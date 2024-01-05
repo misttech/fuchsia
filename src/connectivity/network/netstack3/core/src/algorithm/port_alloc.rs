@@ -9,15 +9,16 @@
 
 use alloc::vec::Vec;
 use core::{
-    hash::Hash,
+    hash::{Hash, Hasher},
     marker::PhantomData,
-    num::{NonZeroU16, NonZeroUsize},
+    num::NonZeroUsize,
     ops::RangeInclusive,
 };
 
-use mundane::{hash::Digest, hmac::HmacSha256};
-use net_types::{ip::IpAddress, SpecifiedAddr};
+use hmac::Mac;
 use rand::RngCore;
+
+type HmacSha256 = hmac::Hmac<sha2::Sha256>;
 
 /// A port number.
 // NOTE(brunodalbo): `PortNumber` could be a trait, but given the expected use
@@ -31,35 +32,31 @@ pub(crate) type PortNumber = u16;
 /// `ProtocolFlowId` provides the most common 3-tuple needed to be used with a
 /// [`PortAlloc`] structure: local IP, remote IP, and remote port number.
 #[derive(Hash, Debug)]
-pub(crate) struct ProtocolFlowId<I: IpAddress> {
-    local_addr: SpecifiedAddr<I>,
-    remote_addr: SpecifiedAddr<I>,
-    remote_port: NonZeroU16,
+pub(crate) struct ProtocolFlowId<A, P> {
+    local_addr: A,
+    remote_addr: A,
+    remote_port: P,
 }
 
-impl<I: IpAddress> ProtocolFlowId<I> {
+impl<A, P> ProtocolFlowId<A, P> {
     /// Creates a new `ProtocolFlowId` with given parameters.
-    pub(crate) fn new(
-        local_addr: SpecifiedAddr<I>,
-        remote_addr: SpecifiedAddr<I>,
-        remote_port: NonZeroU16,
-    ) -> Self {
+    pub(crate) fn new(local_addr: A, remote_addr: A, remote_port: P) -> Self {
         Self { local_addr, remote_addr, remote_port }
     }
 
     /// Gets this `ProtocolFlowId`'s local address.
-    pub(crate) fn local_addr(&self) -> &SpecifiedAddr<I> {
+    pub(crate) fn local_addr(&self) -> &A {
         &self.local_addr
     }
 
     /// Gets this `ProtocolFlowId`'s remote address.
-    pub(crate) fn remote_addr(&self) -> &SpecifiedAddr<I> {
+    pub(crate) fn remote_addr(&self) -> &A {
         &self.remote_addr
     }
 
     /// Gets this `ProtocolFlowId`'s remote port number.
-    pub(crate) fn remote_port(&self) -> NonZeroU16 {
-        self.remote_port
+    pub(crate) fn remote_port(&self) -> &P {
+        &self.remote_port
     }
 }
 
@@ -78,7 +75,7 @@ pub(crate) trait PortAllocImpl {
     /// 4.
     ///
     /// [RFC 6056]: https://tools.ietf.org/html/rfc6056
-    const TABLE_SIZE: NonZeroUsize;
+    const TABLE_SIZE: NonZeroUsize = const_unwrap::const_unwrap_option(NonZeroUsize::new(20));
     /// The range of ports that can be allocated by [`PortAlloc`].
     ///
     /// Local ports used in transport protocols are called [Ephemeral Ports].
@@ -249,10 +246,23 @@ impl<I: PortAllocImpl> PortAlloc<I> {
 fn hmac_with_secret<I: Hash>(id: &I, secret: &[u8]) -> usize {
     use core::convert::TryInto as _;
 
-    let mut hmac = HmacSha256::new(secret);
-    let () = id.hash(&mut hmac);
+    struct MacHasher<'a, M>(&'a mut M);
 
-    usize::from_ne_bytes(hmac.finish().bytes()[..core::mem::size_of::<usize>()].try_into().unwrap())
+    impl<'a, M: Mac> Hasher for MacHasher<'a, M> {
+        fn finish(&self) -> u64 {
+            unimplemented!()
+        }
+
+        fn write(&mut self, bytes: &[u8]) {
+            self.0.update(bytes);
+        }
+    }
+
+    let mut hmac = HmacSha256::new_from_slice(secret).expect("create new HmacSha256");
+    id.hash(&mut MacHasher(&mut hmac));
+
+    let bytes: [u8; 32] = hmac.finalize().into_bytes().into();
+    usize::from_ne_bytes(bytes[..core::mem::size_of::<usize>()].try_into().unwrap())
 }
 
 #[cfg(test)]

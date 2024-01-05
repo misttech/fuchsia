@@ -4,34 +4,36 @@
 
 use {
     crate::fuchsia::{
-        pager::Pager,
+        pager::{Pager, PagerPacketReceiverRegistration},
         pager::{PagerVmoStatsOptions, VmoDirtyRange},
         volume::FxVolume,
     },
     anyhow::{ensure, Context, Error},
     fidl_fuchsia_io as fio, fuchsia_zircon as zx,
     fxfs::{
-        debug_assert_not_too_long,
         errors::FxfsError,
         filesystem::MAX_FILE_SIZE,
         log::*,
-        object_handle::{GetProperties, ObjectHandle, ObjectProperties, ReadObjectHandle},
+        object_handle::{ObjectHandle, ObjectProperties, ReadObjectHandle},
         object_store::{
-            allocator::{Allocator, Reservation, ReservationOwner, SimpleAllocator},
+            allocator::{Allocator, Reservation, ReservationOwner},
             transaction::{
-                AssocObj, LockKey, Mutation, Options, Transaction, TRANSACTION_METADATA_MAX_AMOUNT,
+                lock_keys, AssocObj, LockKey, Mutation, Options, Transaction,
+                TRANSACTION_METADATA_MAX_AMOUNT,
             },
             AttributeKey, DataObjectHandle, ObjectKey, ObjectStore, ObjectValue, StoreObjectHandle,
             Timestamp,
         },
+        range::RangeExt,
         round::{how_many, round_up},
     },
     scopeguard::ScopeGuard,
     std::{
+        future::Future,
         ops::{FnOnce, Range},
         sync::{Arc, Mutex},
     },
-    storage_device::buffer::Buffer,
+    storage_device::buffer::{Buffer, BufferFuture},
     vfs::temp_clone::{unblock, TempClonable},
 };
 
@@ -52,6 +54,7 @@ pub struct PagedObjectHandle {
     inner: Mutex<Inner>,
     vmo: TempClonable<zx::Vmo>,
     handle: DataObjectHandle<FxVolume>,
+    pager_packet_receiver_registration: PagerPacketReceiverRegistration,
 }
 
 struct Inner {
@@ -148,21 +151,6 @@ fn reservation_needed(page_count: u64) -> u64 {
     transaction_count * TRANSACTION_METADATA_MAX_AMOUNT + page_count * page_size
 }
 
-/// Splits the half-open range `[range.start, range.end)` into the ranges `[range.start,
-/// split_point)` and `[split_point, range.end)`. If either of the new ranges would be empty then
-/// `None` is returned in its place and `Some(range)` is returned for the other. `range` must not be
-/// empty.
-fn split_range(range: Range<u64>, split_point: u64) -> (Option<Range<u64>>, Option<Range<u64>>) {
-    debug_assert!(!range.is_empty());
-    if split_point <= range.start {
-        (None, Some(range))
-    } else if split_point >= range.end {
-        (Some(range), None)
-    } else {
-        (Some(range.start..split_point), Some(split_point..range.end))
-    }
-}
-
 /// Returns the number of pages spanned by `range`. `range` must be page aligned.
 fn page_count(range: Range<u64>) -> u64 {
     let page_size = zx::system_get_page_size() as u64;
@@ -185,11 +173,7 @@ impl Inner {
     }
 
     /// Takes all the dirty pages and returns a (<count of dirty pages>, <reservation>).
-    fn take(
-        &mut self,
-        allocator: Arc<SimpleAllocator>,
-        store_object_id: u64,
-    ) -> (u64, Reservation) {
+    fn take(&mut self, allocator: Arc<Allocator>, store_object_id: u64) -> (u64, Reservation) {
         let reservation = allocator.reserve_at_most(Some(store_object_id), 0);
         reservation.add(self.reservation());
         self.spare = 0;
@@ -223,10 +207,11 @@ impl Inner {
 impl PagedObjectHandle {
     pub fn new(handle: DataObjectHandle<FxVolume>) -> Self {
         let size = handle.get_size();
+
+        let (vmo, pager_packet_receiver_registration) =
+            handle.owner().pager().create_vmo(size).unwrap();
         Self {
-            vmo: TempClonable::new(
-                handle.owner().pager().create_vmo(handle.object_id(), size).unwrap(),
-            ),
+            vmo: TempClonable::new(vmo),
             handle,
             inner: Mutex::new(Inner {
                 dirty_crtime: DirtyTimestamp::None,
@@ -235,6 +220,7 @@ impl PagedObjectHandle {
                 spare: 0,
                 pending_shrink: PendingShrink::None,
             }),
+            pager_packet_receiver_registration,
         }
     }
 
@@ -254,8 +240,16 @@ impl PagedObjectHandle {
         self.owner().pager()
     }
 
+    pub fn pager_packet_receiver_registration(&self) -> &PagerPacketReceiverRegistration {
+        &self.pager_packet_receiver_registration
+    }
+
     pub fn get_size(&self) -> u64 {
         self.vmo.get_content_size().unwrap()
+    }
+
+    pub fn pre_fetch_keys(&self) -> Option<impl Future<Output = ()>> {
+        self.handle.handle().pre_fetch_keys()
     }
 
     async fn new_transaction<'a>(
@@ -265,7 +259,10 @@ impl PagedObjectHandle {
         self.store()
             .filesystem()
             .new_transaction(
-                &[LockKey::object(self.handle.store().store_object_id(), self.handle.object_id())],
+                lock_keys![LockKey::object(
+                    self.handle.store().store_object_id(),
+                    self.handle.object_id()
+                )],
                 Options {
                     skip_journal_checks: false,
                     borrow_metadata_space: reservation.is_none(),
@@ -276,7 +273,7 @@ impl PagedObjectHandle {
             .await
     }
 
-    fn allocator(&self) -> Arc<SimpleAllocator> {
+    fn allocator(&self) -> Arc<Allocator> {
         self.store().filesystem().allocator()
     }
 
@@ -293,27 +290,13 @@ impl PagedObjectHandle {
     }
 
     pub async fn read_uncached(&self, range: std::ops::Range<u64>) -> Result<Buffer<'_>, Error> {
-        let mut buffer = self.handle.allocate_buffer((range.end - range.start) as usize);
+        let mut buffer = self.handle.allocate_buffer((range.end - range.start) as usize).await;
         let read = self.handle.read(range.start, buffer.as_mut()).await?;
         buffer.as_mut_slice()[read..].fill(0);
         Ok(buffer)
     }
 
-    pub async fn mark_dirty(&self, page_range: Range<u64>) {
-        let vmo = self.vmo();
-        let (valid_pages, invalid_pages) = split_range(page_range, MAX_FILE_SIZE);
-        if let Some(invalid_pages) = invalid_pages {
-            self.pager().report_failure(vmo, invalid_pages, zx::Status::FILE_BIG);
-        }
-        let page_range = match valid_pages {
-            Some(page_range) => page_range,
-            None => return,
-        };
-
-        // This must occur before making the reservation because this call may trigger a flush
-        // that would consume the reservation.
-        self.owner().report_pager_dirty(page_range.end - page_range.start).await;
-
+    pub fn mark_dirty(&self, page_range: Range<u64>) -> Result<(), zx::Status> {
         let mut inner = self.inner.lock().unwrap();
         let new_inner = Inner {
             dirty_page_count: inner.dirty_page_count + page_count(page_range.clone()),
@@ -334,15 +317,14 @@ impl PagedObjectHandle {
                     reservation.forget();
                 }
                 None => {
-                    // Undo the report of the dirty pages since this has failed.
-                    self.owner().report_pager_clean(page_range.end - page_range.start);
-                    self.pager().report_failure(vmo, page_range, zx::Status::NO_SPACE);
-                    return;
+                    self.pager().report_failure(self.vmo(), page_range, zx::Status::NO_SPACE);
+                    return Err(zx::Status::NO_SPACE);
                 }
             }
         }
         *inner = new_inner;
-        self.pager().dirty_pages(vmo, page_range);
+        self.pager().dirty_pages(self.vmo(), page_range);
+        Ok(())
     }
 
     /// Queries the VMO to see if it was modified since the last time this function was called.
@@ -409,7 +391,7 @@ impl PagedObjectHandle {
             // safe because the pages will be zeroed before they are written to and it would be
             // wrong to write zeroed data.
             let (range, past_content_size_page_range) =
-                split_range(modified_range.range(), page_aligned_content_size);
+                modified_range.range().split(page_aligned_content_size);
 
             if let Some(past_content_size_page_range) = past_content_size_page_range {
                 if !modified_range.is_zero_range() {
@@ -437,6 +419,7 @@ impl PagedObjectHandle {
         content_size: Option<u64>,
         crtime: Option<Timestamp>,
         mtime: Option<Timestamp>,
+        ctime: Option<Timestamp>,
     ) -> Result<(), Error> {
         if let Some(content_size) = content_size {
             transaction.add_with_object(
@@ -452,10 +435,15 @@ impl PagedObjectHandle {
                 AssocObj::Borrowed(&self.handle),
             );
         }
+        let attributes = fio::MutableNodeAttributes {
+            creation_time: crtime.map(|t| t.as_nanos()),
+            modification_time: mtime.map(|t| t.as_nanos()),
+            ..Default::default()
+        };
         self.handle
-            .write_timestamps(transaction, crtime, mtime)
+            .update_attributes(transaction, Some(&attributes), ctime)
             .await
-            .context("write_timestamps failed")?;
+            .context("update_attributes failed")?;
         Ok(())
     }
 
@@ -474,6 +462,7 @@ impl PagedObjectHandle {
             &mut transaction,
             if content_size == previous_content_size { None } else { Some(content_size) },
             crtime,
+            mtime.clone(),
             mtime,
         )
         .await?;
@@ -543,6 +532,7 @@ impl PagedObjectHandle {
                 &mut transaction,
                 size,
                 if first_batch { crtime } else { None },
+                if first_batch { mtime.clone() } else { None },
                 if first_batch { mtime } else { None },
             )
             .await?;
@@ -578,8 +568,10 @@ impl PagedObjectHandle {
         // If the VMO is shrunk between getting the VMO's size and calling query_dirty_ranges or
         // reading the cached data then the flush could fail. This lock is held to prevent the file
         // from shrinking while it's being flushed.
-        let keys = [LockKey::truncate(store.store_object_id(), self.handle.object_id())];
-        let _truncate_guard = debug_assert_not_too_long!(fs.write_lock(&keys));
+        let keys = lock_keys![LockKey::truncate(store.store_object_id(), self.handle.object_id())];
+        let _truncate_guard = fs.lock_manager().write_lock(keys).await;
+
+        self.handle.owner().pager().page_in_barrier().await;
 
         let pending_shrink = self.inner.lock().unwrap().pending_shrink;
         if let PendingShrink::ShrinkTo(size) = pending_shrink {
@@ -703,10 +695,18 @@ impl PagedObjectHandle {
                 inner.dirty_crtime.begin_flush(false),
             )
         };
+
+        let attributes = fio::MutableNodeAttributes {
+            creation_time: crtime.map(|t| t.as_nanos()),
+            modification_time: mtime.map(|t| t.as_nanos()),
+            ..Default::default()
+        };
+        // Shrinking the file should also update `change_time` (it'd be the same value as the
+        // modification time).
         self.handle
-            .write_timestamps(&mut transaction, crtime, mtime)
+            .update_attributes(&mut transaction, Some(&attributes), mtime)
             .await
-            .context("write_timestamps failed")?;
+            .context("update_attributes failed")?;
         transaction.commit().await.context("Failed to commit transaction")?;
         self.inner.lock().unwrap().end_flush();
 
@@ -717,8 +717,8 @@ impl PagedObjectHandle {
         ensure!(new_size <= MAX_FILE_SIZE, FxfsError::InvalidArgs);
         let store = self.handle.store();
         let fs = store.filesystem();
-        let keys = [LockKey::truncate(store.store_object_id(), self.handle.object_id())];
-        let _truncate_guard = debug_assert_not_too_long!(fs.write_lock(&keys));
+        let keys = lock_keys![LockKey::truncate(store.store_object_id(), self.handle.object_id())];
+        let _truncate_guard = fs.lock_manager().write_lock(keys).await;
 
         let old_vmo_size = self.vmo.get_size()?;
 
@@ -787,47 +787,66 @@ impl PagedObjectHandle {
         }
 
         // A race condition can occur if another flush occurs between now and the end of the
-        // transaction. This lock is to prevent a another flush from occurring during that time.
+        // transaction. This lock is to prevent another flush from occurring during that time.
         let fs;
+        // The _flush_guard persists until the end of the function
         let _flush_guard;
         let set_creation_time = attributes.creation_time.is_some();
         let set_modification_time = attributes.modification_time.is_some();
-        if set_creation_time || set_modification_time {
+        let (attributes_with_pending_mtime, ctime) = {
             let store = self.handle.store();
             fs = store.filesystem();
-            let keys = [LockKey::truncate(store.store_object_id(), self.handle.object_id())];
-            _flush_guard = debug_assert_not_too_long!(fs.write_lock(&keys));
-        }
+            let keys =
+                lock_keys![LockKey::truncate(store.store_object_id(), self.handle.object_id())];
+            _flush_guard = fs.lock_manager().write_lock(keys).await;
+            let mut inner = self.inner.lock().unwrap();
+            let mut attributes = attributes.clone();
+            // There is an assumption that when we expose ctime and mtime, that ctime is the same
+            // as dirty_mtime (when it is some value). When we call `update_attributes(..)`,
+            // a situation could arise where ctime is ahead of dirty_mtime and that assumption is no
+            // longer true. An example of this is when we call `update_attributes(..)` without
+            // setting mtime. In this case, we can no longer assume ctime is equal to dirty_mtime.
+            // A way around this is to update attributes with dirty_mtime whenever mtime is not
+            // passed in explicitly which will reset dirty_mtime upon successful completion.
+            let dirty_mtime = inner
+                .dirty_mtime
+                .begin_flush(self.was_file_modified_since_last_call()?)
+                .map(|t| t.as_nanos());
+            if !set_modification_time {
+                attributes.modification_time = dirty_mtime;
+            }
+            (attributes, Some(Timestamp::now()))
+        };
 
         let mut transaction = self.handle.new_transaction().await?;
         self.handle
-            .update_attributes(&mut transaction, attributes)
+            .update_attributes(&mut transaction, Some(&attributes_with_pending_mtime), ctime)
             .await
             .context("update_attributes failed")?;
         transaction.commit().await.context("Failed to commit transaction")?;
-        // Any changes to the dirty timestamps before this transaction are superseded by the values
+        // Any changes to the creation_time before this transaction are superseded by the values
         // set in this update.
         {
             let mut inner = self.inner.lock().unwrap();
             if set_creation_time {
                 inner.dirty_crtime = DirtyTimestamp::None;
             }
-            if set_modification_time {
-                let _ = self.was_file_modified_since_last_call()?;
-                inner.dirty_mtime = DirtyTimestamp::None;
-            }
+            // Discard changes to dirty_mtime if no further update was made since begin_flush(..).
+            inner.dirty_mtime.end_flush();
         }
 
         Ok(())
     }
 
     pub async fn get_properties(&self) -> Result<ObjectProperties, Error> {
-        // We must extract informaton from `inner` *before* we try and retrieve the properties from
+        // We must extract information from `inner` *before* we try and retrieve the properties from
         // the handle to avoid a window where we might see old properties.  When we flush, we update
         // the handle and *then* remove the properties from `inner`.
-        let (dirty_page_count, data_size, ctime, mtime) = {
+        let (dirty_page_count, data_size, crtime, mtime) = {
             let mut inner = self.inner.lock().unwrap();
-            if self.was_file_modified_since_last_call()? {
+
+            // If there are no dirty pages, the client can't have modified anything.
+            if inner.dirty_page_count > 0 && self.was_file_modified_since_last_call()? {
                 inner.dirty_mtime = DirtyTimestamp::Some(Timestamp::now());
             }
             (
@@ -840,11 +859,12 @@ impl PagedObjectHandle {
         let mut props = self.handle.get_properties().await?;
         props.allocated_size += dirty_page_count * zx::system_get_page_size() as u64;
         props.data_attribute_size = data_size;
-        if let Some(t) = ctime {
+        if let Some(t) = crtime {
             props.creation_time = t;
         }
         if let Some(t) = mtime {
             props.modification_time = t;
+            props.change_time = t;
         }
         Ok(props)
     }
@@ -890,7 +910,7 @@ impl ObjectHandle for PagedObjectHandle {
     fn object_id(&self) -> u64 {
         self.handle.object_id()
     }
-    fn allocate_buffer(&self, size: usize) -> Buffer<'_> {
+    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
         self.handle.allocate_buffer(size)
     }
     fn block_size(&self) -> u64 {
@@ -951,7 +971,7 @@ impl FlushBatch {
         }
 
         let split_point = range.range.start + (FLUSH_BATCH_SIZE - self.dirty_byte_count);
-        let (range, remaining) = split_range(range.range, split_point);
+        let (range, remaining) = range.range.split(split_point);
 
         if let Some(range) = range {
             let range = FlushRange { range, is_zero_range: false };
@@ -1000,7 +1020,8 @@ impl FlushBatch {
         }
 
         if self.dirty_byte_count > 0 {
-            let mut buffer = handle.allocate_buffer(self.dirty_byte_count.try_into().unwrap());
+            let mut buffer =
+                handle.allocate_buffer(self.dirty_byte_count.try_into().unwrap()).await;
             let mut slice = buffer.as_mut_slice();
 
             let mut dirty_ranges = Vec::new();
@@ -1058,27 +1079,34 @@ mod tests {
         super::*,
         crate::fuchsia::{
             directory::FxDirectory,
+            pager::{default_page_in, PagerBacked},
             testing::{close_dir_checked, close_file_checked, open_file_checked, TestFixture},
             volume::FxVolumeAndRoot,
         },
         anyhow::{bail, Context},
+        assert_matches::assert_matches,
+        async_trait::async_trait,
         fidl::endpoints::{create_proxy, ServerEnd},
         fidl_fuchsia_io as fio, fuchsia_async as fasync,
         fuchsia_fs::file,
         fuchsia_zircon as zx,
-        futures::join,
+        futures::{
+            channel::mpsc::{unbounded, UnboundedSender},
+            join, StreamExt,
+        },
         fxfs::{
             filesystem::{FxFilesystemBuilder, OpenFxFilesystem},
-            object_store::volume::root_volume,
+            object_store::{volume::root_volume, Directory},
         },
         std::{
+            collections::HashSet,
             sync::{
                 atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-                Arc, Weak,
+                Arc, Condvar, Weak,
             },
             time::Duration,
         },
-        storage_device::{fake_device::FakeDevice, DeviceHolder},
+        storage_device::{buffer, fake_device::FakeDevice, DeviceHolder},
         test_util::{assert_geq, assert_lt},
         vfs::path::Path,
     };
@@ -1532,18 +1560,6 @@ mod tests {
 
         close_file_checked(file).await;
         fixture.close().await;
-    }
-
-    #[test]
-    fn test_split_range() {
-        assert_eq!(split_range(10..20, 0), (None, Some(10..20)));
-        assert_eq!(split_range(10..20, 9), (None, Some(10..20)));
-        assert_eq!(split_range(10..20, 10), (None, Some(10..20)));
-        assert_eq!(split_range(10..20, 11), (Some(10..11), Some(11..20)));
-        assert_eq!(split_range(10..20, 15), (Some(10..15), Some(15..20)));
-        assert_eq!(split_range(10..20, 19), (Some(10..19), Some(19..20)));
-        assert_eq!(split_range(10..20, 20), (Some(10..20), None));
-        assert_eq!(split_range(10..20, 25), (Some(10..20), None));
     }
 
     #[test]
@@ -2043,6 +2059,286 @@ mod tests {
                 })
             );
         }
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_write_mtime_ctime() {
+        let fixture = TestFixture::new_unencrypted().await;
+        let root = fixture.root();
+
+        let file = open_file_checked(
+            &root,
+            fio::OpenFlags::CREATE
+                | fio::OpenFlags::RIGHT_READABLE
+                | fio::OpenFlags::RIGHT_WRITABLE
+                | fio::OpenFlags::NOT_DIRECTORY,
+            FILE_NAME,
+        )
+        .await;
+
+        file::write(&file, &[1, 2, 3, 4]).await.expect("write failed");
+        let write_attributes = get_attributes_checked(&file, fio::NodeAttributesQuery::all()).await;
+        assert_eq!(
+            write_attributes.mutable_attributes.modification_time,
+            write_attributes.immutable_attributes.change_time
+        );
+
+        // Do something else that should not change mtime or ctime
+        file.seek(fio::SeekOrigin::Start, 0)
+            .await
+            .expect("FIDL call failed")
+            .map_err(zx::ok)
+            .expect("seek failed");
+        file::read(&file).await.expect("read failed");
+        let read_attributes = get_attributes_checked(&file, fio::NodeAttributesQuery::all()).await;
+        assert_eq!(
+            write_attributes.mutable_attributes.modification_time,
+            read_attributes.mutable_attributes.modification_time,
+        );
+        assert_eq!(
+            write_attributes.immutable_attributes.change_time,
+            read_attributes.immutable_attributes.change_time,
+        );
+
+        // Syncing the file should have no affect on ctime
+        file.sync().await.unwrap().unwrap();
+        let sync_attributes = get_attributes_checked(&file, fio::NodeAttributesQuery::all()).await;
+        assert_eq!(
+            write_attributes.mutable_attributes.modification_time,
+            sync_attributes.mutable_attributes.modification_time,
+        );
+        assert_eq!(
+            write_attributes.immutable_attributes.change_time,
+            sync_attributes.immutable_attributes.change_time,
+        );
+
+        close_file_checked(file).await;
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_shrink_and_flush_updates_ctime() {
+        let fixture = TestFixture::new_unencrypted().await;
+        let root = fixture.root();
+
+        let file = open_file_checked(
+            &root,
+            fio::OpenFlags::CREATE
+                | fio::OpenFlags::RIGHT_READABLE
+                | fio::OpenFlags::RIGHT_WRITABLE
+                | fio::OpenFlags::NOT_DIRECTORY,
+            FILE_NAME,
+        )
+        .await;
+
+        let initial_file_size = zx::system_get_page_size() as usize * 10;
+        file::write(&file, vec![5u8; initial_file_size]).await.unwrap();
+        file.sync().await.unwrap().map_err(zx::ok).unwrap();
+
+        let (starting_mtime, starting_ctime) = {
+            let attributes = get_attributes_checked(&file, fio::NodeAttributesQuery::all()).await;
+            (
+                attributes.mutable_attributes.modification_time,
+                attributes.immutable_attributes.change_time,
+            )
+        };
+
+        // Shrink the file size.
+        file.resize(0).await.expect("FIDL call failed").expect("resize failed");
+        // Check that the change in timestamps are preserved with flush.
+        file.sync().await.unwrap().unwrap();
+
+        let (synced_mtime, synced_ctime) = {
+            let attributes = get_attributes_checked(&file, fio::NodeAttributesQuery::all()).await;
+            (
+                attributes.mutable_attributes.modification_time,
+                attributes.immutable_attributes.change_time,
+            )
+        };
+
+        assert!(starting_ctime < synced_ctime);
+        assert!(starting_mtime < synced_mtime);
+        assert_eq!(synced_ctime, synced_mtime);
+
+        close_file_checked(file).await;
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 8)]
+    async fn test_race() {
+        struct File {
+            notifications: UnboundedSender<Op>,
+            handle: PagedObjectHandle,
+            unblocked_requests: Mutex<HashSet<u64>>,
+            cvar: Condvar,
+        }
+
+        impl File {
+            fn unblock(&self, request: u64) {
+                self.unblocked_requests.lock().unwrap().insert(request);
+                self.cvar.notify_all();
+            }
+        }
+
+        #[async_trait]
+        impl PagerBacked for File {
+            fn pager(&self) -> &crate::pager::Pager {
+                self.handle.owner().pager()
+            }
+
+            fn pager_packet_receiver_registration(&self) -> &PagerPacketReceiverRegistration {
+                &self.handle.pager_packet_receiver_registration()
+            }
+
+            fn vmo(&self) -> &zx::Vmo {
+                self.handle.vmo()
+            }
+
+            fn page_in(self: Arc<Self>, range: Range<u64>) {
+                default_page_in(self.clone(), range);
+            }
+
+            fn mark_dirty(self: Arc<Self>, range: Range<u64>) {
+                self.handle.mark_dirty(range).unwrap();
+            }
+
+            fn on_zero_children(self: Arc<Self>) {}
+
+            fn read_alignment(&self) -> u64 {
+                self.handle.block_size()
+            }
+
+            fn byte_size(&self) -> u64 {
+                self.handle.uncached_size()
+            }
+
+            async fn aligned_read(
+                &self,
+                range: Range<u64>,
+            ) -> Result<(buffer::Buffer<'_>, usize), Error> {
+                let buffer = self.handle.read_uncached(range).await?;
+                static COUNTER: AtomicU64 = AtomicU64::new(0);
+                let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+                if let Ok(()) = self.notifications.unbounded_send(Op::AfterAlignedRead(counter)) {
+                    let mut unblocked_requests = self.unblocked_requests.lock().unwrap();
+                    while !unblocked_requests.remove(&counter) {
+                        unblocked_requests = self.cvar.wait(unblocked_requests).unwrap();
+                    }
+                }
+                let buffer_len = buffer.len();
+                Ok((buffer, buffer_len))
+            }
+        }
+
+        #[derive(Debug)]
+        enum Op {
+            AfterAlignedRead(u64),
+        }
+
+        let fixture = TestFixture::new().await;
+
+        let vol = fixture.volume().volume().clone();
+        let fs = fixture.fs().clone();
+
+        // Run the test in a separate executor to avoid issues caused by stalling page_in requests
+        // (see `page_in` above).
+        std::thread::spawn(move || {
+            fasync::LocalExecutor::new().run_singlethreaded(async move {
+                let root_object_id = vol.store().root_directory_object_id();
+                let root_dir = Directory::open(&vol, root_object_id).await.expect("open failed");
+
+                let file;
+                let mut transaction = fs
+                    .new_transaction(
+                        lock_keys![LockKey::object(
+                            vol.store().store_object_id(),
+                            root_dir.object_id()
+                        )],
+                        Options::default(),
+                    )
+                    .await
+                    .unwrap();
+                file = root_dir
+                    .create_child_file(&mut transaction, "foo", None)
+                    .await
+                    .expect("create_child_file failed");
+                {
+                    let mut buf = file.allocate_buffer(100).await;
+                    buf.as_mut_slice().fill(1);
+                    file.txn_write(&mut transaction, 0, buf.as_ref())
+                        .await
+                        .expect("txn_write failed");
+                }
+                transaction.commit().await.unwrap();
+                let (notifications, mut receiver) = unbounded();
+
+                let file = Arc::new(File {
+                    notifications,
+                    handle: PagedObjectHandle::new(file),
+                    unblocked_requests: Mutex::new(HashSet::new()),
+                    cvar: Condvar::new(),
+                });
+
+                file.handle.owner().pager().register_file(&file);
+
+                // Trigger a pager request.
+                let cloned_file = file.clone();
+                let thread1 = std::thread::spawn(move || {
+                    cloned_file.vmo().read_to_vec(0, 10).unwrap();
+                });
+
+                // Wait for it.
+                let request1 = assert_matches!(
+                    receiver.next().await.unwrap(),
+                    Op::AfterAlignedRead(request1) => request1
+                );
+
+                // Truncate and then grow the file.
+                file.handle.truncate(0).await.expect("truncate failed");
+                file.handle.truncate(100).await.expect("truncate failed");
+
+                // Unblock the first page request after a delay.  The flush should wait for the
+                // request to finish.  If it doesn't, then the page request might finish later and
+                // provide the wrong pages.
+                let cloned_file = file.clone();
+                let thread2 = std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    cloned_file.unblock(request1);
+                });
+
+                file.handle.flush().await.expect("flush failed");
+
+                // We don't care what the original VMO read request returned, but reading now should
+                // return the new content, i.e. zeroes.  The original page-in request would/will
+                // return non-zero content.
+                let file_cloned = file.clone();
+                let thread3 = std::thread::spawn(move || {
+                    assert_eq!(&file_cloned.vmo().read_to_vec(0, 10).unwrap(), &[0; 10]);
+                });
+
+                // Wait for the second page request to arrive.
+                let request2 = assert_matches!(
+                    receiver.next().await.unwrap(),
+                    Op::AfterAlignedRead(request2) => request2
+                );
+
+                // If the flush didn't wait for the request to finish (it's a bug if it doesn't) we
+                // want the first page request to complete before the second one, and the only way
+                // we can do that now is to wait.
+                fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+
+                // Unblock the second page request.
+                file.unblock(request2);
+
+                thread1.join().unwrap();
+                thread2.join().unwrap();
+                thread3.join().unwrap();
+            })
+        })
+        .join()
+        .unwrap();
+
         fixture.close().await;
     }
 }

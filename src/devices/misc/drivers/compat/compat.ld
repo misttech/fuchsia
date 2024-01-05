@@ -2,6 +2,7 @@
   global:
     /* DFv2 Symbols */
     __fuchsia_driver_lifecycle__;
+    __fuchsia_driver_registration__;
     /* Compat driver Symbols */
     device_add_from_driver;
     device_init_reply;
@@ -12,6 +13,14 @@
     device_set_profile_by_role;
     device_get_protocol;
     get_root_resource;
+    get_iommu_resource;
+    get_framebuffer_resource;
+    get_ioport_resource;
+    get_mmio_resource;
+    get_irq_resource;
+    get_info_resource;
+    get_smc_resource;
+    get_power_resource;
     load_firmware_from_driver;
     device_get_metadata;
     device_get_metadata_size;

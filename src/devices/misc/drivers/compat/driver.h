@@ -6,6 +6,7 @@
 #define SRC_DEVICES_MISC_DRIVERS_COMPAT_DRIVER_H_
 
 #include <fidl/fuchsia.boot/cpp/wire.h>
+#include <fidl/fuchsia.kernel/cpp/wire.h>
 #include <fidl/fuchsia.scheduler/cpp/markers.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/driver/compat/cpp/compat.h>
@@ -18,8 +19,8 @@
 #include <unordered_set>
 
 #include "src/devices/misc/drivers/compat/device.h"
-#include "src/lib/storage/vfs/cpp/pseudo_dir.h"
-#include "src/lib/storage/vfs/cpp/synchronous_vfs.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
+#include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
 
 extern std::mutex kDriverGlobalsLock;
 
@@ -44,6 +45,22 @@ class Driver : public fdf::DriverBase {
 
   zx_handle_t GetRootResource();
 
+  zx_handle_t GetInfoResource();
+
+  zx_handle_t GetIommuResource();
+
+  zx_handle_t GetFramebufferResource();
+
+  zx_handle_t GetMmioResource();
+
+  zx_handle_t GetPowerResource();
+
+  zx_handle_t GetIoportResource();
+
+  zx_handle_t GetIrqResource();
+
+  zx_handle_t GetSmcResource();
+
   // # Threading notes
   //
   // If this method is not called from a task running on |dispatcher|,
@@ -53,6 +70,7 @@ class Driver : public fdf::DriverBase {
   zx::result<> SetProfileByRole(zx::unowned_thread thread, std::string_view role);
   zx::result<std::string> GetVariable(const char* name);
 
+  zx_status_t GetProtocol(uint32_t proto_id, void* out);
   zx_status_t GetFragmentProtocol(const char* fragment, uint32_t proto_id, void* out);
 
   Device& GetDevice() { return device_; }
@@ -134,19 +152,22 @@ class Driver : public fdf::DriverBase {
 
   // API resources.
   zx::resource root_resource_;
+  zx::resource mmio_resource_;
+  zx::resource power_resource_;
+  zx::resource ioport_resource_;
+  zx::resource irq_resource_;
+  zx::resource smc_resource_;
+  zx::resource info_resource_;
+  zx::resource iommu_resource_;
+  zx::resource framebuffer_resource_;
 
   fidl::WireClient<fuchsia_driver_compat::Device> parent_client_;
   std::unordered_map<std::string, fidl::WireClient<fuchsia_driver_compat::Device>> parent_clients_;
 
+  fdf::async_helpers::TaskGroup async_tasks_;
+
   // NOTE: Must be the last member.
   fpromise::scope scope_;
-};
-
-class DriverFactory {
- public:
-  static void CreateDriver(fdf::DriverStartArgs start_args,
-                           fdf::UnownedSynchronizedDispatcher driver_dispatcher,
-                           fdf::StartCompleter completer);
 };
 
 // |GlobalLoggerList| is global for the entire driver host process. It maintains a

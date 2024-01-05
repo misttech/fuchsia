@@ -10,12 +10,29 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct ForensicsConfig {
     #[serde(default)]
+    pub feedback: FeedbackConfig,
+    #[serde(default)]
     pub cobalt: CobaltConfig,
+}
+
+/// Configuration options for the feedback configuration area.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct FeedbackConfig {
+    #[serde(default)]
+    pub low_memory: bool,
+    #[serde(default)]
+    pub large_disk: bool,
+    #[serde(default)]
+    pub remote_device_id_provider: bool,
+    #[serde(default)]
+    pub flash_ts_feedback_id_component_url: Option<String>,
 }
 
 /// Configuration options for the cobalt configuration area.
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CobaltConfig {
-    pub registry: Option<Utf8PathBuf>,
+    #[serde(default)]
+    pub api_key: Option<Utf8PathBuf>,
 }

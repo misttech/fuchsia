@@ -11,6 +11,8 @@ driver_bind_rules("aml_g12_pdm_bind") {
   tests = "tests.json"
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
+    "//src/devices/bind/fuchsia.clock",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
   ]
 }
@@ -25,7 +27,6 @@ fuchsia_driver("aml-g12-pdm-driver") {
 
   deps = [
     ":aml_g12_pdm_bind",
-    "//sdk/banjo/fuchsia.hardware.gpio:fuchsia.hardware.gpio_banjo_cpp",
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/driver",
@@ -54,6 +55,11 @@ fuchsia_driver_component("aml-g12-pdm") {
   deps = [ ":aml-g12-pdm-driver" ]
   info = "aml-g12-pdm-info.json"
   manifest = "meta/aml-g12-pdm.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "aml-g12-pdm"
+  driver_components = [ ":aml-g12-pdm" ]
 }
 
 group("tests") {

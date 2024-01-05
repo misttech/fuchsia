@@ -4,8 +4,6 @@
 
 #include <fidl/fuchsia.hardware.sysmem/cpp/wire_test_base.h>
 #include <fidl/fuchsia.hardware.tee/cpp/wire.h>
-#include <fuchsia/hardware/platform/device/c/banjo.h>
-#include <fuchsia/hardware/platform/device/cpp/banjo.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
@@ -27,11 +25,6 @@
 
 class FakeSysmem : public fidl::testing::WireTestBase<fuchsia_hardware_sysmem::Sysmem> {
  public:
-  void ConnectServer(ConnectServerRequestView request,
-                     ConnectServerCompleter::Sync& completer) override {
-    // Currently, do nothing
-  }
-
   void RegisterHeap(RegisterHeapRequestView request,
                     RegisterHeapCompleter::Sync& completer) override {
     // Currently, do nothing
@@ -58,7 +51,7 @@ class FakeSysmem : public fidl::testing::WireTestBase<fuchsia_hardware_sysmem::S
         .sysmem = sysmem_bindings_.CreateHandler(this, async_get_default_dispatcher(),
                                                  fidl::kIgnoreBindingClosure),
         .allocator_v1 = [](fidl::ServerEnd<fuchsia_sysmem::Allocator> request) {},
-        .allocator = [](fidl::ServerEnd<fuchsia_sysmem2::Allocator> request) {},
+        .allocator_v2 = [](fidl::ServerEnd<fuchsia_sysmem2::Allocator> request) {},
     });
   }
 
@@ -142,17 +135,8 @@ class AmlogicSecureMemTest : public zxtest::Test {
           outgoing->AddService<fuchsia_hardware_tee::Service>(std::move(tee_handler)).is_ok());
     });
 
-    // We initialize this in a dispatcher thread so that fdf_dispatcher_get_current_dispatcher
-    // works. This dispatcher isn't actually used in the test.
-    fdf_env_register_driver_entry(reinterpret_cast<void*>(0x12345678));
-    auto dispatcher = fdf::SynchronizedDispatcher::Create(
-        {}, "aml-securemem-test", fit::bind_member(this, &AmlogicSecureMemTest::ShutdownHandler));
-    fdf_env_register_driver_exit();
-    ASSERT_OK(dispatcher.status_value());
-    dispatcher_ = *std::move(dispatcher);
-
     libsync::Completion completion;
-    async::PostTask(dispatcher_.async_dispatcher(), [&]() {
+    async::PostTask(dispatcher_->async_dispatcher(), [&]() {
       ASSERT_OK(amlogic_secure_mem::AmlogicSecureMemDevice::Create(nullptr, parent()));
       completion.Signal();
     });
@@ -168,7 +152,7 @@ class AmlogicSecureMemTest : public zxtest::Test {
     // aml-securemem doesn't yet implement DdkUnbind() - and arguably it doesn't really need to
     // given what aml-securemem is.
 
-    async::PostTask(dispatcher_.async_dispatcher(), [&]() {
+    async::PostTask(dispatcher_->async_dispatcher(), [&]() {
       dev()->zxdev()->SuspendNewOp(DEV_POWER_STATE_D3COLD, false, DEVICE_SUSPEND_REASON_MEXEC);
     });
 
@@ -176,19 +160,13 @@ class AmlogicSecureMemTest : public zxtest::Test {
 
     // Destroy the driver object in the dispatcher context.
     libsync::Completion destroy_completion;
-    async::PostTask(dispatcher_.async_dispatcher(), [&]() {
-      root_ = nullptr;
+    async::PostTask(dispatcher_->async_dispatcher(), [&]() {
+      EXPECT_EQ(1, root_->child_count());
+      dev()->zxdev()->ReleaseOp();
+      mock_ddk::ReleaseFlaggedDevices(root_.get());
       destroy_completion.Signal();
     });
     destroy_completion.Wait();
-
-    dispatcher_.ShutdownAsync();
-    shutdown_completion_.Wait();
-  }
-
-  void ShutdownHandler(fdf_dispatcher_t* dispatcher) {
-    ASSERT_EQ(dispatcher, dispatcher_.get());
-    shutdown_completion_.Signal();
   }
 
   zx_device_t* parent() { return root_.get(); }
@@ -196,9 +174,10 @@ class AmlogicSecureMemTest : public zxtest::Test {
   amlogic_secure_mem::AmlogicSecureMemDevice* dev() { return dev_; }
 
  private:
+  fdf_testing::DriverRuntime* runtime() { return fdf_testing::DriverRuntime::GetInstance(); }
+
   async::Loop incoming_loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
-  // TODO(fxb/124464): Migrate test to use dispatcher integration.
-  std::shared_ptr<MockDevice> root_ = MockDevice::FakeRootParentNoDispatcherIntegrationDEPRECATED();
+  std::shared_ptr<MockDevice> root_{MockDevice::FakeRootParent()};
   async_patterns::TestDispatcherBound<fake_pdev::FakePDevFidl> pdev_{incoming_loop_.dispatcher(),
                                                                      std::in_place};
   async_patterns::TestDispatcherBound<FakeSysmem> sysmem_{incoming_loop_.dispatcher(),
@@ -207,7 +186,7 @@ class AmlogicSecureMemTest : public zxtest::Test {
   async_patterns::TestDispatcherBound<component::OutgoingDirectory> outgoing_{
       incoming_loop_.dispatcher(), std::in_place, async_patterns::PassDispatcher};
   amlogic_secure_mem::AmlogicSecureMemDevice* dev_;
-  fdf::Dispatcher dispatcher_;
+  fdf::UnownedSynchronizedDispatcher dispatcher_{runtime()->StartBackgroundDispatcher()};
 
   libsync::Completion shutdown_completion_;
 };

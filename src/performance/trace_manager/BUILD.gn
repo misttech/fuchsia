@@ -37,7 +37,7 @@ source_set("lib") {
     "//sdk/lib/fidl/cpp",
     "//sdk/lib/fit",
     "//sdk/lib/sys/cpp",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//zircon/system/ulib/async:async-cpp",
     "//zircon/system/ulib/trace-reader",
     "//zircon/system/ulib/zx",
@@ -51,6 +51,7 @@ executable("bin") {
 
   deps = [
     ":lib",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/fxl",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -72,6 +73,11 @@ fuchsia_component("component_hermetic") {
     ":bin",
     ":tracing.config",
   ]
+}
+
+fuchsia_package("package_hermetic") {
+  package_name = "trace_manager_hermetic"
+  deps = [ ":component_hermetic" ]
 }
 
 fuchsia_package_with_single_component("trace_manager") {
@@ -99,18 +105,4 @@ fuchsia_package_with_single_component("trace_manager") {
 group("trace_manager_pkg") {
   testonly = true
   deps = [ ":trace_manager" ]
-}
-
-group("core_shard") {
-  # Temporary empty group for migration as part of fxbug.dev/112433
-  #
-  # The core shard is included in tree right now and we want to include it out of tree
-  # This sets up a migration where we remove the core shard from the assemblies
-  # and specifically reference it in the product definitions but replacing this
-  # empty group with the following:
-
-  # core_shard("core_shard") {
-  #   shard_file = "meta/trace_manager.core_shard.cml"
-  # }
-  deps = []
 }

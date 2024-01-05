@@ -4,15 +4,18 @@
 
 use anyhow::{anyhow, Context, Result};
 use errors::{ffx_bail, ffx_error};
-use sdk_metadata::{CpuArchitecture, ElementType, FfxTool, HostTool, Manifest, Part};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs,
     io::BufReader,
     path::{Path, PathBuf},
+    process::Command,
 };
 use tracing::warn;
+
+use metadata::{CpuArchitecture, ElementType, FfxTool, HostTool, Manifest, Part};
+pub use sdk_metadata as metadata;
 
 pub const SDK_MANIFEST_PATH: &str = "meta/manifest.json";
 pub const SDK_BUILD_MANIFEST_PATH: &str = "sdk/manifest/core";
@@ -30,6 +33,7 @@ pub enum SdkVersion {
 #[derive(Debug)]
 pub struct Sdk {
     path_prefix: PathBuf,
+    module: Option<String>,
     parts: Vec<Part>,
     real_paths: Option<HashMap<String, String>>,
     version: SdkVersion,
@@ -100,6 +104,21 @@ impl SdkRoot {
         path.join(SDK_MANIFEST_PATH).exists() || path.join(SDK_BUILD_MANIFEST_PATH).exists()
     }
 
+    /// Returns true if the SDK at this root exists and has a valid manifest
+    pub fn manifest_exists(&self) -> bool {
+        let root = match self {
+            Self::Full(path) => path,
+            Self::Modular { manifest, module } => {
+                let Ok(module_path) = module_manifest_path(manifest, module) else { return false };
+                if !module_path.exists() {
+                    return false;
+                }
+                manifest
+            }
+        };
+        root.exists() && Self::is_sdk_root(&root)
+    }
+
     /// Does a full load of the sdk configuration.
     pub fn get_sdk(self) -> Result<Sdk> {
         tracing::debug!("get_sdk");
@@ -147,6 +166,17 @@ impl SdkRoot {
     }
 }
 
+fn module_manifest_path(path: &Path, module: &str) -> Result<PathBuf> {
+    let arch_path = if cfg!(target_arch = "x86_64") {
+        "host_x64"
+    } else if cfg!(target_arch = "aarch64") {
+        "host_arm64"
+    } else {
+        ffx_bail!("Host architecture {} not supported by the SDK", std::env::consts::ARCH)
+    };
+    Ok(path.join(arch_path).join("sdk/manifest").join(module))
+}
+
 impl Sdk {
     fn from_build_dir(path: &Path, module_manifest: Option<&str>) -> Result<Self> {
         let path = std::fs::canonicalize(path).with_context(|| {
@@ -154,22 +184,14 @@ impl Sdk {
         })?;
         let manifest_path = match module_manifest {
             None => path.join(SDK_BUILD_MANIFEST_PATH),
-            Some(module) => if cfg!(target_arch = "x86_64") {
-                path.join("host_x64")
-            } else if cfg!(target_arch = "aarch64") {
-                path.join("host_arm64")
-            } else {
-                ffx_bail!("Host architecture {} not supported by the SDK", std::env::consts::ARCH)
-            }
-            .join("sdk/manifest")
-            .join(module),
+            Some(module) => module_manifest_path(&path, module)?,
         };
 
         let file = Self::open_manifest(&manifest_path)?;
         let atoms = Self::parse_manifest(&manifest_path, file)?;
 
         // If we are able to parse the json file into atoms, creates a Sdk object from the atoms.
-        Self::from_sdk_atoms(&path, atoms, SdkVersion::InTree)
+        Self::from_sdk_atoms(&path, module_manifest, atoms, SdkVersion::InTree)
             .with_context(|| anyhow!("Parsing atoms from SDK manifest at `{}`", path.display()))
     }
 
@@ -188,6 +210,7 @@ impl Sdk {
 
         Ok(Sdk {
             path_prefix,
+            module: None,
             parts: manifest.parts,
             real_paths: None,
             version: SdkVersion::Version(manifest.id.clone()),
@@ -260,13 +283,14 @@ impl Sdk {
         self.get_host_tool_relative_path(name).map(|path| self.path_prefix.join(path))
     }
 
-    fn get_host_tools(&self) -> impl Iterator<Item = HostTool> + '_ {
+    /// Get the metadata for all host tools
+    pub fn get_all_host_tools_metadata(&self) -> impl Iterator<Item = HostTool> + '_ {
         self.metadata_for(&[ElementType::HostTool, ElementType::CompanionHostTool])
     }
 
     fn get_host_tool_relative_path(&self, name: &str) -> Result<PathBuf> {
         let found_tool = self
-            .get_host_tools()
+            .get_all_host_tools_metadata()
             .filter(|tool| tool.name == name)
             .map(|tool| match &tool.files.as_deref() {
                 Some([tool_path]) => Ok(tool_path.to_owned()),
@@ -294,6 +318,18 @@ impl Sdk {
         }
     }
 
+    /// Returns a command invocation builder for the given host tool, if it
+    /// exists in the sdk.
+    pub fn get_host_tool_command(&self, name: &str) -> Result<Command> {
+        let host_tool = self.get_host_tool(name)?;
+        let mut command = Command::new(host_tool);
+        command.env("FUCHSIA_SDK_PATH", &self.path_prefix);
+        if let Some(module) = self.module.as_deref() {
+            command.env("FUCHSIA_SDK_ENV", module);
+        }
+        Ok(command)
+    }
+
     pub fn get_path_prefix(&self) -> &Path {
         &self.path_prefix
     }
@@ -313,14 +349,25 @@ impl Sdk {
     /// For tests only
     #[doc(hidden)]
     pub fn get_empty_sdk_with_version(version: SdkVersion) -> Sdk {
-        Sdk { path_prefix: PathBuf::new(), parts: Vec::new(), real_paths: None, version }
+        Sdk {
+            path_prefix: PathBuf::new(),
+            module: None,
+            parts: Vec::new(),
+            real_paths: None,
+            version,
+        }
     }
 
     /// Allocates a new Sdk using the given atoms.
     ///
     /// All the meta files specified in the atoms are loaded.
     /// The creation succeed only if all the meta files have been loaded successfully.
-    fn from_sdk_atoms(path_prefix: &Path, atoms: SdkAtoms, version: SdkVersion) -> Result<Self> {
+    fn from_sdk_atoms(
+        path_prefix: &Path,
+        module: Option<&str>,
+        atoms: SdkAtoms,
+        version: SdkVersion,
+    ) -> Result<Self> {
         let mut metas = Vec::new();
         let mut real_paths = HashMap::new();
 
@@ -342,6 +389,7 @@ impl Sdk {
 
         Ok(Sdk {
             path_prefix: path_prefix.to_owned(),
+            module: module.map(str::to_owned),
             parts: metas,
             real_paths: Some(real_paths),
             version,
@@ -414,6 +462,8 @@ mod test {
             "host_arm64/gen/tools/symbol-index/symbol_index_sdk.meta.json"
         );
         put_file!(r, "../test_data/core-sdk-root", "sdk/manifest/core");
+        put_file!(r, "../test_data/core-sdk-root", "host_x64/sdk/manifest/host_tools.internal");
+        put_file!(r, "../test_data/core-sdk-root", "host_arm64/sdk/manifest/host_tools.internal");
         put_file!(
             r,
             "../test_data/core-sdk-root",
@@ -443,6 +493,19 @@ mod test {
         put_file!(r, "../test_data/release-sdk-root", "meta/manifest.json");
         put_file!(r, "../test_data/release-sdk-root", "tools/zxdb-meta.json");
         r
+    }
+
+    #[test]
+    fn test_manifest_exists() {
+        let core_root = core_test_data_root();
+        let release_root = sdk_test_data_root();
+        assert!(SdkRoot::Full(core_root.path().to_owned()).manifest_exists());
+        assert!(SdkRoot::Modular {
+            manifest: core_root.path().to_owned(),
+            module: "host_tools.internal".to_owned()
+        }
+        .manifest_exists());
+        assert!(SdkRoot::Full(release_root.path().to_owned()).manifest_exists());
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -492,7 +555,7 @@ mod test {
         ))
         .unwrap();
 
-        let sdk = Sdk::from_sdk_atoms(manifest_path, atoms, SdkVersion::Unknown).unwrap();
+        let sdk = Sdk::from_sdk_atoms(manifest_path, None, atoms, SdkVersion::Unknown).unwrap();
 
         let mut parts = sdk.parts.iter();
         assert!(matches!(parts.next().unwrap(), Part { kind: ElementType::HostTool, .. }));
@@ -511,10 +574,13 @@ mod test {
         ))
         .unwrap();
 
-        let sdk = Sdk::from_sdk_atoms(manifest_path, atoms, SdkVersion::Unknown).unwrap();
+        let sdk = Sdk::from_sdk_atoms(manifest_path, None, atoms, SdkVersion::Unknown).unwrap();
         let zxdb = sdk.get_host_tool("zxdb").unwrap();
 
         assert_eq!(manifest_path.join("host_x64/zxdb"), zxdb);
+
+        let zxdb_cmd = sdk.get_host_tool_command("zxdb").unwrap();
+        assert_eq!(zxdb_cmd.get_program(), manifest_path.join("host_x64/zxdb"));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -526,10 +592,13 @@ mod test {
         ))
         .unwrap();
 
-        let sdk = Sdk::from_sdk_atoms(manifest_path, atoms, SdkVersion::InTree).unwrap();
+        let sdk = Sdk::from_sdk_atoms(manifest_path, None, atoms, SdkVersion::InTree).unwrap();
         let symbol_index = sdk.get_host_tool("symbol-index").unwrap();
 
         assert_eq!(manifest_path.join("host_x64/symbol-index"), symbol_index);
+
+        let symbol_index_cmd = sdk.get_host_tool_command("symbol-index").unwrap();
+        assert_eq!(symbol_index_cmd.get_program(), manifest_path.join("host_x64/symbol-index"));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -541,10 +610,21 @@ mod test {
         ))
         .unwrap();
 
-        let sdk = Sdk::from_sdk_atoms(manifest_path, atoms, SdkVersion::Unknown).unwrap();
+        let sdk = Sdk::from_sdk_atoms(manifest_path, None, atoms, SdkVersion::Unknown).unwrap();
         let ffx_assembly = sdk.get_ffx_tool("ffx-assembly").unwrap();
 
-        assert_eq!(manifest_path.join("host_x64/ffx-assembly"), ffx_assembly.executable);
+        // get_ffx_tool selects with the current architecture, so the executable path will be
+        // architecture-dependent.
+        let arch = CpuArchitecture::current();
+        let host_dir = match arch {
+            CpuArchitecture::X64 => "host_x64",
+            CpuArchitecture::Arm64 => "host_arm64",
+            CpuArchitecture::Riscv64 => "host_riscv64",
+            _ => panic!("Unsupported architecture {}", arch),
+        };
+        assert_eq!(manifest_path.join(host_dir).join("ffx-assembly"), ffx_assembly.executable);
+        // On the other hand, the metadata comes from a fixed set of input test data, which says
+        // the source of tools/ffx_tools/ffx-assembly.json is host_x64/ffx-assembly.json
         assert_eq!(manifest_path.join("host_x64/ffx-assembly.json"), ffx_assembly.metadata);
     }
 
@@ -577,6 +657,7 @@ mod test {
 
         let sdk = Sdk {
             path_prefix: sdk_root.to_owned(),
+            module: None,
             parts: manifest.parts,
             real_paths: None,
             version: SdkVersion::Version(manifest.id.to_owned()),
@@ -584,6 +665,9 @@ mod test {
         let zxdb = sdk.get_host_tool("zxdb").unwrap();
 
         assert_eq!(sdk_root.join("tools/zxdb"), zxdb);
+
+        let zxdb_cmd = sdk.get_host_tool_command("zxdb").unwrap();
+        assert_eq!(zxdb_cmd.get_program(), sdk_root.join("tools/zxdb"));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -597,13 +681,26 @@ mod test {
 
         let sdk = Sdk {
             path_prefix: sdk_root.to_owned(),
+            module: None,
             parts: manifest.parts,
             real_paths: None,
             version: SdkVersion::Version(manifest.id.to_owned()),
         };
         let ffx_assembly = sdk.get_ffx_tool("ffx-assembly").unwrap();
 
-        assert_eq!(sdk_root.join("tools/x64/ffx_tools/ffx-assembly"), ffx_assembly.executable);
+        // get_ffx_tool selects with the current architecture, so the executable path will be
+        // architecture-dependent.
+        let current_arch = CpuArchitecture::current();
+        let arch = match current_arch {
+            CpuArchitecture::Arm64 => "arm64",
+            CpuArchitecture::X64 => "x64",
+            CpuArchitecture::Riscv64 => "riscv64",
+            _ => panic!("Unsupported host tool architecture {}", current_arch),
+        };
+        assert_eq!(
+            sdk_root.join("tools").join(arch).join("ffx_tools/ffx-assembly"),
+            ffx_assembly.executable
+        );
         assert_eq!(sdk_root.join("tools/ffx_tools/ffx-assembly.json"), ffx_assembly.metadata);
     }
 

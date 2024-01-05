@@ -39,7 +39,7 @@ source_set("categories") {
   }
 
   deps = [
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//zircon/system/ulib/fbl",
   ]
 
@@ -64,7 +64,7 @@ executable("bin") {
   deps = [
     ":categories",
     "//sdk/lib/sys/cpp",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//src/performance/lib/perfmon",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -76,6 +76,7 @@ executable("bin") {
 
 fuchsia_package_with_single_component("cpuperf_provider") {
   manifest = "meta/cpuperf_provider.cml"
+  subpackages = [ "//src/performance/cpu-trace" ]
   deps = [ ":bin" ]
 }
 
@@ -102,7 +103,7 @@ executable("cpuperf_provider_integration_tests_bin") {
   sources = [ "cpuperf_provider_integration_tests.cc" ]
 
   deps = [
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//src/lib/fxl/test:test_settings",
     "//src/performance/lib/perfmon",
     "//src/performance/lib/test_utils",
@@ -133,7 +134,18 @@ fuchsia_test_package("cpuperf_provider_tests") {
   test_specs = {
     environments = basic_envs
   }
-  subpackages = [ "//src/performance/trace_manager" ]
+  subpackages = [
+    "//src/performance/trace_manager",
+    "//src/performance/cpu-trace",
+  ]
+
+  if (current_cpu == "riscv64") {
+    test_components -= [
+      # TODO(fxbug.dev/128614): Remove once CategoryTest.NeitherOsNorUser and
+      # CategoryTest.Timebase pass onr RISC-V.
+      ":cpuperf_provider_tests_component",
+    ]
+  }
 }
 
 group("tests") {

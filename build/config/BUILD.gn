@@ -13,6 +13,7 @@ import("//build/config/linker.gni")
 import("//build/toolchain/ccache.gni")
 import("//build/toolchain/concurrent_jobs.gni")
 import("//build/toolchain/goma.gni")
+import("//build/toolchain/rbe.gni")
 import("//build/toolchain/variant.gni")
 
 if (support_rust) {
@@ -225,18 +226,15 @@ config("relative_paths") {
     cflags = [ "-ffile-compilation-dir=." ]
   }
 
-  if (!is_gcc) {
-    # This makes sure that include directories in the toolchain are
-    # represented as relative to the build directory (because that's how we
-    # invoke the compiler), rather than absolute.  This can affect __FILE__
-    # expansions (e.g. assertions in system headers).  We normally run a
-    # compiler that's someplace within the source tree, so its absolute
-    # installation path will have a prefix matching `absolute_path` and
-    # hence be mapped to `relative_path` in the debugging information, so
-    # this should actually be superfluous for purposes of the debugging
-    # information.
-    cflags += [ "-no-canonical-prefixes" ]
-  }
+  # This makes sure that include directories in the toolchain are represented
+  # as relative to the build directory (because that's how we invoke the
+  # compiler), rather than absolute.  This can affect __FILE__ expansions
+  # (e.g. assertions in system headers).  We normally run a compiler that's
+  # someplace within the source tree, so its absolute installation path will
+  # have a prefix matching `absolute_path` and hence be mapped to
+  # `relative_path` in the debugging information, so this should actually be
+  # superfluous for purposes of the debugging information.
+  cflags += [ "-no-canonical-prefixes" ]
 
   asmflags = cflags
   ldflags = cflags
@@ -263,7 +261,6 @@ config("relative_paths") {
 }
 
 config("debug") {
-  rustflags = [ "-Cdebug-assertions=yes" ]
 }
 
 config("release") {
@@ -325,6 +322,28 @@ config("linker_string_merging") {
     ldflags = [ "-Wl,/opt:lldtailmerge" ]
   } else if (current_os != "mac") {
     ldflags = [ "-Wl,-O2" ]
+  }
+}
+
+# Disable remote linking for C++ executables.
+# This can be useful on large targets that OOM remotely.
+config("no_remote_link") {
+  if (link_rbe_enable) {
+    ldflags = [ "--remote-flag=--local" ]
+  }
+}
+
+config("download_outputs") {
+  # Override global settings that may disable downloading of outputs.
+  # This is useful for targets that are known to be needed for local actions.
+  if (rust_rbe_enable) {
+    rustflags = [ "--remote-flag=--download_outputs=true" ]
+  }
+  if (cxx_rbe_enable) {
+    cflags = [ "--remote-flag=--download_outputs=true" ]
+  }
+  if (link_rbe_enable) {
+    ldflags = [ "--remote-flag=--download_outputs=true" ]
   }
 }
 
@@ -464,10 +483,40 @@ config("debuginfo_debug") {
   rustflags = [ "-Cdebuginfo=2" ]
 }
 
+config("dwarf_version") {
+  cflags = [ "-gdwarf-${dwarf_version}" ]
+  asmflags = cflags
+  ldflags = cflags
+}
+
+config("compress_debuginfo") {
+  if (compress_debuginfo != "none") {
+    gz_flag = "-gz=${compress_debuginfo}"
+    cflags = [ gz_flag ]
+    asmflags = cflags
+    ldflags = cflags
+
+    # rustc driver invokes LLD directly when targeting Fuchsia, so we need to
+    # use the linker spelling of this flag, whereas on other targets rustc
+    # invokes Clang so we use the same spelling as for C/C++.
+    if (is_fuchsia) {
+      rustflags =
+          [ "-Clink-arg=--compress-debug-sections=${compress_debuginfo}" ]
+    } else {
+      rustflags = [ "-Clink-arg=${gz_flag}" ]
+    }
+  }
+}
+
 config("default_debuginfo") {
+  cflags = []
+  ldflags = []
   configs = [ ":debuginfo_${debuginfo}" ]
-  if (current_os != "win") {
-    cflags = [ "-gdwarf-${dwarf_version}" ]
+  if (current_os != "win" && current_cpu != "wasm32") {
+    configs += [
+      ":dwarf_version",
+      ":compress_debuginfo",
+    ]
     if (!is_gcc) {
       # This option forces Clang to only emit class type information when
       # constructors are emitted which can significantly reduce debug info
@@ -478,11 +527,10 @@ config("default_debuginfo") {
         "-debug-info-kind=constructor",
       ]
     }
-    asmflags = cflags
   } else if (debuginfo != "none" && current_os == "win") {
     # TODO(fxbug.dev/55244): This produces the .pdb file, but it doesn't seem
     # to get the DWARF data out of the main output file.
-    ldflags = [ "-Wl,/debug:full" ]
+    ldflags += [ "-Wl,/debug:full" ]
   }
 }
 
@@ -495,7 +543,10 @@ config("default_frame_pointers") {
 }
 
 config("frame_pointers") {
-  cflags = [ "-fno-omit-frame-pointer" ]
+  cflags = [
+    "-fno-omit-frame-pointer",
+    "-momit-leaf-frame-pointer",
+  ]
   ldflags = cflags
   rustflags = [ "-Cforce-frame-pointers" ]
   if (zircon_toolchain != false) {
@@ -543,6 +594,14 @@ config("default_warnings") {
     "-Wno-sign-conversion",
     "-Wno-unused-parameter",
     "-Wnonportable-system-include-path",
+
+    # TODO(fxbug.dev/64272): Disable "-Wmissing-field-initializers" which
+    # warns when designated initializers are used on some (but not all)
+    # fields in C++, but not C.
+    #
+    # There is ongoing discussion about whether it should apply to C++ or not.
+    # See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=96868 for details.
+    "-Wno-missing-field-initializers",
   ]
 
   cflags_cc = []
@@ -576,13 +635,6 @@ config("default_warnings") {
     ]
 
     cflags += [
-      # TODO(fxbug.dev/64272): Disable "-Wmissing-field-initializers" which
-      # warns when designated initializers are used on some (but not all)
-      # fields in C++, contrary to its documentation (and Clang).
-      #
-      # See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=39589.
-      "-Wno-missing-field-initializers",
-
       # TODO(fxbug.dev/101358): -Warray-bounds has false positives in GCC 12.
       # When https://gcc.gnu.org/bugzilla/show_bug.cgi?id=105762 is fixed,
       # remove this.
@@ -592,6 +644,10 @@ config("default_warnings") {
       # Moreover, most folks don't build with gcc. We just disable this
       # warning on gcc to make it easier to see actual errors.
       "-Wno-deprecated-declarations",
+
+      # TODO(fxbug.dev/126220): -Wstringop-overread has false positives in GCC
+      # 13.  Needs to be pursued upstream.
+      "-Wno-stringop-overread",
     ]
   }
 }
@@ -653,6 +709,108 @@ config("Wno-address-of-packed-member") {
   cflags = [ "-Wno-address-of-packed-member" ]
   visibility =
       [ "//src/connectivity/wlan/drivers/third_party/nxp/nxpfmac/mlan:*" ]
+}
+
+config("Wno-undef") {
+  cflags = [ "-Wno-undef" ]
+  visibility = [ "//third_party/googletest:*" ]
+}
+
+config("Wno-bitfield-conversion") {
+  cflags = [
+    # TODO(fxbug.dev/135166): Remove -Wno-unknown-warning-option after the next Clang roll.
+    "-Wno-unknown-warning-option",
+    "-Wno-bitfield-conversion",
+  ]
+  visibility = [
+    "//src/connectivity/wlan/drivers/third_party/nxp/nxpfmac:*",
+    "//src/lib/vulkan:*",
+  ]
+}
+
+# TODO(fxbug.dev/135694): Remove the use of variable length arrays.
+#
+# NOTE: Do not add this to public_configs under any circumstances. Public
+# configs are viral and will infect unsuspecting targets.
+
+config("Wno-vla-cxx-extension") {
+  if (!is_gcc) {
+    cflags_cc = [
+      # TODO(fxbug.dev/135166): Remove -Wno-unknown-warning-option after the next Clang roll.
+      "-Wno-unknown-warning-option",
+      "-Wno-vla-cxx-extension",
+    ]
+  }
+  visibility = [
+    "//sdk/lib/fdio:*",
+    "//sdk/lib/fdio/tests:*",
+    "//sdk/lib/ld:*",
+    "//sdk/lib/zxio:*",
+    "//src/bringup/bin/console:*",
+    "//src/bringup/bin/console-launcher:*",
+    "//src/bringup/bin/dlog:*",
+    "//src/camera/bin/camera-gym/controller_parser:*",
+    "//src/camera/bin/factory_cli:*",
+    "//src/camera/drivers/hw_accel/task:*",
+    "//src/camera/lib/raw_formats:*",
+    "//src/connectivity/bluetooth/core/bt-host/fidl:*",
+    "//src/connectivity/bluetooth/core/bt-host/socket:*",
+    "//src/connectivity/bluetooth/hci/transport/usb:*",
+    "//src/connectivity/ethernet/drivers/ethernet/netdevice-migration:*",
+    "//src/connectivity/ethernet/drivers/gvnic:*",
+    "//src/connectivity/network/netstack/udp_serde:*",
+    "//src/connectivity/network/tests/benchmarks/udp-serde:*",
+    "//src/connectivity/network/tests/external_network:*",
+    "//src/connectivity/network/tests/socket:*",
+    "//src/connectivity/telephony/drivers/qmi-usb-transport:*",
+    "//src/connectivity/wlan/drivers/lib/log/cpp/test:*",
+    "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:*",
+    "//src/connectivity/wlan/lib/mlme/cpp:*",
+    "//src/developer/adb/bin/adb-file-sync:*",
+    "//src/developer/debug/debug_agent/test_data:*",
+    "//src/developer/ffx/lib/fuchsia-controller:*",
+    "//src/developer/memory/metrics/tests:*",
+    "//src/devices/block/bin/gpt:*",
+    "//src/devices/block/bin/iochk:*",
+    "//src/devices/block/drivers/aml-sdmmc:*",
+    "//src/devices/block/drivers/zxcrypt:*",
+    "//src/devices/spi/bin/spiutil:*",
+    "//src/devices/usb/bin/usbctl:*",
+    "//src/graphics/display/drivers/amlogic-display:*",
+    "//src/graphics/display/drivers/coordinator:*",
+    "//src/graphics/display/drivers/intel-i915:*",
+    "//src/graphics/lib/compute/spinel/platforms/vk/tests/spinel_vk_tests:*",
+    "//src/graphics/lib/magma/src/libmagma_virt:*",
+    "//src/media/audio/examples/effects:*",
+    "//src/media/drivers/amlogic_decoder:*",
+    "//src/performance/experimental/profiler:*",
+    "//src/performance/lib/gperftools:*",
+    "//src/performance/lib/trace_converters:*",
+    "//src/starnix/tests/syscalls/cpp:*",
+    "//src/storage/blobfs/test:*",
+    "//src/storage/f2fs:*",
+    "//src/storage/f2fs/test:*",
+    "//src/storage/fs_test:*",
+    "//src/storage/fxfs:*",
+    "//src/storage/gpt:*",
+    "//src/storage/lib/block_client/cpp:*",
+    "//src/storage/lib/fs_management/cpp:*",
+    "//src/storage/lib/vfs/cpp:*",
+    "//src/storage/lib/vfs/cpp/journal:*",
+    "//src/storage/minfs:*",
+    "//src/storage/minfs/test:*",
+    "//src/sys/bin/psutils:*",
+    "//src/ui/input/drivers/hid:*",
+    "//src/ui/input/drivers/hid-input-report:*",
+    "//src/ui/scenic/lib/flatland/renderer/tests:*",
+    "//third_party/openweave-core/src/lib/profiles:*",
+    "//tools/fidl/fidlc:*",
+    "//vendor/arm/camera/driver/fuchsia/wrappers:*",
+    "//vendor/google/starnix/android:*",
+    "//zircon/system/ulib/runtests-utils:*",
+    "//zircon/system/ulib/test-utils:*",
+    "//zircon/system/ulib/zxtest:*",
+  ]
 }
 
 # TODO(fxbug.dev/58162): clean up instances of this outside of third party code.
@@ -726,7 +884,6 @@ config("Wno-conversion") {
     "//src/devices/bus/lib/virtio:*",
     "//src/devices/cpu/drivers/aml-cpu-legacy:*",
     "//src/devices/i2c/drivers/intel-i2c:*",
-    "//src/devices/internal/drivers/fragment:*",
     "//src/devices/lib/amlogic:*",
     "//src/devices/lib/fidl-metadata/test:*",
     "//src/devices/lib/goldfish/pipe_io:*",
@@ -749,8 +906,6 @@ config("Wno-conversion") {
     "//src/diagnostics/validator/inspect/lib/cpp:*",
     "//src/firmware/gigaboot/lib",
     "//src/firmware/gigaboot/src",
-    "//src/graphics/display/drivers/aml-hdmi:*",
-    "//src/graphics/display/drivers/coordinator:*",
     "//src/graphics/display/drivers/fake:*",
     "//src/graphics/display/drivers/goldfish-display:*",
     "//src/graphics/display/drivers/ssd1306:*",
@@ -778,7 +933,6 @@ config("Wno-conversion") {
     "//src/lib/line_input:*",
     "//src/lib/listnode:*",
     "//src/lib/process_builder:*",
-    "//src/lib/storage/vfs/cpp:*",
     "//src/lib/ui/scenic/cpp:*",
     "//src/lib/usb_bulk/cpp:*",
     "//src/lib/vmo_store:*",
@@ -800,6 +954,7 @@ config("Wno-conversion") {
     "//src/performance/lib/perfmon:*",
     "//src/performance/lib/trace_converters:*",
     "//src/security/bin/tee_manager:*",
+    "//src/storage/lib/vfs/cpp:*",
     "//src/sys/pkg/lib/far/cpp:*",
     "//src/ui/a11y/bin/a11y_manager/tests:*",
     "//src/ui/a11y/bin/a11y_manager/tests/util:*",
@@ -825,13 +980,12 @@ config("Wno-conversion") {
     "//src/ui/input/drivers/goodix:*",
     "//src/ui/input/drivers/hid-buttons:*",
     "//src/ui/input/drivers/pc-ps2:*",
+    "//src/ui/input/lib/hid:*",
     "//src/ui/input/lib/hid-input-report:*",
     "//src/ui/lib/escher/test:*",
     "//src/ui/lib/escher/test/common:*",
     "//src/ui/lib/yuv:*",
     "//src/ui/scenic/bin:*",
-    "//src/ui/scenic/lib/gfx:*",
-    "//src/ui/scenic/lib/gfx/tests:*",
     "//src/virtualization/third_party/fdt:*",
     "//third_party/acpica/*",
     "//third_party/crashpad/src/*",
@@ -855,7 +1009,6 @@ config("Wno-conversion") {
     "//tools/vboot_reference:*",
     "//vendor/*",
     "//zircon/system/ulib/c/*",
-    "//zircon/system/ulib/hid:*",
     "//zircon/system/ulib/image-format:*",
     "//zircon/system/ulib/ktrace:*",
     "//zircon/system/ulib/tftp:*",
@@ -1120,7 +1273,15 @@ config("auto_var_init") {
 
 config("thread_safety_annotations") {
   if (!is_gcc) {
-    cflags = [ "-Wthread-safety" ]
+    cflags = [
+      "-Wthread-safety",
+
+      # TODO(fxbug.dev/135657): Clang is catching instances of these in the kernel and drivers.
+      # Temporarily disable them for now to facilitate the roll then come back and
+      # fix them.
+      "-Wno-unknown-warning-option",
+      "-Wno-thread-safety-reference-return",
+    ]
     defines = [ "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS=1" ]
   }
 }
@@ -1171,5 +1332,49 @@ config("fuchsia_api_level") {
     # This is defined as __Fuchsia_API_level__ by clang if the target is Fuchsia.
     # However, we also need this for host tools.
     "FUCHSIA_API_LEVEL=${platform_version.in_development_api_level}",
+  ]
+}
+
+config("tlsdesc") {
+  have_tlsdesc = 0
+  if (is_gcc) {
+    # TLSDESC is opt-in or opt-out via -mtls-dialect=... under GCC.
+    if (current_cpu == "arm64") {
+      cflags = [ "-mtls-dialect=desc" ]
+      have_tlsdesc = 1
+    } else if (current_cpu == "x64") {
+      cflags = [ "-mtls-dialect=gnu2" ]
+      have_tlsdesc = 1
+    }
+  } else {
+    # TLSDESC is either always on or always off (so far) under Clang.
+    if (current_cpu == "arm64") {
+      have_tlsdesc = 1
+    }
+  }
+  defines = [
+    "WANT_TLSDESC=1",
+    "HAVE_TLSDESC=$have_tlsdesc",
+  ]
+}
+
+config("no-tlsdesc") {
+  have_tlsdesc = 0
+  if (is_gcc) {
+    # TLSDESC is opt-in or opt-out via -mtls-dialect=... under GCC.
+    if (current_cpu == "arm64") {
+      cflags = [ "-mtls-dialect=traditional" ]
+    } else if (current_cpu == "x64") {
+      cflags = [ "-mtls-dialect=gnu" ]
+    }
+  } else {
+    # TLSDESC is either always on or always off (so far) under Clang.
+    if (current_cpu == "arm64") {
+      have_tlsdesc = 1
+    }
+  }
+  defines = [
+    "WANT_TLSDESC=0",
+    "HAVE_TLSDESC=$have_tlsdesc",
   ]
 }

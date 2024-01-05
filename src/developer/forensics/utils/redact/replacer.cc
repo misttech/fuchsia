@@ -7,7 +7,6 @@
 #include <lib/syslog/cpp/macros.h>
 
 #include <algorithm>
-#include <iterator>
 #include <memory>
 #include <queue>
 #include <string>
@@ -40,7 +39,7 @@ namespace {
 // Replaces all non-overlapping instances of the keys in |redactions| with their values.
 //
 // For example, replacing "bc" with "1" and "c" with "2" in "abc" will result in "a1".
-void ApplyRedactions(const std::map<std::string, std::string> redactions, std::string& text) {
+void ApplyRedactions(const std::map<std::string, std::string>& redactions, std::string& text) {
   // Grouping of a string and its position in |text|.
   using Substr = std::pair<size_t, const std::string*>;
   auto Compare = [](const Substr& lhs, const Substr& rhs) { return rhs.first < lhs.first; };
@@ -54,8 +53,8 @@ void ApplyRedactions(const std::map<std::string, std::string> redactions, std::s
   // Seed |queue| with the position of the first instance of each key in |redactions|.
   for (const auto& [original, _] : redactions) {
     const size_t pos = text.find(original);
-    if (pos != text.npos) {
-      queue.push({pos, &original});
+    if (pos != std::string::npos) {
+      queue.emplace(pos, &original);
     }
   }
 
@@ -68,8 +67,9 @@ void ApplyRedactions(const std::map<std::string, std::string> redactions, std::s
     const std::string& original = *(top.second);
 
     // Add the next instance of |original| to |queue|, if one exists.
-    if (const size_t next_pos = text.find(original, pos + original.size()); next_pos != text.npos) {
-      queue.push({next_pos, &original});
+    if (const size_t next_pos = text.find(original, pos + original.size());
+        next_pos != std::string::npos) {
+      queue.emplace(next_pos, &original);
     }
 
     // Only add non-overlapping strings to |to_replace|.
@@ -79,7 +79,7 @@ void ApplyRedactions(const std::map<std::string, std::string> redactions, std::s
   }
 
   // Replace each substring in |to_replace|.
-  int adjustment{0};
+  size_t adjustment{0};
   for (const auto& [pos, original] : to_replace) {
     const auto& redacted = redactions.at(*original);
     text.replace(pos + adjustment, original->size(), redacted);
@@ -125,8 +125,9 @@ Replacer FunctionBasedReplacer(
     return nullptr;
   }
 
-  if (regexp->NumberOfCapturingGroups() != 1) {
-    FX_LOGS(ERROR) << "Regexp \"" << pattern << "\" expected to have 1 capture group, has "
+  if (regexp->NumberOfCapturingGroups() < 1) {
+    FX_LOGS(ERROR) << "Regexp \"" << pattern
+                   << "\" expected to have at least 1 capturing group, has "
                    << regexp->NumberOfCapturingGroups();
     return nullptr;
   }
@@ -148,7 +149,7 @@ Replacer ReplaceWithIdFormatString(const std::string_view pattern,
                                    const std::string_view format_str) {
   bool specificier_found{false};
 
-  for (size_t pos{0}; (pos = format_str.find("%d", pos)) != format_str.npos; ++pos) {
+  for (size_t pos{0}; (pos = format_str.find("%d", pos)) != std::string::npos; ++pos) {
     if (specificier_found) {
       FX_LOGS(ERROR) << "Format string \"" << format_str
                      << "\" expected to have 1 \"%d\" specifier";
@@ -255,38 +256,74 @@ std::string RedactIPv6(RedactionIdCache& cache, const std::string& match) {
 
 Replacer ReplaceIPv6() { return FunctionBasedReplacer(kIPv6Pattern, RedactIPv6); }
 
-namespace {
+namespace mac_utils {
 
-constexpr std::string_view kMacPattern{
+const size_t NUM_MAC_BYTES = 6;
+
+static constexpr std::string_view kMacPattern{
     R"(\b()"
-    R"(\b(?:(?:[0-9a-fA-F]{1,2}(?:[\.:-])){3})(?:[0-9a-fA-F]{1,2}(?:[\.:-])){2}[0-9a-fA-F]{1,2}\b)"
+    R"(\b((?:[[:xdigit:]]{1,2}(?:[\.:-])){3})(?:[[:xdigit:]]{1,2}(?:[\.:-])){2}[[:xdigit:]]{1,2}\b)"
     R"()\b)"};
 
-constexpr re2::LazyRE2 kOui = MakeLazyRE2(R"(^((?:[0-9a-fA-F]{1,2}(?:[\.:-])){3}))");
-
-std::string GetOui(const std::string& match) {
+std::string GetOuiPrefix(const std::string& mac) {
+  static constexpr re2::LazyRE2 regexp = MakeLazyRE2(kMacPattern.data());
   std::string oui;
-  if (!re2::RE2::PartialMatch(match, *kOui, &oui)) {
-    oui = "regex error";
-  }
+  re2::RE2::FullMatch(mac, *regexp, nullptr, &oui);
   return oui;
 }
 
-std::string RedactMac(RedactionIdCache& cache, const std::string& match) {
-  const int id = cache.GetId(match);
-  const std::string oui = GetOui(match);
-  return fxl::StringPrintf("%s<REDACTED-MAC: %d>", oui.c_str(), id);
+std::string CanonicalizeMac(const std::string& original_mac) {
+  std::string lowercased_mac(original_mac);
+  std::transform(lowercased_mac.begin(), lowercased_mac.end(), lowercased_mac.begin(),
+                 [](char c) { return std::tolower(c); });
+
+  std::string canonical_mac = "00:00:00:00:00:00";
+  re2::StringPiece lowercased_mac_view(lowercased_mac);
+  for (size_t i = 0; i < NUM_MAC_BYTES; ++i) {
+    re2::StringPiece mac_byte;
+    re2::RE2::FindAndConsume(&lowercased_mac_view, R"(([[:xdigit:]]{1,2}))", &mac_byte);
+
+    if (mac_byte.length() == 2) {
+      canonical_mac.replace(3 * i, 2, mac_byte.data(), 2);
+    } else if (mac_byte.length() == 1) {
+      canonical_mac.replace(3 * i + 1, 1, mac_byte.data(), 1);
+    } else {
+      // The regular expression used in |FindAndConsume()| above ensure |mac_byte|
+      // will have either 1 or 2 characters.
+      __builtin_unreachable();
+    }
+  }
+
+  return canonical_mac;
 }
 
-std::string RedactMacNoHash(RedactionIdCache& _cache, const std::string& match) {
-  const std::string oui = GetOui(match);
-  return fxl::StringPrintf("%s<REDACTED-MAC>", oui.c_str());
+}  // namespace mac_utils
+
+namespace {
+
+std::string RedactMac(RedactionIdCache& cache, const std::string& mac) {
+  const std::string oui = mac_utils::GetOuiPrefix(mac);
+  const int id = cache.GetId(mac_utils::CanonicalizeMac(mac));
+  return fxl::StringPrintf("%s<REDACTED-MAC: %d>", oui.c_str(), id);
 }
 
 }  // namespace
 
-Replacer ReplaceMac() { return FunctionBasedReplacer(kMacPattern, RedactMac); }
+Replacer ReplaceMac() { return FunctionBasedReplacer(mac_utils::kMacPattern, RedactMac); }
 
-Replacer ReplaceMacNoHash() { return FunctionBasedReplacer(kMacPattern, RedactMacNoHash); }
+namespace {
+
+// The SSID identifier contains at most 32 pairs of hexadecimal characters, but match any number so
+// SSID identifiers with the wrong number of hexadecimal characters are also redacted.
+constexpr std::string_view kSsidPattern = R"((<ssid-[[:xdigit:]]*>))";
+
+std::string RedactSsid(RedactionIdCache& cache, const std::string& match) {
+  const int id = cache.GetId(match);
+  return fxl::StringPrintf("<REDACTED-SSID: %d>", id);
+}
+
+}  // namespace
+
+Replacer ReplaceSsid() { return FunctionBasedReplacer(kSsidPattern, RedactSsid); }
 
 }  // namespace forensics

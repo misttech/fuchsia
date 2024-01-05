@@ -14,7 +14,6 @@ group("tests") {
   if (!is_coverage) {
     deps += [
       ":driver-manager-tests",
-      "v1:driver-manager-v1-tests",
       "v2:driver-runner-tests",
     ]
   }
@@ -57,10 +56,10 @@ source_set("inspect") {
     "//sdk/lib/inspect/service/cpp",
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-deprecated-binding-headers",
-    "//src/lib/storage/vfs/cpp",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/fbl",
   ]
-  deps = [ "//sdk/lib/inspect/component/cpp:inspect_component_cpp" ]
+  deps = [ "//sdk/lib/inspect/component/cpp" ]
 }
 
 source_set("driver_host_loader_service") {
@@ -80,16 +79,15 @@ executable("driver_manager") {
   sources = [
     "main.cc",
     "main.h",
-    "v1/main.cc",
     "v2/main.cc",
   ]
 
   deps = [
     ":driver_host_loader_service",
     ":driver_manager_config",
-    "v1:coordinator",
     "v2:driver_development_service",
     "v2:driver_runner",
+    "//src/devices/lib/log",
     "//src/lib/scheduler/cpp",
     "//src/sys/lib/stdout-to-debuglog/cpp",
   ]
@@ -111,10 +109,10 @@ test("driver_manager_devfs_test") {
 
   deps = [
     "devfs:devfs",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
-    "//src/lib/storage/vfs/cpp:test_support",
+    "//src/storage/lib/vfs/cpp:test_support",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/zxtest",
@@ -182,8 +180,8 @@ group("driver_shared_libraries") {
     "//sdk/lib/fdio",
     "//sdk/lib/svc",
     "//sdk/lib/syslog/cpp:backend_fuchsia_globals",
-    "//src/devices/bin/driver_host:driver",
     "//src/devices/bin/driver_runtime",
+    "//src/devices/lib/driver",
     "//src/security/lib/tee/tee-client-api",
     "//third_party/boringssl:crypto-shared",
     "//third_party/boringssl:ssl-shared",
@@ -193,18 +191,8 @@ group("driver_shared_libraries") {
   ]
 }
 
-fuchsia_package("dfv1_package") {
-  package_name = "driver_manager"
-  deps = [
-    ":component",
-    ":driver_shared_libraries",
-    "//src/devices/bin/driver_host",
-    "//src/devices/internal/drivers/fragment",
-    "//src/devices/internal/drivers/fragment:fragment.proxy",
-  ]
-}
-
 fuchsia_package("dfv2_package") {
+  validate_structured_config = false
   package_name = "driver_manager"
   deps = [
     ":component",

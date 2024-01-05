@@ -11,12 +11,11 @@ use {
     fidl_fuchsia_wlan_common_security as fidl_security,
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_policy as fidl_policy,
     fidl_fuchsia_wlan_sme as fidl_sme, fuchsia_zircon as zx,
-    ieee80211::{Bssid, Ssid},
-    rand::Rng as _,
+    ieee80211::{Bssid, MacAddrBytes, Ssid},
+    rand::{Rng as _, RngCore},
     std::convert::TryFrom,
     wlan_common::{
         channel::{Cbw, Channel},
-        hasher::WlanHasher,
         random_fidl_bss_description,
         scan::Compatibility,
         security::{wep, wpa, SecurityAuthenticator, SecurityDescriptor},
@@ -75,9 +74,14 @@ pub fn generate_random_sme_scan_result() -> fidl_sme::ScanResult {
     }
 }
 
+pub fn generate_random_bssid() -> types::Bssid {
+    let mut rng = rand::thread_rng();
+    Bssid::from(rng.gen::<[u8; 6]>())
+}
+
 pub fn generate_random_bss() -> types::Bss {
     let mut rng = rand::thread_rng();
-    let bssid: Bssid = Bssid(rng.gen());
+    let bssid = generate_random_bssid();
     let rssi = rng.gen_range(-100..20);
     let channel = generate_random_channel();
     let timestamp = zx::Time::from_nanos(rng.gen());
@@ -104,7 +108,7 @@ pub fn generate_random_bss() -> types::Bss {
             _ => None,
         },
         bss_description: random_fidl_bss_description!(
-            bssid: bssid.0,
+            bssid: bssid.to_array(),
             rssi_dbm: rssi,
             channel: channel,
             snr_db: snr_db,
@@ -256,6 +260,25 @@ pub fn generate_random_fidl_network_config_with_ssid(ssid: &str) -> fidl_policy:
     }
 }
 
+/// Generate a WPA2 network identifier with an SSID of length 2 to 32.
+pub fn generate_random_network_identifier() -> types::NetworkIdentifier {
+    let mut rng = rand::thread_rng();
+    let mut ssid = vec![0; rng.gen_range(2..33)];
+    rng.fill_bytes(&mut ssid);
+    types::NetworkIdentifier {
+        ssid: types::Ssid::from_bytes_unchecked(ssid),
+        security_type: types::SecurityType::Wpa2,
+    }
+}
+
+/// Generate a password of 8 to 64 random bytes.
+pub fn generate_random_password() -> Credential {
+    let mut rng = rand::thread_rng();
+    let password =
+        vec![0; rng.gen_range(8..64)].into_iter().map(|_| rng.gen_range(0..128)).collect();
+    Credential::Password(password)
+}
+
 pub fn generate_random_authenticator() -> SecurityAuthenticator {
     let mut rng = rand::thread_rng();
     match rng.gen_range(0..5) {
@@ -297,7 +320,6 @@ pub fn generate_random_scanned_candidate() -> types::ScannedCandidate {
         network_has_multiple_bss: rng.gen::<bool>(),
         authenticator: generate_random_authenticator(),
         saved_network_info: generate_random_saved_network_data(),
-        hasher: WlanHasher::new(rng.gen::<u64>().to_le_bytes()),
     }
 }
 

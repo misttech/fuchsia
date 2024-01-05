@@ -91,7 +91,9 @@ void Allocator::V1::AllocateNonSharedCollection(
   // The server end of the local token goes to Create(), and the client end
   // goes to BindSharedCollection().  The BindSharedCollection() will figure
   // out which token we're talking about based on the koid(s), as usual.
-  LogicalBufferCollection::CreateV1(std::move(token_server), allocator_->parent_device_);
+  LogicalBufferCollection::CreateV1(
+      std::move(token_server), allocator_->parent_device_,
+      allocator_->client_debug_info_.has_value() ? &*allocator_->client_debug_info_ : nullptr);
   LogicalBufferCollection::BindSharedCollection(
       allocator_->parent_device_, token_client.TakeChannel(),
       std::move(request.collection_request()),
@@ -124,7 +126,9 @@ void Allocator::V2::AllocateNonSharedCollection(
   // The server end of the local token goes to Create(), and the client end
   // goes to BindSharedCollection().  The BindSharedCollection() will figure
   // out which token we're talking about based on the koid(s), as usual.
-  LogicalBufferCollection::CreateV2(std::move(token_server), allocator_->parent_device_);
+  LogicalBufferCollection::CreateV2(
+      std::move(token_server), allocator_->parent_device_,
+      allocator_->client_debug_info_.has_value() ? &*allocator_->client_debug_info_ : nullptr);
   LogicalBufferCollection::BindSharedCollection(
       allocator_->parent_device_, token_client.TakeChannel(),
       std::move(request.collection_request().value()),
@@ -151,7 +155,9 @@ void Allocator::V1::AllocateSharedCollection(AllocateSharedCollectionRequest& re
   // go ahead and allocate the LogicalBufferCollection here since the
   // LogicalBufferCollection associates all the BufferCollectionToken and
   // BufferCollection bindings to the same LogicalBufferCollection.
-  LogicalBufferCollection::CreateV1(std::move(request.token_request()), allocator_->parent_device_);
+  LogicalBufferCollection::CreateV1(
+      std::move(request.token_request()), allocator_->parent_device_,
+      allocator_->client_debug_info_.has_value() ? &*allocator_->client_debug_info_ : nullptr);
 }
 
 void Allocator::V2::AllocateSharedCollection(AllocateSharedCollectionRequest& request,
@@ -175,8 +181,9 @@ void Allocator::V2::AllocateSharedCollection(AllocateSharedCollectionRequest& re
   // go ahead and allocate the LogicalBufferCollection here since the
   // LogicalBufferCollection associates all the BufferCollectionToken and
   // BufferCollection bindings to the same LogicalBufferCollection.
-  LogicalBufferCollection::CreateV2(std::move(request.token_request().value()),
-                                    allocator_->parent_device_);
+  LogicalBufferCollection::CreateV2(
+      std::move(request.token_request().value()), allocator_->parent_device_,
+      allocator_->client_debug_info_.has_value() ? &*allocator_->client_debug_info_ : nullptr);
 }
 
 void Allocator::V1::BindSharedCollection(BindSharedCollectionRequest& request,
@@ -264,15 +271,65 @@ void Allocator::V2::SetDebugClientInfo(SetDebugClientInfoRequest& request,
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
-  if (!request.id().has_value()) {
-    allocator_->LogError(FROM_HERE, "SetDebugClientInfo requires id set");
-    completer.Close(ZX_ERR_INVALID_ARGS);
-    return;
+  uint64_t id = 0;
+  if (request.id().has_value()) {
+    id = *request.id();
   }
   allocator_->client_debug_info_.emplace();
   allocator_->client_debug_info_->name =
       std::string(request.name()->begin(), request.name()->end());
-  allocator_->client_debug_info_->id = request.id().value();
+  allocator_->client_debug_info_->id = id;
+}
+
+void Allocator::V2::GetVmoInfo(GetVmoInfoRequest& request, GetVmoInfoCompleter::Sync& completer) {
+  if (!request.vmo().has_value()) {
+    allocator_->LogError(FROM_HERE, "GetVmoInfo requires vmo handle (!has_value)");
+    completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  if (!request.vmo()->is_valid()) {
+    allocator_->LogError(FROM_HERE, "GetVmoInfo requires vmo handle (!is_valid)");
+    completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  auto& vmo = *request.vmo();
+  zx_info_handle_basic_t basic_info{};
+  zx_status_t status =
+      vmo.get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info), nullptr, nullptr);
+  if (status != ZX_OK) {
+    allocator_->LogError(FROM_HERE, "GetVmoInfo couldn't vmo.get_info to get koid");
+    completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  // Possibly redundant with FIDL generated code.
+  if (basic_info.type != ZX_OBJ_TYPE_VMO) {
+    allocator_->LogError(FROM_HERE, "GetVmoInfo requires VMO handle");
+    completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  zx_koid_t vmo_koid = basic_info.koid;
+  auto logical_buffer_result = allocator_->parent_device_->FindLogicalBufferByVmoKoid(vmo_koid);
+  if (!logical_buffer_result.logical_buffer) {
+    // We don't log anything in this path because a client may just be checking if a VMO is a
+    // sysmem VMO, which could make a LogInfo() here noisy.
+    completer.Reply(fit::error(ZX_ERR_NOT_FOUND));
+    return;
+  }
+  auto& logical_buffer = *logical_buffer_result.logical_buffer;
+  fuchsia_sysmem2::AllocatorGetVmoInfoResponse response;
+  response.buffer_collection_id() =
+      logical_buffer.logical_buffer_collection().buffer_collection_id();
+  response.buffer_index() = logical_buffer.buffer_index();
+  if (logical_buffer_result.is_koid_of_weak_vmo) {
+    auto dup_result = logical_buffer.logical_buffer_collection().DupCloseWeakAsapClientEnd(
+        logical_buffer.buffer_index());
+    if (dup_result.is_error()) {
+      completer.Close(dup_result.error_value());
+      return;
+    }
+    response.close_weak_asap() = std::move(dup_result.value());
+  }
+  completer.Reply(fit::ok(std::move(response)));
 }
 
 }  // namespace sysmem_driver

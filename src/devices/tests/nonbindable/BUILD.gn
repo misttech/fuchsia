@@ -49,12 +49,11 @@ test("nonbindable-test") {
   sources = [ "test.cc" ]
   deps = [
     ":component",
-    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp_wire",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm",
-    "//src/devices/internal/drivers/fragment",
     "//src/devices/misc/drivers/test-parent",
     "//src/lib/fxl/test:gtest_main",
   ]

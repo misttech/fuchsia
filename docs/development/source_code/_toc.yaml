@@ -18,6 +18,8 @@ toc:
   path: /docs/development/source_code/layout.md
 - title: "Owners"
   path: /docs/development/source_code/owners.md
+- title: "Static analyzers"
+  path: /docs/development/source_code/static_analyzers.md
 - title: "Presubmit checks"
   path: /docs/development/source_code/presubmit_checks.md
 - title: "Gerrit auto-submit"
@@ -28,3 +30,5 @@ toc:
   path: /docs/development/source_code/third-party-metadata.md
 - title: "Fuchsia archive format (FAR)"
   path: /docs/development/source_code/archive_format.md
+- title: "Third-party source code management"
+  path: /docs/development/source_code/third-party-management.md

@@ -30,19 +30,22 @@ fuchsia_driver("hid-driver") {
     ":hid_bind",
     "//sdk/banjo/fuchsia.hardware.hidbus:fuchsia.hardware.hidbus_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.hiddevice:fuchsia.hardware.hiddevice_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_cpp",
     "//src/devices/bind/fuchsia.hid:fuchsia.hid_cpp",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddk",
     "//src/lib/listnode",
+    "//src/ui/input/lib/hid",
+    "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/hid",
-    "//zircon/system/ulib/hid-parser",
     "//zircon/system/ulib/trace",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 fuchsia_driver_component("hid") {
@@ -70,7 +73,7 @@ test("hid-test") {
     ":hid_bind",
     "//sdk/banjo/fuchsia.hardware.hidbus:fuchsia.hardware.hidbus_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.hiddevice:fuchsia.hardware.hiddevice_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_cpp",
     "//sdk/lib/driver/runtime/testing/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/bind/fuchsia.hid:fuchsia.hid_cpp",
@@ -78,11 +81,11 @@ test("hid-test") {
     "//src/devices/testing/mock-ddk",
     "//src/lib/ddk",
     "//src/lib/listnode",
+    "//src/ui/input/lib/hid",
+    "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/hid",
-    "//zircon/system/ulib/hid-parser",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/zxtest",
   ]

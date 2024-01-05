@@ -41,6 +41,7 @@ fuchsia_component("pass_without_config") {
 _package_name = "validate_structured_config_repackaging"
 fuchsia_package(_package_name) {
   testonly = true
+  validate_structured_config = false
   deps = [
     ":fail_missing_config",
     ":pass_with_config",
@@ -93,7 +94,7 @@ if (is_host) {
     visibility = [ ":*" ]
   }
 
-  group("host_tests") {
+  group("repackaging_pass") {
     testonly = true
     deps = [ ":structured_config_repackaging_test" ]
 

@@ -13,6 +13,7 @@
 #include <lib/ddk/trace/event.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/clock.h>
+#include <lib/zx/process.h>
 #include <lib/zx/profile.h>
 #include <lib/zx/time.h>
 #include <stdio.h>
@@ -198,9 +199,14 @@ zx_status_t FtDevice::Init() {
   FocaltechMetadata device_info;
   zx_status_t status = device_get_metadata(parent(), DEVICE_METADATA_PRIVATE, &device_info,
                                            sizeof(device_info), &actual);
-  if (status != ZX_OK || sizeof(device_info) != actual) {
-    zxlogf(ERROR, "focaltouch: failed to read metadata");
-    return status == ZX_OK ? ZX_ERR_INTERNAL : status;
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to get metadata: %s", zx_status_get_string(status));
+    return status;
+  }
+  if (sizeof(device_info) != actual) {
+    zxlogf(ERROR, "Incorrect metadata size: Expected %lu bytes but actual is %lu bytes",
+           sizeof(device_info), actual);
+    return ZX_ERR_INTERNAL;
   }
 
   if (device_info.device_id == FOCALTECH_DEVICE_FT3X27) {
@@ -312,7 +318,7 @@ zx_status_t FtDevice::Create(void* ctx, zx_device_t* device) {
     }
   }
 
-  status = ft_dev->DdkAdd(ddk::DeviceAddArgs("focaltouch HidDevice")
+  status = ft_dev->DdkAdd(ddk::DeviceAddArgs("focaltouch-HidDevice")
                               .set_inspect_vmo(ft_dev->inspector_.DuplicateVmo()));
   if (status != ZX_OK) {
     zxlogf(ERROR, "focaltouch: Could not create hid device: %d", status);

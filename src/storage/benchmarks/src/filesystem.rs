@@ -5,7 +5,11 @@
 use {
     crate::BlockDeviceFactory,
     async_trait::async_trait,
-    std::path::{Path, PathBuf},
+    std::{
+        future::Future,
+        path::{Path, PathBuf},
+        pin::Pin,
+    },
 };
 
 /// A trait for creating `Filesystem`s.
@@ -27,13 +31,33 @@ pub trait FilesystemConfig: Send + Sync {
 
 /// A trait representing a mounted filesystem that benchmarks will be run against.
 #[async_trait]
-pub trait Filesystem: Send + Sync {
-    /// Cleans up the filesystem after a benchmark has run.
+pub trait Filesystem: Send + Sync + BoxedFilesystem {
+    /// Cleans up the filesystem after a benchmark has run. Filesystem is unusable after this call.
     async fn shutdown(self);
 
     /// Path to where the filesystem is located in the current process's namespace. All benchmark
     /// operations should happen within this directory.
     fn benchmark_dir(&self) -> &Path;
+}
+
+/// Helper trait for shutting down `Box<dyn Filesystem>` objects.
+pub trait BoxedFilesystem: Send + Sync {
+    /// `Filesystem::shutdown` takes the filesystem by value which doesn't work for `Box<&dyn
+    /// Filesystem>` because the filesystem type isn't known at compile time. Taking the filesystem
+    /// as `Box<Self>` works and the type of the filesystem is now known so the
+    /// `Filesystem::shutdown` method can be called.
+    fn shutdown_boxed<'a>(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+    where
+        Self: 'a;
+}
+
+impl<T: Filesystem> BoxedFilesystem for T {
+    fn shutdown_boxed<'a>(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+    where
+        Self: 'a,
+    {
+        (*self).shutdown()
+    }
 }
 
 /// A trait for filesystems that are able to clear their caches.

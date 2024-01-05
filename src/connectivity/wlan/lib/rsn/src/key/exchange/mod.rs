@@ -50,28 +50,11 @@ impl Method {
     pub fn on_eapol_key_frame<B: ByteSlice>(
         &mut self,
         update_sink: &mut UpdateSink,
-        key_replay_counter: u64,
         frame: Dot11VerifiedKeyFrame<B>,
     ) -> Result<(), Error> {
         match self {
-            Method::FourWayHandshake(hs) => {
-                hs.on_eapol_key_frame(update_sink, key_replay_counter, frame)
-            }
-            Method::GroupKeyHandshake(hs) => {
-                hs.on_eapol_key_frame(update_sink, key_replay_counter, frame)
-            }
-        }
-    }
-
-    pub fn initiate(
-        &mut self,
-        update_sink: &mut UpdateSink,
-        key_replay_counter: u64,
-    ) -> Result<(), Error> {
-        match self {
-            Method::FourWayHandshake(hs) => hs.initiate(update_sink, key_replay_counter),
-            // Only 4-Way Handshake supports initiation so far.
-            _ => Ok(()),
+            Method::FourWayHandshake(hs) => hs.on_eapol_key_frame(update_sink, frame),
+            Method::GroupKeyHandshake(hs) => hs.on_eapol_key_frame(update_sink, frame),
         }
     }
 

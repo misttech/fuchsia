@@ -35,6 +35,8 @@ template("audio_pipeline_benchmark") {
   generated_file("${package_name}-manifest-base") {
     contents = "{"
     contents += "  program: { \"binary\": \"bin/${package_name}\" },"
+    contents +=
+        "  capabilities: [{ \"protocol\": \"fuchsia.media.ProfileProvider\" }],"
     contents += "  use: ["
     contents += "      {"
     contents += "          directory: \"pkg\","
@@ -80,7 +82,7 @@ template("audio_pipeline_benchmark") {
 
     deps = [
       "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_hlcpp",
-      "//src/lib/fxl",
+      "//src/lib/fxl:fxl_cli",
       "//src/media/audio/audio_core/v1:audio_core_lib",
       "//src/media/audio/audio_core/v1/testing",
       "//src/media/audio/lib/analysis",

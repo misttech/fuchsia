@@ -5,12 +5,16 @@ A `.cml` file contains a single json5 object literal with the keys below.
 Where string values are expected, a list of valid values is generally documented.
 The following string value types are reused and must follow specific rules.
 
+The `.cml` file is compiled into a FIDL wire format (`.cm`) file.
+
 ## String types
 
 ### Names {#names}
 
-Both capabilities and a component's children are named. A name string must consist of one or
-more of the following characters: `a-z`, `0-9`, `_`, `.`, `-`.
+Both capabilities and a component's children are named. A name string may
+consist of one or more of the following characters: `A-Z`, `a-z`, `0-9`,
+`_`, `.`, `-`. It must not exceed 100 characters in length and may not start
+with `.` or `-`.
 
 ### References {#references}
 
@@ -25,8 +29,8 @@ A reference string takes the form of `#<name>`, where `<name>` refers to the nam
 [doc-protocol]: /docs/concepts/components/v2/capabilities/protocol.md
 [doc-directory]: /docs/concepts/components/v2/capabilities/directory.md
 [doc-storage]: /docs/concepts/components/v2/capabilities/storage.md
-[doc-resolvers]: /docs/concepts/components/v2/capabilities/resolvers.md
-[doc-runners]: /docs/concepts/components/v2/capabilities/runners.md
+[doc-resolvers]: /docs/concepts/components/v2/capabilities/resolver.md
+[doc-runners]: /docs/concepts/components/v2/capabilities/runner.md
 [doc-event]: /docs/concepts/components/v2/capabilities/event.md
 [doc-service]: /docs/concepts/components/v2/capabilities/service.md
 [doc-directory-rights]: /docs/concepts/components/v2/capabilities/directory#directory-capability-rights
@@ -67,7 +71,7 @@ Note: The `fx` command below is for developers working in a Fuchsia source
 checkout environment.
 
 ```sh
-fx cmc include {{ "<var>" }}cmx_file{{ "</var>" }} --includeroot $FUCHSIA_DIR --includepath $FUCHSIA_DIR/sdk/lib
+fx cmc include {{ "<var>" }}cml_file{{ "</var>" }} --includeroot $FUCHSIA_DIR --includepath $FUCHSIA_DIR/sdk/lib
 ```
 
 Includes can cope with duplicate [`use`], [`offer`], [`expose`], or [`capabilities`]
@@ -229,7 +233,7 @@ than `runner` are specific to the runner. The runner receives the arguments as a
 dictionary of key and value pairs. Refer to the specific runner being used to
 determine what keys it expects to receive, and how it interprets them.
 
-[doc-runners]: /docs/concepts/components/v2/capabilities/runners.md
+[doc-runners]: /docs/concepts/components/v2/capabilities/runner.md
 
 ### `children` {#children}
 
@@ -429,6 +433,8 @@ One and only one of the capability type keys (`protocol`, `directory`, `service`
 - `runner`: (_optional `string`_) The [name](#name) for this runner capability.
 - `resolver`: (_optional `string`_) The [name](#name) for this resolver capability.
 - `event_stream`: (_optional `string or array of strings`_) The [name](#name) for this event_stream capability.
+- `dictionary`: (_optional `string`_) The [name](#name) for this dictionary capability.
+- `config`: (_optional `string`_) The [name](#name) for this configuration capability.
 - `path`: (_optional `string`_) The path within the [outgoing directory][glossary.outgoing directory] of the component's
     program to source the capability.
 
@@ -452,11 +458,17 @@ One and only one of the capability type keys (`protocol`, `directory`, `service`
     - `self`: This component.
     - `#<child-name>`: A [reference](#references) to a child component
         instance.
+- `extends`: (_optional `string`_) (`dictionary` only, optional) The contents to initialize a dictionary with. One of:
+    - `parent/<relative_path>`: A path to a dictionary offered by `parent`.
+    - `#<child-name>/<relative_path>`: A path to a dictionary exposed by `#<child-name>`.
+    - `self/<relative_path>`: A path to a dictionary defined by this component.
+    `<relative_path>` may be either a name, identifying a dictionary capability), or
+    a path with multiple parts, identifying a nested dictionary.
 - `backing_dir`: (_optional `string`_) (`storage` only) The [name](#name) of the directory capability backing the storage. The
     capability must be available from the component referenced in `from`.
 - `subdir`: (_optional `string`_) (`storage` only) A subdirectory within `backing_dir` where per-component isolated storage
     directories are created
-- `storage_id`: (_optional `string`_) (`storage only`) The identifier used to isolated storage for a component, one of:
+- `storage_id`: (_optional `string`_) (`storage` only) The identifier used to isolated storage for a component, one of:
     - `static_instance_id`: The instance ID in the component ID index is used
         as the key for a component's storage. Components which are not listed in
         the component ID index will not be able to use this storage capability.
@@ -464,6 +476,40 @@ One and only one of the capability type keys (`protocol`, `directory`, `service`
         component ID index, the instance ID is used as the key for a component's
         storage. Otherwise, the component's moniker from the storage
         capability is used.
+- `type`: (_optional `string`_) (`configuration` only) The type of configuration, one of:
+    - `bool`: Boolean type.
+    - `uint8`: Unsigned 8 bit type.
+    - `uint16`: Unsigned 16 bit type.
+    - `uint32`: Unsigned 32 bit type.
+    - `uint64`: Unsigned 64 bit type.
+    - `int8`: Signed 8 bit type.
+    - `int16`: Signed 16 bit type.
+    - `int32`: Signed 32 bit type.
+    - `int64`: Signed 64 bit type.
+    - `string`: ASCII string type.
+    - `vector`: Vector type. See `element` for the type of the element within the vector.
+- `max_size`: (_optional `non-zero number`_) (`configuration` only) Only supported if this configuration `type` is 'string'.
+    This is the max size of the string.
+- `max_count`: (_optional `non-zero number`_) (`configuration` only) Only supported if this configuration `type` is 'vector'.
+    This is the max number of elements in the vector.
+- `element`: (_optional `object`_) (`configuration` only) Only supported if this configuration `type` is 'vector'.
+    This is the type of the elements in the configuration vector.
+
+    Example (simple type):
+
+    ```json5
+    { type: "uint8" }
+    ```
+
+    Example (string type):
+
+    ```json5
+    {
+      type: "string",
+      max_size: 100,
+    }
+    ```
+- `value`: (_optional `any`_) (`configuration` only) The value of the configuration.
 
 
 ### `use` {#use}
@@ -484,6 +530,8 @@ this component and the capability's source.
 - `directory`: (_optional `string`_) When using a directory capability, the [name](#name) of a [directory capability][doc-directory].
 - `storage`: (_optional `string`_) When using a storage capability, the [name](#name) of a [storage capability][doc-storage].
 - `event_stream`: (_optional `string or array of strings`_) When using an event stream capability, the [name](#name) of an [event stream capability][doc-event].
+- `runner`: (_optional `string`_) When using a runner capability, the [name](#name) of a [runner capability][doc-runners].
+- `config`: (_optional `string`_) When using a configuration capability, the [name](#name) of a [configuration capability][doc-configuration].
 - `from`: (_optional `string`_) The source of the capability. Defaults to `parent`.  One of:
     - `parent`: The component's parent.
     - `debug`: One of [`debug_capabilities`][fidl-environment-decl] in the
@@ -496,7 +544,7 @@ this component and the capability's source.
         instance.
 - `path`: (_optional `string`_) The path at which to install the capability in the component's namespace. For protocols,
     defaults to `/svc/${protocol}`.  Required for `directory` and `storage`. This property is
-    disallowed for declarations with arrays of capability names.
+    disallowed for declarations with arrays of capability names and for runner capabilities.
 - `rights`: (_optional `array of string`_) (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
     the directory in the component's namespace.
 - `subdir`: (_optional `string`_) (`directory` only) A subdirectory within the directory capability to provide in the
@@ -514,6 +562,7 @@ this component and the capability's source.
     - `weak`: a weak dependency, which is ignored during shutdown. When component manager
         stops the parent realm, the source may stop before the clients. Clients of weak
         dependencies must be able to handle these dependencies becoming unavailable.
+    This property is disallowed for runner capabilities, which are always a `strong` dependency.
 - `availability`: (_optional `string`_) `availability` _(optional)_: The expectations around this capability's availability. One
     of:
     - `required` (default): a required dependency, the component is unable to perform its
@@ -523,6 +572,9 @@ this component and the capability's source.
         disabled).
     - `transitional`: the source may omit the route completely without even having to route
         from `void`. Used for soft transitions that introduce new capabilities.
+    This property is disallowed for runner capabilities, which are always `required`.
+- `config_key`: (_optional `string`_) (`config` only) The configuration key in the component's `config` block that this capability
+    will set.
 
 Example:
 
@@ -550,6 +602,10 @@ use: [
         ],
         from: "framework",
     },
+    {
+        runner: "own_test_runner".
+        from: "#test_runner",
+    },
 ],
 ```
 
@@ -569,6 +625,8 @@ One and only one of the capability type keys (`protocol`, `directory`, `service`
 - `directory`: (_optional `string or array of strings`_) When routing a directory, the [name](#name) of a [directory capability][doc-directory].
 - `runner`: (_optional `string or array of strings`_) When routing a runner, the [name](#name) of a [runner capability][doc-runners].
 - `resolver`: (_optional `string or array of strings`_) When routing a resolver, the [name](#name) of a [resolver capability][doc-resolvers].
+- `dictionary`: (_optional `string or array of strings`_) When routing a dictionary, the [name](#name) of a [dictionary capability][doc-dictionaries].
+- `config`: (_optional `string or array of strings`_) When routing a config, the [name](#name) of a configuration capability.
 - `from`: (_`string or array of strings`_) `from`: The source of the capability, one of:
     - `self`: This component. Requires a corresponding
         [`capability`](#capabilities) declaration.
@@ -652,6 +710,8 @@ instance or a [child collection][doc-collections].
 - `runner`: (_optional `string or array of strings`_) When routing a runner, the [name](#name) of a [runner capability][doc-runners].
 - `resolver`: (_optional `string or array of strings`_) When routing a resolver, the [name](#name) of a [resolver capability][doc-resolvers].
 - `storage`: (_optional `string or array of strings`_) When routing a storage capability, the [name](#name) of a [storage capability][doc-storage].
+- `dictionary`: (_optional `string or array of strings`_) When routing a dictionary, the [name](#name) of a [dictionary capability][doc-dictionaries].
+- `config`: (_optional `string or array of strings`_) When routing a config, the [name](#name) of a configuration capability.
 - `from`: (_`string or array of strings`_) `from`: The source of the capability, one of:
     - `parent`: The component's parent. This source can be used for all
         capability types.

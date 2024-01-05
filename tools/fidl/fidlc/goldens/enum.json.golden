@@ -1,11 +1,12 @@
 {
   "name": "test.enum",
   "experiments": [
-    "no_optional_structs",
     "output_index_json",
-    "unknown_interactions",
-    "unknown_interactions_mandate"
+    "transitional_allow_list"
   ],
+  "available": {
+    "fuchsia": "LEGACY"
+  },
   "library_dependencies": [],
   "bits_declarations": [],
   "const_declarations": [],

@@ -6,11 +6,11 @@
 
 use {
     crate::{
-        debug_assert_not_too_long,
+        filesystem::TxnGuard,
         log::*,
         lsm_tree::{
             layers_from_handles,
-            types::{BoxedLayerIterator, ItemRef, LayerIteratorFilter},
+            types::{BoxedLayerIterator, ItemRef, LayerIterator},
             LSMTree,
         },
         object_handle::{ObjectHandle, ReadObjectHandle, INVALID_OBJECT_ID},
@@ -19,12 +19,11 @@ use {
             layer_size_from_encrypted_mutations_size,
             object_manager::{ObjectManager, ReservationUpdate},
             object_record::{ObjectKey, ObjectValue},
-            transaction::{AssociatedObject, LockKey, Mutation},
-            tree, AssocObj, CachingObjectHandle, DirectWriter, EncryptedMutations, HandleOptions,
-            LockState, ObjectStore, Options, StoreInfo, Transaction, MAX_ENCRYPTED_MUTATIONS_SIZE,
+            transaction::{lock_keys, AssociatedObject, LockKey, Mutation},
+            tree, AssocObj, DirectWriter, EncryptedMutations, HandleOptions, LockState,
+            ObjectStore, Options, StoreInfo, Transaction, MAX_ENCRYPTED_MUTATIONS_SIZE,
         },
         serialized_types::{Version, VersionedLatest},
-        trace_duration,
     },
     anyhow::Context,
     anyhow::Error,
@@ -40,14 +39,12 @@ pub enum Reason {
 
     /// After unlock and replay of encrypted mutations.
     Unlock,
-
-    /// Just prior to locking a store.
-    Lock,
 }
 
+#[fxfs_trace::trace]
 impl ObjectStore {
+    #[trace("store_object_id" => self.store_object_id)]
     pub async fn flush_with_reason(&self, reason: Reason) -> Result<Version, Error> {
-        trace_duration!("ObjectStore::flush", "store_object_id" => self.store_object_id);
         if self.parent_store.is_none() {
             // Early exit, but still return the earliest version used by a struct in the tree
             return Ok(self.tree.get_earliest_version());
@@ -55,8 +52,10 @@ impl ObjectStore {
         let filesystem = self.filesystem();
         let object_manager = filesystem.object_manager();
 
-        let keys = [LockKey::flush(self.store_object_id())];
-        let _guard = debug_assert_not_too_long!(filesystem.write_lock(&keys));
+        // We must take the transaction guard *before* we take the flush lock.
+        let txn_guard = filesystem.clone().txn_guard().await;
+        let keys = lock_keys![LockKey::flush(self.store_object_id())];
+        let _guard = filesystem.lock_manager().write_lock(keys).await;
 
         match reason {
             Reason::Unlock => {
@@ -70,7 +69,7 @@ impl ObjectStore {
                     return Ok(self.tree.get_earliest_version());
                 }
             }
-            Reason::Journal | Reason::Lock => {
+            Reason::Journal => {
                 if !object_manager.needs_flush(self.store_object_id) {
                     // Early exit, but still return the earliest version used by a struct in the
                     // tree.
@@ -85,12 +84,12 @@ impl ObjectStore {
         }
 
         let layer_file_sizes = if matches!(&*self.lock_state.lock().unwrap(), LockState::Locked) {
-            self.flush_locked().await.with_context(|| {
+            self.flush_locked(txn_guard).await.with_context(|| {
                 format!("Failed to flush object store {}", self.store_object_id)
             })?;
             None
         } else {
-            Some(self.flush_unlocked().await.with_context(|| {
+            Some(self.flush_unlocked(txn_guard).await.with_context(|| {
                 format!("Failed to flush object store {}", self.store_object_id)
             })?)
         };
@@ -110,7 +109,7 @@ impl ObjectStore {
     }
 
     // Flushes an unlocked store. Returns the layer file sizes.
-    async fn flush_unlocked(&self) -> Result<Vec<u64>, Error> {
+    async fn flush_unlocked(&self, txn_guard: TxnGuard<'_>) -> Result<Vec<u64>, Error> {
         let roll_mutations_key = self
             .mutations_cipher
             .lock()
@@ -160,12 +159,13 @@ impl ObjectStore {
             skip_journal_checks: true,
             borrow_metadata_space: true,
             allocator_reservation: Some(reservation),
+            txn_guard: Some(&txn_guard),
             ..Default::default()
         };
 
         // The BeginFlush mutation must be within a transaction that has no impact on StoreInfo
         // since we want to get an accurate snapshot of StoreInfo.
-        let mut transaction = filesystem.clone().new_transaction(&[], txn_options).await?;
+        let mut transaction = filesystem.clone().new_transaction(lock_keys![], txn_options).await?;
         transaction.add_with_object(
             self.store_object_id(),
             Mutation::BeginFlush,
@@ -179,13 +179,13 @@ impl ObjectStore {
         // end. Between those two transactions, there are transactions that write to the files.  In
         // the first transaction, objects are created in the graveyard. Upon success, the objects
         // are removed from the graveyard.
-        let mut transaction = filesystem.clone().new_transaction(&[], txn_options).await?;
+        let mut transaction = filesystem.clone().new_transaction(lock_keys![], txn_options).await?;
 
         let reservation_update: ReservationUpdate; // Must live longer than end_transaction.
         let mut end_transaction = filesystem
             .clone()
             .new_transaction(
-                &[LockKey::object(
+                lock_keys![LockKey::object(
                     self.parent_store.as_ref().unwrap().store_object_id(),
                     self.store_info_handle_object_id().unwrap(),
                 )],
@@ -203,7 +203,7 @@ impl ObjectStore {
             None,
         )
         .await?;
-        let writer = DirectWriter::new(&new_object_tree_layer, txn_options);
+        let writer = DirectWriter::new(&new_object_tree_layer, txn_options).await;
         let new_object_tree_layer_object_id = new_object_tree_layer.object_id();
         parent_store.add_to_graveyard(&mut transaction, new_object_tree_layer_object_id);
         parent_store.remove_from_graveyard(&mut end_transaction, new_object_tree_layer_object_id);
@@ -211,9 +211,7 @@ impl ObjectStore {
         transaction.commit().await?;
         let (layers_to_keep, old_layers) = tree::flush(&self.tree, writer).await?;
 
-        let mut new_layers =
-            layers_from_handles(Box::new([CachingObjectHandle::new(new_object_tree_layer)]))
-                .await?;
+        let mut new_layers = layers_from_handles([new_object_tree_layer]).await?;
         new_layers.extend(layers_to_keep.iter().map(|l| (*l).clone()));
 
         new_store_info.layers = Vec::new();
@@ -292,7 +290,7 @@ impl ObjectStore {
     }
 
     // Flushes a locked store.
-    async fn flush_locked(&self) -> Result<(), Error> {
+    async fn flush_locked(&self, txn_guard: TxnGuard<'_>) -> Result<(), Error> {
         let filesystem = self.filesystem();
         let object_manager = filesystem.object_manager();
         let reservation = object_manager.metadata_reservation();
@@ -300,10 +298,11 @@ impl ObjectStore {
             skip_journal_checks: true,
             borrow_metadata_space: true,
             allocator_reservation: Some(reservation),
+            txn_guard: Some(&txn_guard),
             ..Default::default()
         };
 
-        let mut transaction = filesystem.clone().new_transaction(&[], txn_options).await?;
+        let mut transaction = filesystem.clone().new_transaction(lock_keys![], txn_options).await?;
         transaction.add(self.store_object_id(), Mutation::BeginFlush);
         transaction.commit().await?;
 
@@ -313,7 +312,7 @@ impl ObjectStore {
         // end. Between those two transactions, there are transactions that write to the files.  In
         // the first transaction, objects are created in the graveyard. Upon success, the objects
         // are removed from the graveyard.
-        let mut transaction = filesystem.clone().new_transaction(&[], txn_options).await?;
+        let mut transaction = filesystem.clone().new_transaction(lock_keys![], txn_options).await?;
 
         let reservation_update: ReservationUpdate; // Must live longer than end_transaction.
         let handle; // Must live longer than end_transaction.
@@ -335,7 +334,7 @@ impl ObjectStore {
             end_transaction = filesystem
                 .clone()
                 .new_transaction(
-                    &[
+                    lock_keys![
                         LockKey::object(parent_store.store_object_id(), oid),
                         LockKey::object(
                             parent_store.store_object_id(),
@@ -353,7 +352,7 @@ impl ObjectStore {
             end_transaction = filesystem
                 .clone()
                 .new_transaction(
-                    &[
+                    lock_keys![
                         LockKey::object(
                             parent_store.store_object_id(),
                             new_store_info.encrypted_mutations_object_id,
@@ -384,7 +383,7 @@ impl ObjectStore {
             .read_transactions_for_object(self.store_object_id)
             .await
             .context("Failed to read encrypted mutations from journal")?;
-        let mut buffer = handle.allocate_buffer(MAX_ENCRYPTED_MUTATIONS_SIZE);
+        let mut buffer = handle.allocate_buffer(MAX_ENCRYPTED_MUTATIONS_SIZE).await;
         let mut cursor = std::io::Cursor::new(buffer.as_mut_slice());
         EncryptedMutations::from_replayed_mutations(self.store_object_id, journaled)
             .serialize_with_version(&mut cursor)?;
@@ -422,7 +421,7 @@ impl ObjectStore {
     ) -> Result<(), Error> {
         let mut serialized_info = Vec::new();
         new_store_info.serialize_with_version(&mut serialized_info)?;
-        let mut buf = self.device.allocate_buffer(serialized_info.len());
+        let mut buf = self.device.allocate_buffer(serialized_info.len()).await;
         buf.as_mut_slice().copy_from_slice(&serialized_info[..]);
 
         self.store_info_handle.get().unwrap().txn_write(transaction, 0u64, buf.as_ref()).await
@@ -433,13 +432,11 @@ impl ObjectStore {
 mod tests {
     use {
         crate::{
-            filesystem::{
-                Filesystem, FxFilesystem, FxFilesystemBuilder, JournalingObject, SyncOptions,
-            },
+            filesystem::{FxFilesystem, FxFilesystemBuilder, JournalingObject, SyncOptions},
             object_handle::ObjectHandle,
             object_store::{
                 directory::Directory,
-                transaction::{Options, TransactionHandler},
+                transaction::{lock_keys, Options},
                 volume::root_volume,
                 HandleOptions, LockKey, ObjectStore,
             },
@@ -487,7 +484,7 @@ mod tests {
                 let mut transaction = fs
                     .clone()
                     .new_transaction(
-                        &[LockKey::object(store_id, root_dir.object_id())],
+                        lock_keys![LockKey::object(store_id, root_dir.object_id())],
                         Options::default(),
                     )
                     .await
@@ -514,7 +511,7 @@ mod tests {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(store_id, root_dir.object_id())],
+                    lock_keys![LockKey::object(store_id, root_dir.object_id())],
                     Options::default(),
                 )
                 .await
@@ -591,7 +588,7 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_dir.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
                 Options::default(),
             )
             .await
@@ -610,7 +607,7 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_dir.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
                 Options::default(),
             )
             .await

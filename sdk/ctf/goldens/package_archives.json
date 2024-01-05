@@ -1,5 +1,15 @@
 [
   {
+    "archive_gn_label": "//sdk/ctf/tests/fidl/fuchsia.diagnostics:fuchsia-diagnostics-log-tests_archive_copy",
+    "archive_name": "fuchsia-diagnostics-log-tests",
+    "package_name": "fuchsia-diagnostics-log-tests"
+  },
+  {
+    "archive_gn_label": "//sdk/ctf/tests/fidl/fuchsia.diagnostics:fuchsia-diagnostics-tests_archive_copy",
+    "archive_name": "fuchsia-diagnostics-tests",
+    "package_name": "fuchsia-diagnostics-tests"
+  },
+  {
     "archive_gn_label": "//sdk/ctf/tests/fidl/fuchsia.element:fuchsia-element-tests_archive_copy",
     "archive_name": "fuchsia-element-tests",
     "package_name": "fuchsia-element-tests"
@@ -25,13 +35,43 @@
     "package_name": "fdio-spawn-tests"
   },
   {
+    "archive_gn_label": "//sdk/ctf/tests/pkg/fidl/cpp:fidl-hlcpp-conformance-tests_archive_copy",
+    "archive_name": "fidl-hlcpp-conformance-tests",
+    "package_name": "fidl-hlcpp-conformance-tests"
+  },
+  {
+    "archive_gn_label": "//sdk/ctf/tests/pkg/fidl/cpp:fidl-hlcpp-unit-tests_archive_copy",
+    "archive_name": "fidl-hlcpp-unit-tests",
+    "package_name": "fidl-hlcpp-unit-tests"
+  },
+  {
+    "archive_gn_label": "//sdk/ctf/tests/pkg/svc:svc-tests_archive_copy",
+    "archive_name": "svc-tests",
+    "package_name": "svc-tests"
+  },
+  {
     "archive_gn_label": "//sdk/ctf/tests/pkg/vulkan:vulkan-loader-tests_archive_copy",
     "archive_name": "vulkan-loader-tests",
     "package_name": "vulkan-loader-tests"
   },
   {
+    "archive_gn_label": "//src/connectivity/wlan/testing/hw-sim/test:simulate-scan-wlan-hw-sim-tests_archive_copy",
+    "archive_name": "simulate-scan-wlan-hw-sim-tests",
+    "package_name": "simulate-scan-wlan-hw-sim-tests"
+  },
+  {
     "archive_gn_label": "//src/sys/pkg/tests/pkgdir:pkgdir-tests_archive_copy",
     "archive_name": "pkgdir-tests",
     "package_name": "pkgdir-tests"
+  },
+  {
+    "archive_gn_label": "//src/sys/time/timekeeper_integration:faketime-integration_archive_copy",
+    "archive_name": "faketime-integration",
+    "package_name": "faketime-integration"
+  },
+  {
+    "archive_gn_label": "//src/sys/time/timekeeper_integration:timekeeper-integration_archive_copy",
+    "archive_name": "timekeeper-integration",
+    "package_name": "timekeeper-integration"
   }
 ]

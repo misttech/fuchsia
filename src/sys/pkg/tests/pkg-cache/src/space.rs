@@ -9,10 +9,10 @@ use {
     fidl_fuchsia_pkg::{self as fpkg, NeededBlobsMarker},
     fidl_fuchsia_pkg_ext::BlobId,
     fidl_fuchsia_space::ErrorCode,
-    fuchsia_async::OnSignals,
+    fuchsia_async as fasync,
     fuchsia_pkg_testing::{Package, PackageBuilder, SystemImageBuilder},
     fuchsia_zircon::{self as zx, Status},
-    futures::TryFutureExt,
+    futures::TryFutureExt as _,
     mock_paver::{hooks as mphooks, MockPaverServiceBuilder, PaverEvent},
     rand::prelude::*,
     std::collections::{BTreeSet, HashMap},
@@ -50,7 +50,10 @@ async fn gc_error_pending_commit() {
     ]);
     let event_pair =
         env.proxies.commit_status_provider.is_current_system_committed().await.unwrap();
-    assert_eq!(OnSignals::new(&event_pair, zx::Signals::USER_0).await, Ok(zx::Signals::USER_0));
+    assert_eq!(
+        fasync::OnSignals::new(&event_pair, zx::Signals::USER_0).await,
+        Ok(zx::Signals::USER_0)
+    );
     assert_matches!(env.proxies.space_manager.gc().await, Ok(Ok(())));
 }
 
@@ -123,7 +126,12 @@ async fn gc_dynamic_index_protected() {
         fidl::endpoints::create_proxy::<NeededBlobsMarker>().unwrap();
     let (dir, dir_server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>().unwrap();
     let get_fut = package_cache
-        .get(&meta_blob_info, needed_blobs_server_end, Some(dir_server_end))
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            Some(dir_server_end),
+        )
         .map_ok(|res| res.map_err(Status::from_raw));
 
     let (meta_far, contents) = pkgprime.contents();
@@ -176,6 +184,43 @@ async fn gc_dynamic_index_protected() {
         .collect::<BTreeSet<_>>();
 
     assert_eq!(env.blobfs.list_blobs().expect("all blobs"), expected_blobs);
+}
+
+/// Assert that any blobs referenced by cache packages are ineligible for garbage collection, even
+/// if the cache package is not active in the dynamic index.
+#[fuchsia::test]
+async fn gc_cache_packages_protected() {
+    let cache_subpkg = PackageBuilder::new("cache-subpkg")
+        .add_resource_at("sub-blob", "sub-blob-contents".as_bytes())
+        .build()
+        .await
+        .unwrap();
+    let cache_pkg = PackageBuilder::new("cache-pkg")
+        .add_subpackage("cache-subpkg", &cache_subpkg)
+        .add_resource_at("cache-blob", "cache-blob-contents".as_bytes())
+        .build()
+        .await
+        .unwrap();
+    let system_image = SystemImageBuilder::new().cache_packages(&[&cache_pkg]).build().await;
+    let env = TestEnv::builder()
+        .blobfs_from_system_image_and_extra_packages(&system_image, &[&cache_pkg])
+        .await
+        .build()
+        .await;
+
+    // All blobs required for the cache package should be in blobfs.
+    let protected_blobs = cache_pkg.list_blobs().unwrap();
+    assert!(env.blobfs.list_blobs().unwrap().is_superset(&protected_blobs));
+
+    // Replace the cache package in the dynamic index with an alternate that does not share any
+    // blobs, then trigger GC.
+    let dynamic_index_replacer = PackageBuilder::new("cache-pkg").build().await.unwrap();
+    let _: fio::DirectoryProxy =
+        crate::get_and_verify_package(&env.proxies.package_cache, &dynamic_index_replacer).await;
+    let () = env.proxies.space_manager.gc().await.unwrap().unwrap();
+
+    // The cache package blobs should still be in blobfs.
+    assert!(env.blobfs.list_blobs().unwrap().is_superset(&protected_blobs));
 }
 
 #[fuchsia::test]
@@ -237,7 +282,12 @@ async fn gc_updated_static_package() {
         fidl::endpoints::create_proxy::<NeededBlobsMarker>().unwrap();
     let (dir, dir_server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>().unwrap();
     let get_fut = package_cache
-        .get(&meta_blob_info, needed_blobs_server_end, Some(dir_server_end))
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            Some(dir_server_end),
+        )
         .map_ok(|res| res.map_err(Status::from_raw));
 
     let (meta_far, contents) = pkgprime.contents();
@@ -330,7 +380,12 @@ async fn gc_frees_space_so_write_can_succeed(blob_implementation: blobfs_ramdisk
     let get_fut = env
         .proxies
         .package_cache
-        .get(&meta_blob_info, needed_blobs_server_end, Some(dir_server_end))
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            Some(dir_server_end),
+        )
         .map_ok(|res| res.map_err(Status::from_raw));
 
     // Writing the meta.far should fail with NO_SPACE.
@@ -367,12 +422,7 @@ async fn gc_frees_space_so_write_can_succeed_fxblob() {
     let () = gc_frees_space_so_write_can_succeed(blobfs_ramdisk::Implementation::Fxblob).await;
 }
 
-enum GcProtection {
-    Dynamic,
-    Retained,
-}
-
-async fn blobs_protected_from_gc_during_get(gc_protection: GcProtection) {
+async fn blobs_protected_from_gc_during_get(gc_protection: fpkg::GcProtection) {
     let env = TestEnv::builder().build().await;
     let initial_blobs = env.blobfs.list_blobs().unwrap();
 
@@ -417,7 +467,7 @@ async fn blobs_protected_from_gc_during_get(gc_protection: GcProtection) {
 
     // Start the Get.
     match gc_protection {
-        GcProtection::Retained => {
+        fpkg::GcProtection::Retained => {
             crate::replace_retained_packages(
                 &env.proxies.retained_packages,
                 &[(*superpackage.hash()).into()],
@@ -427,7 +477,7 @@ async fn blobs_protected_from_gc_during_get(gc_protection: GcProtection) {
 
         // Ephemeral packages are added to the dynamic index unless they are already in the
         // retained index.
-        GcProtection::Dynamic => (),
+        fpkg::GcProtection::OpenPackageTracking => (),
     }
     let meta_blob_info =
         fpkg::BlobInfo { blob_id: BlobId::from(*superpackage.hash()).into(), length: 0 };
@@ -437,7 +487,7 @@ async fn blobs_protected_from_gc_during_get(gc_protection: GcProtection) {
     let get_fut = env
         .proxies
         .package_cache
-        .get(&meta_blob_info, needed_blobs_server, Some(dir_server))
+        .get(&meta_blob_info, gc_protection, needed_blobs_server, Some(dir_server))
         .map_ok(|res| res.map_err(Status::from_raw));
 
     let blob_is_present_and_protected = |i: usize| {
@@ -527,15 +577,32 @@ async fn blobs_protected_from_gc_during_get(gc_protection: GcProtection) {
     let () = env.proxies.space_manager.gc().await.unwrap().unwrap();
     assert!(env.blobfs.list_blobs().unwrap().is_superset(&to_be_fetched_hashes));
 
+    // Without the protection gc should delete all the blobs.
+    match gc_protection {
+        fpkg::GcProtection::Retained => {
+            crate::replace_retained_packages(&env.proxies.retained_packages, &[]).await
+        }
+        fpkg::GcProtection::OpenPackageTracking => {
+            // This has the same name as the originally protected package, so will evict it from
+            // the dynamic index, and it does not have any blobs in common.
+            let evictor = PackageBuilder::new("superpackage").build().await.unwrap();
+            assert!(to_be_fetched_hashes.is_disjoint(&evictor.list_blobs().unwrap()));
+            let _: fio::DirectoryProxy =
+                crate::get_and_verify_package(&env.proxies.package_cache, &evictor).await;
+        }
+    }
+    let () = env.proxies.space_manager.gc().await.unwrap().unwrap();
+    assert!(env.blobfs.list_blobs().unwrap().is_disjoint(&to_be_fetched_hashes));
+
     let () = env.stop().await;
 }
 
 #[fuchsia_async::run_singlethreaded(test)]
 async fn blobs_protected_from_gc_during_get_by_retained_index() {
-    let () = blobs_protected_from_gc_during_get(GcProtection::Retained).await;
+    let () = blobs_protected_from_gc_during_get(fpkg::GcProtection::Retained).await;
 }
 
 #[fuchsia_async::run_singlethreaded(test)]
-async fn subpackage_blobs_protected_from_gc_by_dynamic_index() {
-    let () = blobs_protected_from_gc_during_get(GcProtection::Dynamic).await;
+async fn blobs_protected_from_gc_during_get_by_dynamic_index() {
+    let () = blobs_protected_from_gc_during_get(fpkg::GcProtection::OpenPackageTracking).await;
 }

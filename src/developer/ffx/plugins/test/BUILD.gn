@@ -23,7 +23,6 @@ ffx_plugin("ffx_test") {
     "//src/lib/testing/test_list",
     "//src/sys/run_test_suite:lib",
     "//third_party/rust_crates:async-trait",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:either",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:lazy_static",
@@ -37,12 +36,14 @@ ffx_plugin("ffx_test") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:tempfile",
+    "//third_party/rust_crates:walkdir",
   ]
 
   args_deps = [
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
     "//src/lib/diagnostics/data/rust",
     "//src/lib/diagnostics/selectors",
+    "//third_party/rust_crates:anyhow",
   ]
   args_sources = [ "src/args.rs" ]
 
@@ -64,4 +65,23 @@ ffx_tool("ffx_test_tool") {
     "//src/lib/fuchsia-async",
   ]
   sources = [ "src/main.rs" ]
+
+  sdk_target_name = "sdk"
+  sdk_category = "partner"
+}
+
+group("test") {
+  public_deps = [
+    ":ffx_test_tool",
+    ":ffx_test_tool_host_tool",
+  ]
+}
+
+group("bin") {
+  public_deps = [ ":ffx_test_tool_versioned" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":ffx_test_tests($host_toolchain)" ]
 }

@@ -64,12 +64,13 @@ class NetdeviceMigration
       __TA_EXCLUDES(rx_lock_) __TA_EXCLUDES(vmo_lock_);
 
   // For NetworkDeviceImplProtocol.
-  zx_status_t NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface);
+  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                             network_device_impl_init_callback callback, void* cookie);
   void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie)
       __TA_EXCLUDES(tx_lock_) __TA_EXCLUDES(rx_lock_);
   void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie)
       __TA_EXCLUDES(tx_lock_) __TA_EXCLUDES(rx_lock_);
-  void NetworkDeviceImplGetInfo(device_info_t* out_info);
+  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info);
   void NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list, size_t buffers_count);
   void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers_list, size_t buffers_count)
       __TA_EXCLUDES(rx_lock_);
@@ -80,16 +81,17 @@ class NetdeviceMigration
   void NetworkDeviceImplSetSnoop(bool snoop);
 
   // For NetworkPortProtocol.
-  void NetworkPortGetInfo(port_info_t* out_info);
+  void NetworkPortGetInfo(port_base_info_t* out_info);
   void NetworkPortGetStatus(port_status_t* out_status) __TA_EXCLUDES(status_lock_);
   void NetworkPortSetActive(bool active);
-  void NetworkPortGetMac(mac_addr_protocol_t* out_mac_ifc);
+  void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc);
   void NetworkPortRemoved();
 
   // For MacAddrProtocol.
-  void MacAddrGetAddress(uint8_t out_mac[MAC_SIZE]);
+  void MacAddrGetAddress(mac_address_t* out_mac);
   void MacAddrGetFeatures(features_t* out_features);
-  void MacAddrSetMode(mode_t mode, const uint8_t* multicast_macs_list, size_t multicast_macs_count);
+  void MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
+                      size_t multicast_macs_count);
 
  private:
   NetdeviceMigration(zx_device_t* parent, ddk::EthernetImplProtocolClient ethernet,
@@ -97,6 +99,7 @@ class NetdeviceMigration
                      zx::bti eth_bti, vmo_store::Options opts, std::array<uint8_t, MAC_SIZE> mac,
                      size_t netbuf_size, NetbufPool netbuf_pool)
       : DeviceType(parent),
+        mac_addr_proto_({&mac_addr_protocol_ops_, this}),
         ethernet_(ethernet),
         ethernet_ifc_proto_({&ethernet_ifc_protocol_ops_, this}),
         eth_bti_(std::move(eth_bti)),
@@ -118,10 +121,10 @@ class NetdeviceMigration
         mtu_(mtu),
         mac_(mac),
         rx_types_{static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet)},
-        tx_types_{tx_support_t{
+        tx_types_{frame_type_support_t{
             .type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
             .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw}},
-        port_info_(port_info_t{
+        port_info_(port_base_info_t{
             .port_class = static_cast<uint8_t>(device_class),
             .rx_types_list = rx_types_.data(),
             .rx_types_count = rx_types_.size(),
@@ -131,22 +134,23 @@ class NetdeviceMigration
         netbuf_size_(netbuf_size),
         netbuf_pool_(std::move(netbuf_pool)),
         vmo_store_(std::move(opts)) {}
-  void SetMacParam(uint32_t param, int32_t value, const uint8_t* data_buffer,
+  void SetMacParam(uint32_t param, int32_t value, const mac_address_t* data_buffer,
                    size_t data_size) const;
 
   std::atomic<size_t> no_rx_space_ = 0;
 
   ddk::NetworkDeviceIfcProtocolClient netdevice_;
+  mac_addr_protocol_t mac_addr_proto_;
 
   const ddk::EthernetImplProtocolClient ethernet_;
   const ethernet_ifc_protocol_t ethernet_ifc_proto_;
   const zx::bti eth_bti_;
-  const device_info_t info_;
+  const device_impl_info_t info_;
   const uint32_t mtu_;
   const std::array<uint8_t, MAC_SIZE> mac_;
   const std::array<uint8_t, 1> rx_types_;
-  const std::array<tx_support_t, 1> tx_types_;
-  const port_info_t port_info_;
+  const std::array<frame_type_support_t, 1> tx_types_;
+  const port_base_info_t port_info_;
   const size_t netbuf_size_;
 
   std::mutex status_lock_;
@@ -162,6 +166,7 @@ class NetdeviceMigration
   // Use a queue to enforce FIFO ordering. With LIFO ordering, some buffers will sit unused unless
   // the driver hits buffer starvation, which could obscure bugs related to malformed buffers.
   std::queue<rx_space_buffer_t> rx_spaces_ __TA_GUARDED(rx_lock_);
+  bool rx_space_queued_ __TA_GUARDED(rx_lock_) = false;
 
   network::SharedLock vmo_lock_ __TA_ACQUIRED_BEFORE(tx_lock_) __TA_ACQUIRED_AFTER(rx_lock_);
   NetdeviceMigrationVmoStore vmo_store_ __TA_GUARDED(vmo_lock_);

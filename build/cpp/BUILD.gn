@@ -195,10 +195,6 @@ config("fidl-wire-deprecated-mutable-tables") {
 
     #------------------
     #------------------
-    "//src/graphics/display/drivers/aml-hdmi:aml-hdmi-test-bin",
-
-    #------------------
-    #------------------
     "//src/graphics/display/drivers/amlogic-display:common_srcs",
 
     #------------------
@@ -239,15 +235,15 @@ config("fidl-wire-deprecated-mutable-tables") {
 
     #------------------
     #------------------
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:entry",
+    "//src/graphics/magma/lib/magma/platform/zircon:entry",
 
     #------------------
     #------------------
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:entry_test",
+    "//src/graphics/magma/lib/magma/platform/zircon:entry_test",
 
     #------------------
     #------------------
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:sysmem_connection",
+    "//src/graphics/magma/lib/magma/platform/zircon:sysmem_connection",
 
     #------------------
     #------------------
@@ -255,7 +251,7 @@ config("fidl-wire-deprecated-mutable-tables") {
 
     #------------------
     #------------------
-    "//src/lib/storage/vfs/cpp",
+    "//src/storage/lib/vfs/cpp",
 
     #------------------
     #------------------

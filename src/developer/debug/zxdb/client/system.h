@@ -13,6 +13,7 @@
 #include "src/developer/debug/zxdb/client/client_object.h"
 #include "src/developer/debug/zxdb/client/download_manager.h"
 #include "src/developer/debug/zxdb/client/map_setting_store.h"
+#include "src/developer/debug/zxdb/client/session_observer.h"
 #include "src/developer/debug/zxdb/client/setting_store_observer.h"
 #include "src/developer/debug/zxdb/client/target.h"
 #include "src/developer/debug/zxdb/symbols/debug_symbol_file_type.h"
@@ -34,8 +35,14 @@ class TargetImpl;
 
 // Represents the client's view of the system-wide state on the debugged
 // computer.
-class System : public ClientObject, public SettingStoreObserver {
+class System : public ClientObject, public SessionObserver, public SettingStoreObserver {
  public:
+  enum class Where {
+    kNone,    // No connection.
+    kLocal,   // Connection is to the local system, file paths can be used directly.
+    kRemote,  // Remote connection to another computer.
+  };
+
   // Callback for requesting the process tree.
   using ProcessTreeCallback = fit::callback<void(const Err&, debug_ipc::ProcessTreeReply)>;
 
@@ -43,6 +50,9 @@ class System : public ClientObject, public SettingStoreObserver {
   ~System() override;
 
   fxl::WeakPtr<System> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
+
+  // Returns whether this connection is local or remote.
+  Where where() const { return where_; }
 
   void AddObserver(SystemObserver* observer) { observers_.AddObserver(observer); }
   void RemoveObserver(SystemObserver* observer) { observers_.RemoveObserver(observer); }
@@ -137,7 +147,7 @@ class System : public ClientObject, public SettingStoreObserver {
   // Notification that a connection has been made/terminated to a target system.
   //
   // The is_local flag will be set when the connection is just a loopback to the local computer.
-  void DidConnect(bool is_local);
+  void DidConnect(Where where);
   void DidDisconnect();
 
   // Returns the breakpoint implementation for the given ID, or null if the ID was not found in the
@@ -168,6 +178,15 @@ class System : public ClientObject, public SettingStoreObserver {
  private:
   void AddNewTarget(std::unique_ptr<TargetImpl> target);
   void AddSymbolServer(std::unique_ptr<SymbolServer> server);
+
+  // Returns an unused Target or allocates a new one, if there are none available.
+  Target* GetNextTarget();
+
+  // SessionObserver implementation.
+  void HandlePreviousConnectedProcesses(
+      const std::vector<debug_ipc::ProcessRecord>& procs) override;
+
+  Where where_ = Where::kNone;
 
   std::vector<std::unique_ptr<SymbolServer>> symbol_servers_;
   std::vector<std::unique_ptr<TargetImpl>> targets_;

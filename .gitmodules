@@ -128,11 +128,6 @@
 	url = https://fuchsia.googlesource.com/third_party/curl
 	name = third_party/curl
 	ignore = all
-[submodule "third_party/dart-pkg/git/flutter"]
-	path = third_party/dart-pkg/git/flutter
-	url = https://chromium.googlesource.com/external/github.com/flutter/flutter
-	name = external/github.com/flutter/flutter
-	ignore = all
 [submodule "third_party/dart-pkg/pub"]
 	path = third_party/dart-pkg/pub
 	url = https://fuchsia.googlesource.com/third_party/dart-pkg
@@ -388,11 +383,6 @@
 	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/external/perfetto/
 	name = third_party/perfetto
 	ignore = all
-[submodule "third_party/pigweed/src"]
-	path = third_party/pigweed/src
-	url = https://pigweed.googlesource.com/pigweed/pigweed
-	name = third_party/pigweed
-	ignore = all
 [submodule "third_party/protobuf"]
 	path = third_party/protobuf
 	url = https://fuchsia.googlesource.com/third_party/protobuf
@@ -422,11 +412,6 @@
 	path = third_party/re2/src
 	url = https://fuchsia.googlesource.com/third_party/re2
 	name = third_party/re2
-	ignore = all
-[submodule "third_party/rust_crates/mirrors/quiche"]
-	path = third_party/rust_crates/mirrors/quiche
-	url = https://fuchsia.googlesource.com/third_party/rust-mirrors/quiche
-	name = third_party/rust-mirrors/quiche
 	ignore = all
 [submodule "third_party/rust_crates/mirrors/serde_json5"]
 	path = third_party/rust_crates/mirrors/serde_json5
@@ -617,4 +602,19 @@
 	path = third_party/chre/src
 	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/chre
 	name = third_party/chre
+	ignore = all
+[submodule "third_party/gfxstream/aemu/src"]
+	path = third_party/gfxstream/aemu/src
+	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/hardware/google/aemu
+	name = third_party/android/platform/hardware/google/aemu
+	ignore = all
+[submodule "third_party/gfxstream/src"]
+	path = third_party/gfxstream/src
+	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/hardware/google/gfxstream
+	name = third_party/android/platform/hardware/google/gfxstream
+	ignore = all
+[submodule "third_party/pigweed/src"]
+	path = third_party/pigweed/src
+	url = https://fuchsia.googlesource.com/third_party/pigweed.googlesource.com/pigweed/pigweed
+	name = third_party/pigweed
 	ignore = all

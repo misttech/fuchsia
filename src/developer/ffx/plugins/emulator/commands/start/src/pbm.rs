@@ -17,6 +17,8 @@ use ffx_emulator_common::{
 use ffx_emulator_config::convert_bundle_to_configs;
 use ffx_emulator_start_args::StartCommand;
 use pbms::ProductBundle;
+
+use sdk_metadata::VirtualDeviceManifest;
 use std::{
     collections::hash_map::DefaultHasher, env, hash::Hasher, path::PathBuf, str::FromStr,
     time::Duration,
@@ -262,6 +264,18 @@ fn generate_mac_address(name: &str) -> String {
     let hashed = hasher.finish();
     let bytes = hashed.to_be_bytes();
     format!("52:54:{:02x}:{:02x}:{:02x}:{:02x}", bytes[0], bytes[1], bytes[2], bytes[3])
+}
+
+pub(crate) async fn get_virtual_devices(product_bundle: &ProductBundle) -> Result<Vec<String>> {
+    match &product_bundle {
+        ProductBundle::V2(pb) => {
+            // Determine the correct device name from the user, or default to the "recommended"
+            // device, if one is provided in the product bundle.
+            let path = pb.get_virtual_devices_path();
+            let manifest = VirtualDeviceManifest::from_path(&path).context("manifest from_path")?;
+            Ok(manifest.device_names())
+        }
+    }
 }
 
 #[cfg(test)]

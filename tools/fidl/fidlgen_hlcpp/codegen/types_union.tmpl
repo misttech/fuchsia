@@ -143,54 +143,45 @@ class {{ .Name }} final {
   friend ::fidl::Equality<{{ . }}>;
 
   {{- if .Result }}
-  {{ .Name }}({{ .Result.FpromiseResult }}&& result) {
+  {{ .Name }}(fpromise::ok_result<{{ .Result.ValueDecl }}>&& result) {
+    set_response({{ .Result.ValueTypeDecl }}{
+      {{- if ne 0 .Result.ValueArity }}std::move(result.value){{ end -}}
+    });
+  }
+  {{- end }}
+
+  {{- if and .Result .Result.HasError }}
+  {{ .Name }}(fpromise::error_result<{{ .Result.ErrorDecl }}>&& result) {
+      set_err(std::move(result.error));
+  }
+  {{ .Name }}(fpromise::result<{{ .Result.ValueDecl }}, {{ .Result.ErrorDecl }}>&& result) {
     ZX_ASSERT(!result.is_pending());
     if (result.is_ok()) {
-      {{- if eq 0 .Result.ValueArity }}
-      set_response({{ .Result.ValueTypeDecl }}{});
-      {{- else }}
-      set_response({{ .Result.ValueTypeDecl }}{result.take_value()});
-      {{- end }}
+      set_response({{ .Result.ValueTypeDecl }}{
+        {{- if ne 0 .Result.ValueArity }}result.take_value(){{ end -}}
+      });
     } else {
-      {{- if and .Result.HasError .Result.HasFrameworkError }}
-      {{ .Result.FpromiseErrDecl }} errvariant = result.take_error();
-      switch (errvariant.index()) {
-        case 0:
-          set_err(std::get<0>(errvariant));
-          break;
-        case 1:
-          set_transport_err(std::get<1>(errvariant));
-          break;
-        default:
-          ZX_PANIC("Unknown variant index %zu", errvariant.index());
-          break;
-      }
-      {{- else if .Result.HasError }}
       set_err(result.take_error());
-      {{- else }}
-      set_transport_err(result.take_error());
-      {{- end }}
     }
   }
-  {{ .Name }}(fpromise::ok_result<{{ .Result.ValueDecl }}>&& result)
-    : {{ .Name }}({{ .Result.FpromiseResult }}(std::move(result))) { }
-  {{ .Name }}(fpromise::error_result<{{ .Result.FpromiseErrDecl }}>&& result)
-    : {{ .Name }}({{ .Result.FpromiseResult }}(std::move(result))) { }
-  operator {{ .Result.FpromiseResult }}() && {
+  {{- end }}
+
+  {{- if .Result }}
+  operator fpromise::result<{{ .Result.ValueDecl }}, {{ .Result.CombinedErrorDecl }}>() && {
     {{- if and .Result.HasError .Result.HasFrameworkError }}
     if (is_err()) {
-      return fpromise::error({{ .Result.FpromiseErrDecl }}(std::in_place_index<0>, err()));
+      return fpromise::error({{ .Result.CombinedErrorDecl }}(std::in_place_index<0>, err()));
     }
-    if (is_transport_err()) {
-      return fpromise::error({{ .Result.FpromiseErrDecl }}(std::in_place_index<1>, transport_err()));
+    if (is_framework_err()) {
+      return fpromise::error({{ .Result.CombinedErrorDecl }}(std::in_place_index<1>, framework_err()));
     }
     {{- else if .Result.HasError }}
     if (is_err()) {
       return fpromise::error(err());
     }
     {{- else }}
-    if (is_transport_err()) {
-      return fpromise::error(transport_err());
+    if (is_framework_err()) {
+      return fpromise::error(framework_err());
     }
     {{- end }}
     {{- if eq 0 .Result.ValueArity }}
@@ -311,7 +302,7 @@ void {{ .Name }}::Encode(::fidl::Encoder* encoder, size_t offset,
     {{- range .Members }}
     case {{ .TagName }}: {
       if (::fidl::EncodingInlineSize<{{ .Type }}>(encoder) <= FIDL_ENVELOPE_INLINING_SIZE_THRESHOLD) {
-        ::fidl::Encode(encoder, &{{ .StorageName }}, offset + offsetof(fidl_xunion_v2_t, envelope)
+        ::fidl::Encode(encoder, &{{ .StorageName }}, offset + offsetof(fidl_union_t, envelope)
         {{- if .HandleInformation -}}
             , ::fidl::HandleInformation{
               .object_type = {{ .HandleInformation.ObjectType }},
@@ -320,7 +311,7 @@ void {{ .Name }}::Encode(::fidl::Encoder* encoder, size_t offset,
         {{- end -}});
 
         {{/* Call GetPtr after Encode because the buffer may move. */ -}}
-        fidl_xunion_v2_t* xunion = encoder->GetPtr<fidl_xunion_v2_t>(offset);
+        fidl_union_t* xunion = encoder->GetPtr<fidl_union_t>(offset);
         xunion->tag = tag_;
         xunion->envelope.num_handles = static_cast<uint16_t>(encoder->CurrentHandleCount() - handles_before);
         xunion->envelope.flags = FIDL_ENVELOPE_FLAGS_INLINING_MASK;
@@ -339,7 +330,7 @@ void {{ .Name }}::Encode(::fidl::Encoder* encoder, size_t offset,
     {{- end -}}
       );
 
-      fidl_xunion_v2_t* xunion = encoder->GetPtr<fidl_xunion_v2_t>(offset);
+      fidl_union_t* xunion = encoder->GetPtr<fidl_union_t>(offset);
       xunion->tag = tag_;
       xunion->envelope.num_bytes = static_cast<uint32_t>(encoder->CurrentLength() - length_before);
       xunion->envelope.num_handles = static_cast<uint16_t>(encoder->CurrentHandleCount() - handles_before);
@@ -350,9 +341,9 @@ void {{ .Name }}::Encode(::fidl::Encoder* encoder, size_t offset,
     {{- if .IsFlexible }}
     case {{ .TagUnknown }}: {
       {{- if .IsResourceType }}
-      ::fidl::EncodeUnknownData(encoder, &unknown_data_, offset + offsetof(fidl_xunion_t, envelope));
+      ::fidl::EncodeUnknownData(encoder, &unknown_data_, offset + offsetof(fidl_union_t, envelope));
       {{- else }}
-      ::fidl::EncodeUnknownBytes(encoder, &unknown_data_, offset + offsetof(fidl_xunion_t, envelope));
+      ::fidl::EncodeUnknownBytes(encoder, &unknown_data_, offset + offsetof(fidl_union_t, envelope));
       {{- end }}
       *encoder->GetPtr<uint64_t>(offset) = tag_;
       break;
@@ -364,7 +355,7 @@ void {{ .Name }}::Encode(::fidl::Encoder* encoder, size_t offset,
 }
 
 void {{ .Name }}::Decode(::fidl::Decoder* _decoder, {{ .Name }}* value, size_t offset) {
-  fidl_xunion_v2_t* xunion = _decoder->GetPtr<fidl_xunion_v2_t>(offset);
+  fidl_union_t* xunion = _decoder->GetPtr<fidl_union_t>(offset);
 
   if (xunion->envelope.num_bytes == 0 &&
       xunion->envelope.num_handles == 0 &&
@@ -527,7 +518,7 @@ struct CodingTraits<std::unique_ptr<{{ . }}>> {
   }
 
   static void Decode(Decoder* _decoder, std::unique_ptr<{{ . }}>* value, size_t offset) {
-    fidl_xunion_t* encoded = _decoder->GetPtr<fidl_xunion_t>(offset);
+    fidl_union_t* encoded = _decoder->GetPtr<fidl_union_t>(offset);
     if (encoded->tag == 0) {
       value->reset(nullptr);
       return;

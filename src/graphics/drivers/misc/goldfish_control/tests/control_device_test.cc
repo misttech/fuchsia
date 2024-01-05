@@ -7,7 +7,10 @@
 #include <fidl/fuchsia.hardware.goldfish.pipe/cpp/markers.h>
 #include <fidl/fuchsia.hardware.goldfish.pipe/cpp/wire.h>
 #include <fidl/fuchsia.hardware.goldfish/cpp/wire_test_base.h>
+#include <fidl/fuchsia.hardware.sysmem/cpp/wire.h>
+#include <fidl/fuchsia.hardware.sysmem/cpp/wire_test_base.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
+#include <fidl/fuchsia.sysmem2/cpp/wire_test_base.h>
 #include <fuchsia/hardware/goldfish/control/cpp/banjo.h>
 #include <lib/async-loop/loop.h>
 #include <lib/async-loop/testing/cpp/real_loop.h>
@@ -33,6 +36,7 @@
 #include "src/devices/lib/goldfish/pipe_headers/include/base.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
 #include "src/graphics/drivers/misc/goldfish_control/render_control_commands.h"
+#include "src/lib/fsl/handles/object_info.h"
 
 #define ASSERT_OK(expr) ASSERT_EQ(ZX_OK, expr)
 #define EXPECT_OK(expr) EXPECT_EQ(ZX_OK, expr)
@@ -44,7 +48,7 @@ namespace {
 class FakePipe : public fidl::WireServer<fuchsia_hardware_goldfish_pipe::GoldfishPipe> {
  public:
   struct HeapInfo {
-    fidl::ClientEnd<fuchsia_sysmem2::Heap> heap_client_end;
+    fidl::ClientEnd<fuchsia_hardware_sysmem::Heap> heap_client_end;
     bool is_registered = false;
     bool cpu_supported = false;
     bool ram_supported = false;
@@ -150,7 +154,7 @@ class FakePipe : public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Goldfis
                           RegisterSysmemHeapCompleter::Sync& completer) override {
     heap_info_[request->heap] = {};
     heap_info_[request->heap].heap_client_end =
-        fidl::ClientEnd<fuchsia_sysmem2::Heap>(std::move(request->connection));
+        fidl::ClientEnd<fuchsia_hardware_sysmem::Heap>(std::move(request->connection));
     completer.ReplySuccess();
   }
 
@@ -195,21 +199,22 @@ class FakePipe : public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Goldfis
   }
 
  private:
-  class SysmemHeapEventHandler : public fidl::WireSyncEventHandler<fuchsia_sysmem2::Heap> {
+  class SysmemHeapEventHandler : public fidl::WireSyncEventHandler<fuchsia_hardware_sysmem::Heap> {
    public:
     SysmemHeapEventHandler() = default;
-    void OnRegister(fidl::WireEvent<fuchsia_sysmem2::Heap::OnRegister>* message) override {
+    void OnRegister(fidl::WireEvent<fuchsia_hardware_sysmem::Heap::OnRegister>* message) override {
       if (handler != nullptr) {
         handler(message);
       }
     }
     void SetOnRegisterHandler(
-        fit::function<void(fidl::WireEvent<fuchsia_sysmem2::Heap::OnRegister>*)> new_handler) {
+        fit::function<void(fidl::WireEvent<fuchsia_hardware_sysmem::Heap::OnRegister>*)>
+            new_handler) {
       handler = std::move(new_handler);
     }
 
    private:
-    fit::function<void(fidl::WireEvent<fuchsia_sysmem2::Heap::OnRegister>*)> handler;
+    fit::function<void(fidl::WireEvent<fuchsia_hardware_sysmem::Heap::OnRegister>*)> handler;
   };
 
   zx_status_t HandleSysmemEvents() {
@@ -217,7 +222,8 @@ class FakePipe : public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Goldfis
     for (auto& kv : heap_info_) {
       SysmemHeapEventHandler handler;
       handler.SetOnRegisterHandler(
-          [this, heap = kv.first](fidl::WireEvent<fuchsia_sysmem2::Heap::OnRegister>* message) {
+          [this,
+           heap = kv.first](fidl::WireEvent<fuchsia_hardware_sysmem::Heap::OnRegister>* message) {
             auto& heap_info = heap_info_[heap];
             heap_info.is_registered = true;
             heap_info.cpu_supported =
@@ -305,6 +311,66 @@ class FakeSync : public fidl::WireServer<fuchsia_hardware_goldfish::SyncDevice> 
   }
 };
 
+class FakeHardwareSysmem;
+
+class FakeSysmemAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Allocator> {
+ public:
+  FakeSysmemAllocator(FakeHardwareSysmem& parent) : parent_(parent) {}
+
+  virtual void GetVmoInfo(::fuchsia_sysmem2::wire::AllocatorGetVmoInfoRequest* request,
+                          GetVmoInfoCompleter::Sync& completer) override;
+
+  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
+    ADD_FAILURE() << "unexpected call to " << name;
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+
+ private:
+  FakeHardwareSysmem& parent_;
+};
+
+class FakeHardwareSysmem : public fidl::testing::WireTestBase<fuchsia_hardware_sysmem::Sysmem> {
+ public:
+  void AddFakeVmoInfo(const zx::vmo& vmo, BufferKey buffer_key) {
+    zx_koid_t koid = fsl::GetKoid(vmo.get());
+    ZX_ASSERT(koid != ZX_KOID_INVALID);
+    auto emplace_result = vmo_infos_.try_emplace(koid, buffer_key);
+    ZX_ASSERT(emplace_result.second);
+  }
+
+  std::optional<BufferKey> LookupFakeVmoInfo(const zx::vmo& vmo) {
+    zx_koid_t koid = fsl::GetKoid(vmo.get());
+    auto iter = vmo_infos_.find(koid);
+    if (iter == vmo_infos_.end()) {
+      return std::nullopt;
+    }
+    return iter->second;
+  }
+
+  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
+    ADD_FAILURE() << "unexpected call to " << name;
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+
+ private:
+  using VmoInfoMap = std::unordered_map<zx_koid_t, BufferKey>;
+  VmoInfoMap vmo_infos_;
+};
+
+void FakeSysmemAllocator::GetVmoInfo(::fuchsia_sysmem2::wire::AllocatorGetVmoInfoRequest* request,
+                                     GetVmoInfoCompleter::Sync& completer) {
+  auto buffer_key = parent_.LookupFakeVmoInfo(request->vmo());
+  if (!buffer_key.has_value()) {
+    completer.ReplyError(ZX_ERR_NOT_FOUND);
+    return;
+  }
+  fidl::Arena arena;
+  auto response = fuchsia_sysmem2::wire::AllocatorGetVmoInfoResponse::Builder(arena);
+  response.buffer_collection_id(buffer_key->first);
+  response.buffer_index(buffer_key->second);
+  completer.ReplySuccess(response.Build());
+}
+
 class ControlDeviceTest : public testing::Test, public loop_fixture::RealLoop {
  public:
   ControlDeviceTest()
@@ -312,6 +378,8 @@ class ControlDeviceTest : public testing::Test, public loop_fixture::RealLoop {
         pipe_server_loop_(&kAsyncLoopConfigNeverAttachToThread),
         address_space_server_loop_(&kAsyncLoopConfigNeverAttachToThread),
         sync_server_loop_(&kAsyncLoopConfigNeverAttachToThread),
+        sysmem_server_loop_(&kAsyncLoopConfigNeverAttachToThread),
+        sysmem_(hardware_sysmem_),
         outgoing_(dispatcher()) {}
 
   void SetUp() override {
@@ -356,9 +424,26 @@ class ControlDeviceTest : public testing::Test, public loop_fixture::RealLoop {
     fake_parent_->AddFidlService(fuchsia_hardware_goldfish::SyncService::Name,
                                  std::move(endpoints->client), "goldfish-sync");
 
+    service_result = outgoing_.AddService<fuchsia_hardware_sysmem::Service>(
+        fuchsia_hardware_sysmem::Service::InstanceHandler({
+            .sysmem = hardware_sysmem_.bind_handler(sysmem_server_loop_.dispatcher()),
+            // specifically not filling out allocator_v1 since that's not what the driver uses
+            // (currently).
+            .allocator_v2 = sysmem_.bind_handler(sysmem_server_loop_.dispatcher()),
+        }));
+    ASSERT_EQ(service_result.status_value(), ZX_OK);
+
+    endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+    ASSERT_OK(endpoints.status_value());
+    ASSERT_OK(outgoing_.Serve(std::move(endpoints->server)).status_value());
+
+    fake_parent_->AddFidlService(fuchsia_hardware_sysmem::Service::Name,
+                                 std::move(endpoints->client), "sysmem");
+
     pipe_server_loop_.StartThread("goldfish-pipe-fidl-server");
     address_space_server_loop_.StartThread("goldfish-address-space-fidl-server");
     sync_server_loop_.StartThread("goldfish-sync-fidl-server");
+    sysmem_server_loop_.StartThread("sysmem-fidl-server");
 
     auto dut = std::make_unique<Control>(fake_parent_.get());
     PerformBlockingWork([&]() { ASSERT_EQ(dut->Bind(), ZX_OK); });
@@ -393,17 +478,21 @@ class ControlDeviceTest : public testing::Test, public loop_fixture::RealLoop {
  protected:
   Control* dut_ = nullptr;
 
-  FakePipe pipe_;
-  FakeAddressSpace address_space_;
-  FakeAddressSpaceChild address_space_child_;
-  FakeSync sync_;
-
-  std::shared_ptr<MockDevice> fake_parent_;
-
   async::Loop loop_;
   async::Loop pipe_server_loop_;
   async::Loop address_space_server_loop_;
   async::Loop sync_server_loop_;
+  async::Loop sysmem_server_loop_;
+
+  FakePipe pipe_;
+  FakeAddressSpace address_space_;
+  FakeAddressSpaceChild address_space_child_;
+  FakeSync sync_;
+  FakeHardwareSysmem hardware_sysmem_;
+  FakeSysmemAllocator sysmem_;
+
+  std::shared_ptr<MockDevice> fake_parent_;
+
   component::OutgoingDirectory outgoing_;
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_goldfish::ControlDevice>>
       control_fidl_server_ = std::nullopt;
@@ -440,11 +529,13 @@ TEST_P(BufferTest, TestCreate2) {
   const auto memory_property = GetParam();
   const bool is_host_visible =
       memory_property == fuchsia_hardware_goldfish::wire::kMemoryPropertyHostVisible;
+  const BufferKey buffer_key(12, 0);
 
   zx::vmo buffer_vmo;
   ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
+  hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
 
-  dut_->RegisterBufferHandle(buffer_vmo);
+  dut_->RegisterBufferHandle(buffer_key);
   fidl::Arena allocator;
   fuchsia_hardware_goldfish::wire::CreateBuffer2Params create_params(allocator);
   create_params.set_size(allocator, kSize).set_memory_property(memory_property);
@@ -513,13 +604,16 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(ControlDeviceTest, CreateBuffer2_AlreadyExists) {
   constexpr size_t kSize = 65536u;
+  constexpr BufferKey buffer_key(12, 0);
   zx::vmo buffer_vmo;
   ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
   zx::vmo copy_vmo;
   ASSERT_OK(buffer_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy_vmo));
 
-  dut_->RegisterBufferHandle(buffer_vmo);
+  hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+  dut_->RegisterBufferHandle(buffer_key);
+
   fidl::Arena allocator;
   fuchsia_hardware_goldfish::wire::CreateBuffer2Params create_params(allocator);
   create_params.set_size(allocator, kSize)
@@ -544,13 +638,12 @@ TEST_F(ControlDeviceTest, CreateBuffer2_AlreadyExists) {
 TEST_F(ControlDeviceTest, CreateBuffer2_InvalidArgs) {
   constexpr size_t kSize = 65536u;
   {
+    const BufferKey buffer_key(12, 0);
     zx::vmo buffer_vmo;
     ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
-    zx_info_handle_basic_t info;
-    ASSERT_OK(buffer_vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-
-    dut_->RegisterBufferHandle(buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     fidl::Arena allocator;
     fuchsia_hardware_goldfish::wire::CreateBuffer2Params create_params(allocator);
@@ -562,17 +655,16 @@ TEST_F(ControlDeviceTest, CreateBuffer2_InvalidArgs) {
     ASSERT_TRUE(result->is_error());
     ASSERT_EQ(result->error_value(), ZX_ERR_INVALID_ARGS);
 
-    dut_->FreeBufferHandle(info.koid);
+    dut_->FreeBufferHandle(buffer_key);
   }
 
   {
+    const BufferKey buffer_key(13, 1);
     zx::vmo buffer_vmo;
     ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
-    zx_info_handle_basic_t info;
-    ASSERT_OK(buffer_vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-
-    dut_->RegisterBufferHandle(buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     fidl::Arena allocator;
     fuchsia_hardware_goldfish::wire::CreateBuffer2Params create_params2(allocator);
@@ -584,7 +676,7 @@ TEST_F(ControlDeviceTest, CreateBuffer2_InvalidArgs) {
     ASSERT_TRUE(result->is_error());
     ASSERT_EQ(result->error_value(), ZX_ERR_INVALID_ARGS);
 
-    dut_->FreeBufferHandle(info.koid);
+    dut_->FreeBufferHandle(buffer_key);
   }
 }
 
@@ -592,6 +684,9 @@ TEST_F(ControlDeviceTest, CreateBuffer2_InvalidVmo) {
   constexpr size_t kSize = 65536u;
   zx::vmo buffer_vmo;
   ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
+
+  // no sysmem_.AddFakeVmoInfo()
+  // no dut_->RegisterBufferHandle()
 
   fidl::Arena allocator;
   fuchsia_hardware_goldfish::wire::CreateBuffer2Params create_params(allocator);
@@ -630,11 +725,13 @@ TEST_P(ColorBufferTest, TestCreate) {
   const auto memory_property = std::get<1>(GetParam());
   const bool is_host_visible =
       memory_property == fuchsia_hardware_goldfish::wire::kMemoryPropertyHostVisible;
+  const BufferKey buffer_key(14, 2);
 
   zx::vmo buffer_vmo;
   ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
-  dut_->RegisterBufferHandle(buffer_vmo);
+  hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+  dut_->RegisterBufferHandle(buffer_key);
 
   fidl::Arena allocator;
   fuchsia_hardware_goldfish::wire::CreateColorBuffer2Params create_params(allocator);
@@ -748,6 +845,7 @@ TEST_F(ControlDeviceTest, CreateColorBuffer2_AlreadyExists) {
   constexpr uint32_t kSize = kWidth * kHeight * 4;
   constexpr auto kFormat = fuchsia_hardware_goldfish::wire::ColorBufferFormatType::kRgba;
   constexpr auto kMemoryProperty = fuchsia_hardware_goldfish::wire::kMemoryPropertyDeviceLocal;
+  const BufferKey buffer_key(15, 3);
 
   zx::vmo buffer_vmo;
   ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
@@ -755,7 +853,10 @@ TEST_F(ControlDeviceTest, CreateColorBuffer2_AlreadyExists) {
   zx::vmo copy_vmo;
   ASSERT_OK(buffer_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy_vmo));
 
-  dut_->RegisterBufferHandle(buffer_vmo);
+  // The object koid is the same for both VMO handles, so GetVmoInfo() will return buffer_key for
+  // both VMO handles.
+  hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+  dut_->RegisterBufferHandle(buffer_key);
 
   {
     fidl::Arena allocator;
@@ -792,13 +893,12 @@ TEST_F(ControlDeviceTest, CreateColorBuffer2_InvalidArgs) {
   constexpr auto kMemoryProperty = fuchsia_hardware_goldfish::wire::kMemoryPropertyDeviceLocal;
 
   {
+    const BufferKey buffer_key(16, 4);
     zx::vmo buffer_vmo;
     ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
-    zx_info_handle_basic_t info;
-    ASSERT_OK(buffer_vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-
-    dut_->RegisterBufferHandle(buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     fidl::Arena allocator;
     fuchsia_hardware_goldfish::wire::CreateColorBuffer2Params create_params(allocator);
@@ -811,17 +911,16 @@ TEST_F(ControlDeviceTest, CreateColorBuffer2_InvalidArgs) {
     ASSERT_TRUE(create_color_buffer_result.ok());
     EXPECT_EQ(create_color_buffer_result.value().res, ZX_ERR_INVALID_ARGS);
 
-    dut_->FreeBufferHandle(info.koid);
+    dut_->FreeBufferHandle(buffer_key);
   }
 
   {
+    const BufferKey buffer_key(17, 5);
     zx::vmo buffer_vmo;
     ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
-    zx_info_handle_basic_t info;
-    ASSERT_OK(buffer_vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-
-    dut_->RegisterBufferHandle(buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     fidl::Arena allocator;
     fuchsia_hardware_goldfish::wire::CreateColorBuffer2Params create_params(allocator);
@@ -834,17 +933,16 @@ TEST_F(ControlDeviceTest, CreateColorBuffer2_InvalidArgs) {
     ASSERT_TRUE(create_color_buffer_result.ok());
     EXPECT_EQ(create_color_buffer_result.value().res, ZX_ERR_INVALID_ARGS);
 
-    dut_->FreeBufferHandle(info.koid);
+    dut_->FreeBufferHandle(buffer_key);
   }
 
   {
+    const BufferKey buffer_key(18, 6);
     zx::vmo buffer_vmo;
     ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
-    zx_info_handle_basic_t info;
-    ASSERT_OK(buffer_vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-
-    dut_->RegisterBufferHandle(buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     fidl::Arena allocator;
     fuchsia_hardware_goldfish::wire::CreateColorBuffer2Params create_params(allocator);
@@ -857,17 +955,16 @@ TEST_F(ControlDeviceTest, CreateColorBuffer2_InvalidArgs) {
     ASSERT_TRUE(create_color_buffer_result.ok());
     EXPECT_EQ(create_color_buffer_result.value().res, ZX_ERR_INVALID_ARGS);
 
-    dut_->FreeBufferHandle(info.koid);
+    dut_->FreeBufferHandle(buffer_key);
   }
 
   {
+    const BufferKey buffer_key(19, 7);
     zx::vmo buffer_vmo;
     ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
-    zx_info_handle_basic_t info;
-    ASSERT_OK(buffer_vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-
-    dut_->RegisterBufferHandle(buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     fidl::Arena allocator;
     fuchsia_hardware_goldfish::wire::CreateColorBuffer2Params create_params(allocator);
@@ -880,17 +977,16 @@ TEST_F(ControlDeviceTest, CreateColorBuffer2_InvalidArgs) {
     ASSERT_TRUE(create_color_buffer_result.ok());
     EXPECT_EQ(create_color_buffer_result.value().res, ZX_ERR_INVALID_ARGS);
 
-    dut_->FreeBufferHandle(info.koid);
+    dut_->FreeBufferHandle(buffer_key);
   }
 
   {
+    const BufferKey buffer_key(20, 8);
     zx::vmo buffer_vmo;
     ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
-    zx_info_handle_basic_t info;
-    ASSERT_OK(buffer_vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-
-    dut_->RegisterBufferHandle(buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     fidl::Arena allocator;
     fuchsia_hardware_goldfish::wire::CreateColorBuffer2Params create_params(allocator);
@@ -904,7 +1000,7 @@ TEST_F(ControlDeviceTest, CreateColorBuffer2_InvalidArgs) {
     ASSERT_TRUE(create_color_buffer_result.ok());
     EXPECT_EQ(create_color_buffer_result.value().res, ZX_ERR_INVALID_ARGS);
 
-    dut_->FreeBufferHandle(info.koid);
+    dut_->FreeBufferHandle(buffer_key);
   }
 }
 
@@ -917,6 +1013,9 @@ TEST_F(ControlDeviceTest, CreateColorBuffer2_InvalidVmo) {
 
   zx::vmo buffer_vmo;
   ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
+
+  // no sysmem_.AddVakeVmoInfo()
+  // no dut_->RegisterBufferHandle()
 
   {
     fidl::Arena allocator;
@@ -951,6 +1050,7 @@ TEST_F(ControlDeviceTest, GetBufferHandle_Success) {
 
   // Create data buffer.
   {
+    const BufferKey buffer_key(21, 20);
     constexpr size_t kSize = 65536u;
     ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
     ASSERT_OK(buffer_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &buffer_vmo_dup));
@@ -958,7 +1058,8 @@ TEST_F(ControlDeviceTest, GetBufferHandle_Success) {
     zx::vmo copy_vmo;
     ASSERT_OK(buffer_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy_vmo));
 
-    dut_->RegisterBufferHandle(buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     fidl::Arena allocator;
     fuchsia_hardware_goldfish::wire::CreateBuffer2Params create_params(allocator);
@@ -974,6 +1075,7 @@ TEST_F(ControlDeviceTest, GetBufferHandle_Success) {
 
   // Create color buffer.
   {
+    const BufferKey buffer_key(22, 21);
     constexpr uint32_t kWidth = 1024u;
     constexpr uint32_t kHeight = 768u;
     constexpr uint32_t kSize = kWidth * kHeight * 4;
@@ -986,7 +1088,8 @@ TEST_F(ControlDeviceTest, GetBufferHandle_Success) {
     zx::vmo copy_vmo;
     ASSERT_OK(color_buffer_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy_vmo));
 
-    dut_->RegisterBufferHandle(color_buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(color_buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     fidl::Arena allocator;
     fuchsia_hardware_goldfish::wire::CreateColorBuffer2Params create_params(allocator);
@@ -1043,20 +1146,19 @@ TEST_F(ControlDeviceTest, GetBufferHandle_Success) {
 TEST_F(ControlDeviceTest, GetBufferHandle_Invalid) {
   // Register data buffer, but don't create it.
   {
+    const BufferKey buffer_key(23, 22);
     constexpr size_t kSize = 65536u;
     zx::vmo buffer_vmo;
     ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
-    zx_info_handle_basic_t info;
-    ASSERT_OK(buffer_vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-
-    dut_->RegisterBufferHandle(buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     auto get_buffer_handle_result = fidl_client_->GetBufferHandle(std::move(buffer_vmo));
     ASSERT_TRUE(get_buffer_handle_result.ok());
     EXPECT_EQ(get_buffer_handle_result.value().res, ZX_ERR_NOT_FOUND);
 
-    dut_->FreeBufferHandle(info.koid);
+    dut_->FreeBufferHandle(buffer_key);
   }
 
   // Check non-registered buffer VMO.
@@ -1080,21 +1182,20 @@ TEST_F(ControlDeviceTest, GetBufferHandle_Invalid) {
 TEST_F(ControlDeviceTest, GetBufferHandleInfo_Invalid) {
   // Register data buffer, but don't create it.
   {
+    const BufferKey buffer_key(24, 23);
     constexpr size_t kSize = 65536u;
     zx::vmo buffer_vmo;
     ASSERT_OK(zx::vmo::create(kSize, 0u, &buffer_vmo));
 
-    zx_info_handle_basic_t info;
-    ASSERT_OK(buffer_vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-
-    dut_->RegisterBufferHandle(buffer_vmo);
+    hardware_sysmem_.AddFakeVmoInfo(buffer_vmo, buffer_key);
+    dut_->RegisterBufferHandle(buffer_key);
 
     auto get_buffer_handle_info_result = fidl_client_->GetBufferHandleInfo(std::move(buffer_vmo));
     ASSERT_TRUE(get_buffer_handle_info_result.ok());
     EXPECT_TRUE(get_buffer_handle_info_result->is_error());
     EXPECT_EQ(get_buffer_handle_info_result->error_value(), ZX_ERR_NOT_FOUND);
 
-    dut_->FreeBufferHandle(info.koid);
+    dut_->FreeBufferHandle(buffer_key);
   }
 
   // Check non-registered buffer VMO.

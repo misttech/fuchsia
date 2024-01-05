@@ -1,33 +1,73 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-import unittest
-import fidl.fuchsia_developer_ffx as ffx_fidl
-import os
-import sys
-import tempfile
-import os.path
 import asyncio
-from fidl_codec import encode_fidl_message, method_ordinal
-from fuchsia_controller_py import Context, IsolateDir, Channel
+import os
+import os.path
+import sys
+import typing
+import unittest
+
+import fidl.fuchsia_developer_ffx as ffx_fidl
+from fidl_codec import encode_fidl_message
+from fidl_codec import method_ordinal
+from fuchsia_controller_py import Channel
+from fuchsia_controller_py import Context
+from fuchsia_controller_py import IsolateDir
 
 
 class EndToEnd(unittest.IsolatedAsyncioTestCase):
+    def _get_default_config(self) -> typing.Dict[str, str]:
+        return {"sdk.root": "./sdk/exported/core"}
 
-    def _make_ctx(self):
+    def _get_isolate_dir(self) -> IsolateDir:
         isolation_path = None
         tmp_path = os.getenv("TEST_UNDECLARED_OUTPUTS_DIR")
         if tmp_path:
             isolation_path = os.path.join(tmp_path, "isolate")
+        return IsolateDir(dir=isolation_path)
 
+    def _make_ctx(self):
         return Context(
-            config={"sdk.root": "."},
-            isolate_dir=IsolateDir(dir=isolation_path))
+            config=self._get_default_config(),
+            isolate_dir=self._get_isolate_dir(),
+        )
+
+    def test_target_add_invalid_args(self):
+        ctx = self._make_ctx()
+        with self.assertRaises(ValueError):
+            ctx.target_add("this is definitely not an IP", False)
+
+    def test_target_add_nowait(self):
+        ctx = self._make_ctx()
+        ctx.target_add("127.0.0.1", False)
+
+    def test_config_get_nonexistent(self):
+        ctx = self._make_ctx()
+        self.assertEqual(ctx.config_get_string("foobarzzzzzzo==?"), None)
+
+    def test_config_get_exists(self):
+        config = self._get_default_config()
+        key = "foobar"
+        expect = "bazmumble"
+        config[key] = expect
+        ctx = Context(config=config, isolate_dir=self._get_isolate_dir())
+        self.assertEqual(ctx.config_get_string(key), expect)
+
+    def test_config_get_too_long(self):
+        config = self._get_default_config()
+        key = "foobarzington"
+        expect = "b" * 50000
+        config[key] = expect
+        ctx = Context(config=config, isolate_dir=self._get_isolate_dir())
+        with self.assertRaises(BufferError):
+            ctx.config_get_string(key)
 
     async def test_echo_daemon(self):
         ctx = self._make_ctx()
         echo_proxy = ffx_fidl.Echo.Client(
-            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER))
+            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER)
+        )
         expected = "this is an echo test"
         result = await echo_proxy.echo_string(value=expected)
         self.assertEqual(result.response, expected)
@@ -35,7 +75,8 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
     async def test_echo_daemon_parallel(self):
         ctx = self._make_ctx()
         echo_proxy = ffx_fidl.Echo.Client(
-            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER))
+            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER)
+        )
         expected1 = "this is an echo test1"
         expected2 = "22222this is an echo test2"
         expected3 = "frobination incoming. Heed the call of the frobe"
@@ -55,9 +96,11 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         (ch0, ch1) = Channel.create()
         echo_proxy1 = ffx_fidl.Echo.Client(ch0)
         echo_proxy2 = ffx_fidl.Echo.Client(
-            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER))
+            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER)
+        )
         echo_proxy3 = ffx_fidl.Echo.Client(
-            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER))
+            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER)
+        )
         coro = echo_proxy1.echo_string(value="foo")
         buf, _ = ch1.read()
         txid = int.from_bytes(buf[0:4], sys.byteorder)
@@ -67,7 +110,12 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
             type_name="fuchsia.developer.ffx/EchoEchoStringRequest",
             txid=txid,
             ordinal=method_ordinal(
-                protocol="fuchsia.developer.ffx/Echo", method="EchoString"))
+                protocol="fuchsia.developer.ffx/Echo", method="EchoString"
+            ),
+        )
+        ordinal = method_ordinal(
+            protocol="fuchsia.developer.ffx/Echo", method="EchoString"
+        )
         self.assertEqual(buf, encoded_bytes)
         msg = encode_fidl_message(
             object=ffx_fidl.EchoEchoStringResponse(response="otherthing"),
@@ -75,7 +123,9 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
             type_name="fuchsia.developer.ffx/EchoEchoStringResponse",
             txid=txid,
             ordinal=method_ordinal(
-                protocol="fuchsia.developer.ffx/Echo", method="EchoString"))
+                protocol="fuchsia.developer.ffx/Echo", method="EchoString"
+            ),
+        )
         ch1.write(msg)
         res = asyncio.run(echo_proxy2.echo_string(value="bar"))
         self.assertEqual(res.response, "bar")
@@ -96,7 +146,9 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
             type_name="fuchsia.developer.ffx/EchoEchoStringRequest",
             txid=txid,
             ordinal=method_ordinal(
-                protocol="fuchsia.developer.ffx/Echo", method="EchoString"))
+                protocol="fuchsia.developer.ffx/Echo", method="EchoString"
+            ),
+        )
         self.assertEqual(buf, encoded_bytes)
         msg = encode_fidl_message(
             object=ffx_fidl.EchoEchoStringResponse(response="otherthing"),
@@ -104,7 +156,9 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
             type_name="fuchsia.developer.ffx/EchoEchoStringResponse",
             txid=txid,
             ordinal=method_ordinal(
-                protocol="fuchsia.developer.ffx/Echo", method="EchoString"))
+                protocol="fuchsia.developer.ffx/Echo", method="EchoString"
+            ),
+        )
         ch1.write(msg)
         result = await coro
         self.assertEqual(result.response, "otherthing")
@@ -118,7 +172,7 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
             _ctx = Context(target="foo", config={"target.default": "bar"})
 
     def test_context_creation_no_args(self):
-        _ctx = Context()
+        Context()
 
     def test_setting_fidl_clients(self):
         """Previously a classmethod was setting the handle.
@@ -126,9 +180,11 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         This ensures these aren't being set globally."""
         ctx = self._make_ctx()
         e1 = ffx_fidl.Echo.Client(
-            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER))
+            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER)
+        )
         e2 = ffx_fidl.Echo.Client(
-            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER))
+            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER)
+        )
         self.assertNotEqual(e1.channel.as_int(), e2.channel.as_int())
 
     def test_running_multiple_commands(self):
@@ -139,7 +195,8 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         """
         ctx = self._make_ctx()
         e = ffx_fidl.Echo.Client(
-            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER))
+            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER)
+        )
         res = asyncio.run(e.echo_string(value="foo"))
         self.assertEqual(res.response, "foo")
         res = asyncio.run(e.echo_string(value="barzzz"))
@@ -153,7 +210,7 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         tc_proxy.list_targets(query=query, reader=list_client.take())
         buf, hdls = tc_server.read()
         self.assertEqual(len(hdls), 1)
-        new_list_client = hdls[0]
+        new_list_client = Channel(hdls[0])
         new_list_client.write((bytearray([5, 6, 7]), []))
         list_buf, list_hdls = list_server.read()
         self.assertEqual(len(list_hdls), 0)

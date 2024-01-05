@@ -17,9 +17,7 @@
 #ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_SIM_SIM_FW_H_
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_SIM_SIM_FW_H_
 
-#include <fuchsia/wlan/common/c/banjo.h>
 #include <fuchsia/wlan/ieee80211/cpp/fidl.h>
-#include <fuchsia/wlan/internal/c/banjo.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <zircon/types.h>
@@ -77,6 +75,8 @@ constexpr zx::duration kAbortScanDelay = zx::msec(10);
 constexpr zx::duration kApStartedEventDelay = zx::msec(1);
 // Size allocated to hold association frame IEs in SIM FW
 #define ASSOC_IES_MAX_LEN 1000
+// Size allocated to hold BSS info IEs in SIM FW
+#define BSS_INFO_IES_MAX_LEN 1000
 
 class SimFirmware {
   class BcdcResponse {
@@ -145,6 +145,14 @@ class SimFirmware {
   // During a reassociation attempt, this is where reassoc params are stored.
   struct ReassocOpts {
     common::MacAddr bssid;
+
+    // Real firmware returns target BSS info in a buffer that contains a
+    // struct, an offset, then an arbitrary length of IE bytes. Sim firmware
+    // stores this internally as a BSS info struct and a separate byte array.
+    brcmf_bss_info_le target_bss_info;
+    uint8_t target_bss_info_ies[BSS_INFO_IES_MAX_LEN];
+    // If we need to send disassoc during roam, we need to know the original BSS channel.
+    wlan_common::WlanChannel orig_bss_channel;
   };
 
  public:
@@ -238,11 +246,6 @@ class SimFirmware {
   zx_status_t IovarsGet(uint16_t ifidx, const char* name, void* value_out, size_t value_len,
                         bcme_status_t* fw_err);
 
-  // Firmware error injection related methods
-  void ErrorInjectSetBit(size_t inject_bit);
-  void ErrorInjectClearBit(size_t inject_bit);
-  void ErrorInjectAllClear();
-
   // channel-chanspec helper functions
   void convert_chanspec_to_channel(uint16_t chanspec, wlan_common::WlanChannel* ch);
   uint16_t convert_channel_to_chanspec(wlan_common::WlanChannel* channel);
@@ -263,6 +266,8 @@ class SimFirmware {
   std::vector<brcmf_wsec_key_le> GetKeyList(uint16_t ifidx);
 
   std::optional<drivers::components::Frame> GetRxFrame();
+  void SetHighWmeRxErrorRate() { wme_high_rx_fail_ = true; }
+  void ClearHighWmeRxErrorRate() { wme_high_rx_fail_ = false; }
 
   zx_status_t SetupIovarTable();
   zx_status_t SetupInternalVmo();
@@ -295,6 +300,7 @@ class SimFirmware {
   zx_status_t IovarSsidSet(SimIovarSetReq* req);
   zx_status_t IovarStbcTxSet(SimIovarSetReq* req);
   zx_status_t IovarStbcTxGet(SimIovarGetReq* req);
+  zx_status_t IovarTargetBssInfoGet(SimIovarGetReq* req);
   zx_status_t IovarTxstreamsSet(SimIovarSetReq* req);
   zx_status_t IovarTxstreamsGet(SimIovarGetReq* req);
   zx_status_t IovarVerGet(SimIovarGetReq* req);
@@ -304,6 +310,7 @@ class SimFirmware {
   zx_status_t IovarWsecKeySet(SimIovarSetReq* req);
   zx_status_t IovarWsecKeyGet(SimIovarGetReq* req);
   zx_status_t IovarWstatsCountersGet(SimIovarGetReq* req);
+  zx_status_t IovarWmeCounterGet(SimIovarGetReq* req);
 
  private:
   struct Client {
@@ -423,6 +430,8 @@ class SimFirmware {
   void DisassocStart(brcmf_scb_val_le* scb_val);
   void DisassocLocalClient(wlan_ieee80211::ReasonCode reason);
   void SetStateToDisassociated(wlan_ieee80211::ReasonCode reason, bool locally_initiated);
+  // Get the Sim firmware ready for a target_bss_info iovar request.
+  void SetTargetBssInfo(const brcmf_bss_info_le& bss_info, cpp20::span<uint8_t> ie_buf);
   void ReassocInit(std::unique_ptr<ReassocOpts> reassoc_opts, wlan_common::WlanChannel& channel);
   void ReassocStart();
   void ReassocHandleFailure(wlan_ieee80211::StatusCode status);
@@ -545,6 +554,14 @@ class SimFirmware {
   AuthState auth_state_;
   ChannelSwitchState channel_switch_state_;
 
+  // Rx data path state
+  const uint16_t wme_rx_be_good_inc_ = 400;  // good pkt increment for each stats fetch.
+  const uint16_t wme_rx_be_bad_inc_ = 600;   // bad pkt increment for each stats fetch.
+  uint64_t wme_rx_be_good_cnt_ = 0;          // Count of good WME BE rx packets.
+  uint64_t wme_rx_be_bad_cnt_ = 0;           // Count of bad WME BE rx packets.
+  bool wme_high_rx_fail_ =
+      false;  // When set to true, sim-fw returns high rx fail count in wme counters.
+
   // This vmo and tx frame storage are used only internally
   // Note that this VMO id should not conflict with the ones used by SimDataPath
   static constexpr uint8_t kInternalVmoId = 0;
@@ -580,6 +597,8 @@ class SimFirmware {
   uint32_t wnm_bsstrans_resp_ = 0x5;  // Default seen in real firmware.
   uint32_t roam_off_ = 0;             // Roam engine is enabled by default.
   uint32_t buf_key_b4_m4_ = 0;        // Buffer key until EAPOL 4th frame is sent out
+  bool wme_rx_error_high_ =
+      false;  // If set to true, sim-fw will return wme stats with high rx drop
 
   std::unordered_map<std::string, SimIovar> iovar_table_;
 };

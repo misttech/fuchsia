@@ -14,9 +14,9 @@ group("tests") {
 
   deps = [
     "bazel:tests",
-    "dart:tests",
     "fidl:tests",
     "go:tests",
+    "licenses:tests",
     "python:tests",
     "rbe:tests",
     "rust:tests",
@@ -64,24 +64,32 @@ group("non_hermetic_deps") {
   visibility += [ "//sdk:cts_generate" ]
 
   # See: fxbug.dev/44889
-  visibility += [ "//sdk:final_fuchsia_idk.exported" ]
+  visibility += [ "//sdk:*" ]
 
   # TODO(http://fxbug.dev/92612): Remove entries when
-  # assembly input bundle creation no longer triggers false-positives in the
-  # action_tracer.py due to how it cleans it's dynamic outputs.
-  visibility += [ "//bundles/assembly/*" ]
+  # assembly and board input bundle creation no longer triggers false-positives
+  # in the action_tracer.py due to how it cleans it's dynamic outputs.
+  visibility += [
+    "//boards/*",
+    "//bundles/assembly/*",
+  ]
 
   # //build/images/assemble_system.gni needs `hermetic_deps = false`, and that
   # will not be resolved except by moving to Bazel.
   visibility += [
     "//build/images/*",
+    "//src/bringup/lib/mexec/tests/*",
+    "//src/lib/elfldltl/test/*",
     "//src/security/lib/scrutiny/plugins/*",
     "//src/security/lib/scrutiny/tests/*",
     "//src/security/tests/pkg_test/tests/*",
     "//src/security/tests/scrutiny_ffx_integration/*",
     "//src/sys/component_manager/tests/fuchsia_boot_resolver:*",
     "//src/tests/assembly/*",
+    "//src/tests/kernel_cprng/*",
     "//third_party/network-conformance/images/*",
+    "//zircon/kernel/*",
+    "//zircon/system/*",
   ]
 
   # TODO(fxbug.dev/94463): Remove entry when action tracer can handle ld.lld invocations.
@@ -119,7 +127,6 @@ group("non_hermetic_deps") {
     "//build/bazel/bazel_sdk:*",
     "//build/bazel/bazel_sdk/tests:*",
     "//build/bazel/examples/*",
-    "//build/bazel/licenses:*",
     "//build/bazel/tests/*",
   ]
 
@@ -137,28 +144,18 @@ group("non_hermetic_deps") {
     "//sdk/ctf:*",
     "//sdk/ctf/release:*",
     "//sdk/ctf/release/packages:*",
-    "//src/cast:cast_runner_pkg",
-    "//src/chromium:chrome_pkg",
-    "//src/chromium:chromium_cast_runner_tests_cast_runner_integration_tests",
     "//src/chromium:chromium_common_tests_base_unittests",
     "//src/chromium:chromium_common_tests_blink_common_unittests",
     "//src/chromium:chromium_common_tests_ipc_tests",
-    "//src/chromium:chromium_common_tests_ipc_unittests",
     "//src/chromium:chromium_common_tests_media_unittests",
     "//src/chromium:chromium_common_tests_mojo_unittests",
     "//src/chromium:chromium_common_tests_skia_unittests",
     "//src/chromium:chromium_web_engine_tests_web_engine_integration_tests",
-    "//src/chromium:chromium_web_engine_tests_web_engine_integration_tests_cfv1",
-    "//src/chromium:chromium_web_engine_tests_web_runner_integration_tests",
     "//src/chromium:web_engine_pkg",
     "//src/chromium:web_engine_shell_pkg",
-    "//src/chromium:web_runner_pkg",
     "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:iwlwifi",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg",
-    "//src/dart:dart_aot_product_runner",
-    "//src/dart:dart_aot_runner",
-    "//src/dart:dart_jit_product_runner",
-    "//src/dart:dart_jit_runner",
+    "//src/devices/rtc/drivers/nxp:pcf8563",
     "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0",
     "//src/media/codec/codecs/vaapi:codec_runner_intel_gen",
     "//src/ui/backlight/drivers:chromebook-keyboard-backlight",
@@ -169,7 +166,10 @@ group("non_hermetic_deps") {
   # management becomes a hermetic process.
   visibility += [ "//tools/check-licenses/util/cmd/gn/*" ]
 
-  visibility += [ "//zircon/kernel/lib/userabi/userboot/tests:*" ]
+  visibility += [
+    "//src/tests/early-boot-coverage/*",
+    "//zircon/kernel/lib/userabi/userboot/tests:*",
+  ]
 }
 
 # Build targets that use the legacy zx_library and zx_host_tool templates
@@ -202,7 +202,6 @@ group("deprecated_zx_wrapper_allowlist") {
     "//src/devices/i2c/testing/fake-i2c:*",
     "//src/devices/i2c/testing/mock-i2c:*",
     "//src/devices/lib/amlogic:*",
-    "//src/devices/lib/as370:*",
     "//src/devices/lib/broadcom:*",
     "//src/devices/lib/dev-operation:*",
     "//src/devices/lib/dma-buffer:*",
@@ -278,8 +277,6 @@ group("deprecated_zx_wrapper_allowlist") {
     "//zircon/system/ulib/fs-host:*",
     "//zircon/system/ulib/fzl:*",
     "//zircon/system/ulib/gfx:*",
-    "//zircon/system/ulib/hid:*",
-    "//zircon/system/ulib/hid-parser:*",
     "//zircon/system/ulib/hwreg:*",
     "//zircon/system/ulib/hwreg-i2c:*",
     "//zircon/system/ulib/hwreg/test/asm:*",
@@ -294,8 +291,6 @@ group("deprecated_zx_wrapper_allowlist") {
     "//zircon/system/ulib/lazy_init:*",
     "//zircon/system/ulib/ldmsg:*",
     "//zircon/system/ulib/lockdep:*",
-    "//zircon/system/ulib/log-writer-logger:*",
-    "//zircon/system/ulib/log-writer-textfile:*",
     "//zircon/system/ulib/mbr:*",
     "//zircon/system/ulib/mini-process:*",
     "//zircon/system/ulib/mmio-ptr:*",
@@ -363,21 +358,18 @@ group("config_data_template_allowlist") {
     "//src/chromium:*",
     "//src/cobalt/bin/app:*",
     "//src/connectivity/lowpan/drivers/lowpan-ot-driver:config-default",
-    "//src/connectivity/network/netcfg:config-default",
+    "//src/connectivity/policy/netcfg:config-default",
     "//src/connectivity/weave/weavestack:config",
     "//src/connectivity/wlan/wlancfg:config",
     "//src/developer/forensics:exceptions_enable_jitd_on_startup",
-    "//src/developer/forensics:feedback_large_disk_product_config",
-    "//src/developer/forensics:feedback_remote_device_id_provider",
-    "//src/developer/forensics:feedback_user_config",
-    "//src/developer/forensics:feedback_userdebug_config",
+    "//src/developer/forensics:feedback_user_config_for_eng",
+    "//src/developer/forensics:feedback_userdebug_config_for_eng",
     "//src/developer/memory/buckets",
     "//src/developer/memory/monitor:userdebug_config",
     "//src/developer/sshd-host:authorized_ssh_keys_config_data",
     "//src/developer/sshd-host:config",
     "//src/diagnostics/config/persistence:persistence",
     "//src/diagnostics/config/pipelines/all:all_selectors",
-    "//src/diagnostics/config/triage:amlogic-display-detect",
     "//src/diagnostics/config/triage:brcmfmac-detect",
     "//src/diagnostics/config/triage:mali-detect",
     "//src/diagnostics/config/triage:omaha-client-detect",

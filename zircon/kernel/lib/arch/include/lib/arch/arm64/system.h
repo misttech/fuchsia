@@ -7,11 +7,12 @@
 
 #include <lib/arch/arm64/feature.h>
 #include <lib/arch/hwreg.h>
-#include <lib/arch/internal/bits.h>
 #include <lib/arch/sysreg.h>
 
 #include <functional>
 #include <optional>
+
+#include "memory.h"
 
 namespace arch {
 
@@ -65,6 +66,11 @@ struct ArmCurrentEl : public SysRegBase<ArmCurrentEl, uint64_t> {
   DEF_FIELD(3, 2, el);
 };
 ARCH_ARM64_SYSREG(ArmCurrentEl, "CurrentEL");
+
+// This is only available on actual AArch64 hardware.  This fetches the current
+// EL, and if it's EL3 then drops to EL2 (if possible) or EL1.  It returns the
+// newly-current EL that ArmCurrentEl::Read() will return afterwards.
+ArmCurrentEl ArmDropEl3();
 
 // This type covers three register formats:
 //  * [arm/sysreg]/sctlr_el1: System Control Register (EL1)
@@ -143,18 +149,44 @@ ARCH_ARM64_SYSREG(ArmSctlrEl2, "sctlr_el2");
 struct ArmSctlrEl3 : public arch::SysRegDerived<ArmSctlrEl3, ArmSystemControlRegister> {};
 ARCH_ARM64_SYSREG(ArmSctlrEl3, "sctlr_el3");
 
-// TCR_EL1 Cache Attributes
-//
-// Used in multiple bitfields for TCR_EL1 and TCR_EL2.
-//
-// [arm/v8]: D13.2.120 TCR_EL1, Translation Control Register (EL1)
-// [arm/v8]: D13.2.121 TCR_EL2, Translation Control Register (EL2)
-enum class ArmTcrCacheAttr {
-  kNonCacheable = 0b00,
-  kWriteBackWriteAllocate = 0b01,
-  kWriteThrough = 0b10,
-  kWriteBack = 0b11,
+// [arm/sysreg]/scr_el3: Secure Configuration Register
+struct ArmScrEl3 : public SysRegBase<ArmScrEl3, uint64_t> {
+  DEF_RSVDZ_FIELD(63, 39);
+  DEF_BIT(38, hxen);
+  DEF_BIT(37, aden);
+  DEF_BIT(36, enas0);
+  DEF_BIT(35, amvoffen);
+  DEF_RSVDZ_BIT(34);
+  DEF_FIELD(33, 30, twedel);
+  DEF_BIT(29, tweden);
+  DEF_BIT(28, ecven);
+  DEF_BIT(27, fgten);
+  DEF_BIT(26, ata);
+  DEF_BIT(25, enscxt);
+  DEF_RSVDZ_FIELD(24, 22);
+  DEF_BIT(21, fien);
+  DEF_BIT(20, nmea);
+  DEF_BIT(19, ease);
+  DEF_BIT(18, eel2);
+  DEF_BIT(17, api);
+  DEF_BIT(16, apk);
+  DEF_BIT(15, terr);
+  DEF_BIT(14, tlor);
+  DEF_BIT(13, twe);
+  DEF_BIT(12, twi);
+  DEF_BIT(11, st);
+  DEF_BIT(10, rw);
+  DEF_BIT(9, sif);
+  DEF_BIT(8, hce);
+  DEF_BIT(7, smd);
+  DEF_RSVDZ_BIT(6);
+  // Bits 5:4 are RES1 (reserved, always one).
+  DEF_BIT(3, ea);
+  DEF_BIT(2, fiq);
+  DEF_BIT(1, irq);
+  DEF_BIT(0, ns);
 };
+ARCH_ARM64_SYSREG(ArmScrEl3, "scr_el3");
 
 // Granule size values for the TCR_EL1 and TCR_EL2 fields.
 //
@@ -171,16 +203,6 @@ enum class ArmTcrTg1Value {
   k4KiB = 0b10,
   k16KiB = 0b01,
   k64KiB = 0b11,
-};
-
-// Cache shareability attribute for the TCR_EL1 and TCR_EL2 fields.
-//
-// [arm/v8]: D13.2.120 TCR_EL1, Translation Control Register (EL1)
-// [arm/v8]: D13.2.121 TCR_EL2, Translation Control Register (EL2)
-enum class ArmTcrShareAttr {
-  kNonShareable = 0b00,
-  kOuterShareable = 0b10,
-  kInnerShareable = 0b11,
 };
 
 // Forward declaration, defined below.
@@ -224,19 +246,19 @@ class ArmTcrEl1 : public SysRegBase<ArmTcrEl1> {
   DEF_BIT(37, tbi0);  // TTBR0 Top Byte Ignored
   DEF_BIT(36, as);    // ASID size: 0 = 8-bit, 1 = 16-bit
   // Bit 35 reserved.
-  DEF_ENUM_FIELD(ArmPhysicalAddressSize, 34, 32, ips);  // Intermediate physical address size.
-  DEF_ENUM_FIELD(ArmTcrTg1Value, 31, 30, tg1);          // TTBR1 granule size
-  DEF_ENUM_FIELD(ArmTcrShareAttr, 29, 28, sh1);         // TTBR1 cache sharability
-  DEF_ENUM_FIELD(ArmTcrCacheAttr, 27, 26, orgn1);       // TTBR1 outer cacheability
-  DEF_ENUM_FIELD(ArmTcrCacheAttr, 25, 24, irgn1);       // TTBR1 inner cacheability
-  DEF_BIT(23, epd1);                                    // TTBR1 table walks disabled
-  DEF_BIT(22, a1);                                      // ASID select: 0 = TTBR0, 1 = TTBR1
-  DEF_FIELD(21, 16, t1sz);                              // TTBR0 size offset
-  DEF_ENUM_FIELD(ArmTcrTg0Value, 15, 14, tg0);          // TTBR0 granule size
-  DEF_ENUM_FIELD(ArmTcrShareAttr, 13, 12, sh0);         // TTBR0 cache sharability
-  DEF_ENUM_FIELD(ArmTcrCacheAttr, 11, 10, orgn0);       // TTBR0 outer cacheability
-  DEF_ENUM_FIELD(ArmTcrCacheAttr, 9, 8, irgn0);         // TTBR0 inner cacheability
-  DEF_BIT(7, epd0);                                     // TTBR0 table walks disabled
+  DEF_ENUM_FIELD(ArmPhysicalAddressSize, 34, 32, ips);      // Intermediate physical address size.
+  DEF_ENUM_FIELD(ArmTcrTg1Value, 31, 30, tg1);              // TTBR1 granule size
+  DEF_ENUM_FIELD(ArmShareabilityAttribute, 29, 28, sh1);    // TTBR1 cache sharability
+  DEF_ENUM_FIELD(ArmCacheabilityAttribute, 27, 26, orgn1);  // TTBR1 outer cacheability
+  DEF_ENUM_FIELD(ArmCacheabilityAttribute, 25, 24, irgn1);  // TTBR1 inner cacheability
+  DEF_BIT(23, epd1);                                        // TTBR1 table walks disabled
+  DEF_BIT(22, a1);                                          // ASID select: 0 = TTBR0, 1 = TTBR1
+  DEF_FIELD(21, 16, t1sz);                                  // TTBR0 size offset
+  DEF_ENUM_FIELD(ArmTcrTg0Value, 15, 14, tg0);              // TTBR0 granule size
+  DEF_ENUM_FIELD(ArmShareabilityAttribute, 13, 12, sh0);    // TTBR0 cache sharability
+  DEF_ENUM_FIELD(ArmCacheabilityAttribute, 11, 10, orgn0);  // TTBR0 outer cacheability
+  DEF_ENUM_FIELD(ArmCacheabilityAttribute, 9, 8, irgn0);    // TTBR0 inner cacheability
+  DEF_BIT(7, epd0);                                         // TTBR0 table walks disabled
   // Bit 6 reserved.
   DEF_FIELD(5, 0, t0sz);  // TTBR0 size offset
 };
@@ -268,11 +290,11 @@ struct ArmTranslationControlRegisterEl2Base
   DEF_BIT(22, hd);          // Hardware Dirty state management
   DEF_BIT(21, ha);          // Hardware Access flag updated
   // Bits [20:19] differ between TCR_EL2 and VTCR_EL2.  See below.
-  DEF_ENUM_FIELD(ArmPhysicalAddressSize, 18, 16, ps);  // Physical address size
-  DEF_ENUM_FIELD(ArmTcrTg0Value, 15, 14, tg0);         // TTBR0 Granule size
-  DEF_ENUM_FIELD(ArmTcrShareAttr, 13, 12, sh0);        // TTBR0 Cache sharability
-  DEF_ENUM_FIELD(ArmTcrCacheAttr, 11, 10, orgn0);      // TTBR0 Outer cacheability
-  DEF_ENUM_FIELD(ArmTcrCacheAttr, 9, 8, irgn0);        // TTBR0 Inner cacheability
+  DEF_ENUM_FIELD(ArmPhysicalAddressSize, 18, 16, ps);       // Physical address size
+  DEF_ENUM_FIELD(ArmTcrTg0Value, 15, 14, tg0);              // TTBR0 Granule size
+  DEF_ENUM_FIELD(ArmShareabilityAttribute, 13, 12, sh0);    // TTBR0 Cache sharability
+  DEF_ENUM_FIELD(ArmCacheabilityAttribute, 11, 10, orgn0);  // TTBR0 Outer cacheability
+  DEF_ENUM_FIELD(ArmCacheabilityAttribute, 9, 8, irgn0);    // TTBR0 Inner cacheability
   // Bits [7:6] differ between TCR_EL2 and VTCR_EL2.  See below.
   DEF_FIELD(5, 0, t0sz);  // TTBR0 size offset
 };
@@ -380,74 +402,6 @@ struct ArmVttbrEl2 : public arch::SysRegDerived<ArmVttbrEl2, ArmTranslationTable
 };
 ARCH_ARM64_SYSREG(ArmVttbrEl2, "vttbr_el2");
 
-// Memory attributes.
-//
-// This is a list of used memory attributes, and not comprehensive.
-enum class ArmMemoryAttribute : uint8_t {
-  // Device memory: non write combining, no reorder, no early ack.
-  kDevice_nGnRnE = 0b0000'0000,
-
-  // Device memory: non write combining, no reorder, early ack.
-  kDevice_nGnRE = 0b0000'0100,
-
-  // Normal Memory, Outer Write-back non-transient Read/Write allocate, Inner
-  // Write-back non-transient Read/Write allocate
-  kNormalCached = 0b1111'1111,
-
-  // Normal memory, Inner/Outer uncached, Write Combined
-  kNormalUncached = 0b0100'0100,
-};
-
-// Memory Attribute Indirection Register
-//
-// [arm/v8]: D13.2.95  MAIR_EL1, Memory Attribute Indirection Register, EL1
-// [arm/v8]: D13.2.96  MAIR_EL2, Memory Attribute Indirection Register, EL2
-struct ArmMemoryAttrIndirectionRegister
-    : public SysRegDerivedBase<ArmMemoryAttrIndirectionRegister, uint64_t> {
-  DEF_ENUM_FIELD(ArmMemoryAttribute, 63, 56, attr7);
-  DEF_ENUM_FIELD(ArmMemoryAttribute, 55, 48, attr6);
-  DEF_ENUM_FIELD(ArmMemoryAttribute, 47, 40, attr5);
-  DEF_ENUM_FIELD(ArmMemoryAttribute, 39, 32, attr4);
-  DEF_ENUM_FIELD(ArmMemoryAttribute, 31, 24, attr3);
-  DEF_ENUM_FIELD(ArmMemoryAttribute, 23, 16, attr2);
-  DEF_ENUM_FIELD(ArmMemoryAttribute, 15, 8, attr1);
-  DEF_ENUM_FIELD(ArmMemoryAttribute, 7, 0, attr0);
-
-  static constexpr size_t kNumAttributes = 8;
-
-  // Get the ArmMemoryAttribute at the given index.
-  //
-  // TODO(fxbug.dev/78027): Ideally hwreg would support this natively.
-  ArmMemoryAttribute GetAttribute(size_t index) const {
-    ZX_DEBUG_ASSERT(index < kNumAttributes);
-    size_t low_bit = index * kAttributeBits;
-    size_t high_bit = low_bit + kAttributeBits - 1;
-    return static_cast<ArmMemoryAttribute>(internal::ExtractBits(high_bit, low_bit, reg_value()));
-  }
-
-  // Set the ArmMemoryAttribute at the given index.
-  //
-  // TODO(fxbug.dev/78027): Ideally hwreg would support this natively.
-  ArmMemoryAttrIndirectionRegister& SetAttribute(size_t index, ArmMemoryAttribute value) {
-    ZX_DEBUG_ASSERT(index < kNumAttributes);
-
-    size_t low_bit = index * kAttributeBits;
-    size_t high_bit = low_bit + kAttributeBits - 1;
-    set_reg_value(
-        internal::UpdateBits(high_bit, low_bit, reg_value(), static_cast<uint64_t>(value)));
-    return *this;
-  }
-
- private:
-  static constexpr size_t kAttributeBits = 8;  // Width of each attribute (in bits).
-};
-
-struct ArmMairEl1 : public arch::SysRegDerived<ArmMairEl1, ArmMemoryAttrIndirectionRegister> {};
-ARCH_ARM64_SYSREG(ArmMairEl1, "mair_el1");
-
-struct ArmMairEl2 : public arch::SysRegDerived<ArmMairEl2, ArmMemoryAttrIndirectionRegister> {};
-ARCH_ARM64_SYSREG(ArmMairEl2, "mair_el2");
-
 // This state is accessed via multiple registers with different bit placements.
 // The three registers DAIF, DAIFSet, and DAIFClr are specified in:
 // [arm/sysreg]/currentel: DAIF, Interrupt Mask Bits
@@ -491,9 +445,9 @@ ARCH_ARM64_SYSREG(ArmVbarEl2, "vbar_el2");
 struct ArmVbarEl3 : public arch::SysRegDerived<ArmVbarEl3, ArmVectorBaseAddressRegister> {};
 ARCH_ARM64_SYSREG(ArmVbarEl3, "vbar_el3");
 
-// [arm/sysreg]/elr_el1: Vector Base Address Register (EL1)
-// [arm/sysreg]/elr_el2: Vector Base Address Register (EL2)
-// [arm/sysreg]/elr_el3: Vector Base Address Register (EL3)
+// [arm/sysreg]/elr_el1: Exception Link Register (EL1)
+// [arm/sysreg]/elr_el2: Exception Link Register (EL2)
+// [arm/sysreg]/elr_el3: Exception Link Register (EL3)
 struct ArmVectorExceptionLinkRegister : public SysRegDerivedBase<ArmVectorExceptionLinkRegister> {
   DEF_FIELD(63, 0, pc);
 };

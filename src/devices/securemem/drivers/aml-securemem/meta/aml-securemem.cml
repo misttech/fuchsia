@@ -10,12 +10,13 @@
     program: {
         runner: "driver",
         bind: "meta/bind/aml-securemem.bindbc",
-        colocate: "true",
+        colocate: "false",
         compat: "driver/aml-securemem.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         fallback: "false",
     },
     use: [
+        { protocol: "fuchsia.scheduler.ProfileProvider" },
         { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.hardware.tee.Service" },
         { service: "fuchsia.hardware.sysmem.Service" },

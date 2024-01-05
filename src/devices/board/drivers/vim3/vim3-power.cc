@@ -16,10 +16,10 @@
 
 #include <bind/fuchsia/amlogic/platform/a311d/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/pwm/cpp/bind.h>
+#include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/i2c/cpp/bind.h>
 #include <bind/fuchsia/power/cpp/bind.h>
+#include <bind/fuchsia/pwm/cpp/bind.h>
 #include <ddk/metadata/power.h>
 #include <ddk/metadata/pwm.h>
 #include <ddktl/device.h>
@@ -37,9 +37,9 @@ namespace fpbus = fuchsia_hardware_platform_bus;
 
 namespace {
 
-constexpr voltage_pwm_period_ns_t kA311dPwmPeriodNs = 1500;
+constexpr voltage_pwm_period_ns_t kA311dPwmPeriodNs = 1250;
 
-const uint32_t kVoltageStepUv = 10'000;
+const uint32_t kVoltageStepUv = 1'000;
 static_assert((kMaxVoltageUv - kMinVoltageUv) % kVoltageStepUv == 0,
               "Voltage step must be a factor of (kMaxVoltageUv - kMinVoltageUv)\n");
 const uint32_t kNumSteps = (kMaxVoltageUv - kMinVoltageUv) / kVoltageStepUv + 1;
@@ -146,14 +146,13 @@ const device_bind_prop_t kI2cProperties[] = {
 };
 
 const ddk::BindRule kGpioRules[] = {
-    ddk::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
-                            bind_fuchsia_hardware_gpio::BIND_PROTOCOL_DEVICE),
+    ddk::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
+                            bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
     ddk::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(VIM3_FUSB302_INT))};
 
 const device_bind_prop_t kGpioProperties[] = {
-    ddk::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_hardware_gpio::BIND_PROTOCOL_DEVICE),
-    ddk::MakeProperty(bind_fuchsia_hardware_gpio::FUNCTION,
-                      bind_fuchsia_hardware_gpio::FUNCTION_USB_POWER_DELIVERY)};
+    ddk::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+    ddk::MakeProperty(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_USB_POWER_DELIVERY)};
 
 zx_status_t AddBigCore(fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus>& pbus) {
   fpbus::Node big_core_dev;
@@ -227,34 +226,17 @@ zx_status_t AddLittleCore(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pla
 }  // namespace
 
 zx_status_t Vim3::PowerInit() {
-  zx_status_t st;
-  st = gpio_impl_.ConfigOut(A311D_GPIOE(1), 0);
-  if (st != ZX_OK) {
-    zxlogf(ERROR, "%s: ConfigOut failed: %d", __func__, st);
-    return st;
-  }
+  gpio_init_steps_.push_back({A311D_GPIOE(1), GpioConfigOut(0)});
 
   // Configure the GPIO to be Output & set it to alternate
   // function 3 which puts in PWM_D mode. A53 cluster (Small)
-  st = gpio_impl_.SetAltFunction(A311D_GPIOE(1), A311D_GPIOE_1_PWM_D_FN);
-  if (st != ZX_OK) {
-    zxlogf(ERROR, "%s: SetAltFunction failed: %d", __func__, st);
-    return st;
-  }
+  gpio_init_steps_.push_back({A311D_GPIOE(1), GpioSetAltFunction(A311D_GPIOE_1_PWM_D_FN)});
 
-  st = gpio_impl_.ConfigOut(A311D_GPIOE(2), 0);
-  if (st != ZX_OK) {
-    zxlogf(ERROR, "%s: ConfigOut failed: %d", __func__, st);
-    return st;
-  }
+  gpio_init_steps_.push_back({A311D_GPIOE(2), GpioConfigOut(0)});
 
   // Configure the GPIO to be Output & set it to alternate
   // function 3 which puts in PWM_D mode. A73 cluster (Big)
-  st = gpio_impl_.SetAltFunction(A311D_GPIOE(2), A311D_GPIOE_2_PWM_D_FN);
-  if (st != ZX_OK) {
-    zxlogf(ERROR, "%s: SetAltFunction failed: %d", __func__, st);
-    return st;
-  }
+  gpio_init_steps_.push_back({A311D_GPIOE(2), GpioSetAltFunction(A311D_GPIOE_2_PWM_D_FN)});
 
   // Add voltage regulator
   fidl::Arena<2048> allocator;
@@ -287,33 +269,39 @@ zx_status_t Vim3::PowerInit() {
 
   auto vreg_pwm_9_node = fuchsia_driver_framework::ParentSpec{{
       .bind_rules = {fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                                             bind_fuchsia_hardware_pwm::BIND_FIDL_PROTOCOL_DEVICE),
+                                             bind_fuchsia_pwm::BIND_FIDL_PROTOCOL_DEVICE),
                      fdf::MakeAcceptBindRule(
                          bind_fuchsia::PWM_ID,
                          bind_fuchsia_amlogic_platform_a311d::BIND_PWM_ID_PWM_AO_D)},
       .properties = {fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                                       bind_fuchsia_hardware_pwm::BIND_FIDL_PROTOCOL_DEVICE),
+                                       bind_fuchsia_pwm::BIND_FIDL_PROTOCOL_DEVICE),
                      fdf::MakeProperty(
-                         bind_fuchsia_hardware_pwm::PWM_ID_FUNCTION,
-                         bind_fuchsia_hardware_pwm::PWM_ID_FUNCTION_CORE_POWER_LITTLE_CLUSTER)},
+                         bind_fuchsia_pwm::PWM_ID_FUNCTION,
+                         bind_fuchsia_pwm::PWM_ID_FUNCTION_CORE_POWER_LITTLE_CLUSTER)},
   }};
 
   auto vreg_pwm_0_node = fuchsia_driver_framework::ParentSpec{{
       .bind_rules = {fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                                             bind_fuchsia_hardware_pwm::BIND_FIDL_PROTOCOL_DEVICE),
+                                             bind_fuchsia_pwm::BIND_FIDL_PROTOCOL_DEVICE),
                      fdf::MakeAcceptBindRule(
                          bind_fuchsia::PWM_ID,
                          bind_fuchsia_amlogic_platform_a311d::BIND_PWM_ID_PWM_A)},
       .properties = {fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                                       bind_fuchsia_hardware_pwm::BIND_FIDL_PROTOCOL_DEVICE),
-                     fdf::MakeProperty(
-                         bind_fuchsia_hardware_pwm::PWM_ID_FUNCTION,
-                         bind_fuchsia_hardware_pwm::PWM_ID_FUNCTION_CORE_POWER_BIG_CLUSTER)},
+                                       bind_fuchsia_pwm::BIND_FIDL_PROTOCOL_DEVICE),
+                     fdf::MakeProperty(bind_fuchsia_pwm::PWM_ID_FUNCTION,
+                                       bind_fuchsia_pwm::PWM_ID_FUNCTION_CORE_POWER_BIG_CLUSTER)},
+  }};
+
+  auto gpio_init_node = fuchsia_driver_framework::ParentSpec{{
+      .bind_rules = {fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP,
+                                             bind_fuchsia_gpio::BIND_INIT_STEP_GPIO)},
+      .properties = {fdf::MakeProperty(bind_fuchsia::INIT_STEP,
+                                       bind_fuchsia_gpio::BIND_INIT_STEP_GPIO)},
   }};
 
   auto vreg_node_spec = fuchsia_driver_framework::CompositeNodeSpec{{
       .name = "vreg",
-      .parents = {{vreg_pwm_9_node, vreg_pwm_0_node}},
+      .parents = {{vreg_pwm_9_node, vreg_pwm_0_node, gpio_init_node}},
   }};
 
   fidl::Arena<> fidl_arena;
@@ -325,7 +313,7 @@ zx_status_t Vim3::PowerInit() {
   if (!vreg_result.ok() || vreg_result.value().is_error()) {
     zxlogf(ERROR, "AddCompositeNodeSpec for vreg failed, error = %s",
            vreg_result.FormatDescription().c_str());
-    return st;
+    return vreg_result.ok() ? vreg_result->error_value() : vreg_result.status();
   }
 
   fidl_arena.Reset();
@@ -347,7 +335,7 @@ zx_status_t Vim3::PowerInit() {
     return result->error_value();
   }
 
-  st = AddBigCore(pbus_);
+  zx_status_t st = AddBigCore(pbus_);
   if (st != ZX_OK) {
     zxlogf(ERROR, "%s: CompositeDeviceAdd for power domain Big Arm Core failed, st = %d",
            __FUNCTION__, st);

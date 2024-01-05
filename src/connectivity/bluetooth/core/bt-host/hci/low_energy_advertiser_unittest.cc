@@ -29,7 +29,7 @@ using bt::testing::FakeController;
 using bt::testing::FakePeer;
 
 using AdvertisingOptions = LowEnergyAdvertiser::AdvertisingOptions;
-using TestingBase = bt::testing::ControllerTest<FakeController>;
+using TestingBase = bt::testing::FakeDispatcherControllerTest<FakeController>;
 
 constexpr hci_spec::ConnectionHandle kConnectionHandle = 0x0001;
 constexpr AdvertisingIntervalRange kTestInterval(hci_spec::kLEAdvertisingIntervalMin,
@@ -241,7 +241,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, ConnectionTest) {
   // Start advertising kPublicAddress
   this->advertiser()->StartAdvertising(kPublicAddress, adv_data, scan_data, options, conn_cb,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
   EXPECT_TRUE(this->advertiser()->IsAdvertising());
   EXPECT_TRUE(this->advertiser()->IsAdvertising(kPublicAddress));
@@ -254,7 +254,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, ConnectionTest) {
   std::optional<hci_spec::AdvertisingHandle> handle = this->CurrentAdvertisingHandle();
   ASSERT_TRUE(handle);
   this->MaybeSendMultipleAdvertisingPostConnectionEvents(kConnectionHandle, handle.value());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
 
   ASSERT_TRUE(link);
   EXPECT_EQ(kConnectionHandle, link->handle());
@@ -266,13 +266,13 @@ TYPED_TEST(LowEnergyAdvertiserTest, ConnectionTest) {
   // Advertising state should get cleared on a disconnection
   link->Disconnect(pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
   this->test_device()->SendDisconnectionCompleteEvent(link->handle());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_FALSE(this->GetControllerAdvertisingState().enabled);
 
   // Restart advertising using a different local address
   this->advertiser()->StartAdvertising(kRandomAddress, adv_data, scan_data, options, conn_cb,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
   EXPECT_TRUE(this->GetControllerAdvertisingState().enabled);
 
@@ -285,7 +285,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, ConnectionTest) {
   handle = this->CurrentAdvertisingHandle();
   ASSERT_TRUE(handle);
   this->MaybeSendMultipleAdvertisingPostConnectionEvents(kConnectionHandle, handle.value());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
 
   ASSERT_TRUE(link);
   EXPECT_EQ(kRandomAddress, link->local_address());
@@ -310,7 +310,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, RestartInConnectionCallback) {
 
   this->advertiser()->StartAdvertising(kPublicAddress, ad, scan_data, options, conn_cb,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
   EXPECT_TRUE(this->GetControllerAdvertisingState().enabled);
 
@@ -332,7 +332,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, RestartInConnectionCallback) {
   this->MaybeSendMultipleAdvertisingPostConnectionEvents(kConnectionHandle, handle.value());
 
   // Advertising should get disabled and re-enabled.
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   ASSERT_EQ(2u, adv_states.size());
   EXPECT_FALSE(adv_states[0]);
   EXPECT_TRUE(adv_states[1]);
@@ -350,11 +350,12 @@ TYPED_TEST(LowEnergyAdvertiserTest, IncomingConnectionWhenNotAdvertising) {
         connection_states.push_back(std::make_pair(connected, handle));
       });
 
-  auto fake_peer = std::make_unique<FakePeer>(kRandomAddress, true, true);
+  auto fake_peer =
+      std::make_unique<FakePeer>(kRandomAddress, TestFixture::dispatcher(), true, true);
   this->test_device()->AddPeer(std::move(fake_peer));
   this->test_device()->ConnectLowEnergy(kRandomAddress,
                                         pw::bluetooth::emboss::ConnectionRole::PERIPHERAL);
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
 
   ASSERT_EQ(1u, connection_states.size());
   auto [connection_state, handle] = connection_states[0];
@@ -366,7 +367,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, IncomingConnectionWhenNotAdvertising) {
                                            pw::bluetooth::emboss::ConnectionRole::PERIPHERAL,
                                            kRandomAddress, hci_spec::LEConnectionParameters());
   this->MaybeSendMultipleAdvertisingPostConnectionEvents(kConnectionHandle, 0);
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   ASSERT_EQ(2u, connection_states.size());
   auto [connection_state_after_disconnect, disconnected_handle] = connection_states[1];
   EXPECT_EQ(handle, disconnected_handle);
@@ -381,7 +382,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, IncomingConnectionWhenNonConnectableAdvertis
                              /*include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kPublicAddress, ad, scan_data, options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   ASSERT_TRUE(this->GetLastStatus());
 
   std::vector<std::pair<bool, hci_spec::ConnectionHandle>> connection_states;
@@ -392,11 +393,12 @@ TYPED_TEST(LowEnergyAdvertiserTest, IncomingConnectionWhenNonConnectableAdvertis
         connection_states.push_back(std::make_pair(connected, handle));
       });
 
-  auto fake_peer = std::make_unique<FakePeer>(kRandomAddress, true, true);
+  auto fake_peer =
+      std::make_unique<FakePeer>(kRandomAddress, TestFixture::dispatcher(), true, true);
   this->test_device()->AddPeer(std::move(fake_peer));
   this->test_device()->ConnectLowEnergy(kRandomAddress,
                                         pw::bluetooth::emboss::ConnectionRole::PERIPHERAL);
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
 
   ASSERT_EQ(1u, connection_states.size());
   auto [connection_state, handle] = connection_states[0];
@@ -408,7 +410,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, IncomingConnectionWhenNonConnectableAdvertis
                                            pw::bluetooth::emboss::ConnectionRole::PERIPHERAL,
                                            kRandomAddress, hci_spec::LEConnectionParameters());
   this->MaybeSendMultipleAdvertisingPostConnectionEvents(kConnectionHandle, 0);
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   ASSERT_EQ(2u, connection_states.size());
   auto [connection_state_after_disconnect, disconnected_handle] = connection_states[1];
   EXPECT_EQ(handle, disconnected_handle);
@@ -424,12 +426,12 @@ TYPED_TEST(LowEnergyAdvertiserTest, StartAndStop) {
 
   this->advertiser()->StartAdvertising(kRandomAddress, ad, scan_data, options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
   EXPECT_TRUE(this->GetControllerAdvertisingState().enabled);
 
   this->advertiser()->StopAdvertising(kRandomAddress);
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_FALSE(this->GetControllerAdvertisingState().enabled);
 }
 
@@ -443,7 +445,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, AdvertisingParameters) {
 
   this->advertiser()->StartAdvertising(kRandomAddress, ad, scan_data, options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
 
   // The expected advertisement including the Flags.
@@ -469,7 +471,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, AdvertisingParameters) {
                                  /*include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kPublicAddress, ad, scan_data, new_options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
 
   state = this->GetControllerAdvertisingState();
@@ -497,7 +499,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, PreviousAdvertisingParameters) {
 
   this->advertiser()->StartAdvertising(kRandomAddress, ad, scan_data, options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
 
   // new advertising data (with fewer fields filled in)
@@ -505,7 +507,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, PreviousAdvertisingParameters) {
   AdvertisingData new_ad = this->GetExampleData();
   this->advertiser()->StartAdvertising(kRandomAddress, new_ad, scan_data, options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
 
   DynamicByteBuffer expected_ad(new_ad.CalculateBlockSize(/*include_flags=*/true));
@@ -527,7 +529,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, AdvertisingIntervalWithinAllowedRange) {
                              /*include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kRandomAddress, ad, scan_data, options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
 
   std::optional<FakeController::LEAdvertisingState> state = this->GetControllerAdvertisingState();
@@ -542,7 +544,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, AdvertisingIntervalWithinAllowedRange) {
                                  /*include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kRandomAddress, ad, scan_data, new_options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
 
   state = this->GetControllerAdvertisingState();
@@ -569,7 +571,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, StartWhileStarting) {
   // This call should override the previous call and succeed with the new parameters.
   this->advertiser()->StartAdvertising(addr, ad, scan_data, new_options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
   EXPECT_TRUE(this->GetControllerAdvertisingState().enabled);
   EXPECT_EQ(new_interval.max(), this->GetControllerAdvertisingState().interval_max);
@@ -585,7 +587,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, StartWhileStopping) {
   // Get to a started state.
   this->advertiser()->StartAdvertising(addr, ad, scan_data, options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
   EXPECT_TRUE(this->GetControllerAdvertisingState().enabled);
 
@@ -607,7 +609,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, StartWhileStopping) {
   this->advertiser()->StopAdvertising(addr);
 
   // Advertising should have been momentarily disabled.
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(was_disabled);
   EXPECT_TRUE(enabled);
   EXPECT_TRUE(this->GetControllerAdvertisingState().enabled);
@@ -625,7 +627,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, StopWhileStarting) {
                                        this->MakeExpectErrorCallback());
   this->advertiser()->StopAdvertising();
 
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
   EXPECT_FALSE(this->GetControllerAdvertisingState().enabled);
 }
@@ -642,7 +644,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, StopAdvertisingConditions) {
   this->advertiser()->StartAdvertising(kRandomAddress, ad, scan_data, options, nullptr,
                                        this->MakeExpectSuccessCallback());
 
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
 
   EXPECT_TRUE(this->GetLastStatus());
 
@@ -652,7 +654,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, StopAdvertisingConditions) {
   EXPECT_TRUE(
       ContainersEqual(this->GetControllerAdvertisingState().advertised_view(), expected_ad));
 
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   this->advertiser()->StopAdvertising(kPublicAddress);
   EXPECT_TRUE(this->GetControllerAdvertisingState().enabled);
   EXPECT_TRUE(
@@ -660,7 +662,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, StopAdvertisingConditions) {
 
   this->advertiser()->StopAdvertising(kRandomAddress);
 
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_FALSE(this->GetControllerAdvertisingState().enabled);
   EXPECT_EQ(0u, this->GetControllerAdvertisingState().advertised_view().size());
   EXPECT_EQ(0u, this->GetControllerAdvertisingState().scan_rsp_view().size());
@@ -675,7 +677,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, AdvertiseUpdate) {
 
   this->advertiser()->StartAdvertising(kRandomAddress, ad, scan_data, options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
 
   EXPECT_TRUE(this->GetLastStatus());
   EXPECT_TRUE(this->GetControllerAdvertisingState().enabled);
@@ -697,7 +699,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, AdvertiseUpdate) {
                                  /*include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kRandomAddress, ad, scan_data, new_options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
 
   EXPECT_TRUE(this->GetLastStatus());
   EXPECT_TRUE(this->GetControllerAdvertisingState().enabled);
@@ -721,7 +723,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, StopAdvertisingSingleAdvertisement) {
                              /*include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kPublicAddress, ad, scan_data, options, nullptr,
                                        this->MakeExpectSuccessCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   EXPECT_TRUE(this->GetLastStatus());
 
   constexpr uint8_t blank[hci_spec::kMaxLEAdvertisingDataLength] = {0};
@@ -741,7 +743,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, StopAdvertisingSingleAdvertisement) {
 
   // stop advertising the random address
   this->advertiser()->StopAdvertising(kPublicAddress);
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
 
   // check that advertiser and controller both report the same advertising state
   EXPECT_FALSE(this->advertiser()->IsAdvertising());
@@ -779,7 +781,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, AdvertisingDataTooLong) {
   // Advertising data too large.
   this->advertiser()->StartAdvertising(kRandomAddress, invalid_ad, valid_scan_rsp, options, nullptr,
                                        this->MakeExpectErrorCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   auto status = this->GetLastStatus();
   ASSERT_TRUE(status);
   EXPECT_EQ(ToResult(HostError::kAdvertisingDataTooLong), *status);
@@ -795,7 +797,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, AdvertisingDataTooLongWithTxPower) {
   // Advertising data too large.
   this->advertiser()->StartAdvertising(kRandomAddress, invalid_ad, valid_scan_rsp, options, nullptr,
                                        this->MakeExpectErrorCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   auto status = this->GetLastStatus();
   ASSERT_TRUE(status);
   EXPECT_EQ(ToResult(HostError::kAdvertisingDataTooLong), *status);
@@ -808,7 +810,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, ScanResponseTooLong) {
                              /*include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kRandomAddress, valid_ad, invalid_scan_rsp, options, nullptr,
                                        this->MakeExpectErrorCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   auto status = this->GetLastStatus();
   ASSERT_TRUE(status);
   EXPECT_EQ(ToResult(HostError::kScanResponseTooLong), *status);
@@ -822,7 +824,7 @@ TYPED_TEST(LowEnergyAdvertiserTest, ScanResponseTooLongWithTxPower) {
                              /*include_tx_power_level=*/true);
   this->advertiser()->StartAdvertising(kRandomAddress, valid_ad, invalid_scan_rsp, options, nullptr,
                                        this->MakeExpectErrorCallback());
-  this->RunLoopUntilIdle();
+  this->RunUntilIdle();
   auto status = this->GetLastStatus();
   ASSERT_TRUE(status);
   EXPECT_EQ(ToResult(HostError::kScanResponseTooLong), *status);

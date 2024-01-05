@@ -4,7 +4,7 @@
 
 use {
     crate::{big_endian::BigEndianU16, mac::MacAddr},
-    zerocopy::{AsBytes, ByteSlice, FromBytes, FromZeroes, Ref, Unaligned},
+    zerocopy::{AsBytes, ByteSlice, FromBytes, FromZeros, NoCell, Ref, Unaligned},
 };
 
 // RFC 704, Appendix B.2
@@ -16,7 +16,7 @@ pub const ETHER_TYPE_IPV6: u16 = 0x86DD;
 pub const MAX_ETH_FRAME_LEN: usize = 2048;
 
 // IEEE Std 802.3-2015, 3.1.1
-#[derive(FromZeroes, FromBytes, AsBytes, Unaligned, Clone, Copy, Debug)]
+#[derive(FromZeros, FromBytes, AsBytes, NoCell, Unaligned, Clone, Copy, Debug)]
 #[repr(C, packed)]
 pub struct EthernetIIHdr {
     pub da: MacAddr,
@@ -50,8 +50,8 @@ mod tests {
         ];
         let (mut hdr, body) = Ref::<_, EthernetIIHdr>::new_unaligned_from_prefix(&mut bytes[..])
             .expect("cannot create ethernet header.");
-        assert_eq!(hdr.da, [1u8, 2, 3, 4, 5, 6]);
-        assert_eq!(hdr.sa, [7u8, 8, 9, 10, 11, 12]);
+        assert_eq!(hdr.da, MacAddr::from([1u8, 2, 3, 4, 5, 6]));
+        assert_eq!(hdr.sa, MacAddr::from([7u8, 8, 9, 10, 11, 12]));
         assert_eq!(hdr.ether_type.to_native(), 13 << 8 | 14);
         assert_eq!(hdr.ether_type.0, [13u8, 14]);
         assert_eq!(body, [99, 99]);

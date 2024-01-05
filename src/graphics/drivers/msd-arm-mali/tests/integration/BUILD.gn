@@ -14,6 +14,7 @@ executable("msd_arm_mali_integration_tests") {
   testonly = true
 
   sources = [
+    "driver_registry.h",
     "mali_utils.cc",
     "mali_utils.h",
     "run_unit_tests.cc",
@@ -24,16 +25,18 @@ executable("msd_arm_mali_integration_tests") {
   ]
 
   public_deps = [
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_cpp",
+    "//sdk/fidl/fuchsia.driver.registrar:fuchsia.driver.registrar_cpp",
+    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp",
     "//sdk/lib/component/incoming/cpp",
-    "//src/graphics/lib/magma/include:magma",
+    "//sdk/lib/magma_client:magma_headers",
     "//src/graphics/lib/magma/src/libmagma",
-    "//src/graphics/lib/magma/src/magma_util:macros",
-    "//src/graphics/lib/magma/src/magma_util:short_macros",
-    "//src/graphics/lib/magma/tests/helper:logger_init_helper",
-    "//src/graphics/lib/magma/tests/helper:magma_map_cpu",
-    "//src/graphics/lib/magma/tests/helper:test_device_helper",
+    "//src/graphics/magma/lib/magma/test_util:logger_init_helper",
+    "//src/graphics/magma/lib/magma/util:macros",
+    "//src/graphics/magma/lib/magma/util:short_macros",
+    "//src/graphics/magma/lib/magma_client/test_util:magma_map_cpu",
+    "//src/graphics/magma/lib/magma_client/test_util:test_device_helper",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",

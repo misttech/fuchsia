@@ -12,7 +12,7 @@ rustc_library("lib") {
 
   deps = [
     "macro:config-macros",
-    "//src/connectivity/overnet/lib/hoist",
+    "//src/connectivity/overnet/lib/ascendd",
     "//src/developer/ffx/config/domain:lib",
     "//src/developer/ffx/lib/buildid:lib",
     "//src/developer/ffx/lib/errors:lib",
@@ -46,6 +46,7 @@ rustc_library("lib") {
   ]
 
   sources = [
+    "src/aliases.rs",
     "src/api/mod.rs",
     "src/api/query.rs",
     "src/api/value.rs",
@@ -68,6 +69,7 @@ rustc_library("lib") {
     "src/mapping/home.rs",
     "src/mapping/mod.rs",
     "src/mapping/runtime.rs",
+    "src/mapping/workspace.rs",
     "src/nested.rs",
     "src/paths.rs",
     "src/runtime.rs",

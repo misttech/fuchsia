@@ -22,6 +22,7 @@
 #include <lib/arch/intrin.h>
 #include <lib/counters.h>
 #include <lib/fit/defer.h>
+#include <lib/fxt/interned_string.h>
 #include <lib/heap.h>
 #include <lib/ktrace.h>
 #include <lib/lazy_init/lazy_init.h>
@@ -43,13 +44,13 @@
 #include <kernel/auto_preempt_disabler.h>
 #include <kernel/cpu.h>
 #include <kernel/dpc.h>
+#include <kernel/idle_power_thread.h>
 #include <kernel/lockdep.h>
 #include <kernel/mp.h>
 #include <kernel/percpu.h>
 #include <kernel/restricted.h>
 #include <kernel/scheduler.h>
 #include <kernel/stats.h>
-#include <kernel/thread.h>
 #include <kernel/thread_lock.h>
 #include <kernel/timer.h>
 #include <ktl/algorithm.h>
@@ -95,7 +96,7 @@ static lazy_init::LazyInit<Thread::List> thread_list;
 Thread::MigrateList Thread::migrate_list_;
 
 // master thread spinlock
-MonitoredSpinLock thread_lock __CPU_ALIGN_EXCLUSIVE;
+MonitoredSpinLock thread_lock __CPU_ALIGN_EXCLUSIVE{"thread_lock"_intern};
 
 // The global preempt disabled token singleton
 PreemptDisabledToken preempt_disabled_token;
@@ -213,6 +214,43 @@ static void free_thread_resources(Thread* t) {
   }
 }
 
+zx_status_t Thread::Current::Fault(Thread::Current::FaultType type, vaddr_t va, uint flags) {
+  if (is_kernel_address(va)) {
+    // Kernel addresses should never fault.
+    return ZX_ERR_NOT_FOUND;
+  }
+
+  // If this thread is a kernel thread, then it must be running a unit test that set `aspace_`
+  // explicitly, so use `aspace_` to resolve the fault.
+  //
+  // If this is a user thread in restricted mode, then `aspace_` is set to the restricted address
+  // space and should be used to resolve the fault.
+  //
+  // Otherwise, this is a user thread running in normal mode. Therefore, we must consult the
+  // process' aspace_at function to resolve the fault.
+  Thread* t = Thread::Current::Get();
+  VmAspace* containing_aspace;
+  bool in_restricted = t->restricted_state_ && t->restricted_state_->in_restricted();
+  if (!t->user_thread_ || in_restricted) {
+    containing_aspace = t->aspace_;
+  } else {
+    containing_aspace = t->user_thread_->process()->aspace_at(va);
+  }
+
+  // Call the appropriate fault function on the containing address space.
+  switch (type) {
+    case Thread::Current::FaultType::PageFault:
+      return containing_aspace->PageFault(va, flags);
+    case Thread::Current::FaultType::SoftFault:
+      return containing_aspace->SoftFault(va, flags);
+    case Thread::Current::FaultType::AccessedFault:
+      DEBUG_ASSERT(flags == 0);
+      return containing_aspace->AccessedFault(va);
+  }
+  // This should be unreachable, and is here mainly to satisfy GCC.
+  return ZX_ERR_NOT_FOUND;
+}
+
 void Thread::Trampoline() {
   // Release the incoming lock held across reschedule.
   Scheduler::LockHandoff();
@@ -325,6 +363,13 @@ void Thread::Resume() {
   if (state() == THREAD_DEATH) {
     // The thread is dead, resuming it is a no-op.
     return;
+  }
+
+  // Emit the thread metadata the first time the thread is resumed so that trace
+  // events written by this thread have the correct name and process association.
+  if (state() == THREAD_INITIAL) {
+    KTRACE_KERNEL_OBJECT("kernel:meta", tid(), ZX_OBJ_TYPE_THREAD, name(),
+                         ("process", ktrace::Koid(pid())));
   }
 
   // Clear the suspend signal in case there is a pending suspend
@@ -708,7 +753,7 @@ cpu_mask_t Thread::GetCpuAffinity() const {
   return scheduler_state_.hard_affinity();
 }
 
-void Thread::SetCpuAffinity(cpu_mask_t affinity) {
+cpu_mask_t Thread::SetCpuAffinity(cpu_mask_t affinity) {
   canary_.Assert();
   DEBUG_ASSERT_MSG(
       (affinity & mp_get_active_mask()) != 0,
@@ -717,22 +762,30 @@ void Thread::SetCpuAffinity(cpu_mask_t affinity) {
 
   Guard<MonitoredSpinLock, IrqSave> guard{ThreadLock::Get(), SOURCE_TAG};
 
-  // set the affinity mask
+  const cpu_mask_t previous_affinity = scheduler_state_.hard_affinity();
   scheduler_state_.hard_affinity_ = affinity;
 
-  // let the scheduler deal with it
-  Scheduler::Migrate(this);
+  // Migrate to a different CPU if the current is no longer in the affinity mask.
+  if ((affinity & cpu_num_to_mask(arch_curr_cpu_num())) == 0) {
+    Scheduler::Migrate(this);
+  }
+
+  return previous_affinity;
 }
 
-void Thread::SetSoftCpuAffinity(cpu_mask_t affinity) {
+cpu_mask_t Thread::SetSoftCpuAffinity(cpu_mask_t affinity) {
   canary_.Assert();
   Guard<MonitoredSpinLock, IrqSave> guard{ThreadLock::Get(), SOURCE_TAG};
 
-  // set the affinity mask
+  const cpu_mask_t previous_affinity = scheduler_state_.soft_affinity();
   scheduler_state_.soft_affinity_ = affinity;
 
-  // let the scheduler deal with it
-  Scheduler::Migrate(this);
+  // Migrate to a different CPU if the current is no longer in the affinity mask.
+  if ((affinity & cpu_num_to_mask(arch_curr_cpu_num())) == 0) {
+    Scheduler::Migrate(this);
+  }
+
+  return previous_affinity;
 }
 
 cpu_mask_t Thread::GetSoftCpuAffinity() const {
@@ -1414,7 +1467,7 @@ void thread_init_early() {
   percpu::InitializeBoot();
 
   // create a thread to cover the current running state
-  Thread* t = &percpu::Get(0).idle_thread;
+  Thread* t = &percpu::Get(0).idle_power_thread.thread();
   thread_construct_first(t, "bootstrap");
 }
 
@@ -1532,7 +1585,7 @@ void Thread::Current::BecomeIdle() {
   // We're now properly in the idle routine. Reenable interrupts and drop
   // into the idle routine, never return.
   arch_enable_ints();
-  arch_idle_thread_routine(nullptr);
+  IdlePowerThread::Run(nullptr);
 
   __UNREACHABLE;
 }
@@ -1556,6 +1609,11 @@ void Thread::SecondaryCpuInitEarly() {
   char name[16];
   snprintf(name, sizeof(name), "cpu_init %u", arch_curr_cpu_num());
   thread_construct_first(this, name);
+
+  // Emitting the thread metadata usually happens during Thread::Resume(), however, cpu_init threads
+  // are never resumed. Emit the metadata here so that the thread name is associated with its tid.
+  KTRACE_KERNEL_OBJECT("kernel:meta", this->tid(), ZX_OBJ_TYPE_THREAD, this->name(),
+                       ("process", ktrace::Koid(this->pid())));
 }
 
 /**
@@ -1566,9 +1624,26 @@ void thread_secondary_cpu_entry() {
 
   mp_set_curr_cpu_active(true);
 
-  percpu::GetCurrent().dpc_queue.InitForCurrentCpu();
+  percpu& current_cpu = percpu::GetCurrent();
 
-  // Remove ourselves from the Scheduler's bookkeeping
+  // Signal the idle/power thread to transition to active but don't wait for it, since it cannot run
+  // until this thread either blocks or exits below. The idle thread will run immediately upon exit
+  // and complete the transition, if necessary.
+  const IdlePowerThread::TransitionResult result =
+      current_cpu.idle_power_thread.TransitionOfflineToActive(ZX_TIME_INFINITE_PAST);
+
+  // The first time a secondary CPU becomes active after boot the CPU power thread is already in the
+  // active state. If the CPU power thread is not in its initial active state, it is being returned
+  // to active from offline and needs to be revived to resume its normal function.
+  if (result.starting_state != IdlePowerThread::State::Active) {
+    Thread::ReviveIdlePowerThread(arch_curr_cpu_num());
+  }
+
+  // CAREFUL: This must happen after the idle/power thread is revived, since creating the DPC thread
+  // can contend on VM locks and could cause this CPU to go idle.
+  current_cpu.dpc_queue.InitForCurrentCpu();
+
+  // Remove ourselves from the Scheduler's bookkeeping.
   {
     Guard<MonitoredSpinLock, IrqSave> guard{ThreadLock::Get(), SOURCE_TAG};
     Scheduler::RemoveFirstThread(Thread::Current::Get());
@@ -1576,7 +1651,7 @@ void thread_secondary_cpu_entry() {
 
   mp_signal_curr_cpu_ready();
 
-  // Exit from our bootstrap thread, and enter the scheduler on this cpu
+  // Exit from our bootstrap thread, and enter the scheduler on this cpu.
   Thread::Current::Exit(0);
 }
 
@@ -1589,8 +1664,9 @@ Thread* Thread::CreateIdleThread(cpu_num_t cpu_num) {
   char name[16];
   snprintf(name, sizeof(name), "idle %u", cpu_num);
 
-  Thread* t = Thread::CreateEtc(&percpu::Get(cpu_num).idle_thread, name, arch_idle_thread_routine,
-                                nullptr, SchedulerState::BaseProfile{IDLE_PRIORITY}, nullptr);
+  Thread* t = Thread::CreateEtc(&percpu::Get(cpu_num).idle_power_thread.thread(), name,
+                                IdlePowerThread::Run, nullptr,
+                                SchedulerState::BaseProfile{IDLE_PRIORITY}, nullptr);
   if (t == nullptr) {
     return t;
   }
@@ -1600,6 +1676,18 @@ Thread* Thread::CreateIdleThread(cpu_num_t cpu_num) {
   Guard<MonitoredSpinLock, IrqSave> guard{ThreadLock::Get(), SOURCE_TAG};
   Scheduler::UnblockIdle(t);
   return t;
+}
+
+void Thread::ReviveIdlePowerThread(cpu_num_t cpu_num) {
+  DEBUG_ASSERT(cpu_num != 0 && cpu_num < SMP_MAX_CPUS);
+  Thread* thread = &percpu::Get(cpu_num).idle_power_thread.thread();
+
+  DEBUG_ASSERT(thread->flags() & THREAD_FLAG_IDLE);
+  DEBUG_ASSERT(thread->scheduler_state().hard_affinity() == cpu_num_to_mask(cpu_num));
+  DEBUG_ASSERT(thread->task_state().entry() == IdlePowerThread::Run);
+
+  arch_thread_initialize(thread, reinterpret_cast<vaddr_t>(Thread::Trampoline));
+  thread->preemption_state().Reset();
 }
 
 /**

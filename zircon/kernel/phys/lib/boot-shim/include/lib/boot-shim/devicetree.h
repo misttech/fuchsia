@@ -28,10 +28,14 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <variant>
 
 #include <fbl/type_info.h>
 
@@ -53,8 +57,6 @@ class DevicetreeItemBase {
     return devicetree::ScanState::kActive;
   }
 
-  devicetree::ScanState OnScan() { return devicetree::ScanState::kActive; }
-
   void OnError(std::string_view error) {
     Log("Error on %s, %*s\n", fbl::TypeInfo<T>::Name(), static_cast<int>(error.length()),
         error.data());
@@ -63,6 +65,10 @@ class DevicetreeItemBase {
   devicetree::ScanState OnSubtree(const devicetree::NodePath&) {
     return devicetree::ScanState::kActive;
   }
+
+  devicetree::ScanState OnScan() { return devicetree::ScanState::kActive; }
+
+  void OnDone() {}
 
   template <typename Shim>
   void Init(const Shim& shim) {
@@ -84,6 +90,48 @@ class DevicetreeItemBase {
  private:
   FILE* log_;
   const char* shim_name_;
+};
+
+// Helper class for decoding interrupt cells and obtaining IRQ numbers.
+class DevicetreeIrqResolver {
+ public:
+  constexpr DevicetreeIrqResolver() = default;
+  explicit constexpr DevicetreeIrqResolver(devicetree::ByteView bytes) : interrupt_bytes_(bytes) {}
+
+  // Attempts to either resolve |interrupt-parent| property from the |decoder| hierarchy
+  // or find the |interrupt-controller| along the way.
+  //
+  // On success with a return value |true|, the |interrupt-controller| node has been resolved,
+  // On success with a return value |false|,the |interrupt-parent| was resolved but the
+  // |interrupt-controller| has not. On failure, a malformed node or property has been encountered
+  // and no further actions can be performed.
+  fit::result<fit::failed, bool> ResolveIrqController(const devicetree::PropertyDecoder& decoder);
+
+  // Obtains the IRQ number from the interrupt described by the |index|-th element in the interrupt
+  // property.
+  std::optional<uint32_t> GetIrqNumber(size_t index) const {
+    ZX_ASSERT(irq_resolver_);
+    const size_t entry_size = *interrupt_cells_ * sizeof(uint32_t);
+    return irq_resolver_(interrupt_bytes_.subspan(index * entry_size, entry_size),
+                         *interrupt_cells_);
+  }
+
+  // May only be called after resolving the IRQ Controller, see |ResolveIrqController()|.
+  size_t num_entries() const {
+    ZX_ASSERT(interrupt_cells_);
+    return interrupt_bytes_.size() / *interrupt_cells_;
+  }
+
+  // Returns whether additional scans are required to resolve the |interrupt_parent|.
+  // This is only meaningful if |ResolveIrqController| return |ScanState::kActive|.
+  bool NeedsInterruptParent() const { return !error_ && interrupt_parent_ && !irq_resolver_; }
+
+ private:
+  fit::inline_function<std::optional<uint32_t>(devicetree::ByteView, uint32_t)> irq_resolver_;
+  devicetree::ByteView interrupt_bytes_;
+  std::optional<uint32_t> interrupt_parent_;
+  std::optional<uint32_t> interrupt_cells_;
+  bool error_ = false;
 };
 
 // Decodes PSCI information from a devicetree and synthesizes a
@@ -115,6 +163,8 @@ class ArmDevicetreePsciItem
 
   devicetree::ScanState OnNode(const devicetree::NodePath& path,
                                const devicetree::PropertyDecoder& decoder);
+
+  devicetree::ScanState OnScan() { return devicetree::ScanState::kDone; }
 
  private:
   devicetree::ScanState HandlePsciNode(const devicetree::NodePath& path,
@@ -156,14 +206,18 @@ class ArmDevicetreeGicItem
 
   static constexpr auto kGicV3CompatibleDevices = cpp20::to_array<std::string_view>({"arm,gic-v3"});
 
+  // Boot Shim Item API.
+  template <typename Shim>
+  void Init(const Shim& shim) {
+    DevicetreeItemBase::Init(shim);
+    mmio_observer_ = &shim.mmio_observer();
+  }
+
   // Matcher API.
   devicetree::ScanState OnNode(const devicetree::NodePath& path,
                                const devicetree::PropertyDecoder& decoder);
   devicetree::ScanState OnSubtree(const devicetree::NodePath& path);
-
-  devicetree::ScanState OnScan() {
-    return matched_ ? devicetree::ScanState::kDone : devicetree::ScanState::kActive;
-  }
+  devicetree::ScanState OnScan() { return devicetree::ScanState::kDone; }
 
   // Boot Shim Item API.
   static constexpr zbi_header_t ItemHeader(const zbi_dcfg_arm_gic_v2_driver_t& driver) {
@@ -185,6 +239,7 @@ class ArmDevicetreeGicItem
   constexpr bool IsGicChildNode() const { return gic_ != nullptr; }
 
   const devicetree::Node* gic_ = nullptr;
+  const DevicetreeBootShimMmioObserver* mmio_observer_ = nullptr;
   bool matched_ = false;
 };
 
@@ -209,6 +264,9 @@ class DevicetreeChosenNodeMatcherBase
   // Matcher API.
   devicetree::ScanState OnNode(const devicetree::NodePath& path,
                                const devicetree::PropertyDecoder& decoder);
+  devicetree::ScanState OnScan() {
+    return found_chosen_ ? devicetree::ScanState::kActive : devicetree::ScanState::kDone;
+  }
 
   // Accessors
 
@@ -231,13 +289,21 @@ class DevicetreeChosenNodeMatcherBase
                                               const devicetree::PropertyDecoder& decoder);
   devicetree::ScanState HandleUartInterruptParent(const devicetree::PropertyDecoder& decoder);
 
+  // May only be called after |uart_irq_.ResolveIrqController| returns |fit::ok(true)|.
+  void UpdateUart() {
+    if (uart_emplacer_) {
+      uart_dcfg_.irq = uart_irq_.GetIrqNumber(0).value_or(0);
+      uart_emplacer_(uart_dcfg_);
+    }
+  }
+
   // Path to device node containing the stdout device (uart).
   bool found_chosen_ = false;
   std::string_view stdout_path_;
   std::optional<devicetree::ResolvedPath> resolved_stdout_;
   zbi_dcfg_simple_t uart_dcfg_ = {};
-  std::optional<uint32_t> uart_interrupt_parent_;
-  std::optional<devicetree::PropertyValue> uart_interrupts_;
+
+  DevicetreeIrqResolver uart_irq_;
 
   // Command line provided by the devicetree.
   std::string_view cmdline_;
@@ -260,9 +326,17 @@ class DevicetreeChosenNodeMatcher : public DevicetreeChosenNodeMatcherBase {
     };
   }
 
-  constexpr const auto& uart() const { return uart_; }
+  // We use std::nullopt over the null driver as a clearer indication that no
+  // UART was matched.
+  constexpr std::optional<AllUartDrivers> uart() const {
+    return std::holds_alternative<uart::null::Driver>(uart_.uart())
+               ? std::nullopt
+               : std::make_optional(uart_.uart());
+  }
 
  private:
+  // We use KernelDriver just for the MatchDevicetree() interface; the choice
+  // of I/O provider or synchronization policy is not actually material.
   uart::all::KernelDriver<uart::BasicIoProvider, uart::UnsynchronizedPolicy, AllUartDrivers> uart_;
 };
 
@@ -296,40 +370,12 @@ class DevicetreeMemoryMatcher : public DevicetreeItemBase<DevicetreeMemoryMatche
 
   devicetree::ScanState OnNode(const devicetree::NodePath& path,
                                const devicetree::PropertyDecoder& decoder);
-  devicetree::ScanState OnSubtree(const devicetree::NodePath& path);
   devicetree::ScanState OnScan() { return devicetree::ScanState::kDone; }
-
-  // Returns true if additional ranges from the devicetree are successfully appended.
-  // The matcher API constitutes only ranges encoded as device nodes within the devicetree.
-  // The additional ranges include those defined as 'memreserve'and the devicetree itself.
-  bool AppendAdditionalRanges(const devicetree::Devicetree& fdt) {
-    if (!AppendRange({
-            .addr = reinterpret_cast<uintptr_t>(fdt.fdt().data()),
-            .size = fdt.size_bytes(),
-            // The original DT Blob is copied into a ZBI ITEM, and the original range is discarded.
-            // It is only useful while the ZBI items are generated.
-            .type = memalloc::Type::kDevicetreeBlob,
-        })) {
-      return false;
-    }
-
-    for (auto [start, size] : fdt.memory_reservations()) {
-      if (!AppendRange(memalloc::Range{
-              .addr = start,
-              .size = size,
-              .type = memalloc::Type::kReserved,
-          })) {
-        return false;
-      }
-    }
-
-    return true;
-  }
 
   // Memory Item API for the bootshim to initialize the memory layout.
   // An empty set of memory ranges indicates an error while parsing the devicetree
   // memory ranges.
-  constexpr cpp20::span<const memalloc::Range> memory_ranges() const {
+  constexpr cpp20::span<const memalloc::Range> ranges() const {
     if (ranges_count_ <= ranges_.size()) {
       return cpp20::span{ranges_.data(), ranges_count_};
     }
@@ -352,7 +398,6 @@ class DevicetreeMemoryMatcher : public DevicetreeItemBase<DevicetreeMemoryMatche
   }
 
   bool AppendRangesFromReg(const devicetree::PropertyDecoder& decoder,
-                           const std::optional<devicetree::RangesProperty>& parent_range,
                            memalloc::Type memrange_type);
 
   devicetree::ScanState HandleMemoryNode(const devicetree::NodePath& path,
@@ -363,13 +408,84 @@ class DevicetreeMemoryMatcher : public DevicetreeItemBase<DevicetreeMemoryMatche
 
   cpp20::span<memalloc::Range> ranges_;
   size_t ranges_count_ = 0;
-
-  const devicetree::Node* reserved_memory_root_ = nullptr;
-
-  // Used to translate child node memory ranges.
-  std::optional<devicetree::RangesProperty> root_ranges_;
-  std::optional<devicetree::RangesProperty> reserved_memory_ranges_;
 };
+
+// This routine passes each memory reservation to a provided callback,
+// excluding the ranges that overlap with a select number of "exclusions". The
+// The callback should return `true` if it wishes to proceed with the iteration
+// and `false` if it wishes to short-circuit; in the latter case the routine
+// itself will return `false`. The exclusions should be non-overlapping and in
+// order.
+//
+// While contrary to the devicetree spec - which says that a memory reservation
+// is memory that should not be used by the kernel - we have encountered
+// bootloaders that do generate reservations for the devicetree blob and
+// ramdisk. This routine works around that to ensure that such ranges do not
+// end up accounted for as RESERVED.
+//
+// This logic is separate from any matcher as memory reservations are not
+// encoded within a devicetree blob's tree structure, and the ramdisk - one of
+// the intended exclusions - is the product itself of a 'chosen' matcher.
+template <typename Callback>
+bool ForEachDevicetreeMemoryReservation(const devicetree::Devicetree& fdt,
+                                        cpp20::span<const memalloc::Range> exclusions,
+                                        Callback&& cb) {
+  using Reservation = devicetree::MemoryReservation;
+  static_assert(std::is_invocable_r_v<bool, Callback, Reservation>);
+
+  ZX_ASSERT(std::is_sorted(exclusions.begin(), exclusions.end(), [](auto a, auto b) {
+    return (a.addr < b.addr) || (a.addr == b.addr && a.size < b.size);
+  }));
+  for (size_t i = 0; i + 1 < exclusions.size(); ++i) {
+    ZX_ASSERT_MSG(exclusions[i].end() <= exclusions[i + 1].addr,
+                  "Overlapping memory reservation exclusions: [%#" PRIx64 ", %#" PRIx64
+                  "), [%#" PRIx64 ", %#" PRIx64 ")",                 //
+                  exclusions[i].addr, exclusions[i].end(),           //
+                  exclusions[i + 1].addr, exclusions[i + 1].end());  //
+  }
+
+  auto filter_exclusions = [&](Reservation res) -> bool {
+    for (auto exclusion : exclusions) {
+      //              [ res )
+      // [ exclusion ) ...
+      if (exclusion.end() <= res.start) {
+        continue;
+      }
+      // [ res )
+      //         [ exclusion ) ...
+      if (res.end() <= exclusion.addr) {
+        return cb(res);
+      }
+
+      // [ res )
+      //     [ exclusion ) ...
+      //
+      // or
+      //
+      // [        res        )
+      //     [ exclusion ) ...
+      if (res.start < exclusion.addr) {
+        if (!cb(Reservation{
+                .start = res.start,
+                .size = exclusion.addr - res.start,
+            })) {
+          return false;
+        }
+      }
+      if (res.end() <= exclusion.end()) {  // First case.
+        return true;
+      }
+      res = {.start = exclusion.end(), .size = res.end() - exclusion.end()};
+    }
+    return cb(res);
+  };
+  for (auto res : fdt.memory_reservations()) {
+    if (!filter_exclusions(res)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 // This item parses the '/cpus' 'timebase-frequency property to generate a timer driver
 // configuration ZBI item.
@@ -385,6 +501,7 @@ class RiscvDevicetreeTimerItem
  public:
   devicetree::ScanState OnNode(const devicetree::NodePath& path,
                                const devicetree::PropertyDecoder& decoder);
+  devicetree::ScanState OnScan() { return devicetree::ScanState::kDone; }
 };
 
 // Parses interrupt controller node that is compatible with PLIC (Platform Level Interrupt
@@ -404,6 +521,7 @@ class RiscvDevicetreePlicItem
   // Matcher API.
   devicetree::ScanState OnNode(const devicetree::NodePath& path,
                                const devicetree::PropertyDecoder& decoder);
+  devicetree::ScanState OnScan() { return devicetree::ScanState::kDone; }
 
  private:
   devicetree::ScanState HandlePlicNode(const devicetree::NodePath& path,
@@ -434,6 +552,9 @@ class DevictreeCpuTopologyItem : public DevicetreeItemBase<DevictreeCpuTopologyI
   devicetree::ScanState OnNode(const devicetree::NodePath& path,
                                const devicetree::PropertyDecoder& decoder);
   devicetree::ScanState OnSubtree(const devicetree::NodePath& path);
+  devicetree::ScanState OnScan() {
+    return found_cpus_ ? devicetree::ScanState::kActive : devicetree::ScanState::kDone;
+  }
 
   size_t size_bytes() const { return ItemSize(node_element_count() * sizeof(zbi_topology_node_t)); }
 
@@ -446,15 +567,24 @@ class DevictreeCpuTopologyItem : public DevicetreeItemBase<DevictreeCpuTopologyI
     devicetree::Properties properties;
   };
 
-  // Callback used for setting up/updating processor information, that is dependent in
-  // architecture specific information.
+  // Callback used during matching for checking architecture-specific processor
+  // information. The returned boolean indicates whether matching should
+  // record the current CPU, false indicating that crucial information was
+  // missing or malformed. For finer-grained reporting, the expectation is that
+  // `this` can be captured to leverage the devicetree item's logging
+  // facilities.
+  using CheckArchCpuInfo = fit::inline_function<bool(const CpuEntry& entry)>;
+
+  // Callback used during AppendItems() for setting architecture-specific
+  // processor information.
   using SetArchCpuInfo =
       fit::inline_function<void(zbi_topology_processor_t&, const CpuEntry& entry)>;
 
   template <typename Shim>
-  void Init(const Shim& shim, SetArchCpuInfo arch_info_setter) {
+  void Init(const Shim& shim, CheckArchCpuInfo arch_info_checker, SetArchCpuInfo arch_info_setter) {
     DevicetreeItemBase<DevictreeCpuTopologyItem, 2>::Init(shim);
     allocator_ = &shim.allocator();
+    arch_info_checker_ = std::move(arch_info_checker);
     arch_info_setter_ = std::move(arch_info_setter);
   }
 
@@ -550,7 +680,9 @@ class DevictreeCpuTopologyItem : public DevicetreeItemBase<DevictreeCpuTopologyI
   // Allocation is environment specific, so we delegate that to a lambda.
   mutable const DevicetreeBootShimAllocator* allocator_ = nullptr;
 
+  CheckArchCpuInfo arch_info_checker_;
   SetArchCpuInfo arch_info_setter_;
+  bool found_cpus_ = false;
 };
 
 class RiscvDevictreeCpuTopologyItem : public DevictreeCpuTopologyItem {
@@ -558,13 +690,16 @@ class RiscvDevictreeCpuTopologyItem : public DevictreeCpuTopologyItem {
   template <typename Shim>
   void Init(Shim& shim) {
     DevictreeCpuTopologyItem::Init(
-        shim, [this](zbi_topology_processor_t& node, const CpuEntry& cpu_entry) -> void {
+        shim,  //
+        [](const CpuEntry&) {
+          // TODO(fxbug.dev/124336): Skip if "riscv,isa" is missing.
+          return true;
+        },
+        [this](zbi_topology_processor_t& node, const CpuEntry& cpu_entry) -> void {
           node.architecture_info.discriminant = ZBI_TOPOLOGY_ARCHITECTURE_INFO_RISCV64;
           devicetree::PropertyDecoder decoder(cpu_entry.properties);
           auto reg = decoder.FindAndDecodeProperty<&devicetree::PropertyValue::AsUint32>("reg");
-          if (!reg) {
-            return;
-          }
+          ZX_DEBUG_ASSERT(reg);  // Validated in the arch info checker.
           node.architecture_info.riscv64.hart_id = *reg;
           if (*reg == boot_hart_id_) {
             node.flags |= ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY;
@@ -584,21 +719,44 @@ class ArmDevictreeCpuTopologyItem : public DevictreeCpuTopologyItem {
   template <typename Shim>
   void Init(Shim& shim) {
     DevictreeCpuTopologyItem::Init(
-        shim, [this](zbi_topology_processor_t& node, const CpuEntry& cpu_entry) -> void {
-          node.architecture_info.discriminant = ZBI_TOPOLOGY_ARCHITECTURE_INFO_ARM64;
+        shim,  //
+        [this](const CpuEntry& cpu_entry) {
           devicetree::PropertyDecoder decoder(cpu_entry.properties);
-
           auto reg_prop = decoder.FindProperty("reg");
           if (!reg_prop) {
             OnError("Could not find 'reg' property in 'cpu' node.");
-            return;
+            return false;
           }
-
           auto reg = devicetree::RegProperty::Create(1, 0, reg_prop->AsBytes());
           if (!reg) {
             OnError("Could not parse 'reg' property in 'cpu' node.");
-            return;
+            return false;
           }
+          if (reg->size() == 0 || reg->size() > 2) {
+            OnError("'reg' property in 'cpu' node contains an unexpected number of cells.");
+            return false;
+          }
+          if (!(*reg)[0].address()) {
+            OnError("Could not parse first cell of 'reg' property in 'cpu' node.");
+            return false;
+          }
+          if (reg->size() == 2 && !(*reg)[1].address()) {
+            OnError("Could not parse second cell of 'reg' property in 'cpu' node.");
+            return false;
+          }
+          return true;
+        },
+        [](zbi_topology_processor_t& node, const CpuEntry& cpu_entry) -> void {
+          node.architecture_info.discriminant = ZBI_TOPOLOGY_ARCHITECTURE_INFO_ARM64;
+          devicetree::PropertyDecoder decoder(cpu_entry.properties);
+
+          // Validations of debug asserts below were made in the arch info
+          // checker.
+          auto reg_prop = decoder.FindProperty("reg");
+          ZX_DEBUG_ASSERT(reg_prop);
+          auto reg = devicetree::RegProperty::Create(1, 0, reg_prop->AsBytes());
+          ZX_DEBUG_ASSERT(reg);
+          ZX_DEBUG_ASSERT(reg->size() == 1 || reg->size() == 2);
 
           auto set_affs = [&node](uint64_t cell) {
             // AFF 0
@@ -620,16 +778,11 @@ class ArmDevictreeCpuTopologyItem : public DevictreeCpuTopologyItem {
             }
           };
 
-          if (reg->size() == 0 || reg->size() > 2) {
-            OnError("'reg' property in 'cpu' node contains an unexpected number of cells.");
-            return;
-          }
-
           auto cell_0 = (*reg)[0].address();
-          if (!cell_0) {
-            OnError("Could not parse first cell of 'reg' property in 'cpu' node.");
-            return;
-          }
+          ZX_DEBUG_ASSERT(cell_0);  // Validated in the arch info checker.
+
+          node.architecture_info.arm64.gic_id =
+              static_cast<uint8_t>(node.logical_ids[node.logical_id_count - 1]);
 
           // One cell.
           // The reg cell bits [23:0] must be set to bits [23:0] of MPIDR_EL1.
@@ -644,15 +797,35 @@ class ArmDevictreeCpuTopologyItem : public DevictreeCpuTopologyItem {
           // The first reg cell bits [7:0] must be set to  bits [39:32] of MPIDR_EL1.
           // The second reg cell bits [23:0] must be set to bits [23:0] of MPIDR_EL1.
           auto cell_1 = (*reg)[1].address();
-          if (!cell_1) {
-            OnError("Could not parse second cell of 'reg' property in 'cpu' node.");
-            return;
-          }
+          ZX_DEBUG_ASSERT(cell_1);  // Validated in the arch info checker.
+
           set_affs(*cell_1);
           node.architecture_info.arm64.cluster_3_id = *cell_0 & 0xFF;
           set_boot_cpu();
         });
   }
+};
+
+// See https://www.kernel.org/doc/Documentation/devicetree/bindings/arm/arch_timer.txt
+class ArmDevicetreeTimerItem
+    : public DevicetreeItemBase<ArmDevicetreeTimerItem, 2>,
+      public SingleOptionalItem<zbi_dcfg_arm_generic_timer_driver_t, ZBI_TYPE_KERNEL_DRIVER,
+                                ZBI_KERNEL_DRIVER_ARM_GENERIC_TIMER> {
+ public:
+  static constexpr auto kCompatibleDevices =
+      cpp20::to_array({"arm,armv7-timer", "arm,armv8-timer"});
+
+  devicetree::ScanState OnNode(const devicetree::NodePath& path,
+                               const devicetree::PropertyDecoder& decoder);
+  devicetree::ScanState OnScan() {
+    return found_timer_ ? devicetree::ScanState::kActive : devicetree::ScanState::kDone;
+  }
+
+ private:
+  bool found_timer_ = false;
+  DevicetreeIrqResolver irq_;
+  // Optional, maps to frequency override.
+  std::optional<uint64_t> frequency_;
 };
 
 // A flat Devicetree ZBI Item.

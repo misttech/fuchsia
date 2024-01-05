@@ -4,12 +4,12 @@
 
 import("//build/assembly/assembly_input_bundle.gni")
 import("//build/assembly/bootfs_files_for_assembly.gni")
-import("//build/assembly/generated_image_assembly_config.gni")
 import("//build/assembly/package_manifests_list.gni")
+import("//build/config.gni")
 import("//build/dist/distribution_manifest.gni")
+import("//build/info/info.gni")
 import("//build/python/python_action.gni")
-import("//src/storage/fshost/fshost.gni")
-import("//src/storage/fshost/generated_fshost_config.gni")
+import("//build/zbi/kernel_cmdline.gni")
 
 # Create a "legacy" assembly input bundle from an image assembly configuration,
 # so that product assembly can use it to produce a matching image assembly
@@ -22,17 +22,6 @@ import("//src/storage/fshost/generated_fshost_config.gni")
 #
 #   bundle_name [optional; default: legacy]
 #     [string] A different name for the bundle, if not the name of the target.
-#
-#   kernel_zbi (optional; default: "//zircon/kernel")
-#     [label] Label of the zircon kernel to use.  This needs to use the `images`
-#     metadata key to provide the `path` and `name` fields (see the
-#     build_api_module("images")` in `//BUILD.gn`).  The default value is most likely
-#     the correct one.  This should only be overridden in special circumstances.
-#
-#   kernel_image_name (optional; default: "kernel")
-#     [string] The image name of the 'kernel_zbi' as seen in images.json. This is used
-#     as an override, that in conjunction with 'kernel_zbi' allows selecting a custom zbi
-#     image as the kernel zbi.
 #
 #   bundles_dir [optional; default: target_out_dir]
 #     [GN file path] path to a dir to use instead of $target_out_dir as the
@@ -59,9 +48,6 @@ import("//src/storage/fshost/generated_fshost_config.gni")
 #   core_realm_definition [optional]
 #     [label] The GN label of a `core_realm_definition()` template
 #
-#   use_assembly_fshost [optional; default: false]
-#     [boolean] Whether to build the fshost component
-#
 #   fshost_config [optional; default: {}]
 #     [scope] Arguments to add to fshost's configuration. These arguments come
 #     before other arguments set by build args.
@@ -78,9 +64,6 @@ import("//src/storage/fshost/generated_fshost_config.gni")
 #
 #   base_packages [required]
 #     [list of labels] The set of base packages.
-#
-#   meta_packages [required]
-#     [list of labels] The set of meta packages.
 #
 #   cache_packages [required]
 #     [list of labels] The set of cache packages.
@@ -101,7 +84,6 @@ template("legacy_assembly_input_bundle") {
 
   assert(defined(invoker.supports_blobs), "Need to define supports_blobs")
   assert(defined(invoker.base_packages), "Need to define base_packages")
-  assert(defined(invoker.meta_packages), "Need to define meta_packages")
   assert(defined(invoker.cache_packages), "Need to define cache_packages")
   assert(defined(invoker.universe_packages), "Need to define universe_packages")
   assert(defined(invoker.additional_boot_args),
@@ -116,14 +98,9 @@ template("legacy_assembly_input_bundle") {
                            "create_package_archive",
                          ])
 
-  kernel_zbi = "//zircon/kernel"
-  if (defined(invoker.kernel_zbi)) {
-    kernel_zbi = invoker.kernel_zbi
-  }
-
-  kernel_name = "kernel"
-  if (defined(invoker.kernel_image_name)) {
-    kernel_name = invoker.kernel_image_name
+  bootfs_package_labels = []
+  if (defined(invoker.bootfs_package_labels)) {
+    bootfs_package_labels += invoker.bootfs_package_labels
   }
 
   system_image_deps = []
@@ -166,18 +143,19 @@ template("legacy_assembly_input_bundle") {
     _core_realm_definition = invoker.core_realm_definition
   }
 
-  use_assembly_fshost =
-      defined(invoker.use_assembly_fshost) && invoker.use_assembly_fshost
-
   labels = {
-    image_assembly_config = "${target_name}.generated_image_assembly_config"
+    base_package_list = "${target_name}_package_manifest_list.base"
+    cache_package_list = "${target_name}_package_manifest_list.cache"
+    extra_base_list = "${target_name}_package_manifest_list.extra_base"
+    extra_base_deps_list =
+        "${target_name}_package_manifest_list.extra_base_deps"
+    bootfs_package_list = "${target_name}_bootfs_package_list"
+    kernel_cmdline_args = "${target_name}_kernel_cmdline_args"
+    boot_args = "${target_name}_boot_args"
+    config_data = "${target_name}.config-data"
+    config_data_entries = "${config_data}_config_package_entries"
     bootfs_files = "${target_name}.bootfs_files"
     bootfs_files_package = "${target_name}.bootfs_files_package"
-
-    # Compute the assembly config and config_data labels that are generated within
-    # generated_image_assembly_config()
-    assemble_system_config_data =
-        "${image_assembly_config}.config-data_config_package_entries"
 
     # The AIB itself
     assembly_input_bundle = "$target_name.bundle"
@@ -202,11 +180,19 @@ template("legacy_assembly_input_bundle") {
   }
 
   files = {
-    image_assembly_config =
-        "$target_out_dir/${labels.image_assembly_config}.json"
+    base_package_list = "$target_out_dir/package_lists/${target_name}_base"
+    cache_package_list = "$target_out_dir/package_lists/${target_name}_cache"
+    extra_base_list = "$target_out_dir/package_lists/${target_name}_extra_base"
+    extra_base_deps_list =
+        "$target_out_dir/package_lists/${target_name}_extra_base_deps"
+    bootfs_package_list = "$target_out_dir/package_lists/${target_name}_bootfs"
+    kernel_cmdline_args =
+        "$target_out_dir/${target_name}_kernel_cmdline_args.json"
+    boot_args = "$target_out_dir/${target_name}_boot_args"
     bootfs_files_package =
         "$target_out_dir/${labels.bootfs_files_package}/package_manifest.json"
-    assemble_system_config_data_entries = "$target_out_dir/${labels.image_assembly_config}.config-data_config_package_entries"
+    assemble_system_config_data_entries =
+        "$target_out_dir/${labels.config_data_entries}"
 
     # Outputs
 
@@ -317,7 +303,6 @@ template("legacy_assembly_input_bundle") {
       "//src/intl/intl_services/meta/intl.core_shard.base.cml",
       "//src/media/audio/audio_core/meta/audio_core.core_shard.base.cml",
       "//src/settings/service/meta/setui_service_base.core_shard.cml",
-      "//src/testing/sl4f/meta/sl4f.core_shard.cml",
       "//src/testing/sl4f/meta/sl4f_base.core_shard.cml",
       "//src/recovery/system/meta/core_shards/base.shard.cml",
       "//src/recovery/system/meta/core_shards/ui.shard.cml",
@@ -398,117 +383,138 @@ template("legacy_assembly_input_bundle") {
     }
   }
 
-  component_id_index_dep = []
-  component_id_index_config_data_dep = []
-  include_component_index = defined(invoker.include_component_id_index) &&
-                            invoker.include_component_id_index
-  if (include_component_index) {
-    # For details, see //docs/development/components/component_id_index.md#system-assembly
-    component_id_index_config("${target_name}.component_id_index_config") {
-      forward_variables_from(invoker,
-                             [
-                               "testonly",
-                               "visibility",
-                             ])
-
-      # collect and merge component ID indices from the base set.
-      deps = invoker.base_packages
-
-      metadata = {
-        package_barrier = []
-      }
-    }
-
-    component_id_index_dep = [ ":${target_name}.component_id_index_config" ]
-
-    # TODO(fxbug.dev/130900): Remove this dep once possible
-    component_id_index_config_data_dep =
-        [ ":${target_name}.component_id_index_config-config-data" ]
-  } else {
-    not_needed([ "component_id_index_config_data_dep" ])
-  }
-
   create_package_archive =
       defined(invoker.create_package_archive) && invoker.create_package_archive
   create_package = create_package_archive ||
                    (defined(invoker.create_package) && invoker.create_package)
 
-  generated_image_assembly_config(labels.image_assembly_config) {
+  # Construct a list of Base packages.
+  package_manifests_list(labels.base_package_list) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    filename = files.base_package_list
+
+    # Don't include driver packages
+    additional_walk_keys = [ "driver_package_barrier" ]
+    if (invoker.supports_blobs) {
+      deps = invoker.base_packages
+    }
+  }
+
+  # Construct a list of Cache packages.
+  package_manifests_list(labels.cache_package_list) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    filename = files.cache_package_list
+    if (invoker.supports_blobs) {
+      deps = invoker.cache_packages
+    }
+  }
+
+  # Construct a list of extra packages whose files should be added to the Base Package.
+  package_manifests_list(labels.extra_base_list) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    filename = files.extra_base_list
+    deps = system_image_deps
+  }
+
+  # Find all the extra system dependencies in the Base packages list.
+  # This list mentions several extra packages to add to the Base Package.
+  generated_file(labels.extra_base_deps_list) {
     forward_variables_from(invoker,
                            [
                              "testonly",
                              "visibility",
                            ])
 
-    kernel_image = kernel_zbi
-    kernel_image_name = kernel_name
-
-    base_packages = []
-    if (invoker.supports_blobs) {
-      base_packages = invoker.base_packages
-      base_packages += invoker.meta_packages
-      cache_packages = invoker.cache_packages
-    } else {
-      not_needed(invoker, [ "meta_packages" ])
-    }
-
-    include_config_data = _include_config_data
-    config_data_packages =
-        invoker.base_packages + invoker.universe_packages +
-        invoker.cache_packages + component_id_index_config_data_dep
-
-    boot_args = invoker.additional_boot_args
-
-    # Search for BootFS packages in these targets.
-    bootfs_package_labels = []
-    if (defined(invoker.bootfs_package_labels)) {
-      bootfs_package_labels += invoker.bootfs_package_labels
-    }
-
-    extra_base_deps = system_image_deps
-
-    # Search for the Kernel cmdline in the BootFS dependencies.
-    cmdline_deps = invoker.bootfs_labels
-    if (defined(invoker.cmdline_deps)) {
-      cmdline_deps += invoker.cmdline_deps
-    }
-    if (defined(invoker.cmdline)) {
-      cmdline = invoker.cmdline
-    }
+    data_keys = [ "system_image_extra_package_manifest" ]
+    walk_keys = [ "system_image_extra_package_manifest_barrier" ]
+    outputs = [ files.extra_base_deps_list ]
+    output_conversion = "json"
+    deps = invoker.base_packages
   }
 
-  # Compile the fshost component and configuration needed for this assembly
-  fshost_component_and_config(labels.fshost) {
-    # THIS CANNOT BE MARKED TESTONLY, EVEN IF THE ASSEMBLY IS.  This template
-    # changes behavior to create a non-bootable fshost if testonly is set to
-    # true.
-    testonly = false
+  # Construct a list of bootfs packages.
+  # Ignores any fuchsia_driver_packages and fuchsia_shell_packages
+  package_manifests_list(labels.bootfs_package_list) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    filename = files.bootfs_package_list
+    deps = bootfs_package_labels
+  }
 
-    # Correct the component name since the target_name is per-image.
-    component_name = "fshost"
-
-    # This is picked up by the `cmc_merge()` within `fshost_cml()`, through its
-    # use of foward_variables_from(invoker, ["output_name" ...]).
-    output_name = files.fshost_merged_cml
-
-    options = {
-      # Use the defaults from the build args set in generated_fshost_config.gni
-      data_filesystem_format = data_filesystem_format
-      use_disk_migration = use_disk_migration
-
-      if (defined(invoker.fshost_config)) {
-        # Override with anything passed from `fshost_config`
-        forward_variables_from(invoker.fshost_config, "*")
-      }
-
-      # Always set ramdisk_image if the assmebled ZBI contains a ramdisk.
-      if (defined(invoker.ramdisk_in_zbi) && invoker.ramdisk_in_zbi) {
-        ramdisk_image = true
-      }
-
-      fxfs_blob = fxfs_blob
-      fxfs_vmex = fxfs_blob
+  # Accumulate the list of cmdline dependencies by first taking the
+  # directly-specified arguments, creating a new metadata target, and adding it
+  # to the list of all metadata targets, then second walking the metadata to
+  # construct the final list.
+  cmdline_deps = invoker.bootfs_labels
+  if (defined(invoker.cmdline)) {
+    kernel_cmdline("${target_name}_extra_cmdline") {
+      args = invoker.cmdline
     }
+    cmdline_deps += [ ":${target_name}_extra_cmdline" ]
+  }
+  if (defined(invoker.cmdline_deps)) {
+    cmdline_deps += invoker.cmdline_deps
+  }
+
+  generated_file(labels.kernel_cmdline_args) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+
+    data_keys = [ "zbi_config_entry" ]
+    walk_keys = [ "zbi_input_barrier" ]
+    outputs = [ files.kernel_cmdline_args ]
+    output_conversion = "json"
+    deps = cmdline_deps
+  }
+
+  # Create a list of boot arguments to add to additional_boot_args.
+  generated_file(labels.boot_args) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+
+    outputs = [ files.boot_args ]
+    output_conversion = "json"
+    contents = invoker.additional_boot_args
+  }
+
+  if (_include_config_data) {
+    config_package(labels.config_data) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      package_name = "config-data"
+      deps = invoker.base_packages + invoker.universe_packages +
+             invoker.cache_packages
+    }
+  } else {
+    not_needed(invoker,
+               [
+                 "cache_packages",
+                 "universe_packages",
+               ])
   }
 
   # Search for BootFS files in these targets.
@@ -518,10 +524,7 @@ template("legacy_assembly_input_bundle") {
                              "testonly",
                              "visibility",
                            ])
-    deps = invoker.bootfs_labels + component_id_index_dep + [ kernel_zbi ]
-    if (!use_assembly_fshost) {
-      deps += [ ":${labels.fshost}" ]
-    }
+    deps = invoker.bootfs_labels
   }
 
   fuchsia_package(labels.bootfs_files_package) {
@@ -565,8 +568,22 @@ template("legacy_assembly_input_bundle") {
     outputs = [ files.assembly_input_bundle_config ]
     depfile = files.assembly_input_bundle_depfile
     args = [
-      "--image-assembly-config",
-      rebase_path(files.image_assembly_config, root_build_dir),
+      "--base-packages-list",
+      rebase_path(files.base_package_list, root_build_dir),
+      "--cache-packages-list",
+      rebase_path(files.cache_package_list, root_build_dir),
+      "--extra-files-packages-list",
+      rebase_path(files.extra_base_list, root_build_dir),
+      "--extra-deps-files-packages-list",
+      rebase_path(files.extra_base_deps_list, root_build_dir),
+      "--bootfs-packages-list",
+      rebase_path(files.bootfs_package_list, root_build_dir),
+      "--kernel-cmdline",
+      rebase_path(files.kernel_cmdline_args, root_build_dir),
+      "--kernel-clock-backstop",
+      rebase_path(build_info_files.minimum_utc_stamp, root_build_dir),
+      "--boot-args",
+      rebase_path(files.boot_args, root_build_dir),
       "--outdir",
       rebase_path(files.assembly_input_bundle_dir, root_build_dir),
       "--depfile",
@@ -594,9 +611,16 @@ template("legacy_assembly_input_bundle") {
     }
 
     inputs = [
+      files.base_package_list,
+      files.cache_package_list,
+      files.extra_base_list,
+      files.extra_base_deps_list,
+      files.bootfs_package_list,
+      build_info_files.minimum_utc_stamp,
+      files.kernel_cmdline_args,
+      files.boot_args,
       files.base_driver_package_list,
       files.driver_package_component_files,
-      files.image_assembly_config,
       files.bootfs_files_package,
       files.boot_driver_package_list,
       files.boot_driver_package_component_files,
@@ -604,11 +628,18 @@ template("legacy_assembly_input_bundle") {
 
     deps = [
       ":${labels.base_driver_package_list}",
+      ":${labels.base_package_list}",
+      ":${labels.boot_args}",
       ":${labels.boot_driver_package_component_files}",
       ":${labels.boot_driver_package_list}",
       ":${labels.bootfs_files_package}",
+      ":${labels.bootfs_package_list}",
+      ":${labels.cache_package_list}",
       ":${labels.driver_package_component_files}",
-      ":${labels.image_assembly_config}",
+      ":${labels.extra_base_deps_list}",
+      ":${labels.extra_base_list}",
+      ":${labels.kernel_cmdline_args}",
+      "//build/info:build_info_files",
     ]
 
     if (_shell_command_packages != []) {
@@ -644,7 +675,7 @@ template("legacy_assembly_input_bundle") {
         rebase_path(files.assemble_system_config_data_entries, root_build_dir),
       ]
       inputs += [ files.assemble_system_config_data_entries ]
-      deps += [ ":${labels.assemble_system_config_data}" ]
+      deps += [ ":${labels.config_data_entries}" ]
     }
 
     metadata = {
@@ -653,6 +684,7 @@ template("legacy_assembly_input_bundle") {
       package_barrier = []
       config_package_barrier = []
       distribution_entries_barrier = []
+      assembly_input_archives_barrier = []
     }
   }
 

@@ -17,7 +17,7 @@ use rand::Rng as _;
 
 use crate::{
     context::{RngContext, TimerContext, TimerHandler},
-    ip::{AnyDevice, DeviceIdContext},
+    device::{AnyDevice, DeviceIdContext},
 };
 
 /// Amount of time to wait after sending `MAX_RTR_SOLICITATIONS` Router
@@ -55,7 +55,7 @@ impl<DeviceId> RsTimerId<DeviceId> {
 }
 
 /// The execution context for router solicitation.
-pub(super) trait RsContext<C>: DeviceIdContext<AnyDevice> {
+pub(super) trait RsContext<BC>: DeviceIdContext<AnyDevice> {
     /// A link-layer address.
     type LinkLayerAddr: AsRef<[u8]>;
 
@@ -94,35 +94,38 @@ pub(super) trait RsContext<C>: DeviceIdContext<AnyDevice> {
         F: FnOnce(Option<UnicastAddr<Ipv6Addr>>) -> S,
     >(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         message: RouterSolicitation,
         body: F,
     ) -> Result<(), S>;
 }
 
-/// The non-synchronized execution context for router solicitation.
-pub(super) trait RsNonSyncContext<DeviceId>:
+/// The bindings execution context for router solicitation.
+pub(super) trait RsBindingsContext<DeviceId>:
     RngContext + TimerContext<RsTimerId<DeviceId>>
 {
 }
-impl<DeviceId, C: RngContext + TimerContext<RsTimerId<DeviceId>>> RsNonSyncContext<DeviceId> for C {}
+impl<DeviceId, BC: RngContext + TimerContext<RsTimerId<DeviceId>>> RsBindingsContext<DeviceId>
+    for BC
+{
+}
 
 /// An implementation of Router Solicitation.
-pub(crate) trait RsHandler<C>:
-    DeviceIdContext<AnyDevice> + TimerHandler<C, RsTimerId<Self::DeviceId>>
+pub(crate) trait RsHandler<BC>:
+    DeviceIdContext<AnyDevice> + TimerHandler<BC, RsTimerId<Self::DeviceId>>
 {
     /// Starts router solicitation.
-    fn start_router_solicitation(&mut self, ctx: &mut C, device_id: &Self::DeviceId);
+    fn start_router_solicitation(&mut self, bindings_ctx: &mut BC, device_id: &Self::DeviceId);
 
     /// Stops router solicitation.
     ///
     /// Does nothing if router solicitaiton is not being performed
-    fn stop_router_solicitation(&mut self, ctx: &mut C, device_id: &Self::DeviceId);
+    fn stop_router_solicitation(&mut self, bindings_ctx: &mut BC, device_id: &Self::DeviceId);
 }
 
-impl<C: RsNonSyncContext<SC::DeviceId>, SC: RsContext<C>> RsHandler<C> for SC {
-    fn start_router_solicitation(&mut self, ctx: &mut C, device_id: &Self::DeviceId) {
+impl<BC: RsBindingsContext<CC::DeviceId>, CC: RsContext<BC>> RsHandler<BC> for CC {
+    fn start_router_solicitation(&mut self, bindings_ctx: &mut BC, device_id: &Self::DeviceId) {
         let remaining = self.with_rs_remaining_mut_and_max(device_id, |remaining, max| {
             *remaining = max;
             max
@@ -135,40 +138,46 @@ impl<C: RsNonSyncContext<SC::DeviceId>, SC: RsContext<C>> RsHandler<C> for SC {
                 // random amount of time between 0 and `MAX_RTR_SOLICITATION_DELAY` to
                 // alleviate congestion when many hosts start up on a link at the same
                 // time.
-                let delay = ctx.rng().gen_range(Duration::new(0, 0)..MAX_RTR_SOLICITATION_DELAY);
+                let delay =
+                    bindings_ctx.rng().gen_range(Duration::new(0, 0)..MAX_RTR_SOLICITATION_DELAY);
                 assert_eq!(
-                    ctx.schedule_timer(delay, RsTimerId { device_id: device_id.clone() },),
+                    bindings_ctx.schedule_timer(delay, RsTimerId { device_id: device_id.clone() },),
                     None
                 );
             }
         }
     }
 
-    fn stop_router_solicitation(&mut self, ctx: &mut C, device_id: &Self::DeviceId) {
-        let _: Option<C::Instant> = ctx.cancel_timer(RsTimerId { device_id: device_id.clone() });
+    fn stop_router_solicitation(&mut self, bindings_ctx: &mut BC, device_id: &Self::DeviceId) {
+        let _: Option<BC::Instant> =
+            bindings_ctx.cancel_timer(RsTimerId { device_id: device_id.clone() });
     }
 }
 
-impl<C: RsNonSyncContext<SC::DeviceId>, SC: RsContext<C>> TimerHandler<C, RsTimerId<SC::DeviceId>>
-    for SC
+impl<BC: RsBindingsContext<CC::DeviceId>, CC: RsContext<BC>>
+    TimerHandler<BC, RsTimerId<CC::DeviceId>> for CC
 {
-    fn handle_timer(&mut self, ctx: &mut C, RsTimerId { device_id }: RsTimerId<SC::DeviceId>) {
-        do_router_solicitation(self, ctx, &device_id)
+    fn handle_timer(
+        &mut self,
+        bindings_ctx: &mut BC,
+        RsTimerId { device_id }: RsTimerId<CC::DeviceId>,
+    ) {
+        do_router_solicitation(self, bindings_ctx, &device_id)
     }
 }
 
 /// Solicit routers once and schedule next message.
-fn do_router_solicitation<C: RsNonSyncContext<SC::DeviceId>, SC: RsContext<C>>(
-    sync_ctx: &mut SC,
-    ctx: &mut C,
-    device_id: &SC::DeviceId,
+fn do_router_solicitation<BC: RsBindingsContext<CC::DeviceId>, CC: RsContext<BC>>(
+    core_ctx: &mut CC,
+    bindings_ctx: &mut BC,
+    device_id: &CC::DeviceId,
 ) {
-    let src_ll = sync_ctx.get_link_layer_addr_bytes(device_id);
+    let src_ll = core_ctx.get_link_layer_addr_bytes(device_id);
 
     // TODO(https://fxbug.dev/85055): Either panic or guarantee that this error
     // can't happen statically.
     let _: Result<(), _> =
-        sync_ctx.send_rs_packet(ctx, device_id, RouterSolicitation::default(), |src_ip| {
+        core_ctx.send_rs_packet(bindings_ctx, device_id, RouterSolicitation::default(), |src_ip| {
             // As per RFC 4861 section 4.1,
             //
             //   Valid Options:
@@ -192,7 +201,7 @@ fn do_router_solicitation<C: RsNonSyncContext<SC::DeviceId>, SC: RsContext<C>>(
             })
         });
 
-    sync_ctx.with_rs_remaining_mut(device_id, |remaining| {
+    core_ctx.with_rs_remaining_mut(device_id, |remaining| {
         *remaining = NonZeroU8::new(
             remaining
                 .expect("should only send a router solicitations when at least one is remaining")
@@ -204,7 +213,7 @@ fn do_router_solicitation<C: RsNonSyncContext<SC::DeviceId>, SC: RsContext<C>>(
             None => {}
             Some(NonZeroU8 { .. }) => {
                 assert_eq!(
-                    ctx.schedule_timer(
+                    bindings_ctx.schedule_timer(
                         RTR_SOLICITATION_INTERVAL,
                         RsTimerId { device_id: device_id.clone() },
                     ),
@@ -226,7 +235,7 @@ mod tests {
     use super::*;
     use crate::{
         context::{
-            testutil::{FakeCtx, FakeNonSyncCtx, FakeSyncCtx, FakeTimerCtxExt as _},
+            testutil::{FakeBindingsCtx, FakeCoreCtx, FakeCtx, FakeTimerCtxExt as _},
             InstantContext as _, SendFrameContext as _,
         },
         device::testutil::FakeDeviceId,
@@ -252,10 +261,10 @@ mod tests {
         message: RouterSolicitation,
     }
 
-    type FakeCtxImpl = FakeSyncCtx<FakeRsContext, RsMessageMeta, FakeDeviceId>;
-    type FakeNonSyncCtxImpl = FakeNonSyncCtx<RsTimerId<FakeDeviceId>, (), ()>;
+    type FakeCoreCtxImpl = FakeCoreCtx<FakeRsContext, RsMessageMeta, FakeDeviceId>;
+    type FakeBindingsCtxImpl = FakeBindingsCtx<RsTimerId<FakeDeviceId>, (), ()>;
 
-    impl RsContext<FakeNonSyncCtxImpl> for FakeCtxImpl {
+    impl RsContext<FakeBindingsCtxImpl> for FakeCoreCtxImpl {
         type LinkLayerAddr = Vec<u8>;
 
         fn with_rs_remaining_mut_and_max<
@@ -292,7 +301,7 @@ mod tests {
             F: FnOnce(Option<UnicastAddr<Ipv6Addr>>) -> S,
         >(
             &mut self,
-            ctx: &mut FakeNonSyncCtxImpl,
+            bindings_ctx: &mut FakeBindingsCtxImpl,
             &FakeDeviceId: &FakeDeviceId,
             message: RouterSolicitation,
             body: F,
@@ -304,7 +313,7 @@ mod tests {
                 link_layer_bytes: _,
                 ip_device_id_ctx: _,
             } = self.get_ref();
-            self.send_frame(ctx, RsMessageMeta { message }, body(*source_address))
+            self.send_frame(bindings_ctx, RsMessageMeta { message }, body(*source_address))
         }
     }
 
@@ -312,25 +321,25 @@ mod tests {
 
     #[test]
     fn stop_router_solicitation() {
-        let FakeCtx { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtx::with_sync_ctx(FakeCtxImpl::with_state(FakeRsContext {
+        let FakeCtx { mut core_ctx, mut bindings_ctx } =
+            FakeCtx::with_core_ctx(FakeCoreCtxImpl::with_state(FakeRsContext {
                 max_router_solicitations: NonZeroU8::new(1),
                 router_soliciations_remaining: None,
                 source_address: None,
                 link_layer_bytes: None,
                 ip_device_id_ctx: Default::default(),
             }));
-        RsHandler::start_router_solicitation(&mut sync_ctx, &mut non_sync_ctx, &FakeDeviceId);
+        RsHandler::start_router_solicitation(&mut core_ctx, &mut bindings_ctx, &FakeDeviceId);
 
-        let now = non_sync_ctx.now();
-        non_sync_ctx
+        let now = bindings_ctx.now();
+        bindings_ctx
             .timer_ctx()
             .assert_timers_installed([(RS_TIMER_ID, now..=now + MAX_RTR_SOLICITATION_DELAY)]);
 
-        RsHandler::stop_router_solicitation(&mut sync_ctx, &mut non_sync_ctx, &FakeDeviceId);
-        non_sync_ctx.timer_ctx().assert_no_timers_installed();
+        RsHandler::stop_router_solicitation(&mut core_ctx, &mut bindings_ctx, &FakeDeviceId);
+        bindings_ctx.timer_ctx().assert_no_timers_installed();
 
-        assert_eq!(sync_ctx.frames(), &[][..]);
+        assert_eq!(core_ctx.frames(), &[][..]);
     }
 
     const SOURCE_ADDRESS: UnicastAddr<Ipv6Addr> =
@@ -372,32 +381,32 @@ mod tests {
         link_layer_bytes: Option<Vec<u8>>,
         expected_sll_bytes: Option<&[u8]>,
     ) {
-        let FakeCtx { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtx::with_sync_ctx(FakeCtxImpl::with_state(FakeRsContext {
+        let FakeCtx { mut core_ctx, mut bindings_ctx } =
+            FakeCtx::with_core_ctx(FakeCoreCtxImpl::with_state(FakeRsContext {
                 max_router_solicitations: NonZeroU8::new(max_router_solicitations),
                 router_soliciations_remaining: None,
                 source_address,
                 link_layer_bytes,
                 ip_device_id_ctx: Default::default(),
             }));
-        RsHandler::start_router_solicitation(&mut sync_ctx, &mut non_sync_ctx, &FakeDeviceId);
+        RsHandler::start_router_solicitation(&mut core_ctx, &mut bindings_ctx, &FakeDeviceId);
 
-        assert_eq!(sync_ctx.frames(), &[][..]);
+        assert_eq!(core_ctx.frames(), &[][..]);
 
         let mut duration = MAX_RTR_SOLICITATION_DELAY;
         for i in 0..max_router_solicitations {
             assert_eq!(
-                sync_ctx.get_ref().router_soliciations_remaining,
+                core_ctx.get_ref().router_soliciations_remaining,
                 NonZeroU8::new(max_router_solicitations - i)
             );
-            let now = non_sync_ctx.now();
-            non_sync_ctx.timer_ctx().assert_timers_installed([(RS_TIMER_ID, now..=now + duration)]);
+            let now = bindings_ctx.now();
+            bindings_ctx.timer_ctx().assert_timers_installed([(RS_TIMER_ID, now..=now + duration)]);
 
             assert_eq!(
-                non_sync_ctx.trigger_next_timer(&mut sync_ctx, TimerHandler::handle_timer),
+                bindings_ctx.trigger_next_timer(&mut core_ctx, TimerHandler::handle_timer),
                 Some(RS_TIMER_ID)
             );
-            let frames = sync_ctx.frames();
+            let frames = core_ctx.frames();
             assert_eq!(frames.len(), usize::from(i + 1), "frames = {:?}", frames);
             let (RsMessageMeta { message }, frame) =
                 frames.last().expect("should have transmitted a frame");
@@ -412,9 +421,9 @@ mod tests {
             duration = RTR_SOLICITATION_INTERVAL;
         }
 
-        non_sync_ctx.timer_ctx().assert_no_timers_installed();
-        assert_eq!(sync_ctx.get_ref().router_soliciations_remaining, None);
-        let frames = sync_ctx.frames();
+        bindings_ctx.timer_ctx().assert_no_timers_installed();
+        assert_eq!(core_ctx.get_ref().router_soliciations_remaining, None);
+        let frames = core_ctx.frames();
         assert_eq!(frames.len(), usize::from(max_router_solicitations), "frames = {:?}", frames);
     }
 }

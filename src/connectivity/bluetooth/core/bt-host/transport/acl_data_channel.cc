@@ -15,6 +15,7 @@
 #include "src/connectivity/bluetooth/core/bt-host/common/assert.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/inspectable.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/log.h"
+#include "src/connectivity/bluetooth/core/bt-host/hci-spec/util.h"
 #include "src/connectivity/bluetooth/core/bt-host/transport/acl_data_packet.h"
 #include "src/connectivity/bluetooth/core/bt-host/transport/link_type.h"
 #include "transport.h"
@@ -92,7 +93,7 @@ class AclDataChannelImpl final : public AclDataChannel {
   void SendPackets(ConnectionMap::iterator& current_link);
 
   // Handler for HCI_Buffer_Overflow_event.
-  CommandChannel::EventCallbackResult DataBufferOverflowCallback(const EventPacket& event);
+  CommandChannel::EventCallbackResult DataBufferOverflowCallback(const EmbossEventPacket& event);
 
   void ResetRoundRobinIterators();
 
@@ -115,9 +116,6 @@ class AclDataChannelImpl final : public AclDataChannel {
 
   // The event handler ID for the Data Buffer Overflow event.
   CommandChannel::EventHandlerId data_buffer_overflow_event_handler_id_ = 0;
-
-  // The dispatcher used for posting tasks on the HCI transport I/O thread.
-  async_dispatcher_t* io_dispatcher_ = async_get_default_dispatcher();
 
   // The current handler for incoming data.
   ACLPacketHandler rx_callback_;
@@ -508,14 +506,12 @@ void AclDataChannelImpl::OnRxPacket(pw::span<const std::byte> buffer) {
 }
 
 CommandChannel::EventCallbackResult AclDataChannelImpl::DataBufferOverflowCallback(
-    const EventPacket& event) {
-  BT_DEBUG_ASSERT(event.event_code() == hci_spec::kDataBufferOverflowEventCode);
-
-  const auto& params = event.params<hci_spec::DataBufferOverflowEventParams>();
+    const EmbossEventPacket& event) {
+  const auto params = event.view<pw::bluetooth::emboss::DataBufferOverflowEventView>();
 
   // Internal buffer state must be invalid and no further transmissions are possible.
-  BT_PANIC("controller data buffer overflow event received (link type: %hhu)",
-           static_cast<unsigned char>(params.ll_type));
+  BT_PANIC("controller data buffer overflow event received (link type: %s)",
+           hci_spec::LinkTypeToString(params.ll_type().Read()));
 
   return CommandChannel::EventCallbackResult::kContinue;
 }

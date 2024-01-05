@@ -21,12 +21,13 @@ use {
     cml_macro::{CheckedVec, OneOrMany, Reference},
     fidl_fuchsia_io as fio,
     indexmap::IndexMap,
+    itertools::Itertools,
     json5format::{FormatOptions, PathOption},
     lazy_static::lazy_static,
     maplit::{hashmap, hashset},
     paste::paste,
     reference_doc::ReferenceDoc,
-    serde::{de, Deserialize, Serialize},
+    serde::{de, ser, Deserialize, Serialize},
     serde_json::{Map, Value},
     std::{
         cmp,
@@ -90,10 +91,10 @@ pub fn parse_many_documents(
 /// This enum allows such names to be specified disambiguating what
 /// namespace they are in.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub enum CapabilityId {
-    Service(Name),
-    Protocol(Name),
-    Directory(Name),
+pub enum CapabilityId<'a> {
+    Service(&'a Name),
+    Protocol(&'a Name),
+    Directory(&'a Name),
     // A service in a `use` declaration has a target path in the component's namespace.
     UsedService(Path),
     // A protocol in a `use` declaration has a target path in the component's namespace.
@@ -104,16 +105,21 @@ pub enum CapabilityId {
     UsedStorage(Path),
     // An event stream in a `use` declaration has a target path in the component's namespace.
     UsedEventStream(Path),
-    Storage(Name),
-    Runner(Name),
-    Resolver(Name),
-    EventStream(Name),
+    // A configuration in a `use` declaration has a target name that matches a config.
+    UsedConfiguration(&'a Name),
+    UsedRunner(&'a Name),
+    Storage(&'a Name),
+    Runner(&'a Name),
+    Resolver(&'a Name),
+    EventStream(&'a Name),
+    Dictionary(&'a Name),
+    Configuration(&'a Name),
 }
 
 /// Generates a `Vec<Name>` -> `Vec<CapabilityId>` conversion function.
 macro_rules! capability_ids_from_names {
     ($name:ident, $variant:expr) => {
-        fn $name(names: Vec<Name>) -> Vec<Self> {
+        fn $name(names: Vec<&'a Name>) -> Vec<Self> {
             names.into_iter().map(|n| $variant(n)).collect()
         }
     };
@@ -128,7 +134,7 @@ macro_rules! capability_ids_from_paths {
     };
 }
 
-impl CapabilityId {
+impl<'a> CapabilityId<'a> {
     /// Human readable description of this capability type.
     pub fn type_str(&self) -> &'static str {
         match self {
@@ -140,10 +146,14 @@ impl CapabilityId {
             CapabilityId::UsedDirectory(_) => "directory",
             CapabilityId::UsedStorage(_) => "storage",
             CapabilityId::UsedEventStream(_) => "event_stream",
+            CapabilityId::UsedRunner(_) => "runner",
+            CapabilityId::UsedConfiguration(_) => "config",
             CapabilityId::Storage(_) => "storage",
             CapabilityId::Runner(_) => "runner",
             CapabilityId::Resolver(_) => "resolver",
             CapabilityId::EventStream(_) => "event_stream",
+            CapabilityId::Dictionary(_) => "dictionary",
+            CapabilityId::Configuration(_) => "config",
         }
     }
 
@@ -167,7 +177,7 @@ impl CapabilityId {
     ///
     /// When multiple capability identifiers are specified, the target names are the same as the
     /// source names.
-    pub fn from_use(use_: &Use) -> Result<Vec<CapabilityId>, Error> {
+    pub fn from_use(use_: &'a Use) -> Result<Vec<Self>, Error> {
         // TODO: Validate that exactly one of these is set.
         let alias = use_.path.as_ref();
         if let Some(n) = use_.service() {
@@ -199,6 +209,20 @@ impl CapabilityId {
             return Ok(vec![CapabilityId::UsedEventStream(Path::new(
                 "/svc/fuchsia.component.EventStream".to_string(),
             )?)]);
+        } else if let Some(n) = use_.runner() {
+            match n {
+                OneOrMany::One(name) => {
+                    return Ok(vec![CapabilityId::UsedRunner(name)]);
+                }
+                OneOrMany::Many(_) => {
+                    return Err(Error::validate("`use runner` should occur at most once."));
+                }
+            }
+        } else if let Some(_) = use_.config() {
+            return match &use_.config_key {
+                None => Err(Error::validate("\"config_key\" should be present for `use config`.")),
+                Some(name) => Ok(vec![CapabilityId::UsedConfiguration(name)]),
+            };
         }
         // Unsupported capability type.
         let supported_keywords = use_
@@ -214,7 +238,7 @@ impl CapabilityId {
         )))
     }
 
-    pub fn from_capability(capability: &Capability) -> Result<Vec<CapabilityId>, Error> {
+    pub fn from_capability(capability: &'a Capability) -> Result<Vec<Self>, Error> {
         // TODO: Validate that exactly one of these is set.
         if let Some(n) = capability.service() {
             if n.is_many() && capability.path.is_some() {
@@ -273,6 +297,18 @@ impl CapabilityId {
                 None,
                 capability.capability_type(),
             )?));
+        } else if let Some(n) = capability.dictionary() {
+            return Ok(Self::dictionaries_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type(),
+            )?));
+        } else if let Some(n) = capability.config() {
+            return Ok(Self::configurations_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type(),
+            )?));
         }
 
         // Unsupported capability type.
@@ -297,7 +333,7 @@ impl CapabilityId {
     ///
     /// When multiple capability identifiers are specified, the target names are the same as the
     /// source names.
-    pub fn from_offer_expose<T>(clause: &T) -> Result<Vec<CapabilityId>, Error>
+    pub fn from_offer_expose<T>(clause: &'a T) -> Result<Vec<Self>, Error>
     where
         T: CapabilityClause + AsClause + fmt::Debug,
     {
@@ -345,6 +381,18 @@ impl CapabilityId {
                 alias,
                 clause.capability_type(),
             )?));
+        } else if let Some(n) = clause.dictionary() {
+            return Ok(Self::dictionaries_from(Self::get_one_or_many_names(
+                n,
+                alias,
+                clause.capability_type(),
+            )?));
+        } else if let Some(n) = clause.config() {
+            return Ok(Self::configurations_from(Self::get_one_or_many_names(
+                n,
+                alias,
+                clause.capability_type(),
+            )?));
         }
 
         // Unsupported capability type.
@@ -362,12 +410,12 @@ impl CapabilityId {
     }
 
     /// Returns the target names as a `Vec`  from a declaration with `names` and `alias` as a `Vec`.
-    fn get_one_or_many_names(
-        names: OneOrMany<Name>,
-        alias: Option<&Name>,
+    fn get_one_or_many_names<'b>(
+        names: OneOrMany<&'b Name>,
+        alias: Option<&'b Name>,
         capability_type: &str,
-    ) -> Result<Vec<Name>, Error> {
-        let names: Vec<Name> = names.into_iter().collect();
+    ) -> Result<Vec<&'b Name>, Error> {
+        let names: Vec<&Name> = names.into_iter().collect();
         if names.len() == 1 {
             Ok(vec![alias_or_name(alias, &names[0])])
         } else {
@@ -383,11 +431,11 @@ impl CapabilityId {
 
     /// Returns the target paths as a `Vec` from a `use` declaration with `names` and `alias`.
     fn get_one_or_many_svc_paths(
-        names: OneOrMany<Name>,
+        names: OneOrMany<&Name>,
         alias: Option<&Path>,
         capability_type: &str,
     ) -> Result<Vec<Path>, Error> {
-        let names: Vec<Name> = names.into_iter().collect();
+        let names: Vec<_> = names.into_iter().collect();
         match (names.len(), alias) {
             (_, None) => {
                 Ok(names.into_iter().map(|n| format!("/svc/{}", n).parse().unwrap()).collect())
@@ -409,19 +457,25 @@ impl CapabilityId {
     capability_ids_from_names!(runners_from, CapabilityId::Runner);
     capability_ids_from_names!(resolvers_from, CapabilityId::Resolver);
     capability_ids_from_names!(event_streams_from, CapabilityId::EventStream);
+    capability_ids_from_names!(dictionaries_from, CapabilityId::Dictionary);
+    capability_ids_from_names!(configurations_from, CapabilityId::Configuration);
     capability_ids_from_paths!(used_services_from, CapabilityId::UsedService);
     capability_ids_from_paths!(used_protocols_from, CapabilityId::UsedProtocol);
 }
 
-impl fmt::Display for CapabilityId {
+impl fmt::Display for CapabilityId<'_> {
     /// Return the string ID of this clause.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             CapabilityId::Service(n)
             | CapabilityId::Storage(n)
             | CapabilityId::Runner(n)
+            | CapabilityId::UsedRunner(n)
             | CapabilityId::Resolver(n)
-            | CapabilityId::EventStream(n) => n.as_str(),
+            | CapabilityId::EventStream(n)
+            | CapabilityId::Configuration(n)
+            | CapabilityId::UsedConfiguration(n)
+            | CapabilityId::Dictionary(n) => n.as_str(),
             CapabilityId::UsedService(p)
             | CapabilityId::UsedProtocol(p)
             | CapabilityId::UsedDirectory(p)
@@ -465,7 +519,7 @@ pub struct OneOrManyPaths;
 /// Generates deserializer for `OneOrMany<ExposeFromRef>`.
 #[derive(OneOrMany, Debug, Clone)]
 #[one_or_many(
-    expected = "one or an array of \"framework\", \"self\", or \"#<child-name>\"",
+    expected = "one or an array of \"framework\", \"self\", \"#<child-name>\", or a dictionary path",
     inner_type = "ExposeFromRef",
     min_length = 1,
     unique_items = true
@@ -475,7 +529,7 @@ pub struct OneOrManyExposeFromRefs;
 /// Generates deserializer for `OneOrMany<OfferToRef>`.
 #[derive(OneOrMany, Debug, Clone)]
 #[one_or_many(
-    expected = "one or an array of \"#<child-name>\" or \"#<collection-name>\", with unique elements",
+    expected = "one or an array of \"#<child-name>\", \"#<collection-name>\", or \"self/<dictionary>\", with unique elements",
     inner_type = "OfferToRef",
     min_length = 1,
     unique_items = true
@@ -485,7 +539,7 @@ pub struct OneOrManyOfferToRefs;
 /// Generates deserializer for `OneOrMany<OfferFromRef>`.
 #[derive(OneOrMany, Debug, Clone)]
 #[one_or_many(
-    expected = "one or an array of \"parent\", \"framework\", \"self\", \"#<child-name>\", or \"#<collection-name>\"",
+    expected = "one or an array of \"parent\", \"framework\", \"self\", \"#<child-name>\", \"#<collection-name>\", or a dictionary path",
     inner_type = "OfferFromRef",
     min_length = 1,
     unique_items = true
@@ -560,13 +614,17 @@ pub enum AnyRef<'a> {
     Parent,
     /// A reference to the framework (component manager). Parsed as `framework`.
     Framework,
-
     /// A reference to the debug. Parsed as `debug`.
     Debug,
     /// A reference to this component. Parsed as `self`.
     Self_,
     /// An intentionally omitted reference.
     Void,
+    /// A reference to a dictionary. Parsed as a dictionary path.
+    Dictionary(&'a DictionaryRef),
+    /// A reference to a dictionary defined by this component. Parsed as
+    /// `self/<dictionary>`.
+    OwnDictionary(&'a Name),
 }
 
 /// Format an `AnyRef` as a string.
@@ -579,6 +637,8 @@ impl fmt::Display for AnyRef<'_> {
             Self::Debug => write!(f, "debug"),
             Self::Self_ => write!(f, "self"),
             Self::Void => write!(f, "void"),
+            Self::Dictionary(d) => write!(f, "{}", d),
+            Self::OwnDictionary(name) => write!(f, "self/{}", name),
         }
     }
 }
@@ -586,7 +646,7 @@ impl fmt::Display for AnyRef<'_> {
 /// A reference in a `use from`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Reference)]
 #[reference(
-    expected = "\"parent\", \"framework\", \"debug\", \"self\", \"#<capability-name>\", \"#<child-name>\", or none"
+    expected = "\"parent\", \"framework\", \"debug\", \"self\", \"#<capability-name>\", \"#<child-name>\", dictionary path, or none"
 )]
 pub enum UseFromRef {
     /// A reference to the parent.
@@ -597,14 +657,18 @@ pub enum UseFromRef {
     Debug,
     /// A reference to a child or a capability declared on self.
     ///
-    /// A reference to a capability is only valid on use declarations for a protocol that
-    /// references a storage capability declared in the same component, which will cause the
-    /// framework to host a fuchsia.sys2.StorageAdmin protocol for the component.
+    /// A reference to a capability must be one of the following:
+    /// - A dictionary capability.
+    /// - A protocol that references a storage capability declared in the same component,
+    ///   which will cause the framework to host a fuchsia.sys2.StorageAdmin protocol for the
+    ///   component.
     ///
     /// This cannot be used to directly access capabilities that a component itself declares.
     Named(Name),
     /// A reference to this component.
     Self_,
+    /// A reference to a dictionary.
+    Dictionary(DictionaryRef),
 }
 
 /// The scope of an event.
@@ -627,6 +691,8 @@ pub enum ExposeFromRef {
     Self_,
     /// An intentionally omitted source.
     Void,
+    /// A reference to a dictionary.
+    Dictionary(DictionaryRef),
 }
 
 /// A reference in an `expose to`.
@@ -641,7 +707,9 @@ pub enum ExposeToRef {
 
 /// A reference in an `offer from`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Reference)]
-#[reference(expected = "\"parent\", \"framework\", \"self\", \"void\", or \"#<child-name>\"")]
+#[reference(
+    expected = "\"parent\", \"framework\", \"self\", \"void\", \"#<child-name>\", or a dictionary path"
+)]
 pub enum OfferFromRef {
     /// A reference to a child or collection.
     Named(Name),
@@ -653,6 +721,8 @@ pub enum OfferFromRef {
     Self_,
     /// An intentionally omitted source.
     Void,
+    /// A reference to a dictionary.
+    Dictionary(DictionaryRef),
 }
 
 impl OfferFromRef {
@@ -666,13 +736,16 @@ impl OfferFromRef {
 
 /// A reference in an `offer to`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Reference)]
-#[reference(expected = "\"#<child-name>\" or \"#<collection-name>\"")]
+#[reference(expected = "\"#<child-name>\", \"#<collection-name>\", or \"self/<dictionary>\"")]
 pub enum OfferToRef {
     /// A reference to a child or collection.
     Named(Name),
 
     /// Syntax sugar that results in the offer decl applying to all children and collections
     All,
+
+    /// A reference to a dictionary defined by this component, the form "self/<dictionary>".
+    OwnDictionary(Name),
 }
 
 /// A reference in an `offer to`.
@@ -701,6 +774,103 @@ pub enum EnvironmentRef {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Reference)]
 #[reference(expected = "\"parent\", \"self\", or \"#<child-name>\"")]
 pub enum CapabilityFromRef {
+    /// A reference to a child.
+    Named(Name),
+    /// A reference to the parent.
+    Parent,
+    /// A reference to this component.
+    Self_,
+}
+
+/// A reference to a (possibly nested) dictionary.
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct DictionaryRef {
+    /// Path to the dictionary relative to `root_dictionary`.
+    pub path: RelativePath,
+    pub root: RootDictionaryRef,
+}
+
+impl<'a> From<&'a DictionaryRef> for AnyRef<'a> {
+    fn from(r: &'a DictionaryRef) -> Self {
+        Self::Dictionary(r)
+    }
+}
+
+impl FromStr for DictionaryRef {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, ParseError> {
+        let path = RelativePath::new(s)?;
+        let path = path.as_str();
+        match path.find('/') {
+            Some(n) => {
+                let root = path[..n].parse().map_err(|_| ParseError::InvalidValue)?;
+                let path = RelativePath::new(&path[n + 1..])?;
+                Ok(Self { root, path })
+            }
+            None => Err(ParseError::InvalidValue),
+        }
+    }
+}
+
+impl fmt::Display for DictionaryRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.root, self.path)
+    }
+}
+
+impl ser::Serialize for DictionaryRef {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        format!("{}", self).serialize(serializer)
+    }
+}
+
+const DICTIONARY_REF_EXPECT_STR: &str = "a path to a dictionary no more \
+    than 4095 characters in length";
+
+impl<'de> de::Deserialize<'de> for DictionaryRef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = DictionaryRef;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(DICTIONARY_REF_EXPECT_STR)
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                s.parse().map_err(|err| match err {
+                    ParseError::InvalidValue => {
+                        E::invalid_value(de::Unexpected::Str(s), &DICTIONARY_REF_EXPECT_STR)
+                    }
+                    ParseError::TooLong | ParseError::Empty => {
+                        E::invalid_length(s.len(), &DICTIONARY_REF_EXPECT_STR)
+                    }
+                    e => {
+                        panic!("unexpected parse error: {:?}", e);
+                    }
+                })
+            }
+        }
+
+        deserializer.deserialize_string(Visitor)
+    }
+}
+
+/// A reference to a root dictionary.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Reference)]
+#[reference(expected = "\"parent\", \"self\", \"#<child-name>\"")]
+pub enum RootDictionaryRef {
     /// A reference to a child.
     Named(Name),
     /// A reference to the parent.
@@ -834,12 +1004,16 @@ impl Right {
 /// Where string values are expected, a list of valid values is generally documented.
 /// The following string value types are reused and must follow specific rules.
 ///
+/// The `.cml` file is compiled into a FIDL wire format (`.cm`) file.
+///
 /// ## String types
 ///
 /// ### Names {#names}
 ///
-/// Both capabilities and a component's children are named. A name string must consist of one or
-/// more of the following characters: `a-z`, `0-9`, `_`, `.`, `-`.
+/// Both capabilities and a component's children are named. A name string may
+/// consist of one or more of the following characters: `A-Z`, `a-z`, `0-9`,
+/// `_`, `.`, `-`. It must not exceed 100 characters in length and may not start
+/// with `.` or `-`.
 ///
 /// ### References {#references}
 ///
@@ -854,8 +1028,8 @@ impl Right {
 /// [doc-protocol]: /docs/concepts/components/v2/capabilities/protocol.md
 /// [doc-directory]: /docs/concepts/components/v2/capabilities/directory.md
 /// [doc-storage]: /docs/concepts/components/v2/capabilities/storage.md
-/// [doc-resolvers]: /docs/concepts/components/v2/capabilities/resolvers.md
-/// [doc-runners]: /docs/concepts/components/v2/capabilities/runners.md
+/// [doc-resolvers]: /docs/concepts/components/v2/capabilities/resolver.md
+/// [doc-runners]: /docs/concepts/components/v2/capabilities/runner.md
 /// [doc-event]: /docs/concepts/components/v2/capabilities/event.md
 /// [doc-service]: /docs/concepts/components/v2/capabilities/service.md
 /// [doc-directory-rights]: /docs/concepts/components/v2/capabilities/directory#directory-capability-rights
@@ -894,7 +1068,7 @@ pub struct Document {
     /// checkout environment.
     ///
     /// ```sh
-    /// fx cmc include {{ "<var>" }}cmx_file{{ "</var>" }} --includeroot $FUCHSIA_DIR --includepath $FUCHSIA_DIR/sdk/lib
+    /// fx cmc include {{ "<var>" }}cml_file{{ "</var>" }} --includeroot $FUCHSIA_DIR --includepath $FUCHSIA_DIR/sdk/lib
     /// ```
     ///
     /// Includes can cope with duplicate [`use`], [`offer`], [`expose`], or [`capabilities`]
@@ -1039,7 +1213,7 @@ pub struct Document {
     /// dictionary of key and value pairs. Refer to the specific runner being used to
     /// determine what keys it expects to receive, and how it interprets them.
     ///
-    /// [doc-runners]: /docs/concepts/components/v2/capabilities/runners.md
+    /// [doc-runners]: /docs/concepts/components/v2/capabilities/runner.md
     #[reference_doc(json_type = "object")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub program: Option<Program>,
@@ -1200,7 +1374,7 @@ where
                 to_keep.push(c.clone());
                 return;
             }
-            let mut names = c.names();
+            let mut names = c.names().into_iter().cloned().collect();
             let mut copy = c.clone();
             copy.set_names(vec![Name::from_str("a").unwrap()]); // The name here is arbitrary.
             let r = to_merge.iter().position(|(t, _)| t == &copy);
@@ -1264,6 +1438,7 @@ macro_rules! merge_from_capability_field {
                     ours.resolver(),
                     ours.runner(),
                     ours.event_stream(),
+                    ours.config(),
                 ] {
                     nonempty |= list.is_some();
                 }
@@ -1307,8 +1482,10 @@ macro_rules! merge_from_other_field {
 /// This is a macro to let us easily specialize on the $type_name.
 macro_rules! compute_capability_diff {
     ($ours:ident, $theirs:ident, $type_name:ident) => {
-        let our_field = $ours.$type_name();
-        let their_field = $theirs.$type_name();
+        let our_field: Option<OneOrMany<Name>> =
+            $ours.$type_name().map(|o| o.into_iter().cloned().collect());
+        let their_field: Option<OneOrMany<Name>> =
+            $theirs.$type_name().map(|o| o.into_iter().cloned().collect());
         match (our_field, their_field) {
             (_, None) | (None, _) => {} // One of the declarations is not for `type_name`.
             (Some(our_field), Some(their_field)) => {
@@ -1396,6 +1573,8 @@ where
     compute_capability_diff!(ours, theirs, resolver);
     compute_capability_diff!(ours, theirs, runner);
     compute_capability_diff!(ours, theirs, event_stream);
+    compute_capability_diff!(ours, theirs, dictionary);
+    compute_capability_diff!(ours, theirs, config);
 }
 
 impl Document {
@@ -1413,7 +1592,7 @@ impl Document {
         merge_from_other_field!(self, other, include);
         merge_from_other_field!(self, other, children);
         merge_from_other_field!(self, other, collections);
-        merge_from_other_field!(self, other, environments);
+        self.merge_environment(other, include_path)?;
         self.merge_program(other, include_path)?;
         self.merge_facets(other, include_path)?;
         self.merge_config(other, include_path)?;
@@ -1478,6 +1657,47 @@ impl Document {
             include_path,
             Some(vec!["environ"]),
         )
+    }
+
+    fn merge_environment(
+        &mut self,
+        other: &mut Document,
+        _include_path: &path::Path,
+    ) -> Result<(), Error> {
+        if let None = other.environments {
+            return Ok(());
+        }
+        if let None = self.environments {
+            self.environments = Some(vec![]);
+        }
+
+        let my_environments = self.environments.as_mut().unwrap();
+        let other_environments = other.environments.as_mut().unwrap();
+        my_environments.sort_by(|x, y| x.name.cmp(&y.name));
+        other_environments.sort_by(|x, y| x.name.cmp(&y.name));
+
+        let all_environments =
+            my_environments.into_iter().merge_by(other_environments, |x, y| x.name <= y.name);
+        let groups = all_environments.group_by(|e| e.name.clone());
+
+        let mut merged_environments = vec![];
+        for (name, group) in groups.into_iter() {
+            let mut merged_environment = Environment {
+                name: name.clone(),
+                extends: None,
+                runners: None,
+                resolvers: None,
+                debug: None,
+                stop_timeout_ms: None,
+            };
+            for e in group {
+                merged_environment.merge_from(e)?;
+            }
+            merged_environments.push(merged_environment);
+        }
+
+        self.environments = Some(merged_environments);
+        Ok(())
     }
 
     fn merge_maps<'s, Source, Dest>(
@@ -1656,7 +1876,7 @@ impl Document {
         }
     }
 
-    pub fn all_storage_and_sources<'a>(&'a self) -> HashMap<&'a Name, &'a CapabilityFromRef> {
+    pub fn all_storage_with_sources<'a>(&'a self) -> HashMap<&'a Name, &'a CapabilityFromRef> {
         if let Some(capabilities) = self.capabilities.as_ref() {
             capabilities
                 .iter()
@@ -1674,11 +1894,7 @@ impl Document {
         self.capabilities
             .as_ref()
             .map(|c| {
-                c.iter()
-                    .filter_map(|c| c.service.as_ref())
-                    .map(|p| p.to_vec().into_iter())
-                    .flatten()
-                    .collect()
+                c.iter().filter_map(|c| c.service.as_ref()).map(|p| p.iter()).flatten().collect()
             })
             .unwrap_or_else(|| vec![])
     }
@@ -1687,11 +1903,7 @@ impl Document {
         self.capabilities
             .as_ref()
             .map(|c| {
-                c.iter()
-                    .filter_map(|c| c.protocol.as_ref())
-                    .map(|p| p.to_vec().into_iter())
-                    .flatten()
-                    .collect()
+                c.iter().filter_map(|c| c.protocol.as_ref()).map(|p| p.iter()).flatten().collect()
             })
             .unwrap_or_else(|| vec![])
     }
@@ -1717,6 +1929,30 @@ impl Document {
             .unwrap_or_else(|| vec![])
     }
 
+    pub fn all_dictionary_names(&self) -> Vec<&Name> {
+        if let Some(capabilities) = self.capabilities.as_ref() {
+            capabilities.iter().filter_map(|c| c.dictionary.as_ref()).collect()
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn all_dictionaries_with_sources<'a>(
+        &'a self,
+    ) -> HashMap<&'a Name, Option<&'a DictionaryRef>> {
+        if let Some(capabilities) = self.capabilities.as_ref() {
+            capabilities
+                .iter()
+                .filter_map(|c| match (c.dictionary.as_ref(), c.extends.as_ref()) {
+                    (Some(s), e) => Some((s, e)),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        }
+    }
+
     pub fn all_environment_names(&self) -> Vec<&Name> {
         self.environments
             .as_ref()
@@ -1724,7 +1960,7 @@ impl Document {
             .unwrap_or_else(|| vec![])
     }
 
-    pub fn all_capability_names(&self) -> HashSet<Name> {
+    pub fn all_capability_names(&self) -> HashSet<&Name> {
         self.capabilities
             .as_ref()
             .map(|c| {
@@ -1833,6 +2069,90 @@ pub struct Environment {
     #[reference_doc(json_type = "number", rename = "__stop_timeout_ms")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_timeout_ms: Option<StopTimeoutMs>,
+}
+
+impl Environment {
+    pub fn merge_from(&mut self, other: &mut Self) -> Result<(), Error> {
+        if self.extends.is_none() {
+            self.extends = other.extends.take();
+        } else if other.extends.is_some() && other.extends != self.extends {
+            return Err(Error::validate(
+                "cannot merge `environments` that declare conflicting `extends`",
+            ));
+        }
+
+        if self.stop_timeout_ms.is_none() {
+            self.stop_timeout_ms = other.stop_timeout_ms;
+        } else if other.stop_timeout_ms.is_some() && other.stop_timeout_ms != self.stop_timeout_ms {
+            return Err(Error::validate(
+                "cannot merge `environments` that declare conflicting `stop_timeout_ms`",
+            ));
+        }
+
+        // Perform naive vector concatenation and rely on later validation to ensure
+        // no conflicting entries.
+        match &mut self.runners {
+            Some(r) => {
+                if let Some(o) = &mut other.runners {
+                    r.append(o);
+                }
+            }
+            None => self.runners = other.runners.take(),
+        }
+
+        match &mut self.resolvers {
+            Some(r) => {
+                if let Some(o) = &mut other.resolvers {
+                    r.append(o);
+                }
+            }
+            None => self.resolvers = other.resolvers.take(),
+        }
+
+        match &mut self.debug {
+            Some(r) => {
+                if let Some(o) = &mut other.debug {
+                    r.append(o);
+                }
+            }
+            None => self.debug = other.debug.take(),
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigType {
+    Bool,
+    Uint8,
+    Uint16,
+    Uint32,
+    Uint64,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    String,
+    Vector,
+}
+
+impl From<&cm_rust::ConfigValueType> for ConfigType {
+    fn from(value: &cm_rust::ConfigValueType) -> Self {
+        match value {
+            cm_rust::ConfigValueType::Bool => ConfigType::Bool,
+            cm_rust::ConfigValueType::Uint8 => ConfigType::Uint8,
+            cm_rust::ConfigValueType::Int8 => ConfigType::Int8,
+            cm_rust::ConfigValueType::Uint16 => ConfigType::Uint16,
+            cm_rust::ConfigValueType::Int16 => ConfigType::Int16,
+            cm_rust::ConfigValueType::Uint32 => ConfigType::Uint32,
+            cm_rust::ConfigValueType::Int32 => ConfigType::Int32,
+            cm_rust::ConfigValueType::Uint64 => ConfigType::Uint64,
+            cm_rust::ConfigValueType::Int64 => ConfigType::Int64,
+            cm_rust::ConfigValueType::String { .. } => ConfigType::String,
+            cm_rust::ConfigValueType::Vector { .. } => ConfigType::Vector,
+        }
+    }
 }
 
 #[derive(Clone, Hash, Debug, PartialEq, PartialOrd, Eq, Ord, Serialize)]
@@ -2031,6 +2351,26 @@ impl ConfigNestedValueType {
     }
 }
 
+impl TryFrom<&cm_rust::ConfigNestedValueType> for ConfigNestedValueType {
+    type Error = ();
+    fn try_from(nested: &cm_rust::ConfigNestedValueType) -> Result<Self, ()> {
+        Ok(match nested {
+            cm_rust::ConfigNestedValueType::Bool => ConfigNestedValueType::Bool {},
+            cm_rust::ConfigNestedValueType::Uint8 => ConfigNestedValueType::Uint8 {},
+            cm_rust::ConfigNestedValueType::Int8 => ConfigNestedValueType::Int8 {},
+            cm_rust::ConfigNestedValueType::Uint16 => ConfigNestedValueType::Uint16 {},
+            cm_rust::ConfigNestedValueType::Int16 => ConfigNestedValueType::Int16 {},
+            cm_rust::ConfigNestedValueType::Uint32 => ConfigNestedValueType::Uint32 {},
+            cm_rust::ConfigNestedValueType::Int32 => ConfigNestedValueType::Int32 {},
+            cm_rust::ConfigNestedValueType::Uint64 => ConfigNestedValueType::Uint64 {},
+            cm_rust::ConfigNestedValueType::Int64 => ConfigNestedValueType::Int64 {},
+            cm_rust::ConfigNestedValueType::String { max_size } => {
+                ConfigNestedValueType::String { max_size: NonZeroU32::new(*max_size).ok_or(())? }
+            }
+        })
+    }
+}
+
 #[derive(Deserialize, Debug, PartialEq, ReferenceDoc, Serialize)]
 #[serde(deny_unknown_fields)]
 #[reference_doc(fields_as = "list")]
@@ -2047,6 +2387,7 @@ pub struct RunnerRegistration {
 
     /// An explicit name for the runner as it will be known in
     /// this environment. If omitted, defaults to `runner`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub r#as: Option<Name>,
 }
 
@@ -2070,7 +2411,7 @@ pub struct ResolverRegistration {
     pub scheme: cm_types::UrlScheme,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone, ReferenceDoc, Serialize)]
+#[derive(Deserialize, Debug, PartialEq, Clone, ReferenceDoc, Serialize, Default)]
 #[serde(deny_unknown_fields)]
 #[reference_doc(fields_as = "list")]
 pub struct Capability {
@@ -2103,6 +2444,14 @@ pub struct Capability {
     /// The [name](#name) for this event_stream capability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_stream: Option<OneOrMany<Name>>,
+
+    /// The [name](#name) for this dictionary capability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dictionary: Option<Name>,
+
+    /// The [name](#name) for this configuration capability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<Name>,
 
     /// The path within the [outgoing directory][glossary.outgoing directory] of the component's
     /// program to source the capability.
@@ -2137,6 +2486,15 @@ pub struct Capability {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<CapabilityFromRef>,
 
+    /// (`dictionary` only, optional) The contents to initialize a dictionary with. One of:
+    /// - `parent/<relative_path>`: A path to a dictionary offered by `parent`.
+    /// - `#<child-name>/<relative_path>`: A path to a dictionary exposed by `#<child-name>`.
+    /// - `self/<relative_path>`: A path to a dictionary defined by this component.
+    /// `<relative_path>` may be either a name, identifying a dictionary capability), or
+    /// a path with multiple parts, identifying a nested dictionary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extends: Option<DictionaryRef>,
+
     /// (`storage` only) The [name](#name) of the directory capability backing the storage. The
     /// capability must be available from the component referenced in `from`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2147,7 +2505,7 @@ pub struct Capability {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subdir: Option<RelativePath>,
 
-    /// (`storage only`) The identifier used to isolated storage for a component, one of:
+    /// (`storage` only) The identifier used to isolated storage for a component, one of:
     /// - `static_instance_id`: The instance ID in the component ID index is used
     ///     as the key for a component's storage. Components which are not listed in
     ///     the component ID index will not be able to use this storage capability.
@@ -2157,6 +2515,59 @@ pub struct Capability {
     ///     capability is used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_id: Option<StorageId>,
+
+    /// (`configuration` only) The type of configuration, one of:
+    /// - `bool`: Boolean type.
+    /// - `uint8`: Unsigned 8 bit type.
+    /// - `uint16`: Unsigned 16 bit type.
+    /// - `uint32`: Unsigned 32 bit type.
+    /// - `uint64`: Unsigned 64 bit type.
+    /// - `int8`: Signed 8 bit type.
+    /// - `int16`: Signed 16 bit type.
+    /// - `int32`: Signed 32 bit type.
+    /// - `int64`: Signed 64 bit type.
+    /// - `string`: ASCII string type.
+    /// - `vector`: Vector type. See `element` for the type of the element within the vector.
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    #[reference_doc(rename = "type")]
+    pub config_type: Option<ConfigType>,
+
+    /// (`configuration` only) Only supported if this configuration `type` is 'string'.
+    /// This is the max size of the string.
+    #[serde(rename = "max_size", skip_serializing_if = "Option::is_none")]
+    #[reference_doc(rename = "max_size")]
+    pub config_max_size: Option<NonZeroU32>,
+
+    /// (`configuration` only) Only supported if this configuration `type` is 'vector'.
+    /// This is the max number of elements in the vector.
+    #[serde(rename = "max_count", skip_serializing_if = "Option::is_none")]
+    #[reference_doc(rename = "max_count")]
+    pub config_max_count: Option<NonZeroU32>,
+
+    /// (`configuration` only) Only supported if this configuration `type` is 'vector'.
+    /// This is the type of the elements in the configuration vector.
+    ///
+    /// Example (simple type):
+    ///
+    /// ```json5
+    /// { type: "uint8" }
+    /// ```
+    ///
+    /// Example (string type):
+    ///
+    /// ```json5
+    /// {
+    ///   type: "string",
+    ///   max_size: 100,
+    /// }
+    /// ```
+    #[serde(rename = "element", skip_serializing_if = "Option::is_none")]
+    #[reference_doc(rename = "element", json_type = "object")]
+    pub config_element_type: Option<ConfigNestedValueType>,
+
+    /// (`configuration` only) The value of the configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, ReferenceDoc, Serialize)]
@@ -2175,6 +2586,7 @@ pub struct DebugRegistration {
 
     /// If specified, the name that the capability in `protocol` should be made
     /// available as to clients. Disallowed if `protocol` is an array.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub r#as: Option<Name>,
 }
 
@@ -2277,6 +2689,10 @@ impl<'de> de::Deserialize<'de> for Program {
 ///         ],
 ///         from: "framework",
 ///     },
+///     {
+///         runner: "own_test_runner".
+///         from: "#test_runner",
+///     },
 /// ],
 /// ```
 #[derive(Deserialize, Debug, Default, PartialEq, Clone, ReferenceDoc, Serialize)]
@@ -2303,6 +2719,14 @@ pub struct Use {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_stream: Option<OneOrMany<Name>>,
 
+    /// When using a runner capability, the [name](#name) of a [runner capability][doc-runners].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner: Option<Name>,
+
+    /// When using a configuration capability, the [name](#name) of a [configuration capability][doc-configuration].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<Name>,
+
     /// The source of the capability. Defaults to `parent`.  One of:
     /// - `parent`: The component's parent.
     /// - `debug`: One of [`debug_capabilities`][fidl-environment-decl] in the
@@ -2318,7 +2742,7 @@ pub struct Use {
 
     /// The path at which to install the capability in the component's namespace. For protocols,
     /// defaults to `/svc/${protocol}`.  Required for `directory` and `storage`. This property is
-    /// disallowed for declarations with arrays of capability names.
+    /// disallowed for declarations with arrays of capability names and for runner capabilities.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<Path>,
 
@@ -2352,6 +2776,7 @@ pub struct Use {
     /// - `weak`: a weak dependency, which is ignored during shutdown. When component manager
     ///     stops the parent realm, the source may stop before the clients. Clients of weak
     ///     dependencies must be able to handle these dependencies becoming unavailable.
+    /// This property is disallowed for runner capabilities, which are always a `strong` dependency.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dependency: Option<DependencyType>,
 
@@ -2364,8 +2789,14 @@ pub struct Use {
     ///     disabled).
     /// - `transitional`: the source may omit the route completely without even having to route
     ///     from `void`. Used for soft transitions that introduce new capabilities.
+    /// This property is disallowed for runner capabilities, which are always `required`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub availability: Option<Availability>,
+
+    /// (`config` only) The configuration key in the component's `config` block that this capability
+    /// will set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_key: Option<Name>,
 }
 
 /// Example:
@@ -2422,6 +2853,14 @@ pub struct Expose {
     /// When routing a resolver, the [name](#name) of a [resolver capability][doc-resolvers].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolver: Option<OneOrMany<Name>>,
+
+    /// When routing a dictionary, the [name](#name) of a [dictionary capability][doc-dictionaries].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dictionary: Option<OneOrMany<Name>>,
+
+    /// When routing a config, the [name](#name) of a configuration capability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<OneOrMany<Name>>,
 
     /// `from`: The source of the capability, one of:
     /// - `self`: This component. Requires a corresponding
@@ -2493,8 +2932,10 @@ impl Expose {
             service: None,
             protocol: None,
             directory: None,
+            config: None,
             runner: None,
             resolver: None,
+            dictionary: None,
             r#as: None,
             to: None,
             rights: None,
@@ -2586,6 +3027,14 @@ pub struct Offer {
     /// When routing a storage capability, the [name](#name) of a [storage capability][doc-storage].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage: Option<OneOrMany<Name>>,
+
+    /// When routing a dictionary, the [name](#name) of a [dictionary capability][doc-dictionaries].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dictionary: Option<OneOrMany<Name>>,
+
+    /// When routing a config, the [name](#name) of a configuration capability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<OneOrMany<Name>>,
 
     /// `from`: The source of the capability, one of:
     /// - `parent`: The component's parent. This source can be used for all
@@ -2804,13 +3253,15 @@ pub trait FromClause {
 }
 
 pub trait CapabilityClause: Clone + PartialEq {
-    fn service(&self) -> Option<OneOrMany<Name>>;
-    fn protocol(&self) -> Option<OneOrMany<Name>>;
-    fn directory(&self) -> Option<OneOrMany<Name>>;
-    fn storage(&self) -> Option<OneOrMany<Name>>;
-    fn runner(&self) -> Option<OneOrMany<Name>>;
-    fn resolver(&self) -> Option<OneOrMany<Name>>;
-    fn event_stream(&self) -> Option<OneOrMany<Name>>;
+    fn service(&self) -> Option<OneOrMany<&Name>>;
+    fn protocol(&self) -> Option<OneOrMany<&Name>>;
+    fn directory(&self) -> Option<OneOrMany<&Name>>;
+    fn storage(&self) -> Option<OneOrMany<&Name>>;
+    fn runner(&self) -> Option<OneOrMany<&Name>>;
+    fn resolver(&self) -> Option<OneOrMany<&Name>>;
+    fn event_stream(&self) -> Option<OneOrMany<&Name>>;
+    fn dictionary(&self) -> Option<OneOrMany<&Name>>;
+    fn config(&self) -> Option<OneOrMany<&Name>>;
     fn set_service(&mut self, o: Option<OneOrMany<Name>>);
     fn set_protocol(&mut self, o: Option<OneOrMany<Name>>);
     fn set_directory(&mut self, o: Option<OneOrMany<Name>>);
@@ -2818,6 +3269,8 @@ pub trait CapabilityClause: Clone + PartialEq {
     fn set_runner(&mut self, o: Option<OneOrMany<Name>>);
     fn set_resolver(&mut self, o: Option<OneOrMany<Name>>);
     fn set_event_stream(&mut self, o: Option<OneOrMany<Name>>);
+    fn set_dictionary(&mut self, o: Option<OneOrMany<Name>>);
+    fn set_config(&mut self, o: Option<OneOrMany<Name>>);
 
     fn availability(&self) -> Option<Availability>;
     fn set_availability(&mut self, a: Option<Availability>);
@@ -2836,18 +3289,20 @@ pub trait CapabilityClause: Clone + PartialEq {
 
     /// Returns the names of the capabilities in this clause.
     /// If `protocol()` returns `Some(OneOrMany::Many(vec!["a", "b"]))`, this returns!["a", "b"].
-    fn names(&self) -> Vec<Name> {
+    fn names(&self) -> Vec<&Name> {
         let res = vec![
             self.service(),
             self.protocol(),
             self.directory(),
             self.storage(),
             self.runner(),
+            self.config(),
             self.resolver(),
             self.event_stream(),
+            self.dictionary(),
         ];
         res.into_iter()
-            .map(|o| o.map(|o| o.into_iter().collect::<Vec<Name>>()).unwrap_or(vec![]))
+            .map(|o| o.map(|o| o.into_iter().collect::<Vec<&Name>>()).unwrap_or(vec![]))
             .flatten()
             .collect()
     }
@@ -2874,6 +3329,10 @@ pub trait CapabilityClause: Clone + PartialEq {
             self.set_resolver(Some(names));
         } else if cap_type == "event_stream" {
             self.set_event_stream(Some(names));
+        } else if cap_type == "dictionary" {
+            self.set_dictionary(Some(names));
+        } else if cap_type == "config" {
+            self.set_config(Some(names));
         } else {
             panic!("Unknown capability type {}", cap_type);
         }
@@ -2920,27 +3379,37 @@ impl Canonicalize for Capability {
     }
 }
 
+fn option_one_or_many_as_ref<T>(o: &Option<OneOrMany<T>>) -> Option<OneOrMany<&T>> {
+    o.as_ref().map(|o| o.as_ref())
+}
+
 impl CapabilityClause for Capability {
-    fn service(&self) -> Option<OneOrMany<Name>> {
-        self.service.clone()
+    fn service(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.service)
     }
-    fn protocol(&self) -> Option<OneOrMany<Name>> {
-        self.protocol.clone()
+    fn protocol(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.protocol)
     }
-    fn directory(&self) -> Option<OneOrMany<Name>> {
-        self.directory.as_ref().map(|n| OneOrMany::One(n.clone()))
+    fn directory(&self) -> Option<OneOrMany<&Name>> {
+        self.directory.as_ref().map(|n| OneOrMany::One(n))
     }
-    fn storage(&self) -> Option<OneOrMany<Name>> {
-        self.storage.as_ref().map(|n| OneOrMany::One(n.clone()))
+    fn storage(&self) -> Option<OneOrMany<&Name>> {
+        self.storage.as_ref().map(|n| OneOrMany::One(n))
     }
-    fn runner(&self) -> Option<OneOrMany<Name>> {
-        self.runner.as_ref().map(|n| OneOrMany::One(n.clone()))
+    fn runner(&self) -> Option<OneOrMany<&Name>> {
+        self.runner.as_ref().map(|n| OneOrMany::One(n))
     }
-    fn resolver(&self) -> Option<OneOrMany<Name>> {
-        self.resolver.as_ref().map(|n| OneOrMany::One(n.clone()))
+    fn resolver(&self) -> Option<OneOrMany<&Name>> {
+        self.resolver.as_ref().map(|n| OneOrMany::One(n))
     }
-    fn event_stream(&self) -> Option<OneOrMany<Name>> {
-        self.event_stream.clone()
+    fn event_stream(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.event_stream)
+    }
+    fn dictionary(&self) -> Option<OneOrMany<&Name>> {
+        self.dictionary.as_ref().map(|n| OneOrMany::One(n))
+    }
+    fn config(&self) -> Option<OneOrMany<&Name>> {
+        self.config.as_ref().map(|n| OneOrMany::One(n))
     }
 
     fn set_service(&mut self, o: Option<OneOrMany<Name>>) {
@@ -2964,6 +3433,13 @@ impl CapabilityClause for Capability {
     fn set_event_stream(&mut self, o: Option<OneOrMany<Name>>) {
         self.event_stream = o;
     }
+    fn set_dictionary(&mut self, o: Option<OneOrMany<Name>>) {
+        self.dictionary = always_one(o);
+    }
+
+    fn set_config(&mut self, o: Option<OneOrMany<Name>>) {
+        self.config = always_one(o);
+    }
 
     fn availability(&self) -> Option<Availability> {
         None
@@ -2985,6 +3461,10 @@ impl CapabilityClause for Capability {
             "resolver"
         } else if self.event_stream.is_some() {
             "event_stream"
+        } else if self.dictionary.is_some() {
+            "dictionary"
+        } else if self.config.is_some() {
+            "config"
         } else {
             panic!("Missing capability name")
         }
@@ -2993,7 +3473,17 @@ impl CapabilityClause for Capability {
         "capability"
     }
     fn supported(&self) -> &[&'static str] {
-        &["service", "protocol", "directory", "storage", "runner", "resolver", "event_stream"]
+        &[
+            "service",
+            "protocol",
+            "directory",
+            "storage",
+            "runner",
+            "resolver",
+            "event_stream",
+            "dictionary",
+            "config",
+        ]
     }
     fn are_many_names_allowed(&self) -> bool {
         ["service", "protocol", "event_stream"].contains(&self.capability_type())
@@ -3025,25 +3515,31 @@ impl RightsClause for Capability {
 }
 
 impl CapabilityClause for DebugRegistration {
-    fn service(&self) -> Option<OneOrMany<Name>> {
+    fn service(&self) -> Option<OneOrMany<&Name>> {
         None
     }
-    fn protocol(&self) -> Option<OneOrMany<Name>> {
-        self.protocol.clone()
+    fn protocol(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.protocol)
     }
-    fn directory(&self) -> Option<OneOrMany<Name>> {
+    fn directory(&self) -> Option<OneOrMany<&Name>> {
         None
     }
-    fn storage(&self) -> Option<OneOrMany<Name>> {
+    fn storage(&self) -> Option<OneOrMany<&Name>> {
         None
     }
-    fn runner(&self) -> Option<OneOrMany<Name>> {
+    fn runner(&self) -> Option<OneOrMany<&Name>> {
         None
     }
-    fn resolver(&self) -> Option<OneOrMany<Name>> {
+    fn resolver(&self) -> Option<OneOrMany<&Name>> {
         None
     }
-    fn event_stream(&self) -> Option<OneOrMany<Name>> {
+    fn event_stream(&self) -> Option<OneOrMany<&Name>> {
+        None
+    }
+    fn dictionary(&self) -> Option<OneOrMany<&Name>> {
+        None
+    }
+    fn config(&self) -> Option<OneOrMany<&Name>> {
         None
     }
 
@@ -3056,6 +3552,8 @@ impl CapabilityClause for DebugRegistration {
     fn set_runner(&mut self, _o: Option<OneOrMany<Name>>) {}
     fn set_resolver(&mut self, _o: Option<OneOrMany<Name>>) {}
     fn set_event_stream(&mut self, _o: Option<OneOrMany<Name>>) {}
+    fn set_dictionary(&mut self, _o: Option<OneOrMany<Name>>) {}
+    fn set_config(&mut self, _o: Option<OneOrMany<Name>>) {}
 
     fn availability(&self) -> Option<Availability> {
         None
@@ -3115,26 +3613,32 @@ impl Canonicalize for Use {
 }
 
 impl CapabilityClause for Use {
-    fn service(&self) -> Option<OneOrMany<Name>> {
-        self.service.clone()
+    fn service(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.service)
     }
-    fn protocol(&self) -> Option<OneOrMany<Name>> {
-        self.protocol.clone()
+    fn protocol(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.protocol)
     }
-    fn directory(&self) -> Option<OneOrMany<Name>> {
-        self.directory.as_ref().map(|n| OneOrMany::One(n.clone()))
+    fn directory(&self) -> Option<OneOrMany<&Name>> {
+        self.directory.as_ref().map(|n| OneOrMany::One(n))
     }
-    fn storage(&self) -> Option<OneOrMany<Name>> {
-        self.storage.as_ref().map(|n| OneOrMany::One(n.clone()))
+    fn storage(&self) -> Option<OneOrMany<&Name>> {
+        self.storage.as_ref().map(|n| OneOrMany::One(n))
     }
-    fn runner(&self) -> Option<OneOrMany<Name>> {
+    fn runner(&self) -> Option<OneOrMany<&Name>> {
+        self.runner.as_ref().map(|n| OneOrMany::One(n))
+    }
+    fn resolver(&self) -> Option<OneOrMany<&Name>> {
         None
     }
-    fn resolver(&self) -> Option<OneOrMany<Name>> {
+    fn event_stream(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.event_stream)
+    }
+    fn dictionary(&self) -> Option<OneOrMany<&Name>> {
         None
     }
-    fn event_stream(&self) -> Option<OneOrMany<Name>> {
-        self.event_stream.clone()
+    fn config(&self) -> Option<OneOrMany<&Name>> {
+        self.config.as_ref().map(|n| OneOrMany::One(n))
     }
 
     fn set_service(&mut self, o: Option<OneOrMany<Name>>) {
@@ -3153,6 +3657,10 @@ impl CapabilityClause for Use {
     fn set_resolver(&mut self, _o: Option<OneOrMany<Name>>) {}
     fn set_event_stream(&mut self, o: Option<OneOrMany<Name>>) {
         self.event_stream = o;
+    }
+    fn set_dictionary(&mut self, _o: Option<OneOrMany<Name>>) {}
+    fn set_config(&mut self, o: Option<OneOrMany<Name>>) {
+        self.config = always_one(o);
     }
 
     fn availability(&self) -> Option<Availability> {
@@ -3173,15 +3681,20 @@ impl CapabilityClause for Use {
             "storage"
         } else if self.event_stream.is_some() {
             "event_stream"
+        } else if self.runner.is_some() {
+            "runner"
+        } else if self.config.is_some() {
+            "config"
         } else {
             panic!("Missing capability name")
         }
     }
+
     fn decl_type(&self) -> &'static str {
         "use"
     }
     fn supported(&self) -> &[&'static str] {
-        &["service", "protocol", "directory", "storage", "event_stream"]
+        &["service", "protocol", "directory", "storage", "event_stream", "runner", "config"]
     }
     fn are_many_names_allowed(&self) -> bool {
         ["service", "protocol", "event_stream"].contains(&self.capability_type())
@@ -3231,30 +3744,37 @@ impl Canonicalize for Expose {
                 scope.canonicalize();
             }
         }
+        // TODO(fxbug.dev/300500098): canonicalize dictionaries
     }
 }
 
 impl CapabilityClause for Expose {
-    fn service(&self) -> Option<OneOrMany<Name>> {
-        self.service.as_ref().map(|n| n.clone())
+    fn service(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.service)
     }
-    fn protocol(&self) -> Option<OneOrMany<Name>> {
-        self.protocol.clone()
+    fn protocol(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.protocol)
     }
-    fn directory(&self) -> Option<OneOrMany<Name>> {
-        self.directory.clone()
+    fn directory(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.directory)
     }
-    fn storage(&self) -> Option<OneOrMany<Name>> {
+    fn storage(&self) -> Option<OneOrMany<&Name>> {
         None
     }
-    fn runner(&self) -> Option<OneOrMany<Name>> {
-        self.runner.clone()
+    fn runner(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.runner)
     }
-    fn resolver(&self) -> Option<OneOrMany<Name>> {
-        self.resolver.clone()
+    fn resolver(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.resolver)
     }
-    fn event_stream(&self) -> Option<OneOrMany<Name>> {
-        self.event_stream.clone()
+    fn event_stream(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.event_stream)
+    }
+    fn dictionary(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.dictionary)
+    }
+    fn config(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.config)
     }
 
     fn set_service(&mut self, o: Option<OneOrMany<Name>>) {
@@ -3276,6 +3796,12 @@ impl CapabilityClause for Expose {
     fn set_event_stream(&mut self, o: Option<OneOrMany<Name>>) {
         self.event_stream = o;
     }
+    fn set_dictionary(&mut self, o: Option<OneOrMany<Name>>) {
+        self.dictionary = o;
+    }
+    fn set_config(&mut self, o: Option<OneOrMany<Name>>) {
+        self.config = o;
+    }
 
     fn availability(&self) -> Option<Availability> {
         None
@@ -3295,6 +3821,10 @@ impl CapabilityClause for Expose {
             "resolver"
         } else if self.event_stream.is_some() {
             "event_stream"
+        } else if self.dictionary.is_some() {
+            "dictionary"
+        } else if self.config.is_some() {
+            "config"
         } else {
             panic!("Missing capability name")
         }
@@ -3303,11 +3833,29 @@ impl CapabilityClause for Expose {
         "expose"
     }
     fn supported(&self) -> &[&'static str] {
-        &["service", "protocol", "directory", "runner", "resolver", "event_stream"]
+        &[
+            "service",
+            "protocol",
+            "directory",
+            "runner",
+            "resolver",
+            "event_stream",
+            "dictionary",
+            "config",
+        ]
     }
     fn are_many_names_allowed(&self) -> bool {
-        ["service", "protocol", "directory", "runner", "resolver", "event_stream"]
-            .contains(&self.capability_type())
+        [
+            "service",
+            "protocol",
+            "directory",
+            "runner",
+            "resolver",
+            "event_stream",
+            "dictionary",
+            "config",
+        ]
+        .contains(&self.capability_type())
     }
 }
 
@@ -3366,26 +3914,32 @@ impl Canonicalize for Offer {
 }
 
 impl CapabilityClause for Offer {
-    fn service(&self) -> Option<OneOrMany<Name>> {
-        self.service.as_ref().map(|n| n.clone())
+    fn service(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.service)
     }
-    fn protocol(&self) -> Option<OneOrMany<Name>> {
-        self.protocol.clone()
+    fn protocol(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.protocol)
     }
-    fn directory(&self) -> Option<OneOrMany<Name>> {
-        self.directory.clone()
+    fn directory(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.directory)
     }
-    fn storage(&self) -> Option<OneOrMany<Name>> {
-        self.storage.clone()
+    fn storage(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.storage)
     }
-    fn runner(&self) -> Option<OneOrMany<Name>> {
-        self.runner.clone()
+    fn runner(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.runner)
     }
-    fn resolver(&self) -> Option<OneOrMany<Name>> {
-        self.resolver.clone()
+    fn resolver(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.resolver)
     }
-    fn event_stream(&self) -> Option<OneOrMany<Name>> {
-        self.event_stream.clone()
+    fn event_stream(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.event_stream)
+    }
+    fn dictionary(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.dictionary)
+    }
+    fn config(&self) -> Option<OneOrMany<&Name>> {
+        option_one_or_many_as_ref(&self.config)
     }
 
     fn set_service(&mut self, o: Option<OneOrMany<Name>>) {
@@ -3408,6 +3962,12 @@ impl CapabilityClause for Offer {
     }
     fn set_event_stream(&mut self, o: Option<OneOrMany<Name>>) {
         self.event_stream = o;
+    }
+    fn set_dictionary(&mut self, o: Option<OneOrMany<Name>>) {
+        self.dictionary = o;
+    }
+    fn set_config(&mut self, o: Option<OneOrMany<Name>>) {
+        self.config = o
     }
 
     fn availability(&self) -> Option<Availability> {
@@ -3432,6 +3992,10 @@ impl CapabilityClause for Offer {
             "resolver"
         } else if self.event_stream.is_some() {
             "event_stream"
+        } else if self.dictionary.is_some() {
+            "dictionary"
+        } else if self.config.is_some() {
+            "config"
         } else {
             panic!("Missing capability name")
         }
@@ -3440,11 +4004,29 @@ impl CapabilityClause for Offer {
         "offer"
     }
     fn supported(&self) -> &[&'static str] {
-        &["service", "protocol", "directory", "storage", "runner", "resolver", "event_stream"]
+        &[
+            "service",
+            "protocol",
+            "directory",
+            "storage",
+            "runner",
+            "resolver",
+            "event_stream",
+            "config",
+        ]
     }
     fn are_many_names_allowed(&self) -> bool {
-        ["service", "protocol", "directory", "storage", "runner", "resolver", "event_stream"]
-            .contains(&self.capability_type())
+        [
+            "service",
+            "protocol",
+            "directory",
+            "storage",
+            "runner",
+            "resolver",
+            "event_stream",
+            "config",
+        ]
+        .contains(&self.capability_type())
     }
 }
 
@@ -3490,12 +4072,12 @@ where
     r.into()
 }
 
-pub fn alias_or_name(alias: Option<&Name>, name: &Name) -> Name {
-    alias.unwrap_or(name).clone()
+pub fn alias_or_name<'a>(alias: Option<&'a Name>, name: &'a Name) -> &'a Name {
+    alias.unwrap_or(name)
 }
 
-pub fn alias_or_path(alias: Option<&Path>, path: &Path) -> Path {
-    alias.unwrap_or(path).clone()
+pub fn alias_or_path<'a>(alias: Option<&'a Path>, path: &'a Path) -> &'a Path {
+    alias.unwrap_or(path)
 }
 
 pub fn format_cml(buffer: &str, file: &std::path::Path) -> Result<Vec<u8>, Error> {
@@ -3674,9 +4256,11 @@ impl Offer {
             r#as: None,
             service: None,
             directory: None,
+            config: None,
             runner: None,
             resolver: None,
             storage: None,
+            dictionary: None,
             dependency: None,
             rights: None,
             subdir: None,
@@ -3707,7 +4291,7 @@ mod tests {
         assert_matches::assert_matches,
         difference::Changeset,
         error::{Error, Location},
-        serde_json::{self, json, to_string_pretty},
+        serde_json::{self, json, to_string_pretty, to_value},
         serde_json5,
         std::path::Path,
         test_case::test_case,
@@ -3912,6 +4496,8 @@ mod tests {
             storage: None,
             runner: None,
             resolver: None,
+            dictionary: None,
+            config: None,
             from: OneOrMany::One(OfferFromRef::Self_),
             to: OneOrMany::Many(vec![]),
             r#as: None,
@@ -3932,11 +4518,14 @@ mod tests {
             scope: None,
             directory: None,
             storage: None,
+            config: None,
+            config_key: None,
             from: None,
             path: None,
             rights: None,
             subdir: None,
             event_stream: None,
+            runner: None,
             filter: None,
             dependency: None,
             availability: None,
@@ -3946,33 +4535,32 @@ mod tests {
     #[test]
     fn test_capability_id() -> Result<(), Error> {
         // service
+        let a: Name = "a".parse().unwrap();
+        let b: Name = "b".parse().unwrap();
         assert_eq!(
             CapabilityId::from_offer_expose(&Offer {
-                service: Some(OneOrMany::One("a".parse().unwrap())),
+                service: Some(OneOrMany::One(a.clone())),
                 ..empty_offer()
             },)?,
-            vec![CapabilityId::Service("a".parse().unwrap())]
+            vec![CapabilityId::Service(&a)]
         );
         assert_eq!(
             CapabilityId::from_offer_expose(&Offer {
-                service: Some(OneOrMany::Many(vec!["a".parse().unwrap(), "b".parse().unwrap()],)),
+                service: Some(OneOrMany::Many(vec![a.clone(), b.clone()],)),
                 ..empty_offer()
             },)?,
-            vec![
-                CapabilityId::Service("a".parse().unwrap()),
-                CapabilityId::Service("b".parse().unwrap())
-            ]
+            vec![CapabilityId::Service(&a), CapabilityId::Service(&b)]
         );
         assert_eq!(
             CapabilityId::from_use(&Use {
-                service: Some(OneOrMany::One("a".parse().unwrap())),
+                service: Some(OneOrMany::One(a.clone())),
                 ..empty_use()
             },)?,
             vec![CapabilityId::UsedService("/svc/a".parse().unwrap())]
         );
         assert_eq!(
             CapabilityId::from_use(&Use {
-                service: Some(OneOrMany::Many(vec!["a".parse().unwrap(), "b".parse().unwrap(),],)),
+                service: Some(OneOrMany::Many(vec![a.clone(), b.clone(),],)),
                 ..empty_use()
             },)?,
             vec![
@@ -3999,7 +4587,7 @@ mod tests {
         );
         assert_eq!(
             CapabilityId::from_use(&Use {
-                service: Some(OneOrMany::One("a".parse().unwrap())),
+                service: Some(OneOrMany::One(a.clone())),
                 path: Some("/b".parse().unwrap()),
                 ..empty_use()
             },)?,
@@ -4009,31 +4597,28 @@ mod tests {
         // protocol
         assert_eq!(
             CapabilityId::from_offer_expose(&Offer {
-                protocol: Some(OneOrMany::One("a".parse().unwrap())),
+                protocol: Some(OneOrMany::One(a.clone())),
                 ..empty_offer()
             },)?,
-            vec![CapabilityId::Protocol("a".parse().unwrap())]
+            vec![CapabilityId::Protocol(&a)]
         );
         assert_eq!(
             CapabilityId::from_offer_expose(&Offer {
-                protocol: Some(OneOrMany::Many(vec!["a".parse().unwrap(), "b".parse().unwrap()],)),
+                protocol: Some(OneOrMany::Many(vec![a.clone(), b.clone()],)),
                 ..empty_offer()
             },)?,
-            vec![
-                CapabilityId::Protocol("a".parse().unwrap()),
-                CapabilityId::Protocol("b".parse().unwrap())
-            ]
+            vec![CapabilityId::Protocol(&a), CapabilityId::Protocol(&b)]
         );
         assert_eq!(
             CapabilityId::from_use(&Use {
-                protocol: Some(OneOrMany::One("a".parse().unwrap())),
+                protocol: Some(OneOrMany::One(a.clone())),
                 ..empty_use()
             },)?,
             vec![CapabilityId::UsedProtocol("/svc/a".parse().unwrap())]
         );
         assert_eq!(
             CapabilityId::from_use(&Use {
-                protocol: Some(OneOrMany::Many(vec!["a".parse().unwrap(), "b".parse().unwrap(),],)),
+                protocol: Some(OneOrMany::Many(vec![a.clone(), b.clone(),],)),
                 ..empty_use()
             },)?,
             vec![
@@ -4043,7 +4628,7 @@ mod tests {
         );
         assert_eq!(
             CapabilityId::from_use(&Use {
-                protocol: Some(OneOrMany::One("a".parse().unwrap())),
+                protocol: Some(OneOrMany::One(a.clone())),
                 path: Some("/b".parse().unwrap()),
                 ..empty_use()
             },)?,
@@ -4053,24 +4638,21 @@ mod tests {
         // directory
         assert_eq!(
             CapabilityId::from_offer_expose(&Offer {
-                directory: Some(OneOrMany::One("a".parse().unwrap())),
+                directory: Some(OneOrMany::One(a.clone())),
                 ..empty_offer()
             },)?,
-            vec![CapabilityId::Directory("a".parse().unwrap())]
+            vec![CapabilityId::Directory(&a)]
         );
         assert_eq!(
             CapabilityId::from_offer_expose(&Offer {
-                directory: Some(OneOrMany::Many(vec!["a".parse().unwrap(), "b".parse().unwrap()])),
+                directory: Some(OneOrMany::Many(vec![a.clone(), b.clone()])),
                 ..empty_offer()
             },)?,
-            vec![
-                CapabilityId::Directory("a".parse().unwrap()),
-                CapabilityId::Directory("b".parse().unwrap()),
-            ]
+            vec![CapabilityId::Directory(&a), CapabilityId::Directory(&b),]
         );
         assert_eq!(
             CapabilityId::from_use(&Use {
-                directory: Some("a".parse().unwrap()),
+                directory: Some(a.clone()),
                 path: Some("/b".parse().unwrap()),
                 ..empty_use()
             },)?,
@@ -4080,38 +4662,41 @@ mod tests {
         // storage
         assert_eq!(
             CapabilityId::from_offer_expose(&Offer {
-                storage: Some(OneOrMany::One("cache".parse().unwrap())),
+                storage: Some(OneOrMany::One(a.clone())),
                 ..empty_offer()
             },)?,
-            vec![CapabilityId::Storage("cache".parse().unwrap())],
+            vec![CapabilityId::Storage(&a)]
         );
         assert_eq!(
             CapabilityId::from_offer_expose(&Offer {
-                storage: Some(OneOrMany::Many(vec!["a".parse().unwrap(), "b".parse().unwrap()])),
+                storage: Some(OneOrMany::Many(vec![a.clone(), b.clone()])),
                 ..empty_offer()
             },)?,
-            vec![
-                CapabilityId::Storage("a".parse().unwrap()),
-                CapabilityId::Storage("b".parse().unwrap()),
-            ]
+            vec![CapabilityId::Storage(&a), CapabilityId::Storage(&b),]
         );
         assert_eq!(
             CapabilityId::from_use(&Use {
-                storage: Some("a".parse().unwrap()),
+                storage: Some(a.clone()),
                 path: Some("/b".parse().unwrap()),
                 ..empty_use()
             },)?,
             vec![CapabilityId::UsedStorage("/b".parse().unwrap())]
         );
 
+        // runner
+        assert_eq!(
+            CapabilityId::from_use(&Use { runner: Some("elf".parse().unwrap()), ..empty_use() },)?,
+            vec![CapabilityId::UsedRunner(&"elf".parse().unwrap())]
+        );
+
         // "as" aliasing.
         assert_eq!(
             CapabilityId::from_offer_expose(&Offer {
-                service: Some(OneOrMany::One("a".parse().unwrap())),
-                r#as: Some("b".parse().unwrap()),
+                service: Some(OneOrMany::One(a.clone())),
+                r#as: Some(b.clone()),
                 ..empty_offer()
             },)?,
-            vec![CapabilityId::Service("b".parse().unwrap())]
+            vec![CapabilityId::Service(&b)]
         );
 
         // Error case.
@@ -4183,7 +4768,7 @@ mod tests {
         let mut other = document(json!({ "expose": [{ "protocol": "bar", "from": "self" }] }));
         some.merge_from(&mut other, &Path::new("some/path")).unwrap();
         let uses = some.r#use.as_ref().unwrap();
-        let exposes = some.r#expose.as_ref().unwrap();
+        let exposes = some.expose.as_ref().unwrap();
         assert_eq!(uses.len(), 1);
         assert_eq!(exposes.len(), 1);
         assert_eq!(
@@ -4194,6 +4779,166 @@ mod tests {
             exposes[0].protocol.as_ref().unwrap(),
             &OneOrMany::One("bar".parse::<Name>().unwrap())
         );
+    }
+
+    #[test]
+    fn test_merge_environments() {
+        let mut some = document(json!({ "environments": [
+            {
+                "name": "one",
+                "extends": "realm",
+            },
+            {
+                "name": "two",
+                "extends": "none",
+                "runners": [
+                    {
+                        "runner": "r1",
+                        "from": "#c1",
+                    },
+                    {
+                        "runner": "r2",
+                        "from": "#c2",
+                    },
+                ],
+                "resolvers": [
+                    {
+                        "resolver": "res1",
+                        "from": "#c1",
+                        "scheme": "foo",
+                    },
+                ],
+                "debug": [
+                    {
+                        "protocol": "baz",
+                        "from": "#c2"
+                    }
+                ]
+            },
+        ]}));
+        let mut other = document(json!({ "environments": [
+            {
+                "name": "two",
+                "__stop_timeout_ms": 100,
+                "runners": [
+                    {
+                        "runner": "r3",
+                        "from": "#c3",
+                    },
+                ],
+                "resolvers": [
+                    {
+                        "resolver": "res2",
+                        "from": "#c1",
+                        "scheme": "bar",
+                    },
+                ],
+                "debug": [
+                    {
+                        "protocol": "faz",
+                        "from": "#c2"
+                    }
+                ]
+            },
+            {
+                "name": "three",
+                "__stop_timeout_ms": 1000,
+            },
+        ]}));
+        some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+        assert_eq!(
+            to_value(some).unwrap(),
+            json!({"environments": [
+                {
+                    "name": "one",
+                    "extends": "realm",
+                },
+                {
+                    "name": "three",
+                    "__stop_timeout_ms": 1000,
+                },
+                {
+                    "name": "two",
+                    "extends": "none",
+                    "__stop_timeout_ms": 100,
+                    "runners": [
+                        {
+                            "runner": "r1",
+                            "from": "#c1",
+                        },
+                        {
+                            "runner": "r2",
+                            "from": "#c2",
+                        },
+                        {
+                            "runner": "r3",
+                            "from": "#c3",
+                        },
+                    ],
+                    "resolvers": [
+                        {
+                            "resolver": "res1",
+                            "from": "#c1",
+                            "scheme": "foo",
+                        },
+                        {
+                            "resolver": "res2",
+                            "from": "#c1",
+                            "scheme": "bar",
+                        },
+                    ],
+                    "debug": [
+                        {
+                            "protocol": "baz",
+                            "from": "#c2"
+                        },
+                        {
+                            "protocol": "faz",
+                            "from": "#c2"
+                        }
+                    ]
+                },
+            ]})
+        );
+    }
+
+    #[test]
+    fn test_merge_environments_errors() {
+        {
+            let mut some = document(json!({"environments": [{"name": "one", "extends": "realm"}]}));
+            let mut other = document(json!({"environments": [{"name": "one", "extends": "none"}]}));
+            assert!(some.merge_from(&mut other, &Path::new("some/path")).is_err());
+        }
+        {
+            let mut some =
+                document(json!({"environments": [{"name": "one", "__stop_timeout_ms": 10}]}));
+            let mut other =
+                document(json!({"environments": [{"name": "one", "__stop_timeout_ms": 20}]}));
+            assert!(some.merge_from(&mut other, &Path::new("some/path")).is_err());
+        }
+
+        // It's ok if the values match.
+        {
+            let mut some = document(json!({"environments": [{"name": "one", "extends": "realm"}]}));
+            let mut other =
+                document(json!({"environments": [{"name": "one", "extends": "realm"}]}));
+            some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+            assert_eq!(
+                to_value(some).unwrap(),
+                json!({"environments": [{"name": "one", "extends": "realm"}]})
+            );
+        }
+        {
+            let mut some =
+                document(json!({"environments": [{"name": "one", "__stop_timeout_ms": 10}]}));
+            let mut other =
+                document(json!({"environments": [{"name": "one", "__stop_timeout_ms": 10}]}));
+            some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+            assert_eq!(
+                to_value(some).unwrap(),
+                json!({"environments": [{"name": "one", "__stop_timeout_ms": 10}]})
+            );
+        }
     }
 
     #[test]

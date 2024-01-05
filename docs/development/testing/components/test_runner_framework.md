@@ -183,69 +183,6 @@ Note: If you see the error message "Component has a \`program\` block defined,
 but doesn't specify a \`runner\`" for your test, this indicates you are not using a
 test framework with a dedicated test runner, and you should add the above dependency.
 
-#### Legacy test runner {#legacy-test-runner}
-
-Legacy tests are tests that were written before the Test Runner Framework was
-introduced. The legacy test runner offers a simple adapter between the modern
-test framework and legacy tests that were not converted to modern ones.
-**It is not recommended to use the legacy test runner in new tests.**
-
-The legacy test runner detects if a test passed or failed by observing its
-return code, with zero indicating success and non-zero indicating failure.
-
-All legacy tests are automatically wrapped in a modern test and executed using
-the legacy test runner. The launch URL of the wrapper will be derived from the wrapped
-test's launch URL. For instance:
-
-&nbsp;&nbsp;&nbsp;&nbsp;`fuchsia-pkg://fuchsia.com/package#meta/test_component.cmx`
-
-will become:
-
-&nbsp;&nbsp;&nbsp;&nbsp;`fuchsia-pkg://fuchsia.com/package#meta/test_component.cm`
-
-The legacy test runner does not understand concepts such as test cases (or
-filtering on them), running multiple test cases in parallel, etc. It does
-however forward arguments to the test, so you can pass arguments that are
-specific to the underlying test framework. For instance, to run just a specific
-test case from a gtest:
-
-```posix-terminal
-fx test <test> -- --gtest_filter=MyTestCase
-```
-
-To run Rust tests, at most 5 test cases at a time:
-
-```posix-terminal
-fx test <test> -- --test-threads=5
-```
-
-To suppress this behavior set `wrap_cmx_test_with_cml_test` to false on `fuchsia_test_package`
-or `fuchsia_unittest_package`. **Don't forget to file a bug and track the reason
-for the exclusion.**
-
-Change your `BUILD.gn` to exclude your legacy test:
-
-```gn
-import("//build/components.gni")
-
-# This is your legacy test
-fuchsia_test_component("simple_test_legacy") {
-  component_name = "simple_test"
-  manifest = "meta/simple_test.cmx"
-  deps = [ ":simple_test_bin" ]
-}
-
-# Exclude your test from auto-wrapping.
-fuchsia_test_package("simple_test") {
-  test_components = [ ":simple_test_legacy" ]
-
-  # TODO(fxbug.dev/XXXXX) : Excluding the test due to ...
-  # Remove below line once the issue is fixed.
-  wrap_cmx_test_with_cml_test = false
-}
-
-```
-
 ### Controlling parallel execution of test cases
 
 When using `fx test` to launch tests, they may run each test case in sequence or
@@ -261,13 +198,6 @@ fuchsia_test_package("my-test-pkg") {
     parallel = 10
   }
 }
-```
-
-To override the value specified in the test spec, pass the parallel option when
-invoking fx test:
-
-```posix-terminal
-fx test --parallel=5 <test_url>
 ```
 
 ### Running test multiple times
@@ -469,7 +399,7 @@ produced by the test.
 A test is *hermetic* if it:
 
 1. Does not [use][manifests-use] or [offer][manifests-offer] any
-capabilities from the [test root's](#tests-as-components) parent.
+capabilities from the [test root's](#test-roles) parent.
 1. Does not [resolve][resolvers] any components outside of the test package.
 
 The tests are by default hermetic unless explicitly stated otherwise.
@@ -485,7 +415,6 @@ hermeticity:
 | `fuchsia.logger.LogSink` | Write to syslog |
 | `fuchsia.process.Launcher` | Launch a child process from the test package |
 | `fuchsia.diagnostics.ArchiveAccessor` | Read diagnostics output by components in the test |
-| `fuchsia.sys2.EventSource` | Access to event protocol |
 
 The hermeticity is retained because these capabilities are carefully curated
 to not allow tests to affect the behavior of system components outside the test
@@ -611,7 +540,7 @@ To use a system capability, a test must explicitly mark itself to run in
 non-hermetic realm as shown below.
 
 ```gn
-# BUILD.gn
+# BUILD.gn (in-tree build rule)
 
 fuchsia_test_component("my_test_component") {
   component_name = "my_test"
@@ -623,10 +552,26 @@ fuchsia_test_component("my_test_component") {
 }
 ```
 
+After integrating with the build rule, the test can be executed as
+
+```
+fx test <my_test>
+```
+
+Or for out-of-tree developers
+
+```
+ffx test run --realm <realm_moniker> <test_url>
+```
+
+where `realm_moniker` should be replaced with `/core/testing:system-tests` for
+above example.
+
 Possible values of `test_type`:
 
 | Value | Description |
 | ----- | ----------- |
+| `chromium` | [Chromium test realm] |
 | `ctf` | [CTF test realm] |
 | `device` | [Device tests] |
 | `drm` | [DRM tests] |
@@ -681,7 +626,6 @@ Possible values of `fuchsia.test.type`:
 | Value | Description |
 | ----- | ----------- |
 | `hermetic` | Hermetic realm |
-| `chromium` | Chromium test realm |
 | `chromium-system` | Chromium system test realm |
 | `google` | Google test realm |
 
@@ -705,10 +649,16 @@ extra overhead per process launched.
 
 Components in the test realm may play various roles in the test, as follows:
 
+- Test root: The component at the top of a test's component tree. The URL for
+  the test identifies this component, and the test manager will invoke the
+  [`fuchsia.test.Suite`][test-suite-protocol] exposed by this component to
+  drive the test.
 - Test driver: The component that actually runs the test, and implements
-    (either directly or through a [test runner](#test-runners)) the
-    [`fuchsia.test.Suite`][test-suite-protocol] protocol. This role may be, but
-    is not necessarily, owned by the [test root](#tests-as-components).
+  (either directly or through a [test runner](#test-runners) the
+  [`fuchsia.test.Suite`][test-suite-protocol] protocol. Note that the test
+  driver and test root may be, but are not necessarily, the same component:
+  the test driver could be a subcomponent of the test root which re-exposes its
+  `fuchsia.test.Suite`, for example.
 - Capability provider: A component that provides a capability that the test
     will exercise somehow. The component may either provide a "fake"
     implementation of the capability for test, or a "real" implementation that
@@ -824,6 +774,7 @@ offer: [
 
 [caching-loader-service]: /src/sys/test_runners/src/elf/elf_component.rs
 [cf]: /docs/concepts/components/v2/
+[Chromium test realm]: /src/sys/testing/meta/chromium_test_realm.shard.cml
 [component-manifest]: /docs/concepts/components/v2/component_manifests.md
 [component-unit-tests]: /docs/development/components/build.md#unit-tests
 [create-test-realm]: /docs/development/testing/components/create_test_realm.md
@@ -840,9 +791,9 @@ offer: [
 [loader-service]: /docs/concepts/process/program_loading.md#the_loader_service
 [manifests-offer]: https://fuchsia.dev/reference/cml#offer
 [manifests-use]: https://fuchsia.dev/reference/cml#use
-[resolvers]:  /docs/concepts/components/v2/capabilities/resolvers.md
+[resolvers]:  /docs/concepts/components/v2/capabilities/resolver.md
 [restricted-logs]: /docs/development/diagnostics/test_and_logs.md#restricting_log_severity
-[runners]: /docs/concepts/components/v2/capabilities/runners.md
+[runners]: /docs/concepts/components/v2/capabilities/runner.md
 [Starnix tests]: /src/sys/testing/meta/starnix-tests.shard.cml
 [subpackages]: /docs/concepts/components/v2/subpackaging.md
 [System Validation Tests]: /src/testing/system-validation/meta/system_validation_test_realm.shard.cml

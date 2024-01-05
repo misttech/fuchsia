@@ -11,11 +11,12 @@
 #include <lib/zx/process.h>
 #include <lib/zx/thread.h>
 #include <zircon/device/audio.h>
+#include <zircon/errors.h>
 
-#include <limits>
 #include <utility>
 
 #include <audio-proto-utils/format-utils.h>
+
 namespace audio {
 
 SimpleAudioStream::SimpleAudioStream(zx_device_t* parent, bool is_input)
@@ -406,7 +407,7 @@ void SimpleAudioStream::CreateRingBuffer(
 
   number_of_channels_.Set(pcm_format.number_of_channels);
   frame_rate_.Set(pcm_format.frame_rate);
-  bits_per_slot_.Set(pcm_format.bytes_per_sample * 8);
+  bits_per_slot_.Set(pcm_format.bytes_per_sample * 8ul);
   bits_per_sample_.Set(pcm_format.valid_bits_per_sample);
   using FidlSampleFormat = audio_fidl::wire::SampleFormat;
   // clang-format off
@@ -444,7 +445,11 @@ void SimpleAudioStream::CreateRingBuffer(
 
 void SimpleAudioStream::WatchGainState(StreamChannel* channel,
                                        StreamChannel::WatchGainStateCompleter::Sync& completer) {
-  ZX_ASSERT(!channel->gain_completer_);
+  if (channel->gain_completer_) {
+    completer.Close(ZX_ERR_BAD_STATE);
+    channel->gain_completer_.reset();
+    return;
+  }
   channel->gain_completer_ = completer.ToAsync();
 
   ScopedToken t(domain_token());
@@ -467,7 +472,11 @@ void SimpleAudioStream::WatchGainState(StreamChannel* channel,
 
 void SimpleAudioStream::WatchPlugState(StreamChannel* channel,
                                        StreamChannel::WatchPlugStateCompleter::Sync& completer) {
-  ZX_ASSERT(!channel->plug_completer_);
+  if (channel->plug_completer_) {
+    completer.Close(ZX_ERR_BAD_STATE);
+    channel->plug_completer_.reset();
+    return;
+  }
   channel->plug_completer_ = completer.ToAsync();
 
   ScopedToken t(domain_token());
@@ -488,12 +497,26 @@ void SimpleAudioStream::WatchPlugState(StreamChannel* channel,
 void SimpleAudioStream::WatchClockRecoveryPositionInfo(
     WatchClockRecoveryPositionInfoCompleter::Sync& completer) {
   fbl::AutoLock position_lock(&position_lock_);
+
+  if (position_completer_) {
+    completer.Close(ZX_ERR_BAD_STATE);
+    position_completer_.reset();
+    return;
+  }
+
   position_request_time_.Set(zx::clock::get_monotonic().get());
   position_completer_ = completer.ToAsync();
 }
 
 void SimpleAudioStream::WatchDelayInfo(WatchDelayInfoCompleter::Sync& completer) {
   ScopedToken t(domain_token());
+
+  if (delay_completer_) {
+    completer.Close(ZX_ERR_BAD_STATE);
+    delay_completer_.reset();
+    return;
+  }
+
   if (!delay_info_updated_) {
     delay_info_updated_ = true;
     fidl::Arena allocator;
@@ -625,7 +648,7 @@ void SimpleAudioStream::GetSupportedFormats(
   fbl::Vector<FidlCompatibleFormats> fidl_compatible_formats;
   for (SupportedFormat& i : supported_formats_) {
     std::vector<utils::Format> formats = audio::utils::GetAllFormats(i.range.sample_formats);
-    ZX_ASSERT(formats.size() >= 1);
+    ZX_ASSERT(!formats.empty());
     for (utils::Format& j : formats) {
       fbl::Vector<uint32_t> rates;
       audio::utils::FrameRateEnumerator enumerator(i.range);
@@ -713,7 +736,6 @@ void SimpleAudioStream::GetProperties(GetPropertiesCompleter::Sync& completer) {
   fidl::Arena allocator;
   audio_fidl::wire::RingBufferProperties ring_buffer_properties(allocator);
   ring_buffer_properties.set_driver_transfer_bytes(driver_transfer_bytes_)
-      .set_external_delay(allocator, external_delay_nsec_)
       .set_needs_cache_flush_or_invalidate(true)
       .set_turn_on_delay(allocator, turn_on_delay_nsec_);
 
@@ -780,7 +802,7 @@ void SimpleAudioStream::Start(StartCompleter::Sync& completer) {
     state_.Set("started");
     start_time_.Set(zx::clock::get_monotonic().get());
   }
-  completer.Reply(start_time);
+  completer.Reply(static_cast<int64_t>(start_time));
 }
 
 void SimpleAudioStream::Stop(StopCompleter::Sync& completer) {

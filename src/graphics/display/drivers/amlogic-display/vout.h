@@ -10,26 +10,50 @@
 #include <fuchsia/hardware/dsiimpl/cpp/banjo.h>
 #include <fuchsia/hardware/i2cimpl/cpp/banjo.h>
 #include <lib/device-protocol/display-panel.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/zx/result.h>
 
 #include "src/graphics/display/drivers/amlogic-display/clock.h"
 #include "src/graphics/display/drivers/amlogic-display/dsi-host.h"
 #include "src/graphics/display/drivers/amlogic-display/hdmi-host.h"
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
+#include "src/graphics/display/lib/api-types-cpp/display-timing.h"
 
 namespace amlogic_display {
 
-enum VoutType { kDsi, kHdmi, kUnknown };
+enum class VoutType : uint8_t {
+  kDsi,
+  kHdmi,
+};
 
 class Vout : public ddk::I2cImplProtocol<Vout> {
  public:
-  Vout() = default;
-  zx_status_t InitDsi(zx_device_t* parent, uint32_t panel_type, uint32_t width, uint32_t height);
-  zx_status_t InitHdmi(zx_device_t* parent, fidl::ClientEnd<fuchsia_hardware_hdmi::Hdmi> hdmi);
-  // Sets only the display size, feature bits and panel settings for testing.
-  zx_status_t InitDsiForTesting(uint32_t panel_type, uint32_t width, uint32_t height);
+  // Returns a non-null pointer to the Vout instance outputting DSI signal on
+  // success.
+  static zx::result<std::unique_ptr<Vout>> CreateDsiVout(zx_device_t* parent, uint32_t panel_type,
+                                                         uint32_t width, uint32_t height,
+                                                         inspect::Node node);
 
-  zx_status_t RestartDisplay();
+  // Returns a non-null pointer to the Vout instance outputting HDMI signal on
+  // success.
+  static zx::result<std::unique_ptr<Vout>> CreateHdmiVout(zx_device_t* parent, inspect::Node node);
+
+  // Sets only the display size, feature bits and panel settings for testing.
+  // Returns a non-null pointer to the Vout instance on success.
+  static zx::result<std::unique_ptr<Vout>> CreateDsiVoutForTesting(uint32_t panel_type,
+                                                                   uint32_t width, uint32_t height);
+
+  // Creates a Vout instance that outputs MIPI-DSI signal.
+  Vout(std::unique_ptr<DsiHost> dsi_host, std::unique_ptr<Clock> dsi_clock, uint32_t width,
+       uint32_t height, display_setting_t display_setting, inspect::Node node);
+
+  // Creates a Vout instance that outputs HDMI signal.
+  Vout(std::unique_ptr<HdmiHost> hdmi_host, inspect::Node node);
+
+  Vout(Vout&&) = delete;
+  Vout(const Vout&) = delete;
+  Vout& operator=(Vout&&) = delete;
+  Vout& operator=(const Vout&) = delete;
 
   void PopulateAddedDisplayArgs(
       added_display_args_t* args, display::DisplayId display_id,
@@ -37,62 +61,21 @@ class Vout : public ddk::I2cImplProtocol<Vout> {
 
   VoutType type() { return type_; }
   bool supports_hpd() const { return supports_hpd_; }
-  uint32_t display_width() {
-    switch (type_) {
-      case kDsi:
-        return dsi_.disp_setting.h_active;
-      case kHdmi:
-        return hdmi_.cur_display_mode_.h_addressable;
-      default:
-        return 0;
-    }
-  }
-  uint32_t display_height() {
-    switch (type_) {
-      case kDsi:
-        return dsi_.disp_setting.v_active;
-      case kHdmi:
-        return hdmi_.cur_display_mode_.v_addressable;
-      default:
-        return 0;
-    }
-  }
-  uint32_t fb_width() {
-    switch (type_) {
-      case kDsi:
-        return dsi_.width;
-      case kHdmi:
-        return hdmi_.cur_display_mode_.h_addressable;
-      default:
-        return 0;
-    }
-  }
-  uint32_t fb_height() {
-    switch (type_) {
-      case kDsi:
-        return dsi_.height;
-      case kHdmi:
-        return hdmi_.cur_display_mode_.v_addressable;
-      default:
-        return 0;
-    }
-  }
 
-  uint32_t panel_type() {
-    switch (type_) {
-      case kDsi:
-        return dsi_.dsi_host->panel_type();
-      case kHdmi:
-      default:
-        return 0;
-    }
-  }
+  uint32_t display_width() const;
+  uint32_t display_height() const;
+  uint32_t fb_width() const;
+  uint32_t fb_height() const;
+  uint32_t panel_type() const;
 
   void DisplayConnected();
   void DisplayDisconnected();
-  bool CheckMode(const display_mode_t* mode);
-  zx_status_t ApplyConfiguration(const display_mode_t* mode);
-  zx_status_t OnDisplaysChanged(added_display_info_t& info);
+
+  // Vout must be of `kHdmi` type.
+  bool IsDisplayTimingSupported(const display::DisplayTiming& timing);
+
+  // Vout must be of `kHdmi` type.
+  zx::result<> ApplyConfiguration(const display::DisplayTiming& timing);
 
   // Required functions for I2cImpl
   zx_status_t I2cImplGetMaxTransferSize(size_t* out_size) {
@@ -123,10 +106,12 @@ class Vout : public ddk::I2cImplProtocol<Vout> {
   void Dump();
 
  private:
-  VoutType type_ = VoutType::kUnknown;
+  VoutType type_;
 
   // Features
   bool supports_hpd_ = false;
+
+  inspect::Node node_;
 
   struct dsi_t {
     std::unique_ptr<DsiHost> dsi_host;
@@ -143,7 +128,7 @@ class Vout : public ddk::I2cImplProtocol<Vout> {
   struct hdmi_t {
     std::unique_ptr<HdmiHost> hdmi_host;
 
-    display_mode_t cur_display_mode_;
+    display::DisplayTiming current_display_timing_;
   } hdmi_;
 };
 

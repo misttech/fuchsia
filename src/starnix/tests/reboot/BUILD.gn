@@ -27,7 +27,6 @@ rustc_test("integration_test") {
     "//src/lib/fuchsia-component-test",
     "//src/sys/pkg/testing/mock-reboot",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:parking_lot",
   ]
@@ -59,7 +58,6 @@ fuchsia_test_package("starnix_reboot_integration_tests") {
     ":realm",
     ":reboot_no_args",
     ":reboot_ota_update",
-    "//src/starnix/tests/android:container_resources",
   ]
 
   subpackages = starnix_test_subpackages +

@@ -24,6 +24,7 @@
 #include "src/developer/forensics/feedback_data/metadata.h"
 #include "src/developer/forensics/utils/cobalt/logger.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
+#include "src/developer/forensics/utils/utc_clock_ready_watcher.h"
 #include "src/lib/fsl/vmo/sized_vmo.h"
 #include "src/lib/timekeeper/clock.h"
 
@@ -51,7 +52,8 @@ class DataProviderInternal {
 
   using GetSnapshotInternalCallback =
       fit::callback<void(feedback::Annotations, fuchsia::feedback::Attachment)>;
-  virtual void GetSnapshotInternal(zx::duration timeout, GetSnapshotInternalCallback callback) = 0;
+  virtual void GetSnapshotInternal(zx::duration timeout, const std::string& uuid,
+                                   GetSnapshotInternalCallback callback) = 0;
 };
 
 // Provides data useful to attach in feedback reports (crash, user feedback or bug reports).
@@ -70,7 +72,8 @@ class DataProvider : public fuchsia::feedback::DataProvider, public DataProvider
                       GetAnnotationsCallback callback) override;
   void GetSnapshot(fuchsia::feedback::GetSnapshotParameters params,
                    GetSnapshotCallback callback) override;
-  void GetSnapshotInternal(zx::duration timeout, GetSnapshotInternalCallback callback) override;
+  void GetSnapshotInternal(zx::duration timeout, const std::string& uuid,
+                           GetSnapshotInternalCallback callback) override;
   void GetScreenshot(fuchsia::feedback::ImageEncoding encoding,
                      GetScreenshotCallback callback) override;
 
@@ -79,13 +82,14 @@ class DataProvider : public fuchsia::feedback::DataProvider, public DataProvider
  private:
   ::fpromise::promise<feedback::Annotations> GetAnnotations(const zx::duration timeout);
   ::fpromise::promise<feedback::Attachments> GetAttachments(const zx::duration timeout);
-  void GetSnapshotInternal(zx::duration timeout,
+  void GetSnapshotInternal(zx::duration timeout, const std::string& uuid,
                            fit::callback<void(feedback::Annotations, fsl::SizedVmo)> callback);
 
   bool ServeArchive(fsl::SizedVmo archive, zx::channel server_end);
 
   async_dispatcher_t* dispatcher_;
   std::shared_ptr<sys::ServiceDirectory> services_;
+  UtcClockReadyWatcher utc_clock_ready_watcher_;
   Metadata metadata_;
   cobalt::Logger* cobalt_;
 

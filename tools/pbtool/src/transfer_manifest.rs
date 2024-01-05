@@ -4,7 +4,7 @@
 
 //! Generate a transfer manifest for uploading and downloading a product bundle.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use argh::FromArgs;
 use assembly_manifest::Image;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -26,7 +26,7 @@ pub struct GenerateTransferManifest {
 
     /// path to the directory to write the transfer.json manifest.
     #[argh(option)]
-    out_dir: Utf8PathBuf,
+    output: Utf8PathBuf,
 }
 
 impl GenerateTransferManifest {
@@ -34,12 +34,15 @@ impl GenerateTransferManifest {
     pub async fn generate(self) -> Result<()> {
         let product_bundle = ProductBundle::try_load_from(&self.product_bundle)?;
         let product_bundle = match product_bundle {
-            ProductBundle::V1(_) => bail!("Only v2 product bundles are supported"),
             ProductBundle::V2(pb) => pb,
         };
 
+        let out_dir = self.output.parent().unwrap();
+        std::fs::create_dir_all(&out_dir).context("creating output directory")?;
         let canonical_out_dir =
-            &self.out_dir.canonicalize_utf8().context("canonicalizing out_dir")?;
+            &out_dir.canonicalize_utf8().context("canonicalizing output directory")?;
+        let canonical_output = canonical_out_dir.join(&self.output.file_name().unwrap());
+
         let canonical_product_bundle_path = &self
             .product_bundle
             .canonicalize_utf8()
@@ -61,7 +64,7 @@ impl GenerateTransferManifest {
             let blob_transfer = TransferEntry {
                 artifact_type: ArtifactType::Blobs,
                 local,
-                remote: "blobs".into(),
+                remote: "".into(),
                 entries: blob_entries,
             };
             entries.push(blob_transfer);
@@ -173,15 +176,15 @@ impl GenerateTransferManifest {
         entries.push(TransferEntry {
             artifact_type: ArtifactType::Files,
             local,
-            remote: "product_bundle".into(),
+            remote: "".into(),
             entries: product_bundle_entries,
         });
 
         // Write the transfer manifest.
         let transfer_manifest = TransferManifest::V1(TransferManifestV1 { entries });
-        let transfer_manifest_path = self.out_dir.join("transfer.json");
-        let file = File::create(transfer_manifest_path).context("creating transfer manifest")?;
-        serde_json::to_writer(file, &transfer_manifest).context("writing transfer manifest")?;
+        let file = File::create(canonical_output).context("creating transfer manifest")?;
+        serde_json::to_writer_pretty(file, &transfer_manifest)
+            .context("writing transfer manifest")?;
         Ok(())
     }
 }
@@ -202,7 +205,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_generate() {
         let tmp = tempdir().unwrap();
-        let tempdir = Utf8Path::from_path(tmp.path()).unwrap();
+        let tempdir = Utf8Path::from_path(tmp.path()).unwrap().canonicalize_utf8().unwrap();
 
         let pb_path = tempdir.join("product_bundle");
         std::fs::create_dir_all(&pb_path).unwrap();
@@ -240,7 +243,7 @@ mod tests {
         serde_json::to_writer(vd_manifest_file, &vd_manifest).unwrap();
 
         let pb = ProductBundle::V2(ProductBundleV2 {
-            product_name: "".to_string(),
+            product_name: "my-product-bundle".to_string(),
             product_version: "".to_string(),
             partitions: PartitionsConfig::default(),
             sdk_version: "".to_string(),
@@ -266,14 +269,12 @@ mod tests {
         });
         pb.write(&pb_path).unwrap();
 
-        let cmd = GenerateTransferManifest {
-            product_bundle: pb_path.clone(),
-            out_dir: tempdir.to_path_buf(),
-        };
+        let output = tempdir.join("transfer.json");
+        let cmd =
+            GenerateTransferManifest { product_bundle: pb_path.clone(), output: output.clone() };
         cmd.generate().await.unwrap();
 
-        let output = tempdir.join("transfer.json");
-        let transfer_manifest_file = File::open(&output).unwrap();
+        let transfer_manifest_file = File::open(output).unwrap();
         let transfer_manifest: TransferManifest =
             serde_json::from_reader(transfer_manifest_file).unwrap();
         assert_eq!(
@@ -283,7 +284,7 @@ mod tests {
                     TransferEntry {
                         artifact_type: transfer_manifest::ArtifactType::Blobs,
                         local: "product_bundle/blobs".into(),
-                        remote: "blobs".into(),
+                        remote: "".into(),
                         entries: vec![
                             ArtifactEntry { name: "050907f009ff634f9aa57bff541fb9e9c2c62b587c23578e77637cda3bd69458".into() },
                             ArtifactEntry { name: "2881455493b5870aaea36537d70a2adc635f516ac2092598f4b6056dabc6b25d".into() },
@@ -296,7 +297,7 @@ mod tests {
                     TransferEntry {
                         artifact_type: transfer_manifest::ArtifactType::Files,
                         local: "product_bundle".into(),
-                        remote: "product_bundle".into(),
+                        remote: "".into(),
                         entries: vec![
                             ArtifactEntry { name: "fvm".into() },
                             ArtifactEntry { name: "kernel".into() },

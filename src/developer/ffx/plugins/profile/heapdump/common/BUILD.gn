@@ -14,12 +14,14 @@ rustc_library("ffx_profile_heapdump_common") {
     "//sdk/fidl/fuchsia.memory.heapdump.client:fuchsia.memory.heapdump.client_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//src/developer/ffx/lib/errors:lib",
+    "//src/developer/ffx/lib/rcs:lib",
     "//src/lib/fidl/rust/fidl",
     "//src/performance/memory/heapdump/lib/heapdump_snapshot",
     "//src/performance/memory/pprof",
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/component_debug",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:prost",
   ]
 
@@ -27,6 +29,7 @@ rustc_library("ffx_profile_heapdump_common") {
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:tempfile",
+    "//third_party/rust_crates:test-case",
   ]
 
   sources = [

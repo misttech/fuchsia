@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.diagnostics/cpp/fidl.h>
 #include <fuchsia/diagnostics/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/inspect/contrib/cpp/archive_reader.h>
+#include <lib/diagnostics/reader/cpp/archive_reader.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -19,7 +19,7 @@
 
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 
-using inspect::contrib::InspectData;
+using diagnostics::reader::InspectData;
 
 constexpr char kChildUrl[] = "#meta/config_example.cm";
 constexpr char kCollectionName[] = "realm_api_collection";
@@ -27,7 +27,7 @@ constexpr char kCollectionName[] = "realm_api_collection";
 class IntegrationTest : public gtest::RealLoopFixture {
  protected:
   InspectData GetInspect(const std::string& child_name) {
-    std::string child_moniker = std::string(kCollectionName) + "\\:" + child_name;
+    std::string child_moniker = std::string(kCollectionName) + ":" + child_name;
     return GetInspect(child_name, child_moniker);
   }
 
@@ -37,9 +37,10 @@ class IntegrationTest : public gtest::RealLoopFixture {
     fuchsia::diagnostics::ArchiveAccessorPtr archive;
     archive.Bind(client_end->TakeChannel(), dispatcher());
 
-    std::string selector = child_moniker + ":root";
+    std::string selector =
+        diagnostics::reader::SanitizeMonikerForSelectors(child_moniker) + ":root";
 
-    inspect::contrib::ArchiveReader reader(std::move(archive), {selector});
+    diagnostics::reader::ArchiveReader reader(std::move(archive), {selector});
     fpromise::result<std::vector<InspectData>, std::string> result;
     async::Executor executor(dispatcher());
     executor.schedule_task(
@@ -198,7 +199,7 @@ TEST_F(IntegrationTest, ConfigCppRealmBuilderParentOverride) {
       .source = component_testing::ParentRef(),
       .targets = {component_testing::ChildRef{child_name}}});
   auto realm = realm_builder.Build();
-  auto moniker = "realm_builder\\:" + realm.component().GetChildName() + "/" + child_name;
+  auto moniker = "realm_builder:" + realm.component().GetChildName() + "/" + child_name;
 
   auto data = GetInspect(child_name, moniker);
 

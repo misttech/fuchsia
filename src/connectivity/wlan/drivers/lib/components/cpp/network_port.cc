@@ -3,7 +3,7 @@
 
 #include "src/connectivity/wlan/drivers/lib/components/cpp/include/wlan/drivers/components/network_port.h"
 
-#include <lib/ddk/debug.h>
+#include "src/connectivity/wlan/drivers/lib/components/cpp/log.h"
 
 namespace wlan::drivers::components {
 
@@ -11,24 +11,46 @@ NetworkPort::Callbacks::~Callbacks() = default;
 
 NetworkPort::NetworkPort(network_device_ifc_protocol_t netdev_ifc, Callbacks& iface,
                          uint8_t port_id)
-    : iface_(iface), netdev_ifc_(&netdev_ifc), port_id_(port_id) {}
+    : iface_(iface),
+      netdev_ifc_(&netdev_ifc),
+      port_id_(port_id),
+      mac_addr_proto_({&mac_addr_protocol_ops_, this}) {}
 
 NetworkPort::~NetworkPort() { RemovePort(); }
 
-void NetworkPort::Init(Role role) {
+zx_status_t NetworkPort::Init(Role role) {
   std::lock_guard lock(netdev_ifc_mutex_);
   role_ = role;
   if (!netdev_ifc_.is_valid()) {
-    zxlogf(WARNING, "netdev_ifc_ invalid, port likely removed.");
-    return;
+    LOGF(WARNING, "netdev_ifc_ invalid, port likely removed.");
+    return ZX_ERR_BAD_STATE;
   }
-  netdev_ifc_.AddPort(port_id_, this, &network_port_protocol_ops_);
+
+  using Context = std::tuple<libsync::Completion, zx_status_t>;
+  Context context;
+
+  netdev_ifc_.AddPort(
+      port_id_, this, &network_port_protocol_ops_,
+      [](void* ctx, zx_status_t status) {
+        auto& [port_added, out_status] = *static_cast<Context*>(ctx);
+        out_status = status;
+        port_added.Signal();
+      },
+      &context);
+  auto& [port_added, status] = context;
+  port_added.Wait();
+  if (status != ZX_OK) {
+    LOGF(ERROR, "Failed to add port: %s", zx_status_get_string(status));
+    netdev_ifc_.clear();
+    return status;
+  }
+  return ZX_OK;
 }
 
 void NetworkPort::RemovePort() {
   std::lock_guard lock(netdev_ifc_mutex_);
   if (!netdev_ifc_.is_valid()) {
-    zxlogf(WARNING, "netdev_ifc_ invalid, port likely removed.");
+    LOGF(WARNING, "netdev_ifc_ invalid, port likely removed.");
     return;
   }
   netdev_ifc_.RemovePort(port_id_);
@@ -48,7 +70,7 @@ void NetworkPort::SetPortOnline(bool online) {
   if (netdev_ifc_.is_valid()) {
     netdev_ifc_.PortStatusChanged(port_id_, &status);
   } else {
-    zxlogf(WARNING, "netdev_ifc_ invalid, port likely removed.");
+    LOGF(WARNING, "netdev_ifc_ invalid, port likely removed.");
   }
 }
 
@@ -57,11 +79,11 @@ bool NetworkPort::IsOnline() const {
   return online_;
 }
 
-void NetworkPort::NetworkPortGetInfo(port_info_t* out_info) {
+void NetworkPort::NetworkPortGetInfo(port_base_info_t* out_info) {
   static constexpr uint8_t kSupportedRxTypes[] = {
       static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet)};
 
-  static constexpr tx_support_t kSupportedTxTypes[]{{
+  static constexpr frame_type_support_t kSupportedTxTypes[]{{
       .type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
       .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw,
       .supported_flags = 0,
@@ -90,11 +112,10 @@ void NetworkPort::NetworkPortGetStatus(port_status_t* out_status) {
 
 void NetworkPort::NetworkPortSetActive(bool active) {}
 
-void NetworkPort::NetworkPortGetMac(mac_addr_protocol_t* out_mac_ifc) {
-  *out_mac_ifc = {
-      .ops = &mac_addr_protocol_ops_,
-      .ctx = this,
-  };
+void NetworkPort::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
+  if (out_mac_ifc) {
+    *out_mac_ifc = &mac_addr_proto_;
+  }
 }
 
 void NetworkPort::NetworkPortRemoved() {
@@ -102,23 +123,24 @@ void NetworkPort::NetworkPortRemoved() {
   port_removed_.Signal();
 }
 
-void NetworkPort::MacAddrGetAddress(uint8_t out_mac[6]) { iface_.MacGetAddress(out_mac); }
+void NetworkPort::MacAddrGetAddress(mac_address_t* out_mac) { iface_.MacGetAddress(out_mac); }
 
 void NetworkPort::MacAddrGetFeatures(features_t* out_features) {
   iface_.MacGetFeatures(out_features);
 }
 
-void NetworkPort::MacAddrSetMode(mode_t mode, const uint8_t* multicast_macs_list,
+void NetworkPort::MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
                                  size_t multicast_macs_count) {
-  iface_.MacSetMode(mode, cpp20::span<const uint8_t>(multicast_macs_list, multicast_macs_count));
+  iface_.MacSetMode(mode,
+                    cpp20::span<const mac_address_t>(multicast_macs_list, multicast_macs_count));
 }
 
 void NetworkPort::GetPortStatusLocked(port_status_t* out_status) {
   // Provide a reasonable default status
   using fuchsia_hardware_network::wire::StatusFlags;
   *out_status = {
-      .mtu = iface_.PortGetMtu(),
       .flags = online_ ? static_cast<uint32_t>(StatusFlags::kOnline) : 0u,
+      .mtu = iface_.PortGetMtu(),
   };
 
   // Allow the interface implementation to modify the status if it wants to

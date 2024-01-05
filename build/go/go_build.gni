@@ -165,7 +165,11 @@ template("go_build") {
       "${target_gen_dir}/${output_name}.hermetic_inputs"
   hermetic_inputs_action(hermetic_inputs_target_name) {
     visibility = [ ":${main_target_name}" ]
-    forward_variables_from(invoker, [ "testonly" ])
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "applicable_licenses",
+                           ])
 
     script = "//build/go/gen_hermetic_inputs.py"
     sources = [ "//build/go/gen_library_metadata.py" ]
@@ -192,11 +196,14 @@ template("go_build") {
   }
 
   variant_target("action") {
+    mnemonic = "GO"
     target_name = main_target_name
     variant_shared_redirection = false
 
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
+                             "data_deps",
                              "testonly",
                              "visibility",
                            ])
@@ -375,15 +382,6 @@ template("go_build") {
     }
 
     inputs = []
-    if (is_fuchsia) {
-      if (output_breakpad_syms && host_os != "mac") {
-        args += [
-          "--dump-syms",
-          breakpad_dump_syms,
-        ]
-        inputs += [ breakpad_dump_syms_prebuilt ]
-      }
-    }
 
     # Add needed arguments for the buildidtool. We should add the stamp file
     # output by buildidtool to the list of outputs for this action but because
@@ -464,15 +462,6 @@ template("go_build") {
           } else {
             dist = debug
           }
-
-          # TODO(fxbug.dev/27215): Update when we add linux go binaries
-          # to .build-id.
-          if (is_fuchsia) {
-            elf_build_id = "$dist.build-id.stamp"
-          }
-          if (output_breakpad_syms && is_fuchsia) {
-            breakpad = "$dist.sym"
-          }
         },
       ]
 
@@ -490,13 +479,6 @@ template("go_build") {
             }
             label = get_label_info(":$target_name", "label_with_toolchain")
             elf_runtime_dir = "lib/${toolchain_variant.libprefix}"
-          },
-        ]
-
-        component_catalog = [
-          {
-            has_go = true
-            label = get_label_info(":$target_name", "label_with_toolchain")
           },
         ]
 
@@ -522,11 +504,6 @@ template("go_build") {
           ]
         }
       }
-    }
-    if (output_breakpad_syms && is_fuchsia) {
-      metadata_binaries = metadata.binaries
-      b = metadata_binaries[0]
-      outputs += [ root_out_dir + "/" + b.breakpad ]
     }
 
     # The binaries embed absolute paths to the source file,

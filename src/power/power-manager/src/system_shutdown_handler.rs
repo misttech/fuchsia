@@ -469,14 +469,7 @@ pub mod tests {
     use crate::test::mock_node::{MessageMatcher, MockNodeMaker};
     use crate::{msg_eq, msg_ok_return};
     use assert_matches::assert_matches;
-    use inspect::assert_data_tree;
-
-    pub fn setup_test_node(shutdown_function: impl Fn() + 'static) -> Rc<SystemShutdownHandler> {
-        SystemShutdownHandlerBuilder::new()
-            .with_component_mgr_proxy(setup_fake_component_mgr_service(shutdown_function))
-            .build()
-            .unwrap()
-    }
+    use diagnostics_assertions::assert_data_tree;
 
     /// Create a fake SystemController service proxy that responds to Shutdown requests by calling
     /// the provided closure.

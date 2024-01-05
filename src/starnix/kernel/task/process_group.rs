@@ -2,12 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{
+    mutable_state::{state_accessor, state_implementation},
+    signals::{send_standard_signal, SignalInfo},
+    task::{Session, ThreadGroup},
+};
+use macro_rules_attribute::apply;
+use starnix_sync::RwLock;
+use starnix_uapi::{
+    ownership::TempRef,
+    pid_t,
+    signals::{Signal, UncheckedSignal, SIGCONT, SIGHUP},
+};
 use std::{
     collections::BTreeMap,
     sync::{Arc, Weak},
 };
-
-use crate::{lock::RwLock, mutable_state::*, signals::*, task::*, types::*};
 
 #[derive(Debug)]
 pub struct ProcessGroupMutableState {
@@ -82,23 +92,23 @@ impl ProcessGroup {
 
     state_accessor!(ProcessGroup, mutable_state);
 
-    pub fn insert(self: &Arc<Self>, thread_group: &Arc<ThreadGroup>) {
+    pub fn insert(&self, thread_group: &Arc<ThreadGroup>) {
         self.write().thread_groups.insert(thread_group.leader, Arc::downgrade(thread_group));
     }
 
     /// Removes the thread group from the process group. Returns whether the process group is empty.
-    pub fn remove(self: &Arc<Self>, thread_group: &ThreadGroup) -> bool {
+    pub fn remove(&self, thread_group: &ThreadGroup) -> bool {
         self.write().remove(thread_group)
     }
 
-    pub fn send_signals(self: &Arc<Self>, signals: &[Signal]) {
+    pub fn send_signals(&self, signals: &[Signal]) {
         let thread_groups = self.read().thread_groups().collect::<Vec<_>>();
         Self::send_signals_to_thread_groups(signals, thread_groups);
     }
 
     /// Check whether the process group became orphaned. If this is the case, send signals to its
     /// members if at least one is stopped.
-    pub fn check_orphaned(self: &Arc<Self>) {
+    pub fn check_orphaned(&self) {
         let thread_groups = {
             let state = self.read();
             if state.orphaned {
@@ -112,7 +122,7 @@ impl ProcessGroup {
                 None => return,
                 Some(parent) => {
                     let parent_state = parent.read();
-                    if &parent_state.process_group != self
+                    if parent_state.process_group.as_ref() != self
                         && parent_state.process_group.session == self.session
                     {
                         return;
@@ -128,7 +138,7 @@ impl ProcessGroup {
             state.orphaned = true;
             state.thread_groups().collect::<Vec<_>>()
         };
-        if thread_groups.iter().any(|tg| tg.read().stopped) {
+        if thread_groups.iter().any(|tg| tg.load_stopped().is_stopping_or_stopped()) {
             Self::send_signals_to_thread_groups(&[SIGHUP, SIGCONT], thread_groups);
         }
     }
@@ -139,15 +149,11 @@ impl ProcessGroup {
             let tasks = thread_groups
                 .iter()
                 .flat_map(|tg| {
-                    tg.read().get_signal_target(&unchecked_signal).map(|task| {
-                        // SAFETY: tasks is kept on the stack. The static is required
-                        // to ensure the lock on ThreadGroup can be dropped.
-                        unsafe { TempRef::into_static(task) }
-                    })
+                    tg.read().get_signal_target(unchecked_signal).map(TempRef::into_static)
                 })
                 .collect::<Vec<_>>();
             for task in tasks {
-                send_signal(&task, SignalInfo::default(*signal));
+                send_standard_signal(&task, SignalInfo::default(*signal));
             }
         }
     }

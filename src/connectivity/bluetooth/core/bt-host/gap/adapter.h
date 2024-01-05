@@ -7,7 +7,6 @@
 
 #include <lib/async/dispatcher.h>
 #include <lib/fit/function.h>
-#include <lib/zx/vmo.h>
 
 #include <memory>
 #include <string>
@@ -68,7 +67,8 @@ class Adapter {
 
   // Optionally, a FakeL2cap  may be passed for testing purposes as |l2cap|. If nullptr is
   // passed, then the Adapter will create and initialize its own L2cap.
-  static std::unique_ptr<Adapter> Create(hci::Transport::WeakPtr hci, gatt::GATT::WeakPtr gatt,
+  static std::unique_ptr<Adapter> Create(pw::async::Dispatcher& pw_dispatcher,
+                                         hci::Transport::WeakPtr hci, gatt::GATT::WeakPtr gatt,
                                          std::unique_ptr<l2cap::ChannelManager> l2cap = nullptr);
   virtual ~Adapter() = default;
 
@@ -148,7 +148,7 @@ class Adapter {
     // Sets the LE security mode of the local device (see v5.2 Vol. 3 Part C Section 10.2). If set
     // to SecureConnectionsOnly, any currently encrypted links not meeting the requirements of
     // Security Mode 1 Level 4 will be disconnected.
-    virtual void SetSecurityMode(LESecurityMode mode) = 0;
+    virtual void SetLESecurityMode(LESecurityMode mode) = 0;
 
     // Returns the current LE security mode.
     virtual LESecurityMode security_mode() const = 0;
@@ -219,10 +219,10 @@ class Adapter {
 
     // Sets the timeout interval to be used on future connect requests. The
     // default value is kLECreateConnectionTimeout.
-    virtual void set_request_timeout_for_testing(zx::duration value) = 0;
+    virtual void set_request_timeout_for_testing(pw::chrono::SystemClock::duration value) = 0;
 
     // Sets a new scan period to any future and ongoing discovery procedures.
-    virtual void set_scan_period_for_testing(zx::duration period) = 0;
+    virtual void set_scan_period_for_testing(pw::chrono::SystemClock::duration period) = 0;
   };
 
   virtual LowEnergy* le() const = 0;
@@ -249,7 +249,7 @@ class Adapter {
     //
     // |cb| will be called with the channel created to the peer, or nullptr if the channel creation
     // resulted in an error.
-    virtual void OpenL2capChannel(PeerId peer_id, l2cap::PSM psm,
+    virtual void OpenL2capChannel(PeerId peer_id, l2cap::Psm psm,
                                   BrEdrSecurityRequirements security_requirements,
                                   l2cap::ChannelParameters params, l2cap::ChannelCallback cb) = 0;
 
@@ -279,6 +279,14 @@ class Adapter {
     // will be called with the result of the procedure, successful or not.
     virtual void Pair(PeerId peer_id, BrEdrSecurityRequirements security,
                       hci::ResultFunction<> callback) = 0;
+
+    // Sets the BR/EDR security mode of the local device (Core Spec v5.4, Vol 3, Part C, 5.2.2). If
+    // set to SecureConnectionsOnly, any currently encrypted links not meeting the requirements of
+    // Security Mode 4 Level 4 will be disconnected.
+    virtual void SetBrEdrSecurityMode(BrEdrSecurityMode mode) = 0;
+
+    // Returns the current BR/EDR security mode.
+    virtual BrEdrSecurityMode security_mode() const = 0;
 
     // Set whether this host is connectable.
     virtual void SetConnectable(bool connectable, hci::ResultFunction<> status_cb) = 0;

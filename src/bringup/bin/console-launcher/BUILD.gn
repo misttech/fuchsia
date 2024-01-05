@@ -19,26 +19,26 @@ source_set("lib") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp_wire",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/syslog/cpp",
-    "//src/lib/storage/vfs/cpp",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/zircon-internal",
   ]
 
   public_deps = [
     # console_launcher.h has #include <fidl/fuchsia.boot/cpp/wire.h>
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp_wire",
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
 
     # console_launcher.h has #include <fidl/fuchsia.hardware.pty/cpp/wire.h>
-    "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp",
 
     # console_launcher.h has #include <fidl/fuchsia.io/cpp/wire.h>
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
 
     # console_launcher.h has #include <fidl/fuchsia.ldsvc/cpp/wire.h>
-    "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_cpp_wire",
+    "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_cpp",
 
     # console_launcher.h has #include <fbl/unique_fd.h>
     "//zircon/system/ulib/fbl",
@@ -52,21 +52,24 @@ executable("bin") {
 
   deps = [
     ":lib",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.virtualconsole:fuchsia.virtualconsole_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.virtualconsole:fuchsia.virtualconsole_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl",
     "//src/lib/loader_service",
-    "//src/lib/storage/vfs/cpp",
+    "//src/storage/lib/vfs/cpp",
     "//src/sys/lib/stdout-to-debuglog/cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 fuchsia_component("component") {

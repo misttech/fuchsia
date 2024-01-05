@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
 /// Platform configuration options for the connectivity area.
@@ -14,6 +15,10 @@ pub struct PlatformConnectivityConfig {
     pub wlan: PlatformWlanConfig,
     #[serde(default)]
     pub mdns: MdnsConfig,
+    #[serde(default)]
+    pub thread: ThreadConfig,
+    #[serde(default)]
+    pub weave: WeaveConfig,
 }
 
 /// Platform configuration options for the network area.
@@ -28,33 +33,36 @@ pub struct PlatformNetworkConfig {
     pub netstack_version: NetstackVersion,
 
     #[serde(default)]
-    pub netcfg_config: NetcfgConfig,
+    pub netcfg_config_path: Option<Utf8PathBuf>,
+
+    #[serde(default)]
+    pub netstack_config_path: Option<Utf8PathBuf>,
+
+    #[serde(default)]
+    pub google_maps_api_key_path: Option<Utf8PathBuf>,
+
+    /// Controls whether the unified binary for networking should be used.
+    ///
+    /// The unified binary provides space savings for space-constrainted
+    /// products, trading off multiple small binaries for one large binary that
+    /// is smaller than the sum of its separate parts thanks to linking
+    /// optimizations.
+    #[serde(default)]
+    pub use_unified_binary: bool,
+
+    /// Whether to include network-tun.
+    #[serde(default)]
+    pub include_tun: bool,
 }
 
 /// Network stack version to use.
 #[derive(Debug, Default, Copy, Clone, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-// TODO(https://fxbug.dev/131101): Introduce migration version option.
+#[serde(rename_all = "snake_case")]
 pub enum NetstackVersion {
     #[default]
     Netstack2,
     Netstack3,
-}
-
-/// Which netcfg configuration to use.
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum NetcfgConfig {
-    /// The default network configuration.
-    #[default]
-    Default,
-
-    /// An unspecified network configuration.
-    ///
-    /// Product owners are expected to specify the configuration for
-    /// netcfg some other way when this value is used.
-    // TODO(https://fxbug.dev/132060): Remove this.
-    Unspecified,
+    NetstackMigration,
 }
 
 /// Which networking type to use (standard or basic).
@@ -84,4 +92,26 @@ pub struct PlatformWlanConfig {
 pub struct MdnsConfig {
     /// Enable a wired service so that ffx can discover the device.
     pub publish_fuchsia_dev_wired_service: Option<bool>,
+
+    /// Service config file.
+    pub config: Option<Utf8PathBuf>,
+}
+
+/// Platform configuration options to use for the thread area.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ThreadConfig {
+    /// Include the LoWPAN service.
+    #[serde(default)]
+    pub include_lowpan: bool,
+}
+
+/// Platform configuration options to use for the weave area.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WeaveConfig {
+    /// The URL of the weave component.
+    ///   e.g. fuchsia-pkg://fuchsia.com/weavestack#meta/weavestack.cm
+    #[serde(default)]
+    pub component_url: Option<String>,
 }

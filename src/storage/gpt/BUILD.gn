@@ -13,12 +13,15 @@ zx_library("gpt") {
     "gpt/guid.h",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/lib/fit-promise",
     "//src/lib/uuid",
     "//zircon/system/ulib/zx",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 
   if (is_fuchsia) {
     sources = [
@@ -26,7 +29,7 @@ zx_library("gpt") {
       "gpt.cc",
       "guid.cc",
     ]
-    public_deps += [ "//src/lib/storage/block_client/cpp" ]
+    public_deps += [ "//src/storage/lib/block_client/cpp" ]
     deps = [
       "//sdk/lib/fit",
       "//src/lib/utf_conversion",

@@ -89,28 +89,25 @@ zx_status_t AudioStreamIn::Init() {
   unique_id_ = AUDIO_STREAM_UNIQUE_ID_BUILTIN_MICROPHONE;
   snprintf(device_name_, sizeof(device_name_), "%s-audio-pdm-in", prod_name_);
 
-  // TODO(mpuryear): change this to the domain of the clock received from the board driver
-  clock_domain_ = 0;
+  // This audio subdevice is in the MONOTONIC clock domain.
+  clock_domain_ = fuchsia_hardware_audio::wire::kClockDomainMonotonic;
 
   return ZX_OK;
 }
 
 zx_status_t AudioStreamIn::InitPDev() {
   size_t actual = 0;
-  auto status = device_get_metadata(parent(), DEVICE_METADATA_PRIVATE, &metadata_,
-                                    sizeof(metadata::AmlPdmConfig), &actual);
+  auto status = device_get_fragment_metadata(parent(), "pdev", DEVICE_METADATA_PRIVATE, &metadata_,
+                                             sizeof(metadata::AmlPdmConfig), &actual);
   if (status != ZX_OK || sizeof(metadata::AmlPdmConfig) != actual) {
-    zxlogf(ERROR, "device_get_metadata failed %d", status);
+    zxlogf(ERROR, "device_get_fragment_metadata failed %d", status);
     return status;
   }
 
-  zx::result pdev_result = ddk::PDevFidl::Create(parent());
+  zx::result pdev_result = ddk::PDevFidl::Create(parent(), ddk::PDevFidl::kFragmentName);
   if (pdev_result.is_error()) {
-    pdev_result = ddk::PDevFidl::Create(parent(), ddk::PDevFidl::kFragmentName);
-    if (pdev_result.is_error()) {
-      zxlogf(ERROR, "get pdev protocol failed %s", pdev_result.status_string());
-      return pdev_result.error_value();
-    }
+    zxlogf(ERROR, "get pdev protocol failed %s", pdev_result.status_string());
+    return pdev_result.error_value();
   }
   ddk::PDevFidl pdev = std::move(pdev_result.value());
   status = pdev.GetBti(0, &bti_);

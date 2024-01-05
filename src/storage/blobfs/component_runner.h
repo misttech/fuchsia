@@ -9,16 +9,17 @@
 #include <fidl/fuchsia.process.lifecycle/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/inspect/component/cpp/component.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 
 #include <optional>
 
-#include "src/lib/storage/vfs/cpp/managed_vfs.h"
-#include "src/lib/storage/vfs/cpp/paged_vfs.h"
-#include "src/lib/storage/vfs/cpp/pseudo_dir.h"
 #include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/mount.h"
+#include "src/storage/lib/vfs/cpp/managed_vfs.h"
+#include "src/storage/lib/vfs/cpp/paged_vfs.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 
 namespace blobfs {
 
@@ -72,6 +73,8 @@ class ComponentRunner final : public fs::PagedVfs {
   std::optional<zx_status_t> shutdown_result_ __TA_GUARDED(shutdown_lock_);
   // A queue of callbacks for shutdown requests that arrive while shutdown is running.
   std::vector<fs::FuchsiaVfs::ShutdownCallback> shutdown_callbacks_ __TA_GUARDED(shutdown_lock_);
+
+  std::optional<inspect::ComponentInspector> exposed_inspector_ = {};
 };
 
 }  // namespace blobfs

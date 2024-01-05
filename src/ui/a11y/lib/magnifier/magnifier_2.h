@@ -5,8 +5,6 @@
 #ifndef SRC_UI_A11Y_LIB_MAGNIFIER_MAGNIFIER_2_H_
 #define SRC_UI_A11Y_LIB_MAGNIFIER_MAGNIFIER_2_H_
 
-#include <fuchsia/accessibility/cpp/fidl.h>
-#include <fuchsia/ui/scenic/cpp/fidl.h>
 #include <lib/zx/time.h>
 
 #include <memory>
@@ -49,6 +47,10 @@ class Magnifier2 {
   static constexpr float kDragThreshold = 1.f / 16;  // NDC
   static constexpr float kMinScale = 1, kMaxScale = 20;
   static constexpr float kDefaultScale = 4;
+  static constexpr float kZoomMinFingerDistance =
+      0.3f;  // Distance between the fingers must exceed this value before being considered a zoom.
+             // This avoids accidental zoom when trying to pan, on small screens. Only relevant
+             // for persistent zoom mode, since temporary zoom mode never changes the zoom level.
 
   explicit Magnifier2(std::shared_ptr<Delegate> delegate);
   ~Magnifier2() = default;

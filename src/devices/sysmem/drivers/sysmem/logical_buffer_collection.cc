@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <inttypes.h>
+#include <lib/async_patterns/cpp/task_scope.h>
 #include <lib/ddk/trace/event.h>
 #include <lib/fidl/cpp/wire/arena.h>
 #include <lib/fidl/cpp/wire/status.h>
@@ -41,6 +42,7 @@
 #include "macros.h"
 #include "node_properties.h"
 #include "orphaned_node.h"
+#include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/memory_barriers/memory_barriers.h"
 #include "usage_pixel_format_cost.h"
 
@@ -81,12 +83,6 @@ const std::unordered_map<sysmem::FidlUnderlyingTypeOrType_t<fuchsia_images2::Col
         {sysmem::fidl_underlying_cast(fuchsia_images2::ColorSpace::kRec2020), 3},
         {sysmem::fidl_underlying_cast(fuchsia_images2::ColorSpace::kRec2100), 2},
         {sysmem::fidl_underlying_cast(fuchsia_images2::ColorSpace::kPassthrough), 9}};
-
-// Zero-initialized, so it shouldn't take up space on-disk.
-constexpr uint64_t kZeroBytes = 8192;
-const uint8_t kZeroes[kZeroBytes] = {};
-
-constexpr uint32_t kNeedAuxVmoAlso = 1;
 
 template <typename T>
 bool IsNonZeroPowerOf2(T value) {
@@ -258,46 +254,6 @@ bool IsPotentiallyIncludedInInitialAllocation(const NodeProperties& node) {
   return potentially_included_in_initial_allocation;
 }
 
-// Use IsImageFormatConstraintsArrayPixelFormatDoNotCare() instead where the array is available,
-// since the array not having exactly 1 item means it's a malformed kDoNotCare, which this routine
-// can't check.
-fit::result<zx_status_t, bool> IsImageFormatConstraintsPixelFormatDoNotCare(
-    const fuchsia_sysmem2::ImageFormatConstraints& x) {
-  if (!x.pixel_format().has_value()) {
-    return fit::error(ZX_ERR_INVALID_ARGS);
-  }
-  if (!x.pixel_format().has_value()) {
-    return fit::error(ZX_ERR_INVALID_ARGS);
-  }
-  if (*x.pixel_format() != fuchsia_images2::PixelFormat::kDoNotCare) {
-    return fit::ok(false);
-  }
-  if (x.pixel_format_modifier().has_value() &&
-      *x.pixel_format_modifier() != fuchsia_images2::kFormatModifierNone) {
-    return fit::error(ZX_ERR_INVALID_ARGS);
-  }
-  return fit::ok(true);
-}
-
-fit::result<zx_status_t, bool> IsImageFormatConstraintsArrayPixelFormatDoNotCare(
-    const std::vector<fuchsia_sysmem2::ImageFormatConstraints>& x) {
-  uint32_t do_not_care_count = 0;
-  for (uint32_t i = 0; i < x.size(); ++i) {
-    auto element_result = IsImageFormatConstraintsPixelFormatDoNotCare(x[i]);
-    if (element_result.is_error()) {
-      return element_result;
-    }
-    if (element_result.value()) {
-      ++do_not_care_count;
-    }
-  }
-  if (do_not_care_count >= 1 && x.size() != 1) {
-    return fit::error(ZX_ERR_INVALID_ARGS);
-  }
-  ZX_DEBUG_ASSERT(do_not_care_count <= 1);
-  return fit::ok(do_not_care_count != 0);
-}
-
 fit::result<zx_status_t, bool> IsColorSpaceArrayDoNotCare(
     const std::vector<fuchsia_images2::ColorSpace>& x) {
   if (x.size() == 0) {
@@ -316,39 +272,158 @@ fit::result<zx_status_t, bool> IsColorSpaceArrayDoNotCare(
   return fit::ok(do_not_care_count != 0);
 }
 
-// Replicate the kDoNotCare to_update to correspond to the not kDoNotCare to_match.
-void ReplicatePixelFormatDoNotCare(
+// true iff either field is DoNotCare
+[[nodiscard]] bool IsPixelFormatAndModifierAtLeastPartlyDoNotCare(const PixelFormatAndModifier& a) {
+  return a.pixel_format == fuchsia_images2::PixelFormat::kDoNotCare ||
+         a.pixel_format_modifier == fuchsia_images2::kFormatModifierDoNotCare;
+}
+
+[[nodiscard]] PixelFormatAndModifier CombinePixelFormatAndModifier(
+    const PixelFormatAndModifier& a, const PixelFormatAndModifier& b) {
+  PixelFormatAndModifier result = a;
+  if (result.pixel_format == fuchsia_images2::PixelFormat::kDoNotCare) {
+    // Can be a specific value, or kDoNotCare.
+    result.pixel_format = b.pixel_format;
+  }
+  if (result.pixel_format_modifier == fuchsia_images2::kFormatModifierDoNotCare) {
+    // Can be a specific value, or kFormatModifierDoNotCare
+    result.pixel_format_modifier = b.pixel_format_modifier;
+  }
+  return result;
+}
+
+[[nodiscard]] bool IsPixelFormatAndModifierCombineable(const PixelFormatAndModifier& a,
+                                                       const PixelFormatAndModifier& b) {
+  bool is_pixel_format_combineable = a.pixel_format == b.pixel_format ||
+                                     a.pixel_format == fuchsia_images2::PixelFormat::kDoNotCare ||
+                                     b.pixel_format == fuchsia_images2::PixelFormat::kDoNotCare;
+  bool is_pixel_format_and_modifier_combineable =
+      a.pixel_format_modifier == b.pixel_format_modifier ||
+      a.pixel_format_modifier == fuchsia_images2::kFormatModifierDoNotCare ||
+      b.pixel_format_modifier == fuchsia_images2::kFormatModifierDoNotCare;
+  if (!is_pixel_format_combineable || !is_pixel_format_and_modifier_combineable) {
+    return false;
+  }
+  auto provisional_combined = CombinePixelFormatAndModifier(a, b);
+  if (!IsPixelFormatAndModifierAtLeastPartlyDoNotCare(provisional_combined) &&
+      !ImageFormatIsSupported(provisional_combined)) {
+    // To be combine-able, a resulting specific (not DoNotCare) format must be a supported format.
+    //
+    // This is in contrast to a client explicitly specifying an unsupported format, which causes
+    // allocation failure.
+    return false;
+  }
+  return true;
+}
+
+[[nodiscard]] bool ReplicateAnyPixelFormatAndModifierDoNotCares(
     const std::vector<fuchsia_sysmem2::ImageFormatConstraints>& to_match,
     std::vector<fuchsia_sysmem2::ImageFormatConstraints>& to_update) {
-  // Error result excluded by caller.
-  ZX_DEBUG_ASSERT(!IsImageFormatConstraintsArrayPixelFormatDoNotCare(to_match).value());
-  // Error result excluded by caller.
-  ZX_DEBUG_ASSERT(IsImageFormatConstraintsArrayPixelFormatDoNotCare(to_update).value());
-  ZX_DEBUG_ASSERT(to_update.size() == 1);
-  if (to_match.empty()) {
-    to_update.resize(0);
-    return;
-  }
-  ZX_DEBUG_ASSERT(!to_match.empty());
-  auto stash = std::move(to_update[0]);
-  to_update.resize(to_match.size());
-  for (uint32_t i = 0; i < to_match.size(); ++i) {
-    // copy / clone
-    to_update[i] = stash;
+  // Given the number of distinct valid values for each field as of this comment, reaching this many
+  // entries would require a caller to send duplicate entries (already checked and rejected
+  // previously), or to send invalid values for pixel_format or pixel_format_modifier.
+  constexpr size_t kMaxItemCount = 512;
 
-    // Normalized/set by caller.
-    ZX_DEBUG_ASSERT(to_match[i].pixel_format().has_value());
-    ZX_DEBUG_ASSERT(to_match[i].pixel_format_modifier().has_value());
-    to_update[i].pixel_format() = *to_match[i].pixel_format();
-    to_update[i].pixel_format_modifier() = *to_match[i].pixel_format_modifier();
+  std::vector<fuchsia_sysmem2::ImageFormatConstraints> to_append;
+
+  for (size_t ui = 0; ui < to_update.size();) {
+    auto u_pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(to_update[ui]);
+    if (!IsPixelFormatAndModifierAtLeastPartlyDoNotCare(u_pixel_format_and_modifier)) {
+      // this entry has no DoNotCare; leave in to_update
+      ++ui;
+      continue;
+    }
+
+    // If to_match also has DoNotCare (rather than a set of specific values), we'll basically move
+    // the to_update DoNotCare entry from to_update to to_append and then back to to_update, which
+    // doesn't change anything overall, but also doesn't seem performance-costly enough to justify
+    // extra code here to avoid.
+    //
+    // If to_match has no entries combine-able with to_fan_out, this will result in to_fan_out being
+    // removed and not replaced; this is fine since to_match has no entry that can work with
+    // to_fan_out. However, note that the caller still needs its own filtering to remove items that
+    // can't combine, since we're only processing items with DoNotCare here.
+
+    auto to_fan_out = std::move(to_update[ui]);
+
+    // to_fan_out's information is effectively being moved (along with fanning out) to to_append, so
+    // move down the last item (if this isn't already the last) to keep to_update packed
+    if (ui != to_update.size() - 1) {
+      to_update[ui] = std::move(to_update[to_update.size() - 1]);
+    }
+    to_update.resize(to_update.size() - 1);
+
+    for (size_t mi = 0; mi < to_match.size(); ++mi) {
+      auto m_pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(to_match[mi]);
+      if (!IsPixelFormatAndModifierCombineable(m_pixel_format_and_modifier,
+                                               u_pixel_format_and_modifier)) {
+        continue;
+      }
+
+      // intentional copy/clone
+      auto cloned_entry = to_fan_out;
+      auto combined_pixel_format_and_modifier =
+          CombinePixelFormatAndModifier(u_pixel_format_and_modifier, m_pixel_format_and_modifier);
+      cloned_entry.pixel_format() = combined_pixel_format_and_modifier.pixel_format;
+      cloned_entry.pixel_format_modifier() =
+          combined_pixel_format_and_modifier.pixel_format_modifier;
+
+      // Since combined_pixel_format_and_modifier is the result of DoNotCare fanout, we want to
+      // filter out color spaces that aren't supported with the format, to avoid a fanout format
+      // causing allocation failure when color spaces are checked later. If zero color spaces remain
+      // here we can just filter out the cloned_entry here by not adding to to_append.
+      auto is_color_space_do_not_care_result =
+          IsColorSpaceArrayDoNotCare(*cloned_entry.color_spaces());
+      // checked previously
+      ZX_DEBUG_ASSERT(is_color_space_do_not_care_result.is_ok());
+      bool is_color_space_do_not_care = is_color_space_do_not_care_result.value();
+      if (!IsPixelFormatAndModifierAtLeastPartlyDoNotCare(combined_pixel_format_and_modifier) &&
+          !is_color_space_do_not_care) {
+        auto& color_spaces = *cloned_entry.color_spaces();
+        for (uint32_t ci = 0; ci < color_spaces.size();) {
+          auto color_space = color_spaces[ci];
+          if (!ImageFormatIsSupportedColorSpaceForPixelFormat(color_space,
+                                                              combined_pixel_format_and_modifier)) {
+            // filter out color space
+            if (ci != color_spaces.size() - 1) {
+              color_spaces[ci] = color_spaces[color_spaces.size() - 1];
+            }
+            color_spaces.resize(color_spaces.size() - 1);
+            continue;
+          }
+          ++ci;
+        }
+        if (color_spaces.empty()) {
+          // If a client is triggering this, the client may want to consider using ColorSpace
+          // kDoNotCare instead (if the client really doesn't care). But if a client really does
+          // care about the specific ColorSpace(s), it's fine to keep leaning on this filtering.
+          //
+          // If this gets too noisy we can remove this log output.
+          LOG(INFO,
+              "omitting DoNotCare fanout format because zero remaining color spaces supported with format: %u 0x%" PRIx64,
+              static_cast<uint32_t>(combined_pixel_format_and_modifier.pixel_format),
+              combined_pixel_format_and_modifier.pixel_format_modifier);
+          continue;
+        }
+      }
+
+      if (to_append.size() + to_update.size() >= kMaxItemCount) {
+        LOG(ERROR, "too many entries; caller sending invalid values?");
+        return false;
+      }
+
+      to_append.emplace_back(std::move(cloned_entry));
+    }
+
+    // intentionally don't ++ui, since this entry has changed, so still needs to be processed (or
+    // ui == size() in which case we're done)
   }
-  ZX_DEBUG_ASSERT(to_update.size() == to_match.size());
-  ZX_DEBUG_ASSERT(!to_update.empty());
-  ZX_DEBUG_ASSERT(!to_match.empty());
-  ZX_DEBUG_ASSERT(*to_update[0].pixel_format() == *to_match[0].pixel_format());
-  ZX_DEBUG_ASSERT(to_update[0].pixel_format_modifier().has_value() ==
-                  to_match[0].pixel_format_modifier().has_value());
-  // The format_modifier_value (if any) also matches.
+
+  for (auto& to_move : to_append) {
+    to_update.emplace_back(std::move(to_move));
+  }
+
+  return true;
 }
 
 void ReplicateColorSpaceDoNotCare(const std::vector<fuchsia_images2::ColorSpace>& to_match,
@@ -390,21 +465,24 @@ TokenServerEndCombinedV1AndV2 ConvertV2TokenRequestToCombinedTokenRequest(
 }  // namespace
 
 // static
-fbl::RefPtr<LogicalBufferCollection> LogicalBufferCollection::CommonCreate(Device* parent_device) {
+fbl::RefPtr<LogicalBufferCollection> LogicalBufferCollection::CommonCreate(
+    Device* parent_device, const ClientDebugInfo* client_debug_info) {
   fbl::RefPtr<LogicalBufferCollection> logical_buffer_collection =
       fbl::AdoptRef<LogicalBufferCollection>(new LogicalBufferCollection(parent_device));
   // The existence of a channel-owned BufferCollectionToken adds a
   // fbl::RefPtr<> ref to LogicalBufferCollection.
   logical_buffer_collection->LogInfo(FROM_HERE, "LogicalBufferCollection::Create()");
-  logical_buffer_collection->root_ = NodeProperties::NewRoot(logical_buffer_collection.get());
+  logical_buffer_collection->root_ =
+      NodeProperties::NewRoot(logical_buffer_collection.get(), client_debug_info);
   return logical_buffer_collection;
 }
 
 // static
 void LogicalBufferCollection::CreateV1(TokenServerEndV1 buffer_collection_token_request,
-                                       Device* parent_device) {
+                                       Device* parent_device,
+                                       const ClientDebugInfo* client_debug_info) {
   fbl::RefPtr<LogicalBufferCollection> logical_buffer_collection =
-      LogicalBufferCollection::CommonCreate(parent_device);
+      LogicalBufferCollection::CommonCreate(parent_device, client_debug_info);
   logical_buffer_collection->CreateBufferCollectionTokenV1(
       logical_buffer_collection, logical_buffer_collection->root_.get(),
       std::move(buffer_collection_token_request));
@@ -412,9 +490,10 @@ void LogicalBufferCollection::CreateV1(TokenServerEndV1 buffer_collection_token_
 
 // static
 void LogicalBufferCollection::CreateV2(TokenServerEndV2 buffer_collection_token_request,
-                                       Device* parent_device) {
+                                       Device* parent_device,
+                                       const ClientDebugInfo* client_debug_info) {
   fbl::RefPtr<LogicalBufferCollection> logical_buffer_collection =
-      LogicalBufferCollection::CommonCreate(parent_device);
+      LogicalBufferCollection::CommonCreate(parent_device, client_debug_info);
   logical_buffer_collection->CreateBufferCollectionTokenV2(
       logical_buffer_collection, logical_buffer_collection->root_.get(),
       std::move(buffer_collection_token_request));
@@ -449,6 +528,34 @@ fit::result<zx_status_t, BufferCollectionToken*> LogicalBufferCollection::Common
   }
 
   return fit::success(token);
+}
+
+fit::result<zx_status_t, std::optional<zx::vmo>> LogicalBufferCollection::CreateWeakVmo(
+    uint32_t buffer_index, const ClientDebugInfo& client_debug_info) {
+  auto buffers_iter = buffers_.find(buffer_index);
+  if (buffers_iter == buffers_.end()) {
+    // success, but no VMO
+    return fit::ok(std::nullopt);
+  }
+  auto& buffer = buffers_iter->second;
+
+  return buffer->CreateWeakVmo(client_debug_info);
+}
+
+fit::result<zx_status_t, std::optional<zx::eventpair>>
+LogicalBufferCollection::DupCloseWeakAsapClientEnd(uint32_t buffer_index) {
+  auto buffer_iter = buffers_.find(buffer_index);
+  if (buffer_iter == buffers_.end()) {
+    // Success but no eventpair needed since no weak VMO will be provided from CreateWeakVmo().
+    return fit::ok(std::nullopt);
+  }
+  auto& buffer = buffer_iter->second;
+  auto dup_result = buffer->DupCloseWeakAsapClientEnd();
+  if (dup_result.is_error()) {
+    LogError(FROM_HERE, "DupCloseWeakAsapClientEnd() failed: %d", dup_result.error_value());
+    return dup_result.take_error();
+  }
+  return fit::ok(std::move(dup_result.value()));
 }
 
 // static
@@ -488,7 +595,10 @@ void LogicalBufferCollection::BindSharedCollection(Device* parent_device,
 
   if (client_debug_info) {
     // The info will be propagated into the logcial buffer collection when the token closes.
-    token->SetDebugClientInfoInternal(client_debug_info->name, client_debug_info->id);
+    //
+    // Intentionally copying *client_debug_info not moving, since allocator may be used for more
+    // BindSharedCollection(s).
+    token->SetDebugClientInfoInternal(*client_debug_info);
   }
 
   // At this point, the token will process the rest of its previously queued
@@ -511,22 +621,16 @@ zx_status_t LogicalBufferCollection::ValidateBufferCollectionToken(Device* paren
 }
 
 void LogicalBufferCollection::HandleTokenFailure(BufferCollectionToken& token, zx_status_t status) {
-  // Clean close from FIDL channel point of view is ZX_ERR_PEER_CLOSED,
-  // and ZX_OK is never passed to the error handler.
+  // Clean close from FIDL channel point of view is ZX_ERR_PEER_CLOSED, and ZX_OK is never passed to
+  // the error handler.
   ZX_DEBUG_ASSERT(status != ZX_OK);
 
-  // The dispatcher shut down before we were able to Bind(...)
-  if (status == ZX_ERR_BAD_STATE) {
-    LogAndFailRootNode(FROM_HERE, status, "sysmem dispatcher shutting down - status: %d", status);
-    return;
-  }
-
-  // We know |this| is alive because the token is alive and the token has
-  // a fbl::RefPtr<LogicalBufferCollection>.  The token is alive because
-  // the token is still under the tree rooted at root_.
+  // We know |this| is alive because the token is alive and the token has a
+  // fbl::RefPtr<LogicalBufferCollection>.  The token is alive because the token is still under the
+  // tree rooted at root_.
   //
-  // Any other deletion of the token_ptr out of the tree at root_ (outside of
-  // this error handler) doesn't run this error handler.
+  // Any other deletion of the token_ptr out of the tree at root_ (outside of this error handler)
+  // doesn't run this error handler.
   ZX_DEBUG_ASSERT(root_);
 
   std::optional<CollectionServerEnd> buffer_collection_request =
@@ -536,15 +640,14 @@ void LogicalBufferCollection::HandleTokenFailure(BufferCollectionToken& token, z
         (token.is_done() || buffer_collection_request.has_value()))) {
     // LogAndFailDownFrom() will also remove any no-longer-needed nodes from the tree.
     //
-    // A token whose error handler sees anything other than clean close
-    // with is_done() implies LogicalBufferCollection failure.  The
-    // ability to detect unexpected closure of a token is a main reason
-    // we use a channel for BufferCollectionToken instead of an
-    // eventpair.
+    // A token whose error handler sees anything other than clean close with is_done() implies
+    // LogicalBufferCollection failure.  The ability to detect unexpected closure of a token is a
+    // main reason we use a channel for BufferCollectionToken instead of an eventpair.
     //
     // If a participant for some reason finds itself with an extra token it doesn't need, the
     // participant should use Close() to avoid triggering this failure.
     NodeProperties* tree_to_fail = FindTreeToFail(&token.node_properties());
+    token.node_properties().LogError(FROM_HERE, "token failure - status: %d", status);
     if (tree_to_fail == root_.get()) {
       LogAndFailDownFrom(FROM_HERE, tree_to_fail, status,
                          "Token failure causing LogicalBufferCollection failure - status: %d",
@@ -568,9 +671,9 @@ void LogicalBufferCollection::HandleTokenFailure(BufferCollectionToken& token, z
   if (!buffer_collection_request.has_value()) {
     ZX_DEBUG_ASSERT(token.is_done());
     // This was a token::Close().  We want to stop tracking the token now that we've processed all
-    // its previously-queued inbound messages.  This might be the last token, so we
-    // MaybeAllocate().  This path isn't a failure (unless there are also zero BufferCollection
-    // views in which case MaybeAllocate() calls Fail()).
+    // its previously-queued inbound messages.  This might be the last token, so we MaybeAllocate().
+    // This path isn't a failure (unless there are also zero BufferCollection views in which case
+    // MaybeAllocate() calls Fail()).
     //
     // Keep self alive via "self" in case this will drop connected_node_count_ to zero.
     auto self = token.shared_logical_buffer_collection();
@@ -661,12 +764,6 @@ bool LogicalBufferCollection::CommonCreateBufferCollectionTokenGroupStage1(
     // and ZX_OK is never passed to the error handler.
     ZX_DEBUG_ASSERT(status != ZX_OK);
 
-    // The dispatcher shut down before we were able to Bind(...)
-    if (status == ZX_ERR_BAD_STATE) {
-      LogAndFailRootNode(FROM_HERE, status, "sysmem dispatcher shutting down - status: %d", status);
-      return;
-    }
-
     // We know |this| is alive because the group is alive and the group has
     // a fbl::RefPtr<LogicalBufferCollection>.  The group is alive because
     // the group is still under the tree rooted at root_.
@@ -676,7 +773,7 @@ bool LogicalBufferCollection::CommonCreateBufferCollectionTokenGroupStage1(
     ZX_DEBUG_ASSERT(root_);
 
     // If not clean Close()
-    if (!group.is_done()) {
+    if (!(status == ZX_ERR_PEER_CLOSED && group.is_done())) {
       // LogAndFailDownFrom() will also remove any no-longer-needed nodes from the tree.
       //
       // A group whose error handler sees anything other than clean Close() (is_done()) implies
@@ -787,17 +884,17 @@ void LogicalBufferCollection::SweepLifetimeTracking() {
     auto last_iter = lifetime_tracking_.end();
     last_iter--;
     uint32_t buffers_remaining = last_iter->first;
-    if (buffers_remaining < parent_vmos_.size()) {
+    if (buffers_remaining < buffers_.size()) {
       return;
     }
-    ZX_DEBUG_ASSERT(buffers_remaining >= parent_vmos_.size());
+    ZX_DEBUG_ASSERT(buffers_remaining >= buffers_.size());
     // This does ~server_end, which signals ZX_EVENTPAIR_PEER_CLOSED to the client_end which is
     // typically held by the client.
     lifetime_tracking_.erase(last_iter);
   }
 }
 
-void LogicalBufferCollection::OnNodeReady() {
+void LogicalBufferCollection::OnDependencyReady() {
   // MaybeAllocate() requires the caller to keep "this" alive.
   auto self = fbl::RefPtr(this);
   MaybeAllocate();
@@ -844,11 +941,25 @@ LogicalBufferCollection::LogicalBufferCollection(Device* parent_device)
     : parent_device_(parent_device) {
   TRACE_DURATION("gfx", "LogicalBufferCollection::LogicalBufferCollection", "this", this);
   LogInfo(FROM_HERE, "LogicalBufferCollection::LogicalBufferCollection()");
+
+  // For now, we create+get a koid that's unique to this LogicalBufferCollection, to be absolutely
+  // certain that the buffer_collection_id_ will be unique per boot. We're using an event here only
+  // because it's a fairly cheap object to create/delete.
+  zx::event dummy_event;
+  zx_status_t status = zx::event::create(0, &dummy_event);
+  ZX_ASSERT(status == ZX_OK);
+  zx_koid_t koid = fsl::GetKoid(dummy_event.get());
+  ZX_ASSERT(koid != ZX_KOID_INVALID);
+  dummy_event.reset();
+  buffer_collection_id_ = koid;
+  ZX_DEBUG_ASSERT(buffer_collection_id_ != ZX_KOID_INVALID);
+  ZX_DEBUG_ASSERT(buffer_collection_id_ != ZX_KOID_KERNEL);
+
   parent_device_->AddLogicalBufferCollection(this);
   inspect_node_ =
       parent_device_->collections_node().CreateChild(CreateUniqueName("logical-collection-"));
 
-  zx_status_t status = creation_timer_.PostDelayed(parent_device_->dispatcher(), zx::sec(5));
+  status = creation_timer_.PostDelayed(parent_device_->dispatcher(), zx::sec(5));
   ZX_ASSERT(status == ZX_OK);
   // nothing else to do here
 }
@@ -861,10 +972,8 @@ LogicalBufferCollection::~LogicalBufferCollection() {
   // before member destructors start running.
   creation_timer_.Cancel();
 
-  // Cancel all TrackedParentVmo waits to avoid a use-after-free of |this|
-  for (auto& tracked : parent_vmos_) {
-    tracked.second->CancelWait();
-  }
+  // Cancel all TrackedParentVmo waits to avoid a use-after-free of |this|.
+  ClearBuffers();
 
   if (memory_allocator_) {
     memory_allocator_->RemoveDestroyCallback(reinterpret_cast<intptr_t>(this));
@@ -884,6 +993,11 @@ void LogicalBufferCollection::LogAndFailRootNode(Location location, zx_status_t 
 }
 
 void LogicalBufferCollection::FailRootNode(zx_status_t epitaph) {
+  if (!root_) {
+    // This can happen for example when we're failing due to zero strong VMOs remaining, but all
+    // Node(s) happen to already be gone so the root node was already removed.
+    return;
+  }
   FailDownFrom(root_.get(), epitaph);
 }
 
@@ -919,11 +1033,11 @@ void LogicalBufferCollection::FailDownFrom(NodeProperties* tree_to_fail, zx_stat
     //
     // Since all the token views and collection views are gone, there is no way for any client to be
     // sent the VMOs again, so we can close the handles to the VMOs here.  This is necessary in
-    // order to get ZX_VMO_ZERO_CHILDREN to happen in TrackedParentVmo, but not sufficient alone
-    // (clients must also close their VMO(s)).
+    // order to get ZX_VMO_ZERO_CHILDREN to happen in TrackedParentVmo(s) of parent_vmos_, but not
+    // sufficient alone (clients must also close their VMO(s)).
     //
-    // Clear out the result info. This may not yet close the VMOs, since they'll still be held onto
-    // by the TableSet allocator.
+    // Clear out the result info since we won't be sending it again. This also clears out any
+    // children of strong_parent_vmos_ that LogicalBufferCollection may still be holding.
     allocation_result_info_.reset();
   }
   // ~self, which will delete "this" if there are no more references to "this".
@@ -1153,6 +1267,14 @@ void LogicalBufferCollection::MaybeAllocate() {
   bool did_something;
   do {
     did_something = false;
+
+    // It is possible for this to be running just after DecStrongNodeTally() posted an async root
+    // fail, with that still pending as the last Node becomes ready for allocation and ends up here.
+    // In that case, the allocation can happen and then the buffers will shortly get deleted again,
+    // but there's no point in noticing strong_node_count_ == 0 in code here since the
+    // allocation-first vs failure-before-allocation race can happen anyway due to message delivery
+    // order at the server.
+
     // If a previous iteration of the loop failed the root_ of the LogicalBufferCollection, we'll
     // return below when we noticed that root_.connected_client_count() == 0.
     //
@@ -1275,10 +1397,6 @@ void LogicalBufferCollection::MaybeAllocate() {
         LogPrunedSubTree(eligible_subtree);
       }
 
-      // We know all the nodes of this sub-tree are ready to attempt allocation.  Every path from
-      // here down will have done something.
-      did_something = true;
-
       ZX_DEBUG_ASSERT((!is_allocate_attempted_) == (eligible_subtree == root_.get()));
       ZX_DEBUG_ASSERT(is_allocate_attempted_ || eligible_subtrees.size() == 1);
 
@@ -1293,7 +1411,8 @@ void LogicalBufferCollection::MaybeAllocate() {
           ignore_result(done_with_subtree ||
                         (NextGroupChildSelection(groups_by_priority), false))) {
         if (combination_ordinal == kMaxGroupChildCombinations) {
-          LOG(INFO, "hit kMaxGroupChildCombinations before successful constraint aggregation");
+          LogInfo(FROM_HERE,
+                  "hit kMaxGroupChildCombinations before successful constraint aggregation");
           subtree_status = ZX_ERR_OUT_OF_RANGE;
           done_with_subtree = true;
           break;
@@ -1350,6 +1469,12 @@ void LogicalBufferCollection::MaybeAllocate() {
               ZX_DEBUG_ASSERT(subtree_status == ZX_ERR_NOT_SUPPORTED);
               // next child selections
               break;
+            case ZX_ERR_SHOULD_WAIT:
+              // OnDependencyReady will call MaybeAllocate again later after all secure allocators
+              // are ready
+              subtree_status = ZX_ERR_SHOULD_WAIT;
+              done_with_subtree = true;
+              break;
             default:
               subtree_status = result.error();
               done_with_subtree = true;
@@ -1378,17 +1503,26 @@ void LogicalBufferCollection::MaybeAllocate() {
         // done_with_subtree true means loop will be done
         ZX_DEBUG_ASSERT(done_with_subtree);
       }
-      // This can still be ZX_ERR_NOT_SUPPORTED if we never got any more immediate failure and
-      // never got success, or this can be some other more immediate failure (still needs to be
-      // handled/propagated here), or this can be ZX_OK if we already handled success.
+      // The subtree_status can still be ZX_ERR_NOT_SUPPORTED if we never got any more immediate
+      // failure and never got success, or this can be some other more immediate failure (still
+      // needs to be handled/propagated here), or this can be ZX_OK if we already handled success,
+      // or can be ZX_ERR_SHOULD_WAIT if not all secure allocators are ready yet.
+      did_something = did_something || (subtree_status != ZX_ERR_SHOULD_WAIT);
       if (subtree_status != ZX_OK) {
+        if (subtree_status == ZX_ERR_SHOULD_WAIT) {
+          // next sub-tree
+          //
+          // OnDependencyReady will call MaybeAllocate again later after all secure allocators are
+          // ready
+          continue;
+        }
         if (was_allocate_attempted) {
           // fail entire logical allocation, including all pruned subtree nodes, regardless of
           // group child selections
           SetFailedLateLogicalAllocationResult(all_subtree_nodes[0], subtree_status);
         } else {
           // fail the initial allocation from root_ down
-          LOG(INFO, "fail the initial allocation from root_ down");
+          LogInfo(FROM_HERE, "fail the initial allocation from root_ down");
           SetFailedAllocationResult(subtree_status);
         }
       }
@@ -1425,7 +1559,9 @@ LogicalBufferCollection::TryAllocate(std::vector<NodeProperties*> nodes) {
     }
   }
 
-  InitializeConstraintSnapshots(constraints_list);
+  if (!waiting_for_secure_allocators_ready_) {
+    InitializeConstraintSnapshots(constraints_list);
+  }
 
   auto combine_result = CombineConstraints(&constraints_list);
   if (!combine_result.is_ok()) {
@@ -1438,16 +1574,28 @@ LogicalBufferCollection::TryAllocate(std::vector<NodeProperties*> nodes) {
   ZX_DEBUG_ASSERT(constraints_list.empty());
   auto combined_constraints = combine_result.take_value();
 
+  if (*combined_constraints.buffer_memory_constraints()->secure_required() &&
+      !parent_device_->is_secure_mem_ready()) {
+    // parent_device_ will call OnDependencyReady when all secure heaps/allocators are ready
+    LogInfo(FROM_HERE, "secure_required && !is_secure_mem_ready");
+    waiting_for_secure_allocators_ready_ = true;
+    return fpromise::error(ZX_ERR_SHOULD_WAIT);
+  }
+
   auto generate_result = GenerateUnpopulatedBufferCollectionInfo(combined_constraints);
   if (!generate_result.is_ok()) {
     ZX_DEBUG_ASSERT(generate_result.error() != ZX_OK);
     if (generate_result.error() != ZX_ERR_NOT_SUPPORTED) {
       LogError(FROM_HERE, "GenerateUnpopulatedBufferCollectionInfo() failed");
     }
-    return generate_result;
+    // This error code allows a BufferCollectionTokenGroup (if any) to try its next child.
+    return fpromise::error(ZX_ERR_NOT_SUPPORTED);
   }
   ZX_DEBUG_ASSERT(generate_result.is_ok());
   auto buffer_collection_info = generate_result.take_value();
+
+  // Above here, a BufferCollectionTokenGroup will move on to its next child. Below here, the group
+  // will not move on to its next child and the overall allocation will fail.
 
   // Save BufferCollectionInfo prior to populating with VMOs, for later comparison with analogous
   // BufferCollectionInfo generated after AttachToken().
@@ -1457,7 +1605,7 @@ LogicalBufferCollection::TryAllocate(std::vector<NodeProperties*> nodes) {
   // non-linearized copy is for easier logging of diffs if an AttachToken() sequence fails due to
   // mismatched BufferCollectionInfo.
   ZX_DEBUG_ASSERT(!buffer_collection_info_before_population_.has_value());
-  auto clone_result = sysmem::V2CloneBufferCollectionInfo(buffer_collection_info, 0, 0);
+  auto clone_result = sysmem::V2CloneBufferCollectionInfo(buffer_collection_info, 0);
   if (!clone_result.is_ok()) {
     ZX_DEBUG_ASSERT(clone_result.error() != ZX_OK);
     ZX_DEBUG_ASSERT(clone_result.error() != ZX_ERR_NOT_SUPPORTED);
@@ -1473,6 +1621,17 @@ LogicalBufferCollection::TryAllocate(std::vector<NodeProperties*> nodes) {
     ZX_DEBUG_ASSERT(result.error() != ZX_ERR_NOT_SUPPORTED);
     return result;
   }
+
+  if (is_verbose_logging()) {
+    const auto& bci = result.value();
+    IndentTracker indent_tracker(0);
+    auto indent = indent_tracker.Current();
+    LogInfo(FROM_HERE, "%*sBufferCollectionInfo:", indent.num_spaces(), "");
+    {  // mirror indent level
+      LogBufferCollectionInfo(indent_tracker, bci);
+    }
+  }
+
   ZX_DEBUG_ASSERT(result.is_ok());
   return result;
 }
@@ -1597,11 +1756,6 @@ zx_status_t LogicalBufferCollection::TryLateLogicalAllocation(std::vector<NodePr
     existing_constraints.image_format_constraints()->at(0) =
         existing.settings()->image_format_constraints().value();
   }
-  if (existing.buffers()->at(0).vmo_usable_start().has_value() &&
-      existing.buffers()->at(0).vmo_usable_start().value() & kNeedAuxVmoAlso) {
-    existing_constraints.need_clear_aux_buffers_for_secure().emplace(true);
-  }
-  existing_constraints.allow_clear_aux_buffers_for_secure().emplace(true);
 
   if (is_verbose_logging()) {
     LogInfo(FROM_HERE, "constraints from initial allocation:");
@@ -1638,7 +1792,8 @@ zx_status_t LogicalBufferCollection::TryLateLogicalAllocation(std::vector<NodePr
                "AttachToken() sequence failed - status: %d",
                generate_result.error());
     }
-    return generate_result.error();
+    // This error code allows a BufferCollectionTokenGroup (if any) to try its next child.
+    return ZX_ERR_NOT_SUPPORTED;
   }
   ZX_DEBUG_ASSERT(generate_result.is_ok());
   fuchsia_sysmem2::BufferCollectionInfo unpopulated_buffer_collection_info =
@@ -1676,7 +1831,7 @@ zx::result<bool> LogicalBufferCollection::CompareBufferCollectionInfo(
   // Clone both.
   auto clone = [this](fuchsia_sysmem2::BufferCollectionInfo& v)
       -> zx::result<fuchsia_sysmem2::BufferCollectionInfo> {
-    auto clone_result = sysmem::V2CloneBufferCollectionInfo(v, 0, 0);
+    auto clone_result = sysmem::V2CloneBufferCollectionInfo(v, 0);
     if (!clone_result.is_ok()) {
       ZX_DEBUG_ASSERT(clone_result.error() != ZX_OK);
       ZX_DEBUG_ASSERT(clone_result.error() != ZX_ERR_NOT_SUPPORTED);
@@ -1838,12 +1993,6 @@ void LogicalBufferCollection::BindSharedCollectionInternal(
     // status passed to an error handler is never ZX_OK.  Clean close is
     // ZX_ERR_PEER_CLOSED.
     ZX_DEBUG_ASSERT(status != ZX_OK);
-
-    // The dispatcher shut down before we were able to Bind(...)
-    if (status == ZX_ERR_BAD_STATE) {
-      LogAndFailRootNode(FROM_HERE, status, "sysmem dispatcher shutting down - status: %d", status);
-      return;
-    }
 
     // We know collection is still alive because collection is still under root_.  We know "this"
     // is still alive because collection has a fbl::RefPtr<> to "this".
@@ -2103,7 +2252,7 @@ LogicalBufferCollection::CombineConstraints(ConstraintsList* constraints_list) {
   // This also enforces that at least one participant must specify non-empty constraints.
   if (!IsMinBufferSizeSpecifiedByAnyParticipant(*constraints_list)) {
     // Too unconstrained...  We refuse to allocate buffers without any min size
-    // bounds from any participant.  At least one particpant must provide
+    // bounds from any participant.  At least one participant must provide
     // some form of size bounds (in terms of buffer size bounds or in terms
     // of image size bounds).
     LogError(FROM_HERE,
@@ -2140,8 +2289,10 @@ LogicalBufferCollection::CombineConstraints(ConstraintsList* constraints_list) {
     return fpromise::error();
   }
 
-  LogInfo(FROM_HERE, "After combining constraints:");
-  LogConstraints(FROM_HERE, nullptr, acc);
+  if (is_verbose_logging()) {
+    LogInfo(FROM_HERE, "After combining constraints:");
+    LogConstraints(FROM_HERE, nullptr, acc);
+  }
 
   return fpromise::ok(std::move(acc));
 }
@@ -2224,11 +2375,10 @@ size_t LogicalBufferCollection::InitialCapacityOrZero(CheckSanitizeStage stage,
   return (stage == CheckSanitizeStage::kInitial) ? initial_capacity : 0;
 }
 
-// Nearly all constraint checks must go under here or under ::Allocate() (not in
-// the Accumulate* methods), else we could fail to notice a single participant
-// providing unsatisfiable constraints, where no Accumulate* happens.  The
-// constraint checks that are present under Accumulate* are commented explaining
-// why it's ok for them to be there.
+// Nearly all constraint checks must go under here or under ::Allocate() (not in the Accumulate*
+// methods), else we could fail to notice a single participant providing unsatisfiable constraints,
+// where no Accumulate* happens.  The constraint checks that are present under Accumulate* are
+// commented explaining why it's ok for them to be there.
 bool LogicalBufferCollection::CheckSanitizeBufferCollectionConstraints(
     CheckSanitizeStage stage, fuchsia_sysmem2::BufferCollectionConstraints& constraints) {
   bool was_empty = constraints.IsEmpty();
@@ -2248,10 +2398,12 @@ bool LogicalBufferCollection::CheckSanitizeBufferCollectionConstraints(
                   stage != CheckSanitizeStage::kAggregated);
   FIELD_DEFAULT_SET(constraints, buffer_memory_constraints);
   ZX_DEBUG_ASSERT(constraints.buffer_memory_constraints().has_value());
+
+  // The upside of this default is treating an empty vector from a client the same way as un-set
+  // from the client. The downside is we have to be careful to notice when the size() moves from 1
+  // to 0, which is an error, while size() 0 from the start is not an error.
   FIELD_DEFAULT_SET_VECTOR(constraints, image_format_constraints, InitialCapacityOrZero(stage, 64));
-  FIELD_DEFAULT_FALSE(constraints, need_clear_aux_buffers_for_secure);
-  FIELD_DEFAULT(constraints, allow_clear_aux_buffers_for_secure,
-                !IsWriteUsage(constraints.usage().value()));
+
   if (!CheckSanitizeBufferUsage(stage, constraints.usage().value())) {
     LogError(FROM_HERE, "CheckSanitizeBufferUsage() failed");
     return false;
@@ -2293,74 +2445,104 @@ bool LogicalBufferCollection::CheckSanitizeBufferCollectionConstraints(
     }
   }
 
-  auto is_pixel_format_do_not_care_result =
-      IsImageFormatConstraintsArrayPixelFormatDoNotCare(*constraints.image_format_constraints());
-  // Here is where is_error() is "checked previously" for PixelFormatType re. DO_NOT_CARE.
-  if (is_pixel_format_do_not_care_result.is_error()) {
-    LogError(FROM_HERE, "malformed PixelFormat (possibly involving DO_NOT_CARE)");
-    return false;
+  if (stage == CheckSanitizeStage::kNotAggregated) {
+    // At least for now, always flatten pixel_formats and pixel_format_modifiers. While it may be
+    // tempting to make aggregation aware of `pixel_formats` and `pixel_format_modifiers` to avoid
+    // this pre-flattening, that would likely increase the complexity of constraints aggregation
+    // quite a bit. Another reasonable-seeming possibility would be some pre-pruning before
+    // flattening.
+    if (!FlattenPixelFormatAndModifiers(*constraints.usage(), constraints)) {
+      // FlattenPixelFormatAndModifiers already logged.
+      return false;
+    }
   }
-  bool is_pixel_format_do_not_care = is_pixel_format_do_not_care_result.value();
-  for (uint32_t i = 0; i < constraints.image_format_constraints()->size(); ++i) {
-    if (!CheckSanitizeImageFormatConstraints(stage,
-                                             constraints.image_format_constraints()->at(i))) {
+
+  ZX_DEBUG_ASSERT(constraints.image_format_constraints().has_value());
+  auto& image_format_constraints = *constraints.image_format_constraints();
+
+  for (uint32_t i = 0; i < image_format_constraints.size(); ++i) {
+    ZX_DEBUG_ASSERT(constraints.usage().has_value());
+    if (!CheckSanitizeImageFormatConstraints(stage, *constraints.usage(),
+                                             image_format_constraints[i])) {
       return false;
     }
   }
 
   if (stage == CheckSanitizeStage::kAggregated) {
-    if (constraints.image_format_constraints().has_value()) {
-      if (is_pixel_format_do_not_care) {
+    // filter out any remaining PixelFormatAndModifier DoNotCare(s)
+    for (uint32_t i = 0; i < image_format_constraints.size(); ++i) {
+      auto& ifc = image_format_constraints[i];
+      auto format = PixelFormatAndModifierFromConstraints(ifc);
+      if (!IsPixelFormatAndModifierAtLeastPartlyDoNotCare(format)) {
+        continue;
+      }
+      LogInfo(
+          FROM_HERE,
+          "per-PixelFormatAndModifier, at least one participant must specify specific value (not DoNotCare) for each field - removing format: %u 0x%" PRIx64,
+          format.pixel_format, format.pixel_format_modifier);
+
+      if (i != image_format_constraints.size() - 1) {
+        image_format_constraints[i] =
+            std::move(image_format_constraints[image_format_constraints.size() - 1]);
+      }
+      image_format_constraints.resize(image_format_constraints.size() - 1);
+      --i;
+
+      // 1 -> 0 is an error (in contrast to initially 0 which is not an error)
+      if (image_format_constraints.empty()) {
         // By design, sysmem does not arbitrarily select a colorspace from among all color spaces
         // without any participant-specified pixel format constraints, as doing so would be likely
         // to lead to unexpected changes to the resulting pixel format when additional pixel formats
-        // are added to PixelFormatType.
-        LogError(FROM_HERE, "at least one participant must specify PixelFormatType != DO_NOT_CARE");
+        // are added to PixelFormat.
+        LogError(
+            FROM_HERE,
+            "after removing format(s) with remaining DoNotCare(s), zero PixelFormatAndModifier(s) remaining");
         return false;
       }
-      for (uint32_t i = 0; i < constraints.image_format_constraints()->size(); ++i) {
-        auto& ifc = constraints.image_format_constraints()->at(i);
-        auto is_color_space_do_not_care_result = IsColorSpaceArrayDoNotCare(*ifc.color_spaces());
-        // maintained during accumulation
-        ZX_DEBUG_ASSERT(is_color_space_do_not_care_result.is_ok());
-        bool is_color_space_do_not_care = is_color_space_do_not_care_result.value();
-        if (is_color_space_do_not_care) {
-          // Both producers and consumers ("active" participants) are required to specify specific
-          // color_spaces by design, with the only exception being kPassThrough.
-          //
-          // Only more passive participants should ever specify ColorSpaceType kDoNotCare.  If an
-          // active participant really does not care, it can instead list all the color spaces.  In
-          // a few scenarios it may be fine for participants to all specify kPassThrough, if there's
-          // no reason to add a particular highly-custom and/or not-actually-color-as-such space to
-          // the ColorSpaceType enum, or if all participants are all truly intending to just pass
-          // through the color space no matter what it is with no need for sysmem to select a color
-          // space and the special scenario would otherwise involve (by intent of design) _all_ the
-          // participants wanting to set kDoNotCare (which would lead to this error).
-          //
-          // The preferred fix most of the time is specifying a specific color space in at least one
-          // participant.  Much less commonly, and only if actually necessary, kPassThrough can be
-          // used by all participants instead (see previous paragraph).
-          LogInfo(FROM_HERE,
-                  "per-PixelFormatType, at least one participant must specify ColorSpaceType != "
-                  "kDoNotCare - removing PixelFormatType: type: %u modifier: 0x%" PRIx64,
-                  *ifc.pixel_format(),
-                  ifc.pixel_format_modifier().has_value() ? *ifc.pixel_format_modifier() : 0ull);
-          // Remove by copying down last PixelFormat to this index and processing this index again,
-          // if this isn't already the last PixelFormat.
-          if (i != constraints.image_format_constraints()->size() - 1) {
-            constraints.image_format_constraints()->at(i) =
-                std::move(constraints.image_format_constraints()->at(
-                    constraints.image_format_constraints()->size() - 1));
-            --i;
-          }
-          constraints.image_format_constraints()->resize(
-              constraints.image_format_constraints()->size() - 1);
-          if (constraints.image_format_constraints()->size() == 0) {
-            LogError(FROM_HERE,
-                     "after removing pixel format that remained ColorSpaceType kDoNotCare, zero "
-                     "pixel formats remaining");
-            return false;
-          }
+    }
+
+    for (uint32_t i = 0; i < image_format_constraints.size(); ++i) {
+      auto& ifc = image_format_constraints[i];
+      auto is_color_space_do_not_care_result = IsColorSpaceArrayDoNotCare(*ifc.color_spaces());
+      // maintained during accumulation
+      ZX_DEBUG_ASSERT(is_color_space_do_not_care_result.is_ok());
+      bool is_color_space_do_not_care = is_color_space_do_not_care_result.value();
+      if (is_color_space_do_not_care) {
+        // Both producers and consumers ("active" participants) are required to specify specific
+        // color_spaces by design, with the only exception being kPassThrough.
+        //
+        // Only more passive participants should ever specify ColorSpaceType kDoNotCare.  If an
+        // active participant really does not care, it can instead list all the color spaces.  In
+        // a few scenarios it may be fine for participants to all specify kPassThrough, if there's
+        // no reason to add a particular highly-custom and/or not-actually-color-as-such space to
+        // the ColorSpaceType enum, or if all participants are all truly intending to just pass
+        // through the color space no matter what it is with no need for sysmem to select a color
+        // space and the special scenario would otherwise involve (by intent of design) _all_ the
+        // participants wanting to set kDoNotCare (which would lead to this error).
+        LogInfo(FROM_HERE,
+                "per-PixelFormat, at least one participant must specify ColorSpaceType != "
+                "kDoNotCare - removing: pixel_format: %u pixel_format_modifier: 0x%" PRIx64,
+                *ifc.pixel_format(),
+                ifc.pixel_format_modifier().has_value() ? *ifc.pixel_format_modifier() : 0ull);
+
+        // Remove by moving down last PixelFormat to this index and processing this index again,
+        // if this isn't already the last PixelFormat.
+        if (i != image_format_constraints.size() - 1) {
+          image_format_constraints[i] =
+              std::move(image_format_constraints[image_format_constraints.size() - 1]);
+        }
+        image_format_constraints.resize(image_format_constraints.size() - 1);
+        --i;
+
+        // 1 -> 0 is an error (in contrast to initially 0 which is not an error)
+        if (image_format_constraints.empty()) {
+          // The preferred fix most of the time is specifying a specific color space in at least
+          // one participant.  Much less commonly, and only if actually necessary, kPassThrough
+          // can be used by all participants instead (see previous paragraph).
+          LogError(
+              FROM_HERE,
+              "after removing format(s) that remained ColorSpace kDoNotCare, zero formats remaining");
+          return false;
         }
       }
     }
@@ -2381,10 +2563,7 @@ bool LogicalBufferCollection::CheckSanitizeBufferCollectionConstraints(
         }
 
         // Set the best color space
-        image_constraint.color_spaces()->resize(0);
-        fuchsia_images2::ColorSpace color_space;
-        color_space = best_color_space;
-        image_constraint.color_spaces()->emplace_back(std::move(color_space));
+        image_constraint.color_spaces() = {best_color_space};
       }
     }
   }
@@ -2399,7 +2578,54 @@ bool LogicalBufferCollection::CheckSanitizeBufferCollectionConstraints(
             PixelFormatAndModifierFromConstraints(constraints.image_format_constraints()->at(j));
         if (ImageFormatIsPixelFormatEqual(i_pixel_format_and_modifier,
                                           j_pixel_format_and_modifier)) {
-          LogError(FROM_HERE, "image format constraints %d and %d have identical formats", i, j);
+          // This can happen if a client is specifying two entries with same pixel_format and same
+          // pixel_format_modifier.
+          //
+          // This can also happen if such a duplicate is implied after default field handling, such
+          // as replacing "none" BufferUsage + un-set pixel_format_modifier with
+          // pixel_format_modifier kDoNotCare, along with another entry from the client with same
+          // pixel_format and explicit pixel_format_modifier kDoNotCare.
+          //
+          // Printing all four values is a bit redundant but perhaps more convincing.
+          LogError(FROM_HERE, "image formats are identical: %u 0x%" PRIx64 " and %u 0x%" PRIx64,
+                   static_cast<uint32_t>(i_pixel_format_and_modifier.pixel_format),
+                   i_pixel_format_and_modifier.pixel_format_modifier,
+                   static_cast<uint32_t>(j_pixel_format_and_modifier.pixel_format),
+                   j_pixel_format_and_modifier.pixel_format_modifier);
+          return false;
+        }
+
+        if (IsPixelFormatAndModifierCombineable(i_pixel_format_and_modifier,
+                                                j_pixel_format_and_modifier)) {
+          // Given the ImageFormatIsPixelFormatEqual check above, this can happen if a client is
+          // specifying two entries where one entry is strictly less picky, so "covering" the other
+          // entry. In this case the client should only send the less picky entry. Sysmem doesn't
+          // have any policy of trying more picky entries then falling back to less picky entries,
+          // short of using a BufferCollectionTokenGroup (please only use that if it's really
+          // needed; prefer to just remove the more-picky entry if that'll work fine for the
+          // client).
+          //
+          // This check also ensures that a (DO_NOT_CARE, FORMAT_MODIFIER_DO_NOT_CARE) is the only
+          // entry, since that's combine-able with any other format (including itself).
+          //
+          // This can also happen in case of (foo, do not care) and (do not care, bar), which is
+          // fine to combine from separate participants (despite no single participant having nailed
+          // down both fields at once), but messes with the "pick one" semantics of format entries
+          // from a single participant, so is disallowed within the format entries of a single
+          // participant.
+          //
+          // We intentionally disallow any combine-able formats from a single participant here. It's
+          // easy enough for a participant that really needs/wants to pick one from set A and one
+          // from set B to duplicate a token and send set A and set B via separate "participants"
+          // driven by the one client.
+          LogError(
+              FROM_HERE,
+              "not permitted for two formats from the same participant to be combine-able: %u 0x%" PRIx64
+              " and %u 0x%" PRIx64,
+              static_cast<uint32_t>(i_pixel_format_and_modifier.pixel_format),
+              i_pixel_format_and_modifier.pixel_format_modifier,
+              static_cast<uint32_t>(j_pixel_format_and_modifier.pixel_format),
+              j_pixel_format_and_modifier.pixel_format_modifier);
           return false;
         }
       }
@@ -2446,13 +2672,26 @@ bool LogicalBufferCollection::CheckSanitizeBufferMemoryConstraints(
 }
 
 bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
-    CheckSanitizeStage stage, fuchsia_sysmem2::ImageFormatConstraints& constraints) {
+    CheckSanitizeStage stage, const fuchsia_sysmem2::BufferUsage& buffer_usage,
+    fuchsia_sysmem2::ImageFormatConstraints& constraints) {
   // We never CheckSanitizeImageFormatConstraints() on empty (aka initial) constraints.
   ZX_DEBUG_ASSERT(stage != CheckSanitizeStage::kInitial);
 
-  FIELD_DEFAULT_ZERO(constraints, pixel_format);
-  // kFormatModifierNone
-  FIELD_DEFAULT_ZERO_64_BIT(constraints, pixel_format_modifier);
+  // Defaults for these fields are set in FlattenPixelFormatAndModifiers().
+  ZX_DEBUG_ASSERT(constraints.pixel_format().has_value());
+  ZX_DEBUG_ASSERT(constraints.pixel_format_modifier().has_value());
+
+  if (*constraints.pixel_format() == fuchsia_images2::PixelFormat::kInvalid) {
+    // kInvalid not allowed; see kDoNotCare if that is the intent.
+    LogError(FROM_HERE, "PixelFormat INVALID not allowed");
+    return false;
+  }
+
+  if (*constraints.pixel_format_modifier() == fuchsia_images2::kFormatModifierInvalid) {
+    // kFormatModifierInvalid not allowed; see kFormatModifierDoNotCare if that is the intent.
+    LogError(FROM_HERE, "pixel_format_modifier kFormatModifierInvalid not allowed");
+    return false;
+  }
 
   FIELD_DEFAULT_SET_VECTOR(constraints, color_spaces, 0);
 
@@ -2494,27 +2733,27 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
 
   FIELD_DEFAULT_1(constraints, start_offset_divisor);
 
-  if (constraints.pixel_format().value() == fuchsia_images2::PixelFormat::kInvalid) {
-    LogError(FROM_HERE, "PixelFormatType INVALID not allowed");
-    return false;
-  }
+  auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints);
+  auto is_format_do_not_care =
+      IsPixelFormatAndModifierAtLeastPartlyDoNotCare(pixel_format_and_modifier);
 
-  auto is_pixel_format_do_not_care_result =
-      IsImageFormatConstraintsPixelFormatDoNotCare(constraints);
-  // checked previously
-  ZX_DEBUG_ASSERT(is_pixel_format_do_not_care_result.is_ok());
-  bool is_pixel_format_do_not_care = is_pixel_format_do_not_care_result.value();
-  if (!is_pixel_format_do_not_care) {
-    auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints);
+  if (!is_format_do_not_care) {
     if (!ImageFormatIsSupported(pixel_format_and_modifier)) {
-      LogError(FROM_HERE, "Unsupported pixel format");
+      LogError(FROM_HERE,
+               "Unsupported pixel format - pixel_format: %u pixel_format_modifier: 0x%" PRIx64,
+               static_cast<uint32_t>(pixel_format_and_modifier.pixel_format),
+               pixel_format_and_modifier.pixel_format_modifier);
       return false;
     }
-    uint32_t min_bytes_per_row_given_min_width =
-        ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier) *
-        constraints.min_size()->width();
-    constraints.min_bytes_per_row() =
-        std::max(constraints.min_bytes_per_row().value(), min_bytes_per_row_given_min_width);
+    if (constraints.min_size()->width() > 0) {
+      uint32_t minimum_row_bytes = 0;
+
+      if (ImageFormatMinimumRowBytes(constraints, constraints.min_size()->width(),
+                                     &minimum_row_bytes)) {
+        constraints.min_bytes_per_row() =
+            std::max(constraints.min_bytes_per_row().value(), minimum_row_bytes);
+      }
+    }
   }
 
   if (!constraints.color_spaces().has_value()) {
@@ -2584,29 +2823,25 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
     return false;
   }
 
-  if (!is_pixel_format_do_not_care) {
-    auto is_color_space_do_not_care_result =
-        IsColorSpaceArrayDoNotCare(*constraints.color_spaces());
-    // Here is where is_error() is "checked previously" for ColorSpaceType re. DO_NOT_CARE.
-    if (is_color_space_do_not_care_result.is_error()) {
-      LogError(FROM_HERE, "malformed color_spaces re. DO_NOT_CARE");
-      return false;
-    }
-    bool is_color_space_do_not_care = is_color_space_do_not_care_result.value();
-    if (!is_color_space_do_not_care) {
-      for (uint32_t i = 0; i < constraints.color_spaces()->size(); ++i) {
-        auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints);
-        if (!ImageFormatIsSupportedColorSpaceForPixelFormat(constraints.color_spaces()->at(i),
-                                                            pixel_format_and_modifier)) {
-          auto color_space = constraints.color_spaces()->at(i);
-          LogError(FROM_HERE,
-                   "!ImageFormatIsSupportedColorSpaceForPixelFormat() "
-                   "color_space: %u pixel_format: %u pixel_format_modifier: 0x%" PRIx64,
-                   sysmem::fidl_underlying_cast(color_space),
-                   sysmem::fidl_underlying_cast(*constraints.pixel_format()),
-                   *constraints.pixel_format_modifier());
-          return false;
-        }
+  auto is_color_space_do_not_care_result = IsColorSpaceArrayDoNotCare(*constraints.color_spaces());
+  if (!is_color_space_do_not_care_result.is_ok()) {
+    LogError(FROM_HERE, "malformed color_spaces re. DO_NOT_CARE");
+    return false;
+  }
+  bool is_color_space_do_not_care = is_color_space_do_not_care_result.value();
+
+  if (!is_format_do_not_care && !is_color_space_do_not_care) {
+    for (uint32_t i = 0; i < constraints.color_spaces()->size(); ++i) {
+      if (!ImageFormatIsSupportedColorSpaceForPixelFormat(constraints.color_spaces()->at(i),
+                                                          pixel_format_and_modifier)) {
+        auto color_space = constraints.color_spaces()->at(i);
+        LogError(FROM_HERE,
+                 "!ImageFormatIsSupportedColorSpaceForPixelFormat() "
+                 "color_space: %u pixel_format: %u pixel_format_modifier: 0x%" PRIx64,
+                 sysmem::fidl_underlying_cast(color_space),
+                 sysmem::fidl_underlying_cast(*constraints.pixel_format()),
+                 *constraints.pixel_format_modifier());
+        return false;
       }
     }
   }
@@ -2713,15 +2948,6 @@ bool LogicalBufferCollection::AccumulateConstraintBufferCollection(
     }
   }
 
-  acc->need_clear_aux_buffers_for_secure().emplace(
-      acc->need_clear_aux_buffers_for_secure().value() ||
-      c.need_clear_aux_buffers_for_secure().value());
-  acc->allow_clear_aux_buffers_for_secure().emplace(
-      acc->allow_clear_aux_buffers_for_secure().value() &&
-      c.allow_clear_aux_buffers_for_secure().value());
-  // We check for consistency of these later only if we're actually attempting to allocate secure
-  // buffers.
-
   // acc->image_format_constraints().count() == 0 is allowed here, when all
   // participants had image_format_constraints().count() == 0.
   return true;
@@ -2775,7 +3001,7 @@ bool LogicalBufferCollection::AccumulateConstraintBufferMemory(
   // actual size of page size, we do permit treating buffers as if they're 1
   // byte, mainly for testing reasons, and to avoid any unnecessary dependence
   // or assumptions re. page size.
-  acc->min_size_bytes() = std::max(*acc->min_size_bytes(), 1u);
+  acc->min_size_bytes() = std::max(*acc->min_size_bytes(), 1ul);
   acc->max_size_bytes() = std::min(*acc->max_size_bytes(), *c.max_size_bytes());
 
   acc->physically_contiguous_required() =
@@ -2813,34 +3039,19 @@ bool LogicalBufferCollection::AccumulateConstraintImageFormats(
   // acc.
   ZX_DEBUG_ASSERT(!acc->empty());
 
-  // Any pixel_format kDoNotCare can only happen with count() == 1, checked previously.  If both
-  // acc and c are indicating kDoNotCare, the result still needs to be kDoNotCare.  If only one of
-  // acc or c is indicating kDoNotCare, we need to fan out the kDoNotCare (via cloning) and replace
-  // each of the resulting pixel_format fields with the specific (not kDoNotCare) pixel_format(s)
-  // indicated by the other (of acc and c).  After this, accumulation can proceed as normal, with
-  // kDoNotCare (if still present) treated as any other normal PixelFormatType.  At the end of
-  // overall accumulation, we must check (elsewhere) that we're not left with only a single
-  // kDoNotCare pixel_format.
-  auto acc_is_do_not_care_result = IsImageFormatConstraintsArrayPixelFormatDoNotCare(*acc);
-  // maintained as we accumulate, largely thanks to each c having been checked previously
-  ZX_DEBUG_ASSERT(acc_is_do_not_care_result.is_ok());
-  bool acc_is_do_not_care = acc_is_do_not_care_result.value();
-  auto c_is_do_not_care_result = IsImageFormatConstraintsArrayPixelFormatDoNotCare(c);
-  // checked previously
-  ZX_DEBUG_ASSERT(c_is_do_not_care_result.is_ok());
-  auto c_is_do_not_care = c_is_do_not_care_result.value();
-  if (acc_is_do_not_care && !c_is_do_not_care) {
-    // replicate acc entries to correspond to c entries
-    ReplicatePixelFormatDoNotCare(c, *acc);
-  } else if (!acc_is_do_not_care && c_is_do_not_care) {
-    // replicate c entries to correspond to acc entries
-    ReplicatePixelFormatDoNotCare(*acc, c);
-  } else {
-    // Either both are pixel_format kDoNotCare, or neither are.
-    ZX_DEBUG_ASSERT(acc_is_do_not_care == c_is_do_not_care);
+  // Fan out any entries with DoNotCare in either field of PixelFormatAndModifier, so that the loop
+  // below can separately aggregate exactly-matching PixelFormatAndModifier(s).
+  //
+  // After this, accumulation can proceed as normal, with kDoNotCare (if still present) treated as
+  // any other normal PixelFormatType.  At the end of overall accumulation, we filter out any
+  // remaining DoNotCare entries (elsewhere).
+  if (!ReplicateAnyPixelFormatAndModifierDoNotCares(c, *acc) ||
+      !ReplicateAnyPixelFormatAndModifierDoNotCares(*acc, c)) {
+    LogError(FROM_HERE, "ReplicateAnyPixelFormatAndModifierDoNotCares failed");
+    return false;
   }
 
-  for (uint32_t ai = 0; ai < acc->size(); ++ai) {
+  for (size_t ai = 0; ai < acc->size(); ++ai) {
     bool is_found_in_c = false;
     for (size_t ci = 0; ci < c.size(); ++ci) {
       auto acc_pixel_format_and_modifier = PixelFormatAndModifierFromConstraints((*acc)[ai]);
@@ -2907,6 +3118,10 @@ bool LogicalBufferCollection::AccumulateConstraintImageFormat(
     fuchsia_sysmem2::ImageFormatConstraints* acc, fuchsia_sysmem2::ImageFormatConstraints c) {
   ZX_DEBUG_ASSERT(ImageFormatIsPixelFormatEqual(PixelFormatAndModifierFromConstraints(*acc),
                                                 PixelFormatAndModifierFromConstraints(c)));
+  auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(*acc);
+  auto is_format_do_not_care =
+      IsPixelFormatAndModifierAtLeastPartlyDoNotCare(pixel_format_and_modifier);
+
   // Checked previously.
   ZX_DEBUG_ASSERT(acc->color_spaces().has_value());
   ZX_DEBUG_ASSERT(!acc->color_spaces()->empty());
@@ -2954,16 +3169,12 @@ bool LogicalBufferCollection::AccumulateConstraintImageFormat(
   ZX_DEBUG_ASSERT(c.start_offset_divisor().has_value());
   acc->start_offset_divisor() = std::max(*acc->start_offset_divisor(), *c.start_offset_divisor());
 
-  // When acc still has kDoNotCare (when this condition is false), we're guaranteed to either end up
-  // here again later in aggregation with the condition true, or to fail the overall aggregation if
-  // acc still has kDoNotCare at the end of aggregation.  This way, we know that we'll take the
-  // pixel format's contribution to these values into consideration before the end of aggregation,
-  // or we'll fail the aggregation anyway.
-  auto acc_is_pixel_format_do_not_care_result = IsImageFormatConstraintsPixelFormatDoNotCare(*acc);
-  // maintained during accumulation, largely thanks to each c having been checked previously
-  ZX_DEBUG_ASSERT(acc_is_pixel_format_do_not_care_result.is_ok());
-  bool acc_is_pixel_format_do_not_care = acc_is_pixel_format_do_not_care_result.value();
-  if (!acc_is_pixel_format_do_not_care) {
+  // When acc still has DoNotCare (when is_format_do_not_care is true), we're guaranteed to either
+  // end up here again later in aggregation with the condition true, or to fail the overall
+  // aggregation if acc still has DoNotCare (in either PixelFormatAndModifier field) at the end of
+  // aggregation. This way, we know that we'll take the format's contribution to these values into
+  // consideration before the end of aggregation, or we'll fail the aggregation anyway.
+  if (!is_format_do_not_care) {
     auto acc_pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(*acc);
     acc->size_alignment()->width() =
         std::max(acc->size_alignment()->width(),
@@ -3108,13 +3319,16 @@ static fpromise::result<fuchsia_sysmem2::HeapType, zx_status_t> GetHeap(
 
   for (size_t i = 0; i < constraints.heap_permitted()->size(); ++i) {
     auto heap = constraints.heap_permitted()->at(i);
-    const auto& heap_properties = device->GetHeapProperties(heap);
-    if (heap_properties.coherency_domain_support().has_value() &&
-        ((*heap_properties.coherency_domain_support()->cpu_supported() &&
+    const auto* heap_properties = device->GetHeapProperties(heap);
+    if (!heap_properties) {
+      continue;
+    }
+    if (heap_properties->coherency_domain_support().has_value() &&
+        ((*heap_properties->coherency_domain_support()->cpu_supported() &&
           *constraints.cpu_domain_supported()) ||
-         (*heap_properties.coherency_domain_support()->ram_supported() &&
+         (*heap_properties->coherency_domain_support()->ram_supported() &&
           *constraints.ram_domain_supported()) ||
-         (*heap_properties.coherency_domain_support()->inaccessible_supported() &&
+         (*heap_properties->coherency_domain_support()->inaccessible_supported() &&
           *constraints.inaccessible_domain_supported()))) {
       return fpromise::ok(heap);
     }
@@ -3171,6 +3385,8 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
 
   fuchsia_sysmem2::BufferCollectionInfo result;
 
+  result.buffer_collection_id() = buffer_collection_id_;
+
   uint32_t min_buffer_count = *constraints.min_buffer_count_for_camping() +
                               *constraints.min_buffer_count_for_dedicated_slack() +
                               *constraints.min_buffer_count_for_shared_slack();
@@ -3215,15 +3431,6 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
   // checked previously
   ZX_DEBUG_ASSERT(IsSecurePermitted(buffer_constraints) || !*buffer_constraints.secure_required());
   buffer_settings.is_secure() = *buffer_constraints.secure_required();
-  if (*buffer_settings.is_secure()) {
-    if (*constraints.need_clear_aux_buffers_for_secure() &&
-        !*constraints.allow_clear_aux_buffers_for_secure()) {
-      LogError(
-          FROM_HERE,
-          "is_secure && need_clear_aux_buffers_for_secure && !allow_clear_aux_buffers_for_secure");
-      return fpromise::error(ZX_ERR_NOT_SUPPORTED);
-    }
-  }
 
   auto result_get_heap = GetHeap(buffer_constraints, parent_device_);
   if (!result_get_heap.is_ok()) {
@@ -3412,24 +3619,16 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
     // preventing unpredictable memory pressure caused by a fuzzer or similar source of
     // unpredictability in tests.
     LogError(FROM_HERE,
-             "GenerateUnpopulatedBufferCollectionInfo() failed because size %u > "
+             "GenerateUnpopulatedBufferCollectionInfo() failed because size %" PRIu64
+             " > "
              "max_allocation_size %ld",
              *buffer_settings.size_bytes(), parent_device_->settings().max_allocation_size);
     return fpromise::error(ZX_ERR_NO_MEMORY);
   }
 
-  // We initially set vmo_usable_start to bit-fields indicating whether vmo and aux_vmo fields will
-  // be set to valid handles later.  This is for purposes of comparison with a later
-  // BufferCollectionInfo after an AttachToken().  Before sending to the client, the
-  // vmo_usable_start is set to 0.  Even if later we need a non-zero vmo_usable_start to be compared
-  // we are extremely unlikely to want a buffer to start at an offset that isn't divisible by 4, so
-  // using the two low-order bits for this seems reasonable enough.
   for (uint32_t i = 0; i < result.buffers()->size(); ++i) {
     fuchsia_sysmem2::VmoBuffer vmo_buffer;
     vmo_buffer.vmo_usable_start() = 0ul;
-    if (*buffer_settings.is_secure() && *constraints.need_clear_aux_buffers_for_secure()) {
-      *vmo_buffer.vmo_usable_start() |= kNeedAuxVmoAlso;
-    }
     result.buffers()->at(i) = std::move(vmo_buffer);
   }
 
@@ -3452,6 +3651,13 @@ LogicalBufferCollection::Allocate(const fuchsia_sysmem2::BufferCollectionConstra
     LogError(FROM_HERE, "No memory allocator for buffer settings");
     return fpromise::error(ZX_ERR_NO_MEMORY);
   }
+  memory_allocator_ = allocator;
+
+  // Register failure handler with memory allocator.
+  allocator->AddDestroyCallback(reinterpret_cast<intptr_t>(this), [this]() {
+    LogAndFailRootNode(FROM_HERE, ZX_ERR_BAD_STATE,
+                       "LogicalBufferCollection memory allocator gone - now auto-failing self.");
+  });
 
   if (settings.image_format_constraints().has_value()) {
     const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints =
@@ -3490,26 +3696,9 @@ LogicalBufferCollection::Allocate(const fuchsia_sysmem2::BufferCollectionConstra
   inspect_node_.CreateUint("allocation_timestamp_ns", zx::clock::get_monotonic().get(),
                            &vmo_properties_);
 
-  // Get memory allocator for aux buffers, if needed.
-  MemoryAllocator* maybe_aux_allocator = nullptr;
-  std::optional<fuchsia_sysmem2::SingleBufferSettings> maybe_aux_settings;
-  ZX_DEBUG_ASSERT(
-      !!(*result.buffers()->at(0).vmo_usable_start() & kNeedAuxVmoAlso) ==
-      (*buffer_settings.is_secure() && *constraints.need_clear_aux_buffers_for_secure()));
-  if (*result.buffers()->at(0).vmo_usable_start() & kNeedAuxVmoAlso) {
-    maybe_aux_settings.emplace();
-    maybe_aux_settings->buffer_settings().emplace();
-    auto& aux_buffer_settings = *maybe_aux_settings->buffer_settings();
-    aux_buffer_settings.size_bytes() = *buffer_settings.size_bytes();
-    aux_buffer_settings.is_physically_contiguous() = false;
-    aux_buffer_settings.is_secure() = false;
-    aux_buffer_settings.coherency_domain() = fuchsia_sysmem2::CoherencyDomain::kCpu;
-    aux_buffer_settings.heap() = fuchsia_sysmem2::HeapType::kSystemRam;
-    maybe_aux_allocator = parent_device_->GetAllocator(aux_buffer_settings);
-    ZX_DEBUG_ASSERT(maybe_aux_allocator);
-  }
-
   ZX_DEBUG_ASSERT(*buffer_settings.size_bytes() <= parent_device_->settings().max_allocation_size);
+
+  auto cleanup_buffers = fit::defer([this] { ClearBuffers(); });
 
   for (uint32_t i = 0; i < result.buffers()->size(); ++i) {
     auto allocate_result = AllocateVmo(allocator, settings, i);
@@ -3520,32 +3709,15 @@ LogicalBufferCollection::Allocate(const fuchsia_sysmem2::BufferCollectionConstra
     zx::vmo vmo = allocate_result.take_value();
     auto& vmo_buffer = result.buffers()->at(i);
     vmo_buffer.vmo() = std::move(vmo);
-    if (maybe_aux_allocator) {
-      ZX_DEBUG_ASSERT(maybe_aux_settings.has_value());
-      auto aux_allocate_result = AllocateVmo(maybe_aux_allocator, maybe_aux_settings.value(), i);
-      if (!aux_allocate_result.is_ok()) {
-        LogError(FROM_HERE, "AllocateVmo() failed (aux)");
-        return fpromise::error(ZX_ERR_NO_MEMORY);
-      }
-      zx::vmo aux_vmo = aux_allocate_result.take_value();
-      vmo_buffer.aux_vmo() = std::move(aux_vmo);
-    }
     ZX_DEBUG_ASSERT(vmo_buffer.vmo_usable_start().has_value());
-    // In case kNeedAuxVmoAlso was set.
-    vmo_buffer.vmo_usable_start() = 0;
+    ZX_DEBUG_ASSERT(*vmo_buffer.vmo_usable_start() == 0);
   }
   vmo_count_property_ = inspect_node_.CreateUint("vmo_count", result.buffers()->size());
   // Make sure we have sufficient barrier after allocating/clearing/flushing any VMO newly allocated
   // by allocator above.
   BarrierAfterFlush();
 
-  // Register failure handler with memory allocator.
-  allocator->AddDestroyCallback(reinterpret_cast<intptr_t>(this), [this]() {
-    LogAndFailRootNode(FROM_HERE, ZX_ERR_BAD_STATE,
-                       "LogicalBufferCollection memory allocator gone - now auto-failing self.");
-  });
-  memory_allocator_ = allocator;
-
+  cleanup_buffers.cancel();
   return fpromise::ok(std::move(result));
 }
 
@@ -3554,9 +3726,9 @@ fpromise::result<zx::vmo> LogicalBufferCollection::AllocateVmo(
     uint32_t index) {
   TRACE_DURATION("gfx", "LogicalBufferCollection::AllocateVmo", "size_bytes",
                  *settings.buffer_settings()->size_bytes());
-  zx::vmo child_vmo;
-  // Physical VMOs only support slices where the size (and offset) are page_size aligned,
-  // so we should also round up when allocating.
+
+  // Physical VMOs only support slices where the size (and offset) are page_size aligned, so we
+  // should also round up when allocating.
   size_t rounded_size_bytes =
       fbl::round_up(*settings.buffer_settings()->size_bytes(), zx_system_get_page_size());
   if (rounded_size_bytes < *settings.buffer_settings()->size_bytes()) {
@@ -3564,18 +3736,17 @@ fpromise::result<zx::vmo> LogicalBufferCollection::AllocateVmo(
     return fpromise::error();
   }
 
-  // raw_vmo may itself be a child VMO of an allocator's overall contig VMO,
-  // but that's an internal detail of the allocator.  The ZERO_CHILDREN signal
-  // will only be set when all direct _and indirect_ child VMOs are fully
-  // gone (not just handles closed, but the kernel object is deleted, which
-  // avoids races with handle close, and means there also aren't any
-  // mappings left).
+  // raw_vmo may itself be a child VMO of an allocator's overall contig VMO, but that's an internal
+  // detail of the allocator.  The ZERO_CHILDREN signal will only be set when all direct _and
+  // indirect_ child VMOs are fully gone (not just handles closed, but the kernel object is deleted,
+  // which avoids races with handle close, and means there also aren't any mappings left).
   zx::vmo raw_parent_vmo;
   std::optional<std::string> name;
   if (name_.has_value()) {
     name = fbl::StringPrintf("%s:%d", name_->name.c_str(), index).c_str();
   }
-  zx_status_t status = allocator->Allocate(rounded_size_bytes, name, &raw_parent_vmo);
+  zx_status_t status = allocator->Allocate(rounded_size_bytes, settings, name,
+                                           buffer_collection_id_, index, &raw_parent_vmo);
   if (status != ZX_OK) {
     LogError(FROM_HERE,
              "allocator.Allocate failed - size_bytes: %zu "
@@ -3584,146 +3755,39 @@ fpromise::result<zx::vmo> LogicalBufferCollection::AllocateVmo(
     return fpromise::error();
   }
 
-  zx_info_vmo_t info;
-  status = raw_parent_vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr);
-  if (status != ZX_OK) {
-    LogError(FROM_HERE, "raw_parent_vmo.get_info(ZX_INFO_VMO) failed - status %d", status);
+  // LogicalBuffer::Create() takes ownership of raw_parent_vmo in both error and success cases,
+  // including the call to allocator->Delete() at the appropriate time. If the LogicalBuffer is
+  // deleted prior to ZX_VMO_ZERO_CHILDREN, the waits will be cancelled and the allocator->Delete()
+  // will be sync rather than async. This is mainly relevant if LogicalBufferCollection::Allocate()
+  // fails to allocate a later buffer in the same collection.
+  auto buffer_result = LogicalBuffer::Create(fbl::RefPtr(this), index, std::move(raw_parent_vmo));
+  if (!buffer_result->is_ok()) {
+    LogError(FROM_HERE, "LogicalBuffer::error(): %d", buffer_result->error());
     return fpromise::error();
   }
 
-  auto node = inspect_node_.CreateChild(fbl::StringPrintf("vmo-%ld", info.koid).c_str());
-  node.CreateUint("koid", info.koid, &vmo_properties_);
-  vmo_properties_.emplace(std::move(node));
+  // success from here down
 
-  // Write zeroes to the VMO, so that the allocator doesn't need to.  Also flush those zeroes to
-  // RAM so the newly-allocated VMO is fully zeroed in both RAM and CPU coherency domains.
-  //
-  // This is measured to be significantly more than half the overall time cost when repeatedly
-  // allocating and deallocating a buffer collection with 4MiB buffer space per collection.  On
-  // astro this was measured to be ~2100us out of ~2550us per-cycle duration.  Larger buffer space
-  // per collection would take longer here.
-  //
-  // If we find this is taking too long, we could ask the allocator if it's already providing
-  // pre-zeroed VMOs.  And/or zero allocator backing space async during deallocation, but wait on
-  // deallocations to be done before failing a new allocation.
-  //
-  // TODO(fxbug.dev/34590): Zero secure/protected VMOs.
-  const auto& heap_properties = allocator->heap_properties();
-  ZX_DEBUG_ASSERT(heap_properties.coherency_domain_support().has_value());
-  ZX_DEBUG_ASSERT(heap_properties.need_clear().has_value());
-  if (*heap_properties.need_clear() && !allocator->is_already_cleared_on_allocate()) {
-    uint64_t offset = 0;
-    while (offset < info.size_bytes) {
-      uint64_t bytes_to_write = std::min(sizeof(kZeroes), info.size_bytes - offset);
-      // TODO(fxbug.dev/59796): Use ZX_VMO_OP_ZERO instead.
-      status = raw_parent_vmo.write(kZeroes, offset, bytes_to_write);
-      if (status != ZX_OK) {
-        LogError(FROM_HERE, "raw_parent_vmo.write() failed - status: %d", status);
-        return fpromise::error();
-      }
-      offset += bytes_to_write;
-    }
-  }
-  if (*heap_properties.need_clear() ||
-      (heap_properties.need_flush().has_value() && *heap_properties.need_flush())) {
-    // Flush out the zeroes written above, or the zeroes that are already in the pages (but not
-    // flushed yet) thanks to zx_vmo_create_contiguous(), or zeroes that are already in the pages
-    // (but not necessarily flushed yet) thanks to whatever other allocator strategy.  The barrier
-    // after this flush is in the caller after all the VMOs are allocated.
-    status = raw_parent_vmo.op_range(ZX_VMO_OP_CACHE_CLEAN, 0, info.size_bytes, nullptr, 0);
+  zx::vmo strong_child_vmo = buffer_result->TakeStrongChildVmo();
+  if (name_.has_value()) {
+    status = strong_child_vmo.set_property(ZX_PROP_NAME, name->c_str(), name->size());
     if (status != ZX_OK) {
-      LogError(FROM_HERE, "raw_parent_vmo.op_range(ZX_VMO_OP_CACHE_CLEAN) failed - status: %d",
-               status);
-      return fpromise::error();
+      LogInfo(FROM_HERE, "strong_child_vmo.set_property(name) failed (ignoring): %d", status);
+      // intentionally ignore set_property() failure
     }
-    // We don't need a BarrierAfterFlush() here because Zircon takes care of that in the
-    // zx_vmo_op_range(ZX_VMO_OP_CACHE_CLEAN).
   }
 
-  // We immediately create the ParentVmo instance so it can take care of calling allocator.Delete()
-  // if this method returns early.  We intentionally don't emplace into parent_vmos_ until
-  // StartWait() has succeeded.  In turn, StartWait() requires a child VMO to have been created
-  // already (else ZX_VMO_ZERO_CHILDREN would trigger too soon).
-  //
-  // We need to keep the raw_parent_vmo around so we can wait for ZX_VMO_ZERO_CHILDREN, and so we
-  // can call allocator.Delete(raw_parent_vmo).
-  //
-  // Until that happens, we can't let LogicalBufferCollection itself go away, because it needs to
-  // stick around to tell allocator that the allocator's VMO can be deleted/reclaimed.
-  //
-  // We let cooked_parent_vmo go away before returning from this method, since it's only purpose
-  // was to attenuate the rights of local_child_vmo.  The local_child_vmo counts as a child of
-  // raw_parent_vmo for ZX_VMO_ZERO_CHILDREN.
-  //
-  // The fbl::RefPtr(this) is fairly similar (in this usage) to shared_from_this().
-  auto tracked_parent_vmo = std::unique_ptr<TrackedParentVmo>(new TrackedParentVmo(
-      fbl::RefPtr(this), std::move(raw_parent_vmo),
-      [this, allocator](TrackedParentVmo* tracked_parent_vmo) mutable {
-        auto node_handle = parent_vmos_.extract(tracked_parent_vmo->vmo().get());
-        ZX_DEBUG_ASSERT(!node_handle || node_handle.mapped().get() == tracked_parent_vmo);
-        allocator->Delete(tracked_parent_vmo->TakeVmo());
-        SweepLifetimeTracking();
-        // ~node_handle may delete "this".
-      }));
+  auto emplace_result = buffers_.try_emplace(index, std::move(buffer_result.value()));
+  ZX_ASSERT(emplace_result.second);
 
-  zx::vmo cooked_parent_vmo;
-  status = tracked_parent_vmo->vmo().duplicate(kSysmemVmoRights, &cooked_parent_vmo);
-  if (status != ZX_OK) {
-    LogError(FROM_HERE, "zx::object::duplicate() failed - status: %d", status);
-    return fpromise::error();
-  }
-
-  zx::vmo local_child_vmo;
-  status =
-      cooked_parent_vmo.create_child(ZX_VMO_CHILD_SLICE, 0, rounded_size_bytes, &local_child_vmo);
-  if (status != ZX_OK) {
-    LogError(FROM_HERE, "zx::vmo::create_child() failed - status: %d", status);
-    return fpromise::error();
-  }
-
-  zx_info_handle_basic_t child_info{};
-  local_child_vmo.get_info(ZX_INFO_HANDLE_BASIC, &child_info, sizeof(child_info), nullptr, nullptr);
-  tracked_parent_vmo->set_child_koid(child_info.koid);
-  TRACE_INSTANT("gfx", "Child VMO created", TRACE_SCOPE_THREAD, "koid", child_info.koid);
-
-  // Now that we know at least one child of raw_parent_vmo exists, we can StartWait() and add to
-  // map.  From this point, ZX_VMO_ZERO_CHILDREN is the only way that allocator.Delete() gets
-  // called.
-  status = tracked_parent_vmo->StartWait(parent_device_->dispatcher());
-  if (status != ZX_OK) {
-    LogError(FROM_HERE, "tracked_parent->StartWait() failed - status: %d", status);
-    // ~tracked_parent_vmo calls allocator.Delete().
-    return fpromise::error();
-  }
-  zx_handle_t raw_parent_vmo_handle = tracked_parent_vmo->vmo().get();
-  TrackedParentVmo& parent_vmo_ref = *tracked_parent_vmo;
-  auto emplace_result = parent_vmos_.emplace(raw_parent_vmo_handle, std::move(tracked_parent_vmo));
-  ZX_DEBUG_ASSERT(emplace_result.second);
-
-  // Now inform the allocator about the child VMO before we return it.
-  //
-  // We copy / clone settings to buffer_settings parameter.
-  status = allocator->SetupChildVmo(parent_vmo_ref.vmo(), local_child_vmo, settings);
-  if (status != ZX_OK) {
-    LogError(FROM_HERE, "allocator.SetupChildVmo() failed - status: %d", status);
-    // In this path, the ~local_child_vmo will async trigger parent_vmo_ref::OnZeroChildren()
-    // which will call allocator.Delete() via above do_delete lambda passed to
-    // ParentVmo::ParentVmo().
-    return fpromise::error();
-  }
-  if (name.has_value()) {
-    local_child_vmo.set_property(ZX_PROP_NAME, name->c_str(), name->size());
-  }
-
-  // ~cooked_parent_vmo is fine, since local_child_vmo counts as a child of raw_parent_vmo for
-  // ZX_VMO_ZERO_CHILDREN purposes.
-  return fpromise::ok(std::move(local_child_vmo));
+  return fpromise::ok(std::move(strong_child_vmo));
 }
 
 void LogicalBufferCollection::CreationTimedOut(async_dispatcher_t* dispatcher,
                                                async::TaskBase* task, zx_status_t status) {
-  if (status != ZX_OK)
+  if (status != ZX_OK) {
     return;
+  }
 
   // It's possible for the timer to fire after the root_ has been deleted, but before "this" has
   // been deleted (which also cancels the timer if it's still pending).  The timer doesn't need to
@@ -3864,11 +3928,12 @@ int32_t LogicalBufferCollection::CompareImageFormatConstraintsByIndex(
   return tie_breaker_compare;
 }
 
-LogicalBufferCollection::TrackedParentVmo::TrackedParentVmo(
-    fbl::RefPtr<LogicalBufferCollection> buffer_collection, zx::vmo vmo,
-    LogicalBufferCollection::TrackedParentVmo::DoDelete do_delete)
+TrackedParentVmo::TrackedParentVmo(fbl::RefPtr<LogicalBufferCollection> buffer_collection,
+                                   zx::vmo vmo, uint32_t buffer_index,
+                                   TrackedParentVmo::DoDelete do_delete)
     : buffer_collection_(std::move(buffer_collection)),
       vmo_(std::move(vmo)),
+      buffer_index_(buffer_index),
       do_delete_(std::move(do_delete)),
       zero_children_wait_(this, vmo_.get(), ZX_VMO_ZERO_CHILDREN) {
   ZX_DEBUG_ASSERT(buffer_collection_);
@@ -3876,52 +3941,79 @@ LogicalBufferCollection::TrackedParentVmo::TrackedParentVmo(
   ZX_DEBUG_ASSERT(do_delete_);
 }
 
-LogicalBufferCollection::TrackedParentVmo::~TrackedParentVmo() {
-  // We avoid relying on LogicalBufferCollection member destruction order by cancelling explicitly
-  // before the end of ~LogicalBufferCollection, so we're never waiting_ by this point.
-  ZX_DEBUG_ASSERT(!waiting_);
+TrackedParentVmo::~TrackedParentVmo() {
+  // In some error paths, we just delete.
+  CancelWait();
+
   if (do_delete_) {
     do_delete_(this);
   }
 }
 
-zx_status_t LogicalBufferCollection::TrackedParentVmo::StartWait(async_dispatcher_t* dispatcher) {
+zx_status_t TrackedParentVmo::StartWait(async_dispatcher_t* dispatcher) {
   buffer_collection_->LogInfo(FROM_HERE, "LogicalBufferCollection::TrackedParentVmo::StartWait()");
   // The current thread is the dispatcher thread.
   ZX_DEBUG_ASSERT(!waiting_);
   zx_status_t status = zero_children_wait_.Begin(dispatcher);
   if (status != ZX_OK) {
-    LogErrorStatic(FROM_HERE, nullptr, "zero_children_wait_.Begin() failed - status: %d", status);
+    buffer_collection_->LogError(FROM_HERE, nullptr,
+                                 "zero_children_wait_.Begin() failed - status: %d", status);
     return status;
   }
   waiting_ = true;
   return ZX_OK;
 }
 
-zx_status_t LogicalBufferCollection::TrackedParentVmo::CancelWait() {
+zx_status_t TrackedParentVmo::CancelWait() {
   waiting_ = false;
   return zero_children_wait_.Cancel();
 }
 
-zx::vmo LogicalBufferCollection::TrackedParentVmo::TakeVmo() {
+zx::vmo TrackedParentVmo::TakeVmo() {
   ZX_DEBUG_ASSERT(!waiting_);
   ZX_DEBUG_ASSERT(vmo_);
   return std::move(vmo_);
 }
 
-const zx::vmo& LogicalBufferCollection::TrackedParentVmo::vmo() const {
+const zx::vmo& TrackedParentVmo::vmo() const {
   ZX_DEBUG_ASSERT(vmo_);
   return vmo_;
 }
 
-void LogicalBufferCollection::TrackedParentVmo::OnZeroChildren(async_dispatcher_t* dispatcher,
-                                                               async::WaitBase* wait,
-                                                               zx_status_t status,
-                                                               const zx_packet_signal_t* signal) {
-  TRACE_DURATION("gfx", "LogicalBufferCollection::TrackedParentVmo::OnZeroChildren",
-                 "buffer_collection", buffer_collection_.get(), "child_koid", child_koid_);
-  buffer_collection_->LogInfo(FROM_HERE,
-                              "LogicalBufferCollection::TrackedParentVmo::OnZeroChildren()");
+fit::result<zx_status_t, zx::eventpair> LogicalBuffer::DupCloseWeakAsapClientEnd() {
+  if (!close_weak_asap_created_) {
+    decltype(close_weak_asap_) local;
+    local.emplace();
+    zx_status_t create_status = zx::eventpair::create(0, &local->client_end, &local->server_end);
+    if (create_status != ZX_OK) {
+      return fit::error(create_status);
+    }
+    close_weak_asap_ = std::move(local);
+    ZX_DEBUG_ASSERT(close_weak_asap_->client_end.is_valid());
+    ZX_DEBUG_ASSERT(close_weak_asap_->server_end.is_valid());
+    // Later when ~strong_parent_vmo_, ~close_weak_asap_ will signal clients via
+    // ZX_EVENTPAIR_PEER_CLOSED.
+    close_weak_asap_created_ = true;
+  }
+  ZX_DEBUG_ASSERT(close_weak_asap_created_);
+  // The caller shouldn't be sending a weak VMO in this case, because strong_parent_vmo_ is gone,
+  // meaning there are no remaining strong VMOs.
+  ZX_DEBUG_ASSERT(close_weak_asap_.has_value());
+  zx::eventpair dup_client_end;
+  zx_status_t dup_status =
+      close_weak_asap_->client_end.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_client_end);
+  if (dup_status != ZX_OK) {
+    return fit::error(dup_status);
+  }
+  return fit::ok(std::move(dup_client_end));
+}
+
+void TrackedParentVmo::OnZeroChildren(async_dispatcher_t* dispatcher, async::WaitBase* wait,
+                                      zx_status_t status, const zx_packet_signal_t* signal) {
+  TRACE_DURATION("gfx", "TrackedParentVmo::OnZeroChildren", "buffer_collection",
+                 buffer_collection_.get(), "child_koid",
+                 child_koid_.has_value() ? *child_koid_ : ZX_KOID_INVALID);
+  buffer_collection_->LogInfo(FROM_HERE, "TrackedParentVmo::OnZeroChildren()");
   ZX_DEBUG_ASSERT(waiting_);
   waiting_ = false;
   if (status == ZX_ERR_CANCELED) {
@@ -3931,7 +4023,7 @@ void LogicalBufferCollection::TrackedParentVmo::OnZeroChildren(async_dispatcher_
   ZX_DEBUG_ASSERT(status == ZX_OK);
   ZX_DEBUG_ASSERT(signal->trigger & ZX_VMO_ZERO_CHILDREN);
   ZX_DEBUG_ASSERT(do_delete_);
-  LogicalBufferCollection::TrackedParentVmo::DoDelete local_do_delete = std::move(do_delete_);
+  TrackedParentVmo::DoDelete local_do_delete = std::move(do_delete_);
   ZX_DEBUG_ASSERT(!do_delete_);
   // will delete "this"
   local_do_delete(this);
@@ -4041,129 +4133,210 @@ std::optional<NodeProperties*> LogicalBufferCollection::FindNodePropertiesByNode
   return iter->second;
 }
 
-#define LOG_UINT32_FIELD(location, prefix, field_name)                                        \
-  do {                                                                                        \
-    if (!(prefix).field_name().has_value()) {                                                 \
-      LogClientInfo(location, node_properties, "!%s.%s().has_value()", #prefix, #field_name); \
-    } else {                                                                                  \
-      LogClientInfo(location, node_properties, "*%s.%s(): %u", #prefix, #field_name,          \
-                    sysmem::fidl_underlying_cast(*(prefix).field_name()));                    \
-    }                                                                                         \
+#define LOG_UINT32_FIELD(location, indent, prefix, field_name)                                   \
+  do {                                                                                           \
+    if ((prefix).field_name().has_value()) {                                                     \
+      LogClientInfo(location, node_properties, "%*s*%s.%s(): %u", indent.num_spaces(), "",       \
+                    #prefix, #field_name, sysmem::fidl_underlying_cast(*(prefix).field_name())); \
+    }                                                                                            \
   } while (0)
 
-#define LOG_UINT64_FIELD(location, prefix, field_name)                                        \
-  do {                                                                                        \
-    if (!(prefix).field_name().has_value()) {                                                 \
-      LogClientInfo(location, node_properties, "!%s.%s().has_value()", #prefix, #field_name); \
-    } else {                                                                                  \
-      LogClientInfo(location, node_properties, "*%s.%s(): %" PRIx64, #prefix, #field_name,    \
-                    sysmem::fidl_underlying_cast(*(prefix).field_name()));                    \
-    }                                                                                         \
+#define LOG_UINT64_FIELD(location, indent, prefix, field_name)                                     \
+  do {                                                                                             \
+    if ((prefix).field_name().has_value()) {                                                       \
+      LogClientInfo(location, node_properties, "%*s*%s.%s(): 0x%" PRIx64, indent.num_spaces(), "", \
+                    #prefix, #field_name, sysmem::fidl_underlying_cast(*(prefix).field_name()));   \
+    }                                                                                              \
   } while (0)
 
-#define LOG_BOOL_FIELD(location, prefix, field_name)                                          \
-  do {                                                                                        \
-    if (!(prefix).field_name().has_value()) {                                                 \
-      LogClientInfo(location, node_properties, "!%s.%s().has_value()", #prefix, #field_name); \
-    } else {                                                                                  \
-      LogClientInfo(location, node_properties, "*%s.%s(): %u", #prefix, #field_name,          \
-                    *(prefix).field_name());                                                  \
-    }                                                                                         \
+#define LOG_BOOL_FIELD(location, indent, prefix, field_name)                               \
+  do {                                                                                     \
+    if ((prefix).field_name().has_value()) {                                               \
+      LogClientInfo(location, node_properties, "%*s*%s.%s(): %u", indent.num_spaces(), "", \
+                    #prefix, #field_name, *(prefix).field_name());                         \
+    }                                                                                      \
+  } while (0)
+
+#define LOG_SIZEU_FIELD(location, indent, prefix, field_name)                                      \
+  do {                                                                                             \
+    if ((prefix).field_name().has_value()) {                                                       \
+      LogClientInfo(location, node_properties, "%*s%s.%s()->width(): %u", indent.num_spaces(), "", \
+                    #prefix, #field_name, prefix.field_name()->width());                           \
+      LogClientInfo(location, node_properties, "%*s%s.%s()->height(): %u", indent.num_spaces(),    \
+                    "", #prefix, #field_name, prefix.field_name()->height());                      \
+    }                                                                                              \
   } while (0)
 
 void LogicalBufferCollection::LogConstraints(
     Location location, NodeProperties* node_properties,
     const fuchsia_sysmem2::BufferCollectionConstraints& constraints) const {
+  ZX_DEBUG_ASSERT(is_verbose_logging());
+  IndentTracker indent_tracker(0);
+  auto indent = indent_tracker.Current();
+
   if (!node_properties) {
-    LogInfo(FROM_HERE, "Constraints (aggregated / previously chosen):");
+    LogInfo(FROM_HERE, "%*sConstraints (aggregated / previously chosen):", indent.num_spaces(), "");
   } else {
-    LogInfo(FROM_HERE, "Constraints - NodeProperties: %p", node_properties);
+    LogInfo(FROM_HERE, "%*sConstraints - NodeProperties: %p", indent.num_spaces(), "",
+            node_properties);
   }
 
-  const fuchsia_sysmem2::BufferCollectionConstraints& c = constraints;
+  {  // scope indent
+    auto indent = indent_tracker.Nested();
 
-  LOG_UINT32_FIELD(FROM_HERE, c, min_buffer_count);
-  LOG_UINT32_FIELD(FROM_HERE, c, min_buffer_count_for_camping);
-  LOG_UINT32_FIELD(FROM_HERE, c, min_buffer_count_for_dedicated_slack);
-  LOG_UINT32_FIELD(FROM_HERE, c, min_buffer_count_for_shared_slack);
+    const fuchsia_sysmem2::BufferCollectionConstraints& c = constraints;
 
-  if (!c.buffer_memory_constraints().has_value()) {
-    LogInfo(FROM_HERE, "!c.has_buffer_memory_constraints()");
-  } else {
-    const fuchsia_sysmem2::BufferMemoryConstraints& bmc = *c.buffer_memory_constraints();
-    LOG_UINT32_FIELD(FROM_HERE, bmc, min_size_bytes);
-    LOG_UINT32_FIELD(FROM_HERE, bmc, max_size_bytes);
-    LOG_BOOL_FIELD(FROM_HERE, bmc, physically_contiguous_required);
-    LOG_BOOL_FIELD(FROM_HERE, bmc, secure_required);
-    LOG_BOOL_FIELD(FROM_HERE, bmc, cpu_domain_supported);
-    LOG_BOOL_FIELD(FROM_HERE, bmc, ram_domain_supported);
-    LOG_BOOL_FIELD(FROM_HERE, bmc, inaccessible_domain_supported);
-  }
+    LOG_UINT32_FIELD(FROM_HERE, indent, c, min_buffer_count);
+    LOG_UINT32_FIELD(FROM_HERE, indent, c, max_buffer_count);
+    LOG_UINT32_FIELD(FROM_HERE, indent, c, min_buffer_count_for_camping);
+    LOG_UINT32_FIELD(FROM_HERE, indent, c, min_buffer_count_for_dedicated_slack);
+    LOG_UINT32_FIELD(FROM_HERE, indent, c, min_buffer_count_for_shared_slack);
 
-  uint32_t image_format_constraints_count =
-      c.image_format_constraints().has_value()
-          ? safe_cast<uint32_t>(c.image_format_constraints()->size())
-          : 0;
-  LogInfo(FROM_HERE, "image_format_constraints.count() %u", image_format_constraints_count);
-  for (uint32_t i = 0; i < image_format_constraints_count; ++i) {
-    LogInfo(FROM_HERE, "image_format_constraints[%u] (ifc):", i);
-    const fuchsia_sysmem2::ImageFormatConstraints& ifc = c.image_format_constraints()->at(i);
-
-    if (!ifc.pixel_format().has_value()) {
-      LogInfo(FROM_HERE, "!ifc.has_pixel_format()");
+    if (!c.buffer_memory_constraints().has_value()) {
+      LogInfo(FROM_HERE, "%*s!c.buffer_memory_constraints().has_value()", indent.num_spaces(), "");
     } else {
-      LOG_UINT32_FIELD(FROM_HERE, ifc, pixel_format);
+      LogInfo(FROM_HERE, "%*sc.buffer_memory_constraints():", indent.num_spaces(), "");
+      auto indent = indent_tracker.Nested();
+      const fuchsia_sysmem2::BufferMemoryConstraints& bmc = *c.buffer_memory_constraints();
+      LOG_UINT64_FIELD(FROM_HERE, indent, bmc, min_size_bytes);
+      LOG_UINT64_FIELD(FROM_HERE, indent, bmc, max_size_bytes);
+      LOG_BOOL_FIELD(FROM_HERE, indent, bmc, physically_contiguous_required);
+      LOG_BOOL_FIELD(FROM_HERE, indent, bmc, secure_required);
+      LOG_BOOL_FIELD(FROM_HERE, indent, bmc, cpu_domain_supported);
+      LOG_BOOL_FIELD(FROM_HERE, indent, bmc, ram_domain_supported);
+      LOG_BOOL_FIELD(FROM_HERE, indent, bmc, inaccessible_domain_supported);
+
+      size_t heap_permitted_count =
+          bmc.heap_permitted().has_value() ? bmc.heap_permitted()->size() : 0;
+      LogInfo(FROM_HERE, "%*sheap_permitted.count() %zu", indent.num_spaces(), "",
+              heap_permitted_count);
+      {
+        // scope indent
+        auto indent = indent_tracker.Nested();
+        for (size_t i = 0; i < heap_permitted_count; i++) {
+          const uint64_t heap_id = safe_cast<uint64_t>(bmc.heap_permitted()->at(i));
+          LogInfo(FROM_HERE, "%*sheap_permitted[%zu] : %" PRIx64, indent.num_spaces(), "", i,
+                  heap_id);
+        }
+      }
     }
 
-    if (!ifc.pixel_format_modifier().has_value()) {
-      LogInfo(FROM_HERE, "!ifc.has_pixel_format_modifier()");
-    } else {
-      LOG_UINT64_FIELD(FROM_HERE, ifc, pixel_format_modifier);
+    uint32_t image_format_constraints_count =
+        c.image_format_constraints().has_value()
+            ? safe_cast<uint32_t>(c.image_format_constraints()->size())
+            : 0;
+    LogInfo(FROM_HERE, "%*simage_format_constraints.count() %u", indent.num_spaces(), "",
+            image_format_constraints_count);
+    {  // scope indent
+      auto indent = indent_tracker.Nested();
+      for (uint32_t i = 0; i < image_format_constraints_count; ++i) {
+        LogInfo(FROM_HERE, "%*simage_format_constraints[%u] (ifc):", indent.num_spaces(), "", i);
+        const fuchsia_sysmem2::ImageFormatConstraints& ifc = c.image_format_constraints()->at(i);
+        LogImageFormatConstraints(indent_tracker, node_properties, ifc);
+      }
     }
-
-    LogInfo(FROM_HERE, "min_size.width: %u", ifc.min_size()->width());
-    LogInfo(FROM_HERE, "min_size.height: %u", ifc.min_size()->height());
-
-    LogInfo(FROM_HERE, "max_size.width: %u", ifc.max_size()->width());
-    LogInfo(FROM_HERE, "max_size.height: %u", ifc.max_size()->height());
-
-    LOG_UINT32_FIELD(FROM_HERE, ifc, min_bytes_per_row);
-    LOG_UINT32_FIELD(FROM_HERE, ifc, max_bytes_per_row);
-
-    LOG_UINT32_FIELD(FROM_HERE, ifc, max_surface_width_times_surface_height);
-
-    LogInfo(FROM_HERE, "size_alignment.width: %u", ifc.size_alignment()->width());
-    LogInfo(FROM_HERE, "size_alignment.height: %u", ifc.size_alignment()->height());
-
-    LogInfo(FROM_HERE, "display_rect_alignment.width: %u", ifc.display_rect_alignment()->width());
-    LogInfo(FROM_HERE, "display_rect_alignment.height: %u", ifc.display_rect_alignment()->height());
-
-    LogInfo(FROM_HERE, "required_min_size.width: %u", ifc.required_min_size()->width());
-    LogInfo(FROM_HERE, "required_min_size.height: %u", ifc.required_min_size()->height());
-
-    LogInfo(FROM_HERE, "required_max_size.width: %u", ifc.required_max_size()->width());
-    LogInfo(FROM_HERE, "required_max_size.height: %u", ifc.required_max_size()->height());
-
-    LOG_UINT32_FIELD(FROM_HERE, ifc, bytes_per_row_divisor);
-
-    LOG_UINT32_FIELD(FROM_HERE, ifc, start_offset_divisor);
   }
 }
 
-void LogicalBufferCollection::LogPrunedSubTree(NodeProperties* subtree) {
+void LogicalBufferCollection::LogBufferCollectionInfo(
+    IndentTracker& indent_tracker, const fuchsia_sysmem2::BufferCollectionInfo& bci) const {
+  ZX_DEBUG_ASSERT(is_verbose_logging());
+  auto indent = indent_tracker.Nested();
+  NodeProperties* node_properties = nullptr;
+
+  LOG_UINT64_FIELD(FROM_HERE, indent, bci, buffer_collection_id);
+  LogInfo(FROM_HERE, "%*ssettings:", indent.num_spaces(), "");
+  {  // scope indent
+    auto indent = indent_tracker.Nested();
+    const auto& sbs = *bci.settings();
+    LogInfo(FROM_HERE, "%*sbuffer_settings:", indent.num_spaces(), "");
+    {  // scope indent
+      auto indent = indent_tracker.Nested();
+      const auto& bms = *sbs.buffer_settings();
+      LOG_UINT64_FIELD(FROM_HERE, indent, bms, size_bytes);
+      LOG_BOOL_FIELD(FROM_HERE, indent, bms, is_physically_contiguous);
+      LOG_BOOL_FIELD(FROM_HERE, indent, bms, is_secure);
+      LogInfo(FROM_HERE, "%*scoherency_domain: %u", indent.num_spaces(), "",
+              *bms.coherency_domain());
+      LogInfo(FROM_HERE, "%*sheap: %" PRIx64, indent.num_spaces(), "", *bms.heap());
+    }
+    LogInfo(FROM_HERE, "%*simage_format_constraints:", indent.num_spaces(), "");
+    {  // scope ifc, and to have indent level mirror output indent level
+      const auto& ifc = *sbs.image_format_constraints();
+      LogImageFormatConstraints(indent_tracker, nullptr, ifc);
+    }
+  }
+  LogInfo(FROM_HERE, "%*sbuffers.size(): %zu", indent.num_spaces(), "", bci.buffers()->size());
+  // For now we don't log per-buffer info.
+}
+
+void LogicalBufferCollection::LogPixelFormatAndModifier(
+    IndentTracker& indent_tracker, NodeProperties* node_properties,
+    const fuchsia_sysmem2::PixelFormatAndModifier& pixel_format_and_modifier) const {
+  auto indent = indent_tracker.Current();
+  LogInfo(FROM_HERE, "%*spixel_format(): %u", indent.num_spaces(), "",
+          pixel_format_and_modifier.pixel_format());
+  LogInfo(FROM_HERE, "%*spixel_format_modifier(): 0x%" PRIx64, indent.num_spaces(), "",
+          pixel_format_and_modifier.pixel_format_modifier());
+}
+
+void LogicalBufferCollection::LogImageFormatConstraints(
+    IndentTracker& indent_tracker, NodeProperties* node_properties,
+    const fuchsia_sysmem2::ImageFormatConstraints& ifc) const {
+  auto indent = indent_tracker.Nested();
+
+  LOG_UINT32_FIELD(FROM_HERE, indent, ifc, pixel_format);
+  LOG_UINT64_FIELD(FROM_HERE, indent, ifc, pixel_format_modifier);
+  if (ifc.pixel_format_and_modifiers().has_value()) {
+    LogInfo(FROM_HERE, "%*spixel_format_and_modifiers.size(): %zu", indent.num_spaces(), "",
+            ifc.pixel_format_and_modifiers()->size());
+    auto indent = indent_tracker.Nested();
+    for (uint32_t i = 0; i < ifc.pixel_format_and_modifiers()->size(); ++i) {
+      LogPixelFormatAndModifier(indent_tracker, node_properties,
+                                ifc.pixel_format_and_modifiers()->at(i));
+    }
+  }
+
+  LOG_SIZEU_FIELD(FROM_HERE, indent, ifc, min_size);
+  LOG_SIZEU_FIELD(FROM_HERE, indent, ifc, max_size);
+
+  LOG_UINT32_FIELD(FROM_HERE, indent, ifc, min_bytes_per_row);
+  LOG_UINT32_FIELD(FROM_HERE, indent, ifc, max_bytes_per_row);
+
+  LOG_UINT64_FIELD(FROM_HERE, indent, ifc, max_surface_width_times_surface_height);
+
+  LOG_SIZEU_FIELD(FROM_HERE, indent, ifc, size_alignment);
+  LOG_SIZEU_FIELD(FROM_HERE, indent, ifc, display_rect_alignment);
+  LOG_SIZEU_FIELD(FROM_HERE, indent, ifc, required_min_size);
+  LOG_SIZEU_FIELD(FROM_HERE, indent, ifc, required_max_size);
+
+  LOG_UINT32_FIELD(FROM_HERE, indent, ifc, bytes_per_row_divisor);
+
+  LOG_UINT32_FIELD(FROM_HERE, indent, ifc, start_offset_divisor);
+}
+
+void LogicalBufferCollection::LogPrunedSubTree(NodeProperties* subtree) const {
+  ZX_DEBUG_ASSERT(is_verbose_logging());
   ignore_result(subtree->DepthFirstPreOrder(
       PrunedSubtreeFilter(*subtree, [this, subtree](const NodeProperties& node_properties) {
         uint32_t depth = 0;
         for (auto iter = &node_properties; iter != subtree; iter = iter->parent()) {
           ++depth;
         }
-        std::string indent;
-        for (uint32_t i = 0; i < depth; ++i) {
-          indent += "  ";
+
+        const char* logical_type_name = "?";
+        if (node_properties.is_token()) {
+          logical_type_name = "token";
+        } else if (node_properties.is_token_group()) {
+          logical_type_name = "group";
+        } else if (node_properties.is_collection()) {
+          logical_type_name = "collection";
         }
-        LogInfo(FROM_HERE, "%sNodeProperties: %p (%s) has_constraints: %u ready: %u name: %s",
-                indent.c_str(), &node_properties, node_properties.node_type_name(),
-                node_properties.has_constraints(), node_properties.node()->ReadyForAllocation(),
+
+        LogInfo(FROM_HERE, "%*sNodeProperties: %p (%s;%s) has_constraints: %u ready: %u name: %s",
+                2 * depth, "", &node_properties, node_properties.node_type_name(),
+                logical_type_name, node_properties.has_constraints(),
+                node_properties.node()->ReadyForAllocation(),
                 node_properties.client_debug_info().name.c_str());
         // No need to keep the nodes in a list; we've alread done what we need to do during the
         // visit.
@@ -4171,7 +4344,8 @@ void LogicalBufferCollection::LogPrunedSubTree(NodeProperties* subtree) {
       })));
 }
 
-void LogicalBufferCollection::LogNodeConstraints(std::vector<NodeProperties*> nodes) {
+void LogicalBufferCollection::LogNodeConstraints(std::vector<NodeProperties*> nodes) const {
+  ZX_DEBUG_ASSERT(is_verbose_logging());
   for (auto node : nodes) {
     LogInfo(FROM_HERE, "Constraints for NodeProperties: %p (%s)", node, node->node_type_name());
     if (!node->buffer_collection_constraints()) {
@@ -4181,5 +4355,572 @@ void LogicalBufferCollection::LogNodeConstraints(std::vector<NodeProperties*> no
     }
   }
 }
+
+void LogicalBuffer::ComplainLoudlyAboutStillExistingWeakVmoHandles() {
+  if (weak_parent_vmos_.empty()) {
+    return;
+  }
+  for (auto& [key, weak_parent] : weak_parent_vmos_) {
+    const char* collection_name = logical_buffer_collection_->name_.has_value()
+                                      ? logical_buffer_collection_->name_->name.c_str()
+                                      : "Unknown";
+    auto* client_debug_info = weak_parent->get_client_debug_info();
+    ZX_DEBUG_ASSERT(client_debug_info);
+
+    logical_buffer_collection_->parent_device_->metrics().LogCloseWeakAsapTakingTooLong();
+
+    // The client may have created a child VMO based on the handed-out VMO and closed the handed-out
+    // VMO, which still counts as failure to close the handed-out weak VMO in a timely manner; the
+    // originally-handed-out koid may or may not be useful.
+    logical_buffer_collection_->LogError(
+        FROM_HERE,
+        "#####################################################################################");
+    logical_buffer_collection_->LogError(
+        FROM_HERE, "sysmem weak VMO handle still open long after close_weak_asap signalled:");
+    logical_buffer_collection_->LogError(FROM_HERE, "  collection: 0x%" PRIx64 " %s",
+                                         logical_buffer_collection_->buffer_collection_id_,
+                                         collection_name);
+    logical_buffer_collection_->LogError(FROM_HERE, "  buffer_index: %u", buffer_index_);
+    logical_buffer_collection_->LogError(
+        FROM_HERE, "  client: %s (id: 0x%" PRIx64 ")",
+        client_debug_info->name.size() ? client_debug_info->name.c_str() : "<empty>",
+        client_debug_info->id);
+    logical_buffer_collection_->LogError(FROM_HERE, "  originally-handed-out koid: 0x%" PRIx64,
+                                         *weak_parent->child_koid());
+    logical_buffer_collection_->LogError(
+        FROM_HERE,
+        "#####################################################################################");
+  }
+}
+
+void LogicalBufferCollection::IncStrongNodeTally() { ++strong_node_count_; }
+
+void LogicalBufferCollection::DecStrongNodeTally() {
+  ZX_DEBUG_ASSERT(strong_node_count_ >= 1);
+  --strong_node_count_;
+  CheckForZeroStrongNodes();
+}
+
+void LogicalBufferCollection::CheckForZeroStrongNodes() {
+  if (strong_node_count_ == 0) {
+    auto post_result =
+        async::PostTask(parent_device_->dispatcher(), [this, ref_this = fbl::RefPtr(this)] {
+          if (allocation_result_info_.has_value()) {
+            // Regardless of whether we'd allocated by the time of posting, we've allocated by the
+            // time of running the posted task.
+            //
+            // If we allocated by the time of posting, we may have some strong VMOs outstanding with
+            // clients, and weak nodes should continue to work until all outstanding strong VMOs are
+            // closed by clients.
+            //
+            // If we hadn't allocated by the time of posting, we can still handle this the same way,
+            // because the strong_parent_vmos_.empty() check elsewhere will take care of failing
+            // from the root_ down shortly after we reset() the vmo fields here (triggered async by
+            // ZX_VMO_ZERO_CHILDREN signal to strong_parent_vmos_).
+            for (auto& buffer : *allocation_result_info_->buffers()) {
+              // The sysmem strong VMO handles in allocation_result_info_ are logically owned by
+              // strong nodes. Once there are zero strong nodes, there can never be a strong node
+              // again, so we reset the strong VMOs here. In some cases there can still be strong
+              // VMOs outstanding, and those still prevent strong_parent_vmos_ entries from
+              // disappearing until all the outstanding strong VMO handles are closed by clients.
+              //
+              // Once all strong_parent_vmos_ entries are gone, the LogicalBufferCollection will
+              // fail from root_ down.
+              buffer.vmo().reset();
+            }
+          } else {
+            // Since we know we have zero strong VMOs outstanding (because no VMOs allocated yet),
+            // this is conceptually skipping to the root_-down fail that we'd otherwise do elsewhere
+            // upon noticing strong_parent_vmos_.empty() becoming true, since we now know that
+            // strong_parent_vmos_.empty() never became false and will remain true from this point
+            // onward.
+            //
+            // We also know in this path that we have zero weak VMOs outstanding (because no VMOs
+            // allocated yet), so there's no need to signal any close_weak_asap(s) here since no
+            // buffers are ever part of this LogicalBufferCollection, and no outstanding weak VMOs
+            // will be holding up ~LogicalBufferCollection.
+            if (!root_) {
+              // This is just avoiding any redundant log output in case the LogicalBufferCollection
+              // already failed from the root_ down already for a different reason.
+              return;
+            }
+            LogAndFailRootNode(
+                FROM_HERE, ZX_ERR_BAD_STATE,
+                "Zero strong nodes remaining before allocation; failing LogicalBufferCollection");
+          }
+          // ~ref_this
+        });
+    ZX_ASSERT(post_result == ZX_OK);
+  }
+}
+
+void LogicalBufferCollection::IncStrongParentVmoCount() { ++strong_parent_vmo_count_; }
+
+void LogicalBufferCollection::DecStrongParentVmoCount() {
+  --strong_parent_vmo_count_;
+  CheckForZeroStrongParentVmoCount();
+}
+
+void LogicalBufferCollection::CheckForZeroStrongParentVmoCount() {
+  if (strong_parent_vmo_count_ == 0) {
+    auto post_result =
+        async::PostTask(parent_device_->dispatcher(), [this, ref_this = fbl::RefPtr(this)] {
+          FailRootNode(ZX_ERR_BAD_STATE);
+          // ~ref_this
+        });
+    ZX_ASSERT(post_result == ZX_OK);
+  }
+}
+
+void LogicalBufferCollection::CreateParentVmoInspect(zx_koid_t parent_vmo_koid) {
+  auto node =
+      inspect_node_.CreateChild(fbl::StringPrintf("parent_vmo-%ld", parent_vmo_koid).c_str());
+  node.CreateUint("koid", parent_vmo_koid, &vmo_properties_);
+  vmo_properties_.emplace(std::move(node));
+}
+
+void LogicalBufferCollection::ClearBuffers() {
+  // deallocate any previoulsy-allocated buffers sync instead of async (not relying on drop of
+  // result to trigger ZX_VMO_ZERO_CHILDREN async etc)
+  //
+  // move out and delete that since ~LogicalBuffer mutates buffers_
+  auto local_buffers = std::move(buffers_);
+  buffers_.clear();
+  local_buffers.clear();
+}
+
+bool LogicalBufferCollection::FlattenPixelFormatAndModifiers(
+    const fuchsia_sysmem2::BufferUsage& buffer_usage,
+    fuchsia_sysmem2::BufferCollectionConstraints& constraints) {
+  auto src = std::move(*constraints.image_format_constraints());
+  auto& dst = constraints.image_format_constraints().emplace();
+  for (uint32_t i = 0; i < src.size(); ++i) {
+    auto& ifc = src[i];
+
+    if (!ifc.pixel_format().has_value()) {
+      if (ifc.pixel_format_modifier().has_value()) {
+        LogError(FROM_HERE,
+                 "pixel_format must be set when pixel_format_modifier is set - index: %u", i);
+        return false;
+      }
+      if (!ifc.pixel_format_and_modifiers().has_value() ||
+          ifc.pixel_format_and_modifiers()->empty()) {
+        // must have at least one pixel_format field set by participant, per ImageFormatConstraints
+        LogError(FROM_HERE,
+                 "pixel_format must be set when zero pixel_format_and_modifiers - index: %u", i);
+        return false;
+      }
+    }
+
+    if (ifc.pixel_format().has_value()) {
+      if (*ifc.pixel_format() == fuchsia_images2::PixelFormat::kDoNotCare) {
+        // pixel_format kDoNotCare and un-set pixel_format_modifier implies
+        // kFormatModifierDoNotCare. A client that wants to constrain pixel_format_modifier can set
+        // the pixel_format_modifier field.
+        FIELD_DEFAULT(ifc, pixel_format_modifier, fuchsia_images2::kFormatModifierDoNotCare);
+      } else if (IsAnyUsage(buffer_usage)) {
+        // When pixel_format != kDoNotCare, kFormatModifierNone / kFormatModifierLinear is the
+        // default when there is any usage. A client with usage which doesn't care what the pixel
+        // format modifier is (what tiling is used) can explicitly specify kFormatModifierDoNotCare
+        // instead of leaving pixel_format_modifier un-set..
+        FIELD_DEFAULT_ZERO_64_BIT(ifc, pixel_format_modifier);
+      } else {
+        // A client with no usage, which also doesn't set pixel_format_modifier, doesn't prevent
+        // using a tiled format.
+        FIELD_DEFAULT(ifc, pixel_format_modifier, fuchsia_images2::kFormatModifierDoNotCare);
+      }
+    }
+
+    if (!ifc.pixel_format_and_modifiers().has_value()) {
+      ZX_DEBUG_ASSERT(ifc.pixel_format().has_value());
+      ZX_DEBUG_ASSERT(ifc.pixel_format_modifier().has_value());
+      // no flattening needed for this src item
+      dst.emplace_back(std::move(ifc));
+      continue;
+    }
+    ZX_DEBUG_ASSERT(ifc.pixel_format_and_modifiers().has_value());
+
+    // If pixel_format is set, move pixel_format, pixel_format_modifier into an additional entry of
+    // pixel_format_and_modifiers, in preparation for flattening.
+
+    auto pixel_format_and_modifiers = std::move(*ifc.pixel_format_and_modifiers());
+    ifc.pixel_format_and_modifiers().reset();
+
+    if (ifc.pixel_format().has_value()) {
+      pixel_format_and_modifiers.emplace_back(fuchsia_sysmem2::PixelFormatAndModifier(
+          *ifc.pixel_format(), *ifc.pixel_format_modifier()));
+      ifc.pixel_format().reset();
+      ifc.pixel_format_modifier().reset();
+    }
+
+    ZX_DEBUG_ASSERT(!ifc.pixel_format().has_value());
+    ZX_DEBUG_ASSERT(!ifc.pixel_format_modifier().has_value());
+    ZX_DEBUG_ASSERT(!ifc.pixel_format_and_modifiers().has_value());
+
+    // If we can do a single move, go ahead and do that. Beyond this point we'll only clone.
+    ZX_DEBUG_ASSERT(!pixel_format_and_modifiers.empty());
+    if (pixel_format_and_modifiers.size() == 1) {
+      auto& new_ifc = dst.emplace_back(std::move(ifc));
+      new_ifc.pixel_format() = pixel_format_and_modifiers[0].pixel_format();
+      new_ifc.pixel_format_modifier() = pixel_format_and_modifiers[0].pixel_format_modifier();
+      continue;
+    }
+
+    for (auto& pixel_format_and_modifier : pixel_format_and_modifiers) {
+      // intentional copy/clone
+      auto& new_ifc = dst.emplace_back(ifc);
+      new_ifc.pixel_format() = pixel_format_and_modifier.pixel_format();
+      new_ifc.pixel_format_modifier() = pixel_format_and_modifier.pixel_format_modifier();
+    }
+  }
+
+  return true;
+}
+
+fit::result<zx_status_t, std::unique_ptr<LogicalBuffer>> LogicalBuffer::Create(
+    fbl::RefPtr<LogicalBufferCollection> logical_buffer_collection, uint32_t buffer_index,
+    zx::vmo parent_vmo) {
+  auto result = std::unique_ptr<LogicalBuffer>(
+      new LogicalBuffer(std::move(logical_buffer_collection), buffer_index, std::move(parent_vmo)));
+  if (!result->is_ok()) {
+    return fit::error(result->error());
+  }
+  return fit::ok(std::move(result));
+}
+
+LogicalBuffer::LogicalBuffer(fbl::RefPtr<LogicalBufferCollection> logical_buffer_collection,
+                             uint32_t buffer_index, zx::vmo parent_vmo)
+    : logical_buffer_collection_(logical_buffer_collection), buffer_index_(buffer_index) {
+  auto ensure_error_set = fit::defer([this] {
+    if (error_ == ZX_OK) {
+      error_ = ZX_ERR_INTERNAL;
+    }
+  });
+
+  auto* allocator = logical_buffer_collection_->memory_allocator_;
+  ZX_DEBUG_ASSERT(allocator);
+
+  // Clean up in any error path until parent_vmo_ do_delete takes over.
+  auto cleanup_parent_vmo =
+      fit::defer([allocator, &parent_vmo] { allocator->Delete(std::move(parent_vmo)); });
+
+  auto complain_about_leaked_weak_timer_task_scope =
+      std::make_shared<std::optional<async_patterns::TaskScope>>();
+  complain_about_leaked_weak_timer_task_scope->emplace(
+      logical_buffer_collection_->parent_device_->dispatcher());
+
+  zx_info_vmo_t info;
+  zx_status_t status = parent_vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr);
+  if (status != ZX_OK) {
+    logical_buffer_collection_->LogError(
+        FROM_HERE, "raw_parent_vmo.get_info(ZX_INFO_VMO) failed - status %d", status);
+    error_ = status;
+    return;
+  }
+  logical_buffer_collection_->CreateParentVmoInspect(info.koid);
+
+  // Write zeroes to the VMO, so that the allocator doesn't need to.  Also flush those zeroes to
+  // RAM so the newly-allocated VMO is fully zeroed in both RAM and CPU coherency domains.
+  //
+  // This is measured to be significantly more than half the overall time cost when repeatedly
+  // allocating and deallocating a buffer collection with 4MiB buffer space per collection.  On
+  // astro this was measured to be ~2100us out of ~2550us per-cycle duration.  Larger buffer space
+  // per collection would take longer here.
+  //
+  // If we find this is taking too long, we could ask the allocator if it's already providing
+  // pre-zeroed VMOs.  And/or zero allocator backing space async during deallocation, but wait on
+  // deallocations to be done before failing a new allocation.
+  //
+  // TODO(fxbug.dev/34590): Zero secure/protected VMOs.
+  const auto& heap_properties = allocator->heap_properties();
+  ZX_DEBUG_ASSERT(heap_properties.coherency_domain_support().has_value());
+  ZX_DEBUG_ASSERT(heap_properties.need_clear().has_value());
+  if (*heap_properties.need_clear() && !allocator->is_already_cleared_on_allocate()) {
+    status = parent_vmo.op_range(ZX_VMO_OP_ZERO, 0, info.size_bytes, nullptr, 0);
+    if (status != ZX_OK) {
+      logical_buffer_collection_->LogError(
+          FROM_HERE, "parent_vmo.op_range(ZX_VMO_OP_ZERO) failed - status: %d", status);
+      error_ = status;
+      return;
+    }
+  }
+  if (*heap_properties.need_clear() ||
+      (heap_properties.need_flush().has_value() && *heap_properties.need_flush())) {
+    // Flush out the zeroes written above, or the zeroes that are already in the pages (but not
+    // flushed yet) thanks to zx_vmo_create_contiguous(), or zeroes that are already in the pages
+    // (but not necessarily flushed yet) thanks to whatever other allocator strategy.  The barrier
+    // after this flush is in the caller after all the VMOs are allocated.
+    status = parent_vmo.op_range(ZX_VMO_OP_CACHE_CLEAN, 0, info.size_bytes, nullptr, 0);
+    if (status != ZX_OK) {
+      logical_buffer_collection_->LogError(
+          FROM_HERE, "raw_parent_vmo.op_range(ZX_VMO_OP_CACHE_CLEAN) failed - status: %d", status);
+      error_ = status;
+      return;
+    }
+    // We don't need a BarrierAfterFlush() here because Zircon takes care of that in the
+    // zx_vmo_op_range(ZX_VMO_OP_CACHE_CLEAN).
+  }
+
+  // The tracked_parent_vmo takes care of calling allocator.Delete() if this method returns early.
+  // We intentionally don't emplace into parent_vmo_ until StartWait() has succeeded.  In turn,
+  // StartWait() requires a child VMO to have been created already (else ZX_VMO_ZERO_CHILDREN would
+  // trigger too soon).
+  //
+  // We need to keep the raw_parent_vmo around so we can wait for ZX_VMO_ZERO_CHILDREN, and so we
+  // can call allocator.Delete(raw_parent_vmo).
+  //
+  // Until that happens, we can't let LogicalBufferCollection itself go away, because it needs to
+  // stick around to tell allocator that the allocator's VMO can be deleted/reclaimed.
+  //
+  // We let attenuated_strong_parent_vmo go away before returning from this method, since it's only
+  // purpose was to attenuate the rights of strong_child_vmo.  The strong_child_vmo counts as a
+  // child of parent_vmo for ZX_VMO_ZERO_CHILDREN.
+  //
+  // The fbl::RefPtr(this) is fairly similar (in this usage) to shared_from_this().
+  //
+  // We avoid letting any duplicates of raw_parent_vmo escape this method, to ensure that this
+  // TrackedParentVmo will authoritatively know that when there are zero children of raw_parent_vmo,
+  // there are also zero duplicated handles, ensuring coherency with respect to allocator->Delete()
+  // called from this do_delete.
+  parent_vmo_ = std::unique_ptr<TrackedParentVmo>(new TrackedParentVmo(
+      fbl::RefPtr(logical_buffer_collection_), std::move(parent_vmo), buffer_index_,
+      [this, allocator,
+       complain_about_leaked_weak_timer_task_scope](TrackedParentVmo* tracked_parent_vmo) mutable {
+        // This timer, if it was set, is cancelled now; the -> instead of . here is significant;
+        // we're intentinoally ending the TaskScope, not just this shared_ptr<> to it.
+        complain_about_leaked_weak_timer_task_scope->reset();
+
+        if (close_weak_asap_time_.has_value()) {
+          zx::duration close_weak_asap_duration =
+              zx::clock::get_monotonic() - *close_weak_asap_time_;
+          logical_buffer_collection_->parent_device_->metrics().LogCloseWeakAsapDuration(
+              close_weak_asap_duration);
+        }
+
+        // This won't find a node if do_delete is running in a sufficiently-early error path.
+        auto buffer_node =
+            logical_buffer_collection_->buffers_.extract(tracked_parent_vmo->buffer_index());
+        ZX_DEBUG_ASSERT_MSG(!buffer_node || (buffer_node.mapped().get() == this),
+                            "!!buffer_node: %u buffer_node.mapped().get(): %p this: %p",
+                            !!buffer_node, buffer_node.mapped().get(), this);
+        allocator->Delete(tracked_parent_vmo->TakeVmo());
+        logical_buffer_collection_->SweepLifetimeTracking();
+        // ~buffer_node may delete the LogicalBufferCollection (via ~parent_vmo_).
+      }));
+  // tracked_parent_vmo do_delete will take care of calling allocator->Delete(parent_vmo),
+  // whether do_delete is called in an error path or later when tracked_parent_vmo sees
+  // ZX_VMO_ZERO_CHILDREN.
+  cleanup_parent_vmo.cancel();
+
+  // As a child directly under parent_vmo, we have the strong_only VMO which in turn is the parent
+  // of (only) all the sysmem strong VMO handles. When strong_only's do_delete runs, we know that
+  // zero sysmem strong VMO handles remain, so we can close corresponding close_weak_asap handles,
+  // signaling to clients to close all their sysmem weak VMO handles asap.
+  zx::vmo strong_parent_vmo;
+  status =
+      parent_vmo_->vmo().create_child(ZX_VMO_CHILD_SLICE, 0, info.size_bytes, &strong_parent_vmo);
+  if (status != ZX_OK) {
+    logical_buffer_collection_->LogError(FROM_HERE, "zx::vmo::create_child() failed - status: %d",
+                                         status);
+    error_ = status;
+    return;
+  }
+
+  // Since strong BufferCollection client_end(s) effectively keep a strong VMO (via
+  // strong_collection_count_ not being zero yet -> keeping strong VMOs in allocation_result()), we
+  // know that this do_delete won't run until all strong BufferCollection client_end(s) are also
+  // gone (can be closed first from client_end or server_end, but either way, gone from server's
+  // point of view), or in a creation-time error path.
+  strong_parent_vmo_ = std::unique_ptr<TrackedParentVmo>(new TrackedParentVmo(
+      fbl::RefPtr(logical_buffer_collection_), std::move(strong_parent_vmo), buffer_index_,
+      [this, complain_about_leaked_weak_timer_task_scope](
+          TrackedParentVmo* tracked_strong_parent_vmo) mutable {
+        if (tracked_strong_parent_vmo->child_koid().has_value()) {
+          logical_buffer_collection_->parent_device_->RemoveVmoKoid(
+              *tracked_strong_parent_vmo->child_koid());
+        }
+
+        // won't have a pointer if ~LogicalBuffer before ZX_VMO_ZERO_CHILDREN
+        auto local_tracked_strong_parent_vmo = std::move(strong_parent_vmo_);
+        ZX_DEBUG_ASSERT(!strong_parent_vmo_);
+
+        logical_buffer_collection_->DecStrongParentVmoCount();
+
+        // We know this still has_value() because node_handle in this scope has a vmo that must
+        // close before the tracked_parent_vmo do_delete can run.
+        ZX_DEBUG_ASSERT(complain_about_leaked_weak_timer_task_scope->has_value());
+        (*complain_about_leaked_weak_timer_task_scope)
+            ->PostDelayed([this] { ComplainLoudlyAboutStillExistingWeakVmoHandles(); }, zx::sec(5));
+
+        // signal client_weak_asap client_end(s) to tell clients holding weak VMOs to close any weak
+        // VMOs asap, now that there are zero strong VMOs
+        close_weak_asap_.reset();
+        if (!weak_parent_vmos_.empty()) {
+          close_weak_asap_time_ = zx::clock::get_monotonic();
+        }
+
+        // ~local_tracked_strong_parent_vmo will close its vmo_, which may trigger
+        // tracked_parent_vmo's do_delete defined above (if zero weak outstanding already)
+      }));
+  logical_buffer_collection_->IncStrongParentVmoCount();
+
+  zx::vmo attenuated_strong_parent_vmo;
+  status = strong_parent_vmo_->vmo().duplicate(kSysmemVmoRights, &attenuated_strong_parent_vmo);
+  if (status != ZX_OK) {
+    logical_buffer_collection_->LogError(FROM_HERE, "zx::object::duplicate() failed - status: %d",
+                                         status);
+    error_ = status;
+    return;
+  }
+
+  zx::vmo strong_child_vmo;
+  status = attenuated_strong_parent_vmo.create_child(ZX_VMO_CHILD_SLICE, 0, info.size_bytes,
+                                                     &strong_child_vmo);
+  if (status != ZX_OK) {
+    logical_buffer_collection_->LogError(FROM_HERE, "zx::vmo::create_child() failed - status: %d",
+                                         status);
+    error_ = status;
+    return;
+  }
+
+  zx_koid_t strong_child_vmo_koid = fsl::GetKoid(strong_child_vmo.get());
+  if (strong_child_vmo_koid == ZX_KOID_INVALID) {
+    logical_buffer_collection_->LogError(FROM_HERE, "fsl::GetKoid failed");
+    error_ = ZX_ERR_INTERNAL;
+    return;
+  }
+
+  logical_buffer_collection_->parent_device_->AddVmoKoid(strong_child_vmo_koid, false, *this);
+  strong_parent_vmo_->set_child_koid(strong_child_vmo_koid);
+
+  TRACE_INSTANT("gfx", "Child VMO created", TRACE_SCOPE_THREAD, "koid", strong_child_vmo_koid);
+
+  // Now that we know at least one child of parent_vmo_ exists, we can StartWait().
+  status = parent_vmo_->StartWait(logical_buffer_collection_->parent_device_->dispatcher());
+  if (status != ZX_OK) {
+    logical_buffer_collection_->LogError(FROM_HERE,
+                                         "tracked_parent->StartWait() failed - status: %d", status);
+    error_ = status;
+    return;
+  }
+
+  // Now that we know at least one child of strong_parent_vmo_ exists, we can StartWait().
+  status = strong_parent_vmo_->StartWait(logical_buffer_collection_->parent_device_->dispatcher());
+  if (status != ZX_OK) {
+    logical_buffer_collection_->LogError(FROM_HERE,
+                                         "tracked_parent->StartWait() failed - status: %d", status);
+    error_ = status;
+    return;
+  }
+
+  ensure_error_set.cancel();
+  ZX_ASSERT(error_ == ZX_OK);
+  strong_child_vmo_ = std::move(strong_child_vmo);
+
+  // ~attenuated_strong_parent_vmo here is fine, since strong_child_vmo counts as a child of
+  // strong_parent_vmo_ for ZX_VMO_ZERO_CHILDREN purposes
+}
+
+bool LogicalBuffer::is_ok() { return error_ == ZX_OK; }
+
+zx_status_t LogicalBuffer::error() {
+  ZX_DEBUG_ASSERT(error_ != ZX_OK);
+  return error_;
+}
+
+fit::result<zx_status_t, std::optional<zx::vmo>> LogicalBuffer::CreateWeakVmo(
+    const ClientDebugInfo& client_debug_info) {
+  if (!strong_parent_vmo_) {
+    // succdess, but no VMO
+    return fit::ok(std::nullopt);
+  }
+  ZX_DEBUG_ASSERT(strong_parent_vmo_->vmo().is_valid());
+
+  // Now that we know there's at least one sysmem strong VMO outstanding for this LogicalBuffer, by
+  // definition it's ok to create a weak VMO for this logical buffer. FWIW, this is the same
+  // condition that we'll use to determine whether it's ok to convert a weak sysmem VMO to a strong
+  // sysmem VMO, if that's added in future.
+
+  // If strong_parent_vmo_ still exists, then we know parent_vmo_ also still exists.
+  ZX_DEBUG_ASSERT(parent_vmo_);
+  ZX_DEBUG_ASSERT(logical_buffer_collection_->allocation_result_info_.has_value());
+  size_t rounded_size_bytes =
+      fbl::round_up(*logical_buffer_collection_->allocation_result_info_->settings()
+                         ->buffer_settings()
+                         ->size_bytes(),
+                    zx_system_get_page_size());
+  zx::vmo per_sent_weak_parent;
+  zx_status_t status = parent_vmo_->vmo().create_child(ZX_VMO_CHILD_SLICE, 0, rounded_size_bytes,
+                                                       &per_sent_weak_parent);
+  if (status != ZX_OK) {
+    logical_buffer_collection_->LogError(FROM_HERE, "create_child() failed: %d", status);
+    return fit::error(status);
+  }
+
+  // The child weak VMO may not actually be sent by the caller; in that case just cleans up without
+  // ever being sent.
+  auto tracked_sent_weak_parent_vmo = std::make_unique<TrackedParentVmo>(
+      fbl::RefPtr(logical_buffer_collection_), std::move(per_sent_weak_parent), buffer_index_,
+      [this](TrackedParentVmo* tracked_sent_weak_parent_vmo) mutable {
+        if (tracked_sent_weak_parent_vmo->child_koid().has_value()) {
+          logical_buffer_collection_->parent_device_->RemoveVmoKoid(
+              *tracked_sent_weak_parent_vmo->child_koid());
+        }
+        // This erase can fail if ~tracked_sent_weak_parent_vmo in an error path before added to
+        // weak_parent_vmos_.
+        weak_parent_vmos_.erase(tracked_sent_weak_parent_vmo);
+      });
+
+  // Makes a copy since TrackedParentVmo can outlast Node.
+  tracked_sent_weak_parent_vmo->set_client_debug_info(client_debug_info);
+
+  zx::vmo child_same_rights;
+  status = tracked_sent_weak_parent_vmo->vmo().create_child(ZX_VMO_CHILD_SLICE, 0,
+                                                            rounded_size_bytes, &child_same_rights);
+  if (status != ZX_OK) {
+    logical_buffer_collection_->LogError(FROM_HERE, "create_child() (2) failed: %d", status);
+    return fit::error(status);
+  }
+
+  // The caller will dup the handle to attenuate handle rights, but that won't change the koid of
+  // the VMO that gets handed out, so stash that here.
+  zx_info_handle_basic_t child_info{};
+  status = child_same_rights.get_info(ZX_INFO_HANDLE_BASIC, &child_info, sizeof(child_info),
+                                      nullptr, nullptr);
+  if (status != ZX_OK) {
+    logical_buffer_collection_->LogError(FROM_HERE, "vmo.get_info() failed: %d", status);
+    return fit::error(status);
+  }
+
+  tracked_sent_weak_parent_vmo->set_child_koid(child_info.koid);
+  logical_buffer_collection_->parent_device_->AddVmoKoid(child_info.koid, true, *this);
+
+  // Now that there's a child VMO of tracked_sent_weak_parent_vmo, we can StartWait().
+  status = tracked_sent_weak_parent_vmo->StartWait(
+      logical_buffer_collection_->parent_device_->dispatcher());
+  if (status != ZX_OK) {
+    logical_buffer_collection_->LogError(FROM_HERE, "StartWait failed: %d", status);
+    return fit::error(status);
+  }
+
+  auto emplace_result = weak_parent_vmos_.try_emplace(tracked_sent_weak_parent_vmo.get(),
+                                                      std::move(tracked_sent_weak_parent_vmo));
+  ZX_ASSERT(emplace_result.second);
+
+  return fit::ok(std::move(child_same_rights));
+}
+
+zx::vmo LogicalBuffer::TakeStrongChildVmo() {
+  ZX_DEBUG_ASSERT(strong_child_vmo_.is_valid());
+  auto local_vmo = std::move(strong_child_vmo_);
+  ZX_DEBUG_ASSERT(!strong_child_vmo_.is_valid());
+  return local_vmo;
+}
+
+LogicalBufferCollection& LogicalBuffer::logical_buffer_collection() {
+  return *logical_buffer_collection_;
+}
+
+uint32_t LogicalBuffer::buffer_index() { return buffer_index_; }
 
 }  // namespace sysmem_driver

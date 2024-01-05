@@ -16,6 +16,7 @@
             protocol: [
                 "fuchsia.pkg.Cup",
                 "fuchsia.pkg.PackageResolver",
+                "fuchsia.pkg.PackageResolver-ota",
                 "fuchsia.pkg.RepositoryManager",
                 "fuchsia.pkg.rewrite.Engine",
             ],
@@ -63,6 +64,7 @@
             protocol: [
                 "fuchsia.pkg.Cup",
                 "fuchsia.pkg.PackageResolver",
+                "fuchsia.pkg.PackageResolver-ota",
                 "fuchsia.pkg.RepositoryManager",
                 "fuchsia.pkg.rewrite.Engine",
             ],
@@ -87,5 +89,8 @@
 
         // The maximum number of times to try resuming a blob download using HTTP range requests.
         blob_download_resumption_attempts_limit: { type: "uint32" },
+
+        // The maximum number of blobs to download concurrently.
+        blob_download_concurrency_limit: { type: "uint16" },
     },
 }

@@ -2,10 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use core::cell::RefCell;
+use std::rc::Rc;
+use tokio::task::LocalSet;
+
+thread_local!(
+    static LOCAL_EXECUTOR: RefCell<Option<Rc<LocalSet>>> = RefCell::new(None)
+);
+
 pub mod task {
+    use super::LOCAL_EXECUTOR;
     use core::task::{Context, Poll};
     use std::future::Future;
     use std::pin::Pin;
+
+    use futures::FutureExt;
 
     /// A handle to a task.
     ///
@@ -14,7 +25,10 @@ pub mod task {
     /// task, call the cancel() method. To run a task to completion without
     /// retaining the Task handle, call the detach() method.
     #[derive(Debug)]
-    pub struct Task<T>(async_executor::Task<T>);
+    pub struct Task<T> {
+        task: tokio::task::JoinHandle<T>,
+        abort_on_drop: bool,
+    }
 
     impl<T: 'static> Task<T> {
         /// Spawn a new `Send` task onto the current executor.
@@ -27,7 +41,14 @@ pub mod task {
         where
             T: Send,
         {
-            Self(super::executor::spawn(fut))
+            let task = LOCAL_EXECUTOR.with(|e| {
+                if let Some(e) = e.borrow().as_ref() {
+                    e.spawn_local(fut)
+                } else {
+                    tokio::task::spawn(fut)
+                }
+            });
+            Self { task, abort_on_drop: true }
         }
 
         /// Spawn a new non-`Send` task onto the single threaded executor.
@@ -37,17 +58,32 @@ pub mod task {
         /// `local` may panic if not called in the context of a local executor
         /// (e.g. within a call to `run` or `run_singlethreaded`).
         pub fn local<'a>(fut: impl Future<Output = T> + 'static) -> Self {
-            Self(super::executor::local(fut))
+            let task = LOCAL_EXECUTOR.with(|e| {
+                e.borrow().as_ref().expect("Executor must be created first").spawn_local(fut)
+            });
+            Self { task, abort_on_drop: true }
         }
 
         /// detach the Task handle. The contained future will be polled until completion.
-        pub fn detach(self) {
-            self.0.detach()
+        pub fn detach(mut self) {
+            self.abort_on_drop = false;
         }
 
         /// cancel a task and wait for cancellation to complete.
-        pub async fn cancel(self) -> Option<T> {
-            self.0.cancel().await
+        pub async fn cancel(mut self) -> Option<T> {
+            self.task.abort();
+            let res = (&mut self.task).await;
+
+            match res {
+                Ok(value) => Some(value),
+                Err(err) => {
+                    if err.is_panic() {
+                        // Propagate panic
+                        std::panic::resume_unwind(err.into_panic());
+                    }
+                    None
+                }
+            }
         }
     }
 
@@ -56,7 +92,29 @@ pub mod task {
 
         fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             use futures_lite::FutureExt;
-            self.0.poll(cx)
+            match self.task.poll(cx) {
+                Poll::Pending => Poll::Pending,
+                Poll::Ready(Err(err)) => {
+                    if err.is_panic() {
+                        // Propagate panic
+                        std::panic::resume_unwind(err.into_panic());
+                    } else {
+                        // All codepaths for canceling/aborting a task consume said task.
+                        // It will not be polled afterwards, and if it is there's something very
+                        // wrong going on.
+                        unreachable!("Task was polled after being cancelled");
+                    }
+                }
+                Poll::Ready(Ok(v)) => Poll::Ready(v),
+            }
+        }
+    }
+
+    impl<T> Drop for Task<T> {
+        fn drop(&mut self) {
+            if self.abort_on_drop {
+                self.task.abort();
+            }
         }
     }
 
@@ -85,18 +143,24 @@ pub mod task {
     pub fn unblock<T: 'static + Send>(
         f: impl 'static + Send + FnOnce() -> T,
     ) -> impl 'static + Send + Future<Output = T> {
-        blocking::unblock(f)
+        tokio::task::spawn_blocking(f).map(|res| res.unwrap())
     }
 }
 
 pub mod executor {
+    use super::LOCAL_EXECUTOR;
+
     use crate::runtime::WakeupTime;
-    use easy_parallel::Parallel;
-    use std::future::Future;
+    use std::{
+        future::Future,
+        ops::{Deref, DerefMut},
+        rc::Rc,
+    };
 
     pub use std::time::Duration;
     /// A time relative to the executor's clock.
     pub use std::time::Instant as Time;
+    use tokio::task::LocalSet;
 
     impl WakeupTime for Time {
         fn into_time(self) -> Time {
@@ -104,34 +168,15 @@ pub mod executor {
         }
     }
 
-    pub(crate) fn spawn<T: 'static>(
-        fut: impl Future<Output = T> + Send + 'static,
-    ) -> async_executor::Task<T>
-    where
-        T: Send,
-    {
-        GLOBAL.spawn(fut)
-    }
-
-    pub(crate) fn local<T>(fut: impl Future<Output = T> + 'static) -> async_executor::Task<T>
-    where
-        T: 'static,
-    {
-        LOCAL.with(|local| local.spawn(fut))
-    }
-
-    thread_local! {
-        static LOCAL: async_executor::LocalExecutor<'static> = async_executor::LocalExecutor::new();
-    }
-
-    static GLOBAL: async_executor::Executor<'_> = async_executor::Executor::new();
-
     /// A multi-threaded executor.
     ///
-    /// API-compatible with the Fuchsia variant.
+    /// Mostly API-compatible with the Fuchsia variant.  This differs from Fuchsia in one important
+    /// regard: tasks can only be spawned whilst the executor is running, whereas Fuchsia will allow
+    /// you to spawn tasks before the executor is running.  LocalExecutor does not have this
+    /// limitation.
     ///
-    /// The current implementation of Executor does not isolate work
-    /// (as the underlying executor is not yet capable of this).
+    /// The current implementation of Executor does not isolate work (as the underlying executor is
+    /// not yet capable of this).
     pub struct SendExecutor {
         num_threads: usize,
     }
@@ -148,24 +193,13 @@ pub mod executor {
             F: Future + Send + 'static,
             F::Output: Send + 'static,
         {
-            let (signal, shutdown) = async_channel::unbounded::<()>();
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(self.num_threads)
+                .enable_io()
+                .build()
+                .expect("Could not start tokio runtime on current thread");
 
-            let (_, res) = Parallel::new()
-                .each(0..self.num_threads, |_| {
-                    LOCAL.with(|local| {
-                        let _ = async_io::block_on(local.run(GLOBAL.run(shutdown.recv())));
-                    })
-                })
-                .finish(|| {
-                    LOCAL.with(|local| {
-                        async_io::block_on(local.run(GLOBAL.run(async {
-                            let res = main_future.await;
-                            drop(signal);
-                            res
-                        })))
-                    })
-                });
-            res
+            rt.block_on(main_future)
         }
     }
 
@@ -175,12 +209,19 @@ pub mod executor {
     ///
     /// The current implementation of Executor does not isolate work
     /// (as the underlying executor is not yet capable of this).
-    pub struct LocalExecutor {}
+    pub struct LocalExecutor(Rc<LocalSet>);
 
     impl LocalExecutor {
         /// Create a new executor.
         pub fn new() -> Self {
-            Self {}
+            let local_set = Rc::new(LocalSet::new());
+            LOCAL_EXECUTOR.with(|e| {
+                assert!(
+                    e.borrow_mut().replace(local_set.clone()).is_none(),
+                    "Cannot create multiple executors"
+                );
+            });
+            Self(local_set)
         }
 
         /// Run a single future to completion on a single thread.
@@ -188,7 +229,17 @@ pub mod executor {
         where
             F: Future,
         {
-            LOCAL.with(|local| async_io::block_on(GLOBAL.run(local.run(main_future))))
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .build()
+                .expect("Could not start tokio runtime on current thread");
+            self.0.block_on(&rt, main_future)
+        }
+    }
+
+    impl Drop for LocalExecutor {
+        fn drop(&mut self) {
+            LOCAL_EXECUTOR.with(|e| e.borrow_mut().take());
         }
     }
 
@@ -196,20 +247,28 @@ pub mod executor {
     ///
     /// The current implementation of Executor does not isolate work
     /// (as the underlying executor is not yet capable of this).
-    pub struct TestExecutor {}
+    pub struct TestExecutor {
+        executor: LocalExecutor,
+    }
 
     impl TestExecutor {
         /// Create a new executor for testing.
         pub fn new() -> Self {
-            Self {}
+            Self { executor: LocalExecutor::new() }
         }
+    }
 
-        /// Run a single future to completion on a single thread.
-        pub fn run_singlethreaded<F>(&mut self, main_future: F) -> F::Output
-        where
-            F: Future,
-        {
-            LocalExecutor {}.run_singlethreaded(main_future)
+    impl Deref for TestExecutor {
+        type Target = LocalExecutor;
+
+        fn deref(&self) -> &Self::Target {
+            &self.executor
+        }
+    }
+
+    impl DerefMut for TestExecutor {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.executor
         }
     }
 }

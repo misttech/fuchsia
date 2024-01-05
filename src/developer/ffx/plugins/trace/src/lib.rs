@@ -4,7 +4,8 @@
 
 use anyhow::{anyhow, Context, Result};
 use errors::ffx_bail;
-use ffx_config::{keys::TARGET_DEFAULT_KEY, EnvironmentContext};
+use ffx_config::EnvironmentContext;
+use ffx_target::get_default_target;
 use ffx_trace_args::{TraceCommand, TraceSubCommand};
 use fho::{daemon_protocol, deferred, moniker, FfxMain, FfxTool, MachineWriter, ToolIO};
 use fidl_fuchsia_developer_ffx::{self as ffx, RecordingError, TracingProxy};
@@ -12,7 +13,9 @@ use fidl_fuchsia_tracing::{BufferingMode, KnownCategory};
 use fidl_fuchsia_tracing_controller::{
     ControllerProxy, ProviderInfo, ProviderSpec, ProviderStats, TraceConfig,
 };
+use flyweights::FlyStr;
 use futures::future::{BoxFuture, FutureExt};
+use fxt::{Arg, ArgValue, RawArg, RawArgValue, RawEventRecord, SessionParser, StringRef};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -20,7 +23,7 @@ use serde_json::Value;
 use std::{
     collections::{BTreeSet, HashMap},
     future::Future,
-    io::{stdin, Stdin},
+    io::{stdin, LineWriter, Stdin, Write},
     path::{Component, PathBuf},
     time::Duration,
 };
@@ -107,24 +110,28 @@ fn more_than_init_record(
 
 fn stats_to_print(trace_stat: ProviderStats, verbose: bool) -> Vec<String> {
     let mut stats_output = Vec::new();
-    let (Some(provider_name),
+    let (
+        Some(provider_name),
         Some(pid),
         Some(buffering_mode),
         Some(wrapped_count),
         Some(records_dropped),
         Some(durable_buffer_used),
-        Some(non_durable_bytes_written)) =
-        (trace_stat.name,
+        Some(non_durable_bytes_written),
+    ) = (
+        trace_stat.name,
         trace_stat.pid,
         trace_stat.buffering_mode,
         trace_stat.buffer_wrapped_count,
         trace_stat.records_dropped,
         trace_stat.percentage_durable_buffer_used,
-        trace_stat.non_durable_bytes_written) else {
-            if verbose {
-                stats_output.push(String::from("A provider returned stats with missing values"));
-            }
-            return stats_output;
+        trace_stat.non_durable_bytes_written,
+    )
+    else {
+        if verbose {
+            stats_output.push(String::from("A provider returned stats with missing values"));
+        }
+        return stats_output;
     };
     if (verbose
         && more_than_init_record(non_durable_bytes_written, durable_buffer_used, buffering_mode))
@@ -278,6 +285,81 @@ fn map_categories_to_providers(categories: &Vec<String>) -> TraceConfig {
     trace_config
 }
 
+fn ir_files_list(env_ctx: &EnvironmentContext) -> Option<Vec<String>> {
+    let mut ir_files = Vec::new();
+    let build_dir = env_ctx.build_dir().unwrap_or(&std::path::Path::new(""));
+    let all_fidl_json_path = build_dir.join("all_fidl_json.txt");
+    match std::fs::read_to_string(all_fidl_json_path) {
+        Ok(file_list) => {
+            for line in file_list.lines() {
+                if let Some(ir_file_path) = build_dir.join(line).to_str() {
+                    ir_files.push(ir_file_path.to_string());
+                }
+            }
+        }
+        Err(_) => return None,
+    };
+    Some(ir_files)
+}
+
+fn generate_symbolization_map(ir_files: Vec<String>) -> (HashMap<u64, String>, Vec<String>) {
+    let mut ord_fn_map = HashMap::new();
+    let mut warnings = vec![];
+    // Scan through the list of ir files and look for the provided ordinal in the json contents.
+    for ir_file in ir_files {
+        let json_string = match std::fs::read_to_string(ir_file.clone()) {
+            Ok(content) => content,
+            Err(e) => {
+                warnings.push(format!("WARNING: Failed to read {ir_file}. Reason: {e}"));
+                continue;
+            }
+        };
+        let fidl_json: serde_json::Value = match serde_json::from_str(&json_string) {
+            Ok(serialized_json) => serialized_json,
+            Err(_) => {
+                warnings.push(format!("WARNING: Failed to parse json in IR file {ir_file}"));
+                continue;
+            }
+        };
+        let Some(protocols) = fidl_json["protocol_declarations"].as_array() else {
+            continue;
+        };
+        for protocol in protocols {
+            // Protocol should have a name, but it is missing for some reason.
+            let protocol_name = protocol["name"].as_str().unwrap_or("-");
+            let Some(methods) = protocol["methods"].as_array() else {
+                continue;
+            };
+            for method in methods {
+                let Some(method_ordinal) = method["ordinal"].as_u64() else {
+                    continue;
+                };
+                let method_name = method["name"].as_str().unwrap_or("-");
+                ord_fn_map.insert(method_ordinal, format!("{protocol_name}.{method_name}"));
+            }
+        }
+    }
+    (ord_fn_map, warnings)
+}
+
+fn symbolize_ordinal(ordinal: u64, ir_files: Vec<String>, mut writer: Writer) -> Result<()> {
+    let (fidl_ordinal_map, warnings) = generate_symbolization_map(ir_files);
+    for warning in warnings {
+        writer.line(warning)?;
+    }
+    if fidl_ordinal_map.contains_key(&ordinal) {
+        writer.line(format!("{} -> {}", ordinal, fidl_ordinal_map[&ordinal]))?;
+    } else {
+        writer.line(format!(
+            "Unable to symbolize ordinal {}. This could be because either:",
+            ordinal
+        ))?;
+        writer.line("1. The ordinal is incorrect")?;
+        writer.line("2. The ordinal is not found in IR files in $FUCHSIA_BUILD_DIR/all_fidl_json.txt or the input IR files")?;
+    }
+    Ok(())
+}
+
 // Print as a grid that fills the width of the terminal. Falls back to one value
 // per line if any value is wider than the terminal.
 fn print_grid(writer: &mut Writer, values: Vec<String>) -> Result<()> {
@@ -296,6 +378,66 @@ fn print_grid(writer: &mut Writer, values: Vec<String>) -> Result<()> {
     };
     writer.line(formatted_values)?;
     Ok(())
+}
+
+pub fn symbolize_fidl_call<'a>(bytes: &[u8], ordinal: u64, method: &'a str) -> Result<Vec<u8>> {
+    let (_, mut raw_event_record) =
+        RawEventRecord::parse(bytes).expect("Unable to parse event record");
+    let mut new_args = vec![];
+    for arg in &raw_event_record.args {
+        if let &RawArgValue::Unsigned64(arg_value) = &arg.value {
+            if arg_value == ordinal {
+                let symbolized_arg = RawArg {
+                    name: StringRef::Inline("method"),
+                    value: RawArgValue::String(StringRef::Inline(method)),
+                };
+                new_args.push(symbolized_arg);
+                continue;
+            }
+        }
+        new_args.push(arg.clone());
+    }
+
+    raw_event_record.args = new_args;
+    raw_event_record.serialize().map_err(|e| anyhow!(e))
+}
+
+fn symbolize_trace_file(
+    trace_file: String,
+    outfile: String,
+    ctx: &EnvironmentContext,
+) -> Result<()> {
+    let content = std::fs::read(trace_file)?;
+    let mut parser = SessionParser::new(std::io::Cursor::new(content));
+    let output = std::fs::File::create(outfile.clone())?;
+    let mut output = LineWriter::new(output);
+
+    let (ord_map, _) = generate_symbolization_map(ir_files_list(ctx).unwrap_or_default());
+    let ordinal_arg_name = FlyStr::from("ordinal");
+    while let Some(record) = parser.next() {
+        let mut parsed_bytes = parser.parsed_bytes().to_owned();
+        output.write_all(match record {
+            Ok(fxt::TraceRecord::Event(fxt::EventRecord { category, args, .. }))
+                if category.as_str() == "kernel:ipc" =>
+            {
+                for arg in args {
+                    match arg {
+                        Arg { name, value: ArgValue::Unsigned64(ord) }
+                            if name == ordinal_arg_name && ord_map.contains_key(&ord) =>
+                        {
+                            parsed_bytes =
+                                symbolize_fidl_call(&parsed_bytes, ord, ord_map[&ord].as_str())
+                                    .unwrap_or(parsed_bytes)
+                        }
+                        _ => continue,
+                    }
+                }
+                &parsed_bytes
+            }
+            _ => &parsed_bytes,
+        })?;
+    }
+    Ok(output.flush()?)
 }
 
 type Writer = MachineWriter<TraceOutput>;
@@ -328,7 +470,7 @@ pub async fn trace(
     mut writer: Writer,
     cmd: TraceCommand,
 ) -> Result<()> {
-    let default_target: Option<String> = context.get(TARGET_DEFAULT_KEY).await?;
+    let default_target: Option<String> = get_default_target(&context).await?;
     match cmd.sub_cmd {
         TraceSubCommand::ListCategories(_) => {
             let controller = controller.await?;
@@ -373,8 +515,7 @@ pub async fn trace(
             }
         }
         TraceSubCommand::Start(opts) => {
-            let string_matcher: Option<String> = context.get(TARGET_DEFAULT_KEY).await.ok();
-            let default = ffx::TargetQuery { string_matcher, ..Default::default() };
+            let default = ffx::TargetQuery { string_matcher: default_target, ..Default::default() };
             let triggers = if opts.trigger.is_empty() { None } else { Some(opts.trigger) };
             if triggers.is_some() && !opts.background {
                 ffx_bail!(
@@ -442,6 +583,27 @@ pub async fn trace(
             stop_tracing(&context, &proxy, output, writer, opts.verbose).await?;
         }
         TraceSubCommand::Status(_opts) => status(&proxy, writer).await?,
+        TraceSubCommand::Symbolize(opts) => {
+            if let Some(trace_file) = opts.fxt {
+                let outfile = opts.outfile.unwrap_or(trace_file.clone());
+                symbolize_trace_file(trace_file, outfile.clone(), &context)?;
+                writer.line(format!("Symbolized traces written to {outfile}"))?;
+            } else if let Some(ordinal) = opts.ordinal {
+                let mut all_ir_files = opts.ir_path.clone();
+                let build_ir_files = match ir_files_list(&context) {
+                    None => {
+                        writer.line("Unable to read list of FIDL IR files from $FUCHSIA_BUILD_DIR/all_fidl_json.txt.")?;
+                        writer.line("Only input IR files will be searched.")?;
+                        vec![]
+                    }
+                    Some(ir_files) => ir_files,
+                };
+                all_ir_files.extend(build_ir_files);
+                symbolize_ordinal(ordinal, all_ir_files, writer)?;
+            } else {
+                ffx_bail!("Either ordinal or trace file must be provided to symbolize");
+            }
+        }
     }
     Ok(())
 }
@@ -548,7 +710,7 @@ async fn handle_recording_result(
     res: Result<ffx::TargetInfo, RecordingError>,
     output: &String,
 ) -> Result<ffx::TargetInfo> {
-    let default: Option<String> = context.get(TARGET_DEFAULT_KEY).await.ok();
+    let default = get_default_target(context).await.unwrap_or(None);
     match res {
         Ok(t) => Ok(t),
         Err(e) => match e {
@@ -652,7 +814,7 @@ fn canonical_path(output_path: String) -> Result<String> {
 mod tests {
     use super::*;
     use errors::ResultExt as _;
-    use ffx_trace_args::{ListCategories, ListProviders, Start, Status, Stop};
+    use ffx_trace_args::{ListCategories, ListProviders, Start, Status, Stop, Symbolize};
     use ffx_writer::{Format, TestBuffers};
     use fidl::endpoints::{ControlHandle, Responder};
     use fidl_fuchsia_developer_ffx as ffx;
@@ -662,7 +824,9 @@ mod tests {
     use pretty_assertions::assert_eq;
     use regex::Regex;
     use serde_json::json;
+    use std::io::Write;
     use std::matches;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_canonical_path_has_root() {
@@ -881,6 +1045,74 @@ mod tests {
         let output = test_buffers.into_stdout_str();
         let want = "input  kernel  kernel:arch  kernel:ipc\n\n";
         assert_eq!(want, output);
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_symbolize_success() {
+        let env = ffx_config::test_init().await.unwrap();
+        let fake_ir_json = json!({
+           "unrelated_key": "unrelated_value",
+           "protocol_declarations": [
+                {
+                    "name": "fake_protocol_name",
+                    "methods": [
+                        {
+                            "ordinal": 12345678,
+                            "name": "fake_method_name",
+                        },
+                    ],
+                },
+            ],
+        });
+        let mut temp_file = NamedTempFile::new().expect("Failed to create temp IR file");
+        temp_file
+            .write_all(fake_ir_json.to_string().as_bytes())
+            .expect("Failed to write IR string to file");
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+        let fake_ir_path =
+            temp_file.path().to_str().expect("Unable to convert fake IR path to string");
+        run_trace_test(
+            env.context.clone(),
+            TraceCommand {
+                sub_cmd: TraceSubCommand::Symbolize(Symbolize {
+                    ordinal: Some(12345678),
+                    ir_path: vec![fake_ir_path.to_string()],
+                    fxt: None,
+                    outfile: None,
+                }),
+            },
+            writer,
+        )
+        .await;
+        let output = test_buffers.into_stdout_str();
+        let want = "12345678 -> fake_protocol_name.fake_method_name\n";
+        assert!(output.contains(want));
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_symbolize_fail() {
+        let env = ffx_config::test_init().await.unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+        run_trace_test(
+            env.context.clone(),
+            TraceCommand {
+                sub_cmd: TraceSubCommand::Symbolize(Symbolize {
+                    ordinal: Some(12345678),
+                    ir_path: vec![],
+                    fxt: None,
+                    outfile: None,
+                }),
+            },
+            writer,
+        )
+        .await;
+        let output = test_buffers.into_stdout_str();
+        let want = "Unable to symbolize ordinal 12345678. This could be because either:\n\
+                    1. The ordinal is incorrect\n\
+                    2. The ordinal is not found in IR files in $FUCHSIA_BUILD_DIR/all_fidl_json.txt or the input IR files\n";
+        assert!(output.contains(want));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]

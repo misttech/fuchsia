@@ -6,7 +6,6 @@
 
 #include <lib/async/default.h>
 
-#include <functional>
 #include <memory>
 #include <utility>
 
@@ -14,7 +13,6 @@
 #include "logical_link.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/assert.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/log.h"
-#include "src/connectivity/bluetooth/core/bt-host/common/trace.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/weak_self.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/basic_mode_rx_engine.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/basic_mode_tx_engine.h"
@@ -29,13 +27,14 @@ namespace hci_android = bt::hci_spec::vendor::android;
 using pw::bluetooth::AclPriority;
 
 Channel::Channel(ChannelId id, ChannelId remote_id, bt::LinkType link_type,
-                 hci_spec::ConnectionHandle link_handle, ChannelInfo info)
+                 hci_spec::ConnectionHandle link_handle, ChannelInfo info, uint16_t max_tx_queued)
     : WeakSelf(this),
       id_(id),
       remote_id_(remote_id),
       link_type_(link_type),
       link_handle_(link_handle),
       info_(info),
+      max_tx_queued_(max_tx_queued),
       requested_acl_priority_(AclPriority::kNormal) {
   BT_DEBUG_ASSERT(id_);
   BT_DEBUG_ASSERT(link_type_ == bt::LinkType::kLE || link_type_ == bt::LinkType::kACL);
@@ -45,38 +44,44 @@ namespace internal {
 
 namespace {
 
+constexpr const char* kInspectPsmPropertyName = "psm";
 constexpr const char* kInspectLocalIdPropertyName = "local_id";
 constexpr const char* kInspectRemoteIdPropertyName = "remote_id";
-constexpr const char* kInspectPsmPropertyName = "psm";
+constexpr const char* kInspectDroppedPacketsPropertyName = "dropped_packets";
 
 }  // namespace
 
 std::unique_ptr<ChannelImpl> ChannelImpl::CreateFixedChannel(
-    ChannelId id, internal::LogicalLinkWeakPtr link, hci::CommandChannel::WeakPtr cmd_channel,
-    uint16_t max_acl_payload_size, A2dpOffloadManager& a2dp_offload_manager) {
+    pw::async::Dispatcher& dispatcher, ChannelId id, internal::LogicalLinkWeakPtr link,
+    hci::CommandChannel::WeakPtr cmd_channel, uint16_t max_acl_payload_size,
+    A2dpOffloadManager& a2dp_offload_manager, uint16_t max_tx_queued) {
   // A fixed channel's endpoints have the same local and remote identifiers.
   // Setting the ChannelInfo MTU to kMaxMTU effectively cancels any L2CAP-level MTU enforcement for
   // services which operate over fixed channels. Such services often define minimum MTU values in
   // their specification, so they are required to respect these MTUs internally by:
   //   1.) never sending packets larger than their spec-defined MTU.
   //   2.) handling inbound PDUs which are larger than their spec-defined MTU appropriately.
-  return std::unique_ptr<ChannelImpl>(
-      new ChannelImpl(id, id, link, ChannelInfo::MakeBasicMode(kMaxMTU, kMaxMTU),
-                      std::move(cmd_channel), max_acl_payload_size, a2dp_offload_manager));
+  return std::unique_ptr<ChannelImpl>(new ChannelImpl(
+      dispatcher, id, id, link, ChannelInfo::MakeBasicMode(kMaxMTU, kMaxMTU),
+      std::move(cmd_channel), max_acl_payload_size, a2dp_offload_manager, max_tx_queued));
 }
 
 std::unique_ptr<ChannelImpl> ChannelImpl::CreateDynamicChannel(
-    ChannelId id, ChannelId peer_id, internal::LogicalLinkWeakPtr link, ChannelInfo info,
-    hci::CommandChannel::WeakPtr cmd_channel, uint16_t max_acl_payload_size,
-    A2dpOffloadManager& a2dp_offload_manager) {
-  return std::unique_ptr<ChannelImpl>(new ChannelImpl(
-      id, peer_id, link, info, std::move(cmd_channel), max_acl_payload_size, a2dp_offload_manager));
+    pw::async::Dispatcher& dispatcher, ChannelId id, ChannelId peer_id,
+    internal::LogicalLinkWeakPtr link, ChannelInfo info, hci::CommandChannel::WeakPtr cmd_channel,
+    uint16_t max_acl_payload_size, A2dpOffloadManager& a2dp_offload_manager,
+    uint16_t max_tx_queued) {
+  return std::unique_ptr<ChannelImpl>(new ChannelImpl(dispatcher, id, peer_id, link, info,
+                                                      std::move(cmd_channel), max_acl_payload_size,
+                                                      a2dp_offload_manager, max_tx_queued));
 }
 
-ChannelImpl::ChannelImpl(ChannelId id, ChannelId remote_id, internal::LogicalLinkWeakPtr link,
-                         ChannelInfo info, hci::CommandChannel::WeakPtr cmd_channel,
-                         uint16_t max_acl_payload_size, A2dpOffloadManager& a2dp_offload_manager)
-    : Channel(id, remote_id, link->type(), link->handle(), info),
+ChannelImpl::ChannelImpl(pw::async::Dispatcher& dispatcher, ChannelId id, ChannelId remote_id,
+                         internal::LogicalLinkWeakPtr link, ChannelInfo info,
+                         hci::CommandChannel::WeakPtr cmd_channel, uint16_t max_acl_payload_size,
+                         A2dpOffloadManager& a2dp_offload_manager, uint16_t max_tx_queued)
+    : Channel(id, remote_id, link->type(), link->handle(), info, max_tx_queued),
+      pw_dispatcher_(dispatcher),
       active_(false),
       link_(link),
       cmd_channel_(std::move(cmd_channel)),
@@ -84,11 +89,12 @@ ChannelImpl::ChannelImpl(ChannelId id, ChannelId remote_id, internal::LogicalLin
       a2dp_offload_manager_(a2dp_offload_manager),
       weak_self_(this) {
   BT_ASSERT(link_.is_alive());
-  BT_ASSERT_MSG(
-      info_.mode == ChannelMode::kBasic || info_.mode == ChannelMode::kEnhancedRetransmission,
-      "Channel constructed with unsupported mode: %hhu\n", static_cast<unsigned char>(info.mode));
+  BT_ASSERT_MSG(info_.mode == RetransmissionAndFlowControlMode::kBasic ||
+                    info_.mode == RetransmissionAndFlowControlMode::kEnhancedRetransmission,
+                "Channel constructed with unsupported mode: %s\n",
+                AnyChannelModeToString(info_.mode).c_str());
 
-  if (info_.mode == ChannelMode::kBasic) {
+  if (info_.mode == RetransmissionAndFlowControlMode::kBasic) {
     rx_engine_ = std::make_unique<BasicModeRxEngine>();
     tx_engine_ = std::make_unique<BasicModeTxEngine>(
         id, max_tx_sdu_size(), fit::bind_member<&ChannelImpl::SendFrame>(this));
@@ -102,7 +108,8 @@ ChannelImpl::ChannelImpl(ChannelId id, ChannelId remote_id, internal::LogicalLin
     };
     std::tie(rx_engine_, tx_engine_) = MakeLinkedEnhancedRetransmissionModeEngines(
         id, max_tx_sdu_size(), info_.max_transmissions, info_.n_frames_in_tx_window,
-        fit::bind_member<&ChannelImpl::SendFrame>(this), std::move(connection_failure_cb));
+        fit::bind_member<&ChannelImpl::SendFrame>(this), std::move(connection_failure_cb),
+        pw_dispatcher_);
   }
 }
 
@@ -199,9 +206,10 @@ std::unique_ptr<hci::ACLDataPacket> ChannelImpl::GetNextOutboundPacket() {
   // Channel's next packet is a starting fragment
   if (!HasFragments() && HasPDUs()) {
     // B-frames for Basic Mode contain only an "Information payload" (v5.0 Vol 3, Part A, Sec 3.1)
-    FrameCheckSequenceOption fcs_option = info().mode == ChannelMode::kEnhancedRetransmission
-                                              ? FrameCheckSequenceOption::kIncludeFcs
-                                              : FrameCheckSequenceOption::kNoFcs;
+    FrameCheckSequenceOption fcs_option =
+        info().mode == RetransmissionAndFlowControlMode::kEnhancedRetransmission
+            ? FrameCheckSequenceOption::kIncludeFcs
+            : FrameCheckSequenceOption::kNoFcs;
     // Get new PDU and release fragments
     auto pdu = fragmenter_.BuildFrame(remote_id(), *pending_tx_pdus_.front(), fcs_option,
                                       /*flushable=*/info().flush_timeout.has_value());
@@ -249,7 +257,7 @@ void ChannelImpl::RequestAclPriority(AclPriority priority,
       });
 }
 
-void ChannelImpl::SetBrEdrAutomaticFlushTimeout(zx::duration flush_timeout,
+void ChannelImpl::SetBrEdrAutomaticFlushTimeout(pw::chrono::SystemClock::duration flush_timeout,
                                                 hci::ResultCallback<> callback) {
   BT_ASSERT(link_type_ == bt::LinkType::kACL);
 
@@ -287,6 +295,11 @@ void ChannelImpl::AttachInspect(inspect::Node& parent, std::string name) {
                                                  bt_lib_cpp_string::StringPrintf("%#.4x", id()));
   inspect_.remote_id = inspect_.node.CreateString(
       kInspectRemoteIdPropertyName, bt_lib_cpp_string::StringPrintf("%#.4x", remote_id()));
+
+  if (dropped_packets) {
+    inspect_.dropped_packets =
+        inspect_.node.CreateUint(kInspectDroppedPacketsPropertyName, dropped_packets);
+  }
 }
 
 void ChannelImpl::StartA2dpOffload(const A2dpOffloadManager::Configuration& config,
@@ -386,6 +399,21 @@ void ChannelImpl::SendFrame(ByteBufferPtr pdu) {
   }
 
   pending_tx_pdus_.emplace(std::move(pdu));
+
+  // Ensure that |pending_tx_pdus_| does not exceed its maximum queue size
+  if (pending_tx_pdus_.size() > max_tx_queued()) {
+    if (dropped_packets % 100 == 0) {
+      bt_log(DEBUG, "l2cap",
+             "Queued packets (%zu) exceeds maximum (%u). "
+             "Dropping oldest ACL packet (handle: %#.4x)",
+             pending_tx_pdus_.size(), max_tx_queued(), link_->handle());
+
+      inspect_.dropped_packets.Set(dropped_packets);
+    }
+    dropped_packets += 1;
+
+    pending_tx_pdus_.pop();  // Remove the oldest (aka first) element
+  }
 
   // Notify LogicalLink that a packet is available. This is only necessary for the first
   // packet of an empty queue (flow control will poll this connection otherwise).

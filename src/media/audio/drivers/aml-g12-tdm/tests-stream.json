@@ -21,8 +21,34 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.gpio.BIND_FIDL_PROTOCOL.SERVICE",
-                    "fuchsia.hardware.gpio.FUNCTION": "fuchsia.hardware.gpio.FUNCTION.SOC_AUDIO_ENABLE"
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.gpio.BIND_FIDL_PROTOCOL.SERVICE",
+                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.SOC_AUDIO_ENABLE"
+                }
+            }
+        ]
+    },
+    {
+        "node": "clock-gate",
+        "tests": [
+            {
+                "name": "Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE",
+                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.AUDIO_GATE"
+                }
+            }
+        ]
+    },
+    {
+        "node": "clock-pll",
+        "tests": [
+            {
+                "name": "Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE",
+                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.AUDIO_PLL"
                 }
             }
         ]
@@ -62,6 +88,18 @@
                 "device": {
                     "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.codec.BIND_FIDL_PROTOCOL.SERVICE",
                     "fuchsia.BIND_CODEC_INSTANCE": "3"
+                }
+            }
+        ]
+    },
+    {
+        "node": "clock-init",
+        "tests": [
+            {
+                "name": "Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.BIND_INIT_STEP": "fuchsia.clock.BIND_INIT_STEP.CLOCK"
                 }
             }
         ]

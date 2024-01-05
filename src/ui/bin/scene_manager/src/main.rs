@@ -26,7 +26,9 @@ use {
         RegistryRequest as A11yViewRegistryRequest,
         RegistryRequestStream as A11yViewRegistryRequestStream,
     },
-    fidl_fuchsia_ui_brightness::ColorAdjustmentHandlerRequestStream,
+    fidl_fuchsia_ui_brightness::{
+        ColorAdjustmentHandlerRequestStream, ColorAdjustmentRequestStream,
+    },
     fidl_fuchsia_ui_composition as flatland, fidl_fuchsia_ui_composition_internal as fcomp,
     fidl_fuchsia_ui_display_color as color, fidl_fuchsia_ui_display_singleton as singleton_display,
     fidl_fuchsia_ui_focus::FocusChainProviderRequestStream,
@@ -39,8 +41,8 @@ use {
     fuchsia_inspect as inspect, fuchsia_zircon as zx,
     futures::lock::Mutex,
     futures::{StreamExt, TryStreamExt},
-    input_config_lib::Config,
-    scene_management::{self, SceneManager, ViewingDistance, ViewportToken},
+    scene_management::{self, SceneManager, SceneManagerTrait, ViewingDistance},
+    scene_manager_structured_config::Config,
     std::fs::File,
     std::io::Read,
     std::sync::Arc,
@@ -57,6 +59,7 @@ mod media_buttons_listener_registry_server;
 
 enum ExposedServices {
     AccessibilityViewRegistry(A11yViewRegistryRequestStream),
+    ColorAdjustment(ColorAdjustmentRequestStream),
     ColorAdjustmentHandler(ColorAdjustmentHandlerRequestStream),
     MediaButtonsListenerRegistry(MediaButtonsListenerRegistryRequestStream),
     DisplayBacklight(DisplayBacklightRequestStream),
@@ -94,7 +97,8 @@ async fn inner_main() -> Result<(), Error> {
     // * Use a slightly larger value here to allow some headroom. E.g. perhaps
     //   some events have a third finger.
     let inspector = inspect::component::init_inspector_with_size(300 * 1024);
-    inspect_runtime::serve(inspector, &mut fs)?;
+    let _inspect_server_task =
+        inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
 
     // Report data on the size of the inspect VMO, and the number of allocation
     // failures encountered. (Allocation failures can lead to missing data.)
@@ -113,6 +117,7 @@ async fn inner_main() -> Result<(), Error> {
     fs.dir("svc")
         .add_fidl_service(ExposedServices::AccessibilityViewRegistry)
         .add_fidl_service(ExposedServices::ColorAdjustmentHandler)
+        .add_fidl_service(ExposedServices::ColorAdjustment)
         .add_fidl_service(ExposedServices::MediaButtonsListenerRegistry)
         .add_fidl_service(ExposedServices::DisplayBacklight)
         .add_fidl_service(ExposedServices::FactoryResetCountdown)
@@ -169,49 +174,35 @@ async fn inner_main() -> Result<(), Error> {
         ownership_proxy.get_event().await.expect("Failed to get display ownership.");
     info!("Instantiating SceneManager");
 
-    // Read config files to discover display attributes.
-    let display_rotation = match std::fs::read_to_string("/config/data/display_rotation") {
-        Ok(contents) => {
-            let contents = contents.trim();
-            contents.parse::<i32>().context(format!(
-                "Failed to parse /config/data/display_rotation - \
-            expected an integer, got {contents}"
-            ))?
-        }
-        Err(e) => {
-            warn!(
-                "Wasn't able to read config/data/display_rotation, \
-                defaulting to a display rotation of 0 degrees: {}",
-                e
-            );
-            0
-        }
-    };
-    let display_pixel_density = match std::fs::read_to_string("/config/data/display_pixel_density")
-    {
-        Ok(contents) => {
-            let contents = contents.trim();
-            Some(contents.parse::<f32>().context(format!(
-                "Failed to parse /config/data/display_pixel_density - \
-                expected a decimal, got {contents}"
-            ))?)
+    let Config {
+        supported_input_devices,
+        display_rotation,
+        display_pixel_density,
+        viewing_distance,
+    } = Config::take_from_startup_handle();
+
+    let display_pixel_density = match display_pixel_density.trim().parse::<f32>() {
+        Ok(density) => {
+            if density < 0.0 {
+                None
+            } else {
+                Some(density)
+            }
         }
         Err(_) => {
-            warn!("/config/data/display_pixel_density not there.");
+            warn!("Failed to parse display_pixel_density value from structured config - expected a decimal, but got: {display_pixel_density}. Falling back to default.");
             None
         }
     };
-    let viewing_distance = match std::fs::read_to_string("/config/data/display_usage") {
-        Ok(s) => Some(match s.trim() {
-            "handheld" => ViewingDistance::Handheld,
-            "close" => ViewingDistance::Close,
-            "near" => ViewingDistance::Near,
-            "midrange" => ViewingDistance::Midrange,
-            "far" => ViewingDistance::Far,
-            unknown => anyhow::bail!("Invalid /config/data/display_usage value: {unknown}"),
-        }),
-        Err(_) => {
-            warn!("/config/data/display_usage not there.");
+
+    let viewing_distance = match viewing_distance.to_lowercase().trim() {
+        "handheld" => Some(ViewingDistance::Handheld),
+        "close" => Some(ViewingDistance::Close),
+        "near" => Some(ViewingDistance::Near),
+        "midrange" => Some(ViewingDistance::Midrange),
+        "far" => Some(ViewingDistance::Far),
+        _ => {
+            warn!("No viewing_distance config value provided, falling back to default.");
             None
         }
     };
@@ -222,8 +213,8 @@ async fn inner_main() -> Result<(), Error> {
     let pointerinjector_flatland = connect_to_protocol::<flatland::FlatlandMarker>()?;
     let scene_flatland = connect_to_protocol::<flatland::FlatlandMarker>()?;
     let a11y_view_provider = connect_to_protocol::<a11y_view::ProviderMarker>()?;
-    let scene_manager: Arc<Mutex<dyn SceneManager>> = Arc::new(Mutex::new(
-        scene_management::FlatlandSceneManager::new(
+    let scene_manager: Arc<Mutex<dyn SceneManagerTrait>> = Arc::new(Mutex::new(
+        SceneManager::new(
             flatland_display,
             singleton_display_info,
             root_flatland,
@@ -244,7 +235,6 @@ async fn inner_main() -> Result<(), Error> {
     let inspect_node = inspector.root().create_child("input_pipeline");
 
     // Start input pipeline.
-    let Config { supported_input_devices } = Config::take_from_startup_handle();
     let has_light_sensor_configuration = light_sensor_configuration.is_some();
     if let Ok(input_pipeline) = input_pipeline::handle_input(
         scene_manager.clone(),
@@ -300,14 +290,17 @@ async fn inner_main() -> Result<(), Error> {
     // than a single client at a time.
     while let Some(service_request) = fs.next().await {
         match service_request {
-            ExposedServices::AccessibilityViewRegistry(request_stream) => {
-                fasync::Task::local(handle_accessibility_view_registry_request_stream(
-                    request_stream,
-                    Arc::clone(&scene_manager),
-                ))
-                .detach()
-            }
+            ExposedServices::AccessibilityViewRegistry(request_stream) => fasync::Task::local(
+                handle_accessibility_view_registry_request_stream(request_stream),
+            )
+            .detach(),
             ExposedServices::ColorAdjustmentHandler(request_stream) => {
+                ColorTransformManager::handle_color_adjustment_handler_request_stream(
+                    Arc::clone(&color_transform_manager),
+                    request_stream,
+                );
+            }
+            ExposedServices::ColorAdjustment(request_stream) => {
                 ColorTransformManager::handle_color_adjustment_request_stream(
                     Arc::clone(&color_transform_manager),
                     request_stream,
@@ -410,28 +403,17 @@ async fn inner_main() -> Result<(), Error> {
 
 pub async fn handle_accessibility_view_registry_request_stream(
     mut request_stream: A11yViewRegistryRequestStream,
-    scene_manager: Arc<Mutex<dyn scene_management::SceneManager>>,
 ) {
     while let Ok(Some(request)) = request_stream.try_next().await {
         match request {
             A11yViewRegistryRequest::CreateAccessibilityViewHolder {
                 a11y_view_ref: _,
-                a11y_view_token,
+                a11y_view_token: _,
                 responder,
                 ..
             } => {
-                let mut scene_manager = scene_manager.lock().await;
-                let r = scene_manager.insert_a11y_view(a11y_view_token).await;
-
-                let _ = match r {
-                    Ok(result) => {
-                        let _ = responder.send(result);
-                    }
-                    Err(e) => {
-                        warn!("Closing A11yViewRegistry connection due to error {:?}", e);
-                        responder.control_handle().shutdown_with_epitaph(zx::Status::PEER_CLOSED);
-                    }
-                };
+                warn!("Closing A11yViewRegistry connection because a11y should be configured to use Flatland, not Gfx");
+                responder.control_handle().shutdown_with_epitaph(zx::Status::PEER_CLOSED);
             }
             A11yViewRegistryRequest::CreateAccessibilityViewport {
                 viewport_creation_token: _,
@@ -447,11 +429,12 @@ pub async fn handle_accessibility_view_registry_request_stream(
 
 pub async fn handle_scene_manager_request_stream(
     mut request_stream: SceneManagerRequestStream,
-    scene_manager: Arc<Mutex<dyn scene_management::SceneManager>>,
+    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
 ) {
     while let Ok(Some(request)) = request_stream.try_next().await {
         match request {
             SceneManagerRequest::SetRootView { view_provider, responder } => {
+                info!("Processing SceneManagerRequest::SetRootView().");
                 if let Ok(proxy) = view_provider.into_proxy() {
                     let mut scene_manager = scene_manager.lock().await;
                     let set_root_view_result =
@@ -465,28 +448,20 @@ pub async fn handle_scene_manager_request_stream(
                 }
             }
             SceneManagerRequest::PresentRootViewLegacy {
-                view_holder_token,
-                view_ref,
+                view_holder_token: _,
+                view_ref: _,
                 responder,
             } => {
-                let mut scene_manager = scene_manager.lock().await;
-                let set_root_view_result = scene_manager
-                    .set_root_view(ViewportToken::Gfx(view_holder_token), Some(view_ref))
-                    .await
-                    .map_err(|e| {
-                        error!("Failed to obtain ViewRef from PresentRootViewLegacy(): {}", e);
-                        PresentRootViewError::InternalError
-                    });
-                if let Err(e) = responder.send(set_root_view_result) {
+                error!("Unsupported call to fuchsia.session.scene.Manager/PresentRootViewLegacy() (GFX only).");
+                if let Err(e) = responder.send(Err(PresentRootViewError::InternalError)) {
                     error!("Error responding to PresentRootViewLegacy(): {}", e);
                 }
             }
             SceneManagerRequest::PresentRootView { viewport_creation_token, responder } => {
+                info!("Processing SceneManagerRequest::PresentRootView().");
                 let mut scene_manager = scene_manager.lock().await;
-                let set_root_view_result = scene_manager
-                    .set_root_view(ViewportToken::Flatland(viewport_creation_token), None)
-                    .await
-                    .map_err(|e| {
+                let set_root_view_result =
+                    scene_manager.set_root_view(viewport_creation_token, None).await.map_err(|e| {
                         error!("Failed to obtain ViewRef from PresentRootView(): {}", e);
                         PresentRootViewError::InternalError
                     });
@@ -500,28 +475,20 @@ pub async fn handle_scene_manager_request_stream(
 
 pub async fn handle_graphical_presenter_request_stream(
     mut request_stream: GraphicalPresenterRequestStream,
-    scene_manager: Arc<Mutex<dyn scene_management::SceneManager>>,
+    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
 ) {
     while let Ok(Some(request)) = request_stream.try_next().await {
         match request {
             GraphicalPresenterRequest::PresentView { view_spec, responder, .. } => {
                 match view_spec {
                     ViewSpec {
-                        view_holder_token: Some(view_holder_token),
-                        view_ref,
+                        view_holder_token: Some(_),
+                        view_ref: _,
                         viewport_creation_token: None,
                         ..
                     } => {
-                        info!("Processing fuchsia.element.GraphicalPresenter/PresentView() with GFX view tokens.");
-                        let mut scene_manager = scene_manager.lock().await;
-                        let set_root_view_result = scene_manager
-                            .set_root_view(ViewportToken::Gfx(view_holder_token), view_ref)
-                            .await
-                            .map_err(|e| {
-                                error!("Failed to PresentView() - GFX: {}", e);
-                                PresentViewError::InvalidArgs
-                            });
-                        if let Err(e) = responder.send(set_root_view_result) {
+                        error!("Processing fuchsia.element.GraphicalPresenter/PresentView() with GFX view tokens.");
+                        if let Err(e) = responder.send(Err(PresentViewError::InvalidArgs)) {
                             error!("Error responding to PresentView(): {}", e);
                         }
                     }
@@ -534,7 +501,7 @@ pub async fn handle_graphical_presenter_request_stream(
                         info!("Processing fuchsia.element.GraphicalPresenter/PresentView() with Flatland view tokens.");
                         let mut scene_manager = scene_manager.lock().await;
                         let set_root_view_result = scene_manager
-                            .set_root_view(ViewportToken::Flatland(viewport_creation_token), None)
+                            .set_root_view(viewport_creation_token, None)
                             .await
                             .map_err(|e| {
                                 error!("Failed to PresentView() - Flatland: {}", e);
@@ -566,9 +533,10 @@ mod tests {
         scene_management_mocks::MockSceneManager,
     };
 
-    /// Tests that handle_graphical_presenter_request_stream, when receiving a GFX present_view request, passes the view_holder_token and the view_ref to set_root_view().
+    /// Tests that handle_graphical_presenter_request_stream, when receiving a GFX present_view request, errors.
     #[fasync::run_singlethreaded(test)]
-    async fn handle_graphical_presenter_request_stream_presents_view_gfx() -> Result<(), Error> {
+    async fn handle_graphical_presenter_request_stream_present_view_gfx_errors() -> Result<(), Error>
+    {
         let (proxy, stream) = create_proxy_and_stream::<GraphicalPresenterMarker>().unwrap();
         let scene_manager = Arc::new(Mutex::new(MockSceneManager::new()));
         let mock_scene_manager = Arc::clone(&scene_manager);
@@ -577,33 +545,22 @@ mod tests {
 
         let view_token_pair = scenic::ViewTokenPair::new()?;
         let view_ref_pair = scenic::ViewRefPair::new()?;
-        let expected_view_holder_token_koid = view_token_pair.view_holder_token.value.get_koid();
-        let expected_view_ref_koid = view_ref_pair.view_ref.reference.get_koid();
         let view_spec = ViewSpec {
             view_holder_token: Some(view_token_pair.view_holder_token),
             view_ref: Some(view_ref_pair.view_ref),
             ..Default::default()
         };
-        let _ = proxy
+        if let Err(present_view_result) = proxy
             .present_view(
                 view_spec, /* annotation controller */ None, /* view controller */ None,
             )
-            .await;
-
-        let (recorded_viewport_token, recorded_view_ref) =
-            scene_manager.lock().await.get_set_root_view_called_args();
-        if let ViewportToken::Gfx(recorded_view_holder_token) = recorded_viewport_token {
-            assert_eq!(
-                recorded_view_holder_token.value.get_koid(),
-                expected_view_holder_token_koid
-            );
+            .await
+            .unwrap()
+        {
+            assert_eq!(present_view_result, PresentViewError::InvalidArgs);
         } else {
-            panic!("Unexpected ViewportToken recorded");
+            panic!("Expected an error from present_view().");
         }
-        assert_eq!(
-            recorded_view_ref.expect("Expected ViewRef").reference.get_koid(),
-            expected_view_ref_koid
-        );
 
         Ok(())
     }
@@ -632,16 +589,13 @@ mod tests {
             )
             .await;
 
-        let (recorded_viewport_token, recorded_view_ref) =
+        let (recorded_viewport_creation_token, recorded_view_ref) =
             scene_manager.lock().await.get_set_root_view_called_args();
-        if let ViewportToken::Flatland(recorded_viewport_creation_token) = recorded_viewport_token {
-            assert_eq!(
-                recorded_viewport_creation_token.value.get_koid(),
-                expected_viewport_creation_token_koid
-            );
-        } else {
-            panic!("Unexpected ViewportToken recorde");
-        }
+        assert_eq!(
+            recorded_viewport_creation_token.value.get_koid(),
+            expected_viewport_creation_token_koid
+        );
+
         assert_eq!(recorded_view_ref, None);
 
         Ok(())

@@ -23,6 +23,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder"
 	"go.fuchsia.dev/fuchsia/tools/lib/color"
 	"go.fuchsia.dev/fuchsia/tools/lib/flagmisc"
+	"go.fuchsia.dev/fuchsia/tools/lib/hostplatform"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
@@ -42,6 +43,7 @@ type testsharderFlags struct {
 	targetDurationSecs             int
 	perTestTimeoutSecs             int
 	maxShardsPerEnvironment        int
+	maxShardSize                   int
 	affectedTestsPath              string
 	affectedTestsMaxAttempts       int
 	affectedTestsMultiplyThreshold int
@@ -53,6 +55,7 @@ type testsharderFlags struct {
 	skipUnaffected                 bool
 	perShardPackageRepos           bool
 	cacheTestPackages              bool
+	productBundleName              string
 }
 
 func parseFlags() testsharderFlags {
@@ -63,13 +66,14 @@ func parseFlags() testsharderFlags {
 	flag.StringVar(&flags.modifiersPath, "modifiers", "", "path to the json manifest containing tests to modify")
 	flag.IntVar(&flags.targetDurationSecs, "target-duration-secs", 0, "approximate duration that each shard should run in")
 	flag.IntVar(&flags.maxShardsPerEnvironment, "max-shards-per-env", 8, "maximum shards allowed per environment. If <= 0, no max will be set")
+	flag.IntVar(&flags.maxShardSize, "max-shard-size", 0, "target max number of tests per shard. It will only have effect if used with target-duration-secs to further "+
+		"limit the number of tests per shard if the calculated average tests per shard would exceed max-shard-size after sharding by duration. This is only a soft "+
+		"maximum and is used to make the average shard size not exceed the max size, but ultimately the shards will be sharded by duration, so some shards may have "+
+		"more than the max number of tests while others will have less. However, if max-shards-per-env is set, that will take precedence over max-shard-size, which "+
+		"may result in all shards exceeding the max size in order to fit within the max number of shards per environment.")
 	// TODO(fxbug.dev/10456): Support different timeouts for different tests.
 	flag.IntVar(&flags.perTestTimeoutSecs, "per-test-timeout-secs", 0, "per-test timeout, applied to all tests. If <= 0, no timeout will be set")
-	// Despite being a misnomer, this argument is still called -max-shard-size
-	// for legacy reasons. If it becomes confusing, we can create a new
-	// target_test_count fuchsia.proto field and do a soft transition with the
-	// recipes to start setting the renamed argument instead.
-	flag.IntVar(&flags.targetTestCount, "max-shard-size", 0, "target number of tests per shard. If <= 0, will be ignored. Otherwise, tests will be placed into more, smaller shards")
+	flag.IntVar(&flags.targetTestCount, "target-test-count", 0, "target number of tests per shard. If <= 0, will be ignored. Otherwise, tests will be placed into more, smaller shards")
 	flag.StringVar(&flags.affectedTestsPath, "affected-tests", "", "path to a file containing names of tests affected by the change being tested. One test name per line.")
 	flag.IntVar(&flags.affectedTestsMaxAttempts, "affected-tests-max-attempts", 2, "maximum attempts for each affected test. Only applied to tests that are not multiplied")
 	flag.IntVar(&flags.affectedTestsMultiplyThreshold, "affected-tests-multiply-threshold", 0, "if there are <= this many tests in -affected-tests, they may be multplied "+
@@ -82,6 +86,7 @@ func parseFlags() testsharderFlags {
 	flag.BoolVar(&flags.skipUnaffected, "skip-unaffected", false, "whether the shards should ignore hermetic, unaffected tests")
 	flag.BoolVar(&flags.perShardPackageRepos, "per-shard-package-repos", false, "whether to construct a local package repo for each shard")
 	flag.BoolVar(&flags.cacheTestPackages, "cache-test-packages", false, "whether the test packages should be cached on disk in the local package repo")
+	flag.StringVar(&flags.productBundleName, "product-bundle-name", "", "name of product bundle to use")
 	flag.Usage = usage
 
 	flag.Parse()
@@ -124,13 +129,26 @@ type buildModules interface {
 	TestSpecs() []build.TestSpec
 	TestListLocation() []string
 	TestDurations() []build.TestDuration
+	Tools() build.Tools
 	PackageRepositories() []build.PackageRepo
+	ProductBundles() []build.ProductBundle
 }
 
 func execute(ctx context.Context, flags testsharderFlags, m buildModules) error {
 	targetDuration := time.Duration(flags.targetDurationSecs) * time.Second
 	if flags.targetTestCount > 0 && targetDuration > 0 {
 		return fmt.Errorf("max-shard-size and target-duration-secs cannot both be set")
+	}
+
+	if flags.maxShardSize > 0 {
+		if flags.targetTestCount > 0 {
+			return fmt.Errorf("max-shard-size has no effect when used with target-test-count")
+		}
+		if targetDuration == 0 {
+			// If no target duration is set, then max shard size will effectively just
+			// become the target test count.
+			flags.targetTestCount = flags.maxShardSize
+		}
 	}
 
 	perTestTimeout := time.Duration(flags.perTestTimeoutSecs) * time.Second
@@ -208,7 +226,10 @@ func execute(ctx context.Context, flags testsharderFlags, m buildModules) error 
 			return fmt.Errorf("failed to read affectedTestsPath (%s): %w", flags.affectedTestsPath, err)
 		}
 		affectedTestNames := strings.Split(strings.TrimSpace(string(affectedTestBytes)), "\n")
-		if len(affectedTestNames) == 0 {
+		if len(affectedTestNames) == 1 && affectedTestNames[0] == "" {
+			// If the affected tests file is empty, strings.Split()
+			// will return a list of one element with the empty string
+			// in it.
 			// If there are no affected tests, that means we weren't
 			// able to determine which tests were affected so we should
 			// run all tests.
@@ -242,12 +263,16 @@ func execute(ctx context.Context, flags testsharderFlags, m buildModules) error 
 	multipliedAffectedShards, nonMultipliedShards := testsharder.PartitionShards(nonMultipliedShards, multipliedAffected, "")
 
 	var skippedShards []*testsharder.Shard
-	if flags.affectedOnly {
+	if flags.affectedOnly && flags.skipUnaffected {
 		affected := func(t testsharder.Test) bool {
 			return t.Affected
 		}
-		affectedShards, _ := testsharder.PartitionShards(nonMultipliedShards, affected, testsharder.AffectedShardPrefix)
+		affectedShards, unaffectedShards := testsharder.PartitionShards(nonMultipliedShards, affected, testsharder.AffectedShardPrefix)
 		shards = affectedShards
+		skippedShards, err = testsharder.MarkShardsSkipped(unaffectedShards)
+		if err != nil {
+			return err
+		}
 	} else {
 		// Filter out the affected, hermetic shards from the non-multiplied shards.
 		hermeticAndAffected := func(t testsharder.Test) bool {
@@ -278,7 +303,7 @@ func execute(ctx context.Context, flags testsharderFlags, m buildModules) error 
 		shards = append(shards, nonhermeticShards...)
 	}
 
-	shards, newTargetDuration := testsharder.WithTargetDuration(shards, targetDuration, flags.targetTestCount, flags.maxShardsPerEnvironment, testDurations)
+	shards, newTargetDuration := testsharder.WithTargetDuration(shards, targetDuration, flags.targetTestCount, flags.maxShardSize, flags.maxShardsPerEnvironment, testDurations)
 
 	// Add the multiplied shards back into the list of shards to run.
 	if newTargetDuration > targetDuration {
@@ -291,12 +316,29 @@ func execute(ctx context.Context, flags testsharderFlags, m buildModules) error 
 
 	if flags.imageDeps || flags.hermeticDeps || flags.ffxDeps {
 		for _, s := range shards {
+			var pbPath, ffxPath string
 			if flags.ffxDeps {
-				if err := testsharder.AddFFXDeps(s, flags.buildDir, m.Images(), flags.pave); err != nil {
+				if err := testsharder.AddFFXDeps(s, flags.buildDir, m.Images(), m.Tools(), flags.pave); err != nil {
 					return err
 				}
+				productBundle := flags.productBundleName
+				if s.ProductBundle != "" {
+					productBundle = s.ProductBundle
+				}
+				if productBundle != "" {
+					pbPath = build.GetPbPathByName(m.ProductBundles(), productBundle)
+					platform, err := hostplatform.Name()
+					if err != nil {
+						return err
+					}
+					ffxTool, err := m.Tools().LookupTool(platform, "ffx")
+					if err != nil {
+						return err
+					}
+					ffxPath = filepath.Join(flags.buildDir, ffxTool.Path)
+				}
 			}
-			if err := testsharder.AddImageDeps(s, flags.buildDir, m.Images(), flags.pave); err != nil {
+			if err := testsharder.AddImageDeps(ctx, s, flags.buildDir, m.Images(), flags.pave, pbPath, ffxPath); err != nil {
 				return err
 			}
 		}
@@ -339,8 +381,8 @@ func execute(ctx context.Context, flags testsharderFlags, m buildModules) error 
 		defer f.Close()
 	}
 
-	slices.SortFunc(shards, func(a, b *testsharder.Shard) bool {
-		return a.Name < b.Name
+	slices.SortFunc(shards, func(a, b *testsharder.Shard) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	encoder := json.NewEncoder(f)

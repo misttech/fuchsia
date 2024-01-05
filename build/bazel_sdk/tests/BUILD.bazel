@@ -2,31 +2,24 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load(
-    "@fuchsia_sdk//fuchsia:defs.bzl",
-    "fuchsia_emulator",
-    "fuchsia_local_package_repository",
-    "fuchsia_remote_product_bundle",
-)
-load("@fuchsia_sdk//fuchsia:workflows.bzl", "fuchsia_development_configuration")
-
 test_suite(
     name = "tests",
     tags = ["all"],
     tests = [
+        ":archivist_tests",
         ":assembly_tests",
+        ":cpp_variants_tests",
         ":licenses_tests",
-        ":unittests",
+        "//fuchsia/api_levels:tests",
+        "//fuchsia/drivers:tests",
+        "//fuchsia/packaging:tests",
     ],
 )
 
 test_suite(
-    name = "unittests",
-    tags = ["unittests"],
+    name = "archivist_tests",
     tests = [
-        "//fuchsia_package:fuchsia_package_tests",
-        "//fuchsia_package:pkg_test",
-        "//fuchsia_package_resource:fuchsia_package_resource_tests",
+        "//fuchsia/archivist:archivist_pipeline_test_test",
     ],
 )
 
@@ -36,6 +29,10 @@ test_suite(
         "//fuchsia/assembly:partitions_config_golden_test",
         "//fuchsia/assembly:product_config_golden_test",
         "//fuchsia/assembly:product_config_with_labels_golden_test",
+        "//fuchsia/assembly:product_ota_config_golden_test",
+        "//fuchsia/assembly:product_ota_config_golden_test_channel_config",
+        "//fuchsia/assembly:product_ota_config_golden_test_realm_a_tuf_repo",
+        "//fuchsia/assembly:product_ota_config_golden_test_realm_b_tuf_repo",
         "//fuchsia/assembly:virtual_device_golden_test",
     ],
 )
@@ -54,6 +51,15 @@ test_suite(
     ],
 )
 
+test_suite(
+    name = "cpp_variants_tests",
+    tests = [
+        "//fuchsia/cpp_variants:cc_17_all",
+        "//fuchsia/cpp_variants:cc_17_shadow",
+        "//fuchsia/cpp_variants:cc_20_all",
+    ],
+)
+
 filegroup(
     name = "build_only_tests",
     testonly = True,
@@ -61,54 +67,4 @@ filegroup(
         "//examples/hello_world_cpp:pkg",
         "//examples/hello_world_cpp:test_pkg",
     ],
-)
-
-# The workstation product bundle for running the emulator
-fuchsia_remote_product_bundle(
-    name = "pb_ws",
-    product_name = "workstation_eng.qemu-x64",
-    product_version = "fake_version",
-    repository = "workstation-packages",
-)
-
-# The workstation product bundle for running on the chromebook
-fuchsia_remote_product_bundle(
-    name = "pb_chromebook",
-    product_name = "workstation_eng.chromebook-x64",
-    product_version = "fake_version",
-    repository = "workstation-packages",
-)
-
-# A fuchsia emulator which runs the workstation product.
-# Note: The workstation_pb must be fetched before the emulator can be started.
-fuchsia_emulator(
-    name = "emu_ws",
-    emulator_name = "workstation-emulator",
-    launch_options = [
-        "--headless",
-    ],
-    product_bundle = ":pb_ws",
-)
-
-fuchsia_local_package_repository(
-    name = "dev_repo",
-    repo_name = "dev",
-    repo_path = ".package_repos/dev",
-    #TODO: add alias support
-)
-
-fuchsia_development_configuration(
-    name = "ws_emu_development",
-    emulator = ":emu_ws",
-    package_repository = ":dev_repo",
-    #TODO: workaround until fxb/113156 is fixed.
-    product_bundle = ":pb_ws",
-)
-
-fuchsia_development_configuration(
-    name = "ws_development",
-    autodetect_target = True,
-    package_repository = ":dev_repo",
-    product_bundle = ":pb_chromebook",
-    stop_emulators = True,
 )

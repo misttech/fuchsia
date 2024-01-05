@@ -121,9 +121,6 @@ class BufferCollection : public Node {
                         SetConstraintsCompleter::Sync& completer) override;
     void WaitForBuffersAllocated(WaitForBuffersAllocatedCompleter::Sync& completer) override;
     void CheckBuffersAllocated(CheckBuffersAllocatedCompleter::Sync& completer) override;
-    void SetConstraintsAuxBuffers(SetConstraintsAuxBuffersRequest& request,
-                                  SetConstraintsAuxBuffersCompleter::Sync& completer) override;
-    void GetAuxBuffers(GetAuxBuffersCompleter::Sync& completer) override;
     void AttachToken(AttachTokenRequest& request, AttachTokenCompleter::Sync& completer) override;
     void AttachLifetimeTracking(AttachLifetimeTrackingRequest& request,
                                 AttachLifetimeTrackingCompleter::Sync& completer) override;
@@ -143,12 +140,14 @@ class BufferCollection : public Node {
     void GetNodeRef(GetNodeRefCompleter::Sync& completer) override;
     void IsAlternateFor(IsAlternateForRequest& request,
                         IsAlternateForCompleter::Sync& completer) override;
+    void GetBufferCollectionId(GetBufferCollectionIdCompleter::Sync& completer) override;
     void SetName(SetNameRequest& request, SetNameCompleter::Sync& completer) override;
     void SetDebugClientInfo(SetDebugClientInfoRequest& request,
                             SetDebugClientInfoCompleter::Sync& completer) override;
     void SetDebugTimeoutLogDeadline(SetDebugTimeoutLogDeadlineRequest& request,
                                     SetDebugTimeoutLogDeadlineCompleter::Sync& completer) override;
     void SetVerboseLogging(SetVerboseLoggingCompleter::Sync& completer) override;
+    void SetWeak(SetWeakCompleter::Sync& completer) override;
 
     //
     // fuchsia.sysmem.BufferCollection interface methods (see also "compose Node" methods above)
@@ -160,6 +159,7 @@ class BufferCollection : public Node {
     void AttachToken(AttachTokenRequest& request, AttachTokenCompleter::Sync& completer) override;
     void AttachLifetimeTracking(AttachLifetimeTrackingRequest& request,
                                 AttachLifetimeTrackingCompleter::Sync& completer) override;
+    void SetWeakOk(SetWeakOkRequest& request, SetWeakOkCompleter::Sync& completer) override;
 
     BufferCollection& parent_;
   };
@@ -175,7 +175,6 @@ class BufferCollection : public Node {
   uint32_t GetUsageBasedRightsAttenuation();
 
   uint32_t GetClientVmoRights();
-  uint32_t GetClientAuxVmoRights();
   void MaybeCompleteWaitForBuffersAllocated();
   void MaybeFlushPendingLifetimeTracking();
 
@@ -191,14 +190,13 @@ class BufferCollection : public Node {
 
   fpromise::result<fuchsia_sysmem::BufferCollectionInfo2> CloneResultForSendingV1(
       const fuchsia_sysmem2::BufferCollectionInfo& buffer_collection_info);
-  fpromise::result<fuchsia_sysmem::BufferCollectionInfo2> CloneAuxBuffersResultForSendingV1(
-      const fuchsia_sysmem2::BufferCollectionInfo& buffer_collection_info);
 
   template <typename Completer>
   bool CommonSetConstraintsStage1(Completer& completer);
 
   template <typename Completer>
-  bool CommonWaitForAllBuffersAllocatedStage1(Completer& completer, trace_async_id_t* out_event_id);
+  bool CommonWaitForAllBuffersAllocatedStage1(bool enforce_set_constraints_before_wait,
+                                              Completer& completer, trace_async_id_t* out_event_id);
 
   template <typename Completer>
   bool CommonCheckAllBuffersAllocatedStage1(Completer& completer, zx_status_t* result);
@@ -214,20 +212,13 @@ class BufferCollection : public Node {
   std::optional<V1> v1_server_;
   std::optional<V2> v2_server_;
 
-  // Temporarily holds fuchsia.sysmem.BufferCollectionConstraintsAuxBuffers until SetConstraints()
-  // arrives.
-  std::optional<fuchsia_sysmem::BufferCollectionConstraintsAuxBuffers> constraints_aux_buffers_;
-
   // FIDL protocol enforcement.
   bool is_set_constraints_seen_ = false;
-  bool is_set_constraints_aux_buffers_seen_ = false;
 
   std::list<std::pair</*async_id*/ uint64_t, V1::WaitForBuffersAllocatedCompleter::Async>>
       pending_wait_for_buffers_allocated_v1_;
   std::list<std::pair</*async_id*/ uint64_t, V2::WaitForAllBuffersAllocatedCompleter::Async>>
       pending_wait_for_buffers_allocated_v2_;
-
-  bool is_done_ = false;
 
   std::optional<fidl::ServerBindingRef<fuchsia_sysmem::BufferCollection>> server_binding_v1_;
   std::optional<fidl::ServerBindingRef<fuchsia_sysmem2::BufferCollection>> server_binding_v2_;
@@ -240,6 +231,8 @@ class BufferCollection : public Node {
     uint32_t buffers_remaining;
   };
   std::vector<PendingLifetimeTracking> pending_lifetime_tracking_;
+
+  bool wait_for_buffers_seen_ = false;
 };
 
 }  // namespace sysmem_driver

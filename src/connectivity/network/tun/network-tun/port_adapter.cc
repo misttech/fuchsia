@@ -11,13 +11,13 @@
 namespace network {
 namespace tun {
 
-void PortAdapter::NetworkPortGetInfo(port_info_t* out_info) { *out_info = port_info_; }
+void PortAdapter::NetworkPortGetInfo(port_base_info_t* out_info) { *out_info = port_info_; }
 void PortAdapter::NetworkPortGetStatus(port_status_t* out_status) {
   fbl::AutoLock lock(&state_lock_);
   *out_status = {
-      .mtu = mtu_,
       .flags =
           online_ ? static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline) : 0,
+      .mtu = mtu_,
   };
 }
 void PortAdapter::NetworkPortSetActive(bool active) {
@@ -28,10 +28,10 @@ void PortAdapter::NetworkPortSetActive(bool active) {
     parent_->OnHasSessionsChanged(*this);
   }
 }
-void PortAdapter::NetworkPortGetMac(mac_addr_protocol_t* out_mac_ifc) {
-  if (mac_) {
+void PortAdapter::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
+  if (mac_ && out_mac_ifc) {
     *out_mac_ifc = mac_->proto();
-  } else {
+  } else if (out_mac_ifc) {
     *out_mac_ifc = {};
   }
 }
@@ -43,7 +43,7 @@ PortAdapter::PortAdapter(PortAdapterParent* parent, const BasePortConfig& config
       port_id_(config.port_id),
       mtu_(config.mtu),
       mac_(std::move(mac)),
-      port_info_(port_info_t{
+      port_info_(port_base_info_t{
           .port_class = static_cast<uint8_t>(fuchsia_hardware_network::wire::DeviceClass::kVirtual),
           .rx_types_list = rx_types_.data(),
           .rx_types_count = config.rx_types.size(),
@@ -68,9 +68,9 @@ bool PortAdapter::SetOnline(bool online) {
   }
   online_ = online;
   port_status_t new_status = {
-      .mtu = mtu_,
       .flags =
           online_ ? static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline) : 0,
+      .mtu = mtu_,
   };
   parent_->OnPortStatusChanged(*this, new_status);
   return true;

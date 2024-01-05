@@ -21,9 +21,22 @@ devicetree_fragment("amlogic-a311d") {
   sources = [ "dts/amlogic-a311d.dtsi" ]
 }
 
+devicetree_fragment("meson-g12-common") {
+  sources = [ "dts/meson-g12-common.dtsi.S" ]
+}
+
 devicetree("vim3") {
-  sources = [ "dts/khadas-vim3.dts" ]
-  deps = [ ":amlogic-a311d" ]
+  sources = [ "dts/khadas-vim3.dts.S" ]
+  deps = [
+    ":amlogic-a311d",
+    ":meson-g12-common",
+    "//zircon/system/ulib/ddk-platform-defs",
+  ]
+  visitors = [
+    "//sdk/lib/driver/devicetree/visitors/drivers/sysmem:sysmem-visitor",
+    "//sdk/lib/driver/devicetree/visitors/drivers/interrupt-controllers/arm-gicv2",
+    "//sdk/lib/driver/devicetree/visitors/drivers/registers:registers-visitor",
+  ]
   golden = "dts/khadas-vim3.golden.dts"
 }
 
@@ -31,7 +44,7 @@ zbi_input("vim3-dtb-item") {
   deps = [ ":vim3" ]
   type = "devicetree"
 
-  dtb_file = get_target_outputs(":vim3_dtb")
+  dtb_file = get_target_outputs(":vim3.dtb")
   sources = [ dtb_file[0] ]
 }
 
@@ -40,8 +53,8 @@ driver_bind_rules("vim3-devicetree-bind") {
   header_output = "vim3-devicetree-bind.h"
   tests = "bind-tests.json"
   deps = [
-    "//src/devices/bind/fuchsia.hardware.platform.bus",
     "//src/devices/bind/fuchsia.khadas.platform",
+    "//src/devices/bind/fuchsia.platform",
   ]
 }
 
@@ -51,9 +64,10 @@ fuchsia_driver("vim3-devicetree-driver") {
   deps = [
     ":vim3-devicetree-bind",
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
     "//sdk/lib/driver/component/cpp:cpp",
-    "//sdk/lib/driver/devicetree",
+    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/visitors:load-visitors",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//src/devices/bin/driver_runtime",
   ]
@@ -63,15 +77,21 @@ fuchsia_driver_component("vim3-devicetree") {
   deps = [
     ":vim3",
     ":vim3-devicetree-driver",
+    ":vim3.visitors",
   ]
   info = "vim3-devicetree-info.json"
   manifest = "meta/vim3-devicetree.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "vim3-devicetree"
+  driver_components = [ ":vim3-devicetree" ]
+}
+
 test("vim3-devicetree-test") {
   sources = [ "vim3-devicetree-test.cc" ]
   deps = [
-    "//sdk/lib/driver/devicetree/testing",
+    "//sdk/lib/driver/devicetree/testing:board-test-helper",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/ddk-platform-defs",
@@ -80,7 +100,7 @@ test("vim3-devicetree-test") {
 }
 
 resource("test-dtb") {
-  sources = get_target_outputs(":vim3_dtb")
+  sources = get_target_outputs(":vim3.dtb")
   outputs = [ "test-data/{{source_file_part}}" ]
   deps = [ ":vim3" ]
 }

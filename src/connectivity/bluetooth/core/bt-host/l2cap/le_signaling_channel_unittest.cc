@@ -26,7 +26,7 @@ class LESignalingChannelTestBase : public testing::FakeChannelTest {
     options.conn_handle = kTestHandle;
 
     fake_sig_chan_ = CreateFakeChannel(options);
-    sig_ = std::make_unique<LESignalingChannel>(fake_sig_chan_->GetWeakPtr(), Role);
+    sig_ = std::make_unique<LESignalingChannel>(fake_sig_chan_->GetWeakPtr(), Role, dispatcher());
   }
 
   void TearDown() override { sig_ = nullptr; }
@@ -52,7 +52,7 @@ TEST_F(LESignalingChannelTest, IgnoreEmptyFrame) {
   fake_chan()->SetSendCallback(std::move(send_cb), dispatcher());
   fake_chan()->Receive(BufferView());
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(send_cb_called);
 }
 

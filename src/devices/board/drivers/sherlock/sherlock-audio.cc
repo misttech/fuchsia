@@ -14,9 +14,10 @@
 #include <string.h>
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
+#include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/codec/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
+#include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/ti/platform/cpp/bind.h>
 #include <ddktl/metadata/audio.h>
 #include <soc/aml-common/aml-audio.h>
@@ -42,7 +43,46 @@ using namespace fuchsia_driver_framework;
 namespace sherlock {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
+zx_status_t AddTas5720Device(fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus>& pbus,
+                             const char* device_name, uint32_t device_instance_id,
+                             cpp20::span<const device_fragment_t> device_fragments,
+                             const uint32_t* instance_count) {
+  fpbus::Node dev;
+  dev.name() = device_name;
+  dev.pid() = PDEV_PID_GENERIC;
+  dev.vid() = PDEV_VID_TI;
+  dev.did() = PDEV_DID_TI_TAS5720;
+  dev.instance_id() = device_instance_id;
+  dev.metadata() = std::vector<fpbus::Metadata>{
+      {{
+          .type = DEVICE_METADATA_PRIVATE,
+          .data = std::vector<uint8_t>(
+              reinterpret_cast<const uint8_t*>(instance_count),
+              reinterpret_cast<const uint8_t*>(instance_count) + sizeof(*instance_count)),
+      }},
+  };
+
+  fidl::Arena<> fidl_arena;
+  fdf::Arena arena('5720');
+  auto fragments = platform_bus_composite::MakeFidlFragment(fidl_arena, device_fragments.data(),
+                                                            device_fragments.size());
+  fdf::WireUnownedResult result =
+      pbus.buffer(arena)->AddComposite(fidl::ToWire(fidl_arena, dev), fragments, "i2c");
+  if (!result.ok()) {
+    zxlogf(ERROR, "Failed to send AddComposite request: %s", result.status_string());
+    return result.status();
+  }
+  if (result->is_error()) {
+    zxlogf(ERROR, "Failed to add composite: %s", zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+
+  return ZX_OK;
+}
+
 zx_status_t Sherlock::AudioInit() {
+  using fuchsia_hardware_clockimpl::wire::InitCall;
+
   uint8_t tdm_instance_id = 1;
   static const std::vector<fpbus::Mmio> audio_mmios{
       {{
@@ -104,19 +144,39 @@ zx_status_t Sherlock::AudioInit() {
   constexpr size_t device_name_max_length = 32;
 
   std::vector<fdf::ParentSpec> sherlock_tdm_i2s_parents;
-  sherlock_tdm_i2s_parents.reserve(4);
+  sherlock_tdm_i2s_parents.reserve(6);
+
+  const auto gpio_init_rules = std::vector{
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+  };
+  const auto gpio_init_props = std::vector{
+      fdf::MakeProperty(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+  };
+
+  const auto clock_init_rules = std::vector{
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
+  };
+  const auto clock_init_props = std::vector{
+      fdf::MakeProperty(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
+  };
+
+  const auto init_parents = std::vector{
+      fdf::ParentSpec{{gpio_init_rules, gpio_init_props}},
+      fdf::ParentSpec{{clock_init_rules, clock_init_props}},
+  };
+
+  sherlock_tdm_i2s_parents.insert(sherlock_tdm_i2s_parents.end(), init_parents.begin(),
+                                  init_parents.end());
 
   // Add a spec for the enable audio GPIO pin.
   auto enable_audio_gpio_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                              bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+                              bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SOC_AUDIO_EN)),
   };
   auto enable_audio_gpio_props = std::vector{
-      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                        bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
-      fdf::MakeProperty(bind_fuchsia_hardware_gpio::FUNCTION,
-                        bind_fuchsia_hardware_gpio::FUNCTION_SOC_AUDIO_ENABLE),
+      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+      fdf::MakeProperty(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_SOC_AUDIO_ENABLE),
   };
   sherlock_tdm_i2s_parents.push_back(fdf::ParentSpec{{
       .bind_rules = enable_audio_gpio_rules,
@@ -145,100 +205,67 @@ zx_status_t Sherlock::AudioInit() {
     }});
   }
 
-  zx_status_t status = clk_impl_.Disable(g12b_clk::CLK_HIFI_PLL);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: Disable(CLK_HIFI_PLL) failed, st = %d", __func__, status);
-    return status;
-  }
-
-  status = clk_impl_.SetRate(g12b_clk::CLK_HIFI_PLL, T931_HIFI_PLL_RATE);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: SetRate(CLK_HIFI_PLL) failed, st = %d", __func__, status);
-    return status;
-  }
-
-  status = clk_impl_.Enable(g12b_clk::CLK_HIFI_PLL);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: Enable(CLK_HIFI_PLL) failed, st = %d", __func__, status);
-    return status;
-  }
+  clock_init_steps_.push_back({g12b_clk::CLK_HIFI_PLL, InitCall::WithDisable({})});
+  clock_init_steps_.push_back(
+      {g12b_clk::CLK_HIFI_PLL, InitCall::WithRateHz(init_arena_, T931_HIFI_PLL_RATE)});
+  clock_init_steps_.push_back({g12b_clk::CLK_HIFI_PLL, InitCall::WithEnable({})});
 
   // TDM pin configuration.
-  gpio_impl_.SetAltFunction(T931_GPIOZ(7), T931_GPIOZ_7_TDMC_SCLK_FN);
-  gpio_impl_.SetAltFunction(T931_GPIOZ(6), T931_GPIOZ_6_TDMC_FS_FN);
-  gpio_impl_.SetAltFunction(T931_GPIOZ(2), T931_GPIOZ_2_TDMC_D0_FN);
+  gpio_init_steps_.push_back({T931_GPIOZ(7), GpioSetAltFunction(T931_GPIOZ_7_TDMC_SCLK_FN)});
+  gpio_init_steps_.push_back({T931_GPIOZ(6), GpioSetAltFunction(T931_GPIOZ_6_TDMC_FS_FN)});
+  gpio_init_steps_.push_back({T931_GPIOZ(2), GpioSetAltFunction(T931_GPIOZ_2_TDMC_D0_FN)});
   constexpr uint64_t ua = 3000;
-  gpio_impl_.SetDriveStrength(T931_GPIOZ(7), ua, nullptr);
-  gpio_impl_.SetDriveStrength(T931_GPIOZ(6), ua, nullptr);
-  gpio_impl_.SetDriveStrength(T931_GPIOZ(2), ua, nullptr);
-  gpio_impl_.SetAltFunction(T931_GPIOZ(3), T931_GPIOZ_3_TDMC_D1_FN);
-  gpio_impl_.SetDriveStrength(T931_GPIOZ(3), ua, nullptr);
+  gpio_init_steps_.push_back({T931_GPIOZ(7), GpioSetDriveStrength(ua)});
+  gpio_init_steps_.push_back({T931_GPIOZ(6), GpioSetDriveStrength(ua)});
+  gpio_init_steps_.push_back({T931_GPIOZ(2), GpioSetDriveStrength(ua)});
+  gpio_init_steps_.push_back({T931_GPIOZ(3), GpioSetAltFunction(T931_GPIOZ_3_TDMC_D1_FN)});
+  gpio_init_steps_.push_back({T931_GPIOZ(3), GpioSetDriveStrength(ua)});
 
-  gpio_impl_.SetAltFunction(T931_GPIOAO(9), T931_GPIOAO_9_MCLK_FN);
-  gpio_impl_.SetDriveStrength(T931_GPIOAO(9), ua, nullptr);
+  gpio_init_steps_.push_back({T931_GPIOAO(9), GpioSetAltFunction(T931_GPIOAO_9_MCLK_FN)});
+  gpio_init_steps_.push_back({T931_GPIOAO(9), GpioSetDriveStrength(ua)});
 
 #ifdef ENABLE_BT
   // PCM pin assignments.
-  gpio_impl_.SetAltFunction(T931_GPIOX(8), T931_GPIOX_8_TDMA_DIN1_FN);
-  gpio_impl_.SetAltFunction(T931_GPIOX(9), T931_GPIOX_9_TDMA_D0_FN);
-  gpio_impl_.SetAltFunction(T931_GPIOX(10), T931_GPIOX_10_TDMA_FS_FN);
-  gpio_impl_.SetAltFunction(T931_GPIOX(11), T931_GPIOX_11_TDMA_SCLK_FN);
-  gpio_impl_.SetDriveStrength(T931_GPIOX(9), ua, nullptr);
-  gpio_impl_.SetDriveStrength(T931_GPIOX(10), ua, nullptr);
-  gpio_impl_.SetDriveStrength(T931_GPIOX(11), ua, nullptr);
+  gpio_init_steps_.push_back({T931_GPIOX(8), GpioSetAltFunction(T931_GPIOX_8_TDMA_DIN1_FN)});
+  gpio_init_steps_.push_back({T931_GPIOX(9), GpioSetAltFunction(T931_GPIOX_9_TDMA_D0_FN)});
+  gpio_init_steps_.push_back({T931_GPIOX(10), GpioSetAltFunction(T931_GPIOX_10_TDMA_FS_FN)});
+  gpio_init_steps_.push_back({T931_GPIOX(11), GpioSetAltFunction(T931_GPIOX_11_TDMA_SCLK_FN)});
+  gpio_init_steps_.push_back({T931_GPIOX(9), GpioSetDriveStrength(ua)});
+  gpio_init_steps_.push_back({T931_GPIOX(10), GpioSetDriveStrength(ua)});
+  gpio_init_steps_.push_back({T931_GPIOX(11), GpioSetDriveStrength(ua)});
 #endif
 
   // PDM pin assignments.
-  gpio_impl_.SetAltFunction(T931_GPIOA(7), T931_GPIOA_7_PDM_DCLK_FN);
-  gpio_impl_.SetAltFunction(T931_GPIOA(8), T931_GPIOA_8_PDM_DIN0_FN);
+  gpio_init_steps_.push_back({T931_GPIOA(7), GpioSetAltFunction(T931_GPIOA_7_PDM_DCLK_FN)});
+  gpio_init_steps_.push_back({T931_GPIOA(8), GpioSetAltFunction(T931_GPIOA_8_PDM_DIN0_FN)});
 
   // Add TDM OUT to the codecs.
   {
-    gpio_impl_.ConfigOut(T931_GPIOH(7), 1);  // SOC_AUDIO_EN.
-    zx_device_prop_t props[] = {{BIND_PLATFORM_DEV_VID, 0, PDEV_VID_TI},
-                                {BIND_PLATFORM_DEV_DID, 0, PDEV_DID_TI_TAS5720},
-                                {BIND_CODEC_INSTANCE, 0, 1}};
-    uint32_t instance_count = 1;
-    const device_metadata_t codec_metadata[] = {
-        {
-            .type = DEVICE_METADATA_PRIVATE,
-            .data = &instance_count,
-            .length = sizeof(instance_count),
-        },
-    };
+    gpio_init_steps_.push_back({T931_GPIOH(7), GpioConfigOut(1)});  // SOC_AUDIO_EN.
 
-    composite_device_desc_t comp_desc = {};
-    comp_desc.props = props;
-    comp_desc.props_count = std::size(props);
-    comp_desc.spawn_colocated = false;
-    comp_desc.fragments = audio_tas5720_woofer_fragments;
-    comp_desc.fragments_count = std::size(audio_tas5720_woofer_fragments);
-    comp_desc.primary_fragment = "i2c";
-    comp_desc.metadata_list = codec_metadata;
-    comp_desc.metadata_count = std::size(codec_metadata);
-    status = DdkAddComposite("audio-tas5720-woofer", &comp_desc);
+    constexpr uint32_t woofer_instance_count = 1;
+    zx_status_t status = AddTas5720Device(pbus_, "audio-tas5720-woofer", woofer_instance_count,
+                                          audio_tas5720_woofer_fragments, &woofer_instance_count);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "%s DdkAddComposite woofer failed %d", __FILE__, status);
+      zxlogf(ERROR, "Failed to add woofer composite device: %s", zx_status_get_string(status));
       return status;
     }
 
-    instance_count = 2;
-    props[2].value = 2;
-    comp_desc.fragments = audio_tas5720_tweeter_left_fragments;
-    comp_desc.fragments_count = std::size(audio_tas5720_tweeter_left_fragments);
-    status = DdkAddComposite("audio-tas5720-left-tweeter", &comp_desc);
+    constexpr uint32_t left_tweeter_instance_count = 2;
+    status = AddTas5720Device(pbus_, "audio-tas5720-left-tweeter", left_tweeter_instance_count,
+                              audio_tas5720_tweeter_left_fragments, &left_tweeter_instance_count);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "%s DdkAddComposite left tweeter failed %d", __FILE__, status);
+      zxlogf(ERROR, "Failed to add left tweeter composite device: %s",
+             zx_status_get_string(status));
       return status;
     }
 
-    instance_count = 3;
-    props[2].value = 3;
-    comp_desc.fragments = audio_tas5720_tweeter_right_fragments;
-    comp_desc.fragments_count = std::size(audio_tas5720_tweeter_right_fragments);
-    status = DdkAddComposite("audio-tas5720-right-tweeter", &comp_desc);
+    constexpr uint32_t right_tweeter_instance_count = 3;
+    status = AddTas5720Device(pbus_, "audio-tas5720-right-tweeter", right_tweeter_instance_count,
+                              audio_tas5720_tweeter_right_fragments, &right_tweeter_instance_count);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "%s DdkAddComposite right tweeter failed %d", __FILE__, status);
+      zxlogf(ERROR, "Failed to add right tweeter composite device: %s",
+             zx_status_get_string(status));
       return status;
     }
   }
@@ -387,14 +414,19 @@ zx_status_t Sherlock::AudioInit() {
     tdm_dev.metadata() = tdm_metadata;
 
     {
-      auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, tdm_dev));
+      auto tdm_spec = fdf::CompositeNodeSpec{{
+          "aml_tdm_dai_out",
+          init_parents,
+      }};
+      auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, tdm_dev),
+                                                              fidl::ToWire(fidl_arena, tdm_spec));
       if (!result.ok()) {
-        zxlogf(ERROR, "%s: NodeAdd Audio(tdm_dev) request failed: %s", __func__,
+        zxlogf(ERROR, "AddCompositeNodeSpec(tdm_dev) request failed: %s",
                result.FormatDescription().data());
         return result.status();
       }
       if (result->is_error()) {
-        zxlogf(ERROR, "%s: NodeAdd Audio(tdm_dev) failed: %s", __func__,
+        zxlogf(ERROR, "AddCompositeNodeSpec(tdm_dev) failed: %s",
                zx_status_get_string(result->error_value()));
         return result->error_value();
       }
@@ -451,14 +483,19 @@ zx_status_t Sherlock::AudioInit() {
     dev_in.metadata() = pdm_metadata;
 
     {
-      auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, dev_in));
+      auto pdm_spec = fdf::CompositeNodeSpec{{
+          "aml_pdm",
+          init_parents,
+      }};
+      auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, dev_in),
+                                                              fidl::ToWire(fidl_arena, pdm_spec));
       if (!result.ok()) {
-        zxlogf(ERROR, "%s: NodeAdd Audio(dev_in) request failed: %s", __func__,
+        zxlogf(ERROR, "AddCompositeNodeSpec Audio(dev_in) request failed: %s",
                result.FormatDescription().data());
         return result.status();
       }
       if (result->is_error()) {
-        zxlogf(ERROR, "%s: NodeAdd Audio(dev_in) failed: %s", __func__,
+        zxlogf(ERROR, "AddCompositeNodeSpec Audio(dev_in) failed: %s",
                zx_status_get_string(result->error_value()));
         return result->error_value();
       }
@@ -514,14 +551,19 @@ zx_status_t Sherlock::AudioInit() {
     tdm_dev.metadata() = tdm_metadata;
 
     {
-      auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, tdm_dev));
+      auto tdm_spec = fdf::CompositeNodeSpec{{
+          "aml_tdm_dai_in",
+          init_parents,
+      }};
+      auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, tdm_dev),
+                                                              fidl::ToWire(fidl_arena, tdm_spec));
       if (!result.ok()) {
-        zxlogf(ERROR, "%s: NodeAdd Audio(tdm_dev) request failed: %s", __func__,
+        zxlogf(ERROR, "AddCompositeNodeSpec(tdm_dev) request failed: %s",
                result.FormatDescription().data());
         return result.status();
       }
       if (result->is_error()) {
-        zxlogf(ERROR, "%s: NodeAdd Audio(tdm_dev) failed: %s", __func__,
+        zxlogf(ERROR, "AddCompositeNodeSpec(tdm_dev) failed: %s",
                zx_status_get_string(result->error_value()));
         return result->error_value();
       }

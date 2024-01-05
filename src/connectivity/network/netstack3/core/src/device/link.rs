@@ -10,13 +10,13 @@
 use core::fmt::Debug;
 
 use net_types::{ethernet::Mac, UnicastAddress};
-use zerocopy::{AsBytes, FromBytes, Unaligned};
+use zerocopy::{AsBytes, FromBytes, NoCell, Unaligned};
 
 use crate::device::Device;
 
 /// The type of address used by a link device.
 pub trait LinkAddress:
-    'static + FromBytes + AsBytes + Unaligned + Copy + Clone + Debug + Eq
+    'static + FromBytes + AsBytes + NoCell + Unaligned + Copy + Clone + Debug + Eq + Send
 {
     /// The length of the address in bytes.
     const BYTES_LENGTH: usize;
@@ -49,31 +49,29 @@ impl LinkAddress for Mac {
     }
 }
 
+/// A link address that can be unicast.
+pub trait LinkUnicastAddress: LinkAddress + UnicastAddress {}
+impl<L: LinkAddress + UnicastAddress> LinkUnicastAddress for L {}
+
 /// A link device.
 ///
 /// `LinkDevice` is used to identify a particular link device implementation. It
 /// is only intended to exist at the type level, never instantiated at runtime.
-pub(crate) trait LinkDevice: Device + Debug {
+pub trait LinkDevice: Device + Debug {
     /// The type of address used to address link devices of this type.
-    type Address: LinkAddress + UnicastAddress;
-
-    /// The state for the link device.
-    type State;
+    type Address: LinkUnicastAddress;
 }
 
 /// Utilities for testing link devices.
 #[cfg(test)]
 pub(crate) mod testutil {
-    use core::{
-        convert::TryInto,
-        fmt::{self, Display, Formatter},
-    };
+    use core::convert::TryInto;
 
-    use zerocopy::{AsBytes, FromBytes, FromZeroes, Unaligned};
+    use zerocopy::{AsBytes, FromBytes, FromZeros, NoCell, Unaligned};
 
     use super::*;
     use crate::{
-        context::testutil::FakeSyncCtx,
+        context::testutil::FakeCoreCtx,
         device::{testutil::FakeWeakDeviceId, DeviceIdContext, Id, StrongId},
     };
 
@@ -87,7 +85,7 @@ pub(crate) mod testutil {
     ///
     /// The value 0xFF is the broadcast address.
     #[derive(
-        FromZeroes, FromBytes, AsBytes, Unaligned, Copy, Clone, Debug, Hash, PartialEq, Eq,
+        FromZeros, FromBytes, AsBytes, NoCell, Unaligned, Copy, Clone, Debug, Hash, PartialEq, Eq,
     )]
     #[repr(transparent)]
     pub(crate) struct FakeLinkAddress(pub(crate) [u8; FAKE_LINK_ADDRESS_LEN]);
@@ -115,18 +113,11 @@ pub(crate) mod testutil {
 
     impl LinkDevice for FakeLinkDevice {
         type Address = FakeLinkAddress;
-        type State = ();
     }
 
     /// A fake ID identifying a [`FakeLinkDevice`].
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
     pub(crate) struct FakeLinkDeviceId;
-
-    impl Display for FakeLinkDeviceId {
-        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-            write!(f, "{:?}", self)
-        }
-    }
 
     impl StrongId for FakeLinkDeviceId {
         type Weak = FakeWeakDeviceId<Self>;
@@ -138,16 +129,12 @@ pub(crate) mod testutil {
         }
     }
 
-    impl<S, M> DeviceIdContext<FakeLinkDevice> for FakeSyncCtx<S, M, FakeLinkDeviceId> {
+    impl<S, M> DeviceIdContext<FakeLinkDevice> for FakeCoreCtx<S, M, FakeLinkDeviceId> {
         type DeviceId = FakeLinkDeviceId;
         type WeakDeviceId = FakeWeakDeviceId<FakeLinkDeviceId>;
 
         fn downgrade_device_id(&self, device_id: &Self::DeviceId) -> Self::WeakDeviceId {
             FakeWeakDeviceId(device_id.clone())
-        }
-
-        fn is_device_installed(&self, _device_id: &Self::DeviceId) -> bool {
-            true
         }
 
         fn upgrade_weak_device_id(

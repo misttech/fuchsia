@@ -34,6 +34,7 @@
 #include "src/graphics/display/drivers/intel-i915/registers-pipe.h"
 #include "src/graphics/display/drivers/intel-i915/registers-transcoder.h"
 #include "src/graphics/display/drivers/intel-i915/registers.h"
+#include "src/graphics/display/lib/api-types-cpp/display-timing.h"
 
 namespace i915 {
 
@@ -140,13 +141,12 @@ bool HdmiDisplay::InitDdi() {
   return true;
 }
 
-bool HdmiDisplay::DdiModeset(const display_mode_t& mode) {
+bool HdmiDisplay::DdiModeset(const display::DisplayTiming& mode) {
   pipe()->Reset();
   controller()->ResetDdi(ddi_id(), pipe()->connected_transcoder_id());
 
-  const int32_t pixel_clock_khz = mode.pixel_clock_10khz * 10;
   DdiPllConfig pll_config = {
-      .ddi_clock_khz = pixel_clock_khz * 5,
+      .ddi_clock_khz = static_cast<int32_t>(mode.pixel_clock_frequency_khz) * 5,
       .spread_spectrum_clocking = false,
       .admits_display_port = false,
       .admits_hdmi = true,
@@ -176,7 +176,7 @@ bool HdmiDisplay::DdiModeset(const display_mode_t& mode) {
   return true;
 }
 
-bool HdmiDisplay::PipeConfigPreamble(const display_mode_t& mode, PipeId pipe_id,
+bool HdmiDisplay::PipeConfigPreamble(const display::DisplayTiming& mode, PipeId pipe_id,
                                      TranscoderId transcoder_id) {
   ZX_DEBUG_ASSERT_MSG(transcoder_id != TranscoderId::TRANSCODER_EDP,
                       "The EDP transcoder doesn't do HDMI");
@@ -195,7 +195,7 @@ bool HdmiDisplay::PipeConfigPreamble(const display_mode_t& mode, PipeId pipe_id,
   return true;
 }
 
-bool HdmiDisplay::PipeConfigEpilogue(const display_mode_t& mode, PipeId pipe_id,
+bool HdmiDisplay::PipeConfigEpilogue(const display::DisplayTiming& mode, PipeId pipe_id,
                                      TranscoderId transcoder_id) {
   ZX_DEBUG_ASSERT(type() == DisplayDevice::Type::kHdmi || type() == DisplayDevice::Type::kDvi);
   ZX_DEBUG_ASSERT_MSG(transcoder_id != TranscoderId::TRANSCODER_EDP,
@@ -214,15 +214,15 @@ bool HdmiDisplay::PipeConfigEpilogue(const display_mode_t& mode, PipeId pipe_id,
                                           ? registers::TranscoderDdiControl::kModeHdmi
                                           : registers::TranscoderDdiControl::kModeDvi);
   transcoder_ddi_control.set_bits_per_color(registers::TranscoderDdiControl::k8bpc)
-      .set_vsync_polarity_not_inverted((mode.flags & MODE_FLAG_VSYNC_POSITIVE) != 0)
-      .set_hsync_polarity_not_inverted((mode.flags & MODE_FLAG_HSYNC_POSITIVE) != 0)
+      .set_vsync_polarity_not_inverted(mode.vsync_polarity == display::SyncPolarity::kPositive)
+      .set_hsync_polarity_not_inverted(mode.hsync_polarity == display::SyncPolarity::kPositive)
       .set_is_port_sync_secondary_kaby_lake(false)
       .set_allocate_display_port_virtual_circuit_payload(false)
       .WriteTo(mmio_space());
 
   auto transcoder_config = transcoder_regs.Config().ReadFrom(mmio_space());
   transcoder_config.set_enabled_target(true)
-      .set_interlaced_display((mode.flags & MODE_FLAG_INTERLACED) != 0)
+      .set_interlaced_display(mode.fields_per_frame == display::FieldsPerFrame::kInterlaced)
       .WriteTo(mmio_space());
 
   // Configure voltage swing and related IO settings.
@@ -266,8 +266,7 @@ bool HdmiDisplay::PipeConfigEpilogue(const display_mode_t& mode, PipeId pipe_id,
   return true;
 }
 
-DdiPllConfig HdmiDisplay::ComputeDdiPllConfig(int32_t pixel_clock_10khz) {
-  const int32_t pixel_clock_khz = pixel_clock_10khz * 10;
+DdiPllConfig HdmiDisplay::ComputeDdiPllConfig(int32_t pixel_clock_khz) {
   return DdiPllConfig{
       .ddi_clock_khz = pixel_clock_khz * 5,
       .spread_spectrum_clocking = false,
@@ -276,7 +275,7 @@ DdiPllConfig HdmiDisplay::ComputeDdiPllConfig(int32_t pixel_clock_10khz) {
   };
 }
 
-bool HdmiDisplay::CheckPixelRate(uint64_t pixel_rate_hz) {
+bool HdmiDisplay::CheckPixelRate(int64_t pixel_rate_hz) {
   // Pixel rates of 300M/165M pixels per second for HDMI/DVI. The Intel docs state
   // that the maximum link bit rate of an HDMI port is 3GHz, not 3.4GHz that would
   // be expected  based on the HDMI spec.
@@ -284,7 +283,8 @@ bool HdmiDisplay::CheckPixelRate(uint64_t pixel_rate_hz) {
     return false;
   }
 
-  DdiPllConfig pll_config = ComputeDdiPllConfig(static_cast<int32_t>(pixel_rate_hz / 10'000));
+  int32_t pixel_rate_khz = static_cast<int32_t>(pixel_rate_hz / 1'000);
+  DdiPllConfig pll_config = ComputeDdiPllConfig(pixel_rate_khz);
   if (pll_config.IsEmpty()) {
     return false;
   }

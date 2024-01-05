@@ -26,6 +26,7 @@
 #include <object/diagnostics.h>
 #include <object/exception_dispatcher.h>
 #include <object/handle.h>
+#include <object/io_buffer_dispatcher.h>
 #include <object/job_dispatcher.h>
 #include <object/msi_dispatcher.h>
 #include <object/process_dispatcher.h>
@@ -38,6 +39,7 @@
 #include <object/vcpu_dispatcher.h>
 #include <object/vm_address_region_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
+#include <vm/compression.h>
 #include <vm/discardable_vmo_tracker.h>
 #include <vm/pmm.h>
 #include <vm/vm.h>
@@ -129,6 +131,25 @@ inline zx_info_vmo_v1_t VmoInfoToVersion(const zx_info_vmo_t& vmo) {
   return vmo_v1;
 }
 
+template <>
+inline zx_info_vmo_v2_t VmoInfoToVersion(const zx_info_vmo_t& vmo) {
+  zx_info_vmo_v2_t vmo_v2 = {};
+  vmo_v2.koid = vmo.koid;
+  memcpy(vmo_v2.name, vmo.name, sizeof(vmo.name));
+  vmo_v2.size_bytes = vmo.size_bytes;
+  vmo_v2.parent_koid = vmo.parent_koid;
+  vmo_v2.num_children = vmo.num_children;
+  vmo_v2.num_mappings = vmo.num_mappings;
+  vmo_v2.share_count = vmo.share_count;
+  vmo_v2.flags = vmo.flags;
+  vmo_v2.committed_bytes = vmo.committed_bytes;
+  vmo_v2.handle_rights = vmo.handle_rights;
+  vmo_v2.cache_policy = vmo.cache_policy;
+  vmo_v2.metadata_bytes = vmo.metadata_bytes;
+  vmo_v2.committed_change_events = vmo.committed_change_events;
+  return vmo_v2;
+}
+
 // Specialize the VmoInfoWriter to work for any T that is a subset of zx_info_vmo_t. This is
 // currently true for v1 and v2 (v2 being the current version). Being a subset the full
 // zx_info_vmo_t can just be casted and copied.
@@ -149,6 +170,50 @@ class SubsetVmoInfoWriter : public VmoInfoWriter {
 
  private:
   static_assert(sizeof(T) <= sizeof(zx_info_vmo_t));
+  user_out_ptr<T> out_;
+  size_t base_offset_ = 0;
+};
+
+template <typename T>
+inline T MapsInfoToVersion(const zx_info_maps_t& maps);
+
+template <>
+inline zx_info_maps_t MapsInfoToVersion(const zx_info_maps_t& maps) {
+  return maps;
+}
+template <>
+inline zx_info_maps_v1_t MapsInfoToVersion(const zx_info_maps_t& maps) {
+  zx_info_maps_v1_t maps_v1 = {};
+  memcpy(maps_v1.name, maps.name, sizeof(maps.name));
+  maps_v1.base = maps.base;
+  maps_v1.size = maps.size;
+  maps_v1.depth = maps.depth;
+  maps_v1.type = maps.type;
+  maps_v1.u.mapping.mmu_flags = maps.u.mapping.mmu_flags;
+  maps_v1.u.mapping.vmo_koid = maps.u.mapping.vmo_koid;
+  maps_v1.u.mapping.vmo_offset = maps.u.mapping.vmo_offset;
+  maps_v1.u.mapping.committed_pages = maps.u.mapping.committed_pages;
+  return maps_v1;
+}
+
+template <typename T>
+class SubsetProcessMapsInfoWriter : public ProcessMapsInfoWriter {
+ public:
+  SubsetProcessMapsInfoWriter(user_out_ptr<T> out) : out_(out) {}
+  ~SubsetProcessMapsInfoWriter() = default;
+  zx_status_t Write(const zx_info_maps_t& maps, size_t offset) override {
+    T versioned_maps = MapsInfoToVersion<T>(maps);
+    return out_.element_offset(offset + base_offset_).copy_to_user(versioned_maps);
+  }
+  UserCopyCaptureFaultsResult WriteCaptureFaults(const zx_info_maps_t& maps,
+                                                 size_t offset) override {
+    T versioned_maps = MapsInfoToVersion<T>(maps);
+    return out_.element_offset(offset + base_offset_).copy_to_user_capture_faults(versioned_maps);
+  }
+  void AddOffset(size_t offset) override { base_offset_ += offset; }
+
+ private:
+  static_assert(sizeof(T) <= sizeof(zx_info_maps_t));
   user_out_ptr<T> out_;
   size_t base_offset_ = 0;
 };
@@ -492,6 +557,7 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
 
       return single_record_result(_buffer, buffer_size, _actual, _avail, info);
     }
+    case ZX_INFO_PROCESS_MAPS_V1:
     case ZX_INFO_PROCESS_MAPS: {
       fbl::RefPtr<ProcessDispatcher> process;
       zx_status_t status =
@@ -499,11 +565,19 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
       if (status != ZX_OK)
         return status;
 
-      auto maps = _buffer.reinterpret<zx_info_maps_t>();
-      size_t count = buffer_size / sizeof(zx_info_maps_t);
+      size_t count = 0;
       size_t avail = 0;
-      status = process->GetAspaceMaps(maps, count, &count, &avail);
 
+      if (topic == ZX_INFO_PROCESS_MAPS_V1) {
+        SubsetProcessMapsInfoWriter<zx_info_maps_v1_t> writer{
+            _buffer.reinterpret<zx_info_maps_v1_t>()};
+        count = buffer_size / sizeof(zx_info_maps_v1_t);
+        status = process->GetAspaceMaps(writer, count, &count, &avail);
+      } else {
+        SubsetProcessMapsInfoWriter<zx_info_maps_t> writer{_buffer.reinterpret<zx_info_maps_t>()};
+        count = buffer_size / sizeof(zx_info_maps_t);
+        status = process->GetAspaceMaps(writer, count, &count, &avail);
+      }
       if (_actual) {
         zx_status_t copy_status = _actual.copy_to_user(count);
         if (copy_status != ZX_OK)
@@ -517,6 +591,7 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
       return status;
     }
     case ZX_INFO_PROCESS_VMOS_V1:
+    case ZX_INFO_PROCESS_VMOS_V2:
     case ZX_INFO_PROCESS_VMOS: {
       fbl::RefPtr<ProcessDispatcher> process;
       zx_status_t status =
@@ -530,6 +605,10 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
       if (topic == ZX_INFO_PROCESS_VMOS_V1) {
         SubsetVmoInfoWriter<zx_info_vmo_v1_t> writer{_buffer.reinterpret<zx_info_vmo_v1_t>()};
         count = buffer_size / sizeof(zx_info_vmo_v1_t);
+        status = process->GetVmos(writer, count, &count, &avail);
+      } else if (topic == ZX_INFO_PROCESS_VMOS_V2) {
+        SubsetVmoInfoWriter<zx_info_vmo_v2_t> writer{_buffer.reinterpret<zx_info_vmo_v2_t>()};
+        count = buffer_size / sizeof(zx_info_vmo_v2_t);
         status = process->GetVmos(writer, count, &count, &avail);
       } else {
         SubsetVmoInfoWriter<zx_info_vmo_t> writer{_buffer.reinterpret<zx_info_vmo_t>()};
@@ -550,6 +629,7 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
       return status;
     }
     case ZX_INFO_VMO_V1:
+    case ZX_INFO_VMO_V2:
     case ZX_INFO_VMO: {
       // lookup the dispatcher from handle
       fbl::RefPtr<VmObjectDispatcher> vmo;
@@ -561,6 +641,10 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
       if (topic == ZX_INFO_VMO_V1) {
         zx_info_vmo_v1_t versioned_vmo = VmoInfoToVersion<zx_info_vmo_v1_t>(entry);
         // The V1 layout is a subset of V2
+        return single_record_result(_buffer, buffer_size, _actual, _avail, versioned_vmo);
+      } else if (topic == ZX_INFO_VMO_V2) {
+        zx_info_vmo_v2_t versioned_vmo = VmoInfoToVersion<zx_info_vmo_v2_t>(entry);
+        // The V2 layout is a subset of V3
         return single_record_result(_buffer, buffer_size, _actual, _avail, versioned_vmo);
       } else {
         return single_record_result(_buffer, buffer_size, _actual, _avail, entry);
@@ -676,7 +760,8 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
           bool is_idle = mp_is_cpu_idle(i);
           if (is_idle) {
             zx_duration_t recent_idle = zx_time_sub_time(
-                current_time(), cpu->idle_thread.scheduler_state().last_started_running());
+                current_time(),
+                cpu->idle_power_thread.thread().scheduler_state().last_started_running());
             idle_time = zx_duration_add_duration(idle_time, recent_idle);
           }
           stats.idle_time = idle_time;
@@ -809,6 +894,42 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
 
       return single_record_result(_buffer, buffer_size, _actual, _avail, stats_ext);
     }
+    case ZX_INFO_KMEM_STATS_COMPRESSION: {
+      auto status =
+          validate_ranged_resource(handle, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_INFO_BASE, 1);
+      if (status != ZX_OK)
+        return status;
+
+      zx_info_kmem_stats_compression_t kstats = {};
+
+      VmCompression* compression = pmm_page_compression();
+      if (compression) {
+        VmCompression::Stats stats = compression->GetStats();
+        kstats.uncompressed_storage_bytes = stats.memory_usage.uncompressed_content_bytes;
+        kstats.compressed_storage_bytes = stats.memory_usage.compressed_storage_bytes;
+        kstats.compressed_fragmentation_bytes = stats.memory_usage.compressed_storage_bytes -
+                                                stats.memory_usage.compressed_storage_used_bytes;
+        kstats.compression_time = stats.compression_time;
+        kstats.decompression_time = stats.decompression_time;
+        kstats.total_page_compression_attempts = stats.total_page_compression_attempts;
+        kstats.failed_page_compression_attempts = stats.failed_page_compression_attempts;
+        kstats.total_page_decompressions = stats.total_page_decompressions;
+        kstats.compressed_page_evictions = stats.compressed_page_evictions;
+        kstats.eager_page_compressions = PageQueues::GetLruPagesCompressed();
+        Evictor::EvictorStats evictor_stats = Evictor::GetGlobalStats();
+        kstats.memory_pressure_page_compressions = evictor_stats.compression_other;
+        kstats.critical_memory_page_compressions = evictor_stats.compression_oom;
+        kstats.pages_decompressed_unit_ns = ZX_SEC(1);
+        static_assert(8 <= VmCompression::kNumLogBuckets);
+        for (int i = 0; i < 8; i++) {
+          kstats.pages_decompressed_within_log_time[i] =
+              stats.pages_decompressed_within_log_seconds[i];
+        }
+      }
+
+      return single_record_result(_buffer, buffer_size, _actual, _avail, kstats);
+    }
+
     case ZX_INFO_RESOURCE: {
       // grab a reference to the dispatcher
       fbl::RefPtr<ResourceDispatcher> resource;
@@ -1036,6 +1157,49 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
           return copy_status;
       }
       return writer.status();
+    }
+
+    case ZX_INFO_IOB: {
+      fbl::RefPtr<IoBufferDispatcher> iob;
+      zx_status_t status =
+          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &iob);
+      if (status != ZX_OK) {
+        return status;
+      }
+
+      return single_record_result(_buffer, buffer_size, _actual, _avail, iob->GetInfo());
+    }
+    case ZX_INFO_IOB_REGIONS: {
+      fbl::RefPtr<IoBufferDispatcher> iob;
+      zx_status_t status =
+          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &iob);
+      if (status != ZX_OK) {
+        return status;
+      }
+
+      const size_t num_regions = iob->RegionCount();
+      const size_t num_space_for = buffer_size / sizeof(zx_iob_region_info_t);
+      const size_t num_to_copy = ktl::min(num_regions, num_space_for);
+
+      for (size_t i = 0; i < num_to_copy; i++) {
+        zx_iob_region_info_t region = iob->GetRegionInfo(i);
+        status = _buffer.reinterpret<zx_iob_region_info_t>().element_offset(i).copy_to_user(region);
+        if (status != ZX_OK) {
+          return status;
+        }
+      }
+
+      if (_actual) {
+        zx_status_t copy_status = _actual.copy_to_user(num_to_copy);
+        if (copy_status != ZX_OK)
+          return copy_status;
+      }
+      if (_avail) {
+        zx_status_t copy_status = _avail.copy_to_user(num_regions);
+        if (copy_status != ZX_OK)
+          return copy_status;
+      }
+      return ZX_OK;
     }
 
     default:

@@ -52,7 +52,10 @@ async fn main() -> Result<(), Error> {
     std::fs::create_dir_all(constants::DEBUG_DATA_FOR_SCP)?;
     std::fs::create_dir_all(constants::ISOLATED_TMP)?;
 
-    inspect_runtime::serve(fuchsia_inspect::component::inspector(), &mut fs)?;
+    let _inspect_server_task = inspect_runtime::publish(
+        fuchsia_inspect::component::inspector(),
+        inspect_runtime::PublishOptions::default(),
+    );
 
     info!("Reading capabilities from {}", args.manifest_name());
     let routing_info = Arc::new(AboveRootCapabilitiesForTest::new(args.manifest_name()).await?);
@@ -98,6 +101,14 @@ async fn main() -> Result<(), Error> {
                 )
                 .await
                 .unwrap_or_else(|error| warn!(?error, "test manager returned error"))
+            })
+            .detach();
+        })
+        .add_fidl_service(move |stream| {
+            fasync::Task::local(async move {
+                test_manager_lib::serve_early_boot_profiles(stream)
+                    .await
+                    .unwrap_or_else(|error| warn!(?error, "test manager returned error"))
             })
             .detach();
         });

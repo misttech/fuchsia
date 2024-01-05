@@ -10,14 +10,14 @@ executable("inspect_service_llcpp_unittests_bin") {
   testonly = true
   sources = [ "service_unittests.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.component:fuchsia.component_cpp_wire",
-    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp_wire",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_hlcpp",
-    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_cpp_wire",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/inspect/component/cpp:inspect_component_cpp",
-    "//sdk/lib/inspect/contrib/cpp:archive_reader",
+    "//sdk/lib/diagnostics/reader/cpp:archive_reader",
+    "//sdk/lib/inspect/component/cpp",
     "//sdk/lib/inspect/testing/cpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
@@ -32,7 +32,7 @@ executable("program_writing_inspect_bin") {
   sources = [ "program.cc" ]
 
   deps = [
-    "//sdk/lib/inspect/component/cpp:inspect_component_cpp",
+    "//sdk/lib/inspect/component/cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/inspect",
@@ -50,4 +50,9 @@ fuchsia_unittest_package("inspect_service_llcpp_tests") {
     ":inspect_service_llcpp_unittests_bin",
     ":program_writing_inspect",
   ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":inspect_service_llcpp_tests" ]
 }

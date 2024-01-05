@@ -199,6 +199,7 @@ typedef struct zx_wait_item {
 // VM Object creation options
 #define ZX_VMO_RESIZABLE                 ((uint32_t)1u << 1)
 #define ZX_VMO_DISCARDABLE               ((uint32_t)1u << 2)
+#define ZX_VMO_TRAP_DIRTY                ((uint32_t)1u << 3)
 
 // VM Object opcodes
 #define ZX_VMO_OP_COMMIT                 ((uint32_t)1u)
@@ -244,6 +245,23 @@ typedef struct zx_vmo_lock_state {
 
 // Pager opcodes
 #define ZX_PAGER_OP_FAIL                 ((uint32_t)1u)
+#define ZX_PAGER_OP_DIRTY                ((uint32_t)2u)
+#define ZX_PAGER_OP_WRITEBACK_BEGIN      ((uint32_t)3u)
+#define ZX_PAGER_OP_WRITEBACK_END        ((uint32_t)4u)
+
+// Struct used by the zx_pager_query_vmo_stats() syscall.
+typedef struct zx_pager_vmo_stats {
+  // Will be set to ZX_PAGER_VMO_STATS_MODIFIED if the VMO was modified, or 0 otherwise.
+  // Note that this can be set to 0 if a previous zx_pager_query_vmo_stats() call specified the
+  // ZX_PAGER_RESET_VMO_STATS option, which resets the modified state.
+  uint32_t modified;
+} zx_pager_vmo_stats_t;
+
+// values for zx_pager_vmo_stats.modified
+#define ZX_PAGER_VMO_STATS_MODIFIED     ((uint32_t)1u)
+
+// options for zx_pager_query_vmo_stats()
+#define ZX_PAGER_RESET_VMO_STATS        ((uint32_t)1u)
 
 // VM Object clone flags
 #define ZX_VMO_CHILD_SNAPSHOT             ((uint32_t)1u << 0)
@@ -573,6 +591,29 @@ typedef int zx_futex_storage_t;
 // Process options.
 // These options can be passed to zx_process_create().
 #define ZX_PROCESS_SHARED     ((uint32_t)1u << 0)
+
+// IOBuffer types describing the structure of a region
+typedef struct iob_discipline {
+  uint64_t type;
+  uint64_t reserved[8];
+} zx_iob_discipline_t;
+
+typedef struct iob_region_private {
+  uint32_t options;
+  uint32_t padding1;
+  uint64_t padding2[3];
+} zx_iob_region_private_t;
+
+typedef struct iob_region {
+  uint32_t type;
+  uint32_t access;
+  uint64_t size;
+  zx_iob_discipline_t discipline;
+  union {
+    zx_iob_region_private_t private_region;
+    uint8_t max_extension[32];
+  };
+} zx_iob_region_t;
 
 __END_CDECLS
 

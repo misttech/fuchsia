@@ -91,9 +91,12 @@ type adminAddressStateProviderImpl struct {
 		// result in the address not being removed when the client closes its end of
 		// the channel.
 		detached bool
-		// removed is set to true if the address has already been removed, and
-		// therefore no longer needs to be removed when this protocol terminates.
-		removed bool
+		// removedReason is set to the reason why the address was removed. When this
+		// is set, the address does not need to be removed when this protocol
+		// terminates.
+		removedReason stack.AddressRemovalReason
+		// Indicates if the OnAddressAdded event was sent.
+		sentAddedEvent bool
 	}
 	// The RouteSetId used to associate this address to any subnet route added
 	// as a result of the add_subnet_route AddressParameters field.
@@ -173,7 +176,7 @@ type adminControlImpl struct {
 	cancelServe context.CancelFunc
 	syncRemoval bool
 	doneChannel chan zx.Channel
-	// TODO(https://fxbug.dev/85061): encode owned, strong, and weak refs once
+	// TODO(https://fxbug.dev/87963): encode owned, strong, and weak refs once
 	// cloning Control is allowed.
 	isStrongRef bool
 }
@@ -297,11 +300,12 @@ func (pi *adminAddressStateProviderImpl) Remove(fidl.Context) error {
 	_ = syslog.DebugTf(addressStateProviderName, "NICID=%d removing address %s from NIC %d due to explicit removal request", pi.nicid, pi.protocolAddr.AddressWithPrefix, pi.nicid)
 
 	pi.mu.Lock()
-	prevRemoved := pi.mu.removed
-	pi.mu.removed = true
+	prevRemovedReason := pi.mu.removedReason
+	// If not already set, removedReason will be set when the address is removed
+	// below by the synchronous callback to pi.OnRemoved.
 	pi.mu.Unlock()
 
-	if prevRemoved {
+	if prevRemovedReason != 0 {
 		return nil
 	}
 
@@ -327,21 +331,33 @@ func (pi *adminAddressStateProviderImpl) Remove(fidl.Context) error {
 	return nil
 }
 
+func (pi *adminAddressStateProviderImpl) sendOnAddressRemovedEventAndCancelServeLocked() {
+	if err := pi.mu.eventProxy.OnAddressRemoved(fidlconv.ToAddressRemovalReason(pi.mu.removedReason)); err != nil {
+		var zxError *zx.Error
+		if !errors.As(err, &zxError) || (zxError.Status != zx.ErrPeerClosed && zxError.Status != zx.ErrBadHandle) {
+			_ = syslog.ErrorTf(addressStateProviderName, "NICID=%d failed to send OnAddressRemoved(%s) for %s: %s", pi.nicid, pi.mu.removedReason, pi.protocolAddr.AddressWithPrefix.Address, err)
+		}
+	}
+	pi.cancelServe()
+}
+
 func (pi *adminAddressStateProviderImpl) OnRemoved(reason stack.AddressRemovalReason) {
 	_ = syslog.DebugTf(addressStateProviderName, "NIC=%d addr=%s removed reason=%s", pi.nicid, pi.protocolAddr.AddressWithPrefix, reason)
 
 	pi.mu.Lock()
 	defer pi.mu.Unlock()
 
-	pi.mu.removed = true
+	pi.mu.removedReason = reason
 
-	if err := pi.mu.eventProxy.OnAddressRemoved(fidlconv.ToAddressRemovalReason(reason)); err != nil {
-		var zxError *zx.Error
-		if !errors.As(err, &zxError) || (zxError.Status != zx.ErrPeerClosed && zxError.Status != zx.ErrBadHandle) {
-			_ = syslog.ErrorTf(addressStateProviderName, "NICID=%d failed to send OnAddressRemoved(%s) for %s: %s", pi.nicid, reason, pi.protocolAddr.AddressWithPrefix.Address, err)
-		}
+	// If the OnAddressAdded event has not been sent yet, then that means the
+	// address was removed while fuchsia.net.interfaces.admin/Control.AddAddress
+	// operation is in-progress. This can happen when immediately after adding the
+	// address to the core (gVisor) netstack but before the OnAddressAdded event
+	// was sent (when no locks are held), DAD fails which triggers address
+	// removal.
+	if pi.mu.sentAddedEvent {
+		pi.sendOnAddressRemovedEventAndCancelServeLocked()
 	}
-	pi.cancelServe()
 }
 
 func (pi *adminAddressStateProviderImpl) cleanUpSubnetRoute() {
@@ -425,8 +441,16 @@ func (ci *adminControlImpl) AddAddress(_ fidl.Context, subnet net.Subnet, parame
 
 	impl.mu.Lock()
 	defer impl.mu.Unlock()
+	impl.mu.sentAddedEvent = true
 	if err := impl.mu.eventProxy.OnAddressAdded(); err != nil {
 		_ = syslog.ErrorTf(controlName, "NICID=%d failed to send OnAddressAdded() for %s - THIS MAY RESULT IN DROPPED ASP REQUESTS (https://fxbug.dev/131322): %s", impl.nicid, protocolAddr.AddressWithPrefix.Address, err)
+	}
+
+	// If the address was removed before we sent the OnAddressAdded event, then
+	// that means we need to send the (pending) OnAddressRemoved event. See
+	// pi.OnRemoved for details.
+	if impl.mu.removedReason != 0 {
+		impl.sendOnAddressRemovedEventAndCancelServeLocked()
 	}
 
 	go func() {
@@ -439,7 +463,7 @@ func (ci *adminControlImpl) AddAddress(_ fidl.Context, subnet net.Subnet, parame
 		})
 
 		impl.mu.Lock()
-		detached, removed := impl.mu.detached, impl.mu.removed
+		detached, removedReason := impl.mu.detached, impl.mu.removedReason
 		impl.mu.Unlock()
 
 		addrDisp.mu.Lock()
@@ -448,7 +472,7 @@ func (ci *adminControlImpl) AddAddress(_ fidl.Context, subnet net.Subnet, parame
 		}
 		addrDisp.mu.Unlock()
 
-		if !detached && !removed {
+		if !detached && removedReason == 0 {
 			_ = syslog.DebugTf(addressStateProviderName, "NICID=%d removing address %s from NIC %d due to protocol closure", impl.nicid, addr, ci.nicid)
 			switch status := ifs.removeAddress(impl.protocolAddr); status {
 			case zx.ErrOk, zx.ErrNotFound:
@@ -472,7 +496,26 @@ func (ci *adminControlImpl) RemoveAddress(_ fidl.Context, address net.Subnet) (a
 	if !ok {
 		panic(fmt.Sprintf("NIC %d not found when removing %s", ci.nicid, protocolAddr.AddressWithPrefix))
 	}
-	switch zxErr := nicInfo.Context.(*ifState).removeAddress(protocolAddr); zxErr {
+	ifs := nicInfo.Context.(*ifState)
+
+	// If the address the caller requested to remove was assigned through DHCP,
+	// just stop DHCP since that will result in the removal of the address.
+	ifs.dhcpLock <- struct{}{}
+	ifs.mu.Lock()
+	defer func() {
+		ifs.mu.Unlock()
+		<-ifs.dhcpLock
+	}()
+
+	// DHCP client is only available for Ethernet interfaces.
+	if ifs.mu.dhcp.Client != nil {
+		if info := ifs.mu.dhcp.Client.Info(); info.Assigned.Address == protocolAddr.AddressWithPrefix.Address {
+			ifs.setDHCPStatusLocked(nicInfo.Name, false)
+			return admin.ControlRemoveAddressResultWithResponse(admin.ControlRemoveAddressResponse{DidRemove: true}), nil
+		}
+	}
+
+	switch zxErr := ifs.removeAddress(protocolAddr); zxErr {
 	case zx.ErrOk:
 		return admin.ControlRemoveAddressResultWithResponse(admin.ControlRemoveAddressResponse{DidRemove: true}), nil
 	case zx.ErrNotFound:
@@ -530,6 +573,50 @@ func (ci *adminControlImpl) getNetworkEndpoint(netProto tcpip.NetworkProtocolNum
 	return ep
 }
 
+func toAdminNudConfiguration(stackNud stack.NUDConfigurations) admin.NudConfiguration {
+	var adminNud admin.NudConfiguration
+	adminNud.SetMaxMulticastSolicitations(uint16(stackNud.MaxMulticastProbes))
+	adminNud.SetMaxUnicastSolicitations(uint16(stackNud.MaxUnicastProbes))
+	return adminNud
+}
+
+func (ci *adminControlImpl) getNUDConfig(netProto tcpip.NetworkProtocolNumber) stack.NUDConfigurations {
+	config, err := ci.ns.stack.NUDConfigurations(tcpip.NICID(ci.nicid), netProto)
+	if err != nil {
+		panic(fmt.Sprintf("ci.ns.stack.NUDConfigurations(tcpip.NICID(%d), %d): %s", ci.nicid, netProto, err))
+	}
+	return config
+}
+
+func (ci *adminControlImpl) applyNUDConfig(netProto tcpip.NetworkProtocolNumber, nudConfig *admin.NudConfiguration) admin.NudConfiguration {
+	var previousNudConfig admin.NudConfiguration
+
+	// NB: We're reading and updating in place here without acquiring
+	// locks, this is fine because we don't serve
+	// fuchsia.net.interfaces.admin.Control concurrently.
+	stackNudConfig := ci.getNUDConfig(netProto)
+	needsNudUpdate := false
+	if nudConfig.HasMaxMulticastSolicitations() {
+		prev := stackNudConfig.MaxMulticastProbes
+		stackNudConfig.MaxMulticastProbes = uint32(nudConfig.MaxMulticastSolicitations)
+		previousNudConfig.SetMaxMulticastSolicitations(uint16(prev))
+		needsNudUpdate = true
+	}
+	if nudConfig.HasMaxUnicastSolicitations() {
+		prev := stackNudConfig.MaxUnicastProbes
+		stackNudConfig.MaxUnicastProbes = uint32(nudConfig.MaxUnicastSolicitations)
+		previousNudConfig.SetMaxUnicastSolicitations(uint16(prev))
+		needsNudUpdate = true
+	}
+
+	if needsNudUpdate {
+		if err := ci.ns.stack.SetNUDConfigurations(tcpip.NICID(ci.nicid), netProto, stackNudConfig); err != nil {
+			panic(fmt.Sprintf("ci.ns.stack.SetNUDConfigurations(tcpip.NICID(%d), %d, %v): %s", ci.nicid, netProto, stackNudConfig, err))
+		}
+	}
+	return previousNudConfig
+}
+
 func (ci *adminControlImpl) getIGMPEndpoint() ipv4.IGMPEndpoint {
 	// We want this to panic if EP does not implement ipv4.IGMPEndpoint.
 	return ci.getNetworkEndpoint(ipv4.ProtocolNumber).(ipv4.IGMPEndpoint)
@@ -575,6 +662,10 @@ func (ci *adminControlImpl) SetConfiguration(_ fidl.Context, config admin.Config
 			if config.Ipv4.HasMulticastForwarding() && config.Ipv4.MulticastForwarding {
 				return admin.ControlSetConfigurationResultWithErr(admin.ControlSetConfigurationErrorIpv4MulticastForwardingUnsupported), nil
 			}
+
+			if config.Ipv4.HasArp() {
+				return admin.ControlSetConfigurationResultWithErr(admin.ControlSetConfigurationErrorArpNotSupported), nil
+			}
 		}
 
 		// Make sure the IGMP version (if specified) is supported.
@@ -583,6 +674,17 @@ func (ci *adminControlImpl) SetConfiguration(_ fidl.Context, config admin.Config
 			case admin.IgmpVersionV1, admin.IgmpVersionV2, admin.IgmpVersionV3:
 			default:
 				return admin.ControlSetConfigurationResultWithErr(admin.ControlSetConfigurationErrorIpv4IgmpVersionUnsupported), nil
+			}
+		}
+
+		if config.Ipv4.HasArp() {
+			if config.Ipv4.Arp.HasNud() {
+				if config.Ipv4.Arp.Nud.HasMaxMulticastSolicitations() && config.Ipv4.Arp.Nud.MaxMulticastSolicitations == 0 {
+					return admin.ControlSetConfigurationResultWithErr(admin.ControlSetConfigurationErrorIllegalZeroValue), nil
+				}
+				if config.Ipv4.Arp.Nud.HasMaxUnicastSolicitations() && config.Ipv4.Arp.Nud.MaxUnicastSolicitations == 0 {
+					return admin.ControlSetConfigurationResultWithErr(admin.ControlSetConfigurationErrorIllegalZeroValue), nil
+				}
 			}
 		}
 	}
@@ -597,6 +699,10 @@ func (ci *adminControlImpl) SetConfiguration(_ fidl.Context, config admin.Config
 			if config.Ipv6.HasMulticastForwarding() && config.Ipv6.MulticastForwarding {
 				return admin.ControlSetConfigurationResultWithErr(admin.ControlSetConfigurationErrorIpv6MulticastForwardingUnsupported), nil
 			}
+
+			if config.Ipv6.HasNdp() {
+				return admin.ControlSetConfigurationResultWithErr(admin.ControlSetConfigurationErrorNdpNotSupported), nil
+			}
 		}
 
 		// Make sure the MLD version (if specified) is supported.
@@ -605,6 +711,17 @@ func (ci *adminControlImpl) SetConfiguration(_ fidl.Context, config admin.Config
 			case admin.MldVersionV1, admin.MldVersionV2:
 			default:
 				return admin.ControlSetConfigurationResultWithErr(admin.ControlSetConfigurationErrorIpv6MldVersionUnsupported), nil
+			}
+		}
+
+		if config.Ipv6.HasNdp() {
+			if config.Ipv6.Ndp.HasNud() {
+				if config.Ipv6.Ndp.Nud.HasMaxMulticastSolicitations() && config.Ipv6.Ndp.Nud.MaxMulticastSolicitations == 0 {
+					return admin.ControlSetConfigurationResultWithErr(admin.ControlSetConfigurationErrorIllegalZeroValue), nil
+				}
+				if config.Ipv6.Ndp.Nud.HasMaxUnicastSolicitations() && config.Ipv6.Ndp.Nud.MaxUnicastSolicitations == 0 {
+					return admin.ControlSetConfigurationResultWithErr(admin.ControlSetConfigurationErrorIllegalZeroValue), nil
+				}
 			}
 		}
 	}
@@ -651,6 +768,15 @@ func (ci *adminControlImpl) SetConfiguration(_ fidl.Context, config admin.Config
 			previousIpv4Config.SetIgmp(previousIgmpConfig)
 		}
 
+		if ipv4Config.HasArp() {
+			var previousArpConfig admin.ArpConfiguration
+			if ipv4Config.Arp.HasNud() {
+				previousArpConfig.SetNud(ci.applyNUDConfig(ipv4.ProtocolNumber, &ipv4Config.Arp.Nud))
+			}
+
+			previousIpv4Config.SetArp(previousArpConfig)
+		}
+
 		previousConfig.SetIpv4(previousIpv4Config)
 	}
 
@@ -686,6 +812,15 @@ func (ci *adminControlImpl) SetConfiguration(_ fidl.Context, config admin.Config
 			}
 
 			previousIpv6Config.SetMld(previousMldConfig)
+		}
+
+		if ipv6Config.HasNdp() {
+			var previousNdpConfig admin.NdpConfiguration
+			if ipv6Config.Ndp.HasNud() {
+				previousNdpConfig.SetNud(ci.applyNUDConfig(ipv6.ProtocolNumber, &ipv6Config.Ndp.Nud))
+			}
+
+			previousIpv6Config.SetNdp(previousNdpConfig)
 		}
 
 		previousConfig.SetIpv6(previousIpv6Config)
@@ -732,6 +867,11 @@ func (ci *adminControlImpl) GetConfiguration(fidl.Context) (admin.ControlGetConf
 		var igmpConfig admin.IgmpConfiguration
 		igmpConfig.SetVersion(toAdminIgmpVersion(ci.getIGMPEndpoint().GetIGMPVersion()))
 		ipv4Config.SetIgmp(igmpConfig)
+		if !ci.isLoopback() {
+			var arpConfig admin.ArpConfiguration
+			arpConfig.SetNud(toAdminNudConfiguration(ci.getNUDConfig(ipv4.ProtocolNumber)))
+			ipv4Config.SetArp(arpConfig)
+		}
 
 		config.SetIpv4(ipv4Config)
 	}
@@ -744,6 +884,11 @@ func (ci *adminControlImpl) GetConfiguration(fidl.Context) (admin.ControlGetConf
 		var mldConfig admin.MldConfiguration
 		mldConfig.SetVersion(toAdminMldVersion(ci.getMLDEndpoint().GetMLDVersion()))
 		ipv6Config.SetMld(mldConfig)
+		if !ci.isLoopback() {
+			var ndpConfig admin.NdpConfiguration
+			ndpConfig.SetNud(toAdminNudConfiguration(ci.getNUDConfig(ipv6.ProtocolNumber)))
+			ipv6Config.SetNdp(ndpConfig)
+		}
 
 		config.SetIpv6(ipv6Config)
 	}

@@ -9,14 +9,6 @@
             extends: "realm",
             runners: [
                 {
-                    runner: "dart_aot_runner",
-                    from: "#dart_aot_runner",
-                },
-                {
-                    runner: "dart_jit_runner",
-                    from: "#dart_jit_runner",
-                },
-                {
                     runner: "elf_test_runner",
                     from: "#elf_test_runner",
                 },
@@ -56,6 +48,10 @@
                 {
                     runner: "rust_test_runner",
                     from: "#rust_test_runner",
+                },
+                {
+                    runner: "rust_test_create_raw_processes_runner",
+                    from: "#rust_test_create_raw_processes_runner",
                 },
                 {
                     runner: "rust_test_next_vdso_runner",

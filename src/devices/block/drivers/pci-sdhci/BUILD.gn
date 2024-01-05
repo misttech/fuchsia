@@ -9,8 +9,9 @@ driver_bind_rules("pci-sdhci-bind") {
   rules = "pci-sdhci.bind"
   tests = "pci-sdhci-bind-test.json"
   deps = [
-    "//src/devices/bind/fuchsia.driver.framework",
+    "//src/devices/bind/fuchsia.acpi",
     "//src/devices/bind/fuchsia.pci",
+    "//src/devices/bind/fuchsia.sysmem",
   ]
 }
 
@@ -39,6 +40,11 @@ fuchsia_driver_component("pci-sdhci") {
   ]
   info = "pci-sdhci-info.json"
   manifest = "meta/pci-sdhci.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "pci-sdhci"
+  driver_components = [ ":pci-sdhci" ]
 }
 
 group("tests") {

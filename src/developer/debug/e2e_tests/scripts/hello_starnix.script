@@ -3,7 +3,8 @@
 ## require is_asan=false
 ## require is_lto=false
 ## require is_thinlto=false
-## set timeout 10
+## require optimize=none
+## set timeout 30
 
 # TODO(fxbug.dev/127384): attach shouldn't be necessary.
 [zxdb] attach hello_starnix
@@ -13,7 +14,7 @@ Waiting for process matching "hello_starnix".
 Created Breakpoint 1 @ hello_starnix.cc:9
 
 [zxdb] run-test --realm /core/testing:system-tests fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/hello_starnix.cm
-Attached Process 1 state=Running koid=?? name=hello_starnix component=starnix_kernel.cm
+Attached Process 1 state=Running koid=?? name=data/bin/hello_starnix component=starnix_kernel.cm
 🛑 on bp 1 main() • hello_starnix.cc:9
 
 [zxdb] next

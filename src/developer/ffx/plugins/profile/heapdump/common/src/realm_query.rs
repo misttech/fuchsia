@@ -5,11 +5,11 @@
 use cm_rust::{CapabilityDecl, CapabilityDeclCommon};
 use component_debug::capability::{get_all_route_segments, RouteSegment};
 use errors::{ffx_bail, ffx_error};
-use fidl::{endpoints::DiscoverableProtocolMarker, Status};
+use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_io::OpenFlags;
 use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
-use fidl_fuchsia_sys2::RealmQueryProxy;
+use fidl_fuchsia_sys2::{OpenDirType, RealmQueryProxy};
 
 const COLLECTOR_CAPABILITY: &str = fheapdump_client::CollectorMarker::PROTOCOL_NAME;
 
@@ -40,8 +40,8 @@ pub async fn connect_to_collector(
     remote_control: &RemoteControlProxy,
     moniker: Option<String>,
 ) -> anyhow::Result<fheapdump_client::CollectorProxy> {
-    let (query_proxy, query_server) = fidl::endpoints::create_proxy()?;
-    remote_control.root_realm_query(query_server).await?.map_err(Status::from_raw)?;
+    let query_proxy =
+        rcs::root_realm_query(&remote_control, std::time::Duration::from_secs(15)).await?;
 
     let moniker = if let Some(moniker) = moniker {
         moniker
@@ -62,8 +62,9 @@ pub async fn connect_to_collector(
     let (collector_proxy, collector_server) =
         fidl::endpoints::create_proxy::<fheapdump_client::CollectorMarker>()?;
     remote_control
-        .connect_capability(
+        .open_capability(
             &moniker,
+            OpenDirType::ExposedDir,
             fheapdump_client::CollectorMarker::PROTOCOL_NAME,
             collector_server.into_channel(),
             OpenFlags::empty(),

@@ -1,7 +1,13 @@
-// Copyright 2020 The Fuchsia Authors. All rights reserved.
+// Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::{Context, Result};
+use fidl::{endpoints, HandleBased};
+use fidl_fuchsia_testing_harness as ftth;
+use fidl_fuchsia_time as fft;
+use fidl_test_time_realm as fttr;
+use fuchsia_component::client;
 use {
     fidl_fuchsia_metrics::MetricEvent,
     fidl_fuchsia_metrics_test::{LogMethod, MetricEventLoggerQuerierProxy},
@@ -25,9 +31,9 @@ use {
         TIMEKEEPER_TRACK_EVENTS_MIGRATED_METRIC_ID,
     },
     timekeeper_integration_lib::{
-        create_cobalt_event_stream, new_clock, poll_until, poll_until_some, rtc_time_to_zx_time,
-        NestedTimekeeper, PushSourcePuppet, RtcUpdates, BACKSTOP_TIME, BEFORE_BACKSTOP_TIME,
-        BETWEEN_SAMPLES, STD_DEV, VALID_RTC_TIME, VALID_TIME, VALID_TIME_2,
+        create_cobalt_event_stream, new_nonshareable_clock, poll_until, poll_until_some_async,
+        rtc_time_to_zx_time, RemotePushSourcePuppet, RemoteRtcUpdates, BACKSTOP_TIME,
+        BEFORE_BACKSTOP_TIME, BETWEEN_SAMPLES, STD_DEV, VALID_RTC_TIME, VALID_TIME, VALID_TIME_2,
     },
 };
 
@@ -35,28 +41,93 @@ use {
 /// If `initial_rtc_time` is provided, a fake RTC device that reports the time as
 /// `initial_rtc_time` is injected into timekeeper's environment. The provided `test_fn` is
 /// provided with handles to manipulate the time source and observe changes to the RTC and cobalt.
-fn timekeeper_test<F, Fut>(clock: Arc<zx::Clock>, initial_rtc_time: Option<zx::Time>, test_fn: F)
+async fn timekeeper_test<F, Fut>(
+    clock: zx::Clock,
+    initial_rtc_time: Option<zx::Time>,
+    test_fn: F,
+) -> Result<()>
 where
-    F: FnOnce(Arc<PushSourcePuppet>, RtcUpdates, MetricEventLoggerQuerierProxy) -> Fut,
-    Fut: Future,
+    F: FnOnce(
+        zx::Clock,
+        Arc<RemotePushSourcePuppet>,
+        RemoteRtcUpdates,
+        MetricEventLoggerQuerierProxy,
+    ) -> Fut,
+    Fut: Future<Output = ()>,
 {
-    let mut executor = fasync::LocalExecutor::new();
-    executor.run_singlethreaded(async move {
-        let clock_arc = Arc::new(clock);
-        let (_timekeeper, push_source_controller, rtc, cobalt, _) = NestedTimekeeper::new(
-            Arc::clone(&clock_arc),
-            initial_rtc_time,
-            false, // no fake clock.
-        )
-        .await;
-        test_fn(push_source_controller, rtc, cobalt).await;
-    });
+    let clock_copy = clock.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicated");
+    let result = async move {
+        let test_realm_proxy = client::connect_to_protocol::<fttr::RealmFactoryMarker>()
+            .with_context(|| {
+                format!(
+                    "while connecting to: {}",
+                    <fttr::RealmFactoryMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME
+                )
+            })?;
+
+        // _realm_keepalive must live as long as you need your test realm to live.
+        let (_realm_keepalive, server_end) =
+            endpoints::create_endpoints::<ftth::RealmProxy_Marker>();
+        let (push_source_puppet, _opts, cobalt_metric_client) = test_realm_proxy
+            .create_realm(
+                fttr::RealmOptions {
+                    use_real_monotonic_clock: Some(true),
+                    rtc: initial_rtc_time.map(|t| fttr::RtcOptions::InitialRtcTime(t.into_nanos())),
+                    ..Default::default()
+                },
+                clock_copy,
+                server_end,
+            )
+            .await
+            .expect("FIDL protocol error")
+            .expect("Error value returned from the call");
+        let cobalt = cobalt_metric_client.into_proxy().expect("infallible");
+        let rtc_updates = _opts
+            .rtc_updates
+            .expect("rtc updates should always be present in these tests")
+            .into_proxy()
+            .expect("infallible");
+        let rtc = RemoteRtcUpdates::new(rtc_updates);
+        let push_source_puppet = push_source_puppet.into_proxy().expect("infallible");
+        let push_source_controller = RemotePushSourcePuppet::new(push_source_puppet);
+        tracing::debug!("timekeeper_test: about to run test_fn");
+        let result = test_fn(clock, push_source_controller, rtc, cobalt).await;
+        tracing::debug!("timekeeper_test: done with run test_fn");
+        Ok(result)
+    };
+    result.await
 }
 
 #[fuchsia::test]
-fn test_no_rtc_start_clock_from_time_source() {
-    let clock = new_clock();
-    timekeeper_test(Arc::clone(&clock), None, |push_source_controller, _, cobalt| async move {
+async fn test_no_rtc_start_clock_from_time_source_alternate_signal() {
+    let clock = new_nonshareable_clock();
+    timekeeper_test(clock, None, |clock, push_source_controller, _, _| async move {
+        let sample_monotonic = zx::Time::get_monotonic();
+        tracing::info!("[fxb/130140]: before push_source_controller.set_sample");
+        push_source_controller
+            .set_sample(TimeSample {
+                utc: Some(VALID_TIME.into_nanos()),
+                monotonic: Some(sample_monotonic.into_nanos()),
+                standard_deviation: Some(STD_DEV.into_nanos()),
+                ..Default::default()
+            })
+            .await;
+
+        fasync::OnSignals::new(
+            &clock,
+            zx::Signals::from_bits(fft::SIGNAL_UTC_CLOCK_LOGGING_QUALITY).unwrap(),
+        )
+        .await
+        .unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[fuchsia::test]
+async fn test_no_rtc_start_clock_from_time_source() {
+    let clock = new_nonshareable_clock();
+    timekeeper_test(clock, None, |clock, push_source_controller, _, cobalt| async move {
         let before_update_ticks = clock.get_details().unwrap().last_value_update_ticks;
 
         let sample_monotonic = zx::Time::get_monotonic();
@@ -71,7 +142,15 @@ fn test_no_rtc_start_clock_from_time_source() {
             .await;
 
         tracing::info!("[fxb/130140]: before CLOCK_STARTED");
-        fasync::OnSignals::new(&*clock, zx::Signals::CLOCK_STARTED).await.unwrap();
+        fasync::OnSignals::new(&clock, zx::Signals::CLOCK_STARTED).await.unwrap();
+        tracing::info!("[fxb/130140]: before SIGNAL_UTC_CLOCK_SYNCHRONIZED");
+        fasync::OnSignals::new(
+            &clock,
+            zx::Signals::from_bits(fft::SIGNAL_UTC_CLOCK_SYNCHRONIZED).unwrap(),
+        )
+        .await
+        .unwrap();
+        tracing::info!("[fxb/130140]: after SIGNAL_UTC_CLOCK_SYNCHRONIZED");
         let after_update_ticks = clock.get_details().unwrap().last_value_update_ticks;
         assert!(after_update_ticks > before_update_ticks);
 
@@ -85,40 +164,55 @@ fn test_no_rtc_start_clock_from_time_source() {
         let cobalt_event_stream =
             create_cobalt_event_stream(Arc::new(cobalt), LogMethod::LogMetricEvents);
         tracing::info!("[fxb/130140]: before cobalt_event_stream.take");
-        assert_eq!(
-            cobalt_event_stream.take(5).collect::<Vec<_>>().await,
-            vec![
-                MetricEvent::builder(REAL_TIME_CLOCK_EVENTS_MIGRATED_METRIC_ID)
+        let actual = cobalt_event_stream.take(6).collect::<Vec<_>>().await;
+        assert!(
+            actual.iter().any(|elem| *elem
+                == MetricEvent::builder(REAL_TIME_CLOCK_EVENTS_MIGRATED_METRIC_ID)
                     .with_event_codes(RtcEventType::NoDevices)
-                    .as_occurrence(1),
-                MetricEvent::builder(TIMEKEEPER_LIFECYCLE_EVENTS_MIGRATED_METRIC_ID)
+                    .as_occurrence(1)),
+            "got: {:#?}",
+            actual
+        );
+        assert!(
+            actual.iter().any(|elem| *elem
+                == MetricEvent::builder(TIMEKEEPER_LIFECYCLE_EVENTS_MIGRATED_METRIC_ID)
                     .with_event_codes(LifecycleEventType::InitializedBeforeUtcStart)
-                    .as_occurrence(1),
-                MetricEvent::builder(TIMEKEEPER_TRACK_EVENTS_MIGRATED_METRIC_ID)
+                    .as_occurrence(1)),
+            "got: {:#?}",
+            actual
+        );
+        assert!(
+            actual.iter().any(|elem| *elem
+                == MetricEvent::builder(TIMEKEEPER_SQRT_COVARIANCE_MIGRATED_METRIC_ID)
+                    .with_event_codes((Track::Primary, Experiment::None))
+                    .as_integer(STD_DEV.into_micros()),),
+            "got: {:#?}",
+            actual
+        );
+        assert!(
+            actual.iter().any(|elem| *elem
+                == MetricEvent::builder(TIMEKEEPER_TRACK_EVENTS_MIGRATED_METRIC_ID)
                     .with_event_codes((
                         TrackEvent::EstimatedOffsetUpdated,
                         Track::Primary,
-                        Experiment::None
+                        Experiment::None,
                     ))
-                    .as_occurrence(1),
-                MetricEvent::builder(TIMEKEEPER_SQRT_COVARIANCE_MIGRATED_METRIC_ID)
-                    .with_event_codes((Track::Primary, Experiment::None))
-                    .as_integer(STD_DEV.into_micros()),
-                MetricEvent::builder(TIMEKEEPER_LIFECYCLE_EVENTS_MIGRATED_METRIC_ID)
-                    .with_event_codes(LifecycleEventType::StartedUtcFromTimeSource)
-                    .as_occurrence(1),
-            ]
+                    .as_occurrence(1),),
+            "got: {:#?}",
+            actual
         );
-    });
+    })
+    .await
+    .unwrap();
 }
 
 #[fuchsia::test]
-fn test_invalid_rtc_start_clock_from_time_source() {
-    let clock = new_clock();
+async fn test_invalid_rtc_start_clock_from_time_source() {
+    let clock = new_nonshareable_clock();
     timekeeper_test(
-        Arc::clone(&clock),
+        clock,
         Some(*BEFORE_BACKSTOP_TIME),
-        |push_source_controller, rtc_updates, cobalt| async move {
+        |clock, push_source_controller, rtc_updates, cobalt| async move {
             let mut cobalt_event_stream =
                 create_cobalt_event_stream(Arc::new(cobalt), LogMethod::LogMetricEvents);
             // Timekeeper should reject the RTC time.
@@ -148,7 +242,13 @@ fn test_invalid_rtc_start_clock_from_time_source() {
 
             // Timekeeper should accept the time from the time source.
             tracing::info!("[fxb/130140]: before CLOCK_STARTED");
-            fasync::OnSignals::new(&*clock, zx::Signals::CLOCK_STARTED).await.unwrap();
+            fasync::OnSignals::new(&clock, zx::Signals::CLOCK_STARTED).await.unwrap();
+            fasync::OnSignals::new(
+                &clock,
+                zx::Signals::from_bits(fft::SIGNAL_UTC_CLOCK_SYNCHRONIZED).unwrap(),
+            )
+            .await
+            .unwrap();
             // UTC time reported by the clock should be at least the time reported by the time
             // source, and no more than the UTC time reported by the time source + time elapsed
             // since the time was read.
@@ -157,7 +257,7 @@ fn test_invalid_rtc_start_clock_from_time_source() {
             assert_geq!(reported_utc, *VALID_TIME);
             assert_leq!(reported_utc, *VALID_TIME + (monotonic_after - sample_monotonic));
             // RTC should also be set.
-            let rtc_update = poll_until_some!(|| rtc_updates.to_vec().pop()).await;
+            let rtc_update = poll_until_some_async!(async { rtc_updates.to_vec().await.pop() });
             let monotonic_after_rtc_set = zx::Time::get_monotonic();
             let rtc_reported_utc = rtc_time_to_zx_time(rtc_update);
             assert_geq!(rtc_reported_utc, *VALID_TIME);
@@ -187,23 +287,25 @@ fn test_invalid_rtc_start_clock_from_time_source() {
                 ]
             );
         },
-    );
+    )
+    .await
+    .unwrap();
 }
 
 #[fuchsia::test]
-fn test_start_clock_from_rtc() {
-    let clock = new_clock();
+async fn test_start_clock_from_rtc() {
+    let clock = new_nonshareable_clock();
     let monotonic_before = zx::Time::get_monotonic();
     timekeeper_test(
-        Arc::clone(&clock),
+        clock,
         Some(*VALID_RTC_TIME),
-        |push_source_controller, rtc_updates, cobalt| async move {
+        |clock, push_source_controller, rtc_updates, cobalt| async move {
             let mut cobalt_event_stream =
                 create_cobalt_event_stream(Arc::new(cobalt), LogMethod::LogMetricEvents);
 
             // Clock should start from the time read off the RTC.
             tracing::info!("[fxb/130140]: before CLOCK_STARTED");
-            fasync::OnSignals::new(&*clock, zx::Signals::CLOCK_STARTED).await.unwrap();
+            fasync::OnSignals::new(&clock, zx::Signals::CLOCK_STARTED).await.unwrap();
 
             // UTC time reported by the clock should be at least the time reported by the RTC, and no
             // more than the UTC time reported by the RTC + time elapsed since Timekeeper was launched.
@@ -251,7 +353,7 @@ fn test_start_clock_from_rtc() {
             assert_geq!(clock_utc, *VALID_TIME);
             assert_leq!(clock_utc, *VALID_TIME + (monotonic_after_read - sample_monotonic));
             // RTC should be set too.
-            let rtc_update = poll_until_some!(|| rtc_updates.to_vec().pop()).await;
+            let rtc_update = poll_until_some_async!(async { rtc_updates.to_vec().await.pop() });
             let monotonic_after_rtc_set = zx::Time::get_monotonic();
             let rtc_reported_utc = rtc_time_to_zx_time(rtc_update);
             assert_geq!(rtc_reported_utc, *VALID_TIME);
@@ -307,13 +409,31 @@ fn test_start_clock_from_rtc() {
                 ]
             );
         },
-    );
+    )
+    .await
+    .unwrap();
 }
 
 #[fuchsia::test]
-fn test_reject_before_backstop() {
-    let clock = new_clock();
-    timekeeper_test(Arc::clone(&clock), None, |push_source_controller, _, cobalt| async move {
+async fn test_start_clock_from_rtc_alternate_signal() {
+    let clock = new_nonshareable_clock();
+    timekeeper_test(clock, Some(*VALID_RTC_TIME), |clock, _, _, _| async move {
+        // Clock should start from the time read off the RTC.
+        fasync::OnSignals::new(
+            &clock,
+            zx::Signals::from_bits(fft::SIGNAL_UTC_CLOCK_LOGGING_QUALITY).unwrap(),
+        )
+        .await
+        .unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[fuchsia::test]
+async fn test_reject_before_backstop() {
+    let clock = new_nonshareable_clock();
+    timekeeper_test(clock, None, |clock, push_source_controller, _, cobalt| async move {
         let cobalt_event_stream =
             create_cobalt_event_stream(Arc::new(cobalt), LogMethod::LogMetricEvents);
 
@@ -340,13 +460,15 @@ fn test_reject_before_backstop() {
             })
             .collect::<Vec<_>>()
             .await;
-        // Clock should still read backstop.
-        assert_eq!(*BACKSTOP_TIME, clock.read().unwrap());
-    });
+        // Clock should not have been rewound to before backstop.
+        assert_leq!(*BACKSTOP_TIME, clock.read().unwrap());
+    })
+    .await
+    .unwrap();
 }
 
 #[fuchsia::test]
-fn test_slew_clock() {
+async fn test_slew_clock() {
     // Constants for controlling the duration of the slew we want to induce. These constants
     // are intended to tune the test to avoid flakes and do not necessarily need to match up with
     // those in timekeeper.
@@ -354,8 +476,8 @@ fn test_slew_clock() {
     const NOMINAL_SLEW_PPM: i64 = 20;
     let error_for_slew = SLEW_DURATION * NOMINAL_SLEW_PPM / 1_000_000;
 
-    let clock = new_clock();
-    timekeeper_test(Arc::clone(&clock), None, |push_source_controller, _, _| async move {
+    let clock = new_nonshareable_clock();
+    timekeeper_test(clock, None, |clock, push_source_controller, _, _| async move {
         // Let the first sample be slightly in the past so later samples are not in the future.
         let sample_1_monotonic = zx::Time::get_monotonic() - BETWEEN_SAMPLES;
         let sample_1_utc = *VALID_TIME;
@@ -372,7 +494,14 @@ fn test_slew_clock() {
         // After the first sample, the clock is started, and running at the same rate as
         // the reference.
         tracing::info!("[fxb/130140]: before CLOCK_STARTED");
-        fasync::OnSignals::new(&*clock, zx::Signals::CLOCK_STARTED).await.unwrap();
+        fasync::OnSignals::new(&clock, zx::Signals::CLOCK_STARTED).await.unwrap();
+        tracing::info!("[fxb/130140]: before SIGNAL_UTC_CLOCK_SYNCHRONIZED");
+        fasync::OnSignals::new(
+            &clock,
+            zx::Signals::from_bits(fft::SIGNAL_UTC_CLOCK_SYNCHRONIZED).unwrap(),
+        )
+        .await
+        .unwrap();
         let clock_rate = clock.get_details().unwrap().mono_to_synthetic.rate;
         assert_eq!(clock_rate.reference_ticks, clock_rate.synthetic_ticks);
         let last_generation_counter = clock.get_details().unwrap().generation_counter;
@@ -397,14 +526,16 @@ fn test_slew_clock() {
         assert_lt!(slew_rate.synthetic_ticks, slew_rate.reference_ticks);
 
         // TODO(fxbug.dev/65239) - verify that the slew completes.
-    });
+    })
+    .await
+    .unwrap();
 }
 
 #[fuchsia::test]
-fn test_step_clock() {
+async fn test_step_clock() {
     const STEP_ERROR: zx::Duration = zx::Duration::from_hours(1);
-    let clock = new_clock();
-    timekeeper_test(Arc::clone(&clock), None, |push_source_controller, _, _| async move {
+    let clock = new_nonshareable_clock();
+    timekeeper_test(clock, None, |clock, push_source_controller, _, _| async move {
         // Let the first sample be slightly in the past so later samples are not in the future.
         let monotonic_before = zx::Time::get_monotonic();
         let sample_1_monotonic = monotonic_before - BETWEEN_SAMPLES;
@@ -419,10 +550,16 @@ fn test_step_clock() {
             })
             .await;
 
-        // After the first sample, the clock is started, and running at the same rate as
-        // the reference.
+        // Wait until the clock is running and synchronized before testing.
         tracing::info!("[fxb/130140]: before CLOCK_STARTED");
-        fasync::OnSignals::new(&*clock, zx::Signals::CLOCK_STARTED).await.unwrap();
+        fasync::OnSignals::new(&clock, zx::Signals::CLOCK_STARTED).await.unwrap();
+        tracing::info!("[fxb/130140]: before SIGNAL_UTC_CLOCK_SYNCHRONIZED");
+        fasync::OnSignals::new(
+            &clock,
+            zx::Signals::from_bits(fft::SIGNAL_UTC_CLOCK_SYNCHRONIZED).unwrap(),
+        )
+        .await
+        .unwrap();
         let utc_now = clock.read().unwrap();
         let monotonic_after = zx::Time::get_monotonic();
         assert_geq!(utc_now, sample_1_utc + BETWEEN_SAMPLES);
@@ -441,7 +578,9 @@ fn test_step_clock() {
                 ..Default::default()
             })
             .await;
-        poll_until!(|| clock.get_details().unwrap().last_value_update_ticks != clock_last_set_ticks)
+        poll_until!(
+                || clock.get_details().unwrap().last_value_update_ticks != clock_last_set_ticks
+            )
             .await;
         let utc_now_2 = clock.read().unwrap();
         let monotonic_after_2 = zx::Time::get_monotonic();
@@ -456,7 +595,9 @@ fn test_step_clock() {
             utc_now_2,
             jump_utc + (monotonic_after_2 - monotonic_before) + zx::Duration::from_millis(500)
         );
-    });
+    })
+    .await
+    .unwrap();
 }
 
 fn avg(time_1: zx::Time, time_2: zx::Time) -> zx::Time {
@@ -467,9 +608,9 @@ fn avg(time_1: zx::Time, time_2: zx::Time) -> zx::Time {
 }
 
 #[fuchsia::test]
-fn test_restart_crashed_time_source() {
-    let clock = new_clock();
-    timekeeper_test(Arc::clone(&clock), None, |push_source_controller, _, _| async move {
+async fn test_restart_crashed_time_source() {
+    let clock = new_nonshareable_clock();
+    timekeeper_test(clock, None, |clock, push_source_controller, _, _| async move {
         // Let the first sample be slightly in the past so later samples are not in the future.
         let monotonic_before = zx::Time::get_monotonic();
         let sample_1_monotonic = monotonic_before - BETWEEN_SAMPLES;
@@ -486,11 +627,11 @@ fn test_restart_crashed_time_source() {
 
         // After the first sample, the clock is started.
         tracing::info!("[fxb/130140]: before CLOCK_STARTED");
-        fasync::OnSignals::new(&*clock, zx::Signals::CLOCK_STARTED).await.unwrap();
+        fasync::OnSignals::new(&clock, zx::Signals::CLOCK_STARTED).await.unwrap();
         let last_generation_counter = clock.get_details().unwrap().generation_counter;
 
         // After a time source crashes, timekeeper should restart it and accept samples from it.
-        push_source_controller.simulate_crash();
+        let _result = push_source_controller.simulate_crash();
         let sample_2_utc = *VALID_TIME_2;
         let sample_2_monotonic = sample_1_monotonic + BETWEEN_SAMPLES;
         tracing::info!("[fxb/130140]: before push_source_controller.set_sample 2");
@@ -510,5 +651,7 @@ fn test_restart_crashed_time_source() {
         let minimum_expected = avg(sample_1_utc + BETWEEN_SAMPLES, sample_2_utc)
             + (monotonic_after - monotonic_before);
         assert_geq!(result_utc, minimum_expected);
-    });
+    })
+    .await
+    .unwrap();
 }

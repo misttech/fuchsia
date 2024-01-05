@@ -15,6 +15,7 @@ for the Fuchsia build.
 
 from dataclasses import dataclass
 import json
+import re
 import typing
 
 from dataparse import dataparse
@@ -115,6 +116,9 @@ class TestListFile:
         return ret
 
 
+_PACKAGE_REGEX = re.compile(r"/([\w\-_]+)#meta")
+
+
 @dataclass
 class Test:
     """Wrapper containing data from both tests.json and test-list.json.
@@ -138,6 +142,49 @@ class Test:
     def __eq__(self, other) -> bool:
         return self.build.__eq__(other)
 
+    def is_device_test(self) -> bool:
+        return self.build.test.package_url is not None
+
+    def is_host_test(self) -> bool:
+        return self.build.test.path is not None
+
+    def name(self) -> str:
+        """Return the unique name of this test.
+
+        Returns:
+            str: This tests name, which is unique among Tests.
+        """
+        return self.info.name
+
+    def is_e2e_test(self) -> bool:
+        """Determine if this test is an E2E test.
+
+        E2E tests run on the host system (Linux) and also have a device_type
+        set in their environments.
+
+        Returns:
+            bool: True only if the test is an E2E test.
+        """
+        return self.build.test.os.lower() == "linux" and any(
+            [
+                env.dimensions.device_type is not None
+                for env in self.build.environments or []
+            ]
+        )
+
+    def package_name(self) -> str | None:
+        """Get the package name for this test if applicable.
+
+        If the test in question is a host test, returns None.
+
+        Returns:
+            str | None: Package name if this is a device test, None otherwise.
+        """
+        if self.build.test.package_url is None:
+            return None
+        m = _PACKAGE_REGEX.findall(self.build.test.package_url)
+        return m[0] if m else None
+
     @classmethod
     def join_test_descriptions(
         cls: typing.Type[typing.Self],
@@ -158,13 +205,14 @@ class Test:
         """
         try:
             ret: typing.List[Test] = [
-                cls(entry, test_list_entries[entry.test.name]) for entry in test_entries
+                cls(entry, test_list_entries[entry.test.name])
+                for entry in test_entries
             ]
             # Ignore type for now. With Python 3.11 we can use typing.Self.
             return ret  # type:ignore
         except KeyError as e:
             raise ValueError(
                 f"Test '{e.args[0]} was found in "
-                + "tests.json, but not test-list.json. This may be an error "
-                + "with your build configuration."
+                + "tests.json, but not test-list.json.\nYou may need to run "
+                + "`fx build :test-list` or a full `fx build`."
             )

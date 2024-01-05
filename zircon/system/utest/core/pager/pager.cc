@@ -24,6 +24,7 @@
 
 #include "test_thread.h"
 #include "userpager.h"
+#include "zircon/system/utest/core/vmo/helpers.h"
 
 namespace pager_tests {
 
@@ -400,14 +401,24 @@ TEST(Pager, VmarUnmapTest) {
   Vmo* vmo;
   ASSERT_TRUE(pager.CreateVmo(1, &vmo));
 
-  TestThread t([vmo]() -> bool { return check_buffer(vmo, 0, 1, true); });
+  zx_vaddr_t addr;
+  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ, 0, vmo->vmo(), 0, zx_system_get_page_size(),
+                                       &addr));
+
+  TestThread t([addr]() -> bool {
+    auto buf = reinterpret_cast<uint8_t*>(addr);
+    uint8_t data = *buf;
+    // This comparison is not relevant. Just use the data so that the dereference is not optimized
+    // out. The thread is expected to crash before this point anyway.
+    return data > 0;
+  });
   ASSERT_TRUE(t.Start());
   ASSERT_TRUE(t.WaitForBlocked());
 
-  ASSERT_TRUE(pager.UnmapVmo(vmo));
+  ASSERT_OK(zx::vmar::root_self()->unmap(addr, zx_system_get_page_size()));
   ASSERT_TRUE(pager.SupplyPages(vmo, 0, 1));
 
-  ASSERT_TRUE(t.WaitForCrash(vmo->base_addr(), ZX_ERR_NOT_FOUND));
+  ASSERT_TRUE(t.WaitForCrash(addr, ZX_ERR_NOT_FOUND));
 }
 
 // Tests that replacing a vmar mapping while threads are blocked on a
@@ -1123,7 +1134,7 @@ TEST(Pager, CloneCommitTest) {
   zx_info_vmo_t info;
   uint64_t a1, a2;
   ASSERT_EQ(ZX_OK, clone->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.populated_bytes);
 }
 
 // Tests that commit on the clone of a clone populates things properly.
@@ -1156,11 +1167,11 @@ TEST(Pager, CloneChainCommitTest) {
   zx_info_vmo_t info;
   uint64_t a1, a2;
   ASSERT_EQ(ZX_OK, clone->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.populated_bytes);
 
   // Verify that the intermediate has no pages committed.
   ASSERT_EQ(ZX_OK, intermediate->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-  EXPECT_EQ(0ul, info.committed_bytes);
+  EXPECT_EQ(0ul, info.populated_bytes);
 }
 
 // Tests that commit on the clone populates things properly if things have already been touched.
@@ -1196,7 +1207,7 @@ TEST(Pager, CloneSplitCommitTest) {
   zx_info_vmo_t info;
   uint64_t a1, a2;
   ASSERT_EQ(ZX_OK, clone->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.populated_bytes);
 }
 
 // Resizing a cloned VMO causes a fault.
@@ -1728,6 +1739,10 @@ TEST(Pager, InvalidPagerSupplyPages) {
   ASSERT_EQ(aux_vmo.duplicate(ZX_DEFAULT_VMO_RIGHTS & ~ZX_RIGHT_WRITE, &ro_vmo), ZX_OK);
   ASSERT_EQ(zx_pager_supply_pages(pager.get(), vmo.get(), 0, 0, ro_vmo.get(), 0),
             ZX_ERR_ACCESS_DENIED);
+  zx::vmo wo_vmo;
+  ASSERT_EQ(aux_vmo.duplicate(ZX_DEFAULT_VMO_RIGHTS & ~ZX_RIGHT_READ, &wo_vmo), ZX_OK);
+  ASSERT_EQ(zx_pager_supply_pages(pager.get(), vmo.get(), 0, 0, wo_vmo.get(), 0),
+            ZX_ERR_ACCESS_DENIED);
 
   // missing permissions on the pager vmo
   zx::vmo ro_pager_vmo;
@@ -1745,16 +1760,11 @@ TEST(Pager, InvalidPagerSupplyPages) {
 
   zx::unowned_resource root_resource = maybe_standalone::GetRootResource();
   if (root_resource->is_valid()) {
-    // unsupported aux vmo type
-    zx::vmo physical_vmo;
-    // We're not actually going to do anything with this vmo, and since the
-    // kernel doesn't do any checks with the address if you're using the
-    // root resource, just use addr 0.
-    ASSERT_EQ(zx_vmo_create_physical(root_resource->get(), 0, zx_system_get_page_size(),
-                                     physical_vmo.reset_and_get_address()),
-              ZX_OK);
+    zx::result<vmo_test::PhysVmo> result = vmo_test::GetTestPhysVmo(zx_system_get_page_size());
+    ASSERT_TRUE(result.is_ok());
+    zx_handle_t physical_vmo_handle = result.value().vmo.get();
     ASSERT_EQ(zx_pager_supply_pages(pager.get(), vmo.get(), 0, zx_system_get_page_size(),
-                                    physical_vmo.get(), 0),
+                                    physical_vmo_handle, 0),
               ZX_ERR_NOT_SUPPORTED);
   }
 
@@ -1774,6 +1784,9 @@ TEST(Pager, InvalidPagerSupplyPages) {
     zx::vmo aux_vmo;  // aux vmo given to supply pages
     zx::vmo alt_vmo;  // alt vmo if clones are involved
 
+    // The expected status of this test.
+    zx_status_t expected_status = ZX_ERR_BAD_STATE;
+
     if (i == kIsClone) {
       ASSERT_EQ(zx::vmo::create(zx_system_get_page_size(), 0, &alt_vmo), ZX_OK);
       ASSERT_EQ(alt_vmo.create_child(ZX_VMO_CHILD_SNAPSHOT, 0, zx_system_get_page_size(), &aux_vmo),
@@ -1782,6 +1795,7 @@ TEST(Pager, InvalidPagerSupplyPages) {
       ASSERT_EQ(zx_pager_create_vmo(pager.get(), 0, port.get(), 0, zx_system_get_page_size(),
                                     aux_vmo.reset_and_get_address()),
                 ZX_OK);
+      expected_status = ZX_ERR_NOT_SUPPORTED;
     } else {
       ASSERT_EQ(zx::vmo::create(zx_system_get_page_size(), 0, &aux_vmo), ZX_OK);
     }
@@ -1819,7 +1833,7 @@ TEST(Pager, InvalidPagerSupplyPages) {
 
     ASSERT_EQ(zx_pager_supply_pages(pager.get(), vmo.get(), 0, zx_system_get_page_size(),
                                     aux_vmo.get(), 0),
-              ZX_ERR_BAD_STATE);
+              expected_status);
 
     if (pmt) {
       pmt.unpin();
@@ -1880,6 +1894,75 @@ TEST(Pager, MappedSupplyPages) {
 
   // The mapped address should now read zero.
   EXPECT_EQ(*reinterpret_cast<volatile uint8_t*>(addr), 0u);
+}
+
+// Tests that supply_pages works when the destination has some pinned pages.
+TEST(Pager, PinnedSupplyPages) {
+  zx::unowned_resource root_resource = maybe_standalone::GetRootResource();
+  if (!root_resource->is_valid()) {
+    return;
+  }
+
+  zx::pager pager;
+  ASSERT_OK(zx::pager::create(0, &pager));
+
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  zx::vmo vmo;
+  const size_t kNumPages = 3;
+  ASSERT_OK(pager.create_vmo(0, port, 0, kNumPages * zx_system_get_page_size(), &vmo));
+
+  zx::vmo aux_vmo;
+  ASSERT_OK(zx::vmo::create(kNumPages * zx_system_get_page_size(), 0, &aux_vmo));
+  ASSERT_OK(
+      aux_vmo.op_range(ZX_VMO_OP_COMMIT, 0, kNumPages * zx_system_get_page_size(), nullptr, 0));
+
+  // Supply only the middle page, this will be pinned below.
+  ASSERT_OK(zx_pager_supply_pages(pager.get(), vmo.get(), zx_system_get_page_size(),
+                                  zx_system_get_page_size(), aux_vmo.get(), 0));
+
+  // Verify contents of the supplied page.
+  uint8_t buf[zx_system_get_page_size()];
+  ASSERT_OK(vmo.read(&buf[0], zx_system_get_page_size(), sizeof(buf)));
+  uint8_t expected[zx_system_get_page_size()];
+  memset(&expected[0], 0, zx_system_get_page_size());
+  ASSERT_EQ(0, memcmp(buf, expected, zx_system_get_page_size()));
+
+  // Overwrite the supplied page that we can check for later.
+  memset(&buf[0], 0xa, zx_system_get_page_size());
+  memset(&expected[0], 0xa, zx_system_get_page_size());
+  ASSERT_OK(vmo.write(&buf[0], zx_system_get_page_size(), sizeof(buf)));
+
+  // Now pin the middle page.
+  zx::iommu iommu;
+  zx::bti bti;
+  zx::pmt pmt;
+  zx_iommu_desc_dummy_t desc;
+  ASSERT_OK(zx_iommu_create(root_resource->get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+                            iommu.reset_and_get_address()));
+  ASSERT_OK(zx::bti::create(iommu, 0, 0xdeadbeef, &bti));
+  zx_paddr_t addr;
+  ASSERT_OK(bti.pin(ZX_BTI_PERM_READ, vmo, zx_system_get_page_size(), zx_system_get_page_size(),
+                    &addr, 1, &pmt));
+  auto unpin = fit::defer([&]() { pmt.unpin(); });
+
+  // Try to supply the entire VMO now. This should skip the middle page which was pinned.
+  ASSERT_OK(
+      aux_vmo.op_range(ZX_VMO_OP_COMMIT, 0, kNumPages * zx_system_get_page_size(), nullptr, 0));
+  ASSERT_OK(zx_pager_supply_pages(pager.get(), vmo.get(), 0, kNumPages * zx_system_get_page_size(),
+                                  aux_vmo.get(), 0));
+
+  // Verify that the middle page hasn't been overwritten.
+  ASSERT_OK(vmo.read(&buf[0], zx_system_get_page_size(), sizeof(buf)));
+  ASSERT_EQ(0, memcmp(buf, expected, zx_system_get_page_size()));
+
+  // Verify that the remaining pages have been supplied with zeros from the aux_vmo.
+  memset(&expected[0], 0, zx_system_get_page_size());
+  ASSERT_OK(vmo.read(&buf[0], 0, sizeof(buf)));
+  ASSERT_EQ(0, memcmp(buf, expected, zx_system_get_page_size()));
+  ASSERT_OK(vmo.read(&buf[0], 2 * zx_system_get_page_size(), sizeof(buf)));
+  ASSERT_EQ(0, memcmp(buf, expected, zx_system_get_page_size()));
 }
 
 // Tests that resizing a non-resizable pager vmo fails.
@@ -2594,7 +2677,7 @@ TEST(Pager, CloneCommitSingleBatch) {
   zx_info_vmo_t info;
   uint64_t a1, a2;
   ASSERT_EQ(ZX_OK, clone->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.populated_bytes);
 }
 
 // Tests that a commit on a clone generates two batch page requests when the parent has a page
@@ -2633,7 +2716,7 @@ TEST(Pager, CloneCommitTwoBatches) {
   zx_info_vmo_t info;
   uint64_t a1, a2;
   ASSERT_EQ(ZX_OK, clone->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.populated_bytes);
 }
 
 // Tests that a commit on a clone generates three batch page requests when the parent has two
@@ -2677,7 +2760,7 @@ TEST(Pager, CloneCommitMultipleBatches) {
   zx_info_vmo_t info;
   uint64_t a1, a2;
   ASSERT_EQ(ZX_OK, clone->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.populated_bytes);
 }
 
 // Tests that a commit on a clone populates pages as expected when the parent has some populated
@@ -2728,7 +2811,7 @@ TEST(Pager, CloneCommitRandomBatches) {
   zx_info_vmo_t info;
   uint64_t a1, a2;
   ASSERT_EQ(ZX_OK, clone->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_EQ(kNumPages * zx_system_get_page_size(), info.populated_bytes);
 }
 
 // Tests that the ZX_VMO_OP_ALWAYS_NEED hint works as expected.
@@ -2798,21 +2881,10 @@ TEST(Pager, EvictionHintDontNeed) {
   ASSERT_OK(
       zx_debug_send_command(root_resource->get(), k_command_reclaim, strlen(k_command_reclaim)));
 
+  // Verify that the vmo has no committed pages after eviction.
   // Eviction is asynchronous. Poll in a loop until we see the committed page count drop. In case
   // we're left polling forever, the external test timeout will kick in.
-  while (true) {
-    zx::nanosleep(zx::deadline_after(zx::msec(50)));
-    printf("polling page count...\n");
-
-    // Verify that the vmo has no committed pages after eviction.
-    ASSERT_OK(vmo->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-    if (info.committed_bytes == 0) {
-      break;
-    }
-    printf("page count %zu\n", info.committed_bytes / zx_system_get_page_size());
-  }
-
-  ASSERT_EQ(0, info.committed_bytes);
+  ASSERT_TRUE(vmo_test::PollVmoPopulatedBytes(vmo->vmo(), 0));
 }
 
 // Tests that the zx_vmo_op_range() API succeeds and fails as expected for hints.
@@ -2981,6 +3053,7 @@ TEST(Pager, EvictionHintsVmar) {
   const uint64_t kVmarSize = 15 * zx_system_get_page_size();
   ASSERT_OK(root_vmar->allocate(ZX_VM_CAN_MAP_SPECIFIC | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE,
                                 0, kVmarSize, &vmar, &base_addr));
+  auto destroy = fit::defer([&vmar]() { vmar.destroy(); });
 
   UserPager pager;
   ASSERT_TRUE(pager.Init());
@@ -3019,32 +3092,37 @@ TEST(Pager, EvictionHintsVmar) {
   });
   ASSERT_TRUE(t1.Start());
 
-  // We should see page requests for both VMOs.
-  ASSERT_TRUE(pager.WaitForPageRead(vmo1, 0, 1, ZX_TIME_INFINITE));
-  ASSERT_TRUE(pager.SupplyPages(vmo1, 0, 1));
-  // The next page was committed and then marked DONT_NEED and could have been evicted already, so
-  // get the next request manually and see where we're at.
-  uint64_t req_offset;
-  uint64_t req_count;
-  ASSERT_TRUE(pager.GetPageReadRequest(vmo1, ZX_TIME_INFINITE, &req_offset, &req_count));
-  if (req_offset == 1) {
-    pager.SupplyPages(vmo1, 1, 1);
-    ASSERT_TRUE(pager.WaitForPageRead(vmo1, 2, 1, ZX_TIME_INFINITE));
-  } else {
-    ASSERT_EQ(req_offset, 2);
-  }
-  ASSERT_TRUE(pager.SupplyPages(vmo1, 2, 1));
-  ASSERT_TRUE(pager.WaitForPageRead(vmo2, 0, 1, ZX_TIME_INFINITE));
-  ASSERT_TRUE(pager.SupplyPages(vmo2, 0, 1));
-  // Similar as before, page might have been evicted.
-  ASSERT_TRUE(pager.GetPageReadRequest(vmo2, ZX_TIME_INFINITE, &req_offset, &req_count));
-  if (req_offset == 1) {
-    pager.SupplyPages(vmo2, 1, 1);
-    ASSERT_TRUE(pager.WaitForPageRead(vmo2, 2, 1, ZX_TIME_INFINITE));
-  } else {
-    ASSERT_EQ(req_offset, 2);
-  }
-  ASSERT_TRUE(pager.SupplyPages(vmo2, 2, 1));
+  // We should see page requests for both VMOs, however we do not know if the pages we marked
+  // DONT_NEED got evicted or not. As such there are three page request outcomes we might see
+  //  1. Single request for all three pages (page was evicted before our ALWAYS_NEED op)
+  //  2. Request for page 1 then request for pages 2 and 3 (page was evicted while servicing request
+  //     for page 1)
+  //  3. Request for page 1 then request for page 3 (page was not evicted at all)
+  auto wait_for_pages = [&pager](Vmo* vmo) {
+    uint64_t req_offset;
+    uint64_t req_count;
+    ASSERT_TRUE(pager.GetPageReadRequest(vmo, ZX_TIME_INFINITE, &req_offset, &req_count));
+    // First page is always absent, so our request should be for that.
+    ASSERT_EQ(req_offset, 0);
+    // 1 or 3 pages
+    ASSERT_TRUE(req_count == 3 || req_count == 1);
+    pager.SupplyPages(vmo, 0, req_count);
+    if (req_count == 3) {
+      return;
+    }
+    // The next request is either just the last page, or the last two pages.
+    ASSERT_TRUE(pager.GetPageReadRequest(vmo, ZX_TIME_INFINITE, &req_offset, &req_count));
+    if (req_offset == 1) {
+      ASSERT_EQ(req_count, 2);
+      pager.SupplyPages(vmo, 1, 2);
+    } else {
+      ASSERT_EQ(req_offset, 2);
+      ASSERT_EQ(req_count, 1);
+      pager.SupplyPages(vmo, 2, 1);
+    }
+  };
+  ASSERT_NO_FATAL_FAILURE(wait_for_pages(vmo1));
+  ASSERT_NO_FATAL_FAILURE(wait_for_pages(vmo2));
 
   ASSERT_TRUE(t1.Wait());
 
@@ -3067,6 +3145,7 @@ TEST(Pager, EvictionHintsNestedVmar) {
   const uint64_t kVmarSize = 10 * zx_system_get_page_size();
   ASSERT_OK(root_vmar->allocate(ZX_VM_CAN_MAP_SPECIFIC | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE,
                                 0, kVmarSize, &vmar, &base_addr));
+  auto destroy = fit::defer([&vmar]() { vmar.destroy(); });
 
   UserPager pager;
   ASSERT_TRUE(pager.Init());
@@ -3154,6 +3233,7 @@ TEST(Pager, EvictionHintsCloneVmar) {
   const uint64_t kVmarSize = 5 * zx_system_get_page_size();
   ASSERT_OK(root_vmar->allocate(ZX_VM_CAN_MAP_SPECIFIC | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE,
                                 0, kVmarSize, &vmar, &base_addr));
+  auto destroy = fit::defer([&vmar]() { vmar.destroy(); });
 
   UserPager pager;
   ASSERT_TRUE(pager.Init());
@@ -3194,7 +3274,7 @@ TEST(Pager, EvictionHintsCloneVmar) {
   zx_info_vmo_t info;
   uint64_t a1, a2;
   ASSERT_OK(clone->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-  ASSERT_EQ(zx_system_get_page_size(), info.committed_bytes);
+  ASSERT_EQ(zx_system_get_page_size(), info.populated_bytes);
   uint8_t new_data;
   ASSERT_OK(clone->vmo().read(&new_data, zx_system_get_page_size(), sizeof(data)));
   ASSERT_EQ(data, new_data);
@@ -3254,6 +3334,7 @@ TEST(Pager, OpCommitVmar) {
   const uint64_t kVmarSize = 15 * zx_system_get_page_size();
   ASSERT_OK(root_vmar->allocate(ZX_VM_CAN_MAP_SPECIFIC | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE,
                                 0, kVmarSize, &vmar, &base_addr));
+  auto destroy = fit::defer([&vmar]() { vmar.destroy(); });
 
   UserPager pager;
   ASSERT_TRUE(pager.Init());
@@ -3317,6 +3398,7 @@ TEST(Pager, OpCommitCloneVmar) {
   const uint64_t kVmarSize = 5 * zx_system_get_page_size();
   ASSERT_OK(root_vmar->allocate(ZX_VM_CAN_MAP_SPECIFIC | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE,
                                 0, kVmarSize, &vmar, &base_addr));
+  auto destroy = fit::defer([&vmar]() { vmar.destroy(); });
 
   UserPager pager;
   ASSERT_TRUE(pager.Init());
@@ -3357,7 +3439,7 @@ TEST(Pager, OpCommitCloneVmar) {
   zx_info_vmo_t info;
   uint64_t a1, a2;
   ASSERT_OK(clone->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), &a1, &a2));
-  ASSERT_EQ(2 * zx_system_get_page_size(), info.committed_bytes);
+  ASSERT_EQ(2 * zx_system_get_page_size(), info.populated_bytes);
 
   // The previously forked page should not have been overwritten.
   uint8_t new_data;

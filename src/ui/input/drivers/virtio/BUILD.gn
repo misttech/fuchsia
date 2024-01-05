@@ -12,7 +12,6 @@ driver_bind_rules("virtio_input_bind") {
   tests = "bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.acpi",
-    "//src/devices/bind/fuchsia.hardware.sysmem",
     "//src/devices/bind/fuchsia.pci",
     "//src/devices/bind/fuchsia.sysmem",
   ]
@@ -33,11 +32,13 @@ fuchsia_driver("virtio_input-driver") {
   ]
   deps = [
     ":virtio_input_bind",
-    "//sdk/banjo/fuchsia.hardware.hidbus:fuchsia.hardware.hidbus_banjo_cpp",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//src/devices/bus/lib/virtio",
     "//src/devices/lib/driver",
+    "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddktl",
-    "//zircon/system/ulib/hid",
+    "//src/ui/input/lib/hid",
+    "//zircon/system/ulib/inspect",
   ]
 }
 
@@ -46,6 +47,11 @@ fuchsia_driver_component("virtio_input") {
   deps = [ ":virtio_input-driver" ]
   info = "virtio_input-info.json"
   manifest = "meta/virtio_input.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "virtio_input"
+  driver_components = [ ":virtio_input" ]
 }
 
 test("virtio-input-test") {
@@ -62,15 +68,16 @@ test("virtio-input-test") {
     "input_touch.cc",
   ]
   deps = [
-    "//sdk/banjo/fuchsia.hardware.hidbus:fuchsia.hardware.hidbus_banjo_cpp",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
+    "//sdk/lib/async_patterns/testing/cpp",
     "//src/devices/bus/lib/virtio",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/no_ddk",
     "//src/ui/input/lib/hid-input-report",
+    "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/hid-parser",
     "//zircon/system/ulib/zxtest",
   ]
 

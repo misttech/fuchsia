@@ -3,17 +3,17 @@
 # found in the LICENSE file.
 
 import("//build/fidl/toolchain.gni")
-import("//build/sdk/sdk.gni")
+import("//build/sdk/sdk_molecule.gni")
 
 # The list of FIDLs to include in the core IDK.
 sdk_fidl_targets = [
+  # keep-sorted: begin
   "//sdk/fidl/fuchsia.accessibility.gesture:fuchsia.accessibility.gesture",
   "//sdk/fidl/fuchsia.accessibility.semantics:fuchsia.accessibility.semantics",
   "//sdk/fidl/fuchsia.accessibility.tts:fuchsia.accessibility.tts",
   "//sdk/fidl/fuchsia.accessibility.virtualkeyboard:fuchsia.accessibility.virtualkeyboard",
   "//sdk/fidl/fuchsia.audio.effects:fuchsia.audio.effects",
   "//sdk/fidl/fuchsia.auth:fuchsia.auth",
-  "//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs",
   "//sdk/fidl/fuchsia.auth.oldtokens:fuchsia.auth.oldtokens",
   "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth",
   "//sdk/fidl/fuchsia.bluetooth.a2dp:fuchsia.bluetooth.a2dp",
@@ -40,13 +40,18 @@ sdk_fidl_targets = [
   "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl",
   "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution",
   "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner",
+  "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox",
   "//sdk/fidl/fuchsia.component.test:fuchsia.component.test",
   "//sdk/fidl/fuchsia.component.types:fuchsia.component.types",
   "//sdk/fidl/fuchsia.data:fuchsia.data",
+  "//sdk/fidl/fuchsia.debugdata:fuchsia.debugdata",
   "//sdk/fidl/fuchsia.developer.tiles:fuchsia.developer.tiles",
+  "//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs",
   "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics",
   "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types",
   "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework",
+  "//sdk/fidl/fuchsia.driver.legacy:fuchsia.driver.legacy",
+  "//sdk/fidl/fuchsia.driver.registrar:fuchsia.driver.registrar",
   "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test",
   "//sdk/fidl/fuchsia.element:fuchsia.element",
   "//sdk/fidl/fuchsia.factory:fuchsia.factory",
@@ -64,6 +69,7 @@ sdk_fidl_targets = [
   "//sdk/fidl/fuchsia.hardware.power.sensor:fuchsia.hardware.power.sensor",
   "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol",
   "//sdk/fidl/fuchsia.hardware.radar:fuchsia.hardware.radar",
+  "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc",
   "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature",
   "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo",
   "//sdk/fidl/fuchsia.images:fuchsia.images",
@@ -123,6 +129,7 @@ sdk_fidl_targets = [
   "//sdk/fidl/fuchsia.sys.test:fuchsia.sys.test",
   "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo",
   "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem",
+  "//sdk/fidl/fuchsia.test:fuchsia.test",
   "//sdk/fidl/fuchsia.thermal:fuchsia.thermal",
   "//sdk/fidl/fuchsia.tracing:fuchsia.tracing",
   "//sdk/fidl/fuchsia.tracing.perfetto:fuchsia.tracing.perfetto",
@@ -163,12 +170,8 @@ sdk_fidl_targets = [
   "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration",
   "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac",
   "//zircon/vdso/zx:zx",
-]
 
-# The list of FIDLs to include in the core testing IDK.
-sdk_fidl_testing_targets = [
-  "//sdk/fidl/fuchsia.test:fuchsia.test",
-  "//sdk/fidl/fuchsia.debugdata:fuchsia.debugdata",
+  # keep-sorted: end
 ]
 
 # The FIDL portion of the platform surface area (plasa).
@@ -201,23 +204,8 @@ sdk_molecule("fidl") {
   ]
 }
 
-# Fuchsia IDL (FIDL) files defining testing API for the SDK.
-sdk_molecule("fidl_testing") {
-  testonly = true
-  visibility = [
-    ":*",
-    "//build/fidl:sdk_fidl",
-    "//sdk:*",
-  ]
-
-  deps = []
-  foreach(target, sdk_fidl_testing_targets) {
-    deps += [ "${target}_sdk($fidl_toolchain)" ]
-  }
-}
-
 group("sdk_fidl_partner_allowlist") {
-  visibility = sdk_fidl_targets + sdk_fidl_testing_targets
+  visibility = sdk_fidl_targets
 }
 
 group("sdk_partner_libs") {
@@ -237,16 +225,25 @@ group("sdk_partner_libs") {
 # this group is used to ensure that we run the FIDL API compatibility tests on
 # these libraries.
 _sdk_partner_internal_fidl_libraries = [
+  "fuchsia.audio.controller",
+  "fuchsia.dash",
   "fuchsia.debugdata",
+  "fuchsia.debugger",
+  "fuchsia.developer.ffxdaemonlifecycle",
+  "fuchsia.developer.remotecontrol",
+  "fuchsia.diagnostics.host",
   "fuchsia.fs",
   "fuchsia.hardware.pty",
   "fuchsia.net.name",
   "fuchsia.memory.debug",
+  "fuchsia.memory.heapdump.client",
   "fuchsia.memory.inspection",
+  "fuchsia.overnet.protocol",
   "fuchsia.posix.socket.packet",
   "fuchsia.posix.socket.raw",
   "fuchsia.posix.socket",
   "fuchsia.posix",
+  "fuchsia.sys2",
   "fuchsia.vulkan.loader",
 ]
 

@@ -1,8 +1,6 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-#include <fuchsia/hardware/wlan/fullmac/c/banjo.h>
-#include <fuchsia/wlan/common/c/banjo.h>
 #include <fuchsia/wlan/ieee80211/cpp/fidl.h>
 #include <zircon/errors.h>
 
@@ -46,7 +44,7 @@ TEST_F(SimTest, Disassoc) {
 
   // Verify that we get appropriate notification
   ASSERT_EQ(client_ifc.stats_.disassoc_indications.size(), 1U);
-  const wlan_fullmac::WlanFullmacDisassocIndication& disassoc_ind =
+  const wlan_fullmac_wire::WlanFullmacDisassocIndication& disassoc_ind =
       client_ifc.stats_.disassoc_indications.front();
   // Verify reason code is propagated
   EXPECT_EQ(disassoc_ind.reason_code, static_cast<wlan_ieee80211::ReasonCode>(kDisassocReason));
@@ -95,13 +93,15 @@ TEST_F(SimTest, SmeDeauthFollowedByFwDisassoc) {
 
   // Verify that we got the deauth confirmation
   ASSERT_EQ(client_ifc.stats_.deauth_results.size(), 1U);
-  const wlan_fullmac::WlanFullmacDeauthConfirm& deauth_confirm =
+  wlan_fullmac_wire::WlanFullmacImplIfcDeauthConfRequest& deauth_confirm =
       client_ifc.stats_.deauth_results.front();
-  EXPECT_EQ(0, memcmp(deauth_confirm.peer_sta_address.data(), kApBssid.byte, ETH_ALEN));
+  ASSERT_TRUE(client_ifc.stats_.deauth_results.front().has_peer_sta_address());
+  ASSERT_EQ(ETH_ALEN, deauth_confirm.peer_sta_address().size());
+  ASSERT_BYTES_EQ(deauth_confirm.peer_sta_address().data(), kApBssid.byte, ETH_ALEN);
 
   // Verify that we got the disassociation indication, not a confirmation or anything else
   ASSERT_EQ(client_ifc.stats_.disassoc_indications.size(), 1U);
-  const wlan_fullmac::WlanFullmacDisassocIndication& disassoc_ind =
+  const wlan_fullmac_wire::WlanFullmacDisassocIndication& disassoc_ind =
       client_ifc.stats_.disassoc_indications.front();
   EXPECT_EQ(disassoc_ind.reason_code, static_cast<wlan_ieee80211::ReasonCode>(disassoc_reason));
   EXPECT_EQ(disassoc_ind.locally_initiated, true);

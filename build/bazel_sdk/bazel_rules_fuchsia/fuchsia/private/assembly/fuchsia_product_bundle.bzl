@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 """Rule for creating product bundle for flashing Fuchsia images to target devices."""
 
+load("//fuchsia/private:ffx_tool.bzl", "get_ffx_product_bundle_inputs")
+load("//fuchsia/private/workflows:fuchsia_product_bundle_tasks.bzl", "fuchsia_product_bundle_tasks")
 load(
     ":providers.bzl",
     "FuchsiaAssemblyConfigInfo",
@@ -12,13 +14,57 @@ load(
     "FuchsiaScrutinyConfigInfo",
     "FuchsiaVirtualDeviceInfo",
 )
-load("//fuchsia/private:ffx_tool.bzl", "get_ffx_product_bundle_inputs")
+
+def fuchsia_product_bundle(
+        *,
+        name,
+        board_name = None,
+        partitions_config = None,
+        product_image = None,
+        product_name = None,
+        **kwargs):
+    """ Build a fuchsia product bundle.
+
+    This rule produces a fuchsia product bundle which can be used to flash or OTA a device.
+
+    This macro will expand out into several fuchsia tasks that can be run by a
+    bazel invocation. Given a product bundle definition, the following targets will be
+    created.
+
+    ```
+    fuchsia_product_bundle(
+        name = "product_bundle",
+        board_name = "<your_board>",
+        partitions_config = ":your_partitions_config",
+        product_image = ":your_image",
+        product_name = "<your_product_name>",
+    )
+    ```
+    - product_bundle.flash: Calling run on this target will flash the device this created product_bundle.
+    - product_bundle.ota: <TBA>.
+    - product_bundle.emu: <TBA>.
+    """
+
+    _build_fuchsia_product_bundle(
+        name = name,
+        board_name = board_name,
+        partitions_config = partitions_config,
+        product_image = product_image,
+        product_name = product_name,
+        **kwargs
+    )
+
+    fuchsia_product_bundle_tasks(
+        name = "%s_tasks" % name,
+        product_bundle = name,
+    )
 
 def _scrutiny_validation(
         ctx,
         ffx_tool,
         pb_out_dir,
         scrutiny_config,
+        platform_scrutiny_config,
         is_recovery = False):
     deps = []
     ffx_invocation = [
@@ -36,8 +82,8 @@ def _scrutiny_validation(
         ffx_invocation,
         ffx_tool,
         pb_out_dir,
-        scrutiny_config.bootfs_files,
-        scrutiny_config.bootfs_packages,
+        scrutiny_config.bootfs_files + platform_scrutiny_config.bootfs_files,
+        scrutiny_config.bootfs_packages + platform_scrutiny_config.bootfs_packages,
     ))
     deps.append(_verify_kernel_cmdline(
         ctx,
@@ -45,7 +91,7 @@ def _scrutiny_validation(
         ffx_invocation,
         ffx_tool,
         pb_out_dir,
-        scrutiny_config.kernel_cmdline,
+        scrutiny_config.kernel_cmdline + platform_scrutiny_config.kernel_cmdline,
     ))
     deps += _verify_base_packages(
         ctx,
@@ -53,8 +99,16 @@ def _scrutiny_validation(
         ffx_invocation,
         ffx_tool,
         pb_out_dir,
-        scrutiny_config.base_packages,
+        [scrutiny_config.base_packages, platform_scrutiny_config.base_packages],
     )
+    deps.append(_verify_pre_signing(
+        ctx,
+        label_name,
+        ffx_invocation,
+        ffx_tool,
+        pb_out_dir,
+        scrutiny_config.pre_signing_policy,
+    ))
     if not is_recovery:
         deps += _verify_route_sources(
             ctx,
@@ -310,14 +364,17 @@ def _verify_base_packages(
         "static-pkgs",
         "--product-bundle",
         pb_out_dir.path,
-        "--golden",
-        base_packages.path,
     ]
+    for base_package_list in base_packages:
+        _ffx_invocation += [
+            "--golden",
+            base_package_list.path,
+        ]
     script_lines = [
         "set -e",
         " ".join(_ffx_invocation),
     ]
-    inputs = [ffx_tool, pb_out_dir, base_packages]
+    inputs = [ffx_tool, pb_out_dir] + base_packages
     ctx.actions.run_shell(
         inputs = inputs,
         outputs = [stamp_file, tmp_dir, ffx_isolate_dir],
@@ -326,6 +383,40 @@ def _verify_base_packages(
         progress_message = "Verify Static pkgs for %s" % label_name,
     )
     return [stamp_file, tmp_dir]
+
+def _verify_pre_signing(
+        ctx,
+        label_name,
+        ffx_invocation,
+        ffx_tool,
+        pb_out_dir,
+        pre_signing_policy_file):
+    stamp_file = ctx.actions.declare_file(label_name + "_pre_signing.stamp")
+    ffx_isolate_dir = ctx.actions.declare_directory(label_name + "_pre_signing.ffx")
+    _ffx_invocation = []
+    _ffx_invocation.extend(ffx_invocation)
+    _ffx_invocation += [
+        "--stamp",
+        stamp_file.path,
+        "pre-signing",
+        "--product-bundle",
+        pb_out_dir.path,
+        "--policy",
+        pre_signing_policy_file.path,
+    ]
+    script_lines = [
+        "set -e",
+        " ".join(_ffx_invocation),
+    ]
+    inputs = [ffx_tool, pb_out_dir, pre_signing_policy_file]
+    ctx.actions.run_shell(
+        inputs = inputs,
+        outputs = [stamp_file, ffx_isolate_dir],
+        env = {"FFX_ISOLATE_DIR": ffx_isolate_dir.path},
+        command = "\n".join(script_lines),
+        progress_message = "Verify pre-signing checks for %s" % label_name,
+    )
+    return stamp_file
 
 def _verify_structured_config(
         ctx,
@@ -398,7 +489,7 @@ def _extract_structured_config(ctx, ffx_tool, pb_out_dir, is_recovery):
     )
     return [structured_config, depfile]
 
-def _fuchsia_product_bundle_impl(ctx):
+def _build_fuchsia_product_bundle_impl(ctx):
     fuchsia_toolchain = ctx.toolchains["@fuchsia_sdk//fuchsia:toolchain"]
     partitions_configuration = ctx.attr.partitions_config[FuchsiaAssemblyConfigInfo].config
     system_a_out = ctx.attr.product_image[FuchsiaProductImageInfo].images_out
@@ -406,6 +497,7 @@ def _fuchsia_product_bundle_impl(ctx):
     pb_out_dir = ctx.actions.declare_directory(ctx.label.name + "_out")
     ffx_isolate_dir = ctx.actions.declare_directory(ctx.label.name + "_ffx_isolate_dir")
     product_name = "{}.{}".format(ctx.attr.product_name, ctx.attr.board_name)
+    delivery_blob_type = ctx.attr.delivery_blob_type
 
     # In the future, the product bundles should be versioned independently of
     # the sdk version. So far they have been the same value.
@@ -427,8 +519,10 @@ def _fuchsia_product_bundle_impl(ctx):
         "--partitions $PARTITIONS_PATH",
         "--system-a $SYSTEM_A_MANIFEST",
         "--out-dir $OUTDIR",
-        "--with-deprecated-flash-manifest",
     ]
+
+    if delivery_blob_type:
+        ffx_invocation.append("--delivery-blob-type " + delivery_blob_type)
 
     # Gather the environment variables needed in the script.
     env = {
@@ -483,10 +577,6 @@ def _fuchsia_product_bundle_impl(ctx):
         " ".join(ffx_invocation),
     ]
 
-    script_lines.append("cp $BOOTSERVER $OUTDIR")
-    env["BOOTSERVER"] = fuchsia_toolchain.bootserver.path
-    inputs.append(fuchsia_toolchain.bootserver)
-
     script = "\n".join(script_lines)
     ctx.actions.run_shell(
         inputs = inputs,
@@ -499,57 +589,44 @@ def _fuchsia_product_bundle_impl(ctx):
 
     # Scrutiny Validation
     if ctx.attr.product_image_scrutiny_config:
+        build_type = ctx.attr.product_image[FuchsiaProductImageInfo].build_type
+        if build_type == "user":
+            platform_scrutiny_config = ctx.attr._platform_user_scrutiny_config[FuchsiaScrutinyConfigInfo]
+        elif build_type == "userdebug":
+            platform_scrutiny_config = ctx.attr._platform_userdebug_scrutiny_config[FuchsiaScrutinyConfigInfo]
+        else:
+            fail("scrutiny cannot run on 'product_image' because it is an eng build type")
+
         product_image_scrutiny_config = ctx.attr.product_image_scrutiny_config[FuchsiaScrutinyConfigInfo]
-        deps += _scrutiny_validation(ctx, ffx_tool, pb_out_dir, product_image_scrutiny_config)
+        deps += _scrutiny_validation(ctx, ffx_tool, pb_out_dir, product_image_scrutiny_config, platform_scrutiny_config)
     if ctx.attr.recovery_scrutiny_config:
+        build_type = ctx.attr.recovery[FuchsiaProductImageInfo].build_type
+        if build_type == "user":
+            platform_scrutiny_config = ctx.attr._platform_user_scrutiny_config[FuchsiaScrutinyConfigInfo]
+        elif build_type == "userdebug":
+            platform_scrutiny_config = ctx.attr._platform_userdebug_scrutiny_config[FuchsiaScrutinyConfigInfo]
+        else:
+            fail("scrutiny cannot run on 'recovery' because it is an eng build type")
+
         recovery_scrutiny_config = ctx.attr.recovery_scrutiny_config[FuchsiaScrutinyConfigInfo]
-        deps += _scrutiny_validation(ctx, ffx_tool, pb_out_dir, recovery_scrutiny_config, True)
-
-    # TODO(fxb/121752): Remove the generation of pave.sh after infra is
-    # ready to use product bundle to flash device.
-    pave_script = ctx.actions.declare_file(ctx.label.name + "_pave.sh")
-    ctx.actions.run(
-        outputs = [pave_script],
-        inputs = [pb_out_dir],
-        executable = ctx.executable._create_pave_script,
-        arguments = [
-            "--product-bundle",
-            pb_out_dir.path + "/product_bundle.json",
-            "--pave-script-path",
-            pave_script.path,
-        ],
-    )
-
-    # TODO(fxb/121752): Remove the generation of flash.json after infra is
-    # ready to use product bundle to flash device.
-    flash_manifest = ctx.actions.declare_file(ctx.label.name + "_flash.json")
-    ctx.actions.run(
-        outputs = [flash_manifest],
-        inputs = [pb_out_dir],
-        executable = ctx.executable._rebase_flash_manifest,
-        arguments = [
-            "--product-bundle",
-            pb_out_dir.path,
-            "--flash-manifest-path",
-            flash_manifest.path,
-        ],
-    )
-    deps.append(flash_manifest)
-    deps.append(pave_script)
+        deps += _scrutiny_validation(ctx, ffx_tool, pb_out_dir, recovery_scrutiny_config, platform_scrutiny_config, True)
 
     return [DefaultInfo(files = depset(direct = deps)), FuchsiaProductBundleInfo(
         product_bundle = pb_out_dir,
         is_remote = False,
     )]
 
-fuchsia_product_bundle = rule(
+_build_fuchsia_product_bundle = rule(
     doc = """Creates pb for flashing Fuchsia images to target devices.""",
-    implementation = _fuchsia_product_bundle_impl,
+    implementation = _build_fuchsia_product_bundle_impl,
     toolchains = ["@fuchsia_sdk//fuchsia:toolchain"],
     attrs = {
         "board_name": attr.string(
             doc = "Name of the board this PB runs on. E.g. qemu-x64",
             mandatory = True,
+        ),
+        "delivery_blob_type": attr.string(
+            doc = "Delivery blob type of the product bundle.",
         ),
         "partitions_config": attr.label(
             doc = "Partitions config to use",
@@ -607,15 +684,20 @@ fuchsia_product_bundle = rule(
             allow_single_file = True,
             default = "@fuchsia_sdk//:meta/manifest.json",
         ),
-        "_create_pave_script": attr.label(
-            default = "//fuchsia/tools:create_pave_script",
-            executable = True,
-            cfg = "exec",
-        ),
         "_rebase_flash_manifest": attr.label(
             default = "//fuchsia/tools:rebase_flash_manifest",
             executable = True,
             cfg = "exec",
+        ),
+        "_platform_user_scrutiny_config": attr.label(
+            doc = "Scrutiny config listing platform content of user products",
+            providers = [FuchsiaScrutinyConfigInfo],
+            default = "//fuchsia/private/assembly/goldens:user",
+        ),
+        "_platform_userdebug_scrutiny_config": attr.label(
+            doc = "Scrutiny config listing platform content of userdebug products",
+            providers = [FuchsiaScrutinyConfigInfo],
+            default = "//fuchsia/private/assembly/goldens:userdebug",
         ),
     },
 )

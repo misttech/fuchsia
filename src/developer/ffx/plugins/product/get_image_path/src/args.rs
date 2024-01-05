@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{anyhow, Result};
-use argh::FromArgs;
+use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
 use ffx_core::ffx_command;
 use std::str::FromStr;
@@ -55,7 +55,7 @@ impl FromStr for ImageType {
 
 /// Get the path of an image inside a Product Bundle based on type and slot.
 #[ffx_command()]
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "get-image-path")]
 pub struct GetImagePathCommand {
     /// path to product bundle directory.
@@ -64,11 +64,15 @@ pub struct GetImagePathCommand {
 
     /// the slot where image will be located in.
     #[argh(option)]
-    pub slot: Slot,
+    pub slot: Option<Slot>,
 
     /// the type of image.
     #[argh(option)]
-    pub image_type: ImageType,
+    pub image_type: Option<ImageType>,
+
+    /// the type of bootloader.
+    #[argh(option, short = 'b')]
+    pub bootloader: Option<String>,
 
     /// return relative path or not
     #[argh(switch, short = 'r')]

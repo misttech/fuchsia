@@ -8,15 +8,13 @@
 #include <lib/fit/defer.h>
 
 #include <string>
-#include <type_traits>
-#include <unordered_map>
 #include <unordered_set>
 
+#include "src/connectivity/bluetooth/core/bt-host/common/advertising_data.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/byte_buffer.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/device_address.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/inspectable.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/macros.h"
-#include "src/connectivity/bluetooth/core/bt-host/common/metrics.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/uuid.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/gap.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/peer_metrics.h"
@@ -57,8 +55,8 @@ class Peer final {
   // (do the callbacks outlive |this|?).
   Peer(NotifyListenersCallback notify_listeners_callback, PeerCallback update_expiry_callback,
        PeerCallback dual_mode_callback, StoreLowEnergyBondCallback store_le_bond_callback,
-       PeerId identifier, const DeviceAddress& address, bool connectable,
-       PeerMetrics* peer_metrics);
+       PeerId identifier, const DeviceAddress& address, bool connectable, PeerMetrics* peer_metrics,
+       pw::async::Dispatcher& dispatcher);
 
   // Connection state as considered by the GAP layer. This may not correspond
   // exactly with the presence or absence of a link at the link layer. For
@@ -176,19 +174,29 @@ class Peer final {
       return bonded() && auto_conn_behavior_ == AutoConnectBehavior::kAlways;
     }
 
-    // Advertising (and optionally scan response) data obtained during
-    // discovery.
-    const ByteBuffer& advertising_data() const { return adv_data_buffer_; }
-
     // Note that it is possible for `advertising_data()` to return a non-empty buffer while this
     // method returns std::nullopt, as AdvertisingData is only stored if it is parsed correctly.
     // TODO(fxbug.dev/85368): Migrate clients off of advertising_data, so that we do not need to
     // store the raw buffer after parsing it.
-    const std::optional<AdvertisingData>& parsed_advertising_data() const {
-      return parsed_adv_data_;
+    const std::optional<std::reference_wrapper<const AdvertisingData>> parsed_advertising_data()
+        const {
+      if (parsed_adv_data_.is_error()) {
+        return std::nullopt;
+      }
+      return std::cref(parsed_adv_data_.value());
     }
     // Returns the timestamp associated with the most recently successfully parsed AdvertisingData.
-    std::optional<zx::time> parsed_advertising_data_timestamp() const { return adv_timestamp_; }
+    std::optional<pw::chrono::SystemClock::time_point> parsed_advertising_data_timestamp() const {
+      return adv_timestamp_;
+    }
+
+    // Returns the error, if any, encountered when parsing the advertising data from the peer.
+    std::optional<AdvertisingData::ParseError> advertising_data_error() const {
+      if (!parsed_adv_data_.is_error()) {
+        return std::nullopt;
+      }
+      return parsed_adv_data_.error_value();
+    }
 
     // Most recently used LE connection parameters. Has no value if the peer
     // has never been connected.
@@ -212,7 +220,8 @@ class Peer final {
 
     // Overwrites the stored advertising and scan response data with the contents of |data|
     // and updates the known RSSI and timestamp with the given values.
-    void SetAdvertisingData(int8_t rssi, const ByteBuffer& data, zx::time timestamp);
+    void SetAdvertisingData(int8_t rssi, const ByteBuffer& data,
+                            pw::chrono::SystemClock::time_point timestamp);
 
     // Register a connection that is in the request/initializing state. A token is returned that
     // should be owned until the initialization is complete or canceled. The connection state may be
@@ -284,9 +293,10 @@ class Peer final {
     // data supercede those in the original advertising data when processing fields in order.
     DynamicByteBuffer adv_data_buffer_;
     // Time when advertising data was last updated and successfully parsed.
-    std::optional<zx::time> adv_timestamp_;
-    // AdvertisingData parsed out of the adv_data_buffer_, if it is present and parses correctly.
-    std::optional<AdvertisingData> parsed_adv_data_;
+    std::optional<pw::chrono::SystemClock::time_point> adv_timestamp_;
+    // AdvertisingData parsed from the peer's advertising data, if parsed correctly.
+    AdvertisingData::ParseResult parsed_adv_data_ =
+        fit::error(AdvertisingData::ParseError::kMissing);
 
     BoolInspectable<std::optional<sm::PairingData>> bond_data_;
 
@@ -307,7 +317,7 @@ class Peer final {
    public:
     static constexpr const char* kInspectNodeName = "bredr_data";
     static constexpr const char* kInspectConnectionStateName = "connection_state";
-    static constexpr const char* kInspectLinkKeyName = "bonded";
+    static constexpr const char* kInspectLinkKeyName = "link_key";
     static constexpr const char* kInspectServicesName = "services";
 
     explicit BrEdrData(Peer* owner);
@@ -328,7 +338,7 @@ class Peer final {
     bool connected() const { return !initializing() && connection_tokens_count_ > 0; }
     bool initializing() const { return initializing_tokens_count_ > 0; }
 
-    bool bonded() const { return link_key_->has_value(); }
+    bool bonded() const { return link_key_.has_value(); }
 
     // Returns the peer's BD_ADDR.
     const DeviceAddress& address() const { return address_; }
@@ -346,9 +356,8 @@ class Peer final {
     // have the highest-order bit set and the rest represents bits 16-2 of CLKNPeripheral-CLK (see
     // hci_spec::kClockOffsetFlagBit in hci/hci_constants.h).
     const std::optional<uint16_t>& clock_offset() const { return clock_offset_; }
-    const BufferView extended_inquiry_response() const { return eir_buffer_.view(0, eir_len_); }
 
-    const std::optional<sm::LTK>& link_key() const { return *link_key_; }
+    const std::optional<sm::LTK>& link_key() const { return link_key_; }
 
     const std::unordered_set<UUID>& services() const { return *services_; }
 
@@ -359,8 +368,8 @@ class Peer final {
     // the Bluetooth controller. Each field should be encoded in little-endian
     // byte order.
     void SetInquiryData(const pw::bluetooth::emboss::InquiryResultView& view);
-    void SetInquiryData(const hci_spec::InquiryResultRSSI& value);
-    void SetInquiryData(const hci_spec::ExtendedInquiryResultEventParams& value);
+    void SetInquiryData(const pw::bluetooth::emboss::InquiryResultWithRssiView& view);
+    void SetInquiryData(const pw::bluetooth::emboss::ExtendedInquiryResultEventView& view);
 
     // Register a connection that is in the request/initializing state. A token is returned that
     // should be owned until the initialization is complete or canceled. The connection state may be
@@ -417,10 +426,9 @@ class Peer final {
     std::optional<DeviceClass> device_class_;
     std::optional<pw::bluetooth::emboss::PageScanRepetitionMode> page_scan_rep_mode_;
     std::optional<uint16_t> clock_offset_;
-    // TODO(jamuraa): Parse more of the Extended Inquiry Response fields
-    size_t eir_len_;
-    DynamicByteBuffer eir_buffer_;
-    BoolInspectable<std::optional<sm::LTK>> link_key_;
+
+    std::optional<sm::LTK> link_key_;
+
     StringInspectable<std::unordered_set<UUID>> services_;
   };
 
@@ -573,7 +581,7 @@ class Peer final {
   // * BR/EDR bond data updated
   // * BR/EDR services updated
   // * name is updated
-  zx::time last_updated() const { return last_updated_; }
+  pw::chrono::SystemClock::time_point last_updated() const { return last_updated_; }
 
   using WeakPtr = WeakSelf<Peer>::WeakPtr;
   Peer::WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
@@ -667,7 +675,9 @@ class Peer final {
   PeerMetrics* peer_metrics_;
 
   // The time when the most recent update occurred.
-  zx::time last_updated_;
+  pw::chrono::SystemClock::time_point last_updated_;
+
+  pw::async::Dispatcher& dispatcher_;
 
   WeakSelf<Peer> weak_self_;
 

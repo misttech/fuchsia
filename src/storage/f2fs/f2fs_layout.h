@@ -7,7 +7,7 @@
 
 #include <safemath/checked_math.h>
 
-#include "src/storage/f2fs/f2fs_types.h"
+#include "src/storage/f2fs/common.h"
 
 namespace f2fs {
 
@@ -100,7 +100,7 @@ struct Superblock {
   uint32_t meta_ino = 0;               // meta inode number
   uint8_t uuid[16] = {
       0,
-  };                                         // 128-bit uuid for volume
+  };  // 128-bit uuid for volume
   uint16_t volume_name[512];                 // volume name
   uint32_t extension_count = 0;              // # of extensions below
   uint8_t extension_list[kMaxExtension][8];  // extension array
@@ -265,6 +265,7 @@ struct NatBlock {
 // there-in blocks should occupy 64 bytes, 512 bits.
 // Not allow to change this.
 constexpr uint32_t kSitVBlockMapSize = 64;
+constexpr uint32_t kSitVBlockMapSizeInBit = kSitVBlockMapSize << kShiftForBitSize;
 
 // Note that SitEntry->vblocks has the following bit-field information.
 // [15:10] : allocation type such as CURSEG_XXXX_TYPE
@@ -410,7 +411,7 @@ constexpr uint32_t kNrDentryInBlock = 214;
 constexpr uint32_t kMaxDirHashDepth = 63;
 
 constexpr size_t kSizeOfDirEntry = 11;  // by byte
-constexpr size_t kSizeOfDentryBitmap = (kNrDentryInBlock + kBitsPerByte - 1) / kBitsPerByte;
+constexpr size_t kSizeOfDentryBitmap = (kNrDentryInBlock + kBitsPerByte - 1) >> kShiftForBitSize;
 constexpr size_t kSizeOfReserved =
     kPageSize - ((kSizeOfDirEntry + kNameLen) * kNrDentryInBlock + kSizeOfDentryBitmap);
 

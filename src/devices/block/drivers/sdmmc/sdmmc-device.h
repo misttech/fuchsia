@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_DEVICE_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_DEVICE_H_
 
+#include <fidl/fuchsia.hardware.sdmmc/cpp/driver/fidl.h>
 #include <fuchsia/hardware/sdmmc/cpp/banjo.h>
 #include <lib/sdmmc/hw.h>
 #include <lib/stdcompat/span.h>
@@ -13,7 +14,11 @@
 
 #include <array>
 
+#include <sdk/lib/driver/logging/cpp/logger.h>
+
 namespace sdmmc {
+
+class SdmmcRootDevice;
 
 // SdmmcDevice wraps a ddk::SdmmcProtocolClient to provide helper methods to the SD/MMC and SDIO
 // core drivers. It is assumed that the underlying SDMMC protocol driver can handle calls from
@@ -23,11 +28,22 @@ namespace sdmmc {
 // required.
 class SdmmcDevice {
  public:
-  explicit SdmmcDevice(const ddk::SdmmcProtocolClient& host) : host_(host), host_info_({}) {}
+  explicit SdmmcDevice(SdmmcRootDevice* root_device) : root_device_(root_device) {}
 
-  zx_status_t Init();
+  // For testing using Banjo.
+  explicit SdmmcDevice(SdmmcRootDevice* root_device, const ddk::SdmmcProtocolClient& host)
+      : root_device_(root_device), host_(host) {}
+  // For testing using FIDL.
+  explicit SdmmcDevice(SdmmcRootDevice* root_device,
+                       fdf::ClientEnd<fuchsia_hardware_sdmmc::Sdmmc> client_end)
+      : root_device_(root_device) {
+    client_.Bind(std::move(client_end), fdf::Dispatcher::GetCurrent()->get());
+    using_fidl_ = true;
+  }
 
-  const ddk::SdmmcProtocolClient& host() const { return host_; }
+  zx_status_t Init(bool use_fidl);
+
+  bool using_fidl() const { return using_fidl_; }
   const sdmmc_host_info_t& host_info() const { return host_info_; }
 
   bool UseDma() const { return host_info_.caps & SDMMC_HOST_CAP_DMA; }
@@ -42,12 +58,12 @@ class SdmmcDevice {
   zx_status_t SdmmcSendStatus(uint32_t* status);
   zx_status_t SdmmcStopTransmission(uint32_t* status = nullptr);
   zx_status_t SdmmcWaitForState(uint32_t state);
-  // Retries a block read/write request. STOP_TRANSMISSION is issued after every attempt that
-  // results in an error, but not after the request succeeds. Optionally supply a leading
-  // SET BLOCK COUNT command for pre-defined transfer mode.
-  zx_status_t SdmmcIoRequestWithRetries(
-      const sdmmc_req_t& request, uint32_t* retries,
-      const std::optional<sdmmc_req_t>& set_block_count = std::nullopt);
+  // Retries a collection of IO requests by recursively calling itself (|retries| is used to track
+  // the retry count). STOP_TRANSMISSION is issued after every attempt that results in an error, but
+  // not after the request succeeds. Invokes |callback| with the final status and retry count.
+  void SdmmcIoRequestWithRetries(std::vector<sdmmc_req_t> reqs,
+                                 fit::function<void(zx_status_t, uint32_t)> callback,
+                                 uint32_t retries = 0);
 
   // SD ops
   zx_status_t SdSendOpCond(uint32_t flags, uint32_t* ocr);
@@ -75,8 +91,31 @@ class SdmmcDevice {
   zx_status_t MmcSetRelativeAddr(uint16_t rca);
   zx_status_t MmcSendCsd(std::array<uint8_t, SDMMC_CSD_SIZE>& csd);
   zx_status_t MmcSendExtCsd(std::array<uint8_t, MMC_EXT_CSD_SIZE>& ext_csd);
-  zx_status_t MmcSelectCard();
+  zx_status_t MmcSleepOrAwake(bool sleep);
+  zx_status_t MmcSelectCard(bool select = true);
   zx_status_t MmcSwitch(uint8_t index, uint8_t value);
+
+  // TODO(b/299501583): Migrate these to use FIDL calls.
+  // Wraps ddk::SdmmcProtocolClient methods.
+  zx_status_t HostInfo(sdmmc_host_info_t* info);
+  zx_status_t SetSignalVoltage(sdmmc_voltage_t voltage);
+  zx_status_t SetBusWidth(sdmmc_bus_width_t bus_width);
+  zx_status_t SetBusFreq(uint32_t bus_freq);
+  zx_status_t SetTiming(sdmmc_timing_t timing);
+  zx_status_t HwReset();
+  zx_status_t PerformTuning(uint32_t cmd_idx);
+  zx_status_t RegisterInBandInterrupt(void* interrupt_cb_ctx,
+                                      const in_band_interrupt_protocol_ops_t* interrupt_cb_ops);
+  void AckInBandInterrupt();
+  zx_status_t RegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo, uint64_t offset,
+                          uint64_t size, uint32_t vmo_rights);
+  zx_status_t UnregisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo* out_vmo);
+  zx_status_t Request(const sdmmc_req_t* req, uint32_t out_response[4]);
+
+  // Visible for testing.
+  zx_status_t RefreshHostInfo() { return HostInfo(&host_info_); }
+
+  fdf::Logger& logger();
 
  private:
   static constexpr uint32_t kTryAttempts = 10;  // 1 initial + 9 retries.
@@ -84,15 +123,22 @@ class SdmmcDevice {
   // Retry each request retries_ times (with wait_time delay in between) by default. Requests are
   // always tried at least once.
   zx_status_t Request(const sdmmc_req_t& req, uint32_t response[4], uint32_t retries = 0,
-                      zx::duration wait_time = {}) const;
+                      zx::duration wait_time = {});
   zx_status_t RequestWithBlockRead(const sdmmc_req_t& req, uint32_t response[4],
-                                   cpp20::span<uint8_t> read_data) const;
+                                   cpp20::span<uint8_t> read_data);
   zx_status_t SdSendAppCmd();
+  // In case of IO failure, stop the transmission and wait for the card to go idle before retrying.
+  void SdmmcStopForRetry();
 
   inline uint32_t RcaArg() const { return rca_ << 16; }
 
-  const ddk::SdmmcProtocolClient host_;
-  sdmmc_host_info_t host_info_;
+  bool using_fidl_ = false;
+  SdmmcRootDevice* const root_device_;
+  ddk::SdmmcProtocolClient host_;
+  // The FIDL client to communicate with Sdmmc device.
+  fdf::WireSharedClient<fuchsia_hardware_sdmmc::Sdmmc> client_;
+
+  sdmmc_host_info_t host_info_ = {};
   sdmmc_voltage_t signal_voltage_ = SDMMC_VOLTAGE_V330;
   uint16_t rca_ = 0;  // APP_CMD requires the initial RCA to be zero.
   uint32_t retries_ = 0;

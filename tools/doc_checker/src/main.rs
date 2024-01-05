@@ -5,18 +5,19 @@
 //! doc_checker is a CLI tool to check markdown files for correctness in
 //! the Fuchsia project.
 
-pub(crate) use crate::checker::{DocCheck, DocCheckError, DocLine, DocYamlCheck, ErrorLevel};
-pub(crate) use crate::md_element::DocContext;
-use {
-    anyhow::{bail, Context, Result},
-    argh::FromArgs,
-    glob::glob,
-    serde_yaml::Value,
-    std::{
-        fs::{self, File},
-        io::BufReader,
-        path::PathBuf,
-    },
+pub(crate) use crate::{
+    checker::{DocCheck, DocCheckError, DocLine, DocYamlCheck, ErrorLevel},
+    md_element::DocContext,
+};
+use anyhow::{bail, Context, Result};
+use argh::FromArgs;
+use glob::glob;
+use serde_json;
+use serde_yaml::Value;
+use std::{
+    fs::{self, File},
+    io::BufReader,
+    path::PathBuf,
 };
 mod checker;
 mod include_checker;
@@ -58,13 +59,14 @@ pub(crate) mod mock_path_helper_module {
         path.exists() ||
 
         // if is_dir returns true, the directory needs to exist as well.
-        is_dir(path) ||
+        (is_dir(path) &&!path_str.ends_with("no-extension")) ||
 
         // markdown files exist with a couple exceptions.
         path_str.ends_with(".md") &&
         (!path_str.ends_with("no_readme/README.md") &&
         !path_str.ends_with("unused/README.md") &&
-        !path_str.ends_with("missing.md" ) )   ||
+        !path_str.ends_with("missing.md" ) &&
+        !path_str.ends_with("no-extension") )   ||
 
         // OWNERS file exists.
         path.ends_with("OWNERS")
@@ -100,12 +102,15 @@ pub struct DocCheckerArgs {
     #[argh(switch)]
     pub local_links_only: bool,
 
-    /// check reference-links. This enables checking for
-    /// reference links that do not have a definition.
-    /// It is off by default until all the markdown can
-    /// pass this check. fxbug.dev/106059.
+    /// output in JSON format
     #[argh(switch)]
-    pub check_reference_links: bool,
+    pub json: bool,
+
+    /// allow links to fuchsia-src. Usually links to
+    /// fuchsia-src should be written as file paths
+    /// to /docs.
+    #[argh(switch)]
+    pub allow_fuchsia_src_links: bool,
 }
 
 #[fuchsia::main]
@@ -114,43 +119,57 @@ async fn main() -> Result<()> {
 
     // Canonicalize the root directory so the rest of the code can rely on
     // the root directory existing and being a normalized path.
-    opt.root = opt
-        .root
-        .canonicalize()
-        .context(format!("invalid root dir for source: {:?} ", &opt.root))?;
+    opt.root =
+        opt.root.canonicalize().context(format!("invalid root dir for source: {:?} ", opt.root))?;
 
-    if let Some(mut errors) = do_main(opt).await? {
+    if let Some(mut errors) = do_main(&opt).await? {
         // Output the result
         let mut error_count = 0;
         let mut warning_count = 0;
         let mut info_count = 0;
         errors.sort();
-        for e in &errors {
-            match e.level {
-                ErrorLevel::Info => info_count += 1,
-                ErrorLevel::Warning => warning_count += 1,
-                ErrorLevel::Error => error_count += 1,
+        if opt.json {
+            println!("{}", serde_json::to_string(&errors)?);
+            if errors.iter().any(|e| e.level == ErrorLevel::Error) {
+                std::process::exit(1);
             }
-            println!("{}\n", e);
-        }
-        // Only bail if there are errors, warnings should return OK.
-        if error_count > 0 {
-            bail!("Found {} errors, {} warnings, {} info.", error_count, warning_count, info_count)
         } else {
-            println!(
-                "Found {} errors, {} warnings, {} info.",
-                error_count, warning_count, info_count
-            )
+            for e in &errors {
+                match e.level {
+                    ErrorLevel::Info => info_count += 1,
+                    ErrorLevel::Warning => warning_count += 1,
+                    ErrorLevel::Error => error_count += 1,
+                }
+                println!("{}\n", e);
+            }
+            // Only bail if there are errors, warnings should return OK.
+            if error_count > 0 {
+                bail!(
+                    "Found {} errors, {} warnings, {} info.",
+                    error_count,
+                    warning_count,
+                    info_count
+                )
+            } else {
+                println!(
+                    "Found {} errors, {} warnings, {} info.",
+                    error_count, warning_count, info_count
+                )
+            }
         }
     } else {
-        println!("No errors found");
+        if opt.json {
+            println!("[]");
+        } else {
+            println!("No errors found");
+        }
     }
     Ok(())
 }
 
 /// The actual main function. It is refactored like this to make it easier
 /// to run it in a unit test.
-async fn do_main(opt: DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
+async fn do_main(opt: &DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
     let root_dir = &opt.root;
     let docs_project = &opt.project;
     let docs_dir = root_dir.join(&opt.docs_folder);
@@ -214,7 +233,7 @@ async fn do_main(opt: DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
     let mut yaml_checks = yaml::register_yaml_checks(&opt)?;
 
     let markdown_errors: Vec<DocCheckError> =
-        check_markdown(&markdown_files, &mut markdown_checks, opt.check_reference_links)?;
+        check_markdown(&markdown_files, &mut markdown_checks)?;
     errors.extend(markdown_errors);
 
     let yaml_errors = check_yaml(&yaml_files, &mut yaml_checks)?;
@@ -252,14 +271,12 @@ async fn do_main(opt: DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
 pub fn check_markdown<'a>(
     files: &[PathBuf],
     checks: &'a mut [Box<dyn DocCheck + 'static>],
-    check_reference_links: bool,
 ) -> Result<Vec<DocCheckError>> {
     let mut errors: Vec<DocCheckError> = vec![];
 
     for mdfile in files {
         let mdcontent = fs::read_to_string(mdfile).expect("Unable to read file");
-        let doc_context =
-            DocContext::new_with_checks(mdfile.clone(), &mdcontent, check_reference_links);
+        let doc_context = DocContext::new_with_checks(mdfile.clone(), &mdcontent);
 
         for element in doc_context {
             for c in &mut *checks {
@@ -319,7 +336,8 @@ mod test {
             project: "fuchsia".to_string(),
             docs_folder: PathBuf::from("docs"),
             local_links_only: true,
-            check_reference_links: false,
+            json: false,
+            allow_fuchsia_src_links: false,
         };
 
         // Set the current directory to the executable dir so the relative test paths WAI.
@@ -334,6 +352,8 @@ mod test {
                 "Obsolete or invalid project garnet: https://fuchsia.googlesource.com/garnet/+/refs/heads/main/README.md"),
             DocCheckError::new_error(21,PathBuf::from("doc_checker_test_data/docs/README.md"),
                 "Cannot normalize /docs/../../README.md, references parent beyond root."),
+            DocCheckError::new_error_helpful(28,PathBuf::from("doc_checker_test_data/docs/README.md"),
+                "in-tree link to /docs/no-extension could not be found at \"doc_checker_test_data/docs/no-extension\"", "\"no-extension.md\""),
             DocCheckError::new_error(5, PathBuf::from("doc_checker_test_data/docs/_common/_included.md"),
                 "in-tree link to /docs/missing.md could not be found at \"doc_checker_test_data/docs/missing.md\""),
             DocCheckError::new_error(7, PathBuf::from("doc_checker_test_data/docs/include_here.md"),
@@ -350,6 +370,8 @@ mod test {
                 "Cannot normalize /docs/../../missing.md, references parent beyond root."),
             DocCheckError::new_error(1, PathBuf::from("doc_checker_test_data/docs/unused/_toc.yaml"),
                 "in-tree link to /docs/unused could not be found at \"doc_checker_test_data/docs/unused\" or  \"doc_checker_test_data/docs/unused/README.md\""),
+            DocCheckError::new_error(0, PathBuf::from("doc_checker_test_data/docs/_toc.yaml"),
+                "Cannot find file \"doc_checker_test_data/docs/missing/_toc.yaml\" included in \"doc_checker_test_data/docs/_toc.yaml\""),
             DocCheckError::new_error(0, PathBuf::from("doc_checker_test_data/docs/cycle/_toc.yaml"),
                 "YAML files cannot include themselves \"doc_checker_test_data/docs/cycle/_toc.yaml\""),
             DocCheckError::new_error(0, PathBuf::from("doc_checker_test_data/docs/unreachable.md"),
@@ -358,7 +380,7 @@ mod test {
                 "File not reachable via _toc include references."),
         ];
 
-        if let Some(actual_errors) = do_main(opt).await? {
+        if let Some(actual_errors) = do_main(&opt).await? {
             let mut expected_iter = expected.iter();
             for actual in actual_errors {
                 if let Some(expected) = expected_iter.next() {

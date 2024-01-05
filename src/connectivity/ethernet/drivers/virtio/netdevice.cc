@@ -74,7 +74,8 @@ NetworkDevice::NetworkDevice(zx_device_t* bus_device, zx::bti bti_handle,
                   .bti_pin_options = ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE,
                   .index = true,
               },
-      }) {}
+      }),
+      mac_addr_proto_({&mac_addr_protocol_ops_, this}) {}
 
 NetworkDevice::~NetworkDevice() {}
 
@@ -207,10 +208,9 @@ bool NetworkDevice::IrqRingUpdateInternal() {
     tx_.IrqRingUpdate([this, &tx_it](vring_used_elem* used_elem) {
       []() __TA_ASSERT(tx_lock_) {}();
       uint16_t id = static_cast<uint16_t>(used_elem->id & 0xffff);
-      Descriptor desc = tx_in_flight_.Pop();
-      ZX_ASSERT_MSG(desc.ring_id == id, "tx ring and FIFO id mismatch (%d != %d for buffer %d)",
-                    desc.ring_id, id, desc.buffer_id);
-      *tx_it++ = {.id = desc.buffer_id, .status = ZX_OK};
+      ZX_ASSERT_MSG(id < kMaxDepth && tx_in_flight_active_[id], "%d is not active", id);
+      *tx_it++ = {.id = tx_in_flight_buffer_ids_[id], .status = ZX_OK};
+      tx_in_flight_active_[id] = false;
       tx_.FreeDesc(id);
     });
     more_work |= tx_.ClearNoInterruptCheckHasWork();
@@ -288,18 +288,32 @@ port_status_t NetworkDevice::ReadStatus() const {
   virtio_net_config config;
   CopyDeviceConfig(&config, sizeof(config));
   return {
-      .mtu = kMtu,
       .flags = IsLinkActive(config, is_status_supported_)
                    ? static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline)
                    : 0,
+      .mtu = kMtu,
   };
 }
 
-zx_status_t NetworkDevice::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface) {
+void NetworkDevice::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                                          network_device_impl_init_callback callback,
+                                          void* cookie) {
   fbl::AutoLock lock(&state_lock_);
   ifc_ = ddk::NetworkDeviceIfcProtocolClient(iface);
-  ifc_.AddPort(kPortId, this, &network_port_protocol_ops_);
-  return ZX_OK;
+  using Context = std::tuple<network_device_impl_init_callback, void*>;
+  std::unique_ptr context = std::make_unique<Context>(callback, cookie);
+
+  ifc_.AddPort(
+      kPortId, this, &network_port_protocol_ops_,
+      [](void* ctx, zx_status_t status) {
+        std::unique_ptr<Context> context(static_cast<Context*>(ctx));
+        auto [callback, cookie] = *context;
+        if (status != ZX_OK) {
+          zxlogf(ERROR, "failed to add port: %s", zx_status_get_string(status));
+        }
+        callback(cookie, status);
+      },
+      context.release());
 }
 
 void NetworkDevice::NetworkDeviceImplStart(network_device_impl_start_callback callback,
@@ -369,12 +383,14 @@ void NetworkDevice::NetworkDeviceImplStop(network_device_impl_stop_callback call
       auto iter = tx_return.begin();
       {
         std::lock_guard lock(tx_lock_);
-        while (!tx_in_flight_.Empty()) {
-          Descriptor d = tx_in_flight_.Pop();
-          *iter++ = {
-              .id = d.buffer_id,
-              .status = ZX_ERR_BAD_STATE,
-          };
+        for (int i = 0; i < kMaxDepth; ++i) {
+          if (tx_in_flight_active_[i]) {
+            *iter++ = {
+                .id = tx_in_flight_buffer_ids_[i],
+                .status = ZX_ERR_BAD_STATE,
+            };
+            tx_in_flight_active_[i] = false;
+          }
         }
       }
       if (iter != tx_return.begin()) {
@@ -392,6 +408,8 @@ void NetworkDevice::NetworkDeviceImplStop(network_device_impl_stop_callback call
         while (!rx_in_flight_.Empty()) {
           Descriptor d = rx_in_flight_.Pop();
           *iter++ = {
+              .meta = {.frame_type =
+                           static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
               .data_list = &*parts_iter,
               .data_count = 1,
           };
@@ -407,7 +425,7 @@ void NetworkDevice::NetworkDeviceImplStop(network_device_impl_stop_callback call
   callback(cookie);
 }
 
-void NetworkDevice::NetworkDeviceImplGetInfo(device_info_t* out_info) {
+void NetworkDevice::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
   *out_info = {
       .tx_depth = tx_depth_,
       .rx_depth = rx_depth_,
@@ -488,10 +506,8 @@ void NetworkDevice::NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list, size_t
         .addr = region.phys_addr,
         .len = static_cast<uint32_t>(data.length),
     };
-    tx_in_flight_.Push({
-        .buffer_id = buffer.id,
-        .ring_id = id,
-    });
+    tx_in_flight_buffer_ids_[id] = buffer.id;
+    tx_in_flight_active_[id] = true;
     // Submit the descriptor and notify the back-end.
     if (zxlog_level_enabled(TRACE)) {
       virtio_dump_desc(desc);
@@ -564,10 +580,10 @@ void NetworkDevice::NetworkDeviceImplReleaseVmo(uint8_t vmo_id) {
   }
 }
 
-void NetworkDevice::NetworkPortGetInfo(port_info_t* out_info) {
+void NetworkDevice::NetworkPortGetInfo(port_base_info_t* out_info) {
   static constexpr uint8_t kRxTypesList[] = {
       static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet)};
-  static constexpr tx_support_t kTxTypesList[] = {{
+  static constexpr frame_type_support_t kTxTypesList[] = {{
       .type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
       .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw,
   }};
@@ -583,15 +599,14 @@ void NetworkDevice::NetworkPortGetInfo(port_info_t* out_info) {
 void NetworkDevice::NetworkPortGetStatus(port_status_t* out_status) { *out_status = ReadStatus(); }
 
 void NetworkDevice::NetworkPortSetActive(bool active) {}
-void NetworkDevice::NetworkPortGetMac(mac_addr_protocol_t* out_mac_ifc) {
-  *out_mac_ifc = {
-      .ops = &mac_addr_protocol_ops_,
-      .ctx = this,
-  };
+void NetworkDevice::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
+  if (out_mac_ifc) {
+    *out_mac_ifc = &mac_addr_proto_;
+  }
 }
 
-void NetworkDevice::MacAddrGetAddress(uint8_t* out_mac) {
-  std::copy(mac_.octets.begin(), mac_.octets.end(), out_mac);
+void NetworkDevice::MacAddrGetAddress(mac_address_t* out_mac) {
+  std::copy(mac_.octets.begin(), mac_.octets.end(), out_mac->octets);
 }
 
 void NetworkDevice::MacAddrGetFeatures(features_t* out_features) {
@@ -601,10 +616,10 @@ void NetworkDevice::MacAddrGetFeatures(features_t* out_features) {
   };
 }
 
-void NetworkDevice::MacAddrSetMode(mode_t mode, const uint8_t* multicast_macs_list,
+void NetworkDevice::MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
                                    size_t multicast_macs_count) {
   /* We only support promiscuous mode, nothing to do */
-  ZX_ASSERT_MSG(mode == MODE_PROMISCUOUS, "unsupported mode %d", mode);
+  ZX_ASSERT_MSG(mode == MAC_FILTER_MODE_PROMISCUOUS, "unsupported mode %d", mode);
   ZX_ASSERT_MSG(multicast_macs_count == 0, "unsupported multicast count %zu", multicast_macs_count);
 }
 

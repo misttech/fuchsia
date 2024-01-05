@@ -35,7 +35,7 @@ source_set("util") {
 
   if (is_fuchsia) {
     deps += [
-      "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp_wire",
+      "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
       "//sdk/lib/fdio",
     ]
   }
@@ -65,7 +65,7 @@ test("netstack_${bsdsocket_label}_test") {
   ]
 
   if (is_fuchsia) {
-    deps += [ "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp_wire" ]
+    deps += [ "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp" ]
   }
 }
 
@@ -82,9 +82,12 @@ test("netstack_${dgramsocket_label}_test") {
     "//zircon/system/ulib/fbl",
   ]
 
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
+
   if (is_fuchsia) {
     deps += [
-      "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp_wire",
+      "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
       "//sdk/lib/fdio",
       "//src/connectivity/network/netstack/udp_serde",
     ]
@@ -102,7 +105,7 @@ test("netstack_${if_nameindex_label}_test") {
 
   if (is_fuchsia) {
     deps += [
-      "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp_wire",
+      "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
       "//src/lib/testing/predicates",
     ]
   }
@@ -123,7 +126,7 @@ test("netstack_${streamsocket_label}_test") {
   ]
 
   if (is_fuchsia) {
-    deps += [ "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp_wire" ]
+    deps += [ "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp" ]
   }
 }
 
@@ -135,7 +138,7 @@ test("netstack_${fuchsia_label}_test") {
 
   deps = [
     ":util",
-    "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp_wire",
+    "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
     "//sdk/lib/fdio",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
@@ -243,7 +246,7 @@ ns2_test_component_names = []
 netstack2_syncudp_tests = [
   {
     label = streamsocket_label
-    expect_include_dep = ":socket_test_includes"
+    expects = true
   },
   {
     label = bsdsocket_label

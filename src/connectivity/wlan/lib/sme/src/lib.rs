@@ -4,7 +4,6 @@
 
 pub mod ap;
 pub mod client;
-pub mod mesh;
 pub mod serve;
 #[cfg(test)]
 pub mod test_utils;
@@ -14,7 +13,7 @@ use {
     fidl_fuchsia_wlan_mlme::{self as fidl_mlme, MlmeEvent},
     futures::channel::mpsc,
     thiserror::Error,
-    wlan_common::{sink::UnboundedSink, timer::TimedEvent},
+    wlan_common::{sink::UnboundedSink, timer},
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
@@ -51,9 +50,6 @@ pub enum MlmeRequest {
     Reset(fidl_mlme::ResetRequest),
     Start(fidl_mlme::StartRequest),
     Stop(fidl_mlme::StopRequest),
-    SendMpOpenAction(fidl_mlme::MeshPeeringOpenAction),
-    SendMpConfirmAction(fidl_mlme::MeshPeeringConfirmAction),
-    MeshPeeringEstablished(fidl_mlme::MeshPeeringParams),
     GetIfaceCounterStats(responder::Responder<fidl_mlme::GetIfaceCounterStatsResponse>),
     GetIfaceHistogramStats(responder::Responder<fidl_mlme::GetIfaceHistogramStatsResponse>),
     ListMinstrelPeers(responder::Responder<fidl_mlme::MinstrelListResponse>),
@@ -89,9 +85,6 @@ impl MlmeRequest {
             Self::Reset(_) => "Reset",
             Self::Start(_) => "Start",
             Self::Stop(_) => "Stop",
-            Self::SendMpOpenAction(_) => "SendMpOpenAction",
-            Self::SendMpConfirmAction(_) => "SendMpConfirmAction",
-            Self::MeshPeeringEstablished(_) => "MeshPeeringEstablished",
             Self::GetIfaceCounterStats(_) => "GetIfaceCounterStats",
             Self::GetIfaceHistogramStats(_) => "GetIfaceHistogramStats",
             Self::ListMinstrelPeers(_) => "ListMinstrelPeers",
@@ -113,7 +106,7 @@ pub trait Station {
     type Event;
 
     fn on_mlme_event(&mut self, event: fidl_mlme::MlmeEvent);
-    fn on_timeout(&mut self, timed_event: TimedEvent<Self::Event>);
+    fn on_timeout(&mut self, timed_event: timer::Event<Self::Event>);
 }
 
 pub type MlmeStream = mpsc::UnboundedReceiver<MlmeRequest>;
@@ -156,8 +149,6 @@ fn mlme_event_name(event: &MlmeEvent) -> &str {
         MlmeEvent::StartConf { .. } => "StartConf",
         MlmeEvent::StopConf { .. } => "StopConf",
         MlmeEvent::EapolConf { .. } => "EapolConf",
-        MlmeEvent::IncomingMpOpenAction { .. } => "IncomingMpOpenAction",
-        MlmeEvent::IncomingMpConfirmAction { .. } => "IncomingMpConfirmAction",
         MlmeEvent::SignalReport { .. } => "SignalReport",
         MlmeEvent::EapolInd { .. } => "EapolInd",
         MlmeEvent::RelayCapturedFrame { .. } => "RelayCapturedFrame",

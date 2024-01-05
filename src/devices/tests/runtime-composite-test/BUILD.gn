@@ -16,10 +16,9 @@ test("runtime-composite-test") {
   sources = [ "test.cc" ]
   deps = [
     "drivers:drivers",
-    "drivers:fuchsia.runtime.composite.test_cpp_wire",
+    "drivers:fuchsia.runtime.composite.test_cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm/simple",
-    "//src/devices/internal/drivers/fragment",
     "//src/lib/fxl/test:gtest_main",
   ]
 }

@@ -6,7 +6,7 @@ use crate::{constants::*, test_topology};
 use anyhow::Error;
 use diagnostics_data::{Data, Logs};
 use diagnostics_message::{fx_log_packet_t, METADATA_SIZE};
-use diagnostics_reader::ArchiveReader;
+use diagnostics_reader::{ArchiveReader, RetryConfig};
 use fidl::prelude::*;
 use fidl_fuchsia_archivist_tests::{
     SocketPuppetControllerRequest, SocketPuppetControllerRequestStream, SocketPuppetProxy,
@@ -157,7 +157,7 @@ impl PuppetEnv {
         log_reader
             .with_archive(archive())
             .with_minimum_schema_count(0) // we want this to return even when no log messages
-            .retry_if_empty(false);
+            .retry(RetryConfig::never());
         let (_log_subscription, mut errors) =
             log_reader.snapshot_then_subscribe::<Logs>().unwrap().split_streams();
 
@@ -205,8 +205,7 @@ impl PuppetEnv {
             _ => panic!("did not expect that"),
         };
 
-        let moniker =
-            format!("realm_builder:{}/test/puppet-{}", self.instance.root.child_name(), id);
+        let moniker = format!("puppet-{id}");
         let puppet = Puppet { moniker: moniker.clone(), proxy };
 
         info!("having the puppet connect to LogSink");

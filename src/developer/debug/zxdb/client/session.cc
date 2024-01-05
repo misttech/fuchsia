@@ -28,6 +28,7 @@
 #include "src/developer/debug/shared/stream_buffer.h"
 #include "src/developer/debug/shared/zx_status.h"
 #include "src/developer/debug/zxdb/client/arch_info.h"
+#include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_action.h"
 #include "src/developer/debug/zxdb/client/breakpoint_impl.h"
 #include "src/developer/debug/zxdb/client/filter.h"
@@ -212,28 +213,51 @@ void Session::PendingConnection::ConnectCompleteMainThread(fxl::RefPtr<PendingCo
 
 void Session::PendingConnection::DataAvailableMainThread(fxl::RefPtr<PendingConnection> owner) {
   // This function needs to manually deserialize the hello message since the Session stuff isn't
-  // connected yet.
-  constexpr size_t kHelloMessageSize =
-      debug_ipc::MsgHeader::kSerializedHeaderSize + sizeof(debug_ipc::HelloReply);
+  // connected yet. In version 58 a 32-bit "platform" enum was added.
+  if (!buffer_->stream().IsAvailable(debug_ipc::MsgHeader::kSerializedHeaderSize))
+    return;  // Wait for more data.
 
-  if (!buffer_->stream().IsAvailable(kHelloMessageSize))
+  std::vector<char> serialized_header;
+  serialized_header.resize(debug_ipc::MsgHeader::kSerializedHeaderSize);
+  buffer_->stream().Peek(serialized_header.data(), debug_ipc::MsgHeader::kSerializedHeaderSize);
+
+  // Header doesn't have a version.
+  debug_ipc::MessageReader reader(std::move(serialized_header), 0);
+  debug_ipc::MsgHeader header;
+  reader | header;
+  // Since we already validated there is enough data for the header, the header read should not
+  // fail (it's just a memcpy).
+  FX_CHECK(!reader.has_error());
+
+  // Sanity checking on the size to prevent crashes.
+  if (header.size > kMaxMessageSize) {
+    LOGS(Error) << "Bad message received of size " << static_cast<uint32_t>(header.size) << "."
+                << "(type = " << static_cast<unsigned>(header.type)
+                << ", transaction = " << static_cast<unsigned>(header.transaction_id) << ")";
+    HelloCompleteMainThread(std::move(owner), Err("Reply too large"), debug_ipc::HelloReply());
+    return;
+  }
+
+  if (!buffer_->stream().IsAvailable(header.size))
     return;  // Wait for more data.
 
   std::vector<char> serialized;
-  serialized.resize(kHelloMessageSize);
-  size_t read = buffer_->stream().Read(serialized.data(), kHelloMessageSize);
+  serialized.resize(header.size);
+  buffer_->stream().Read(serialized.data(), header.size);
 
   debug_ipc::HelloReply reply;
   Err err;
 
-  if (read != kHelloMessageSize) {
-    err = Err("Connection to the debug agent is broken.");
+  // Deserialize with version 0 to get the initial fields including the version.
+  uint32_t transaction_id = 0;
+  if (!debug_ipc::Deserialize(serialized, &reply, &transaction_id, 0) ||
+      reply.signature != debug_ipc::HelloReply::kStreamSignature) {
+    // Corrupt.
+    err = Err("Corrupted reply, service is probably not the debug agent.");
   } else {
-    uint32_t transaction_id = 0;
-    if (!debug_ipc::Deserialize(std::move(serialized), &reply, &transaction_id, 0) ||
-        reply.signature != debug_ipc::HelloReply::kStreamSignature) {
-      // Corrupt.
-      err = Err("Corrupted reply, service is probably not the debug agent.");
+    // Now deserialize with the given version to get all of the fields.
+    if (!debug_ipc::Deserialize(serialized, &reply, &transaction_id, reply.version)) {
+      err = Err("Version mismatch in reply.");
     }
   }
 
@@ -265,22 +289,27 @@ Err Session::PendingConnection::DoConnectBackgroundThread() {
 
 Session::Session()
     : remote_api_(std::make_unique<RemoteAPIImpl>(this)), system_(this), weak_factory_(this) {
-  SetArch(debug::Arch::kUnknown, 0);
+  SetArch(debug::Arch::kUnknown, debug::Platform::kUnknown, 0);
 
   ListenForSystemSettings();
 }
 
-Session::Session(std::unique_ptr<RemoteAPI> remote_api, debug::Arch arch, uint64_t page_size)
+Session::Session(std::unique_ptr<RemoteAPI> remote_api, debug::Arch arch, debug::Platform platform,
+                 uint64_t page_size)
     : remote_api_(std::move(remote_api)), system_(this), arch_(arch), weak_factory_(this) {
-  Err err = SetArch(arch, page_size);
+  Err err = SetArch(arch, platform, page_size);
   FX_DCHECK(!err.has_error());  // Should not fail for synthetically set-up architectures.
 
   ListenForSystemSettings();
 }
 
 Session::Session(debug::StreamBuffer* stream)
-    : stream_(stream), system_(this), weak_factory_(this) {
+    : stream_(stream),
+      remote_api_(std::make_unique<RemoteAPIImpl>(this)),
+      system_(this),
+      weak_factory_(this) {
   ListenForSystemSettings();
+  SendLocalHello([](const Err&) {});
 }
 
 Session::~Session() = default;
@@ -305,7 +334,6 @@ void Session::OnStreamReadable() {
     // fail (it's just a memcpy).
     FX_CHECK(!reader.has_error());
 
-    // Sanity checking on the size to prevent crashes.
     if (header.size > kMaxMessageSize) {
       LOGS(Error) << "Bad message received of size " << static_cast<uint32_t>(header.size) << "."
                   << "(type = " << static_cast<unsigned>(header.type)
@@ -416,13 +444,15 @@ void Session::Connect(const SessionConnectionInfo& info, fit::callback<void(cons
       });
 }
 
-Err Session::SetArch(debug::Arch arch, uint64_t page_size) {
+Err Session::SetArch(debug::Arch arch, debug::Platform platform, uint64_t page_size) {
   arch_info_ = std::make_unique<ArchInfo>();
 
   Err arch_err = arch_info_->Init(arch, page_size);
   if (!arch_err.has_error()) {
     arch_ = arch;
+    platform_ = platform;
   } else {
+    LOGS(Error) << "Fail to init ArchInfo: " << arch_err.msg();
     // Rollback to default-initialized ArchInfo;
     arch_info_ = std::make_unique<ArchInfo>();
   }
@@ -456,15 +486,7 @@ void Session::OpenMinidump(const std::string& path, fit::callback<void(const Err
   // the core file in order to properly populate the architecture information in time to print it to
   // the UI with all the exception information correctly decoded, which is architecture specific and
   // can only happen after the architecture information has been given here.
-  remote_api_->Hello(debug_ipc::HelloRequest(),
-                     [callback = std::move(callback), weak_this = GetWeakPtr()](
-                         const Err& err, debug_ipc::HelloReply reply) mutable {
-                       if (weak_this && !err.has_error()) {
-                         weak_this->SetArch(reply.arch, reply.page_size);
-                       }
-
-                       callback(err);
-                     });
+  SendLocalHello(std::move(callback));
 
   system().GetTargets()[0]->Attach(
       minidump->ProcessID(), [](fxl::WeakPtr<Target> target, const Err&, uint64_t timestamp) {});
@@ -472,7 +494,7 @@ void Session::OpenMinidump(const std::string& path, fit::callback<void(const Err
 
 Err Session::Disconnect() {
   if (!stream_ && !is_minidump_) {
-    if (pending_connection_.get()) {
+    if (pending_connection_) {
       // Cancel pending connection.
       pending_connection_ = nullptr;
       return Err();
@@ -636,7 +658,7 @@ void Session::DispatchNotifyProcessStarting(const debug_ipc::NotifyProcessStarti
                         ? Process::StartType::kAttach
                         : Process::StartType::kLaunch;
   found_target->CreateProcess(start_type, notify.koid, notify.name, notify.timestamp,
-                              notify.component);
+                              notify.components);
 }
 
 void Session::DispatchNotifyProcessExiting(const debug_ipc::NotifyProcessExiting& notify) {
@@ -729,6 +751,48 @@ Err Session::ResolvePendingConnection(fxl::RefPtr<PendingConnection> pending,
   }
   pending_connection_ = nullptr;
 
+  if (Err err = HandleHelloReply(reply); err.has_error()) {
+    return err;
+  }
+
+  // Success, connect up the stream buffers.
+  connection_storage_ = std::move(buffer);
+
+  stream_ = &connection_storage_->stream();
+  connection_storage_->set_data_available_callback([this]() { OnStreamReadable(); });
+  connection_storage_->set_error_callback([this]() { OnStreamError(); });
+
+  // Simple heuristic to tell if we're connected to the local system.
+  // TODO As we extend local debugging support, this will need to get more complex and robust.
+  System::Where where = pending->connection_info().host == "localhost" ? System::Where::kLocal
+                                                                       : System::Where::kRemote;
+
+  // Connection succeeds.
+  system_.DidConnect(where);
+  SyncAgentStatus();
+  return Err();
+}
+
+void Session::SendLocalHello(fit::callback<void(const Err&)> cb) {
+  // In order to use the RemoteAPI wrappers, we need to manually set the version first. This is
+  // OK since we know the connection is to our same build (either to the built-in debug_agent or to
+  // the minidump backend) and has the same version.
+  ipc_version_ = debug_ipc::kCurrentProtocolVersion;
+  remote_api_->SetVersion(debug_ipc::kCurrentProtocolVersion);
+  remote_api_->Hello(debug_ipc::HelloRequest{.version = debug_ipc::kCurrentProtocolVersion},
+                     [weak_this = GetWeakPtr(), cb = std::move(cb)](
+                         const Err& err, debug_ipc::HelloReply reply) mutable {
+                       if (weak_this && !err.has_error()) {
+                         if (weak_this->HandleHelloReply(reply).ok()) {
+                           weak_this->SyncAgentStatus();
+                           weak_this->system_.DidConnect(System::Where::kLocal);
+                         }
+                         cb(err);
+                       }
+                     });
+}
+
+Err Session::HandleHelloReply(const debug_ipc::HelloReply& reply) {
   // Version check.
   if (reply.version > debug_ipc::kCurrentProtocolVersion ||
       reply.version < debug_ipc::kMinimumProtocolVersion) {
@@ -742,26 +806,10 @@ Err Session::ResolvePendingConnection(fxl::RefPtr<PendingConnection> pending,
   remote_api_->SetVersion(reply.version);
 
   // Initialize arch-specific stuff.
-  Err err = SetArch(reply.arch, reply.page_size);
-  if (err.has_error()) {
-    return err;
-  }
+  return SetArch(reply.arch, reply.platform, reply.page_size);
+}
 
-  // Success, connect up the stream buffers.
-  connection_storage_ = std::move(buffer);
-
-  stream_ = &connection_storage_->stream();
-  connection_storage_->set_data_available_callback([this]() { OnStreamReadable(); });
-  connection_storage_->set_error_callback([this]() { OnStreamError(); });
-
-  // Simple heuristic to tell if we're connected to the local system.
-  // TODO As we extend local debugging support, this will need to get more complex and robust.
-  bool is_local_connection = pending->connection_info().host == "localhost";
-
-  // Connection succeeds.
-  system_.DidConnect(is_local_connection);
-
-  // Query which processes the debug agent is already connected to.
+void Session::SyncAgentStatus() {
   remote_api()->Status(
       debug_ipc::StatusRequest{},
       [this, session = GetWeakPtr()](const Err& err, debug_ipc::StatusReply reply) {
@@ -771,6 +819,15 @@ Err Session::ResolvePendingConnection(fxl::RefPtr<PendingConnection> pending,
         if (err.has_error()) {
           LOGS(Error) << "Could not get debug agent status: " << err.msg();
           return;
+        }
+
+        if (!reply.filters.empty()) {
+          for (auto& remote_filter : reply.filters) {
+            Filter* client_filter = system().CreateNewFilter();
+            client_filter->SetType(remote_filter.type);
+            client_filter->SetPattern(remote_filter.pattern);
+            client_filter->SetJobKoid(remote_filter.job_koid);
+          }
         }
 
         // Notify about previously connected processes.
@@ -794,9 +851,30 @@ Err Session::ResolvePendingConnection(fxl::RefPtr<PendingConnection> pending,
             LOGS(Info) << "Not auto connecting to all processes in Limbo due to user override.";
           }
         }
-      });
 
-  return Err();
+        if (!reply.breakpoints.empty()) {
+          for (auto& bp : reply.breakpoints) {
+            Breakpoint* client_bp = system().CreateNewBreakpoint();
+
+            BreakpointSettings settings = client_bp->GetSettings();
+            settings.name = bp.name;
+            settings.type = bp.type;
+            settings.one_shot = bp.one_shot;
+            settings.instructions = bp.instructions;
+            settings.scope = ExecutionScope();
+
+            // TODO(http://b/317387036): There is some information that will be lost about the
+            // breakpoint if it had been installed by zxdb before (breakpoint conditions, file/line
+            // information, etc) which the target never knows about. The best we can do is use the
+            // address that DebugAgent knows about when the breakpoint is installed.
+            for (const auto& location : bp.locations) {
+              settings.locations.emplace_back(location.address);
+            }
+
+            client_bp->SetSettings(settings);
+          }
+        }
+      });
 }
 
 void Session::OnSettingChanged(const SettingStore& store, const std::string& setting_name) {

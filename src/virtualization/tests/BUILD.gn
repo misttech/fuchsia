@@ -51,6 +51,7 @@ group("tests") {
     ":virtualization_vsock_tests_pkg",
     "hypervisor",
     "lib:tests",
+    "smoke",
     "virtio_input_test_util:tests($host_toolchain)",
   ]
 
@@ -256,8 +257,8 @@ executable("virtualization_gpu_tests") {
     "lib:lib",
     "lib:periodic_logger",
     "lib:test_main",
+    "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_cpp",
     "//sdk/lib/sys/component/cpp/testing:cpp",
-    "//src/lib/ui/input-synthesis:test.inputsynthesis_hlcpp",
     "//third_party/googletest:gmock",
     "//third_party/rapidjson",
   ]
@@ -295,8 +296,8 @@ executable("virtualization_input_tests") {
     "lib",
     "lib:guest_console",
     "lib:test_main",
+    "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_cpp",
     "//sdk/lib/sys/component/cpp/testing:cpp",
-    "//src/lib/ui/input-synthesis:test.inputsynthesis_hlcpp",
   ]
 }
 
@@ -535,8 +536,8 @@ romfs_image("extras") {
   testonly = true
 
   deps = [
-    "//src/graphics/lib/magma/tests/integration:virtmagma_conformance_tests(${linux_exe_toolchain})",
-    "//src/graphics/lib/magma/tests_linux/unit_tests:virtmagma_vulkan_unit_tests(${linux_exe_toolchain})",
+    "//src/graphics/magma/tests/integration:virtmagma_conformance_tests(${linux_exe_toolchain})",
+    "//src/graphics/magma/tests_linux/unit_tests:virtmagma_vulkan_unit_tests(${linux_exe_toolchain})",
   ]
 
   inputs = [

@@ -9,7 +9,8 @@ use {
     async_trait::async_trait,
     fidl::endpoints::Proxy,
     fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-    fidl_fuchsia_ui_policy as fidl_ui_policy, fuchsia_async as fasync, fuchsia_inspect,
+    fidl_fuchsia_ui_policy as fidl_ui_policy, fuchsia_async as fasync,
+    fuchsia_inspect::{self, health::Reporter},
     fuchsia_zircon::AsHandleRef,
     futures::{channel::mpsc, StreamExt, TryStreamExt},
     metrics_registry::*,
@@ -72,6 +73,14 @@ impl UnhandledInputHandler for MediaButtonsHandler {
             }
             _ => vec![input_device::InputEvent::from(unhandled_input_event)],
         }
+    }
+
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
     }
 }
 
@@ -166,6 +175,7 @@ impl MediaButtonsHandler {
             mic_mute: Some(false),
             pause: Some(false),
             camera_disable: Some(false),
+            power: Some(false),
             ..Default::default()
         };
         for button in &event.pressed_buttons {
@@ -184,6 +194,9 @@ impl MediaButtonsHandler {
                 }
                 fidl_input_report::ConsumerControlButton::CameraDisable => {
                     new_event.camera_disable = Some(true);
+                }
+                fidl_input_report::ConsumerControlButton::Function => {
+                    new_event.power = Some(true);
                 }
                 _ => {}
             }
@@ -300,12 +313,14 @@ mod tests {
         mic_mute: Option<bool>,
         pause: Option<bool>,
         camera_disable: Option<bool>,
+        power: Option<bool>,
     ) -> fidl_ui_input::MediaButtonsEvent {
         fidl_ui_input::MediaButtonsEvent {
             volume,
             mic_mute,
             pause,
             camera_disable,
+            power,
             ..Default::default()
         }
     }
@@ -339,7 +354,13 @@ mod tests {
         let media_buttons_handler = Rc::new(MediaButtonsHandler {
             inner: RefCell::new(MediaButtonsHandlerInner {
                 listeners: HashMap::new(),
-                last_event: Some(create_ui_input_media_buttons_event(Some(1), None, None, None)),
+                last_event: Some(create_ui_input_media_buttons_event(
+                    Some(1),
+                    None,
+                    None,
+                    None,
+                    None,
+                )),
                 send_event_task_tracker: LocalTaskTracker::new(),
             }),
             inspect_status,
@@ -358,7 +379,7 @@ mod tests {
         };
 
         // Assert listener was registered and received last event.
-        let expected_event = create_ui_input_media_buttons_event(Some(1), None, None, None);
+        let expected_event = create_ui_input_media_buttons_event(Some(1), None, None, None, None);
         let assert_fut = async {
             match listener_stream.next().await {
                 Some(Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent {
@@ -401,12 +422,18 @@ mod tests {
                 fidl_input_report::ConsumerControlButton::Pause,
                 fidl_input_report::ConsumerControlButton::MicMute,
                 fidl_input_report::ConsumerControlButton::CameraDisable,
+                fidl_input_report::ConsumerControlButton::Function,
             ],
             event_time,
             &descriptor,
         )];
-        let expected_events =
-            vec![create_ui_input_media_buttons_event(Some(0), Some(true), Some(true), Some(true))];
+        let expected_events = vec![create_ui_input_media_buttons_event(
+            Some(0),
+            Some(true),
+            Some(true),
+            Some(true),
+            Some(true),
+        )];
 
         // Assert registered listener receives event.
         use crate::input_handler::InputHandler as _; // Adapt UnhandledInputHandler to InputHandler
@@ -448,6 +475,7 @@ mod tests {
         )];
         let expected_events = vec![create_ui_input_media_buttons_event(
             Some(1),
+            Some(false),
             Some(false),
             Some(false),
             Some(false),
@@ -504,8 +532,13 @@ mod tests {
                 &descriptor,
             );
 
-            let expected_media_buttons_event =
-                create_ui_input_media_buttons_event(Some(1), Some(false), Some(false), Some(false));
+            let expected_media_buttons_event = create_ui_input_media_buttons_event(
+                Some(1),
+                Some(false),
+                Some(false),
+                Some(false),
+                Some(false),
+            );
 
             // Drop third registered listener.
             std::mem::drop(third_listener_stream);
@@ -586,8 +619,13 @@ mod tests {
             event_time,
             trace_id: None,
         };
-        let first_expected_media_buttons_event =
-            create_ui_input_media_buttons_event(Some(1), Some(false), Some(false), Some(false));
+        let first_expected_media_buttons_event = create_ui_input_media_buttons_event(
+            Some(1),
+            Some(false),
+            Some(false),
+            Some(false),
+            Some(false),
+        );
 
         assert_matches!(
             media_buttons_handler
@@ -641,8 +679,13 @@ mod tests {
             event_time,
             trace_id: None,
         };
-        let second_expected_media_buttons_event =
-            create_ui_input_media_buttons_event(Some(0), Some(true), Some(false), Some(false));
+        let second_expected_media_buttons_event = create_ui_input_media_buttons_event(
+            Some(0),
+            Some(true),
+            Some(false),
+            Some(false),
+            Some(false),
+        );
 
         // Ensure we can handle a subsequent event if listener stalls on first event.
         assert_matches!(
@@ -740,7 +783,7 @@ mod tests {
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
         let _handler =
             MediaButtonsHandler::new(&fake_handlers_node, metrics::MetricsLogger::default());
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 media_buttons_handler: {
                     events_received_count: 0u64,
@@ -750,7 +793,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 }
             }
@@ -810,7 +853,7 @@ mod tests {
             media_buttons_handler.clone().handle_input_event(event).await;
         }
 
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 media_buttons_handler: {
                     events_received_count: 2u64,
@@ -820,7 +863,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 }
             }

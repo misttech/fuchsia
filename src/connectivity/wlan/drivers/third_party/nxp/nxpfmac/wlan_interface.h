@@ -14,7 +14,6 @@
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_NXP_NXPFMAC_WLAN_INTERFACE_H_
 
 #include <fidl/fuchsia.wlan.fullmac/cpp/driver/wire.h>
-#include <fuchsia/hardware/wlan/fullmac/cpp/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/fit/function.h>
@@ -26,7 +25,6 @@
 #include <wlan/drivers/components/frame.h>
 #include <wlan/drivers/components/network_port.h>
 
-#include "src/connectivity/wlan/drivers/lib/fullmac_ifc/wlan_fullmac_ifc.h"
 #include "src/connectivity/wlan/drivers/third_party/nxp/nxpfmac/client_connection.h"
 #include "src/connectivity/wlan/drivers/third_party/nxp/nxpfmac/key_ring.h"
 #include "src/connectivity/wlan/drivers/third_party/nxp/nxpfmac/scanner.h"
@@ -78,37 +76,33 @@ class WlanInterface : public WlanInterfaceDeviceType,
       fdf::Arena& arena, QuerySpectrumManagementSupportCompleter::Sync& completer) override;
   void StartScan(StartScanRequestView request, fdf::Arena& arena,
                  StartScanCompleter::Sync& completer) override;
-  void ConnectReq(ConnectReqRequestView request, fdf::Arena& arena,
-                  ConnectReqCompleter::Sync& completer) override;
-  void ReconnectReq(ReconnectReqRequestView request, fdf::Arena& arena,
-                    ReconnectReqCompleter::Sync& completer) override;
+  void Connect(ConnectRequestView request, fdf::Arena& arena,
+               ConnectCompleter::Sync& completer) override;
+  void Reconnect(ReconnectRequestView request, fdf::Arena& arena,
+                 ReconnectCompleter::Sync& completer) override;
   void AuthResp(AuthRespRequestView request, fdf::Arena& arena,
                 AuthRespCompleter::Sync& completer) override;
-  void DeauthReq(DeauthReqRequestView request, fdf::Arena& arena,
-                 DeauthReqCompleter::Sync& completer) override;
+  void Deauth(DeauthRequestView request, fdf::Arena& arena,
+              DeauthCompleter::Sync& completer) override;
   void AssocResp(AssocRespRequestView request, fdf::Arena& arena,
                  AssocRespCompleter::Sync& completer) override;
-  void DisassocReq(DisassocReqRequestView request, fdf::Arena& arena,
-                   DisassocReqCompleter::Sync& completer) override;
-  void ResetReq(ResetReqRequestView request, fdf::Arena& arena,
-                ResetReqCompleter::Sync& completer) override;
-  void StartReq(StartReqRequestView request, fdf::Arena& arena,
-                StartReqCompleter::Sync& completer) override;
-  void StopReq(StopReqRequestView request, fdf::Arena& arena,
-               StopReqCompleter::Sync& completer) override;
+  void Disassoc(DisassocRequestView request, fdf::Arena& arena,
+                DisassocCompleter::Sync& completer) override;
+  void Reset(ResetRequestView request, fdf::Arena& arena, ResetCompleter::Sync& completer) override;
+  void StartBss(StartBssRequestView request, fdf::Arena& arena,
+                StartBssCompleter::Sync& completer) override;
+  void StopBss(StopBssRequestView request, fdf::Arena& arena,
+               StopBssCompleter::Sync& completer) override;
   void SetKeysReq(SetKeysReqRequestView request, fdf::Arena& arena,
                   SetKeysReqCompleter::Sync& completer) override;
   void DelKeysReq(DelKeysReqRequestView request, fdf::Arena& arena,
                   DelKeysReqCompleter::Sync& completer) override;
-  void EapolReq(EapolReqRequestView request, fdf::Arena& arena,
-                EapolReqCompleter::Sync& completer) override;
+  void EapolTx(EapolTxRequestView request, fdf::Arena& arena,
+               EapolTxCompleter::Sync& completer) override;
   void GetIfaceCounterStats(fdf::Arena& arena,
                             GetIfaceCounterStatsCompleter::Sync& completer) override;
   void GetIfaceHistogramStats(fdf::Arena& arena,
                               GetIfaceHistogramStatsCompleter::Sync& completer) override;
-  void StartCaptureFrames(StartCaptureFramesRequestView request, fdf::Arena& arena,
-                          StartCaptureFramesCompleter::Sync& completer) override;
-  void StopCaptureFrames(fdf::Arena& arena, StopCaptureFramesCompleter::Sync& completer) override;
   void SetMulticastPromisc(SetMulticastPromiscRequestView request, fdf::Arena& arena,
                            SetMulticastPromiscCompleter::Sync& completer) override;
   void SaeHandshakeResp(SaeHandshakeRespRequestView request, fdf::Arena& arena,
@@ -133,9 +127,9 @@ class WlanInterface : public WlanInterfaceDeviceType,
 
   // NetworkPort::Callbacks implementation
   uint32_t PortGetMtu() override;
-  void MacGetAddress(uint8_t out_mac[6]) override;
+  void MacGetAddress(mac_address_t* out_mac) override;
   void MacGetFeatures(features_t* out_features) override;
-  void MacSetMode(mode_t mode, cpp20::span<const uint8_t> multicast_macs) override;
+  void MacSetMode(mac_filter_mode_t mode, cpp20::span<const mac_address_t> multicast_macs) override;
 
  private:
   explicit WlanInterface(zx_device_t* parent, uint32_t iface_index,
@@ -143,10 +137,10 @@ class WlanInterface : public WlanInterfaceDeviceType,
                          const uint8_t mac_address[ETH_ALEN], zx::channel&& mlme_channel);
 
   zx_status_t SetMacAddressInFw();
-  void ConfirmDeauth() __TA_EXCLUDES(fullmac_ifc_mutex_);
-  void ConfirmDisassoc(zx_status_t status) __TA_EXCLUDES(fullmac_ifc_mutex_);
+  void ConfirmDeauth();
+  void ConfirmDisassoc(zx_status_t status);
   void ConfirmConnectReq(ClientConnection::StatusCode status, const uint8_t* ies = nullptr,
-                         size_t ies_len = 0) __TA_EXCLUDES(fullmac_ifc_mutex_);
+                         size_t ies_len = 0);
 
   fuchsia_wlan_common::wire::WlanMacRole role_;
   uint32_t iface_index_;
@@ -161,8 +155,7 @@ class WlanInterface : public WlanInterfaceDeviceType,
   SoftAp soft_ap_ __TA_GUARDED(mutex_);
   DeviceContext* context_ = nullptr;
 
-  std::unique_ptr<wlan::WlanFullmacIfc> fullmac_ifc_ __TA_GUARDED(fullmac_ifc_mutex_);
-  std::mutex fullmac_ifc_mutex_;
+  fdf::WireSyncClient<fuchsia_wlan_fullmac::WlanFullmacImplIfc> fullmac_ifc_;
 
   // Serves fuchsia_wlan_fullmac::Service.
   fdf::OutgoingDirectory outgoing_dir_;

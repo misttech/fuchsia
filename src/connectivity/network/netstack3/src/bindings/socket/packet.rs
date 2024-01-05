@@ -8,22 +8,21 @@ use fidl_fuchsia_posix as fposix;
 use fidl_fuchsia_posix_socket as fpsocket;
 use fidl_fuchsia_posix_socket_packet as fppacket;
 
-use fidl::{endpoints::RequestStream as _, Peered as _};
-use fuchsia_async as fasync;
+use fidl::{
+    endpoints::{ProtocolMarker as _, RequestStream as _},
+    Peered as _,
+};
 use fuchsia_zircon::{self as zx, HandleBased as _};
-use futures::TryStreamExt as _;
+use futures::StreamExt as _;
 use net_types::ethernet::Mac;
 use netstack3_core::{
-    device::{
-        socket::{
-            DeviceSocketTypes, EthernetFrame, Frame, NonSyncContext, Protocol, ReceivedFrame,
-            SendDatagramError, SendDatagramParams, SendFrameError, SendFrameParams, SentFrame,
-            SocketId, SocketInfo, TargetDevice,
-        },
-        DeviceId, FrameDestination, WeakDeviceId,
+    device::{DeviceId, WeakDeviceId},
+    device_socket::{
+        DeviceSocketBindingsContext, DeviceSocketTypes, EthernetFrame, Frame, FrameDestination,
+        Protocol, ReceivedFrame, SendDatagramError, SendDatagramParams, SendFrameError,
+        SendFrameParams, SentFrame, SocketId, SocketInfo, TargetDevice,
     },
     sync::Mutex,
-    SyncCtx,
 };
 use packet::Buf;
 use tracing::error;
@@ -39,10 +38,10 @@ use crate::bindings::{
         DeviceNotFoundError, IntoCore as _, IntoFidl as _, TryFromFidlWithContext,
         TryIntoCoreWithContext as _, TryIntoFidlWithContext,
     },
-    BindingsNonSyncCtxImpl, Ctx, DeviceIdExt as _,
+    BindingsCtx, Ctx,
 };
 
-/// State held in the non-sync context for a single socket.
+/// State held in the bindings context for a single socket.
 #[derive(Debug)]
 pub(crate) struct SocketState {
     /// The received messages for the socket.
@@ -50,11 +49,11 @@ pub(crate) struct SocketState {
     kind: fppacket::Kind,
 }
 
-impl DeviceSocketTypes for BindingsNonSyncCtxImpl {
+impl DeviceSocketTypes for BindingsCtx {
     type SocketState = SocketState;
 }
 
-impl NonSyncContext<DeviceId<Self>> for BindingsNonSyncCtxImpl {
+impl DeviceSocketBindingsContext<DeviceId<Self>> for BindingsCtx {
     fn receive_frame(
         &self,
         state: &Self::SocketState,
@@ -78,33 +77,48 @@ impl NonSyncContext<DeviceId<Self>> for BindingsNonSyncCtxImpl {
 pub(crate) async fn serve(
     ctx: Ctx,
     stream: fppacket::ProviderRequestStream,
-) -> Result<(), fidl::Error> {
+) -> crate::bindings::util::TaskWaitGroup {
     let ctx = &ctx;
+    let (wait_group, spawner) = crate::bindings::util::TaskWaitGroup::new();
+    let spawner: worker::ProviderScopedSpawner<_> = spawner.into();
     stream
-        .try_for_each(|req| async {
+        .map(|req| {
+            let req = match req {
+                Ok(req) => req,
+                Err(e) => {
+                    if !e.is_closed() {
+                        tracing::error!(
+                            "{} request error {e:?}",
+                            fppacket::ProviderMarker::DEBUG_NAME
+                        );
+                    }
+                    return;
+                }
+            };
             match req {
                 fppacket::ProviderRequest::Socket { responder, kind } => {
                     let (client, request_stream) = fidl::endpoints::create_request_stream()
                         .unwrap_or_else(|e: fidl::Error| {
                             panic!("failed to create a new request stream: {e}")
                         });
-                    fasync::Task::spawn(SocketWorker::serve_stream_with(
+                    spawner.spawn(SocketWorker::serve_stream_with(
                         ctx.clone(),
-                        move |sync_ctx, non_sync_ctx, properties| {
-                            BindingData::new(sync_ctx, non_sync_ctx, kind, properties)
-                        },
+                        move |ctx, properties| BindingData::new(ctx, kind, properties),
                         SocketWorkerProperties {},
                         request_stream,
-                    ))
-                    .detach();
+                        (),
+                        spawner.clone(),
+                    ));
                     responder
                         .send(Ok(client))
                         .unwrap_or_else(|e| error!("failed to respond: {e:?}"));
                 }
             }
-            Ok(())
         })
-        .await
+        .collect::<()>()
+        .await;
+
+    wait_group
 }
 
 #[derive(Debug)]
@@ -112,7 +126,7 @@ struct BindingData {
     /// The event to hand off for [`fppacket::SocketRequest::Describe`].
     peer_event: zx::EventPair,
     /// The identifier for the [`netstack3_core`] socket resource.
-    id: SocketId<BindingsNonSyncCtxImpl>,
+    id: SocketId<BindingsCtx>,
 }
 
 struct IntoMessage<'a>(MessageData, &'a [u8]);
@@ -150,7 +164,7 @@ enum MessageDataInfo {
 }
 
 impl MessageData {
-    fn new(frame: &Frame<&[u8]>, device: &DeviceId<BindingsNonSyncCtxImpl>) -> Self {
+    fn new(frame: &Frame<&[u8]>, device: &DeviceId<BindingsCtx>) -> Self {
         let (packet_type, info) = match frame {
             Frame::Sent(sent) => (
                 fppacket::PacketType::Outgoing,
@@ -173,7 +187,7 @@ impl MessageData {
         Self {
             packet_type,
             info,
-            interface_id: device.external_state().static_common_info().binding_id.get(),
+            interface_id: device.bindings_id().id.get(),
             interface_type: iface_type(device),
         }
     }
@@ -194,19 +208,19 @@ impl BodyLen for Message {
 
 impl BindingData {
     fn new(
-        sync_ctx: &SyncCtx<BindingsNonSyncCtxImpl>,
-        _non_sync_ctx: &mut BindingsNonSyncCtxImpl,
+        ctx: &Ctx,
         kind: fppacket::Kind,
         SocketWorkerProperties {}: SocketWorkerProperties,
     ) -> Self {
+        let (core_ctx, _bindings_ctx) = ctx.contexts();
         let (local_event, peer_event) = zx::EventPair::create();
         match local_event.signal_peer(zx::Signals::NONE, ZXSIO_SIGNAL_OUTGOING) {
             Ok(()) => (),
             Err(e) => error!("socket failed to signal peer: {:?}", e),
         }
 
-        let id = netstack3_core::device::socket::create(
-            sync_ctx,
+        let id = netstack3_core::device_socket::create(
+            core_ctx,
             SocketState { queue: Mutex::new(MessageQueue::new(local_event)), kind },
         );
 
@@ -224,27 +238,26 @@ impl worker::SocketWorkerHandler for BindingData {
     type Request = fppacket::SocketRequest;
     type RequestStream = fppacket::SocketRequestStream;
     type CloseResponder = fppacket::SocketCloseResponder;
+    type SetupArgs = ();
+    type Spawner = ();
 
     fn handle_request(
         &mut self,
-        ctx: &Ctx,
+        ctx: &mut Ctx,
         request: Self::Request,
+        _spawners: &worker::TaskSpawnerCollection<()>,
     ) -> ControlFlow<Self::CloseResponder, Option<Self::RequestStream>> {
         RequestHandler { ctx, data: self }.handle_request(request)
     }
 
-    fn close(
-        self,
-        sync_ctx: &SyncCtx<BindingsNonSyncCtxImpl>,
-        _non_sync_ctx: &mut BindingsNonSyncCtxImpl,
-    ) {
+    fn close(self, ctx: &mut Ctx) {
         let Self { peer_event: _, id } = self;
-        netstack3_core::device::socket::remove(sync_ctx, id)
+        netstack3_core::device_socket::remove(ctx.core_ctx(), id)
     }
 }
 
 struct RequestHandler<'a> {
-    ctx: &'a Ctx,
+    ctx: &'a mut Ctx,
     data: &'a mut BindingData,
 }
 
@@ -277,13 +290,12 @@ impl<'a> RequestHandler<'a> {
             })
             .transpose()?;
         let Self { ctx, data: BindingData { peer_event: _, id } } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let device = match interface {
             fppacket::BoundInterfaceId::All(fppacket::Empty) => None,
             fppacket::BoundInterfaceId::Specified(id) => {
                 let id = BindingId::new(id).ok_or(DeviceNotFoundError.into_errno())?;
-                Some(id.try_into_core_with_ctx(non_sync_ctx).map_err(IntoErrno::into_errno)?)
+                Some(id.try_into_core_with_ctx(bindings_ctx).map_err(IntoErrno::into_errno)?)
             }
         };
         let device_selector = match device.as_ref() {
@@ -292,13 +304,13 @@ impl<'a> RequestHandler<'a> {
         };
 
         match protocol {
-            Some(protocol) => netstack3_core::device::socket::set_device_and_protocol(
-                sync_ctx,
+            Some(protocol) => netstack3_core::device_socket::set_device_and_protocol(
+                core_ctx,
                 id,
                 device_selector,
                 protocol,
             ),
-            None => netstack3_core::device::socket::set_device(sync_ctx, id, device_selector),
+            None => netstack3_core::device_socket::set_device(core_ctx, id, device_selector),
         }
         Ok(())
     }
@@ -310,17 +322,15 @@ impl<'a> RequestHandler<'a> {
         fposix::Errno,
     > {
         let Self { ctx, data: BindingData { peer_event: _, id } } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
 
-        let SocketInfo { device, protocol } =
-            netstack3_core::device::socket::get_info(sync_ctx, id);
+        let SocketInfo { device, protocol } = netstack3_core::device_socket::get_info(core_ctx, id);
         let SocketState { queue: _, kind } = *id.socket_state();
 
         let interface = match device {
             TargetDevice::AnyDevice => fppacket::BoundInterface::All(fppacket::Empty),
             TargetDevice::SpecificDevice(d) => fppacket::BoundInterface::Specified(
-                d.try_into_fidl_with_ctx(non_sync_ctx).map_err(IntoErrno::into_errno)?,
+                d.try_into_fidl_with_ctx(bindings_ctx).map_err(IntoErrno::into_errno)?,
             ),
         };
 
@@ -362,17 +372,16 @@ impl<'a> RequestHandler<'a> {
         data: Vec<u8>,
     ) -> Result<(), fposix::Errno> {
         let Self { ctx, data: BindingData { peer_event: _, id } } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let SocketState { kind, queue: _ } = *id.socket_state();
 
         let data = Buf::new(data, ..);
         match kind {
             fppacket::Kind::Network => {
-                let params = packet_info.try_into_core_with_ctx(non_sync_ctx)?;
-                netstack3_core::device::socket::send_datagram(
-                    sync_ctx,
-                    non_sync_ctx,
+                let params = packet_info.try_into_core_with_ctx(bindings_ctx)?;
+                netstack3_core::device_socket::send_datagram(
+                    core_ctx,
+                    bindings_ctx,
                     id,
                     params,
                     data,
@@ -381,9 +390,9 @@ impl<'a> RequestHandler<'a> {
             }
             fppacket::Kind::Link => {
                 let params = packet_info
-                    .try_into_core_with_ctx(non_sync_ctx)
+                    .try_into_core_with_ctx(bindings_ctx)
                     .map_err(IntoErrno::into_errno)?;
-                netstack3_core::device::socket::send_frame(sync_ctx, non_sync_ctx, id, params, data)
+                netstack3_core::device_socket::send_frame(core_ctx, bindings_ctx, id, params, data)
                     .map_err(|(_, e): (Buf<Vec<u8>>, _)| e.into_errno())
             }
         }
@@ -408,27 +417,25 @@ impl<'a> RequestHandler<'a> {
                     .send(fppacket::SOCKET_PROTOCOL_NAME.as_bytes())
                     .unwrap_or_else(|e| error!("failed to respond: {e:?}"));
             }
-            fppacket::SocketRequest::SetReuseAddress { value: _, responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetReuseAddress { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetError { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::SetBroadcast { value: _, responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetBroadcast { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::SetSendBuffer { value_bytes: _, responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetSendBuffer { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
+            fppacket::SocketRequest::SetReuseAddress { value: _, responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetReuseAddress { responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetError { responder } => respond_not_supported!(responder),
+            fppacket::SocketRequest::SetBroadcast { value: _, responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetBroadcast { responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::SetSendBuffer { value_bytes: _, responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetSendBuffer { responder } => {
+                respond_not_supported!(responder)
+            }
             fppacket::SocketRequest::SetReceiveBuffer { value_bytes, responder } => {
                 responder
                     .send(Ok(self.set_receive_buffer(value_bytes)))
@@ -439,53 +446,49 @@ impl<'a> RequestHandler<'a> {
                     .send(Ok(self.receive_buffer()))
                     .unwrap_or_else(|e| error!("failed to respond: {e:?}"));
             }
-            fppacket::SocketRequest::SetKeepAlive { value: _, responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetKeepAlive { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::SetOutOfBandInline { value: _, responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetOutOfBandInline { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::SetNoCheck { value: _, responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetNoCheck { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
+            fppacket::SocketRequest::SetKeepAlive { value: _, responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetKeepAlive { responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::SetOutOfBandInline { value: _, responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetOutOfBandInline { responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::SetNoCheck { value: _, responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetNoCheck { responder } => respond_not_supported!(responder),
             fppacket::SocketRequest::SetLinger { linger: _, length_secs: _, responder } => {
                 responder
                     .send(Err(fposix::Errno::Eopnotsupp))
                     .unwrap_or_else(|e| error!("failed to respond: {e:?}"))
             }
-            fppacket::SocketRequest::GetLinger { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::SetReusePort { value: _, responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetReusePort { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetAcceptConn { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::SetBindToDevice { value: _, responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetBindToDevice { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::SetTimestamp { value: _, responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
-            fppacket::SocketRequest::GetTimestamp { responder } => responder
-                .send(Err(fposix::Errno::Eopnotsupp))
-                .unwrap_or_else(|e| error!("failed to respond: {e:?}")),
+            fppacket::SocketRequest::GetLinger { responder } => respond_not_supported!(responder),
+            fppacket::SocketRequest::SetReusePort { value: _, responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetReusePort { responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetAcceptConn { responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::SetBindToDevice { value: _, responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetBindToDevice { responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::SetTimestamp { value: _, responder } => {
+                respond_not_supported!(responder)
+            }
+            fppacket::SocketRequest::GetTimestamp { responder } => {
+                respond_not_supported!(responder)
+            }
             fppacket::SocketRequest::Describe { responder } => {
                 responder
                     .send(self.describe())
@@ -547,16 +550,14 @@ impl<'a> RequestHandler<'a> {
     }
 }
 
-fn iface_type(device: &DeviceId<BindingsNonSyncCtxImpl>) -> fppacket::HardwareType {
+fn iface_type(device: &DeviceId<BindingsCtx>) -> fppacket::HardwareType {
     match device {
         DeviceId::Ethernet(_) => fppacket::HardwareType::Ethernet,
         DeviceId::Loopback(_) => fppacket::HardwareType::Loopback,
     }
 }
 
-impl TryIntoFidlWithContext<fppacket::InterfaceProperties>
-    for WeakDeviceId<BindingsNonSyncCtxImpl>
-{
+impl TryIntoFidlWithContext<fppacket::InterfaceProperties> for WeakDeviceId<BindingsCtx> {
     type Error = DeviceNotFoundError;
     fn try_into_fidl_with_ctx<C: crate::bindings::util::ConversionContext>(
         self,

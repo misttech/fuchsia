@@ -19,6 +19,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <array>
+
+#include <bind/fuchsia/amlogic/platform/s905d3/cpp/bind.h>
+#include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/google/platform/cpp/bind.h>
+#include <bind/fuchsia/gpio/cpp/bind.h>
+#include <bind/fuchsia/hardware/platform/bus/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 
@@ -29,59 +36,6 @@ namespace nelson {
 namespace fpbus = fuchsia_hardware_platform_bus;
 namespace fhgpio = fuchsia_hardware_gpio;
 
-uint32_t Nelson::GetBoardRev() {
-  if (!board_rev_) {
-    uint32_t board_rev;
-    uint8_t id0, id1, id2;
-
-    gpio_impl_.ConfigIn(GPIO_HW_ID0, static_cast<uint32_t>(fhgpio::GpioFlags::kNoPull));
-    gpio_impl_.ConfigIn(GPIO_HW_ID1, static_cast<uint32_t>(fhgpio::GpioFlags::kNoPull));
-    gpio_impl_.ConfigIn(GPIO_HW_ID2, static_cast<uint32_t>(fhgpio::GpioFlags::kNoPull));
-    gpio_impl_.Read(GPIO_HW_ID0, &id0);
-    gpio_impl_.Read(GPIO_HW_ID1, &id1);
-    gpio_impl_.Read(GPIO_HW_ID2, &id2);
-    board_rev = id0 + (id1 << 1) + (id2 << 2);
-
-    if (board_rev >= MAX_SUPPORTED_REV) {
-      // We have detected a new board rev. Print this warning just in case the
-      // new board rev requires additional support that we were not aware of
-      zxlogf(INFO, "Unsupported board revision detected (%d)", board_rev);
-    }
-
-    board_rev_.emplace(board_rev);
-  }
-
-  return *board_rev_;
-}
-
-uint32_t Nelson::GetBoardOption() {
-  if (!board_option_) {
-    uint8_t id3, id4;
-
-    gpio_impl_.ConfigIn(GPIO_HW_ID3, static_cast<uint32_t>(fhgpio::GpioFlags::kNoPull));
-    gpio_impl_.ConfigIn(GPIO_HW_ID4, static_cast<uint32_t>(fhgpio::GpioFlags::kNoPull));
-    gpio_impl_.Read(GPIO_HW_ID3, &id3);
-    gpio_impl_.Read(GPIO_HW_ID4, &id4);
-
-    board_option_.emplace(id3 + (id4 << 1));
-  }
-
-  return *board_option_;
-}
-
-uint32_t Nelson::GetDisplayId() {
-  if (!display_id_) {
-    uint8_t id0, id1;
-    gpio_impl_.ConfigIn(GPIO_DISP_SOC_ID0, static_cast<uint32_t>(fhgpio::GpioFlags::kNoPull));
-    gpio_impl_.ConfigIn(GPIO_DISP_SOC_ID1, static_cast<uint32_t>(fhgpio::GpioFlags::kNoPull));
-    gpio_impl_.Read(GPIO_DISP_SOC_ID0, &id0);
-    gpio_impl_.Read(GPIO_DISP_SOC_ID1, &id1);
-    display_id_.emplace((id1 << 1) | id0);
-  }
-
-  return *display_id_;
-}
-
 int Nelson::Thread() {
   zx_status_t status;
 
@@ -91,121 +45,12 @@ int Nelson::Thread() {
     return status;
   }
 
-  if ((status = GpioInit()) != ZX_OK) {
-    zxlogf(ERROR, "%s: GpioInit() failed: %d", __func__, status);
-    return status;
-  }
-
-  // Once gpio is up and running, let's populate board revision
-  fpbus::BoardInfo info = {};
-  info.board_revision() = GetBoardRev();
-  fidl::Arena<> fidl_arena;
-  auto result = pbus_.buffer(fdf::Arena('INFO'))->SetBoardInfo(fidl::ToWire(fidl_arena, info));
-  if (!result.ok()) {
-    zxlogf(ERROR, "%s: SetBoardInfo request failed: %s", __func__,
-           result.FormatDescription().data());
-    return result.status();
-  }
-  if (result->is_error()) {
-    zxlogf(ERROR, "%s: SetBoardInfo failed: %s", __func__,
-           zx_status_get_string(result->error_value()));
-    return result->error_value();
-  }
-  zxlogf(INFO, "Detected board rev 0x%x", info.board_revision().value_or(-1));
-
-  if ((info.board_revision() != BOARD_REV_P1) && (info.board_revision() != BOARD_REV_P2) &&
-      (info.board_revision() != BOARD_REV_EVT) && (info.board_revision() != BOARD_REV_DVT) &&
-      (info.board_revision() != BOARD_REV_DVT2)) {
-    zxlogf(ERROR, "Unsupported board revision %u. Booting will not continue",
-           info.board_revision().value_or(-1));
-    return -1;
-  }
-
-  // This is tightly coupled to the u-boot supplied metadata and the GT6853 touch driver.
-  size_t metadata_size;
-  uint32_t bootloader_display_id = 0;
-  status = DdkGetMetadataSize(DEVICE_METADATA_BOARD_PRIVATE, &metadata_size);
-  if (status == ZX_OK) {
-    if (metadata_size != sizeof(uint32_t)) {
-      zxlogf(ERROR, "%s: bootloader board metadata is the wrong size, got %zu want %zu", __func__,
-             metadata_size, sizeof(uint32_t));
-    } else {
-      size_t actual;
-      status = DdkGetMetadata(DEVICE_METADATA_BOARD_PRIVATE, &bootloader_display_id, metadata_size,
-                              &actual);
-      if (status != ZX_OK || actual != metadata_size) {
-        zxlogf(ERROR, "%s: bootloader board metadata could not be read (%d, size=%zu)", __func__,
-               status, actual);
-        bootloader_display_id = 0;
-      }
-    }
-  } else {
-    zxlogf(ERROR, "%s: no panel type metadata (%d), falling back to GPIO inspection", __func__,
-           status);
-  }
-
-  if ((status = RegistersInit()) != ZX_OK) {
-    zxlogf(ERROR, "RegistersInit failed: %d", status);
-  }
-
-  if ((status = ClkInit()) != ZX_OK) {
-    zxlogf(ERROR, "ClkInit failed: %d", status);
-  }
-
-  if ((status = ButtonsInit()) != ZX_OK) {
-    zxlogf(ERROR, "ButtonsInit failed: %d", status);
-  }
-
   if ((status = I2cInit()) != ZX_OK) {
     zxlogf(ERROR, "I2cInit failed: %d", status);
   }
 
-  if ((status = CpuInit()) != ZX_OK) {
-    zxlogf(ERROR, "CpuInit failed: %d", status);
-  }
-
   if ((status = SpiInit()) != ZX_OK) {
     zxlogf(ERROR, "SpiInit failed: %d", status);
-  }
-
-  if ((status = SelinaInit()) != ZX_OK) {
-    zxlogf(ERROR, "SelinaInit failed: %d\n", status);
-  }
-
-  if ((status = MaliInit()) != ZX_OK) {
-    zxlogf(ERROR, "MaliInit failed: %d", status);
-  }
-
-  if ((status = UsbInit()) != ZX_OK) {
-    zxlogf(ERROR, "UsbInit failed: %d", status);
-  }
-
-  if ((status = TouchInit()) != ZX_OK) {
-    zxlogf(ERROR, "TouchInit failed: %d", status);
-  }
-
-  if ((status = DsiInit()) != ZX_OK) {
-    zxlogf(ERROR, "DsiInit failed: %d", status);
-  }
-
-  if ((status = DisplayInit(bootloader_display_id)) != ZX_OK) {
-    zxlogf(ERROR, "DisplayInit failed: %d", status);
-  }
-
-  if ((status = CanvasInit()) != ZX_OK) {
-    zxlogf(ERROR, "CanvasInit failed: %d", status);
-  }
-
-  if ((status = PwmInit()) != ZX_OK) {
-    zxlogf(ERROR, "PwmInit failed: %d", status);
-  }
-
-  if ((status = TeeInit()) != ZX_OK) {
-    zxlogf(ERROR, "TeeInit failed: %d", status);
-  }
-
-  if ((status = VideoInit()) != ZX_OK) {
-    zxlogf(ERROR, "VideoInit failed: %d", status);
   }
 
   if ((status = EmmcInit()) != ZX_OK) {
@@ -228,6 +73,78 @@ int Nelson::Thread() {
     zxlogf(ERROR, "AudioInit failed: %d", status);
   }
 
+  if (OtRadioInit() != ZX_OK) {
+    zxlogf(ERROR, "OtRadioInit failed");
+  }
+
+  if ((status = BluetoothInit()) != ZX_OK) {
+    zxlogf(ERROR, "BluetoothInit failed: %d", status);
+  }
+
+  // ClkInit() must be called after other subsystems that bind to clock have had a chance to add
+  // their init steps.
+  if ((status = ClkInit()) != ZX_OK) {
+    zxlogf(ERROR, "ClkInit failed: %d", status);
+  }
+  clock_init_steps_.clear();
+
+  // GpioInit() must be called after other subsystems that bind to GPIO have had a chance to add
+  // their init steps.
+  if ((status = GpioInit()) != ZX_OK) {
+    zxlogf(ERROR, "%s: GpioInit() failed: %d", __func__, status);
+    return status;
+  }
+  gpio_init_steps_.clear();
+
+  if ((status = AddPostInitDevice()) != ZX_OK) {
+    zxlogf(ERROR, "%s: AddPostInitDevice() failed: %d", __func__, status);
+    return status;
+  }
+
+  if ((status = RegistersInit()) != ZX_OK) {
+    zxlogf(ERROR, "RegistersInit failed: %d", status);
+  }
+
+  if ((status = ButtonsInit()) != ZX_OK) {
+    zxlogf(ERROR, "ButtonsInit failed: %d", status);
+  }
+
+  if ((status = CpuInit()) != ZX_OK) {
+    zxlogf(ERROR, "CpuInit failed: %d", status);
+  }
+
+  if ((status = MaliInit()) != ZX_OK) {
+    zxlogf(ERROR, "MaliInit failed: %d", status);
+  }
+
+  if ((status = UsbInit()) != ZX_OK) {
+    zxlogf(ERROR, "UsbInit failed: %d", status);
+  }
+
+  if ((status = TouchInit()) != ZX_OK) {
+    zxlogf(ERROR, "TouchInit failed: %d", status);
+  }
+
+  if ((status = DsiInit()) != ZX_OK) {
+    zxlogf(ERROR, "DsiInit failed: %d", status);
+  }
+
+  if ((status = CanvasInit()) != ZX_OK) {
+    zxlogf(ERROR, "CanvasInit failed: %d", status);
+  }
+
+  if ((status = PwmInit()) != ZX_OK) {
+    zxlogf(ERROR, "PwmInit failed: %d", status);
+  }
+
+  if ((status = TeeInit()) != ZX_OK) {
+    zxlogf(ERROR, "TeeInit failed: %d", status);
+  }
+
+  if ((status = VideoInit()) != ZX_OK) {
+    zxlogf(ERROR, "VideoInit failed: %d", status);
+  }
+
   if ((status = SecureMemInit()) != ZX_OK) {
     zxlogf(ERROR, "SecureMemInit failed: %d", status);
   }
@@ -248,24 +165,16 @@ int Nelson::Thread() {
     zxlogf(ERROR, "RamCtlInit failed");
   }
 
+  if (auto result = AdcInit(); result.is_error()) {
+    zxlogf(ERROR, "AdcInit failed: %d", result.error_value());
+  }
+
   if (ThermistorInit() != ZX_OK) {
     zxlogf(ERROR, "ThermistorInit failed");
   }
 
-  if (OtRadioInit() != ZX_OK) {
-    zxlogf(ERROR, "OtRadioInit failed");
-  }
-
-  // This function includes some non-trivial delays, so lets run this last
-  // to avoid slowing down the rest of the boot.
-  if ((status = BluetoothInit()) != ZX_OK) {
-    zxlogf(ERROR, "BluetoothInit failed: %d", status);
-  }
-
-  root_ = inspector_.GetRoot().CreateChild("nelson_board_driver");
-  board_rev_property_ = root_.CreateUint("board_build", GetBoardRev());
-  board_option_property_ = root_.CreateUint("board_option", GetBoardOption());
-  display_id_property_ = root_.CreateUint("display_id", GetDisplayId());
+  ZX_ASSERT_MSG(clock_init_steps_.empty(), "Clock init steps added but not applied");
+  ZX_ASSERT_MSG(gpio_init_steps_.empty(), "GPIO init steps added but not applied");
 
   return ZX_OK;
 }
@@ -307,9 +216,43 @@ zx_status_t Nelson::Create(void* ctx, zx_device_t* parent) {
     return ZX_ERR_NO_MEMORY;
   }
 
+  {
+    fuchsia_hardware_platform_bus::Service::InstanceHandler handler({
+        .platform_bus = fit::bind_member<&Nelson::Serve>(board.get()),
+    });
+    auto result =
+        board->outgoing_.AddService<fuchsia_hardware_platform_bus::Service>(std::move(handler));
+    if (result.is_error()) {
+      zxlogf(ERROR, "AddService failed: %s", result.status_string());
+      return result.error_value();
+    }
+  }
+
+  auto directory_endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+  if (directory_endpoints.is_error()) {
+    return directory_endpoints.status_value();
+  }
+
+  {
+    auto result = board->outgoing_.Serve(std::move(directory_endpoints->server));
+    if (result.is_error()) {
+      zxlogf(ERROR, "Failed to serve the outgoing directory: %s", result.status_string());
+      return result.error_value();
+    }
+  }
+
+  constexpr zx_device_prop_t kBoardDriverProps[] = {
+      {BIND_PLATFORM_DEV_VID, 0, bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE},
+      {BIND_PLATFORM_DEV_PID, 0, bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_NELSON},
+      {BIND_PLATFORM_DEV_INSTANCE_ID, 0, 1},
+  };
+
+  const char* fidl_service_offers[] = {fuchsia_hardware_platform_bus::Service::Name};
   status = board->DdkAdd(ddk::DeviceAddArgs("nelson")
-                             .set_flags(DEVICE_ADD_NON_BINDABLE)
-                             .set_inspect_vmo(board->inspector_.DuplicateVmo()));
+                             .set_props(kBoardDriverProps)
+                             .set_outgoing_dir(directory_endpoints->client.TakeChannel())
+                             .set_runtime_service_offers({fidl_service_offers, 1})
+                             .forward_metadata(parent, DEVICE_METADATA_BOARD_PRIVATE));
   if (status != ZX_OK) {
     return status;
   }
@@ -321,6 +264,58 @@ zx_status_t Nelson::Create(void* ctx, zx_device_t* parent) {
     [[maybe_unused]] auto* dummy = board.release();
   }
   return status;
+}
+
+zx_status_t Nelson::AddPostInitDevice() {
+  constexpr std::array<uint32_t, 8> kPostInitGpios{
+      bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_7,
+      bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_8,
+      bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_3,
+      bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_0,
+      bind_fuchsia_amlogic_platform_s905d3::GPIOAO_PIN_ID_PIN_4,
+      bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_11,
+      bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_12,
+      bind_fuchsia_amlogic_platform_s905d3::GPIOH_PIN_ID_PIN_8,
+  };
+
+  const ddk::BindRule post_init_rules[] = {
+      ddk::MakeAcceptBindRule(bind_fuchsia_hardware_platform_bus::SERVICE,
+                              bind_fuchsia_hardware_platform_bus::SERVICE_DRIVERTRANSPORT),
+      ddk::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                              bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE),
+      ddk::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                              bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_NELSON),
+      ddk::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, 1u),
+  };
+  const device_bind_prop_t post_init_properties[] = {
+      ddk::MakeProperty(bind_fuchsia_hardware_platform_bus::SERVICE,
+                        bind_fuchsia_hardware_platform_bus::SERVICE_DRIVERTRANSPORT),
+      ddk::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
+                        bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE),
+      ddk::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
+                        bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_NELSON),
+      ddk::MakeProperty(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, 1u),
+  };
+
+  auto spec = ddk::CompositeNodeSpec(post_init_rules, post_init_properties);
+  for (const uint32_t pin : kPostInitGpios) {
+    const ddk::BindRule gpio_rules[] = {
+        ddk::MakeAcceptBindRule(bind_fuchsia::PROTOCOL, bind_fuchsia_gpio::BIND_PROTOCOL_DEVICE),
+        ddk::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, pin),
+    };
+    const device_bind_prop_t gpio_properties[] = {
+        ddk::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_gpio::BIND_PROTOCOL_DEVICE),
+        ddk::MakeProperty(bind_fuchsia::GPIO_PIN, pin),
+    };
+    spec.AddParentSpec(gpio_rules, gpio_properties);
+  }
+
+  if (zx_status_t status = DdkAddCompositeNodeSpec("post-init", spec); status != ZX_OK) {
+    zxlogf(ERROR, "Failed to add board info composite: %s", zx_status_get_string(status));
+    return status;
+  }
+
+  return ZX_OK;
 }
 
 static zx_driver_ops_t nelson_driver_ops = []() {

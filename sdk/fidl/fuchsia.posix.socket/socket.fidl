@@ -289,6 +289,28 @@ closed protocol BaseNetworkSocket {
         membership IpMulticastMembership;
     }) -> () error fuchsia.posix.Errno;
 
+    /// Set `SOL_IP` -> `IP_TRANSPARENT`
+    @available(added=15)
+    strict SetIpTransparent(struct {
+        value bool;
+    }) -> () error fuchsia.posix.Errno;
+    /// Get `SOL_IP` -> `IP_TRANSPARENT`
+    @available(added=15)
+    strict GetIpTransparent() -> (struct {
+        value bool;
+    }) error fuchsia.posix.Errno;
+
+    /// Set `SOL_IP` -> `IP_RECVORIGDSTADDR`
+    @available(added=15)
+    strict SetIpReceiveOriginalDestinationAddress(struct {
+        value bool;
+    }) -> () error fuchsia.posix.Errno;
+    /// Get `SOL_IP` -> `IP_RECVORIGDSTADDR`
+    @available(added=15)
+    strict GetIpReceiveOriginalDestinationAddress() -> (struct {
+        value bool;
+    }) error fuchsia.posix.Errno;
+
     /// Set `SOL_IPV6` -> `IPV6_ADD_MEMBERSHIP`.
     strict AddIpv6Membership(struct {
         membership Ipv6MulticastMembership;
@@ -389,6 +411,13 @@ closed protocol BaseNetworkSocket {
     strict GetIpv6ReceivePacketInfo() -> (struct {
         value bool;
     }) error fuchsia.posix.Errno;
+
+    /// Get `SOL_IP` -> `SO_ORIGINAL_DST`.
+    // Return the original destination for the socket (as it was before NAT translation).
+    @available(added=15)
+    strict GetOriginalDestination() -> (struct {
+        value fuchsia.net.SocketAddress;
+    }) error fuchsia.posix.Errno;
 };
 
 /// IPv4 multicast membership options.
@@ -463,6 +492,12 @@ type NetworkSocketRecvControlData = table {
         ///
         /// Present if the `SOL_IP` -> `IP_RECVTTL` option is enabled.
         2: ttl uint8;
+
+        /// The original destination address.
+        ///
+        /// Present if the `SOL_IP` -> `IP_RECVORIGDSTADDR` option is enabled.
+        @available(added=15)
+        3: original_destination_address fuchsia.net.SocketAddress;
     };
 
     /// IPv6 level ancillary data.
@@ -713,6 +748,9 @@ closed protocol DatagramSocket {
             IPV6_HOPLIMIT = 0x8;
             /// Identifies whether the `IPV6_RECVPKTINFO` control message is requested.
             IPV6_PKTINFO = 0x10;
+            /// Identifies whether the `IP_RECVORIGDSTADDR` control message is requested.
+            @available(added=15)
+            IP_RECVORIGDSTADDR = 0x20;
         };
     }) error fuchsia.posix.Errno;
 };

@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::blob::BlobDirectoryError;
 use super::blob::BlobOpenError;
-use super::package::Error as PackageError;
+use super::bootfs::AdditionalBootConfigurationError;
+use super::bootfs::BootfsPackageError;
+use super::bootfs::BootfsPackageIndexError;
+use super::bootfs::ComponentManagerConfigurationError;
+use cm_rust::CapabilityDecl;
+use cm_rust::ComponentDecl;
 use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
-use fuchsia_url::PinnedAbsolutePackageUrl;
-use fuchsia_url::UnpinnedAbsolutePackageUrl;
+use fuchsia_url as furl;
 use std::cmp;
 use std::collections::HashMap;
 use std::fmt;
@@ -71,52 +74,24 @@ pub trait Scrutiny {
     fn data_sources(&self) -> Box<dyn Iterator<Item = Box<dyn DataSource>>>;
 
     /// Iterate over all blobs from all system data sources.
-    fn blobs(&self) -> Result<Box<dyn Iterator<Item = Box<dyn Blob>>>, ScrutinyBlobsError>;
+    fn blobs(&self) -> Box<dyn Iterator<Item = Box<dyn Blob>>>;
 
     /// Iterate over all packages from all system data sources.
-    fn packages(&self)
-        -> Box<dyn Iterator<Item = Result<Box<dyn Package>, ScrutinyPackagesError>>>;
+    fn packages(&self) -> Box<dyn Iterator<Item = Box<dyn Package>>>;
 
-    /// Iterate over all package resolvers in the system.
-    fn package_resolvers(&self) -> Box<dyn Iterator<Item = Box<dyn PackageResolver>>>;
-
-    /// Iterate over all components in the system.
-    fn components(&self) -> Box<dyn Iterator<Item = Box<dyn Component>>>;
-
-    /// Iterate over all component resolvers in the system.
-    fn component_resolvers(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentResolver>>>;
-
-    /// Iterate over all component's capabilities in the system.
-    fn component_capabilities(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentCapability>>>;
+    /// Iterate over all component manifests in the system.
+    fn component_manifests(&self) -> Box<dyn Iterator<Item = ComponentDecl>>;
 
     /// Iterate over all component instances in the system. Note that a component instance is a
     /// component situated at a particular point in the system's component tree.
     fn component_instances(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentInstance>>>;
-
-    /// Iterate over all capabilities of component instances in the system.
-    fn component_instance_capabilities(
-        &self,
-    ) -> Box<dyn Iterator<Item = Box<dyn ComponentInstanceCapability>>>;
-}
-
-#[derive(Debug, Error)]
-pub enum ScrutinyBlobsError {
-    #[error("error iterating over blobs in directory: {0}")]
-    Directory(#[from] BlobDirectoryError),
-}
-
-#[derive(Debug, Error)]
-pub enum ScrutinyPackagesError {
-    #[error("ambiguous package URL: {0}")]
-    Ambiguous(UnpinnedAbsolutePackageUrl),
-    #[error("failed to locate package blob: {0}")]
-    Locate(#[from] BlobOpenError),
-    #[error("failed to open package: {0}")]
-    Open(#[from] PackageError),
 }
 
 /// High-level metadata about the system inspected by a [`Scrutiny`] instance.
-pub trait System {
+pub trait System: DynClone {
+    /// The kind of Fuchsia system under inspection.
+    fn variant(&self) -> SystemVariant;
+
     /// The build directory associated with the system build.
     fn build_dir(&self) -> Box<dyn Path>;
 
@@ -131,12 +106,19 @@ pub trait System {
 
     /// Accessor for the system's Verified Boot Metadata (vbmeta).
     fn vb_meta(&self) -> Box<dyn VbMeta>;
+}
 
-    /// Accessor for the system's additional boot configuration file.
-    fn additional_boot_configuration(&self) -> Box<dyn AdditionalBootConfiguration>;
+clone_trait_object!(System);
 
-    /// Accessor for the system's component manager configuration.
-    fn component_manager_configuration(&self) -> Box<dyn ComponentManagerConfiguration>;
+/// The kind of Fuchsia system that should be inspected by a [`Scrutiny`] instance. The variant determines a
+/// variety of strategies used to locate system artifacts. For example, the location of the Zircon Boot Image
+/// (ZBI) in the Update Package is different for `Main` and `Recovery` systems.
+#[derive(Clone)]
+pub enum SystemVariant {
+    /// The usual system layout that would be installed on the "A/B" device partitions.
+    Main,
+    /// The recovery system layout that would be installed on a "recovery" device partition.
+    Recovery,
 }
 
 // TODO(fxbug.dev/112121): This is over-fitted to the "inspect bootfs" use case, and should probably be in terms of
@@ -144,18 +126,66 @@ pub trait System {
 
 /// Model of the system's Zircon Boot Image (ZBI) used for Zircon kernel to userspace bootstrapping
 /// (userboot). See https://fuchsia.dev/fuchsia-src/concepts/process/userboot for details.
-pub trait Zbi {
-    /// Iterate over (path, contents) pairs of files in this ZBI's bootfs. See
-    /// https://fuchsia.dev/fuchsia-src/concepts/process/userboot#bootfs for details.
-    fn bootfs(&self) -> Result<Box<dyn Iterator<Item = (Box<dyn Path>, Box<dyn Blob>)>>, ZbiError>;
+pub trait Zbi: DynClone {
+    /// Accessor for bootfs.
+    fn bootfs(&self) -> Result<Box<dyn Bootfs>, ZbiError>;
 }
+
+clone_trait_object!(Zbi);
 
 #[derive(Debug, Error)]
 pub enum ZbiError {
     #[error("failed to hash blobfs blob at bootfs path {bootfs_path:?}: {error}")]
     Hash { bootfs_path: Box<dyn Path>, error: std::io::Error },
+    #[error("expected to find exactly 1 bootfs section in zbi, but found {num_sections}")]
+    BootfsSections { num_sections: usize },
     #[error("failed to parse bootfs image in zbi at path {path:?}: {error}")]
     ParseBootfs { path: Box<dyn Path>, error: anyhow::Error },
+}
+
+/// Model of the read-only boot filesystem, containing files needed in early boot.
+/// The filesystem is a list of filenames together with, for each filename, the size and
+/// offset of the file.
+/// See https://fuchsia.dev/fuchsia-src/concepts/process/userboot#bootfs for details.
+pub trait Bootfs: DynClone {
+    /// Iterator over all contents of bootfs by path, with each file delivered as a `Blob`
+    /// implementation.
+    ///
+    /// Some files are serialized instances of particular data types; for example,
+    /// configuration files or packages. This iterator provides those files in raw format
+    /// together with all other contents of bootfs, but other `Bootfs` trait methods may
+    /// provide an object-oriented view of the same files (after parsing and validating
+    /// the raw data). For example, the component manager configuration file is provided
+    /// in raw form via `content_blobs()`, and as an implementation of the
+    /// `ComponentManagerConfiguration` API via `compoennt_manager_configuration()`.
+    fn content_blobs(&self) -> Box<dyn Iterator<Item = (Box<dyn Path>, Box<dyn Blob>)>>;
+
+    /// Accessor for the system's additional boot configuration file.
+    fn additional_boot_configuration(
+        &self,
+    ) -> Result<Box<dyn AdditionalBootConfiguration>, BootfsError>;
+
+    /// Accessor for the system's component manager configuration.
+    fn component_manager_configuration(
+        &self,
+    ) -> Result<Box<dyn ComponentManagerConfiguration>, BootfsError>;
+
+    /// Iterate over all packages in bootfs.
+    fn packages(&self) -> Result<Box<dyn Iterator<Item = Box<dyn Package>>>, BootfsError>;
+}
+
+clone_trait_object!(Bootfs);
+
+#[derive(Debug, Error)]
+pub enum BootfsError {
+    #[error("failed to instantiate additional boot configuration: {0}")]
+    AdditionalBootConfiguration(#[from] AdditionalBootConfigurationError),
+    #[error("failed to instantiate component manager configuration: {0}")]
+    ComponentManagerConfiguration(#[from] ComponentManagerConfigurationError),
+    #[error("failed to read bootfs package index: {0}")]
+    PackageIndex(#[from] BootfsPackageIndexError),
+    #[error("failed to instantiate bootfs package: {0}")]
+    Packages(#[from] BootfsPackageError),
 }
 
 /// Kernel command-line flags. See https://fuchsia.dev/fuchsia-src/reference/kernel/kernel_cmdline
@@ -174,10 +204,14 @@ pub trait KernelFlags {
 /// Model of the Verified Boot Metadata (vbmeta).
 pub trait VbMeta {}
 
-/// Device manager configuration file key/value pairs. This configuration file is passed to the
-/// device manager during early boot, and is combined with configuration set in [`KernelFlags`] and
+/// Additional boot configuration file key/value pairs. This configuration file is passed to the
+/// component manager, and is combined with configuration set in [`KernelFlags`] and
 /// [`VbMeta`] to determine various configuration parameters for booting the Fuchsia system on the
 /// device.
+///
+/// See https://fuchsia.dev/fuchsia-src/reference/kernel/kernel_cmdline for more details about
+/// how the configuration is used, and see https://fuchsia.dev/fuchsia-src/gen/boot-options for
+/// the set of valid options.
 pub trait AdditionalBootConfiguration {
     /// Get the value associated with `key`, or `None` if the key does not exist in in the
     /// underlying device configuration file.
@@ -193,17 +227,29 @@ pub trait ComponentManager {
     fn configuration(&self) -> Box<dyn ComponentManagerConfiguration>;
 
     /// Capabilities the system provides to the component manager.
-    fn namespace_capabilities(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentCapability>>>;
+    fn namespace_capabilities(&self) -> Box<dyn Iterator<Item = CapabilityDecl>>;
 
     /// Capabilities the component manager provides to all components that it manages.
-    fn builtin_capabilities(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentCapability>>>;
+    fn builtin_capabilities(&self) -> Box<dyn Iterator<Item = CapabilityDecl>>;
 }
 
-// TODO(fxbug.dev/112121): What should this API look like?
+// TODO(fxbug.dev/112121): What should this API look like? This is just a starting point to
+// get something plumbed through from the data source.
 
-/// Model of the component manager configuration. For details about the role of component manager
+/// Model of the component manager configuration. This configuration file controls various
+/// aspects of component manager's execution, including capability routing policy and
+/// logging behavior.
+///
+/// For details about the role of component manager
 /// in the system, see https://fuchsia.dev/fuchsia-src/concepts/components/v2/component_manager.
-pub trait ComponentManagerConfiguration {}
+///
+/// See //sdk/fidl/fuchsia.component.internal/config.fidl for the (internal) FIDL format that
+/// should back implementations of this trait.
+pub trait ComponentManagerConfiguration {
+    /// Whether Component Manager will run in debug mode.
+    /// See //sdk/fidl/fuchsia.component.internal/config.fidl for details.
+    fn debug(&self) -> bool;
+}
 
 /// Model of a data source that a [`Scrutiny`] instance is using as a source of truth about the
 /// underlying system. This type is used for interrogating where a Fuchsia abstraction such as a
@@ -412,6 +458,12 @@ pub trait AsBytes: Display + Debug {
     fn as_bytes(&self) -> &[u8];
 }
 
+impl AsBytes for fuchsia_url::Hash {
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 impl PartialEq for dyn AsBytes {
     fn eq(&self, other: &dyn AsBytes) -> bool {
         self.as_bytes() == other.as_bytes()
@@ -426,7 +478,6 @@ impl dyn AsBytes {
     }
 }
 
-#[allow(unknown_lints, clippy::incorrect_partial_ord_impl_on_ord_type)]
 impl PartialOrd for dyn AsBytes {
     fn partial_cmp(&self, other: &dyn AsBytes) -> Option<cmp::Ordering> {
         Some(self.compare(other))
@@ -462,7 +513,6 @@ impl dyn Hash {
     }
 }
 
-#[allow(unknown_lints, clippy::incorrect_partial_ord_impl_on_ord_type)]
 impl PartialOrd for dyn Hash {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.compare(other))
@@ -513,10 +563,37 @@ pub trait Package: DynClone {
     fn meta_blobs(&self) -> Box<dyn Iterator<Item = (Box<dyn Path>, Box<dyn Blob>)>>;
 
     /// Constructs iterator over blobs that appear to be component manifests.
-    fn components(&self) -> Box<dyn Iterator<Item = (Box<dyn Path>, Box<dyn Component>)>>;
+    fn component_manifests(
+        &self,
+    ) -> Result<Box<dyn Iterator<Item = (Box<dyn Path>, ComponentDecl)>>, PackageComponentsError>;
+}
+
+impl PartialEq for dyn Package {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash() == other.hash()
+    }
+}
+
+impl Eq for dyn Package {}
+
+impl Debug for dyn Package {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Package(")?;
+        fmt::Debug::fmt(&self.hash(), f)?;
+        f.write_str(")")?;
+        Ok(())
+    }
 }
 
 clone_trait_object!(Package);
+
+#[derive(Debug, Error)]
+pub enum PackageComponentsError {
+    #[error("failed open blob for parsing as component: {0}")]
+    Open(#[from] BlobError),
+    #[error("failed read blob for parsing as component: {0}")]
+    Read(#[from] std::io::Error),
+}
 
 // TODO(fxbug.dev/112121): Define API consistent with fuchsia_pkg::MetaPackage.
 
@@ -570,7 +647,7 @@ impl Debug for dyn MetaContents {
 
 pub trait UpdatePackage: Package {
     /// Returns a borrowed listing of package URLs described by this update package.
-    fn packages(&self) -> &Vec<PinnedAbsolutePackageUrl>;
+    fn packages(&self) -> &Vec<furl::PinnedAbsolutePackageUrl>;
 }
 
 clone_trait_object!(UpdatePackage);
@@ -588,38 +665,42 @@ pub trait PackageResolver {
 }
 
 /// The variety of URLs that [`PackageResolver`] can resolve to package hashes.
+// TODO(fxbug.dev/112121): Define varieties of URL that PackageResolver supports, choose types
+// for those URLs, and have each of these variants wrap a representation of a URL.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PackageResolverUrl {
-    // TODO(fxbug.dev/112121): Define varieties of URL that PackageResolver supports.
-    Url,
+    // A URL identifying a package in bootfs.
+    Boot(furl::boot_url::BootUrl),
+    // A URL identifying a package in a repository.
+    Package(furl::PackageUrl),
 }
 
-/// Model for a Fuchsia component. Note that this model is of a component as described by a
-/// component manifest, not to be confused with a component _instance_, which is a component
-/// situated at a particular point in a runtime component tree. See
-/// https://fuchsia.dev/fuchsia-src/concepts/components/v2 for details.
-pub trait Component {
-    /// Iterate over the known packages that contain the component.
-    fn packages(&self) -> Box<dyn Iterator<Item = Box<dyn Package>>>;
+impl PackageResolverUrl {
+    pub fn parse(url: &str) -> Result<Self, PackageResolverUrlParseError> {
+        match furl::PackageUrl::parse(url) {
+            Ok(package_url) => Ok(Self::Package(package_url)),
+            Err(package_error) => match furl::boot_url::BootUrl::parse(url) {
+                Ok(boot_url) => {
+                    if boot_url.resource().is_some() {
+                        Err(PackageResolverUrlParseError::BootWithResource)
+                    } else {
+                        Ok(Self::Boot(boot_url))
+                    }
+                }
+                Err(boot_error) => {
+                    Err(PackageResolverUrlParseError::InvalidFormat { package_error, boot_error })
+                }
+            },
+        }
+    }
+}
 
-    /// Iterate over known child component URLs.
-    fn children(&self) -> Box<dyn Iterator<Item = PackageResolverUrl>>;
-
-    /// Iterate over capability that the component uses.
-    fn uses(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentCapability>>>;
-
-    /// Iterate over capabilities that the component exposes to its parent.
-    fn exposes(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentCapability>>>;
-
-    /// Iterate over capabilities that the component offers to one or more of its children.
-    fn offers(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentCapability>>>;
-
-    /// Iterate over capabilities defined by (i.e., originating from) the component.
-    fn capabilities(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentCapability>>>;
-
-    /// Iterate over instances of the component that appear in the component tree known to the
-    /// [`Scrutiny`] instance that underpins this component.
-    fn instances(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentInstance>>>;
+#[derive(Debug, Error)]
+pub enum PackageResolverUrlParseError {
+    #[error("failed to parse as package url: {package_error}; failed to parse as boot url: {boot_error}")]
+    InvalidFormat { package_error: furl::errors::ParseError, boot_error: furl::errors::ParseError },
+    #[error("boot url that refers to package contains resource")]
+    BootWithResource,
 }
 
 /// Model for a component resolution strategy. See
@@ -633,98 +714,81 @@ pub trait ComponentResolver {
     fn aliases(&self, hash: Box<dyn Hash>) -> Box<dyn Iterator<Item = ComponentResolverUrl>>;
 }
 
-// TODO(fxbug.dev/112121): Define varieties of URL that ComponentResolver supports.
-
 /// The variety of URLs that [`ComponentResolver`] can resolve to component hashes.
-pub enum ComponentResolverUrl {}
-
-/// A capability named in a particular component manifest. See
-/// https://fuchsia.dev/fuchsia-src/concepts/components/v2/component_manifests and
-/// https://fuchsia.dev/fuchsia-src/concepts/components/v2/capabilities for details.
-pub trait ComponentCapability {
-    /// Accessor for component that names the capability.
-    fn component(&self) -> Box<dyn Component>;
-
-    /// Accessor for the kind of capability.
-    fn kind(&self) -> CapabilityKind;
-
-    /// Accessor for the component-local notion of the capability's source, such as the parent
-    /// component or a particular child component. Note that this is different from a
-    /// [`ComponentInstance`] notion of source, which refers to the component instance where the
-    /// capability originates before being routed around the component tree.
-    fn source(&self) -> CapabilitySource;
-
-    /// Accessor for the component-local notion of the capability's destination, such as the parent
-    /// component or a particular child component. Note that this is different from a
-    /// [`ComponentInstance`] notion of source, which refers to the component instances to which
-    /// the capability is routed to, and routed no further.
-    fn destination(&self) -> CapabilityDestination;
-
-    /// Accessor for the component-local source name for this capability, if any. Capabilities can
-    /// be renamed as they are routed around in the component tree by designating different source
-    /// and destination names.
-    fn source_name(&self) -> Option<Box<dyn ComponentCapabilityName>>;
-
-    /// Accessor for the component-local source name for this capability, if any. Capabilities can
-    /// be renamed as they are routed around in the component tree by designating different source
-    /// and destination names.
-    fn destination_name(&self) -> Option<Box<dyn ComponentCapabilityName>>;
-
-    /// Accessor for the component-local source path for this capability, if any. Capabilities can
-    /// be mapped to different path locations as they are routed around the component tree by
-    /// designating different source and destination paths.
-    fn source_path(&self) -> Option<Box<dyn ComponentCapabilityPath>>;
-
-    /// Accessor for the component-local destination path for this capability, if any. Capabilities
-    /// can be mapped to different path locations as they are routed around the component tree by
-    /// designating different source and destination paths.
-    fn destination_path(&self) -> Option<Box<dyn ComponentCapabilityPath>>;
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ComponentResolverUrl {
+    Resource(ResourcePath),
+    // A URL identifying a component file in bootfs.
+    Boot(furl::boot_url::BootUrl),
+    // A URL identifying a component in a package.
+    Component(furl::ComponentUrl),
 }
 
-/// Various kinds of capabilities that a [`Scrutiny`] instance can reason about. See
-/// https://fuchsia.dev/fuchsia-src/concepts/components/v2/capabilities#capability-types for
-/// details.
-pub enum CapabilityKind {
-    // TODO(fxbug.dev/112121): Add kinds of capabilities based on cm capability types.
-    /// The kind of capability denoted in the component manfiest is not recognized by the
-    /// underlying [`Scrutiny`] instance.
-    Unknown,
+impl ComponentResolverUrl {
+    pub fn parse(url: &str) -> Result<Self, ComponentResolverUrlParseError> {
+        match furl::ComponentUrl::parse(url) {
+            Ok(component_url) => Ok(Self::Component(component_url)),
+            Err(component_error) => match furl::boot_url::BootUrl::parse(url) {
+                Ok(boot_url) => {
+                    if boot_url.resource().is_none() {
+                        Err(ComponentResolverUrlParseError::BootWithoutResource)
+                    } else {
+                        Ok(Self::Boot(boot_url))
+                    }
+                }
+                Err(boot_error) => {
+                    let mut chars = url.chars();
+                    if let Some(first_char) = chars.next() {
+                        if first_char == '#' {
+                            let resource_path_str = chars.as_str();
+                            match furl::validate_resource_path(resource_path_str) {
+                                Ok(()) => {
+                                    Ok(Self::Resource(ResourcePath(resource_path_str.to_string())))
+                                }
+                                Err(resource_error) => {
+                                    Err(ComponentResolverUrlParseError::ComponentBootAndResource {
+                                        component_error,
+                                        boot_error,
+                                        resource_error,
+                                    })
+                                }
+                            }
+                        } else {
+                            Err(ComponentResolverUrlParseError::ComponentAndBoot {
+                                component_error,
+                                boot_error,
+                            })
+                        }
+                    } else {
+                        Err(ComponentResolverUrlParseError::ComponentAndBoot {
+                            component_error,
+                            boot_error,
+                        })
+                    }
+                }
+            },
+        }
+    }
 }
 
-/// The component-local source from which a capability is routed. See
-/// https://fuchsia.dev/fuchsia-src/concepts/components/v2/capabilities#routing for details.
-pub enum CapabilitySource {
-    // TODO(fxbug.dev/112121): Add capability sources based on cm capability types.
-    /// The capability source denoted in the component manfiest is not recognized by the
-    /// underlying [`Scrutiny`] instance.
-    Unknown,
-}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResourcePath(String);
 
-/// The component-local destination to which a capability is routed. See
-/// https://fuchsia.dev/fuchsia-src/concepts/components/v2/capabilities#routing for details.
-pub enum CapabilityDestination {
-    // TODO(fxbug.dev/112121): Add capability destinations based on cm capability types.
-    /// The capability destination denoted in the component manfiest is not recognized by the
-    /// underlying [`Scrutiny`] instance.
-    Unknown,
-}
-
-/// The name of a capability in the context of its component manifest.
-pub trait ComponentCapabilityName {
-    /// Returns a borrowed string representation of the capability name.
-    fn as_str(&self) -> &str;
-
-    /// Accessor for the capability that uses this name.
-    fn component(&self) -> Box<dyn ComponentCapability>;
-}
-
-/// The path associated with a capability in the context of its component manifest.
-pub trait ComponentCapabilityPath {
-    /// Returns a copy of the capability path.
-    fn as_path(&self) -> Box<dyn Path>;
-
-    /// Accessor for the capability that uses this path.
-    fn component(&self) -> Box<dyn ComponentCapability>;
+#[derive(Debug, Error)]
+pub enum ComponentResolverUrlParseError {
+    #[error("failed to parse as component url: {component_error}; failed to parse as boot url: {boot_error}; url is not a resource-only URL")]
+    ComponentAndBoot {
+        component_error: furl::errors::ParseError,
+        boot_error: furl::errors::ParseError,
+    },
+    #[error("failed to parse as component url: {component_error}; failed to parse as boot url: {boot_error}; failed to parse as resource path in resource-only URL: {resource_error}")]
+    ComponentBootAndResource {
+        component_error: furl::errors::ParseError,
+        boot_error: furl::errors::ParseError,
+        resource_error: furl::errors::ResourcePathError,
+    },
+    #[error("boot url that refers to component contains no resource")]
+    BootWithoutResource,
 }
 
 /// Model of a component instance that appears at a particular location in a component tree. See
@@ -738,7 +802,7 @@ pub trait ComponentInstance {
     fn environment(&self) -> Box<dyn Environment>;
 
     /// Accessor for the underlying component.
-    fn component(&self) -> Box<dyn Component>;
+    fn component_manifest(&self) -> ComponentDecl;
 
     /// Accessor for the parent component instance.
     fn parent(&self) -> Box<dyn ComponentInstance>;
@@ -751,18 +815,6 @@ pub trait ComponentInstance {
 
     /// Iterate over the full set of ancestors above this component in the component tree.
     fn ancestors(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentInstance>>>;
-
-    /// Iterate over capabilities that the component instance uses.
-    fn uses(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentInstanceCapability>>>;
-
-    /// Iterate over capabilities that the component instance exposes to its parent.
-    fn exposes(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentInstanceCapability>>>;
-
-    /// Iterate over capabilities that the component instance offers to one or more of its children.
-    fn offers(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentInstanceCapability>>>;
-
-    /// Iterate over capabilities defined by (i.e., originating from) the component instance.
-    fn capabilities(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentInstanceCapability>>>;
 }
 
 // TODO(fxbug.dev/112121): Define API compatible with moniker::Moniker.
@@ -779,43 +831,14 @@ pub trait Moniker {}
 /// https://fuchsia.dev/fuchsia-src/concepts/components/v2/environments for details.
 pub trait Environment {}
 
-/// A capability named by a component instance in the context of the component tree constructed
-/// by the underlying [`Scrutiny`] instance. See
-/// https://fuchsia.dev/fuchsia-src/concepts/components/v2/capabilities#routing for details.
-pub trait ComponentInstanceCapability {
-    /// Accessor for the component capability for which this instance is a special case.
-    fn component_capability(&self) -> Box<dyn ComponentCapability>;
-
-    /// Accessor for the component instance that names this capability.
-    fn component_instance(&self) -> Box<dyn ComponentInstance>;
-
-    /// The source where this capability originates.
-    fn source(&self) -> Box<dyn ComponentInstanceCapability>;
-
-    /// Iterate over the component instance capabilities that constitute the capability route from
-    /// its origin to this component instance capability (inclusive).
-    fn source_path(&self) -> Box<dyn Iterator<Item = Box<dyn ComponentInstanceCapability>>>;
-
-    /// Iterate over the component instance capabilities that constitute all routes from this
-    /// component instance capability to destinations that route no further (inclusive).
-    fn destination_paths(
-        &self,
-    ) -> Box<dyn Iterator<Item = Box<dyn Iterator<Item = Box<dyn ComponentInstanceCapability>>>>>;
-
-    /// Iterate over the component instance capabilities that constitute all routes from this
-    /// component instance capability's source to all destinations that route no further
-    /// (inclusive).
-    fn all_paths(
-        &self,
-    ) -> Box<dyn Iterator<Item = Box<dyn Iterator<Item = Box<dyn ComponentInstanceCapability>>>>>;
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::data_source as ds;
+    use super::ComponentResolverUrl;
     use super::DataSource;
     use super::DataSourceKind;
     use super::DataSourceVersion;
+    use super::PackageResolverUrl;
     use super::Path;
 
     #[fuchsia::test]
@@ -1005,5 +1028,32 @@ mod tests {
             &almost_same_as_reference.path().expect("extra root child path")
         );
         expect(reference, almost_same_as_reference, false);
+    }
+
+    #[fuchsia::test]
+    fn test_parse_package_url() {
+        PackageResolverUrl::parse("fuchsia-pkg://test.fuchsia.com/some_pkg")
+            .expect("fully qualified package URL");
+        PackageResolverUrl::parse("/some_pkg").expect("relative package URL");
+        PackageResolverUrl::parse("fuchsia-boot:///some/pkg").expect("boot URL without resource");
+        PackageResolverUrl::parse("fuchsia-pkg://test.fuchsia.com/some_pkg#meta/resource")
+            .expect_err("package URL with resource");
+        PackageResolverUrl::parse("fuchsia-boot:///some/pkg#meta/resource")
+            .expect_err("boot URL with resource");
+        PackageResolverUrl::parse("#meta/resource").expect_err("resource-only URL");
+    }
+
+    #[fuchsia::test]
+    fn test_parse_component_url() {
+        ComponentResolverUrl::parse("fuchsia-pkg://test.fuchsia.com/some_pkg")
+            .expect_err("fully qualified package URL");
+        ComponentResolverUrl::parse("/some_pkg").expect_err("relative package URL");
+        ComponentResolverUrl::parse("fuchsia-boot:///some/pkg")
+            .expect_err("boot URL without resource");
+        ComponentResolverUrl::parse("fuchsia-pkg://test.fuchsia.com/some_pkg#meta/resource")
+            .expect("package URL with resource");
+        ComponentResolverUrl::parse("fuchsia-boot:///some/pkg#meta/resource")
+            .expect("boot URL with resource");
+        ComponentResolverUrl::parse("#meta/resource").expect("resource-only URL");
     }
 }

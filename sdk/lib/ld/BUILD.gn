@@ -17,9 +17,14 @@ library_headers("headers") {
     "lib/ld/load-module.h",
     "lib/ld/load.h",
     "lib/ld/memory.h",
+    "lib/ld/remote-load-module.h",
+    "lib/ld/tlsdesc.h",
   ]
 
-  public_deps = [ ":abi-headers" ]
+  public_deps = [
+    ":abi-headers",
+    "//zircon/kernel/lib/arch",
+  ]
 }
 
 # This is the linkable target for using the passive ABI.
@@ -34,6 +39,7 @@ library_headers("abi-headers") {
   headers = [
     "lib/ld/abi.h",
     "lib/ld/module.h",
+    "lib/ld/tls.h",
   ]
 
   public_deps = [
@@ -53,13 +59,35 @@ config("abi-interp") {
   ldflags = [ "-Wl,-dynamic-linker=${toolchain_variant.libprefix}$abi_soname" ]
 }
 
+# This provides the __tls_get_addr ABI symbol used by TLS GD accesses when
+# TLSDESC is not in use.  This implementation uses the passive ABI to resolve
+# references in the initial exec set's static TLS layout.  A different
+# implementation would be required to also support post-startup modules.
+source_set("static-tls-get-addr") {
+  sources = [ "static-tls-get-addr.cc" ]
+  deps = [ "." ]
+}
+
 # `verify_ld_abi(ld) {}` defines "$ld.verify-abi" to check that the
 # shared_library(ld) or loadable_module(ld) matches the passive ABI.
 template("verify_ld_abi") {
   ld_target = target_name
-  extract_target = "$ld_target.ifs"
   verify_target = "$ld_target.verify-abi"
+  extract_target = "$ld_target.ifs"
   ifs_file = "$target_out_dir/$extract_target"
+
+  if (defined(invoker.variant_target)) {
+    # Do variant selection as if for the ld_target, approximately.
+    variant_selection_target = verify_target
+    verify_target += ".variant"
+    variant_target("group") {
+      visibility = [ "./*" ]
+      variant_selector_target_type = invoker.variant_target
+      target_name = variant_selection_target
+      variant_shared_redirection = true
+      data_deps = [ ":$verify_target" ]
+    }
+  }
 
   ifs_extract(extract_target) {
     visibility = [ ":*" ]
@@ -69,7 +97,7 @@ template("verify_ld_abi") {
   }
 
   verify_public_symbols(verify_target) {
-    visibility = [ ":*" ]
+    visibility = [ "./*" ]
     forward_variables_from(invoker, [ "testonly" ])
     deps = [ ":$extract_target" ]
     current = ifs_file
@@ -97,7 +125,15 @@ loadable_module("ld-stub") {
   exclude_toolchain_tags = [ "instrumented" ]
 }
 
+# This redirects to the user.basic toolchain where ld-stub.so should be built.
+# It only serves to get it built and reached via data_deps so it will be
+# included in a package.
+user_basic_redirect("ld-stub.basic") {
+  public_deps = [ ":ld-stub.verify-abi" ]
+}
+
 verify_ld_abi("ld-stub") {
+  variant_target = "loadable_module"
 }
 
 source_set("abi") {
@@ -115,6 +151,10 @@ source_set("bootstrap") {
   public_deps = [
     ":headers",
     "//src/lib/elfldltl",
+
+    # TODO(fxbug.dev/130542): This gets users of bootstrap.h the config that
+    # plumbs the HAVE_LLVM_PROFDATA predefine used there.
+    "//src/lib/llvm-profdata",
   ]
 }
 
@@ -167,41 +207,69 @@ config("standalone.config") {
 
 source_set("posix-header") {
   public = [ "posix.h" ]
+  public_deps = [
+    ":startup-load",
+    "//src/lib/elfldltl",
+  ]
 }
 
-source_set("zircon-header") {
+source_set("zircon") {
   public = [ "zircon.h" ]
+  public_deps = [
+    ":diagnostics",
+    ":startup-load",
+    "//sdk/lib/stdcompat",
+    "//src/lib/elfldltl",
+  ]
+  sources = [
+    "ldsvc.cc",
+    "procargs.cc",
+  ]
+  deps = [
+    "//zircon/system/ulib/ldmsg",
+    "//zircon/system/ulib/processargs",
+    "//zircon/system/ulib/zircon-internal",
+  ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
+}
+
+source_set("startup-load") {
+  public = [ "startup-load.h" ]
+  public_deps = [
+    ":abi",
+    ":allocator",
+    ":bootstrap",
+    ":diagnostics",
+    ":headers",
+    "//src/lib/elfldltl",
+    "//zircon/system/ulib/fbl",
+  ]
 }
 
 shared_library("ld-startup") {
   configs += [ ":abi-soname" ]
 
-  sources = [ "startup-load.h" ]
+  sources = []
   deps = [
-    ":abi",
-    ":allocator",
-    ":bootstrap",
-    ":diagnostics",
     ":standalone",
-    "//src/lib/elfldltl",
-    "//zircon/system/ulib/fbl",
+    ":startup-load",
+    ":tlsdesc",
   ]
 
   if (is_fuchsia) {
     sources += [
-      "procargs.cc",
       "zircon-startup.S",
       "zircon-startup.cc",
     ]
     deps += [
+      ":zircon",
       ":zircon-diagnostics",
-      ":zircon-header",
       "//sdk/lib/stdcompat",
       "//src/lib/llvm-profdata",
       "//src/zircon/lib/zircon",
       "//zircon/kernel/lib/arch",
-      "//zircon/system/ulib/processargs",
-      "//zircon/system/ulib/zircon-internal",
       "//zircon/system/ulib/zx",
     ]
   } else {
@@ -219,32 +287,33 @@ shared_library("ld-startup") {
     configs += [ "//build/config:no_profile" ]
   }
 
-  if (is_fuchsia) {
-    output_path = "$root_out_dir/lib$target_name.so"
+  output_path = "$root_out_dir/lib$target_name.so"
 
-    metadata = {
-      distribution_entries = [
-        {
-          destination = "lib/${toolchain_variant.libprefix}$abi_soname"
-          source = rebase_path(output_path, root_build_dir)
-          label = get_label_info(target_name, "label_with_toolchain")
-        },
-      ]
+  metadata = {
+    distribution_entries = [
+      {
+        destination = "lib/${toolchain_variant.libprefix}$abi_soname"
+        source = rebase_path(output_path, root_build_dir)
+        label = get_label_info(target_name, "label_with_toolchain")
+      },
+    ]
 
-      # This is collected by test:ld-startup-test-switches.rsp.  The
-      # user_basic_redirect may wind up in a different variant than the one
-      # requested, if the test's variant isn't available in user.basic, so we
-      # don't know statically which libprefix the test should load from.
-      ld_startup_test_switches =
-          [ "'-DLD_STARTUP_TEST_LIBPREFIX=\"${toolchain_variant.libprefix}\"'" ]
-    }
+    # This is collected by test:ld-startup-test-switches.rsp.  The
+    # user_basic_redirect may wind up in a different variant than the one
+    # requested, if the test's variant isn't available in user.basic, so we
+    # don't know statically which libprefix the test should load from.
+    ld_startup_test_switches =
+        [ "'-DLD_STARTUP_TEST_LIBPREFIX=\"${toolchain_variant.libprefix}\"'" ]
   }
 }
 
 source_set("diagnostics") {
   visibility = [ ":*" ]
   public = [ "diagnostics.h" ]
-  public_deps = [ "//src/lib/elfldltl" ]
+  public_deps = [
+    "//src/lib/elfldltl",
+    "//src/lib/symbolizer-markup",
+  ]
   sources = [ "diagnostics.cc" ]
 }
 
@@ -264,7 +333,8 @@ source_set("zircon-diagnostics") {
   sources = [ "zircon-diagnostics.cc" ]
   deps = [
     ":diagnostics",
-    ":zircon-header",
+    ":zircon",
+    "//src/lib/symbolizer-markup",
     "//zircon/system/ulib/c/stdio/printf_core:wrapper",
     "//zircon/system/ulib/zx",
   ]
@@ -286,25 +356,31 @@ source_set("linux-syscalls") {
   include_dirs = [ "//third_party/linux-syscall-support/src" ]
 }
 
+source_set("tlsdesc") {
+  public_deps = [
+    ":headers",
+    "//zircon/kernel/lib/arch",
+  ]
+  sources = [
+    "tlsdesc-runtime-static.S",
+    "tlsdesc-runtime-undefined-weak.S",
+  ]
+}
+
 user_basic_redirect("ld-startup.basic") {
   public_deps = [ ":ld-startup" ]
 }
 
-verify_ld_abi("ld-startup.basic") {
-}
-
-user_basic_redirect("verify-abi") {
-  public_deps = [
-    ":ld-startup.basic.verify-abi",
-    ":ld-stub.verify-abi",
-  ]
+# This is reached from test:ld-startup.test-data, where it will be instantiated
+# in each environment and variant for which any tests are built.
+verify_ld_abi("ld-startup") {
 }
 
 group("tests") {
   testonly = true
 
   deps = [
-    ":verify-abi",
+    ":ld-stub.basic",  # This just gets it built and its ABI verified.
     "test:tests",
   ]
 }

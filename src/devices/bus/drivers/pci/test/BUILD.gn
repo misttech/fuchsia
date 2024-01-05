@@ -29,7 +29,6 @@ test("pci-unit") {
     "//sdk/lib/inspect/testing/cpp:zxtest",
     "//src/devices/bus/drivers/pci:user_pci",
     "//src/devices/lib/mmio:test_helper",
-    "//src/devices/testing/driver-runtime-main:zxtest",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/fake-msi",
     "//src/devices/testing/mock-ddk",
@@ -48,7 +47,7 @@ test("pci-driver") {
 
   sources = [ "driver/driver_tests.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.device.test:fuchsia.device.test_cpp_wire",
+    "//sdk/fidl/fuchsia.device.test:fuchsia.device.test_cpp",
     "//src/devices/testing/driver-integration-test-shim",
     "//src/lib/ddk",
     "//src/lib/ddktl",
@@ -100,7 +99,7 @@ fuchsia_driver("pci_protocol_test_driver-driver") {
   sources = [ "driver/protocol_test_driver.cc" ]
   deps = [
     "driver:pci_protocol_test_driver_bind",
-    "//sdk/fidl/fuchsia.device.test:fuchsia.device.test_cpp_wire",
+    "//sdk/fidl/fuchsia.device.test:fuchsia.device.test_cpp",
     "//src/devices/bus/drivers/pci:user_pci",
     "//src/devices/lib/driver",
     "//src/devices/pci/lib/device-protocol-pci",

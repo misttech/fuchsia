@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fuchsia_inspect::{InspectType, Node};
-use parking_lot::Mutex;
+use fuchsia_sync::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
@@ -76,7 +76,8 @@ impl<T: InspectType> IfaceTree for T {}
 mod tests {
     use super::*;
 
-    use fuchsia_inspect::{assert_data_tree, Inspector, StringProperty};
+    use diagnostics_assertions::assert_data_tree;
+    use fuchsia_inspect::{Inspector, StringProperty};
 
     #[test]
     fn test_iface_manager_eviction() {

@@ -90,16 +90,6 @@ typedef bool FidlIsResource;
 static const FidlIsResource kFidlIsResource_Resource = true;
 static const FidlIsResource kFidlIsResource_NotResource = false;
 
-// Indicates if encoding an object of a given type might involve mutations.
-typedef bool FidlMemcpyCompatibility;
-static const FidlMemcpyCompatibility kFidlMemcpyCompatibility_CannotMemcpy = false;
-static const FidlMemcpyCompatibility kFidlMemcpyCompatibility_CanMemcpy = true;
-
-// Indicates if a struct contains an envelope recursively within it.
-typedef bool FidlContainsEnvelope;
-static const FidlContainsEnvelope kFidlContainsEnvelope_DoesNotContainEnvelope = false;
-static const FidlContainsEnvelope kFidlContainsEnvelope_ContainsEnvelope = true;
-
 // Indicates if a struct is empty.
 typedef bool FidlEmpty;
 static const FidlEmpty kFidlEmpty_IsNotEmpty = false;
@@ -139,7 +129,7 @@ static inline bool FidlAddOutOfLine(uint32_t offset, uint32_t size, uint32_t* ou
   return true;
 }
 
-inline bool FidlIsZeroEnvelope(const fidl_envelope_v2_t* envelope) {
+inline bool FidlIsZeroEnvelope(const fidl_envelope_t* envelope) {
   static_assert(sizeof(*envelope) == sizeof(uint64_t), "");
   uint64_t uval;
   memcpy(&uval, envelope, sizeof(*envelope));
@@ -415,11 +405,6 @@ struct FidlCodedBits FIDL_INTERNAL_INHERIT_TYPE_T {
 // the purview of this library. It's easier for the compiler to stash it.
 struct FidlCodedStruct FIDL_INTERNAL_INHERIT_TYPE_T {
   const FidlTypeTag tag;
-  // Indicates if the struct recursively contains an envelope.
-  // Intended to be temporarily used in the FIDL transformer for the duration
-  // of the envelope wire format migration.
-  // TODO(fxbug.dev/79584) Remove this once the migration is complete.
-  const FidlContainsEnvelope contains_envelope;
   const FidlEmpty is_empty;
   // element_count should be a uint32_t, but for the sake of binary size
   // a uint16_t is used (all existing values fit within this size).
@@ -489,7 +474,6 @@ struct FidlCodedString FIDL_INTERNAL_INHERIT_TYPE_T {
 struct FidlCodedVector FIDL_INTERNAL_INHERIT_TYPE_T {
   const FidlTypeTag tag;
   const FidlNullability nullable;
-  const FidlMemcpyCompatibility element_memcpy_compatibility;
   const uint32_t max_count;
   const uint32_t element_size_v2;
   const fidl_type_t* const element;
@@ -565,7 +549,7 @@ extern const struct FidlCodedPrimitive fidl_internal_kUint64Table;
 extern const struct FidlCodedPrimitive fidl_internal_kFloat32Table;
 extern const struct FidlCodedPrimitive fidl_internal_kFloat64Table;
 
-extern const struct FidlCodedEnum fidl_internal_kTransportErrTable;
+extern const struct FidlCodedEnum fidl_internal_kFrameworkErrTable;
 
 // Backwards-compatible names
 typedef struct FidlCodedUnion FidlCodedXUnion;
@@ -603,7 +587,7 @@ static_assert(offsetof(struct FidlCodedHandle, tag) == 0, "");
 static_assert(sizeof(struct FidlCodedPrimitive) == 2, "");
 static_assert(sizeof(struct FidlCodedEnum) == 24, "");
 static_assert(sizeof(struct FidlCodedBits) == 24, "");
-static_assert(sizeof(struct FidlCodedStruct) == 32, "");
+static_assert(sizeof(struct FidlCodedStruct) == 24, "");
 static_assert(sizeof(struct FidlCodedStructPointer) == 16, "");
 static_assert(sizeof(struct FidlCodedUnion) == 24, "");
 static_assert(sizeof(struct FidlCodedArray) == 16, "");

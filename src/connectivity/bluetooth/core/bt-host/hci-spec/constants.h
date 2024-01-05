@@ -11,9 +11,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "lib/zx/time.h"
-
-#include <pw_bluetooth/hci.emb.h>
+#include <pw_bluetooth/hci_commands.emb.h>
+#include <pw_chrono/system_clock.h>
 #include "src/connectivity/bluetooth/core/bt-host/common/advertising_data.h"
 
 // This file contains constants and numbers used in HCI packet payloads.
@@ -793,7 +792,7 @@ enum class EncryptionStatus : uint8_t {
 // TODO(fxbug.dev/1196,fxbug.dev/1197) This was increased to handle flaking integration tests.
 // We may want to reduce this to something lower again once we have a better
 // resolution to this issue.
-constexpr zx::duration kCommandTimeout = zx::sec(10);
+constexpr pw::chrono::SystemClock::duration kCommandTimeout = std::chrono::seconds(10);
 
 // The minimum and maximum range values for the LE advertising interval
 // parameters.
@@ -1325,14 +1324,14 @@ constexpr float kFlushTimeoutMsToCommandParameterConversionFactor = 1.0f / kFlus
 
 // See Core Spec v5.2, Vol 4, Part E, Sec 7.3.30
 constexpr uint16_t kMaxAutomaticFlushTimeoutCommandParameterValue = 0x07FF;
-constexpr zx::duration kMaxAutomaticFlushTimeoutDuration = zx::msec(static_cast<int64_t>(kMaxAutomaticFlushTimeoutCommandParameterValue * kFlushTimeoutCommandParameterToMillisecondsConversionFactor));
+constexpr pw::chrono::SystemClock::duration kMaxAutomaticFlushTimeoutDuration = std::chrono::milliseconds(static_cast<int64_t>(kMaxAutomaticFlushTimeoutCommandParameterValue * kFlushTimeoutCommandParameterToMillisecondsConversionFactor));
 
 // Page Timeout = N * 0.625 ms (Core Spec v5.2, Vol 4, Part E, Sec 7.3.16).
 // The default is 5.12 sec.
-constexpr zx::duration kDurationPerPageTimeoutUnit = zx::usec(625);
-constexpr zx::duration kMinPageTimeoutDuration = kDurationPerPageTimeoutUnit * static_cast<uint16_t>(pw::bluetooth::emboss::PageTimeout::MIN);
-constexpr zx::duration kDefaultPageTimeoutDuration = kDurationPerPageTimeoutUnit * static_cast<uint16_t>(pw::bluetooth::emboss::PageTimeout::DEFAULT);
-constexpr zx::duration kMaxPageTimeoutDuration = kDurationPerPageTimeoutUnit * static_cast<uint16_t>(pw::bluetooth::emboss::PageTimeout::MAX);
+constexpr pw::chrono::SystemClock::duration kDurationPerPageTimeoutUnit = std::chrono::microseconds(625);
+constexpr pw::chrono::SystemClock::duration kMinPageTimeoutDuration = kDurationPerPageTimeoutUnit * static_cast<uint16_t>(pw::bluetooth::emboss::PageTimeout::MIN);
+constexpr pw::chrono::SystemClock::duration kDefaultPageTimeoutDuration = kDurationPerPageTimeoutUnit * static_cast<uint16_t>(pw::bluetooth::emboss::PageTimeout::DEFAULT);
+constexpr pw::chrono::SystemClock::duration kMaxPageTimeoutDuration = kDurationPerPageTimeoutUnit * static_cast<uint16_t>(pw::bluetooth::emboss::PageTimeout::MAX);
 
 }  // namespace bt::hci_spec
 

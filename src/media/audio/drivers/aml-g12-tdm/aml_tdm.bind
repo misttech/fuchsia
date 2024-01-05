@@ -6,8 +6,10 @@ composite aml_tdm;
 
 using fuchsia.amlogic.platform;
 using fuchsia.codec;
-using fuchsia.hardware.gpio;
+using fuchsia.gpio;
+using fuchsia.clock;
 using fuchsia.platform;
+using fuchsia.amlogic.platform.meson;
 
 primary node "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
@@ -23,9 +25,23 @@ primary node "pdev" {
   }
 }
 
+optional node "clock-gate" {
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_GATE;
+}
+
+optional node "clock-pll" {
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_PLL;
+}
+
+node "gpio-init" {
+  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
 optional node "gpio-enable" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.gpio.BIND_FIDL_PROTOCOL.SERVICE;
-  fuchsia.hardware.gpio.FUNCTION == fuchsia.hardware.gpio.FUNCTION.SOC_AUDIO_ENABLE;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.gpio.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.SOC_AUDIO_ENABLE;
 }
 
 optional node "codec-01" {
@@ -41,4 +57,8 @@ optional node "codec-02" {
 optional node "codec-03" {
   fuchsia.BIND_FIDL_PROTOCOL == fuchsia.codec.BIND_FIDL_PROTOCOL.SERVICE;
   fuchsia.BIND_CODEC_INSTANCE == 3;
+}
+
+node "clock-init" {
+  fuchsia.BIND_INIT_STEP == fuchsia.clock.BIND_INIT_STEP.CLOCK;
 }

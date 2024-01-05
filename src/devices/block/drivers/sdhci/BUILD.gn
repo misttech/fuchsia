@@ -39,7 +39,7 @@ fuchsia_driver("sdhci-driver") {
     ":sdhci-bind",
     "//sdk/banjo/fuchsia.hardware.sdhci:fuchsia.hardware.sdhci_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
     "//src/devices/block/lib/sdmmc",
     "//src/devices/lib/driver",
@@ -61,6 +61,11 @@ fuchsia_driver_component("sdhci") {
   manifest = "meta/sdhci.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "sdhci"
+  driver_components = [ ":sdhci" ]
+}
+
 test("sdhci-test-bin") {
   output_name = "sdhci-test"
   configs += [ "//build/config:all_source" ]
@@ -74,10 +79,11 @@ test("sdhci-test-bin") {
     "//sdk/banjo/fuchsia.hardware.sdhci:fuchsia.hardware.sdhci_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.sdhci:fuchsia.hardware.sdhci_banjo_cpp_mock",
     "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
     "//src/devices/block/lib/sdmmc",
     "//src/devices/lib/mmio",
+    "//src/devices/lib/mmio:test_helper",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/mock-ddk",
     "//src/lib/ddk",

@@ -24,8 +24,8 @@ driver_bind_rules("gvnic_bind") {
   tests = "bind-tests.json"
   deps = [
     "//src/devices/bind/fuchsia.acpi",
-    "//src/devices/bind/fuchsia.hardware.sysmem",
     "//src/devices/bind/fuchsia.pci",
+    "//src/devices/bind/fuchsia.sysmem",
   ]
 }
 
@@ -42,7 +42,7 @@ fuchsia_driver("gvnic-driver") {
   ]
   deps = [
     ":gvnic_bind",
-    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
     "//src/connectivity/network/drivers/network-device/device:shared_lock",
     "//src/devices/lib/dma-buffer",
@@ -53,6 +53,9 @@ fuchsia_driver("gvnic-driver") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/inspect",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 fuchsia_driver_component("gvnic") {
@@ -80,7 +83,7 @@ test("gvnic-unit-tests") {
   ]
   deps = [
     ":gvnic_bind",
-    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
     "//sdk/lib/inspect/testing/cpp:zxtest",
     "//src/connectivity/network/drivers/network-device/device:shared_lock",

@@ -6,7 +6,9 @@
 
 #include <fidl/fuchsia.hardware.gpio/cpp/common_types.h>
 #include <lib/async/default.h>
+#include <zircon/errors.h>
 
+#include <atomic>
 #include <variant>
 
 namespace fake_gpio {
@@ -31,9 +33,13 @@ FakeGpio::FakeGpio() : write_callback_(DefaultWriteCallback) {
 void FakeGpio::GetInterrupt(GetInterruptRequestView request,
                             GetInterruptCompleter::Sync& completer) {
   if (interrupt_.is_ok()) {
-    zx::interrupt interrupt;
-    ZX_ASSERT(interrupt_.value().duplicate(ZX_RIGHT_SAME_RIGHTS, &interrupt) == ZX_OK);
-    completer.ReplySuccess(std::move(interrupt));
+    if (!interrupt_used_.exchange(/*desired=*/true, std::memory_order_relaxed)) {
+      zx::interrupt interrupt;
+      ZX_ASSERT(interrupt_.value().duplicate(ZX_RIGHT_SAME_RIGHTS, &interrupt) == ZX_OK);
+      completer.ReplySuccess(std::move(interrupt));
+    } else {
+      completer.ReplyError(ZX_ERR_ALREADY_BOUND);
+    }
   } else {
     completer.ReplyError(interrupt_.error_value());
   }
@@ -98,6 +104,7 @@ void FakeGpio::Read(ReadCompleter::Sync& completer) {
 }
 
 void FakeGpio::ReleaseInterrupt(ReleaseInterruptCompleter::Sync& completer) {
+  interrupt_used_.store(false);
   completer.ReplySuccess();
 }
 
@@ -165,13 +172,9 @@ fidl::ClientEnd<fuchsia_hardware_gpio::Gpio> FakeGpio::Connect() {
 }
 
 fuchsia_hardware_gpio::Service::InstanceHandler FakeGpio::CreateInstanceHandler() {
-  auto* dispatcher = async_get_default_dispatcher();
-  Handler device_handler = [impl = this, dispatcher = dispatcher](
-                               ::fidl::ServerEnd<::fuchsia_hardware_gpio::Gpio> request) {
-    impl->bindings_.AddBinding(dispatcher, std::move(request), impl, fidl::kIgnoreBindingClosure);
-  };
-
-  return fuchsia_hardware_gpio::Service::InstanceHandler({.device = std::move(device_handler)});
+  return fuchsia_hardware_gpio::Service::InstanceHandler(
+      {.device = bindings_.CreateHandler(this, async_get_default_dispatcher(),
+                                         fidl::kIgnoreBindingClosure)});
 }
 
 fuchsia_hardware_gpio::GpioPolarity FakeGpio::GetCurrentPolarity() {

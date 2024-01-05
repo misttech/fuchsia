@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use {
+    crate::reply::Reply,
     anyhow::{anyhow, bail, Result},
+    async_trait::async_trait,
     chrono::Duration,
     command::Command,
     fuchsia_async::TimeoutExt,
@@ -13,13 +15,14 @@ use {
         AsyncReadExt, AsyncWriteExt,
     },
     lazy_static::lazy_static,
-    reply::Reply,
     std::convert::TryFrom,
+    std::marker::Sync,
     thiserror::Error,
 };
 
 pub mod command;
 pub mod reply;
+pub mod test_transport;
 
 const MAX_PACKET_SIZE: usize = 64;
 const DEFAULT_READ_TIMEOUT_SECS: i64 = 30;
@@ -35,8 +38,9 @@ pub enum SendError {
     Timeout,
 }
 
+#[async_trait]
 pub trait InfoListener {
-    fn on_info(&self, info: String) -> Result<()> {
+    async fn on_info(&self, info: String) -> Result<()> {
         tracing::info!("Fastboot Info: \"{}\"", info);
         Ok(())
     }
@@ -45,11 +49,12 @@ pub trait InfoListener {
 struct LogInfoListener {}
 impl InfoListener for LogInfoListener {}
 
+#[async_trait]
 pub trait UploadProgressListener {
-    fn on_started(&self, size: usize) -> Result<()>;
-    fn on_progress(&self, bytes_written: u64) -> Result<()>;
-    fn on_error(&self, error: &str) -> Result<()>;
-    fn on_finished(&self) -> Result<()>;
+    async fn on_started(&self, size: usize) -> Result<()>;
+    async fn on_progress(&self, bytes_written: u64) -> Result<()>;
+    async fn on_error(&self, error: &str) -> Result<()>;
+    async fn on_finished(&self) -> Result<()>;
 }
 
 async fn read_from_interface<T: AsyncRead + Unpin>(interface: &mut T) -> Result<Reply> {
@@ -74,7 +79,7 @@ async fn read_from_interface<T: AsyncRead + Unpin>(interface: &mut T) -> Result<
 
 async fn read<T: AsyncRead + Unpin>(
     interface: &mut T,
-    listener: &impl InfoListener,
+    listener: &(impl InfoListener + Sync),
 ) -> Result<Reply> {
     read_with_timeout(interface, listener, Duration::seconds(DEFAULT_READ_TIMEOUT_SECS)).await
 }
@@ -86,7 +91,7 @@ async fn read_and_log_info<T: AsyncRead + Unpin>(interface: &mut T) -> Result<Re
 
 async fn read_with_timeout<T: AsyncRead + Unpin>(
     interface: &mut T,
-    listener: &impl InfoListener,
+    listener: &(impl InfoListener + Sync),
     timeout: Duration,
 ) -> Result<Reply> {
     let std_timeout = timeout.to_std().expect("converting chrono Duration to std");
@@ -96,7 +101,7 @@ async fn read_with_timeout<T: AsyncRead + Unpin>(
             .on_timeout(end_time, || Err(anyhow!(SendError::Timeout)))
             .await
         {
-            Ok(Reply::Info(msg)) => listener.on_info(msg)?,
+            Ok(Reply::Info(msg)) => listener.on_info(msg).await?,
             #[cfg(target_os = "linux")]
             Err(e) => {
                 // If we get a TIMEDOUT response, keep reading -- that's just the usb_bulk crate
@@ -141,7 +146,7 @@ async fn read_with_timeout<T: AsyncRead + Unpin>(
 pub async fn send_with_listener<T: AsyncRead + AsyncWrite + Unpin>(
     cmd: Command,
     interface: &mut T,
-    listener: &impl InfoListener,
+    listener: &(impl InfoListener + Sync),
 ) -> Result<Reply> {
     let _lock = SEND_LOCK.lock().await;
     let bytes = Vec::<u8>::try_from(&cmd)?;
@@ -196,16 +201,16 @@ pub async fn upload<T: AsyncRead + AsyncWrite + Unpin>(
                     data.len()
                 );
                 tracing::error!(%err);
-                listener.on_error(&err)?;
+                listener.on_error(&err).await?;
                 bail!(err);
             }
-            listener.on_started(data.len())?;
+            listener.on_started(data.len()).await?;
             tracing::debug!("fastboot: writing {} bytes", data.len());
             match interface.write(&data).await {
                 Err(e) => {
                     let err = format!("Could not write to usb interface: {:?}", e);
                     tracing::error!(%err);
-                    listener.on_error(&err)?;
+                    listener.on_error(&err).await?;
                     bail!(err);
                 }
                 _ => (),
@@ -213,13 +218,13 @@ pub async fn upload<T: AsyncRead + AsyncWrite + Unpin>(
             tracing::debug!("fastboot: completed writing {} bytes", data.len());
             match read_and_log_info(interface).await {
                 Ok(reply) => {
-                    listener.on_finished()?;
+                    listener.on_finished().await?;
                     Ok(reply)
                 }
                 Err(e) => {
                     let err = format!("Could not verify upload: {:?}", e);
                     tracing::error!(%err);
-                    listener.on_error(&err)?;
+                    listener.on_error(&err).await?;
                     bail!(err);
                 }
             }
@@ -273,71 +278,43 @@ pub async fn download<T: AsyncRead + AsyncWrite + Unpin>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use command::ClientVariable;
-    use futures::io::task::{Context, Poll};
-    use std::pin::Pin;
+    use crate::command::ClientVariable;
+    use crate::test_transport::TestTransport;
 
-    struct TestTransport {
-        replies: Vec<Reply>,
-    }
+    struct LogUploadProgressListener {}
 
-    impl AsyncRead for TestTransport {
-        fn poll_read(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &mut [u8],
-        ) -> Poll<std::io::Result<usize>> {
-            match self.replies.pop() {
-                Some(r) => {
-                    let reply = Vec::<u8>::from(r);
-                    buf[..reply.len()].copy_from_slice(&reply);
-                    Ok(reply.len())
-                }
-                None => Ok(0),
-            }
+    #[async_trait]
+    impl UploadProgressListener for LogUploadProgressListener {
+        async fn on_started(&self, size: usize) -> Result<()> {
+            tracing::info!("Upload Started size: {size}");
+            Ok(())
+        }
+        async fn on_progress(&self, bytes_written: u64) -> Result<()> {
+            tracing::info!("Upload Progress. Bytes Written: {bytes_written}");
+            Ok(())
+        }
+        async fn on_error(&self, error: &str) -> Result<()> {
+            tracing::info!("Upload Error: {error}");
+            Ok(())
+        }
+        async fn on_finished(&self) -> Result<()> {
+            tracing::info!("Upload Finished");
+            Ok(())
         }
     }
 
-    impl AsyncWrite for TestTransport {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &[u8],
-        ) -> Poll<std::io::Result<usize>> {
-            Ok(buf.len())
-        }
-
-        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            unimplemented!();
-        }
-
-        fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            unimplemented!();
-        }
-    }
-
-    impl TestTransport {
-        pub fn new() -> Self {
-            TestTransport { replies: Vec::new() }
-        }
-
-        pub fn push(&mut self, reply: Reply) {
-            self.replies.push(reply);
-        }
-    }
-
-    #[test]
-    fn test_send_does_not_return_info_replies() {
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_send_does_not_return_info_replies() {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Okay("0.4".to_string()));
-        let response = send(Command::GetVar(ClientVariable::Version), &mut test_transport);
+        let response = send(Command::GetVar(ClientVariable::Version), &mut test_transport).await;
         assert!(!response.is_err());
         assert_eq!(response.unwrap(), Reply::Okay("0.4".to_string()));
 
         test_transport.push(Reply::Okay("0.4".to_string()));
         test_transport.push(Reply::Info("Test".to_string()));
         let response_with_info =
-            send(Command::GetVar(ClientVariable::Version), &mut test_transport);
+            send(Command::GetVar(ClientVariable::Version), &mut test_transport).await;
         assert!(!response_with_info.is_err());
         assert_eq!(response_with_info.unwrap(), Reply::Okay("0.4".to_string()));
 
@@ -346,41 +323,45 @@ mod test {
             test_transport.push(Reply::Info(format!("Test {}", i).to_string()));
         }
         let response_with_info =
-            send(Command::GetVar(ClientVariable::Version), &mut test_transport);
+            send(Command::GetVar(ClientVariable::Version), &mut test_transport).await;
         assert!(!response_with_info.is_err());
         assert_eq!(response_with_info.unwrap(), Reply::Okay("0.4".to_string()));
     }
 
-    #[test]
-    fn test_uploading_data_to_partition() {
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_uploading_data_to_partition() {
         let data: [u8; 1024] = [0; 1024];
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Okay("Done Writing".to_string()));
         test_transport.push(Reply::Info("Writing".to_string()));
         test_transport.push(Reply::Data(1024));
 
-        let response = upload(&data, &mut test_transport);
+        let listener = LogUploadProgressListener {};
+
+        let response = upload(&data, &mut test_transport, &listener).await;
         assert!(!response.is_err());
         assert_eq!(response.unwrap(), Reply::Okay("Done Writing".to_string()));
     }
 
-    #[test]
-    fn test_uploading_data_with_unexpected_reply() {
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_uploading_data_with_unexpected_reply() {
         let data: [u8; 1024] = [0; 1024];
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Info("Writing".to_string()));
 
-        let response = upload(&data, &mut test_transport);
+        let listener = LogUploadProgressListener {};
+        let response = upload(&data, &mut test_transport, &listener).await;
         assert!(response.is_err());
     }
 
-    #[test]
-    fn test_uploading_data_with_unexpected_data_size_reply() {
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_uploading_data_with_unexpected_data_size_reply() {
         let data: [u8; 1024] = [0; 1024];
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Data(1000));
 
-        let response = upload(&data, &mut test_transport);
+        let listener = LogUploadProgressListener {};
+        let response = upload(&data, &mut test_transport, &listener).await;
         assert!(response.is_err());
     }
 }

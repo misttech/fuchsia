@@ -10,8 +10,7 @@ import tempfile
 import time
 
 from fuchsia_base_test import fuchsia_base_test
-from mobly import asserts
-from mobly import test_runner
+from mobly import asserts, test_runner
 
 from honeydew.interfaces.device_classes import fuchsia_device
 
@@ -42,14 +41,6 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
                 * `tracing.stop()`
                 * `tracing.terminate()`
         """
-        if self._is_fuchsia_controller_based_device(self.device):
-            with asserts.assert_raises(NotImplementedError):
-                self.device.tracing.initialize()
-                self.device.tracing.start()
-                self.device.tracing.stop()
-                self.device.tracing.terminate()
-            return
-
         # Initialize Tracing Session.
         self.device.tracing.initialize()
 
@@ -63,7 +54,7 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         self.device.tracing.terminate()
 
     def test_tracing_trace_download(self) -> None:
-        """ This test case tests the following tracing methods and asserts that
+        """This test case tests the following tracing methods and asserts that
             the trace was downloaded successfully.
 
         This test case calls the following tracing methods:
@@ -72,12 +63,6 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
                 * `tracing.stop()`
                 * `tracing.terminate_and_download(directory="/tmp/")`
         """
-        if self._is_fuchsia_controller_based_device(self.device):
-            with asserts.assert_raises(NotImplementedError):
-                self.device.tracing.terminate_and_download(
-                    directory="/tmp", trace_file="trace.fxt")
-            return
-
         # Initialize Tracing Session.
         self.device.tracing.initialize()
 
@@ -92,12 +77,40 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         # Terminate the tracing session.
         with tempfile.TemporaryDirectory() as tmpdir:
             res = self.device.tracing.terminate_and_download(
-                directory=tmpdir, trace_file="trace.fxt")
+                directory=tmpdir, trace_file="trace.fxt"
+            )
 
             asserts.assert_equal(
-                res, f"{tmpdir}/trace.fxt", msg="trace not downloaded")
+                res, f"{tmpdir}/trace.fxt", msg="trace not downloaded"
+            )
             asserts.assert_true(
-                os.path.exists(f"{tmpdir}/trace.fxt"), msg="trace failed")
+                os.path.exists(f"{tmpdir}/trace.fxt"), msg="trace failed"
+            )
+
+    def test_tracing_session(self) -> None:
+        """This test case tests the `tracing.trace_session()` context manager"""
+        with self.device.tracing.trace_session():
+            pass
+
+    def test_tracing_session_download(self) -> None:
+        """This test case tests the `tracing.trace_session()` context manager
+        and asserts that the trace was downloaded successfully.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.device.tracing.trace_session(
+                download=True, directory=tmpdir, trace_file="trace.fxt"
+            ):
+                pass
+            asserts.assert_true(
+                os.path.exists(f"{tmpdir}/trace.fxt"), msg="trace failed"
+            )
+
+    def test_multi_tracing_session(self) -> None:
+        """This test case tests the multiple traces using trace context manager"""
+        with self.device.tracing.trace_session():
+            self.device.tracing.stop()
+            time.sleep(1)
+            self.device.tracing.start()
 
 
 if __name__ == "__main__":

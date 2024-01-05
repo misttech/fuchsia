@@ -137,6 +137,9 @@ class BufferCollectionToken : public Node, public LoggingMixin {
     void GetNodeRefV2(GetNodeRefV2Completer::Sync& completer) override;
     void IsAlternateForV2(IsAlternateForV2Request& request,
                           IsAlternateForV2Completer::Sync& completer) override;
+    void GetBufferCollectionIdV2(GetBufferCollectionIdV2Completer::Sync& completer) override;
+    void SetWeakV2(SetWeakV2Completer::Sync& completer) override;
+    void SetWeakOkV2(SetWeakOkV2Request& request, SetWeakOkV2Completer::Sync& completer) override;
     void SetNameV2(SetNameV2Request& request, SetNameV2Completer::Sync& completer) override;
     void SetDebugClientInfoV2(SetDebugClientInfoV2Request& request,
                               SetDebugClientInfoV2Completer::Sync& completer) override;

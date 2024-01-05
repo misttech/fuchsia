@@ -74,6 +74,7 @@ source_set("linuxisms") {
   ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp",
     "//zircon/system/public",
   ]
 }
@@ -153,9 +154,7 @@ source_set("core") {
   ]
   deps = [
     ":timer",
-    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_banjo_c",
     "//sdk/lib/driver/component/cpp:cpp",
-    "//src/connectivity/wlan/drivers/lib/fullmac_ifc",
     "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/inspect",
     "//src/connectivity/wlan/lib/common/cpp:common",
     "//src/lib/ddktl",
@@ -166,11 +165,9 @@ source_set("core") {
     ":debug",
     ":linuxisms",
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.wlan.fullmac:fuchsia.hardware.wlan.fullmac_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.wlanphyimpl:fuchsia.hardware.wlanphyimpl_banjo_cpp",
-    "//sdk/fidl/fuchsia.factory.wlan:fuchsia.factory.wlan_cpp_wire",
-    "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_cpp_driver",
-    "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
+    "//sdk/fidl/fuchsia.factory.wlan:fuchsia.factory.wlan_cpp",
+    "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_cpp",
+    "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp",
     "//sdk/lib/driver/component/cpp:cpp",
     "//sdk/lib/stdcompat",
     "//src/connectivity/wlan/drivers/lib/components:cpp",
@@ -191,6 +188,9 @@ source_set("core") {
 
   # TODO(https://fxbug.dev/58162): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 # Source set including the driver sources, and the bus definitions conditionally compiled in on each
@@ -239,7 +239,7 @@ fuchsia_driver_component("fuchsia_driver") {
   manifest = "meta/brcmfmac_sdio.cml"
   deps = [ ":fuchsia_driver-driver" ]
   visibility += [
-    "//bundles/drivers:pci",
+    "//bundles/drivers/pci",
     "//src/connectivity/wlan:drivers",
   ]
   info = "fuchsia_driver-info.json"
@@ -342,6 +342,7 @@ brcmfmac_driver("brcmfmac-vim3") {
 # The test package, including tests in subdirs.
 group("brcmfmac_tests") {
   deps = [
+    "recovery/test:brcmfmac_recovery_test",
     "sdio/test:brcmfmac_sdio_test",
     "sim/test:brcmfmac_sim_test",
     "test:brcmfmac_test",

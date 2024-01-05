@@ -11,9 +11,17 @@ driver_bind_rules("aml-cpu-bind") {
   rules = "aml-cpu.bind"
   bind_output = "aml-cpu.bindbc"
   tests = "bind-tests.json"
+
+  # TODO(fxb/115757): Remove this once we no longer need to generate
+  # fragments for composite bind rules.
+  disable_fragment_gen = true
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
+    "//src/devices/bind/fuchsia.clock",
     "//src/devices/bind/fuchsia.google.platform",
+    "//src/devices/bind/fuchsia.gpio",
+    "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.power",
   ]
 }
 
@@ -27,10 +35,10 @@ fuchsia_driver("aml-cpu-driver") {
   deps = [
     ":aml-cpu-bind",
     "//sdk/banjo/fuchsia.hardware.thermal:fuchsia.hardware.thermal_banjo_cpp",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp",
+    "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_cpp",
+    "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
     "//sdk/lib/fidl",
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/lib/amlogic",
@@ -53,6 +61,11 @@ fuchsia_driver_component("aml-cpu") {
   info = "aml-cpu-info.json"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "aml-cpu"
+  driver_components = [ ":aml-cpu" ]
+}
+
 test("aml-cpu-test-bin") {
   sources = [
     "aml-cpu-test.cc",
@@ -62,10 +75,10 @@ test("aml-cpu-test-bin") {
   deps = [
     ":aml-cpu-bind",
     "//sdk/banjo/fuchsia.hardware.thermal:fuchsia.hardware.thermal_banjo_cpp",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp_testing",
+    "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_cpp",
+    "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fidl",

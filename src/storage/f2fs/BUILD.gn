@@ -6,18 +6,20 @@ static_library("f2fs") {
   friend = [ "test:*" ]
   sources = [
     "bcache.cc",
+    "bitmap.cc",
     "checkpoint.cc",
+    "common.h",
     "data.cc",
     "dir.cc",
     "dir.h",
     "dir_entry_cache.cc",
     "dir_entry_cache.h",
     "dir_hash.cc",
+    "extent_cache.cc",
+    "extent_cache.h",
     "f2fs.cc",
     "f2fs_internal.h",
     "f2fs_layout.h",
-    "f2fs_lib.h",
-    "f2fs_types.h",
     "file.cc",
     "file.h",
     "file_cache.cc",
@@ -42,7 +44,6 @@ static_library("f2fs") {
     "segment.h",
     "storage_buffer.cc",
     "storage_buffer.h",
-    "super.cc",
     "third_party/ext2_hash/hash.cc",
     "third_party/ext2_hash/hash.h",
     "vnode.cc",
@@ -62,10 +63,11 @@ static_library("f2fs") {
   ]
 
   public_deps = [
-    "//src/lib/storage/vfs/cpp",
-    "//src/lib/storage/vfs/cpp/journal",
-    "//src/lib/storage/vfs/cpp/transaction",
     "//src/lib/uuid",
+    "//src/storage/lib/vfs/cpp",
+    "//src/storage/lib/vfs/cpp/journal",
+    "//src/storage/lib/vfs/cpp/transaction",
+    "//zircon/system/ulib/bitmap",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/storage/buffer",
     "//zircon/third_party/ulib/safemath",
@@ -96,23 +98,23 @@ static_library("f2fs") {
     public_deps += [
       "//sdk/fidl/fuchsia.memorypressure:fuchsia.memorypressure_cpp",
       "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_hlcpp",
-      "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp_wire",
+      "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
       "//sdk/lib/component/incoming/cpp",
+      "//sdk/lib/inspect/component/cpp",
       "//sdk/lib/sys/cpp",
-      "//src/lib/storage/block_client/cpp",
-      "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp_wire",
+      "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp",
+      "//src/storage/lib/block_client/cpp",
       "//zircon/system/ulib/zircon-internal",
       "//zircon/system/ulib/zx",
     ]
 
     deps += [
-      "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp_wire",
+      "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
       "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
       "//sdk/lib/fdio",
       "//sdk/lib/fidl",
-      "//sdk/lib/inspect/service/cpp",
       "//src/lib/fuchsia-component",
-      "//src/lib/storage/vfs/cpp/inspect",
+      "//src/storage/lib/vfs/cpp/inspect",
       "//zircon/system/ulib/async",
       "//zircon/system/ulib/async:async-cpp",
       "//zircon/system/ulib/async-default",
@@ -145,6 +147,7 @@ group("tests") {
   assert_no_deps = [ "test/compatibility:*" ]
 
   deps = [
+    "bin:tests",
     "test:f2fs-fs-tests",
     "test:f2fs-slow-fs-tests",
   ]

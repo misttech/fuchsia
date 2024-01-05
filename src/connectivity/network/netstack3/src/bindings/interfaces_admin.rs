@@ -31,11 +31,7 @@
 //! ownership semantics (removing the interface closes the protocol; closing
 //! protocol does not remove the interface).
 
-use std::{
-    borrow::Borrow,
-    collections::hash_map,
-    ops::{Deref as _, DerefMut as _},
-};
+use std::{collections::hash_map, ops::DerefMut as _};
 
 use assert_matches::assert_matches;
 use fidl::endpoints::{ProtocolMarker, ServerEnd};
@@ -46,34 +42,51 @@ use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fuchsia_async as fasync;
 use fuchsia_zircon as zx;
 use futures::{
-    future::FusedFuture as _, lock::Mutex as AsyncMutex, stream::FusedStream as _, FutureExt as _,
-    SinkExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _,
+    future::FusedFuture as _, stream::FusedStream as _, FutureExt as _, SinkExt as _,
+    StreamExt as _, TryFutureExt as _, TryStreamExt as _,
 };
-use net_types::{ip::AddrSubnetEither, ip::IpAddr, SpecifiedAddr, Witness};
+use net_types::{
+    ip::{AddrSubnetEither, IpAddr},
+    SpecifiedAddr, Witness,
+};
 use netstack3_core::{
-    device::{update_ipv4_configuration, update_ipv6_configuration, DeviceId},
-    ip::device::{
-        state::{AddrSubnetAndManualConfigEither, Ipv4AddrConfig, Ipv6AddrManualConfig, Lifetime},
-        IpDeviceConfigurationUpdate, Ipv4DeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate,
+    device::{
+        DeviceConfiguration, DeviceConfigurationUpdate, DeviceConfigurationUpdateError, DeviceId,
+    },
+    ip::{
+        AddrSubnetAndManualConfigEither, IpDeviceConfigurationUpdate, Ipv4AddrConfig,
+        Ipv4DeviceConfigurationUpdate, Ipv6AddrManualConfig, Ipv6DeviceConfigurationUpdate,
+        Lifetime, UpdateIpConfigurationError,
     },
 };
 
 use crate::bindings::{
-    devices, netdevice_worker, util::IntoCore as _, util::TryIntoCore as _, BindingId, Ctx,
-    DeviceIdExt as _, Netstack, StackTime,
+    devices, netdevice_worker,
+    routes::{self, admin::RouteSet},
+    util::{IllegalZeroValueError, IntoCore as _, IntoFidl, TryIntoCore},
+    BindingId, BindingsCtx, Ctx, DeviceIdExt as _, Netstack, StackTime,
 };
 
-pub(crate) fn serve(
-    ns: Netstack,
-    req: fnet_interfaces_admin::InstallerRequestStream,
-) -> impl futures::Stream<Item = Result<fasync::Task<()>, fidl::Error>> {
-    req.map_ok(
-        move |fnet_interfaces_admin::InstallerRequest::InstallDevice {
-                  device,
-                  device_control,
-                  control_handle: _,
-              }| {
-            fasync::Task::spawn(
+pub(crate) async fn serve(ns: Netstack, req: fnet_interfaces_admin::InstallerRequestStream) {
+    req.filter_map(|req| {
+        let req = match req {
+            Ok(req) => req,
+            Err(e) => {
+                if !e.is_closed() {
+                    tracing::error!(
+                        "{} request error {e:?}",
+                        fnet_interfaces_admin::InstallerMarker::DEBUG_NAME
+                    );
+                }
+                return futures::future::ready(None);
+            }
+        };
+        match req {
+            fnet_interfaces_admin::InstallerRequest::InstallDevice {
+                device,
+                device_control,
+                control_handle: _,
+            } => futures::future::ready(Some(fasync::Task::spawn(
                 run_device_control(
                     ns.clone(),
                     device,
@@ -82,9 +95,14 @@ pub(crate) fn serve(
                 .map(|r| {
                     r.unwrap_or_else(|e| tracing::warn!("device control finished with {:?}", e))
                 }),
-            )
-        },
-    )
+            ))),
+        }
+    })
+    .for_each_concurrent(None, |task| {
+        // Wait for all created devices on this installer to finish.
+        task
+    })
+    .await;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -96,7 +114,7 @@ enum DeviceControlError {
 }
 
 async fn run_device_control(
-    ns: Netstack,
+    mut ns: Netstack,
     device: fidl::endpoints::ClientEnd<fhardware_network::DeviceMarker>,
     req_stream: fnet_interfaces_admin::DeviceControlRequestStream,
 ) -> Result<(), DeviceControlError> {
@@ -136,17 +154,17 @@ async fn run_device_control(
                     options,
                     control_handle: _,
                 } => {
-                    if let Some(interface_control_task) = create_interface(
+                    if let Some(interface_tasks) = create_interface(
                         port,
                         control,
                         options,
-                        &ns,
+                        &mut ns,
                         &handler,
                         stop_event.wait_or_dropped(),
                     )
                     .await
                     {
-                        tasks.push(interface_control_task);
+                        tasks.extend(interface_tasks);
                     }
                 }
                 fnet_interfaces_admin::DeviceControlRequest::Detach { control_handle: _ } => {
@@ -171,7 +189,7 @@ const INTERFACES_ADMIN_CHANNEL_SIZE: usize = 16;
 ///
 /// If `owns_interface` is true, this handle 'owns' the interfaces, and when the handle closes the
 /// interface should be removed.
-pub struct OwnedControlHandle {
+pub(crate) struct OwnedControlHandle {
     request_stream: fnet_interfaces_admin::ControlRequestStream,
     control_handle: fnet_interfaces_admin::ControlControlHandle,
     owns_interface: bool,
@@ -230,33 +248,34 @@ impl OwnedControlHandle {
 /// Operates a fuchsia.net.interfaces.admin/DeviceControl.CreateInterface
 /// request.
 ///
-/// Returns `Some(fuchsia_async::Task)` if an interface was created
-/// successfully. The returned `Task` must be polled to completion and is tied
+/// Returns `Some([fuchsia_async::Task;2])` if an interface was created
+/// successfully. The returned `Task`s must be polled to completion and are tied
 /// to the created interface's lifetime.
 async fn create_interface(
     port: fhardware_network::PortId,
     control: fidl::endpoints::ServerEnd<fnet_interfaces_admin::ControlMarker>,
     options: fnet_interfaces_admin::Options,
-    ns: &Netstack,
+    ns: &mut Netstack,
     handler: &netdevice_worker::DeviceHandler,
     device_stopped_fut: async_utils::event::EventWaitResult,
-) -> Option<fuchsia_async::Task<()>> {
+) -> Option<[fuchsia_async::Task<()>; 2]> {
     tracing::debug!("creating interface from {:?} with {:?}", port, options);
     let fnet_interfaces_admin::Options { name, metric, .. } = options;
     let (control_sender, mut control_receiver) =
         OwnedControlHandle::new_channel_with_owned_handle(control).await;
     match handler
-        .add_port(&ns, netdevice_worker::InterfaceOptions { name, metric }, port, control_sender)
+        .add_port(ns, netdevice_worker::InterfaceOptions { name, metric }, port, control_sender)
         .await
     {
-        Ok((binding_id, status_stream)) => {
-            Some(fasync::Task::spawn(run_netdevice_interface_control(
+        Ok((binding_id, status_stream, tx_task)) => {
+            let interface_control_task = fasync::Task::spawn(run_netdevice_interface_control(
                 ns.ctx.clone(),
                 binding_id,
                 status_stream,
                 device_stopped_fut,
                 control_receiver,
-            )))
+            ));
+            Some([interface_control_task, tx_task])
         }
         Err(e) => {
             tracing::warn!("failed to add port {:?} to device: {:?}", port, e);
@@ -332,11 +351,34 @@ async fn run_netdevice_interface_control<
     mut device_stopped_fut: async_utils::event::EventWaitResult,
     control_receiver: futures::channel::mpsc::Receiver<OwnedControlHandle>,
 ) {
-    let interface_access_synchronizer = AsyncMutex::new(());
+    let status_stream = status_stream.scan((), |(), status| {
+        futures::future::ready(match status {
+            Ok(netdevice_client::client::PortStatus { flags, mtu: _ }) => {
+                Some(DeviceState { online: flags.contains(fhardware_network::StatusFlags::ONLINE) })
+            }
+            Err(e) => {
+                match e {
+                    netdevice_client::Error::Fidl(e) if e.is_closed() => {
+                        tracing::warn!(
+                            "error operating port state stream {:?} for interface {}",
+                            e,
+                            id
+                        )
+                    }
+                    e => {
+                        tracing::error!(
+                            "error operating port state stream {:?} for interface {}",
+                            e,
+                            id
+                        )
+                    }
+                }
+                // Terminate the stream in case of any errors.
+                None
+            }
+        })
+    });
 
-    let link_state_fut =
-        run_link_state_watcher(ctx.clone(), id, status_stream, &interface_access_synchronizer)
-            .fuse();
     let (interface_control_stop_sender, interface_control_stop_receiver) =
         futures::channel::oneshot::channel();
 
@@ -348,97 +390,33 @@ async fn run_netdevice_interface_control<
         interface_control_stop_receiver,
         control_receiver,
         removable,
-        &interface_access_synchronizer,
+        status_stream,
     )
     .fuse();
-    futures::pin_mut!(link_state_fut);
     futures::pin_mut!(interface_control_fut);
-    let cleanup_iface_control = futures::select! {
+    futures::select! {
         o = device_stopped_fut => {
             o.expect("event was orphaned");
-            None
         },
-        () = link_state_fut => None,
-        cleanup = interface_control_fut => cleanup,
+        () = interface_control_fut => (),
     };
-    let cleanup_iface_control = if !interface_control_fut.is_terminated() {
+    if !interface_control_fut.is_terminated() {
         // Cancel interface control and drive it to completion, allowing it to terminate each
         // control handle.
         interface_control_stop_sender
             .send(fnet_interfaces_admin::InterfaceRemovedReason::PortClosed)
             .expect("failed to cancel interface control");
         interface_control_fut.await
-    } else {
-        cleanup_iface_control
-    };
-    remove_interface(ctx, id).await;
-
-    // Run the cleanup only after the interface is completely removed.
-    if let Some(cleanup_iface_control) = cleanup_iface_control {
-        cleanup_iface_control();
     }
 }
 
-/// Runs a worker to watch the given status_stream and update the interface state accordingly.
-async fn run_link_state_watcher<
-    S: futures::Stream<Item = netdevice_client::Result<netdevice_client::client::PortStatus>>,
->(
-    ctx: Ctx,
-    id: BindingId,
-    status_stream: S,
-    interface_access_synchronizer: &AsyncMutex<()>,
-) {
-    let result = status_stream
-        .try_for_each(|netdevice_client::client::PortStatus { flags, mtu: _ }| {
-            let ctx = &ctx;
-            async move {
-                // Take the lock to synchronize with other operations that may
-                // mutate state for this device (e.g. admin up/down).
-                let guard = interface_access_synchronizer.lock().await;
-                let _: &() = guard.deref();
-
-                let online = flags.contains(fhardware_network::StatusFlags::ONLINE);
-                tracing::debug!("observed interface {} online = {}", id, online);
-                let mut ctx = ctx.clone();
-                match ctx
-                    .non_sync_ctx
-                    .devices
-                    .get_core_id(id)
-                    .expect("device not present")
-                    .external_state()
-                {
-                    devices::DeviceSpecificInfo::Netdevice(i) => {
-                        i.with_dynamic_info_mut(|i| i.phy_up = online)
-                    }
-                    i @ devices::DeviceSpecificInfo::Loopback(_) => {
-                        unreachable!("unexpected device info {:?} for interface {}", i, id)
-                    }
-                };
-                // Enable or disable interface with context depending on new online
-                // status. The helper functions take care of checking if admin
-                // enable is the expected value.
-                crate::bindings::set_interface_enabled(&mut ctx, id, online).unwrap_or_else(|e| {
-                    panic!("failed to set interface enabled={}: {:?}", online, e)
-                });
-                Ok(())
-            }
-        })
-        .await;
-    match result {
-        Ok(()) => tracing::debug!("state stream closed for interface {}", id),
-        Err(netdevice_client::Error::Fidl(e)) if e.is_closed() => {
-            tracing::warn!("error operating port state stream {:?} for interface {}", e, id)
-        }
-        Err(e) => tracing::error!("error operating port state stream {:?} for interface {}", e, id),
-    }
+pub(crate) struct DeviceState {
+    online: bool,
 }
 
 /// Runs a worker to serve incoming `fuchsia.net.interfaces.admin/Control`
 /// handles.
-///
-/// Returns a function that must be called after the interface has been removed
-/// to notify all clients of removal.
-pub(crate) async fn run_interface_control(
+pub(crate) async fn run_interface_control<S: futures::Stream<Item = DeviceState>>(
     ctx: Ctx,
     id: BindingId,
     mut stop_receiver: futures::channel::oneshot::Receiver<
@@ -446,12 +424,13 @@ pub(crate) async fn run_interface_control(
     >,
     control_receiver: futures::channel::mpsc::Receiver<OwnedControlHandle>,
     removable: bool,
-    interface_access_synchronizer: impl Borrow<AsyncMutex<()>>,
-) -> Option<impl FnOnce() -> ()> {
-    let interface_access_synchronizer = interface_access_synchronizer.borrow();
-
+    device_state: S,
+) {
     // An event indicating that the individual control request streams should stop.
     let cancel_request_streams = async_utils::event::Event::new();
+
+    let enabled_controller = enabled::InterfaceEnabledController::new(ctx.clone(), id);
+    let enabled_controller = &enabled_controller;
     // A struct to retain per-handle state of the individual request streams in `control_receiver`.
     struct ReqStreamState {
         owns_interface: bool,
@@ -459,6 +438,7 @@ pub(crate) async fn run_interface_control(
         ctx: Ctx,
         id: BindingId,
     }
+
     // Convert `control_receiver` (a stream-of-streams) into a stream of futures, where each future
     // represents the termination of an inner `ControlRequestStream`.
     let stream_of_fut = control_receiver.map(
@@ -494,7 +474,7 @@ pub(crate) async fn run_interface_control(
                                 *id,
                                 removable,
                                 owns_interface,
-                                interface_access_synchronizer,
+                                enabled_controller,
                             )
                             .await
                             {
@@ -524,6 +504,16 @@ pub(crate) async fn run_interface_control(
     // Enable the stream of futures to be polled concurrently.
     let mut stream_of_fut = stream_of_fut.buffer_unordered(std::usize::MAX);
 
+    let device_state = {
+        device_state
+            .then(|DeviceState { online }| async move {
+                tracing::debug!("observed interface {} online = {}", id, online);
+                enabled_controller.set_phy_up(online).await;
+            })
+            .fuse()
+            .collect::<()>()
+    };
+
     let (remove_reason, removal_requester) = {
         // Drive the `ControlRequestStreams` to completion, short-circuiting if
         // an owner terminates or if interface removal is requested.
@@ -549,6 +539,7 @@ pub(crate) async fn run_interface_control(
             })
         });
 
+        futures::pin_mut!(device_state);
         futures::select! {
             // One of the interface's owning channels hung up or `Remove` was
             // called; inform the other channels.
@@ -557,6 +548,8 @@ pub(crate) async fn run_interface_control(
             }
             // Cancelation event was received with a specified remove reason.
             reason = stop_receiver => (reason.expect("failed to receive stop"), None),
+            // Device state stream ended, assume device was removed.
+            () = device_state => (fnet_interfaces_admin::InterfaceRemovedReason::PortClosed, None),
         }
     };
 
@@ -565,10 +558,10 @@ pub(crate) async fn run_interface_control(
     // Cancel the active request streams, and drive the remaining `ControlRequestStreams` to
     // completion, allowing each handle to send termination events.
     assert!(cancel_request_streams.signal(), "expected the event to be unsignaled");
-    let cleanup_fn = if !stream_of_fut.is_terminated() {
-        // Accumulate all the control handles first. We can't return
-        // `stream_of_fut` because it's borrowing from stack variables.
-        let control_handles = stream_of_fut
+    let control_handles = if !stream_of_fut.is_terminated() {
+        // Accumulate all the control handles first so we stop operating on
+        // them.
+        stream_of_fut
             .map(|fold_result| match fold_result {
                 async_utils::fold::FoldResult::StreamEnded(ReqStreamState {
                     owns_interface: _,
@@ -582,22 +575,16 @@ pub(crate) async fn run_interface_control(
             // (if there is one) so it receives the terminal event too.
             .chain(futures::stream::iter(removal_requester))
             .collect::<Vec<_>>()
-            .await;
-        Some(move || {
-            control_handles.into_iter().for_each(|control_handle| {
-                control_handle.send_on_interface_removed(remove_reason).unwrap_or_else(|e| {
-                    tracing::error!("failed to send terminal event: {:?} for interface {}", e, id)
-                });
-            });
-        })
+            .await
     } else {
-        None
+        // Drop the terminated stream of fut to get rid of context borrows.
+        std::mem::drop(stream_of_fut);
+        Vec::new()
     };
     // Cancel the `AddressStateProvider` workers and drive them to completion.
     let address_state_providers = {
-        let ctx = ctx.clone();
         let core_id =
-            ctx.non_sync_ctx.devices.get_core_id(id).expect("missing device info for interface");
+            ctx.bindings_ctx().devices.get_core_id(id).expect("missing device info for interface");
         core_id.external_state().with_common_info_mut(|i| {
             futures::stream::FuturesUnordered::from_iter(i.addresses.values_mut().map(
                 |devices::AddressInfo {
@@ -615,7 +602,18 @@ pub(crate) async fn run_interface_control(
         })
     };
     address_state_providers.collect::<()>().await;
-    cleanup_fn
+
+    // Nothing else should be borrowing ctx by now. Moving to a mutable bind
+    // proves this.
+    let mut ctx = ctx;
+    remove_interface(&mut ctx, id).await;
+
+    // Send the termination reason for all handles we had on removal.
+    control_handles.into_iter().for_each(|control_handle| {
+        control_handle.send_on_interface_removed(remove_reason).unwrap_or_else(|e| {
+            tracing::error!("failed to send terminal event: {:?} for interface {}", e, id)
+        });
+    });
 }
 
 enum ControlRequestResult {
@@ -626,17 +624,13 @@ enum ControlRequestResult {
 /// Serves a `fuchsia.net.interfaces.admin/Control` Request.
 async fn dispatch_control_request(
     req: fnet_interfaces_admin::ControlRequest,
-    ctx: &Ctx,
+    ctx: &mut Ctx,
     id: BindingId,
     removable: bool,
     owns_interface: &mut bool,
-    interface_access_synchronizer: &AsyncMutex<()>,
+    enabled_controller: &enabled::InterfaceEnabledController,
 ) -> Result<ControlRequestResult, fidl::Error> {
     tracing::debug!("serving {:?}", req);
-    // Take the lock to synchronize with other operations that may mutate state
-    // for this device (e.g. phy link up/down handlers).
-    let guard = interface_access_synchronizer.lock().await;
-    let _: &() = guard.deref();
 
     match req {
         fnet_interfaces_admin::ControlRequest::AddAddress {
@@ -656,10 +650,10 @@ async fn dispatch_control_request(
             responder.send(Ok(&get_configuration(ctx, id)))
         }
         fnet_interfaces_admin::ControlRequest::Enable { responder } => {
-            responder.send(Ok(set_interface_enabled(ctx, true, id).await))
+            responder.send(Ok(enabled_controller.set_admin_enabled(true).await))
         }
         fnet_interfaces_admin::ControlRequest::Disable { responder } => {
-            responder.send(Ok(set_interface_enabled(ctx, false, id).await))
+            responder.send(Ok(enabled_controller.set_admin_enabled(false).await))
         }
         fnet_interfaces_admin::ControlRequest::Detach { control_handle: _ } => {
             *owns_interface = false;
@@ -678,106 +672,89 @@ async fn dispatch_control_request(
     .map(|()| ControlRequestResult::Continue)
 }
 
+async fn wait_for_device_removal<T: 'static>(
+    id: BindingId,
+    result: netstack3_core::device::RemoveDeviceResultWithContext<T, BindingsCtx>,
+    weak_id: &netstack3_core::device::WeakDeviceId<BindingsCtx>,
+) -> T {
+    let mut receiver = match result {
+        netstack3_core::device::RemoveDeviceResult::Removed(r) => {
+            tracing::debug!("device {id} removal completed synchronously");
+            return r;
+        }
+        netstack3_core::device::RemoveDeviceResult::Deferred(receiver) => receiver,
+    };
+    let debug_refs = weak_id.debug_references();
+
+    tracing::debug!("device {id} removal is pending references: {debug_refs:?}");
+    // If we get stuck trying to remove the device, log the remaining refs at a
+    // low frequency to aid debugging.
+    let mut interval_logging = fasync::Interval::new(zx::Duration::from_seconds(30))
+        .map(|()| tracing::warn!("device {id} removal is pending references: {debug_refs:?}"))
+        .collect::<()>();
+
+    futures::select! {
+        () = interval_logging => unreachable!("interval channel never completes"),
+        r = receiver => r.expect("sender dropped without notifying")
+    }
+}
+
 /// Cleans up and removes the specified NetDevice interface.
 ///
 /// # Panics
 ///
 /// Panics if `id` points to a loopback device.
-async fn remove_interface(ctx: Ctx, id: BindingId) {
-    let devices::NetdeviceInfo { handler, mac: _, static_common_info: _, dynamic: _ } = {
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+async fn remove_interface(ctx: &mut Ctx, id: BindingId) {
+    let (devices::NetdeviceInfo { handler, mac: _, static_common_info: _, dynamic: _ }, weak_id) = {
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let core_id =
-            non_sync_ctx.devices.remove_device(id).expect("device was not removed since retrieval");
+            bindings_ctx.devices.remove_device(id).expect("device was not removed since retrieval");
+        // Keep a weak ID around to debug pending destruction.
+        let weak_id = core_id.downgrade();
         match core_id {
-            DeviceId::Ethernet(id) => {
-                netstack3_core::device::remove_ethernet_device(sync_ctx, non_sync_ctx, id)
+            DeviceId::Ethernet(core_id) => {
+                // We want to remove the routes on the device _after_ we mark
+                // the device for deletion (by calling `remove_..._device`) so
+                // that we don't race with any new routes being added through
+                // that device.
+                let result =
+                    netstack3_core::device::remove_ethernet_device(core_ctx, bindings_ctx, core_id);
+                bindings_ctx.remove_routes_on_device(&weak_id).await;
+                let info = wait_for_device_removal(id, result, &weak_id).await;
+                (info, weak_id)
             }
-            DeviceId::Loopback(id) => panic!("loopback device {} may not be removed", id),
+            DeviceId::Loopback(core_id) => {
+                // We want to remove the routes on the device _after_ we mark
+                // the device for deletion (by calling `remove_..._device`) so
+                // that we don't race with any new routes being added through
+                // that device.
+                let result =
+                    netstack3_core::device::remove_loopback_device(core_ctx, bindings_ctx, core_id);
+                bindings_ctx.remove_routes_on_device(&weak_id).await;
+                let devices::LoopbackInfo {
+                    static_common_info: _,
+                    dynamic_common_info: _,
+                    rx_notifier: _,
+                } = wait_for_device_removal(id, result, &weak_id).await;
+                // Allow the loopback interface to be removed as part of clean
+                // shutdown, but emit a warning about it.
+                tracing::warn!("loopback interface was removed");
+                return;
+            }
         }
     };
 
+    let id = weak_id.bindings_id();
     handler.uninstall().await.unwrap_or_else(|e| {
-        tracing::warn!("error uninstalling netdevice handler for interface {}: {:?}", id, e)
-    })
-}
-
-/// Sets interface with `id` to `admin_enabled = enabled`.
-///
-/// Returns `true` if the value of `admin_enabled` changed in response to
-/// this call.
-async fn set_interface_enabled(ctx: &Ctx, enabled: bool, id: BindingId) -> bool {
-    enum Info<A, B> {
-        Loopback(A),
-        Netdevice(B),
-    }
-
-    let mut ctx = ctx.clone();
-    let core_id = ctx.non_sync_ctx.devices.get_core_id(id).expect("device not present");
-    let port_handler = {
-        let mut info = match core_id.external_state() {
-            devices::DeviceSpecificInfo::Loopback(devices::LoopbackInfo {
-                static_common_info: _,
-                dynamic_common_info,
-                rx_notifier: _,
-            }) => Info::Loopback((dynamic_common_info.write().unwrap(), None)),
-            devices::DeviceSpecificInfo::Netdevice(devices::NetdeviceInfo {
-                static_common_info: _,
-                handler,
-                mac: _,
-                dynamic,
-            }) => Info::Netdevice((dynamic.write().unwrap(), Some(handler))),
-        };
-        let (common_info, port_handler) = match info {
-            Info::Loopback((ref mut common_info, port_handler)) => {
-                (common_info.deref_mut(), port_handler)
-            }
-            Info::Netdevice((ref mut dynamic, port_handler)) => {
-                (&mut dynamic.common_info, port_handler)
-            }
-        };
-
-        // Already set to expected value.
-        if common_info.admin_enabled == enabled {
-            return false;
-        }
-        common_info.admin_enabled = enabled;
-
-        port_handler
-    };
-
-    if let Some(handler) = port_handler {
-        let r = if enabled { handler.attach().await } else { handler.detach().await };
-        match r {
-            Ok(()) => (),
-            Err(e) => {
-                tracing::warn!("failed to set port {:?} to {}: {:?}", handler, enabled, e);
-                // NB: There might be other errors here to consider in the
-                // future, we start with a very strict set of known errors to
-                // allow and panic on anything that is unexpected.
-                match e {
-                    // We can race with the port being removed or the device
-                    // being destroyed.
-                    netdevice_client::Error::Attach(_, zx::Status::NOT_FOUND)
-                    | netdevice_client::Error::Detach(_, zx::Status::NOT_FOUND) => (),
-                    netdevice_client::Error::Fidl(e) if e.is_closed() => (),
-                    e => panic!(
-                        "unexpected error setting enabled={} on port {:?}: {:?}",
-                        enabled, handler, e
-                    ),
-                }
-            }
-        }
-    }
-    crate::bindings::set_interface_enabled(&mut ctx, id, enabled)
-        .unwrap_or_else(|e| panic!("failed to set interface enabled={}: {:?}", enabled, e));
-    true
+        tracing::warn!("error uninstalling netdevice handler for interface {:?}: {:?}", id, e)
+    });
+    tracing::info!("device {id:?} removal complete");
 }
 
 /// Removes the given `address` from the interface with the given `id`.
 ///
 /// Returns `true` if the address existed and was removed; otherwise `false`.
-async fn remove_address(ctx: &Ctx, id: BindingId, address: fnet::Subnet) -> bool {
+async fn remove_address(ctx: &mut Ctx, id: BindingId, address: fnet::Subnet) -> bool {
     let specified_addr = match address.addr.try_into_core() {
         Ok(addr) => addr,
         Err(e) => {
@@ -785,19 +762,35 @@ async fn remove_address(ctx: &Ctx, id: BindingId, address: fnet::Subnet) -> bool
             return false;
         }
     };
+    let core_id =
+        ctx.bindings_ctx().devices.get_core_id(id).expect("missing device info for interface");
     let Some((worker, cancelation_sender)) = ({
-        let ctx = ctx.clone();
-        let core_id =
-            ctx.non_sync_ctx.devices.get_core_id(id).expect("missing device info for interface");
         core_id.external_state().with_common_info_mut(|i| {
-            i.addresses.get_mut(&specified_addr)
-            .map(|devices::AddressInfo {
-                    address_state_provider: devices::FidlWorkerInfo { worker, cancelation_sender },
-                    assignment_state_sender: _,
-                }| (worker.clone(), cancelation_sender.take()),
+            i.addresses.get_mut(&specified_addr).map(
+                |devices::AddressInfo {
+                     address_state_provider: devices::FidlWorkerInfo { worker, cancelation_sender },
+                     assignment_state_sender: _,
+                 }| (worker.clone(), cancelation_sender.take()),
             )
         })
-    }) else { return false };
+    }) else {
+        // Even if the address is not in the bindings HashMap of addresses,
+        // it could still be in core (e.g. if it's a loopback address or a
+        // SLAAC address).
+        // TODO(https://fxbug.dev/135102): Rather than falling back in this way,
+        // make it impossible to make this mistake by centralizing the
+        // "source of truth" for addresses on a device.
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        return match netstack3_core::device::del_ip_addr(
+            core_ctx,
+            bindings_ctx,
+            &core_id,
+            specified_addr,
+        ) {
+            Ok(()) => true,
+            Err(netstack3_core::error::NotFoundError) => false,
+        };
+    };
     let did_cancel_worker = match cancelation_sender {
         Some(cancelation_sender) => {
             cancelation_sender
@@ -821,150 +814,219 @@ async fn remove_address(ctx: &Ctx, id: BindingId, address: fnet::Subnet) -> bool
 ///
 /// Returns the previously set configuration on the interface.
 fn set_configuration(
-    ctx: &Ctx,
+    ctx: &mut Ctx,
     id: BindingId,
     config: fnet_interfaces_admin::Configuration,
 ) -> fnet_interfaces_admin::ControlSetConfigurationResult {
-    let mut ctx = ctx.clone();
-    let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-    let core_id = non_sync_ctx
+    let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+    let core_id = bindings_ctx
         .devices
         .get_core_id(id)
         .expect("device lifetime should be tied to channel lifetime");
 
     let fnet_interfaces_admin::Configuration { ipv4, ipv6, .. } = config;
 
-    let is_loopback = match core_id {
-        DeviceId::Loopback(_) => true,
-        DeviceId::Ethernet(_) => false,
+    let (ipv4_update, arp) = match ipv4 {
+        Some(fnet_interfaces_admin::Ipv4Configuration {
+            igmp,
+            multicast_forwarding,
+            forwarding,
+            arp,
+            __source_breaking,
+        }) => {
+            if let Some(_) = igmp {
+                tracing::warn!("TODO(https://fxbug.dev/120293): support IGMP configuration changes")
+            }
+            if let Some(_) = multicast_forwarding {
+                tracing::warn!(
+                "TODO(https://fxbug.dev/124237): setting multicast_forwarding not yet supported"
+            )
+            }
+            (
+                Some(Ipv4DeviceConfigurationUpdate {
+                    ip_config: Some(IpDeviceConfigurationUpdate {
+                        forwarding_enabled: forwarding,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                arp.map(TryIntoCore::try_into_core).transpose().map_err(
+                    |IllegalZeroValueError| {
+                        fnet_interfaces_admin::ControlSetConfigurationError::IllegalZeroValue
+                    },
+                )?,
+            )
+        }
+        None => (None, None),
     };
 
-    if let Some(fnet_interfaces_admin::Ipv4Configuration {
-        igmp,
-        multicast_forwarding,
-        forwarding,
-        ..
-    }) = ipv4.as_ref()
-    {
-        if let Some(_) = igmp {
-            tracing::warn!("TODO(https://fxbug.dev/120293): support IGMP configuration changes")
-        }
-        if let Some(_) = multicast_forwarding {
-            tracing::warn!(
-                "TODO(https://fxbug.dev/124237): setting multicast_forwarding not yet supported"
-            )
-        }
-        if let Some(forwarding) = forwarding {
-            if *forwarding && is_loopback {
-                return Err(
-                    fnet_interfaces_admin::ControlSetConfigurationError::Ipv4ForwardingUnsupported,
-                );
+    let (ipv6_update, ndp) = match ipv6 {
+        Some(fnet_interfaces_admin::Ipv6Configuration {
+            mld,
+            multicast_forwarding,
+            forwarding,
+            ndp,
+            __source_breaking,
+        }) => {
+            if let Some(_) = mld {
+                tracing::warn!("TODO(https://fxbug.dev/120293): support MLD configuration changes")
             }
-        }
-    }
-    if let Some(fnet_interfaces_admin::Ipv6Configuration {
-        mld,
-        multicast_forwarding,
-        forwarding,
-        ..
-    }) = ipv6.as_ref()
-    {
-        if let Some(_) = mld {
-            tracing::warn!("TODO(https://fxbug.dev/120293): support MLD configuration changes")
-        }
-        if let Some(_) = multicast_forwarding {
-            tracing::warn!(
-                "TODO(https://fxbug.dev/124237): setting multicast_forwarding not yet supported"
-            )
-        }
-        if let Some(forwarding) = forwarding {
-            if *forwarding && is_loopback {
-                return Err(
-                    fnet_interfaces_admin::ControlSetConfigurationError::Ipv6ForwardingUnsupported,
-                );
+            if let Some(_) = multicast_forwarding {
+                tracing::warn!(
+                    "TODO(https://fxbug.dev/124237): setting multicast_forwarding not yet supported"
+                )
             }
-        }
-    }
 
+            (
+                Some(Ipv6DeviceConfigurationUpdate {
+                    ip_config: Some(IpDeviceConfigurationUpdate {
+                        forwarding_enabled: forwarding,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ndp.map(TryIntoCore::try_into_core).transpose().map_err(
+                    |IllegalZeroValueError| {
+                        fnet_interfaces_admin::ControlSetConfigurationError::IllegalZeroValue
+                    },
+                )?,
+            )
+        }
+        None => (None, None),
+    };
+
+    let ipv4_update = ipv4_update
+        .map(|ipv4_update| {
+            netstack3_core::device::new_ipv4_configuration_update(&core_id, ipv4_update)
+        })
+        .transpose()
+        .map_err(|e| match e {
+            UpdateIpConfigurationError::ForwardingNotSupported => {
+                fnet_interfaces_admin::ControlSetConfigurationError::Ipv4ForwardingUnsupported
+            }
+        })?;
+    let ipv6_update = ipv6_update
+        .map(|ipv6_update| {
+            netstack3_core::device::new_ipv6_configuration_update(&core_id, ipv6_update)
+        })
+        .transpose()
+        .map_err(|e| match e {
+            UpdateIpConfigurationError::ForwardingNotSupported => {
+                fnet_interfaces_admin::ControlSetConfigurationError::Ipv6ForwardingUnsupported
+            }
+        })?;
+    let device_update = netstack3_core::device::new_device_configuration_update(
+        &core_id,
+        DeviceConfigurationUpdate { arp, ndp },
+    )
+    .map_err(|e| match e {
+        DeviceConfigurationUpdateError::ArpNotSupported => {
+            fnet_interfaces_admin::ControlSetConfigurationError::ArpNotSupported
+        }
+        DeviceConfigurationUpdateError::NdpNotSupported => {
+            fnet_interfaces_admin::ControlSetConfigurationError::NdpNotSupported
+        }
+    })?;
+
+    let DeviceConfigurationUpdate { arp, ndp } = device_update.apply(core_ctx);
+
+    // Apply both updates now that we have checked for errors and get the deltas
+    // back. If we didn't apply updates, use the default struct to construct the
+    // delta responses.
+    let ipv4 = {
+        let Ipv4DeviceConfigurationUpdate { ip_config } =
+            ipv4_update.map(|u| u.apply(core_ctx, bindings_ctx)).unwrap_or_default();
+        ip_config.map(
+            move |IpDeviceConfigurationUpdate {
+                      forwarding_enabled,
+                      ip_enabled: _,
+                      gmp_enabled: _,
+                  }| {
+                fnet_interfaces_admin::Ipv4Configuration {
+                    forwarding: forwarding_enabled,
+                    multicast_forwarding: None,
+                    igmp: None,
+                    arp: arp.map(IntoFidl::into_fidl),
+                    __source_breaking: fidl::marker::SourceBreaking,
+                }
+            },
+        )
+    };
+    let ipv6 = {
+        let Ipv6DeviceConfigurationUpdate {
+            ip_config,
+            dad_transmits: _,
+            max_router_solicitations: _,
+            slaac_config: _,
+        } = ipv6_update.map(|u| u.apply(core_ctx, bindings_ctx)).unwrap_or_default();
+        ip_config.map(
+            move |IpDeviceConfigurationUpdate {
+                      forwarding_enabled,
+                      ip_enabled: _,
+                      gmp_enabled: _,
+                  }| {
+                fnet_interfaces_admin::Ipv6Configuration {
+                    forwarding: forwarding_enabled,
+                    multicast_forwarding: None,
+                    mld: None,
+                    ndp: ndp.map(IntoFidl::into_fidl),
+                    __source_breaking: fidl::marker::SourceBreaking,
+                }
+            },
+        )
+    };
     Ok(fnet_interfaces_admin::Configuration {
-        ipv4: ipv4.map(|fnet_interfaces_admin::Ipv4Configuration { forwarding, .. }| {
-            fnet_interfaces_admin::Ipv4Configuration {
-                forwarding: forwarding.and_then(|enable| {
-                    update_ipv4_configuration(
-                        sync_ctx,
-                        non_sync_ctx,
-                        &core_id,
-                        Ipv4DeviceConfigurationUpdate {
-                            ip_config: Some(IpDeviceConfigurationUpdate {
-                                forwarding_enabled: Some(enable),
-                                ..Default::default()
-                            }),
-                            ..Default::default()
-                        },
-                    )
-                    .expect("checked supported configuration before calling")
-                    .ip_config
-                    .expect("IP configuration was updated")
-                    .forwarding_enabled
-                }),
-                ..Default::default()
-            }
-        }),
-        ipv6: ipv6.map(|fnet_interfaces_admin::Ipv6Configuration { forwarding, .. }| {
-            fnet_interfaces_admin::Ipv6Configuration {
-                forwarding: forwarding.and_then(|enable| {
-                    update_ipv6_configuration(
-                        sync_ctx,
-                        non_sync_ctx,
-                        &core_id,
-                        Ipv6DeviceConfigurationUpdate {
-                            ip_config: Some(IpDeviceConfigurationUpdate {
-                                forwarding_enabled: Some(enable),
-                                ..Default::default()
-                            }),
-                            ..Default::default()
-                        },
-                    )
-                    .expect("checked supported configuration before calling")
-                    .ip_config
-                    .expect("IP configuration was updated")
-                    .forwarding_enabled
-                }),
-                ..Default::default()
-            }
-        }),
-        ..Default::default()
+        ipv4,
+        ipv6,
+        __source_breaking: fidl::marker::SourceBreaking,
     })
 }
 
 /// Returns the configuration used for the interface with the given `id`.
-fn get_configuration(ctx: &Ctx, id: BindingId) -> fnet_interfaces_admin::Configuration {
-    let mut ctx = ctx.clone();
-    let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-    let core_id = non_sync_ctx
+fn get_configuration(ctx: &mut Ctx, id: BindingId) -> fnet_interfaces_admin::Configuration {
+    let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+    let core_id = bindings_ctx
         .devices
         .get_core_id(id)
         .expect("device lifetime should be tied to channel lifetime");
+
+    let DeviceConfiguration { arp, ndp } =
+        netstack3_core::device::get_device_configuration(&core_ctx, &core_id);
+
     fnet_interfaces_admin::Configuration {
         ipv4: Some(fnet_interfaces_admin::Ipv4Configuration {
             forwarding: Some(
-                netstack3_core::device::get_ipv4_configuration_and_flags(&sync_ctx, &core_id)
+                netstack3_core::device::get_ipv4_configuration_and_flags(&core_ctx, &core_id)
                     .config
                     .ip_config
                     .forwarding_enabled,
             ),
-            ..Default::default()
+            // TODO(https://fxbug.dev/120293): Support IGMP configuration
+            // changes.
+            igmp: None,
+            // TODO(https://fxbug.dev/124237): Support multicast forwarding
+            // configuration changes.
+            multicast_forwarding: None,
+            arp: arp.map(IntoFidl::into_fidl),
+            __source_breaking: fidl::marker::SourceBreaking,
         }),
         ipv6: Some(fnet_interfaces_admin::Ipv6Configuration {
             forwarding: Some(
-                netstack3_core::device::get_ipv6_configuration_and_flags(&sync_ctx, &core_id)
+                netstack3_core::device::get_ipv6_configuration_and_flags(&core_ctx, &core_id)
                     .config
                     .ip_config
                     .forwarding_enabled,
             ),
-            ..Default::default()
+            // TODO(https://fxbug.dev/120293): Support MLD configuration
+            // changes.
+            mld: None,
+            // TODO(https://fxbug.dev/124237): Support multicast forwarding
+            // configuration changes.
+            multicast_forwarding: None,
+            ndp: ndp.map(IntoFidl::into_fidl),
+            __source_breaking: fidl::marker::SourceBreaking,
         }),
-        ..Default::default()
+        __source_breaking: fidl::marker::SourceBreaking,
     }
 }
 
@@ -973,7 +1035,7 @@ fn get_configuration(ctx: &Ctx, id: BindingId) -> fnet_interfaces_admin::Configu
 /// If the address cannot be added, the appropriate removal reason will be sent
 /// to the address_state_provider.
 fn add_address(
-    ctx: &Ctx,
+    ctx: &mut Ctx,
     id: BindingId,
     address: fnet::Subnet,
     params: fnet_interfaces_admin::AddressParameters,
@@ -1037,9 +1099,8 @@ fn add_address(
         }
     };
 
-    let locked_ctx = ctx.clone();
     let core_id =
-        locked_ctx.non_sync_ctx.devices.get_core_id(id).expect("missing device info for interface");
+        ctx.bindings_ctx().devices.get_core_id(id).expect("missing device info for interface");
     core_id.external_state().with_common_info_mut(|i| {
         let vacant_address_entry = match i.addresses.entry(specified_addr) {
             hash_map::Entry::Occupied(_occupied) => {
@@ -1107,7 +1168,7 @@ impl From<AddressStateProviderCancellationReason> for fnet_interfaces_admin::Add
 
 /// A worker for `fuchsia.net.interfaces.admin/AddressStateProvider`.
 async fn run_address_state_provider(
-    ctx: Ctx,
+    mut ctx: Ctx,
     addr_subnet_and_config: AddrSubnetAndManualConfigEither<StackTime>,
     add_subnet_route: bool,
     id: BindingId,
@@ -1122,7 +1183,7 @@ async fn run_address_state_provider(
     let (address, subnet) = addr_subnet_either.addr_subnet();
     struct StateInCore {
         address: bool,
-        subnet_route: bool,
+        subnet_route: Option<routes::admin::UserRouteSet>,
     }
 
     // Add the address to Core. Note that even though we verified the address
@@ -1130,12 +1191,11 @@ async fn run_address_state_provider(
     // for the address to exist in core (e.g. auto-configured addresses such as
     // loopback or SLAAC).
     let add_to_core_result = {
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-        let device_id = non_sync_ctx.devices.get_core_id(id).expect("interface not found");
-        netstack3_core::add_ip_addr_subnet(
-            sync_ctx,
-            non_sync_ctx,
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        let device_id = bindings_ctx.devices.get_core_id(id).expect("interface not found");
+        netstack3_core::device::add_ip_addr_subnet(
+            core_ctx,
+            bindings_ctx,
             &device_id,
             addr_subnet_and_config,
         )
@@ -1150,33 +1210,60 @@ async fn run_address_state_provider(
             );
             // The address already existed, so don't attempt to remove it.
             // Otherwise we would accidentally remove an address we didn't add!
-            (StateInCore { address: false, subnet_route: false }, None)
+            (StateInCore { address: false, subnet_route: None }, None)
         }
         Ok(()) => {
             let state_to_remove = if add_subnet_route {
-                let mut ctx = ctx.clone();
-                let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-                let core_id = non_sync_ctx
+                let bindings_ctx = ctx.bindings_ctx();
+                let core_id = bindings_ctx
                     .devices
                     .get_core_id(id)
-                    .expect("missing device info for interface");
-                match netstack3_core::add_route(
-                    sync_ctx,
-                    non_sync_ctx,
-                    netstack3_core::ip::types::AddableEntryEither::without_gateway(
-                        subnet,
-                        core_id,
-                        netstack3_core::ip::types::AddableMetric::MetricTracksInterface,
-                    ),
-                ) {
-                    Ok(()) => StateInCore { address: true, subnet_route: true },
+                    .expect("missing device info for interface")
+                    .downgrade();
+
+                let route_set = routes::admin::UserRouteSet::new(ctx.clone());
+
+                let add_route_result = match subnet {
+                    net_types::ip::SubnetEither::V4(subnet) => {
+                        let entry = netstack3_core::routes::AddableEntry {
+                            subnet,
+                            device: core_id,
+                            metric: netstack3_core::routes::AddableMetric::MetricTracksInterface,
+                            gateway: None,
+                        };
+                        route_set.apply_route_op(routes::RouteOp::Add(entry)).await
+                    }
+                    net_types::ip::SubnetEither::V6(subnet) => {
+                        let entry = netstack3_core::routes::AddableEntry {
+                            subnet,
+                            device: core_id,
+                            metric: netstack3_core::routes::AddableMetric::MetricTracksInterface,
+                            gateway: None,
+                        };
+                        route_set.apply_route_op(routes::RouteOp::Add(entry)).await
+                    }
+                };
+
+                match add_route_result {
                     Err(e) => {
-                        tracing::warn!("failed to add subnet route {}: {}", addr_subnet_either, e);
-                        StateInCore { address: true, subnet_route: false }
+                        tracing::warn!("failed to add subnet route {:?}: {:?}", subnet, e);
+                        route_set.close().await;
+                        StateInCore { address: true, subnet_route: None }
+                    }
+                    Ok(outcome) => {
+                        assert_matches!(
+                            outcome,
+                            routes::ChangeOutcome::Changed,
+                            "subnet route for {subnet:?} should be new to \
+                            route set, since route set was created especially \
+                            for this"
+                        );
+
+                        StateInCore { address: true, subnet_route: Some(route_set) }
                     }
                 }
             } else {
-                StateInCore { address: true, subnet_route: false }
+                StateInCore { address: true, subnet_route: None }
             };
 
             control_handle.send_on_address_added().unwrap_or_else(|e| {
@@ -1201,7 +1288,7 @@ async fn run_address_state_provider(
             // ref so that they don't get dropped after the main loop exits
             // (before the senders are removed from `ctx`).
             let (needs_removal, removal_reason) = address_state_provider_main_loop(
-                ctx.clone(),
+                &mut ctx,
                 address,
                 id,
                 req_stream,
@@ -1224,9 +1311,8 @@ async fn run_address_state_provider(
     };
 
     // Remove the address.
-    let mut ctx = ctx.clone();
-    let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-    let core_id = non_sync_ctx.devices.get_core_id(id).expect("missing device info for interface");
+    let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+    let core_id = bindings_ctx.devices.get_core_id(id).expect("missing device info for interface");
     // Don't drop the worker yet; it's what's driving THIS function.
     let _worker: futures::future::Shared<fuchsia_async::Task<()>> =
         match core_id.external_state().with_common_info_mut(|i| i.addresses.remove(&address)) {
@@ -1239,30 +1325,19 @@ async fn run_address_state_provider(
             }
         };
 
-    let StateInCore { address: remove_address, subnet_route: remove_subnet_route } =
-        state_to_remove_from_core;
-    let device_id = non_sync_ctx.devices.get_core_id(id).expect("interface not found");
-    if remove_subnet_route {
-        // TODO(https://fxbug.dev/123319): Migrate away from the
-        // `add_subnet_route` flag and only remove the route when the
-        // last handle for it is gone.
-        //
-        // The `add_subnet_route` flag is deprecated and is only being
-        // used to support the DHCP client. Once the new routes admin
-        // API is implemented, the flag will be removed and its usages
-        // will be migrated. Until then, provide best-effort support
-        // without complex reference counting.
-        netstack3_core::del_route(sync_ctx, non_sync_ctx, subnet).unwrap_or_else(|e| {
-            tracing::warn!(
-                "failed to remove route for {} added via add_subnet_route: {}",
-                addr_subnet_either,
-                e
-            )
-        })
+    let StateInCore { address: remove_address, subnet_route } = state_to_remove_from_core;
+    let device_id = bindings_ctx.devices.get_core_id(id).expect("interface not found");
+
+    // The presence of this `route_set` indicates that we added a subnet route
+    // previously due to the `add_subnet_route` AddressParameters option.
+    // Closing `route_set` will correctly remove this route.
+    if let Some(route_set) = subnet_route {
+        route_set.close().await;
     }
+
     if remove_address {
         assert_matches!(
-            netstack3_core::del_ip_addr(sync_ctx, non_sync_ctx, &device_id, address),
+            netstack3_core::device::del_ip_addr(core_ctx, bindings_ctx, &device_id, address),
             Ok(())
         );
     }
@@ -1281,7 +1356,7 @@ enum AddressNeedsExplicitRemovalFromCore {
 }
 
 async fn address_state_provider_main_loop(
-    ctx: Ctx,
+    ctx: &mut Ctx,
     address: SpecifiedAddr<IpAddr>,
     id: BindingId,
     req_stream: fnet_interfaces_admin::AddressStateProviderRequestStream,
@@ -1334,7 +1409,7 @@ async fn address_state_provider_main_loop(
                     break None;
                 }
                 Ok(Some(request)) => match dispatch_address_state_provider_request(
-                    ctx.clone(),
+                    ctx,
                     request,
                     address,
                     id,
@@ -1494,7 +1569,7 @@ struct UserRemove;
 /// If `Ok(Some(UserRemove))` is returned, the client has explicitly
 /// requested removal of the address, but the address has not been removed yet.
 fn dispatch_address_state_provider_request(
-    ctx: Ctx,
+    ctx: &mut Ctx,
     req: fnet_interfaces_admin::AddressStateProviderRequest,
     address: SpecifiedAddr<IpAddr>,
     id: BindingId,
@@ -1515,12 +1590,12 @@ fn dispatch_address_state_provider_request(
             if preferred_lifetime_info.is_some() {
                 tracing::warn!("Updating preferred lifetime info is not yet supported (https://fxbug.dev/105011)");
             }
-            let Ctx { sync_ctx, mut non_sync_ctx } = ctx;
-            let device_id = non_sync_ctx.devices.get_core_id(id).expect("interface not found");
+            let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+            let device_id = bindings_ctx.devices.get_core_id(id).expect("interface not found");
             let result = match address.into() {
                 IpAddr::V4(address) => netstack3_core::device::set_ip_addr_properties(
-                    &sync_ctx,
-                    &mut non_sync_ctx,
+                    core_ctx,
+                    bindings_ctx,
                     &device_id,
                     address,
                     valid_lifetime_end_nanos
@@ -1528,8 +1603,8 @@ fn dispatch_address_state_provider_request(
                         .unwrap_or(Lifetime::Infinite),
                 ),
                 IpAddr::V6(address) => netstack3_core::device::set_ip_addr_properties(
-                    &sync_ctx,
-                    &mut non_sync_ctx,
+                    core_ctx,
+                    bindings_ctx,
                     &device_id,
                     address,
                     valid_lifetime_end_nanos
@@ -1584,100 +1659,290 @@ fn send_address_removal_event(
     })
 }
 
+mod enabled {
+    use super::*;
+    use crate::bindings::{DeviceSpecificInfo, DynamicCommonInfo, DynamicNetdeviceInfo};
+    use futures::lock::Mutex as AsyncMutex;
+
+    /// A helper that provides interface enabling and disabling under an
+    /// interface-scoped lock.
+    ///
+    /// All interface enabling and disabling must go through this controller to
+    /// guarantee that futures are not racing to act on the same status that is
+    /// protected by locks owned by device structures in core.
+    pub(super) struct InterfaceEnabledController {
+        id: BindingId,
+        ctx: AsyncMutex<Ctx>,
+    }
+
+    impl InterfaceEnabledController {
+        pub(super) fn new(ctx: Ctx, id: BindingId) -> Self {
+            Self { id, ctx: AsyncMutex::new(ctx) }
+        }
+
+        /// Sets this controller's interface to `admin_enabled = enabled`.
+        ///
+        /// Returns `true` if the value of `admin_enabled` changed in response
+        /// to this call.
+        pub(super) async fn set_admin_enabled(&self, enabled: bool) -> bool {
+            let Self { id, ctx } = self;
+            let mut ctx = ctx.lock().await;
+            enum Info<A, B> {
+                Loopback(A),
+                Netdevice(B),
+            }
+
+            let core_id = ctx.bindings_ctx().devices.get_core_id(*id).expect("device not present");
+            let port_handler = {
+                let mut info = match core_id.external_state() {
+                    devices::DeviceSpecificInfo::Loopback(devices::LoopbackInfo {
+                        static_common_info: _,
+                        dynamic_common_info,
+                        rx_notifier: _,
+                    }) => Info::Loopback((dynamic_common_info.write().unwrap(), None)),
+                    devices::DeviceSpecificInfo::Netdevice(devices::NetdeviceInfo {
+                        static_common_info: _,
+                        handler,
+                        mac: _,
+                        dynamic,
+                    }) => Info::Netdevice((dynamic.write().unwrap(), Some(handler))),
+                };
+                let (common_info, port_handler) = match info {
+                    Info::Loopback((ref mut common_info, port_handler)) => {
+                        (common_info.deref_mut(), port_handler)
+                    }
+                    Info::Netdevice((ref mut dynamic, port_handler)) => {
+                        (&mut dynamic.common_info, port_handler)
+                    }
+                };
+
+                // Already set to expected value.
+                if common_info.admin_enabled == enabled {
+                    return false;
+                }
+                common_info.admin_enabled = enabled;
+
+                port_handler
+            };
+
+            if let Some(handler) = port_handler {
+                let r = if enabled { handler.attach().await } else { handler.detach().await };
+                match r {
+                    Ok(()) => (),
+                    Err(e) => {
+                        tracing::warn!("failed to set port {:?} to {}: {:?}", handler, enabled, e);
+                        // NB: There might be other errors here to consider in the
+                        // future, we start with a very strict set of known errors to
+                        // allow and panic on anything that is unexpected.
+                        match e {
+                            // We can race with the port being removed or the device
+                            // being destroyed.
+                            netdevice_client::Error::Attach(_, zx::Status::NOT_FOUND)
+                            | netdevice_client::Error::Detach(_, zx::Status::NOT_FOUND) => (),
+                            netdevice_client::Error::Fidl(e) if e.is_closed() => (),
+                            e => panic!(
+                                "unexpected error setting enabled={} on port {:?}: {:?}",
+                                enabled, handler, e
+                            ),
+                        }
+                    }
+                }
+            }
+            Self::update_enabled_state(ctx.deref_mut(), *id);
+            true
+        }
+
+        /// Sets this controller's interface to `phy_up = online`.
+        pub(super) async fn set_phy_up(&self, online: bool) {
+            let Self { id, ctx } = self;
+            let mut ctx = ctx.lock().await;
+            match ctx
+                .bindings_ctx()
+                .devices
+                .get_core_id(*id)
+                .expect("device not present")
+                .external_state()
+            {
+                devices::DeviceSpecificInfo::Netdevice(i) => {
+                    i.with_dynamic_info_mut(|i| i.phy_up = online)
+                }
+                i @ devices::DeviceSpecificInfo::Loopback(_) => {
+                    unreachable!("unexpected device info {:?} for interface {}", i, *id)
+                }
+            };
+            // Enable or disable interface with context depending on new
+            // online status. The helper functions take care of checking if
+            // admin enable is the expected value.
+            Self::update_enabled_state(&mut ctx, *id);
+        }
+
+        /// Commits interface enabled state to core.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `id` is not a valid installed interface identifier.
+        ///
+        /// Panics if `should_enable` is `false` but the device state reflects
+        /// that it should be enabled.
+        fn update_enabled_state(ctx: &mut Ctx, id: BindingId) {
+            let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+            let core_id = bindings_ctx
+                .devices
+                .get_core_id(id)
+                .expect("tried to enable/disable nonexisting device");
+
+            let dev_enabled = match core_id.external_state() {
+                DeviceSpecificInfo::Netdevice(i) => i.with_dynamic_info(
+                    |DynamicNetdeviceInfo {
+                         phy_up,
+                         common_info:
+                             DynamicCommonInfo {
+                                 admin_enabled,
+                                 mtu: _,
+                                 events: _,
+                                 control_hook: _,
+                                 addresses: _,
+                             },
+                         neighbor_event_sink: _,
+                     }| *phy_up && *admin_enabled,
+                ),
+                DeviceSpecificInfo::Loopback(i) => i.with_dynamic_info(
+                    |DynamicCommonInfo {
+                         admin_enabled,
+                         mtu: _,
+                         events: _,
+                         control_hook: _,
+                         addresses: _,
+                     }| { *admin_enabled },
+                ),
+            };
+
+            let ip_config = Some(IpDeviceConfigurationUpdate {
+                ip_enabled: Some(dev_enabled),
+                ..Default::default()
+            });
+
+            // The update functions from core are already capable of identifying
+            // deltas and return the previous values for us. Log the deltas for
+            // info.
+            let v4_was_enabled = netstack3_core::device::new_ipv4_configuration_update(
+                &core_id,
+                Ipv4DeviceConfigurationUpdate { ip_config, ..Default::default() },
+            )
+            .expect("changing ip_enabled should never fail")
+            .apply(core_ctx, bindings_ctx)
+            .ip_config
+            .expect("ip config must be informed")
+            .ip_enabled
+            .expect("ip enabled must be informed");
+
+            let v6_was_enabled = netstack3_core::device::new_ipv6_configuration_update(
+                &core_id,
+                Ipv6DeviceConfigurationUpdate { ip_config, ..Default::default() },
+            )
+            .expect("changing ip_enabled should never fail")
+            .apply(core_ctx, bindings_ctx)
+            .ip_config
+            .expect("ip config must be informed")
+            .ip_enabled
+            .expect("ip enabled must be informed");
+
+            tracing::info!("updated core ip_enabled state to {dev_enabled}, prev v4={v4_was_enabled},v6={v6_was_enabled}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
-    use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
     use net_declare::fidl_subnet;
-    use netstack3_core::ip::types::RawMetric;
 
     use crate::bindings::{
-        interfaces_watcher::InterfaceEvent, interfaces_watcher::InterfaceUpdate, util::IntoFidl,
-        Ctx, InterfaceEventProducer, DEFAULT_INTERFACE_METRIC, DEFAULT_LOOPBACK_MTU,
+        integration_tests::{StackSetupBuilder, TestSetup, TestSetupBuilder},
+        interfaces_watcher::{InterfaceEvent, InterfaceUpdate},
+        util::IntoFidl,
     };
 
     // Verifies that when an an interface is removed, its addresses are
     // implicitly removed, rather then explicitly removed one-by-one. Explicit
     // removal would be redundant and is unnecessary.
+    #[fixture::teardown(TestSetup::shutdown)]
     #[fuchsia_async::run_singlethreaded(test)]
     async fn implicit_address_removal_on_interface_removal() {
-        let ctx: Ctx = Default::default();
-        let (control_client_end, control_server_end) =
-            fnet_interfaces_ext::admin::Control::create_endpoints().expect("create control proxy");
-        let (control_sender, control_receiver) =
-            OwnedControlHandle::new_channel_with_owned_handle(control_server_end).await;
-        let (event_sender, event_receiver) = futures::channel::mpsc::unbounded();
+        const ENDPOINT: &'static str = "endpoint";
 
-        // Add the interface.
-        let binding_id = {
-            let mut ctx = ctx.clone();
-            let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-            let binding_id = non_sync_ctx.devices.alloc_new_id();
-            let core_id = netstack3_core::device::add_loopback_device_with_state(
-                sync_ctx,
-                DEFAULT_LOOPBACK_MTU,
-                RawMetric(DEFAULT_INTERFACE_METRIC),
-                || {
-                    const LOOPBACK_NAME: &'static str = "lo";
-                    devices::LoopbackInfo {
-                        static_common_info: devices::StaticCommonInfo {
-                            binding_id,
-                            name: LOOPBACK_NAME.to_string(),
-                            tx_notifier: Default::default(),
-                        },
-                        dynamic_common_info: devices::DynamicCommonInfo {
-                            mtu: DEFAULT_LOOPBACK_MTU,
-                            admin_enabled: true,
-                            events: InterfaceEventProducer::new(binding_id, event_sender),
-                            control_hook: control_sender,
-                            addresses: HashMap::new(),
-                        }
-                        .into(),
-                        rx_notifier: Default::default(),
-                    }
-                },
+        let (spy_sink, event_receiver) = futures::channel::mpsc::unbounded();
+        let mut t = TestSetupBuilder::new()
+            .add_named_endpoint(ENDPOINT)
+            .add_stack(StackSetupBuilder::new().spy_interface_events(spy_sink))
+            .build()
+            .await;
+
+        // We just want to add and remove an interface from the stack. Since loopback interfaces
+        // are never removed (except for during stack teardown), it's better to use a netdevice
+        // interface instead.
+        let (endpoint, port_id) = t.get_endpoint(ENDPOINT).await;
+
+        let test_stack = t.get(0);
+
+        let (device_control_proxy, device_control_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_interfaces_admin::DeviceControlMarker>(
             )
-            .expect("failed to add loopback to core");
-            non_sync_ctx.devices.add_device(binding_id, core_id.into());
-            binding_id
-        };
+            .expect("create address proxy and stream");
 
-        // Start the interface control worker.
-        let (_stop_sender, stop_receiver) = futures::channel::oneshot::channel();
-        let removable = false;
-        let interface_control_fut = run_interface_control(
-            ctx,
-            binding_id,
-            stop_receiver,
-            control_receiver,
-            removable,
-            AsyncMutex::new(()),
-        );
+        let device_control_task = fuchsia_async::Task::spawn(run_device_control(
+            test_stack.netstack(),
+            endpoint,
+            device_control_request_stream,
+        ));
+
+        let (interface_control, control_server_end) =
+            fidl::endpoints::create_proxy::<fnet_interfaces_admin::ControlMarker>()
+                .expect("create interface control proxy");
+
+        device_control_proxy
+            .create_interface(
+                &port_id,
+                control_server_end,
+                &fnet_interfaces_admin::Options::default(),
+            )
+            .expect("create interface");
+
+        let binding_id = interface_control.get_id().await.expect("get ID");
+
+        // Filter for only events on this interface.
+        let event_receiver = event_receiver
+            .filter(|event| match event {
+                InterfaceEvent::Added { id, properties: _ }
+                | InterfaceEvent::Changed { id, event: _ }
+                | InterfaceEvent::Removed(id) => futures::future::ready(id.get() == binding_id),
+            })
+            .fuse();
+        futures::pin_mut!(event_receiver);
+
+        // We should see the interface get added.
+        let event = event_receiver.next().await;
+        assert_matches!(event, Some(InterfaceEvent::Added {
+            id,
+            properties: _,
+         }) if id.get() == binding_id);
 
         // Add an address.
         let (asp_client_end, asp_server_end) =
             fidl::endpoints::create_proxy::<fnet_interfaces_admin::AddressStateProviderMarker>()
                 .expect("create ASP proxy");
-        let mut addr = fidl_subnet!("1.1.1.1/32");
-        control_client_end
+        let addr = fidl_subnet!("1.1.1.1/32");
+        interface_control
             .add_address(
-                &mut addr,
-                fnet_interfaces_admin::AddressParameters::default(),
+                &addr,
+                &fnet_interfaces_admin::AddressParameters::default(),
                 asp_server_end,
             )
             .expect("failed to add address");
 
         // Observe the `AddressAdded` event.
-        let event_receiver = event_receiver.fuse();
-        let interface_control_fut = interface_control_fut.fuse();
-        futures::pin_mut!(event_receiver);
-        futures::pin_mut!(interface_control_fut);
-        let event = futures::select!(
-            _cleanup = interface_control_fut => panic!("interface control unexpectedly ended"),
-            event = event_receiver.next() => event
-        );
+        let event = event_receiver.next().await;
         assert_matches!(event, Some(InterfaceEvent::Changed {
             id,
             event: InterfaceUpdate::AddressAdded {
@@ -1685,7 +1950,7 @@ mod tests {
                 assignment_state: _,
                 valid_until: _,
             }
-        }) if (id == binding_id && address.into_fidl() == addr ));
+        }) if (id.get() == binding_id && address.into_fidl() == addr ));
         let mut asp_event_stream = asp_client_end.take_event_stream();
         let event = asp_event_stream
             .try_next()
@@ -1694,18 +1959,16 @@ mod tests {
             .expect("AddressStateProvider event stream unexpectedly empty");
         assert_matches!(event, fnet_interfaces_admin::AddressStateProviderEvent::OnAddressAdded {});
 
-        // Drop the control handle and expect interface control to exit
-        drop(control_client_end);
-        if let Some(cleanup) = interface_control_fut.await {
-            cleanup();
-        }
+        // Drop the device control handle and expect the device task to exit.
+        // This will cause the interface to be removed as well.
+        drop(device_control_proxy);
+        device_control_task.await.expect("should not get error");
 
-        // Expect that the event receiver has closed, and that it does not
-        // contain, an `AddressRemoved` event, which would indicate the address
-        // was explicitly removed.
+        // Expect that the event receiver observes the interface being removed
+        // without ever seeing an `AddressRemoved` event, which would indicate
+        // the address was explicitly removed.
         assert_matches!(event_receiver.next().await,
-            Some(InterfaceEvent::Removed( id)) if id == binding_id);
-        assert_matches!(event_receiver.next().await, None);
+        Some(InterfaceEvent::Removed(id)) if id.get() == binding_id);
 
         // Verify the ASP closed for the correct reason.
         let event = asp_event_stream
@@ -1719,5 +1982,7 @@ mod tests {
                 assert_eq!(error, fnet_interfaces_admin::AddressRemovalReason::InterfaceRemoved)
             }
         );
+
+        t
     }
 }

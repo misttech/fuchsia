@@ -19,12 +19,14 @@
 #include <zircon/status.h>
 
 #include <forward_list>
+#include <queue>
 #include <random>
 #include <stack>
 
+#include "src/devices/bin/driver_manager/v2/composite_node_spec_v2.h"
 #include "src/devices/lib/log/log.h"
 #include "src/lib/fxl/strings/join_strings.h"
-#include "src/lib/storage/vfs/cpp/service.h"
+#include "src/storage/lib/vfs/cpp/service.h"
 
 namespace fdf {
 using namespace fuchsia_driver_framework;
@@ -142,21 +144,57 @@ fidl::StringView CollectionName(Collection collection) {
       return "full-pkg-drivers";
   }
 }
-Collection ToCollection(fdi::DriverPackageType package) {
+
+Collection ToCollection(fdf::DriverPackageType package) {
   switch (package) {
-    case fdi::DriverPackageType::kBoot:
+    case fdf::DriverPackageType::kBoot:
       return Collection::kBoot;
-    case fdi::DriverPackageType::kBase:
+    case fdf::DriverPackageType::kBase:
       return Collection::kPackage;
-    case fdi::DriverPackageType::kCached:
-    case fdi::DriverPackageType::kUniverse:
+    case fdf::DriverPackageType::kCached:
+    case fdf::DriverPackageType::kUniverse:
       return Collection::kFullPackage;
     default:
       return Collection::kNone;
   }
 }
 
-// Perfrom a Breadth-First-Search (BFS) over the node topology, applying the visitor function on
+// Choose the highest ranked collection between `collection` and `node`'s
+// parents. If one of `node`'s parent's collection is none then check the
+// parent's parents and so on.
+Collection GetHighestRankingCollection(const Node& node, Collection collection) {
+  std::stack<const std::weak_ptr<Node>> ancestors;
+  for (const auto& parent : node.parents()) {
+    ancestors.emplace(parent);
+  }
+
+  // Find the highest ranked collection out of `node`'s parent nodes. If a
+  // node's collection is none then check that node's parents and so on.
+  while (!ancestors.empty()) {
+    auto ancestor = ancestors.top();
+    ancestors.pop();
+    auto ancestor_ptr = ancestor.lock();
+    if (!ancestor_ptr) {
+      LOGF(WARNING, "Ancestor node released");
+      continue;
+    }
+
+    auto ancestor_collection = ancestor_ptr->collection();
+    if (ancestor_collection == Collection::kNone) {
+      // Check ancestor's parents to see what the collection of the ancestor
+      // should be.
+      for (const auto& parent : ancestor_ptr->parents()) {
+        ancestors.emplace(parent);
+      }
+    } else if (ancestor_collection > collection) {
+      collection = ancestor_collection;
+    }
+  }
+
+  return collection;
+}
+
+// Perform a Breadth-First-Search (BFS) over the node topology, applying the visitor function on
 // the node being visited.
 // The return value of the visitor function is a boolean for whether the children of the node
 // should be visited. If it returns false, the children will be skipped.
@@ -186,25 +224,15 @@ void PerformBFS(const std::shared_ptr<Node>& starting_node,
 
 }  // namespace
 
-Collection ToCollection(const Node& node, fdi::DriverPackageType package_type) {
+Collection ToCollection(const Node& node, fdf::DriverPackageType package_type) {
   Collection collection = ToCollection(package_type);
-  for (const auto& parent : node.parents()) {
-    auto parent_ptr = parent.lock();
-    if (!parent_ptr) {
-      LOGF(WARNING, "Parent node released");
-      continue;
-    }
-    if (parent_ptr->collection() > collection) {
-      collection = parent_ptr->collection();
-    }
-  }
-  return collection;
+  return GetHighestRankingCollection(node, collection);
 }
 
 DriverRunner::DriverRunner(fidl::ClientEnd<fcomponent::Realm> realm,
                            fidl::ClientEnd<fdi::DriverIndex> driver_index, InspectManager& inspect,
                            LoaderServiceFactory loader_service_factory,
-                           async_dispatcher_t* dispatcher)
+                           async_dispatcher_t* dispatcher, bool enable_test_shutdown_delays)
     : driver_index_(std::move(driver_index), dispatcher),
       loader_service_factory_(std::move(loader_service_factory)),
       dispatcher_(dispatcher),
@@ -213,7 +241,16 @@ DriverRunner::DriverRunner(fidl::ClientEnd<fcomponent::Realm> realm,
           inspect.CreateDevice(std::string(kRootDeviceName), zx::vmo(), 0))),
       composite_node_spec_manager_(this),
       bind_manager_(this, this, dispatcher),
-      runner_(dispatcher, fidl::WireClient(std::move(realm), dispatcher)) {
+      runner_(dispatcher, fidl::WireClient(std::move(realm), dispatcher)),
+      removal_tracker_(dispatcher),
+      enable_test_shutdown_delays_(enable_test_shutdown_delays) {
+  if (enable_test_shutdown_delays_) {
+    // TODO(fxb/134783): Allow the seed to be set from the configuration.
+    auto seed = std::chrono::system_clock::now().time_since_epoch().count();
+    LOGF(INFO, "Shutdown test delays enabled. Using seed %u", seed);
+    shutdown_test_delay_rng_ = std::make_shared<std::mt19937>(static_cast<uint32_t>(seed));
+  }
+
   inspect.inspector().GetRoot().CreateLazyNode(
       "driver_runner", [this] { return Inspect(); }, &inspect.inspector());
 
@@ -247,6 +284,23 @@ void DriverRunner::AddSpec(AddSpecRequestView request, AddSpecCompleter::Sync& c
   completer.Reply(composite_node_spec_manager_.AddSpec(*request, std::move(spec)));
 }
 
+void DriverRunner::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_driver_framework::CompositeNodeManager> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  std::string method_type;
+  switch (metadata.unknown_method_type) {
+    case fidl::UnknownMethodType::kOneWay:
+      method_type = "one-way";
+      break;
+    case fidl::UnknownMethodType::kTwoWay:
+      method_type = "two-way";
+      break;
+  };
+
+  LOGF(WARNING, "CompositeNodeManager received unknown %s method. Ordinal: %lu",
+       method_type.c_str(), metadata.method_ordinal);
+}
+
 void DriverRunner::AddSpecToDriverIndex(fuchsia_driver_framework::wire::CompositeNodeSpec group,
                                         AddToIndexCallback callback) {
   driver_index_->AddCompositeNodeSpec(group).Then(
@@ -263,7 +317,7 @@ void DriverRunner::AddSpecToDriverIndex(fuchsia_driver_framework::wire::Composit
           return;
         }
 
-        callback(zx::ok(fidl::ToNatural(*result->value())));
+        callback(zx::ok());
       });
 }
 
@@ -287,7 +341,7 @@ fpromise::promise<inspect::Inspector> DriverRunner::Inspect() const {
   return fpromise::make_ok_promise(inspector);
 }
 
-std::vector<fdd::wire::CompositeInfo> DriverRunner::GetCompositeListInfo(
+std::vector<fdd::wire::CompositeNodeInfo> DriverRunner::GetCompositeListInfo(
     fidl::AnyArena& arena) const {
   auto spec_composite_list = composite_node_spec_manager_.GetCompositeInfo(arena);
   auto list = bind_manager_.GetCompositeListInfo(arena);
@@ -309,29 +363,29 @@ void DriverRunner::PublishComponentRunner(component::OutgoingDirectory& outgoing
 }
 
 zx::result<> DriverRunner::StartRootDriver(std::string_view url) {
-  fdi::DriverPackageType package = cpp20::starts_with(url, kBootScheme)
-                                       ? fdi::DriverPackageType::kBoot
-                                       : fdi::DriverPackageType::kBase;
+  fdf::DriverPackageType package = cpp20::starts_with(url, kBootScheme)
+                                       ? fdf::DriverPackageType::kBoot
+                                       : fdf::DriverPackageType::kBase;
   return StartDriver(*root_node_, url, package);
 }
 
-void DriverRunner::ScheduleBaseDriversBinding() {
-  driver_index_->WaitForBaseDrivers().Then(
-      [this](fidl::WireUnownedResult<fdi::DriverIndex::WaitForBaseDrivers>& result) mutable {
+void DriverRunner::ScheduleWatchForDriverLoad() {
+  driver_index_->WatchForDriverLoad().Then(
+      [this](fidl::WireUnownedResult<fdi::DriverIndex::WatchForDriverLoad>& result) mutable {
         if (!result.ok()) {
-          // It's possible in tests that the test can finish before WaitForBaseDrivers
+          // It's possible in tests that the test can finish before WatchForDriverLoad
           // finishes.
           if (result.status() == ZX_ERR_PEER_CLOSED) {
-            LOGF(WARNING, "Connection to DriverIndex closed during WaitForBaseDrivers.");
+            LOGF(WARNING, "Connection to DriverIndex closed during WatchForDriverLoad.");
           } else {
-            LOGF(ERROR, "DriverIndex::WaitForBaseDrivers failed with: %s",
+            LOGF(ERROR, "DriverIndex::WatchForDriverLoad failed with: %s",
                  result.error().FormatDescription().c_str());
           }
           return;
         }
-
-        TryBindAllAvailable();
+        ScheduleWatchForDriverLoad();
       });
+  TryBindAllAvailable();
 }
 
 void DriverRunner::TryBindAllAvailable(NodeBindingInfoResultCallback result_callback) {
@@ -339,8 +393,17 @@ void DriverRunner::TryBindAllAvailable(NodeBindingInfoResultCallback result_call
 }
 
 zx::result<> DriverRunner::StartDriver(Node& node, std::string_view url,
-                                       fdi::DriverPackageType package_type) {
+                                       fdf::DriverPackageType package_type) {
+  // Ensure `node`'s collection is equal to or higher ranked than its ancestor
+  // nodes' collections. This is to avoid node components having a dependency
+  // cycle with each other. For example, node components in the boot driver
+  // collection depend on the devfs component which ultimately depends on all
+  // components within the package driver collection. If a package driver
+  // component depended on a component in the boot driver collection (a lower
+  // ranked collection than the package driver collection) then a cyclic
+  // dependency would occur.
   node.set_collection(ToCollection(node, package_type));
+  node.set_driver_package_type(package_type);
 
   std::weak_ptr node_weak = node.shared_from_this();
   runner_.StartDriverComponent(
@@ -375,6 +438,11 @@ void DriverRunner::BindToUrl(Node& node, std::string_view driver_url_suffix,
   bind_manager_.Bind(node, driver_url_suffix, std::move(result_tracker));
 }
 
+void DriverRunner::RebindComposite(std::string spec, std::optional<std::string> driver_url,
+                                   fit::callback<void(zx::result<>)> callback) {
+  composite_node_spec_manager_.Rebind(spec, driver_url, std::move(callback));
+}
+
 void DriverRunner::DestroyDriverComponent(dfv2::Node& node,
                                           DestroyDriverComponentCallback callback) {
   auto name = node.MakeComponentMoniker();
@@ -391,7 +459,9 @@ zx::result<DriverHost*> DriverRunner::CreateDriverHost() {
     return endpoints.take_error();
   }
   std::string name = "driver-host-" + std::to_string(next_driver_host_id_++);
-  auto create = CreateDriverHostComponent(name, std::move(endpoints->server));
+
+  std::shared_ptr<bool> connected = std::make_shared<bool>(false);
+  auto create = CreateDriverHostComponent(name, std::move(endpoints->server), connected);
   if (create.is_error()) {
     return create.take_error();
   }
@@ -410,8 +480,8 @@ zx::result<DriverHost*> DriverRunner::CreateDriverHost() {
     return loader_service_client.take_error();
   }
 
-  auto driver_host =
-      std::make_unique<DriverHostComponent>(std::move(*client_end), dispatcher_, &driver_hosts_);
+  auto driver_host = std::make_unique<DriverHostComponent>(std::move(*client_end), dispatcher_,
+                                                           &driver_hosts_, connected);
   auto result = driver_host->InstallLoader(std::move(*loader_service_client));
   if (result.is_error()) {
     LOGF(ERROR, "Failed to install loader service: %s", result.status_string());
@@ -424,8 +494,14 @@ zx::result<DriverHost*> DriverRunner::CreateDriverHost() {
   return zx::ok(driver_host_ptr);
 }
 
+bool DriverRunner::IsDriverHostValid(DriverHost* driver_host) const {
+  return driver_hosts_.find_if([driver_host](const DriverHostComponent& host) {
+    return &host == driver_host;
+  }) != driver_hosts_.end();
+}
+
 zx::result<std::string> DriverRunner::StartDriver(
-    Node& node, fuchsia_driver_index::wire::MatchedDriverInfo driver_info) {
+    Node& node, fuchsia_driver_framework::wire::DriverInfo driver_info) {
   if (!driver_info.has_url()) {
     LOGF(ERROR, "Failed to start driver for node '%s', the driver URL is missing",
          node.name().c_str());
@@ -433,7 +509,7 @@ zx::result<std::string> DriverRunner::StartDriver(
   }
 
   auto pkg_type =
-      driver_info.has_package_type() ? driver_info.package_type() : fdi::DriverPackageType::kBase;
+      driver_info.has_package_type() ? driver_info.package_type() : fdf::DriverPackageType::kBase;
   auto result = StartDriver(node, driver_info.url().get(), pkg_type);
   if (result.is_error()) {
     return result.take_error();
@@ -441,10 +517,12 @@ zx::result<std::string> DriverRunner::StartDriver(
   return zx::ok(std::string(driver_info.url().get()));
 }
 
-zx::result<BindSpecResult> DriverRunner::BindToParentSpec(
-    fuchsia_driver_index::wire::MatchedCompositeNodeParentInfo match_info, std::weak_ptr<Node> node,
-    bool enable_multibind) {
-  return this->composite_node_spec_manager_.BindParentSpec(match_info, node, enable_multibind);
+zx::result<BindSpecResult> DriverRunner::BindToParentSpec(fidl::AnyArena& arena,
+                                                          CompositeParents composite_parents,
+                                                          std::weak_ptr<Node> node,
+                                                          bool enable_multibind) {
+  return this->composite_node_spec_manager_.BindParentSpec(arena, composite_parents, node,
+                                                           enable_multibind);
 }
 
 void DriverRunner::RequestMatchFromDriverIndex(
@@ -453,8 +531,35 @@ void DriverRunner::RequestMatchFromDriverIndex(
   driver_index()->MatchDriver(args).Then(std::move(match_callback));
 }
 
+void DriverRunner::RequestRebindFromDriverIndex(std::string spec,
+                                                std::optional<std::string> driver_url_suffix,
+                                                fit::callback<void(zx::result<>)> callback) {
+  fidl::Arena allocator;
+  fidl::StringView fidl_driver_url = driver_url_suffix == std::nullopt
+                                         ? fidl::StringView()
+                                         : fidl::StringView(allocator, driver_url_suffix.value());
+  driver_index_->RebindCompositeNodeSpec(fidl::StringView(allocator, spec), fidl_driver_url)
+      .Then(
+          [callback = std::move(callback)](
+              fidl::WireUnownedResult<fdi::DriverIndex::RebindCompositeNodeSpec>& result) mutable {
+            if (!result.ok()) {
+              LOGF(ERROR, "Failed to send a composite rebind request to the Driver Index failed %s",
+                   result.error().FormatDescription().c_str());
+              callback(zx::error(result.status()));
+              return;
+            }
+
+            if (result->is_error()) {
+              callback(result->take_error());
+              return;
+            }
+            callback(zx::ok());
+          });
+}
+
 zx::result<> DriverRunner::CreateDriverHostComponent(
-    std::string moniker, fidl::ServerEnd<fuchsia_io::Directory> exposed_dir) {
+    std::string moniker, fidl::ServerEnd<fuchsia_io::Directory> exposed_dir,
+    std::shared_ptr<bool> exposed_dir_connected) {
   constexpr std::string_view kUrl = "fuchsia-boot:///driver_host2#meta/driver_host2.cm";
   fidl::Arena arena;
   auto child_decl_builder = fdecl::wire::Child::Builder(arena).name(moniker).url(kUrl).startup(
@@ -474,6 +579,7 @@ zx::result<> DriverRunner::CreateDriverHostComponent(
       };
   auto create_callback =
       [this, moniker, exposed_dir = std::move(exposed_dir),
+       exposed_dir_connected = std::move(exposed_dir_connected),
        open_callback = std::move(open_callback)](
           fidl::WireUnownedResult<fcomponent::Realm::CreateChild>& result) mutable {
         if (!result.ok()) {
@@ -493,6 +599,7 @@ zx::result<> DriverRunner::CreateDriverHostComponent(
         runner_.realm()
             ->OpenExposedDir(child_ref, std::move(exposed_dir))
             .ThenExactlyOnce(std::move(open_callback));
+        *exposed_dir_connected = true;
       };
   runner_.realm()
       ->CreateChild(
@@ -506,11 +613,6 @@ zx::result<> DriverRunner::CreateDriverHostComponent(
 
 zx::result<uint32_t> DriverRunner::RestartNodesColocatedWithDriverUrl(
     std::string_view url, fdd::RematchFlags rematch_flags) {
-  if (rematch_flags & (fdd::RematchFlags::kCompositeSpec | fdd::RematchFlags::kLegacyComposite)) {
-    LOGF(WARNING, "Rematching composites are not supported currently.");
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
-
   auto driver_hosts = DriverHostsWithDriverUrl(url);
 
   // Perform a BFS over the node topology, if the current node's host is one of the driver_hosts
@@ -521,27 +623,30 @@ zx::result<uint32_t> DriverRunner::RestartNodesColocatedWithDriverUrl(
   // This node will by definition have colocated set to false, so when we call StartDriver
   // on this node we will always create a new driver host. The old driver host will go away
   // on its own asynchronously since it is drained from all of its drivers.
-  PerformBFS(
-      root_node_, [&driver_hosts, rematch_flags, url](const std::shared_ptr<dfv2::Node>& current) {
-        if (driver_hosts.find(current->driver_host()) != driver_hosts.end()) {
-          // We want the node to re-match to a driver (rather than re-using its existing driver) if
-          // it's not a composite and we have either the following:
-          // - The node has the requested URL and we have a requested flag
-          // - We have a non-requested flag
-          if (!current->IsComposite() &&
-              ((current->driver_url() == url && rematch_flags & fdd::RematchFlags::kRequested) ||
-               rematch_flags & fdd::RematchFlags::kNonRequested)) {
-            current->RestartNodeWithRematch();
-          } else {
-            current->RestartNode();
-          }
+  PerformBFS(root_node_,
+             [this, &driver_hosts, rematch_flags, url](const std::shared_ptr<dfv2::Node>& current) {
+               if (driver_hosts.find(current->driver_host()) == driver_hosts.end()) {
+                 // Not colocated with one of the restarting hosts. Continue to visit the children.
+                 return true;
+               }
 
-          // Don't visit children of this node since we restarted it.
-          return false;
-        }
+               if (current->EvaluateRematchFlags(rematch_flags, url)) {
+                 if (current->type() == dfv2::NodeType::kComposite) {
+                   // Composites need to go through a different flow that will fully remove the
+                   // node and empty out the composite spec management layer.
+                   RebindComposite(current->name(), std::nullopt, [](zx::result<>) {});
+                   return false;
+                 }
 
-        return true;
-      });
+                 // Legacy composites and plain nodes both use the restart with rematch flow.
+                 current->RestartNodeWithRematch();
+                 return false;
+               }
+
+               // Not rematching, plain node restart.
+               current->RestartNode();
+               return false;
+             });
 
   return zx::ok(static_cast<uint32_t>(driver_hosts.size()));
 }

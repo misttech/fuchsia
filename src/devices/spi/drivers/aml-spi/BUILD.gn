@@ -11,18 +11,25 @@ driver_bind_rules("aml_spi_bind") {
   rules = "aml_spi.bind"
   bind_output = "aml-spi.bindbc"
   tests = "bind_tests.json"
+
+  # TODO(fxb/115757): Remove this once we no longer need to generate
+  # fragments for composite bind rules.
+  disable_fragment_gen = true
+
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.register",
   ]
 }
 
 group("common") {
   public_deps = [
     ":aml_spi_bind",
-    "//sdk/banjo/fuchsia.hardware.gpio:fuchsia.hardware.gpio_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.spiimpl:fuchsia.hardware.spiimpl_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
+    "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/driver",
@@ -46,10 +53,10 @@ test("aml-spi-test-bin") {
   ]
   deps = [
     ":common",
-    "//sdk/banjo/fuchsia.hardware.gpio:fuchsia.hardware.gpio_banjo_cpp_mock",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//src/devices/bus/testing/fake-pdev",
+    "//src/devices/gpio/testing/fake-gpio",
     "//src/devices/registers/testing/mock-registers",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/fake-mmio-reg",
@@ -99,4 +106,9 @@ fuchsia_driver_component("aml-spi") {
   component_name = "aml-spi"
   deps = [ ":aml-spi-driver" ]
   manifest = "meta/aml-spi.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "aml-spi"
+  driver_components = [ ":aml-spi" ]
 }

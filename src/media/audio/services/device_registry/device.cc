@@ -243,7 +243,7 @@ bool Device::DropControl() {
     return false;
   }
 
-  control_notify_ = std::nullopt;
+  control_notify_.reset();
   // We don't remove our ControlNotify from the observer list: we wait for it to self-invalidate.
 
   SetState(State::DeviceInitialized);
@@ -310,13 +310,13 @@ void Device::DropRingBuffer() {
     SetState(State::DeviceInitialized);
   }
 
-  start_time_ = std::nullopt;  // We are not started.
+  start_time_.reset();  // We are not started.
 
-  delay_info_ = std::nullopt;  // We are not paused.
-  num_ring_buffer_frames_ = std::nullopt;
-  ring_buffer_properties_ = std::nullopt;
+  delay_info_.reset();  // We are not paused.
+  num_ring_buffer_frames_.reset();
+  ring_buffer_properties_.reset();
 
-  driver_format_ = std::nullopt;  // We are not configured.
+  driver_format_.reset();  // We are not configured.
 
   // Clear our FIDL connection to the driver RingBuffer.
   ring_buffer_client_ = fidl::Client<fuchsia_hardware_audio::RingBuffer>();
@@ -526,7 +526,11 @@ void Device::RetrievePlugState() {
         }
 
         ADR_LOG_OBJECT(kLogStreamConfigFidlResponses) << "WatchPlugState response";
-        auto status = ValidatePlugState(result->plug_state(), stream_config_properties_);
+        std::optional<fuchsia_hardware_audio::PlugDetectCapabilities> plug_detect_capabilities;
+        if (stream_config_properties_) {
+          plug_detect_capabilities = stream_config_properties_->plug_detect_capabilities();
+        }
+        auto status = ValidatePlugState(result->plug_state(), plug_detect_capabilities);
         if (status != ZX_OK) {
           OnError(status);
           return;
@@ -825,7 +829,7 @@ std::shared_ptr<ControlNotify> Device::GetControlNotify() {
 
   auto sh_ptr_control = control_notify_->lock();
   if (!sh_ptr_control) {
-    control_notify_ = std::nullopt;
+    control_notify_.reset();
     LogObjectCounts();
   }
 
@@ -858,6 +862,14 @@ bool Device::ConnectRingBufferFidl(fuchsia_hardware_audio::Format driver_format)
     return false;
   }
 
+  auto bytes_per_sample = driver_format.pcm_format()->bytes_per_sample();
+  auto sample_format = driver_format.pcm_format()->sample_format();
+  status = ValidateFormatCompatibility(bytes_per_sample, sample_format);
+  if (status != ZX_OK) {
+    OnError(status);
+    return false;
+  }
+
   auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_audio::RingBuffer>();
   if (!endpoints.is_ok()) {
     FX_PLOGS(ERROR, endpoints.status_value())
@@ -877,31 +889,28 @@ bool Device::ConnectRingBufferFidl(fuchsia_hardware_audio::Format driver_format)
       fidl::ClientEnd<fuchsia_hardware_audio::RingBuffer>(std::move(endpoints->client)),
       dispatcher_, &ring_buffer_handler_);
 
-  auto bytes_per_sample = driver_format.pcm_format()->bytes_per_sample();
-  auto sample_format = driver_format.pcm_format()->sample_format();
-  fuchsia_audio::SampleType sample_type;
-  if (bytes_per_sample == 1) {
-    if (sample_format == fuchsia_hardware_audio::SampleFormat::kPcmUnsigned) {
-      sample_type = fuchsia_audio::SampleType::kUint8;
-    }
-  } else if (bytes_per_sample == 2) {
-    if (sample_format == fuchsia_hardware_audio::SampleFormat::kPcmSigned) {
-      sample_type = fuchsia_audio::SampleType::kInt16;
-    }
-  } else if (bytes_per_sample == 4) {
-    if (sample_format == fuchsia_hardware_audio::SampleFormat::kPcmSigned) {
-      sample_type = fuchsia_audio::SampleType::kInt32;
-    } else if (sample_format == fuchsia_hardware_audio::SampleFormat::kPcmFloat) {
-      sample_type = fuchsia_audio::SampleType::kFloat32;
-    }
-  } else if (bytes_per_sample == 8) {
-    if (sample_format == fuchsia_hardware_audio::SampleFormat::kPcmFloat) {
-      sample_type = fuchsia_audio::SampleType::kFloat64;
-    }
+  std::optional<fuchsia_audio::SampleType> sample_type;
+  if (bytes_per_sample == 1 &&
+      sample_format == fuchsia_hardware_audio::SampleFormat::kPcmUnsigned) {
+    sample_type = fuchsia_audio::SampleType::kUint8;
+  } else if (bytes_per_sample == 2 &&
+             sample_format == fuchsia_hardware_audio::SampleFormat::kPcmSigned) {
+    sample_type = fuchsia_audio::SampleType::kInt16;
+  } else if (bytes_per_sample == 4 &&
+             sample_format == fuchsia_hardware_audio::SampleFormat::kPcmSigned) {
+    sample_type = fuchsia_audio::SampleType::kInt32;
+  } else if (bytes_per_sample == 4 &&
+             sample_format == fuchsia_hardware_audio::SampleFormat::kPcmFloat) {
+    sample_type = fuchsia_audio::SampleType::kFloat32;
+  } else if (bytes_per_sample == 8 &&
+             sample_format == fuchsia_hardware_audio::SampleFormat::kPcmFloat) {
+    sample_type = fuchsia_audio::SampleType::kFloat64;
   }
+  FX_CHECK(sample_type) << "Invalid sample format was not detected in ValidateFormatCompatibility";
+
   driver_format_ = driver_format;  // This contains valid_bits_per_sample.
   vmo_format_ = {{
-      .sample_type = sample_type,
+      .sample_type = *sample_type,
       .channel_count = driver_format.pcm_format()->number_of_channels(),
       .frames_per_second = driver_format.pcm_format()->frame_rate(),
       // TODO(fxbug.dev/87650): handle .channel_layout, when communicated from driver.
@@ -959,8 +968,7 @@ void Device::RetrieveDelayInfo() {
         }
         ADR_LOG_OBJECT(kLogRingBufferFidlResponses) << "RingBuffer/WatchDelayInfo: success";
 
-        auto status = ValidateDelayInfo(result->delay_info(), ring_buffer_properties_,
-                                        *driver_format_->pcm_format());
+        auto status = ValidateDelayInfo(result->delay_info());
         if (status != ZX_OK) {
           OnError(status);
           return;
@@ -1138,7 +1146,7 @@ void Device::StopRingBuffer(fit::callback<void(zx_status_t)> stop_callback) {
         }
         ADR_LOG_OBJECT(kLogRingBufferFidlResponses) << "RingBuffer/Stop: success";
 
-        start_time_ = std::nullopt;
+        start_time_.reset();
         callback(ZX_OK);
         SetState(State::RingBufferStopped);
       });

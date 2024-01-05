@@ -21,25 +21,7 @@ driver_bind_rules("astro-bind") {
   tests = "bind-tests.json"
   deps = [
     "//src/devices/bind/fuchsia.google.platform",
-    "//src/devices/bind/fuchsia.hardware.platform.bus",
-  ]
-}
-
-driver_bind_rules("astro-cpu-bind") {
-  rules = "bind/astro-cpu.bind"
-  header_output = "astro-cpu-bind.h"
-  bind_output = "astro-cpu-bind.bc"
-  tests = "bind-tests/astro-cpu-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform",
-    "//src/devices/bind/fuchsia.amlogic.platform.meson",
-    "//src/devices/bind/fuchsia.amlogic.platform.s905d2",
-    "//src/devices/bind/fuchsia.google.platform",
-    "//src/devices/bind/fuchsia.hardware.clock",
-    "//src/devices/bind/fuchsia.hardware.power",
-    "//src/devices/bind/fuchsia.hardware.tee",
     "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.sysmem",
   ]
 }
 
@@ -50,32 +32,8 @@ driver_bind_rules("astro-pwm-bind") {
   tests = "bind-tests/astro-pwm-test.json"
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform.s905d2",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.hardware.pwm",
-  ]
-}
-
-driver_bind_rules("astro-securemem-bind") {
-  rules = "bind/astro-securemem.bind"
-  header_output = "astro-securemem-bind.h"
-  bind_output = "astro-securemem-bind.bc"
-  tests = "bind-tests/astro-securemem-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform",
-    "//src/devices/bind/fuchsia.hardware.tee",
-    "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.sysmem",
-  ]
-}
-
-driver_bind_rules("astro-tee-bind") {
-  rules = "bind/astro-tee.bind"
-  header_output = "astro-tee-bind.h"
-  bind_output = "astro-tee-bind.bc"
-  tests = "bind-tests/astro-tee-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.sysmem",
+    "//src/devices/bind/fuchsia.gpio",
+    "//src/devices/bind/fuchsia.pwm",
   ]
 }
 
@@ -87,11 +45,10 @@ driver_bind_rules("astro-video-bind") {
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.amlogic.platform.meson",
-    "//src/devices/bind/fuchsia.hardware.amlogiccanvas",
-    "//src/devices/bind/fuchsia.hardware.clock",
-    "//src/devices/bind/fuchsia.hardware.tee",
+    "//src/devices/bind/fuchsia.clock",
     "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.sysmem",
+    "//src/devices/bind/fuchsia.tee",
   ]
 }
 
@@ -100,7 +57,10 @@ driver_bind_rules("pd-armcore-bind") {
   header_output = "pd-armcore-bind.h"
   bind_output = "pd-armcore-bind.bc"
   tests = "bind-tests/pd-armcore-test.json"
-  deps = [ "//src/devices/bind/fuchsia.power" ]
+  deps = [
+    "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.power",
+  ]
 }
 
 driver_bind_rules("pwm-ao-d-bind") {
@@ -112,42 +72,8 @@ driver_bind_rules("pwm-ao-d-bind") {
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.amlogic.platform.s905d2",
     "//src/devices/bind/fuchsia.google.platform",
-    "//src/devices/bind/fuchsia.hardware.pwm",
     "//src/devices/bind/fuchsia.platform",
-  ]
-}
-
-driver_bind_rules("astro-aml-usb-phy-v2-bind") {
-  rules = "bind/astro-aml-usb-phy-v2.bind"
-  header_output = "astro-aml-usb-phy-v2-bind.h"
-  bind_output = "astro-aml-usb-phy-v2-bind.bc"
-  tests = "bind-tests/astro-aml-usb-phy-v2-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform",
-    "//src/devices/bind/fuchsia.hardware.registers",
-    "//src/devices/bind/fuchsia.platform",
-  ]
-}
-
-driver_bind_rules("astro-dwc2-phy-bind") {
-  rules = "bind/astro-dwc2-phy.bind"
-  header_output = "astro-dwc2-phy-bind.h"
-  bind_output = "astro-dwc2-phy-bind.bc"
-  tests = "bind-tests/astro-dwc2-phy-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.usb.phy",
-  ]
-}
-
-driver_bind_rules("astro-xhci-bind") {
-  rules = "bind/astro-xhci.bind"
-  header_output = "astro-xhci-bind.h"
-  bind_output = "astro-xhci-bind.bc"
-  tests = "bind-tests/astro-xhci-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.usb.phy",
+    "//src/devices/bind/fuchsia.pwm",
   ]
 }
 
@@ -159,9 +85,9 @@ driver_bind_rules("astro-aml-sdio-bind") {
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.amlogic.platform.s905d2",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.hardware.pwm",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.pwm",
   ]
 }
 
@@ -173,9 +99,9 @@ driver_bind_rules("astro-wifi-bind") {
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform.s905d2",
     "//src/devices/bind/fuchsia.broadcom.platform",
-    "//src/devices/bind/fuchsia.hardware.gpio",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.sdmmc",
+    "//src/devices/bind/fuchsia.sdio",
   ]
 }
 
@@ -186,6 +112,7 @@ fuchsia_driver("astro-driver") {
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
   sources = [
+    "astro-adc.cc",
     "astro-audio.cc",
     "astro-backlight.cc",
     "astro-bluetooth.cc",
@@ -217,44 +144,50 @@ fuchsia_driver("astro-driver") {
   ]
   deps = [
     ":astro-aml-sdio-bind_header",
-    ":astro-aml-usb-phy-v2-bind_header",
     ":astro-bind",
-    ":astro-cpu-bind_header",
-    ":astro-dwc2-phy-bind_header",
     ":astro-pwm-bind_header",
-    ":astro-securemem-bind_header",
-    ":astro-tee-bind_header",
     ":astro-video-bind_header",
     ":astro-wifi-bind_header",
-    ":astro-xhci-bind_header",
     ":pd-armcore-bind_header",
     ":pwm-ao-d-bind_header",
-    "//sdk/banjo/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.gpioimpl:fuchsia.hardware.gpioimpl_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.iommu:fuchsia.hardware.iommu_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.powerimpl:fuchsia.hardware.powerimpl_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.serial:fuchsia.hardware.serial_banjo_cpp",
     "//sdk/banjo/fuchsia.sysmem:fuchsia.sysmem_banjo_c",
+    "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib_cpp",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.gpu.amlogic:fuchsia.hardware.gpu.amlogic_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
-    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.thermal:fuchsia.hardware.thermal_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_cpp",
+    "//sdk/fidl/fuchsia.hardware.gpioimpl:fuchsia.hardware.gpioimpl_cpp",
+    "//sdk/fidl/fuchsia.hardware.gpu.amlogic:fuchsia.hardware.gpu.amlogic_cpp",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp",
+    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_cpp",
+    "//sdk/fidl/fuchsia.hardware.thermal:fuchsia.hardware.thermal_cpp",
     "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.adc:fuchsia.adc_cpp",
     "//src/devices/bind/fuchsia.amlogic.platform:fuchsia.amlogic.platform_cpp",
     "//src/devices/bind/fuchsia.amlogic.platform.s905d2:fuchsia.amlogic.platform.s905d2_cpp",
     "//src/devices/bind/fuchsia.ams.platform:fuchsia.ams.platform_cpp",
     "//src/devices/bind/fuchsia.arm.platform:fuchsia.arm.platform_cpp",
+    "//src/devices/bind/fuchsia.clock:fuchsia.clock_cpp",
     "//src/devices/bind/fuchsia.codec:fuchsia.codec_cpp",
-    "//src/devices/bind/fuchsia.hardware.dsi:fuchsia.hardware.dsi_cpp",
-    "//src/devices/bind/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
-    "//src/devices/bind/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
-    "//src/devices/bind/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
+    "//src/devices/bind/fuchsia.display.dsi:fuchsia.display.dsi_cpp",
+    "//src/devices/bind/fuchsia.focaltech.platform:fuchsia.focaltech.platform_cpp",
+    "//src/devices/bind/fuchsia.goodix.platform:fuchsia.goodix.platform_cpp",
+    "//src/devices/bind/fuchsia.google.platform:fuchsia.google.platform_cpp",
+    "//src/devices/bind/fuchsia.gpio:fuchsia.gpio_cpp",
     "//src/devices/bind/fuchsia.i2c:fuchsia.i2c_cpp",
+    "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
+    "//src/devices/bind/fuchsia.power:fuchsia.power_cpp",
+    "//src/devices/bind/fuchsia.pwm:fuchsia.pwm_cpp",
+    "//src/devices/bind/fuchsia.register:fuchsia.register_cpp",
+    "//src/devices/bind/fuchsia.rpmb:fuchsia.rpmb_cpp",
     "//src/devices/bind/fuchsia.sysmem:fuchsia.sysmem_cpp",
+    "//src/devices/bind/fuchsia.tee:fuchsia.tee_cpp",
     "//src/devices/bind/fuchsia.ti.platform:fuchsia.ti.platform_cpp",
+    "//src/devices/bind/fuchsia.usb.phy:fuchsia.usb.phy_cpp",
     "//src/devices/bus/lib/platform-bus-composites",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/broadcom",
@@ -300,20 +233,19 @@ fuchsia_driver_component("astro") {
   manifest = "meta/astro.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "astro"
+  driver_components = [ ":astro" ]
+}
+
 group("tests") {
   testonly = true
   deps = [
     ":astro-aml-sdio-bind_test",
-    ":astro-aml-usb-phy-v2-bind_test",
     ":astro-bind_test",
-    ":astro-cpu-bind_test",
-    ":astro-dwc2-phy-bind_test",
     ":astro-pwm-bind_test",
-    ":astro-securemem-bind_test",
-    ":astro-tee-bind_test",
     ":astro-video-bind_test",
     ":astro-wifi-bind_test",
-    ":astro-xhci-bind_test",
     ":pd-armcore-bind_test",
     ":pwm-ao-d-bind_test",
   ]

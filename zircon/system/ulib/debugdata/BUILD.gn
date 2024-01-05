@@ -15,10 +15,10 @@ zx_library("debugdata") {
     "lib/debugdata/datasink.h",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.debugdata:fuchsia.debugdata_cpp_wire",
+    "//sdk/fidl/fuchsia.debugdata:fuchsia.debugdata_cpp",
     "//sdk/lib/fidl",
     "//src/lib/fxl",
-    "//src/lib/storage/vfs/cpp",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/async:async-cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -27,7 +27,7 @@ zx_library("debugdata") {
   ]
   public_deps = [
     # <debugdata/debugdata.h has #include <fidl/fuchsia.debugdata/cpp/wire.h>.
-    "//sdk/fidl/fuchsia.debugdata:fuchsia.debugdata_cpp_wire",
+    "//sdk/fidl/fuchsia.debugdata:fuchsia.debugdata_cpp",
 
     # <debugdata/debugdata.h> has #include <fbl/unique_fd.h>.
     "//zircon/system/ulib/fbl",

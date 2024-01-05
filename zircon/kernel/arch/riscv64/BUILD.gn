@@ -23,11 +23,6 @@ if (toolchain_base_environment == "kernel") {
       "zifencei",
     ]
 
-    # We always use the `pause` instruction even though it's optional in the
-    # RVA20U64 profile. It's a HINT instruction so it's treated as a NOP by
-    # CPUs that don't support it.
-    _features += [ "zihintpause" ]
-
     foreach(feature, _features) {
       _march += "_$feature"
     }
@@ -74,6 +69,7 @@ if (toolchain_base_environment == "kernel") {
       "debugger.cc",
       "exceptions.S",
       "exceptions_c.cc",
+      "feature.cc",
       "fpu.cc",
       "fpu_asm.S",
       "mmu.cc",
@@ -92,7 +88,9 @@ if (toolchain_base_environment == "kernel") {
       "//sdk/lib/zbi-format",
       "//zircon/kernel/dev/iommu/dummy",
       "//zircon/kernel/dev/pdev/power",
+      "//zircon/kernel/dev/pdev/timer",
       "//zircon/kernel/lib/arch",
+      "//zircon/kernel/lib/boot-options",
       "//zircon/kernel/lib/console",
       "//zircon/kernel/lib/counters",
       "//zircon/kernel/lib/crashlog",

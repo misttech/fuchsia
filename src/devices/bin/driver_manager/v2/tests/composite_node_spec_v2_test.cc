@@ -4,88 +4,134 @@
 
 #include "src/devices/bin/driver_manager/v2/composite_node_spec_v2.h"
 
-#include "src/devices/bin/driver_manager/v2/node.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
+#include "src/devices/bin/driver_manager/v2/tests/driver_manager_test_base.h"
 
-class FakeNodeManager : public dfv2::NodeManager {
+class CompositeNodeSpecV2Test : public DriverManagerTestBase {
  public:
-  void Bind(dfv2::Node& node, std::shared_ptr<dfv2::BindResultTracker> result_tracker) override {}
-
-  zx::result<dfv2::DriverHost*> CreateDriverHost() override { return zx::ok(nullptr); }
-
-  void DestroyDriverComponent(
-      dfv2::Node& node,
-      fit::callback<void(fidl::WireUnownedResult<fuchsia_component::Realm::DestroyChild>& result)>
-          callback) override {}
-};
-
-class CompositeNodeSpecV2Test : public gtest::TestLoopFixture {
- public:
-  std::shared_ptr<dfv2::Node> CreateNode(const char* name, dfv2::NodeManager* manager) {
-    return std::make_shared<dfv2::Node>(name, std::vector<std::weak_ptr<dfv2::Node>>(), manager,
-                                        dispatcher(), inspect_.CreateDevice(name, zx::vmo(), 0));
+  void SetUp() override {
+    DriverManagerTestBase::SetUp();
+    arena_ = std::make_unique<fidl::Arena<512>>();
   }
 
+  dfv2::NodeManager* GetNodeManager() override { return &node_manager; }
+
+  dfv2::CompositeNodeSpecV2 CreateCompositeNodeSpec(std::string name, size_t size) {
+    return dfv2::CompositeNodeSpecV2(
+        CompositeNodeSpecCreateInfo{
+            .name = name,
+            .size = size,
+        },
+        dispatcher(), &node_manager);
+  }
+
+  zx::result<std::optional<DeviceOrNode>> MatchAndBindParentSpec(
+      dfv2::CompositeNodeSpecV2& spec, std::weak_ptr<dfv2::Node> parent_node,
+      std::vector<std::string> parent_names, uint32_t node_index, uint32_t primary_index = 0) {
+    fuchsia_driver_framework::CompositeParent matched_parent({
+        .composite = fuchsia_driver_framework::CompositeInfo{{
+            .spec = fuchsia_driver_framework::CompositeNodeSpec{{
+                .name = spec.name(),
+                .parents = std::vector<fuchsia_driver_framework::ParentSpec>(parent_names.size()),
+            }},
+            .matched_driver = fuchsia_driver_framework::CompositeDriverMatch{{
+                .composite_driver = fuchsia_driver_framework::CompositeDriverInfo{{
+                    .composite_name = "test-composite",
+                    .driver_info = fuchsia_driver_framework::DriverInfo{{
+                        .url = "fuchsia-boot:///#meta/composite-driver.cm",
+                        .colocate = true,
+                    }},
+                }},
+                .parent_names = parent_names,
+                .primary_parent_index = primary_index,
+            }},
+        }},
+        .index = node_index,
+    });
+
+    return spec.BindParent(fidl::ToWire(*arena_, matched_parent), parent_node);
+  }
+
+  void VerifyCompositeNode(std::weak_ptr<dfv2::Node> composite_node,
+                           std::vector<std::string> expected_parents, uint32_t primary_index) {
+    auto composite_node_ptr = composite_node.lock();
+    ASSERT_TRUE(composite_node_ptr);
+    ASSERT_EQ(expected_parents.size(), composite_node_ptr->parents().size());
+    for (size_t i = 0; i < expected_parents.size(); i++) {
+      ASSERT_EQ(expected_parents[i], composite_node_ptr->parents()[i].lock()->name());
+    }
+    ASSERT_EQ(expected_parents[primary_index], composite_node_ptr->GetPrimaryParent()->name());
+  }
+
+  TestNodeManagerBase node_manager;
+
  private:
-  InspectManager inspect_{dispatcher()};
+  std::unique_ptr<fidl::Arena<512>> arena_;
 };
 
 TEST_F(CompositeNodeSpecV2Test, SpecBind) {
-  FakeNodeManager node_manager;
-  fidl::Arena allocator;
-
-  auto spec = dfv2::CompositeNodeSpecV2(
-      CompositeNodeSpecCreateInfo{
-          .name = "spec",
-          .size = 2,
-      },
-      dispatcher(), &node_manager);
-
-  auto matched_composite = fuchsia_driver_index::MatchedCompositeInfo(
-      {.composite_name = "test-composite",
-       .driver_info = fuchsia_driver_index::MatchedDriverInfo(
-           {.url = "fuchsia-boot:///#meta/composite-driver.cm", .colocate = true})});
-
-  std::optional<Devnode> root_devnode;
-  Devfs devfs = Devfs(root_devnode);
+  auto spec = CreateCompositeNodeSpec("spec", 2);
 
   // Bind the first node.
-  std::shared_ptr parent_1 = CreateNode("spec_parent_1", &node_manager);
-  parent_1->AddToDevfsForTesting(root_devnode.value());
-  auto matched_parent_1 = fuchsia_driver_index::MatchedCompositeNodeSpecInfo({
-      .name = "spec",
-      .node_index = 0,
-      .composite = matched_composite,
-      .num_nodes = 2,
-      .node_names = {{"node-0", "node-1"}},
-      .primary_index = 1,
-  });
-  auto result = spec.BindParent(fidl::ToWire(allocator, matched_parent_1), parent_1);
+  std::shared_ptr parent_1 = CreateNode("spec_parent_1");
+  auto result = MatchAndBindParentSpec(spec, parent_1, {"node-0", "node-1"}, 0);
   ASSERT_TRUE(result.is_ok());
   ASSERT_FALSE(result.value());
 
   // Bind the second node.
-  std::shared_ptr parent_2 = CreateNode("spec_parent_2", &node_manager);
-  parent_2->AddToDevfsForTesting(root_devnode.value());
-  auto matched_parent_2 = fuchsia_driver_index::MatchedCompositeNodeSpecInfo({
-      .name = "spec",
-      .node_index = 1,
-      .composite = matched_composite,
-      .num_nodes = 2,
-      .node_names = {{"node-0", "node-1"}},
-      .primary_index = 1,
-  });
-  result = spec.BindParent(fidl::ToWire(allocator, matched_parent_2), parent_2);
+  std::shared_ptr parent_2 = CreateNode("spec_parent_2");
+  result = MatchAndBindParentSpec(spec, parent_2, {"node-0", "node-1"}, 1);
   ASSERT_TRUE(result.is_ok());
   ASSERT_TRUE(result.value());
 
   // Verify the parents and primary node.
-  auto composite_node_ptr = std::get<std::weak_ptr<dfv2::Node>>(result.value().value());
-  auto composite_node = composite_node_ptr.lock();
-  ASSERT_TRUE(composite_node);
-  ASSERT_TRUE(composite_node->IsComposite());
-  ASSERT_EQ("spec_parent_1", composite_node->parents()[0].lock()->name());
-  ASSERT_EQ("spec_parent_2", composite_node->parents()[1].lock()->name());
+  auto composite_node = std::get<std::weak_ptr<dfv2::Node>>(result.value().value());
+  VerifyCompositeNode(composite_node, {"spec_parent_1", "spec_parent_2"}, 0);
+}
 
-  ASSERT_EQ("spec_parent_2", composite_node->GetPrimaryParent()->name());
+TEST_F(CompositeNodeSpecV2Test, RemoveWithCompositeNode) {
+  auto spec = CreateCompositeNodeSpec("spec", 2);
+
+  // Bind the first node.
+  std::shared_ptr parent_1 = CreateNode("spec_parent_1");
+  auto result = MatchAndBindParentSpec(spec, parent_1, {"node-0", "node-1"}, 0);
+  ASSERT_TRUE(result.is_ok());
+  ASSERT_FALSE(result.value());
+
+  ASSERT_TRUE(spec.has_parent_set_collector_for_testing());
+
+  // Bind the second node.
+  std::shared_ptr parent_2 = CreateNode("spec_parent_2");
+  result = MatchAndBindParentSpec(spec, parent_2, {"node-0", "node-1"}, 1);
+  ASSERT_TRUE(result.is_ok());
+  ASSERT_TRUE(result.value());
+
+  // Verify the parents and primary node.
+  auto composite_node = spec.completed_composite_node();
+  ASSERT_TRUE(composite_node.has_value());
+  auto composite_node_ptr = composite_node->lock();
+  VerifyCompositeNode(composite_node.value(), {"spec_parent_1", "spec_parent_2"}, 0);
+
+  // Invoke remove.
+  spec.Remove([](zx::result<> result) {});
+  ASSERT_EQ(dfv2::ShutdownIntent::kRebindComposite, composite_node_ptr->shutdown_intent());
+  ASSERT_FALSE(spec.completed_composite_node().has_value());
+  ASSERT_FALSE(spec.has_parent_set_collector_for_testing());
+}
+
+TEST_F(CompositeNodeSpecV2Test, RemoveWithNoCompositeNode) {
+  auto spec = CreateCompositeNodeSpec("spec", 2);
+
+  // Bind the second node.
+  std::shared_ptr parent_2 = CreateNode("spec_parent_2");
+  auto result = MatchAndBindParentSpec(spec, parent_2, {"node-0", "node-1"}, 1);
+  ASSERT_TRUE(result.is_ok());
+  ASSERT_FALSE(result.value());
+
+  ASSERT_TRUE(spec.has_parent_set_collector_for_testing());
+  ASSERT_FALSE(spec.completed_composite_node().has_value());
+
+  // Invoke remove.
+  spec.Remove([](zx::result<> result) {});
+  ASSERT_FALSE(spec.completed_composite_node().has_value());
+  ASSERT_FALSE(spec.has_parent_set_collector_for_testing());
 }

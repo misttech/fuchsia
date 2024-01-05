@@ -692,7 +692,7 @@ void Dwc2::HandleEp0TimeoutRecovery() {
   SoftDisconnect();
   ep0_state_ = Ep0State::DISCONNECTED;
   zx::nanosleep(zx::deadline_after(zx::msec(50)));
-  InitController(); // Clears the GRSTCTRL.sftdiscon condition.
+  InitController();  // Clears the GRSTCTRL.sftdiscon condition.
   zxlogf(INFO, "USB port soft-disconnect and controller reset sequence complete");
 }
 
@@ -919,9 +919,9 @@ zx_status_t Dwc2::Init() {
   }
 
   // USB PHY protocol is optional.
-  usb_phy_ = ddk::UsbPhyProtocolClient(parent(), "dwc2-phy");
-  if (!usb_phy_->is_valid()) {
-    usb_phy_.reset();
+  auto phy = usb_phy::UsbPhyClient::Create(parent(), "dwc2-phy");
+  if (phy.is_ok()) {
+    usb_phy_.emplace(std::move(phy.value()));
   }
 
   for (uint8_t i = 0; i < std::size(endpoints_); i++) {
@@ -964,11 +964,6 @@ zx_status_t Dwc2::Init() {
   status = ep0_buffer_.PhysMap();
   if (status != ZX_OK) {
     zxlogf(ERROR, "Dwc2::Init ep0_buffer_.PhysMap failed: %d", status);
-    return status;
-  }
-
-  if ((status = InitController()) != ZX_OK) {
-    zxlogf(ERROR, "Dwc2::Init InitController failed: %d", status);
     return status;
   }
 
@@ -1131,6 +1126,12 @@ zx_status_t Dwc2::UsbDciSetInterface(const usb_dci_interface_protocol_t* interfa
   }
 
   dci_intf_ = ddk::UsbDciInterfaceProtocolClient(interface);
+
+  auto status = InitController();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Dwc2::Init InitController failed: %d", status);
+    return status;
+  }
 
   return ZX_OK;
 }

@@ -7,16 +7,13 @@
 
 #include <zircon/assert.h>
 
-#include <iostream>
 #include <map>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
 #include <rapidjson/document.h>
 
-#include "lib/syslog/cpp/macros.h"
 #include "src/lib/fidl_codec/semantic.h"
 
 // This file contains a programmatic representation of a FIDL schema.  A
@@ -49,10 +46,10 @@ constexpr int kDecimalBase = 10;
 using Ordinal32 = uint32_t;
 using Ordinal64 = uint64_t;
 
-enum class WireVersion { kWireV2 };
+enum class WireVersion : uint8_t { kWireV2 };
 
 struct LibraryReadError {
-  enum ErrorValue {
+  enum ErrorValue : uint8_t {
     kOk,
     kIoError,
     kParseError,
@@ -74,6 +71,7 @@ class StructValue;
 class Table;
 class TypeVisitor;
 class Union;
+class Int32Type;
 
 class EnumOrBitsMember {
   friend class Enum;
@@ -100,24 +98,25 @@ class EnumOrBits {
   ~EnumOrBits();
 
   const std::string& name() const { return name_; }
-  uint64_t size_v2() const { return size_v2_; }
+  uint64_t size() const { return size_; }
   const Type* type() const { return type_.get(); }
 
   // Get a list of Enum members.
   const std::vector<EnumOrBitsMember>& members() const { return members_; }
 
-  uint64_t Size(WireVersion version) const { return size_v2_; }
+  uint64_t Size(WireVersion version) const { return size_; }
 
  protected:
+  EnumOrBits(std::string name, uint64_t size_v2, std::unique_ptr<Type> type,
+             std::vector<EnumOrBitsMember> members);
   explicit EnumOrBits(const rapidjson::Value* json_definition);
-
   // Decode all the values from the JSON definition.
   void DecodeTypes(bool is_scalar, const std::string& supertype_name, Library* enclosing_library);
 
  private:
   const rapidjson::Value* json_definition_;
   std::string name_;
-  uint64_t size_v2_;
+  uint64_t size_;
   std::unique_ptr<Type> type_;
   std::vector<EnumOrBitsMember> members_;
 };
@@ -125,7 +124,6 @@ class EnumOrBits {
 class Enum : public EnumOrBits {
  public:
   friend class Library;
-
   // Gets the name of the enum member corresponding to the value pointed to by
   // |bytes| of length |length|.  For example, if we had the following
   // definition:
@@ -137,7 +135,11 @@ class Enum : public EnumOrBits {
   // the member.
   std::string GetName(uint64_t absolute_value, bool negative) const;
 
+  static const Enum& FrameworkErrorEnum();
+
  private:
+  Enum(std::string name, uint64_t size, std::unique_ptr<Type> type,
+       std::vector<EnumOrBitsMember> members);
   explicit Enum(const rapidjson::Value* json_definition) : EnumOrBits(json_definition) {}
 
   void DecodeTypes(Library* enclosing_library) {
@@ -213,12 +215,11 @@ class StructMember {
   void reset_type();
   uint8_t id() const { return id_; }
 
-  uint64_t Offset(WireVersion version) const { return offset_v2_; }
+  uint64_t Offset(WireVersion version) const { return offset_; }
 
  private:
   const std::string name_;
-  uint64_t offset_v1_ = 0;
-  uint64_t offset_v2_ = 0;
+  uint64_t offset_ = 0;
   std::unique_ptr<Type> type_;
   uint8_t id_ = 0;
 };
@@ -247,8 +248,7 @@ class Struct final {
   Library* enclosing_library_;
   const rapidjson::Value* json_definition_;
   std::string name_;
-  uint32_t size_v1_ = 0;
-  uint32_t size_v2_ = 0;
+  uint32_t size_ = 0;
   std::vector<std::unique_ptr<StructMember>> members_;
 };
 

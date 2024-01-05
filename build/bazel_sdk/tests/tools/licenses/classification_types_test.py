@@ -8,7 +8,6 @@ from fuchsia.tools.licenses.classification_types import *
 
 
 class TestClassificationTypes(unittest.TestCase):
-
     def test_StringMatcher_to_json(self):
         sm = StringMatcher.create(["foo", "bar"])
         self.assertEqual(sm.to_json(), ["foo", "bar"])
@@ -22,7 +21,8 @@ class TestClassificationTypes(unittest.TestCase):
 
         self.assertEqual(sm.get_matches(["foo", "bar", "baz"]), ["foo", "bar"])
         self.assertEqual(
-            sm.get_matches(["foo", "foo", "foo"]), ["foo", "foo", "foo"])
+            sm.get_matches(["foo", "foo", "foo"]), ["foo", "foo", "foo"]
+        )
 
         self.assertTrue(sm.matches_all(["foo"]))
         self.assertTrue(sm.matches_all(["foo", "bar"]))
@@ -117,6 +117,14 @@ class TestClassificationTypes(unittest.TestCase):
         self.assertTrue(sm.matches("XwYaZz"))
         self.assertTrue(sm.matches("wXaYzZ"))
 
+    def test_StringMatcher_asterix_matches_greedily(self):
+        sm = StringMatcher.create(["ba*r"])
 
-if __name__ == '__main__':
+        self.assertTrue(sm.matches("bar"))
+        self.assertTrue(sm.matches("baar"))
+        self.assertTrue(sm.matches("barr"))
+        self.assertTrue(sm.matches("barbarr"))
+
+
+if __name__ == "__main__":
     unittest.main()

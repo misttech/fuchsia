@@ -156,7 +156,6 @@ std::unique_ptr<sys::ServiceDirectory> EnclosedGuest::StartWithUITestManager(
   // realm.
   ui_testing::UITestRealm::Config ui_config;
   ui_config.use_scene_owner = true;
-  ui_config.use_flatland = true;
   ui_config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
 
   // These are services that we need to expose from the UITestRealm.
@@ -580,8 +579,8 @@ fit::result<std::string> EnsureValidZirconPsOutput(std::string_view ps_output) {
   if (ps_output.find("virtual-console") == std::string::npos) {
     return fit::error("'virtual-console' cannot be found in 'ps' output");
   }
-  if (ps_output.find("base-resolver") == std::string::npos) {
-    return fit::error("'base-resolver' cannot be found in 'ps' output");
+  if (ps_output.find("pkg-cache") == std::string::npos) {
+    return fit::error("'pkg-cache' cannot be found in 'ps' output");
   }
   return fit::ok();
 }

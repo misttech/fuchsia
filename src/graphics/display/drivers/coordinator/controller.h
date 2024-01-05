@@ -36,11 +36,13 @@
 #include "src/graphics/display/drivers/coordinator/client-id.h"
 #include "src/graphics/display/drivers/coordinator/client-priority.h"
 #include "src/graphics/display/drivers/coordinator/display-info.h"
+#include "src/graphics/display/drivers/coordinator/driver.h"
 #include "src/graphics/display/drivers/coordinator/id-map.h"
 #include "src/graphics/display/drivers/coordinator/image.h"
 #include "src/graphics/display/drivers/coordinator/migration-util.h"
 #include "src/graphics/display/lib/api-types-cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
+#include "src/graphics/display/lib/api-types-cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-buffer-collection-id.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-capture-image-id.h"
 #include "src/graphics/display/lib/edid/edid.h"
@@ -76,7 +78,7 @@ class Controller : public DeviceType,
 
   ~Controller() override;
 
-  static void PopulateDisplayMode(const edid::timing_params_t& params, display_mode_t* mode);
+  static void PopulateDisplayMode(const display::DisplayTiming& timing, display_mode_t* mode);
 
   void DdkUnbind(ddk::UnbindTxn txn);
   void DdkRelease();
@@ -85,15 +87,9 @@ class Controller : public DeviceType,
   void DisplayControllerInterfaceOnDisplaysChanged(const added_display_args_t* displays_added,
                                                    size_t added_count,
                                                    const uint64_t* displays_removed,
-                                                   size_t removed_count,
-                                                   added_display_info_t* out_display_info_list,
-                                                   size_t display_info_count,
-                                                   size_t* display_info_actual);
+                                                   size_t removed_count);
   void DisplayControllerInterfaceOnDisplayVsync(uint64_t banjo_display_id, zx_time_t timestamp,
                                                 const config_stamp_t* config_stamp);
-  zx_status_t DisplayControllerInterfaceGetAudioFormat(
-      uint64_t banjo_display_id, uint32_t fmt_idx,
-      audio_types_audio_stream_format_range_t* fmt_out);
 
   void DisplayCaptureInterfaceOnCaptureComplete();
   void OnClientDead(ClientProxy* client);
@@ -103,11 +99,11 @@ class Controller : public DeviceType,
   void ApplyConfig(DisplayConfig* configs[], int32_t count, ConfigStamp config_stamp,
                    uint32_t layer_stamp, ClientId client_id) __TA_EXCLUDES(mtx());
 
-  void ReleaseImage(Image* image);
+  void ReleaseImage(image_t* image);
   void ReleaseCaptureImage(DriverCaptureImageId driver_capture_image_id);
 
   // |mtx()| must be held for as long as |edid| and |params| are retained.
-  bool GetPanelConfig(DisplayId display_id, const fbl::Vector<edid::timing_params_t>** timings,
+  bool GetPanelConfig(DisplayId display_id, const fbl::Vector<display::DisplayTiming>** timings,
                       const display_params_t** params) __TA_REQUIRES(mtx());
 
   zx::result<fbl::Array<CoordinatorPixelFormat>> GetSupportedPixelFormats(DisplayId display_id)
@@ -120,13 +116,8 @@ class Controller : public DeviceType,
       __TA_REQUIRES(mtx());
   bool GetDisplayPhysicalDimensions(DisplayId display_id, uint32_t* horizontal_size_mm,
                                     uint32_t* vertical_size_mm) __TA_REQUIRES(mtx());
-  ddk::DisplayControllerImplProtocolClient* dc() { return &dc_; }
-  ddk::DisplayClampRgbImplProtocolClient* dc_clamp_rgb() {
-    if (dc_clamp_rgb_.is_valid()) {
-      return &dc_clamp_rgb_;
-    }
-    return nullptr;
-  }
+  Driver* driver() { return &driver_; }
+
   bool supports_capture() { return supports_capture_; }
 
   async::Loop& loop() { return loop_; }
@@ -202,8 +193,7 @@ class Controller : public DeviceType,
   async::Loop loop_;
   thrd_t loop_thread_;
   async_watchdog::Watchdog watchdog_;
-  ddk::DisplayControllerImplProtocolClient dc_;
-  ddk::DisplayClampRgbImplProtocolClient dc_clamp_rgb_;
+  Driver driver_;
 
   std::atomic<zx::time> last_vsync_timestamp_{};
   inspect::UintProperty last_vsync_ns_property_;

@@ -1,56 +1,20 @@
-# Global approvers
-#
-# Someone should be a global approver if they commonly make large-scale changes
-# across the whole codebase. For example, people who maintain the various
-# languages, toolchains, and other build system components often should be
-# global approvers. Additionally, the set of global approvers should have good
-# coverage across the world to support contributors in every timezone.
-#
-# Code reviews should be sent to a global approver if the change manipulates
-# the root directory or has broad (typically mechanical) impact across the
-# codebase. If the change manipulates a specific part of the codebase, the code
-# review should be sent to a more specific approver. Global approvers should
-# use their judgement as to when to redirect review requests to more specific
-# approvers.
-#
-# The list of global approvers will change over time as the set of people
-# making large-scale changes evolves over time. Please do not take it
-# personally if you are added or removed from this list. This list is not an
-# "honor roll" of respected contributors. It is a list of people who often make
-# certain kinds of changes to the codebase.
-#
-# To become a Global Approver:
-#
-# - The applicant must have a demonstrated ability to make large-scale
-#   changes across the whole codebase.
-#
-# - The applicant may self-nominate or get nominated by another committer.
-#
-# - The applicant must send out a CL notifying all existing global
-#   approvers, and then wait at least one business day for discussion and
-#   approval.
+# This file intentionally contains no individual users. Please do not add any.
 
-abarth@google.com
-digit@google.com
-etiennej@google.com
-ianloic@google.com
-jamesr@google.com
-jeremymanson@google.com
-joshuaseaton@google.com
-lindkvist@google.com
-maruel@google.com
-mcgrathr@google.com
-phosek@google.com
-qsr@google.com
-surajmalhotra@google.com
-thatguy@google.com
-tmandry@google.com
+# If a contributor has a legitimate need to approve changes across the
+# code base to a particular kind of file, add a per-file rule using
+# **. If that access is only needed temporarily, provide a date on
+# which that per-file rule should be reassessed."
+
+# For broad changes across the codebase, please request Owners-Override approval (see
+# https://fuchsia.dev/fuchsia-src/contribute/community/contributor-roles#global-approver)
 
 # NOTE: This file uses the 'GLOB' style path expressions (not the `find-owners`
 # style), which is documented here:
 # https://android-review.googlesource.com/plugins/code-owners/Documentation/path-expressions.html#findOwnersCaveat
 #
-# - 'foo' matches the file 'foo' in this directory only (not in any subdirectories)
+# - 'foo' matches the file 'foo' in this directory only (not in any subdirectories).
+# - '**/foo' matches the file 'foo' in any subdirectory (not in this directory).
+# - '{**/,}foo' matches the file 'foo' in this directory and any subdirectory.
 # - '*.foo' matches files in this directory only.
 # - '**.foo' matches files in this directory and any subdirectory.
 
@@ -66,21 +30,32 @@ per-file rustfmt.toml,fuchsia.code-workspace = file:/build/rust/OWNERS
 # Python-language support files
 per-file pyrightconfig.json,fuchsia.code-workspace = file:/build/python/OWNERS
 
+# SHAC support files
+per-file shac.star,shac.textproto = file:/scripts/shac/OWNERS
+
 # Add owners to .gitmodules for submodule update tool
 per-file .gitmodules = file:/third_party/OWNERS
 
 # Add owners to source related files
 per-file .gitignore,.gitmodules = file:/infra/OWNERS
 
+# OSS Compliance:
+per-file **/README.fuchsia = file:/build/licenses/OWNERS
+per-file **/*LICENSE* = file:/build/licenses/OWNERS
+per-file **/*LICENCE* = file:/build/licenses/OWNERS
+per-file **/*NOTICE* = file:/build/licenses/OWNERS
+per-file **/*COPYRIGHT* = file:/build/licenses/OWNERS
+per-file **/*COPYING* = file:/build/licenses/OWNERS
+
 # For the LSC to migrate platform components into Software Assembly, add the
 # following special-cased ownership.  This should be re-evaluated for removal
 # quarterly, the next review at the start of 2023Q4: 2023-10-01
-per-file **/README.md = aaronwood@google.com
+per-file {**/,}README.md = aaronwood@google.com
 per-file **.cml = aaronwood@google.com
 
 # For the effort to reform the way we handle Global Approvers, grant some folks
 # ownership over OWNERS files.  This should be re-evaluated for removal
-# quarterly, the next review at the start of 2023Q4: 2023-10-01
-per-file **/OWNERS = hjfreyer@google.com,neelsa@google.com
+# quarterly, the next review at the start of 2024Q1: 2024-01-01
+per-file {**/,}OWNERS = hjfreyer@google.com,neelsa@google.com
 
 per-file .ignore = *

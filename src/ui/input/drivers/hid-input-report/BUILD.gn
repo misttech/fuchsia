@@ -29,18 +29,18 @@ source_set("driver-internals") {
   ]
   deps = [
     ":hid_input_report_bind",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp_wire",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/lib/fidl",
+    "//src/ui/input/lib/hid",
+    "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/hid",
-    "//zircon/system/ulib/hid-parser",
     "//zircon/system/ulib/trace",
   ]
 
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.hiddevice:fuchsia.hardware.hiddevice_banjo_cpp",
-    "//sdk/lib/inspect/component/cpp:inspect_component_cpp",
+    "//sdk/lib/inspect/component/cpp",
     "//src/lib/ddk",
     "//src/lib/ddktl",
     "//src/ui/input/lib/hid-input-report",
@@ -51,6 +51,9 @@ source_set("driver-internals") {
   # TODO(fxbug.dev/94768): This target uses mutable tables which are deprecated,
   # rather than builders.
   configs += [ "//build/cpp:fidl-wire-deprecated-mutable-tables" ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 fuchsia_driver("hid-input-report-driver") {
@@ -111,12 +114,12 @@ test("hid-input-report-test-bin") {
     "//sdk/lib/inspect/testing/cpp:zxtest",
     "//src/devices/testing/mock-ddk",
     "//src/lib/ddk:ddk-metadata-headers",
+    "//src/ui/input/lib/hid",
     "//src/ui/input/lib/hid-input-report",
+    "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/hid",
-    "//zircon/system/ulib/hid-parser",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/trace",

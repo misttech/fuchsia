@@ -9,7 +9,7 @@
 #include "fuchsia/bluetooth/le/cpp/fidl.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/advertising_data.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/byte_buffer.h"
-#include "src/connectivity/bluetooth/core/bt-host/gap/fake_adapter_test_fixture.h"
+#include "src/connectivity/bluetooth/core/bt-host/fidl/fake_adapter_test_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/low_energy_advertising_manager.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/low_energy_connection_manager.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/fake_peer.h"
@@ -31,15 +31,15 @@ const bt::DeviceAddress kTestAddr2(bt::DeviceAddress::Type::kLEPublic, {0x02, 0,
 using bt::testing::FakePeer;
 using FidlAdvHandle = fidl::InterfaceHandle<fble::AdvertisingHandle>;
 
-class LowEnergyPeripheralServerTestFakeAdapter : public bt::gap::testing::FakeAdapterTestFixture {
+class LowEnergyPeripheralServerTestFakeAdapter : public bt::fidl::testing::FakeAdapterTestFixture {
  public:
   LowEnergyPeripheralServerTestFakeAdapter() = default;
   ~LowEnergyPeripheralServerTestFakeAdapter() override = default;
 
   void SetUp() override {
-    bt::gap::testing::FakeAdapterTestFixture::SetUp();
+    bt::fidl::testing::FakeAdapterTestFixture::SetUp();
 
-    fake_gatt_ = std::make_unique<bt::gatt::testing::FakeLayer>();
+    fake_gatt_ = std::make_unique<bt::gatt::testing::FakeLayer>(pw_dispatcher());
 
     // Create a LowEnergyPeripheralServer and bind it to a local client.
     fidl::InterfaceHandle<fble::Peripheral> handle;
@@ -53,7 +53,7 @@ class LowEnergyPeripheralServerTestFakeAdapter : public bt::gap::testing::FakeAd
 
     peripheral_client_ = nullptr;
     server_ = nullptr;
-    bt::gap::testing::FakeAdapterTestFixture::TearDown();
+    bt::fidl::testing::FakeAdapterTestFixture::TearDown();
   }
 
   LowEnergyPeripheralServer* server() const { return server_.get(); }
@@ -77,7 +77,7 @@ class LowEnergyPeripheralServerTest : public bthost::testing::AdapterTestFixture
   void SetUp() override {
     AdapterTestFixture::SetUp();
 
-    fake_gatt_ = std::make_unique<bt::gatt::testing::FakeLayer>();
+    fake_gatt_ = std::make_unique<bt::gatt::testing::FakeLayer>(pw_dispatcher());
 
     // Create a LowEnergyPeripheralServer and bind it to a local client.
     fidl::InterfaceHandle<fble::Peripheral> handle;
@@ -268,7 +268,7 @@ TEST_F(LowEnergyPeripheralServerTest, StartAdvertisingNoConnectionRelatedParamsN
   ASSERT_TRUE(result.has_value());
   ASSERT_FALSE(result->is_error());
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
 
@@ -286,7 +286,7 @@ TEST_F(LowEnergyPeripheralServerTest, AdvertiseNoConnectionRelatedParamsNoConnec
   RunLoopUntilIdle();
   EXPECT_FALSE(result.has_value());
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
   EXPECT_FALSE(adv_peripheral_server.last_connected_peer());
@@ -318,7 +318,7 @@ TEST_F(LowEnergyPeripheralServerTest, StartAdvertisingConnectableParameterTrueCo
   ASSERT_TRUE(result.has_value());
   ASSERT_FALSE(result->is_error());
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
 
@@ -357,7 +357,7 @@ TEST_F(LowEnergyPeripheralServerTest, StartAdvertisingEmptyConnectionOptionsConn
   ASSERT_TRUE(result.has_value());
   ASSERT_FALSE(result->is_error());
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
 
@@ -386,7 +386,7 @@ TEST_F(LowEnergyPeripheralServerTest, AdvertiseEmptyConnectionOptionsConnectsBon
   RunLoopUntilIdle();
   EXPECT_FALSE(result.has_value());
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
   auto connected_id = adv_peripheral_server.last_connected_peer();
@@ -419,7 +419,7 @@ TEST_P(BoolParam, AdvertiseBondableOrNonBondableConnectsBondableOrNonBondable) {
   RunLoopUntilIdle();
   EXPECT_FALSE(result.has_value());
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
   auto connected_id = adv_peripheral_server.last_connected_peer();
@@ -462,7 +462,7 @@ TEST_P(BoolParam, StartAdvertisingBondableOrNonBondableConnectsBondableOrNonBond
   ASSERT_TRUE(result);
   ASSERT_FALSE(result->is_error());
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
 
@@ -505,7 +505,7 @@ TEST_F(LowEnergyPeripheralServerTest, RestartStartAdvertisingDuringInboundConnKe
       bt::hci_spec::kReadRemoteVersionInfo,
       [&](fit::closure trigger) { complete_interrogation = std::move(trigger); });
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
 
@@ -569,7 +569,7 @@ TEST_F(LowEnergyPeripheralServerTest, RestartAdvertiseDuringInboundConnKeepsNewA
       bt::hci_spec::kReadRemoteVersionInfo,
       [&](fit::closure trigger) { complete_interrogation = std::move(trigger); });
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
   EXPECT_FALSE(adv_peripheral_server_0.last_connected_peer());
@@ -711,7 +711,7 @@ TEST_F(LowEnergyPeripheralServerTest, AdvertiseAndReceiveTwoConnections) {
   RunLoopUntilIdle();
   EXPECT_FALSE(adv_result.has_value());
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
   ASSERT_TRUE(adv_peripheral_server.last_connected_peer());
@@ -720,7 +720,7 @@ TEST_F(LowEnergyPeripheralServerTest, AdvertiseAndReceiveTwoConnections) {
   adv_peripheral_server.connections()[0].callback();
   RunLoopUntilIdle();
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr2));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr2, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr2);
   RunLoopUntilIdle();
   ASSERT_EQ(adv_peripheral_server.connections().size(), 2u);
@@ -793,7 +793,7 @@ TEST_P(BoolParam, AdvertiseTwiceCausesSecondToFail) {
   EXPECT_TRUE(adv_peripheral_server_1_closed);
 
   // Server 0 should still receive connections.
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
   EXPECT_TRUE(adv_peripheral_server_0.last_connected_peer());
@@ -833,7 +833,7 @@ TEST_F(LowEnergyPeripheralServerTest, CallAdvertiseTwiceSequentiallyBothSucceed)
   EXPECT_FALSE(adv_result_1.has_value());
 
   // Server 1 should receive connections.
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
   EXPECT_TRUE(adv_peripheral_server_1.last_connected_peer());
@@ -858,7 +858,7 @@ TEST_F(LowEnergyPeripheralServerTest, PeerDisconnectClosesConnection) {
   RunLoopUntilIdle();
   EXPECT_FALSE(adv_result.has_value());
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
   EXPECT_TRUE(adv_peripheral_server.last_connected_peer());
@@ -900,7 +900,7 @@ TEST_F(LowEnergyPeripheralServerTest, IncomingConnectionFailureContinuesAdvertis
       bt::hci_spec::kReadRemoteVersionInfo,
       pw::bluetooth::emboss::StatusCode::UNSUPPORTED_REMOTE_FEATURE);
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
   EXPECT_FALSE(adv_peripheral_server.last_connected_peer());
@@ -909,7 +909,7 @@ TEST_F(LowEnergyPeripheralServerTest, IncomingConnectionFailureContinuesAdvertis
   // Allow next interrogation to succeed.
   test_device()->ClearDefaultCommandStatus(bt::hci_spec::kReadRemoteVersionInfo);
 
-  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, pw_dispatcher()));
   test_device()->ConnectLowEnergy(kTestAddr);
   RunLoopUntilIdle();
   EXPECT_TRUE(adv_peripheral_server.last_connected_peer());

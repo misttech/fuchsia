@@ -68,6 +68,18 @@ type NodeAttributesQuery = strict bits : uint64 {
     GID = 0x400;
     @available(added=HEAD)
     RDEV = 0x800;
+    @available(added=HEAD)
+    ACCESS_TIME = 0x1000;
+    @available(added=HEAD)
+    CHANGE_TIME = 0x2000;
+
+    /// Verity attributes.
+    @available(added=HEAD)
+    OPTIONS = 0x4000;
+    @available(added=HEAD)
+    ROOT_HASH = 0x8000;
+    @available(added=HEAD)
+    VERITY_ENABLED = 0x10000;
 };
 
 type MutableNodeAttributes = table {
@@ -89,6 +101,11 @@ type MutableNodeAttributes = table {
     5: gid uint32; // gid_t
     @available(added=HEAD)
     6: rdev uint64; // dev_t
+
+    /// Time of last access in nanoseconds since the Unix epoch, UTC. Note that servers might not
+    /// always update this if this is the only attribute being updated.
+    @available(added=HEAD)
+    7: access_time uint64;
 };
 
 // TODO(https://fxbug.dev/105840): Inline this into its only reference when fidlgen_go is fixed.
@@ -128,6 +145,22 @@ type NodeAttributes2 = struct {
         /// An ID for the node. See [`Id`].
         /// This `id` should be unique among all entries of a directory.
         6: id Id;
+
+        /// Time of last change to the metadata in nanoseconds since the Unix epoch, UTC.
+        @available(added=HEAD)
+        7: change_time uint64;
+
+        /// Contains the verification options for verity-enabled files.
+        @available(added=HEAD)
+        8: options VerificationOptions;
+
+        /// The root hash for the file. Not all filesystems support this across all files.
+        @available(added=HEAD)
+        9: root_hash vector<uint8>:64;
+
+        /// True if this file is verity-enabled.
+        @available(added=HEAD)
+       10: verity_enabled bool;
     };
 };
 

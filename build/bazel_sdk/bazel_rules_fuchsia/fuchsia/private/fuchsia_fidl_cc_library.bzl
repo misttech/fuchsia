@@ -46,6 +46,9 @@ def fuchsia_fidl_cc_library(name, library, binding_type = "cpp_wire", sdk_for_de
     gen_name = "%s_codegen" % name
     impl_name = "%s_impl" % name
 
+    if not sdk_for_default_deps:
+        sdk_for_default_deps = "@fuchsia_sdk"
+
     _codegen(
         name = gen_name,
         library = library,
@@ -65,12 +68,15 @@ def fuchsia_fidl_cc_library(name, library, binding_type = "cpp_wire", sdk_for_de
         ],
         srcs = [
             ":%s" % impl_name,
-            # For the coding tables.
-            library,
         ],
         # This is necessary in order to locate generated headers.
         strip_include_prefix = gen_name + "." + binding_type,
-        deps = _typed_deps(deps, binding_type) + _get_binding_info(sdk_for_default_deps, binding_type)["deps"],
+        deps = _typed_deps(deps, binding_type) + [
+            sdk_for_default_deps + "//pkg/fidl_cpp_wire",
+            sdk_for_default_deps + "//pkg/fidl_cpp_v2",
+            sdk_for_default_deps + "//pkg/fidl_driver",
+            sdk_for_default_deps + "//pkg/fidl_driver_natural",
+        ],
         tags = tags,
         **kwargs
     )
@@ -86,15 +92,41 @@ def _codegen_impl(context):
     # This declaration is needed in order to get access to the full path.
     root = context.actions.declare_directory(base_path)
 
-    b = _get_binding_info(context.attr.sdk_for_default_deps, context.attr.binding_type)
-    header_files = []
-    header_files.extend(b["headers"])
-    source_files = []
-    source_files.extend(b["sources"])
-    for layer_dep in b["layer_deps"]:
-        layer_dep_b = _get_binding_info(context.attr.sdk_for_default_deps, layer_dep)
-        header_files.extend(layer_dep_b["headers"])
-        source_files.extend(layer_dep_b["sources"])
+    header_files = [
+        "common_types.h",
+        "driver/natural_messaging.h",
+        "driver/wire_messaging.h",
+        "driver/wire_messaging.h",
+        "driver/wire.h",
+        "driver/wire.h",
+        "fidl.h",
+        "hlcpp_conversion.h",
+        "markers.h",
+        "natural_messaging.h",
+        "natural_messaging.h",
+        "natural_ostream.h",
+        "natural_types.h",
+        "natural_types.h",
+        "test_base.h",
+        "type_conversions.h",
+        "wire_messaging.h",
+        "wire_test_base.h",
+        "wire_types.h",
+        "wire.h",
+    ]
+    source_files = [
+        "natural_messaging.cc",
+        "common_types.cc",
+        "wire_types.cc",
+        "wire_messaging.cc",
+        "natural_ostream.cc",
+        "natural_types.cc",
+        "type_conversions.cc",
+        "driver/wire_messaging.cc",
+        "driver/wire_messaging.cc",
+        "natural_messaging.cc",
+        "driver/natural_messaging.cc",
+    ]
 
     # TODO(fxbug.dev/108680): Better workaround for skipping codegen for zx.
     if name == "zx":
@@ -151,7 +183,7 @@ _codegen = rule(
             mandatory = True,
         ),
         "sdk_for_default_deps": attr.string(
-            doc = "Name of the Bazel workspace where default FIDL library dependencies are defined. If empty or not defined, defaults to the current repository.",
+            doc = "Name of the Bazel workspace where default FIDL library dependencies are defined. If empty or not defined, defaults to @fuchsia_sdk.",
             mandatory = False,
         ),
     },
@@ -176,87 +208,3 @@ _impl_wrapper = rule(
         ),
     },
 )
-
-def _get_binding_info(sdk_for_default_deps, binding_type):
-    # Note: deps needs to be flattened, since Starlark does not support
-    # recursivity or unbounded loops.
-    if not sdk_for_default_deps:
-        sdk_for_default_deps = ""
-
-    wire_dep = sdk_for_default_deps + "//pkg/fidl_cpp_wire"
-    natural_dep = sdk_for_default_deps + "//pkg/fidl_cpp_v2"
-    driver_dep = sdk_for_default_deps + "//pkg/fidl_driver"
-    driver_natural_dep = sdk_for_default_deps + "//pkg/fidl_driver_natural"
-
-    bindings = {
-        "cpp_common": {
-            "headers": ["common_types.h", "markers.h"],
-            "sources": ["common_types.cc"],
-            "layer_deps": [],
-            "deps": [wire_dep],
-        },
-        "cpp_wire_types": {
-            "headers": ["wire_types.h"],
-            "sources": ["wire_types.cc"],
-            "layer_deps": ["cpp_common"],
-            "deps": [],
-        },
-        "cpp_wire": {
-            "headers": ["wire.h", "wire_messaging.h"],
-            "sources": ["wire_messaging.cc"],
-            "layer_deps": ["cpp_wire_types", "cpp_common"],
-            "deps": [wire_dep],
-        },
-        "cpp_wire_testing": {
-            "headers": ["wire_test_base.h"],
-            "sources": [""],
-            "layer_deps": ["cpp_wire", "cpp_wire_types", "cpp_common"],
-            "deps": [],
-        },
-        "cpp_natural_types": {
-            "headers": ["natural_types.h"],
-            "sources": ["natural_types.cc"],
-            "layer_deps": ["cpp_common"],
-            "deps": [],
-        },
-        "cpp_natural_ostream": {
-            "headers": ["natural_ostream.h"],
-            "sources": ["natural_ostream.cc"],
-            "layer_deps": ["cpp_natural_types", "cpp_common"],
-            "deps": [],
-        },
-        "cpp_type_conversions": {
-            "headers": ["type_conversions.h"],
-            "sources": ["type_conversions.cc"],
-            "layer_deps": ["cpp_natural_types", "cpp_wire", "cpp_common", "cpp_wire_types"],
-            "deps": [],
-        },
-        "cpp": {
-            "headers": ["fidl.h", "natural_messaging.h"],
-            "sources": ["natural_messaging.cc"],
-            "layer_deps": ["cpp_natural_types", "cpp_type_conversions", "cpp_wire", "cpp_common", "cpp_wire_types"],
-            "deps": [wire_dep, natural_dep],
-        },
-        "cpp_driver_wire": {
-            "headers": ["driver/wire.h", "driver/wire_messaging.h"],
-            "sources": ["driver/wire_messaging.cc"],
-            "layer_deps": ["cpp_wire_types", "cpp_common"],
-            "deps": [wire_dep, driver_dep],
-        },
-        "cpp_driver": {
-            "headers": ["driver/wire.h", "driver/wire_messaging.h", "natural_messaging.h", "driver/natural_messaging.h"],
-            "sources": ["driver/wire_messaging.cc", "natural_messaging.cc", "driver/natural_messaging.cc"],
-            "layer_deps": ["cpp_wire_types", "cpp_common", "cpp_natural_types", "cpp_type_conversions", "cpp_wire"],
-            "deps": [wire_dep, natural_dep, driver_dep, driver_natural_dep],
-        },
-        "cpp_hlcpp_conversion": {
-            "headers": ["hlcpp_conversion.h"],
-            "sources": [""],
-            "layer_deps": ["cpp_natural_types", "cpp_common"],
-            "deps": [],
-        },
-    }
-
-    if binding_type not in bindings:
-        fail("Unsupported binding type: %s" % binding_type)
-    return bindings[binding_type]

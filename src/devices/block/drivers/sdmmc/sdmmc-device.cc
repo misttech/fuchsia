@@ -8,7 +8,7 @@
 #include <fuchsia/hardware/sdio/c/banjo.h>
 #include <fuchsia/hardware/sdmmc/c/banjo.h>
 #include <inttypes.h>
-#include <lib/ddk/debug.h>
+#include <lib/driver/compat/cpp/compat.h>
 #include <lib/sdio/hw.h>
 #include <lib/zx/time.h>
 #include <stdio.h>
@@ -16,6 +16,8 @@
 #include <string.h>
 
 #include <pretty/hexdump.h>
+
+#include "sdmmc-root-device.h"
 
 namespace {
 
@@ -31,20 +33,142 @@ constexpr void UpdateBits(uint32_t* x, uint32_t mask, uint32_t loc, uint32_t val
   *x |= ((val << loc) & mask);
 }
 
+// Translates a Banjo sdmmc request (sdmmc_req_t) into a FIDL one
+// (fuchsia_hardware_sdmmc::wire::SdmmcReq).
+zx::result<fuchsia_hardware_sdmmc::wire::SdmmcReq> BanjoToFidlReq(const sdmmc_req_t& banjo_req,
+                                                                  fdf::Arena* arena,
+                                                                  fdf::Logger& logger) {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq wire_req;
+
+  wire_req.cmd_idx = banjo_req.cmd_idx;
+  wire_req.cmd_flags = banjo_req.cmd_flags;
+  wire_req.arg = banjo_req.arg;
+  wire_req.blocksize = banjo_req.blocksize;
+  wire_req.suppress_error_messages = banjo_req.suppress_error_messages;
+  wire_req.client_id = banjo_req.client_id;
+
+  wire_req.buffers.Allocate(*arena, banjo_req.buffers_count);
+  for (size_t i = 0; i < banjo_req.buffers_count; i++) {
+    if (banjo_req.buffers_list[i].type == SDMMC_BUFFER_TYPE_VMO_ID) {
+      wire_req.buffers[i].type = fuchsia_hardware_sdmmc::wire::SdmmcBufferType::kVmoId;
+      wire_req.buffers[i].buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(
+          banjo_req.buffers_list[i].buffer.vmo_id);
+    } else {
+      if (banjo_req.buffers_list[i].type != SDMMC_BUFFER_TYPE_VMO_HANDLE) {
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      zx::vmo dup;
+      // TODO(b/300145353): Remove duplication when removing Banjo.
+      zx_status_t status = zx_handle_duplicate(banjo_req.buffers_list[i].buffer.vmo,
+                                               ZX_RIGHT_SAME_RIGHTS, dup.reset_and_get_address());
+      if (status != ZX_OK) {
+        FDF_LOGL(ERROR, logger, "Failed to duplicate vmo: %s", zx_status_get_string(status));
+        return zx::error(status);
+      }
+      wire_req.buffers[i].type = fuchsia_hardware_sdmmc::wire::SdmmcBufferType::kVmoHandle;
+      wire_req.buffers[i].buffer =
+          fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(dup));
+    }
+
+    wire_req.buffers[i].offset = banjo_req.buffers_list[i].offset;
+    wire_req.buffers[i].size = banjo_req.buffers_list[i].size;
+  }
+  return zx::ok(std::move(wire_req));
+}
+
+// Translates a collection of Banjo sdmmc requests into a FIDL one.
+zx::result<fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>> BanjoToFidlReqVector(
+    const sdmmc_req_t* req, size_t banjo_req_count, fdf::Arena* arena, fdf::Logger& logger) {
+  fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq> wire_req_vector;
+  wire_req_vector.Allocate(*arena, banjo_req_count);
+
+  for (size_t i = 0; i < banjo_req_count; i++) {
+    zx::result<fuchsia_hardware_sdmmc::wire::SdmmcReq> wire_req =
+        BanjoToFidlReq(*req, arena, logger);
+    if (wire_req.is_error()) {
+      return zx::error(wire_req.error_value());
+    }
+    wire_req_vector[i] = std::move(*wire_req);
+    req++;
+  }
+  return zx::ok(wire_req_vector);
+}
+
 }  // namespace
 
 namespace sdmmc {
 
-zx_status_t SdmmcDevice::Init() { return host_.HostInfo(&host_info_); }
+zx_status_t SdmmcDevice::Init(bool use_fidl) {
+  // Reset any previous initializations in a way that works with unit testing.
+  using_fidl_ = use_fidl;
+
+  if (root_device_ == nullptr) {
+    return ZX_ERR_BAD_STATE;
+  }
+
+  if (use_fidl) {
+    auto client_end =
+        root_device_->driver_incoming()->Connect<fuchsia_hardware_sdmmc::SdmmcService::Sdmmc>();
+    if (client_end.is_error() || !client_end->is_valid()) {
+      FDF_LOGL(ERROR, logger(), "Failed to connect to FIDL SDMMC protocol: %s",
+               client_end.status_string());
+      return client_end.status_value();
+    }
+    client_ = fdf::WireSharedClient(std::move(*client_end), fdf::Dispatcher::GetCurrent()->get());
+
+    fdf::Arena arena('SDMC');
+    auto result = client_.sync().buffer(arena)->HostInfo();
+    if (!result.ok()) {
+      FDF_LOGL(ERROR, logger(), "Failed to get HostInfo using FIDL SDMMC protocol: %s",
+               result.status_string());
+      return result.status();
+    }
+  } else {
+    auto host = compat::ConnectBanjo<ddk::SdmmcProtocolClient>(root_device_->driver_incoming());
+    if (!host.is_ok()) {
+      FDF_LOGL(ERROR, logger(), "Failed to connect to Banjo SDMMC protocol: %s",
+               host.status_string());
+      return host.status_value();
+    }
+    host_ = *host;
+
+    if (!host_.is_valid()) {
+      FDF_LOGL(ERROR, logger(), "Failed to get valid Banjo SDMMC protocol.");
+      return ZX_ERR_NOT_SUPPORTED;
+    }
+  }
+
+  zx_status_t status = HostInfo(&host_info_);
+  if (status != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "failed to get host info: %s", zx_status_get_string(status));
+    return status;
+  }
+
+  FDF_LOGL(DEBUG, logger(), "host caps dma %d 8-bit bus %d max_transfer_size %" PRIu64 "",
+           UseDma() ? 1 : 0, (host_info().caps & SDMMC_HOST_CAP_BUS_WIDTH_8) ? 1 : 0,
+           host_info().max_transfer_size);
+
+  // Reset the card.
+  HwReset();
+
+  // No matter what state the card is in, issuing the GO_IDLE_STATE command will put the card into
+  // the idle state.
+  status = SdmmcGoIdle();
+  if (status != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "SDMMC_GO_IDLE_STATE failed: %s", zx_status_get_string(status));
+    return status;
+  }
+  return ZX_OK;
+}
 
 zx_status_t SdmmcDevice::Request(const sdmmc_req_t& req, uint32_t response[4], uint32_t retries,
-                                 zx::duration wait_time) const {
+                                 zx::duration wait_time) {
   if (retries == 0) {
     retries = retries_;
   }
 
   zx_status_t st;
-  while (((st = host_.Request(&req, response)) != ZX_OK) && retries > 0) {
+  while (((st = Request(&req, response)) != ZX_OK) && retries > 0) {
     retries--;
     if (wait_time.get() > 0) {
       zx::nanosleep(zx::deadline_after(wait_time));
@@ -54,7 +178,7 @@ zx_status_t SdmmcDevice::Request(const sdmmc_req_t& req, uint32_t response[4], u
 }
 
 zx_status_t SdmmcDevice::RequestWithBlockRead(const sdmmc_req_t& req, uint32_t response[4],
-                                              cpp20::span<uint8_t> read_data) const {
+                                              cpp20::span<uint8_t> read_data) {
   zx::vmo vmo;
   zx_status_t st = zx::vmo::create(read_data.size(), 0, &vmo);
   if (st != ZX_OK) {
@@ -137,43 +261,70 @@ zx_status_t SdmmcDevice::SdmmcWaitForState(uint32_t state) {
   return ZX_ERR_TIMED_OUT;
 }
 
-zx_status_t SdmmcDevice::SdmmcIoRequestWithRetries(
-    const sdmmc_req_t& request, uint32_t* retries,
-    const std::optional<sdmmc_req_t>& set_block_count) {
-  zx_status_t st;
-  for (uint32_t i = 0; i < kTryAttempts; i++) {
-    if (i > 0) {
-      (*retries)++;
-    }
-
-    if (set_block_count.has_value()) {
-      uint32_t unused_response[4];
-      if ((st = Request(set_block_count.value(), unused_response)) != ZX_OK) {
-        continue;
-      }
-    }
-
-    sdmmc_req_t req = request;
-    req.suppress_error_messages = i < (kTryAttempts - 1);
-
-    uint32_t unused_response[4];
-    if ((st = Request(req, unused_response)) == ZX_OK) {
-      break;
-    }
-
-    // Wait for the card to go idle (TRAN state) before retrying. SdmmcStopTransmission waits for
-    // the busy signal on dat0, so the card should be back in TRAN immediately after.
-
-    uint32_t status;
-    if (SdmmcStopTransmission(&status) == ZX_OK &&
-        MMC_STATUS_CURRENT_STATE(status) == MMC_STATUS_CURRENT_STATE_TRAN) {
-      continue;
-    }
-
-    SdmmcWaitForState(MMC_STATUS_CURRENT_STATE_TRAN);
+void SdmmcDevice::SdmmcIoRequestWithRetries(std::vector<sdmmc_req_t> reqs,
+                                            fit::function<void(zx_status_t, uint32_t)> callback,
+                                            uint32_t retries) {
+  const bool last_retry = retries >= (kTryAttempts - 1);
+  for (auto& req : reqs) {
+    req.suppress_error_messages = !last_retry;
   }
 
-  return st;
+  if (!using_fidl_) {
+    zx_status_t status = ZX_OK;
+    for (const auto& req : reqs) {
+      uint32_t unused_response[4];
+      status = host_.Request(&req, unused_response);
+      if (status != ZX_OK) {
+        SdmmcStopForRetry();
+        break;
+      }
+    }
+    if (status != ZX_OK && !last_retry) {
+      return SdmmcIoRequestWithRetries(std::move(reqs), std::move(callback), retries + 1);
+    } else {
+      return callback(status, retries);
+    }
+  }
+
+  fdf::Arena arena('SDMC');
+  zx::result<fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>> wire_req_vector =
+      BanjoToFidlReqVector(reqs.data(), reqs.size(), &arena, logger());
+  if (wire_req_vector.is_error()) {
+    return callback(wire_req_vector.error_value(), retries);
+  }
+
+  client_.buffer(arena)
+      ->Request(*wire_req_vector)
+      .Then([this, reqs = std::move(reqs), callback = std::move(callback), retries, last_retry](
+                fdf::WireUnownedResult<fuchsia_hardware_sdmmc::Sdmmc::Request>& result) mutable {
+        if (!result.ok()) {
+          FDF_LOGL(ERROR, logger(), "Request request failed: %s", result.status_string());
+          return callback(result.status(), retries);  // Not retrying if FIDL error.
+        }
+
+        if (result->is_error()) {
+          SdmmcStopForRetry();  // Performed synchronously within this asynchronous context.
+          if (!last_retry) {
+            return SdmmcIoRequestWithRetries(std::move(reqs), std::move(callback), retries + 1);
+          } else {
+            return callback(result->error_value(), retries);
+          }
+        }
+        return callback(ZX_OK, retries);
+      });
+}
+
+void SdmmcDevice::SdmmcStopForRetry() {
+  // Wait for the card to go idle (TRAN state) before retrying. SdmmcStopTransmission waits for
+  // the busy signal on dat0, so the card should be back in TRAN immediately after.
+
+  uint32_t status;
+  if (SdmmcStopTransmission(&status) == ZX_OK &&
+      MMC_STATUS_CURRENT_STATE(status) == MMC_STATUS_CURRENT_STATE_TRAN) {
+    return;
+  }
+
+  SdmmcWaitForState(MMC_STATUS_CURRENT_STATE_TRAN);
 }
 
 // SD ops
@@ -217,12 +368,12 @@ zx_status_t SdmmcDevice::SdSendIfCond() {
   uint32_t response[4];
   zx_status_t st = Request(req, response);
   if (st != ZX_OK) {
-    zxlogf(DEBUG, "SD_SEND_IF_COND failed, retcode = %d", st);
+    FDF_LOGL(DEBUG, logger(), "SD_SEND_IF_COND failed, retcode = %d", st);
     return st;
   }
   if ((response[0] & 0xfff) != arg) {
     // The card should have replied with the pattern that we sent.
-    zxlogf(DEBUG, "SDMMC_SEND_IF_COND got bad reply = %" PRIu32 "", response[0]);
+    FDF_LOGL(DEBUG, logger(), "SDMMC_SEND_IF_COND got bad reply = %" PRIu32 "", response[0]);
     return ZX_ERR_BAD_STATE;
   } else {
     return ZX_OK;
@@ -238,7 +389,7 @@ zx_status_t SdmmcDevice::SdSendRelativeAddr(uint16_t* card_status) {
   uint32_t response[4];
   zx_status_t st = Request(req, response);
   if (st != ZX_OK) {
-    zxlogf(DEBUG, "SD_SEND_RELATIVE_ADDR failed, retcode = %d", st);
+    FDF_LOGL(DEBUG, logger(), "SD_SEND_RELATIVE_ADDR failed, retcode = %d", st);
     return st;
   }
 
@@ -306,25 +457,25 @@ zx_status_t SdmmcDevice::SdSwitchUhsVoltage(uint32_t ocr) {
 
   uint32_t unused_response[4];
   if ((st = Request(req, unused_response)) != ZX_OK) {
-    zxlogf(DEBUG, "SD_VOLTAGE_SWITCH failed, retcode = %d", st);
+    FDF_LOGL(DEBUG, logger(), "SD_VOLTAGE_SWITCH failed, retcode = %d", st);
     return st;
   }
 
-  if ((st = host_.SetBusFreq(0)) != ZX_OK) {
-    zxlogf(DEBUG, "SD_VOLTAGE_SWITCH failed, retcode = %d", st);
+  if ((st = SetBusFreq(0)) != ZX_OK) {
+    FDF_LOGL(DEBUG, logger(), "SD_VOLTAGE_SWITCH failed, retcode = %d", st);
     return st;
   }
 
-  if ((st = host_.SetSignalVoltage(SDMMC_VOLTAGE_V180)) != ZX_OK) {
-    zxlogf(DEBUG, "SD_VOLTAGE_SWITCH failed, retcode = %d", st);
+  if ((st = SetSignalVoltage(SDMMC_VOLTAGE_V180)) != ZX_OK) {
+    FDF_LOGL(DEBUG, logger(), "SD_VOLTAGE_SWITCH failed, retcode = %d", st);
     return st;
   }
 
   // Wait 5ms for the voltage to stabilize. See section 3.6.1. in the SDHCI specification.
   zx::nanosleep(zx::deadline_after(kVoltageStabilizationTime));
 
-  if ((st = host_.SetBusFreq(kInitializationFrequencyHz)) != ZX_OK) {
-    zxlogf(DEBUG, "SD_VOLTAGE_SWITCH failed, retcode = %d", st);
+  if ((st = SetBusFreq(kInitializationFrequencyHz)) != ZX_OK) {
+    FDF_LOGL(DEBUG, logger(), "SD_VOLTAGE_SWITCH failed, retcode = %d", st);
     return st;
   }
 
@@ -386,7 +537,7 @@ zx_status_t SdmmcDevice::SdioIoRwDirect(bool write, uint32_t fn_idx, uint32_t re
   zx_status_t st = Request(req, response);
   if (st != ZX_OK) {
     // Let the platform driver handle logging of this error.
-    zxlogf(DEBUG, "SDIO_IO_RW_DIRECT failed, retcode = %d", st);
+    FDF_LOGL(DEBUG, logger(), "SDIO_IO_RW_DIRECT failed, retcode = %d", st);
     return st;
   }
   if (read_byte) {
@@ -436,9 +587,9 @@ zx_status_t SdmmcDevice::SdioIoRwExtended(uint32_t caps, bool write, uint8_t fn_
   req.buffers_count = buffers.size();
 
   uint32_t response[4] = {};
-  zx_status_t st = host_.Request(&req, response);
+  zx_status_t st = Request(&req, response);
   if (st != ZX_OK) {
-    zxlogf(ERROR, "SDIO_IO_RW_DIRECT_EXTENDED failed, retcode = %d", st);
+    FDF_LOGL(ERROR, logger(), "SDIO_IO_RW_DIRECT_EXTENDED failed, retcode = %d", st);
     return st;
   }
   return ZX_OK;
@@ -537,18 +688,41 @@ zx_status_t SdmmcDevice::MmcSendExtCsd(std::array<uint8_t, MMC_EXT_CSD_SIZE>& ex
     return st;
   }
 
-  if (zxlog_level_enabled(TRACE)) {
-    zxlogf(TRACE, "EXT_CSD:");
+  if (fdf::Logger::GlobalInstance()->GetSeverity() <= FUCHSIA_LOG_TRACE) {
+    FDF_LOGL(TRACE, logger(), "EXT_CSD:");
     hexdump8_ex(ext_csd.data(), ext_csd.size(), 0);
   }
 
   return ZX_OK;
 }
 
-zx_status_t SdmmcDevice::MmcSelectCard() {
+zx_status_t SdmmcDevice::MmcSleepOrAwake(bool sleep) {
+  sdmmc_req_t req = {};
+  req.cmd_idx = MMC_SLEEP_AWAKE;
+  req.arg = RcaArg() | (sleep ? 1 : 0) << 15;
+  req.cmd_flags = MMC_SLEEP_AWAKE_FLAGS;
+  uint32_t response[4];
+  zx_status_t status = Request(req, response);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  if (sleep) {
+    if (MMC_STATUS_CURRENT_STATE(response[0]) != MMC_STATUS_CURRENT_STATE_STBY) {
+      return ZX_ERR_BAD_STATE;
+    }
+  } else {
+    if (MMC_STATUS_CURRENT_STATE(response[0]) != MMC_STATUS_CURRENT_STATE_SLP) {
+      return ZX_ERR_BAD_STATE;
+    }
+  }
+  return ZX_OK;
+}
+
+zx_status_t SdmmcDevice::MmcSelectCard(bool select) {
   sdmmc_req_t req = {};
   req.cmd_idx = MMC_SELECT_CARD;
-  req.arg = RcaArg();
+  req.arg = select ? RcaArg() : 0;
   req.cmd_flags = MMC_SELECT_CARD_FLAGS;
   uint32_t unused_response[4];
   return Request(req, unused_response);
@@ -565,5 +739,290 @@ zx_status_t SdmmcDevice::MmcSwitch(uint8_t index, uint8_t value) {
   uint32_t unused_response[4];
   return Request(req, unused_response);
 }
+
+zx_status_t SdmmcDevice::HostInfo(sdmmc_host_info_t* info) {
+  if (!using_fidl_) {
+    return host_.HostInfo(info);
+  }
+
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->HostInfo();
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "HostInfo request failed: %s", result.status_string());
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  auto& response = result.value();
+  info->caps = response->info.caps;
+  info->max_transfer_size = response->info.max_transfer_size;
+  info->max_transfer_size_non_dma = response->info.max_transfer_size_non_dma;
+  info->max_buffer_regions = response->info.max_buffer_regions;
+  info->prefs = response->info.prefs;
+  return ZX_OK;
+}
+
+zx_status_t SdmmcDevice::SetSignalVoltage(sdmmc_voltage_t voltage) {
+  if (!using_fidl_) {
+    return host_.SetSignalVoltage(voltage);
+  }
+
+  fuchsia_hardware_sdmmc::wire::SdmmcVoltage wire_voltage;
+  switch (voltage) {
+    case SDMMC_VOLTAGE_V330:
+      wire_voltage = fuchsia_hardware_sdmmc::wire::SdmmcVoltage::kV330;
+      break;
+    case SDMMC_VOLTAGE_V180:
+      wire_voltage = fuchsia_hardware_sdmmc::wire::SdmmcVoltage::kV180;
+      break;
+    case SDMMC_VOLTAGE_MAX:
+      wire_voltage = fuchsia_hardware_sdmmc::wire::SdmmcVoltage::kMax;
+      break;
+  }
+
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->SetSignalVoltage(wire_voltage);
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "SetSignalVoltage request failed: %s", result.status_string());
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t SdmmcDevice::SetBusWidth(sdmmc_bus_width_t bus_width) {
+  if (!using_fidl_) {
+    return host_.SetBusWidth(bus_width);
+  }
+
+  fuchsia_hardware_sdmmc::wire::SdmmcBusWidth wire_bus_width;
+  switch (bus_width) {
+    case SDMMC_BUS_WIDTH_ONE:
+      wire_bus_width = fuchsia_hardware_sdmmc::wire::SdmmcBusWidth::kOne;
+      break;
+    case SDMMC_BUS_WIDTH_FOUR:
+      wire_bus_width = fuchsia_hardware_sdmmc::wire::SdmmcBusWidth::kFour;
+      break;
+    case SDMMC_BUS_WIDTH_EIGHT:
+      wire_bus_width = fuchsia_hardware_sdmmc::wire::SdmmcBusWidth::kEight;
+      break;
+    case SDMMC_BUS_WIDTH_MAX:
+      wire_bus_width = fuchsia_hardware_sdmmc::wire::SdmmcBusWidth::kMax;
+      break;
+  }
+
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->SetBusWidth(wire_bus_width);
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "SetBusWidth request failed: %s", result.status_string());
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t SdmmcDevice::SetBusFreq(uint32_t bus_freq) {
+  if (!using_fidl_) {
+    return host_.SetBusFreq(bus_freq);
+  }
+
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->SetBusFreq(bus_freq);
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "SetBusFreq request failed: %s", result.status_string());
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t SdmmcDevice::SetTiming(sdmmc_timing_t timing) {
+  if (!using_fidl_) {
+    return host_.SetTiming(timing);
+  }
+
+  fuchsia_hardware_sdmmc::wire::SdmmcTiming wire_timing;
+  switch (timing) {
+    case SDMMC_TIMING_LEGACY:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kLegacy;
+      break;
+    case SDMMC_TIMING_HS:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHs;
+      break;
+    case SDMMC_TIMING_HSDDR:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHsddr;
+      break;
+    case SDMMC_TIMING_HS200:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHs200;
+      break;
+    case SDMMC_TIMING_HS400:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHs400;
+      break;
+    case SDMMC_TIMING_SDR12:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kSdr12;
+      break;
+    case SDMMC_TIMING_SDR25:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kSdr25;
+      break;
+    case SDMMC_TIMING_SDR104:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kSdr104;
+      break;
+    case SDMMC_TIMING_DDR50:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kDdr50;
+      break;
+    case SDMMC_TIMING_MAX:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kMax;
+      break;
+  }
+
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->SetTiming(wire_timing);
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "SetTiming request failed: %s", result.status_string());
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t SdmmcDevice::HwReset() {
+  if (!using_fidl_) {
+    return host_.HwReset();
+  }
+
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->HwReset();
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "HwReset request failed: %s", result.status_string());
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t SdmmcDevice::PerformTuning(uint32_t cmd_idx) {
+  if (!using_fidl_) {
+    return host_.PerformTuning(cmd_idx);
+  }
+
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->PerformTuning(cmd_idx);
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "PerformTuning request failed: %s", result.status_string());
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t SdmmcDevice::RegisterInBandInterrupt(
+    void* interrupt_cb_ctx, const in_band_interrupt_protocol_ops_t* interrupt_cb_ops) {
+  if (!using_fidl_) {
+    return host_.RegisterInBandInterrupt(interrupt_cb_ctx, interrupt_cb_ops);
+  }
+
+  // TODO(b/300145353): For now, not supported by aml-sdmmc.
+  return ZX_ERR_NOT_SUPPORTED;
+}
+
+void SdmmcDevice::AckInBandInterrupt() {
+  if (!using_fidl_) {
+    return host_.AckInBandInterrupt();
+  }
+
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->AckInBandInterrupt();
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "AckInBandInterrupt request failed: %s", result.status_string());
+  }
+}
+
+zx_status_t SdmmcDevice::RegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo,
+                                     uint64_t offset, uint64_t size, uint32_t vmo_rights) {
+  if (!using_fidl_) {
+    return host_.RegisterVmo(vmo_id, client_id, std::move(vmo), offset, size, vmo_rights);
+  }
+
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->RegisterVmo(vmo_id, client_id, std::move(vmo), offset,
+                                                          size, vmo_rights);
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "RegisterVmo request failed: %s", result.status_string());
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t SdmmcDevice::UnregisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo* out_vmo) {
+  if (!using_fidl_) {
+    return host_.UnregisterVmo(vmo_id, client_id, out_vmo);
+  }
+
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->UnregisterVmo(vmo_id, client_id);
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "UnregisterVmo request failed: %s", result.status_string());
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  *out_vmo = std::move(result.value()->vmo);
+  return ZX_OK;
+}
+
+zx_status_t SdmmcDevice::Request(const sdmmc_req_t* req, uint32_t out_response[4]) {
+  if (!using_fidl_) {
+    return host_.Request(req, out_response);
+  }
+
+  fdf::Arena arena('SDMC');
+  zx::result<fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>> wire_req_vector =
+      BanjoToFidlReqVector(req, 1, &arena, logger());
+  if (wire_req_vector.is_error()) {
+    return wire_req_vector.error_value();
+  }
+
+  auto result = client_.sync().buffer(arena)->Request(*wire_req_vector);
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "Request request failed: %s", result.status_string());
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  for (int i = 0; i < 4; i++) {
+    out_response[i] = result.value()->response[i];
+  }
+  return ZX_OK;
+}
+
+fdf::Logger& SdmmcDevice::logger() { return root_device_->logger(); }
 
 }  // namespace sdmmc

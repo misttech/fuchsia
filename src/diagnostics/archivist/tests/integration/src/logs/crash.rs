@@ -4,7 +4,8 @@
 
 use crate::{constants::*, test_topology, utils};
 use component_events::matcher::ExitStatusMatcher;
-use diagnostics_reader::{assert_data_tree, ArchiveReader, Logs, Severity};
+use diagnostics_assertions::assert_data_tree;
+use diagnostics_reader::{ArchiveReader, Logs, Severity};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_diagnostics::ArchiveAccessorMarker;
 use fuchsia_async::Task;
@@ -34,7 +35,7 @@ async fn logs_from_crashing_component() {
     reader.with_archive(accessor);
     let (mut logs, mut errors) = reader.snapshot_then_subscribe::<Logs>().unwrap().split_streams();
     let _errors = Task::spawn(async move {
-        while let Some(e) = errors.next().await {
+        if let Some(e) = errors.next().await {
             panic!("error in subscription: {e}");
         }
     });

@@ -31,8 +31,8 @@ class NetdeviceMigrationTestHelper {
     return netdev_.rx_started_;
   }
   size_t netbuf_size() const { return netdev_.netbuf_size_; }
-  const device_info_t& Info() { return netdev_.info_; }
-  const port_info_t& PortInfo() { return netdev_.port_info_; }
+  const device_impl_info_t& Info() { return netdev_.info_; }
+  const port_base_info_t& PortInfo() { return netdev_.port_info_; }
   const ethernet_ifc_protocol_t& EthernetIfcProto() { return netdev_.ethernet_ifc_proto_; }
   const network_device_impl_protocol_ops_t& NetworkDeviceImplProtoOps() {
     return netdev_.network_device_impl_protocol_ops_;
@@ -82,7 +82,9 @@ class MockNetworkDeviceIfc : public ddk::Device<MockNetworkDeviceIfc>,
 
   MOCK_METHOD(void, NetworkDeviceIfcPortStatusChanged,
               (uint8_t id, const port_status_t* new_status));
-  MOCK_METHOD(void, NetworkDeviceIfcAddPort, (uint8_t id, const network_port_protocol_t* port));
+  MOCK_METHOD(void, NetworkDeviceIfcAddPort,
+              (uint8_t id, const network_port_protocol_t* port,
+               network_device_ifc_add_port_callback callback, void* cookie));
   MOCK_METHOD(void, NetworkDeviceIfcRemovePort, (uint8_t id));
   MOCK_METHOD(void, NetworkDeviceIfcCompleteRx, (const rx_buffer_t* rx_list, size_t rx_count));
   MOCK_METHOD(void, NetworkDeviceIfcCompleteTx, (const tx_result_t* rx_list, size_t tx_count));
@@ -145,18 +147,26 @@ class NetdeviceMigrationTest : public ::testing::Test {
           return ZX_OK;
         });
     ASSERT_NO_FATAL_FAILURE(CreateDevice());
-    EXPECT_CALL(
-        mock_network_device_ifc_,
-        NetworkDeviceIfcAddPort(netdevice_migration::NetdeviceMigration::kPortId, testing::_))
-        .Times(1);
-    ASSERT_OK(device_->NetworkDeviceImplInit(&mock_network_device_ifc_.proto()));
+    EXPECT_CALL(mock_network_device_ifc_,
+                NetworkDeviceIfcAddPort(netdevice_migration::NetdeviceMigration::kPortId,
+                                        testing::_, testing::_, testing::_))
+        .Times(1)
+        .WillOnce([](uint8_t id, const network_port_protocol_t* port,
+                     network_device_ifc_add_port_callback callback,
+                     void* cookie) { callback(cookie, ZX_OK); });
+    libsync::Completion initialized;
+    device_->NetworkDeviceImplInit(
+        &mock_network_device_ifc_.proto(),
+        [](void* ctx, zx_status_t status) {
+          libsync::Completion* completion = static_cast<libsync::Completion*>(ctx);
+          EXPECT_OK(status);
+          completion->Signal();
+        },
+        &initialized);
+    initialized.Wait();
   }
 
   void NetdevImplStart(zx_status_t expected) {
-    if (expected != ZX_ERR_ALREADY_BOUND) {
-      EXPECT_CALL(mock_ethernet_impl_, EthernetImplStart(testing::_))
-          .WillOnce(testing::Return(expected));
-    }
     std::optional<zx_status_t> callback_status;
     device_->NetworkDeviceImplStart(
         [](void* ctx, zx_status_t status) {
@@ -225,6 +235,17 @@ class NetdeviceMigrationTest : public ::testing::Test {
     Device().NetworkDeviceImplQueueTx(&buf, 1);
   }
 
+  void QueueRxSpace(const rx_space_buffer_t* buffers, size_t buffers_count) {
+    if (!queued_rx_space_) {
+      // The call to Ethernet.Start is deferred to the first call to QueueRxSpace to ensure there
+      // are receive buffers available as soon as Start is called. After the first call it is not
+      // expected to be called again.
+      EXPECT_CALL(mock_ethernet_impl_, EthernetImplStart(testing::_));
+      queued_rx_space_ = true;
+    }
+    Device().NetworkDeviceImplQueueRxSpace(buffers, buffers_count);
+  }
+
   MockDevice& Parent() { return *parent_; }
   testing::StrictMock<const MockNetworkDeviceIfc>& MockNetworkDevice() {
     return mock_network_device_ifc_;
@@ -238,6 +259,7 @@ class NetdeviceMigrationTest : public ::testing::Test {
   testing::StrictMock<const MockNetworkDeviceIfc> mock_network_device_ifc_;
   testing::StrictMock<const MockEthernetImpl> mock_ethernet_impl_;
   std::unique_ptr<netdevice_migration::NetdeviceMigration> device_;
+  bool queued_rx_space_ = false;
 };
 
 class NetdeviceMigrationDefaultSetupTest : public NetdeviceMigrationTest {
@@ -297,7 +319,7 @@ TEST_P(DeviceClassSetupTest, DeviceClassTest) {
   const DeviceClassTestCase test_case = GetParam();
   SetUpWithFeatures(test_case.features);
   netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  const port_info_t port_info = helper.PortInfo();
+  const port_base_info_t port_info = helper.PortInfo();
   ASSERT_EQ(static_cast<uint8_t>(test_case.expected_device_class), port_info.port_class);
 }
 
@@ -309,7 +331,7 @@ INSTANTIATE_TEST_SUITE_P(NetdeviceMigration, DeviceClassSetupTest,
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, DeviceInfoPreconditions) {
   netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  const device_info_t& info = helper.Info();
+  const device_impl_info_t& info = helper.Info();
   // buffer_alignment > max_buffer_length leads to either unnecessary wasting of contiguous memory,
   // or for the configuration to be rejected altogether.
   ASSERT_LE(info.buffer_alignment, info.max_buffer_length);
@@ -325,7 +347,16 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, LifetimeTest) {
 }
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplInit) {
-  ASSERT_STATUS(Device().NetworkDeviceImplInit(&MockNetworkDevice().proto()), ZX_ERR_ALREADY_BOUND);
+  libsync::Completion init_called;
+  Device().NetworkDeviceImplInit(
+      &MockNetworkDevice().proto(),
+      [](void* ctx, zx_status_t status) {
+        libsync::Completion* init_called = static_cast<libsync::Completion*>(ctx);
+        EXPECT_STATUS(status, ZX_ERR_ALREADY_BOUND);
+        init_called->Signal();
+      },
+      &init_called);
+  init_called.Wait();
 }
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplStartStop) {
@@ -335,10 +366,6 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplStartStop) {
     // Step calls ImplStart if set, ImplStop otherwise.
     std::optional<zx_status_t> start_status;
   } kTestSteps[] = {
-      {
-          .name = "failed start",
-          .start_status = ZX_ERR_INTERNAL,
-      },
       {
           .name = "successful start",
           .device_started = true,
@@ -380,8 +407,8 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, EthernetIfcStatus) {
               NetworkDeviceIfcPortStatusChanged(
                   netdevice_migration::NetdeviceMigration::kPortId,
                   testing::Pointee(testing::FieldsAre(
-                      ETH_MTU_SIZE, static_cast<uint32_t>(
-                                        fuchsia_hardware_network::wire::StatusFlags::kOnline)))))
+                      static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline),
+                      ETH_MTU_SIZE))))
       .Times(1);
   Device().EthernetIfcStatus(ETHERNET_STATUS_ONLINE);
   Device().NetworkPortGetStatus(&status);
@@ -403,8 +430,8 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, EthernetIfcStatusCalledFromEthernetIm
               NetworkDeviceIfcPortStatusChanged(
                   netdevice_migration::NetdeviceMigration::kPortId,
                   testing::Pointee(testing::FieldsAre(
-                      ETH_MTU_SIZE, static_cast<uint32_t>(
-                                        fuchsia_hardware_network::wire::StatusFlags::kOnline)))))
+                      static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline),
+                      ETH_MTU_SIZE))))
       .Times(1);
   ASSERT_OK(MockEthernet().EthernetImplStart(&proto));
   port_status_t status;
@@ -508,11 +535,11 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplQueueRxSpace) {
   // An unstarted netdevice will immediately return queued buffers.
   EXPECT_CALL(MockNetworkDevice(), NetworkDeviceIfcCompleteRx(testing::_, 1))
       .Times(std::size(spaces));
-  Device().NetworkDeviceImplQueueRxSpace(spaces, std::size(spaces));
+  QueueRxSpace(spaces, std::size(spaces));
   ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
   netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
   helper.WithRxSpaces<void>([](auto& rx_spaces) { EXPECT_TRUE(rx_spaces.empty()); });
-  Device().NetworkDeviceImplQueueRxSpace(spaces, std::size(spaces));
+  QueueRxSpace(spaces, std::size(spaces));
   helper.WithRxSpaces<void>([&spaces](auto& rx_spaces) {
     ASSERT_EQ(rx_spaces.size(), std::size(spaces));
     for (const rx_space_buffer_t& space : spaces) {
@@ -576,7 +603,7 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, EthernetIfcRecv) {
               },
       },
   };
-  Device().NetworkDeviceImplQueueRxSpace(spaces, std::size(spaces));
+  QueueRxSpace(spaces, std::size(spaces));
   constexpr uint8_t rcvd[] = {0, 1, 2, 3, 4, 5, 6, 7};
   EXPECT_CALL(
       MockNetworkDevice(),
@@ -637,7 +664,7 @@ TEST_P(RecvFailedPreconditionTest, RemovesDriver) {
               },
       },
   };
-  Device().NetworkDeviceImplQueueRxSpace(spaces, std::size(spaces));
+  QueueRxSpace(spaces, std::size(spaces));
   uint8_t bytes[input.buf_len];
   auto* device = TakeDevice();
   ASSERT_OK(device->DeviceAdd());
@@ -868,11 +895,11 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, MacAddrGetAddress) {
-  uint8_t out[MAC_SIZE];
-  Device().MacAddrGetAddress(out);
+  mac_address_t out;
+  Device().MacAddrGetAddress(&out);
   uint8_t expected[] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
   for (size_t i = 0; i < MAC_SIZE; ++i) {
-    EXPECT_EQ(out[i], expected[i]);
+    EXPECT_EQ(out.octets[i], expected[i]);
   }
 }
 
@@ -887,7 +914,7 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, MacAddrGetFeatures) {
 
 struct MacAddrSetModeFailedPreconditionInput {
   const char* name;
-  mode_t mode;
+  supported_mac_filter_mode_t mode;
   size_t mcast_macs;
 };
 
@@ -911,12 +938,13 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         MacAddrSetModeFailedPreconditionInput{
             .name = "TooManyMulticastMacFilters",
-            .mode = MODE_MULTICAST_FILTER,
+            .mode = MAC_FILTER_MODE_MULTICAST_FILTER,
             .mcast_macs = netdevice_migration::NetdeviceMigration::kMulticastFilterMax + 1,
         },
         MacAddrSetModeFailedPreconditionInput{
             .name = "InvalidMode",
-            .mode = MODE_MULTICAST_FILTER | MODE_MULTICAST_PROMISCUOUS | MODE_PROMISCUOUS,
+            .mode = MAC_FILTER_MODE_MULTICAST_FILTER | MAC_FILTER_MODE_MULTICAST_PROMISCUOUS |
+                    MAC_FILTER_MODE_PROMISCUOUS,
             .mcast_macs = netdevice_migration::NetdeviceMigration::kMulticastFilterMax,
         }),
     [](const testing::TestParamInfo<MacAddrSetModeFailedPreconditionTest::ParamType>& info) {
@@ -930,14 +958,29 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, MacAddrSetMode) {
       .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
   EXPECT_CALL(MockEthernet(), EthernetImplSetParam(ETHERNET_SETPARAM_PROMISC, 0, nullptr, 0))
       .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
-  std::array<uint8_t, netdevice_migration::NetdeviceMigration::kMulticastFilterMax * MAC_SIZE>
+  std::array<mac_address_t, netdevice_migration::NetdeviceMigration::kMulticastFilterMax>
       mac_filter;
-  EXPECT_CALL(MockEthernet(),
-              EthernetImplSetParam(ETHERNET_SETPARAM_MULTICAST_FILTER,
-                                   netdevice_migration::NetdeviceMigration::kMulticastFilterMax,
-                                   testing::Pointer(mac_filter.data()), mac_filter.size()))
+  for (size_t i = 0; i < mac_filter.size(); ++i) {
+    // Fill up each mac address with {i, i + 1, i + 2, ...} to have some distinct test data.
+    std::iota(std::begin(mac_filter[i].octets), std::end(mac_filter[i].octets), i);
+  }
+  auto mcast_macs_match = [&](const uint8_t* data) -> bool {
+    const uint8_t* addr = data;
+    for (auto& mac : mac_filter) {
+      if (std::memcmp(mac.octets, addr, MAC_SIZE) != 0) {
+        return false;
+      }
+      addr += MAC_SIZE;
+    }
+    return true;
+  };
+  EXPECT_CALL(
+      MockEthernet(),
+      EthernetImplSetParam(ETHERNET_SETPARAM_MULTICAST_FILTER,
+                           netdevice_migration::NetdeviceMigration::kMulticastFilterMax,
+                           testing::ResultOf(mcast_macs_match, true), mac_filter.size() * MAC_SIZE))
       .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
-  Device().MacAddrSetMode(MODE_MULTICAST_FILTER, mac_filter.data(),
+  Device().MacAddrSetMode(MAC_FILTER_MODE_MULTICAST_FILTER, mac_filter.data(),
                           netdevice_migration::NetdeviceMigration::kMulticastFilterMax);
 
   EXPECT_CALL(MockEthernet(), EthernetImplSetParam(ETHERNET_SETPARAM_PROMISC, 0, nullptr, 0))
@@ -945,21 +988,22 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, MacAddrSetMode) {
   EXPECT_CALL(MockEthernet(),
               EthernetImplSetParam(ETHERNET_SETPARAM_MULTICAST_PROMISC, 1, nullptr, 0))
       .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
-  Device().MacAddrSetMode(MODE_MULTICAST_PROMISCUOUS, nullptr, 0u);
+  Device().MacAddrSetMode(MAC_FILTER_MODE_MULTICAST_PROMISCUOUS, nullptr, 0u);
 
   EXPECT_CALL(MockEthernet(), EthernetImplSetParam(ETHERNET_SETPARAM_PROMISC, 1, nullptr, 0))
       .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
-  Device().MacAddrSetMode(MODE_PROMISCUOUS, nullptr, 0u);
+  Device().MacAddrSetMode(MAC_FILTER_MODE_PROMISCUOUS, nullptr, 0u);
 }
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, GetMac) {
-  mac_addr_protocol_t mac;
+  mac_addr_protocol_t* mac;
   Device().NetworkPortGetMac(&mac);
+  ASSERT_NE(mac, nullptr);
   netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  std::array<uint8_t, MAC_SIZE> addr = {};
-  mac.ops->get_address(mac.ctx, addr.data());
-  for (size_t i = 0; i < addr.size(); ++i) {
-    EXPECT_EQ(addr[i], helper.Mac()[i]);
+  mac_address_t addr = {};
+  mac->ops->get_address(mac->ctx, &addr);
+  for (size_t i = 0; i < MAC_SIZE; ++i) {
+    EXPECT_EQ(addr.octets[i], helper.Mac()[i]);
   }
 }
 
@@ -984,7 +1028,7 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, ReturnsRxBuffersOnStop) {
   ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
   netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
   helper.WithRxSpaces<void>([](auto& rx_spaces) { EXPECT_TRUE(rx_spaces.empty()); });
-  Device().NetworkDeviceImplQueueRxSpace(spaces, std::size(spaces));
+  QueueRxSpace(spaces, std::size(spaces));
   helper.WithRxSpaces<void>([&spaces, &kBufId](auto& rx_spaces) {
     ASSERT_EQ(rx_spaces.size(), std::size(spaces));
     EXPECT_EQ(rx_spaces.front().id, kBufId);

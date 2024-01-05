@@ -1,0 +1,43 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+
+group("client") {
+  deps = [ ":package" ]
+}
+
+executable("bin") {
+  output_name = "pw_rpc_client"
+
+  sources = [ "pw_rpc_client.cc" ]
+
+  deps = [
+    "//examples/components/pw_rpc/fidl:fidl.examples.pigweed_cpp",
+    "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/syslog/cpp",
+    "//third_party/pigweed/backends/pw_log:printf",
+    "//third_party/pigweed/src/pw_hdlc",
+    "//third_party/pigweed/src/pw_hdlc:pw_rpc",
+    "//third_party/pigweed/src/pw_hdlc:rpc_channel_output",
+    "//third_party/pigweed/src/pw_rpc:client",
+    "//third_party/pigweed/src/pw_rpc/pwpb:echo_service",
+    "//third_party/pigweed/src/pw_stream",
+    "//third_party/pigweed/src/pw_stream:socket_stream",
+    "//zircon/system/ulib/async-default",
+    "//zircon/system/ulib/async-loop:async-loop-cpp",
+    "//zircon/system/ulib/async-loop:async-loop-default",
+  ]
+}
+
+fuchsia_component("component") {
+  component_name = "pw_rpc_client"
+  manifest = "meta/pw_rpc_client.cml"
+  deps = [ ":bin" ]
+}
+
+fuchsia_package("package") {
+  package_name = "pw_rpc_client"
+  deps = [ ":component" ]
+}

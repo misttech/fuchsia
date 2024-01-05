@@ -31,14 +31,52 @@ pub enum LogError {
     DumpWithSinceNow,
     #[error("No symbolizer configuration provided")]
     NoSymbolizerConfig,
+    #[error("failed to connect to RealmQuery: {:?}", error)]
+    RealmQueryConnectionFailed { error: i32 },
+}
+
+impl From<log_command::LogError> for LogError {
+    fn from(value: log_command::LogError) -> Self {
+        use log_command::LogError::*;
+        match value {
+            UnknownError(err) => Self::UnknownError(err),
+            NoBootTimestamp => Self::NoBootTimestamp,
+            IOError(err) => Self::IOError(err),
+            DumpWithSinceNow => Self::DumpWithSinceNow,
+            NoSymbolizerConfig => Self::NoSymbolizerConfig,
+            FfxError(err) => Self::UnknownError(err.into()),
+            Utf8Error(err) => Self::UnknownError(err.into()),
+            FidlError(err) => Self::UnknownError(err.into()),
+        }
+    }
 }
 
 impl From<LogError> for fho::Error {
     fn from(value: LogError) -> Self {
+        use LogError::*;
         match value {
-            LogError::DumpWithSinceNow => fho::Error::User(value.into()),
-            err => fho::Error::Unexpected(err.into()),
+            // anyhow errors may carry ffx user errors, so let the normal translation deal with that.
+            UnknownError(err) => err.into(),
+            // these errors have useful, actionable errors for users
+            DumpWithSinceNow
+            | NoBootTimestamp
+            | NoSymbolizerConfig
+            | RealmQueryConnectionFailed { .. }
+            | OpenTargetError { .. }
+            | TargetConnectionError { .. }
+            | IdentifyHostError { .. }
+            | ConnectCapabilityError { .. } => fho::Error::User(value.into()),
+            // these errors are probably an unexpected problem with no actionable error output.
+            FidlError(err) => fho::Error::Unexpected(err.into()),
+            IOError(err) => fho::Error::Unexpected(err.into()),
+            ConfigError(err) => fho::Error::Unexpected(err.into()),
         }
+    }
+}
+
+impl From<i32> for LogError {
+    fn from(error: i32) -> Self {
+        Self::RealmQueryConnectionFailed { error }
     }
 }
 

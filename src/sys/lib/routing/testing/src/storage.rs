@@ -7,14 +7,14 @@ use {
         component_id_index::make_index_file, generate_storage_path, CheckUse, ExpectedResult,
         RoutingTestModel, RoutingTestModelBuilder,
     },
+    cm_config::{CapabilityAllowlistKey, CapabilityAllowlistSource},
     cm_moniker::InstancedMoniker,
     cm_rust::*,
     cm_rust_testing::{ComponentDeclBuilder, DirectoryDeclBuilder},
-    component_id_index::gen_instance_id,
+    component_id_index::InstanceId,
     fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio,
     fuchsia_zircon_status as zx_status,
     moniker::{ExtendedMoniker, Moniker, MonikerBase},
-    routing::config::{CapabilityAllowlistKey, CapabilityAllowlistSource},
     std::{collections::HashSet, convert::TryInto, marker::PhantomData, path::PathBuf},
 };
 
@@ -273,7 +273,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     storage_relation: None,
                     from_cm_namespace: false,
                     storage_subdir: None,
-                    expected_res: ExpectedResult::Err(zx_status::Status::UNAVAILABLE),
+                    expected_res: ExpectedResult::Err(zx_status::Status::ACCESS_DENIED),
                 },
             )
             .await;
@@ -303,6 +303,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     .offer(OfferDecl::Directory(OfferDirectoryDecl {
                         source: OfferSource::Self_,
                         source_name: "data".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "minfs".parse().unwrap(),
                         target: OfferTarget::static_child("b".to_string()),
                         rights: Some(fio::RW_STAR_DIR),
@@ -384,6 +385,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     .offer(OfferDecl::Directory(OfferDirectoryDecl {
                         source: OfferSource::Self_,
                         source_name: "data".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "minfs".parse().unwrap(),
                         target: OfferTarget::static_child("b".to_string()),
                         rights: Some(fio::RW_STAR_DIR),
@@ -471,6 +473,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     .offer(OfferDecl::Directory(OfferDirectoryDecl {
                         source: OfferSource::Self_,
                         source_name: "data".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "minfs".parse().unwrap(),
                         target: OfferTarget::static_child("b".to_string()),
                         rights: Some(fio::RW_STAR_DIR),
@@ -648,6 +651,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     .expose(ExposeDecl::Directory(ExposeDirectoryDecl {
                         source_name: "data".parse().unwrap(),
                         source: ExposeSource::Self_,
+                        source_dictionary: None,
                         target_name: "minfs".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         rights: Some(fio::RW_STAR_DIR),
@@ -726,6 +730,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     .expose(ExposeDecl::Directory(ExposeDirectoryDecl {
                         source_name: "data".parse().unwrap(),
                         source: ExposeSource::Self_,
+                        source_dictionary: None,
                         target_name: "minfs".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         rights: Some(fio::RW_STAR_DIR),
@@ -827,6 +832,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     .expose(ExposeDecl::Directory(ExposeDirectoryDecl {
                         source_name: "data".parse().unwrap(),
                         source: ExposeSource::Self_,
+                        source_dictionary: None,
                         target_name: "minfs".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         rights: Some(fio::RW_STAR_DIR),
@@ -988,7 +994,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     storage_relation: None,
                     from_cm_namespace: false,
                     storage_subdir: None,
-                    expected_res: ExpectedResult::Err(zx_status::Status::UNAVAILABLE),
+                    expected_res: ExpectedResult::Err(zx_status::Status::NOT_FOUND),
                 },
             )
             .await;
@@ -1014,6 +1020,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     .offer(OfferDecl::Directory(OfferDirectoryDecl {
                         source: OfferSource::Self_,
                         source_name: "data".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "data".parse().unwrap(),
                         target: OfferTarget::static_child("b".to_string()),
                         rights: Some(fio::RW_STAR_DIR),
@@ -1044,7 +1051,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     storage_relation: None,
                     from_cm_namespace: false,
                     storage_subdir: None,
-                    expected_res: ExpectedResult::Err(zx_status::Status::UNAVAILABLE),
+                    expected_res: ExpectedResult::Err(zx_status::Status::NOT_FOUND),
                 },
             )
             .await;
@@ -1098,7 +1105,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     storage_relation: None,
                     from_cm_namespace: false,
                     storage_subdir: None,
-                    expected_res: ExpectedResult::Err(zx_status::Status::UNAVAILABLE),
+                    expected_res: ExpectedResult::Err(zx_status::Status::NOT_FOUND),
                 },
             )
             .await;
@@ -1128,6 +1135,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     .offer(OfferDecl::Directory(OfferDirectoryDecl {
                         source: OfferSource::Self_,
                         source_name: "data".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "minfs".parse().unwrap(),
                         target: OfferTarget::static_child("b".to_string()),
                         rights: Some(fio::RW_STAR_DIR),
@@ -1178,7 +1186,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     storage_relation: None,
                     from_cm_namespace: false,
                     storage_subdir: None,
-                    expected_res: ExpectedResult::Err(zx_status::Status::UNAVAILABLE),
+                    expected_res: ExpectedResult::Err(zx_status::Status::NOT_FOUND),
                 },
             )
             .await;
@@ -1268,15 +1276,13 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
     /// Instance IDs defined only for `b` in the component ID index.
     /// Check that the correct storage layout is used when a component has an instance ID.
     pub async fn test_instance_id_from_index(&self) {
-        let b_instance_id = Some(gen_instance_id(&mut rand::thread_rng()));
-        let component_id_index_path = make_index_file(component_id_index::Index {
-            instances: vec![component_id_index::InstanceIdEntry {
-                instance_id: b_instance_id.clone(),
-                moniker: Some(Moniker::parse_str("/b").unwrap()),
-            }],
-            ..component_id_index::Index::default()
-        })
-        .unwrap();
+        let b_instance_id = InstanceId::new_random(&mut rand::thread_rng());
+        let component_id_index = {
+            let mut index = component_id_index::Index::default();
+            index.insert(Moniker::parse_str("/b").unwrap(), b_instance_id.clone()).unwrap();
+            index
+        };
+        let component_id_index_path = make_index_file(component_id_index).unwrap();
         let components = vec![
             (
                 "a",
@@ -1335,7 +1341,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
         ];
         let mut builder = T::new("a", components);
         builder.set_component_id_index_path(
-            component_id_index_path.path().to_str().unwrap().to_string(),
+            component_id_index_path.path().to_owned().try_into().unwrap(),
         );
         let model = builder.build().await;
 
@@ -1352,7 +1358,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                 },
             )
             .await;
-        model.check_test_subdir_contains(".", b_instance_id.as_ref().unwrap().to_string()).await;
+        model.check_test_subdir_contains(".", b_instance_id.to_string()).await;
 
         // instance `c` uses moniker-based paths.
         let storage_relation = InstancedMoniker::try_from(vec!["b:0", "c:0"]).unwrap();

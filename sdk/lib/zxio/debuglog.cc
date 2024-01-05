@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/zxio/cpp/vector.h>
 #include <lib/zxio/null.h>
 #include <lib/zxio/ops.h>
 #include <zircon/syscalls/log.h>
@@ -10,7 +9,8 @@
 #include <array>
 #include <mutex>
 
-#include "private.h"
+#include "sdk/lib/zxio/private.h"
+#include "sdk/lib/zxio/vector.h"
 
 namespace {
 
@@ -82,7 +82,7 @@ zx_status_t Debuglog::Writev(const zx_iovec_t* vector, size_t vector_count, zxio
     return status;
   };
 
-  auto write = [&](void* buffer, size_t capacity, size_t* out_actual) {
+  auto write = [&](void* buffer, size_t capacity, size_t total_so_far, size_t* out_actual) {
     // Convince the compiler that the lock is held here. This is safe because the lock is held over
     // the call to zxio_do_vector and zxio_do_vector is synchronous, so it cannot extend the life of
     // this lambda.

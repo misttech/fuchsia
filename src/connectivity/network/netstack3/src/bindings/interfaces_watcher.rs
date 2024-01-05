@@ -18,7 +18,7 @@ use futures::{
     TryFutureExt as _, TryStreamExt as _,
 };
 use net_types::ip::{AddrSubnetEither, IpAddr, IpVersion};
-use netstack3_core::ip::device::IpAddressState;
+use netstack3_core::ip::IpAddressState;
 
 /// Possible errors when serving `fuchsia.net.interfaces/State`.
 #[derive(thiserror::Error, Debug)]
@@ -30,7 +30,7 @@ pub(crate) enum Error {
 }
 
 #[cfg_attr(test, derive(Default))]
-pub struct WatcherOptions {
+pub(crate) struct WatcherOptions {
     address_properties_interest: finterfaces::AddressPropertiesInterest,
     include_non_assigned_addresses: bool,
 }
@@ -244,7 +244,7 @@ impl Watcher {
 /// Interface specific events.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, Eq, PartialEq))]
-pub enum InterfaceUpdate {
+pub(crate) enum InterfaceUpdate {
     AddressAdded { addr: AddrSubnetEither, assignment_state: IpAddressState, valid_until: zx::Time },
     AddressAssignmentStateChanged { addr: IpAddr, new_state: IpAddressState },
     AddressPropertiesChanged { addr: IpAddr, update: AddressPropertiesUpdate },
@@ -256,23 +256,23 @@ pub enum InterfaceUpdate {
 /// Changes to address properties (e.g. via interfaces-admin).
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, Eq, PartialEq))]
-pub struct AddressPropertiesUpdate {
+pub(crate) struct AddressPropertiesUpdate {
     /// The new value for `valid_until`.
-    pub valid_until: zx::Time,
+    pub(crate) valid_until: zx::Time,
 }
 
 /// Immutable interface properties.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, Eq, PartialEq))]
-pub struct InterfaceProperties {
-    pub name: String,
-    pub device_class: finterfaces::DeviceClass,
+pub(crate) struct InterfaceProperties {
+    pub(crate) name: String,
+    pub(crate) device_class: finterfaces::DeviceClass,
 }
 
 /// Cached interface state by the worker.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, Eq, PartialEq))]
-pub struct InterfaceState {
+pub(crate) struct InterfaceState {
     properties: InterfaceProperties,
     online: bool,
     addresses: HashMap<IpAddr, AddressProperties>,
@@ -290,9 +290,9 @@ struct AddressProperties {
 /// Cached address state by the worker.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, Eq, PartialEq))]
-pub struct AddressState {
-    pub valid_until: zx::Time,
-    pub assignment_state: IpAddressState,
+pub(crate) struct AddressState {
+    pub(crate) valid_until: zx::Time,
+    pub(crate) assignment_state: IpAddressState,
 }
 
 #[derive(Debug)]
@@ -304,7 +304,7 @@ pub(crate) enum InterfaceEvent {
 }
 
 #[derive(Debug)]
-pub struct InterfaceEventProducer {
+pub(crate) struct InterfaceEventProducer {
     id: BindingId,
     channel: mpsc::UnboundedSender<InterfaceEvent>,
 }
@@ -312,7 +312,7 @@ pub struct InterfaceEventProducer {
 impl InterfaceEventProducer {
     /// Notifies the interface state [`Worker`] of [`event`] on this
     /// [`InterfaceEventProducer`]'s interface.
-    pub fn notify(&self, event: InterfaceUpdate) -> Result<(), InterfaceUpdate> {
+    pub(crate) fn notify(&self, event: InterfaceUpdate) -> Result<(), InterfaceUpdate> {
         let Self { id, channel } = self;
         channel.unbounded_send(InterfaceEvent::Changed { id: *id, event }).map_err(|e| {
             match e.into_inner() {
@@ -322,14 +322,6 @@ impl InterfaceEventProducer {
                 e => unreachable!("{:?}", e),
             }
         })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn new(
-        id: BindingId,
-        channel: mpsc::UnboundedSender<InterfaceEvent>,
-    ) -> InterfaceEventProducer {
-        InterfaceEventProducer { id, channel }
     }
 }
 
@@ -348,7 +340,7 @@ impl Drop for InterfaceEventProducer {
 
 #[derive(thiserror::Error, Debug)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
-pub enum WorkerError {
+pub(crate) enum WorkerError {
     #[error("attempted to reinsert interface {interface} over old {old:?}")]
     AddedDuplicateInterface { interface: BindingId, old: InterfaceState },
     #[error("attempted to remove nonexisting interface with id {0}")]
@@ -381,9 +373,17 @@ enum ChangedAddressProperties {
     },
 }
 
-pub struct Worker {
+#[derive(Default)]
+pub(crate) struct RunOptions {
+    #[cfg(test)]
+    pub(crate) spy_interface_events:
+        Option<futures::channel::mpsc::UnboundedSender<InterfaceEvent>>,
+}
+
+pub(crate) struct Worker {
     events: mpsc::UnboundedReceiver<InterfaceEvent>,
     watchers: mpsc::Receiver<NewWatcher>,
+    pub(crate) run_options: RunOptions,
 }
 /// Arbitrarily picked constant to force backpressure on FIDL requests.
 const WATCHER_CHANNEL_CAPACITY: usize = 32;
@@ -396,11 +396,15 @@ fn is_assigned(state: IpAddressState) -> bool {
 }
 
 impl Worker {
-    pub fn new() -> (Worker, WorkerWatcherSink, WorkerInterfaceSink) {
+    pub(crate) fn new() -> (Worker, WorkerWatcherSink, WorkerInterfaceSink) {
         let (events_sender, events_receiver) = mpsc::unbounded();
         let (watchers_sender, watchers_receiver) = mpsc::channel(WATCHER_CHANNEL_CAPACITY);
         (
-            Worker { events: events_receiver, watchers: watchers_receiver },
+            Worker {
+                events: events_receiver,
+                watchers: watchers_receiver,
+                run_options: RunOptions::default(),
+            },
             WorkerWatcherSink { sender: watchers_sender },
             WorkerInterfaceSink { sender: events_sender },
         )
@@ -414,7 +418,7 @@ impl Worker {
     pub(crate) async fn run(
         self,
     ) -> Result<futures::stream::FuturesUnordered<Watcher>, WorkerError> {
-        let Self { events, watchers: watchers_stream } = self;
+        let Self { events, watchers: watchers_stream, run_options } = self;
         let mut current_watchers = futures::stream::FuturesUnordered::<Watcher>::new();
         let mut interface_state = HashMap::new();
 
@@ -486,6 +490,21 @@ impl Worker {
                 }
                 Action::Sink(Some(SinkAction::Event(e))) => {
                     tracing::debug!("consuming event {:?}", e);
+
+                    #[cfg(test)]
+                    {
+                        let RunOptions { spy_interface_events } = &run_options;
+                        match spy_interface_events {
+                            Some(sink) => sink.unbounded_send(e.clone()).unwrap_or(
+                                // To simplify teardown, we allow tests to
+                                // drop the spy receiver.
+                                (),
+                            ),
+                            None => (),
+                        };
+                    }
+                    #[cfg(not(test))]
+                    let RunOptions {} = &run_options;
 
                     let is_address_visible = |involves_assigned, include_non_assigned_addresses| {
                         // The address is visible if the change involves an
@@ -815,16 +834,16 @@ struct NewWatcher {
 
 #[derive(thiserror::Error, Debug)]
 #[error("Connection to interfaces worker closed")]
-pub struct WorkerClosedError {}
+pub(crate) struct WorkerClosedError {}
 
 #[derive(Clone)]
-pub struct WorkerWatcherSink {
+pub(crate) struct WorkerWatcherSink {
     sender: mpsc::Sender<NewWatcher>,
 }
 
 impl WorkerWatcherSink {
     /// Adds a new interface watcher to be operated on by [`Worker`].
-    pub async fn add_watcher(
+    pub(crate) async fn add_watcher(
         &mut self,
         watcher: finterfaces::WatcherRequestStream,
         options: WatcherOptions,
@@ -837,7 +856,7 @@ impl WorkerWatcherSink {
 }
 
 #[derive(Clone)]
-pub struct WorkerInterfaceSink {
+pub(crate) struct WorkerInterfaceSink {
     sender: mpsc::UnboundedSender<InterfaceEvent>,
 }
 
@@ -856,7 +875,7 @@ impl WorkerInterfaceSink {
     /// the same identifier are created at the same time, but that is not
     /// observable from `add_interface`. It does not provide guardrails to
     /// prevent identifier reuse, however.
-    pub fn add_interface(
+    pub(crate) fn add_interface(
         &self,
         id: BindingId,
         properties: InterfaceProperties,

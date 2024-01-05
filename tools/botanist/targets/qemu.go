@@ -57,6 +57,9 @@ const (
 
 	// Minimum number of bytes of entropy bits required for the kernel's PRNG.
 	minEntropyBytes uint = 32 // 256 bits
+
+	// The experiment level at which to enable `ffx emu`.
+	ffxEmuExperimentLevel = 1
 )
 
 // qemuTargetMapping maps the Fuchsia target name to the name recognized by QEMU.
@@ -224,8 +227,13 @@ func (t *QEMU) SSHClient() (*sshutil.Client, error) {
 	return t.sshClient(addr)
 }
 
+func (t *QEMU) UseProductBundles() bool {
+	return t.UseFFX()
+}
+
 // Start starts the QEMU target.
-func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []string) (err error) {
+// TODO(fxbug.dev/95938): Add logic to use PB with ffx emu
+func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []string, pbPath string, isBootTest bool) (err error) {
 	if t.process != nil {
 		return fmt.Errorf("a process has already been started with PID %d", t.process.Pid)
 	}
@@ -247,28 +255,55 @@ func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []stri
 	}
 	qemuCmd.SetBinary(absQEMUSystemPath)
 
+	useProductBundle := t.UseFFX() && pbPath != ""
+
 	// If a QEMU kernel override was specified, use that; else, unless we want
 	// to boot via a UEFI disk image (which does not require one), then we
 	// surely want a QEMU kernel, so use the default.
-	var qemuKernel *bootserver.Image
-	if t.imageOverrides.QEMUKernel != "" {
-		qemuKernel = getImage(images, t.imageOverrides.QEMUKernel, build.ImageTypeQEMUKernel)
-	} else if t.imageOverrides.EFIDisk == "" {
-		qemuKernel = getImageByNameAndCPU(images, "kernel_qemu-kernel", t.config.Target)
+	var qemuKernel, efiDisk *bootserver.Image
+	if useProductBundle {
+		qemuKernel, err = t.ffx.GetImageFromPB(ctx, pbPath, "a", "qemu-kernel", "")
+		if err != nil {
+			return err
+		}
+		if qemuKernel == nil {
+			efiDisk, err = t.ffx.GetImageFromPB(ctx, pbPath, "", "", "firmware_fat")
+			if err != nil {
+				return err
+			}
+			if efiDisk == nil {
+				qemuKernel = getImageByNameAndCPU(images, "kernel_qemu-kernel", t.config.Target)
+			}
+		}
+	} else {
+		if t.imageOverrides.QEMUKernel != "" {
+			qemuKernel = getImage(images, t.imageOverrides.QEMUKernel, build.ImageTypeQEMUKernel)
+		} else if t.imageOverrides.EFIDisk != "" {
+			efiDisk = getImage(images, t.imageOverrides.EFIDisk, build.ImageTypeFAT)
+		} else {
+			qemuKernel = getImageByNameAndCPU(images, "kernel_qemu-kernel", t.config.Target)
+		}
 	}
 
-	// If a ZBI override is specified, use that; else if no overrides were
-	// specified, then we surely want a ZBI, so use the default.
 	var zbi *bootserver.Image
-	if t.imageOverrides.ZBI != "" {
-		zbi = getImage(images, t.imageOverrides.ZBI, build.ImageTypeZBI)
-	} else if t.imageOverrides.IsEmpty() {
-		zbi = getImageByName(images, "zbi_zircon-a")
-	}
-
-	var efiDisk *bootserver.Image
-	if t.imageOverrides.EFIDisk != "" {
-		efiDisk = getImage(images, t.imageOverrides.EFIDisk, build.ImageTypeFAT)
+	if useProductBundle {
+		zbi, err = t.ffx.GetImageFromPB(ctx, pbPath, "a", "zbi", "")
+		if err != nil {
+			return err
+		}
+		// The zbi image may not exist as part of the
+		// product bundle for a boot test, which is ok.
+		if zbi == nil && !isBootTest {
+			return fmt.Errorf("failed to find zbi from product bundle")
+		}
+	} else {
+		// If a ZBI override is specified, use that; else if no overrides were
+		// specified, then we surely want a ZBI, so use the default.
+		if t.imageOverrides.ZBI != "" {
+			zbi = getImage(images, t.imageOverrides.ZBI, build.ImageTypeZBI)
+		} else if t.imageOverrides.IsEmpty() {
+			zbi = getImageByName(images, "zbi_zircon-a")
+		}
 	}
 
 	// The QEMU command needs to be invoked within an empty directory, as QEMU
@@ -286,25 +321,36 @@ func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []stri
 
 	var fvmImage *bootserver.Image
 	var fxfsImage *bootserver.Image
-	if t.imageOverrides.IsEmpty() {
-		fvmImage = getImageByName(images, "blk_storage-full")
-		fxfsImage = getImageByName(images, "fxfs-blk_storage-full")
-	} else if t.imageOverrides.FVM != "" {
-		// TODO(ihuh): Figure out proper way to identify fvm instead of
-		// hardcoding the name extension.
-		for _, img := range images {
-			if img.Label == t.imageOverrides.FVM &&
-				img.Type == build.ImageTypeBlk &&
-				filepath.Ext(img.Name) == ".fvm" {
-				fvmImage = &img
-				break
-			}
+	if useProductBundle {
+		fvmImage, err = t.ffx.GetImageFromPB(ctx, pbPath, "a", "fvm", "")
+		if err != nil {
+			return err
 		}
-	} else if t.imageOverrides.Fxfs != "" {
-		for _, img := range images {
-			if img.Label == t.imageOverrides.Fxfs && img.Type == build.ImageTypeFxfsBlk {
-				fxfsImage = &img
-				break
+		fxfsImage, err = t.ffx.GetImageFromPB(ctx, pbPath, "a", "fxfs", "")
+		if err != nil {
+			return err
+		}
+	} else {
+		if t.imageOverrides.IsEmpty() {
+			fvmImage = getImageByName(images, "blk_storage-full")
+			fxfsImage = getImageByName(images, "fxfs-blk_storage-full")
+		} else if t.imageOverrides.FVM != "" {
+			// TODO(ihuh): Figure out proper way to identify fvm instead of
+			// hardcoding the name extension.
+			for _, img := range images {
+				if img.Label == t.imageOverrides.FVM &&
+					img.Type == build.ImageTypeBlk &&
+					filepath.Ext(img.Name) == ".fvm" {
+					fvmImage = &img
+					break
+				}
+			}
+		} else if t.imageOverrides.Fxfs != "" {
+			for _, img := range images {
+				if img.Label == t.imageOverrides.Fxfs && img.Type == build.ImageTypeFxfsBlk {
+					fxfsImage = &img
+					break
+				}
 			}
 		}
 	}
@@ -330,7 +376,7 @@ func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []stri
 		if err := os.WriteFile(tmpFile, authorizedKeys, os.ModePerm); err != nil {
 			return fmt.Errorf("could not write authorized keys to file: %w", err)
 		}
-		if t.UseFFXExperimental(1) {
+		if t.UseFFXExperimental(ffxEmuExperimentLevel) {
 			t.ffx.ConfigSet(ctx, "ssh.pub", tmpFile)
 		}
 		if err := embedZBIWithKey(ctx, zbi, t.config.ZBITool, tmpFile); err != nil {
@@ -455,7 +501,44 @@ func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []stri
 		if err := os.MkdirAll(filepath.Dir(logfile), os.ModePerm); err != nil {
 			return fmt.Errorf("failed to make parent dirs of %q: %w", logfile, err)
 		}
-		chardev.Logfile = logfile
+		// Have the emulator write the serial output to a temp file, which we will
+		// read through a TimestampWriter into the actual designated log file.
+		tempLogfile := filepath.Join(os.TempDir(), "temp_logfile.txt")
+		chardev.Logfile = tempLogfile
+		f, err := os.Create(tempLogfile)
+		if err != nil {
+			return fmt.Errorf("failed to create %s", tempLogfile)
+		}
+		cleanupTempLogfile := func() {
+			if err := f.Close(); err != nil {
+				logger.Warningf(t.targetCtx, "failed to close %s", tempLogfile)
+			}
+			if err := os.Remove(tempLogfile); err != nil {
+				logger.Warningf(t.targetCtx, "failed to remove %s", tempLogfile)
+			}
+		}
+		g, err := os.Create(logfile)
+		if err != nil {
+			cleanupTempLogfile()
+			return fmt.Errorf("failed to create %s", logfile)
+		}
+		serialWriter := botanist.NewLineWriter(botanist.NewTimestampWriter(g))
+		go func() {
+			for {
+				if t.targetCtx.Err() != nil {
+					logger.Debugf(t.targetCtx, "target context finished: %s", t.targetCtx.Err())
+					break
+				}
+				if _, err := io.Copy(serialWriter, f); err != nil {
+					logger.Errorf(t.targetCtx, "failed to copy serial: %s", err)
+					break
+				}
+			}
+			if err := g.Close(); err != nil {
+				logger.Warningf(t.targetCtx, "failed to close %s", logfile)
+			}
+			cleanupTempLogfile()
+		}()
 	}
 	qemuCmd.AddSerial(chardev)
 
@@ -474,6 +557,10 @@ func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []stri
 	qemuCmd.AddKernelArg("kernel.lockup-detector.heartbeat-period-ms=0")
 	qemuCmd.AddKernelArg("kernel.lockup-detector.heartbeat-age-threshold-ms=0")
 	qemuCmd.AddKernelArg("kernel.lockup-detector.heartbeat-age-fatal-threshold-ms=0")
+	// TODO(fxbug.dev/133949): Remove when set by default.
+	if !strings.Contains(strings.Join(args, " "), "kernel.experimental.serial_migration") {
+		qemuCmd.AddKernelArg("kernel.experimental.serial_migration=true")
+	}
 
 	// Add entropy to simulate bootloader entropy.
 	entropy := make([]byte, minEntropyBytes)
@@ -496,7 +583,7 @@ func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []stri
 	qemuCmd.SetFlag("-monitor", "none")
 
 	var cmd *exec.Cmd
-	if t.UseFFXExperimental(1) {
+	if t.UseFFXExperimental(ffxEmuExperimentLevel) {
 		config, err := qemuCmd.BuildConfig()
 		if err != nil {
 			return err
@@ -505,15 +592,8 @@ func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []stri
 		if err := jsonutil.WriteToFile(configFile, config); err != nil {
 			return err
 		}
-		// We currently don't have an easy way to get a modular SDK or modify the
-		// virtual device properties.
-		// TODO(fxbug.dev/95938): Stop rewriting files once there is a better alternative.
 		cwd, err := os.Getwd()
 		if err != nil {
-			return err
-		}
-		sdkManifestPath := filepath.Join(cwd, ffxutil.SDKManifestPath)
-		if err := rewriteSDKManifest(sdkManifestPath, t.config.Target, t.isQEMU); err != nil {
 			return err
 		}
 		tools := ffxutil.EmuTools{
@@ -534,11 +614,21 @@ func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []stri
 	}
 
 	cmd.Dir = workdir
-	stdout, stderr, flush := botanist.NewStdioWriters(ctx)
+	stdout, stderr, flush := botanist.NewStdioWritersWithTimestamp(ctx)
 	if t.ptm != nil {
 		cmd.Stdin = t.ptm
 		cmd.Stdout = io.MultiWriter(t.ptm, stdout)
 		cmd.Stderr = io.MultiWriter(t.ptm, stderr)
+		if isBootTest {
+			// TODO(fxbug.dev/135386): Don't write to stdout for
+			// boot tests to rule out whether the issue in the bug
+			// is due to a race between writing to stdout from the
+			// emulator and the boot test. Instead the boot test
+			// will print out the serial output it reads from the
+			// emulator.
+			cmd.Stdout = t.ptm
+			cmd.Stderr = t.ptm
+		}
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			Setctty: true,
 			Setsid:  true,
@@ -572,26 +662,9 @@ func (t *QEMU) Start(ctx context.Context, images []bootserver.Image, args []stri
 	return nil
 }
 
-// rewriteSDKManifest rewrites the SDK manifest needed by `ffx emu` to only include the tools
-// we need from the SDK. That way we don't need to ensure all other files referenced by the
-// manifest exist, only the ones included in the manifest.
-func rewriteSDKManifest(manifestPath, targetCPU string, isQEMU bool) error {
-	// TODO(fxbug.dev/99321): Use the tools from the SDK once they are available for
-	// arm64. Until then, we'll have to provide our own.
-	manifest, err := ffxutil.GetFFXEmuManifest(manifestPath, targetCPU, []string{})
-	if err != nil {
-		return err
-	}
-
-	if err := jsonutil.WriteToFile(manifestPath, manifest); err != nil {
-		return fmt.Errorf("failed to modify sdk manifest: %w", err)
-	}
-	return nil
-}
-
 // Stop stops the QEMU target.
 func (t *QEMU) Stop() error {
-	if t.UseFFXExperimental(1) {
+	if t.UseFFXExperimental(ffxEmuExperimentLevel) {
 		return t.ffx.EmuStop(context.Background())
 	}
 	if t.process == nil {
@@ -649,7 +722,7 @@ func embedZBIWithKey(ctx context.Context, zbiImage *bootserver.Image, zbiTool st
 	}
 	logger.Debugf(ctx, "embedding %s with key %s", zbiImage.Name, authorizedKeysFile)
 	cmd := exec.CommandContext(ctx, absToolPath, "-o", zbiImage.Path, zbiImage.Path, "--entry", fmt.Sprintf("data/ssh/authorized_keys=%s", authorizedKeysFile))
-	stdout, stderr, flush := botanist.NewStdioWriters(ctx)
+	stdout, stderr, flush := botanist.NewStdioWritersWithTimestamp(ctx)
 	defer flush()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -669,7 +742,7 @@ func extendFvmImage(ctx context.Context, fvmImage *bootserver.Image, fvmTool str
 	}
 	logger.Debugf(ctx, "extending fvm.blk to %d bytes", size)
 	cmd := exec.CommandContext(ctx, absToolPath, fvmImage.Path, "extend", "--length", strconv.Itoa(int(size)))
-	stdout, stderr, flush := botanist.NewStdioWriters(ctx)
+	stdout, stderr, flush := botanist.NewStdioWritersWithTimestamp(ctx)
 	defer flush()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr

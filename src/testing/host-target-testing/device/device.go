@@ -19,14 +19,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.fuchsia.dev/fuchsia/src/sys/pkg/bin/pm/build"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/artifacts"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/packages"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/paver"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/sl4f"
-	"go.fuchsia.dev/fuchsia/tools/net/sshutil"
-
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 	"go.fuchsia.dev/fuchsia/tools/lib/retry"
+	"go.fuchsia.dev/fuchsia/tools/net/sshutil"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -209,14 +209,14 @@ func (c *Client) GetSSHConnection(ctx context.Context) (string, error) {
 	return strings.Split(string(stdout.Bytes()), " ")[0], nil
 }
 
-func (c *Client) GetSystemImageMerkle(ctx context.Context) (string, error) {
+func (c *Client) GetSystemImageMerkle(ctx context.Context) (build.MerkleRoot, error) {
 	const systemImageMeta = "/system/meta"
-	merkle, err := c.ReadRemotePath(ctx, systemImageMeta)
+	merkleBytes, err := c.ReadRemotePath(ctx, systemImageMeta)
 	if err != nil {
-		return "", err
+		return build.MerkleRoot{}, err
 	}
 
-	return strings.TrimSpace(string(merkle)), nil
+	return build.DecodeMerkleRoot([]byte(strings.TrimSpace(string(merkleBytes))))
 }
 
 // Reboot asks the device to reboot. It waits until the device reconnects
@@ -544,8 +544,13 @@ func (c *Client) RegisterPackageRepository(
 				ruleTemplate += `{
 					"host_match":"fuchsia.com",
 					"host_replacement":"%[1]v",
-					"path_prefix_match":"/` + p + `/",
-					"path_prefix_replacement":"/` + p + `/"
+					"path_prefix_match":"/` + p + `",
+					"path_prefix_replacement":"/` + p + `"
+				}, {
+					"host_match":"fuchsia.com",
+					"host_replacement":"%[1]v",
+					"path_prefix_match":"/` + p + `/0",
+					"path_prefix_replacement":"/` + p + `/0"
 				}`
 			}
 			ruleTemplate += `]}'`
@@ -593,15 +598,6 @@ func (c *Client) ServePackageRepository(
 func (c *Client) StartRpcSession(ctx context.Context, repo *packages.Repository) (*sl4f.Client, error) {
 	logger.Infof(ctx, "connecting to sl4f")
 	startTime := time.Now()
-
-	// Ensure this client is running system_image or system_image_prime from repo.
-	currentSystemImageMerkle, err := c.GetSystemImageMerkle(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get system image merkle: %w", err)
-	}
-	if err := repo.VerifyMatchesAnyUpdateSystemImageMerkle(ctx, currentSystemImageMerkle); err != nil {
-		return nil, fmt.Errorf("repo does not match system version: %w", err)
-	}
 
 	// Configure the target to use this repository as "fuchsia-pkg://host_target_testing_sl4f".
 	repoName := "host-target-testing-sl4f"

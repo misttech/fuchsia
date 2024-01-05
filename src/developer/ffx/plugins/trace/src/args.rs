@@ -2,18 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use argh::FromArgs;
+use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 use fidl_fuchsia_developer_ffx::{Action, Trigger};
 use fidl_fuchsia_tracing::BufferingMode;
 
 #[ffx_command()]
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "trace",
-    description = "Tracing is a tool that allows you to collect, aggregate, and visualize diagnostic
-tracing information from both userspace processes and the Zircon kernel on a Fuchsia device.",
+    description = "Tracing is a tool that allows you to collect, aggregate, and visualize \
+diagnostic tracing information from both userspace processes and the Zircon kernel on a \
+Fuchsia device.",
     example = "
 
 [Quick Start]:
@@ -31,7 +32,7 @@ pub struct TraceCommand {
     pub sub_cmd: TraceSubCommand,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
 pub enum TraceSubCommand {
     ListCategories(ListCategories),
@@ -40,20 +41,21 @@ pub enum TraceSubCommand {
     Start(Start),
     Stop(Stop),
     Status(Status),
+    Symbolize(Symbolize),
     // More commands including `record` and `convert` to follow.
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 /// List the target's known trace categories.
 #[argh(subcommand, name = "list-categories")]
 pub struct ListCategories {}
 
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 /// List the target's trace providers.
 #[argh(subcommand, name = "list-providers")]
 pub struct ListProviders {}
 
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 /// List the builtin and custom category groups.
 #[argh(subcommand, name = "list-category-groups")]
 pub struct ListCategoryGroups {}
@@ -63,12 +65,35 @@ pub struct ListCategoryGroups {}
 // is much more concise when dealing with a large set of categories.
 pub type TraceCategories = Vec<String>;
 
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 /// Gets status of all running traces.
 #[argh(subcommand, name = "status")]
 pub struct Status {}
 
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+/// Symbolizes the provided ordinal
+#[argh(subcommand, name = "symbolize")]
+pub struct Symbolize {
+    /// FIDL ordinal to be symbolized.
+    #[argh(option)]
+    pub ordinal: Option<u64>,
+
+    /// trace file to be symbolized.
+    #[argh(option)]
+    pub fxt: Option<String>,
+
+    /// symbolized file path. Defaults to overwriting the input file.
+    #[argh(option)]
+    pub outfile: Option<String>,
+
+    /// additional IR files to use for symbolization. Path provided must be
+    /// absolute or relative to $FUCHSIA_BUILD_DIR. If not provided, only the
+    /// files listed in $FUCHSIA_BUILD_DIR/all_fidl_json.txt will be checked.
+    #[argh(option)]
+    pub ir_path: Vec<String>,
+}
+
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 /// Stops an active running trace.
 #[argh(subcommand, name = "stop")]
 pub struct Stop {
@@ -86,7 +111,7 @@ pub struct Stop {
     pub verbose: bool,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 /// Record a trace.
 #[argh(
     subcommand,

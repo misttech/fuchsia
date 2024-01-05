@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <queue>
+#include <unordered_set>
 
 #include <zxtest/zxtest.h>
 
@@ -141,11 +142,19 @@ class NetworkDeviceTests : public zxtest::Test,
         .ops = &network_device_ifc_protocol_ops_,
         .ctx = this,
     };
-    ASSERT_OK(device_->NetworkDeviceImplInit(&protocol));
+    libsync::Completion initialized;
+    device_->NetworkDeviceImplInit(
+        &protocol,
+        [](void* ctx, zx_status_t status) {
+          EXPECT_OK(status);
+          static_cast<libsync::Completion*>(ctx)->Signal();
+        },
+        &initialized);
+    initialized.Wait();
     ASSERT_TRUE(port_.is_valid());
-    mac_addr_protocol_t mac_proto;
+    mac_addr_protocol_t* mac_proto = nullptr;
     port_.GetMac(&mac_proto);
-    mac_ = ddk::MacAddrProtocolClient(&mac_proto);
+    mac_ = ddk::MacAddrProtocolClient(mac_proto);
     ASSERT_TRUE(mac_.is_valid());
   }
 
@@ -188,10 +197,12 @@ class NetworkDeviceTests : public zxtest::Test,
     EXPECT_EQ(port_id, NetworkDevice::kPortId);
     port_status_queue_.push(*new_status);
   }
-  void NetworkDeviceIfcAddPort(uint8_t port_id, const network_port_protocol_t* port) {
+  void NetworkDeviceIfcAddPort(uint8_t port_id, const network_port_protocol_t* port,
+                               network_device_ifc_add_port_callback callback, void* cookie) {
     EXPECT_EQ(port_id, NetworkDevice::kPortId);
-    ASSERT_FALSE(port_.is_valid());
+    EXPECT_FALSE(port_.is_valid());
     port_ = ddk::NetworkPortProtocolClient(port);
+    callback(cookie, ZX_OK);
   }
   void NetworkDeviceIfcRemovePort(uint8_t port_id) { ADD_FAILURE("Port should never be removed"); }
   void NetworkDeviceIfcCompleteRx(const rx_buffer_t* rx_list, size_t rx_count) {
@@ -275,9 +286,9 @@ TEST_F(NetworkDeviceTests, PortGetStatus) {
 }
 
 TEST_F(NetworkDeviceTests, MacGetAddr) {
-  fuchsia_net::wire::MacAddress addr;
-  mac().GetAddress(addr.octets.data());
-  EXPECT_BYTES_EQ(addr.octets.data(), FakeBackendForNetdeviceTest::kMac, addr.octets.size());
+  mac_address_t addr;
+  mac().GetAddress(&addr);
+  EXPECT_BYTES_EQ(addr.octets, FakeBackendForNetdeviceTest::kMac, MAC_SIZE);
 }
 
 TEST_P(VirtioVersionTests, Start) {
@@ -352,17 +363,19 @@ TEST_F(NetworkDeviceTests, Stop) {
     std::optional final = PopRx();
     ASSERT_FALSE(final.has_value(), "extra complete buffer with id %d", final.value().part.id);
   }
+  std::unordered_set<uint32_t> ids;
+  for (;;) {
+    if (std::optional tx = PopTx(); tx) {
+      EXPECT_STATUS(tx->status, ZX_ERR_BAD_STATE);
+      EXPECT_TRUE(ids.insert(tx->id).second);
+    } else {
+      break;
+    }
+  }
+  EXPECT_EQ(std::size(tx_buffers), ids.size());
   for (const auto& tx_sent : tx_buffers) {
     SCOPED_TRACE(fxl::StringPrintf("tx sent %d", tx_sent.id));
-    std::optional tx = PopTx();
-    ASSERT_TRUE(tx.has_value());
-    const tx_result_t& result = tx.value();
-    EXPECT_EQ(result.id, tx_sent.id);
-    EXPECT_STATUS(result.status, ZX_ERR_BAD_STATE);
-  }
-  {
-    std::optional final = PopTx();
-    ASSERT_FALSE(final.has_value(), "extra complete buffer with id %d", final.value().id);
+    EXPECT_TRUE(ids.find(tx_sent.id) != ids.end());
   }
 }
 
@@ -537,9 +550,9 @@ TEST_P(VirtioVersionTests, Tx) {
 
   // Check build descriptors and write into registers as the device does.
   vring& vring = tx_vring();
-  size_t avail_ring_offset = std::size(tx_buffers);
+  size_t avail_offset = vring.avail->idx - std::size(tx_buffers);
   for (const auto& tx_buffer : tx_buffers) {
-    uint16_t desc_idx = vring.avail->ring[vring.avail->idx - avail_ring_offset--];
+    uint16_t desc_idx = vring.avail->ring[avail_offset++];
     vring_desc& desc = vring.desc[desc_idx];
     const buffer_region_t& region = tx_buffer.data_list[0];
     EXPECT_EQ(desc.flags, 0);
@@ -551,7 +564,7 @@ TEST_P(VirtioVersionTests, Tx) {
         .id = desc_idx,
     };
   }
-  // Call irq handler and verify all buffer are returned.
+  // Call irq handler and verify all buffers are returned.
   device().IrqRingUpdate();
   for (const auto& expect : tx_buffers) {
     SCOPED_TRACE(fxl::StringPrintf("expect id %d", expect.id));
@@ -560,6 +573,42 @@ TEST_P(VirtioVersionTests, Tx) {
     const tx_result_t& result = tx.value();
     EXPECT_EQ(result.id, expect.id);
     EXPECT_OK(result.status);
+  }
+
+  // Submit the buffers again, but this time report them used in the opposite order.
+  device().NetworkDeviceImplQueueTx(tx_buffers, std::size(tx_buffers));
+
+  vring.used->idx += std::size(tx_buffers);
+  uint16_t idx = vring.used->idx;
+  for (const auto& tx_buffer : tx_buffers) {
+    uint16_t desc_idx = vring.avail->ring[avail_offset++];
+    vring_desc& desc = vring.desc[desc_idx];
+    const buffer_region_t& region = tx_buffer.data_list[0];
+    EXPECT_EQ(desc.flags, 0);
+    EXPECT_EQ(desc.len, region.length);
+    EXPECT_EQ(desc.addr, FAKE_BTI_PHYS_ADDR + region.offset);
+    EXPECT_EQ(desc.next, 0);
+
+    vring.used->ring[--idx] = {
+        .id = desc_idx,
+    };
+  }
+
+  // Call irq handler and verify all buffers are returned.
+  device().IrqRingUpdate();
+  std::unordered_set<uint32_t> ids;
+  for (;;) {
+    if (std::optional tx = PopTx(); tx) {
+      EXPECT_OK(tx->status);
+      EXPECT_TRUE(ids.insert(tx->id).second);
+    } else {
+      break;
+    }
+  }
+  EXPECT_EQ(std::size(tx_buffers), ids.size());
+  for (const auto& tx_sent : tx_buffers) {
+    SCOPED_TRACE(fxl::StringPrintf("tx sent %d", tx_sent.id));
+    EXPECT_TRUE(ids.find(tx_sent.id) != ids.end());
   }
 }
 

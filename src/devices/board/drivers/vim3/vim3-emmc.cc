@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.sdmmc/cpp/wire.h>
 #include <fuchsia/hardware/sdmmc/c/banjo.h>
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
@@ -52,14 +53,6 @@ static aml_sdmmc_config_t config = {
     .prefs = SDMMC_HOST_PREFS_DISABLE_HS400,
 };
 
-static const std::vector<fpbus::Metadata> emmc_metadata{
-    {{
-        .type = DEVICE_METADATA_PRIVATE,
-        .data = std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(&config),
-                                     reinterpret_cast<const uint8_t*>(&config) + sizeof(config)),
-    }},
-};
-
 static const std::vector<fpbus::BootMetadata> emmc_boot_metadata{
     {{
         .zbi_type = DEVICE_METADATA_PARTITION_MAP,
@@ -68,6 +61,31 @@ static const std::vector<fpbus::BootMetadata> emmc_boot_metadata{
 };
 
 zx_status_t Vim3::EmmcInit() {
+  fidl::Arena<> fidl_arena;
+
+  fit::result sdmmc_metadata =
+      fidl::Persist(fuchsia_hardware_sdmmc::wire::SdmmcMetadata::Builder(fidl_arena)
+                        // TODO(fxbug.dev/134787): Use the FIDL SDMMC protocol.
+                        .use_fidl(false)
+                        .Build());
+  if (!sdmmc_metadata.is_ok()) {
+    zxlogf(ERROR, "Failed to encode SDMMC metadata: %s",
+           sdmmc_metadata.error_value().FormatDescription().c_str());
+    return sdmmc_metadata.error_value().status();
+  }
+
+  const std::vector<fpbus::Metadata> emmc_metadata{
+      {{
+          .type = DEVICE_METADATA_PRIVATE,
+          .data = std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(&config),
+                                       reinterpret_cast<const uint8_t*>(&config) + sizeof(config)),
+      }},
+      {{
+          .type = DEVICE_METADATA_SDMMC,
+          .data = std::move(sdmmc_metadata.value()),
+      }},
+  };
+
   fpbus::Node emmc_dev;
   emmc_dev.name() = "aml_emmc";
   emmc_dev.vid() = PDEV_VID_AMLOGIC;
@@ -80,22 +98,23 @@ zx_status_t Vim3::EmmcInit() {
   emmc_dev.boot_metadata() = emmc_boot_metadata;
 
   // set alternate functions to enable EMMC
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(0), A311D_GPIOBOOT_0_EMMC_D0_FN);
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(1), A311D_GPIOBOOT_1_EMMC_D1_FN);
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(2), A311D_GPIOBOOT_2_EMMC_D2_FN);
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(3), A311D_GPIOBOOT_3_EMMC_D3_FN);
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(4), A311D_GPIOBOOT_4_EMMC_D4_FN);
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(5), A311D_GPIOBOOT_5_EMMC_D5_FN);
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(6), A311D_GPIOBOOT_6_EMMC_D6_FN);
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(7), A311D_GPIOBOOT_7_EMMC_D7_FN);
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(8), A311D_GPIOBOOT_8_EMMC_CLK_FN);
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(10), A311D_GPIOBOOT_10_EMMC_CMD_FN);
-  // gpio_impl_.SetAltFunction(A311D_GPIOBOOT(12), 1);
-  gpio_impl_.SetAltFunction(A311D_GPIOBOOT(13), A311D_GPIOBOOT_13_EMMC_DS_FN);
+  gpio_init_steps_.push_back({A311D_GPIOBOOT(0), GpioSetAltFunction(A311D_GPIOBOOT_0_EMMC_D0_FN)});
+  gpio_init_steps_.push_back({A311D_GPIOBOOT(1), GpioSetAltFunction(A311D_GPIOBOOT_1_EMMC_D1_FN)});
+  gpio_init_steps_.push_back({A311D_GPIOBOOT(2), GpioSetAltFunction(A311D_GPIOBOOT_2_EMMC_D2_FN)});
+  gpio_init_steps_.push_back({A311D_GPIOBOOT(3), GpioSetAltFunction(A311D_GPIOBOOT_3_EMMC_D3_FN)});
+  gpio_init_steps_.push_back({A311D_GPIOBOOT(4), GpioSetAltFunction(A311D_GPIOBOOT_4_EMMC_D4_FN)});
+  gpio_init_steps_.push_back({A311D_GPIOBOOT(5), GpioSetAltFunction(A311D_GPIOBOOT_5_EMMC_D5_FN)});
+  gpio_init_steps_.push_back({A311D_GPIOBOOT(6), GpioSetAltFunction(A311D_GPIOBOOT_6_EMMC_D6_FN)});
+  gpio_init_steps_.push_back({A311D_GPIOBOOT(7), GpioSetAltFunction(A311D_GPIOBOOT_7_EMMC_D7_FN)});
+  gpio_init_steps_.push_back({A311D_GPIOBOOT(8), GpioSetAltFunction(A311D_GPIOBOOT_8_EMMC_CLK_FN)});
+  gpio_init_steps_.push_back(
+      {A311D_GPIOBOOT(10), GpioSetAltFunction(A311D_GPIOBOOT_10_EMMC_CMD_FN)});
+  // gpio_init_steps_.push_back({A311D_GPIOBOOT(12), GpioSetAltFunction(1)});
+  gpio_init_steps_.push_back(
+      {A311D_GPIOBOOT(13), GpioSetAltFunction(A311D_GPIOBOOT_13_EMMC_DS_FN)});
 
-  gpio_impl_.ConfigOut(A311D_GPIOBOOT(14), 1);
+  gpio_init_steps_.push_back({A311D_GPIOBOOT(14), GpioConfigOut(1)});
 
-  fidl::Arena<> fidl_arena;
   fdf::Arena arena('EMMC');
   auto result = pbus_.buffer(arena)->AddComposite(
       fidl::ToWire(fidl_arena, emmc_dev),

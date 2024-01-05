@@ -8,17 +8,15 @@
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
 
-#define WEAK __attribute__((weak))
+namespace syslog_runtime {
 
-namespace syslog_backend {
+void SetLogSettings(const fuchsia_logging::LogSettings& settings);
 
-WEAK void SetLogSettings(const fuchsia_logging::LogSettings& settings);
+void SetLogSettings(const fuchsia_logging::LogSettings& settings,
+                    const std::initializer_list<std::string>& tags);
 
-WEAK void SetLogSettings(const fuchsia_logging::LogSettings& settings,
-                         const std::initializer_list<std::string>& tags);
+fuchsia_logging::LogSeverity GetMinLogLevel();
 
-WEAK fuchsia_logging::LogSeverity GetMinLogLevel();
-
-}  // namespace syslog_backend
+}  // namespace syslog_runtime
 
 #endif  // LIB_SYSLOG_CPP_LOGGING_BACKEND_H_

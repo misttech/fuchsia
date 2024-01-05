@@ -3,12 +3,12 @@
 # found in the LICENSE file.
 
 import("//build/assembly/assembled_system.gni")
+import("//build/assembly/board_configuration.gni")
 import("//build/assembly/product_assembly_configuration.gni")
 import("//build/board.gni")
 import("//build/images/args.gni")
 import("//build/images/paths.gni")
 import("//build/product.gni")
-import("//src/storage/fshost/generated_fshost_config.gni")
 import("//src/sys/core/build/core.gni")
 
 #########
@@ -57,9 +57,16 @@ if (labels.images == "//build/images/bringup") {
 } else {
   # In all other builds, define the guest assembly.
 
-  if (has_board) {
-    assert(board_information_for_assembly != false,
-           "Need to define board_information_for_assembly for cuckoo tests")
+  board_configuration("board") {
+    hardware_info = {
+      name = "guest-board"
+    }
+    filesystems = {
+      fvm = {
+        sparse_output = {
+        }
+      }
+    }
   }
 
   # Guest's specific core realm (not based on core_realm_shards).
@@ -95,15 +102,11 @@ if (labels.images == "//build/images/bringup") {
     testonly = true
 
     generate_fvm = true
-    generate_fvm_fastboot = assembly_generate_fvm_fastboot
-    generate_fvm_nand = assembly_generate_fvm_nand
-    generate_vbmeta = use_vbmeta
 
     namespace = "guest"
     image_name = "fuchsia"
     product_assembly_config_label = ":product_assembly_config"
-    board_config = board_information_for_assembly
-    use_assembly_fshost = true
+    board_config_label = ":board"
 
     # As `:product_assembly_config` specifies an `eng` build-type, the assembly
     # needs to be allowed to use the "eng" platform bundles as deps / inputs.
@@ -111,8 +114,6 @@ if (labels.images == "//build/images/bringup") {
 
     base_packages = [
       "//src/performance/trace",
-      "//src/sys/core:component_id_index_no_restrict_storage",
-      "//src/sys/core:core_component_id_index",
       "//src/virtualization/tests:virtualization_test_utils_pkg",
       "//src/cobalt/bin/app:cobalt_registry",
       "//src/cobalt/bin/app:config",
@@ -133,20 +134,14 @@ if (labels.images == "//build/images/bringup") {
       "//src/devices/sysmem/drivers/sysmem",
       "//src/graphics/display/drivers/coordinator",
       "//src/graphics/display/drivers/virtio-guest:virtio_gpu",
-      "//src/storage/bin/minfs",
+      "//src/storage/minfs/bin:minfs-component",
       "//src/storage/bin/mount",
       "//src/storage/bin/umount",
       "//src/storage/fvm/driver",
-      "//src/sys/component_manager:component_manager_bootfs_config",
       "//src/ui/input/drivers/hid",
       "//src/ui/input/drivers/hid-input-report",
       "//src/ui/input/drivers/virtio:virtio_input",
     ]
-
-    fshost_config = {
-      forward_variables_from(board_fshost_config, "*")
-      no_zxcrypt = true
-    }
 
     if (current_cpu == "x64") {
       bootfs_labels += [
@@ -158,7 +153,6 @@ if (labels.images == "//build/images/bringup") {
       ]
     }
 
-    include_component_id_index = true
     core_realm_definition = ":core"
   }
 }

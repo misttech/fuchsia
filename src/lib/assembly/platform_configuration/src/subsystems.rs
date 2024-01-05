@@ -4,6 +4,7 @@
 
 use anyhow::{bail, Context};
 use assembly_config_schema::{AssemblyConfig, BoardInformation, BuildType, ExampleConfig};
+use camino::Utf8Path;
 
 use crate::common::{CompletedConfiguration, ConfigurationBuilderImpl};
 
@@ -23,6 +24,9 @@ pub(crate) mod prelude {
 use prelude::*;
 
 mod battery;
+mod bluetooth;
+mod build_info;
+mod component;
 mod connectivity;
 mod development;
 mod diagnostics;
@@ -32,18 +36,23 @@ mod fonts;
 mod forensics;
 mod graphics;
 mod hwinfo;
+mod icu;
 mod identity;
-mod input;
+mod input_groups;
 mod intl;
+mod kernel;
 mod media;
+mod power;
 mod radar;
 mod rcs;
+mod recovery;
 mod session;
 mod setui;
 mod starnix;
 mod storage;
 mod swd;
 mod thermal;
+mod timekeeper;
 mod ui;
 mod virtualization;
 
@@ -57,9 +66,12 @@ const EXAMPLE_ENABLED_FLAG: &str = "assembly_example_enabled";
 pub fn define_configuration(
     config: &AssemblyConfig,
     board_info: &BoardInformation,
+    ramdisk_image: bool,
+    gendir: impl AsRef<Utf8Path>,
+    resource_dir: impl AsRef<Utf8Path>,
 ) -> anyhow::Result<CompletedConfiguration> {
     let icu_config = &config.platform.icu;
-    let mut builder = ConfigurationBuilderImpl::new(icu_config);
+    let mut builder = ConfigurationBuilderImpl::new(icu_config.clone());
 
     // The emulator support bundle is always added, even to an empty build.
     builder.platform_bundle("emulator_support");
@@ -70,10 +82,19 @@ pub fn define_configuration(
     // Only perform configuration if the feature_set_level is not None (ie, Empty).
     if let Some(feature_set_level) = &feature_set_level {
         let build_type = &config.platform.build_type;
+        let gendir = gendir.as_ref().to_path_buf();
+        let resource_dir = resource_dir.as_ref().to_path_buf();
 
         // Set up the context that's used by each subsystem to get the generally-
         // available platform information.
-        let context = ConfigurationContext { feature_set_level, build_type, board_info };
+        let context = ConfigurationContext {
+            feature_set_level,
+            build_type,
+            board_info,
+            ramdisk_image,
+            gendir,
+            resource_dir,
+        };
 
         // Call the configuration functions for each subsystem.
         configure_subsystems(&context, config, &mut builder)?;
@@ -188,6 +209,28 @@ fn configure_subsystems(
     )
     .context("Configuring the 'battery' subsystem")?;
 
+    bluetooth::BluetoothSubsystemConfig::define_configuration(
+        context,
+        &config.platform.bluetooth,
+        builder,
+    )
+    .context("Configuring the `bluetooth` subsystem")?;
+
+    build_info::BuildInfoSubsystem::define_configuration(
+        context,
+        &config.product.build_info,
+        builder,
+    )
+    .context("Configuring the 'build_info' subsystem")?;
+
+    let component_config = component::ComponentConfig {
+        policy: &config.product.component_policy,
+        development_support: &config.platform.development_support,
+        starnix: &config.platform.starnix,
+    };
+    component::ComponentSubsystem::define_configuration(context, &component_config, builder)
+        .context("Configuring the 'component' subsystem")?;
+
     connectivity::ConnectivitySubsystemConfig::define_configuration(
         context,
         &config.platform.connectivity,
@@ -226,6 +269,9 @@ fn configure_subsystems(
     hwinfo::HwinfoSubsystem::define_configuration(context, &config.product.info, builder)
         .context("Configuring the 'hwinfo' subsystem")?;
 
+    icu::IcuSubsystem::define_configuration(context, &config.platform.icu, builder)
+        .context("Configuring the 'icu' subsystem")?;
+
     identity::IdentitySubsystemConfig::define_configuration(
         context,
         &config.platform.identity,
@@ -233,14 +279,24 @@ fn configure_subsystems(
     )
     .context("Configuring the 'identity' subsystem")?;
 
-    input::InputSubsystemConfig::define_configuration(context, &config.platform.input, builder)
-        .context("Configuring the 'input' subsystem")?;
+    input_groups::InputGroupsSubsystem::define_configuration(
+        context,
+        &config.platform.input_groups,
+        builder,
+    )
+    .context("Configuring the 'input_groups' subsystem")?;
 
     media::MediaSubsystem::define_configuration(context, &config.platform.media, builder)
         .context("Configuring the 'media' subsystem")?;
 
+    power::PowerManagementSubsystem::define_configuration(context, &(), builder)
+        .context("Configuring the 'power' subsystem")?;
+
     radar::RadarSubsystemConfig::define_configuration(context, &(), builder)
         .context("Configuring the 'radar' subsystem")?;
+
+    recovery::RecoverySubsystem::define_configuration(context, &config.platform.recovery, builder)
+        .context("Configuring the 'recovery' subsystem")?;
 
     rcs::RcsSubsystemConfig::define_configuration(context, &(), builder)
         .context("Configuring the 'rcs' subsystem")?;
@@ -291,12 +347,18 @@ fn configure_subsystems(
     setui::SetUiSubsystem::define_configuration(context, &config.platform.setui, builder)
         .context("Confguring the 'SetUI' subsystem")?;
 
+    kernel::KernelSubsystem::define_configuration(context, &config.platform.kernel, builder)
+        .context("Configuring the 'kernel' subsystem")?;
+
     forensics::ForensicsSubsystem::define_configuration(
         context,
         &config.platform.forensics,
         builder,
     )
-    .context("Confguring the 'Forensics' subsystem")?;
+    .context("Configuring the 'Forensics' subsystem")?;
+
+    timekeeper::TimekeeperSubsystem::define_configuration(context, &(), builder)
+        .context("Configuring the 'Timekeeper' subsystem")?;
 
     Ok(())
 }
@@ -328,7 +390,7 @@ mod tests {
 
         let mut cursor = std::io::Cursor::new(json5);
         let config: AssemblyConfig = util::from_reader(&mut cursor).unwrap();
-        let result = define_configuration(&config, &BoardInformation::default());
+        let result = define_configuration(&config, &BoardInformation::default(), false, "", "");
 
         assert!(result.is_err());
     }

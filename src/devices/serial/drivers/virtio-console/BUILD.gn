@@ -11,8 +11,8 @@ driver_bind_rules("virtio_console_bind") {
   tests = "bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.acpi",
-    "//src/devices/bind/fuchsia.hardware.sysmem",
     "//src/devices/bind/fuchsia.pci",
+    "//src/devices/bind/fuchsia.sysmem",
     "//src/devices/bind/fuchsia.sysmem",
   ]
 }
@@ -33,7 +33,7 @@ fuchsia_driver("virtio_console-driver") {
   ]
   deps = [
     ":virtio_console_bind",
-    "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp",
     "//src/devices/bus/lib/virtio",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
@@ -46,4 +46,9 @@ fuchsia_driver_component("virtio_console") {
   component_name = "virtio_console"
   deps = [ ":virtio_console-driver" ]
   manifest = "meta/virtio_console.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "virtio_console"
+  driver_components = [ ":virtio_console" ]
 }

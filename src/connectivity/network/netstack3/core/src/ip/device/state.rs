@@ -34,7 +34,8 @@ use crate::{
 /// The default value for *RetransTimer* as defined in [RFC 4861 section 10].
 ///
 /// [RFC 4861 section 10]: https://tools.ietf.org/html/rfc4861#section-10
-const RETRANS_TIMER_DEFAULT: NonZeroDuration = const_unwrap_option(NonZeroDuration::from_secs(1));
+pub(crate) const RETRANS_TIMER_DEFAULT: NonZeroDuration =
+    const_unwrap_option(NonZeroDuration::from_secs(1));
 
 /// The default value for the default hop limit to be used when sending IP
 /// packets.
@@ -140,8 +141,9 @@ pub struct IpDeviceFlags {
 
 /// The state common to all IP devices.
 #[derive(GenericOverIp)]
+#[generic_over_ip(I, Ip)]
 #[cfg_attr(test, derive(Debug))]
-pub(crate) struct IpDeviceState<Instant: crate::Instant, I: Ip + IpDeviceStateIpExt> {
+pub(crate) struct IpDeviceState<Instant: crate::Instant, I: IpDeviceStateIpExt> {
     /// IP addresses assigned to this device.
     ///
     /// IPv6 addresses may be tentative (performing NDP's Duplicate Address
@@ -544,21 +546,21 @@ impl AsMut<IpDeviceConfiguration> for Ipv6DeviceConfiguration {
     }
 }
 
-impl<I: Instant> RwLockFor<crate::lock_ordering::Ipv6DeviceRetransTimeout>
+impl<I: Instant> RwLockFor<crate::lock_ordering::Ipv6DeviceLearnedParams>
     for DualStackIpDeviceState<I>
 {
-    type Data = NonZeroDuration;
-    type ReadGuard<'l> = crate::sync::RwLockReadGuard<'l, NonZeroDuration>
+    type Data = Ipv6NetworkLearnedParameters;
+    type ReadGuard<'l> = crate::sync::RwLockReadGuard<'l, Ipv6NetworkLearnedParameters>
         where
             Self: 'l;
-    type WriteGuard<'l> = crate::sync::RwLockWriteGuard<'l, NonZeroDuration>
+    type WriteGuard<'l> = crate::sync::RwLockWriteGuard<'l, Ipv6NetworkLearnedParameters>
         where
             Self: 'l;
     fn read_lock(&self) -> Self::ReadGuard<'_> {
-        self.ipv6.retrans_timer.read()
+        self.ipv6.learned_params.read()
     }
     fn write_lock(&self) -> Self::WriteGuard<'_> {
-        self.ipv6.retrans_timer.write()
+        self.ipv6.learned_params.write()
     }
 }
 
@@ -604,18 +606,29 @@ impl<I: Instant> RwLockFor<crate::lock_ordering::IpDeviceConfiguration<Ipv6>>
     }
 }
 
-/// The state common to all IPv6 devices.
-pub(crate) struct Ipv6DeviceState<I: Instant> {
+/// IPv6 device parameters that can be learned from router advertisements.
+#[derive(Default)]
+pub(crate) struct Ipv6NetworkLearnedParameters {
     /// The time between retransmissions of Neighbor Solicitation messages to a
     /// neighbor when resolving the address or when probing the reachability of
     /// a neighbor.
     ///
-    /// Default: [`RETRANS_TIMER_DEFAULT`].
     ///
     /// See RetransTimer in [RFC 4861 section 6.3.2] for more details.
     ///
     /// [RFC 4861 section 6.3.2]: https://tools.ietf.org/html/rfc4861#section-6.3.2
-    pub(crate) retrans_timer: RwLock<NonZeroDuration>,
+    pub(crate) retrans_timer: Option<NonZeroDuration>,
+}
+
+impl Ipv6NetworkLearnedParameters {
+    pub(crate) fn retrans_timer_or_default(&self) -> NonZeroDuration {
+        self.retrans_timer.clone().unwrap_or(RETRANS_TIMER_DEFAULT)
+    }
+}
+
+/// The state common to all IPv6 devices.
+pub(crate) struct Ipv6DeviceState<I: Instant> {
+    pub(super) learned_params: RwLock<Ipv6NetworkLearnedParameters>,
     pub(super) route_discovery: Mutex<Ipv6RouteDiscoveryState>,
     pub(super) router_soliciations_remaining: Mutex<Option<NonZeroU8>>,
     pub(crate) ip_state: IpDeviceState<I, Ipv6>,
@@ -625,7 +638,7 @@ pub(crate) struct Ipv6DeviceState<I: Instant> {
 impl<I: Instant> Default for Ipv6DeviceState<I> {
     fn default() -> Ipv6DeviceState<I> {
         Ipv6DeviceState {
-            retrans_timer: RwLock::new(RETRANS_TIMER_DEFAULT),
+            learned_params: Default::default(),
             route_discovery: Default::default(),
             router_soliciations_remaining: Default::default(),
             ip_state: Default::default(),
@@ -842,7 +855,8 @@ impl<Instant> AddrSubnetAndManualConfigEither<Instant> {
         config: I::ManualAddressConfig<Instant>,
     ) -> Self {
         #[derive(GenericOverIp)]
-        struct AddrSubnetAndConfig<I: Ip + IpDeviceIpExt, Instant> {
+        #[generic_over_ip(I, Ip)]
+        struct AddrSubnetAndConfig<I: IpDeviceIpExt, Instant> {
             addr_subnet: AddrSubnet<I::Addr>,
             config: I::ManualAddressConfig<Instant>,
         }
@@ -1002,9 +1016,8 @@ pub(crate) mod testutil {
         A::Version: IpDeviceStateIpExt,
     {
         #[derive(GenericOverIp)]
-        struct Wrap<I: Ip + IpDeviceStateIpExt, Instant: crate::Instant>(
-            I::AssignedAddress<Instant>,
-        );
+        #[generic_over_ip(I, Ip)]
+        struct Wrap<I: IpDeviceStateIpExt, Instant: crate::Instant>(I::AssignedAddress<Instant>);
         let Wrap(entry) = <A::Version as Ip>::map_ip(
             ip.get(),
             |ip| {

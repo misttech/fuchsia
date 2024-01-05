@@ -6,7 +6,7 @@ use crate::input_device::{Handled, InputDeviceEvent, InputEvent, UnhandledInputE
 use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
 use async_trait::async_trait;
 use fidl_fuchsia_ui_input3::{KeyMeaning, Modifiers, NonPrintableKey};
-use fuchsia_inspect;
+use fuchsia_inspect::{self, health::Reporter};
 use keymaps::{LockStateKeys, ModifierState};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -63,6 +63,14 @@ impl UnhandledInputHandler for ModifierHandler {
             // Pass other events through.
             _ => vec![InputEvent::from(unhandled_input_event)],
         }
+    }
+
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
     }
 }
 
@@ -143,6 +151,14 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
             // Pass other events through.
             _ => vec![InputEvent::from(unhandled_input_event)],
         }
+    }
+
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
     }
 }
 
@@ -350,7 +366,7 @@ mod tests {
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
         let _modifier_handler = ModifierHandler::new(&fake_handlers_node);
         let _modifier_meaning_handler = ModifierMeaningHandler::new(&fake_handlers_node);
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 modifier_handler: {
                     events_received_count: 0u64,
@@ -360,7 +376,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 },
                 modifier_meaning_handler: {
@@ -371,7 +387,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 }
             }
@@ -440,7 +456,7 @@ mod tests {
 
         let last_event_timestamp: u64 = event_time_u64.into_nanos().try_into().unwrap();
 
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 modifier_handler: {
                     events_received_count: 3u64,
@@ -450,7 +466,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 },
                 modifier_meaning_handler: {
@@ -461,7 +477,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 }
             }

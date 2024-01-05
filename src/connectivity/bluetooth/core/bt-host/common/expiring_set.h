@@ -5,10 +5,9 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_COMMON_EXPIRING_SET_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_COMMON_EXPIRING_SET_H_
 
-#include <lib/async/cpp/time.h>
-#include <lib/async/default.h>
-
 #include <unordered_map>
+
+#include <pw_async/dispatcher.h>
 
 namespace bt {
 
@@ -17,11 +16,11 @@ template <typename Key>
 class ExpiringSet {
  public:
   virtual ~ExpiringSet() = default;
-  ExpiringSet() = default;
+  explicit ExpiringSet(pw::async::Dispatcher& pw_dispatcher) : pw_dispatcher_(pw_dispatcher) {}
 
   // Add an item with the key `k` to the set, until the `expiration` passes.
   // If the key is already in the set, the expiration is updated, even if it changes the expiration.
-  void add_until(Key k, zx::time expiration) { elems_[k] = expiration; }
+  void add_until(Key k, pw::chrono::SystemClock::time_point expiration) { elems_[k] = expiration; }
 
   // Remove an item from the set. Idempotent.
   void remove(const Key& k) { elems_.erase(k); }
@@ -33,7 +32,7 @@ class ExpiringSet {
     if (it == elems_.end()) {
       return false;
     }
-    if (it->second <= async::Now(async_get_default_dispatcher())) {
+    if (it->second <= pw_dispatcher_.now()) {
       elems_.erase(it);
       return false;
     }
@@ -41,7 +40,8 @@ class ExpiringSet {
   }
 
  private:
-  std::unordered_map<Key, zx::time> elems_;
+  std::unordered_map<Key, pw::chrono::SystemClock::time_point> elems_;
+  pw::async::Dispatcher& pw_dispatcher_;
 };
 
 }  // namespace bt

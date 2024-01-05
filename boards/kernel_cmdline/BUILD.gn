@@ -7,7 +7,7 @@ import("//build/zbi/kernel_cmdline.gni")
 
 # This serves as an anchor point. By expressing a dependency on
 # //boards/kernel_cmdline, build arguments declared in this file
-# (e.g. pmm_checker_from_board) are brought into scope.
+# are brought into scope.
 group("kernel_cmdline") {
 }
 
@@ -19,20 +19,6 @@ kernel_cmdline("serial-legacy") {
 kernel_cmdline("disable-blobfs-compression") {
   args = [ "blobfs.write-compression-algorithm=UNCOMPRESSED" ]
   deps = [ "//build/validate:non_production_tag" ]
-}
-
-kernel_cmdline("pmm-checker") {
-  args = [
-    # Enable PMM checker to detect certain kinds of buffer overrun and
-    # use-after-free bugs.
-    "kernel.pmm-checker.enable=true",
-
-    # Use a small fill size to minimize performance impact.  In practice,
-    # corruption tends to happen at the start of a page so filling/checking only
-    # the first 16 bytes provides decent coverage without sacrificing
-    # performance.
-    "kernel.pmm-checker.fill-size=16",
-  ]
 }
 
 kernel_cmdline("enable-suspend") {
@@ -52,17 +38,6 @@ kernel_cmdline("enable-suspend") {
 group("enable-suspend-from-board") {
   if (enable_suspend) {
     deps = [ ":enable-suspend" ]
-  }
-}
-
-declare_args() {
-  # Used to control whether board definitions include PMM checker options.
-  pmm_checker_from_board = true
-}
-
-group("pmm-checker-from-board") {
-  if (pmm_checker_from_board) {
-    deps = [ ":pmm-checker" ]
   }
 }
 
@@ -145,44 +120,4 @@ kernel_cmdline("gce") {
 
 kernel_cmdline("as370") {
   args = [ "kernel.bypass-debuglog=true" ]
-}
-
-kernel_cmdline("vim3") {
-  deps = [ ":pmm-checker-from-board" ]
-  args = [
-    # Prefer using the built-in NIC to the CDC-ether interface.
-    # TODO(https://fxbug.dev/117539): Update topopath when dwmac is off
-    # netdevice migration.
-    "netsvc.interface=/dwmac/dwmac/Designware-MAC/netdevice-migration/network-device",
-  ]
-}
-
-kernel_cmdline("chromebook-x64") {
-  deps = [ ":pmm-checker-from-board" ]
-  args = [
-    # Depthcharge will fill this in.
-    "zvb.boot-partition-uuid=%U",
-  ]
-}
-
-# Copy from vim3
-kernel_cmdline("av400") {
-  deps = [ ":pmm-checker-from-board" ]
-  args = [
-    # Prefer using the built-in NIC to the CDC-ether interface.
-    # TODO(https://fxbug.dev/117539): Update topopath when dwmac is off
-    # netdevice migration.
-    "netsvc.interface=/dwmac/dwmac/Designware-MAC/netdevice-migration/network-device",
-  ]
-}
-
-# Copy from av400
-kernel_cmdline("clover") {
-  deps = [ ":pmm-checker-from-board" ]
-  args = [
-    # Prefer using the built-in NIC to the CDC-ether interface.
-    # TODO(https://fxbug.dev/117539): Update topopath when dwmac is off
-    # netdevice migration.
-    "netsvc.interface=/dev/dwmac/dwmac/Designware-MAC/netdevice-migration/network-device",
-  ]
 }

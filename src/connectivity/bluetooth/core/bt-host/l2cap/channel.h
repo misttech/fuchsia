@@ -10,11 +10,13 @@
 
 #include <atomic>
 #include <climits>
+#include <cstdint>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <queue>
 
+#include "lib/inspect/cpp/vmo/types.h"
 #include "pw_bluetooth/vendor.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/byte_buffer.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/inspect.h"
@@ -37,6 +39,9 @@
 #include "src/connectivity/bluetooth/core/bt-host/transport/link_type.h"
 
 namespace bt::l2cap {
+
+// Maximum count of packets a channel can queue before it must drop old packets
+constexpr uint16_t kDefaultTxMaxQueuedCount = 500;
 
 // Represents a L2CAP channel. Each instance is owned by a service
 // implementation that operates on the corresponding channel. Instances can only
@@ -68,7 +73,7 @@ class Channel : public WeakSelf<Channel> {
  public:
   // TODO(fxbug.dev/1022): define a preferred MTU somewhere
   Channel(ChannelId id, ChannelId remote_id, bt::LinkType link_type,
-          hci_spec::ConnectionHandle link_handle, ChannelInfo info);
+          hci_spec::ConnectionHandle link_handle, ChannelInfo info, uint16_t max_tx_queued);
   virtual ~Channel() = default;
 
   // Identifier for this channel's endpoint on this device. It can be prior-
@@ -97,7 +102,7 @@ class Channel : public WeakSelf<Channel> {
     return (link_handle() << (sizeof(ChannelId) * CHAR_BIT)) | id();
   }
 
-  ChannelMode mode() const { return info().mode; }
+  const AnyChannelMode& mode() const { return info().mode; }
 
   // These accessors define the concept of a Maximum Transmission Unit (MTU) as a maximum inbound
   // (rx) and outbound (tx) packet size for the L2CAP implementation (see v5.2, Vol. 3, Part A
@@ -112,7 +117,10 @@ class Channel : public WeakSelf<Channel> {
   uint16_t max_tx_sdu_size() const { return info().max_tx_sdu_size; }
 
   // Returns the current configuration parameters for this channel.
-  ChannelInfo info() const { return info_; }
+  const ChannelInfo& info() const { return info_; }
+
+  uint16_t max_tx_queued() const { return max_tx_queued_; }
+  void set_max_tx_queued(uint16_t count) { max_tx_queued_ = count; }
 
   // Returns the current link security properties of the underlying link.
   // Returns the lowest security level if the link is closed.
@@ -189,9 +197,9 @@ class Channel : public WeakSelf<Channel> {
   // Sets an automatic flush timeout with duration |flush_timeout|. |callback| will be called with
   // the result of the operation. This is only supported if the link type is kACL (BR/EDR).
   // |flush_timeout| must be in the range [1ms - hci_spec::kMaxAutomaticFlushTimeoutDuration]. A
-  // flush timeout of zx::duration::infinite() indicates an infinite flush timeout (packets will be
-  // marked flushable, but there will be no automatic flush timeout).
-  virtual void SetBrEdrAutomaticFlushTimeout(zx::duration flush_timeout,
+  // flush timeout of pw::chrono::SystemClock::duration::max() indicates an infinite flush timeout
+  // (packets will be marked flushable, but there will be no automatic flush timeout).
+  virtual void SetBrEdrAutomaticFlushTimeout(pw::chrono::SystemClock::duration flush_timeout,
                                              hci::ResultCallback<> callback) = 0;
 
   // Attach this channel as a child node of |parent| with the given |name|.
@@ -216,6 +224,8 @@ class Channel : public WeakSelf<Channel> {
   const bt::LinkType link_type_;
   const hci_spec::ConnectionHandle link_handle_;
   ChannelInfo info_;
+  // Maximum number of PDUs in the channel queue
+  uint16_t max_tx_queued_;
   // The ACL priority that was requested by a client and accepted by the controller.
   pw::bluetooth::AclPriority requested_acl_priority_;
 
@@ -236,16 +246,16 @@ class ChannelImpl : public Channel {
   // fixed channels are required to respect their MTU internally by:
   //   1.) never sending packets larger than their spec-defined MTU.
   //   2.) handling inbound PDUs which are larger than their spec-defined MTU appropriately.
-  static std::unique_ptr<ChannelImpl> CreateFixedChannel(ChannelId id,
-                                                         internal::LogicalLinkWeakPtr link,
-                                                         hci::CommandChannel::WeakPtr cmd_channel,
-                                                         uint16_t max_acl_payload_size,
-                                                         A2dpOffloadManager& a2dp_offload_manager);
+  static std::unique_ptr<ChannelImpl> CreateFixedChannel(
+      pw::async::Dispatcher& dispatcher, ChannelId id, internal::LogicalLinkWeakPtr link,
+      hci::CommandChannel::WeakPtr cmd_channel, uint16_t max_acl_payload_size,
+      A2dpOffloadManager& a2dp_offload_manager, uint16_t max_tx_queued = kDefaultTxMaxQueuedCount);
 
   static std::unique_ptr<ChannelImpl> CreateDynamicChannel(
-      ChannelId id, ChannelId peer_id, internal::LogicalLinkWeakPtr link, ChannelInfo info,
-      hci::CommandChannel::WeakPtr cmd_channel, uint16_t max_acl_payload_size,
-      A2dpOffloadManager& a2dp_offload_manager);
+      pw::async::Dispatcher& dispatcher, ChannelId id, ChannelId peer_id,
+      internal::LogicalLinkWeakPtr link, ChannelInfo info, hci::CommandChannel::WeakPtr cmd_channel,
+      uint16_t max_acl_payload_size, A2dpOffloadManager& a2dp_offload_manager,
+      uint16_t max_tx_queued = kDefaultTxMaxQueuedCount);
 
   ~ChannelImpl() override;
 
@@ -276,7 +286,7 @@ class ChannelImpl : public Channel {
   void UpgradeSecurity(sm::SecurityLevel level, sm::ResultFunction<> callback) override;
   void RequestAclPriority(pw::bluetooth::AclPriority priority,
                           fit::callback<void(fit::result<fit::failed>)> callback) override;
-  void SetBrEdrAutomaticFlushTimeout(zx::duration flush_timeout,
+  void SetBrEdrAutomaticFlushTimeout(pw::chrono::SystemClock::duration flush_timeout,
                                      hci::ResultCallback<> callback) override;
   void AttachInspect(inspect::Node& parent, std::string name) override;
   void StartA2dpOffload(const A2dpOffloadManager::Configuration& config,
@@ -287,15 +297,18 @@ class ChannelImpl : public Channel {
   WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
 
  private:
-  ChannelImpl(ChannelId id, ChannelId remote_id, internal::LogicalLinkWeakPtr link,
-              ChannelInfo info, hci::CommandChannel::WeakPtr cmd_channel,
-              uint16_t max_acl_payload_size, A2dpOffloadManager& a2dp_offload_manager);
+  ChannelImpl(pw::async::Dispatcher& dispatcher, ChannelId id, ChannelId remote_id,
+              internal::LogicalLinkWeakPtr link, ChannelInfo info,
+              hci::CommandChannel::WeakPtr cmd_channel, uint16_t max_acl_payload_size,
+              A2dpOffloadManager& a2dp_offload_manager, uint16_t max_tx_queued);
 
   // Common channel closure logic. Called on Deactivate/OnClosed.
   void CleanUp();
 
   // Callback that |tx_engine_| uses to deliver a PDU to lower layers.
   void SendFrame(ByteBufferPtr pdu);
+
+  pw::async::Dispatcher& pw_dispatcher_;
 
   bool active_;
   RxCallback rx_cb_;
@@ -339,11 +352,14 @@ class ChannelImpl : public Channel {
   // Fragmenter and Recombiner are always accessed on the L2CAP thread.
   const Fragmenter fragmenter_;
 
+  uint8_t dropped_packets = 0;
+
   struct InspectProperties {
     inspect::Node node;
     inspect::StringProperty psm;
     inspect::StringProperty local_id;
     inspect::StringProperty remote_id;
+    inspect::UintProperty dropped_packets;
   };
   InspectProperties inspect_;
 

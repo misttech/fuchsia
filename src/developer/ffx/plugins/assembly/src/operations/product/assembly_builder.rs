@@ -3,22 +3,24 @@
 // found in the LICENSE file.
 
 use crate::compiled_package::CompiledPackageBuilder;
-use anyhow::{anyhow, ensure, Context, Result};
-use assembly_bootfs_file_map::BootfsFileMap;
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use assembly_config_data::ConfigDataBuilder;
 use assembly_config_schema::{
     assembly_config::{AssemblyInputBundle, CompiledPackageDefinition, ShellCommands},
-    board_config::{HardwareSupportBundle, PackagedDriverDetails},
-    image_assembly_config::{PartialImageAssemblyConfig, PartialKernelConfig},
+    board_config::{BoardInputBundle, HardwareInfo},
+    common::PackagedDriverDetails,
+    image_assembly_config::{BoardDriverArguments, KernelConfig},
+    platform_config::BuildType,
     product_config::{ProductConfigData, ProductPackageDetails, ProductPackagesConfig},
-    DriverDetails, FileEntry,
+    BoardInformation, DriverDetails, FileEntry, PackageDetails, PackageSet,
 };
+use assembly_named_file_map::NamedFileMap;
 
 use assembly_domain_config::DomainConfigPackage;
 use assembly_driver_manifest::{
     DriverManifestBuilder, DriverPackageType, BASE_DRIVER_MANIFEST_PATH, BOOT_DRIVER_MANIFEST_PATH,
 };
-use assembly_package_set::{PackageEntry, PackageSet};
+use assembly_package_set::PackageEntry;
 use assembly_package_utils::{PackageInternalPathBuf, PackageManifestPathBuf};
 use assembly_platform_configuration::{
     ComponentConfigs, DomainConfig, DomainConfigs, PackageConfigs, PackageConfiguration,
@@ -31,16 +33,22 @@ use assembly_util::{InsertAllUniqueExt, InsertUniqueExt, NamedMap};
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_pkg::PackageManifest;
 use fuchsia_url::UnpinnedAbsolutePackageUrl;
+use itertools::Itertools;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
+const DEDUP_CONFIG_DATA: bool = false;
+
 #[derive(Debug, Serialize)]
 pub struct ImageAssemblyConfigBuilder {
+    /// The RFC-0115 Build Type of the assembled product + platform.
+    build_type: BuildType,
+
     /// The base packages from the AssemblyInputBundles
-    base: PackageSet,
+    base: assembly_package_set::PackageSet,
 
     /// The cache packages from the AssemblyInputBundles
-    cache: PackageSet,
+    cache: assembly_package_set::PackageSet,
 
     /// The base driver packages from the AssemblyInputBundles
     base_drivers: NamedMap<DriverDetails>,
@@ -49,16 +57,16 @@ pub struct ImageAssemblyConfigBuilder {
     boot_drivers: NamedMap<DriverDetails>,
 
     /// The system packages from the AssemblyInputBundles
-    system: PackageSet,
+    system: assembly_package_set::PackageSet,
 
     /// The bootfs packages from the AssemblyInputBundles
-    bootfs_packages: PackageSet,
+    bootfs_packages: assembly_package_set::PackageSet,
 
     /// The boot_args from the AssemblyInputBundles
     boot_args: BTreeSet<String>,
 
     /// The bootfs_files from the AssemblyInputBundles
-    bootfs_files: BootfsFileMap,
+    bootfs_files: NamedFileMap,
 
     /// Modifications that must be made to structured config within bootfs.
     bootfs_structured_config: ComponentConfigs,
@@ -81,56 +89,26 @@ pub struct ImageAssemblyConfigBuilder {
 
     /// The packages for assembly to create specified by AIBs
     packages_to_compile: BTreeMap<String, CompiledPackageBuilder>,
-}
 
-/// An enum representing unique identifiers for the 4 types of supported package sets in the
-/// ImageAssemblyConfigBuilder. Used to dereference PackageSet fields on the builder by name
-#[derive(Debug)]
-#[allow(clippy::upper_case_acronyms)]
-enum PackageSets {
-    BASE,
-    CACHE,
-    SYSTEM,
-    BOOTFS,
-}
+    /// Data passed to the board's Board Driver, if provided.
+    board_driver_arguments: Option<BoardDriverArguments>,
 
-impl PackageSets {
-    fn list_all() -> Vec<PackageSets> {
-        vec![Self::BASE, Self::CACHE, Self::BOOTFS, Self::SYSTEM]
-    }
-}
-
-impl Default for ImageAssemblyConfigBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Convert the PackageSet from config_schema to the PackageSets used
-/// internally in product assembly.
-// TODO: Remove this once the PackageSet in config_schema is used in
-// product assembly.
-impl From<assembly_config_schema::PackageSet> for PackageSets {
-    fn from(set: assembly_config_schema::PackageSet) -> Self {
-        match set {
-            assembly_config_schema::PackageSet::Base => PackageSets::BASE,
-            assembly_config_schema::PackageSet::BootFS => PackageSets::BOOTFS,
-        }
-    }
+    configuration_capabilities: Option<assembly_config_capabilities::CapabilityNamedMap>,
 }
 
 impl ImageAssemblyConfigBuilder {
-    pub fn new() -> Self {
+    pub fn new(build_type: BuildType) -> Self {
         Self {
-            base: PackageSet::new("base packages"),
-            cache: PackageSet::new("cache packages"),
+            build_type,
+            base: assembly_package_set::PackageSet::new("base packages"),
+            cache: assembly_package_set::PackageSet::new("cache packages"),
             base_drivers: NamedMap::new("base_drivers"),
             boot_drivers: NamedMap::new("boot_drivers"),
-            system: PackageSet::new("system packages"),
-            bootfs_packages: PackageSet::new("bootfs packages"),
+            system: assembly_package_set::PackageSet::new("system packages"),
+            bootfs_packages: assembly_package_set::PackageSet::new("bootfs packages"),
             boot_args: BTreeSet::default(),
             shell_commands: ShellCommands::default(),
-            bootfs_files: BootfsFileMap::new(),
+            bootfs_files: NamedFileMap::new("bootfs files"),
             bootfs_structured_config: ComponentConfigs::new("component configs"),
             package_configs: PackageConfigs::new("package configs"),
             domain_configs: DomainConfigs::new("domain configs"),
@@ -140,6 +118,8 @@ impl ImageAssemblyConfigBuilder {
             qemu_kernel: None,
             package_urls: BTreeSet::default(),
             packages_to_compile: BTreeMap::default(),
+            board_driver_arguments: None,
+            configuration_capabilities: None,
         }
     }
 
@@ -171,7 +151,12 @@ impl ImageAssemblyConfigBuilder {
     ) -> Result<()> {
         let bundle_path = bundle_path.as_ref();
         let AssemblyInputBundle {
-            image_assembly: bundle,
+            kernel,
+            qemu_kernel,
+            boot_args,
+            bootfs_packages: _,
+            bootfs_files: _,
+            packages,
             config_data,
             blobs: _,
             base_drivers,
@@ -181,7 +166,7 @@ impl ImageAssemblyConfigBuilder {
             bootfs_files_package,
         } = bundle;
 
-        self.add_bundle_packages(bundle_path, &bundle)?;
+        self.add_bundle_packages(bundle_path, &packages)?;
 
         if let Some(path) = bootfs_files_package {
             self.add_bootfs_files_from_path(bundle_path, path)?;
@@ -190,7 +175,7 @@ impl ImageAssemblyConfigBuilder {
         // Base drivers are added to the base packages
         for driver_details in base_drivers {
             let driver_package_path = &bundle_path.join(&driver_details.package);
-            self.add_unique_package_from_path(driver_package_path, &PackageSets::BASE)?;
+            self.add_unique_package_from_path(driver_package_path, &PackageSet::Base)?;
 
             let package_url = DriverManifestBuilder::get_package_url(
                 DriverPackageType::Base,
@@ -202,7 +187,7 @@ impl ImageAssemblyConfigBuilder {
         // Boot drivers are added to the bootfs package set
         for driver_details in boot_drivers {
             let driver_package_path = &bundle_path.join(&driver_details.package);
-            self.add_unique_package_from_path(driver_package_path, &PackageSets::BOOTFS)?;
+            self.add_unique_package_from_path(driver_package_path, &PackageSet::Bootfs)?;
 
             let package_url = DriverManifestBuilder::get_package_url(
                 DriverPackageType::Boot,
@@ -212,10 +197,10 @@ impl ImageAssemblyConfigBuilder {
         }
 
         self.boot_args
-            .try_insert_all_unique(bundle.boot_args)
+            .try_insert_all_unique(boot_args)
             .map_err(|arg| anyhow!("duplicate boot_arg found: {}", arg))?;
 
-        if let Some(kernel) = bundle.kernel {
+        if let Some(kernel) = kernel {
             assembly_util::set_option_once_or(
                 &mut self.kernel_path,
                 kernel.path.map(|p| bundle_path.join(p)),
@@ -251,51 +236,97 @@ impl ImageAssemblyConfigBuilder {
 
         assembly_util::set_option_once_or(
             &mut self.qemu_kernel,
-            bundle.qemu_kernel.map(|p| bundle_path.join(p)),
+            qemu_kernel.map(|p| bundle_path.join(p)),
             anyhow!("Only one input bundle can specify a qemu kernel path"),
         )?;
 
         Ok(())
     }
 
-    /// Add a Hardware Support Bundle to the builder, using the path to the
+    /// Add a Board input Bundle to the builder, using the path to the
     /// folder that contains it.
     ///
     /// If any of the items it's trying to add are duplicates (either of itself
     /// or others, this will return an error).
-    pub fn add_hardware_support_bundle(
+    pub fn add_board_input_bundle(
         &mut self,
-        bundle_path: impl AsRef<Utf8Path>,
-        bundle: HardwareSupportBundle,
+        bundle: BoardInputBundle,
+        bootstrap_only: bool,
     ) -> Result<()> {
-        let bundle_path = bundle_path.as_ref();
-
         for PackagedDriverDetails { package, set, components } in bundle.drivers {
-            let driver_package_path = &bundle_path.join(&package);
-
             // These need to be consolidated into a single type so that they are
             // less cumbersome.
-            let (package_set, driver_package_type) = match &set {
-                assembly_config_schema::PackageSet::Base => {
-                    (PackageSets::BASE, DriverPackageType::Base)
-                }
-                assembly_config_schema::PackageSet::BootFS => {
-                    (PackageSets::BOOTFS, DriverPackageType::Boot)
-                }
+            let driver_package_type = match &set {
+                PackageSet::Base => DriverPackageType::Base,
+                PackageSet::Bootfs => DriverPackageType::Boot,
+                _ => bail!("Unsupported board package set type {:?}", &set),
             };
 
-            self.add_unique_package_from_path(driver_package_path, &package_set)?;
+            // Always add the drivers if bootfs, and only add non-bootfs drivers
+            // if this is not a bootstrap_only build.
+            if set == PackageSet::Bootfs || !bootstrap_only {
+                self.add_unique_package_from_path(&package, &set)?;
 
-            let package_url =
-                DriverManifestBuilder::get_package_url(driver_package_type, driver_package_path)?;
+                let package_url =
+                    DriverManifestBuilder::get_package_url(driver_package_type, &package)?;
 
-            let driver_set = match &set {
-                assembly_config_schema::PackageSet::Base => &mut self.base_drivers,
-                assembly_config_schema::PackageSet::BootFS => &mut self.boot_drivers,
-            };
-            driver_set.try_insert_unique(package_url, DriverDetails { package, components })?;
+                let driver_set = match &set {
+                    PackageSet::Base => &mut self.base_drivers,
+                    PackageSet::Bootfs => &mut self.boot_drivers,
+                    _ => bail!("Unsupported board package set type {:?}", &set),
+                };
+                driver_set.try_insert_unique(
+                    package_url,
+                    DriverDetails { package: package.into(), components },
+                )?;
+            }
         }
 
+        for PackageDetails { package, set } in bundle.packages {
+            // Always add the package if bootfs, and only add non-bootfs packages
+            // if this is not a bootstrap_only build.
+            if set == PackageSet::Bootfs || !bootstrap_only {
+                self.add_unique_package_from_path(package, &set)?;
+            }
+        }
+
+        self.kernel_args
+            .try_insert_all_unique(bundle.kernel_boot_args)
+            .map_err(|arg| anyhow!("duplicate boot_arg found: {}", arg))?;
+
+        Ok(())
+    }
+
+    /// Set the (optional) arguments for the Board Driver.
+    pub fn set_board_driver_arguments(&mut self, board_info: &BoardInformation) -> Result<()> {
+        if self.board_driver_arguments.is_some() {
+            bail!("Board driver arguments have already been set");
+        }
+        self.board_driver_arguments = match &board_info.hardware_info {
+            HardwareInfo {
+                name,
+                vendor_id: Some(vendor_id),
+                product_id: Some(product_id),
+                revision: Some(revision),
+            } => Some(BoardDriverArguments {
+                vendor_id: *vendor_id,
+                product_id: *product_id,
+                revision: *revision,
+                name: name.as_ref().unwrap_or(&board_info.name).clone(),
+            }),
+            HardwareInfo { name: _, vendor_id: None, product_id: None, revision: None } => None,
+            _ => {
+                bail!("If any of 'vendor_id', 'product_id', or 'revision' are set, all must be provided: {:?}", &board_info.hardware_info);
+            }
+        };
+        Ok(())
+    }
+
+    /// Add all the bootfs file entries to the builder.
+    pub fn add_bootfs_files(&mut self, files: &NamedMap<FileEntry>) -> Result<()> {
+        for (_, entry) in files {
+            self.bootfs_files.add_entry_as_blob(entry.to_owned())?;
+        }
         Ok(())
     }
 
@@ -324,7 +355,7 @@ impl ImageAssemblyConfigBuilder {
     fn add_unique_package_from_path(
         &mut self,
         path: impl AsRef<Utf8Path>,
-        to_package_set: &PackageSets,
+        to_package_set: &PackageSet,
     ) -> Result<()> {
         // Create PackageEntry
         let package_entry = PackageEntry::parse_from(path.as_ref().to_owned())?;
@@ -337,17 +368,21 @@ impl ImageAssemblyConfigBuilder {
     fn add_unique_package_entry(
         &mut self,
         package_entry: PackageEntry,
-        to_package_set: &PackageSets,
+        to_package_set: &PackageSet,
     ) -> Result<()> {
         let package_set = match to_package_set.to_owned() {
-            PackageSets::BASE => &mut self.base,
-            PackageSets::CACHE => &mut self.cache,
-            PackageSets::SYSTEM => &mut self.system,
-            PackageSets::BOOTFS => &mut self.bootfs_packages,
+            PackageSet::Base => &mut self.base,
+            PackageSet::Cache => &mut self.cache,
+            PackageSet::System => &mut self.system,
+            PackageSet::Bootfs => &mut self.bootfs_packages,
+            _ => bail!("Unsupported package set type {:?}", &to_package_set),
         };
 
         let package_url = package_entry.manifest.package_url()?.ok_or_else(|| {
-            anyhow::anyhow!("Something happened when trying to get the package_url")
+            anyhow::anyhow!(
+                "Failed to retrieve package_url for package {}",
+                package_entry.manifest.name()
+            )
         })?;
         self.package_urls.try_insert_unique(package_url).map_err(|e| {
             anyhow::anyhow!("duplicate package {} found in {}", e, package_set.name)
@@ -362,20 +397,20 @@ impl ImageAssemblyConfigBuilder {
     fn add_bundle_packages(
         &mut self,
         bundle_path: impl AsRef<Utf8Path>,
-        bundle: &PartialImageAssemblyConfig,
+        packages: &Vec<PackageDetails>,
     ) -> Result<()> {
-        for package_set in PackageSets::list_all() {
-            let bundle_package_paths = match package_set {
-                PackageSets::BASE => &bundle.base,
-                PackageSets::CACHE => &bundle.cache,
-                PackageSets::SYSTEM => &bundle.system,
-                PackageSets::BOOTFS => &bundle.bootfs_packages,
+        for entry in packages {
+            let manifest_path: Utf8PathBuf =
+                entry.package.clone().resolve_from_dir(&bundle_path)?.into();
+            let set = match (&entry.set, &self.build_type) {
+                (&PackageSet::Flexible, BuildType::Eng) => PackageSet::Cache,
+                (&PackageSet::Flexible, _) => PackageSet::Base,
+                (&PackageSet::Base, _) => PackageSet::Base,
+                (&PackageSet::Cache, _) => PackageSet::Cache,
+                (&PackageSet::System, _) => PackageSet::System,
+                (&PackageSet::Bootfs, _) => PackageSet::Bootfs,
             };
-
-            for path in bundle_package_paths {
-                let manifest_path = bundle_path.as_ref().join(path);
-                self.add_unique_package_from_path(manifest_path, &package_set)?;
-            }
+            self.add_unique_package_from_path(manifest_path, &set)?;
         }
 
         Ok(())
@@ -401,8 +436,8 @@ impl ImageAssemblyConfigBuilder {
     /// flagged as being the issue (and not the platform being the issue).
     pub fn add_product_packages(&mut self, packages: ProductPackagesConfig) -> Result<()> {
         // Add the config data entries to the map
-        self.add_product_packages_to_set(packages.base, PackageSets::BASE)?;
-        self.add_product_packages_to_set(packages.cache, PackageSets::CACHE)?;
+        self.add_product_packages_to_set(packages.base, PackageSet::Base)?;
+        self.add_product_packages_to_set(packages.cache, PackageSet::Cache)?;
         Ok(())
     }
 
@@ -410,7 +445,7 @@ impl ImageAssemblyConfigBuilder {
     fn add_product_packages_to_set(
         &mut self,
         entries: Vec<ProductPackageDetails>,
-        to_package_set: PackageSets,
+        to_package_set: PackageSet,
     ) -> Result<()> {
         for entry in entries {
             // Parse the package_manifest.json into a PackageManifest, returning
@@ -483,18 +518,23 @@ impl ImageAssemblyConfigBuilder {
     /// Add an entry to `config_data` for the given package.  If the entry
     /// duplicates an existing entry, return an error.
     fn add_config_data_entry(&mut self, package: impl AsRef<str>, entry: FileEntry) -> Result<()> {
-        self.package_configs
+        let config_data = &mut self
+            .package_configs
             .entry(package.as_ref().into())
             .or_insert_with(|| PackageConfiguration::new(package.as_ref()))
-            .config_data
-            .try_insert_unique(entry.destination.clone(), entry)
-            .map_err(|dup| {
-                anyhow!(
-                    "duplicate config data file found for package: {}\n  error: {}",
-                    package.as_ref(),
-                    dup,
-                )
-            })
+            .config_data;
+        let result = if DEDUP_CONFIG_DATA {
+            config_data.add_entry_as_blob(entry)
+        } else {
+            config_data.add_entry(entry)
+        };
+        result.map_err(|dup| {
+            anyhow!(
+                "duplicate config data file found for package: {}\n  error: {}",
+                package.as_ref(),
+                dup,
+            )
+        })
     }
 
     fn add_shell_command_entry(
@@ -546,6 +586,17 @@ impl ImageAssemblyConfigBuilder {
         }
     }
 
+    pub fn add_configuration_capabilities(
+        &mut self,
+        config: assembly_config_capabilities::CapabilityNamedMap,
+    ) -> Result<()> {
+        if self.configuration_capabilities.is_some() {
+            return Err(anyhow::format_err!("duplicate configuration capabilities"));
+        }
+        self.configuration_capabilities = Some(config);
+        Ok(())
+    }
+
     pub fn add_compiled_package(
         &mut self,
         compiled_package_def: &CompiledPackageDefinition,
@@ -581,6 +632,7 @@ impl ImageAssemblyConfigBuilder {
         // Decompose the fields in self, so that they can be recomposed into the generated
         // image assembly configuration.
         let Self {
+            build_type: _,
             package_configs,
             domain_configs,
             mut base,
@@ -599,6 +651,8 @@ impl ImageAssemblyConfigBuilder {
             shell_commands,
             package_urls: _,
             packages_to_compile,
+            board_driver_arguments,
+            configuration_capabilities,
         } = self;
 
         let cmc_tool = tools.get_tool("cmc")?;
@@ -687,7 +741,25 @@ impl ImageAssemblyConfigBuilder {
             let (path, manifest) = package
                 .build(outdir)
                 .with_context(|| format!("building domain config package {package_name}"))?;
-            base.insert(package_name.to_owned(), PackageEntry { path, manifest });
+            base.add_package_ignore_duplicates(PackageEntry { path, manifest })
+                .with_context(|| format!("Adding domain config package: {}", package_name))?;
+        }
+
+        // Construct the config capability package.
+        if let Some(config) = configuration_capabilities {
+            let package_name = "config";
+            let outdir = outdir.join(package_name);
+            std::fs::create_dir_all(&outdir)
+                .with_context(|| format!("creating directory {outdir}"))?;
+
+            let (path, manifest) =
+                assembly_config_capabilities::build_config_capability_package(config, &outdir)
+                    .with_context(|| {
+                        format!("building config capabilties package {package_name}")
+                    })?;
+            bootfs_packages
+                .add_package(PackageEntry { path, manifest })
+                .with_context(|| format!("Adding config capabilities package: {}", package_name))?;
         }
 
         {
@@ -708,22 +780,18 @@ impl ImageAssemblyConfigBuilder {
             })?;
         }
 
-        // Build the config_data package
-        let mut config_data_builder = ConfigDataBuilder::default();
-        let mut found_config_data = false;
-        for (package_name, config) in &package_configs {
-            if !config.config_data.is_empty() {
-                found_config_data = true;
-                for (_, entry) in config.config_data.iter() {
+        // Build the config_data package if we have any packages.
+        if !base.is_empty() || !cache.is_empty() || !system.is_empty() {
+            let mut config_data_builder = ConfigDataBuilder::default();
+            for (package_name, config) in &package_configs {
+                for (destination, source_merkle_pair) in config.config_data.iter() {
                     config_data_builder.add_entry(
                         package_name,
-                        entry.destination.clone().into(),
-                        entry.source.clone(),
+                        destination.clone().into(),
+                        source_merkle_pair.source.clone(),
                     )?;
                 }
             }
-        }
-        if found_config_data {
             let manifest_path = config_data_builder
                 .build(outdir)
                 .context("writing the 'config_data' package metafar.")?;
@@ -743,25 +811,23 @@ impl ImageAssemblyConfigBuilder {
         // Construct a single "partial" config from the combined fields, and
         // then pass this to the ImageAssemblyConfig::try_from_partials() to get the
         // final validation that it's complete.
-        let partial = assembly_config_schema::PartialImageAssemblyConfig {
-            system: system.into_paths().collect(),
-            base: base.into_paths().collect(),
-            cache: cache.into_paths().collect(),
-            kernel: Some(PartialKernelConfig {
-                path: kernel_path,
+        let image_assembly_config = assembly_config_schema::ImageAssemblyConfig {
+            system: system.into_paths().sorted().collect(),
+            base: base.into_paths().sorted().collect(),
+            cache: cache.into_paths().sorted().collect(),
+            kernel: KernelConfig {
+                path: kernel_path.context("A kernel path must be specified")?,
                 args: kernel_args.into_iter().collect(),
-                clock_backstop: kernel_clock_backstop,
-            }),
-            qemu_kernel,
+                clock_backstop: kernel_clock_backstop
+                    .context("A kernel clock backstop time must be specified")?,
+            },
+            qemu_kernel: qemu_kernel.context("A qemu kernel configuration must be specified")?,
             boot_args: boot_args.into_iter().collect(),
             bootfs_files: bootfs_files.into_file_entries(),
-            bootfs_packages: bootfs_packages.into_paths().collect(),
+            bootfs_packages: bootfs_packages.into_paths().sorted().collect(),
+            images_config: Default::default(),
+            board_driver_arguments,
         };
-
-        let image_assembly_config = assembly_config_schema::ImageAssemblyConfig::try_from_partials(
-            std::iter::once(partial),
-        )?;
-
         Ok(image_assembly_config)
     }
 }
@@ -770,8 +836,8 @@ impl ImageAssemblyConfigBuilder {
 /// manifest and a mutable reference to the set from which it was removed.
 fn remove_package_from_sets<'a, 'b: 'a, const N: usize>(
     package_name: &str,
-    package_sets: [&'a mut PackageSet; N],
-) -> anyhow::Result<Option<(PackageManifest, &'a mut PackageSet)>> {
+    package_sets: [&'a mut assembly_package_set::PackageSet; N],
+) -> anyhow::Result<Option<(PackageManifest, &'a mut assembly_package_set::PackageSet)>> {
     let mut matches_name = None;
 
     for package_set in package_sets {
@@ -793,7 +859,10 @@ mod tests {
     use assembly_config_schema::assembly_config::{
         AdditionalPackageContents, MainPackageDefinition, ShellCommands,
     };
+    use assembly_config_schema::image_assembly_config::PartialKernelConfig;
     use assembly_driver_manifest::DriverManifest;
+    use assembly_file_relative_path::FileRelativePathBuf;
+    use assembly_named_file_map::SourceMerklePair;
     use assembly_package_utils::PackageManifestPathBuf;
     use assembly_test_util::generate_test_manifest;
     use assembly_tool::testing::FakeToolProvider;
@@ -803,7 +872,6 @@ mod tests {
     use fuchsia_pkg::{
         BlobInfo, MetaPackage, PackageBuilder, PackageManifest, PackageManifestBuilder,
     };
-    use itertools::Itertools;
     use serde_json::json;
     use std::fs::File;
     use std::io::BufReader;
@@ -877,22 +945,41 @@ mod tests {
         serde_json::to_writer(&test_file, &manifest).unwrap();
         test_file.flush().unwrap();
 
-        let write_empty_bundle_pkg = |name: &str| write_empty_pkg(bundle_path, name, None).clone();
+        let write_empty_bundle_pkg = |name: &str| {
+            FileRelativePathBuf::FileRelative(write_empty_pkg(bundle_path, name, None).clone())
+        };
         AssemblyInputBundle {
-            image_assembly: assembly_config_schema::PartialImageAssemblyConfig {
-                base: vec![write_empty_bundle_pkg("base_package0")],
-                system: vec![write_empty_bundle_pkg("sys_package0")],
-                cache: vec![write_empty_bundle_pkg("cache_package0")],
-                bootfs_packages: vec![write_empty_bundle_pkg("bootfs_package0")],
-                kernel: Some(PartialKernelConfig {
-                    path: Some("kernel/path".into()),
-                    args: vec!["kernel_arg0".into()],
-                    clock_backstop: Some(56244),
-                }),
-                qemu_kernel: Some("path/to/qemu/kernel".into()),
-                boot_args: vec!["boot_arg0".into()],
-                bootfs_files: vec![],
-            },
+            kernel: Some(PartialKernelConfig {
+                path: Some("kernel/path".into()),
+                args: vec!["kernel_arg0".into()],
+                clock_backstop: Some(56244),
+            }),
+            qemu_kernel: Some("path/to/qemu/kernel".into()),
+            boot_args: vec!["boot_arg0".into()],
+            bootfs_files: vec![],
+            bootfs_packages: vec![],
+            packages: vec![
+                PackageDetails {
+                    package: write_empty_bundle_pkg("base_package0"),
+                    set: PackageSet::Base,
+                },
+                PackageDetails {
+                    package: write_empty_bundle_pkg("cache_package0"),
+                    set: PackageSet::Cache,
+                },
+                PackageDetails {
+                    package: write_empty_bundle_pkg("flexible_package0"),
+                    set: assembly_config_schema::PackageSet::Flexible,
+                },
+                PackageDetails {
+                    package: write_empty_bundle_pkg("bootfs_package0"),
+                    set: PackageSet::Bootfs,
+                },
+                PackageDetails {
+                    package: write_empty_bundle_pkg("sys_package0"),
+                    set: PackageSet::System,
+                },
+            ],
             base_drivers: Vec::default(),
             boot_drivers: Vec::default(),
             config_data: BTreeMap::default(),
@@ -928,19 +1015,21 @@ mod tests {
         package_names: Vec<String>,
     ) -> ImageAssemblyConfigBuilder {
         let minimum_bundle = AssemblyInputBundle {
-            image_assembly: assembly_config_schema::PartialImageAssemblyConfig {
-                base: package_names
-                    .iter()
-                    .map(|package_name| write_empty_pkg(&outdir, package_name, None).into())
-                    .collect(),
-                kernel: Some(PartialKernelConfig {
-                    path: Some("kernel/path".into()),
-                    args: Vec::default(),
-                    clock_backstop: Some(0),
-                }),
-                qemu_kernel: Some("kernel/qemu/path".into()),
-                ..assembly_config_schema::PartialImageAssemblyConfig::default()
-            },
+            kernel: Some(PartialKernelConfig {
+                path: Some("kernel/path".into()),
+                args: Vec::default(),
+                clock_backstop: Some(0),
+            }),
+            qemu_kernel: Some("kernel/qemu/path".into()),
+            packages: package_names
+                .iter()
+                .map(|package_name| PackageDetails {
+                    package: FileRelativePathBuf::FileRelative(
+                        write_empty_pkg(&outdir, package_name, None).into(),
+                    ),
+                    set: PackageSet::Base,
+                })
+                .collect(),
             base_drivers: Vec::default(),
             boot_drivers: Vec::default(),
             config_data: BTreeMap::default(),
@@ -948,8 +1037,9 @@ mod tests {
             shell_commands: ShellCommands::default(),
             packages_to_compile: Vec::default(),
             bootfs_files_package: None,
+            ..AssemblyInputBundle::default()
         };
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
         builder.add_parsed_bundle(outdir.as_ref().join("minimum_bundle"), minimum_bundle).unwrap();
         builder
     }
@@ -959,7 +1049,7 @@ mod tests {
         let vars = TempdirPathsForTest::new();
         let tools = FakeToolProvider::default();
 
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
         builder
             .add_parsed_bundle(
                 &vars.outdir,
@@ -969,8 +1059,106 @@ mod tests {
         let result: assembly_config_schema::ImageAssemblyConfig =
             builder.build(&vars.outdir, &tools).unwrap();
 
-        assert_eq!(result.base, vec![vars.bundle_path.join("base_package0"),]);
-        assert_eq!(result.cache, vec![vars.bundle_path.join("cache_package0")]);
+        assert_eq!(
+            result.base,
+            vec![
+                vars.bundle_path.join("base_package0"),
+                vars.outdir.join("config_data/package_manifest.json")
+            ]
+        );
+        assert_eq!(
+            result.cache,
+            vec![
+                vars.bundle_path.join("cache_package0"),
+                vars.bundle_path.join("flexible_package0"),
+            ]
+        );
+        assert_eq!(result.system, vec![vars.bundle_path.join("sys_package0")]);
+        assert_eq!(result.bootfs_packages, vec![vars.bundle_path.join("bootfs_package0")]);
+        assert_eq!(result.boot_args, vec!("boot_arg0".to_string()));
+        assert_eq!(
+            result
+                .bootfs_files
+                .iter()
+                .map(|f| f.destination.to_owned())
+                .sorted()
+                .collect::<Vec<_>>(),
+            vec![BASE_DRIVER_MANIFEST_PATH, BOOT_DRIVER_MANIFEST_PATH, "dest/file/path"]
+        );
+
+        assert_eq!(result.kernel.path, vars.outdir.join("kernel/path"));
+        assert_eq!(result.kernel.args, vec!("kernel_arg0".to_string()));
+        assert_eq!(result.kernel.clock_backstop, 56244);
+        assert_eq!(result.qemu_kernel, vars.outdir.join("path/to/qemu/kernel"));
+    }
+
+    #[test]
+    fn test_builder_userdebug() {
+        let vars = TempdirPathsForTest::new();
+        let tools = FakeToolProvider::default();
+
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::UserDebug);
+        builder
+            .add_parsed_bundle(
+                &vars.outdir,
+                make_test_assembly_bundle(&vars.outdir, &vars.bundle_path),
+            )
+            .unwrap();
+        let result: assembly_config_schema::ImageAssemblyConfig =
+            builder.build(&vars.outdir, &tools).unwrap();
+
+        assert_eq!(
+            result.base,
+            vec![
+                vars.bundle_path.join("base_package0"),
+                vars.bundle_path.join("flexible_package0"),
+                vars.outdir.join("config_data/package_manifest.json")
+            ]
+        );
+        assert_eq!(result.cache, vec![vars.bundle_path.join("cache_package0"),]);
+        assert_eq!(result.system, vec![vars.bundle_path.join("sys_package0")]);
+        assert_eq!(result.bootfs_packages, vec![vars.bundle_path.join("bootfs_package0")]);
+        assert_eq!(result.boot_args, vec!("boot_arg0".to_string()));
+        assert_eq!(
+            result
+                .bootfs_files
+                .iter()
+                .map(|f| f.destination.to_owned())
+                .sorted()
+                .collect::<Vec<_>>(),
+            vec![BASE_DRIVER_MANIFEST_PATH, BOOT_DRIVER_MANIFEST_PATH, "dest/file/path"]
+        );
+
+        assert_eq!(result.kernel.path, vars.outdir.join("kernel/path"));
+        assert_eq!(result.kernel.args, vec!("kernel_arg0".to_string()));
+        assert_eq!(result.kernel.clock_backstop, 56244);
+        assert_eq!(result.qemu_kernel, vars.outdir.join("path/to/qemu/kernel"));
+    }
+
+    #[test]
+    fn test_builder_user() {
+        let vars = TempdirPathsForTest::new();
+        let tools = FakeToolProvider::default();
+
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::User);
+        builder
+            .add_parsed_bundle(
+                &vars.outdir,
+                make_test_assembly_bundle(&vars.outdir, &vars.bundle_path),
+            )
+            .unwrap();
+        let result: assembly_config_schema::ImageAssemblyConfig =
+            builder.build(&vars.outdir, &tools).unwrap();
+
+        assert_eq!(
+            result.base,
+            vec![
+                vars.bundle_path.join("base_package0"),
+                vars.bundle_path.join("flexible_package0"),
+                vars.outdir.join("config_data/package_manifest.json")
+            ]
+        );
+        assert_eq!(result.cache, vec![vars.bundle_path.join("cache_package0"),]);
         assert_eq!(result.system, vec![vars.bundle_path.join("sys_package0")]);
         assert_eq!(result.bootfs_packages, vec![vars.bundle_path.join("bootfs_package0")]);
         assert_eq!(result.boot_args, vec!("boot_arg0".to_string()));
@@ -994,7 +1182,7 @@ mod tests {
         vars: &TempdirPathsForTest,
         bundles: Vec<AssemblyInputBundle>,
     ) -> ImageAssemblyConfigBuilder {
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
 
         // Write a file to the temp dir for use with config_data.
         std::fs::create_dir_all(&vars.config_data_target_package_dir).unwrap();
@@ -1019,7 +1207,7 @@ mod tests {
         let boot_driver_2 = make_test_driver("boot-driver2", &vars.outdir)?;
         aib.boot_drivers = vec![boot_driver_1, boot_driver_2];
 
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
         builder.add_parsed_bundle(&vars.bundle_path, aib).unwrap();
         let result: assembly_config_schema::ImageAssemblyConfig =
             builder.build(&vars.outdir, &tools).unwrap();
@@ -1117,16 +1305,18 @@ mod tests {
                 PackageConfiguration {
                     components: ComponentConfigs::new("component configs"),
                     name: vars.config_data_target_package_name.clone(),
-                    config_data: NamedMap {
-                        name: "config data".into(),
-                        entries: [(
-                            "dest/platform/configuration".into(),
-                            FileEntry {
-                                destination: "dest/platform/configuration".into(),
-                                source: vars.config_data_file_path,
-                            },
-                        )]
-                        .into(),
+                    config_data: NamedFileMap {
+                        map: NamedMap {
+                            name: "config data".into(),
+                            entries: [(
+                                "dest/platform/configuration".into(),
+                                SourceMerklePair {
+                                    merkle: None,
+                                    source: vars.config_data_file_path,
+                                },
+                            )]
+                            .into(),
+                        },
                     },
                 },
             )
@@ -1211,7 +1401,7 @@ mod tests {
             vars.outdir.join("shell-commands").join("package_manifest.json");
 
         // Validate that the base package set contains shell_commands.
-        assert_eq!(result.base.len(), 2);
+        assert_eq!(result.base.len(), 3);
         assert!(result.base.contains(&expected_manifest_path));
     }
 
@@ -1318,7 +1508,7 @@ mod tests {
 
         assert_eq!(
             result.base.iter().map(|p| p.to_owned()).sorted().collect::<Vec<_>>(),
-            ["driver1", "driver2", "platform_a", "platform_b"]
+            ["config_data/package_manifest.json", "driver1", "driver2", "platform_a", "platform_b"]
                 .iter()
                 .map(|p| outdir.join(p))
                 .sorted()
@@ -1487,50 +1677,14 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_catches_dupe_base_pkgs_in_aib() {
+    fn test_builder_catches_dupe_pkgs_in_aib() {
         let temp = TempDir::new().unwrap();
         let root = Utf8Path::from_path(temp.path()).unwrap();
 
         let mut aib = make_test_assembly_bundle(root, root);
-        duplicate_first(&mut aib.image_assembly.base);
+        duplicate_first(&mut aib.packages);
 
-        let mut builder = ImageAssemblyConfigBuilder::default();
-        assert!(builder.add_parsed_bundle(root, aib).is_err());
-    }
-
-    #[test]
-    fn test_builder_catches_dupe_cache_pkgs_in_aib() {
-        let temp = TempDir::new().unwrap();
-        let root = Utf8Path::from_path(temp.path()).unwrap();
-
-        let mut aib = make_test_assembly_bundle(root, root);
-        duplicate_first(&mut aib.image_assembly.cache);
-
-        let mut builder = ImageAssemblyConfigBuilder::default();
-        assert!(builder.add_parsed_bundle(root, aib).is_err());
-    }
-
-    #[test]
-    fn test_builder_catches_dupe_system_pkgs_in_aib() {
-        let temp = TempDir::new().unwrap();
-        let root = Utf8Path::from_path(temp.path()).unwrap();
-
-        let mut aib = make_test_assembly_bundle(root, root);
-        duplicate_first(&mut aib.image_assembly.system);
-
-        let mut builder = ImageAssemblyConfigBuilder::default();
-        assert!(builder.add_parsed_bundle(root, aib).is_err());
-    }
-
-    #[test]
-    fn test_builder_catches_dupe_bootfs_pkgs_in_aib() {
-        let temp = TempDir::new().unwrap();
-        let root = Utf8Path::from_path(temp.path()).unwrap();
-
-        let mut aib = make_test_assembly_bundle(root, root);
-        duplicate_first(&mut aib.image_assembly.bootfs_packages);
-
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
         assert!(builder.add_parsed_bundle(root, aib).is_err());
     }
 
@@ -1554,24 +1708,14 @@ mod tests {
         let value = first_list.get(0).unwrap();
         second_list.push(value.clone());
 
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
         builder.add_parsed_bundle(outdir, aib).unwrap();
         assert!(builder.add_parsed_bundle(outdir.join("second"), second_aib).is_err());
     }
 
     #[test]
-    fn test_builder_catches_dupe_base_pkgs_across_aibs() {
-        test_duplicates_across_aibs_impl(|a| &mut a.image_assembly.base);
-    }
-
-    #[test]
-    fn test_builder_catches_dupe_cache_pkgs_across_aibs() {
-        test_duplicates_across_aibs_impl(|a| &mut a.image_assembly.cache);
-    }
-
-    #[test]
-    fn test_builder_catches_dupe_system_pkgs_across_aibs() {
-        test_duplicates_across_aibs_impl(|a| &mut a.image_assembly.system);
+    fn test_builder_catches_dupe_pkgs_across_aibs() {
+        test_duplicates_across_aibs_impl(|a| &mut a.packages);
     }
 
     fn assert_two_pkgs_same_name_diff_path_errors() {
@@ -1582,16 +1726,23 @@ mod tests {
         let tmp_path2 = TempDir::new_in(outdir).unwrap();
         let dir_path2 = Utf8Path::from_path(tmp_path2.path()).unwrap();
         let aib = AssemblyInputBundle {
-            image_assembly: assembly_config_schema::PartialImageAssemblyConfig {
-                base: vec![
-                    write_empty_pkg(dir_path1, "base_package2", None).into(),
-                    write_empty_pkg(dir_path2, "base_package2", None).into(),
-                ],
-                ..Default::default()
-            },
+            packages: vec![
+                PackageDetails {
+                    package: FileRelativePathBuf::FileRelative(
+                        write_empty_pkg(dir_path1, "base_package2", None).into(),
+                    ),
+                    set: PackageSet::Base,
+                },
+                PackageDetails {
+                    package: FileRelativePathBuf::FileRelative(
+                        write_empty_pkg(dir_path2, "base_package2", None).into(),
+                    ),
+                    set: PackageSet::Base,
+                },
+            ],
             ..Default::default()
         };
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
         assert!(builder.add_parsed_bundle(outdir, aib).is_err());
     }
 
@@ -1612,22 +1763,26 @@ mod tests {
         let dir_path2 = Utf8Path::from_path(tmp_path2.path()).unwrap();
         let tools = FakeToolProvider::default();
         let aib = AssemblyInputBundle {
-            image_assembly: assembly_config_schema::PartialImageAssemblyConfig {
-                base: vec![write_empty_pkg(dir_path1, "base_package2", None).into()],
-                ..Default::default()
-            },
+            packages: vec![PackageDetails {
+                package: FileRelativePathBuf::FileRelative(
+                    write_empty_pkg(dir_path1, "base_package2", None).into(),
+                ),
+                set: PackageSet::Base,
+            }],
             ..Default::default()
         };
 
         let aib2 = AssemblyInputBundle {
-            image_assembly: assembly_config_schema::PartialImageAssemblyConfig {
-                base: vec![write_empty_pkg(dir_path2, "base_package2", None).into()],
-                ..Default::default()
-            },
+            packages: vec![PackageDetails {
+                package: FileRelativePathBuf::FileRelative(
+                    write_empty_pkg(dir_path2, "base_package2", None).into(),
+                ),
+                set: PackageSet::Base,
+            }],
             ..Default::default()
         };
 
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
         builder.add_parsed_bundle(outdir, aib).ok();
         builder.add_parsed_bundle(outdir, aib2).ok();
         assert!(builder.build(outdir, &tools).is_err());
@@ -1649,21 +1804,25 @@ mod tests {
         let tmp_path2 = TempDir::new_in(outdir).unwrap();
         let dir_path2 = Utf8Path::from_path(tmp_path2.path()).unwrap();
         let aib = AssemblyInputBundle {
-            image_assembly: assembly_config_schema::PartialImageAssemblyConfig {
-                base: vec![write_empty_pkg(dir_path1, "foo", None).into()],
-                ..Default::default()
-            },
+            packages: vec![PackageDetails {
+                package: FileRelativePathBuf::FileRelative(
+                    write_empty_pkg(dir_path1, "foo", None).into(),
+                ),
+                set: PackageSet::Base,
+            }],
             ..Default::default()
         };
 
         let aib2 = AssemblyInputBundle {
-            image_assembly: assembly_config_schema::PartialImageAssemblyConfig {
-                cache: vec![write_empty_pkg(dir_path2, "foo", None).into()],
-                ..Default::default()
-            },
+            packages: vec![PackageDetails {
+                package: FileRelativePathBuf::FileRelative(
+                    write_empty_pkg(dir_path2, "foo", None).into(),
+                ),
+                set: PackageSet::Cache,
+            }],
             ..Default::default()
         };
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
         builder.add_parsed_bundle(outdir, aib).ok();
         assert!(builder.add_parsed_bundle(outdir, aib2).is_err());
     }
@@ -1677,22 +1836,26 @@ mod tests {
         let tmp_path2 = TempDir::new_in(outdir).unwrap();
         let dir_path2 = Utf8Path::from_path(tmp_path2.path()).unwrap();
         let aib = AssemblyInputBundle {
-            image_assembly: assembly_config_schema::PartialImageAssemblyConfig {
-                base: vec![write_empty_pkg(dir_path1, "foo", Some("fuchsia.com")).into()],
-                ..Default::default()
-            },
+            packages: vec![PackageDetails {
+                package: FileRelativePathBuf::FileRelative(
+                    write_empty_pkg(dir_path1, "foo", Some("fuchsia.com")).into(),
+                ),
+                set: PackageSet::Base,
+            }],
             ..Default::default()
         };
 
         let aib2 = AssemblyInputBundle {
-            image_assembly: assembly_config_schema::PartialImageAssemblyConfig {
-                cache: vec![write_empty_pkg(dir_path2, "foo", Some("google.com")).into()],
-                ..Default::default()
-            },
+            packages: vec![PackageDetails {
+                package: FileRelativePathBuf::FileRelative(
+                    write_empty_pkg(dir_path2, "foo", Some("google.com")).into(),
+                ),
+                set: PackageSet::Cache,
+            }],
             ..Default::default()
         };
 
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
         builder.add_parsed_bundle(outdir, aib).ok();
         builder.add_parsed_bundle(outdir, aib2).unwrap();
     }
@@ -1705,15 +1868,24 @@ mod tests {
         let mut first_aib = make_test_assembly_bundle(root, root);
         let mut second_aib = AssemblyInputBundle::default();
 
-        let config_data_file_entry = FileEntry {
-            source: "source/path/to/file".into(),
-            destination: "dest/file/path".into(),
-        };
+        // Write the config data files.
+        std::fs::create_dir(root.join("second")).unwrap();
+
+        let config = root.join("config_data");
+        let mut f = File::create(&config).unwrap();
+        write!(&mut f, "config_data").unwrap();
+
+        let config = root.join("second/config_data");
+        let mut f = File::create(&config).unwrap();
+        write!(&mut f, "config_data2").unwrap();
+
+        let config_data_file_entry =
+            FileEntry { source: "config_data".into(), destination: "dest/file/path".into() };
 
         first_aib.config_data.insert("base_package0".into(), vec![config_data_file_entry.clone()]);
         second_aib.config_data.insert("base_package0".into(), vec![config_data_file_entry]);
 
-        let mut builder = ImageAssemblyConfigBuilder::default();
+        let mut builder = ImageAssemblyConfigBuilder::new(BuildType::Eng);
         builder.add_parsed_bundle(root, first_aib).unwrap();
         assert!(builder.add_parsed_bundle(root.join("second"), second_aib).is_err());
     }

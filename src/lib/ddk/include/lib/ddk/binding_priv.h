@@ -126,6 +126,7 @@ __BEGIN_CDECLS
 
 // GPIO binding variables at 0x0A1X
 #define BIND_GPIO_PIN 0x0A10
+#define BIND_GPIO_CONTROLLER 0x0A11
 
 // POWER binding variables at 0x0A2X
 #define BIND_POWER_DOMAIN 0x0A20
@@ -147,15 +148,11 @@ __BEGIN_CDECLS
 // Codec binding variables at 0x0A7X
 #define BIND_CODEC_INSTANCE 0x0A70
 
-// Regsiters binding variables at 0x0A8X
-#define BIND_REGISTER_ID 0x0A80
+// 0x0A80 was BIND_REGISTER_ID which is now deprecated.
 
 // Power sensor binding variables at 0x0A9X
 #define BIND_POWER_SENSOR_DOMAIN 0x0A90
 // LINT.ThenChange(/sdk/lib/driver/legacy-bind-constants/legacy-bind-constants.h)
-
-// Mailbox binding variables at 0x0AAX
-#define BIND_MAILBOX_ID 0x0AA0
 
 typedef struct zx_bind_inst {
   uint32_t op;

@@ -8,9 +8,8 @@
 #include <chrono>
 #include <memory>
 
+#include "src/developer/debug/ipc/protocol.h"
 #include "src/lib/analytics/cpp/core_dev_tools/analytics.h"
-#include "src/lib/analytics/cpp/core_dev_tools/general_parameters.h"
-#include "src/lib/analytics/cpp/google_analytics/timing.h"
 #include "src/lib/fxl/strings/substitute.h"
 
 namespace symbolizer {
@@ -45,9 +44,6 @@ class SymbolizationAnalyticsBuilder {
   void DownloadTimerStart();
   void DownloadTimerStop();
 
-  // Build the timing hit
-  analytics::google_analytics::Timing BuildUaHit() const;
-
   // Build the symbolize event
   std::unique_ptr<SymbolizationEvent> BuildGa4Event() const;
 
@@ -78,36 +74,13 @@ class Analytics : public analytics::core_dev_tools::Analytics<Analytics> {
   friend class analytics::core_dev_tools::Analytics<Analytics>;
 
   static constexpr char kToolName[] = "symbolizer";
+  static constexpr uint32_t kToolVersion = debug_ipc::kCurrentProtocolVersion;
   static constexpr int64_t kQuitTimeoutMs = 500;
   static constexpr char kMeasurementId[] = "G-B0SP6NVLC6";
   static constexpr char kMeasurementKey[] = "ABmnNSKcQX21P9EcYQDt2Q";
-  static constexpr char kTrackingId[] = "UA-127897021-14";
   static constexpr char kEnableArgs[] = "--analytics=enable";
   static constexpr char kDisableArgs[] = "--analytics=disable";
   static constexpr char kStatusArgs[] = "--analytics-show";
-  static constexpr char kAnalyticsList[] = R"(1. For invocation of symbolizer:
-   - The version of symbolizer.
-   - The output of "uname -ms" (CPU architecture and kernel name).
-2. Event of opting in/out of collection of analytics.
-3. For each hit sent to Google Analytics, we also collect:
-   - Whether symbolizer is run in a bot environment and if so the name of the
-     bot (e.g. LUCI, Travis, etc.).
-4. For each stack trace:
-   - Whether there is at least one invalid input.
-   - Number of modules.
-   - Number of modules with local symbols, i.e. binaries and symbol files are
-     built locally.
-   - Number of modules with remote symbols, i.e. the build ID can be found on
-     the symbol server.
-   - Number of modules with cached symbols.
-   - Number of modules with downloaded symbols.
-   - Number of modules with downloading-failed symbols.
-   - Number of frames.
-   - Number of frames not valid, i.e. out of valid modules.
-   - Number of frames symbolized.
-   - Whether remote symbol lookup is enabled.
-   - Total wall time spent.
-   - Downloading time spent.)";
 };
 
 }  // namespace symbolizer

@@ -62,6 +62,20 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
             _ => {}
         }
 
+        if config.include_sl4f {
+            builder.platform_bundle("sl4f");
+        }
+
+        match (context.build_type, &config.include_bin_clock) {
+            (BuildType::User, true) => {
+                anyhow::bail!("bin/clock cannot be provided on user builds")
+            }
+            (BuildType::Eng, _) | (BuildType::UserDebug, true) => {
+                builder.platform_bundle("clock_development_tools")
+            }
+            (BuildType::User, false) | (BuildType::UserDebug, false) => {}
+        }
+
         Ok(())
     }
 }

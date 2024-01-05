@@ -5,7 +5,6 @@
 """Soft Reboot test."""
 
 import logging
-from typing import List, Tuple
 
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.interfaces.device_classes import fuchsia_device
@@ -26,7 +25,7 @@ class SoftRebootTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
-        test_arg_tuple_list: List[Tuple[int]] = []
+        test_arg_tuple_list: list[tuple[int]] = []
 
         for iteration in range(1, int(self.user_params["num_reboots"]) + 1):
             test_arg_tuple_list.append((iteration,))
@@ -34,7 +33,8 @@ class SoftRebootTest(fuchsia_base_test.FuchsiaBaseTest):
         self.generate_tests(
             test_logic=self._test_logic,
             name_func=self._name_func,
-            arg_sets=test_arg_tuple_list)
+            arg_sets=test_arg_tuple_list,
+        )
 
     def setup_class(self) -> None:
         """setup_class is called once before running tests.
@@ -50,7 +50,8 @@ class SoftRebootTest(fuchsia_base_test.FuchsiaBaseTest):
         _LOGGER.info("Starting the Soft Reboot test iteration# %s", iteration)
         self.dut.reboot()
         _LOGGER.info(
-            "Successfully ended the Soft Reboot test iteration# %s", iteration)
+            "Successfully ended the Soft Reboot test iteration# %s", iteration
+        )
 
     def _name_func(self, iteration: int) -> str:
         """This function generates the names of each test case based on each

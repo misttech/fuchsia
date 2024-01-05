@@ -34,7 +34,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.amlogiccanvas.BIND_FIDL_PROTOCOL.SERVICE"
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.amlogic.platform.BIND_FIDL_PROTOCOL.CANVAS_SERVICE"
                 }
             }
         ]
@@ -46,7 +46,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.clock.BIND_FIDL_PROTOCOL.SERVICE",
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE",
                     "fuchsia.BIND_CLOCK_ID": "fuchsia.amlogic.platform.meson.SM1_CLK_ID.CLK_DOS_GCLK_VDEC"
                 }
             }
@@ -60,7 +60,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.BIND_CLOCK_ID": "fuchsia.amlogic.platform.meson.SM1_CLK_ID.CLK_DOS",
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.clock.BIND_FIDL_PROTOCOL.SERVICE"
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE"
                 }
             }
         ]
@@ -72,7 +72,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.tee.BIND_FIDL_PROTOCOL.DEVICE"
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.tee.BIND_FIDL_PROTOCOL.DEVICE"
                 }
             }
         ]

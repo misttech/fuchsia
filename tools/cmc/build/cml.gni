@@ -49,6 +49,7 @@ template("cm") {
       output_name = "${target_name}_merge.cml"
       forward_variables_from(invoker,
                              [
+                               "applicable_licenses",
                                "deps",
                                "testonly",
                              ])
@@ -65,6 +66,7 @@ template("cm") {
   cmc(target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "deps",
                              "metadata",
                              "output_name",
@@ -104,11 +106,7 @@ template("cm") {
       restricted_features = []
     }
 
-    # Restricted features that don't require an explicit opt-in.
-    #
-    # Useful for features which we want to allow globally in tree but
-    # restrict out of tree.
-    restricted_features += [ "hub" ]
+    # Toggle restricted features that don't require an explicit opt-in.
 
     # Enables feature allow_non_hermetic_packages. This allows us disable the
     # feature in OOT builds.

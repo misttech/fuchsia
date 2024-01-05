@@ -4,7 +4,7 @@
 
 # buildifier: disable=module-docstring
 load("@fuchsia_sdk//fuchsia/private/assembly:providers.bzl", "FuchsiaVirtualDeviceInfo")
-load(":test_utils.bzl", "CREATE_VALIDATION_SCRIPT_ATTRS", "create_validation_script")
+load("//test_utils:json_validator.bzl", "CREATE_VALIDATION_SCRIPT_ATTRS", "create_validation_script")
 
 def _fuchsia_virtual_device_test_impl(ctx):
     virtual_device_file = ctx.attr.virtual_device[FuchsiaVirtualDeviceInfo].config

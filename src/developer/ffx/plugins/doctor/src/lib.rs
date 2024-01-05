@@ -8,13 +8,11 @@ use async_lock::Mutex;
 use async_trait::async_trait;
 use doctor_utils::{DaemonManager, DefaultDaemonManager, DoctorRecorder, Recorder};
 use errors::{ffx_bail, ffx_error};
-use ffx_config::{
-    environment::EnvironmentContext, get, global_env_context, keys::TARGET_DEFAULT_KEY,
-    print_config,
-};
+use ffx_config::{environment::EnvironmentContext, get, global_env_context, print_config};
 use ffx_daemon::DaemonConfig;
 use ffx_doctor_args::DoctorCommand;
 use ffx_ssh::{SshKeyErrorKind, SshKeyFiles};
+use ffx_target::get_default_target;
 use fho::{FfxMain, FfxTool, SimpleWriter};
 use fidl::{endpoints::create_proxy, prelude::*};
 use fidl_fuchsia_developer_ffx::{
@@ -232,13 +230,12 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
     cmd: DoctorCommand,
     mut writer: W,
 ) -> Result<()> {
-    // todo(fxb/108692) remove this use of the global hoist when we put the main one in the environment context
-    // instead.
-    let hoist = hoist::hoist();
+    let node = overnet_core::Router::new(None)
+        .with_context(|| ffx_error!("Could not initialize Overnet"))?;
     let context = ffx_config::global_env_context()
         .with_context(|| ffx_error!("No environment context loaded"))?;
     let ascendd_path = context.get_ascendd_path().await?;
-    let daemon_manager = DefaultDaemonManager::new(hoist.clone(), ascendd_path);
+    let daemon_manager = DefaultDaemonManager::new(node, ascendd_path);
     let delay = Duration::from_millis(cmd.retry_delay);
 
     let ffx: ffx_command::Ffx = argh::from_env();
@@ -319,10 +316,8 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
 
     let recorder = Arc::new(Mutex::new(DoctorRecorder::new()));
     let mut handler = DefaultDoctorStepHandler::new(recorder.clone(), Box::new(writer));
-    let default_target = context
-        .get(TARGET_DEFAULT_KEY)
-        .await
-        .map_err(|e: ffx_config::api::ConfigError| format!("{:?}", e).replace("\n", ""));
+    let default_target =
+        get_default_target(&context).await.map_err(|e| format!("{:?}", e).replace("\n", ""));
 
     // create ledger
     let ledger_mode = match cmd.verbose {
@@ -1144,6 +1139,30 @@ async fn doctor_summary<W: Write>(
         let target_node =
             ledger.add_node(&format!("Target: {}", target_name), LedgerMode::Normal)?;
 
+        let (compatibility_state, compatibility_message) = match &target.compatibility {
+            Some(info) => (info.state.into(), info.message.clone()),
+            None => (
+                compat_info::CompatibilityState::Absent,
+                "Compatibility information is not available".to_string(),
+            ),
+        };
+
+        let state_node = ledger.add_node(
+            &format!("Compatibility state: {compatibility_state}"),
+            LedgerMode::Verbose,
+        )?;
+        let message_node = ledger.add_node(&compatibility_message, LedgerMode::Verbose)?;
+
+        let outcome = match compatibility_state {
+            compat_info::CompatibilityState::Supported => LedgerOutcome::Success,
+            compat_info::CompatibilityState::Error => LedgerOutcome::Failure,
+            compat_info::CompatibilityState::Absent => LedgerOutcome::SoftWarning,
+            compat_info::CompatibilityState::Unsupported => LedgerOutcome::Warning,
+            compat_info::CompatibilityState::Unknown => LedgerOutcome::SoftWarning,
+        };
+        ledger.set_outcome(state_node, outcome)?;
+        ledger.set_outcome(message_node, outcome)?;
+
         //TODO(fxbug.dev/86523): Offer a fix when we cannot connect to a device via RCS.
         let (target_proxy, target_server) = fidl::endpoints::create_proxy::<TargetMarker>()?;
         match timeout(
@@ -1291,7 +1310,7 @@ mod test {
     use fidl_fuchsia_developer_ffx::{
         DaemonProxy, DaemonRequest, OpenTargetError, RemoteControlState, TargetCollectionRequest,
         TargetCollectionRequestStream, TargetConnectionError, TargetInfo, TargetRequest,
-        TargetState, TargetType,
+        TargetState,
     };
     use fidl_fuchsia_developer_remotecontrol::{
         IdentifyHostResponse, RemoteControlMarker, RemoteControlRequest,
@@ -1788,7 +1807,6 @@ mod test {
                                 addresses: Some(vec![]),
                                 age_ms: Some(0),
                                 rcs_state: Some(RemoteControlState::Unknown),
-                                target_type: Some(TargetType::Unknown),
                                 target_state: Some(TargetState::Fastboot),
                                 ..Default::default()
                             }]
@@ -1846,7 +1864,6 @@ mod test {
                                         addresses: Some(vec![]),
                                         age_ms: Some(0),
                                         rcs_state: Some(RemoteControlState::Unknown),
-                                        target_type: Some(TargetType::Unknown),
                                         target_state: Some(TargetState::Unknown),
                                         ..Default::default()
                                     }]
@@ -1856,7 +1873,6 @@ mod test {
                                         addresses: Some(vec![]),
                                         age_ms: Some(0),
                                         rcs_state: Some(RemoteControlState::Unknown),
-                                        target_type: Some(TargetType::Unknown),
                                         target_state: Some(TargetState::Unknown),
                                         ..Default::default()
                                     }]
@@ -1867,7 +1883,6 @@ mod test {
                                             addresses: Some(vec![]),
                                             age_ms: Some(0),
                                             rcs_state: Some(RemoteControlState::Unknown),
-                                            target_type: Some(TargetType::Unknown),
                                             target_state: Some(TargetState::Unknown),
                                             ..Default::default()
                                         },
@@ -1876,7 +1891,6 @@ mod test {
                                             addresses: Some(vec![]),
                                             age_ms: Some(0),
                                             rcs_state: Some(RemoteControlState::Unknown),
-                                            target_type: Some(TargetType::Unknown),
                                             target_state: Some(TargetState::Unknown),
                                             ..Default::default()
                                         },
@@ -2097,6 +2111,7 @@ mod test {
                    \n    [✓] No build directory discovered in the environment.\
                    \n    [✓] Config Lock Files\
                    \n        [✓] {user_file} locked by {user_file}.lock\
+                   \n        [✓] {global_file} locked by {global_file}.lock\
                    \n    [✓] SSH Public/Private keys match\
                    \n[✗] Checking daemon\
                    \n    [✗] No running daemons found. Run `ffx doctor --restart-daemon`\n",
@@ -2104,6 +2119,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -2159,6 +2175,7 @@ mod test {
                    \n    [✓] No build directory discovered in the environment.\
                    \n    [✓] Config Lock Files\
                    \n        [✓] {user_file} locked by {user_file}.lock\
+                   \n        [✓] {global_file} locked by {global_file}.lock\
                    \n    [✓] SSH Public/Private keys match\
                    \n[✓] Checking daemon\
                    \n    [✓] Daemon found: [1]\
@@ -2174,6 +2191,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -2229,6 +2247,7 @@ mod test {
                    \n    [✓] No build directory discovered in the environment.\
                    \n    [✓] Config Lock Files\
                    \n        [✓] {user_file} locked by {user_file}.lock\
+                   \n        [✓] {global_file} locked by {global_file}.lock\
                    \n    [✓] SSH Public/Private keys match\
                    \n[✗] Checking daemon\
                    \n    [✓] Daemon found: [1]\
@@ -2237,6 +2256,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -2292,6 +2312,7 @@ mod test {
                    \n    [✓] No build directory discovered in the environment.\
                    \n    [✓] Config Lock Files\
                    \n        [✓] {user_file} locked by {user_file}.lock\
+                   \n        [✓] {global_file} locked by {global_file}.lock\
                    \n    [✓] SSH Public/Private keys match\
                    \n[✓] Checking daemon\
                    \n    [✓] Daemon found: [1]\
@@ -2307,6 +2328,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -2362,6 +2384,7 @@ mod test {
             \n    [✓] No build directory discovered in the environment.\
             \n    [✓] Config Lock Files\
             \n        [✓] {user_file} locked by {user_file}.lock\
+            \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] SSH Public/Private keys match\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
@@ -2377,6 +2400,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -2554,6 +2578,7 @@ mod test {
             \n    [✓] No build directory discovered in the environment.\
             \n    [✓] Config Lock Files\
             \n        [✓] {user_file} locked by {user_file}.lock\
+            \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] SSH Public/Private keys match\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
@@ -2567,6 +2592,8 @@ mod test {
             \n    [✓] 1 targets found\
             \n[✗] Verifying Targets\
             \n    [✗] Target: {SSH_ERR_NODENAME}\
+            \n        [!] Compatibility state: absent\
+            \n            [!] Compatibility information is not available\
             \n        [✓] Opened target handle\
             \n        [✓] Connecting to RCS\
             \n        [✗] Error while connecting to RCS: <reason omitted>\
@@ -2575,6 +2602,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -2634,6 +2662,7 @@ mod test {
             \n    [✓] No build directory discovered in the environment.\
             \n    [✓] Config Lock Files\
             \n        [✓] {user_file} locked by {user_file}.lock\
+            \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] SSH Public/Private keys match\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
@@ -2647,10 +2676,14 @@ mod test {
             \n    [✓] 2 targets found\
             \n[✓] Verifying Targets\
             \n    [✓] Target: {NODENAME}\
+            \n        [!] Compatibility state: absent\
+            \n            [!] Compatibility information is not available\
             \n        [✓] Opened target handle\
             \n        [✓] Connecting to RCS\
             \n        [✓] Communicating with RCS\
             \n    [✗] Target: {UNRESPONSIVE_NODENAME}\
+            \n        [!] Compatibility state: absent\
+            \n            [!] Compatibility information is not available\
             \n        [✓] Opened target handle\
             \n        [✓] Connecting to RCS\
             \n        [✗] Timeout while communicating with RCS\
@@ -2659,6 +2692,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -2678,6 +2712,7 @@ mod test {
                 \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
                 \n    [✓] Config Lock Files\
                 \n        [✓] {user_file} locked by {user_file}.lock\
+                \n        [✓] {global_file} locked by {global_file}.lock\
                 \n    [✓] SSH Public/Private keys match\
                 \n[✓] Checking daemon\
                 \n    [✓] Daemon found: [1]\
@@ -2690,6 +2725,7 @@ mod test {
                 \n[✓] No issues found\n",
                 isolated_root=test_env.isolate_root.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -2748,6 +2784,7 @@ mod test {
             \n    [✓] No build directory discovered in the environment.\
             \n    [✓] Config Lock Files\
             \n        [✓] {user_file} locked by {user_file}.lock\
+            \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] SSH Public/Private keys match\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
@@ -2761,6 +2798,8 @@ mod test {
             \n    [✓] 1 targets found\
             \n[✓] Verifying Targets\
             \n    [✓] Target: {NODENAME}\
+            \n        [!] Compatibility state: absent\
+            \n            [!] Compatibility information is not available\
             \n        [✓] Opened target handle\
             \n        [✓] Connecting to RCS\
             \n        [✓] Communicating with RCS\
@@ -2769,6 +2808,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -2828,6 +2868,7 @@ mod test {
             \n    [✓] No build directory discovered in the environment.\
             \n    [✓] Config Lock Files\
             \n        [✓] {user_file} locked by {user_file}.lock\
+            \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] SSH Public/Private keys match\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
@@ -2843,6 +2884,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -2981,6 +3023,7 @@ mod test {
                     \n    [✓] No build directory discovered in the environment.\
                     \n    [✓] Config Lock Files\
                     \n        [✓] {user_file} locked by {user_file}.lock\
+                    \n        [✓] {global_file} locked by {global_file}.lock\
                     \n    [✓] SSH Public/Private keys match\n\
                     \n[✓] Checking daemon\
                     \n    [✓] Daemon found: [1]\
@@ -2995,7 +3038,8 @@ mod test {
                     ffx_path=ffx_path(),
                     isolated_root=test_env.isolate_root.path().display(),
                     env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
+                    user_file=test_env.user_file.path().display(),
+                    global_file=test_env.global_file.path().display(),
                 ))),
                 TestStepEntry::step(StepType::GeneratingRecord),
                 TestStepEntry::result(StepResult::Success),
@@ -3061,6 +3105,7 @@ mod test {
                     \n    [✓] No build directory discovered in the environment.\
                     \n    [✓] Config Lock Files\
                     \n        [✓] {user_file} locked by {user_file}.lock\
+                    \n        [✓] {global_file} locked by {global_file}.lock\
                     \n    [✓] SSH Public/Private keys match\n\
                     \n[✓] Checking daemon\
                     \n    [✓] Daemon found: [1]\
@@ -3075,7 +3120,8 @@ mod test {
                     ffx_path=ffx_path(),
                     isolated_root=test_env.isolate_root.path().display(),
                     env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
+                    user_file=test_env.user_file.path().display(),
+                    global_file=test_env.global_file.path().display(),
                 ))),
                 // Error will occur here.
             ])
@@ -3161,6 +3207,7 @@ mod test {
                 \n    [✓] No build directory discovered in the environment.\
                 \n    [✓] Config Lock Files\
                 \n        [✓] {user_file} locked by {user_file}.lock\
+                \n        [✓] {global_file} locked by {global_file}.lock\
                 \n    [✓] SSH Public/Private keys match\
                 \n[✓] Checking daemon\
                 \n    [✓] Daemon found: [1]\
@@ -3174,10 +3221,14 @@ mod test {
                 \n    [✓] 2 targets found\
                 \n[✗] Verifying Targets\
                 \n    [✗] Target: UNKNOWN\
+                \n        [!] Compatibility state: absent\
+                \n            [!] Compatibility information is not available\
                 \n        [✓] Opened target handle\
                 \n        [✓] Connecting to RCS\
                 \n        [✗] Timeout while communicating with RCS\
                 \n    [✗] Target: {UNRESPONSIVE_NODENAME}\
+                \n        [!] Compatibility state: absent\
+                \n            [!] Compatibility information is not available\
                 \n        [✓] Opened target handle\
                 \n        [✓] Connecting to RCS\
                 \n        [✗] Timeout while communicating with RCS\
@@ -3186,6 +3237,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -3205,6 +3257,7 @@ mod test {
                 \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
                 \n    [✓] Config Lock Files\
                 \n        [✓] {user_file} locked by {user_file}.lock\
+                \n        [✓] {global_file} locked by {global_file}.lock\
                 \n    [✓] SSH Public/Private keys match\
                 \n[✓] Checking daemon\
                 \n    [✓] Daemon found: [1]\
@@ -3218,6 +3271,7 @@ mod test {
                 run 'ffx doctor -v' for more details.\n",
                 isolated_root=test_env.isolate_root.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -3273,6 +3327,7 @@ mod test {
             \n    [✓] No build directory discovered in the environment.\
             \n    [✓] Config Lock Files\
             \n        [✓] {user_file} locked by {user_file}.lock\
+            \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] SSH Public/Private keys match\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
@@ -3291,6 +3346,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -3346,6 +3402,7 @@ mod test {
                    \n    [✓] No build directory discovered in the environment.\
                    \n    [✓] Config Lock Files\
                    \n        [✓] {user_file} locked by {user_file}.lock\
+                   \n        [✓] {global_file} locked by {global_file}.lock\
                    \n    [✓] SSH Public/Private keys match\
                    \n[✓] Checking daemon\
                    \n    [✓] Daemon found: [1]\
@@ -3362,6 +3419,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
             )
         );
     }
@@ -3435,6 +3493,7 @@ mod test {
             \n    [✓] No build directory discovered in the environment.\
             \n    [✓] Config Lock Files\
             \n        [✓] {user_file} locked by {user_file}.lock\
+            \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✗] Private key {priv_key} does not exist. Check configuration or run `ffx doctor --repair-keys`\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
@@ -3453,6 +3512,7 @@ mod test {
                 isolated_root=test_env.isolate_root.path().display(),
                 env_file=test_env.env_file.path().display(),
                 user_file=test_env.user_file.path().display(),
+                global_file=test_env.global_file.path().display(),
                 priv_key = priv_key.display()
             )
         );

@@ -13,7 +13,7 @@ use {
         errors::FxfsError,
         filesystem::{FxFilesystem, OpenFxFilesystem},
         log::info,
-        object_handle::{GetProperties, ObjectProperties},
+        object_handle::ObjectProperties,
         object_store::{
             volume::root_volume, DataObjectHandle, Directory, HandleOptions, ObjectDescriptor,
             ObjectKey, ObjectKind, ObjectStore, ObjectValue, Timestamp,
@@ -22,8 +22,8 @@ use {
     fxfs_crypto::Crypt,
     libc,
     once_cell::sync::OnceCell,
+    rustc_hash::FxHashMap as HashMap,
     std::{
-        collections::HashMap,
         ffi::OsStr,
         fs::{File, OpenOptions},
         path::PathBuf,
@@ -134,7 +134,7 @@ impl FuseFs {
             fs,
             default_store,
             mount_path,
-            object_handle_cache: Arc::new(RwLock::new(HashMap::new())),
+            object_handle_cache: Arc::new(RwLock::new(HashMap::default())),
         }
     }
 
@@ -155,7 +155,7 @@ impl FuseFs {
             fs,
             default_store,
             mount_path,
-            object_handle_cache: Arc::new(RwLock::new(HashMap::new())),
+            object_handle_cache: Arc::new(RwLock::new(HashMap::default())),
         }
     }
 
@@ -389,7 +389,7 @@ mod tests {
         crate::fuse_fs::FuseFs,
         fxfs::{
             object_handle::ObjectHandle,
-            object_store::transaction::{LockKey, Options, TransactionHandler},
+            object_store::transaction::{lock_keys, LockKey, Options},
         },
     };
 
@@ -403,7 +403,7 @@ mod tests {
             .fs
             .clone()
             .new_transaction(
-                &[LockKey::object(fs.default_store.store_object_id(), dir.object_id())],
+                lock_keys![LockKey::object(fs.default_store.store_object_id(), dir.object_id())],
                 Options::default(),
             )
             .await

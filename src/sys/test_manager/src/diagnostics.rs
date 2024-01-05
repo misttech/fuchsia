@@ -3,21 +3,15 @@
 // found in the LICENSE file.
 
 use {
-    crate::utilities::LogOnDrop,
     anyhow::Error,
-    async_trait::async_trait,
-    diagnostics_bridge::ArchiveReaderManager,
-    diagnostics_data::{Data, LogsData},
-    diagnostics_reader as reader,
     fidl::endpoints::ServerEnd,
-    fidl_fuchsia_developer_remotecontrol::StreamError,
+    fidl_fuchsia_diagnostics as fdiagnostics,
     fidl_fuchsia_diagnostics::{
-        ArchiveAccessorProxy, BatchIteratorMarker, ClientSelectorConfiguration, DataType, Format,
-        StreamMode, StreamParameters,
+        BatchIteratorMarker, ClientSelectorConfiguration, DataType, Format, StreamMode,
+        StreamParameters,
     },
-    fidl_fuchsia_test_manager as ftest_manager, fuchsia_async as fasync,
-    futures::stream::FusedStream,
-    std::ops::Deref,
+    fidl_fuchsia_diagnostics_host as fhost, fidl_fuchsia_test_manager as ftest_manager,
+    fuchsia_async as fasync,
     tracing::warn,
 };
 
@@ -34,21 +28,22 @@ pub(crate) struct ServeSyslogOutcome {
 }
 
 /// Connect to archivist and starting serving syslog.
+/// TODO(https://fxbug.dev/133153): Only take one ArchiveAccessorProxy, not both.
 pub(crate) fn serve_syslog(
-    accessor: ArchiveAccessorProxy,
+    accessor: fdiagnostics::ArchiveAccessorProxy,
+    host_accessor: fhost::ArchiveAccessorProxy,
     log_iterator: ftest_manager::LogsIterator,
-) -> Result<ServeSyslogOutcome, StreamError> {
-    let mut provider = IsolatedLogsProvider::new(accessor);
+) -> Result<ServeSyslogOutcome, anyhow::Error> {
     let logs_iterator_task = match log_iterator {
-        ftest_manager::LogsIterator::Archive(iterator) => {
-            let iterator_fut = provider.run_iterator_server(iterator)?;
+        ftest_manager::LogsIterator::Stream(iterator) => {
+            let iterator_fut = run_iterator_socket(&host_accessor, iterator);
             Some(fasync::Task::spawn(async move {
-                let _on_drop = LogOnDrop("Log iterator task dropped");
-                iterator_fut.await
+                iterator_fut.await?;
+                Ok(())
             }))
         }
         ftest_manager::LogsIterator::Batch(iterator) => {
-            provider.start_streaming_logs(iterator)?;
+            IsolatedLogsProvider::new(&accessor).start_streaming_logs(iterator)?;
             None
         }
         _ => None,
@@ -56,9 +51,12 @@ pub(crate) fn serve_syslog(
     let archivist_responding_task = fasync::Task::spawn(async move {
         let (proxy, iterator) =
             fidl::endpoints::create_proxy().expect("cannot create batch iterator");
-        if let Err(e) =
-            provider.start_streaming(iterator, StreamMode::Snapshot, DataType::Inspect, Some(0))
-        {
+        if let Err(e) = IsolatedLogsProvider::new(&accessor).start_streaming(
+            iterator,
+            StreamMode::Snapshot,
+            DataType::Inspect,
+            Some(0),
+        ) {
             warn!("Failed to start streaming logs: {:?}", e);
             return;
         }
@@ -72,19 +70,37 @@ pub(crate) fn serve_syslog(
     Ok(ServeSyslogOutcome { logs_iterator_task, archivist_responding_task })
 }
 
-struct IsolatedLogsProvider {
-    accessor: ArchiveAccessorProxy,
+fn run_iterator_socket(
+    host_accessor: &fhost::ArchiveAccessorProxy,
+    socket: fuchsia_zircon::Socket,
+) -> fidl::client::QueryResponseFut<()> {
+    host_accessor.stream_diagnostics(
+        &StreamParameters {
+            stream_mode: Some(StreamMode::SnapshotThenSubscribe),
+            data_type: Some(DataType::Logs),
+            format: Some(Format::Json),
+            client_selector_configuration: Some(ClientSelectorConfiguration::SelectAll(true)),
+            batch_retrieval_timeout_seconds: None,
+            ..Default::default()
+        },
+        socket,
+    )
 }
 
-impl IsolatedLogsProvider {
-    fn new(accessor: ArchiveAccessorProxy) -> Self {
+/// Type alias for &'a ArchiveAccessorProxy
+struct IsolatedLogsProvider<'a> {
+    accessor: &'a fdiagnostics::ArchiveAccessorProxy,
+}
+
+impl<'a> IsolatedLogsProvider<'a> {
+    fn new(accessor: &'a fdiagnostics::ArchiveAccessorProxy) -> Self {
         Self { accessor }
     }
 
     fn start_streaming_logs(
         &self,
         iterator: ServerEnd<BatchIteratorMarker>,
-    ) -> Result<(), StreamError> {
+    ) -> Result<(), anyhow::Error> {
         self.start_streaming(iterator, StreamMode::SnapshotThenSubscribe, DataType::Logs, None)
     }
 
@@ -94,7 +110,7 @@ impl IsolatedLogsProvider {
         stream_mode: StreamMode,
         data_type: DataType,
         batch_timeout: Option<i64>,
-    ) -> Result<(), StreamError> {
+    ) -> Result<(), anyhow::Error> {
         let stream_parameters = StreamParameters {
             stream_mode: Some(stream_mode),
             data_type: Some(data_type),
@@ -104,44 +120,9 @@ impl IsolatedLogsProvider {
             ..Default::default()
         };
         self.accessor.stream_diagnostics(&stream_parameters, iterator).map_err(|err| {
-            warn!(%err, "Failed to subscribe to isolated logs");
-            StreamError::SetupSubscriptionFailed
+            warn!(%err, ?data_type, "Failed to subscribe to isolated diagnostics data");
+            err
         })?;
         Ok(())
-    }
-}
-
-impl Deref for IsolatedLogsProvider {
-    type Target = ArchiveAccessorProxy;
-
-    fn deref(&self) -> &Self::Target {
-        &self.accessor
-    }
-}
-
-#[async_trait]
-impl ArchiveReaderManager for IsolatedLogsProvider {
-    type Error = reader::Error;
-
-    async fn snapshot<D: diagnostics_data::DiagnosticsData + 'static>(
-        &self,
-    ) -> Result<Vec<Data<D>>, StreamError> {
-        unimplemented!("This functionality is not yet needed.");
-    }
-
-    fn start_log_stream(
-        &mut self,
-    ) -> Result<
-        Box<dyn FusedStream<Item = Result<LogsData, Self::Error>> + Unpin + Send>,
-        StreamError,
-    > {
-        let (proxy, batch_iterator_server) = fidl::endpoints::create_proxy::<BatchIteratorMarker>()
-            .map_err(|err| {
-                warn!(%err, "Fidl error while creating proxy");
-                StreamError::GenericError
-            })?;
-        self.start_streaming_logs(batch_iterator_server)?;
-        let subscription = reader::Subscription::new(proxy);
-        Ok(Box::new(subscription))
     }
 }

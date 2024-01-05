@@ -1,0 +1,171 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/assembly/assembled_system.gni")
+import("//build/board.gni")
+import("//build/images/args.gni")
+import("//build/product.gni")
+import("//build/testing/boot_tests/zbi_test.gni")
+import("//src/storage/fshost/generated_fshost_config.gni")
+
+cuckoo_kernel_zbi_test_params = {
+  # List of assembly input groups that the kernel cuckoo zbi will use. Each one may provide
+  # packages, core realm shards, etc.
+  input_groups = [
+    "bootstrap",
+    "legacy",
+    "network",
+    "debug",
+    "test",
+  ]
+}
+
+# Given a kernel_zbi, that will eventually reach userboot, will assemble a system
+# capable of interacting with ffx and fx. This allows data exfiltration from arbitrary
+# devices for gathering data from the provided zbi. E.g. coverage, profile, etc.
+#
+# TODO(fxbug.dev/101831): This template longer term goal is to facilitate the
+# construction of Cuckoo Testing.
+#
+#  Parameters:
+#    kernel_zbi: (Required)
+#    [label] Path to a ZBI target that eventually reaches userboot.
+#
+#    target_test: (Required)
+#    [label] Path to a Fuchsia target test to run against the image.
+#      Running this test will trigger the collection of the early boot data
+#      from the zbi to a retrievable location.
+#
+#    kernel_image_name:(Optional, defaults: get_label_info(kernel_zbi, "name"))
+#    [string] Use to filter the zbi image from images.json.
+#
+template("_cuckoo_kernel_zbi_test") {
+  assert(current_toolchain == default_toolchain)
+  assert(defined(invoker.kernel_zbi))
+
+  cuckoo_target_name = target_name
+
+  assembly_kernel_zbi = invoker.kernel_zbi
+  assembly_kernel_image_name = get_label_info(assembly_kernel_zbi, "name")
+  if (defined(invoker.kernel_image_name)) {
+    assembly_kernel_image_name = invoker.kernel_image_name
+  }
+
+  assembly_input = {
+    testonly = true
+    namespace = cuckoo_target_name
+    image_name = "fuchsia"
+    kernel_zbi = assembly_kernel_zbi
+    kernel_image_name = assembly_kernel_image_name
+    bootfs_labels = board_bootfs_labels
+    base_packages =
+        board_package_labels + board_driver_package_labels + [
+          # This package is needed to provide a fake intl_services
+          # so that snapshot won't time out trying to collect
+          # locale and timezone annotations.
+          "//src/testing/fidl/intl_property_manager:fake_intl_services_package",
+          invoker.target_test,
+        ]
+    cmdline_deps = []
+    system_image_deps = board_system_image_deps
+    core_realm_definition = "//build/testing:cuckoo-core-realm"
+    board_config_label = board_configuration_label
+    allow_eng_platform_bundle_use = true
+
+    if (fxfs_blob) {
+      product_assembly_config_label =
+          "//build/testing:cuckoo-product-configuration"
+      generate_fxfs = true
+    } else {
+      if (data_filesystem_format == "fxfs") {
+        product_assembly_config_label =
+            "//build/testing:cuckoo-product-configuration-fxfs"
+      } else {
+        product_assembly_config_label =
+            "//build/testing:cuckoo-product-configuration-minfs"
+      }
+      generate_fvm = true
+      generate_fvm_fastboot = generate_fvm && assembly_generate_fvm_fastboot
+      generate_fvm_nand = generate_fvm && assembly_generate_fvm_nand
+    }
+
+    generate_vbmeta = use_vbmeta
+  }
+
+  foreach(input_group, cuckoo_kernel_zbi_test_params.input_groups) {
+    input_group_label = "//bundles/assembly_input_groups:${input_group}"
+    assembly_input.base_packages += [ "${input_group_label}.base_packages" ]
+    assembly_input.bootfs_labels += [ "${input_group_label}.bootfs_labels" ]
+    assembly_input.cmdline_deps += [ "${input_group_label}.cmdline_deps" ]
+    assembly_input.system_image_deps +=
+        [ "${input_group_label}.system_image_deps" ]
+  }
+
+  assembled_system(cuckoo_target_name) {
+    forward_variables_from(assembly_input, "*")
+  }
+}
+
+template("cuckoo_kernel_zbi_test") {
+  group_deps = []
+  cuckoo_kernel_zbi = "${target_name}_zbi"
+  label_for_images = get_label_info(":$cuckoo_kernel_zbi",
+                                    "label_no_toolchain") + ".image_assembler"
+  label_for_images_with_toolchain =
+      get_label_info(label_for_images, "label_with_toolchain")
+
+  # This creates the target test to run against the cuckoo images.
+  cuckoo_kernel_test = "${target_name}_test"
+  fuchsia_unittest_package(cuckoo_kernel_test) {
+    deps = [
+      "//src/sys/early_boot_instrumentation/test:early-boot-collector-stub",
+    ]
+    test_specs = {
+      image_overrides = {
+        zbi = label_for_images_with_toolchain
+        if (use_vbmeta) {
+          vbmeta = label_for_images_with_toolchain
+        }
+        if (fxfs_blob) {
+          fxfs = label_for_images_with_toolchain
+        } else {
+          fvm = label_for_images_with_toolchain
+        }
+      }
+      if (defined(invoker.environments)) {
+        environments = invoker.environments
+      } else {
+        environments = [ emu_env ]
+      }
+      isolated = true
+    }
+  }
+  group_deps += [ ":$cuckoo_kernel_test" ]
+  _cuckoo_kernel_zbi_test(cuckoo_kernel_zbi) {
+    forward_variables_from(invoker, "*")
+    target_test = get_label_info(":$cuckoo_kernel_test", "label_no_toolchain")
+  }
+  group_deps += [ ":$cuckoo_kernel_zbi" ]
+  group(target_name) {
+    testonly = true
+    deps = group_deps
+  }
+}
+
+# Composes a bootable kernel zbi test. That is, a zircon kernel that will launch
+# a custom user space process instead of component manager.
+#
+# TODO(fxbug.dev/101831): This template longer term goal is to facilitate the
+# construction of Cuckoo Testing.
+#
+# At this moment `kernel_zbi_test` has no additional parameters from a
+# zbi_test().
+template("kernel_zbi_test") {
+  zbi_test(target_name) {
+    assert(current_cpu != "")
+    deps = []
+    forward_variables_from(invoker, "*")
+    deps += [ "//zircon/kernel" ]
+  }
+}

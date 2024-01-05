@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result};
+use anyhow::{anyhow, bail, Context as _, Result};
 use async_io::Async;
 use async_lock::Mutex;
 use async_net::UdpSocket;
@@ -26,6 +26,7 @@ use std::{
     rc::{Rc, Weak},
     time::Duration,
 };
+use timeout::timeout;
 use zerocopy::ByteSlice;
 
 /// Default mDNS port
@@ -71,7 +72,6 @@ impl PartialEq for CachedTarget {
 impl Eq for CachedTarget {}
 
 pub struct MdnsProtocol {
-    pub events_in: async_channel::Receiver<ffx::MdnsEventType>,
     pub events_out: async_channel::Sender<ffx::MdnsEventType>,
     pub target_cache: RefCell<HashSet<CachedTarget>>,
 }
@@ -152,17 +152,14 @@ impl MdnsEnabledChecker for MdnsEnabled {
     }
 }
 
-/// Returns a Vec<TargetInfo> of Fuchsia targets discovered via mDNS during the given `duration`
-pub async fn discover_targets(
+/// Returns a TargetInfo of a Fuchsia target discovered via mDNS during the given `duration`
+pub async fn discover_target(
+    target_name: String,
     listen_duration: Duration,
     mdns_port: u16,
-) -> Result<Vec<ffx::TargetInfo>> {
+) -> Result<ffx::TargetInfo> {
     let (sender, receiver) = async_channel::bounded::<ffx::MdnsEventType>(1);
-    let inner = Rc::new(MdnsProtocol {
-        events_in: receiver,
-        events_out: sender,
-        target_cache: Default::default(),
-    });
+    let inner = Rc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
 
     let inner_mv = Rc::downgrade(&inner);
 
@@ -180,12 +177,177 @@ pub async fn discover_targets(
     .fuse();
     let discover_task = Box::pin(discover_task);
 
-    let timeout = fuchsia_async::Timer::new(listen_duration).fuse();
+    //  Okay have a loop that will pull from the receiver until it has a target that matches the
+    //  given one
+    let loop_task = timeout(listen_duration, loop_for_target(receiver, target_name.clone())).fuse();
+    let loop_task = Box::pin(loop_task);
 
     // Wait on either the discovery or the timeout
-    futures::future::select(discover_task, timeout).await;
+    match futures::future::select(loop_task, discover_task).await {
+        futures::future::Either::Left((loop_res, _)) => match loop_res {
+            Ok(ok) => ok,
+            Err(e) => Err(anyhow!("Hit error finding target: {}", e)),
+        },
+        futures::future::Either::Right((_, _)) => {
+            bail!("Discovery loop exited early")
+        }
+    }
+}
+
+async fn loop_for_target(
+    receiver: async_channel::Receiver<ffx::MdnsEventType>,
+    target_name: String,
+) -> Result<ffx::TargetInfo> {
+    loop {
+        match receiver.recv().await {
+            Ok(mdns_event) => match mdns_event {
+                ffx::MdnsEventType::TargetFound(target_info) => {
+                    if target_info.nodename == Some(target_name.clone()) {
+                        return Ok(target_info);
+                    }
+                }
+                _ => {
+                    tracing::trace!("Got an mdns event, but it wasnt a TargetFound so skipping it");
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Got error receiving items");
+                return Err(anyhow!("Got error receiving mDNS events: {}", e));
+            }
+        }
+    }
+}
+
+/// Returns a Vec<TargetInfo> of Fuchsia targets discovered via mDNS during the given `duration`
+pub async fn discover_targets(
+    listen_duration: Duration,
+    mdns_port: u16,
+) -> Result<Vec<ffx::TargetInfo>> {
+    let (sender, receiver) = async_channel::bounded::<ffx::MdnsEventType>(1);
+    let inner = Rc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
+
+    let inner_mv = Rc::downgrade(&inner);
+
+    let discover_task = timeout(
+        listen_duration,
+        discovery_loop(
+            DiscoveryConfig {
+                socket_tasks: Default::default(),
+                mdns_protocol: inner_mv,
+                discovery_interval: MDNS_INTERFACE_DISCOVERY_INTERVAL,
+                query_interval: MDNS_BROADCAST_INTERVAL,
+                ttl: MDNS_TTL,
+                mdns_port,
+            },
+            MdnsEnabled {},
+        ),
+    )
+    .fuse();
+    let discover_task = Box::pin(discover_task);
+
+    let drain_task = Task::local(drain_reciever(receiver)).fuse();
+    let drain_task = Box::pin(drain_task);
+
+    // Wait on either the discovery or the timeout
+    futures::future::select(discover_task, drain_task).await;
 
     Ok(inner.as_ref().target_cache())
+}
+
+async fn drain_reciever(receiver: async_channel::Receiver<ffx::MdnsEventType>) -> Result<()> {
+    loop {
+        match receiver.recv().await {
+            Ok(_) => {}
+            Err(_) => {
+                return Ok(());
+            }
+        }
+    }
+}
+
+pub struct MdnsWatcher {
+    // Task for the discovery loop
+    discovery_task: Option<Task<()>>,
+    // Task for the drain loop
+    drain_task: Option<Task<()>>,
+    // Inner
+    inner: Option<Rc<MdnsProtocol>>,
+}
+
+pub trait MdnsEventHandler: Send + 'static {
+    /// Handles an event.
+    fn handle_event(&mut self, event: Result<ffx::MdnsEventType>);
+}
+
+impl<F> MdnsEventHandler for F
+where
+    F: FnMut(Result<ffx::MdnsEventType>) -> () + Send + 'static,
+{
+    fn handle_event(&mut self, x: Result<ffx::MdnsEventType>) -> () {
+        self(x)
+    }
+}
+
+pub fn recommended_watcher<F>(event_handler: F) -> Result<MdnsWatcher>
+where
+    F: MdnsEventHandler,
+{
+    MdnsWatcher::new(
+        event_handler,
+        MDNS_PORT,
+        MDNS_INTERFACE_DISCOVERY_INTERVAL,
+        MDNS_BROADCAST_INTERVAL,
+        MDNS_TTL,
+    )
+}
+
+impl MdnsWatcher {
+    fn new<F>(
+        events_out: F,
+        mdns_port: u16,
+        discovery_interval: Duration,
+        query_interval: Duration,
+        ttl: u32,
+    ) -> Result<Self>
+    where
+        F: MdnsEventHandler,
+    {
+        let mut res = Self { discovery_task: None, inner: None, drain_task: None };
+
+        let (sender, receiver) = async_channel::bounded::<ffx::MdnsEventType>(1);
+
+        let inner = Rc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
+        res.inner.replace(inner.clone());
+
+        let inner = Rc::downgrade(&inner);
+        res.discovery_task.replace(Task::local(discovery_loop(
+            DiscoveryConfig {
+                socket_tasks: Default::default(),
+                mdns_protocol: inner,
+                discovery_interval,
+                query_interval,
+                ttl,
+                mdns_port,
+            },
+            MdnsEnabled {},
+        )));
+
+        res.drain_task.replace(Task::local(handle_events_loop(receiver, events_out)));
+
+        Ok(res)
+    }
+}
+
+async fn handle_events_loop<F>(
+    receiver: async_channel::Receiver<ffx::MdnsEventType>,
+    mut handler: F,
+) where
+    F: MdnsEventHandler,
+{
+    loop {
+        let event = receiver.recv().await.map_err(|e| anyhow!(e));
+        handler.handle_event(event);
+    }
 }
 
 // discovery_loop iterates over all multicast interfaces and adds them to
@@ -635,7 +797,7 @@ async fn query_recv_loop(
 // the return path is likely not viable. In particular this filters out multicast that QEMU SLIRP
 // has invalidly pumped onto the network that would cause us to attempt to connect to the host
 // machine as if it was a Fuchsia target.
-fn contains_source_address<B: zerocopy::ByteSlice + Clone>(
+fn contains_source_address<B: zerocopy::ByteSlice + Copy>(
     addr: &SocketAddr,
     msg: &dns::Message<B>,
 ) -> bool {
@@ -655,14 +817,14 @@ fn contains_source_address<B: zerocopy::ByteSlice + Clone>(
     false
 }
 
-fn contains_txt_response<B: zerocopy::ByteSlice + Clone>(m: &dns::Message<B>) -> bool {
+fn contains_txt_response<B: zerocopy::ByteSlice + Copy>(m: &dns::Message<B>) -> bool {
     m.answers.iter().any(|a| a.rtype == dns::Type::Txt)
 }
-fn is_fuchsia_response<B: zerocopy::ByteSlice + Clone>(m: &dns::Message<B>) -> bool {
+fn is_fuchsia_response<B: zerocopy::ByteSlice + Copy>(m: &dns::Message<B>) -> bool {
     m.answers.iter().any(|a| a.domain == "_fuchsia._udp.local")
 }
 
-fn is_fastboot_response<B: zerocopy::ByteSlice + Clone>(
+fn is_fastboot_response<B: zerocopy::ByteSlice + Copy>(
     m: &dns::Message<B>,
 ) -> Option<ffx::FastbootInterface> {
     if m.answers.is_empty() {

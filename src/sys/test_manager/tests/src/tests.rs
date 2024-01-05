@@ -539,7 +539,22 @@ async fn collect_isolated_logs_using_batch() {
 async fn collect_isolated_logs_using_archive_iterator() {
     let test_url = "fuchsia-pkg://fuchsia.com/test-manager-diagnostics-tests#meta/test-root.cm";
     let options = RunOptions {
-        log_iterator: Some(ftest_manager::LogsIteratorOption::ArchiveIterator),
+        log_iterator: Some(ftest_manager::LogsIteratorOption::SocketBatchIterator),
+        ..default_run_option()
+    };
+    let (_events, logs) = run_single_test(test_url, options).await.unwrap();
+
+    assert_eq!(
+        logs,
+        vec!["Started diagnostics publisher".to_owned(), "Finishing through Stop".to_owned()]
+    );
+}
+
+#[fuchsia::test]
+async fn collect_isolated_logs_using_host_socket() {
+    let test_url = "fuchsia-pkg://fuchsia.com/test-manager-diagnostics-tests#meta/test-root.cm";
+    let options = RunOptions {
+        log_iterator: Some(ftest_manager::LogsIteratorOption::SocketBatchIterator),
         ..default_run_option()
     };
     let (_events, logs) = run_single_test(test_url, options).await.unwrap();
@@ -554,7 +569,7 @@ async fn collect_isolated_logs_using_archive_iterator() {
 async fn update_log_severity_for_all_components() {
     let test_url = "fuchsia-pkg://fuchsia.com/test-manager-diagnostics-tests#meta/test-root.cm";
     let options = RunOptions {
-        log_iterator: Some(ftest_manager::LogsIteratorOption::ArchiveIterator),
+        log_iterator: Some(ftest_manager::LogsIteratorOption::SocketBatchIterator),
         log_interest: Some(vec![
             selectors::parse_log_interest_selector_or_severity("DEBUG").unwrap()
         ]),
@@ -576,7 +591,7 @@ async fn update_log_severity_for_all_components() {
 async fn update_log_severity_for_the_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/test-manager-diagnostics-tests#meta/test-root.cm";
     let options = RunOptions {
-        log_iterator: Some(ftest_manager::LogsIteratorOption::ArchiveIterator),
+        log_iterator: Some(ftest_manager::LogsIteratorOption::SocketBatchIterator),
         log_interest: Some(vec![selectors::parse_log_interest_selector_or_severity(
             "<root>#DEBUG",
         )
@@ -653,6 +668,19 @@ async fn debug_data_test() {
         .count()
         .await;
     assert_eq!(num_debug_data_events, 1);
+}
+
+// Test that we can hook up DebugDataIterator connection for EarlyBootPrfile.
+#[fuchsia::test]
+async fn early_boot_profile_test() {
+    let proxy = client::connect_to_protocol::<ftest_manager::EarlyBootProfileMarker>()
+        .expect("cannot connect to run builder proxy");
+    let (debug_data_proxy, iterator) = endpoints::create_proxy().unwrap();
+    proxy.register_watcher(iterator).unwrap();
+
+    // We cannot check the returned value as it can be empty vector or bunch of socket connections.
+    // But we can check that our call to DebugDataIterator goes through.
+    let _ = debug_data_proxy.get_next().await.unwrap();
 }
 
 #[fuchsia::test]

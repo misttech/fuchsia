@@ -9,10 +9,7 @@ use {
         range::RangeExt,
     },
     anyhow::{ensure, Error},
-    std::{
-        collections::{BTreeMap, HashMap},
-        ops::Range,
-    },
+    std::{collections::BTreeMap, ops::Range},
     storage_device::Device,
 };
 
@@ -37,7 +34,6 @@ impl ChecksumState {
 struct ChecksumEntry {
     // |start| is the journal_offset at which this range was written.
     start_journal_offset: u64,
-    owner_object_id: u64,
     device_range: Range<u64>,
     // Holds checksums that cover |device_range| that should hold valid from
     // start_journal_offset..end_journal_offset.
@@ -73,7 +69,6 @@ impl ChecksumList {
     pub fn push(
         &mut self,
         journal_offset: u64,
-        owner_object_id: u64,
         mut device_range: Range<u64>,
         mut checksums: &[u64],
     ) -> Result<(), Error> {
@@ -117,7 +112,6 @@ impl ChecksumList {
                     == chunk_size,
                 FxfsError::Inconsistent
             );
-            ensure!(entry.owner_object_id == owner_object_id, FxfsError::Inconsistent);
 
             let overlap = std::cmp::max(device_range.start, entry.device_range.start)
                 ..std::cmp::min(device_range.end, entry.device_range.end);
@@ -139,7 +133,6 @@ impl ChecksumList {
                 gap_entries.push((gap.end, self.checksum_entries.len()));
                 self.checksum_entries.push(ChecksumEntry {
                     start_journal_offset: journal_offset,
-                    owner_object_id,
                     device_range: gap,
                     checksums: gap_checksums
                         .into_iter()
@@ -162,7 +155,6 @@ impl ChecksumList {
                 .insert(device_range.end, self.checksum_entries.len());
             self.checksum_entries.push(ChecksumEntry {
                 start_journal_offset: journal_offset,
-                owner_object_id,
                 device_range,
                 checksums: checksums
                     .iter()
@@ -216,23 +208,13 @@ impl ChecksumList {
     pub async fn verify(
         &mut self,
         device: &dyn Device,
-        marked_for_deletion: HashMap<
-            /* owner_object_id: */ u64,
-            /* journal_offset: */ u64,
-        >,
         mut journal_offset: u64,
     ) -> Result<u64, Error> {
-        let mut buf = device.allocate_buffer(self.max_chunk_size as usize);
+        let mut buf = device.allocate_buffer(self.max_chunk_size as usize).await;
         'try_again: loop {
             for e in &mut self.checksum_entries {
                 if e.start_journal_offset >= journal_offset {
                     break;
-                }
-                if let Some(mark_deletion_offset) = marked_for_deletion.get(&e.owner_object_id) {
-                    // If marked for deletion before 'journal_offset', skip checksum validation.
-                    if *mark_deletion_offset < journal_offset {
-                        continue;
-                    }
                 }
                 let chunk_size =
                     (e.device_range.length().unwrap() / e.checksums.len() as u64) as usize;
@@ -270,14 +252,13 @@ mod tests {
     use {
         super::ChecksumList,
         crate::checksum::fletcher64,
-        std::collections::HashMap,
         storage_device::{fake_device::FakeDevice, Device},
     };
 
     #[fuchsia::test]
     async fn test_verify() {
         let device = FakeDevice::new(2048, 512);
-        let mut buffer = device.allocate_buffer(2048);
+        let mut buffer = device.allocate_buffer(2048).await;
         let mut list = ChecksumList::new(0);
 
         buffer.as_mut_slice()[0..512].copy_from_slice(&[1; 512]);
@@ -287,54 +268,38 @@ mod tests {
         device.write(512, buffer.as_ref()).await.expect("write failed");
         list.push(
             1,
-            1,
             512..2048,
             &[fletcher64(&[1; 512], 0), fletcher64(&[2; 512], 0), fletcher64(&[3; 512], 0)],
         )
         .unwrap();
 
         // All entries should pass.
-        assert_eq!(
-            list.clone().verify(&device, HashMap::new(), 10).await.expect("verify failed"),
-            10
-        );
+        assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 10);
 
         // Corrupt the middle of the three 512 byte blocks.
         buffer.as_mut_slice()[512] = 0;
         device.write(512, buffer.as_ref()).await.expect("write failed");
 
         // Verification should fail now.
-        assert_eq!(
-            list.clone().verify(&device, HashMap::new(), 10).await.expect("verify failed"),
-            1
-        );
+        assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 1);
 
         // Mark the middle block as deallocated and then it should pass again.
         list.mark_deallocated(2, 1024..1536);
-        assert_eq!(
-            list.clone().verify(&device, HashMap::new(), 10).await.expect("verify failed"),
-            10
-        );
+        assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 10);
 
         // Add another entry followed by a deallocation.
-        list.push(3, 1, 2048..2560, &[fletcher64(&[4; 512], 0)]).unwrap();
+        list.push(3, 2048..2560, &[fletcher64(&[4; 512], 0)]).unwrap();
         list.mark_deallocated(4, 1536..2048);
 
         // All entries should validate.
-        assert_eq!(
-            list.clone().verify(&device, HashMap::new(), 10).await.expect("verify failed"),
-            10
-        );
+        assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 10);
 
         // Now corrupt the block at 2048.
         buffer.as_mut_slice()[1536] = 0;
         device.write(512, buffer.as_ref()).await.expect("write failed");
 
         // This should only validate up to journal offset 3.
-        assert_eq!(
-            list.clone().verify(&device, HashMap::new(), 10).await.expect("verify failed"),
-            3
-        );
+        assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 3);
 
         // Corrupt the block that was marked as deallocated in #4.
         buffer.as_mut_slice()[1024] = 0;
@@ -342,13 +307,13 @@ mod tests {
 
         // The deallocation in #4 should be ignored and so validation should only succeed up
         // to offset 1.
-        assert_eq!(list.verify(&device, HashMap::new(), 10).await.expect("verify failed"), 1);
+        assert_eq!(list.verify(&device, 10).await.expect("verify failed"), 1);
     }
 
     #[fuchsia::test]
     async fn test_verify_entry_prior_to_flushed_offset_is_ignored() {
         let device = FakeDevice::new(2048, 512);
-        let mut buffer = device.allocate_buffer(2048);
+        let mut buffer = device.allocate_buffer(2048).await;
         let mut list = ChecksumList::new(2);
 
         buffer.as_mut_slice()[0..512].copy_from_slice(&[1; 512]);
@@ -357,83 +322,34 @@ mod tests {
 
         // This entry has the wrong checksum will fail, but it should be ignored anyway because it
         // is prior to the flushed offset.
-        list.push(1, 1, 512..1024, &[fletcher64(&[2; 512], 0)]).unwrap();
+        list.push(1, 512..1024, &[fletcher64(&[2; 512], 0)]).unwrap();
 
-        list.push(2, 1, 1024..1536, &[fletcher64(&[2; 512], 0)]).unwrap();
+        list.push(2, 1024..1536, &[fletcher64(&[2; 512], 0)]).unwrap();
 
-        assert_eq!(list.verify(&device, HashMap::new(), 10).await.expect("verify failed"), 10);
+        assert_eq!(list.verify(&device, 10).await.expect("verify failed"), 10);
     }
 
     #[fuchsia::test]
     async fn test_deallocate_overlap() {
         let device = FakeDevice::new(2048, 512);
-        let mut buffer = device.allocate_buffer(512);
+        let mut buffer = device.allocate_buffer(512).await;
         let mut list = ChecksumList::new(1);
 
         buffer.as_mut_slice().copy_from_slice(&[2; 512]);
         device.write(2560, buffer.as_ref()).await.expect("write failed");
 
-        list.push(2, 1, 512..1024, &[fletcher64(&[1; 512], 0)]).unwrap();
+        list.push(2, 512..1024, &[fletcher64(&[1; 512], 0)]).unwrap();
         list.mark_deallocated(3, 0..1024);
-        list.push(4, 1, 2048..3072, &[fletcher64(&[2; 512], 0); 2]).unwrap();
+        list.push(4, 2048..3072, &[fletcher64(&[2; 512], 0); 2]).unwrap();
         list.mark_deallocated(5, 1536..2560);
 
-        assert_eq!(list.verify(&device, HashMap::new(), 10).await.expect("verify failed"), 10);
-    }
-
-    #[fuchsia::test]
-    async fn test_mark_for_deletion_valid() {
-        let device = FakeDevice::new(2048, 512);
-        let mut buffer = device.allocate_buffer(512);
-        let mut list = ChecksumList::new(1);
-
-        let mut marked_for_deletion = HashMap::new();
-
-        buffer.as_mut_slice().copy_from_slice(&[2; 512]);
-        device.write(2560, buffer.as_ref()).await.expect("write failed");
-
-        // Valid
-        list.push(1, 1, 512..1024, &[fletcher64(&[0; 512], 0)]).unwrap();
-        // Invalid, but will be skipped by marked_for_deletion.
-        list.push(2, 2, 1024..1536, &[fletcher64(&[1; 512], 0)]).unwrap();
-        marked_for_deletion.insert(2, 3);
-        // Valid
-        list.push(4, 2, 1536..2048, &[fletcher64(&[0; 512], 0)]).unwrap();
-        // Invalid, not skipped.
-        list.push(5, 2, 2048..2560, &[fletcher64(&[1; 512], 0)]).unwrap();
-
-        assert_eq!(list.verify(&device, marked_for_deletion, 4).await.expect("verify failed"), 4);
-    }
-
-    #[fuchsia::test]
-    async fn test_mark_for_deletion_invalid() {
-        let device = FakeDevice::new(2048, 512);
-        let mut buffer = device.allocate_buffer(512);
-        let mut list = ChecksumList::new(1);
-
-        let mut marked_for_deletion = HashMap::new();
-
-        buffer.as_mut_slice().copy_from_slice(&[2; 512]);
-        device.write(2560, buffer.as_ref()).await.expect("write failed");
-
-        // Valid
-        list.push(1, 1, 512..1024, &[fletcher64(&[0; 512], 0)]).unwrap();
-        // Invalid, but will not be skipped by marked_for_deletion because the entry before that is
-        // also invalid.
-        list.push(2, 2, 1024..1536, &[fletcher64(&[1; 512], 0)]).unwrap();
-        // Invalid, not skipped by mark for deletion because the range before that is also invalid.
-        list.push(3, 3, 1536..2048, &[fletcher64(&[1; 512], 0)]).unwrap();
-        marked_for_deletion.insert(2, 3);
-
-        // Note that the journal offset (2) returned is the non-inclusive limit rather than
-        // the last successful operation.
-        assert_eq!(list.verify(&device, marked_for_deletion, 4).await.expect("verify failed"), 2);
+        assert_eq!(list.verify(&device, 10).await.expect("verify failed"), 10);
     }
 
     #[fuchsia::test]
     async fn test_duplicate_entries() {
         let device = FakeDevice::new(2048, 512);
-        let mut buffer = device.allocate_buffer(1024);
+        let mut buffer = device.allocate_buffer(1024).await;
         let mut list = ChecksumList::new(1);
 
         buffer.as_mut_slice().copy_from_slice(&[2; 1024]);
@@ -443,26 +359,22 @@ mod tests {
         let c1 = fletcher64(&[1; 512], 0);
         let c2 = fletcher64(&[2; 512], 0);
 
-        list.push(1, 1, 1024..2048, &[c2, c2]).unwrap();
+        list.push(1, 1024..2048, &[c2, c2]).unwrap();
 
         // Different checksum.
-        list.push(2, 1, 1536..2048, &[c1]).expect_err("Expected failure due to checksum mismatch");
+        list.push(2, 1536..2048, &[c1]).expect_err("Expected failure due to checksum mismatch");
 
         // Overlapping head.
-        list.push(3, 1, 512..1536, &[c0, c2]).expect("push failed");
-        list.push(4, 1, 512..1024, &[c1]).expect_err("Expected failure due to checksum mismatch");
+        list.push(3, 512..1536, &[c0, c2]).expect("push failed");
+        list.push(4, 512..1024, &[c1]).expect_err("Expected failure due to checksum mismatch");
 
         // Overlapping tail.
-        list.push(5, 1, 1536..2560, &[c2, c0]).expect("push failed");
-        list.push(6, 1, 2048..2560, &[c1]).expect_err("Expected failure due to checksum mismatch");
+        list.push(5, 1536..2560, &[c2, c0]).expect("push failed");
+        list.push(6, 2048..2560, &[c1]).expect_err("Expected failure due to checksum mismatch");
 
         // Different chunk size.
-        list.push(7, 1, 0..1024, &[c0]).expect_err("Expected failure due to different chunk size");
+        list.push(7, 0..1024, &[c0]).expect_err("Expected failure due to different chunk size");
 
-        // Different owner object.
-        list.push(8, 2, 512..1024, &[c0])
-            .expect_err("Expected failure due to different owner object");
-
-        assert_eq!(list.verify(&device, HashMap::new(), 6).await.expect("verify failed"), 6);
+        assert_eq!(list.verify(&device, 6).await.expect("verify failed"), 6);
     }
 }

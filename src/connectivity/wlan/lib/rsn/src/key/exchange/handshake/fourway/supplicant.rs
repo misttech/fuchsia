@@ -1,5 +1,5 @@
 // Copyright 2018 The Fuchsia Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
+// Use ofn this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 use crate::key::exchange::handshake::fourway::{self, Config, FourwayHandshakeFrame};
@@ -164,10 +164,10 @@ fn handle_message_3<B: ByteSlice>(
             let rsc = frame.key_frame_fields.key_rsc.to_native();
             Ok((
                 msg4,
-                Some(Gtk::from_gtk(
+                Some(Gtk::from_bytes(
                     gtk.gtk,
-                    gtk.info.key_id(),
                     negotiated_protection.group_data,
+                    gtk.info.key_id(),
                     rsc,
                 )?),
                 igtk,

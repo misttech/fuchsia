@@ -6,9 +6,7 @@ use {
     crate::{
         accessor::PerformanceConfig,
         diagnostics::BatchIteratorConnectionStats,
-        identity::MonikerHelper,
         inspect::container::{ReadSnapshot, SnapshotData, UnpopulatedInspectDataContainer},
-        moniker_rewriter::OutputRewriter,
     },
     diagnostics_data::{self as schema, Data, Inspect, InspectHandleName},
     diagnostics_hierarchy::{DiagnosticsHierarchy, HierarchyMatcher},
@@ -16,6 +14,7 @@ use {
     fuchsia_inspect::reader::PartialNodeHierarchy,
     fuchsia_trace as ftrace, fuchsia_zircon as zx,
     futures::prelude::*,
+    selectors::SelectorExt,
     std::{
         convert::{TryFrom, TryInto},
         sync::Arc,
@@ -77,7 +76,6 @@ pub struct ReaderServer {
     /// Selectors provided by the client which define what inspect data is returned by read
     /// requests. A none type implies that all available data should be returned.
     selectors: Option<Vec<Selector>>,
-    output_rewriter: Option<OutputRewriter>,
 }
 
 fn convert_snapshot_to_node_hierarchy(
@@ -96,11 +94,10 @@ impl ReaderServer {
         unpopulated_diagnostics_sources: Vec<UnpopulatedInspectDataContainer>,
         performance_configuration: PerformanceConfig,
         selectors: Option<Vec<Selector>>,
-        output_rewriter: Option<OutputRewriter>,
         stats: Arc<BatchIteratorConnectionStats>,
         parent_trace_id: ftrace::Id,
     ) -> impl Stream<Item = Data<Inspect>> + Send + 'static {
-        let server = Arc::new(Self { selectors, output_rewriter });
+        let server = Arc::new(Self { selectors });
 
         let batch_timeout = performance_configuration.batch_timeout_sec;
         let maximum_concurrent_snapshots_per_reader =
@@ -327,11 +324,7 @@ impl ReaderServer {
         // and filtering it using the provided selector regular expressions. Each filtered
         // inspect hierarchy is then added to an accumulator as a HierarchyData to be converted
         // into a JSON string and returned.
-        let sanitized_moniker = pumped_inspect_data.identity.moniker.sanitized();
-        let sanitized_moniker = match &self.output_rewriter {
-            None => sanitized_moniker,
-            Some(rewriter) => rewriter.rewrite_moniker(sanitized_moniker),
-        };
+        let moniker = pumped_inspect_data.identity.moniker.to_string();
 
         if let Some(configured_selectors) = &self.selectors {
             client_selectors = {
@@ -376,7 +369,7 @@ impl ReaderServer {
             parent_trace_id,
         );
         Some(Data::for_inspect(
-            sanitized_moniker,
+            moniker,
             hierarchy_data.hierarchy,
             hierarchy_data.timestamp.into_nanos(),
             identity.url.clone(),
@@ -396,23 +389,28 @@ mod tests {
             diagnostics::AccessorStats,
             events::{
                 router::EventConsumer,
-                types::{DiagnosticsReadyPayload, Event, EventPayload},
+                types::{
+                    DiagnosticsReadyPayload, Event, EventPayload, InspectSinkRequestedPayload,
+                },
             },
             identity::ComponentIdentity,
-            inspect::repository::InspectRepository,
+            inspect::{repository::InspectRepository, servers::InspectSinkServer},
             pipeline::Pipeline,
         },
+        diagnostics_assertions::{assert_data_tree, AnyProperty},
         diagnostics_data::InspectHandleName,
-        fidl::endpoints::{create_proxy_and_stream, DiscoverableProtocolMarker},
+        fidl::endpoints::{create_proxy_and_stream, ClientEnd, DiscoverableProtocolMarker},
         fidl_fuchsia_diagnostics::{BatchIteratorMarker, BatchIteratorProxy, Format, StreamMode},
-        fidl_fuchsia_inspect::TreeMarker,
+        fidl_fuchsia_inspect::{InspectSinkMarker, InspectSinkPublishRequest, TreeMarker},
+        fidl_fuchsia_io as fio,
         fuchsia_async::{self as fasync, Task},
         fuchsia_component::server::ServiceFs,
-        fuchsia_inspect::{assert_data_tree, reader, testing::AnyProperty, Inspector},
+        fuchsia_inspect::{reader, Inspector},
         fuchsia_zircon as zx,
         fuchsia_zircon::Peered,
         futures::future::join_all,
         futures::{FutureExt, StreamExt},
+        inspect_runtime::{service, TreeServerSendPreference},
         moniker::ExtendedMoniker,
         selectors::{self, VerboseError},
         serde_json::json,
@@ -492,6 +490,7 @@ mod tests {
         ns.unbind(path).unwrap();
     }
 
+    // TODO(fxbug.dev/299973540): remove this test when the out/diagnostics dir is removed
     #[fuchsia::test]
     async fn inspect_data_collector_tree() {
         let path = "/test-bindings2/out";
@@ -508,7 +507,7 @@ mod tests {
             }
             .boxed()
         });
-        inspect_runtime::serve(&inspector, &mut fs).expect("failed to serve inspector");
+        inspect_runtime::deprecated::serve(&inspector, &mut fs).expect("failed to serve inspector");
 
         // Create a connection to the ServiceFs.
         let (h0, h1) = fidl::endpoints::create_endpoints();
@@ -592,7 +591,8 @@ mod tests {
             let done = done1;
             let mut executor = fasync::LocalExecutor::new();
             executor.run_singlethreaded(async {
-                verify_reader(path).await;
+                let directory = collector::find_directory_proxy(path).unwrap();
+                verify_reader(InspectServiceMethod::DiagnosticsDir(directory)).await;
                 done.signal_peer(zx::Signals::NONE, zx::Signals::USER_0).expect("signalling peer");
             });
         });
@@ -609,7 +609,7 @@ mod tests {
         // One is an inspect file, and one is not.
         let mut fs = ServiceFs::new();
         let inspector = inspector_for_reader_test();
-        inspect_runtime::serve(&inspector, &mut fs).expect("failed to serve inspector");
+        inspect_runtime::deprecated::serve(&inspector, &mut fs).expect("failed to serve inspector");
 
         // Create a connection to the ServiceFs.
         let (h0, h1) = fidl::endpoints::create_endpoints();
@@ -627,12 +627,21 @@ mod tests {
             let done = done1;
             let mut executor = fasync::LocalExecutor::new();
             executor.run_singlethreaded(async {
-                verify_reader(path).await;
+                let directory = collector::find_directory_proxy(path).unwrap();
+                verify_reader(InspectServiceMethod::DiagnosticsDir(directory)).await;
                 done.signal_peer(zx::Signals::NONE, zx::Signals::USER_0).expect("signalling peer");
             });
         });
         fasync::OnSignals::new(&done0, zx::Signals::USER_0).await.unwrap();
         ns.unbind(path).unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn read_server_formatting_tree_inspect_sink() {
+        let inspector = inspector_for_reader_test();
+        let (_inspect_server, tree_client) =
+            service::spawn_tree_server(inspector, TreeServerSendPreference::default()).unwrap();
+        verify_reader(InspectServiceMethod::InspectSink(tree_client)).await;
     }
 
     #[fuchsia::test]
@@ -660,7 +669,12 @@ mod tests {
             let done = done1;
             let mut executor = fasync::LocalExecutor::new();
             executor.run_singlethreaded(async {
-                verify_reader_with_mode(path, VerifyMode::ExpectComponentFailure).await;
+                let directory = collector::find_directory_proxy(path).unwrap();
+                verify_reader_with_mode(
+                    InspectServiceMethod::DiagnosticsDir(directory),
+                    VerifyMode::ExpectComponentFailure,
+                )
+                .await;
                 done.signal_peer(zx::Signals::NONE, zx::Signals::USER_0).expect("signalling peer");
             });
         });
@@ -747,7 +761,7 @@ mod tests {
                 let id_and_directory_proxy =
                     join_all(dir_name_and_filecount.iter().map(|(dir, _)| async move {
                         let full_path = format!("{path}/{dir}");
-                        let proxy = collector::find_directory_proxy(&full_path).await.unwrap();
+                        let proxy = collector::find_directory_proxy(&full_path).unwrap();
                         let unique_cid =
                             ExtendedMoniker::parse_str(&format!("./component_{dir}")).unwrap();
                         (unique_cid, proxy)
@@ -760,15 +774,13 @@ mod tests {
 
                 for (cid, proxy) in id_and_directory_proxy {
                     let identity = Arc::new(ComponentIdentity::new(cid, TEST_URL));
-                    Arc::clone(&inspect_repo)
-                        .handle(Event {
-                            timestamp: zx::Time::get_monotonic(),
-                            payload: EventPayload::DiagnosticsReady(DiagnosticsReadyPayload {
-                                component: Arc::clone(&identity),
-                                directory: proxy,
-                            }),
-                        })
-                        .await;
+                    Arc::clone(&inspect_repo).handle(Event {
+                        timestamp: zx::Time::get_monotonic(),
+                        payload: EventPayload::DiagnosticsReady(DiagnosticsReadyPayload {
+                            component: Arc::clone(&identity),
+                            directory: proxy,
+                        }),
+                    });
                 }
 
                 let inspector = Inspector::default();
@@ -816,11 +828,21 @@ mod tests {
         ExpectComponentFailure,
     }
 
-    async fn verify_reader(path: &str) {
-        verify_reader_with_mode(path, VerifyMode::ExpectSuccess).await;
+    enum InspectServiceMethod {
+        InspectSink(ClientEnd<TreeMarker>),
+        DiagnosticsDir(fio::DirectoryProxy),
     }
 
-    async fn verify_reader_with_mode(path: &str, mode: VerifyMode) {
+    /// Verify that data can be read via InspectRepository, and that `AccessorStats` are updated
+    /// accordingly.
+    async fn verify_reader(inspect_service_method: InspectServiceMethod) {
+        verify_reader_with_mode(inspect_service_method, VerifyMode::ExpectSuccess).await;
+    }
+
+    async fn verify_reader_with_mode(
+        inspect_service_method: InspectServiceMethod,
+        mode: VerifyMode,
+    ) {
         let child_1_1_selector =
             selectors::parse_selector::<VerboseError>(r#"*:root/child_1/*:some-int"#).unwrap();
         let child_2_selector =
@@ -830,8 +852,6 @@ mod tests {
 
         let pipeline = Arc::new(Pipeline::for_test(static_selectors_opt));
         let inspect_repo = Arc::new(InspectRepository::new(vec![Arc::downgrade(&pipeline)]));
-
-        let out_dir_proxy = collector::find_directory_proxy(path).await.unwrap();
 
         // The moniker here is made up since the selector is a glob
         // selector, so any path would match.
@@ -905,15 +925,43 @@ mod tests {
         let inspector_arc = Arc::new(inspector);
 
         let identity = Arc::new(ComponentIdentity::new(component_id, TEST_URL));
-        Arc::clone(&inspect_repo)
-            .handle(Event {
-                timestamp: zx::Time::get_monotonic(),
-                payload: EventPayload::DiagnosticsReady(DiagnosticsReadyPayload {
-                    component: Arc::clone(&identity),
-                    directory: out_dir_proxy,
-                }),
-            })
-            .await;
+
+        match inspect_service_method {
+            InspectServiceMethod::DiagnosticsDir(directory) => {
+                Arc::clone(&inspect_repo).handle(Event {
+                    timestamp: zx::Time::get_monotonic(),
+                    payload: EventPayload::DiagnosticsReady(DiagnosticsReadyPayload {
+                        component: Arc::clone(&identity),
+                        directory,
+                    }),
+                });
+            }
+            InspectServiceMethod::InspectSink(tree_client) => {
+                let (proxy, request_stream) =
+                    create_proxy_and_stream::<InspectSinkMarker>().unwrap();
+                proxy
+                    .publish(InspectSinkPublishRequest {
+                        tree: Some(tree_client),
+                        ..Default::default()
+                    })
+                    .unwrap();
+
+                let inspect_sink_server =
+                    Arc::new(InspectSinkServer::new(Arc::clone(&inspect_repo)));
+                Arc::clone(&inspect_sink_server).handle(Event {
+                    timestamp: zx::Time::get_monotonic(),
+                    payload: EventPayload::InspectSinkRequested(InspectSinkRequestedPayload {
+                        component: Arc::clone(&identity),
+                        request_stream,
+                    }),
+                });
+
+                drop(proxy);
+
+                inspect_sink_server.stop();
+                inspect_sink_server.wait_for_servers_to_complete().await;
+            }
+        }
 
         let expected_get_next_result_errors = match mode {
             VerifyMode::ExpectComponentFailure => 1u64,
@@ -1015,7 +1063,7 @@ mod tests {
 
         let test_batch_iterator_stats2 = Arc::new(test_accessor_stats.new_inspect_batch_iterator());
 
-        inspect_repo.terminate_inspect(identity).await;
+        inspect_repo.terminate_inspect(identity);
         {
             let result_json = read_snapshot(
                 Arc::clone(&inspect_repo),
@@ -1085,7 +1133,7 @@ mod tests {
         }
     }
 
-    async fn start_snapshot(
+    fn start_snapshot(
         inspect_repo: Arc<InspectRepository>,
         pipeline: Arc<Pipeline>,
         stats: Arc<BatchIteratorConnectionStats>,
@@ -1097,13 +1145,11 @@ mod tests {
         };
 
         let trace_id = ftrace::Id::random();
-        let static_selectors_matchers = pipeline.read().await.static_selectors_matchers();
+        let static_selectors_matchers = pipeline.read().static_selectors_matchers();
         let reader_server = Box::pin(ReaderServer::stream(
-            inspect_repo.fetch_inspect_data(&None, static_selectors_matchers).await,
+            inspect_repo.fetch_inspect_data(&None, static_selectors_matchers),
             test_performance_config,
             // No selectors
-            None,
-            // No output rewriter
             None,
             Arc::clone(&stats),
             trace_id,
@@ -1136,7 +1182,7 @@ mod tests {
         _test_inspector: Arc<Inspector>,
         stats: Arc<BatchIteratorConnectionStats>,
     ) -> serde_json::Value {
-        let (consumer, server) = start_snapshot(inspect_repo, pipeline, stats).await;
+        let (consumer, server) = start_snapshot(inspect_repo, pipeline, stats);
 
         let mut result_vec: Vec<String> = Vec::new();
         loop {
@@ -1175,7 +1221,7 @@ mod tests {
         expected_batch_sizes: Vec<usize>,
         stats: Arc<BatchIteratorConnectionStats>,
     ) -> serde_json::Value {
-        let (consumer, server) = start_snapshot(inspect_repo, pipeline, stats).await;
+        let (consumer, server) = start_snapshot(inspect_repo, pipeline, stats);
 
         let mut result_vec: Vec<String> = Vec::new();
         let mut batch_counts = Vec::new();

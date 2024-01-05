@@ -27,7 +27,8 @@ namespace {
 using device_watcher::RecursiveWaitForFile;
 using devmgr_integration_test::IsolatedDevmgr;
 
-TEST(PbusTest, Enumeration) {
+// TODO(b/316176095): Re-enable test after ensuring it works with DFv2.
+TEST(PbusTest, DISABLED_Enumeration) {
   // NB: this loop is never run. RealmBuilder::Build is in the call stack, and insists on a non-null
   // dispatcher.
   //
@@ -54,15 +55,8 @@ TEST(PbusTest, Enumeration) {
                 .status_value());
   EXPECT_OK(RecursiveWaitForFile(dirfd, "sys/platform/11:01:5/test-gpio/gpio-3").status_value());
   EXPECT_OK(RecursiveWaitForFile(dirfd, "sys/platform/11:01:7/test-clock/clock-1").status_value());
-  EXPECT_OK(
-      RecursiveWaitForFile(dirfd, "sys/platform/11:01:8/test-i2c/i2c/i2c-0-16").status_value());
-  EXPECT_OK(
-      RecursiveWaitForFile(dirfd, "sys/platform/11:01:8/test-i2c/i2c/i2c-0-17").status_value());
-  EXPECT_OK(
-      RecursiveWaitForFile(dirfd, "sys/platform/11:01:8:1/test-i2c/i2c/i2c-1-5").status_value());
-  EXPECT_OK(
-      RecursiveWaitForFile(dirfd, "sys/platform/11:01:8:1/test-i2c/i2c/i2c-1-6").status_value());
   EXPECT_OK(RecursiveWaitForFile(dirfd, "sys/platform/11:01:f").status_value());
+  EXPECT_OK(RecursiveWaitForFile(dirfd, "sys/platform/11:01:f/composite-dev").status_value());
   EXPECT_OK(
       RecursiveWaitForFile(dirfd, "sys/platform/11:01:f/composite-dev/composite").status_value());
   EXPECT_OK(RecursiveWaitForFile(dirfd, "sys/platform/11:01:10").status_value());
@@ -84,10 +78,6 @@ TEST(PbusTest, Enumeration) {
   EXPECT_EQ(fstatat(dirfd, "sys/platform/11:01:1/child-1/child-3-top/child-3", &st, 0), 0);
   EXPECT_EQ(fstatat(dirfd, "sys/platform/11:01:5/test-gpio/gpio-3", &st, 0), 0);
   EXPECT_EQ(fstatat(dirfd, "sys/platform/11:01:7/test-clock/clock-1", &st, 0), 0);
-  EXPECT_EQ(fstatat(dirfd, "sys/platform/11:01:8/test-i2c/i2c/i2c-0-16", &st, 0), 0);
-  EXPECT_EQ(fstatat(dirfd, "sys/platform/11:01:8/test-i2c/i2c/i2c-0-17", &st, 0), 0);
-  EXPECT_EQ(fstatat(dirfd, "sys/platform/11:01:8:1/test-i2c/i2c/i2c-1-5", &st, 0), 0);
-  EXPECT_EQ(fstatat(dirfd, "sys/platform/11:01:8:1/test-i2c/i2c/i2c-1-6", &st, 0), 0);
   EXPECT_EQ(fstatat(dirfd, "sys/platform/11:01:f/composite-dev/composite", &st, 0), 0);
   EXPECT_EQ(
       fstatat(dirfd, "sys/platform/11:01:23/composite_node_spec/test-composite-node-spec", &st, 0),

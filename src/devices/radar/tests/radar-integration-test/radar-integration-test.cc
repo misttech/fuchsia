@@ -14,7 +14,6 @@
 
 #include <future>
 
-#include <fbl/unique_fd.h>
 #include <zxtest/zxtest.h>
 
 namespace {
@@ -104,21 +103,6 @@ class RadarIntegrationTest : public zxtest::Test {
     void OnBurst(fidl::WireEvent<BurstReader::OnBurst>* event) override {
       if (burst_handler_) {
         burst_handler_(*event);
-      }
-    }
-
-    // TODO(fxbug.dev/99924): Remove this after all servers have switched to OnBurst.
-    void OnBurst2(fidl::WireEvent<BurstReader::OnBurst2>* event) override {
-      if (burst_handler_) {
-        if (event->is_burst()) {
-          const auto burst =
-              fidl::ObjectView<fuchsia_hardware_radar::wire::Burst>::FromExternal(&event->burst());
-          burst_handler_(
-              fuchsia_hardware_radar::wire::RadarBurstReaderOnBurstRequest::WithBurst(burst));
-        } else if (event->is_error()) {
-          burst_handler_(fuchsia_hardware_radar::wire::RadarBurstReaderOnBurstRequest::WithError(
-              event->error()));
-        }
       }
     }
 

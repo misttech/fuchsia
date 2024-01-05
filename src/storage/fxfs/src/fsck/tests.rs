@@ -4,9 +4,7 @@
 
 use {
     crate::{
-        filesystem::{
-            Filesystem, FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem,
-        },
+        filesystem::{FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem},
         fsck::{
             errors::{FsckError, FsckFatal, FsckIssue, FsckWarning},
             fsck_volume_with_options, fsck_with_options, FsckOptions,
@@ -15,15 +13,16 @@ use {
             simple_persistent_layer::SimplePersistentLayerWriter,
             types::{Item, ItemRef, Key, LayerIterator, LayerWriter, Value},
         },
-        object_handle::{ObjectHandle, ObjectHandleExt, ReadObjectHandle, INVALID_OBJECT_ID},
+        object_handle::{ObjectHandle, ReadObjectHandle, INVALID_OBJECT_ID},
         object_store::{
-            allocator::{Allocator, AllocatorKey, AllocatorValue, CoalescingIterator},
+            allocator::{AllocatorKey, AllocatorValue, CoalescingIterator},
             directory::Directory,
-            transaction::{self, LockKey, ObjectStoreMutation, Options},
+            transaction::{self, lock_keys, LockKey, ObjectStoreMutation, Options},
             volume::root_volume,
-            AttributeKey, ChildValue, EncryptionKeys, ExtentValue, HandleOptions, Mutation,
-            ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore,
-            ObjectValue, StoreInfo, Timestamp,
+            AttributeKey, ChildValue, EncryptionKeys, ExtentValue, FsverityMetadata, HandleOptions,
+            Mutation, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind,
+            ObjectStore, ObjectValue, RootDigest, StoreInfo, Timestamp, DEFAULT_DATA_ATTRIBUTE_ID,
+            FSVERITY_MERKLE_ATTRIBUTE_ID,
         },
         round::round_down,
         serialized_types::VersionedLatest,
@@ -109,7 +108,7 @@ impl FsckTest {
         }
         Ok(())
     }
-    fn filesystem(&self) -> Arc<dyn Filesystem> {
+    fn filesystem(&self) -> Arc<FxFilesystem> {
         self.filesystem.as_ref().unwrap().deref().clone()
     }
     fn errors(&self) -> Vec<FsckIssue> {
@@ -125,7 +124,7 @@ impl FsckTest {
 // will still be subject to merging).
 // Doing this in the root store might cause a variety of unrelated failures.
 async fn install_items_in_store<K: Key, V: Value>(
-    filesystem: &Arc<dyn Filesystem>,
+    filesystem: &Arc<FxFilesystem>,
     store: &ObjectStore,
     items: impl AsRef<[Item<K, V>]>,
 ) {
@@ -133,7 +132,7 @@ async fn install_items_in_store<K: Key, V: Value>(
     let root_store = filesystem.root_store();
     let mut transaction = filesystem
         .clone()
-        .new_transaction(&[], Options::default())
+        .new_transaction(lock_keys![], Options::default())
         .await
         .expect("new_transaction failed");
     let layer_handle = ObjectStore::create_object(
@@ -149,7 +148,7 @@ async fn install_items_in_store<K: Key, V: Value>(
 
     {
         let mut writer = SimplePersistentLayerWriter::<Writer<'_>, K, V>::new(
-            Writer::new(&layer_handle),
+            Writer::new(&layer_handle).await,
             filesystem.block_size(),
         )
         .await
@@ -184,7 +183,7 @@ async fn install_items_in_store<K: Key, V: Value>(
     store_info.layers.push(layer_handle.object_id());
     let mut store_info_vec = vec![];
     store_info.serialize_with_version(&mut store_info_vec).expect("serialize failed");
-    let mut buf = device.allocate_buffer(store_info_vec.len());
+    let mut buf = device.allocate_buffer(store_info_vec.len()).await;
     buf.as_mut_slice().copy_from_slice(&store_info_vec[..]);
 
     let mut transaction =
@@ -204,7 +203,7 @@ async fn test_missing_graveyard() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[],
+                lock_keys![],
                 transaction::Options {
                     skip_journal_checks: true,
                     borrow_metadata_space: true,
@@ -237,7 +236,7 @@ async fn test_bad_graveyard_value() {
         let fs = test.filesystem();
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         let root_store = fs.root_store();
@@ -268,7 +267,7 @@ async fn test_extra_allocation() {
         let fs = test.filesystem();
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         // We need a discontiguous allocation, and some blocks will have been used up by other
@@ -296,7 +295,7 @@ async fn test_misaligned_allocation() {
         let fs = test.filesystem();
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         // We need a discontiguous allocation, and some blocks will have been used up by other
@@ -331,7 +330,7 @@ async fn test_malformed_allocation() {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         let layer_handle = ObjectStore::create_object(
@@ -348,7 +347,7 @@ async fn test_malformed_allocation() {
         {
             let mut writer =
                 SimplePersistentLayerWriter::<Writer<'_>, AllocatorKey, AllocatorValue>::new(
-                    Writer::new(&layer_handle),
+                    Writer::new(&layer_handle).await,
                     fs.block_size(),
                 )
                 .await
@@ -371,7 +370,7 @@ async fn test_malformed_allocation() {
         allocator_info.layers.push(layer_handle.object_id());
         let mut allocator_info_vec = vec![];
         allocator_info.serialize_with_version(&mut allocator_info_vec).expect("serialize failed");
-        let mut buf = device.allocate_buffer(allocator_info_vec.len());
+        let mut buf = device.allocate_buffer(allocator_info_vec.len()).await;
         buf.as_mut_slice().copy_from_slice(&allocator_info_vec[..]);
 
         let handle = ObjectStore::open_object(
@@ -404,7 +403,7 @@ async fn test_misaligned_extent_in_root_store() {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         transaction.add(
@@ -434,7 +433,7 @@ async fn test_malformed_extent_in_root_store() {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         transaction.add(
@@ -465,7 +464,7 @@ async fn test_misaligned_extent_in_child_store() {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         transaction.add(
@@ -501,7 +500,7 @@ async fn test_malformed_extent_in_child_store() {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         transaction.add(
@@ -536,7 +535,10 @@ async fn test_allocation_mismatch() {
         let range = {
             let layer_set = allocator.tree().layer_set();
             let mut merger = layer_set.merger();
-            let iter = allocator.iter(&mut merger, Bound::Unbounded).await.expect("iter failed");
+            let iter = allocator
+                .filter(merger.seek(Bound::Unbounded).await.expect("seek failed"))
+                .await
+                .expect("iter failed");
             let ItemRef { key: AllocatorKey { device_range }, .. } =
                 iter.get().expect("missing item");
             device_range.clone()
@@ -580,7 +582,10 @@ async fn test_volume_allocation_mismatch() {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(volume.store_object_id(), root_directory.object_id())],
+                    lock_keys![LockKey::object(
+                        volume.store_object_id(),
+                        root_directory.object_id()
+                    )],
                     Options::default(),
                 )
                 .await
@@ -593,12 +598,12 @@ async fn test_volume_allocation_mismatch() {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(volume.store_object_id(), handle.object_id())],
+                    lock_keys![LockKey::object(volume.store_object_id(), handle.object_id())],
                     Options::default(),
                 )
                 .await
                 .expect("new_transaction failed");
-            let buf = device.allocate_buffer(1);
+            let buf = device.allocate_buffer(1).await;
             handle
                 .txn_write(&mut transaction, 1_048_576, buf.as_ref())
                 .await
@@ -613,8 +618,10 @@ async fn test_volume_allocation_mismatch() {
         let range = {
             let layer_set = allocator.tree().layer_set();
             let mut merger = layer_set.merger();
-            let mut iter =
-                allocator.iter(&mut merger, Bound::Unbounded).await.expect("iter failed");
+            let mut iter = allocator
+                .filter(merger.seek(Bound::Unbounded).await.expect("seek failed"))
+                .await
+                .expect("iter failed");
             loop {
                 if let ItemRef {
                     key: AllocatorKey { device_range },
@@ -668,7 +675,10 @@ async fn test_missing_allocation() {
         let key = {
             let layer_set = allocator.tree().layer_set();
             let mut merger = layer_set.merger();
-            let iter = allocator.iter(&mut merger, Bound::Unbounded).await.expect("iter failed");
+            let iter = allocator
+                .filter(merger.seek(Bound::Unbounded).await.expect("seek failed"))
+                .await
+                .expect("iter failed");
             let iter = CoalescingIterator::new(iter).await.expect("filter failed");
             let ItemRef { key, .. } = iter.get().expect("missing item");
             // 'key' points at the first allocation record, which will be for the super blocks.
@@ -707,7 +717,10 @@ async fn test_too_many_object_refs() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(root_store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(
+                    root_store.store_object_id(),
+                    root_directory.object_id()
+                )],
                 Options::default(),
             )
             .await
@@ -746,7 +759,7 @@ async fn test_too_few_object_refs() {
         // reference count of one, but zero references.
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         ObjectStore::create_object(
@@ -776,7 +789,7 @@ async fn test_missing_object_tree_layer_file() {
         let volume = root_volume.new_volume("vol", Some(test.get_crypt())).await.unwrap();
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         ObjectStore::create_object(&volume, &mut transaction, HandleOptions::default(), None, None)
@@ -941,7 +954,7 @@ async fn test_link_to_root_directory() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -977,7 +990,7 @@ async fn test_multiple_links_to_directory() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1017,7 +1030,7 @@ async fn test_conflicting_link_types() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1055,7 +1068,7 @@ async fn test_volume_in_child_store() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1089,7 +1102,7 @@ async fn test_children_on_file() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1124,7 +1137,137 @@ async fn test_children_on_file() {
 }
 
 #[fuchsia::test]
-async fn test_attribute_on_directory() {
+async fn test_non_file_marked_as_verified() {
+    let mut test = FsckTest::new().await;
+
+    let store_id = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume.new_volume("vol", None).await.unwrap();
+
+        install_items_in_store(
+            &fs,
+            store.as_ref(),
+            vec![
+                Item::new(
+                    ObjectKey::object(10),
+                    ObjectValue::Object {
+                        kind: ObjectKind::Directory { sub_dirs: 0 },
+                        attributes: ObjectAttributes { ..Default::default() },
+                    },
+                ),
+                Item::new(
+                    ObjectKey::attribute(10, DEFAULT_DATA_ATTRIBUTE_ID, AttributeKey::Attribute),
+                    ObjectValue::verified_attribute(
+                        0,
+                        FsverityMetadata { root_digest: RootDigest::Sha256([0; 32]), salt: vec![] },
+                    ),
+                ),
+            ],
+        )
+        .await;
+        store.store_object_id()
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+    assert_matches!(
+        test.errors()[..],
+        [FsckIssue::Error(FsckError::NonFileMarkedAsVerified(..)), ..]
+    );
+}
+
+#[fuchsia::test]
+async fn test_verified_file_merkle_attribute_missing() {
+    let mut test = FsckTest::new().await;
+
+    let store_id = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume.new_volume("vol", None).await.unwrap();
+
+        install_items_in_store(
+            &fs,
+            store.as_ref(),
+            vec![
+                Item::new(
+                    ObjectKey::object(10),
+                    ObjectValue::Object {
+                        kind: ObjectKind::File { refs: 1 },
+                        attributes: ObjectAttributes { ..Default::default() },
+                    },
+                ),
+                Item::new(
+                    ObjectKey::attribute(10, DEFAULT_DATA_ATTRIBUTE_ID, AttributeKey::Attribute),
+                    ObjectValue::verified_attribute(
+                        0,
+                        FsverityMetadata { root_digest: RootDigest::Sha256([0; 32]), salt: vec![] },
+                    ),
+                ),
+            ],
+        )
+        .await;
+        store.store_object_id()
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+    assert_matches!(
+        test.errors()[..],
+        [FsckIssue::Error(FsckError::InconsistentVerifiedFile(..)), ..]
+    );
+}
+
+#[fuchsia::test]
+async fn test_file_with_merkle_attribute_not_marked_as_verified() {
+    let mut test = FsckTest::new().await;
+
+    let store_id = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume.new_volume("vol", None).await.unwrap();
+
+        install_items_in_store(
+            &fs,
+            store.as_ref(),
+            vec![
+                Item::new(
+                    ObjectKey::object(10),
+                    ObjectValue::Object {
+                        kind: ObjectKind::File { refs: 1 },
+                        attributes: ObjectAttributes { ..Default::default() },
+                    },
+                ),
+                Item::new(
+                    ObjectKey::attribute(10, DEFAULT_DATA_ATTRIBUTE_ID, AttributeKey::Attribute),
+                    ObjectValue::attribute(0),
+                ),
+                Item::new(
+                    ObjectKey::attribute(10, FSVERITY_MERKLE_ATTRIBUTE_ID, AttributeKey::Attribute),
+                    ObjectValue::attribute(0),
+                ),
+            ],
+        )
+        .await;
+        store.store_object_id()
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+    assert_matches!(
+        test.errors()[..],
+        [FsckIssue::Error(FsckError::InconsistentVerifiedFile(..)), ..]
+    );
+}
+
+#[fuchsia::test]
+async fn test_orphaned_extended_attribute_record() {
     let mut test = FsckTest::new().await;
 
     let store_id = {
@@ -1136,7 +1279,100 @@ async fn test_attribute_on_directory() {
             &fs,
             store.as_ref(),
             vec![Item::new(
-                ObjectKey::attribute(store.root_directory_object_id(), 1, AttributeKey::Attribute),
+                ObjectKey::extended_attribute(10, b"foo".to_vec()),
+                ObjectValue::inline_extended_attribute(b"value".to_vec()),
+            )],
+        )
+        .await;
+        store.store_object_id()
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+    assert_matches!(
+        test.errors()[..],
+        [FsckIssue::Warning(FsckWarning::OrphanedExtendedAttributeRecord(..)), ..]
+    );
+}
+
+#[fuchsia::test]
+async fn test_orphaned_large_extended_attribute_record() {
+    let mut test = FsckTest::new().await;
+
+    let store_id = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume.new_volume("vol", Some(test.get_crypt())).await.unwrap();
+
+        install_items_in_store(
+            &fs,
+            store.as_ref(),
+            vec![Item::new(
+                ObjectKey::extended_attribute(10, b"foo".to_vec()),
+                ObjectValue::extended_attribute(64),
+            )],
+        )
+        .await;
+        store.store_object_id()
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+    assert_matches!(
+        test.errors()[..],
+        [FsckIssue::Warning(FsckWarning::OrphanedExtendedAttributeRecord(..)), ..]
+    );
+}
+
+#[fuchsia::test]
+async fn test_large_extended_attribute_nonexistent_attribute() {
+    let mut test = FsckTest::new().await;
+
+    let store_id = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume.new_volume("vol", Some(test.get_crypt())).await.unwrap();
+
+        install_items_in_store(
+            &fs,
+            store.as_ref(),
+            vec![Item::new(
+                ObjectKey::extended_attribute(store.root_directory_object_id(), b"foo".to_vec()),
+                ObjectValue::extended_attribute(64),
+            )],
+        )
+        .await;
+        store.store_object_id()
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+    assert_matches!(
+        test.errors()[..],
+        [FsckIssue::Error(FsckError::MissingAttributeForExtendedAttribute(..)), ..]
+    );
+}
+
+#[fuchsia::test]
+async fn test_orphaned_extended_attribute() {
+    let mut test = FsckTest::new().await;
+
+    let store_id = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume.new_volume("vol", Some(test.get_crypt())).await.unwrap();
+
+        install_items_in_store(
+            &fs,
+            store.as_ref(),
+            vec![Item::new(
+                ObjectKey::attribute(store.root_directory_object_id(), 64, AttributeKey::Attribute),
                 ObjectValue::attribute(100),
             )],
         )
@@ -1148,7 +1384,10 @@ async fn test_attribute_on_directory() {
     test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
         .await
         .expect_err("Fsck should fail");
-    assert_matches!(test.errors()[..], [FsckIssue::Error(FsckError::AttributeNotOnFile(..)), ..]);
+    assert_matches!(
+        test.errors()[..],
+        [FsckIssue::Warning(FsckWarning::OrphanedExtendedAttribute(..)), ..]
+    );
 }
 
 #[fuchsia::test]
@@ -1257,7 +1496,7 @@ async fn test_invalid_child_in_store() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1290,7 +1529,7 @@ async fn test_link_cycle() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1336,7 +1575,7 @@ async fn test_orphaned_link_cycle() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1371,7 +1610,7 @@ async fn test_file_length_mismatch() {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         let handle = ObjectStore::create_object(
@@ -1388,19 +1627,19 @@ async fn test_file_length_mismatch() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), handle.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
             )
             .await
             .expect("new_transaction failed");
-        let buf = device.allocate_buffer(1);
+        let buf = device.allocate_buffer(1).await;
         handle.txn_write(&mut transaction, 1_048_576, buf.as_ref()).await.expect("write failed");
         transaction.commit().await.expect("commit transaction failed");
 
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), handle.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
             )
             .await
@@ -1459,7 +1698,7 @@ async fn test_spurious_extents() {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         transaction.add(
@@ -1487,7 +1726,7 @@ async fn test_spurious_extents() {
     let mut found = 0;
     for e in test.errors() {
         match e {
-            FsckIssue::Warning(FsckWarning::ExtentForDirectory(..)) => found |= 1,
+            FsckIssue::Warning(FsckWarning::ExtentForMissingAttribute(..)) => found |= 1,
             FsckIssue::Warning(FsckWarning::ExtentForNonexistentObject(..)) => found |= 2,
             _ => {}
         }
@@ -1510,7 +1749,7 @@ async fn test_missing_encryption_key() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1519,7 +1758,7 @@ async fn test_missing_encryption_key() {
             .create_child_file(&mut transaction, "child_file", None)
             .await
             .expect("create_child_file failed");
-        let buf = handle.allocate_buffer(1);
+        let buf = handle.allocate_buffer(1).await;
         handle.txn_write(&mut transaction, 1_048_576, buf.as_ref()).await.expect("write failed");
 
         let txn_mutation = transaction
@@ -1584,7 +1823,7 @@ async fn test_orphaned_keys() {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[LockKey::object(store_id, 1000)], Options::default())
+            .new_transaction(lock_keys![LockKey::object(store_id, 1000)], Options::default())
             .await
             .expect("new_transaction failed");
         transaction.add(
@@ -1620,7 +1859,7 @@ async fn test_missing_encryption_keys() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1676,7 +1915,7 @@ async fn test_duplicate_key() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1750,7 +1989,7 @@ async fn test_project_accounting() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store_id, root_directory.object_id())],
+                lock_keys![LockKey::object(store_id, root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1779,7 +2018,7 @@ async fn test_project_accounting() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[
+                lock_keys![
                     LockKey::object(store_id, root_directory.object_id()),
                     LockKey::ProjectId { store_object_id: store_id, project_id: 4 },
                 ],
@@ -1824,7 +2063,7 @@ async fn test_project_accounting() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[
+                lock_keys![
                     LockKey::object(store_id, root_directory.object_id()),
                     LockKey::ProjectId { store_object_id: store_id, project_id: 5 },
                 ],
@@ -1899,7 +2138,7 @@ async fn test_zombie_file() {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -1912,7 +2151,7 @@ async fn test_zombie_file() {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         store.add_to_graveyard(&mut transaction, handle.object_id());

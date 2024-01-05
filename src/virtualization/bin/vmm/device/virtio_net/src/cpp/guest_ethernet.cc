@@ -232,19 +232,35 @@ void GuestEthernet::FinishShutdownIfRequired() {
   }
 }
 
-zx_status_t GuestEthernet::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface) {
+void GuestEthernet::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                                          network_device_impl_init_callback callback,
+                                          void* cookie) {
   FX_CHECK(!parent_.is_valid()) << "NetworkDeviceImplInit called multiple times";
   parent_ = ddk::NetworkDeviceIfcProtocolClient(iface);
 
+  using Context = std::tuple<GuestEthernet*, network_device_impl_init_callback, void*>;
+  std::unique_ptr context = std::make_unique<Context>(this, callback, cookie);
+
   // Create port.
-  parent_.AddPort(kPortId, this, &network_port_protocol_ops_);
+  parent_.AddPort(
+      kPortId, this, &network_port_protocol_ops_,
+      [](void* ctx, zx_status_t status) {
+        std::unique_ptr<Context> context(static_cast<Context*>(ctx));
+        auto [guest_ethernet, callback, cookie] = *context;
+        if (status != ZX_OK) {
+          FX_LOGS(ERROR) << "Failed to add port: " << zx_status_get_string(status);
+          callback(cookie, status);
+          return;
+        }
 
-  // Inform our parent that the port is active.
-  port_status_t port_status;
-  NetworkPortGetStatus(&port_status);
-  parent_.PortStatusChanged(kPortId, &port_status);
+        // Inform our parent that the port is active.
+        port_status_t port_status;
+        guest_ethernet->NetworkPortGetStatus(&port_status);
+        guest_ethernet->parent_.PortStatusChanged(kPortId, &port_status);
 
-  return ZX_OK;
+        callback(cookie, ZX_OK);
+      },
+      context.release());
 }
 
 void GuestEthernet::NetworkDeviceImplStart(network_device_impl_start_callback callback,
@@ -280,7 +296,7 @@ void GuestEthernet::NetworkDeviceImplStop(network_device_impl_stop_callback call
   FinishShutdownIfRequired();
 }
 
-void GuestEthernet::NetworkDeviceImplGetInfo(device_info_t* out_info) {
+void GuestEthernet::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
   *out_info = {
       // Allow at most kMaxTxDepth/kMaxRxDepth buffers in flight to TX/RX,
       // respectively.
@@ -433,8 +449,8 @@ void GuestEthernet::NetworkDeviceImplSetSnoop(bool snoop) {
   }
 }
 
-void GuestEthernet::MacAddrGetAddress(uint8_t out_mac[VIRTIO_ETH_MAC_SIZE]) {
-  std::memcpy(out_mac, mac_address_, VIRTIO_ETH_MAC_SIZE);
+void GuestEthernet::MacAddrGetAddress(mac_address_t* out_mac) {
+  std::memcpy(out_mac->octets, mac_address_, VIRTIO_ETH_MAC_SIZE);
 }
 
 void GuestEthernet::MacAddrGetFeatures(features_t* out_features) {
@@ -447,18 +463,18 @@ void GuestEthernet::MacAddrGetFeatures(features_t* out_features) {
   };
 }
 
-void GuestEthernet::MacAddrSetMode(mode_t mode, const uint8_t* multicast_macs_list,
+void GuestEthernet::MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
                                    size_t multicast_macs_count) {
   FX_LOGS(WARNING) << "MacAddrSetMode not implemented";
 }
 
-void GuestEthernet::NetworkPortGetInfo(port_info_t* out_info) {
+void GuestEthernet::NetworkPortGetInfo(port_base_info_t* out_info) {
   static constexpr std::array<uint8_t, 1> kRxTypes = {
       static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
   };
-  static const std::array<tx_support, 1> kTxTypes = {
-      tx_support{
-          .type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
+  static const std::array<frame_type_support_t, 1> kTxTypes = {
+      frame_type_support_t{
+          .type = static_cast<frame_type_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
           .features = static_cast<uint32_t>(fuchsia_hardware_network::wire::EthernetFeatures::kRaw),
       },
   };
@@ -476,21 +492,20 @@ void GuestEthernet::NetworkPortGetInfo(port_info_t* out_info) {
 
 void GuestEthernet::NetworkPortGetStatus(port_status_t* out_status) {
   *out_status = {
-      // Port's maximum transmission unit, in bytes.
-      .mtu = kMtu,
-
       // Port status flags.
       //
       // Status flags, as defined in [`fuchsia.hardware.network/Status`].
       .flags = static_cast<uint32_t>(::fuchsia_hardware_network::wire::StatusFlags::kOnline),
+
+      // Port's maximum transmission unit, in bytes.
+      .mtu = kMtu,
   };
 }
 
-void GuestEthernet::NetworkPortGetMac(mac_addr_protocol_t* out_mac_ifc) {
-  *out_mac_ifc = {
-      .ops = &mac_addr_protocol_ops_,
-      .ctx = this,
-  };
+void GuestEthernet::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
+  if (out_mac_ifc) {
+    *out_mac_ifc = &mac_addr_proto_;
+  }
 }
 
 ddk::NetworkDeviceImplProtocolClient GuestEthernet::GetNetworkDeviceImplClient() {

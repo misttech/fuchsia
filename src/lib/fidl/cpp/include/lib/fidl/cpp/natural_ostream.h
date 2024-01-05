@@ -6,6 +6,7 @@
 #define SRC_LIB_FIDL_CPP_INCLUDE_LIB_FIDL_CPP_NATURAL_OSTREAM_H_
 
 #include <lib/fidl/cpp/box.h>
+#include <lib/fidl/cpp/framework_err.h>
 
 #include <iostream>
 #include <optional>
@@ -218,6 +219,16 @@ struct Formatter<fidl::Box<T>> {
       return Formatter<T>::Format(os, *value);
     }
     return os << "null";
+  }
+};
+
+template <>
+struct Formatter<fidl::internal::FrameworkErr> {
+  static std::ostream& Format(std::ostream& os, const fidl::internal::FrameworkErr& value) {
+    if (value == internal::FrameworkErr::kUnknownMethod) {
+      return os << "<unknown method>";
+    }
+    return os << "<transport error>";
   }
 };
 

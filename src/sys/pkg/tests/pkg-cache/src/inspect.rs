@@ -8,12 +8,11 @@ use {
         replace_retained_packages, write_meta_far, write_needed_blobs, TestEnv,
     },
     assert_matches::assert_matches,
+    diagnostics_assertions::{assert_data_tree, tree_assertion, AnyProperty},
+    diagnostics_hierarchy::DiagnosticsHierarchy,
     fidl_fuchsia_io as fio,
     fidl_fuchsia_pkg::{self as fpkg, BlobInfo, NeededBlobsMarker, PackageCacheMarker},
     fidl_fuchsia_pkg_ext::BlobId,
-    fuchsia_inspect::{
-        assert_data_tree, hierarchy::DiagnosticsHierarchy, testing::AnyProperty, tree_assertion,
-    },
     fuchsia_pkg_testing::{PackageBuilder, SystemImageBuilder},
     fuchsia_zircon as zx,
     fuchsia_zircon::Status,
@@ -64,7 +63,7 @@ async fn base_packages() {
         hierarchy,
         root: contains {
             "base-packages": {
-                "system_image/0": {
+                "fuchsia-pkg://fuchsia.com/system_image": {
                     "hash": AnyProperty
                 }
             }
@@ -90,12 +89,11 @@ async fn cache_packages() {
     assert_data_tree!(
         hierarchy,
         root: contains {
-            "cache-packages": vec![
-                format!(
-                    "fuchsia-pkg://fuchsia.com/a-cache-package/0?hash={}",
-                    cache_package.hash()
-                )
-            ]
+            "cache-packages": {
+                "fuchsia-pkg://fuchsia.com/a-cache-package/0": {
+                    "hash": cache_package.hash().to_string()
+                }
+            }
         }
 
     );
@@ -183,8 +181,7 @@ async fn dynamic_index_with_cache_packages() {
             "index": contains {
                 "dynamic": {
                     cache_package.hash().to_string() => {
-                        "state" : "active",
-                        "time": AnyProperty,
+                        "state" : "Active",
                         "required_blobs": 1u64,
                         "path": "a-cache-package/0",
                     },
@@ -208,7 +205,12 @@ async fn dynamic_index_needed_blobs() {
     let get_fut = env
         .proxies
         .package_cache
-        .get(&meta_blob_info, needed_blobs_server_end, Some(dir_server_end))
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            Some(dir_server_end),
+        )
         .map_ok(|res| res.map_err(Status::from_raw));
 
     let (meta_far, _) = pkg.contents();
@@ -224,8 +226,7 @@ async fn dynamic_index_needed_blobs() {
             "index": contains {
                 "dynamic": {
                     pkg.hash().to_string() => {
-                        "state": "pending",
-                        "time": AnyProperty,
+                        "state": "Pending",
                     }
                 }
             }
@@ -238,8 +239,8 @@ async fn dynamic_index_needed_blobs() {
         "root": contains {
             "index": contains {
                 "dynamic": contains {
-                    pkg.hash().to_string() => contains {
-                        "state": "with_meta_far",
+                    pkg.hash().to_string() => {
+                        "state": "WithMetaFar",
                         "path": AnyProperty,
                         "required_blobs": AnyProperty,
                     }
@@ -256,10 +257,9 @@ async fn dynamic_index_needed_blobs() {
             "index": contains {
                 "dynamic": {
                     pkg.hash().to_string() => {
-                        "state": "with_meta_far",
-                        "required_blobs": 0u64,
-                        "time": AnyProperty,
+                        "state": "WithMetaFar",
                         "path": "single-blob/0",
+                        "required_blobs": 0u64,
                     }
 
                 }
@@ -277,10 +277,9 @@ async fn dynamic_index_needed_blobs() {
             "index": contains {
                 "dynamic": {
                     pkg.hash().to_string() => {
-                        "state": "active",
+                        "state": "Active",
+                        "path": "single-blob/0",
                         "required_blobs": 0u64,
-                        "time": AnyProperty,
-                        "path": "single-blob/0"
                     }
 
                 }
@@ -303,7 +302,12 @@ async fn dynamic_index_package_hash_update() {
     let get_fut = env
         .proxies
         .package_cache
-        .get(&meta_blob_info, needed_blobs_server_end, None)
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            None,
+        )
         .map_ok(|res| res.map_err(Status::from_raw));
 
     let (meta_far, _) = pkg.contents();
@@ -323,12 +327,10 @@ async fn dynamic_index_package_hash_update() {
             "index": contains {
                 "dynamic": {
                     pkg.hash().to_string() => {
-                        "state": "active",
+                        "state": "Active",
+                        "path": "single-blob/0",
                         "required_blobs": 0u64,
-                        "time": AnyProperty,
-                        "path": "single-blob/0"
                     }
-
                 }
             }
         }
@@ -352,12 +354,10 @@ async fn dynamic_index_package_hash_update() {
             "index": contains {
                 "dynamic": {
                     updated_hash => {
-                        "state": "active",
+                        "state": "Active",
+                        "path": "single-blob/0",
                         "required_blobs": 1u64,
-                        "time": AnyProperty,
-                        "path": "single-blob/0"
                     }
-
                 }
             }
         }
@@ -440,7 +440,12 @@ async fn package_cache_get() {
     let get_fut = env
         .proxies
         .package_cache
-        .get(&meta_blob_info, needed_blobs_server_end, Some(dir_server_end))
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            Some(dir_server_end),
+        )
         .map_ok(|res| res.map_err(zx::Status::from_raw));
 
     // Request received, expect client requesting meta far.
@@ -537,7 +542,12 @@ async fn package_cache_concurrent_gets() {
     let _get_fut = env
         .proxies
         .package_cache
-        .get(&meta_blob_info, needed_blobs_server_end, Some(dir_server_end))
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            Some(dir_server_end),
+        )
         .map_ok(|res| res.map_err(zx::Status::from_raw));
 
     // Initiate concurrent connection to `PackageCache`.
@@ -554,7 +564,12 @@ async fn package_cache_concurrent_gets() {
         fidl::endpoints::create_proxy::<NeededBlobsMarker>().unwrap();
     let (_dir, dir_server_end2) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>().unwrap();
     let _get_fut = package_cache_proxy2
-        .get(&meta_blob_info2, needed_blobs_server_end2, Some(dir_server_end2))
+        .get(
+            &meta_blob_info2,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end2,
+            Some(dir_server_end2),
+        )
         .map_ok(|res| res.map_err(zx::Status::from_raw));
 
     let hierarchy = env
@@ -583,12 +598,14 @@ async fn package_cache_concurrent_gets() {
                         "started-time": AnyProperty,
                         "meta-far-id": AnyProperty,
                         "meta-far-length": AnyProperty,
+                        "gc-protection": "OpenPackageTracking",
                     },
                     "1" : {
                         "state": "need-meta-far",
                         "started-time": AnyProperty,
                         "meta-far-id": AnyProperty,
                         "meta-far-length": AnyProperty,
+                        "gc-protection": "OpenPackageTracking",
                     }
                 }
             }
@@ -631,8 +648,6 @@ async fn retained_index_inital_state() {
         root: contains {
             "index": contains {
                 "retained" : {
-                    "generation" : 0u64,
-                    "last-set" : AnyProperty,
                     "entries" : {},
                 }
             }
@@ -665,7 +680,12 @@ async fn retained_index_updated_and_persisted() {
     let get_fut = env
         .proxies
         .package_cache
-        .get(&meta_blob_info, needed_blobs_server_end, Some(dir_server_end))
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            Some(dir_server_end),
+        )
         .map_ok(|res| res.map_err(zx::Status::from_raw));
 
     let hierarchy = env.inspect_hierarchy().await;
@@ -674,15 +694,11 @@ async fn retained_index_updated_and_persisted() {
         root: contains {
             "index": contains {
                 "retained" : {
-                    "generation" : 1u64,
-                    "last-set" : AnyProperty,
                     "entries" : {
                         blob_ids[0].to_string() => {
-                            "last-set": AnyProperty,
                             "state": "need-meta-far",
                         },
                         blob_ids[1].to_string() => {
-                            "last-set": AnyProperty,
                             "state": "need-meta-far",
                         }
                     },
@@ -701,11 +717,8 @@ async fn retained_index_updated_and_persisted() {
         root: contains {
             "index": contains {
                 "retained" : {
-                    "generation" : 1u64,
-                    "last-set" : AnyProperty,
                     "entries" : contains {
                         blob_ids[0].to_string() => {
-                            "last-set": AnyProperty,
                             "state": "known",
                             "blobs-count": 0u64
                         }
@@ -724,7 +737,12 @@ async fn retained_index_updated_and_persisted() {
     let get_fut2 = env
         .proxies
         .package_cache
-        .get(&meta_blob_info2, needed_blobs_server_end2, Some(dir_server_end2))
+        .get(
+            &meta_blob_info2,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end2,
+            Some(dir_server_end2),
+        )
         .map_ok(|res| res.map_err(zx::Status::from_raw));
 
     let (meta_far2, _contents2) = packages[1].contents();
@@ -737,11 +755,8 @@ async fn retained_index_updated_and_persisted() {
         root: contains {
             "index": contains {
                 "retained" : {
-                    "generation" : 1u64,
-                    "last-set" : AnyProperty,
                     "entries" : contains {
                         blob_ids[1].to_string() => {
-                            "last-set": AnyProperty,
                             "state": "known",
                             "blobs-count": 2u64
                         },
@@ -763,16 +778,12 @@ async fn retained_index_updated_and_persisted() {
         root: contains {
             "index": contains {
                 "retained" : {
-                    "generation" : 1u64,
-                    "last-set" : AnyProperty,
                     "entries" : {
                         blob_ids[0].to_string() => {
-                            "last-set": AnyProperty,
                             "state": "known",
                             "blobs-count": 0u64
                         },
                         blob_ids[1].to_string() => {
-                            "last-set": AnyProperty,
                             "state": "known",
                             "blobs-count": 2u64
                         },
@@ -802,7 +813,12 @@ async fn index_updated_mid_package_write() {
     let get_fut = env
         .proxies
         .package_cache
-        .get(&meta_blob_info, needed_blobs_server_end, Some(dir_server_end))
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            Some(dir_server_end),
+        )
         .map_ok(|res| res.map_err(zx::Status::from_raw));
 
     let (meta_far, contents) = package.contents();
@@ -817,11 +833,8 @@ async fn index_updated_mid_package_write() {
         root: contains {
             "index": contains {
                 "retained" : {
-                    "generation" : 1u64,
-                    "last-set" : AnyProperty,
                     "entries" : {
                         blob_id.to_string() => {
-                            "last-set": AnyProperty,
                             "state": "known",
                             "blobs-count": 2u64,
                         },
@@ -843,18 +856,14 @@ async fn index_updated_mid_package_write() {
             "index": {
                 "dynamic": {
                     blob_id.to_string() => {
-                        "state" : "active",
-                        "time": AnyProperty,
-                        "required_blobs": 2u64,
+                        "state" : "Active",
                         "path": "multi-pkg-a/0",
+                        "required_blobs": 2u64,
                     },
                 },
                 "retained" : {
-                    "generation" : 1u64,
-                    "last-set" : AnyProperty,
                     "entries" : {
                         blob_id.to_string() => {
-                            "last-set": AnyProperty,
                             "state": "known",
                             "blobs-count": 2u64,
                         },

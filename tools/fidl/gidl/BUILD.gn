@@ -46,8 +46,8 @@ conformance_golden_items = [
     extension = "rs"
   },
   {
-    language = "dart"
-    extension = "dart"
+    language = "rust_codec"
+    extension = "rs"
   },
 ]
 

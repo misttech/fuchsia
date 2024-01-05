@@ -37,21 +37,36 @@
             environment: "#driver-env",
             durability: "single_run",
             allowed_offers: "static_and_dynamic",
+            allow_long_names: true,
         },
         {
             name: "pkg-drivers",
             environment: "#driver-env",
             durability: "single_run",
             allowed_offers: "static_and_dynamic",
+            allow_long_names: true,
         },
         {
             name: "full-pkg-drivers",
             environment: "#full-pkg-driver-env",
             durability: "single_run",
             allowed_offers: "static_and_dynamic",
+            allow_long_names: true,
+        },
+    ],
+    capabilities: [
+        {
+            config: "fuchsia.driver.DriverLoadFuzzerMaxDelayMs",
+            type: "int64",
+            value: 0,
         },
     ],
     offer: [
+        {
+            from: "self",
+            to: "#driver-index",
+            config: "fuchsia.driver.DriverLoadFuzzerMaxDelayMs",
+        },
         {
             protocol: [ "fuchsia.device.fs.lifecycle.Lifecycle" ],
             from: "#driver_manager",
@@ -100,6 +115,11 @@
             ],
             from: "parent",
             to: [ "#driver_manager" ],
+        },
+        {
+            protocol: [ "fuchsia.boot.RootResource" ],
+            from: "parent",
+            to: [ "#boot-drivers" ],
         },
         {
             protocol: "fuchsia.process.Launcher",
@@ -158,6 +178,16 @@
         },
         {
             directory: "boot",
+            from: "parent",
+            to: [
+                "#driver-index",
+                "#driver_manager",
+                "#fake-resolver",
+            ],
+            rights: [ "rx*" ],
+        },
+        {
+            directory: "pkg_drivers",
             from: "parent",
             to: [
                 "#driver-index",

@@ -8,7 +8,8 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use ffx_daemon_events::TargetInfo;
+use ffx::DaemonError;
+use ffx_daemon_events::{TargetConnectionState, TargetEventInfo};
 use ffx_daemon_target::{target::Target, target_collection::TargetCollection};
 use fidl::{
     endpoints::{DiscoverableProtocolMarker, ProtocolMarker, Proxy, Request, RequestStream},
@@ -21,6 +22,7 @@ use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     sync::Arc,
+    time::Instant,
 };
 
 #[derive(Default)]
@@ -116,6 +118,7 @@ pub struct FakeDaemon {
     register: Option<ProtocolRegister>,
     target_collection: Rc<TargetCollection>,
     rcs_handler: Option<Arc<dyn Fn(rcs::RemoteControlRequest, Option<String>)>>,
+    overnet_node: Arc<overnet_core::Router>,
 }
 
 impl FakeDaemon {
@@ -141,8 +144,9 @@ impl Default for FakeDaemon {
     fn default() -> Self {
         FakeDaemon {
             register: Default::default(),
-            target_collection: Default::default(),
+            target_collection: TargetCollection::new().into(),
             rcs_handler: Default::default(),
+            overnet_node: overnet_core::Router::new(None).unwrap(),
         }
     }
 }
@@ -161,6 +165,10 @@ impl DaemonProtocolProvider for FakeDaemon {
             )
             .await?;
         Ok(client)
+    }
+
+    fn overnet_node(&self) -> Result<Arc<overnet_core::Router>> {
+        Ok(Arc::clone(&self.overnet_node))
     }
 
     async fn open_remote_control(
@@ -206,17 +214,25 @@ impl DaemonProtocolProvider for FakeDaemon {
         // assumption that any target being added is going to be looked up later for
         // a test.
         Ok((
-            self.get_target_info(target_identifier).await?,
+            self.get_target_info(target_identifier).await.map_err(|err| anyhow!("{:?}", err))?,
             self.open_protocol(protocol_name.to_string()).await?,
         ))
     }
 
-    async fn get_target_info(&self, target_identifier: Option<String>) -> Result<ffx::TargetInfo> {
+    async fn get_target_info(
+        &self,
+        target_identifier: Option<String>,
+    ) -> Result<ffx::TargetInfo, DaemonError> {
+        let query = target_identifier.into();
         Ok(ffx::TargetInfo::from(
             &*self
                 .target_collection
-                .get(target_identifier.clone())
-                .ok_or(anyhow!("couldn't find target for query: {:?}", target_identifier))?,
+                .query_single_enabled_target(&query)
+                .map_err(|_| DaemonError::TargetAmbiguous)?
+                .ok_or_else(|| {
+                    tracing::error!("couldn't find target for query: {:?}", query);
+                    DaemonError::TargetNotFound
+                })?,
         ))
     }
 
@@ -237,7 +253,7 @@ impl FakeDaemonBuilder {
     }
 
     pub fn target(self, target: ffx::TargetInfo) -> Self {
-        let t = TargetInfo {
+        let t = TargetEventInfo {
             nodename: target.nodename,
             addresses: target
                 .addresses
@@ -246,7 +262,8 @@ impl FakeDaemonBuilder {
             ssh_host_address: target.ssh_host_address.map(|a| a.address),
             ..Default::default()
         };
-        let built_target = Target::from_target_info(t.into());
+        let built_target = Target::from_target_event_info(t.into());
+        built_target.update_connection_state(|_| TargetConnectionState::Mdns(Instant::now()));
 
         // Need to set for `ssh` target testing.
         if let Some(addr) = target.ssh_address {
@@ -260,7 +277,8 @@ impl FakeDaemonBuilder {
             assert!(built_target.set_preferred_ssh_address(addr.into()));
         }
 
-        let _ = self.target_collection.merge_insert(built_target);
+        let target = self.target_collection.merge_insert(built_target);
+        self.target_collection.use_target(target.into(), "test");
         self
     }
 
@@ -333,7 +351,7 @@ impl Default for FakeDaemonBuilder {
         Self {
             map: Default::default(),
             rcs_handler: Default::default(),
-            target_collection: Default::default(),
+            target_collection: TargetCollection::new().into(),
         }
     }
 }

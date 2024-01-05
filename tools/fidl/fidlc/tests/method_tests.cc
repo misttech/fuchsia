@@ -2,381 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/diagnostics.h"
 #include "tools/fidl/fidlc/include/fidl/flat/types.h"
 #include "tools/fidl/fidlc/include/fidl/flat_ast.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
-
-// TODO(fxbug.dev/88366): remove once fully migrated.
-TEST(MethodTests, GoodValidMethodsAndEventsMigrationMode) {
-  TestLibrary library(R"FIDL(library example;
-
-open protocol OpenExample1 {
-    -> OnMyEvent();
-    MyOneWayMethod();
-    MyTwoWayMethod() -> ();
-};
-
-open protocol OpenExample2 {
-    strict -> OnMyEvent();
-    strict MyOneWayMethod();
-    strict MyTwoWayMethod() -> ();
-};
-
-open protocol OpenExample3 {
-    flexible -> OnMyEvent();
-    flexible MyOneWayMethod();
-    flexible MyTwoWayMethod() -> ();
-};
-
-ajar protocol AjarExample1 {
-    -> OnMyEvent();
-    MyOneWayMethod();
-    MyTwoWayMethod() -> ();
-};
-
-ajar protocol AjarExample2 {
-    strict -> OnMyEvent();
-    strict MyOneWayMethod();
-    strict MyTwoWayMethod() -> ();
-};
-
-ajar protocol AjarExample3 {
-    flexible -> OnMyEvent();
-    flexible MyOneWayMethod();
-};
-
-closed protocol ClosedExample1 {
-    -> OnMyEvent();
-    MyOneWayMethod();
-    MyTwoWayMethod() -> ();
-};
-
-closed protocol ClosedExample2 {
-    strict -> OnMyEvent();
-    strict MyOneWayMethod();
-    strict MyTwoWayMethod() -> ();
-};
-
-protocol ImplicitClosedExample1 {
-    -> OnMyEvent();
-    MyOneWayMethod();
-    MyTwoWayMethod() -> ();
-};
-
-protocol ImplicitClosedExample2 {
-    strict -> OnMyEvent();
-    strict MyOneWayMethod();
-    strict MyTwoWayMethod() -> ();
-};
-
-)FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  ASSERT_COMPILED(library);
-
-  auto open_protocol1 = library.LookupProtocol("OpenExample1");
-  ASSERT_NOT_NULL(open_protocol1);
-  ASSERT_EQ(open_protocol1->methods.size(), 3);
-  EXPECT_EQ(open_protocol1->all_methods.size(), 3);
-  for (auto& method : open_protocol1->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-
-  auto open_protocol2 = library.LookupProtocol("OpenExample2");
-  ASSERT_NOT_NULL(open_protocol2);
-  ASSERT_EQ(open_protocol2->methods.size(), 3);
-  EXPECT_EQ(open_protocol2->all_methods.size(), 3);
-  for (auto& method : open_protocol2->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-
-  auto open_protocol3 = library.LookupProtocol("OpenExample3");
-  ASSERT_NOT_NULL(open_protocol3);
-  ASSERT_EQ(open_protocol3->methods.size(), 3);
-  EXPECT_EQ(open_protocol3->all_methods.size(), 3);
-  for (auto& method : open_protocol3->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kFlexible);
-  }
-
-  auto ajar_protocol1 = library.LookupProtocol("AjarExample1");
-  ASSERT_NOT_NULL(ajar_protocol1);
-  ASSERT_EQ(ajar_protocol1->methods.size(), 3);
-  EXPECT_EQ(ajar_protocol1->all_methods.size(), 3);
-  for (auto& method : ajar_protocol1->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-
-  auto ajar_protocol2 = library.LookupProtocol("AjarExample2");
-  ASSERT_NOT_NULL(ajar_protocol2);
-  ASSERT_EQ(ajar_protocol2->methods.size(), 3);
-  EXPECT_EQ(ajar_protocol2->all_methods.size(), 3);
-  for (auto& method : ajar_protocol2->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-
-  auto ajar_protocol3 = library.LookupProtocol("AjarExample3");
-  ASSERT_NOT_NULL(ajar_protocol3);
-  ASSERT_EQ(ajar_protocol3->methods.size(), 2);
-  EXPECT_EQ(ajar_protocol3->all_methods.size(), 2);
-  for (auto& method : ajar_protocol3->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kFlexible);
-  }
-
-  auto closed_protocol1 = library.LookupProtocol("ClosedExample1");
-  ASSERT_NOT_NULL(closed_protocol1);
-  ASSERT_EQ(closed_protocol1->methods.size(), 3);
-  EXPECT_EQ(closed_protocol1->all_methods.size(), 3);
-  for (auto& method : closed_protocol1->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-
-  auto closed_protocol2 = library.LookupProtocol("ClosedExample2");
-  ASSERT_NOT_NULL(closed_protocol2);
-  ASSERT_EQ(closed_protocol2->methods.size(), 3);
-  EXPECT_EQ(closed_protocol2->all_methods.size(), 3);
-  for (auto& method : closed_protocol2->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-
-  auto implicit_closed_protocol1 = library.LookupProtocol("ImplicitClosedExample1");
-  ASSERT_NOT_NULL(implicit_closed_protocol1);
-  ASSERT_EQ(implicit_closed_protocol1->methods.size(), 3);
-  EXPECT_EQ(implicit_closed_protocol1->all_methods.size(), 3);
-  for (auto& method : implicit_closed_protocol1->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-
-  auto implicit_closed_protocol2 = library.LookupProtocol("ImplicitClosedExample2");
-  ASSERT_NOT_NULL(implicit_closed_protocol2);
-  ASSERT_EQ(implicit_closed_protocol2->methods.size(), 3);
-  EXPECT_EQ(implicit_closed_protocol2->all_methods.size(), 3);
-  for (auto& method : implicit_closed_protocol2->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-}
-
-// TODO(fxbug.dev/88366): remove once fully migrated.
-TEST(MethodTests, BadInvalidMethodsAndEventsMigrationMode) {
-  TestLibrary library1(R"FIDL(library example;
-ajar protocol Example {
-    flexible TwoWay() -> ();
-};
-)FIDL");
-  library1.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  ASSERT_ERRORED_DURING_COMPILE(library1, fidl::ErrFlexibleTwoWayMethodRequiresOpenProtocol)
-
-  TestLibrary library2(R"FIDL(library example;
-closed protocol Example {
-    flexible TwoWay() -> ();
-};
-)FIDL");
-  library2.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  ASSERT_ERRORED_DURING_COMPILE(library2, fidl::ErrFlexibleTwoWayMethodRequiresOpenProtocol)
-
-  TestLibrary library3(R"FIDL(library example;
-protocol Example {
-    flexible TwoWay() -> ();
-};
-)FIDL");
-  library3.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  ASSERT_ERRORED_DURING_COMPILE(library3, fidl::ErrFlexibleTwoWayMethodRequiresOpenProtocol)
-
-  TestLibrary library4(R"FIDL(library example;
-closed protocol Example {
-    flexible OneWay();
-};
-)FIDL");
-  library4.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  ASSERT_ERRORED_DURING_COMPILE(library4, fidl::ErrFlexibleOneWayMethodInClosedProtocol)
-
-  TestLibrary library5(R"FIDL(library example;
-closed protocol Example {
-    flexible -> OnEvent();
-};
-)FIDL");
-  library5.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  ASSERT_ERRORED_DURING_COMPILE(library5, fidl::ErrFlexibleOneWayMethodInClosedProtocol)
-
-  TestLibrary library6(R"FIDL(library example;
-protocol Example {
-    flexible OneWay();
-};
-)FIDL");
-  library6.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  ASSERT_ERRORED_DURING_COMPILE(library6, fidl::ErrFlexibleOneWayMethodInClosedProtocol)
-
-  TestLibrary library7(R"FIDL(library example;
-protocol Example {
-    flexible -> OnEvent();
-};
-)FIDL");
-  library7.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  ASSERT_ERRORED_DURING_COMPILE(library7, fidl::ErrFlexibleOneWayMethodInClosedProtocol)
-}
-
-// TODO(fxbug.dev/88366): remove once fully migrated.
-TEST(MethodTests, GoodValidMethodsAndEventsMandateMode) {
-  TestLibrary library(R"FIDL(library example;
-
-open protocol OpenExample1 {
-    strict -> OnMyEvent();
-    strict MyOneWayMethod();
-    strict MyTwoWayMethod() -> ();
-};
-
-open protocol OpenExample2 {
-    flexible -> OnMyEvent();
-    flexible MyOneWayMethod();
-    flexible MyTwoWayMethod() -> ();
-};
-
-ajar protocol AjarExample1 {
-    strict -> OnMyEvent();
-    strict MyOneWayMethod();
-    strict MyTwoWayMethod() -> ();
-};
-
-ajar protocol AjarExample2 {
-    flexible -> OnMyEvent();
-    flexible MyOneWayMethod();
-};
-
-closed protocol ClosedExample1 {
-    strict -> OnMyEvent();
-    strict MyOneWayMethod();
-    strict MyTwoWayMethod() -> ();
-};
-)FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsMandate);
-  ASSERT_COMPILED(library);
-
-  auto open_protocol1 = library.LookupProtocol("OpenExample1");
-  ASSERT_NOT_NULL(open_protocol1);
-  ASSERT_EQ(open_protocol1->methods.size(), 3);
-  EXPECT_EQ(open_protocol1->all_methods.size(), 3);
-  for (auto& method : open_protocol1->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-
-  auto open_protocol2 = library.LookupProtocol("OpenExample2");
-  ASSERT_NOT_NULL(open_protocol2);
-  ASSERT_EQ(open_protocol2->methods.size(), 3);
-  EXPECT_EQ(open_protocol2->all_methods.size(), 3);
-  for (auto& method : open_protocol2->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kFlexible);
-  }
-
-  auto ajar_protocol1 = library.LookupProtocol("AjarExample1");
-  ASSERT_NOT_NULL(ajar_protocol1);
-  ASSERT_EQ(ajar_protocol1->methods.size(), 3);
-  EXPECT_EQ(ajar_protocol1->all_methods.size(), 3);
-  for (auto& method : ajar_protocol1->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-
-  auto ajar_protocol2 = library.LookupProtocol("AjarExample2");
-  ASSERT_NOT_NULL(ajar_protocol2);
-  ASSERT_EQ(ajar_protocol2->methods.size(), 2);
-  EXPECT_EQ(ajar_protocol2->all_methods.size(), 2);
-  for (auto& method : ajar_protocol2->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kFlexible);
-  }
-
-  auto closed_protocol1 = library.LookupProtocol("ClosedExample1");
-  ASSERT_NOT_NULL(closed_protocol1);
-  ASSERT_EQ(closed_protocol1->methods.size(), 3);
-  EXPECT_EQ(closed_protocol1->all_methods.size(), 3);
-  for (auto& method : closed_protocol1->methods) {
-    EXPECT_EQ(method.strictness, fidl::types::Strictness::kStrict);
-  }
-}
-
-// TODO(fxbug.dev/88366): remove once fully migrated.
-TEST(MethodTests, BadInvalidMethodsAndEventsMandateMode) {
-  TestLibrary library1;
-  library1.AddFile("bad/fi-0191.test.fidl");
-  library1.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library1.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsMandate);
-  ASSERT_ERRORED_DURING_COMPILE(library1, fidl::ErrMethodMustDefineStrictness)
-
-  TestLibrary library2(R"FIDL(library example;
-open protocol Example {
-    TwoWay() -> ();
-};
-)FIDL");
-  library2.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library2.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsMandate);
-  ASSERT_ERRORED_DURING_COMPILE(library2, fidl::ErrMethodMustDefineStrictness)
-
-  TestLibrary library3(R"FIDL(library example;
-open protocol Example {
-    -> Event();
-};
-)FIDL");
-  library3.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library3.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsMandate);
-  ASSERT_ERRORED_DURING_COMPILE(library3, fidl::ErrMethodMustDefineStrictness)
-
-  TestLibrary library4(R"FIDL(library example;
-ajar protocol Example {
-    OneWay();
-};
-)FIDL");
-  library4.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library4.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsMandate);
-  ASSERT_ERRORED_DURING_COMPILE(library4, fidl::ErrMethodMustDefineStrictness)
-
-  TestLibrary library5(R"FIDL(library example;
-ajar protocol Example {
-    TwoWay() -> ();
-};
-)FIDL");
-  library5.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library5.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsMandate);
-  ASSERT_ERRORED_DURING_COMPILE(library5, fidl::ErrMethodMustDefineStrictness)
-
-  TestLibrary library6(R"FIDL(library example;
-ajar protocol Example {
-    -> Event();
-};
-)FIDL");
-  library6.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library6.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsMandate);
-  ASSERT_ERRORED_DURING_COMPILE(library6, fidl::ErrMethodMustDefineStrictness)
-
-  TestLibrary library7(R"FIDL(library example;
-closed protocol Example {
-    OneWay();
-};
-)FIDL");
-  library7.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library7.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsMandate);
-  ASSERT_ERRORED_DURING_COMPILE(library7, fidl::ErrMethodMustDefineStrictness)
-
-  TestLibrary library8(R"FIDL(library example;
-closed protocol Example {
-    TwoWay() -> ();
-};
-)FIDL");
-  library8.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library8.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsMandate);
-  ASSERT_ERRORED_DURING_COMPILE(library8, fidl::ErrMethodMustDefineStrictness)
-
-  TestLibrary library9(R"FIDL(library example;
-closed protocol Example {
-    -> Event();
-};
-)FIDL");
-  library9.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library9.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsMandate);
-  ASSERT_ERRORED_DURING_COMPILE(library9, fidl::ErrMethodMustDefineStrictness)
-}
 
 TEST(MethodTests, GoodValidComposeMethod) {
   TestLibrary library(R"FIDL(library example;
@@ -389,21 +22,19 @@ open protocol HasComposeMethod2 {
     compose() -> ();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto protocol1 = library.LookupProtocol("HasComposeMethod1");
-  ASSERT_NOT_NULL(protocol1);
-  ASSERT_EQ(protocol1->methods.size(), 1);
+  ASSERT_NE(protocol1, nullptr);
+  ASSERT_EQ(protocol1->methods.size(), 1u);
   EXPECT_EQ(protocol1->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol1->all_methods.size(), 1);
+  EXPECT_EQ(protocol1->all_methods.size(), 1u);
 
   auto protocol2 = library.LookupProtocol("HasComposeMethod2");
-  ASSERT_NOT_NULL(protocol2);
-  ASSERT_EQ(protocol2->methods.size(), 1);
+  ASSERT_NE(protocol2, nullptr);
+  ASSERT_EQ(protocol2->methods.size(), 1u);
   EXPECT_EQ(protocol2->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol2->all_methods.size(), 1);
+  EXPECT_EQ(protocol2->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidStrictComposeMethod) {
@@ -417,21 +48,19 @@ open protocol HasComposeMethod2 {
     strict compose() -> ();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto protocol1 = library.LookupProtocol("HasComposeMethod1");
-  ASSERT_NOT_NULL(protocol1);
-  ASSERT_EQ(protocol1->methods.size(), 1);
+  ASSERT_NE(protocol1, nullptr);
+  ASSERT_EQ(protocol1->methods.size(), 1u);
   EXPECT_EQ(protocol1->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol1->all_methods.size(), 1);
+  EXPECT_EQ(protocol1->all_methods.size(), 1u);
 
   auto protocol2 = library.LookupProtocol("HasComposeMethod2");
-  ASSERT_NOT_NULL(protocol2);
-  ASSERT_EQ(protocol2->methods.size(), 1);
+  ASSERT_NE(protocol2, nullptr);
+  ASSERT_EQ(protocol2->methods.size(), 1u);
   EXPECT_EQ(protocol2->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol2->all_methods.size(), 1);
+  EXPECT_EQ(protocol2->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidFlexibleComposeMethod) {
@@ -445,21 +74,19 @@ open protocol HasComposeMethod2 {
     flexible compose() -> ();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto protocol1 = library.LookupProtocol("HasComposeMethod1");
-  ASSERT_NOT_NULL(protocol1);
-  ASSERT_EQ(protocol1->methods.size(), 1);
+  ASSERT_NE(protocol1, nullptr);
+  ASSERT_EQ(protocol1->methods.size(), 1u);
   EXPECT_EQ(protocol1->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol1->all_methods.size(), 1);
+  EXPECT_EQ(protocol1->all_methods.size(), 1u);
 
   auto protocol2 = library.LookupProtocol("HasComposeMethod2");
-  ASSERT_NOT_NULL(protocol2);
-  ASSERT_EQ(protocol2->methods.size(), 1);
+  ASSERT_NE(protocol2, nullptr);
+  ASSERT_EQ(protocol2->methods.size(), 1u);
   EXPECT_EQ(protocol2->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol2->all_methods.size(), 1);
+  EXPECT_EQ(protocol2->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidStrictMethod) {
@@ -489,45 +116,43 @@ open protocol HasStrictMethod6 {
     flexible strict() -> ();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto protocol1 = library.LookupProtocol("HasStrictMethod1");
-  ASSERT_NOT_NULL(protocol1);
-  ASSERT_EQ(protocol1->methods.size(), 1);
+  ASSERT_NE(protocol1, nullptr);
+  ASSERT_EQ(protocol1->methods.size(), 1u);
   EXPECT_EQ(protocol1->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol1->all_methods.size(), 1);
+  EXPECT_EQ(protocol1->all_methods.size(), 1u);
 
   auto protocol2 = library.LookupProtocol("HasStrictMethod2");
-  ASSERT_NOT_NULL(protocol2);
-  ASSERT_EQ(protocol2->methods.size(), 1);
+  ASSERT_NE(protocol2, nullptr);
+  ASSERT_EQ(protocol2->methods.size(), 1u);
   EXPECT_EQ(protocol2->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol2->all_methods.size(), 1);
+  EXPECT_EQ(protocol2->all_methods.size(), 1u);
 
   auto protocol3 = library.LookupProtocol("HasStrictMethod3");
-  ASSERT_NOT_NULL(protocol3);
-  ASSERT_EQ(protocol3->methods.size(), 1);
+  ASSERT_NE(protocol3, nullptr);
+  ASSERT_EQ(protocol3->methods.size(), 1u);
   EXPECT_EQ(protocol3->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol3->all_methods.size(), 1);
+  EXPECT_EQ(protocol3->all_methods.size(), 1u);
 
   auto protocol4 = library.LookupProtocol("HasStrictMethod4");
-  ASSERT_NOT_NULL(protocol4);
-  ASSERT_EQ(protocol4->methods.size(), 1);
+  ASSERT_NE(protocol4, nullptr);
+  ASSERT_EQ(protocol4->methods.size(), 1u);
   EXPECT_EQ(protocol4->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol4->all_methods.size(), 1);
+  EXPECT_EQ(protocol4->all_methods.size(), 1u);
 
   auto protocol5 = library.LookupProtocol("HasStrictMethod5");
-  ASSERT_NOT_NULL(protocol5);
-  ASSERT_EQ(protocol5->methods.size(), 1);
+  ASSERT_NE(protocol5, nullptr);
+  ASSERT_EQ(protocol5->methods.size(), 1u);
   EXPECT_EQ(protocol5->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol5->all_methods.size(), 1);
+  EXPECT_EQ(protocol5->all_methods.size(), 1u);
 
   auto protocol6 = library.LookupProtocol("HasStrictMethod6");
-  ASSERT_NOT_NULL(protocol6);
-  ASSERT_EQ(protocol6->methods.size(), 1);
+  ASSERT_NE(protocol6, nullptr);
+  ASSERT_EQ(protocol6->methods.size(), 1u);
   EXPECT_EQ(protocol6->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol6->all_methods.size(), 1);
+  EXPECT_EQ(protocol6->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidFlexibleTwoWayMethod) {
@@ -557,45 +182,43 @@ open protocol HasFlexibleTwoWayMethod6 {
     flexible flexible() -> ();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto protocol1 = library.LookupProtocol("HasFlexibleTwoWayMethod1");
-  ASSERT_NOT_NULL(protocol1);
-  ASSERT_EQ(protocol1->methods.size(), 1);
+  ASSERT_NE(protocol1, nullptr);
+  ASSERT_EQ(protocol1->methods.size(), 1u);
   EXPECT_EQ(protocol1->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol1->all_methods.size(), 1);
+  EXPECT_EQ(protocol1->all_methods.size(), 1u);
 
   auto protocol2 = library.LookupProtocol("HasFlexibleTwoWayMethod2");
-  ASSERT_NOT_NULL(protocol2);
-  ASSERT_EQ(protocol2->methods.size(), 1);
+  ASSERT_NE(protocol2, nullptr);
+  ASSERT_EQ(protocol2->methods.size(), 1u);
   EXPECT_EQ(protocol2->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol2->all_methods.size(), 1);
+  EXPECT_EQ(protocol2->all_methods.size(), 1u);
 
   auto protocol3 = library.LookupProtocol("HasFlexibleTwoWayMethod3");
-  ASSERT_NOT_NULL(protocol3);
-  ASSERT_EQ(protocol3->methods.size(), 1);
+  ASSERT_NE(protocol3, nullptr);
+  ASSERT_EQ(protocol3->methods.size(), 1u);
   EXPECT_EQ(protocol3->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol3->all_methods.size(), 1);
+  EXPECT_EQ(protocol3->all_methods.size(), 1u);
 
   auto protocol4 = library.LookupProtocol("HasFlexibleTwoWayMethod4");
-  ASSERT_NOT_NULL(protocol4);
-  ASSERT_EQ(protocol4->methods.size(), 1);
+  ASSERT_NE(protocol4, nullptr);
+  ASSERT_EQ(protocol4->methods.size(), 1u);
   EXPECT_EQ(protocol4->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol4->all_methods.size(), 1);
+  EXPECT_EQ(protocol4->all_methods.size(), 1u);
 
   auto protocol5 = library.LookupProtocol("HasFlexibleTwoWayMethod5");
-  ASSERT_NOT_NULL(protocol5);
-  ASSERT_EQ(protocol5->methods.size(), 1);
+  ASSERT_NE(protocol5, nullptr);
+  ASSERT_EQ(protocol5->methods.size(), 1u);
   EXPECT_EQ(protocol5->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol5->all_methods.size(), 1);
+  EXPECT_EQ(protocol5->all_methods.size(), 1u);
 
   auto protocol6 = library.LookupProtocol("HasFlexibleTwoWayMethod6");
-  ASSERT_NOT_NULL(protocol6);
-  ASSERT_EQ(protocol6->methods.size(), 1);
+  ASSERT_NE(protocol6, nullptr);
+  ASSERT_EQ(protocol6->methods.size(), 1u);
   EXPECT_EQ(protocol6->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol6->all_methods.size(), 1);
+  EXPECT_EQ(protocol6->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidNormalMethod) {
@@ -609,21 +232,19 @@ open protocol HasNormalMethod2 {
     MyMethod() -> ();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto protocol1 = library.LookupProtocol("HasNormalMethod1");
-  ASSERT_NOT_NULL(protocol1);
-  ASSERT_EQ(protocol1->methods.size(), 1);
+  ASSERT_NE(protocol1, nullptr);
+  ASSERT_EQ(protocol1->methods.size(), 1u);
   EXPECT_EQ(protocol1->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol1->all_methods.size(), 1);
+  EXPECT_EQ(protocol1->all_methods.size(), 1u);
 
   auto protocol2 = library.LookupProtocol("HasNormalMethod2");
-  ASSERT_NOT_NULL(protocol2);
-  ASSERT_EQ(protocol2->methods.size(), 1);
+  ASSERT_NE(protocol2, nullptr);
+  ASSERT_EQ(protocol2->methods.size(), 1u);
   EXPECT_EQ(protocol2->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol2->all_methods.size(), 1);
+  EXPECT_EQ(protocol2->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidStrictNormalMethod) {
@@ -637,21 +258,19 @@ open protocol HasNormalMethod2 {
     strict MyMethod() -> ();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto protocol1 = library.LookupProtocol("HasNormalMethod1");
-  ASSERT_NOT_NULL(protocol1);
-  ASSERT_EQ(protocol1->methods.size(), 1);
+  ASSERT_NE(protocol1, nullptr);
+  ASSERT_EQ(protocol1->methods.size(), 1u);
   EXPECT_EQ(protocol1->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol1->all_methods.size(), 1);
+  EXPECT_EQ(protocol1->all_methods.size(), 1u);
 
   auto protocol2 = library.LookupProtocol("HasNormalMethod2");
-  ASSERT_NOT_NULL(protocol2);
-  ASSERT_EQ(protocol2->methods.size(), 1);
+  ASSERT_NE(protocol2, nullptr);
+  ASSERT_EQ(protocol2->methods.size(), 1u);
   EXPECT_EQ(protocol2->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol2->all_methods.size(), 1);
+  EXPECT_EQ(protocol2->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidFlexibleNormalMethod) {
@@ -665,21 +284,19 @@ open protocol HasNormalMethod2 {
     flexible MyMethod() -> ();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto protocol1 = library.LookupProtocol("HasNormalMethod1");
-  ASSERT_NOT_NULL(protocol1);
-  ASSERT_EQ(protocol1->methods.size(), 1);
+  ASSERT_NE(protocol1, nullptr);
+  ASSERT_EQ(protocol1->methods.size(), 1u);
   EXPECT_EQ(protocol1->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol1->all_methods.size(), 1);
+  EXPECT_EQ(protocol1->all_methods.size(), 1u);
 
   auto protocol2 = library.LookupProtocol("HasNormalMethod2");
-  ASSERT_NOT_NULL(protocol2);
-  ASSERT_EQ(protocol2->methods.size(), 1);
+  ASSERT_NE(protocol2, nullptr);
+  ASSERT_EQ(protocol2->methods.size(), 1u);
   EXPECT_EQ(protocol2->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol2->all_methods.size(), 1);
+  EXPECT_EQ(protocol2->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidEvent) {
@@ -689,15 +306,13 @@ protocol HasEvent {
     -> MyEvent();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto protocol = library.LookupProtocol("HasEvent");
-  ASSERT_NOT_NULL(protocol);
-  ASSERT_EQ(protocol->methods.size(), 1);
+  ASSERT_NE(protocol, nullptr);
+  ASSERT_EQ(protocol->methods.size(), 1u);
   EXPECT_EQ(protocol->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol->all_methods.size(), 1);
+  EXPECT_EQ(protocol->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidStrictEvent) {
@@ -707,15 +322,13 @@ protocol HasEvent {
     strict -> MyMethod();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto protocol = library.LookupProtocol("HasEvent");
-  ASSERT_NOT_NULL(protocol);
-  ASSERT_EQ(protocol->methods.size(), 1);
+  ASSERT_NE(protocol, nullptr);
+  ASSERT_EQ(protocol->methods.size(), 1u);
   EXPECT_EQ(protocol->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol->all_methods.size(), 1);
+  EXPECT_EQ(protocol->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidFlexibleEvent) {
@@ -725,16 +338,14 @@ protocol HasEvent {
     flexible -> MyMethod();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
 
   ASSERT_COMPILED(library);
 
   auto protocol = library.LookupProtocol("HasEvent");
-  ASSERT_NOT_NULL(protocol);
-  ASSERT_EQ(protocol->methods.size(), 1);
+  ASSERT_NE(protocol, nullptr);
+  ASSERT_EQ(protocol->methods.size(), 1u);
   EXPECT_EQ(protocol->methods[0].strictness, fidl::types::Strictness::kFlexible);
-  EXPECT_EQ(protocol->all_methods.size(), 1);
+  EXPECT_EQ(protocol->all_methods.size(), 1u);
 }
 
 TEST(MethodTests, GoodValidStrictnessModifiers) {
@@ -767,21 +378,19 @@ open protocol Open {
   flexible -> FlexibleEvent();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto closed = library.LookupProtocol("Closed");
-  ASSERT_NOT_NULL(closed);
-  ASSERT_EQ(closed->methods.size(), 3);
+  ASSERT_NE(closed, nullptr);
+  ASSERT_EQ(closed->methods.size(), 3u);
 
   auto ajar = library.LookupProtocol("Ajar");
-  ASSERT_NOT_NULL(ajar);
-  ASSERT_EQ(ajar->methods.size(), 5);
+  ASSERT_NE(ajar, nullptr);
+  ASSERT_EQ(ajar->methods.size(), 5u);
 
   auto open = library.LookupProtocol("Open");
-  ASSERT_NOT_NULL(open);
-  ASSERT_EQ(open->methods.size(), 6);
+  ASSERT_NE(open, nullptr);
+  ASSERT_EQ(open->methods.size(), 6u);
 }
 
 TEST(MethodTests, BadInvalidStrictnessFlexibleEventInClosed) {
@@ -791,17 +400,15 @@ closed protocol Closed {
   flexible -> Event();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrFlexibleOneWayMethodInClosedProtocol);
+  library.ExpectFail(fidl::ErrFlexibleOneWayMethodInClosedProtocol, "event");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(MethodTests, BadInvalidStrictnessFlexibleOneWayMethodInClosed) {
   TestLibrary library;
   library.AddFile("bad/fi-0116.test.fidl");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrFlexibleOneWayMethodInClosedProtocol);
+  library.ExpectFail(fidl::ErrFlexibleOneWayMethodInClosedProtocol, "one-way method");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(MethodTests, BadInvalidStrictnessFlexibleTwoWayMethodInClosed) {
@@ -811,17 +418,17 @@ closed protocol Closed {
   flexible Method() -> ();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrFlexibleTwoWayMethodRequiresOpenProtocol);
+  library.ExpectFail(fidl::ErrFlexibleTwoWayMethodRequiresOpenProtocol,
+                     fidl::types::Openness::kClosed);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(MethodTests, BadInvalidStrictnessFlexibleTwoWayMethodInAjar) {
   TestLibrary library;
   library.AddFile("bad/fi-0115.test.fidl");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrFlexibleTwoWayMethodRequiresOpenProtocol);
+  library.ExpectFail(fidl::ErrFlexibleTwoWayMethodRequiresOpenProtocol,
+                     fidl::types::Openness::kAjar);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(MethodTests, BadInvalidOpennessModifierOnMethod) {
@@ -833,201 +440,8 @@ protocol BadMethod {
 };
 
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, GoodValidComposeMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    compose();
-};
-)FIDL");
-  ASSERT_COMPILED(library);
-
-  auto protocol = library.LookupProtocol("HasMethod");
-  ASSERT_NOT_NULL(protocol);
-  ASSERT_EQ(protocol->methods.size(), 1);
-  EXPECT_EQ(protocol->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol->all_methods.size(), 1);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, BadStrictComposeMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    strict compose();
-};
-)FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, BadFlexibleComposeMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    flexible compose();
-};
-)FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, GoodValidStrictMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    strict();
-};
-)FIDL");
-  ASSERT_COMPILED(library);
-
-  auto protocol = library.LookupProtocol("HasMethod");
-  ASSERT_NOT_NULL(protocol);
-  ASSERT_EQ(protocol->methods.size(), 1);
-  EXPECT_EQ(protocol->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol->all_methods.size(), 1);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, BadStrictStrictMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    strict strict();
-};
-)FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, BadFlexibleStrictMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    flexible strict();
-};
-)FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, GoodValidFlexibleTwoWayMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    flexible();
-};
-)FIDL");
-  ASSERT_COMPILED(library);
-
-  auto protocol = library.LookupProtocol("HasMethod");
-  ASSERT_NOT_NULL(protocol);
-  ASSERT_EQ(protocol->methods.size(), 1);
-  EXPECT_EQ(protocol->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol->all_methods.size(), 1);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, BadStrictFlexibleTwoWayMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    strict flexible();
-};
-)FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, BadFlexibleFlexibleTwoWayMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    flexible flexible();
-};
-)FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, GoodValidNormalMethodWithoutUnknownInteractions) {
-  TestLibrary library;
-  library.AddFile("good/fi-0024.test.fidl");
-  ASSERT_COMPILED(library);
-
-  auto protocol = library.LookupProtocol("Example");
-  ASSERT_NOT_NULL(protocol);
-  ASSERT_EQ(protocol->methods.size(), 1);
-  EXPECT_EQ(protocol->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol->all_methods.size(), 1);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, BadStrictNormalMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    strict MyMethod();
-};
-)FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, BadFlexibleNormalMethodWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasMethod {
-    flexible MyMethod();
-};
-)FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, GoodValidEventWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasEvent {
-    -> OnSomething();
-};
-)FIDL");
-  ASSERT_COMPILED(library);
-
-  auto protocol = library.LookupProtocol("HasEvent");
-  ASSERT_NOT_NULL(protocol);
-  ASSERT_EQ(protocol->methods.size(), 1);
-  EXPECT_EQ(protocol->methods[0].strictness, fidl::types::Strictness::kStrict);
-  EXPECT_EQ(protocol->all_methods.size(), 1);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, BadStrictEventWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasEvent {
-    strict -> OnSomething();
-};
-)FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
-}
-
-// TODO(fxb/88366): remove checks for behavior with unknown interactions turned
-// off when unknown interactions are always-on.
-TEST(MethodTests, BadFlexibleEventWithoutUnknownInteractions) {
-  TestLibrary library(R"FIDL(library example;
-protocol HasEvent {
-    flexible -> OnSomething();
-};
-)FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidProtocolMember);
+  library.ExpectFail(fidl::ErrInvalidProtocolMember);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(MethodTests, GoodValidEmptyPayloads) {
@@ -1040,13 +454,11 @@ open protocol Test {
   flexible MethodD() -> () error int32;
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto closed = library.LookupProtocol("Test");
-  ASSERT_NOT_NULL(closed);
-  ASSERT_EQ(closed->methods.size(), 4);
+  ASSERT_NE(closed, nullptr);
+  ASSERT_EQ(closed->methods.size(), 4u);
 }
 
 TEST(MethodTests, BadInvalidEmptyStructPayloadStrictNoError) {
@@ -1056,9 +468,8 @@ open protocol Test {
   strict Method() -> (struct {});
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructs);
+  library.ExpectFail(fidl::ErrEmptyPayloadStructs, "Method");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(MethodTests, BadEmptyStructPayloadFlexibleNoError) {
@@ -1068,9 +479,8 @@ open protocol Test {
   flexible Method() -> (struct {});
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructs);
+  library.ExpectFail(fidl::ErrEmptyPayloadStructs, "Method");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(MethodTests, BadEmptyStructPayloadStrictError) {
@@ -1080,9 +490,8 @@ open protocol Test {
   strict Method() -> (struct {}) error int32;
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructs);
+  library.ExpectFail(fidl::ErrEmptyPayloadStructs, "Method");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(MethodTests, BadEmptyStructPayloadFlexibleError) {
@@ -1092,9 +501,8 @@ open protocol Test {
   flexible Method() -> (struct {}) error int32;
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructs);
+  library.ExpectFail(fidl::ErrEmptyPayloadStructs, "Method");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(MethodTests, GoodAbsentPayloadFlexibleNoError) {
@@ -1104,8 +512,6 @@ open protocol Test {
   flexible Method() -> ();
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 }
 
@@ -1116,8 +522,6 @@ open protocol Test {
   strict Method() -> () error int32;
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 }
 
@@ -1128,8 +532,6 @@ open protocol Test {
   flexible Method() -> () error int32;
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 }
 
@@ -1142,44 +544,42 @@ open protocol Example {
     });
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto methods = &library.LookupProtocol("Example")->methods;
-  ASSERT_EQ(methods->size(), 1);
+  ASSERT_EQ(methods->size(), 1u);
   auto method = &methods->at(0);
   auto response = method->maybe_response.get();
-  ASSERT_NOT_NULL(response);
+  ASSERT_NE(response, nullptr);
 
   ASSERT_EQ(response->type->kind, fidl::flat::Type::Kind::kIdentifier);
   auto id = static_cast<const fidl::flat::IdentifierType*>(response->type);
   ASSERT_EQ(id->type_decl->kind, fidl::flat::Decl::Kind::kUnion);
   auto result_union = static_cast<const fidl::flat::Union*>(id->type_decl);
-  ASSERT_NOT_NULL(result_union);
-  ASSERT_EQ(result_union->members.size(), 3);
+  ASSERT_NE(result_union, nullptr);
+  ASSERT_EQ(result_union->members.size(), 3u);
 
   auto anonymous = result_union->name.as_anonymous();
-  ASSERT_NOT_NULL(anonymous);
+  ASSERT_NE(anonymous, nullptr);
   ASSERT_EQ(anonymous->provenance, fidl::flat::Name::Provenance::kGeneratedResultUnion);
 
   const auto& success = result_union->members.at(0);
-  ASSERT_NOT_NULL(success.maybe_used);
-  ASSERT_STREQ("response", std::string(success.maybe_used->name.data()).c_str());
+  ASSERT_NE(success.maybe_used, nullptr);
+  ASSERT_EQ("response", success.maybe_used->name.data());
 
   const fidl::flat::Union::Member& error = result_union->members.at(1);
-  ASSERT_NULL(error.maybe_used);
-  ASSERT_STREQ("err", std::string(error.span->data()).c_str());
+  ASSERT_EQ(error.maybe_used, nullptr);
+  ASSERT_EQ("err", error.span->data());
 
-  const fidl::flat::Union::Member& transport_error = result_union->members.at(2);
-  ASSERT_NOT_NULL(transport_error.maybe_used);
-  ASSERT_STREQ("transport_err", std::string(transport_error.maybe_used->name.data()).c_str());
+  const fidl::flat::Union::Member& framework_error = result_union->members.at(2);
+  ASSERT_NE(framework_error.maybe_used, nullptr);
+  ASSERT_EQ("framework_err", framework_error.maybe_used->name.data());
 
-  ASSERT_NOT_NULL(transport_error.maybe_used->type_ctor->type);
-  ASSERT_EQ(transport_error.maybe_used->type_ctor->type->kind, fidl::flat::Type::Kind::kInternal);
-  auto transport_err_internal_type =
-      static_cast<const fidl::flat::InternalType*>(transport_error.maybe_used->type_ctor->type);
-  ASSERT_EQ(transport_err_internal_type->subtype, fidl::types::InternalSubtype::kTransportErr);
+  ASSERT_NE(framework_error.maybe_used->type_ctor->type, nullptr);
+  ASSERT_EQ(framework_error.maybe_used->type_ctor->type->kind, fidl::flat::Type::Kind::kInternal);
+  auto framework_err_internal_type =
+      static_cast<const fidl::flat::InternalType*>(framework_error.maybe_used->type_ctor->type);
+  ASSERT_EQ(framework_err_internal_type->subtype, fidl::types::InternalSubtype::kFrameworkErr);
 }
 
 TEST(MethodTests, GoodFlexibleErrorResponseUnion) {
@@ -1191,49 +591,47 @@ open protocol Example {
     }) error uint32;
 };
 )FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
   ASSERT_COMPILED(library);
 
   auto methods = &library.LookupProtocol("Example")->methods;
-  ASSERT_EQ(methods->size(), 1);
+  ASSERT_EQ(methods->size(), 1u);
   auto method = &methods->at(0);
   auto response = method->maybe_response.get();
-  ASSERT_NOT_NULL(response);
+  ASSERT_NE(response, nullptr);
 
   ASSERT_EQ(response->type->kind, fidl::flat::Type::Kind::kIdentifier);
   auto id = static_cast<const fidl::flat::IdentifierType*>(response->type);
   ASSERT_EQ(id->type_decl->kind, fidl::flat::Decl::Kind::kUnion);
   auto result_union = static_cast<const fidl::flat::Union*>(id->type_decl);
-  ASSERT_NOT_NULL(result_union);
-  ASSERT_EQ(result_union->members.size(), 3);
+  ASSERT_NE(result_union, nullptr);
+  ASSERT_EQ(result_union->members.size(), 3u);
 
   auto anonymous = result_union->name.as_anonymous();
-  ASSERT_NOT_NULL(anonymous);
+  ASSERT_NE(anonymous, nullptr);
   ASSERT_EQ(anonymous->provenance, fidl::flat::Name::Provenance::kGeneratedResultUnion);
 
   const auto& success = result_union->members.at(0);
-  ASSERT_NOT_NULL(success.maybe_used);
-  ASSERT_STREQ("response", std::string(success.maybe_used->name.data()).c_str());
+  ASSERT_NE(success.maybe_used, nullptr);
+  ASSERT_EQ("response", success.maybe_used->name.data());
 
   const fidl::flat::Union::Member& error = result_union->members.at(1);
-  ASSERT_NOT_NULL(error.maybe_used);
-  ASSERT_STREQ("err", std::string(error.maybe_used->name.data()).c_str());
+  ASSERT_NE(error.maybe_used, nullptr);
+  ASSERT_EQ("err", error.maybe_used->name.data());
 
-  ASSERT_NOT_NULL(error.maybe_used->type_ctor->type);
+  ASSERT_NE(error.maybe_used->type_ctor->type, nullptr);
   ASSERT_EQ(error.maybe_used->type_ctor->type->kind, fidl::flat::Type::Kind::kPrimitive);
   auto err_primitive_type =
       static_cast<const fidl::flat::PrimitiveType*>(error.maybe_used->type_ctor->type);
   ASSERT_EQ(err_primitive_type->subtype, fidl::types::PrimitiveSubtype::kUint32);
 
-  const fidl::flat::Union::Member& transport_error = result_union->members.at(2);
-  ASSERT_NOT_NULL(transport_error.maybe_used);
-  ASSERT_STREQ("transport_err", std::string(transport_error.maybe_used->name.data()).c_str());
+  const fidl::flat::Union::Member& framework_error = result_union->members.at(2);
+  ASSERT_NE(framework_error.maybe_used, nullptr);
+  ASSERT_EQ("framework_err", framework_error.maybe_used->name.data());
 
-  ASSERT_NOT_NULL(transport_error.maybe_used->type_ctor->type);
-  ASSERT_EQ(transport_error.maybe_used->type_ctor->type->kind, fidl::flat::Type::Kind::kInternal);
-  auto transport_err_internal_type =
-      static_cast<const fidl::flat::InternalType*>(transport_error.maybe_used->type_ctor->type);
-  ASSERT_EQ(transport_err_internal_type->subtype, fidl::types::InternalSubtype::kTransportErr);
+  ASSERT_NE(framework_error.maybe_used->type_ctor->type, nullptr);
+  ASSERT_EQ(framework_error.maybe_used->type_ctor->type->kind, fidl::flat::Type::Kind::kInternal);
+  auto framework_err_internal_type =
+      static_cast<const fidl::flat::InternalType*>(framework_error.maybe_used->type_ctor->type);
+  ASSERT_EQ(framework_err_internal_type->subtype, fidl::types::InternalSubtype::kFrameworkErr);
 }
 }  // namespace

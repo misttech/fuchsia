@@ -8,10 +8,13 @@
 # To use this script, symlink a .sh to this script, using the python script's
 # basename.
 
-script="$0"
+readonly script="$0"
+# assume script is always with path prefix, e.g. "./$script"
+readonly script_dir="${script%/*}"
+readonly script_basename="${script##*/}"
+
 # 'stem' is any executable python binary or test
-stem="$(basename "$script" .sh)"
-script_dir="$(dirname "$script")"
+stem="${script_basename%.sh}"
 
 source "$script_dir"/common-setup.sh
 # 'python' is defined
@@ -19,9 +22,10 @@ source "$script_dir"/common-setup.sh
 script_dir_abs="$(normalize_path "$script_dir")"
 project_root="$default_project_root"
 
-test -f "$script_dir"/proto/api/proxy/log_pb2.py || {
+generated_src=api/log/log_pb2.py
+test -f "$script_dir"/proto/"$generated_src" || {
   cat <<EOF
-Generated source $script_dir/proto/api/proxy/log_pb2.py not found.
+Generated source $script_dir/proto/$generated_src not found.
 Run $script_dir/proto/refresh.sh first.
 EOF
   exit 1

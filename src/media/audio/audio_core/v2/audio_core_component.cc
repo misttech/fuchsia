@@ -12,9 +12,9 @@
 #include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/fidl/cpp/wire/client.h>
 
-#include "src/media/audio/audio_core/shared/pin_executable_memory.h"
 #include "src/media/audio/audio_core/shared/policy_loader.h"
 #include "src/media/audio/audio_core/shared/process_config_loader.h"
+#include "src/media/audio/audio_core/shared/profile_acquirer.h"
 #include "src/media/audio/audio_core/shared/reporter.h"
 #include "src/media/audio/audio_core/shared/volume_curve.h"
 #include "src/media/audio/audio_core/v2/audio_core_server.h"
@@ -25,8 +25,8 @@ namespace media_audio {
 
 namespace {
 
+using ::media::audio::AcquireMemoryRole;
 using ::media::audio::ActivityDispatcherImpl;
-using ::media::audio::PinExecutableMemory;
 using ::media::audio::PolicyLoader;
 using ::media::audio::ProcessConfig;
 using ::media::audio::ProcessConfigLoader;
@@ -123,7 +123,11 @@ AudioCoreComponent::AudioCoreComponent(component::OutgoingDirectory& outgoing,
   const auto io_dispatcher = io_loop_->dispatcher();
 
   // Pin all memory pages backed by executable files.
-  PinExecutableMemory::Singleton();
+  auto result = AcquireMemoryRole(zx::vmar::root_self(), "fuchsia.media.audio.core");
+  if (result.is_error()) {
+    FX_PLOGS(ERROR, result.status_value())
+        << "Unable to set memory role for the audio_core process";
+  }
 
   // TODO(fxbug.dev/98652): replace uses of this function with newer functions such as
   // component::Connect().

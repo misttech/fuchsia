@@ -4,7 +4,7 @@
 
 use {
     fuchsia_inspect::Property,
-    parking_lot::Mutex,
+    fuchsia_sync::Mutex,
     std::{
         borrow::Cow,
         collections::{hash_map::Entry, HashMap},
@@ -175,10 +175,7 @@ impl Debug for DiagnosticNodeInner {
 
 #[cfg(test)]
 mod test {
-    use {
-        super::*,
-        fuchsia_inspect::{testing::assert_data_tree, Inspector},
-    };
+    use {super::*, diagnostics_assertions::assert_data_tree, fuchsia_inspect::Inspector};
 
     #[fuchsia::test]
     fn inspect_lifetimes() {

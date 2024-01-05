@@ -21,6 +21,8 @@
 #include <fbl/bits.h>
 #include <hwreg/bitfields.h>
 
+#include "memory.h"
+
 //
 // The definitions here just deal with stage 1 translation for now.
 //
@@ -51,35 +53,123 @@ enum class ArmAddressTranslationLevel {
   k3,
 };
 
-// [arm/v8]: Table D5-36 SH[1:0] field encoding for Normal memory, VMSAv8-64 translation table
-// format
+// Forward-declared; defined below.
+template <ArmAddressTranslationLevel Level,             //
+          ArmGranuleSize GranuleSize,                   //
+          ArmMaximumVirtualAddressWidth MaxVaddrWidth>  //
+class ArmAddressTranslationDescriptor;
+
 //
-// Shareability attribute for Normal memory
-enum class ArmAddressTranslationShareability {
-  kNonShareable = 0b00,
-  kOuterShareable = 0b10,
-  kInnerShareable = 0b11,
-};
-
-// [arm/v8]: Table D5-28 Data access permissions for stage 1 translations
+// Implementations of the PagingTraits API (defined in <lib/arch/paging.h>) for
+// ARM.
 //
-// Access permission for page table entries.
-enum class ArmAddressTranslationAccessPermissions {
-  kSupervisorReadWrite = 0b00,  // EL1+ can read/write, EL0 no access.
-  kReadWrite = 0b01,            // All levels can read/write.
-  kSupervisorReadOnly = 0b10,   // EL1+ can read, EL0 no access.
-  kReadOnly = 0b11,             // All levels can read.
+// We just define the 4KiB granule, max 48-bit wide versions of these for now,
+// as these are all that are currently used.
+//
+
+// Specifies the upper or lower virtual address range (i.e., the
+// 1- or 0- extended ranges, respectively), which are configured separately.
+enum class ArmVirtualAddressRange {
+  // Configured by TCR_EL1.T0SZ.
+  kLower,
+
+  // Configured by TCR_EL1.T1SZ.
+  kUpper,
 };
 
-enum class ArmAddressTranslationTableAccessPermissions {
-  kNoEffect = 0b00,
-  kNoEl0Access = 0b01,
-  kNoWriteAccess = 0b10,
-  kNoWriteOrEl0Access = 0b11,
+struct ArmSystemPagingState {
+  template <class CurrentEl>
+  static ArmSystemPagingState Create(ArmMemoryAttrIndirectionRegister mair,
+                                     ArmShareabilityAttribute sh) {
+    return {
+        .mair = mair,
+        .shareability = sh,
+        .el1 = CurrentEl::Read().el() == 1,
+    };
+  }
+
+  // Defaults to only configuring non-cacheable normal memory.
+  ArmMemoryAttrIndirectionRegister mair =
+      ArmMemoryAttrIndirectionRegister::Get().FromValue(0).SetAttribute(0, {});
+  ArmShareabilityAttribute shareability = ArmShareabilityAttribute::kNone;
+
+  // TODO(fxbug.dev/131555): This is included only to account for the
+  // associated bug.
+  bool el1 = true;
 };
 
-// Captures the system state influencing ARM paging.
-struct ArmSystemPagingState {};
+using ArmPagingSettings = internal::PagingSettings<ArmMairAttribute>;
+
+// VirtualAddressSize represents the value of 64 - TnSZ, which restricts the
+// addressable virtual address range and may result in few levels of paging.
+template <ArmVirtualAddressRange Range, unsigned int VirtualAddressSize = 48>
+struct ArmPagingTraits {
+  using LevelType = ArmAddressTranslationLevel;
+
+  using MemoryType = ArmMairAttribute;
+
+  using SystemState = ArmSystemPagingState;
+
+  using PagingSettings = ArmPagingSettings;
+
+  template <ArmAddressTranslationLevel Level>
+  using TableEntry = ArmAddressTranslationDescriptor<Level, ArmGranuleSize::k4KiB,
+                                                     ArmMaximumVirtualAddressWidth::k48Bits>;
+
+  static constexpr unsigned int kMaxPhysicalAddressSize = 48;
+
+  static constexpr unsigned int kTableAlignmentLog2 = 12;
+
+  template <ArmAddressTranslationLevel Level>
+  static constexpr unsigned int kNumTableEntriesLog2 = 9;
+
+  static constexpr bool kNonTerminalAccessPermissions = true;
+
+  static_assert(16 <= VirtualAddressSize);
+  static_assert(VirtualAddressSize <= 48);
+  static constexpr std::optional<unsigned int> kVirtualAddressSizeOverride = VirtualAddressSize;
+
+  static constexpr auto kVirtualAddressExtension = Range == ArmVirtualAddressRange::kLower
+                                                       ? VirtualAddressExtension::k0
+                                                       : VirtualAddressExtension::k1;
+
+  static constexpr std::array kAllLevels = {
+      ArmAddressTranslationLevel::k0,
+      ArmAddressTranslationLevel::k1,
+      ArmAddressTranslationLevel::k2,
+      ArmAddressTranslationLevel::k3,
+  };
+
+  // [arm/v8]: Table D5-13 TCR_ELx.TnSZ values and IA ranges, 4KB granule with no concatenation of
+  // tables
+  //
+  // Restrictions of the virtual address space can result in fewer levels.
+  static constexpr unsigned int kFirstLevelIndex = []() {
+    switch (VirtualAddressSize) {
+      case 40 ... 48:
+        return 0;
+      case 31 ... 39:
+        return 1;
+      case 22 ... 30:
+        return 2;
+      case 16 ... 21:
+        return 3;
+    }
+  }();
+  static constexpr auto kLevels = cpp20::span{kAllLevels}.subspan(kFirstLevelIndex);
+
+  static constexpr bool kExecuteOnlyAllowed = false;
+
+  template <ArmAddressTranslationLevel Level>
+  static constexpr bool LevelCanBeTerminal(const SystemState& state) {
+    using Page = typename TableEntry<Level>::Page;
+    using Block = typename TableEntry<Level>::Block;
+    return Page::kValid || Block::kValid;
+  }
+};
+
+using ArmLowerPagingTraits = ArmPagingTraits<ArmVirtualAddressRange::kLower>;
+using ArmUpperPagingTraits = ArmPagingTraits<ArmVirtualAddressRange::kUpper>;
 
 //
 // Forward declarations of the different descriptor layouts; defined below.
@@ -100,12 +190,29 @@ template <ArmAddressTranslationLevel Level,             //
           ArmMaximumVirtualAddressWidth MaxVaddrWidth>  //
 class ArmAddressTranslationBlockDescriptor;
 
+// [arm/v8]: Table D5-29 Data access permissions for stage 1 translations
+//
+// Access permission for page table entries.
+enum class ArmAddressTranslationAccessPermissions : uint8_t {
+  kSupervisorReadWrite = 0b00,  // EL1+ can read/write, EL0 no access.
+  kReadWrite = 0b01,            // All levels can read/write.
+  kSupervisorReadOnly = 0b10,   // EL1+ can read, EL0 no access.
+  kReadOnly = 0b11,             // All levels can read.
+};
+
+enum class ArmAddressTranslationTableAccessPermissions : uint8_t {
+  kNoEffect = 0b00,
+  kNoEl0Access = 0b01,
+  kNoWriteAccess = 0b10,
+  kNoWriteOrEl0Access = 0b11,
+};
+
 // [arm/v8]: D5.3.1 VMSAv8-64 translation table level 0, level 1, and level 2
 // descriptor formats.
 //
 // [arm/v8]: D5.3.2 Armv8 translation table level 3 descriptor formats
 //
-enum class ArmAddressTranslationDescriptorFormat {
+enum class ArmAddressTranslationDescriptorFormat : uint8_t {
   // Block descriptor for levels {0, 1, 2}. Invalid for level 3.
   kBlock = 0b0,
 
@@ -262,7 +369,28 @@ class ArmAddressTranslationDescriptor
            ap_table == ArmTableAccessPermissions::kNoWriteAccess;
   }
 
-  constexpr SelfType& Set(const ArmSystemPagingState& state, const PagingSettings& settings) {
+  constexpr bool accessed() const {
+    return IsPage() ? AsPage().af() : IsBlock() ? AsBlock().af() : false;
+  }
+
+  constexpr bool global() const {
+    return IsPage() ? !AsPage().ng() : IsBlock() ? !AsBlock().ng() : false;
+  }
+
+  constexpr ArmMairAttribute Memory(const ArmSystemPagingState& state) const {
+    auto memory = [&state](const auto& desc) {
+      return *state.mair.GetAttribute(static_cast<unsigned int>(desc.attr_index()));
+    };
+    if (IsPage()) {
+      return memory(AsPage());
+    }
+    if (IsBlock()) {
+      return memory(AsBlock());
+    }
+    ZX_PANIC("Memory() cannot be called on a non-terminal entry");
+  }
+
+  constexpr SelfType& Set(const ArmSystemPagingState& state, const ArmPagingSettings& settings) {
     set_valid(settings.present);
     if (!settings.present) {
       return *this;
@@ -276,6 +404,21 @@ class ArmAddressTranslationDescriptor
       } else {
         ZX_PANIC("level cannot be terminal");
       }
+
+      auto set_terminal = [&](auto& desc) {
+        desc.set_af(true).set_ng(!settings.global).set_sh(state.shareability);
+        std::optional<unsigned int> index = state.mair.GetIndex(settings.memory);
+        ZX_DEBUG_ASSERT_MSG(index,
+                            "memory attribute %#" PRIx8 " not configured in MAIR (%#" PRIx64 ")",
+                            ArmMemoryAttrIndirectionRegister::AttributeToValue(settings.memory),
+                            state.mair.reg_value());
+        desc.set_attr_index(*index);
+      };
+      if (IsPage()) {
+        set_terminal(AsPage());
+      } else {
+        set_terminal(AsBlock());
+      }
     } else {
       if constexpr (Table::kValid) {
         SetAsTable();
@@ -284,7 +427,7 @@ class ArmAddressTranslationDescriptor
       }
     }
 
-    Set(settings.access);
+    Set(state, settings.access);
 
     if (IsTable()) {
       AsTable().set_table_address(settings.address);
@@ -306,14 +449,15 @@ class ArmAddressTranslationDescriptor
   static constexpr auto& As(Base* base) {
     // Double-check that we can safely recast a Base as a Subclass.
     static_assert(std::is_base_of_v<std::remove_const_t<Base>, Subclass>);
-    static_assert(sizeof(Subclass) == sizeof(Base));
     static_assert(std::alignment_of_v<Subclass> == std::alignment_of_v<Base>);
     ZX_ASSERT((base->*IsSubclass)());
     return *static_cast<std::conditional_t<std::is_const_v<Base>, const Subclass, Subclass>*>(base);
   }
 
-  constexpr SelfType& Set(const AccessPermissions& access) {
+  constexpr SelfType& Set(const ArmSystemPagingState& state, const AccessPermissions& access) {
     if (terminal()) {
+      ZX_DEBUG_ASSERT(access.readable);
+
       ArmAccessPermissions ap = [&]() {
         if (access.writable) {
           if (access.user_accessible) {
@@ -329,7 +473,9 @@ class ArmAddressTranslationDescriptor
 
       auto set_xn = [&](auto& desc) {
         // We do not need to support user-executable pages at this time.
-        desc.set_uxn(true).set_pxn(!access.executable);
+        //
+        // TODO(fxbug.dev/131555): set UXN to false always.
+        desc.set_uxn(state.el1).set_pxn(!access.executable);
       };
 
       if (IsPage()) {
@@ -354,7 +500,9 @@ class ArmAddressTranslationDescriptor
       AsTable()
           .set_ap_table(ap_table)
           // We do not need to support user-executable pages at this time.
-          .set_uxn_table(true)
+          //
+          // TODO(fxbug.dev/131555): set UXN_TABLE to false always.
+          .set_uxn_table(state.el1)
           .set_pxn_table(!access.executable);
     }
 
@@ -467,9 +615,10 @@ class ArmAddressTranslationPageDescriptor
   // Bits [49:12] conditionally represent the output address field, which is
   // handled manually below.
 
+  DEF_BIT(11, ng);  // Not Global
   DEF_BIT(10, af);  // Access Flag
 
-  DEF_COND_ENUM_FIELD(ArmAddressTranslationShareability, 9, 8, sh, kWidth48);  // SHareability
+  DEF_COND_ENUM_FIELD(ArmShareabilityAttribute, 9, 8, sh, kWidth48);  // SHareability
 
   // Access Permissions
   DEF_ENUM_FIELD(ArmAddressTranslationAccessPermissions, 7, 6, ap);
@@ -574,10 +723,10 @@ class ArmAddressTranslationBlockDescriptor
 
   DEF_BIT(16, nt);  // Block translation entry
 
-  DEF_RSVDZ_BIT(11);
+  DEF_BIT(11, ng);  // Not Global
   DEF_BIT(10, af);  // Access Flag
 
-  DEF_COND_ENUM_FIELD(ArmAddressTranslationShareability, 9, 8, sh, kWidth48);  // SHareability
+  DEF_COND_ENUM_FIELD(ArmShareabilityAttribute, 9, 8, sh, kWidth48);  // SHareability
 
   DEF_ENUM_FIELD(ArmAddressTranslationAccessPermissions, 7, 6, ap);  // Access Permissions
   DEF_BIT(5, ns);                                                    // Non-Secure
@@ -668,90 +817,6 @@ class ArmAddressTranslationBlockDescriptor
   DEF_UNSHIFTED_FIELD(kOaHighBit, 21, oa);
   DEF_COND_FIELD(15, 12, oa_51_48, kWidth52 && (kOaHighBit == 47));
   DEF_COND_FIELD(9, 8, oa_51_50, kWidth52 && (kOaHighBit == 49));
-};
-
-//
-// Implementations of the PagingTraits API (defined in <lib/arch/paging.h>) for
-// ARM.
-//
-// We just define the 4KiB granule, max 48-bit wide versions of these for now,
-// as these are all that are currently used.
-//
-
-// Specifies the upper or lower virtual address range (i.e., the
-// 1- or 0- extended ranges, respectively), which are configured separately.
-enum class ArmVirtualAddressRange {
-  // Configured by TCR_EL1.T0SZ.
-  kLower,
-
-  // Configured by TCR_EL1.T1SZ.
-  kUpper,
-};
-
-// VirtualAddressSize represents the value of 64 - TnSZ, which restricts the
-// addressable virtual address range and may result in few levels of paging.
-template <ArmVirtualAddressRange Range, unsigned int VirtualAddressSize = 48>
-struct ArmPagingTraits {
-  using LevelType = ArmAddressTranslationLevel;
-
-  using SystemState = ArmSystemPagingState;
-
-  template <ArmAddressTranslationLevel Level>
-  using TableEntry = ArmAddressTranslationDescriptor<Level, ArmGranuleSize::k4KiB,
-                                                     ArmMaximumVirtualAddressWidth::k48Bits>;
-
-  static constexpr unsigned int kMaxPhysicalAddressSize = 48;
-
-  static constexpr unsigned int kTableAlignmentLog2 = 12;
-
-  template <ArmAddressTranslationLevel Level>
-  static constexpr unsigned int kNumTableEntriesLog2 = 9;
-
-  static constexpr bool kNonTerminalAccessPermissions = true;
-
-  static_assert(16 <= VirtualAddressSize);
-  static_assert(VirtualAddressSize <= 48);
-  static constexpr std::optional<unsigned int> kVirtualAddressSizeOverride = VirtualAddressSize;
-
-  static constexpr auto kVirtualAddressExtension = Range == ArmVirtualAddressRange::kLower
-                                                       ? VirtualAddressExtension::k0
-                                                       : VirtualAddressExtension::k1;
-
-  static constexpr std::array kAllLevels = {
-      ArmAddressTranslationLevel::k0,
-      ArmAddressTranslationLevel::k1,
-      ArmAddressTranslationLevel::k2,
-      ArmAddressTranslationLevel::k3,
-  };
-
-  // [arm/v8]: Table D5-13 TCR_ELx.TnSZ values and IA ranges, 4KB granule with no concatenation of
-  // tables
-  //
-  // Restrictions of the virtual address space can result in fewer levels.
-  static constexpr unsigned int kFirstLevelIndex = []() {
-    switch (VirtualAddressSize) {
-      case 40 ... 48:
-        return 0;
-      case 31 ... 39:
-        return 1;
-      case 22 ... 30:
-        return 2;
-      case 16 ... 21:
-        return 3;
-    }
-  }();
-  static constexpr auto kLevels = cpp20::span{kAllLevels}.subspan(kFirstLevelIndex);
-
-  static constexpr bool IsValidPageAccess(const ArmSystemPagingState&, const AccessPermissions&) {
-    return true;
-  }
-
-  template <ArmAddressTranslationLevel Level>
-  static constexpr bool LevelCanBeTerminal(const ArmSystemPagingState& state) {
-    using Page = typename TableEntry<Level>::Page;
-    using Block = typename TableEntry<Level>::Block;
-    return Page::kValid || Block::kValid;
-  }
 };
 
 }  // namespace arch

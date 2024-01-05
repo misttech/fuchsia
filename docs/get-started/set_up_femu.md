@@ -22,14 +22,14 @@ Running FEMU requires that you've completed the following guides:
 
 To run FEMU, you first need to build a Fuchsia system image that supports
 the emulator environment. This guide uses `qemu-x64` for the board
-and `workstation_eng` for the product as an example.
+and `workbench_eng` for the product as an example.
 
 To build a FEMU Fuchsia image, do the following:
 
 1. Set the Fuchsia build configuration:
 
    ```posix-terminal
-   fx set workstation_eng.qemu-x64 --release
+   fx set workbench_eng.qemu-x64 --release
    ```
 
 2. Build Fuchsia:
@@ -51,9 +51,9 @@ enable KVM.
 
 * {Linux}
 
-  To enable KVM on your machine, do the following:
-
   Note: You only need to do this once per machine.
+
+  To enable KVM on your machine, do the following:
 
   1.  Add yourself to the `kvm` group on your machine:
 
@@ -92,12 +92,13 @@ enable KVM.
 
 Prior to starting the emulator, start the package server.
 
-To start the the package server, run the following command:
+To start the package server, run the following command:
 
-  ```posix-terminal
-  fx serve
-  ```
-Note: Alternatively you can background the `fx serve` process.
+```posix-terminal
+fx serve
+```
+
+Alternatively you can background the `fx serve` process.
 
 ### Start the emulator
 
@@ -107,46 +108,45 @@ To start the emulator on your Linux machine, do the following:
 
   1. Configure the upscript by running the following command:
 
-      Note: If your machine is behind a firewall, you may need to apply some additional
-      configuration to allow the emulator to access the network. This is typically
-      accomplished by running an "upscript", which sets up the interfaces and firewall
-      access rules for the current process. If you're on a corporate network, check
-      with your internal networking team to see if they have an existing upscript
-      for you to use.
-      If you're not behind a firewall, there's still some configuration needed to
-      enable tun/tap networking. The example upscript
-      at <code>{{ '<var>' }}FUCHSIA_ROOT{{ '</var>' }}/scripts/start-unsecure-internet.sh</code>
-      should work for the majority of non-corporate users.
+     ```posix-terminal
+     ffx config set emu.upscript {{ '<var>' }}FUCHSIA_ROOT{{ '</var>' }}/scripts/start-unsecure-internet.sh
+     ```
 
+     * `start-unsecure-internet.sh` is an example upscript.
+     * `FUCHSIA_ROOT` is the path to your Fuchsia directory.
 
-      ```posix-terminal
-      ffx config set emu.upscript {{ '<var>' }}FUCHSIA_ROOT{{ '</var>' }}/scripts/start-unsecure-internet.sh
-      ```
-      * `start-unsecure-internet.sh` is an example upscript.
-      * `FUCHSIA_ROOT` is the path to your Fuchsia directory.
+     If your machine is behind a firewall, you may need to apply some additional
+     configuration to allow the emulator to access the network. This is typically
+     accomplished by running an "upscript", which sets up the interfaces and firewall
+     access rules for the current process. If you're on a corporate network, check
+     with your internal networking team to see if they have an existing upscript
+     for you to use.
 
-  1. Start FEMU
+     If you're not behind a firewall, there's still some configuration needed to
+     enable tun/tap networking. The example upscript
+     at <code>{{ '<var>' }}FUCHSIA_ROOT{{ '</var>' }}/scripts/start-unsecure-internet.sh</code>
+     should work for the majority of non-corporate users.
 
-      1. To start the emulator with access to external networks, run the
-         following command:
+  1. To start the emulator with access to external networks,
+     run the following command:
 
-          ```posix-terminal
-          ffx emu start --net tap
-          ```
+     ```posix-terminal
+     ffx emu start --net tap
+     ```
 
-          * `--net` specifies the networking mode for the emulator. `--net tap`
-          attaches to a Tun/Tap interface.
+     `--net` specifies the networking mode for the emulator. `--net tap`
+     attaches to a Tun/Tap interface.
 
-      1. To start the emulator without access to external networks, run
-         the following command:
+     Or, to start the emulator without access to external networks,
+     run the following command:
 
-          ```posix-terminal
-          ffx emu start --net none
-          ```
+     ```posix-terminal
+     ffx emu start --net none
+     ```
 
-    Starting the emulator opens a new window with the
-    title **Fuchsia Emulator**. When the emulator is finished booting, you are
-    returned to the command prompt, and the emulator runs in the background.
+     Starting the emulator opens a new window with the title
+     **Fuchsia Emulator**. When the emulator is finished booting, you are
+     returned to the command prompt, and the emulator runs in the background.
 
 * {macOS}
 
@@ -192,7 +192,7 @@ This command prints output similar to the following:
 ```none {:.devsite-disable-click-to-copy}
 $ ffx target list
 NAME                      SERIAL       TYPE                    STATE      ADDRS/IP                            RCS
-fuchsia-emulator    <unknown>    workstation_eng.qemu-x64    Product    [fe80::866a:a5ea:cd9e:69f6%qemu]    N
+fuchsia-emulator    <unknown>    workbench_eng.qemu-x64    Product    [fe80::866a:a5ea:cd9e:69f6%qemu]    N
 ```
 
 `fuchsia-emulator` is the default node name of the Fuchsia emulator.
@@ -200,11 +200,21 @@ fuchsia-emulator    <unknown>    workstation_eng.qemu-x64    Product    [fe80::8
 The output of `ffx target list` is influenced by the `--net` option in the
 following ways:
 
-   * `--net none` disables networking, which causes the device to not be
-   discoverable when running `ffx target list`.
+   * `--net none` disables networking, which causes the device to be not
+   discoverable by `ffx target list`.
    * `--net tap` and `--net user` allow the device to be discoverable
    when running `ffx target list`.
 
+
+### Add target manually
+
+If no target is found after running `ffx target list`, the target may
+need to be added manually by running `ffx target add`.
+
+
+```posix-terminal
+ffx target add {{ "<var>" }}device-ip{{ "</var>" }}:{{ "<var>" }}device-port{{ "</var>" }}
+```
 
 ## Next steps
 
@@ -255,7 +265,7 @@ for FEMU on Linux machine using [TUN/TAP][tuntap]{: .external}.
 
 * {Linux}
 
-  Note: This has to be completed once per machine.
+  Note: You only need to do this once per machine.
 
   To enable networking in FEMU using
   [tap networking][tap-networking]{: .external}, do the following:
@@ -312,7 +322,7 @@ emulator to use the host GPU hardware for rendering. See the following options:
   </tr>
 </tbody></table>
 
-Important: The `host` and `auto` GPU emulation modes are for experimental use only and
+The `host` and `auto` GPU emulation modes are for **experimental use only** and
 are not officially supported at the moment. You may see graphics artifacts, testing
 failures or emulator crashes when using these two modes.
 

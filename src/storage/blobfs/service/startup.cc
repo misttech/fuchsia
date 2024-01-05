@@ -6,10 +6,10 @@
 
 #include <lib/syslog/cpp/macros.h>
 
-#include "src/lib/storage/block_client/cpp/remote_block_device.h"
 #include "src/storage/blobfs/fsck.h"
 #include "src/storage/blobfs/mkfs.h"
 #include "src/storage/blobfs/mount.h"
+#include "src/storage/lib/block_client/cpp/remote_block_device.h"
 
 namespace blobfs {
 namespace {
@@ -18,7 +18,6 @@ MountOptions ParseMountOptions(fuchsia_fs_startup::wire::StartOptions start_opti
   MountOptions options;
 
   options.verbose = start_options.verbose;
-  options.allow_delivery_blobs = start_options.allow_delivery_blobs;
 
   if (start_options.read_only) {
     options.writability = Writability::ReadOnlyFilesystem;

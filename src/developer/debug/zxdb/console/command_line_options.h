@@ -22,6 +22,7 @@ struct CommandLineOptions {
  public:
   std::optional<std::string> connect;
   std::optional<std::string> unix_connect;
+  bool local = false;
   bool debug_mode = false;
   std::optional<std::string> core;
   std::vector<std::string> attach;
@@ -39,6 +40,8 @@ struct CommandLineOptions {
   bool enable_debug_adapter = false;
   uint16_t debug_adapter_port = 15678;
   bool no_auto_attach_limbo = false;
+  pid_t signal_when_ready = 0;
+  std::vector<std::string> stream_files;
 };
 
 // Parses the given command line into options and params.

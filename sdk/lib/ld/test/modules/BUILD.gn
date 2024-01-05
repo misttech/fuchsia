@@ -3,74 +3,160 @@
 # found in the LICENSE file.
 
 import("//build/testing/host_test_data.gni")
+import("//build/toolchain/ifs_shared_library.gni")
+import("//build/toolchain/toolchain_environment.gni")
+import("//build/toolchain/zircon/user_basic_redirect.gni")
 
 # This only gets instantiated in the environment where the test modules are
 # meant to be built.
 
-executables = [
+# Everything in this list has can_be_in_process = true.
+in_process_executables = [
   ":ret17",
-  ":ret17.in-process",
   ":relative-reloc",
-  ":relative-reloc.in-process",
+  ":symbolic-reloc",
+  ":ld-dep",
+  ":basic-dep",
+  ":indirect-deps",
+  ":passive-abi-basic",
+  ":symbolic-namespace",
+  ":many-deps",
+  ":init-fini",
+  ":tls-exec-only",
+  ":tls-shlib-only",
+  ":tls-exec-shlib",
+  ":tls-ie",
+  ":tls-gd",
+  ":tls-desc",
 ]
-libs = []
+
+# Everything in this list does not have can_be_in_process = true.
+executables = [
+  ":missing-dep",
+  ":missing-sym",
+  ":relro",
+]
+
+shlibs = [
+  ":ld-dep-a",
+  ":ld-dep-b",
+  ":ld-dep-c",
+  ":ld-dep-d",
+  ":ld-dep-e",
+  ":ld-dep-f",
+  ":indirect-deps-a",
+  ":indirect-deps-b",
+  ":indirect-deps-c",
+  ":tls-dep",
+  ":tls-ie-dep",
+  ":tls-desc-dep",
+]
+
 modules = []
 
-if (is_fuchsia) {
-  group("modules") {
-    testonly = true
+foreach(label, in_process_executables) {
+  executables += [
+    label,
+    "$label.in-process",
+  ]
+}
 
-    deps = executables + libs + modules
-  }
-} else {
-  host_test_data("modules") {
-    deps = []
-    sources = []
-    outputs = [ "$host_out_dir/test_data/elfldltl/{{source_file_part}}" ]
+# This is used to roll up all the test binaries with appropriate variant
+# selection for metadata collection purposes.  It's used both to get the test
+# binaries populated in the Fuchsia package (via resource() equivalents) or
+# host subdirectory (via host_test_data() equivalents), and to examine those
+# binaries in the ..:gen-load-test-modules-info target.
+group("modules") {
+  testonly = true
 
-    foreach(label, executables) {
-      name = get_label_info(label, "name")
+  deps = executables + modules
 
-      deps += [ label ]
-      sources += [ "$root_out_dir/$name" ]
-    }
-
-    # shlib_out_dir = get_label_info(".($shlib_toolchain)", "root_out_dir")
-
-    foreach(label, libs) {
-      name = get_label_info(label, "name")
-
-      deps += [ "$label($shlib_toolchain)" ]
-      sources += [ "$shlib_out_dir/lib$file.so" ]
-    }
-
-    foreach(label, modules) {
-      name = get_label_info(label, "name")
-
-      deps += [ "$label($shlib_toolchain)" ]
-      sources += [ "$shlib_out_dir/$file.so" ]
+  if (!is_fuchsia) {
+    # On Fuchsia, the binary targets themselves are resource() equivalents.
+    # On host, extra `.host-test-data` targets are defined below.
+    data_deps = []
+    foreach(test, deps) {
+      data_deps += [ "$test.host-test-data" ]
     }
   }
 }
 
+config("semantic-interposition") {
+  visibility = [ ":*" ]
+
+  # TODO(fxbug.dev/117866): clang will still perform interprocedural
+  # optimization in a PIC, this flag disallows that and requires the PLT call
+  # always be made so we can properly test applying plt relocations.
+  if (!is_gcc) {
+    cflags = [ "-fsemantic-interposition" ]
+  }
+}
+
 template("test_executable") {
+  executable_target = target_name
+
   suffices = [ "" ]
   if (defined(invoker.can_be_in_process) && invoker.can_be_in_process) {
     suffices += [ ".in-process" ]
   }
+
   foreach(suffix, suffices) {
-    executable(target_name + suffix) {
+    executable(executable_target + suffix) {
+      visibility = [ ":*" ]
       testonly = true
 
       deps = []
-      forward_variables_from(invoker, "*", [ "testonly" ])
+      data_deps = []
+      forward_variables_from(invoker,
+                             "*",
+                             [
+                               "configs",
+                               "shlib_deps",
+                               "testonly",
+                             ])
       deps += [ ":test-executable$suffix" ]
+      if (defined(invoker.shlib_deps)) {
+        deps += invoker.shlib_deps
+      }
+      if (defined(invoker.configs)) {
+        configs += invoker.configs
+      }
 
       # This is needed in the non-Zircon (host/Linux) toolchains to avoid
       # having any implicit deps injected.
       disable_syslog_backend = true
 
       exclude_toolchain_tags = [ "instrumentation-runtime" ]
+
+      if (!is_fuchsia && defined(invoker.shlib_deps)) {
+        # On Fuchsia, the indirect deps are all reached as resource()
+        # equivalents implicitly.  On host, the shlib_deps binaries must both
+        # be copied into the right test-data directory and roll up as
+        # host_test_data() equivalents.  This is evaluated after variant
+        # selection so it reaches the right variant $shlib_toolchain where
+        # test_shared_library() defines the `.host-test-data` target.
+        foreach(shlib, invoker.shlib_deps) {
+          data_deps += [ "$shlib.host-test-data($shlib_toolchain)" ]
+        }
+      }
+    }
+
+    if (!is_fuchsia && current_toolchain != shlib_toolchain) {
+      # On Fuchsia, the test executable is reached as a resource() equivalent
+      # implicitly.  On host, it must both be copied into the right test-data
+      # directory and roll up as an host_test_data() equivalent.  The variant
+      # selection is done by the executable() target, but we are in the right
+      # environment that produces a copy() target into the base toolchain's
+      # $root_out_dir.  This host_test_data() will copy again from there.
+      if (is_linux) {
+        assert(toolchain_environment == "linux",
+               "$current_toolchain is $toolchain_environment")
+      }
+      host_test_data("$executable_target$suffix.host-test-data") {
+        deps = [ ":$executable_target$suffix" ]
+        sources = [ "$root_out_dir/$executable_target$suffix" ]
+        outputs = [ "$host_out_dir/test_data/elfldltl/{{source_file_part}}" ]
+      }
     }
   }
 }
@@ -89,7 +175,7 @@ foreach(in_process,
           "",
           ".in-process",
         ]) {
-  source_set("test-executable$in_process") {
+  static_library("test-executable$in_process") {
     visibility = [ ":*" ]
     testonly = true
 
@@ -97,22 +183,157 @@ foreach(in_process,
       defines = [ "IN_PROCESS_TEST" ]
     }
 
+    public = [ "ensure-test-thread-pointer.h" ]
     public_deps = [ "//sdk/lib/ld:standalone" ]
-    public_configs = [ "//sdk/lib/ld:abi-interp" ]
+    public_configs = [
+      "//sdk/lib/ld:abi-interp",
+      ":semantic-interposition",
+    ]
+    sources = [ "ensure-test-thread-pointer.cc" ]
+    deps = [
+      ":test-module.deps",
+      "//zircon/system/public",
+    ]
     if (is_fuchsia) {
       if (in_process == "") {
-        sources = [ "zircon-test-start.cc" ]
-        deps = [
-          "//src/zircon/lib/zircon",
-          "//zircon/system/public",
-        ]
+        sources += [ "zircon-test-start.cc" ]
+        deps += [ "//src/zircon/lib/zircon" ]
       } else {
         public_configs += [ ":test-executable.in-process.config" ]
       }
     } else {
-      sources = [ "posix-test-start.S" ]
-      deps = [ "//zircon/kernel/lib/arch" ]
+      sources += [ "posix-test-start.S" ]
+      deps += [ "//zircon/kernel/lib/arch" ]
     }
+
+    # This dependency is evaluated in the toolchain where the test_executable()
+    # is built, after variant selection.  So it gets the right version of
+    # ld-startup installed where the test needs to find it.
+    data_deps = [ "..:ld-startup.test-data($shlib_toolchain)" ]
+  }
+}
+
+# These are things that every test module of all target types implicitly
+# depends on.
+group("test-module.deps") {
+  visibility = [ ":*" ]
+
+  # TODO(fxbug.dev/135799): setting testonly seems to tickle a GN bug
+  #testonly = true
+
+  # When llvm-profdata instrumentation is in use, it may generate calls to
+  # functions that are supplied by the runtime.  Even though the modules aren't
+  # actually using the runtime to extract their data (yet, anyway), they link
+  # in the runtime to make sure any such references are satisfied at link time.
+  if (toolchain_variant.tags + [ "llvm-profdata" ] - [ "llvm-profdata" ] !=
+      toolchain_variant.tags) {
+    deps = [ "//src/lib/llvm-profdata" ]
+  }
+}
+
+# clang++ will add -lc++ and -lm, which we don't want for these tests. Note
+# there are differences between the Fuchsia and GNU toolchains in clang. The
+# GNU toolchain will unconditionally add -lm regardless of -nostdlib++ though
+# the Fuchsia driver doesn't. -nodefaultlibs will stop the driver from adding
+# -lm, but we get unused -nolibc warning because the arg is never read when
+# -nodefaultlibs is specified, so just ignore the warning.
+config("nostdlibs") {
+  if (is_fuchsia) {
+    ldflags = [ "-nostdlib++" ]
+  } else {
+    ldflags = [
+      "-nodefaultlibs",
+      "-Wno-unused-command-line-argument",
+    ]
+  }
+}
+
+template("test_shared_library") {
+  shlib_target_name = target_name
+
+  shared_library(shlib_target_name) {
+    visibility = [ ":*" ]
+
+    # TODO(fxbug.dev/135799): setting testonly seems to tickle a GN bug
+    #testonly = true
+
+    deps = []
+    public_deps = []
+    shlib_deps = []
+    ldflags = []
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "configs",
+                             "remove_configs",
+                           ])
+
+    public_deps += [ "//sdk/lib/ld:standalone" ]
+    deps += [ ":test-module.deps" ] + shlib_deps
+
+    if (is_linux) {
+      configs -= [ "//build/config/linux:implicit-host-libs" ]
+    }
+    configs += [ ":nostdlibs" ]
+    if (defined(invoker.configs)) {
+      configs += invoker.configs
+    }
+
+    if (defined(invoker.remove_configs)) {
+      configs += invoker.remove_configs
+      configs -= invoker.remove_configs
+    }
+  }
+
+  if (!is_fuchsia && current_toolchain == shlib_toolchain) {
+    # host_test_data() generates this copy() target with this metadata, but it
+    # adds extra deps that don't work here and are only in host_test_data() for
+    # issues with non-shlib variant binaries that don't apply here.
+    copy("$shlib_target_name.host-test-data") {
+      visibility = [ ":*" ]
+      testonly = true
+
+      deps = [ ":$shlib_target_name" ]
+      sources = [ "$root_out_dir/lib$shlib_target_name.so" ]
+      outputs = [ "$host_out_dir/test_data/elfldltl/{{source_file_part}}" ]
+      metadata = {
+        test_runtime_deps = process_file_template(sources, outputs)
+      }
+
+      data_deps = []
+      if (defined(invoker.shlib_deps)) {
+        foreach(shlib, invoker.shlib_deps) {
+          data_deps += [ "$shlib.host-test-data" ]
+        }
+      }
+    }
+  }
+}
+
+template("test_dep") {
+  test_shared_library("ld-dep-$target_name") {
+    deps = []
+    test_deps = []
+    forward_variables_from(invoker, "*")
+
+    shlib_deps = []
+    decls = ""
+    syms = ""
+    foreach(dep, test_deps) {
+      shlib_deps += [ ":ld-dep-$dep" ]
+      decls += "extern \"C\" int64_t $dep();"
+      syms += "$dep, "
+    }
+
+    defines = [
+      "VALUE=$value",
+      "SYM=$target_name",
+      "DECLS=$decls",
+      "DEP_SYMS=$syms",
+    ]
+
+    sources = [ "dep-template.cc" ]
+    deps += [ "//zircon/system/public" ]
   }
 }
 
@@ -129,4 +350,277 @@ test_executable("ret17") {
 test_executable("relative-reloc") {
   can_be_in_process = true
   sources = [ "relative-reloc.cc" ]
+}
+
+config("temporarily-build-as-shared") {
+  visibility = [ ":*" ]
+
+  cflags = [
+    "-fPIC",
+    "-Wno-unused-command-line-argument",
+    "-Wno-option-ignored",
+  ]
+  ldflags = cflags
+  ldflags += [ "-shared" ]
+}
+
+test_executable("symbolic-reloc") {
+  can_be_in_process = true
+  sources = [
+    "interp.S",
+    "symbolic-reloc.cc",
+  ]
+  defines = [ "DYNAMIC_LINKER_PATH=\"${toolchain_variant.libprefix}ld.so.1\"" ]
+  deps = [ "//zircon/system/public" ]
+  configs = [ ":temporarily-build-as-shared" ]
+}
+
+test_executable("ld-dep") {
+  can_be_in_process = true
+  sources = [ "ld-dep.cc" ]
+  deps = [ "../.." ]
+}
+
+test_dep("a") {
+  value = 13
+}
+
+test_executable("basic-dep") {
+  can_be_in_process = true
+  sources = [ "basic-dep.cc" ]
+  shlib_deps = [ ":ld-dep-a" ]
+}
+
+test_executable("indirect-deps") {
+  can_be_in_process = true
+  sources = [ "basic-dep.cc" ]
+  shlib_deps = [ ":indirect-deps-a" ]
+}
+
+test_shared_library("indirect-deps-a") {
+  sources = [ "indirect-deps-a.cc" ]
+  deps = [ "//zircon/system/public" ]
+  shlib_deps = [
+    ":indirect-deps-b",
+    ":indirect-deps-c",
+  ]
+}
+
+test_shared_library("indirect-deps-b") {
+  sources = [ "indirect-deps-b.cc" ]
+  deps = [ "//zircon/system/public" ]
+}
+
+test_shared_library("indirect-deps-c") {
+  sources = [ "indirect-deps-c.cc" ]
+  deps = [ "//zircon/system/public" ]
+}
+
+test_executable("passive-abi-basic") {
+  can_be_in_process = true
+  sources = [ "passive-abi-basic.cc" ]
+  deps = [ "../.." ]
+}
+
+test_executable("symbolic-namespace") {
+  can_be_in_process = true
+  sources = [ "symbolic-namespace.cc" ]
+  deps = [ "../.." ]
+  shlib_deps = [ ":ld-dep-a" ]
+}
+
+# These show the dependency graph of the test and the expected return value of each dependency's
+# only symbol.
+#
+# many_deps -> (13 + -8 + 3 + 9 = 17)
+#   a -> 13
+#   b -> -2 (-2 + 2 + 13 + -21 = -8)
+#     c -> 2
+#     a -> 13
+#     d -> -5 (-5 + -16 = -21)
+#       c -> 2
+#       e -> -18
+#   f -> 3
+#   _ld_abi -> 9 (number of total modules including vdso which may not be depended on)
+
+test_dep("b") {
+  value = -2
+  test_deps = [
+    "a",
+    "c",
+    "d",
+  ]
+}
+
+test_dep("c") {
+  value = 2
+}
+
+test_dep("d") {
+  value = -5
+  test_deps = [
+    "c",
+    "e",
+  ]
+}
+
+test_dep("e") {
+  value = -18
+}
+
+test_dep("f") {
+  value = 3
+}
+
+test_executable("many-deps") {
+  can_be_in_process = true
+  sources = [ "many-deps.cc" ]
+
+  deps = [ "../.." ]
+  shlib_deps = [
+    ":ld-dep-a",
+    ":ld-dep-b",
+    ":ld-dep-f",
+  ]
+}
+
+test_executable("init-fini") {
+  can_be_in_process = true
+  sources = [ "init-fini.cc" ]
+  deps = [ "../.." ]
+}
+
+test_executable("tls-exec-only") {
+  can_be_in_process = true
+  sources = [ "tls-exec-only.cc" ]
+  deps = [
+    "../..",
+    "//src/lib/elfldltl",
+  ]
+}
+
+test_executable("tls-shlib-only") {
+  can_be_in_process = true
+  sources = [ "tls-shlib-only.cc" ]
+  deps = [ "../.." ]
+  shlib_deps = [ ":tls-dep" ]
+}
+
+test_shared_library("tls-dep") {
+  public = [ "tls-dep.h" ]
+  sources = [ "tls-dep.cc" ]
+  configs = [ "//build/config:no-tlsdesc" ]
+  deps = [
+    "//sdk/lib/ld:static-tls-get-addr",
+    "//zircon/system/public",
+  ]
+
+  # TODO(fxbug.dev/135809): LTO insists on using IE accesses here. Remove this
+  # when the LLVM bug gets fixed and the fixed toolchain rolled into Fuchsia.
+  remove_configs = [ "//build/config/lto" ]
+}
+
+# This is the same as tls-dep but using TLSDESC, with no __tls_get_addr.
+test_shared_library("tls-desc-dep") {
+  public = [ "tls-dep.h" ]
+  sources = [ "tls-dep.cc" ]
+  configs = [ "//build/config:tlsdesc" ]
+  deps = [ "//zircon/system/public" ]
+
+  # TODO(fxbug.dev/135809): LTO insists on using IE accesses here. Remove this
+  # when the LLVM bug gets fixed and the fixed toolchain rolled into Fuchsia.
+  remove_configs = [ "//build/config/lto" ]
+}
+
+test_executable("tls-exec-shlib") {
+  can_be_in_process = true
+  sources = [ "tls-exec-shlib.cc" ]
+  deps = [ "../.." ]
+  shlib_deps = [ ":tls-dep" ]
+}
+
+test_executable("tls-ie") {
+  can_be_in_process = true
+  sources = [ "tls-ie.cc" ]
+  deps = [ "../.." ]
+  shlib_deps = [ ":tls-ie-dep" ]
+}
+
+ifs_shared_library("tls-ie-dep-weak") {
+  visibility = [ ":*" ]
+
+  # TODO(fxbug.dev/135799): setting testonly seems to tickle a GN bug
+  #testonly = true
+
+  abi = "tls-ie-dep-weak.ifs"
+
+  public = [ "tls-ie-dep.h" ]
+
+  data_deps = [ ":tls-ie-dep" ]
+}
+
+# The actual tls-ie is an empty library that doesn't define all the symbols
+# seen at link time in the IFS-generated link stub.
+test_shared_library("tls-ie-dep") {
+  public = [ "tls-ie-dep.h" ]
+  sources = [ "tls-ie-dep.cc" ]
+  deps = [ "//zircon/system/public" ]
+
+  # TODO(fxbug.dev/135809): LTO insists on using LE accesses. Remove this when
+  # the LLVM bug gets fixed and the fixed toolchain rolled into Fuchsia.
+  remove_configs = [ "//build/config/lto" ]
+}
+
+test_executable("tls-gd") {
+  can_be_in_process = true
+  sources = [ "tls-gd.cc" ]
+  configs = [ "//build/config:no-tlsdesc" ]
+  deps = [ "../.." ]
+  shlib_deps = [ ":tls-dep" ]
+}
+
+# This is the same as tls-gd, but using TLSDESC.
+test_executable("tls-desc") {
+  can_be_in_process = true
+  sources = [ "tls-gd.cc" ]
+  configs = [ "//build/config:tlsdesc" ]
+  deps = [ "../.." ]
+  shlib_deps = [ ":tls-desc-dep" ]
+}
+
+test_executable("missing-sym") {
+  sources = [ "missing-sym.cc" ]
+
+  # Note this isn't shlib_deps because there's no corresponding .host-test-data
+  # subtarget, so instead we have explicit data_deps on the real runtime dep.
+  # For Fuchsia this is implicit via the data_deps in ifs_shared_library().
+  deps = [ ":missing-sym-dep-a" ]
+  if (!is_fuchsia) {
+    data_deps = [ ":ld-dep-a.host-test-data($shlib_toolchain)" ]
+  }
+}
+
+ifs_shared_library("missing-sym-dep-a") {
+  # TODO(fxbug.dev/135799): setting testonly seems to tickle a GN bug
+  #testonly = true
+  abi = "missing-sym-dep-a.ifs"
+  data_deps = [ ":ld-dep-a" ]
+}
+
+test_executable("missing-dep") {
+  sources = [ "missing-dep.cc" ]
+
+  # Note this isn't shlib_deps because there's no corresponding test data.
+  deps = [ ":missing-dep-dep" ]
+}
+
+ifs_shared_library("missing-dep-dep") {
+  # TODO(fxbug.dev/135799): setting testonly seems to tickle a GN bug
+  #testonly = true
+  abi = "missing-dep-dep.ifs"
+}
+
+test_executable("relro") {
+  sources = [ "relro.cc" ]
+  deps = [ "//zircon/system/public" ]
 }

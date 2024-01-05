@@ -30,7 +30,7 @@ DDK_FIDL_PROTOCOL_DEF(PLATFORM_BUS,    11, "fuchsia.hardware.platform.bus.Platfo
 DDK_FIDL_PROTOCOL_DEF(INTERRUPT,       12, "fuchsia.hardware.interrupt.Provider")
 DDK_FIDL_PROTOCOL_DEF(PLATFORM_DEVICE, 13, "fuchsia.hardware.platform.device.Service")
 DDK_FIDL_PROTOCOL_DEF(DSP,             14, "fuchsia.hardware.dsp.Service")
-DDK_FIDL_PROTOCOL_DEF(HDMI,            15, "fuchsia.hardware.hdmi.Service")
+// 15 was "fuchsia.hardware.hdmi.Service"
 DDK_FIDL_PROTOCOL_DEF(POWER_SENSOR,    16, "fuchsia.hardware.power.sensor.Service")
 DDK_FIDL_PROTOCOL_DEF(VREG,            17, "fuchsia.hardware.vreg.Service")
 DDK_FIDL_PROTOCOL_DEF(REGISTERS,       18, "fuchsia.hardware.registers.Service")
@@ -42,5 +42,6 @@ DDK_FIDL_PROTOCOL_DEF(CODEC,           23, "fuchsia.hardware.audio.CodecService"
 DDK_FIDL_PROTOCOL_DEF(PWM,             24, "fuchsia.hardware.pwm.Service")
 DDK_FIDL_PROTOCOL_DEF(ETH_BOARD,       25, "fuchsia.hardware.ethernet.board.Service")
 DDK_FIDL_PROTOCOL_DEF(GPIO,            26, "fuchsia.hardware.gpio.Service")
+DDK_FIDL_PROTOCOL_DEF(I2C_IMPL,        27, "fuchsia.hardware.i2cimpl.Service")
 #undef DDK_FIDL_PROTOCOL_DEF
 #endif

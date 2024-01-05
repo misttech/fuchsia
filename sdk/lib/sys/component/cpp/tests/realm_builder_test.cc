@@ -27,6 +27,7 @@
 #include <lib/syslog/cpp/macros.h>
 #include <string.h>
 #include <zircon/assert.h>
+#include <zircon/availability.h>
 #include <zircon/status.h>
 #include <zircon/types.h>
 
@@ -223,6 +224,7 @@ TEST_F(RealmBuilderTest, RoutesProtocolFromRelativeChild) {
   EXPECT_EQ(response, fidl::StringPtr("hello"));
 }
 
+#if __Fuchsia_API_level__ < 17
 class LocalEchoServerByPtr : public test::placeholders::Echo, public LocalComponent {
  public:
   explicit LocalEchoServerByPtr(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
@@ -242,6 +244,7 @@ class LocalEchoServerByPtr : public test::placeholders::Echo, public LocalCompon
   fidl::BindingSet<test::placeholders::Echo> bindings_;
   std::unique_ptr<LocalComponentHandles> handles_;
 };
+#endif
 
 class LocalEchoServer : public test::placeholders::Echo, public LocalComponentImpl {
  public:
@@ -272,14 +275,22 @@ class LocalEchoServer : public test::placeholders::Echo, public LocalComponentIm
     ASSERT_EQ(outgoing()->AddPublicService(bindings_.GetHandler(this, dispatcher_)), ZX_OK);
   }
 
+  void OnStop() override {
+    if (on_stop_) {
+      on_stop_();
+    }
+  }
+
  private:
   async_dispatcher_t* dispatcher_;
   fit::closure on_start_;
+  fit::closure on_stop_;
   fit::closure on_destruct_;
   fidl::BindingSet<test::placeholders::Echo> bindings_;
   bool exit_after_serve_;
 };
 
+#if __Fuchsia_API_level__ < 17
 // Tests and demonstrates that the deprecated AddLocalChild(LocalComponent*)
 // still works.
 //
@@ -322,6 +333,7 @@ TEST_F(RealmBuilderTest, RoutesProtocolFromLocalComponentRawPointer) {
   });
   RunLoopUntil([&]() { return was_called; });
 }
+#endif
 
 // Demonstrates the recommended pattern for implementing a restartable
 // LocalComponentImpl. A new LocalComponentImpl is returned when requested.
@@ -373,7 +385,8 @@ TEST_F(RealmBuilderTest, ComponentCanStopAndBeRestarted) {
   bool got_peer_closed = false;
   realm_builder.AddLocalChild(kEchoServer, [&]() {
     return std::make_unique<LocalEchoServer>(
-        dispatcher(), /*on_start=*/
+        dispatcher(),
+        /*on_start=*/
         [&started]() {
           FX_LOGS(INFO) << "ComponentCanStopAndBeRestarted: started = true";
           started = true;
@@ -444,6 +457,59 @@ TEST_F(RealmBuilderTest, ComponentCanStopAndBeRestarted) {
     RunLoopUntil([&]() { return got_peer_closed || (started && got_response && destructed); });
   }
   FX_LOGS(INFO) << "ComponentCanStopAndBeRestarted: done";
+}
+
+TEST_F(RealmBuilderTest, StartAndStop) {
+  static constexpr char kEchoServer[] = "echo_server";
+  auto realm_builder = RealmBuilder::Create();
+  realm_builder.AddLocalChild(kEchoServer, [&]() {
+    return std::make_unique<LocalEchoServer>(dispatcher(), /*on_start=*/
+                                             nullptr,
+                                             /*on_destruct=*/
+                                             nullptr,
+                                             /*exit_after_serve=*/true);
+  });
+  // A component controller can only be acquired for a direct descendant, so we
+  // need to make the local component the root of the constructed realm. Before
+  // we do that though, let's use the `AddRoute` call to cause the expose
+  // declaration for the echo protocol to be added to the local component's
+  // manifest.
+  realm_builder.AddRoute(Route{.capabilities = {Protocol{test::placeholders::Echo::Name_}},
+                               .source = ChildRef{kEchoServer},
+                               .targets = {ParentRef()}});
+  auto child_decl = realm_builder.GetComponentDecl(kEchoServer);
+  realm_builder.ReplaceRealmDecl(std::move(child_decl));
+  realm_builder.StartOnBuild(false);
+  auto realm = realm_builder.Build(dispatcher());
+
+  // We can start a component and see it exit on its own.
+  {
+    auto execution_controller = realm.component().Start();
+    auto stopped_payload = std::optional<fuchsia::component::StoppedPayload>{};
+    execution_controller.OnStop([&](fuchsia::component::StoppedPayload payload) {
+      stopped_payload = std::make_optional<fuchsia::component::StoppedPayload>(std::move(payload));
+    });
+
+    // Once we use the echo service, the local component will exit.
+    test::placeholders::EchoPtr echo;
+    ASSERT_EQ(realm.component().Connect(echo.NewRequest()), ZX_OK);
+    echo->EchoString({"hello"}, [](fidl::StringPtr response) {});
+
+    RunLoopUntil([&]() { return stopped_payload.has_value(); });
+    ASSERT_EQ(stopped_payload->status(), ZX_ERR_CANCELED);
+  }
+
+  // We can start a component, cause it to stop, and observe that stop.
+  {
+    auto execution_controller = realm.component().Start();
+    auto stopped_payload = std::optional<fuchsia::component::StoppedPayload>{};
+    execution_controller.OnStop([&](fuchsia::component::StoppedPayload payload) {
+      stopped_payload = std::make_optional<fuchsia::component::StoppedPayload>(std::move(payload));
+    });
+    execution_controller.Stop();
+    RunLoopUntil([&]() { return stopped_payload.has_value(); });
+    ASSERT_EQ(stopped_payload->status(), ZX_OK);
+  }
 }
 
 // Tests and demonstrates a discouraged pattern for calling AddLocalChild()
@@ -793,31 +859,6 @@ class SimpleComponent : public component_testing::LocalComponentImpl {
   bool stopping_ = false;
   fit::closure on_stop_;
   fit::closure on_destruct_;
-};
-
-class SimpleComponentByPtr : public component_testing::LocalComponent {
- public:
-  SimpleComponentByPtr() = default;
-  explicit SimpleComponentByPtr(fit::closure on_destruct)
-      : on_destruct_(std::make_unique<fit::closure>(std::move(on_destruct))) {}
-
-  ~SimpleComponentByPtr() override {
-    if (on_destruct_) {
-      (*on_destruct_)();
-    }
-  }
-
-  void Start(std::unique_ptr<LocalComponentHandles> handles) override {
-    handles_ = std::move(handles);
-    started_ = true;
-  }
-
-  bool IsStarted() const { return started_; }
-
- private:
-  bool started_ = false;
-  std::unique_ptr<fit::closure> on_destruct_;
-  std::unique_ptr<LocalComponentHandles> handles_;
 };
 
 // This test asserts that the LocalComponents are started, not stopped, and
@@ -1174,6 +1215,7 @@ TEST(RealmBuilderUnittest, PanicsWhenArgsAreNullptr) {
       },
       "");
 
+#if __Fuchsia_API_level__ < 17
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
   ASSERT_DEATH(
@@ -1183,6 +1225,7 @@ TEST(RealmBuilderUnittest, PanicsWhenArgsAreNullptr) {
       },
       "");
 #pragma clang diagnostic pop
+#endif
 }
 
 TEST(DirectoryContentsUnittest, PanicWhenGivenInvalidPath) {

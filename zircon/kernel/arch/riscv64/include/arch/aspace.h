@@ -10,15 +10,15 @@
 // RISC-V arch-specific declarations for VmAspace implementation.
 
 #include <debug.h>
+#include <lib/zx/result.h>
 
 #include <arch/riscv64/mmu.h>
 #include <vm/arch_vm_aspace.h>
 
 enum class Riscv64AspaceType {
-  kUser,        // Userspace address space.
-  kKernel,      // Kernel address space.
-  kGuest,       // Second-stage address space.
-  kHypervisor,  // Hypervisor address space.
+  kUser,    // Userspace address space.
+  kKernel,  // Kernel address space.
+  kGuest,   // Second-stage address space.
 };
 
 class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
@@ -32,6 +32,10 @@ class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
   using ArchVmAspaceInterface::page_alloc_fn_t;
 
   zx_status_t Init() override;
+  zx_status_t InitShared() override;
+  zx_status_t InitRestricted() override;
+  zx_status_t InitUnified(ArchVmAspaceInterface& shared,
+                          ArchVmAspaceInterface& restricted) override;
 
   void DisableUpdates() override;
 
@@ -75,6 +79,10 @@ class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
     return ((va >> page_pt_shift) + 1) << page_pt_shift;
   }
 
+  Riscv64AspaceType type() const { return type_; }
+  bool IsKernel() const { return type_ == Riscv64AspaceType::kKernel; }
+  bool IsUser() const { return type_ == Riscv64AspaceType::kUser; }
+
  private:
   class ConsistencyManager;
   inline bool IsValidVaddr(vaddr_t vaddr) const {
@@ -84,16 +92,17 @@ class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
   // Page table management.
   volatile pte_t* GetPageTable(vaddr_t pt_index, volatile pte_t* page_table) TA_REQ(lock_);
 
-  zx_status_t AllocPageTable(paddr_t* paddrp) TA_REQ(lock_);
+  zx::result<paddr_t> AllocPageTable() TA_REQ(lock_);
 
   void FreePageTable(void* vaddr, paddr_t paddr, ConsistencyManager& cm) TA_REQ(lock_);
 
-  ssize_t MapPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel, paddr_t paddr_in, size_t size_in,
-                       pte_t attrs, uint level, volatile pte_t* page_table, ConsistencyManager& cm)
-      TA_REQ(lock_);
+  zx::result<size_t> MapPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel, paddr_t paddr_in,
+                                  size_t size_in, pte_t attrs, uint level,
+                                  volatile pte_t* page_table, ConsistencyManager& cm) TA_REQ(lock_);
 
-  ssize_t UnmapPageTable(vaddr_t vaddr, vaddr_t vaddr_rel, size_t size, EnlargeOperation enlarge,
-                         uint level, volatile pte_t* page_table, ConsistencyManager& cm)
+  zx::result<size_t> UnmapPageTable(vaddr_t vaddr, vaddr_t vaddr_rel, size_t size,
+                                    EnlargeOperation enlarge, uint level,
+                                    volatile pte_t* page_table, ConsistencyManager& cm)
       TA_REQ(lock_);
 
   zx_status_t ProtectPageTable(vaddr_t vaddr, vaddr_t vaddr_rel, size_t size_in, pte_t attrs,
@@ -118,17 +127,16 @@ class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
   zx_status_t SplitLargePage(vaddr_t vaddr, uint level, vaddr_t pt_index,
                              volatile pte_t* page_table, ConsistencyManager& cm) TA_REQ(lock_);
 
-  void MmuParamsFromFlags(uint mmu_flags, pte_t* attrs);
-  ssize_t MapPages(vaddr_t vaddr, paddr_t paddr, size_t size, pte_t attrs, ConsistencyManager& cm)
-      TA_REQ(lock_);
+  zx::result<size_t> MapPages(vaddr_t vaddr, paddr_t paddr, size_t size, pte_t attrs,
+                              ConsistencyManager& cm) TA_REQ(lock_);
 
-  ssize_t UnmapPages(vaddr_t vaddr, size_t size, EnlargeOperation enlarge, ConsistencyManager& cm)
-      TA_REQ(lock_);
+  zx::result<size_t> UnmapPages(vaddr_t vaddr, size_t size, EnlargeOperation enlarge,
+                                ConsistencyManager& cm) TA_REQ(lock_);
 
   zx_status_t ProtectPages(vaddr_t vaddr, size_t size, pte_t attrs) TA_REQ(lock_);
   zx_status_t QueryLocked(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) TA_REQ(lock_);
 
-  void FlushTLBEntry(vaddr_t vaddr, bool terminal) const TA_REQ(lock_);
+  void FlushTLBEntryRun(vaddr_t vaddr, size_t page_count) const TA_REQ(lock_);
 
   void FlushAsid() const TA_REQ(lock_);
 

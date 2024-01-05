@@ -51,6 +51,7 @@ static_library("minfs") {
     "runner.cc",
     "runner.h",
     "superblock.h",
+    "trace.h",
     "transaction_limits.cc",
     "unowned_vmo_buffer.h",
     "vnode.cc",
@@ -62,8 +63,8 @@ static_library("minfs") {
     "writeback.h",
   ]
   public_deps = [
-    "//src/lib/storage/vfs/cpp/inspect",
-    "//src/lib/storage/vfs/cpp/transaction",
+    "//src/storage/lib/vfs/cpp/inspect",
+    "//src/storage/lib/vfs/cpp/transaction",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/storage/buffer",
     "//zircon/system/ulib/zircon-internal",
@@ -72,9 +73,9 @@ static_library("minfs") {
   deps = [
     "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp",
-    "//src/lib/storage/vfs/cpp",
     "//src/storage/fvm",
     "//src/storage/lib/disk_inspector",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/async:async-cpp",
     "//zircon/system/ulib/bitmap",
     "//zircon/system/ulib/range",
@@ -82,6 +83,9 @@ static_library("minfs") {
     "//zircon/third_party/ulib/cksum",
     "//zircon/third_party/ulib/safemath",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
   if (is_fuchsia) {
     public += [
       "inspector/command_handler.h",
@@ -126,10 +130,10 @@ static_library("minfs") {
     ]
     public_deps += [
       # fsck.h includes block-client/cpp/block-device.h
-      "//src/lib/storage/block_client/cpp",
+      "//src/storage/lib/block_client/cpp",
 
       # inspector/minfs_inspector.h includes journal/format.h
-      "//src/lib/storage/vfs/cpp/journal",
+      "//src/storage/lib/vfs/cpp/journal",
 
       # Used by the MinfsInspectTree class
       "//zircon/system/ulib/zx",
@@ -138,16 +142,16 @@ static_library("minfs") {
       "//zircon/system/ulib/async-loop:async-loop-cpp",
 
       # mount.h includes fidl/fuchsia.process.lifecycle/cpp/wire.h
-      "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp_wire",
+      "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
     ]
     deps += [
-      "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-      "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+      "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+      "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
       "//sdk/lib/fidl",
       "//sdk/lib/inspect/service/cpp:cpp",
       "//sdk/lib/sys/cpp:cpp",
       "//sdk/lib/syslog/cpp",
-      "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp_wire",
+      "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp",
       "//src/storage/fvm",
       "//src/storage/lib/storage-metrics",
       "//zircon/system/ulib/async",
@@ -175,7 +179,7 @@ static_library("minfs") {
       "superblock_host.cc",
     ]
     deps += [
-      "//src/lib/storage/vfs/cpp/journal",
+      "//src/storage/lib/vfs/cpp/journal",
       "//src/zircon/lib/zircon:zircon-headers",
     ]
   }
@@ -185,6 +189,7 @@ group("tests") {
   testonly = true
   deps = [
     "allocator/test:minfs-allocator-tests",
+    "bin:tests",
     "test:minfs-fs-tests",
     "test:minfs-fuzzers",
     "test:minfs-slow-fs-tests",

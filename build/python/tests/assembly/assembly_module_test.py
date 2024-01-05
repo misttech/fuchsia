@@ -11,7 +11,12 @@ import unittest
 
 from assembly import AssemblyInputBundle, AIBCreator, BlobEntry, SubpackageEntry
 from assembly import FileEntry, FilePath, PackageManifest, PackageMetaData
-from assembly.assembly_input_bundle import CompiledPackageMainDefinition, CompiledPackageAdditionalShards, DriverDetails
+from assembly.assembly_input_bundle import (
+    CompiledPackageMainDefinition,
+    CompiledPackageAdditionalShards,
+    DriverDetails,
+    PackageDetails,
+)
 import assembly
 import serialization
 from fast_copy_mock import mock_fast_copy_in
@@ -61,73 +66,82 @@ empty_blob_raw_json = """{
 
 
 class PackageManifestTest(unittest.TestCase):
-
     def test_deserialize_from_json(self):
         manifest = serialization.json_loads(
-            PackageManifest, raw_package_manifest_json)
+            PackageManifest, raw_package_manifest_json
+        )
 
         self.assertEqual(
             manifest,
             PackageManifest(
-                PackageMetaData("some_package", 42), [
+                PackageMetaData("some_package", 42),
+                [
                     BlobEntry(
                         path="meta/",
-                        merkle=
-                        "0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF",
+                        merkle="0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF",
                         size=4096,
-                        source_path="some/source/path/to/a/file"),
+                        source_path="some/source/path/to/a/file",
+                    ),
                     BlobEntry(
                         path="a/file",
-                        merkle=
-                        "123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF0",
+                        merkle="123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF0",
                         size=8192,
-                        source_path="some/other/source/path"),
+                        source_path="some/other/source/path",
+                    ),
                     BlobEntry(
                         path="an/empty/file",
-                        merkle=
-                        "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b",
+                        merkle="15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b",
                         size=0,
-                        source_path="source/path/to/an/empty/file"),
-                ], "1", None, [
+                        source_path="source/path/to/an/empty/file",
+                    ),
+                ],
+                "1",
+                None,
+                [
                     SubpackageEntry(
                         name="my_subpackage",
-                        merkle=
-                        "23456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF01",
-                        manifest_path=
-                        "subpackages/15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"
+                        merkle="23456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF01",
+                        manifest_path="subpackages/15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b",
                     ),
-                ], "some_repo"))
+                ],
+                "some_repo",
+            ),
+        )
 
     def test_serialize_json(self):
         manifest = PackageManifest(
-            PackageMetaData("some_package", 42), [
+            PackageMetaData("some_package", 42),
+            [
                 BlobEntry(
                     path="meta/",
-                    merkle=
-                    "0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF",
+                    merkle="0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF",
                     size=4096,
-                    source_path="some/source/path/to/a/file"),
+                    source_path="some/source/path/to/a/file",
+                ),
                 BlobEntry(
                     path="a/file",
-                    merkle=
-                    "123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF0",
+                    merkle="123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF0",
                     size=8192,
-                    source_path="some/other/source/path"),
+                    source_path="some/other/source/path",
+                ),
                 BlobEntry(
                     path="an/empty/file",
-                    merkle=
-                    "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b",
+                    merkle="15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b",
                     size=0,
-                    source_path="source/path/to/an/empty/file"),
-            ], "1", None, [
+                    source_path="source/path/to/an/empty/file",
+                ),
+            ],
+            "1",
+            None,
+            [
                 SubpackageEntry(
                     name="my_subpackage",
-                    merkle=
-                    "23456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF01",
-                    manifest_path=
-                    "subpackages/15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"
+                    merkle="23456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF01",
+                    manifest_path="subpackages/15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b",
                 ),
-            ], "some_repo")
+            ],
+            "some_repo",
+        )
 
         serialized_json = serialization.json_dumps(manifest, indent=4)
         self.maxDiff = None
@@ -136,26 +150,16 @@ class PackageManifestTest(unittest.TestCase):
     def test_serialize_empty_blob(self):
         blob = BlobEntry(
             path="an/empty/file",
-            merkle=
-            "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b",
+            merkle="15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b",
             size=0,
-            source_path="source/path/to/an/empty/file")
+            source_path="source/path/to/an/empty/file",
+        )
         self.assertEqual(
-            serialization.json_dumps(blob, indent=4), empty_blob_raw_json)
+            serialization.json_dumps(blob, indent=4), empty_blob_raw_json
+        )
 
 
 raw_assembly_input_bundle_json = """{
-  "base": [
-    "package1",
-    "package2"
-  ],
-  "cache": [
-    "package3",
-    "package4"
-  ],
-  "system": [
-    "package0"
-  ],
   "kernel": {
     "path": "path/to/kernel",
     "args": [
@@ -175,6 +179,28 @@ raw_assembly_input_bundle_json = """{
     }
   ],
   "bootfs_packages": [],
+  "packages": [
+    {
+      "package": "package0",
+      "set": "system"
+    },
+    {
+      "package": "package1",
+      "set": "base"
+    },
+    {
+      "package": "package2",
+      "set": "base"
+    },
+    {
+      "package": "package3",
+      "set": "cache"
+    },
+    {
+      "package": "package4",
+      "set": "cache"
+    }
+  ],
   "config_data": {
     "package1": [
       {
@@ -235,96 +261,110 @@ raw_assembly_input_bundle_json = """{
 
 
 class AssemblyInputBundleTest(unittest.TestCase):
-
     def test_serialization(self):
-
         self.maxDiff = None
 
         aib = AssemblyInputBundle()
-        aib.base.update(["package1", "package2"])
-        aib.cache.update(["package3", "package4"])
-        aib.system.add("package0")
+        aib.add_packages(
+            [
+                PackageDetails("package1", "base"),
+                PackageDetails("package2", "base"),
+                PackageDetails("package3", "cache"),
+                PackageDetails("package4", "cache"),
+                PackageDetails("package0", "system"),
+            ]
+        )
         aib.kernel.path = "path/to/kernel"
         aib.kernel.args.update(["arg1", "arg2"])
         aib.kernel.clock_backstop = 1234
         aib.boot_args.update(["arg3", "arg4"])
         aib.bootfs_files.add(FileEntry("path/to/source", "path/to/destination"))
         aib.config_data["package1"] = set(
-            [FileEntry("path/to/source.json", "config.json")])
+            [FileEntry("path/to/source.json", "config.json")]
+        )
         aib.base_drivers = [
             DriverDetails(
                 "driver_package1",
-                set(["meta/driver_component1.cm",
-                     "meta/driver_component2.cm"])),
+                set(["meta/driver_component1.cm", "meta/driver_component2.cm"]),
+            ),
             DriverDetails(
                 "driver_package2",
                 set(
-                    [
-                        "meta/driver2_component1.cm",
-                        "meta/driver2_component2.cm"
-                    ]))
+                    ["meta/driver2_component1.cm", "meta/driver2_component2.cm"]
+                ),
+            ),
         ]
         aib.shell_commands["package1"] = ["path/to/binary1", "path/to/binary2"]
         aib.packages_to_compile = [
             CompiledPackageMainDefinition(
                 name="foo",
                 components={"bar": "baz.cml"},
-                includes=set([FileEntry(source="a/b", destination="c/d")])),
+                includes=set([FileEntry(source="a/b", destination="c/d")]),
+            ),
             CompiledPackageAdditionalShards(
-                name="foo", component_shards={"bar": ["bar/meta.shard.cml"]})
+                name="foo", component_shards={"bar": ["bar/meta.shard.cml"]}
+            ),
         ]
 
         self.assertEqual(
-            aib.json_dumps(indent=2), raw_assembly_input_bundle_json)
+            aib.json_dumps(indent=2), raw_assembly_input_bundle_json
+        )
 
     def test_deserialization(self):
-
         self.maxDiff = None
 
         aib = AssemblyInputBundle()
-        aib.base.update(["package1", "package2"])
-        aib.cache.update(["package3", "package4"])
-        aib.system.add("package0")
+        aib.add_packages(
+            [
+                PackageDetails("package1", "base"),
+                PackageDetails("package2", "base"),
+                PackageDetails("package3", "cache"),
+                PackageDetails("package4", "cache"),
+                PackageDetails("package0", "system"),
+            ]
+        )
         aib.kernel.path = "path/to/kernel"
         aib.kernel.args.update(["arg1", "arg2"])
         aib.kernel.clock_backstop = 1234
         aib.boot_args.update(["arg3", "arg4"])
         aib.bootfs_files.add(FileEntry("path/to/source", "path/to/destination"))
         aib.config_data["package1"] = set(
-            [FileEntry("path/to/source.json", "config.json")])
+            [FileEntry("path/to/source.json", "config.json")]
+        )
         aib.base_drivers = [
             DriverDetails(
                 "driver_package1",
-                set(["meta/driver_component1.cm",
-                     "meta/driver_component2.cm"])),
+                set(["meta/driver_component1.cm", "meta/driver_component2.cm"]),
+            ),
             DriverDetails(
                 "driver_package2",
                 set(
-                    [
-                        "meta/driver2_component1.cm",
-                        "meta/driver2_component2.cm"
-                    ]))
+                    ["meta/driver2_component1.cm", "meta/driver2_component2.cm"]
+                ),
+            ),
         ]
         aib.shell_commands["package1"] = ["path/to/binary1", "path/to/binary2"]
         aib.packages_to_compile = [
             CompiledPackageMainDefinition(
                 name="foo",
                 components={"bar": "baz.cml"},
-                includes=set([FileEntry(source="a/b", destination="c/d")])),
+                includes=set([FileEntry(source="a/b", destination="c/d")]),
+            ),
             CompiledPackageAdditionalShards(
-                name="foo", component_shards={"bar": ["bar/meta.cml"]})
+                name="foo", component_shards={"bar": ["bar/meta.cml"]}
+            ),
         ]
 
         parsed_aib = AssemblyInputBundle.json_loads(
-            raw_assembly_input_bundle_json)
+            raw_assembly_input_bundle_json
+        )
 
         def assert_field_equal(parsed, expected, field_name):
             self.assertEqual(
-                getattr(parsed, field_name), getattr(expected, field_name))
+                getattr(parsed, field_name), getattr(expected, field_name)
+            )
 
-        assert_field_equal(parsed_aib, aib, "base")
-        assert_field_equal(parsed_aib, aib, "cache")
-        assert_field_equal(parsed_aib, aib, "system")
+        assert_field_equal(parsed_aib, aib, "packages")
         assert_field_equal(parsed_aib, aib, "kernel")
 
         assert_field_equal(parsed_aib, aib, "boot_args")
@@ -377,29 +417,34 @@ class PackageManifestBuilder:
             self._name_counter += 1
         return format_merkle(idx)
 
-    def manifest_path(self, path: FilePath) -> 'PackageManifestBuilder':
+    def manifest_path(self, path: FilePath) -> "PackageManifestBuilder":
         """Set the path that the manifest should be written to."""
         self._manifest_path = path
         return self
 
     def blob(
-            self,
-            path: Optional[str] = None,
-            merkle: Optional[str] = None,
-            size: Optional[int] = None,
-            source: Optional[FilePath] = None) -> 'PackageManifestBuilder':
+        self,
+        path: Optional[str] = None,
+        merkle: Optional[str] = None,
+        size: Optional[int] = None,
+        source: Optional[FilePath] = None,
+    ) -> "PackageManifestBuilder":
         """Add a blob to the package, creating fake data for any fields that
         aren't given.
         """
         self._blobs.append(
             BlobEntry(
                 path if path else f"some/path/for/{self._make_blob_name()}",
-                merkle if merkle else self._make_merkle(), size if size else 0,
-                source if source else
-                f"source/path/for/{self._make_blob_name('input_')}"))
+                merkle if merkle else self._make_merkle(),
+                size if size else 0,
+                source
+                if source
+                else f"source/path/for/{self._make_blob_name('input_')}",
+            )
+        )
         return self
 
-    def fake_blob(self, id: int) -> 'PackageManifestBuilder':
+    def fake_blob(self, id: int) -> "PackageManifestBuilder":
         """Add a completely faked blob to the package, using a numeric id to
         provide a way of tracking which package it belongs to.
         """
@@ -408,7 +453,9 @@ class PackageManifestBuilder:
                 path=f"package/path/for/blob_{id}",
                 merkle=self._make_merkle(id),
                 size=id,
-                source_path=f"source/path/for/input_{id}"))
+                source_path=f"source/path/for/input_{id}",
+            )
+        )
         return self
 
     def build(self) -> PackageManifest:
@@ -417,20 +464,19 @@ class PackageManifestBuilder:
         """
         manifest = PackageManifest(PackageMetaData(self._name), self._blobs)
         if self._manifest_path:
-            with open(self._manifest_path, 'w') as manifest_file:
+            with open(self._manifest_path, "w") as manifest_file:
                 serialization.json_dump(manifest, manifest_file)
         return manifest
 
 
 class AIBCreatorTest(unittest.TestCase):
-
     def test_aib_creator_file_copy_and_package_manifest_relative_paths(self):
         """This tests that the AIBCreator will correctly copy the blobs/* files
-           and create the package manifests in the correct location within the
-           AIB structure, with package-manifest relative paths to the blobs.
+        and create the package manifests in the correct location within the
+        AIB structure, with package-manifest relative paths to the blobs.
 
-           It also tests that the fini manifest and dep-files contain the
-           correct paths.
+        It also tests that the fini manifest and dep-files contain the
+        correct paths.
         """
         # Diffs can be very large for some of these lists, so show the whole
         # thing.
@@ -457,25 +503,38 @@ class AIBCreatorTest(unittest.TestCase):
             # be used to validate that blobs are copied to the right places, and
             # that the manifests are re-written correctly in a portable manner.
             some_package_manifest_path = "inputs/some_package_manifest.json"
-            some_package_manifest = PackageManifestBuilder(
-                "some_package"
-            ).manifest_path(some_package_manifest_path).blob(
-                path="meta/",
-                merkle=
-                "0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF",
-                source="some/meta.far").fake_blob(11).fake_blob(12).fake_blob(
-                    13).build()
+            some_package_manifest = (
+                PackageManifestBuilder("some_package")
+                .manifest_path(some_package_manifest_path)
+                .blob(
+                    path="meta/",
+                    merkle="0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF",
+                    source="some/meta.far",
+                )
+                .fake_blob(11)
+                .fake_blob(12)
+                .fake_blob(13)
+                .build()
+            )
 
-            another_package_manifest_path = "inputs/another_package_manifest.json"
-            another_package_manifest = PackageManifestBuilder(
-                "another_package"
-            ).manifest_path(another_package_manifest_path).blob(
-                path="meta/",
-                merkle=
-                "123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF0",
-                source="another/meta.far").fake_blob(26).fake_blob(27).build()
+            another_package_manifest_path = (
+                "inputs/another_package_manifest.json"
+            )
+            another_package_manifest = (
+                PackageManifestBuilder("another_package")
+                .manifest_path(another_package_manifest_path)
+                .blob(
+                    path="meta/",
+                    merkle="123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF0",
+                    source="another/meta.far",
+                )
+                .fake_blob(26)
+                .fake_blob(27)
+                .build()
+            )
             created_manifests = [
-                some_package_manifest, another_package_manifest
+                some_package_manifest,
+                another_package_manifest,
             ]
 
             # These are the files, and their sources, that we expect to find
@@ -487,59 +546,69 @@ class AIBCreatorTest(unittest.TestCase):
                 # some_package files
                 FileEntry(
                     "some/meta.far",
-                    "blobs/0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF"
+                    "blobs/0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF",
                 ),
                 FileEntry(
-                    "source/path/for/input_11", f"blobs/{format_merkle(11)}"),
+                    "source/path/for/input_11", f"blobs/{format_merkle(11)}"
+                ),
                 FileEntry(
-                    "source/path/for/input_12", f"blobs/{format_merkle(12)}"),
+                    "source/path/for/input_12", f"blobs/{format_merkle(12)}"
+                ),
                 FileEntry(
-                    "source/path/for/input_13", f"blobs/{format_merkle(13)}"),
-
+                    "source/path/for/input_13", f"blobs/{format_merkle(13)}"
+                ),
                 # another_package files
                 FileEntry(
                     "another/meta.far",
-                    "blobs/123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF0"
+                    "blobs/123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF0",
                 ),
                 FileEntry(
-                    "source/path/for/input_26", f"blobs/{format_merkle(26)}"),
+                    "source/path/for/input_26", f"blobs/{format_merkle(26)}"
+                ),
                 FileEntry(
-                    "source/path/for/input_27", f"blobs/{format_merkle(27)}")
+                    "source/path/for/input_27", f"blobs/{format_merkle(27)}"
+                ),
             ]
             source_package_manifests = [
-                some_package_manifest_path, another_package_manifest_path
+                some_package_manifest_path,
+                another_package_manifest_path,
             ]
             expected_package_manifests = [
-                "packages/base/some_package", "packages/base/another_package"
+                PackageDetails("packages/base/some_package", "base"),
+                PackageDetails("packages/base/another_package", "base"),
             ]
 
             # Create the AIBCreator and perform the operation that's under test.
             aib_creator = AIBCreator(assembly_dir)
             aib_creator.base.update(
-                [some_package_manifest_path, another_package_manifest_path])
+                [some_package_manifest_path, another_package_manifest_path]
+            )
             bundle, bundle_path, deps = aib_creator.build()
 
             # Verify that the bundle was written to the correct location (and it
             # matches the returned bundle).
             self.assertEqual(
-                bundle_path, os.path.join(assembly_dir, "assembly_config.json"))
+                bundle_path, os.path.join(assembly_dir, "assembly_config.json")
+            )
             with open(bundle_path) as bundle_file:
                 parsed_bundle = AssemblyInputBundle.json_load(bundle_file)
                 self.assertEqual(parsed_bundle, bundle)
 
             # Verify that resultant AIB contains the correct base packages.
-            self.assertEqual(bundle.base, set(expected_package_manifests))
+            self.assertEqual(bundle.packages, set(expected_package_manifests))
 
             # Verify that the package manfiests have been rewritten to use file-
             # relative blob paths into the correct directory.
             def validate_rewritten_package_manifest(
-                    path: FilePath, expected: PackageManifest):
+                path: FilePath, expected: PackageManifest
+            ):
                 """Parses the PackageManifest at the given path, and compares it
                 with the `expected` one.
                 """
                 with open(path) as package_manifest_file:
                     parsed_manifest = serialization.json_load(
-                        PackageManifest, package_manifest_file)
+                        PackageManifest, package_manifest_file
+                    )
 
                 self.assertEqual(parsed_manifest.package, expected.package)
                 self.assertEqual(parsed_manifest.blob_sources_relative, "file")
@@ -548,15 +617,22 @@ class AIBCreatorTest(unittest.TestCase):
                 # path set to be by merkle in the blobs/ dir of the AIB.
                 expected_blobs = [
                     BlobEntry(
-                        blob.path, blob.merkle, blob.size,
-                        f"../../blobs/{blob.merkle}") for blob in expected.blobs
+                        blob.path,
+                        blob.merkle,
+                        blob.size,
+                        f"../../blobs/{blob.merkle}",
+                    )
+                    for blob in expected.blobs
                 ]
                 self.assertEqual(parsed_manifest.blobs, expected_blobs)
 
-            for (path, manifest) in zip(expected_package_manifests,
-                                        created_manifests):
+            for package_details, manifest in zip(
+                expected_package_manifests, created_manifests
+            ):
                 validate_rewritten_package_manifest(
-                    os.path.join(assembly_dir, path), manifest)
+                    os.path.join(assembly_dir, package_details.package),
+                    manifest,
+                )
 
             # Verify that the copies that were performed by the mocked
             # `fast_copy()` fn are correct.
@@ -578,7 +654,8 @@ class AIBCreatorTest(unittest.TestCase):
             expected_deps = [entry.source for entry in expected_files]
             expected_deps.extend(source_package_manifests)
             self.assertEqual(
-                sorted(deps), sorted(expected_deps))  # type: ignore
+                sorted(deps), sorted(expected_deps)
+            )  # type: ignore
 
             # Verify that the fini manifest created (used to create archives of
             # the AIB is correct).
@@ -590,16 +667,19 @@ class AIBCreatorTest(unittest.TestCase):
             # Verify that all_file_paths() returns the correct (AIB-relative)
             # files.
             expected_paths = [entry.destination for entry in expected_files]
-            expected_paths.extend(expected_package_manifests)
+            expected_paths.extend(
+                [p.package for p in expected_package_manifests]
+            )
             self.assertEqual(
-                sorted(bundle.all_file_paths()),
-                sorted(expected_paths))  # type: ignore
+                sorted(bundle.all_file_paths()), sorted(expected_paths)
+            )  # type: ignore
 
             # Created the expected entries from the expected_paths by pre-
             # pending the assembly_dir to create the source path.
             expected_paths.append("assembly_config.json")
             expected_fini_contents = sorted(
-                [f"{path}={assembly_dir}/{path}" for path in expected_paths])
+                [f"{path}={assembly_dir}/{path}" for path in expected_paths]
+            )
 
             # Write the fini manifest to a string buffer
             fini_file = io.StringIO()

@@ -49,6 +49,15 @@ type RunCommand struct {
 	// ImageManifest is a path to an image manifest.
 	imageManifest string
 
+	// ProductBundle is a path to product_bundles.json file.
+	productBundles string
+
+	// ProductBundleName is a name of product bundle getting used.
+	productBundleName string
+
+	// IsBootTest tells whether the product bundle provided is for a boot test.
+	isBootTest bool
+
 	// Netboot tells botanist to netboot (and not to pave).
 	netboot bool
 
@@ -99,6 +108,9 @@ type RunCommand struct {
 
 	// Args passed to testrunner
 	testrunnerOptions testrunner.Options
+
+	// When true, upload to resultdb from testrunner.
+	uploadToResultDB bool
 }
 
 type imageOverridesFlagValue build.ImageOverrides
@@ -134,6 +146,9 @@ func (*RunCommand) Synopsis() string {
 func (r *RunCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&r.configFile, "config", "", "path to file of device config")
 	f.StringVar(&r.imageManifest, "images", "", "path to an image manifest")
+	f.StringVar(&r.productBundles, "product-bundles", "", "path to product_bundles.json file")
+	f.StringVar(&r.productBundleName, "product-bundle-name", "", "name of product bundle to use")
+	f.BoolVar(&r.isBootTest, "boot-test", false, "whether the provided product bundle is for a boot test.")
 	f.BoolVar(&r.netboot, "netboot", false, "if set, botanist will not pave; but will netboot instead")
 	f.Var(&r.zirconArgs, "zircon-args", "kernel command-line arguments")
 	f.DurationVar(&r.timeout, "timeout", 0, "duration allowed for the command to finish execution, a value of 0 (zero) will not impose a timeout.")
@@ -148,6 +163,8 @@ func (r *RunCommand) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&r.ffxExperimentLevel, "ffx-experiment-level", 0, "The level of experimental features to enable. If -ffx is not set, this will have no effect.")
 	f.BoolVar(&r.skipSetup, "skip-setup", false, "if set, botanist will not set up a target.")
 	f.Var(&r.imageOverrides, "image-overrides", "A json struct following the ImageOverrides schema at //tools/build/tests.go with the names of the images to use from images.json.")
+	// Temporary flag to enable a soft transition to uploading test results from botanist rather than from the recipe.
+	f.BoolVar(&r.uploadToResultDB, "upload-to-resultdb", false, "if set, test results will be uploaded to ResultDB from testrunner.")
 
 	// Parsing of testrunner options.
 	f.StringVar(&r.testrunnerOptions.OutDir, "out-dir", "", "Optional path where a directory containing test results should be created.")
@@ -159,7 +176,7 @@ func (r *RunCommand) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&r.testrunnerOptions.UseSerial, "use-serial", false, "Use serial to run tests on the target.")
 }
 
-func (r *RunCommand) setupFFX(ctx context.Context, fuchsiaTargets []targets.FuchsiaTarget, primaryTarget targets.FuchsiaTarget, removeFFXOutputsDir *bool) (func(), error) {
+func (r *RunCommand) setupFFX(ctx context.Context, fuchsiaTargets []targets.FuchsiaTarget, primaryTarget targets.FuchsiaTarget) (func(), error) {
 	var cleanup func()
 	ffxOutputsDir := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), "ffx_outputs")
 
@@ -168,7 +185,7 @@ func (r *RunCommand) setupFFX(ctx context.Context, fuchsiaTargets []targets.Fuch
 		return cleanup, err
 	}
 	if ffx != nil {
-		stdout, stderr, flush := botanist.NewStdioWriters(ctx)
+		stdout, stderr, flush := botanist.NewStdioWritersWithTimestamp(ctx)
 		defer flush()
 		ffx.SetStdoutStderr(stdout, stderr)
 		if r.ffxExperimentLevel > 0 {
@@ -228,9 +245,6 @@ func (r *RunCommand) setupFFX(ctx context.Context, fuchsiaTargets []targets.Fuch
 			<-cmdWait
 			if err := daemonLog.Close(); err != nil {
 				logger.Errorf(ctx, "failed to close ffx daemon log: %s", err)
-			}
-			if *removeFFXOutputsDir {
-				os.RemoveAll(ffxOutputsDir)
 			}
 		}
 	}
@@ -345,9 +359,12 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 		defer cancel()
 
 		startOpts := targets.StartOptions{
-			Netboot:       r.netboot,
-			ImageManifest: r.imageManifest,
-			ZirconArgs:    r.zirconArgs,
+			Netboot:           r.netboot,
+			ImageManifest:     r.imageManifest,
+			ZirconArgs:        r.zirconArgs,
+			ProductBundles:    r.productBundles,
+			ProductBundleName: r.productBundleName,
+			IsBootTest:        r.isBootTest,
 		}
 
 		if err := targets.StartTargets(ctx, startOpts, fuchsiaTargets); err != nil {
@@ -448,8 +465,7 @@ func (r *RunCommand) execute(ctx context.Context, args []string) error {
 	// streamed from.
 	primaryTarget := fuchsiaTargets[0]
 
-	removeFFXOutputsDir := false
-	cleanup, err := r.setupFFX(ctx, fuchsiaTargets, primaryTarget, &removeFFXOutputsDir)
+	cleanup, err := r.setupFFX(ctx, fuchsiaTargets, primaryTarget)
 	if cleanup != nil {
 		defer cleanup()
 	}
@@ -482,9 +498,6 @@ func (r *RunCommand) execute(ctx context.Context, args []string) error {
 		return err
 	}
 
-	// In the case of a successful run, remove the ffx_outputs dir which contains ffx logs.
-	// These logs can be very large, so we should only upload them in the case of a failure.
-	removeFFXOutputsDir = true
 	return nil
 }
 
@@ -571,7 +584,7 @@ func (r *RunCommand) dumpSyslogOverSerial(ctx context.Context, socketPath string
 	// Dump the existing syslog buffer. This may not work if pkg-resolver is not
 	// up yet, in which case it will just print nothing.
 	cmds := []serial.Command{
-		{Cmd: []string{syslog.LogListener, "--dump_logs", "yes"}, SleepDuration: 5 * time.Second},
+		{Cmd: syslog.LogListenerWithArgs("--dump_logs", "yes"), SleepDuration: 5 * time.Second},
 	}
 	if err := serial.RunCommands(ctx, socket, cmds); err != nil {
 		return fmt.Errorf("failed to dump syslog over serial: %w", err)
@@ -612,7 +625,7 @@ func (r *RunCommand) runAgainstTarget(ctx context.Context, t targets.FuchsiaTarg
 		testrunnerEnv[constants.IPv6AddrEnvKey] = ipv6.String()
 		if t.UseFFX() {
 			// Add the target address in order to skip MDNS discovery.
-			if err := t.GetFFX().Run(ctx, "target", "add", addr.String(), "--nowait"); err != nil {
+			if err := t.GetFFX().Run(ctx, "target", "add", addr.String()); err != nil {
 				return err
 			}
 		}
@@ -642,13 +655,8 @@ func (r *RunCommand) runAgainstTarget(ctx context.Context, t targets.FuchsiaTarg
 	}
 	if t.UseFFX() {
 		setEnviron(t.FFXEnv())
-		// TODO(fxbug.dev/113992): testrunner's use of ffx involves calls to a `ssh` host binary
-		// which may not be available on the host. Put behind an experiment level until
-		// the bug is fixed.
-		if t.UseFFXExperimental(2) {
-			r.testrunnerOptions.FFX = t.GetFFX().FFXInstance
-			r.testrunnerOptions.FFXExperimentLevel = r.ffxExperimentLevel
-		}
+		r.testrunnerOptions.FFX = t.GetFFX().FFXInstance
+		r.testrunnerOptions.FFXExperimentLevel = r.ffxExperimentLevel
 	}
 
 	if err := testrunner.SetupAndExecute(ctx, r.testrunnerOptions, testsPath); err != nil {
@@ -696,7 +704,7 @@ func (r *RunCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interfac
 			return subcommands.ExitFailure
 		}
 		defer func() {
-			if err := osmisc.CopyDir(tmpOutDir, testOutDir); err != nil {
+			if skippedFiles, err := osmisc.CopyDir(tmpOutDir, testOutDir, osmisc.SkipUnknownFiles); err != nil {
 				logger.Errorf(ctx, "failed to copy outputs to %s: %s", testOutDir, err)
 				// TODO(fxbug.dev/128608): If we fail to copy outputs, at least copy
 				// the ffx logs over so we can debug. Remove when attached bug is
@@ -704,12 +712,18 @@ func (r *RunCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interfac
 				if r.ffxPath != "" {
 					ffxLogsDir := filepath.Join("ffx_outputs", "ffx_logs")
 					if _, err := os.Stat(filepath.Join(testOutDir, ffxLogsDir)); os.IsNotExist(err) {
-						if err := osmisc.CopyDir(filepath.Join(tmpOutDir, ffxLogsDir), filepath.Join(testOutDir, ffxLogsDir)); err != nil {
+						if _, err := osmisc.CopyDir(filepath.Join(tmpOutDir, ffxLogsDir), filepath.Join(testOutDir, ffxLogsDir), osmisc.RaiseError); err != nil {
 							logger.Errorf(ctx, "failed to copy ffx logs to %s: %s", filepath.Join(testOutDir, ffxLogsDir), err)
 						}
 					}
 				}
+			} else if len(skippedFiles) > 0 {
+				skippedFilesTxt := filepath.Join(testOutDir, "skipped_files.txt")
+				if err := os.WriteFile(skippedFilesTxt, []byte(strings.Join(skippedFiles, "\n")), os.ModePerm); err != nil {
+					logger.Errorf(ctx, "failed to write %s: %s\nskipped files: %s", skippedFilesTxt, err, skippedFiles)
+				}
 			}
+
 			if err := os.Setenv(testrunnerconstants.TestOutDirEnvKey, testOutDir); err != nil {
 				logger.Errorf(ctx, "failed to reset %s to %s: %s", testrunnerconstants.TestOutDirEnvKey, testOutDir, err)
 			}

@@ -5,10 +5,7 @@
 use crate::{
     fastboot::{
         client::{FastbootImpl, InterfaceFactory},
-        network::{
-            tcp::{TcpNetworkFactory, TcpNetworkInterface},
-            udp::{UdpNetworkFactory, UdpNetworkInterface},
-        },
+        network::{tcp::TcpNetworkFactory, udp::UdpNetworkFactory},
     },
     target::Target,
 };
@@ -23,6 +20,8 @@ use fastboot::{
 };
 use ffx_config::get;
 use ffx_daemon_events::FastbootInterface;
+use ffx_fastboot_transport_interface::tcp::TcpNetworkInterface;
+use ffx_fastboot_transport_interface::udp::UdpNetworkInterface;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_developer_ffx::{
     FastbootRequestStream, UploadProgressListenerMarker, UploadProgressListenerProxy,
@@ -32,7 +31,7 @@ use futures::{
     io::{AsyncRead, AsyncWrite},
     TryStreamExt,
 };
-use std::{convert::TryInto, fs::read, rc::Rc};
+use std::{convert::TryInto, fs::read, rc::Rc, sync::Arc};
 use usb_bulk::AsyncInterface as Interface;
 
 pub mod client;
@@ -66,31 +65,38 @@ impl Fastboot {
         }
     }
 
+    #[tracing::instrument(skip(self, stream))]
     pub async fn handle_fastboot_requests_from_stream(
         &mut self,
         mut stream: FastbootRequestStream,
+        overnet_node: &Arc<overnet_core::Router>,
     ) -> Result<()> {
         while let Some(req) = stream.try_next().await? {
+            tracing::debug!("Got fastboot request: {:#?}", req);
             if let Some((_, interface)) = self.target.fastboot_address() {
                 match interface {
-                    FastbootInterface::Tcp => match self.tcp.handle_fastboot_request(req).await {
-                        Ok(_) => (),
-                        Err(e) => {
-                            self.tcp.clear_interface().await;
-                            return Err(e);
+                    FastbootInterface::Tcp => {
+                        match self.tcp.handle_fastboot_request(req, overnet_node).await {
+                            Ok(_) => (),
+                            Err(e) => {
+                                self.tcp.clear_interface().await;
+                                return Err(e);
+                            }
                         }
-                    },
-                    FastbootInterface::Udp => match self.udp.handle_fastboot_request(req).await {
-                        Ok(_) => (),
-                        Err(e) => {
-                            self.udp.clear_interface().await;
-                            return Err(e);
+                    }
+                    FastbootInterface::Udp => {
+                        match self.udp.handle_fastboot_request(req, overnet_node).await {
+                            Ok(_) => (),
+                            Err(e) => {
+                                self.udp.clear_interface().await;
+                                return Err(e);
+                            }
                         }
-                    },
+                    }
                     _ => bail!("Unexpected interface type {:?}", self.target.fastboot_interface()),
                 }
             } else {
-                match self.usb.handle_fastboot_request(req).await {
+                match self.usb.handle_fastboot_request(req, overnet_node).await {
                     Ok(_) => (),
                     Err(e) => {
                         self.usb.clear_interface().await;
@@ -131,6 +137,13 @@ impl InterfaceFactory<Interface> for UsbFactory {
             tracing::debug!("dropping in use serial: {s}");
         }
     }
+
+    async fn is_target_discovery_enabled(&self) -> bool {
+        let Some(context) = ffx_config::global_env_context() else {
+            return true;
+        };
+        !ffx_config::is_usb_discovery_disabled(&context).await
+    }
 }
 
 impl Drop for UsbFactory {
@@ -156,8 +169,9 @@ impl VariableListener {
     }
 }
 
+#[async_trait]
 impl fastboot::InfoListener for VariableListener {
-    fn on_info(&self, info: String) -> Result<()> {
+    async fn on_info(&self, info: String) -> Result<()> {
         if let Some((name, val)) = info.split_once(':') {
             self.0.on_variable(name.trim(), val.trim()).map_err(|e| anyhow!(e))?;
         }
@@ -173,20 +187,21 @@ impl UploadProgressListener {
     }
 }
 
+#[async_trait]
 impl fastboot::UploadProgressListener for UploadProgressListener {
-    fn on_started(&self, size: usize) -> Result<()> {
+    async fn on_started(&self, size: usize) -> Result<()> {
         self.0.on_started(size.try_into()?).map_err(|e| anyhow!(e))
     }
 
-    fn on_progress(&self, bytes_written: u64) -> Result<()> {
+    async fn on_progress(&self, bytes_written: u64) -> Result<()> {
         self.0.on_progress(bytes_written).map_err(|e| anyhow!(e))
     }
 
-    fn on_error(&self, error: &str) -> Result<()> {
+    async fn on_error(&self, error: &str) -> Result<()> {
         self.0.on_error(error).map_err(|e| anyhow!(e))
     }
 
-    fn on_finished(&self) -> Result<()> {
+    async fn on_finished(&self) -> Result<()> {
         self.0.on_finished().map_err(|e| anyhow!(e))
     }
 }

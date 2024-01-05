@@ -13,14 +13,12 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/avb"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/omaha_tool"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/packages"
-	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/util"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/zbi"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 
@@ -50,12 +48,32 @@ type Updater interface {
 
 func checkSyslogForUnknownFirmware(ctx context.Context, c client) error {
 	logger.Infof(ctx, "Checking system log for errors")
-	cmd := []string{"log_listener", "--tag", "system-updater", "--dump_logs", "yes"}
 
+	// Try to dump logs using the new logger.
 	var stdout bytes.Buffer
+	if err := c.Run(
+		ctx,
+		[]string{"log_listener", "--tag", "system-updater", "dump"},
+		&stdout,
+		os.Stderr,
+	); err != nil {
+		// Don't bother trying to fall back to the old command if we
+		// disconnected from the device.
+		var errExitMissing *ssh.ExitMissingError
+		if errors.As(err, &errExitMissing) {
+			return err
+		}
 
-	if err := c.Run(ctx, cmd, &stdout, os.Stderr); err != nil {
-		return err
+		// Otherwise fall back to the old logger
+		stdout = bytes.Buffer{}
+		if err := c.Run(
+			ctx,
+			[]string{"log_listener", "--tag", "system-updater", "--dump_logs", "yes"},
+			&stdout,
+			os.Stderr,
+		); err != nil {
+			return err
+		}
 	}
 
 	re := regexp.MustCompile("skipping unsupported .* type:")
@@ -71,33 +89,86 @@ func checkSyslogForUnknownFirmware(ctx context.Context, c client) error {
 	return nil
 }
 
-func SyslogForUnknownFirmwareIgnoreDisconnect(ctx context.Context, c client) error {
-	if err := checkSyslogForUnknownFirmware(ctx, c); err != nil {
-		var errExitMissing *ssh.ExitMissingError
-		if errors.As(err, &errExitMissing) {
-			logger.Warningf(ctx, "disconnected, assuming did not install unknown firmware")
-			return nil
-		}
-		return err
-	}
-	return nil
-}
-
 // SystemUpdateChecker uses `update check-now` to install a package.
 type SystemUpdateChecker struct {
 	repo                   *packages.Repository
+	updatePackageUrl       string
 	checkForUnkownFirmware bool
 }
 
-func NewSystemUpdateChecker(repo *packages.Repository, checkForUnkownFirmware bool) *SystemUpdateChecker {
-	return &SystemUpdateChecker{repo: repo, checkForUnkownFirmware: checkForUnkownFirmware}
+func NewSystemUpdateChecker(
+	repo *packages.Repository,
+	updatePackageUrl string,
+	checkForUnkownFirmware bool,
+) *SystemUpdateChecker {
+	return &SystemUpdateChecker{
+		repo:                   repo,
+		updatePackageUrl:       updatePackageUrl,
+		checkForUnkownFirmware: checkForUnkownFirmware,
+	}
 }
+
+const (
+	// The default fuchsia update package URL.
+	defaultUpdatePackageURL = "fuchsia-pkg://fuchsia.com/update/0"
+)
 
 func (u *SystemUpdateChecker) Update(ctx context.Context, c client) error {
-	return updateCheckNow(ctx, c, u.repo, true, u.checkForUnkownFirmware)
+	// If we're using the default update package url, we can directly update
+	// with it.
+	if u.updatePackageUrl == defaultUpdatePackageURL {
+		return updateCheckNow(ctx, c, u.repo, true, u.checkForUnkownFirmware)
+	}
+
+	// Otherwise, copy the repository into a temporary directory, and publish
+	// the update package to `fuchsia-pkg://fuchsia.com/update/0`, then update
+	// with the temp repository.
+
+	logger.Infof(
+		ctx,
+		"update package %s isn't default, cloning the repository so it can be made %s",
+		u.updatePackageUrl,
+		defaultUpdatePackageURL,
+	)
+
+	url, err := url.Parse(u.updatePackageUrl)
+	if err != nil {
+		return fmt.Errorf("invalid update package URL %q: %w", u.updatePackageUrl, err)
+	}
+	srcUpdatePath := url.Path[1:]
+
+	tempDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		return fmt.Errorf("failed to create a temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	repo, err := u.repo.CloneIntoDir(ctx, tempDir)
+	if err != nil {
+		return fmt.Errorf("failed to copy %s into %s: %w", u.repo, tempDir, err)
+	}
+
+	srcUpdate, err := repo.OpenUpdatePackage(ctx, srcUpdatePath)
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %w", srcUpdatePath, err)
+	}
+
+	dstUpdatePath := "update/0"
+	_, err = srcUpdate.EditContents(ctx, dstUpdatePath, func(tempDir string) error { return nil })
+	if err != nil {
+		return fmt.Errorf("failed to publish %s: %w", dstUpdatePath, err)
+	}
+
+	return updateCheckNow(ctx, c, repo, true, u.checkForUnkownFirmware)
 }
 
-func updateCheckNow(ctx context.Context, c client, repo *packages.Repository, createRewriteRule bool, checkForUnkownFirmware bool) error {
+func updateCheckNow(
+	ctx context.Context,
+	c client,
+	repo *packages.Repository,
+	createRewriteRule bool,
+	checkForUnkownFirmware bool,
+) error {
 	logger.Infof(ctx, "Triggering OTA")
 
 	startTime := time.Now()
@@ -145,14 +216,15 @@ func updateCheckNow(ctx context.Context, c client, repo *packages.Repository, cr
 			"check-now",
 			"--monitor",
 		}
-		if err := c.Run(ctx, cmd, os.Stdout, os.Stderr); err == nil {
-			if checkForUnkownFirmware {
-				// FIXME(fxbug.dev/126805): We wouldn't have to ignore disconnects if we could trigger an update without it automatically rebooting.
-				if err := SyslogForUnknownFirmwareIgnoreDisconnect(ctx, c); err != nil {
-					return err
-				}
-			}
-		} else {
+
+		err = c.Run(ctx, cmd, os.Stdout, os.Stderr)
+		if err == nil && checkForUnkownFirmware {
+			// FIXME(fxbug.dev/126805): We wouldn't have to ignore disconnects
+			// if we could trigger an update without it automatically rebooting.
+			err = checkSyslogForUnknownFirmware(ctx, c)
+		}
+
+		if err != nil {
 			// If the device rebooted before ssh was able to tell
 			// us the command ran, it will tell us the session
 			// exited without passing along an exit code. So,
@@ -206,34 +278,21 @@ func NewSystemUpdater(repo *packages.Repository, updatePackageUrl string, checkF
 func (u *SystemUpdater) Update(ctx context.Context, c client) error {
 	startTime := time.Now()
 
-	repoName := "download-ota"
-	tempDir, err := os.MkdirTemp("", "update-pkg-expand")
-	if err != nil {
-		return fmt.Errorf("unable to create temp directory: %w", err)
-	}
-	defer os.RemoveAll(tempDir)
-
 	url, err := url.Parse(u.updatePackageUrl)
 	if err != nil {
 		return fmt.Errorf("invalid update package URL %q: %w", u.updatePackageUrl, err)
 	}
+	pkgPath := url.Path[1:]
 
-	if err := rehostPackageRepository(ctx, u.repo, url, repoName, tempDir); err != nil {
-		return fmt.Errorf("failed to rehost the package repository: %q", err)
-	}
-
-	pkgBuilder, err := packages.NewPackageBuilderFromDir(tempDir, "system_update", "0", "testrepository.com")
+	srcUpdate, err := u.repo.OpenUpdatePackage(ctx, pkgPath)
 	if err != nil {
-		return fmt.Errorf("Failed to parse package from %q: %w", tempDir, err)
-	}
-	defer pkgBuilder.Close()
-
-	pkgPath, pkgMerkle, err := pkgBuilder.Publish(ctx, u.repo)
-	if err != nil {
-		return fmt.Errorf("Failed to publish update package: %w", err)
+		return err
 	}
 
-	logger.Infof(ctx, "published %q as %q to %q", pkgPath, pkgMerkle, u.repo)
+	repoName := "download-ota"
+	dstUpdate, err := srcUpdate.RehostUpdatePackage(ctx, repoName, pkgPath)
+
+	logger.Infof(ctx, "published %q as %q to %q", pkgPath, dstUpdate.Merkle(), u.repo)
 
 	server, err := c.ServePackageRepository(ctx, u.repo, repoName, true, nil)
 	if err != nil {
@@ -255,7 +314,7 @@ func (u *SystemUpdater) Update(ctx context.Context, c client) error {
 
 	logger.Infof(ctx, "OTA successfully downloaded in %s", time.Now().Sub(startTime))
 
-	if err := SyslogForUnknownFirmwareIgnoreDisconnect(ctx, c); err != nil {
+	if err := checkSyslogForUnknownFirmware(ctx, c); err != nil {
 		return err
 	}
 
@@ -284,6 +343,7 @@ type OmahaUpdater struct {
 	zbiTool                     *zbi.ZBITool
 	workaroundOtaNoRewriteRules bool
 	checkForUnkownFirmware      bool
+	useNewUpdateFormat          bool
 }
 
 func NewOmahaUpdater(
@@ -294,6 +354,7 @@ func NewOmahaUpdater(
 	zbiTool *zbi.ZBITool,
 	workaroundOtaNoRewriteRules bool,
 	checkForUnkownFirmware bool,
+	useNewUpdateFormat bool,
 ) (*OmahaUpdater, error) {
 	u, err := url.Parse(updatePackageURL)
 	if err != nil {
@@ -316,28 +377,19 @@ func NewOmahaUpdater(
 		zbiTool:                     zbiTool,
 		workaroundOtaNoRewriteRules: workaroundOtaNoRewriteRules,
 		checkForUnkownFirmware:      checkForUnkownFirmware,
+		useNewUpdateFormat:          useNewUpdateFormat,
 	}, nil
 }
 
 func (u *OmahaUpdater) Update(ctx context.Context, c client) error {
 	logger.Infof(ctx, "injecting omaha_url into %q", u.updatePackageURL)
 
-	pkg, err := u.repo.OpenPackage(ctx, u.updatePackageURL.Path[1:])
+	srcUpdate, err := u.repo.OpenUpdatePackage(ctx, u.updatePackageURL.Path[1:])
 	if err != nil {
-		return fmt.Errorf("failed to open url %q: %w", u.updatePackageURL, err)
+		return err
 	}
 
-	logger.Infof(ctx, "source update package merkle for %q is %q", u.updatePackageURL, pkg.Merkle())
-
-	tempDir, err := os.MkdirTemp("", "update-pkg-expand")
-	if err != nil {
-		return fmt.Errorf("unable to create temp directory: %w", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	if err := rehostPackageRepository(ctx, u.repo, u.updatePackageURL, "trigger-ota", tempDir); err != nil {
-		return fmt.Errorf("failed to rehost the package repository: %q", err)
-	}
+	logger.Infof(ctx, "source update package merkle for %q is %q", u.updatePackageURL, srcUpdate.Merkle())
 
 	// Create a ZBI with the omaha_url argument.
 	destZbi, err := os.CreateTemp("", "omaha_argument.zbi")
@@ -351,6 +403,8 @@ func (u *OmahaUpdater) Update(ctx context.Context, c client) error {
 		"omaha_app_id": u.omahaTool.Args.AppId,
 	}
 
+	logger.Infof(ctx, "Omaha Server URL set in vbmeta to %q", u.omahaTool.URL())
+
 	if err := u.zbiTool.MakeImageArgsZbi(ctx, destZbi.Name(), imageArguments); err != nil {
 		return fmt.Errorf("failed to create ZBI: %w", err)
 	}
@@ -360,41 +414,28 @@ func (u *OmahaUpdater) Update(ctx context.Context, c client) error {
 		"zbi": destZbi.Name(),
 	}
 
-	// Update vbmeta in this package.
-	srcVbmetaPath := filepath.Join(tempDir, "fuchsia.vbmeta")
+	repoName := "trigger-ota"
 
-	if _, err := os.Stat(srcVbmetaPath); err != nil {
-		return fmt.Errorf("vbmeta %q does not exist in repo: %w", srcVbmetaPath, err)
-	}
-
-	// Swap the the updated vbmeta into place.
-	err = util.AtomicallyWriteFile(srcVbmetaPath, 0600, func(f *os.File) error {
-		if err := u.avbTool.MakeVBMetaImage(ctx, f.Name(), srcVbmetaPath, propFiles); err != nil {
-			return fmt.Errorf("Failed to update vbmeta: %w", err)
-		}
-
-		return nil
-	})
+	dstUpdate, err := srcUpdate.EditUpdatePackageWithVBMetaProperties(
+		ctx,
+		u.avbTool,
+		repoName,
+		"update_omaha/0",
+		propFiles,
+		u.useNewUpdateFormat,
+	)
 	if err != nil {
-		return fmt.Errorf("failed to atomically overwrite %q: %w", srcVbmetaPath, err)
+		return fmt.Errorf("failed to inject vbmeta properties into update package: %w", err)
 	}
 
-	logger.Infof(ctx, "Omaha Server URL set in vbmeta to %q", u.omahaTool.URL())
+	logger.Infof(ctx, "Published %q as %q to %q", dstUpdate.Path(), dstUpdate.Merkle(), u.repo)
 
-	pkgBuilder, err := packages.NewPackageBuilderFromDir(tempDir, "update_omaha", "0", "testrepository.com")
-	if err != nil {
-		return fmt.Errorf("Failed to parse package from %q: %w", tempDir, err)
-	}
-	defer pkgBuilder.Close()
-
-	pkgPath, pkgMerkle, err := pkgBuilder.Publish(ctx, u.repo)
-	if err != nil {
-		return fmt.Errorf("Failed to publish update package: %w", err)
-	}
-
-	logger.Infof(ctx, "published %q as %q to %q", pkgPath, pkgMerkle, u.repo)
-
-	omahaPackageURL := fmt.Sprintf("fuchsia-pkg://trigger-ota/%s?hash=%s", pkgPath, pkgMerkle)
+	omahaPackageURL := fmt.Sprintf(
+		"fuchsia-pkg://%s/%s?hash=%s",
+		repoName,
+		dstUpdate.Path(),
+		dstUpdate.Merkle(),
+	)
 
 	// Configure the Omaha server with the new omaha package URL.
 	if err := u.omahaTool.SetPkgURL(ctx, omahaPackageURL); err != nil {
@@ -403,38 +444,4 @@ func (u *OmahaUpdater) Update(ctx context.Context, c client) error {
 
 	// Trigger an update
 	return updateCheckNow(ctx, c, u.repo, !u.workaroundOtaNoRewriteRules, u.checkForUnkownFirmware)
-}
-
-func rehostPackageRepository(ctx context.Context, repo *packages.Repository, updatePackageUrl *url.URL, repoName string, tempDir string) error {
-	pkg, err := repo.OpenPackage(ctx, updatePackageUrl.Path[1:])
-	if err != nil {
-		return fmt.Errorf("failed to open url %q: %w", updatePackageUrl.String(), err)
-	}
-
-	logger.Infof(ctx, "source update package merkle for %q is %q", updatePackageUrl.String(), pkg.Merkle())
-
-	if err := pkg.Expand(ctx, tempDir); err != nil {
-		return fmt.Errorf("failed to expand pkg to %s: %w", tempDir, err)
-	}
-
-	// Update packages.json in this package.
-	packagesJsonPath := filepath.Join(tempDir, "packages.json")
-	err = util.AtomicallyWriteFile(packagesJsonPath, 0600, func(f *os.File) error {
-		src, err := os.Open(packagesJsonPath)
-		if err != nil {
-			return fmt.Errorf("Failed to open packages.json %q: %w", packagesJsonPath, err)
-		}
-		if err := util.RehostPackagesJSON(bufio.NewReader(src), bufio.NewWriter(f), repoName); err != nil {
-			return fmt.Errorf("Failed to rehost packages.json: %w", err)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to atomically overwrite %q: %w", packagesJsonPath, err)
-	}
-
-	logger.Infof(ctx, "host names in packages.json set to %w", repoName)
-
-	return nil
 }

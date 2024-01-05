@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <map>
 #include <memory>
+#include <variant>
 
 #include <gtest/gtest.h>
 #include <hwreg/array.h>
@@ -35,12 +36,18 @@
 namespace {
 
 using AccessPermissions = arch::AccessPermissions;
+
 using ArmPagingLevel = arch::ArmAddressTranslationLevel;
-using MapSettings = arch::MapSettings;
-using PagingSettings = arch::PagingSettings;
+using ArmPagingSettings = arch::ArmPagingSettings;
+using ArmSystemState = arch::ArmSystemPagingState;
+
+using RiscvMemoryType = arch::RiscvMemoryType;
 using RiscvPagingLevel = arch::RiscvPagingLevel;
+using RiscvPagingSettings = arch::RiscvPagingTraitsBase::PagingSettings;
+
 using X86PagingLevel = arch::X86PagingLevel;
-using X86SystemState = arch::X86SystemPagingState;
+using X86PagingSettings = arch::X86PagingTraitsBase::PagingSettings;
+using X86SystemState = arch::X86PagingTraitsBase::SystemState;
 
 template <ArmPagingLevel Level>
 using ArmTableEntry =
@@ -100,15 +107,15 @@ void TestRiscvGetSetPresent() {
   entry.set_reg_value(0).set_v(true);
   EXPECT_TRUE(entry.present());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{.present = false});
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{.present = false});
   EXPECT_FALSE(entry.v());
   EXPECT_FALSE(entry.present());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{.present = false});
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{.present = false});
   EXPECT_FALSE(entry.v());
   EXPECT_FALSE(entry.present());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = false,
                                      .access = kRWXU,
@@ -116,7 +123,7 @@ void TestRiscvGetSetPresent() {
   EXPECT_TRUE(entry.v());
   EXPECT_TRUE(entry.present());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = true,
                                  });
@@ -130,34 +137,6 @@ TEST(RiscvPagingTraitTests, GetSetPresent) {
   TestRiscvGetSetPresent<RiscvPagingLevel::k2>();
   TestRiscvGetSetPresent<RiscvPagingLevel::k1>();
   TestRiscvGetSetPresent<RiscvPagingLevel::k0>();
-}
-
-template <RiscvPagingLevel Level>
-void TestRiscvIsValidPageAccess() {
-  // Any set of page permissions must either be readable or execute-only.
-  for (bool r : kBools) {
-    for (bool w : kBools) {
-      for (bool x : kBools) {
-        for (bool u : kBools) {
-          AccessPermissions access = {
-              .readable = r,
-              .writable = w,
-              .executable = x,
-              .user_accessible = u,
-          };
-          EXPECT_EQ(r || !w, arch::RiscvIsValidPageAccess({}, access));
-        }
-      }
-    }
-  }
-}
-
-TEST(RiscvPagingTraitTests, IsValidPageAccess) {
-  TestRiscvIsValidPageAccess<RiscvPagingLevel::k4>();
-  TestRiscvIsValidPageAccess<RiscvPagingLevel::k3>();
-  TestRiscvIsValidPageAccess<RiscvPagingLevel::k2>();
-  TestRiscvIsValidPageAccess<RiscvPagingLevel::k1>();
-  TestRiscvIsValidPageAccess<RiscvPagingLevel::k0>();
 }
 
 template <RiscvPagingLevel Level>
@@ -178,7 +157,7 @@ void TestRiscvGetSetReadable() {
   }
 
   entry.set_reg_value(0).Set(
-      {}, PagingSettings{
+      {}, RiscvPagingSettings{
               .present = true,
               .terminal = true,
               .access =
@@ -190,7 +169,7 @@ void TestRiscvGetSetReadable() {
   EXPECT_FALSE(entry.r());
   EXPECT_FALSE(entry.readable());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = true,
                                      .access = AccessPermissions{.readable = true},
@@ -198,7 +177,7 @@ void TestRiscvGetSetReadable() {
   EXPECT_TRUE(entry.r());
   EXPECT_TRUE(entry.readable());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = false,
                                      .access = kRWXU,
@@ -234,7 +213,7 @@ void TestRiscvGetSetWritable() {
   }
 
   entry.set_reg_value(0).Set(
-      {}, PagingSettings{
+      {}, RiscvPagingSettings{
               .present = true,
               .terminal = true,
               .access =
@@ -247,7 +226,7 @@ void TestRiscvGetSetWritable() {
   EXPECT_FALSE(entry.writable());
 
   entry.set_reg_value(0).Set(
-      {}, PagingSettings{
+      {}, RiscvPagingSettings{
               .present = true,
               .terminal = true,
               .access =
@@ -259,7 +238,7 @@ void TestRiscvGetSetWritable() {
   EXPECT_TRUE(entry.w());
   EXPECT_TRUE(entry.writable());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = false,
                                      .access = kRWXU,
@@ -293,7 +272,7 @@ void TestRiscvGetSetExecutable() {
   }
 
   entry.set_reg_value(0).Set(
-      {}, PagingSettings{
+      {}, RiscvPagingSettings{
               .present = true,
               .terminal = true,
               .access =
@@ -305,7 +284,7 @@ void TestRiscvGetSetExecutable() {
   EXPECT_FALSE(entry.x());
   EXPECT_FALSE(entry.executable());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = true,
                                      .access = AccessPermissions{.executable = true},
@@ -313,7 +292,7 @@ void TestRiscvGetSetExecutable() {
   EXPECT_TRUE(entry.x());
   EXPECT_TRUE(entry.executable());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = false,
                                      .access = kRWXU,
@@ -349,7 +328,7 @@ void TestRiscvGetSetUserAccesible() {
     }
   }
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = true,
                                      .access =
@@ -361,7 +340,7 @@ void TestRiscvGetSetUserAccesible() {
   EXPECT_FALSE(entry.u());
   EXPECT_FALSE(entry.user_accessible());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = true,
                                      .access =
@@ -377,7 +356,7 @@ void TestRiscvGetSetUserAccesible() {
   // There are no intermediate knobs to disable permissions.
   //
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = false,
                                      .access = kRWXU,
@@ -426,7 +405,7 @@ void TestRiscvGetSetTerminal() {
   for (unsigned int r = 0; r <= 1; ++r) {
     for (unsigned int w = 0; w <= 1; ++w) {
       for (unsigned int x = 0; x <= 1; ++x) {
-        entry.set_reg_value(0).set_r(r).set_w(w).set_x(x).Set({}, PagingSettings{
+        entry.set_reg_value(0).set_r(r).set_w(w).set_x(x).Set({}, RiscvPagingSettings{
                                                                       .present = true,
                                                                       .terminal = false,
                                                                       .access = kRWXU,
@@ -443,7 +422,7 @@ void TestRiscvGetSetTerminal() {
   // Setting as terminal requires readability or executability.
   //
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = true,
                                      .access =
@@ -454,7 +433,7 @@ void TestRiscvGetSetTerminal() {
                                  });
   EXPECT_TRUE(entry.terminal());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = true,
                                      .access =
@@ -465,7 +444,7 @@ void TestRiscvGetSetTerminal() {
                                  });
   EXPECT_TRUE(entry.terminal());
 
-  entry.set_reg_value(0).Set({}, PagingSettings{
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                      .present = true,
                                      .terminal = true,
                                      .access =
@@ -503,7 +482,7 @@ void TestRiscvGetSetAddress() {
 
   // Each address in kAddrs should be a valid table address.
   for (uint64_t addr : kAddrs) {
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                        .address = addr,
                                        .present = true,
                                        .terminal = false,
@@ -518,7 +497,7 @@ void TestRiscvGetSetAddress() {
 
   for (size_t i = kFirstSupported; i < kAddrs.size(); ++i) {
     uint64_t addr = kAddrs[i];
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, RiscvPagingSettings{
                                        .address = addr,
                                        .present = true,
                                        .terminal = true,
@@ -537,6 +516,168 @@ TEST(RiscvPagingTraitTests, GetSetAddress) {
   TestRiscvGetSetAddress<RiscvPagingLevel::k0>();
 }
 
+template <RiscvPagingLevel Level>
+void TestRiscvGetSetMemory() {
+  //
+  // The memory type is given via the PBMT field.
+  //
+
+  arch::RiscvPageTableEntry<Level> entry;
+
+  // Memory() can only be called on a terminal entry.
+  entry = entry.set_reg_value(0).Set({}, RiscvPagingSettings{
+                                             .present = true,
+                                             .terminal = true,
+                                             .access = {.readable = true},
+                                         });
+  entry.set_pbmt(RiscvMemoryType::kPma);
+  EXPECT_EQ(RiscvMemoryType::kPma, entry.Memory({}));
+  entry.set_pbmt(RiscvMemoryType::kNc);
+  EXPECT_EQ(RiscvMemoryType::kNc, entry.Memory({}));
+  entry.set_pbmt(RiscvMemoryType::kIo);
+  EXPECT_EQ(RiscvMemoryType::kIo, entry.Memory({}));
+
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
+                                     .present = true,
+                                     .terminal = true,
+                                     .access = {.readable = true},
+                                     .memory = RiscvMemoryType::kPma,
+                                 });
+  EXPECT_EQ(RiscvMemoryType::kPma, entry.pbmt());
+
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
+                                     .present = true,
+                                     .terminal = true,
+                                     .access = {.readable = true},
+                                     .memory = RiscvMemoryType::kNc,
+                                 });
+  EXPECT_EQ(RiscvMemoryType::kNc, entry.pbmt());
+
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
+                                     .present = true,
+                                     .terminal = true,
+                                     .access = {.readable = true},
+                                     .memory = RiscvMemoryType::kIo,
+                                 });
+  EXPECT_EQ(RiscvMemoryType::kIo, entry.pbmt());
+
+  //
+  // If the entry is non-terminal, the setting of memory should have no effect.
+  //
+
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
+                                     .present = true,
+                                     .terminal = false,
+                                     .memory = RiscvMemoryType::kNc,
+                                 });
+  EXPECT_EQ(RiscvMemoryType::kPma, entry.pbmt());
+
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
+                                     .present = true,
+                                     .terminal = false,
+                                     .memory = RiscvMemoryType::kIo,
+                                 });
+  EXPECT_EQ(RiscvMemoryType::kPma, entry.pbmt());
+}
+
+TEST(RiscvPagingTraitTests, GetSetMemory) {
+  TestRiscvGetSetMemory<RiscvPagingLevel::k4>();
+  TestRiscvGetSetMemory<RiscvPagingLevel::k3>();
+  TestRiscvGetSetMemory<RiscvPagingLevel::k2>();
+  TestRiscvGetSetMemory<RiscvPagingLevel::k1>();
+  TestRiscvGetSetMemory<RiscvPagingLevel::k0>();
+}
+
+template <RiscvPagingLevel Level>
+void TestRiscvSetImpliesAccessedAndDirty() {
+  //
+  // Whether the entry was 'accessed' or 'dirty' is given via the A and D
+  // fields, respectively;
+  //
+
+  arch::RiscvPageTableEntry<Level> entry;
+
+  //
+  // Non-terminal entries should not report as accessed or dirty.
+  //
+
+  entry.set_reg_value(0).set_r(false).set_a(false);
+  EXPECT_FALSE(entry.accessed());
+
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
+                                     .present = true,
+                                     .terminal = false,
+                                 });
+  EXPECT_FALSE(entry.accessed());
+  EXPECT_FALSE(entry.a());
+  EXPECT_FALSE(entry.d());
+
+  entry.set_reg_value(0).set_r(true).set_a(true);
+  EXPECT_TRUE(entry.accessed());
+
+  //
+  // Terminal entries should report as accessed, and dirty when writable.
+  //
+
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
+                                     .present = true,
+                                     .terminal = true,
+                                     .access = {.readable = true, .writable = false},
+                                 });
+  EXPECT_TRUE(entry.accessed());
+  EXPECT_TRUE(entry.a());
+  EXPECT_FALSE(entry.d());
+
+  entry.set_reg_value(0).Set({}, RiscvPagingSettings{
+                                     .present = true,
+                                     .terminal = true,
+                                     .access = {.readable = true, .writable = true},
+                                 });
+  EXPECT_TRUE(entry.accessed());
+  EXPECT_TRUE(entry.a());
+  EXPECT_TRUE(entry.d());
+}
+
+TEST(RiscvPagingTraitTests, GetSetAccessed) {
+  TestRiscvSetImpliesAccessedAndDirty<RiscvPagingLevel::k4>();
+  TestRiscvSetImpliesAccessedAndDirty<RiscvPagingLevel::k3>();
+  TestRiscvSetImpliesAccessedAndDirty<RiscvPagingLevel::k2>();
+  TestRiscvSetImpliesAccessedAndDirty<RiscvPagingLevel::k1>();
+  TestRiscvSetImpliesAccessedAndDirty<RiscvPagingLevel::k0>();
+}
+
+template <RiscvPagingLevel Level>
+void TestRiscvGetSetGlobal() {
+  //
+  // Whether the entry was 'accessed' is given via the G field.
+  //
+
+  arch::RiscvPageTableEntry<Level> entry;
+
+  for (bool t : kBools) {
+    for (bool g : kBools) {
+      entry.set_reg_value(0).set_r(t).set_g(g);
+      EXPECT_EQ(t && g, entry.global());
+
+      entry.set_reg_value(0).Set({}, RiscvPagingSettings{
+                                         .present = true,
+                                         .terminal = t,
+                                         .access = {.readable = true},
+                                         .global = g,
+                                     });
+      EXPECT_EQ(t && g, entry.global());
+    }
+  }
+}
+
+TEST(RiscvPagingTraitTests, GetSetGlobal) {
+  TestRiscvGetSetGlobal<RiscvPagingLevel::k4>();
+  TestRiscvGetSetGlobal<RiscvPagingLevel::k3>();
+  TestRiscvGetSetGlobal<RiscvPagingLevel::k2>();
+  TestRiscvGetSetGlobal<RiscvPagingLevel::k1>();
+  TestRiscvGetSetGlobal<RiscvPagingLevel::k0>();
+}
+
 template <X86PagingLevel Level>
 void TestX86GetSetPresent() {
   // Presence is controlled by the P bit.
@@ -549,25 +690,25 @@ void TestX86GetSetPresent() {
   EXPECT_TRUE(entry.present());
 
   if constexpr (kX86LevelCanBeNonTerminal<Level>) {
-    entry.set_reg_value(0).Set({},
-                               PagingSettings{.present = false, .terminal = false, .access = kRX});
+    entry.set_reg_value(0).Set(
+        {}, X86PagingSettings{.present = false, .terminal = false, .access = kRX});
     EXPECT_FALSE(entry.p());
     EXPECT_FALSE(entry.present());
 
-    entry.set_reg_value(0).Set({},
-                               PagingSettings{.present = true, .terminal = false, .access = kRX});
+    entry.set_reg_value(0).Set(
+        {}, X86PagingSettings{.present = true, .terminal = false, .access = kRX});
     EXPECT_TRUE(entry.p());
     EXPECT_TRUE(entry.present());
   }
 
   if constexpr (kX86LevelCanBeTerminal<Level>) {
-    entry.set_reg_value(0).Set({},
-                               PagingSettings{.present = false, .terminal = true, .access = kRX});
+    entry.set_reg_value(0).Set(
+        {}, X86PagingSettings{.present = false, .terminal = true, .access = kRX});
     EXPECT_FALSE(entry.p());
     EXPECT_FALSE(entry.present());
 
     entry.set_reg_value(0).Set({},
-                               PagingSettings{.present = true, .terminal = true, .access = kRX});
+                               X86PagingSettings{.present = true, .terminal = true, .access = kRX});
     EXPECT_TRUE(entry.p());
     EXPECT_TRUE(entry.present());
   }
@@ -582,33 +723,6 @@ TEST(X86PagingTraitTests, GetSetPresent) {
 }
 
 template <X86PagingLevel Level>
-void TestX86CheckAccessPermissions() {
-  for (bool r : kBools) {
-    for (bool w : kBools) {
-      for (bool x : kBools) {
-        for (bool u : kBools) {
-          AccessPermissions access = {
-              .readable = r,
-              .writable = w,
-              .executable = x,
-              .user_accessible = u,
-          };
-          EXPECT_EQ(r, arch::X86IsValidPageAccess({}, access));
-        }
-      }
-    }
-  }
-}
-
-TEST(X86PagingTraitTests, CheckAccessPermissions) {
-  TestX86CheckAccessPermissions<X86PagingLevel::kPml5Table>();
-  TestX86CheckAccessPermissions<X86PagingLevel::kPml4Table>();
-  TestX86CheckAccessPermissions<X86PagingLevel::kPageDirectoryPointerTable>();
-  TestX86CheckAccessPermissions<X86PagingLevel::kPageDirectory>();
-  TestX86CheckAccessPermissions<X86PagingLevel::kPageTable>();
-}
-
-template <X86PagingLevel Level>
 void TestX86GetSetReadable() {
   //
   // Readability is a default.
@@ -619,7 +733,7 @@ void TestX86GetSetReadable() {
   EXPECT_TRUE(entry.readable());
 
   if constexpr (kX86LevelCanBeTerminal<Level>) {
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, X86PagingSettings{
                                        .present = true,
                                        .terminal = true,
                                        .access = kRX,
@@ -653,7 +767,7 @@ void TestX86GetSetWritable() {
   if constexpr (kX86LevelCanBeNonTerminal<Level>) {
     entry.set_reg_value(0).set_r_w(true).Set(
         {},
-        PagingSettings{
+        X86PagingSettings{
             .present = true,
             .terminal = false,
             .access = AccessPermissions{.readable = true, .writable = false, .executable = true},
@@ -662,7 +776,7 @@ void TestX86GetSetWritable() {
     EXPECT_FALSE(entry.writable());
 
     entry.set_reg_value(0).Set(
-        {}, PagingSettings{
+        {}, X86PagingSettings{
                 .present = true,
                 .terminal = false,
                 .access = AccessPermissions{.readable = true, .writable = true, .executable = true},
@@ -674,7 +788,7 @@ void TestX86GetSetWritable() {
   if constexpr (kX86LevelCanBeTerminal<Level>) {
     entry.set_reg_value(0).set_r_w(true).Set(
         {},
-        PagingSettings{
+        X86PagingSettings{
             .present = true,
             .terminal = true,
             .access = AccessPermissions{.readable = true, .writable = false, .executable = true},
@@ -683,7 +797,7 @@ void TestX86GetSetWritable() {
     EXPECT_FALSE(entry.writable());
 
     entry.set_reg_value(0).Set(
-        {}, PagingSettings{
+        {}, X86PagingSettings{
                 .present = true,
                 .terminal = true,
                 .access = AccessPermissions{.readable = true, .writable = true, .executable = true},
@@ -717,7 +831,7 @@ void TestX86GetSetExecutable() {
 
   if constexpr (kX86LevelCanBeNonTerminal<Level>) {
     entry.set_reg_value(0).set_xd(false).Set(
-        {}, PagingSettings{
+        {}, X86PagingSettings{
                 .present = true,
                 .terminal = false,
                 .access = AccessPermissions{.readable = true, .executable = false},
@@ -725,7 +839,7 @@ void TestX86GetSetExecutable() {
     EXPECT_TRUE(entry.xd());
     EXPECT_FALSE(entry.executable());
 
-    entry.set_reg_value(0).set_xd(false).Set({}, PagingSettings{
+    entry.set_reg_value(0).set_xd(false).Set({}, X86PagingSettings{
                                                      .present = true,
                                                      .terminal = false,
                                                      .access = kRX,
@@ -735,7 +849,7 @@ void TestX86GetSetExecutable() {
 
   if constexpr (kX86LevelCanBeTerminal<Level>) {
     entry.set_reg_value(0).set_xd(false).Set(
-        {}, PagingSettings{
+        {}, X86PagingSettings{
                 .present = true,
                 .terminal = true,
                 .access = AccessPermissions{.readable = true, .executable = false},
@@ -743,7 +857,7 @@ void TestX86GetSetExecutable() {
     EXPECT_TRUE(entry.xd());
     EXPECT_FALSE(entry.executable());
 
-    entry.set_reg_value(0).set_xd(false).Set({}, PagingSettings{
+    entry.set_reg_value(0).set_xd(false).Set({}, X86PagingSettings{
                                                      .present = true,
                                                      .terminal = true,
                                                      .access = kRX,
@@ -778,7 +892,7 @@ void TestX86GetSetUserAccessible() {
   if constexpr (kX86LevelCanBeNonTerminal<Level>) {
     entry.set_reg_value(0).set_u_s(true).Set(
         {},
-        PagingSettings{
+        X86PagingSettings{
             .present = true,
             .terminal = false,
             .access =
@@ -787,7 +901,7 @@ void TestX86GetSetUserAccessible() {
     EXPECT_FALSE(entry.u_s());
     EXPECT_FALSE(entry.user_accessible());
 
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, X86PagingSettings{
                                        .present = true,
                                        .terminal = false,
                                        .access = AccessPermissions{.readable = true,
@@ -801,7 +915,7 @@ void TestX86GetSetUserAccessible() {
   if constexpr (kX86LevelCanBeTerminal<Level>) {
     entry.set_reg_value(0).set_u_s(true).Set(
         {},
-        PagingSettings{
+        X86PagingSettings{
             .present = true,
             .terminal = true,
             .access =
@@ -810,7 +924,7 @@ void TestX86GetSetUserAccessible() {
     EXPECT_FALSE(entry.u_s());
     EXPECT_FALSE(entry.user_accessible());
 
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, X86PagingSettings{
                                        .present = true,
                                        .terminal = true,
                                        .access =
@@ -848,8 +962,8 @@ void TestX86GetSetTerminal() {
   }
 
   if constexpr (kX86LevelCanBeNonTerminal<Level>) {
-    entry.set_reg_value(0).Set({},
-                               PagingSettings{.present = true, .terminal = false, .access = kRX});
+    entry.set_reg_value(0).Set(
+        {}, X86PagingSettings{.present = true, .terminal = false, .access = kRX});
     EXPECT_FALSE(entry.terminal());
     if constexpr (kPdptOrkPd) {
       EXPECT_FALSE(*entry.ps());
@@ -860,7 +974,7 @@ void TestX86GetSetTerminal() {
 
   if constexpr (kX86LevelCanBeTerminal<Level>) {
     entry.set_reg_value(0).Set({},
-                               PagingSettings{.present = true, .terminal = true, .access = kRX});
+                               X86PagingSettings{.present = true, .terminal = true, .access = kRX});
     EXPECT_TRUE(entry.terminal());
     if constexpr (kPdptOrkPd) {
       EXPECT_TRUE(*entry.ps());
@@ -894,7 +1008,7 @@ void TestX86GetSetAddress() {
     // Each address in kAddrs should be a valid table address.
     for (size_t i = 0; i < kAddrs.size(); ++i) {
       uint64_t addr = kAddrs[i];
-      entry.set_reg_value(0).Set({}, PagingSettings{
+      entry.set_reg_value(0).Set({}, X86PagingSettings{
                                          .address = addr,
                                          .present = true,
                                          .terminal = false,
@@ -911,7 +1025,7 @@ void TestX86GetSetAddress() {
                                                                                  : 2;
     for (size_t i = kFirstSupported; i < kAddrs.size(); ++i) {
       uint64_t addr = kAddrs[i];
-      entry.set_reg_value(0).Set({}, PagingSettings{
+      entry.set_reg_value(0).Set({}, X86PagingSettings{
                                          .address = addr,
                                          .present = true,
                                          .terminal = true,
@@ -930,6 +1044,113 @@ TEST(X86PagingTraitTests, GetSetAddress) {
   TestX86GetSetAddress<X86PagingLevel::kPageTable>();
 }
 
+template <X86PagingLevel Level>
+void TestX86SetImpliesAccessedAndDirty() {
+  arch::X86PagingStructure<Level> entry;
+
+  entry.set_reg_value(0).set_a(false);
+  EXPECT_FALSE(entry.accessed());
+
+  entry.set_reg_value(0).set_a(true);
+  EXPECT_TRUE(entry.accessed());
+
+  // A Set() entry should always report as accessed and dirty.
+
+  if constexpr (kX86LevelCanBeNonTerminal<Level>) {
+    entry.set_reg_value(0).Set({}, X86PagingSettings{
+                                       .present = true,
+                                       .terminal = false,
+                                   });
+    EXPECT_TRUE(entry.accessed());
+    EXPECT_TRUE(entry.a());
+    EXPECT_TRUE(entry.d());
+  }
+
+  if constexpr (kX86LevelCanBeTerminal<Level>) {
+    entry.set_reg_value(0).Set({}, X86PagingSettings{
+                                       .present = true,
+                                       .terminal = true,
+                                   });
+    EXPECT_TRUE(entry.accessed());
+    EXPECT_TRUE(entry.a());
+    EXPECT_TRUE(entry.d());
+  }
+}
+
+TEST(X86PagingTraitTests, SetImpliesAccessedAndDirty) {
+  TestX86SetImpliesAccessedAndDirty<X86PagingLevel::kPml5Table>();
+  TestX86SetImpliesAccessedAndDirty<X86PagingLevel::kPml4Table>();
+  TestX86SetImpliesAccessedAndDirty<X86PagingLevel::kPageDirectoryPointerTable>();
+  TestX86SetImpliesAccessedAndDirty<X86PagingLevel::kPageDirectory>();
+  TestX86SetImpliesAccessedAndDirty<X86PagingLevel::kPageTable>();
+}
+
+template <X86PagingLevel Level>
+void TestX86GetSetGlobal() {
+  arch::X86PagingStructure<Level> entry;
+
+  // Non-terminal entries ignore settings of `global = true`.
+  if constexpr (kX86LevelCanBeNonTerminal<Level>) {
+    entry.set_reg_value(0)
+        .Set({}, X86PagingSettings{.present = true, .terminal = false})
+        .set_g(false);
+    EXPECT_FALSE(entry.global());
+
+    entry.set_reg_value(0)
+        .Set({}, X86PagingSettings{.present = true, .terminal = false})
+        .set_g(true);
+    EXPECT_FALSE(entry.global());
+
+    entry.set_reg_value(0).Set({}, X86PagingSettings{
+                                       .present = true,
+                                       .terminal = false,
+                                       .global = false,
+                                   });
+    EXPECT_FALSE(entry.global());
+
+    entry.set_reg_value(0).Set({}, X86PagingSettings{
+                                       .present = true,
+                                       .terminal = false,
+                                       .global = true,
+                                   });
+    EXPECT_FALSE(entry.global());
+  }
+
+  if constexpr (kX86LevelCanBeTerminal<Level>) {
+    entry.set_reg_value(0)
+        .Set({}, X86PagingSettings{.present = true, .terminal = true})
+        .set_g(false);
+    EXPECT_FALSE(entry.global());
+
+    entry.set_reg_value(0)
+        .Set({}, X86PagingSettings{.present = true, .terminal = true})
+        .set_g(true);
+    EXPECT_TRUE(entry.global());
+
+    entry.set_reg_value(0).Set({}, X86PagingSettings{
+                                       .present = true,
+                                       .terminal = true,
+                                       .global = false,
+                                   });
+    EXPECT_FALSE(entry.global());
+
+    entry.set_reg_value(0).Set({}, X86PagingSettings{
+                                       .present = true,
+                                       .terminal = true,
+                                       .global = true,
+                                   });
+    EXPECT_TRUE(entry.global());
+  }
+}
+
+TEST(X86PagingTraitTests, GetSetGlobal) {
+  TestX86GetSetGlobal<X86PagingLevel::kPml5Table>();
+  TestX86GetSetGlobal<X86PagingLevel::kPml4Table>();
+  TestX86GetSetGlobal<X86PagingLevel::kPageDirectoryPointerTable>();
+  TestX86GetSetGlobal<X86PagingLevel::kPageDirectory>();
+  TestX86GetSetGlobal<X86PagingLevel::kPageTable>();
+}
+
 template <ArmPagingLevel Level>
 void TestArmGetSetPresent() {
   ArmTableEntry<Level> entry;
@@ -940,12 +1161,12 @@ void TestArmGetSetPresent() {
   entry.set_reg_value(0).set_valid(true);
   EXPECT_TRUE(entry.present());
 
-  entry.set_reg_value(0).set_valid(true).Set({}, PagingSettings{.present = false});
+  entry.set_reg_value(0).set_valid(true).Set({}, ArmPagingSettings{.present = false});
   EXPECT_FALSE(entry.valid());
   EXPECT_FALSE(entry.present());
 
   if constexpr (kArmLevelCanBeNonTerminal<Level>) {
-    entry.set_reg_value(0).set_valid(false).Set({}, PagingSettings{
+    entry.set_reg_value(0).set_valid(false).Set({}, ArmPagingSettings{
                                                         .present = true,
                                                         .terminal = false,
                                                     });
@@ -954,7 +1175,7 @@ void TestArmGetSetPresent() {
   }
 
   if constexpr (kArmLevelCanBeTerminal<Level>) {
-    entry.set_reg_value(0).set_valid(false).Set({}, PagingSettings{
+    entry.set_reg_value(0).set_valid(false).Set({}, ArmPagingSettings{
                                                         .present = true,
                                                         .terminal = true,
                                                     });
@@ -1023,7 +1244,7 @@ void TestArmGetSetTerminal() {
     entry.set_reg_value(0).SetAsPage();
     EXPECT_TRUE(entry.terminal());
 
-    entry.set_reg_value(0).Set({}, PagingSettings{.present = true, .terminal = true});
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{.present = true, .terminal = true});
     EXPECT_TRUE(entry.terminal());
     EXPECT_TRUE(entry.IsPage());
   }
@@ -1032,7 +1253,7 @@ void TestArmGetSetTerminal() {
     entry.set_reg_value(0).SetAsBlock();
     EXPECT_TRUE(entry.terminal());
 
-    entry.set_reg_value(0).Set({}, PagingSettings{.present = true, .terminal = true});
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{.present = true, .terminal = true});
     EXPECT_TRUE(entry.terminal());
     EXPECT_TRUE(entry.IsBlock());
   }
@@ -1041,7 +1262,7 @@ void TestArmGetSetTerminal() {
     entry.set_reg_value(0).SetAsTable();
     EXPECT_FALSE(entry.terminal());
 
-    entry.set_reg_value(0).Set({}, PagingSettings{.present = true, .terminal = false});
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{.present = true, .terminal = false});
     EXPECT_FALSE(entry.terminal());
     EXPECT_TRUE(entry.IsTable());
   }
@@ -1059,7 +1280,7 @@ void TestArmGetSetReadable() {
   ArmTableEntry<Level> entry;
 
   if constexpr (kArmLevelCanBeNonTerminal<Level>) {
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                        .present = true,
                                        .terminal = false,
                                        .access = AccessPermissions{.readable = true},
@@ -1068,7 +1289,7 @@ void TestArmGetSetReadable() {
   }
 
   if constexpr (kArmLevelCanBeTerminal<Level>) {
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                        .present = true,
                                        .terminal = true,
                                        .access = AccessPermissions{.readable = true},
@@ -1147,7 +1368,7 @@ void TestArmGetSetWritableOrUserAccessible() {
   }
 
   if constexpr (kArmLevelCanBeNonTerminal<Level>) {
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                        .present = true,
                                        .terminal = false,
                                        .access =
@@ -1161,7 +1382,7 @@ void TestArmGetSetWritableOrUserAccessible() {
     EXPECT_FALSE(entry.user_accessible());
     EXPECT_EQ(entry.AsTable().ap_table(), ArmTableAccessPermissions::kNoWriteOrEl0Access);
 
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                        .present = true,
                                        .terminal = false,
                                        .access =
@@ -1175,7 +1396,7 @@ void TestArmGetSetWritableOrUserAccessible() {
     EXPECT_TRUE(entry.user_accessible());
     EXPECT_EQ(entry.AsTable().ap_table(), ArmTableAccessPermissions::kNoWriteAccess);
 
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                        .present = true,
                                        .terminal = false,
                                        .access =
@@ -1189,7 +1410,7 @@ void TestArmGetSetWritableOrUserAccessible() {
     EXPECT_FALSE(entry.user_accessible());
     EXPECT_EQ(entry.AsTable().ap_table(), ArmTableAccessPermissions::kNoEl0Access);
 
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                        .present = true,
                                        .terminal = false,
                                        .access =
@@ -1212,7 +1433,7 @@ void TestArmGetSetWritableOrUserAccessible() {
       return entry.AsBlock().ap();
     };
 
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                        .present = true,
                                        .terminal = true,
                                        .access =
@@ -1226,7 +1447,7 @@ void TestArmGetSetWritableOrUserAccessible() {
     EXPECT_FALSE(entry.user_accessible());
     EXPECT_EQ(get_ap(entry), ArmAccessPermissions::kSupervisorReadOnly);
 
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                        .present = true,
                                        .terminal = true,
                                        .access =
@@ -1240,7 +1461,7 @@ void TestArmGetSetWritableOrUserAccessible() {
     EXPECT_TRUE(entry.user_accessible());
     EXPECT_EQ(get_ap(entry), ArmAccessPermissions::kReadOnly);
 
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                        .present = true,
                                        .terminal = true,
                                        .access =
@@ -1254,7 +1475,7 @@ void TestArmGetSetWritableOrUserAccessible() {
     EXPECT_FALSE(entry.user_accessible());
     EXPECT_EQ(get_ap(entry), ArmAccessPermissions::kSupervisorReadWrite);
 
-    entry.set_reg_value(0).Set({}, PagingSettings{
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                        .present = true,
                                        .terminal = true,
                                        .access =
@@ -1323,7 +1544,7 @@ void TestArmGetSetExecutable() {
 
   if constexpr (kArmLevelCanBeNonTerminal<Level>) {
     for (bool u : kBools) {
-      entry.set_reg_value(0).Set({}, PagingSettings{
+      entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                          .present = true,
                                          .terminal = false,
                                          .access =
@@ -1337,7 +1558,7 @@ void TestArmGetSetExecutable() {
       EXPECT_TRUE(entry.AsTable().pxn_table());
       EXPECT_TRUE(entry.AsTable().uxn_table());
 
-      entry.set_reg_value(0).Set({}, PagingSettings{
+      entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                          .present = true,
                                          .terminal = false,
                                          .access =
@@ -1368,7 +1589,7 @@ void TestArmGetSetExecutable() {
     };
 
     for (bool u : kBools) {
-      entry.set_reg_value(0).Set({}, PagingSettings{
+      entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                          .present = true,
                                          .terminal = true,
                                          .access =
@@ -1382,7 +1603,7 @@ void TestArmGetSetExecutable() {
       EXPECT_TRUE(get_pxn(entry));
       EXPECT_TRUE(get_uxn(entry));
 
-      entry.set_reg_value(0).Set({}, PagingSettings{
+      entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                          .present = true,
                                          .terminal = true,
                                          .access =
@@ -1424,7 +1645,7 @@ void TestArmGetSetAddress() {
       entry.set_reg_value(0).SetAsTable().set_table_address(addr);
       EXPECT_EQ(addr, entry.address());
 
-      entry.set_reg_value(0).Set({}, PagingSettings{
+      entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                          .address = addr,
                                          .present = true,
                                          .terminal = false,
@@ -1455,7 +1676,7 @@ void TestArmGetSetAddress() {
       }
       EXPECT_EQ(addr, entry.address());
 
-      entry.set_reg_value(0).Set({}, PagingSettings{
+      entry.set_reg_value(0).Set({}, ArmPagingSettings{
                                          .address = addr,
                                          .present = true,
                                          .terminal = true,
@@ -1477,7 +1698,193 @@ TEST(ArmPagingTraitTests, GetSetAddress) {
   TestArmGetSetAddress<ArmPagingLevel::k3>();
 }
 
-//
+template <ArmPagingLevel Level>
+void TestArmGetSetMemory() {
+  constexpr arch::ArmMairAttribute kNormalMemory = arch::ArmMairNormalAttribute{
+      .inner = arch::ArmCacheabilityAttribute::kWriteBackReadWriteAllocate,
+      .outer = arch::ArmCacheabilityAttribute::kWriteBackReadWriteAllocate,
+  };
+
+  constexpr arch::ArmMairAttribute kMmioMemory =
+      arch::ArmDeviceMemory::kNonGatheringNonReorderingEarlyAck;
+
+  const ArmSystemState kState = {
+      .mair = arch::ArmMemoryAttrIndirectionRegister::Get()
+                  .FromValue(0)
+                  .SetAttribute(0, kNormalMemory)
+                  .SetAttribute(1, kMmioMemory),
+      .shareability = arch::ArmShareabilityAttribute::kOuter,
+  };
+
+  ArmTableEntry<Level> entry;
+
+  if constexpr (kArmLevelCanBePage<Level>) {
+    entry.set_reg_value(0).SetAsPage().set_attr_index(0);
+    EXPECT_EQ(kNormalMemory, entry.Memory(kState));
+
+    entry.set_reg_value(0).SetAsPage().set_attr_index(1);
+    EXPECT_EQ(kMmioMemory, entry.Memory(kState));
+  } else if constexpr (kArmLevelCanBeBlock<Level>) {
+    entry.set_reg_value(0).SetAsBlock().set_attr_index(0);
+    EXPECT_EQ(kNormalMemory, entry.Memory(kState));
+
+    entry.set_reg_value(0).SetAsBlock().set_attr_index(1);
+    EXPECT_EQ(kMmioMemory, entry.Memory(kState));
+  }
+
+  if constexpr (kArmLevelCanBeTerminal<Level>) {
+    auto attr_index = [](auto& entry) {
+      if (entry.IsPage()) {
+        return entry.AsPage().attr_index();
+      }
+      return entry.AsBlock().attr_index();
+    };
+
+    entry.set_reg_value(0).Set(kState, ArmPagingSettings{
+                                           .present = true,
+                                           .terminal = true,
+                                           .access = {.readable = true},
+                                           .memory = kNormalMemory,
+                                       });
+    EXPECT_EQ(0u, attr_index(entry));
+    EXPECT_EQ(kNormalMemory, entry.Memory(kState));
+
+    entry.set_reg_value(0).Set(kState, ArmPagingSettings{
+                                           .present = true,
+                                           .terminal = true,
+                                           .access = {.readable = true},
+                                           .memory = kMmioMemory,
+                                       });
+    EXPECT_EQ(1u, attr_index(entry));
+    EXPECT_EQ(kMmioMemory, entry.Memory(kState));
+  }
+}
+
+TEST(ArmPagingTraitTests, GetSetMemory) {
+  TestArmGetSetMemory<ArmPagingLevel::k0>();
+  TestArmGetSetMemory<ArmPagingLevel::k1>();
+  TestArmGetSetMemory<ArmPagingLevel::k2>();
+  TestArmGetSetMemory<ArmPagingLevel::k3>();
+}
+
+template <ArmPagingLevel Level>
+void TestArmSetImpliesAccessed() {
+  ArmTableEntry<Level> entry;
+
+  if constexpr (kArmLevelCanBeTable<Level>) {
+    entry.set_reg_value(0).SetAsTable();
+    EXPECT_FALSE(entry.accessed());
+  }
+  if constexpr (kArmLevelCanBePage<Level>) {
+    entry.set_reg_value(0).SetAsPage().set_af(0);
+    EXPECT_FALSE(entry.accessed());
+
+    entry.set_reg_value(0).SetAsPage().set_af(1);
+    EXPECT_TRUE(entry.accessed());
+  }
+  if constexpr (kArmLevelCanBeBlock<Level>) {
+    entry.set_reg_value(0).SetAsBlock().set_af(0);
+    EXPECT_FALSE(entry.accessed());
+
+    entry.set_reg_value(0).SetAsBlock().set_af(1);
+    EXPECT_TRUE(entry.accessed());
+  }
+
+  // Non-terminal entries never report as accessed.
+  if constexpr (kArmLevelCanBeNonTerminal<Level>) {
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
+                                       .present = true,
+                                       .terminal = false,
+                                   });
+    EXPECT_FALSE(entry.accessed());
+  }
+
+  // An entry Set() as terminal should report as accessed.
+  if constexpr (kArmLevelCanBeTerminal<Level>) {
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
+                                       .present = true,
+                                       .terminal = true,
+                                   });
+    EXPECT_TRUE(entry.accessed());
+  }
+}
+
+TEST(ArmPagingTraitTests, SetImpliesAccessed) {
+  TestArmSetImpliesAccessed<ArmPagingLevel::k0>();
+  TestArmSetImpliesAccessed<ArmPagingLevel::k1>();
+  TestArmSetImpliesAccessed<ArmPagingLevel::k2>();
+  TestArmSetImpliesAccessed<ArmPagingLevel::k3>();
+}
+
+template <ArmPagingLevel Level>
+void TestArmGetSetGlobal() {
+  ArmTableEntry<Level> entry;
+
+  if constexpr (kArmLevelCanBeTable<Level>) {
+    entry.set_reg_value(0).SetAsTable();
+    EXPECT_FALSE(entry.global());
+  }
+  if constexpr (kArmLevelCanBePage<Level>) {
+    entry.set_reg_value(0).SetAsPage().set_ng(true);
+    EXPECT_FALSE(entry.global());
+
+    entry.set_reg_value(0).SetAsPage().set_ng(false);
+    EXPECT_TRUE(entry.global());
+  }
+  if constexpr (kArmLevelCanBeBlock<Level>) {
+    entry.set_reg_value(0).SetAsBlock().set_ng(true);
+    EXPECT_FALSE(entry.global());
+
+    entry.set_reg_value(0).SetAsBlock().set_ng(false);
+    EXPECT_TRUE(entry.global());
+  }
+
+  // Non-terminal entries never report 'global'.
+  if constexpr (kArmLevelCanBeNonTerminal<Level>) {
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
+                                       .present = true,
+                                       .terminal = false,
+                                       .access = {.readable = true},
+                                       .global = false,
+                                   });
+    EXPECT_FALSE(entry.global());
+
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
+                                       .present = true,
+                                       .terminal = false,
+                                       .access = {.readable = true},
+                                       .global = true,
+                                   });
+    EXPECT_FALSE(entry.global());
+  }
+
+  if constexpr (kArmLevelCanBeTerminal<Level>) {
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
+                                       .present = true,
+                                       .terminal = true,
+                                       .access = {.readable = true},
+                                       .global = false,
+                                   });
+    EXPECT_FALSE(entry.global());
+
+    entry.set_reg_value(0).Set({}, ArmPagingSettings{
+                                       .present = true,
+                                       .terminal = true,
+                                       .access = {.readable = true},
+                                       .global = true,
+                                   });
+    EXPECT_TRUE(entry.global());
+  }
+}
+
+TEST(ArmPagingTraitTests, GetSetGlobal) {
+  TestArmGetSetGlobal<ArmPagingLevel::k0>();
+  TestArmGetSetGlobal<ArmPagingLevel::k1>();
+  TestArmGetSetGlobal<ArmPagingLevel::k2>();
+  TestArmGetSetGlobal<ArmPagingLevel::k3>();
+}
+
+// Represents a 512 entry page table and owns its own storage.
 class Table {
  public:
   using Io = hwreg::ArrayIo<uint64_t, 512>;
@@ -1556,20 +1963,27 @@ class PagingHelper {
   std::map<uint64_t, std::unique_ptr<Table>> tables_;
 };
 
-TEST(PagingTests, Compilation) {
+template <typename PagingTraits>
+void PagingCompilationTest() {
   // The point here is not really to check that the traits structs are empty,
   // but rather to force the compiler to instantiate arch::Paging for each
   // trait, which in turn checks that the traits meet the expected API.
-  static_assert(std::is_empty_v<arch::Paging<arch::ExamplePagingTraits>>);
-  static_assert(std::is_empty_v<arch::Paging<arch::RiscvSv39PagingTraits>>);
-  static_assert(std::is_empty_v<arch::Paging<arch::RiscvSv48PagingTraits>>);
-  static_assert(std::is_empty_v<arch::Paging<arch::RiscvSv57PagingTraits>>);
-  static_assert(std::is_empty_v<arch::Paging<arch::X86FourLevelPagingTraits>>);
-  static_assert(std::is_empty_v<arch::Paging<arch::X86FiveLevelPagingTraits>>);
-  static_assert(
-      std::is_empty_v<arch::Paging<arch::ArmPagingTraits<arch::ArmVirtualAddressRange::kLower>>>);
-  static_assert(
-      std::is_empty_v<arch::Paging<arch::ArmPagingTraits<arch::ArmVirtualAddressRange::kUpper>>>);
+  static_assert(std::is_empty_v<arch::Paging<PagingTraits>>);
+
+  // Check that the static members expected of traits that are not referenced
+  // directly by arch::Paging are indeed defined.
+  static_assert(std::is_same_v<std::decay_t<decltype(PagingTraits::kExecuteOnlyAllowed)>, bool>);
+}
+
+TEST(PagingTests, Compilation) {
+  PagingCompilationTest<arch::ExamplePagingTraits>();
+  PagingCompilationTest<arch::RiscvSv39PagingTraits>();
+  PagingCompilationTest<arch::RiscvSv48PagingTraits>();
+  PagingCompilationTest<arch::RiscvSv57PagingTraits>();
+  PagingCompilationTest<arch::X86FourLevelPagingTraits>();
+  PagingCompilationTest<arch::X86FiveLevelPagingTraits>();
+  PagingCompilationTest<arch::ArmLowerPagingTraits>();
+  PagingCompilationTest<arch::ArmUpperPagingTraits>();
 }
 
 // The following macros are expected to be used on test cases given as
@@ -1585,14 +1999,12 @@ TEST(PagingTests, Compilation) {
   TEST_FOR_RISCV(name)            \
   TEST_FOR_X86(name)
 
-#define TEST_FOR_ARM(name)                                            \
-  TEST(PagingTests, ArmLower##name) {                                 \
-    name<arch::ArmPagingTraits<arch::ArmVirtualAddressRange::kLower>, \
-         /*VaddrHighBits=*/0x0000'0000'0000'0000u>({});               \
-  }                                                                   \
-  TEST(PagingTests, ArmUpper##name) {                                 \
-    name<arch::ArmPagingTraits<arch::ArmVirtualAddressRange::kUpper>, \
-         /*VaddrHighBits=*/0xffff'0000'0000'0000u>({});               \
+#define TEST_FOR_ARM(name)                                                          \
+  TEST(PagingTests, ArmLower##name) {                                               \
+    name<arch::ArmLowerPagingTraits, /*VaddrHighBits=*/0x0000'0000'0000'0000u>({}); \
+  }                                                                                 \
+  TEST(PagingTests, ArmUpper##name) {                                               \
+    name<arch::ArmUpperPagingTraits, /*VaddrHighBits=*/0xffff'0000'0000'0000u>({}); \
   }
 
 #define TEST_FOR_RISCV(name) \
@@ -1616,6 +2028,7 @@ bool OneGibPagesAllowed(const X86SystemState& state) { return state.page1gb; }
 template <class PagingTraits, uint64_t VaddrHighBits = 0>
 void TranslationWith4KiBPages(const typename PagingTraits::SystemState& state) {
   using Paging = arch::Paging<PagingTraits>;
+  using PagingSettings = typename Paging::PagingSettings;
 
   //                                |---9---| |---9---| |---9---| |---9---| |----12----|
   constexpr uint64_t kPageVaddr =
@@ -1710,6 +2123,7 @@ TEST_FOR_ALL_TRAITS(TranslationWith4KiBPages)
 template <class PagingTraits, uint64_t VaddrHighBits = 0>
 void TranslationWith2MiBPages(const typename PagingTraits::SystemState& state) {
   using Paging = arch::Paging<PagingTraits>;
+  using PagingSettings = typename Paging::PagingSettings;
 
   //                                |---9---| |---9---| |---9---| |------12 + 9-------|
   constexpr uint64_t kPageVaddr =
@@ -1796,6 +2210,7 @@ TEST_FOR_ALL_TRAITS(TranslationWith2MiBPages)
 template <class PagingTraits, uint64_t VaddrHighBits = 0>
 void TranslationWith1GiBPages(const typename PagingTraits::SystemState& state) {
   using Paging = arch::Paging<PagingTraits>;
+  using PagingSettings = typename Paging::PagingSettings;
 
   //                                |---9---| |---9---| |---------12 + 9 + 9---------|
   constexpr uint64_t kPageVaddr =
@@ -1872,6 +2287,7 @@ TEST_FOR_ALL_TRAITS(TranslationWith1GiBPages)
 template <class PagingTraits, uint64_t VaddrHighBits = 0>
 void TranslationFault(const typename PagingTraits::SystemState& state) {
   using Paging = arch::Paging<PagingTraits>;
+  using PagingSettings = typename Paging::PagingSettings;
 
   //                                |---9---| |---9---| |---9---| |---9---| |----12----|
   constexpr uint64_t kPageVaddr =
@@ -1970,6 +2386,7 @@ TEST_FOR_ALL_TRAITS(TranslationFault)
 template <class PagingTraits, uint64_t VaddrHighBits = 0>
 void Mapped4KiBPage(typename PagingTraits::SystemState state) {
   using Paging = arch::Paging<PagingTraits>;
+  using MapSettings = typename Paging::MapSettings;
 
   //                                |---9---| |---9---| |---9---| |---9---| |----12----|
   constexpr uint64_t kPageVaddr =
@@ -2050,6 +2467,7 @@ TEST_FOR_ALL_TRAITS(Mapped4KiBPage)
 template <class PagingTraits, uint64_t VaddrHighBits = 0>
 void Mapped2MiBPage(typename PagingTraits::SystemState state) {
   using Paging = arch::Paging<PagingTraits>;
+  using MapSettings = typename Paging::MapSettings;
 
   //                                |---9---| |---9---| |---9---| |------12 + 9-------|
   constexpr uint64_t kPageVaddr =
@@ -2132,6 +2550,7 @@ TEST_FOR_ALL_TRAITS(Mapped2MiBPage)
 template <class PagingTraits, uint64_t VaddrHighBits = 0>
 void Mapped1GiBPage(typename PagingTraits::SystemState state) {
   using Paging = arch::Paging<PagingTraits>;
+  using MapSettings = typename Paging::MapSettings;
 
   //                                |---9---| |---9---| |---------12 + 9 + 9---------|
   constexpr uint64_t kPageVaddr =
@@ -2236,6 +2655,7 @@ void DoubleMapping(typename PagingTraits::SystemState state) {
   //
 
   using Paging = arch::Paging<PagingTraits>;
+  using MapSettings = typename Paging::MapSettings;
 
   constexpr MapSettings kSettings = {
       .access =
@@ -2313,6 +2733,7 @@ TEST_FOR_ALL_TRAITS(DoubleMapping)
 template <class PagingTraits, uint64_t VaddrHighBits = 0>
 void MapAllocationFailure(typename PagingTraits::SystemState state) {
   using Paging = arch::Paging<PagingTraits>;
+  using MapSettings = typename Paging::MapSettings;
 
   constexpr uint64_t kVaddr = 0xffff'ffff'1000;
   constexpr uint64_t kPaddr = 0x0000'0000'1000;
@@ -2354,6 +2775,7 @@ TEST_FOR_ALL_TRAITS(MapAllocationFailure)
 template <class PagingTraits, uint64_t VaddrHighBits = 0>
 void MappedRegionWithMultipleMappings(typename PagingTraits::SystemState state) {
   using Paging = arch::Paging<PagingTraits>;
+  using MapSettings = typename Paging::MapSettings;
 
   constexpr uint64_t k1GiB = 0x4000'0000;
   constexpr uint64_t k2MiB = 0x0020'0000;

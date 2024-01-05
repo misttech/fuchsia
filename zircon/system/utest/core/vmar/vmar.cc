@@ -504,7 +504,7 @@ TEST(Vmar, MapOverDestroyedTest) {
 }
 
 struct AlignTestdata {
-  zx_vm_option_t aligment;
+  zx_vm_option_t alignment;
   int zero_bits;
 };
 
@@ -546,8 +546,16 @@ zx_status_t MakeManualAlignedVmar(size_t vmar_size, size_t alignment, zx_handle_
 
 TEST(Vmar, AlignmentVmarMapTest) {
   const size_t size = zx_system_get_page_size() * 2;
+#if defined(__riscv) && __has_feature(address_sanitizer)
+  // The reduced address space of riscv along with additional address space utilization with ASAN
+  // does not allow large VMAR allocations to succeed. So scale down the VMAR size, which should
+  // prevent testing of only three of the higher alignment flags.
+  const auto vmar_size = (512ull * 1024 * 1024);
+  const auto vmar_alignment = (32ull * 1024 * 1024);
+#else
   const auto vmar_size = (8ull * 1024 * 1024 * 1024);
   const auto vmar_alignment = (512ull * 1024 * 1024);
+#endif
 
   zx_handle_t vmo;
   ASSERT_EQ(zx_vmo_create(size, 0, &vmo), ZX_OK);
@@ -583,9 +591,17 @@ TEST(Vmar, AlignmentVmarMapTest) {
   // Test all supported alignments.
   for (const auto& d : align_data) {
     zx_vaddr_t mapping_addr = 0u;
-    ASSERT_EQ(zx_vmar_map(vmar, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | d.aligment, 0, vmo, 0, size,
-                          &mapping_addr),
-              ZX_OK);
+    zx_status_t status = zx_vmar_map(vmar, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | d.alignment, 0, vmo,
+                                     0, size, &mapping_addr);
+    if (status != ZX_OK) {
+      if (1ull << d.zero_bits > vmar_size) {
+        // If the requested alignment was greater than the VMAR size, the map should fail with
+        // ZX_ERR_NO_RESOURCES. Any other failure code is unexpected.
+        ASSERT_EQ(ZX_ERR_NO_RESOURCES, status, "alignment zero bits %d", d.zero_bits);
+        continue;
+      }
+    }
+    ASSERT_OK(status, "alignment zero bits %d", d.zero_bits);
 
     ASSERT_NE(mapping_addr, 0u);
     EXPECT_GE(__builtin_ctzll(mapping_addr), d.zero_bits);
@@ -601,8 +617,16 @@ TEST(Vmar, AlignmentVmarMapTest) {
 
 TEST(Vmar, AlignmentVmarAllocateTest) {
   const size_t size = zx_system_get_page_size() * 16;
+#if defined(__riscv) && __has_feature(address_sanitizer)
+  // The reduced address space of riscv along with additional address space utilization with ASAN
+  // does not allow large VMAR allocations to succeed. So scale down the VMAR size, which should
+  // prevent testing of only three of the higher alignment flags.
+  const auto vmar_size = (512ull * 1024 * 1024);
+  const auto vmar_alignment = (32ull * 1024 * 1024);
+#else
   const auto vmar_size = (8ull * 1024 * 1024 * 1024);
   const auto vmar_alignment = (512ull * 1024 * 1024);
+#endif
 
   zx_handle_t vmar = ZX_HANDLE_INVALID;
   ASSERT_EQ(MakeManualAlignedVmar(vmar_size, vmar_alignment, &vmar), ZX_OK);
@@ -639,9 +663,18 @@ TEST(Vmar, AlignmentVmarAllocateTest) {
   for (const auto& d : align_data) {
     zx_handle_t child_vmar;
     uintptr_t mapping_addr = 0u;
-    ASSERT_EQ(zx_vmar_allocate(vmar, ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | d.aligment, 0, size,
-                               &child_vmar, &mapping_addr),
-              ZX_OK);
+    zx_status_t status =
+        zx_vmar_allocate(vmar, ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | d.alignment, 0, size,
+                         &child_vmar, &mapping_addr);
+    if (status != ZX_OK) {
+      // If the requested alignment was greater than the VMAR size, the allocation should fail with
+      // ZX_ERR_NO_RESOURCES. Any other failure code is unexpected.
+      if (1ull << d.zero_bits > vmar_size) {
+        ASSERT_EQ(ZX_ERR_NO_RESOURCES, status, "alignment zero bits %d", d.zero_bits);
+        continue;
+      }
+    }
+    ASSERT_OK(status, "alignment zero bits %d", d.zero_bits);
 
     ASSERT_NE(mapping_addr, 0u);
     EXPECT_GE(__builtin_ctzll(mapping_addr), d.zero_bits);
@@ -1960,9 +1993,9 @@ TEST(Vmar, RangeOpCommitVmoPages) {
   // Verify decommit of only part of a mapping.
   std::atomic_uint8_t* target = reinterpret_cast<std::atomic_uint8_t*>(vmar_base);
   target[0].store(5);
-  EXPECT_EQ(
-      zx_vmar_op_range(vmar, ZX_VMO_OP_DECOMMIT, vmar_base, zx_system_get_page_size(), nullptr, 0u),
-      ZX_OK);
+  EXPECT_EQ(zx_vmar_op_range(vmar, ZX_VMAR_OP_DECOMMIT, vmar_base, zx_system_get_page_size(),
+                             nullptr, 0u),
+            ZX_OK);
   EXPECT_EQ(target[0].load(), 0u);
   target[zx_system_get_page_size()].store(7);
   EXPECT_EQ(zx_vmar_op_range(vmar, ZX_VMO_OP_DECOMMIT, vmar_base + zx_system_get_page_size(),
@@ -1974,7 +2007,7 @@ TEST(Vmar, RangeOpCommitVmoPages) {
   target[zx_system_get_page_size()].store(5);
   target[zx_system_get_page_size() * 2].store(6);
   EXPECT_EQ(target[zx_system_get_page_size() * 4].load(), 5u);
-  EXPECT_EQ(zx_vmar_op_range(vmar, ZX_VMO_OP_DECOMMIT, vmar_base + zx_system_get_page_size(),
+  EXPECT_EQ(zx_vmar_op_range(vmar, ZX_VMAR_OP_DECOMMIT, vmar_base + zx_system_get_page_size(),
                              zx_system_get_page_size() * 2, nullptr, 0u),
             ZX_OK);
   EXPECT_EQ(target[zx_system_get_page_size()].load(), 0u);
@@ -1982,7 +2015,7 @@ TEST(Vmar, RangeOpCommitVmoPages) {
   EXPECT_EQ(target[zx_system_get_page_size() * 4].load(), 0u);
 
   // Verify decommit including an unmapped region fails.
-  EXPECT_EQ(zx_vmar_op_range(vmar, ZX_VMO_OP_DECOMMIT, vmar_base + zx_system_get_page_size(),
+  EXPECT_EQ(zx_vmar_op_range(vmar, ZX_VMAR_OP_DECOMMIT, vmar_base + zx_system_get_page_size(),
                              zx_system_get_page_size() * 3, nullptr, 0u),
             ZX_ERR_BAD_STATE);
 
@@ -2000,7 +2033,7 @@ TEST(Vmar, RangeOpCommitVmoPages) {
   ASSERT_EQ(zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ, 0, readonly_vmo, 0,
                         zx_system_get_page_size(), &readonly_mapping_addr),
             ZX_OK);
-  EXPECT_EQ(zx_vmar_op_range(zx_vmar_root_self(), ZX_VMO_OP_DECOMMIT, readonly_mapping_addr,
+  EXPECT_EQ(zx_vmar_op_range(zx_vmar_root_self(), ZX_VMAR_OP_DECOMMIT, readonly_mapping_addr,
                              zx_system_get_page_size(), nullptr, 0u),
             ZX_ERR_ACCESS_DENIED);
   EXPECT_EQ(zx_vmar_unmap(zx_vmar_root_self(), readonly_mapping_addr, zx_system_get_page_size()),
@@ -2568,18 +2601,18 @@ TEST(Vmar, RangeOpCommit) {
   // reclamation to have already happened.
   zx_info_vmo_t info;
   ASSERT_OK(vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
-  EXPECT_LE(2 * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_GE(2 * zx_system_get_page_size(), info.populated_bytes);
   ASSERT_OK(clone.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
-  EXPECT_LE(2 * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_GE(2 * zx_system_get_page_size(), info.populated_bytes);
 
   // Commit all pages in the clone.
   ASSERT_OK(sub_vmar2.op_range(ZX_VMAR_OP_COMMIT, addr2, kVmoSize, nullptr, 0));
 
   // The clone now might have all its pages committed, but the parent should still be capped at 2.
   ASSERT_OK(vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
-  EXPECT_LE(2 * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_GE(2 * zx_system_get_page_size(), info.populated_bytes);
   ASSERT_OK(clone.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
-  EXPECT_LE(kVmoSize, info.committed_bytes);
+  EXPECT_GE(kVmoSize, info.populated_bytes);
 
   // Map a single page as read-only and try to commit it. The commit should fail.
   zx::vmo readonly_vmo;
@@ -2591,11 +2624,11 @@ TEST(Vmar, RangeOpCommit) {
   ASSERT_EQ(ZX_ERR_ACCESS_DENIED,
             vmar.op_range(ZX_VMAR_OP_COMMIT, addr, zx_system_get_page_size(), nullptr, 0));
 
-  // The commit counts should not have changed.
+  // The commit counts should not have changed (modulo any reclamation).
   ASSERT_OK(vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
-  EXPECT_EQ(2 * zx_system_get_page_size(), info.committed_bytes);
+  EXPECT_GE(2 * zx_system_get_page_size(), info.populated_bytes);
   ASSERT_OK(clone.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
-  EXPECT_EQ(kVmoSize, info.committed_bytes);
+  EXPECT_GE(kVmoSize, info.populated_bytes);
 
   // Some trivial failure cases.
   // Out of range.

@@ -32,6 +32,11 @@ namespace elfldltl {
 // constexpr context).  Lookup has both const and non-const overloads, but the
 // const overload has to recompute every time if the hash isn't already cached.
 //
+// ELF symbol names cannot contain NUL characters, so it's an invariant that
+// SymbolName cannot contain embedded NULs (unlike std::string_view, which can).
+// Construction and assignment enforce this by turning a std::string_view argument
+// that contains embedded NULs into the empty string.
+//
 class SymbolName : public std::string_view {
  public:
   using std::string_view::string_view;
@@ -51,21 +56,27 @@ class SymbolName : public std::string_view {
   // This will precompute the hashes in constexpr context, see below.
   constexpr explicit SymbolName(std::string_view name) { *this = name; }
 
+  constexpr explicit SymbolName(const char* name) { *this = name; }
+
   // Convenient constructor using a symbol table entry (see below).
   template <class SymbolInfo, class Sym>
   constexpr SymbolName(const SymbolInfo& si, const Sym& sym) : SymbolName(si.string(sym.name)) {}
 
   constexpr SymbolName& operator=(const SymbolName&) = default;
 
-  constexpr SymbolName& operator=(const std::string_view& name) {
-    std::string_view::operator=(name);
-    compat_hash_ = kCompatNoHash;
-    gnu_hash_ = kGnuNoHash;
-    if (cpp20::is_constant_evaluated()) {  // Precompute in constexpr.
-      compat_hash();
-      gnu_hash();
+  constexpr SymbolName& operator=(std::string_view name) {
+    // No valid symbol will have an embedded NUL character, in which case just yield an empty
+    // symbol.
+    if (!name.empty() && name.find_first_of('\0') != std::string_view::npos) [[unlikely]] {
+      name = {};
     }
-    return *this;
+    return ChangeName(name);
+  }
+
+  constexpr SymbolName& operator=(const char* name) {
+    // Implicit const char* -> std::string_view conversion makes it impossible
+    // for there to be an embedded NUL, so no need to check that invariant.
+    return ChangeName(name);
   }
 
   constexpr uint32_t compat_hash() {
@@ -121,24 +132,53 @@ class SymbolName : public std::string_view {
   }
 
  private:
+  constexpr SymbolName& ChangeName(std::string_view name) {
+    std::string_view::operator=(name);
+    compat_hash_ = kCompatNoHash;
+    gnu_hash_ = kGnuNoHash;
+    if (cpp20::is_constant_evaluated()) {  // Precompute in constexpr.
+      compat_hash();
+      gnu_hash();
+    }
+    return *this;
+  }
+
   uint32_t compat_hash_ =  // Precompute in constexpr.
       cpp20::is_constant_evaluated() ? CompatHashString(*this) : kCompatNoHash;
   uint32_t gnu_hash_ =  // Precompute in constexpr.
       cpp20::is_constant_evaluated() ? GnuHashString(*this) : kGnuNoHash;
 };
 
+// This type can be used as a constructor tag to zero-construct an object whose
+// default constructor would otherwise not be zero initializable. This can
+// allow and object to be placed in bss. See
+// `SymbolInfo::SymbolInfo(LinkerZeroInitialized)` for more.
+struct LinkerZeroInitialized {};
+inline constexpr LinkerZeroInitialized kLinkerZeroInitialized{};
+
 // This represents all the dynamic symbol table information for one ELF file.
 // It's primarily used for hash table lookup via SymbolName::Lookup, but can
 // also be used to enumerate the symbol table or the hash tables.  It holds
 // non-owning pointers into target data normally found in the RODATA segment.
 //
-template <class Elf, class AbiTraits = LocalAbiTraits>
+template <class ElfLayout, class AbiTraits = LocalAbiTraits>
 class SymbolInfo {
  public:
+  using Elf = ElfLayout;
   using Word = typename Elf::Word;
   using Addr = typename Elf::Addr;
   using size_type = typename Elf::size_type;
   using Sym = typename Elf::Sym;
+
+  constexpr SymbolInfo() = default;
+
+  // This constructor can be used to zero-initialize a SymbolInfo object.
+  // This can be useful for performance reasons. Note, a SymbolInfo object in
+  // this state must never be used until `InitLinkerZeroInitialized` has been
+  // called.
+  constexpr explicit SymbolInfo(LinkerZeroInitialized) : strtab_{} {}
+
+  constexpr void InitLinkerZeroInitialized() { strtab_ = kEmptyStrtab; }
 
   // Each flavor of hash table has a support class with a compatible API,
   // except for the argument to the constructor and Valid, which is a
@@ -214,12 +254,14 @@ class SymbolInfo {
 
   // Look up a symbol in one of the hash tables.  The filter is a predicate to
   // accept or reject symbols before name matching.
+  // This takes a SymbolName to enforce the invariant that there are no embedded NUL characters.
+  // It's hash fields are not used.
   template <class HashTable, typename Filter>
-  constexpr const Sym* Lookup(const HashTable& table, std::string_view name, uint32_t hash,
+  constexpr const Sym* Lookup(const HashTable& table, const SymbolName& name, uint32_t hash,
                               Filter&& filter = DefinedSymbol) const {
     static_assert(std::is_invocable_r_v<bool, Filter, const Sym&>);
     const uint32_t bucket = table.Bucket(hash);
-    if (bucket != 0 && name.size() < strtab().size()) {
+    if (bucket != 0 && name.size() && name.size() < strtab().size()) {
       for (uint32_t i : HashBucket<HashTable>(table, bucket, hash)) {
         if (i >= symtab_.size()) [[unlikely]] {
           break;
@@ -241,14 +283,11 @@ class SymbolInfo {
 
   // Fetch a NUL-terminated string from the string table by offset,
   // e.g. as stored in st_name or DT_SONAME.
-  constexpr std::string_view string(size_t offset) const {
-    if (offset < strtab().size()) {
-      size_t pos = strtab().find_first_of('\0', offset);
-      if (pos != std::string_view::npos) {
-        return strtab().substr(offset, pos - offset);
-      }
+  constexpr const char* string(size_t offset) const {
+    if (strtab().size() && offset < strtab().size() - 1) [[likely]] {
+      return strtab().data() + offset;
     }
-    return {};
+    return "";
   }
 
   // Fetch the raw symbol table.  Note this size may be an upper bound.  It's
@@ -286,10 +325,20 @@ class SymbolInfo {
     return {};
   }
 
+  // Return the DT_FLAGS bits.
+  constexpr size_type flags() const { return flags_; }
+
+  // Return the DT_FLAGS_1 bits.
+  constexpr size_type flags1() const { return flags1_; }
+
   // Install data for the various tables.  These return *this so they can be
   // called in fluent style, e.g. in a constexpr initializer.
 
   constexpr SymbolInfo& set_strtab(std::string_view strtab) {
+    if (strtab.empty() || strtab.back() != '\0') {
+      // Invalid string table has no NUL terminator; don't use it at all.
+      strtab = kEmptyStrtab;
+    }
     strtab_ = strtab;
     return *this;
   }
@@ -318,9 +367,31 @@ class SymbolInfo {
     return *this;
   }
 
+  constexpr SymbolInfo& set_flags(size_type flags) {
+    flags_ = flags;
+    return *this;
+  }
+
+  constexpr SymbolInfo& set_flags1(size_type flags1) {
+    flags1_ = flags1;
+    return *this;
+  }
+
  private:
   template <typename T>
   using Span = AbiSpan<const T, cpp20::dynamic_extent, Elf, AbiTraits>;
+
+  // In directly-usable instantiations, ensure that the empty state is
+  // guaranteed NUL terminated.  In remoting instantiations, the values will
+  // always be reset from known-valid local instantiations so the zero-length
+  // view will never be used.
+  static constexpr AbiStringView<Elf, AbiTraits> kEmptyStrtab = []() {
+    AbiStringView<Elf, AbiTraits> empty;
+    if constexpr (std::is_constructible_v<AbiStringView<Elf, AbiTraits>, std::string_view>) {
+      empty = std::string_view{"", 1};
+    }
+    return empty;
+  }();
 
   size_type safe_symtab_size() const {
     if (symtab_.empty()) {
@@ -354,11 +425,14 @@ class SymbolInfo {
     return symtab_.size();
   }
 
-  AbiStringView<Elf, AbiTraits> strtab_;
+ public:
+  AbiStringView<Elf, AbiTraits> strtab_ = kEmptyStrtab;
   Span<Sym> symtab_;
   Span<Word> compat_hash_;
   Span<Addr> gnu_hash_;
   Addr soname_ = 0;
+  Addr flags_ = 0;   // DT_FLAGS
+  Addr flags1_ = 0;  // DT_FLAGS_1
 };
 
 // This constructs a SymbolInfo that just contains a single undefined symbol.

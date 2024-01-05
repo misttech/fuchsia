@@ -3,22 +3,13 @@
 // found in the LICENSE file.
 
 use {
-    crate::builtin::capability::BuiltinCapability,
-    ::routing::capability_source::InternalCapability,
     anyhow::Error,
-    async_trait::async_trait,
-    cm_types::Name,
     fidl_fuchsia_kernel as fkernel,
     fuchsia_async::DurationExt as _,
     fuchsia_zircon::{self as zx, Resource},
     futures::prelude::*,
-    lazy_static::lazy_static,
     std::sync::Arc,
 };
-
-lazy_static! {
-    static ref KERNEL_STATS_CAPABILITY_NAME: Name = "fuchsia.kernel.Stats".parse().unwrap();
-}
 
 /// An implementation of the `fuchsia.kernel.Stats` protocol.
 pub struct KernelStats {
@@ -30,14 +21,11 @@ impl KernelStats {
     pub fn new(resource: Resource) -> Arc<Self> {
         Arc::new(Self { resource })
     }
-}
 
-#[async_trait]
-impl BuiltinCapability for KernelStats {
-    const NAME: &'static str = "KernelStats";
-    type Marker = fkernel::StatsMarker;
-
-    async fn serve(self: Arc<Self>, mut stream: fkernel::StatsRequestStream) -> Result<(), Error> {
+    pub async fn serve(
+        self: Arc<Self>,
+        mut stream: fkernel::StatsRequestStream,
+    ) -> Result<(), Error> {
         while let Some(stats_request) = stream.try_next().await? {
             match stats_request {
                 fkernel::StatsRequest::GetMemoryStats { responder } => {
@@ -77,6 +65,51 @@ impl BuiltinCapability for KernelStats {
                         mmu_overhead_bytes: Some(mem_stats_extended.mmu_overhead_bytes),
                         ipc_bytes: Some(mem_stats_extended.ipc_bytes),
                         other_bytes: Some(mem_stats_extended.other_bytes),
+                        ..Default::default()
+                    };
+                    responder.send(&stats)?;
+                }
+                fkernel::StatsRequest::GetMemoryStatsCompression { responder } => {
+                    let mem_stats_compression = &self.resource.mem_stats_compression()?;
+                    let stats = fkernel::MemoryStatsCompression {
+                        uncompressed_storage_bytes: Some(
+                            mem_stats_compression.uncompressed_storage_bytes,
+                        ),
+                        compressed_storage_bytes: Some(
+                            mem_stats_compression.compressed_storage_bytes,
+                        ),
+                        compressed_fragmentation_bytes: Some(
+                            mem_stats_compression.compressed_fragmentation_bytes,
+                        ),
+                        compression_time: Some(mem_stats_compression.compression_time),
+                        decompression_time: Some(mem_stats_compression.decompression_time),
+                        total_page_compression_attempts: Some(
+                            mem_stats_compression.total_page_compression_attempts,
+                        ),
+                        failed_page_compression_attempts: Some(
+                            mem_stats_compression.failed_page_compression_attempts,
+                        ),
+                        total_page_decompressions: Some(
+                            mem_stats_compression.total_page_decompressions,
+                        ),
+                        compressed_page_evictions: Some(
+                            mem_stats_compression.compressed_page_evictions,
+                        ),
+                        eager_page_compressions: Some(
+                            mem_stats_compression.eager_page_compressions,
+                        ),
+                        memory_pressure_page_compressions: Some(
+                            mem_stats_compression.memory_pressure_page_compressions,
+                        ),
+                        critical_memory_page_compressions: Some(
+                            mem_stats_compression.critical_memory_page_compressions,
+                        ),
+                        pages_decompressed_unit_ns: Some(
+                            mem_stats_compression.pages_decompressed_unit_ns,
+                        ),
+                        pages_decompressed_within_log_time: Some(
+                            mem_stats_compression.pages_decompressed_within_log_time,
+                        ),
                         ..Default::default()
                     };
                     responder.send(&stats)?;
@@ -133,10 +166,6 @@ impl BuiltinCapability for KernelStats {
         }
         Ok(())
     }
-
-    fn matches_routed_capability(&self, capability: &InternalCapability) -> bool {
-        capability.matches_protocol(&KERNEL_STATS_CAPABILITY_NAME)
-    }
 }
 
 /// Uses start / end times and corresponding PerCpuStats to calculate and return a vector of per-CPU
@@ -162,14 +191,14 @@ fn calculate_cpu_loads(
 #[cfg(test)]
 mod tests {
     use {
-        super::*, fidl_fuchsia_boot as fboot, fuchsia_async as fasync,
+        super::*, fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync,
         fuchsia_component::client::connect_to_protocol, zx::DurationNum as _,
     };
 
-    async fn get_root_resource() -> Result<Resource, Error> {
-        let root_resource_provider = connect_to_protocol::<fboot::RootResourceMarker>()?;
-        let root_resource_handle = root_resource_provider.get().await?;
-        Ok(Resource::from(root_resource_handle))
+    async fn get_info_resource() -> Result<Resource, Error> {
+        let info_resource_provider = connect_to_protocol::<fkernel::InfoResourceMarker>()?;
+        let info_resource_handle = info_resource_provider.get().await?;
+        Ok(Resource::from(info_resource_handle))
     }
 
     enum OnError {
@@ -178,10 +207,10 @@ mod tests {
     }
 
     async fn serve_kernel_stats(on_error: OnError) -> Result<fkernel::StatsProxy, Error> {
-        let root_resource = get_root_resource().await?;
+        let info_resource = get_info_resource().await?;
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fkernel::StatsMarker>()?;
-        fasync::Task::local(KernelStats::new(root_resource).serve(stream).unwrap_or_else(
+        fasync::Task::local(KernelStats::new(info_resource).serve(stream).unwrap_or_else(
             move |e| match on_error {
                 OnError::Panic => panic!("Error while serving kernel stats: {}", e),
                 _ => {}

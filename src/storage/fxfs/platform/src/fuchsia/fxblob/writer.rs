@@ -11,7 +11,6 @@ use {
         node::FxNode, volume::FxVolume,
     },
     anyhow::{anyhow, Context, Error},
-    async_trait::async_trait,
     delivery_blob::{
         compression::{decode_archive, ChunkInfo, ChunkedDecompressor},
         Type1Blob,
@@ -23,10 +22,9 @@ use {
     fxfs::{
         errors::FxfsError,
         log::*,
-        object_handle::{ObjectHandle, ObjectProperties, WriteObjectHandle},
+        object_handle::{ObjectHandle, WriteObjectHandle},
         object_store::{
             directory::{replace_child_with_object, ReplacedChild},
-            transaction::{LockKey, Options},
             DataObjectHandle, ObjectDescriptor, Timestamp, BLOB_MERKLE_ATTRIBUTE_ID,
         },
         round::{round_down, round_up},
@@ -153,7 +151,7 @@ impl Inner {
 
         // Copy data into transfer buffer, zero pad if required.
         let aligned_len = round_up(len, block_size).ok_or(FxfsError::OutOfRange)?;
-        let mut buffer = handle.allocate_buffer(aligned_len);
+        let mut buffer = handle.allocate_buffer(aligned_len).await;
         buffer.as_mut_slice()[..len].copy_from_slice(&self.buffer[..len]);
         buffer.as_mut_slice()[len..].fill(0);
 
@@ -213,16 +211,18 @@ impl FxDeliveryBlob {
     }
 
     async fn allocate(&self, size: usize) -> Result<(), Error> {
-        let mut transaction = self.handle.new_transaction().await?;
-        let size: u64 = size.try_into()?;
-        self.handle
-            .preallocate_range(
-                &mut transaction,
-                0..round_up(size, self.handle.block_size()).ok_or(FxfsError::OutOfRange)?,
-            )
-            .await?;
-        self.handle.grow(&mut transaction, 0, size).await?;
-        transaction.commit().await?;
+        let size = size as u64;
+        let mut range = 0..round_up(size, self.handle.block_size()).ok_or(FxfsError::OutOfRange)?;
+        let mut first_time = true;
+        while range.start < range.end {
+            let mut transaction = self.handle.new_transaction().await?;
+            if first_time {
+                self.handle.grow(&mut transaction, 0, size).await?;
+                first_time = false;
+            }
+            self.handle.preallocate_range(&mut transaction, &mut range).await?;
+            transaction.commit().await?;
+        }
         Ok(())
     }
 
@@ -246,13 +246,18 @@ impl FxDeliveryBlob {
             .downcast::<BlobDirectory>()
             .expect("Expected blob directory");
 
-        let keys = [LockKey::object(store.store_object_id(), dir.object_id())];
-        let mut transaction = store.filesystem().new_transaction(&keys, Options::default()).await?;
+        let name = format!("{}", self.hash);
+        let mut transaction = dir
+            .directory()
+            .directory()
+            .acquire_context_for_replace(None, &name, false)
+            .await
+            .map_err(map_to_status)?
+            .transaction;
 
         let object_id = self.handle.object_id();
         store.remove_from_graveyard(&mut transaction, object_id);
 
-        let name = format!("{}", self.hash);
         match replace_child_with_object(
             &mut transaction,
             Some((object_id, ObjectDescriptor::File)),
@@ -273,14 +278,15 @@ impl FxDeliveryBlob {
         transaction
             .commit_with_callback(|_| {
                 self.is_completed.store(true, Ordering::Relaxed);
-                parent.did_add(&name);
+                // This can't actually add the node to the cache, because it hasn't been created
+                // ever at this point. Passes in None for now as a result.
+                parent.did_add(&name, None);
             })
             .await?;
         Ok(())
     }
 }
 
-#[async_trait]
 impl FxNode for FxDeliveryBlob {
     fn object_id(&self) -> u64 {
         self.handle.object_id()
@@ -292,10 +298,6 @@ impl FxNode for FxDeliveryBlob {
 
     fn set_parent(&self, _parent: Arc<FxDirectory>) {
         unreachable!()
-    }
-
-    async fn get_properties(&self) -> Result<ObjectProperties, Error> {
-        unimplemented!()
     }
 
     fn open_count_add_one(&self) {
@@ -313,6 +315,10 @@ impl FxNode for FxDeliveryBlob {
                 .graveyard()
                 .queue_tombstone(store.store_object_id(), self.object_id());
         }
+    }
+
+    fn object_descriptor(&self) -> ObjectDescriptor {
+        ObjectDescriptor::File
     }
 }
 
@@ -380,7 +386,7 @@ impl FxDeliveryBlob {
                 let Some((seek_table, chunk_data)) = decode_archive(&inner.buffer, archive_length)
                     .context("Failed to decode chunked archive")?
                 else {
-                    return Ok(());  // Not enough data to decode archive header/seek table.
+                    return Ok(()); // Not enough data to decode archive header/seek table.
                 };
                 // We store the seek table out-of-line with the data, so we don't persist that
                 // part of the payload directly.
@@ -547,10 +553,10 @@ mod tests {
         core::ops::Range,
         delivery_blob::{CompressionMode, Type1Blob},
         fidl_fuchsia_fxfs::CreateBlobError,
+        fidl_fuchsia_io::UnlinkOptions,
         fuchsia_async as fasync,
         fuchsia_merkle::MerkleTreeBuilder,
         fuchsia_zircon::Status,
-        fxfs::filesystem::Filesystem,
         rand::{thread_rng, Rng},
     };
 
@@ -608,7 +614,7 @@ mod tests {
                 write_offset += len;
             }
         }
-        assert_eq!(fixture.read_blob(&format!("{}", hash)).await, data);
+        assert_eq!(fixture.read_blob(hash).await, data);
         fixture.close().await;
     }
 
@@ -750,7 +756,7 @@ mod tests {
                 count += 1;
             }
         }
-        assert_eq!(fixture.read_blob(&format!("{}", hash)).await, data);
+        assert_eq!(fixture.read_blob(hash).await, data);
         fixture.close().await;
     }
 
@@ -840,7 +846,7 @@ mod tests {
                 write_offset += len;
             }
         }
-        assert_eq!(fixture.read_blob(&format!("{}", hash)).await, data);
+        assert_eq!(fixture.read_blob(hash).await, data);
         fixture.close().await;
     }
 
@@ -871,7 +877,7 @@ mod tests {
                 .expect("transport error on bytes_ready")
                 .expect("failed to write data to vmo");
 
-            assert_eq!(fixture.read_blob(&format!("{}", hash)).await, data);
+            assert_eq!(fixture.read_blob(hash).await, data);
             assert_eq!(
                 fixture.create_blob(&hash.into(), false).await.expect_err("rewrite succeeded"),
                 CreateBlobError::AlreadyExists
@@ -922,7 +928,76 @@ mod tests {
                 write_offset += len;
             }
         }
-        assert_eq!(fixture.read_blob(&format!("{}", hash)).await, data);
+        assert_eq!(fixture.read_blob(hash).await, data);
+        fixture.close().await;
+    }
+
+    #[fasync::run(10, test)]
+    async fn test_allocate_with_large_transaction() {
+        const NUM_BLOBS: usize = 1024;
+        let fixture = new_blob_fixture().await;
+
+        let mut data = [0; 128];
+        let mut hashes = Vec::new();
+
+        // It doesn't matter if these blobs are compressed. We just need to fragment space.
+        for _ in 0..NUM_BLOBS {
+            thread_rng().fill(&mut data[..]);
+            let hash = fixture.write_blob(&data, CompressionMode::Never).await;
+            hashes.push(hash);
+        }
+
+        // Delete every second blob, fragmenting free space.
+        for ix in 0..NUM_BLOBS / 2 {
+            fixture
+                .root()
+                .unlink(&format!("{}", hashes[ix * 2]), &UnlinkOptions::default())
+                .await
+                .expect("FIDL failed")
+                .expect("unlink failed");
+        }
+
+        // Create one large blob (reusing fragmented extents).
+        {
+            let mut data = vec![1; 1024921];
+            thread_rng().fill(&mut data[..]);
+
+            let mut builder = MerkleTreeBuilder::new();
+            builder.write(&data);
+            let hash = builder.finish().root();
+            let compressed_data = Type1Blob::generate(&data, CompressionMode::Always);
+            assert!(compressed_data.len() as u64 > *RING_BUFFER_SIZE);
+
+            let writer =
+                fixture.create_blob(&hash.into(), false).await.expect("failed to create blob");
+            let vmo = writer
+                .get_vmo(compressed_data.len() as u64)
+                .await
+                .expect("transport error on get_vmo")
+                .expect("failed to get vmo");
+
+            let vmo_size = vmo.get_size().expect("failed to get vmo size");
+
+            let list_of_writes = generate_list_of_writes(compressed_data.len() as u64);
+            let mut write_offset = 0;
+            for range in list_of_writes {
+                let len = range.end - range.start;
+                vmo.write(
+                    &compressed_data[range.start as usize..range.end as usize],
+                    write_offset % vmo_size,
+                )
+                .expect("failed to write to vmo");
+                let _ = writer
+                    .bytes_ready(len)
+                    .await
+                    .expect("transport error on bytes_ready")
+                    .expect("failed to write data to vmo.");
+                write_offset += len;
+            }
+            // Ensure that the blob is readable and matches what we expect.
+            assert_eq!(fixture.read_blob(hash).await, data);
+        }
+
         fixture.close().await;
     }
 }

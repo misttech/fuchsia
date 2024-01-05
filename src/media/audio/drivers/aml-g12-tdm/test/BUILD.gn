@@ -11,13 +11,15 @@ executable("aml-g12-tdm-test-bin") {
   testonly = true
   sources = [
     "../aml-tdm-config-device.cc",
+    "../aml-tdm-config-device.h",
     "../audio-stream.cc",
     "stream-test.cc",
   ]
   deps = [
     "../:aml-g12-tdm-bind",
-    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp",
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/inspect/testing/cpp:zxtest",
@@ -59,13 +61,14 @@ executable("aml-g12-tdm-dai-test-bin") {
   testonly = true
   sources = [
     "../aml-tdm-config-device.cc",
+    "../aml-tdm-config-device.h",
     "../dai.cc",
     "dai-test.cc",
   ]
   deps = [
     "../:aml-g12-tdm-dai-bind",
     "//sdk/banjo/fuchsia.hardware.audio:fuchsia.hardware.audio_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp",
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_hlcpp",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
@@ -99,6 +102,19 @@ executable("aml-g12-tdm-dai-test-bin") {
   configs += [ "//build/cpp:fidl-wire-deprecated-mutable-tables" ]
 }
 
+test("aml-g12-composite-test-bin") {
+  sources = [ "composite-test.cc" ]
+  deps = [
+    "..:aml-g12-composite-common",
+    "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/driver/incoming/cpp",
+    "//sdk/lib/driver/testing/cpp",
+    "//src/devices/testing/fake-bti",
+    "//zircon/system/ulib/fzl",
+    "//zircon/system/ulib/zxtest",
+  ]
+}
+
 fuchsia_unittest_package("stream-test-package") {
   package_name = "aml-g12-tdm-test"
   deps = [ ":aml-g12-tdm-test-bin" ]
@@ -113,6 +129,17 @@ fuchsia_unittest_package("stream-test-package") {
 fuchsia_unittest_package("dai-test-package") {
   package_name = "aml-g12-tdm-dai-test"
   deps = [ ":aml-g12-tdm-dai-test-bin" ]
+  test_specs = {
+    environments = basic_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+fuchsia_unittest_package("composite-test-package") {
+  package_name = "aml-g12-composite-test"
+  deps = [ ":aml-g12-composite-test-bin" ]
   test_specs = {
     environments = basic_envs
     log_settings = {

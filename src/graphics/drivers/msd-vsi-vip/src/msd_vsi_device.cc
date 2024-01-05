@@ -5,6 +5,13 @@
 #include "msd_vsi_device.h"
 
 #include <lib/fit/defer.h>
+#include <lib/magma/platform/platform_barriers.h>
+#include <lib/magma/platform/platform_logger.h>
+#include <lib/magma/platform/platform_mmio.h>
+#include <lib/magma/platform/platform_thread.h>
+#include <lib/magma/platform/platform_trace.h>
+#include <lib/magma/util/short_macros.h>
+#include <lib/magma_service/msd.h>
 
 #include <algorithm>
 #include <chrono>
@@ -16,51 +23,13 @@
 #include "address_space_layout.h"
 #include "command_buffer.h"
 #include "instructions.h"
-#include "magma_util/short_macros.h"
 #include "magma_vendor_queries.h"
-#include "msd.h"
 #include "msd_vsi_context.h"
-#include "platform_barriers.h"
-#include "platform_logger.h"
-#include "platform_mmio.h"
-#include "platform_thread.h"
-#include "platform_trace.h"
 #include "registers.h"
 
 static constexpr uint32_t kInterruptIndex = 0;
 
 static constexpr uint32_t kSramMmioIndex = 4;
-
-class MsdVsiDevice::BatchRequest : public DeviceRequest {
- public:
-  BatchRequest(std::unique_ptr<MappedBatch> batch, bool do_flush)
-      : batch_(std::move(batch)), do_flush_(do_flush) {}
-
- protected:
-  magma::Status Process(MsdVsiDevice* device) override {
-    return device->ProcessBatch(std::move(batch_), do_flush_);
-  }
-
- private:
-  std::unique_ptr<MappedBatch> batch_;
-  bool do_flush_;
-};
-
-class MsdVsiDevice::InterruptRequest : public DeviceRequest {
- public:
-  InterruptRequest() {}
-
- protected:
-  magma::Status Process(MsdVsiDevice* device) override { return device->ProcessInterrupt(); }
-};
-
-class MsdVsiDevice::DumpRequest : public DeviceRequest {
- public:
-  DumpRequest() {}
-
- protected:
-  magma::Status Process(MsdVsiDevice* device) override { return device->ProcessDumpStatusToLog(); }
-};
 
 MsdVsiDevice::~MsdVsiDevice() { Shutdown(); }
 
@@ -435,7 +404,26 @@ int MsdVsiDevice::DeviceThreadLoop(bool disable_suspend) {
 
 void MsdVsiDevice::EnqueueDeviceRequest(std::unique_ptr<DeviceRequest> request) {
   std::unique_lock<std::mutex> lock(device_request_mutex_);
-  device_request_list_.emplace_back(std::move(request));
+
+  // Interrupts are higher priority and placed at the front of the queue in FIFO order
+  if (request->RequestType() == InterruptRequest::kRequestType) {
+    if (device_request_list_.empty()) {
+      device_request_list_.emplace_front(std::move(request));
+    } else {
+      for(auto it = device_request_list_.begin(); ; ++it) {
+        if (it == device_request_list_.end()) {
+          device_request_list_.emplace_back(std::move(request));
+          break;
+        } else if (it->get()->RequestType() != InterruptRequest::kRequestType) {
+          device_request_list_.emplace(it, std::move(request));
+          break;
+        }
+      }
+    }
+  } else {
+    device_request_list_.emplace_back(std::move(request));
+  }
+
   device_request_semaphore_->Signal();
 }
 
@@ -459,30 +447,29 @@ int MsdVsiDevice::InterruptThreadLoop() {
 
     last_interrupt_timestamp_ = magma::get_monotonic_ns();
 
-    auto request = std::make_unique<InterruptRequest>();
-    auto reply = request->GetReply();
+    // In the field (b/280363833) we observe a crash while reading from IrqAck,
+    // which indicates the hardware is suspended. This should not be possible
+    // because we should not be suspending the hardware while there is work in
+    // in progress. To prevent the crash we do PowerOn() here as a temporary measure
+    // to reduce the impact of having the driver crash in the field.
+    if (power_state() != PowerState::kOn) {
+      MAGMA_LOG(ERROR, "Processing Interrupt with power state 0x%x",
+                static_cast<unsigned int>(power_state()));
+      PowerOn();
+    }
+    auto irqack = registers::IrqAck::Get().ReadFrom(register_io_.get());
+    interrupt_->Complete();
+
+    auto request = std::make_unique<InterruptRequest>(std::move(irqack));
     EnqueueDeviceRequest(std::move(request));
-    reply->Wait();
   }
   DLOG("VSI Interrupt thread exiting");
   return 0;
 }
 
-magma::Status MsdVsiDevice::ProcessInterrupt() {
+magma::Status MsdVsiDevice::ProcessInterrupt(registers::IrqAck irq_status) {
   CHECK_THREAD_IS_CURRENT(device_thread_id_);
 
-  // In the field (b/280363833) we observe a crash here while reading from IrqAck,
-  // which indicates the hardware is suspended. This should not be possible
-  // because we should not be suspending the hardware while there is work in
-  // in progress. To prevent the crash we do PowerOn() here as a temporary measure
-  // to reduce the impact of having the driver crash in the field.
-  if (power_state() != PowerState::kOn) {
-    MAGMA_LOG(ERROR, "Processing Interrupt with power state 0x%x",
-              static_cast<unsigned int>(power_state()));
-    PowerOn();
-  }
-
-  auto irq_status = registers::IrqAck::Get().ReadFrom(register_io_.get());
   auto mmu_exception = irq_status.mmu_exception();
   auto bus_error = irq_status.bus_error();
   auto value = irq_status.value();
@@ -549,7 +536,6 @@ magma::Status MsdVsiDevice::ProcessInterrupt() {
       MAGMA_LOG(WARNING, "%s", str.c_str());
     }
   }
-  interrupt_->Complete();
 
   if (mmu_exception) {
     KillCurrentContext();

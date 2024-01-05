@@ -24,11 +24,11 @@ fuchsia_driver("receiver_driver") {
   deps = [
     ":receiver_bind",
     ":receiver_config",
-    ":test.structuredconfig.receiver.shim_cpp_wire",
+    ":test.structuredconfig.receiver.shim_cpp",
     "//sdk/lib/driver/component/cpp:cpp",
-    "//sdk/lib/inspect/component/cpp:inspect_component_cpp",
+    "//sdk/lib/inspect/component/cpp",
     "//src/devices/lib/driver:driver_runtime",
-    "//src/sys/component_manager/tests/structured_config/fidl:test.structuredconfig.receiver_cpp_wire",
+    "//src/sys/component_manager/tests/structured_config/fidl:test.structuredconfig.receiver_cpp",
   ]
 }
 
@@ -45,7 +45,7 @@ fuchsia_driver_component("receiver_component") {
   info = "receiver-info.json"
 }
 
-fuchsia_structured_config_cpp_driver_lib("receiver_config") {
+fuchsia_structured_config_cpp_elf_lib("receiver_config") {
   testonly = true
   cm_label = ":receiver_manifest"
 }

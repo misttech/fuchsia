@@ -1,0 +1,90 @@
+{
+  "name": "download",
+  "description": "Retrieve image data.",
+  "examples": [
+    "Auth flow choices for --auth include:\n  `--auth no-auth` do not use auth.\n  `--auth pkce` to use PKCE auth flow (requires GUI browser).\n  `--auth device-experimental` to use device flow.\n  `--auth <path/to/exe>` run tool at given path which will print an access token to stdout and exit 0.\n    \n  `--auth default` let the tool decide which auth flow to use."
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--force",
+      "short": null,
+      "description": "get the data again, even if it's already present locally.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "auth"
+        }
+      },
+      "optionality": "optional",
+      "long": "--auth",
+      "short": null,
+      "description": "use specific auth flow for oauth2 (see examples; default: pkce).",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "base-url"
+        }
+      },
+      "optionality": "optional",
+      "long": "--base-url",
+      "short": null,
+      "description": "where to look for product bundles manifest.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "version"
+        }
+      },
+      "optionality": "optional",
+      "long": "--version",
+      "short": null,
+      "description": "filter on products of <version>.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "branch"
+        }
+      },
+      "optionality": "optional",
+      "long": "--branch",
+      "short": null,
+      "description": "filter on products of <branch>.",
+      "hidden": false
+    }
+  ],
+  "notes": [],
+  "commands": [],
+  "positionals": [
+    {
+      "name": "manifest_url",
+      "description": "url to the transfer manifest of the product bundle to download, or the product name to fetch.",
+      "optionality": "required",
+      "hidden": false
+    },
+    {
+      "name": "product_dir",
+      "description": "local name of the product bundle directory.",
+      "optionality": "required",
+      "hidden": false
+    }
+  ],
+  "error_codes": []
+}

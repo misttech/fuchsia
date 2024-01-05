@@ -2,20 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-mod serial;
 mod usb;
 
-use crate::serial::run_serial_link_handlers;
 use crate::usb::listen_for_usb_devices;
 use anyhow::Context as ErrorContext;
 use anyhow::{bail, format_err, Error};
 use argh::FromArgs;
 use async_net::unix::{UnixListener, UnixStream};
-use fuchsia_async::Task;
-use fuchsia_async::TimeoutExt;
+use fuchsia_async::{Task, TimeoutExt};
 use futures::channel::mpsc::unbounded;
 use futures::prelude::*;
-use hoist::Hoist;
 use overnet_core::AscenddClientRouting;
 use std::io::{
     ErrorKind::{self, TimedOut},
@@ -26,13 +22,89 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use stream_link::run_stream_link;
 
-#[cfg(not(target_os = "fuchsia"))]
-pub use hoist::default_ascendd_path;
+pub static CIRCUIT_ID: [u8; 8] = *b"CIRCUIT\0";
 
-#[cfg(not(target_os = "fuchsia"))]
-use hoist::CIRCUIT_ID;
+pub fn default_ascendd_path() -> PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push("ascendd");
+    path
+}
+
+/// If necessary, holds a tempdir open with a symlink to a socket path
+/// that is too long to fit in the system's SUN_LEN.
+#[derive(Debug)]
+pub struct ShortPathLink {
+    /// The shorthand path we're using to connect to the daemon
+    pub short_path: PathBuf,
+    /// The temporary directory handle we're putting the socket file in
+    _temp_location: Option<tempfile::TempDir>,
+}
+
+impl ShortPathLink {
+    // there seems to be no standard binding available for the SUN_LEN constant
+    // in std, libc, or nix, so we'll just conservatively guess 100 for now.
+    pub const MAX_SUN_LEN: usize = 100;
+}
+
+impl AsRef<Path> for ShortPathLink {
+    fn as_ref(&self) -> &Path {
+        self.short_path.as_ref()
+    }
+}
+
+/// If `real_path` is too long to fit in a socket bind/connect struct,
+/// creates a symlink in the tempdir that points to the 'real' socket
+/// path.
+///
+/// Returns a [`ShortPathSocket`] that keeps the reference alive
+/// while it's being connected to.
+pub fn short_socket_path(real_path: &Path) -> std::io::Result<ShortPathLink> {
+    #[cfg(not(target_os = "windows"))]
+    use std::os::unix::fs::symlink;
+    #[cfg(target_os = "windows")]
+    use std::os::windows::fs::symlink_dir as symlink;
+
+    let short_path;
+    let temp_location;
+    if real_path.as_os_str().len() > ShortPathLink::MAX_SUN_LEN {
+        // we make a symlink from the original home of the socket to a (hopefully shorter) tmpdir path,
+        // and then return a path that looks into that symlink to find the socket. This avoids a bunch of
+        // annoying situations around things trying to create the socket when it doesn't already exist.
+        let socket_filename = real_path.file_name().ok_or_else(|| {
+            let error_str = format!(
+                "{real_path} did not have a filename component",
+                real_path = real_path.display()
+            );
+            std::io::Error::new(ErrorKind::InvalidInput, error_str)
+        })?;
+        let socket_dir = real_path.parent().ok_or_else(|| {
+            let error_str = format!(
+                "{real_path} did not have a path component",
+                real_path = real_path.display()
+            );
+            std::io::Error::new(ErrorKind::InvalidInput, error_str)
+        })?;
+
+        let tempdir = tempfile::tempdir()?;
+        let symlink_path = tempdir.path().join("root");
+
+        short_path = symlink_path.join(socket_filename).to_owned();
+        if short_path.as_os_str().len() > ShortPathLink::MAX_SUN_LEN {
+            let error_str = format!(
+                "Even tmpdir path was too long to create a short enough socket path for {real_path} (tried: {short_path})",
+                real_path=real_path.display(),
+                short_path=short_path.display());
+            return Err(std::io::Error::new(ErrorKind::InvalidInput, error_str));
+        }
+        symlink(socket_dir, &symlink_path)?;
+        temp_location = Some(tempdir);
+    } else {
+        short_path = real_path.to_owned();
+        temp_location = None;
+    }
+    Ok(ShortPathLink { short_path, _temp_location: temp_location })
+}
 
 #[derive(FromArgs, Default)]
 /// daemon to lift a non-Fuchsia device into Overnet.
@@ -71,26 +143,21 @@ pub struct Ascendd {
 }
 
 impl Ascendd {
-    pub async fn new(
+    // Initializes and binds ascendd socket, but does not accept connections yet.
+    pub async fn prime(
         mut opt: Opt,
-        hoist: &Hoist,
-        stdout: impl AsyncWrite + Unpin + Send + 'static,
-    ) -> Result<Self, Error> {
+        node: Arc<overnet_core::Router>,
+    ) -> Result<impl FnOnce() -> Self, Error> {
         let usb = opt.usb;
         let link = std::mem::replace(&mut opt.link, vec![]);
-        let (sockpath, serial, client_routing, incoming) = bind_listener(opt, hoist).await?;
-        Ok(Self {
-            task: Task::spawn(run_ascendd(
-                hoist.clone(),
-                sockpath,
-                serial,
-                incoming,
-                client_routing,
-                usb,
-                stdout,
-                link,
-            )),
+        let (sockpath, client_routing, incoming) = bind_listener(opt, node.node_id()).await?;
+        Ok(move || Self {
+            task: Task::spawn(run_ascendd(node, sockpath, incoming, client_routing, usb, link)),
         })
+    }
+
+    pub async fn new(opt: Opt, node: Arc<overnet_core::Router>) -> Result<Self, Error> {
+        Self::prime(opt, node).await.map(|f| f())
     }
 }
 
@@ -106,7 +173,8 @@ impl Future for Ascendd {
 #[derive(Debug)]
 pub enum RunStreamError {
     Circuit(circuit::Error),
-    Other(Error),
+    EarlyHangup(std::io::Error),
+    Unsupported,
 }
 
 /// Run an ascendd server on the given stream IOs identified by the given labels
@@ -115,21 +183,14 @@ pub async fn run_stream<'a>(
     node: Arc<overnet_core::Router>,
     rx: &'a mut (dyn AsyncRead + Unpin + Send),
     tx: &'a mut (dyn AsyncWrite + Unpin + Send),
-    label: Option<String>,
-    path: Option<String>,
 ) -> Result<(), RunStreamError> {
     let mut id = [0; 8];
-    let mut read = 0;
 
-    while read < 8 {
-        match rx.read(&mut id[read..]).await {
-            Ok(got) if got > 0 => read += got,
-            // If the socket errors early it's the link's job to handle it.
-            Ok(_) | Err(_) => break,
-        }
+    if let Err(e) = rx.read_exact(&mut id).await {
+        return Err(RunStreamError::EarlyHangup(e));
     }
 
-    if read == 8 && id == CIRCUIT_ID {
+    if id == CIRCUIT_ID {
         let (errors_sender, errors) = unbounded();
         futures::future::join(
             circuit::multi_stream::multi_stream_node_connection_to_async(
@@ -151,21 +212,7 @@ pub async fn run_stream<'a>(
         .await
         .map_err(RunStreamError::Circuit)
     } else {
-        let config = Box::new(move || {
-            Some(fidl_fuchsia_overnet_protocol::LinkConfig::AscenddServer(
-                fidl_fuchsia_overnet_protocol::AscenddLinkConfig {
-                    path: path.clone(),
-                    connection_label: label.clone(),
-                    ..Default::default()
-                },
-            ))
-        });
-
-        let read = if read != 0 { Some(id[..read].to_vec()) } else { None };
-
-        run_stream_link(node, read, rx, tx, Default::default(), config)
-            .await
-            .map_err(RunStreamError::Other)
+        Err(RunStreamError::Unsupported)
     }
 }
 
@@ -206,54 +253,61 @@ pub async fn run_linked_ascendd<'a>(
 
 async fn bind_listener(
     opt: Opt,
-    hoist: &Hoist,
-) -> Result<(PathBuf, String, AscenddClientRouting, UnixListener), Error> {
-    let Opt { sockpath, serial, client_routing, usb: _, link: _ } = opt;
+    node_id: overnet_core::NodeId,
+) -> Result<(PathBuf, AscenddClientRouting, UnixListener), Error> {
+    let Opt { sockpath, serial: _, client_routing, usb: _, link: _ } = opt;
     let sockpath = sockpath.unwrap_or(default_ascendd_path());
-    let serial = serial.unwrap_or("none".to_string());
 
     let client_routing =
         if client_routing { AscenddClientRouting::Enabled } else { AscenddClientRouting::Disabled };
-    tracing::debug!(
-        node_id = hoist.node().node_id().0,
-        "starting ascendd on {}",
-        sockpath.display(),
-    );
+    tracing::debug!(node_id = node_id.0, "starting ascendd on {}", sockpath.display(),);
 
     let incoming = loop {
-        let safe_socket_path = hoist::short_socket_path(&sockpath)?;
+        let safe_socket_path = short_socket_path(&sockpath)?;
         match UnixListener::bind(&safe_socket_path) {
             Ok(listener) => {
                 break listener;
             }
-            Err(_) => match UnixStream::connect(&safe_socket_path)
-                .on_timeout(Duration::from_secs(1), || {
-                    Err(std::io::Error::new(TimedOut, format_err!("connecting to ascendd socket")))
-                })
-                .await
-            {
-                Ok(_) => {
-                    tracing::error!(
-                        "another ascendd is already listening at {}",
-                        sockpath.display()
-                    );
-                    bail!("another ascendd is aleady listening at {}!", sockpath.display());
+            Err(e) if e.kind() == ErrorKind::AddrInUse => {
+                match UnixStream::connect(&safe_socket_path)
+                    .on_timeout(Duration::from_secs(1), || {
+                        Err(std::io::Error::new(
+                            TimedOut,
+                            format_err!("connecting to ascendd socket"),
+                        ))
+                    })
+                    .await
+                {
+                    Ok(_) => {
+                        tracing::error!(
+                            "another ascendd is already listening at {}",
+                            sockpath.display()
+                        );
+                        bail!("another ascendd is aleady listening at {}!", sockpath.display());
+                    }
+                    Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
+                        tracing::info!(
+                            "trying to clean up stale ascendd socket at {} (error: {e:?})",
+                            sockpath.display()
+                        );
+                        std::fs::remove_file(&sockpath)?;
+                    }
+                    Err(e) => {
+                        tracing::info!("An unexpected error occurred while trying to connect to the existing ascendd socket at: {}: {e:?}", sockpath.display());
+                        bail!(
+                            "unexpected error while trying to connect to the existing ascendd socket at: {}: {e}",
+                            sockpath.display()
+                        );
+                    }
                 }
-                Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
-                    tracing::info!(
-                        "trying to clean up stale ascendd socket at {} (error: {e:?})",
-                        sockpath.display()
-                    );
-                    std::fs::remove_file(&sockpath)?;
-                }
-                Err(e) => {
-                    tracing::info!("An unexpected error occurred while trying to bind to the ascendd socket at {}: {e:?}", sockpath.display());
-                    bail!(
-                        "unexpected error while trying to bind to ascendd socket at {}: {e}",
-                        sockpath.display()
-                    );
-                }
-            },
+            }
+            Err(e) => {
+                tracing::info!("An unexpected error occurred while trying to bind to the ascendd socket at {}: {e:?}", sockpath.display());
+                bail!(
+                    "unexpected error while trying to bind to ascendd socket at {}: {e}",
+                    sockpath.display()
+                );
+            }
         }
     };
 
@@ -261,7 +315,7 @@ async fn bind_listener(
     if let Err(e) = write_pidfile(&sockpath, std::process::id()) {
         tracing::warn!("failed to write pidfile alongside {}: {e:?}", sockpath.display());
     }
-    Ok((sockpath, serial, client_routing, incoming))
+    Ok((sockpath, client_routing, incoming))
 }
 
 /// Writes a pid file alongside the socketpath so we know what pid last successfully tried to
@@ -275,25 +329,18 @@ fn write_pidfile(sockpath: &Path, pid: u32) -> anyhow::Result<()> {
 }
 
 async fn run_ascendd(
-    hoist: Hoist,
+    node: Arc<overnet_core::Router>,
     sockpath: PathBuf,
-    serial: String,
     incoming: UnixListener,
     client_routing: AscenddClientRouting,
     usb: bool,
-    stdout: impl AsyncWrite + Unpin + Send,
     link: Vec<PathBuf>,
 ) -> Result<(), Error> {
-    let node = hoist.node();
-    node.set_implementation(fidl_fuchsia_overnet_protocol::Implementation::Ascendd);
     node.set_client_routing(client_routing);
 
     tracing::debug!("ascendd listening to socket {}", sockpath.display());
 
-    let sockpath = &sockpath.to_str().context("Non-unicode in socket path")?.to_owned();
-    let hoist = &hoist;
-
-    futures::future::try_join4(
+    futures::future::try_join3(
         futures::stream::iter(link.into_iter().map(Ok)).try_for_each_concurrent(None, |path| {
             let node = Arc::clone(&node);
             async move {
@@ -312,54 +359,61 @@ async fn run_ascendd(
                 Ok(())
             }
         }),
-        run_serial_link_handlers(Arc::downgrade(&hoist.node()), &serial, stdout),
-        async move {
-            if usb {
-                listen_for_usb_devices(Arc::downgrade(&hoist.node())).await
-            } else {
-                Ok(())
+        {
+            let node = Arc::clone(&node);
+            async move {
+                if usb {
+                    listen_for_usb_devices(Arc::downgrade(&node)).await
+                } else {
+                    Ok(())
+                }
             }
         },
-        async move {
-            incoming
-                .incoming()
-                .for_each_concurrent(None, |stream| async move {
-                    match stream {
-                        Ok(stream) => {
-                            let (mut rx, mut tx) = stream.split();
-                            if let Err(e) = run_stream(
-                                hoist.node(),
-                                &mut rx,
-                                &mut tx,
-                                None,
-                                Some(sockpath.clone()),
-                            )
-                            .await
-                            {
-                                match e {
-                                    // A close of the remote side is not an error.
-                                    // TODO: Use typed error instead of String
-                                    RunStreamError::Other(e)
-                                        if format!("{e:?}") == "Framer closed during read" =>
+        {
+            let node = Arc::clone(&node);
+            async move {
+                incoming
+                    .incoming()
+                    .for_each_concurrent(None, |stream| {
+                        let node = Arc::clone(&node);
+                        async move {
+                            match stream {
+                                Ok(stream) => {
+                                    let (mut rx, mut tx) = stream.split();
+                                    if let Err(e) =
+                                        run_stream(Arc::clone(&node), &mut rx, &mut tx).await
                                     {
-                                        tracing::debug!("Completed socket read: {:?}", e)
+                                        match e {
+                                            RunStreamError::Circuit(
+                                                circuit::Error::ConnectionClosed(reason),
+                                            ) => {
+                                                tracing::debug!(
+                                                    "Circuit connection closed: {reason:?}"
+                                                )
+                                            }
+                                            RunStreamError::Circuit(other) => {
+                                                tracing::warn!("Failed serving socket: {other:?}")
+                                            }
+                                            RunStreamError::EarlyHangup(e) => {
+                                                tracing::debug!("Socket hung up early: {e:?}")
+                                            }
+                                            RunStreamError::Unsupported => {
+                                                tracing::warn!(
+                                                    "Socket was not a circuit connection."
+                                                )
+                                            }
+                                        }
                                     }
-                                    RunStreamError::Circuit(circuit::Error::ConnectionClosed(
-                                        reason,
-                                    )) => {
-                                        tracing::debug!("Circuit connection closed: {:?}", reason)
-                                    }
-                                    other => tracing::warn!("Failed serving socket: {:?}", other),
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed starting socket: {:?}", e);
                                 }
                             }
                         }
-                        Err(e) => {
-                            tracing::warn!("Failed starting socket: {:?}", e);
-                        }
-                    }
-                })
-                .await;
-            Ok(())
+                    })
+                    .await;
+                Ok(())
+            }
         },
     )
     .await

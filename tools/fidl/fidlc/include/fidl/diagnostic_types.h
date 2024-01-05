@@ -12,9 +12,7 @@
 #include <sstream>
 #include <string_view>
 
-#include "tools/fidl/fidlc/include/fidl/fixables.h"
 #include "tools/fidl/fidlc/include/fidl/flat_ast.h"
-#include "tools/fidl/fidlc/include/fidl/program_invocation.h"
 #include "tools/fidl/fidlc/include/fidl/source_span.h"
 #include "tools/fidl/fidlc/include/fidl/token.h"
 #include "tools/fidl/fidlc/include/fidl/types.h"
@@ -32,15 +30,12 @@ using ErrorId = uint32_t;
 
 namespace internal {
 
-constexpr std::string_view kFormatMarker = "{}";
-
 std::string Display(char c);
 std::string Display(const std::string& s);
 std::string Display(std::string_view s);
-std::string Display(const std::set<std::string>& s);
 std::string Display(const std::set<std::string_view>& s);
-std::string Display(const SourceSpan& s);
-std::string Display(const Token::KindAndSubkind& t);
+std::string Display(SourceSpan s);
+std::string Display(Token::KindAndSubkind t);
 std::string Display(types::Openness o);
 std::string Display(const raw::AttributeList* a);
 std::string Display(const std::vector<std::string_view>& library_name);
@@ -50,47 +45,44 @@ std::string Display(const flat::Constant* c);
 std::string Display(flat::Element::Kind k);
 std::string Display(flat::Decl::Kind k);
 std::string Display(const flat::Element* e);
-std::string Display(std::vector<const flat::Decl*>& d);
+std::string Display(const std::vector<const flat::Decl*>& d);
 std::string Display(const flat::Type* t);
 std::string Display(const flat::Name& n);
 std::string Display(const Platform& p);
-std::string Display(const Version& v);
-std::string Display(const VersionRange& r);
+std::string Display(Version v);
+std::string Display(VersionRange r);
 std::string Display(const VersionSet& s);
 template <typename T, typename = decltype(std::to_string(std::declval<T>()))>
 std::string Display(T val) {
   return std::to_string(val);
 }
 
-inline void FormatHelper(std::stringstream& out, std::string_view msg) {
-  ZX_ASSERT(msg.find(kFormatMarker) == std::string::npos);
-  out << msg;
-}
-
-template <typename T, typename... Rest>
-void FormatHelper(std::stringstream& out, std::string_view msg, T t, const Rest&... rest) {
-  auto i = msg.find(kFormatMarker);
-  ZX_ASSERT(i != std::string::npos);
-  out << msg.substr(0, i) << Display(t);
-  auto remaining_msg = msg.substr(i + kFormatMarker.size());
-  FormatHelper(out, remaining_msg, rest...);
-}
-
+// TODO(fxbug.dev/113689): Use std::format when we're on C++20.
 template <typename... Args>
 std::string FormatDiagnostic(std::string_view msg, const Args&... args) {
+  std::string displayed_args[] = {Display(args)...};
   std::stringstream s;
-  FormatHelper(s, msg, args...);
+  size_t offset = 0;
+  for (size_t i = 0; i < msg.size() - 2; i++) {
+    if (msg[i] == '{' && msg[i + 1] >= '0' && msg[i + 1] <= '9' && msg[i + 2] == '}') {
+      size_t index = msg[i + 1] - '0';
+      s << msg.substr(offset, i - offset) << displayed_args[index];
+      offset = i + 3;
+    }
+  }
+  s << msg.substr(offset);
   return s.str();
 }
 
-constexpr size_t CountFormatArgs(std::string_view s) {
-  size_t i = s.find(kFormatMarker, 0);
-  size_t total = 0;
-  while (i != std::string::npos) {
-    total++;
-    i = s.find(kFormatMarker, i + kFormatMarker.size());
+constexpr size_t CountFormatArgs(std::string_view msg) {
+  size_t count = 0;
+  for (size_t i = 0; i < msg.size() - 2; i++) {
+    if (msg[i] == '{' && msg[i + 1] >= '0' && msg[i + 1] <= '9' && msg[i + 2] == '}') {
+      size_t index = msg[i + 1] - '0';
+      count = std::max(count, index + 1);
+    }
   }
-  return total;
+  return count;
 }
 
 // No-op non-constexpr function used to produce an error.
@@ -131,8 +123,6 @@ enum class DiagnosticKind {
 struct DiagnosticOptions {
   // If true, the error message will link to the diagnostic on fuchsia.dev.
   bool documented = true;
-  // If set, the error message will instruct the user to run fidl-fix.
-  std::optional<Fixable::Kind> fixable;
 };
 
 struct DiagnosticDef {
@@ -204,7 +194,7 @@ struct Diagnostic {
   }
 
   // Formats the error message to a string.
-  std::string Format(const ProgramInvocation& program_invocation) const;
+  std::string Format() const;
 
   const DiagnosticDef& def;
   const SourceSpan span;

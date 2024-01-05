@@ -89,6 +89,28 @@ correctly, have large unsafe APIs with insufficient documentation, or perform
 many operations from safe code that could cause undefined behavior.
 """
 
+[[audits.aes]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.7.5 -> 0.8.2"
+notes = """
+Note for reviewers of future updates to this crate: There exist
+internal APIs such as [1] which are safe but have undocumented safety
+invariants.
+
+[1] https://fuchsia-review.git.corp.google.com/c/fuchsia/+/711365/comment/7a8cdc16_9e9f45ca/
+"""
+
+[[audits.aes-gcm]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.9.4 -> 0.8.2"
+
+[[audits.aes-gcm-siv]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.10.3 -> 0.11.1"
+
 [[audits.ash]]
 who = "David Koloski <dkoloski@google.com>"
 criteria = ["ub-risk-4", "safe-to-deploy"]
@@ -101,22 +123,83 @@ criteria = ["ub-risk-2", "safe-to-deploy"]
 version = "0.3.4"
 notes = "Reviewed on https://fxrev.dev/761470"
 
+[[audits.async-stream]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-0"]
+delta = "0.3.4 -> 0.3.5"
+notes = "Reviewed on https://fxrev.dev/906795"
+
 [[audits.async-stream-impl]]
 who = "Tyler Mandry <tmandry@google.com>"
 criteria = ["ub-risk-2", "safe-to-deploy"]
 version = "0.3.4"
 notes = "Reviewed on https://fxrev.dev/761470"
 
+[[audits.async-stream-impl]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-0"]
+delta = "0.3.4 -> 0.3.5"
+notes = "Reviewed on https://fxrev.dev/906795"
+
 [[audits.async-trait]]
 who = "David Koloski <dkoloski@google.com>"
 criteria = "safe-to-deploy"
 delta = "0.1.56 -> 0.1.68"
+
+[[audits.chacha20]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.8.1 -> 0.9.0"
+
+[[audits.ecdsa]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.13.4 -> 0.14.8"
+
+[[audits.elliptic-curve]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.11.12 -> 0.12.3"
+
+[[audits.getrandom]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.2.2 -> 0.2.12"
+notes = "Audited at https://fxrev.dev/932979"
+
+[[audits.hkdf]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.11.0 -> 0.12.3"
+
+[[audits.hmac]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.11.0 -> 0.12.1"
 
 [[audits.http-body]]
 who = "Erick Tryzelaar <etryzelaar@google.com>"
 criteria = ["ub-risk-2", "safe-to-run"]
 version = "0.4.4"
 notes = "Reviewed on https://fxrev.dev/611683"
+
+[[audits.libc]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.2.142 -> 0.2.149"
+notes = "Audited at https://fxrev.dev/932979"
+
+[[audits.loom]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = "safe-to-run"
+delta = "0.5.6 -> 0.7.0"
+notes = "Reviewed on https://fxrev.dev/907709."
+
+[[audits.md-5]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-1"]
+version = "0.10.5"
+notes = "Reviewed on https://fxrev.dev/712372."
 
 [[audits.nix]]
 who = "David Koloski <dkoloski@google.com>"
@@ -137,6 +220,21 @@ Issues:
 - https://github.com/nix-rust/nix/pull/1993
 """
 
+[[audits.p256]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.10.1 -> 0.11.1"
+
+[[audits.password-hash]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.3.2 -> 0.4.2"
+
+[[audits.pbkdf2]]
+who = "Joshua Liebow-Feeser <joshlf@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.9.0 -> 0.11.0"
+
 [[audits.pin-project-lite]]
 who = "David Koloski <dkoloski@google.com>"
 criteria = ["ub-risk-1", "safe-to-deploy"]
@@ -156,14 +254,62 @@ criteria = ["ub-risk-2", "safe-to-deploy"]
 delta = "1.3.0 -> 1.5.3"
 notes = "Reviewed on https://fxrev.dev/753625"
 
+[[audits.sha1]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-1"]
+version = "0.10.5"
+notes = "Reviewed on https://fxrev.dev/712371."
+
 [[audits.take_mut]]
 who = "David Koloski <dkoloski@google.com>"
 criteria = ["safe-to-deploy", "ub-risk-2"]
 version = "0.2.2"
 notes = "Reviewed on https://fxrev.dev/883543"
 
+[[audits.thread_local]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "1.0.1 -> 1.1.7"
+notes = "Reviewed on https://fxrev.dev/906819"
+
+[[audits.tokio]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "1.19.2 -> 1.20.5"
+notes = "Reviewed on http://fxrev.dev/904806"
+
+[[audits.tokio]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "1.20.5 -> 1.25.2"
+notes = "Reviewed at https://fxrev.dev/906324"
+
 [[audits.tokio-stream]]
 who = "David Koloski <dkoloski@google.com>"
 criteria = ["ub-risk-1", "safe-to-deploy"]
 version = "0.1.11"
 notes = "Reviewed on https://fxrev.dev/804724"
+
+[[audits.tokio-stream]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-0"]
+delta = "0.1.11 -> 0.1.14"
+notes = "Reviewed on https://fxrev.dev/907732."
+
+[[audits.tracing-core]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.1.21 -> 0.1.31"
+notes = "Reviewed on https://fxrev.dev/906816"
+
+[[audits.tracing-subscriber]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+delta = "0.3.1 -> 0.3.15"
+notes = "Reviewed on https://fxrev.dev/907708"
+
+[[audits.utf8parse]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = ["safe-to-deploy", "ub-risk-2"]
+version = "0.2.1"
+notes = "Reviewed on https://fxrev.dev/904811"

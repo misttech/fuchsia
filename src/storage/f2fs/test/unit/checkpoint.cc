@@ -5,6 +5,7 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/zircon-internal/thread_annotations.h>
 
 #include <random>
 #include <vector>
@@ -12,8 +13,8 @@
 #include <gtest/gtest.h>
 
 #include "safemath/safe_conversions.h"
-#include "src/lib/storage/block_client/cpp/fake_block_device.h"
 #include "src/storage/f2fs/f2fs.h"
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "unit_lib.h"
 
 namespace f2fs {
@@ -32,7 +33,7 @@ constexpr uint32_t kFirstCheckpointVersion = 2;
 constexpr uint32_t kCheckpointLoopCnt = 10;
 constexpr uint8_t kRootDirNatBit = 0x80;
 constexpr uint8_t kRootDirSitBit = 0x20;
-constexpr uint32_t kMapPerSitEntry = kSitVBlockMapSize * kBitsPerByte;
+constexpr uint32_t kMapPerSitEntry = kSitVBlockMapSize << kShiftForBitSize;
 constexpr uint32_t kOrphanInodeBlockCnt = 10;
 constexpr uint8_t kMSB = 0x80;  // MSB(Most Significant Bit)
 constexpr uint32_t kRootInodeNid = 3;
@@ -54,7 +55,7 @@ class CheckpointTest : public F2fsFakeDevTestFixture {
 
   void DoCheckpoints(CheckpointCallback &callback, uint32_t loop_cnt) {
     for (uint32_t cp_version = kFirstCheckpointVersion; cp_version <= loop_cnt + 1; ++cp_version) {
-      fs_->WriteCheckpoint(false, true);
+      fs_->Sync();
 
       callback(checkpoint_pack_, cp_version, false);
 
@@ -97,7 +98,7 @@ class CheckpointTest : public F2fsFakeDevTestFixture {
   }
 
   void GetLastCheckpoint(uint32_t expect_cp_position, bool after_mkfs, LockedPage *cp_out) {
-    Superblock &raw_superblock = fs_->RawSb();
+    const Superblock &raw_superblock = fs_->GetSuperblockInfo().GetSuperblock();
     Checkpoint *cp_block1 = nullptr, *cp_block2 = nullptr;
     LockedPage cp_page1, cp_page2;
 
@@ -124,14 +125,9 @@ class CheckpointTest : public F2fsFakeDevTestFixture {
     }
   }
 
-  void *GetBitmapPtr(Checkpoint *ckpt, MetaBitmap flag) {
-    uint32_t offset = (flag == MetaBitmap::kNatBitmap) ? ckpt->sit_ver_bitmap_bytesize : 0;
-    return &ckpt->sit_nat_version_bitmap + offset;
-  }
-
   void CreateDirs(int dir_cnt, uint64_t version) {
     fbl::RefPtr<VnodeF2fs> data_root;
-    ASSERT_EQ(VnodeF2fs::Vget(fs_.get(), fs_->RawSb().root_ino, &data_root), ZX_OK);
+    ASSERT_EQ(VnodeF2fs::Vget(fs_.get(), fs_->GetSuperblockInfo().GetRootIno(), &data_root), ZX_OK);
     Dir *root_dir = static_cast<Dir *>(data_root.get());
 
     for (int i = 0; i < dir_cnt; ++i) {
@@ -145,7 +141,7 @@ class CheckpointTest : public F2fsFakeDevTestFixture {
 
   void CreateFiles(int file_cnt, uint64_t version) {
     fbl::RefPtr<VnodeF2fs> data_root;
-    ASSERT_EQ(VnodeF2fs::Vget(fs_.get(), fs_->RawSb().root_ino, &data_root), ZX_OK);
+    ASSERT_EQ(VnodeF2fs::Vget(fs_.get(), fs_->GetSuperblockInfo().GetRootIno(), &data_root), ZX_OK);
     Dir *root_dir = static_cast<Dir *>(data_root.get());
 
     for (int i = 0; i < file_cnt; ++i) {
@@ -202,7 +198,7 @@ TEST_F(CheckpointTest, NatBitmap) {
     ASSERT_EQ(cp->checkpoint_ver, expect_cp_ver);
 
     // 2. Get NAT version bitmap
-    uint8_t *version_bitmap = static_cast<uint8_t *>(GetBitmapPtr(cp, MetaBitmap::kNatBitmap));
+    uint8_t *version_bitmap = cp->sit_nat_version_bitmap + cp->sit_ver_bitmap_bytesize;
     ASSERT_NE(version_bitmap, nullptr);
 
     auto &pre_bitmap = GetPreBitmap();
@@ -267,7 +263,7 @@ TEST_F(CheckpointTest, SitBitmap) {
     ASSERT_EQ(cp->checkpoint_ver, expect_cp_ver);
 
     // 2. Get SIT version bitmap
-    uint8_t *version_bitmap = static_cast<uint8_t *>(GetBitmapPtr(cp, MetaBitmap::kSitBitmap));
+    uint8_t *version_bitmap = cp->sit_nat_version_bitmap;
     ASSERT_NE(version_bitmap, nullptr);
 
     auto &pre_bitmap = GetPreBitmap();
@@ -336,7 +332,7 @@ TEST_F(CheckpointTest, AddOrphanInode) {
       ASSERT_TRUE(fs_->GetSuperblockInfo().TestCpFlags(CpFlag::kCpOrphanPresentFlag));
 
       for (auto ino : exp_inos) {
-        fs_->GetSuperblockInfo().RemoveVnodeFromVnodeSet(InoType::kOrphanIno, ino);
+        fs_->RemoveFromVnodeSet(VnodeSet::kOrphan, ino);
       }
 
       for (block_t i = 0; i < orphan_blkaddr; ++i) {
@@ -368,10 +364,10 @@ TEST_F(CheckpointTest, AddOrphanInode) {
                  std::default_random_engine(static_cast<uint32_t>(cp->checkpoint_ver)));
 
     for (auto ino : inos) {
-      fs_->GetSuperblockInfo().AddVnodeToVnodeSet(InoType::kOrphanIno, ino);
+      fs_->AddToVnodeSet(VnodeSet::kOrphan, ino);
     }
 
-    ASSERT_EQ(fs_->GetSuperblockInfo().GetVnodeSetSize(InoType::kOrphanIno), orphan_inos);
+    ASSERT_EQ(fs_->GetVnodeSetSize(VnodeSet::kOrphan), orphan_inos);
 
     // Add duplicate orphan inodes
     constexpr uint32_t kGapBetweenTargetInos = 10;
@@ -382,7 +378,7 @@ TEST_F(CheckpointTest, AddOrphanInode) {
     });
 
     for (auto ino : dup_inos) {
-      fs_->GetSuperblockInfo().AddVnodeToVnodeSet(InoType::kOrphanIno, ino);
+      fs_->AddToVnodeSet(VnodeSet::kOrphan, ino);
     }
   };
 
@@ -432,7 +428,7 @@ TEST_F(CheckpointTest, RemoveOrphanInode) {
         for (block_t j = 0; j < LeToCpu(orphan_blk->entry_count); ++j) {
           nid_t ino = LeToCpu(orphan_blk->ino[j]);
           cp_inos.push_back(ino);
-          superblock_info.RemoveVnodeFromVnodeSet(InoType::kOrphanIno, ino);
+          fs_->RemoveFromVnodeSet(VnodeSet::kOrphan, ino);
         }
       }
 
@@ -450,9 +446,9 @@ TEST_F(CheckpointTest, RemoveOrphanInode) {
 
     if (cp->checkpoint_ver <= kCheckpointLoopCnt) {
       for (auto ino : inos) {
-        superblock_info.AddVnodeToVnodeSet(InoType::kOrphanIno, ino);
+        fs_->AddToVnodeSet(VnodeSet::kOrphan, ino);
       }
-      ASSERT_EQ(superblock_info.GetVnodeSetSize(InoType::kOrphanIno), orphan_inos);
+      ASSERT_EQ(fs_->GetVnodeSetSize(VnodeSet::kOrphan), orphan_inos);
     }
 
     // 5. Remove orphan inodes
@@ -463,7 +459,7 @@ TEST_F(CheckpointTest, RemoveOrphanInode) {
     });
 
     for (auto ino : rm_inos) {
-      superblock_info.RemoveVnodeFromVnodeSet(InoType::kOrphanIno, ino);
+      fs_->RemoveFromVnodeSet(VnodeSet::kOrphan, ino);
     }
   };
 
@@ -512,7 +508,7 @@ TEST_F(CheckpointTest, PurgeOrphanInode) {
 
       for (auto &vnode_refptr : vnodes) {
         ASSERT_EQ(vnode_refptr.get()->GetNlink(), (uint32_t)0);
-        superblock_info.RemoveVnodeFromVnodeSet(InoType::kOrphanIno, vnode_refptr->GetKey());
+        fs_->RemoveFromVnodeSet(VnodeSet::kOrphan, vnode_refptr->GetKey());
         vnode_refptr.reset();
       }
       vnodes.clear();
@@ -546,20 +542,22 @@ TEST_F(CheckpointTest, PurgeOrphanInode) {
       fs_->InsertVnode(vnode);
 
       vnodes.push_back(std::move(vnode_refptr));
-      superblock_info.AddVnodeToVnodeSet(InoType::kOrphanIno, ino);
+      fs_->AddToVnodeSet(VnodeSet::kOrphan, ino);
       vnode_refptr.reset();
     }
 
-    ASSERT_EQ(superblock_info.GetVnodeSetSize(InoType::kOrphanIno), orphan_inos);
+    ASSERT_EQ(fs_->GetVnodeSetSize(VnodeSet::kOrphan), orphan_inos);
   };
 
   DoFirstCheckpoint(check_recover_orphan_inode);
   DoCheckpoints(check_recover_orphan_inode, kCheckpointLoopCnt);
 }
 
-TEST_F(CheckpointTest, CompactedSummaries) {
-  CheckpointCallback check_compacted_summaries = [this](uint32_t expect_cp_position,
-                                                        uint32_t expect_cp_ver, bool after_mkfs) {
+TEST_F(CheckpointTest, CompactedSummaries) TA_NO_THREAD_SAFETY_ANALYSIS {
+  CheckpointCallback check_compacted_summaries = [this](
+                                                     uint32_t expect_cp_position,
+                                                     uint32_t expect_cp_ver,
+                                                     bool after_mkfs) TA_NO_THREAD_SAFETY_ANALYSIS {
     DisableFsck();
 
     LockedPage cp_page;
@@ -635,7 +633,7 @@ TEST_F(CheckpointTest, CompactedSummaries) {
           continue;
         }
 
-        segment_manager.SetSummary(&sum, 3, j, static_cast<uint8_t>(cp->checkpoint_ver));
+        SetSummary(&sum, 3, j, static_cast<uint8_t>(cp->checkpoint_ver));
         segment_manager.AddSumEntry(static_cast<CursegType>(i), &sum, j);
 
         MapTester::DoWriteSit(fs_.get(), static_cast<CursegType>(i), kNullSegNo, &new_blkaddr);
@@ -651,9 +649,10 @@ TEST_F(CheckpointTest, CompactedSummaries) {
   DoCheckpoints(check_compacted_summaries, kCheckpointLoopCnt);
 }
 
-TEST_F(CheckpointTest, NormalSummaries) {
+TEST_F(CheckpointTest, NormalSummaries) TA_NO_THREAD_SAFETY_ANALYSIS {
   CheckpointCallback check_normal_summaries = [this](uint32_t expect_cp_position,
-                                                     uint32_t expect_cp_ver, bool after_mkfs) {
+                                                     uint32_t expect_cp_ver,
+                                                     bool after_mkfs) TA_NO_THREAD_SAFETY_ANALYSIS {
     DisableFsck();
 
     LockedPage cp_page;
@@ -701,7 +700,7 @@ TEST_F(CheckpointTest, NormalSummaries) {
 
           nid_t nid = curseg->sum_blk->entries[j].nid;
           ASSERT_EQ(nid, cp->checkpoint_ver - kMkfsCheckpointVersion);
-          if (!segment_manager.IsNodeSeg(static_cast<CursegType>(i))) {
+          if (!IsNodeSeg(static_cast<CursegType>(i))) {
             ASSERT_EQ(static_cast<uint64_t>(curseg->sum_blk->entries[j].version),
                       cp->checkpoint_ver - 1);
             uint16_t ofs_in_node = curseg->sum_blk->entries[j].ofs_in_node;
@@ -725,8 +724,8 @@ TEST_F(CheckpointTest, NormalSummaries) {
           continue;
         }
 
-        segment_manager.SetSummary(&sum, static_cast<nid_t>(cp->checkpoint_ver), j,
-                                   static_cast<uint8_t>(cp->checkpoint_ver));
+        SetSummary(&sum, static_cast<nid_t>(cp->checkpoint_ver), j,
+                   static_cast<uint8_t>(cp->checkpoint_ver));
         segment_manager.AddSumEntry(static_cast<CursegType>(i), &sum, j);
 
         MapTester::DoWriteSit(fs_.get(), static_cast<CursegType>(i), kNullSegNo, &new_blkaddr);
@@ -742,11 +741,11 @@ TEST_F(CheckpointTest, NormalSummaries) {
   DoCheckpoints(check_normal_summaries, kCheckpointLoopCnt);
 }
 
-TEST_F(CheckpointTest, SitJournal) {
+TEST_F(CheckpointTest, SitJournal) TA_NO_THREAD_SAFETY_ANALYSIS {
   DisableFsck();
 
   CheckpointCallback check_sit_journal = [this](uint32_t expect_cp_position, uint32_t expect_cp_ver,
-                                                bool after_mkfs) {
+                                                bool after_mkfs) TA_NO_THREAD_SAFETY_ANALYSIS {
     LockedPage cp_page;
     SegmentManager &segment_manager = fs_->GetSegmentManager();
     auto &segnos = GetPrevValues();
@@ -765,8 +764,8 @@ TEST_F(CheckpointTest, SitJournal) {
       CursegInfo *curseg = segment_manager.CURSEG_I(CursegType::kCursegColdData);
 
       SummaryBlock *sum = &curseg->sum_blk;
-      for (int i = 0; i < SitsInCursum(sum); ++i) {
-        uint32_t segno = LeToCpu(SegnoInJournal(sum, i));
+      for (int i = 0; i < SitsInCursum(*sum); ++i) {
+        uint32_t segno = LeToCpu(SegnoInJournal(*sum, i));
         ASSERT_EQ(segno, segnos[i]);
       }
     }
@@ -776,9 +775,9 @@ TEST_F(CheckpointTest, SitJournal) {
       CursegInfo *curseg = segment_manager.CURSEG_I(CursegType::kCursegColdData);
 
       // Clear SIT journal
-      if (SitsInCursum(&curseg->sum_blk) >= static_cast<int>(kSitJournalEntries)) {
+      if (SitsInCursum(*curseg->sum_blk) >= static_cast<int>(kSitJournalEntries)) {
         SitInfo &sit_i = segment_manager.GetSitInfo();
-        uint8_t *bitmap = sit_i.dirty_sentries_bitmap.get();
+        RawBitmap &bitmap = sit_i.dirty_sentries_bitmap;
         block_t nsegs = segment_manager.TotalSegs();
 
         // Add dummy dirty sentries
@@ -792,8 +791,10 @@ TEST_F(CheckpointTest, SitJournal) {
 
         // Clear dirty sentries
         uint32_t segno = 0;
-        while ((segno = FindNextBit(bitmap, nsegs, segno + 1)) < nsegs) {
-          ClearBit(segno, bitmap);
+        size_t out;
+        while (!bitmap.Scan(segno + 1, nsegs, false, &out)) {
+          segno = safemath::checked_cast<uint32_t>(out);
+          bitmap.ClearOne(segno);
           --sit_i.dirty_sentries;
         }
       }
@@ -817,11 +818,11 @@ TEST_F(CheckpointTest, SitJournal) {
   DoCheckpoints(check_sit_journal, kCheckpointLoopCnt);
 }
 
-TEST_F(CheckpointTest, NatJournal) {
+TEST_F(CheckpointTest, NatJournal) TA_NO_THREAD_SAFETY_ANALYSIS {
   DisableFsck();
 
   CheckpointCallback check_nat_journal = [this](uint32_t expect_cp_position, uint32_t expect_cp_ver,
-                                                bool after_mkfs) {
+                                                bool after_mkfs) TA_NO_THREAD_SAFETY_ANALYSIS {
     SuperblockInfo &superblock_info = fs_->GetSuperblockInfo();
     NodeManager &node_manager = fs_->GetNodeManager();
     SegmentManager &segment_manager = fs_->GetSegmentManager();
@@ -846,14 +847,14 @@ TEST_F(CheckpointTest, NatJournal) {
 
       // 3. Check recovered journal
       SummaryBlock *sum = &curseg->sum_blk;
-      for (int i = 0; i < NatsInCursum(sum); ++i) {
-        ASSERT_EQ(NidInJournal(sum, i), nids[i]);
-        ASSERT_EQ(NatInJournal(sum, i).version, cp->checkpoint_ver - kMkfsCheckpointVersion);
+      for (int i = 0; i < NatsInCursum(*sum); ++i) {
+        ASSERT_EQ(NidInJournal(*sum, i), nids[i]);
+        ASSERT_EQ(NatInJournal(*sum, i).version, cp->checkpoint_ver - kMkfsCheckpointVersion);
       }
 
       // 4. Fill compact data summary
       // Clear NAT journal
-      if (NatsInCursum(&curseg->sum_blk) >= static_cast<int>(kNatJournalEntries)) {
+      if (NatsInCursum(*curseg->sum_blk) >= static_cast<int>(kNatJournalEntries)) {
         // Add dummy dirty NAT entries
         MapTester::DoWriteNat(fs_.get(), nid_offset, nid_offset,
                               static_cast<uint8_t>(cp->checkpoint_ver));
@@ -882,7 +883,7 @@ TEST_F(CheckpointTest, NatJournal) {
 }
 
 TEST(CheckpointUnmountTest, UmountFlag) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   // create f2fs and root dir
@@ -905,11 +906,11 @@ TEST(CheckpointUnmountTest, UmountFlag) {
   ASSERT_EQ(root->Close(), ZX_OK);
   root = nullptr;
 
-  fs->WriteCheckpoint(false, true);
+  fs->Sync();
   FileTester::SuddenPowerOff(std::move(fs), &bc);
 
   FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
-  fs->WriteCheckpoint(false, false);
+  fs->SyncFs(false);
   FileTester::SuddenPowerOff(std::move(fs), &bc);
 
   FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
@@ -935,19 +936,16 @@ TEST_F(CheckpointTest, CpError) {
   // which causes that f2fs sets the checkpoint error flag.
   auto hook = [](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
     if (_req.command.opcode == BLOCK_OPCODE_WRITE) {
-      return ZX_ERR_IO;
+      return ZX_ERR_PEER_CLOSED;
     }
     return ZX_OK;
   };
   DeviceTester::SetHook(fs_.get(), hook);
-  fs_->WriteCheckpoint(false, false);
+  fs_->SyncFs();
 
   ASSERT_TRUE(fs_->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag));
 
   // All operations causing dirty pages are not allowed.
-  size_t end = 0, out = 0;
-  ASSERT_EQ(vnode->Append(wbuf, kBlockSize, &end, &out), ZX_ERR_BAD_STATE);
-  ASSERT_EQ(vnode->Write(wbuf, kBlockSize, 0, &out), ZX_ERR_BAD_STATE);
   ASSERT_EQ(vnode->Truncate(0), ZX_ERR_BAD_STATE);
   ASSERT_EQ(root_dir_->Unlink("test", false), ZX_ERR_BAD_STATE);
   ASSERT_EQ(root_dir_->Create("test2", S_IFREG, &test_file), ZX_ERR_BAD_STATE);
@@ -969,7 +967,7 @@ TEST_F(CheckpointTest, ValidateCheckpointFirstCpPackDiskFail) {
   op.bSync = true;
   fs_->GetMetaVnode().Writeback(op);
 
-  block_t cp_start_blk_no = LeToCpu(fs_->RawSb().cp_blkaddr);
+  block_t cp_start_blk_no = LeToCpu(fs_->GetSuperblockInfo().GetSuperblock().cp_blkaddr);
   block_t target_addr = cp_start_blk_no * kDefaultSectorsPerBlock;
 
   auto hook = [target_addr](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
@@ -998,7 +996,7 @@ TEST_F(CheckpointTest, ValidateCheckpointSecondCpPackDiskFail) {
   op.bSync = true;
   fs_->GetMetaVnode().Writeback(op);
 
-  block_t cp_start_blk_no = LeToCpu(fs_->RawSb().cp_blkaddr);
+  block_t cp_start_blk_no = LeToCpu(fs_->GetSuperblockInfo().GetSuperblock().cp_blkaddr);
   block_t first_cp_blk_no = cp_start_blk_no;
 
   LockedPage cp_page;
@@ -1066,14 +1064,14 @@ TEST_F(CheckpointTest, FlushNatEntriesDiskFail) {
   }
 }
 
-TEST_F(CheckpointTest, FlushSitEntriesDiskFail) {
+TEST_F(CheckpointTest, FlushSitEntriesDiskFail) TA_NO_THREAD_SAFETY_ANALYSIS {
   DisableFsck();
 
   WritebackOperation op;
   op.bSync = true;
   fs_->GetMetaVnode().Writeback(op);
 
-  block_t cp_start_blk_no = LeToCpu(fs_->RawSb().cp_blkaddr);
+  block_t cp_start_blk_no = LeToCpu(fs_->GetSuperblockInfo().GetSuperblock().cp_blkaddr);
 
   LockedPage cp_page;
   ASSERT_EQ(fs_->GetMetaPage(cp_start_blk_no, &cp_page), ZX_OK);
@@ -1116,7 +1114,7 @@ TEST_F(CheckpointTest, FlushSitEntriesDiskFail) {
   // Check disk peer closed exception case in WriteCheckpoint()
   {
     DeviceTester::SetHook(fs_.get(), hook);
-    ASSERT_EQ(fs_->WriteCheckpoint(false, false), ZX_ERR_PEER_CLOSED);
+    ASSERT_EQ(fs_->SyncFs(), ZX_ERR_PEER_CLOSED);
     ASSERT_TRUE(fs_->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag));
 
     DeviceTester::SetHook(fs_.get(), nullptr);
@@ -1131,43 +1129,24 @@ TEST_F(CheckpointTest, DoCheckpointDiskFail) {
   op.bSync = true;
   fs_->GetMetaVnode().Writeback(op);
 
-  uint32_t flush_count = 0;
-  uint32_t target_flush_count = 0;
   auto hook = [&](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
-    if (_req.command.opcode == BLOCK_OPCODE_FLUSH) {
-      if (++flush_count == target_flush_count) {
-        return ZX_ERR_PEER_CLOSED;
-      }
-      return ZX_OK;
+    if (_req.command.opcode == BLOCK_OPCODE_WRITE &&
+        _req.command.flags & (BLOCK_IO_FLAG_PREFLUSH | BLOCK_IO_FLAG_FORCE_ACCESS)) {
+      return ZX_ERR_PEER_CLOSED;
     }
     return ZX_OK;
   };
 
   // Check disk peer closed exception case in DoCheckpoint()
-  {
-    flush_count = 0;
-    target_flush_count = 1;
-    DeviceTester::SetHook(fs_.get(), hook);
-    ASSERT_EQ(fs_->DoCheckpoint(false), ZX_ERR_PEER_CLOSED);
-    ASSERT_TRUE(fs_->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag));
+  DeviceTester::SetHook(fs_.get(), hook);
+  ASSERT_NE(fs_->SyncFs(), ZX_OK);
+  ASSERT_TRUE(fs_->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag));
 
-    DeviceTester::SetHook(fs_.get(), nullptr);
-    fs_->GetSuperblockInfo().ClearCpFlags(CpFlag::kCpErrorFlag);
-  }
-
-  {
-    flush_count = 0;
-    target_flush_count = 2;
-    DeviceTester::SetHook(fs_.get(), hook);
-    ASSERT_EQ(fs_->DoCheckpoint(false), ZX_ERR_PEER_CLOSED);
-    ASSERT_TRUE(fs_->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag));
-
-    DeviceTester::SetHook(fs_.get(), nullptr);
-    fs_->GetSuperblockInfo().ClearCpFlags(CpFlag::kCpErrorFlag);
-  }
+  DeviceTester::SetHook(fs_.get(), nullptr);
+  fs_->GetSuperblockInfo().ClearCpFlags(CpFlag::kCpErrorFlag);
 }
 
-TEST_F(CheckpointTest, ReadCompactSummaryDiskFail) {
+TEST_F(CheckpointTest, ReadCompactSummaryDiskFail) TA_NO_THREAD_SAFETY_ANALYSIS {
   DisableFsck();
 
   WritebackOperation op;
@@ -1194,7 +1173,7 @@ TEST_F(CheckpointTest, ReadCompactSummaryDiskFail) {
   }
 }
 
-TEST_F(CheckpointTest, ReadNormalSummaryDiskFail) {
+TEST_F(CheckpointTest, ReadNormalSummaryDiskFail) TA_NO_THREAD_SAFETY_ANALYSIS {
   DisableFsck();
 
   WritebackOperation op;

@@ -234,12 +234,6 @@ static void x86_tlb_global_invalidate() {
   }
 }
 
-static void maybe_invvpid(InvVpid invalidation, uint16_t vpid, zx_vaddr_t address) {
-  if (vpid != MMU_X86_UNUSED_VPID) {
-    invvpid(invalidation, vpid, address);
-  }
-}
-
 // X86PageTableMmu
 
 bool X86PageTableMmu::check_paddr(paddr_t paddr) { return x86_mmu_check_paddr(paddr); }
@@ -291,7 +285,7 @@ PtFlags X86PageTableMmu::terminal_flags(PageTableLevel level, uint flags) {
         terminal_flags |= X86_MMU_LARGE_PAT_WRITE_COMBINING;
         break;
       default:
-        PANIC_UNIMPLEMENTED;
+        panic("Unexpected flags 0x%x\n", flags);
     }
   } else {
     switch (flags & ARCH_MMU_FLAG_CACHE_MASK) {
@@ -306,7 +300,7 @@ PtFlags X86PageTableMmu::terminal_flags(PageTableLevel level, uint flags) {
         terminal_flags |= X86_MMU_PTE_PAT_WRITE_COMBINING;
         break;
       default:
-        PANIC_UNIMPLEMENTED;
+        panic("Unexpected flags 0x%x\n", flags);
     }
   }
 
@@ -331,7 +325,8 @@ PtFlags X86PageTableMmu::split_flags(PageTableLevel level, PtFlags flags) {
   return flags;
 }
 
-void X86PageTableMmu::TlbInvalidate(PendingTlbInvalidation* pending) {
+void X86PageTableMmu::TlbInvalidate(const PendingTlbInvalidation* pending) {
+  AssertHeld(lock_);
   if (pending->count == 0 && !pending->full_shootdown) {
     return;
   }
@@ -340,31 +335,29 @@ void X86PageTableMmu::TlbInvalidate(PendingTlbInvalidation* pending) {
 
   const auto aspace = static_cast<X86ArchVmAspace*>(ctx());
   const ulong root_ptable_phys = phys();
-  const uint16_t vpid = aspace->arch_vpid();
   const uint16_t pcid = aspace->pcid();
 
   struct TlbInvalidatePage_context {
     paddr_t target_root_ptable;
     const PendingTlbInvalidation* pending;
-    uint16_t vpid;
     uint16_t pcid;
+    bool is_shared;
   };
   TlbInvalidatePage_context task_context = {
       .target_root_ptable = root_ptable_phys,
       .pending = pending,
-      .vpid = vpid,
       .pcid = pcid,
+      .is_shared = IsShared(),
   };
-
-  // TODO(fxbug.dev/95763): Consider whether it is better to invalidate a VPID
-  // on context switch, or whether it is better to target all CPUs here.
-  if (vpid != MMU_X86_UNUSED_VPID) {
-    pending->contains_global = true;
-  }
 
   mp_ipi_target_t target;
   cpu_mask_t target_mask = 0;
-  if (pending->contains_global) {
+  // We need to send the TLB invalidate to all CPUs if this aspace is shared because active_cpus
+  // is inaccurate in that case (another CPU may be running a unified aspace with these shared
+  // mappings).
+  // TODO(https://fxbug.dev/132980): Replace this global broadcast for shared aspaces with a more
+  // targeted one once shared aspaces keep track of all the CPUs they are on.
+  if (IsShared() || pending->contains_global) {
     target = MP_IPI_TARGET_ALL;
   } else {
     target = MP_IPI_TARGET_MASK;
@@ -415,23 +408,29 @@ void X86PageTableMmu::TlbInvalidate(PendingTlbInvalidation* pending) {
      * - PCID feature is not being used
      * - It doesn't contain any global pages (ie, isn't the kernel)
      * - The target aspace is different (different root page table in cr3)
+     * - This is not a shared mapping invalidation.
      */
     if (!g_x86_feature_pcid_enabled && !context->pending->contains_global &&
-        context->target_root_ptable != current_root_ptable) {
+        context->target_root_ptable != current_root_ptable && !context->is_shared) {
       tlb_invalidations_received_invalid.Add(1);
       return;
     }
 
-    /* Full context shootdowns handled here */
-    if (context->pending->full_shootdown) {
+    // Handle full shootdowns of the TLB. This happens anytime full_shootdown is set and whenever
+    // this is a TLB invalidation of a shared entry.
+    if (context->pending->full_shootdown || context->is_shared) {
       if (context->pending->contains_global) {
         kcounter_add(tlb_invalidations_full_global_received, 1);
         x86_tlb_global_invalidate();
-        maybe_invvpid(InvVpid::SINGLE_CONTEXT, context->vpid, 0);
       } else {
         kcounter_add(tlb_invalidations_full_nonglobal_received, 1);
-        x86_tlb_nonglobal_invalidate(context->pcid);
-        maybe_invvpid(InvVpid::SINGLE_CONTEXT_RETAIN_GLOBALS, context->vpid, 0);
+        if (context->is_shared) {
+          // The shared region runs under many different PCIDs, so instead of tracking those PCIDs
+          // we just invalidated all of them.
+          x86_tlb_nonglobal_invalidate(MMU_X86_UNUSED_PCID);
+        } else {
+          x86_tlb_nonglobal_invalidate(context->pcid);
+        }
       }
       return;
     }
@@ -447,9 +446,8 @@ void X86PageTableMmu::TlbInvalidate(PendingTlbInvalidation* pending) {
         case PageTableLevel::PDP_L:
         case PageTableLevel::PD_L:
         case PageTableLevel::PT_L:
-          /* Terminal entry is being asked to be flushed. If it's a global page
-           * or not belonging to a special pcid, use the invlpg instruction.
-           */
+          // Terminal entry is being asked to be flushed. If it's a global page or does not belong
+          // to a special PCID, use the invlpg instruction.
           if (context->target_root_ptable == current_root_ptable || item.is_global() ||
               context->pcid == MMU_X86_UNUSED_PCID) {
             invlpg(item.addr());
@@ -458,15 +456,12 @@ void X86PageTableMmu::TlbInvalidate(PendingTlbInvalidation* pending) {
              */
             invpcid_va_pcid(item.addr(), context->pcid);
           }
-
-          maybe_invvpid(InvVpid::INDIVIDUAL_ADDRESS, context->vpid, item.addr());
           break;
       }
     }
   };
 
   mp_sync_exec(target, target_mask, tlb_invalidate_page_task, &task_context);
-  pending->clear();
 }
 
 uint X86PageTableMmu::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level) {
@@ -494,7 +489,7 @@ uint X86PageTableMmu::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level)
         mmu_flags |= ARCH_MMU_FLAG_WRITE_COMBINING;
         break;
       default:
-        PANIC_UNIMPLEMENTED;
+        panic("Unexpected flags %" PRIx64, flags);
     }
   } else {
     switch (flags & X86_MMU_PTE_PAT_MASK) {
@@ -508,7 +503,7 @@ uint X86PageTableMmu::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level)
         mmu_flags |= ARCH_MMU_FLAG_WRITE_COMBINING;
         break;
       default:
-        PANIC_UNIMPLEMENTED;
+        panic("Unexpected flags %" PRIx64, flags);
     }
   }
   return mmu_flags;
@@ -568,7 +563,7 @@ PtFlags X86PageTableEpt::terminal_flags(PageTableLevel level, uint flags) {
       terminal_flags |= X86_EPT_WC;
       break;
     default:
-      PANIC_UNIMPLEMENTED;
+      panic("Unexpected flags 0x%x", flags);
   }
 
   return terminal_flags;
@@ -580,7 +575,7 @@ PtFlags X86PageTableEpt::split_flags(PageTableLevel level, PtFlags flags) {
   return flags;
 }
 
-void X86PageTableEpt::TlbInvalidate(PendingTlbInvalidation* pending) {
+void X86PageTableEpt::TlbInvalidate(const PendingTlbInvalidation* pending) {
   if (pending->count == 0 && !pending->full_shootdown) {
     return;
   }
@@ -597,7 +592,6 @@ void X86PageTableEpt::TlbInvalidate(PendingTlbInvalidation* pending) {
   // TODO: Track what CPUs the VCPUs using this EPT are migrated to and only IPI that subset.
   uint64_t eptp = ept_pointer_from_pml4(static_cast<X86ArchVmAspace*>(ctx())->arch_table_phys());
   broadcast_invept(eptp);
-  pending->clear();
 }
 
 uint X86PageTableEpt::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level) {
@@ -624,7 +618,7 @@ uint X86PageTableEpt::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level)
       mmu_flags |= ARCH_MMU_FLAG_WRITE_COMBINING;
       break;
     default:
-      PANIC_UNIMPLEMENTED;
+      panic("Unexpected flags %" PRIx64, flags);
   }
 
   return mmu_flags;
@@ -687,19 +681,10 @@ zx_status_t X86ArchVmAspace::Init() {
     pt_ = mmu;
 
     if (g_x86_feature_pcid_enabled) {
-      // assign a PCID
-      zx::result<uint16_t> result = pcid_allocator->TryAlloc();
-      if (result.is_error()) {
-        // TODO(fxbug.dev/124428): Implement some kind of PCID recycling.
-        LTRACEF("X86: ran out of PCIDs when assigning new aspace\n");
-        return ZX_ERR_NO_RESOURCES;
+      zx_status_t status = AllocatePCID();
+      if (status != ZX_OK) {
+        return status;
       }
-      pcid_ = result.value();
-      DEBUG_ASSERT(pcid_ != MMU_X86_UNUSED_PCID && pcid_ < 4096);
-
-      // Start off with all cpus marked as dirty so the first context switch on any cpu
-      // invalidates the entire PCID when it's loaded.
-      MarkPcidDirtyCpus(CPU_MASK_ALL);
     }
 
     zx_status_t status = mmu->Init(this, test_page_alloc_func_);
@@ -716,6 +701,118 @@ zx_status_t X86ArchVmAspace::Init() {
             pcid_);
   }
 
+  return ZX_OK;
+}
+
+zx_status_t X86ArchVmAspace::InitRestricted() {
+  canary_.Assert();
+  // Restricted ArchVmAspaces are only allowed with user address spaces.
+  DEBUG_ASSERT(flags_ == 0);
+
+  X86PageTableMmu* mmu = new (&page_table_storage_.mmu) X86PageTableMmu();
+  pt_ = mmu;
+
+  if (g_x86_feature_pcid_enabled) {
+    zx_status_t status = AllocatePCID();
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+
+  zx_status_t status = mmu->InitRestricted(this, test_page_alloc_func_);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  status = mmu->AliasKernelMappings();
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  LTRACEF("user restricted aspace: pt phys %#" PRIxPTR ", virt %p, pcid %#hx\n", pt_->phys(),
+          pt_->virt(), pcid_);
+  return ZX_OK;
+}
+
+zx_status_t X86ArchVmAspace::InitShared() {
+  canary_.Assert();
+  // Shared ArchVmAspaces are only allowed with user address spaces.
+  DEBUG_ASSERT(flags_ == 0);
+
+  X86PageTableMmu* mmu = new (&page_table_storage_.mmu) X86PageTableMmu();
+  pt_ = mmu;
+
+  if (g_x86_feature_pcid_enabled) {
+    zx_status_t status = AllocatePCID();
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+
+  zx_status_t status = mmu->InitShared(this, base_, size_, test_page_alloc_func_);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  status = mmu->AliasKernelMappings();
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  LTRACEF("user shared aspace: pt phys %#" PRIxPTR ", virt %p, pcid %#hx\n", pt_->phys(),
+          pt_->virt(), pcid_);
+  return ZX_OK;
+}
+
+zx_status_t X86ArchVmAspace::InitUnified(ArchVmAspaceInterface& shared,
+                                         ArchVmAspaceInterface& restricted) {
+  canary_.Assert();
+  // Unified ArchVmAspaces are only allowed with user address spaces.
+  DEBUG_ASSERT(flags_ == 0);
+
+  X86PageTableMmu* mmu = new (&page_table_storage_.mmu) X86PageTableMmu();
+  pt_ = mmu;
+
+  if (g_x86_feature_pcid_enabled) {
+    zx_status_t status = AllocatePCID();
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+
+  X86ArchVmAspace& sharedX86 = static_cast<X86ArchVmAspace&>(shared);
+  X86ArchVmAspace& restrictedX86 = static_cast<X86ArchVmAspace&>(restricted);
+  zx_status_t status =
+      mmu->InitUnified(this, sharedX86.pt_, sharedX86.base_, sharedX86.size_, restrictedX86.pt_,
+                       restrictedX86.base_, restrictedX86.size_, test_page_alloc_func_);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  status = mmu->AliasKernelMappings();
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  LTRACEF("user aspace: pt phys %#" PRIxPTR ", virt %p, pcid %#hx\n", pt_->phys(), pt_->virt(),
+          pcid_);
+  return ZX_OK;
+}
+
+zx_status_t X86ArchVmAspace::AllocatePCID() {
+  DEBUG_ASSERT(g_x86_feature_pcid_enabled);
+  zx::result<uint16_t> result = pcid_allocator->TryAlloc();
+  if (result.is_error()) {
+    // TODO(fxbug.dev/124428): Implement some kind of PCID recycling.
+    LTRACEF("X86: ran out of PCIDs when assigning new aspace\n");
+    return ZX_ERR_NO_RESOURCES;
+  }
+  pcid_ = result.value();
+  DEBUG_ASSERT(pcid_ != MMU_X86_UNUSED_PCID && pcid_ < 4096);
+
+  // Start off with all cpus marked as dirty so the first context switch on any cpu
+  // invalidates the entire PCID when it's loaded.
+  MarkPcidDirtyCpus(CPU_MASK_ALL);
   return ZX_OK;
 }
 
@@ -744,6 +841,7 @@ zx_status_t X86ArchVmAspace::Destroy() {
 
 zx_status_t X86ArchVmAspace::Unmap(vaddr_t vaddr, size_t count, EnlargeOperation enlarge,
                                    size_t* unmapped) {
+  DEBUG_ASSERT(!pt_->IsUnified());
   if (!IsValidVaddr(vaddr))
     return ZX_ERR_INVALID_ARGS;
 
@@ -754,6 +852,7 @@ zx_status_t X86ArchVmAspace::Unmap(vaddr_t vaddr, size_t count, EnlargeOperation
 
 zx_status_t X86ArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count,
                                            uint mmu_flags, size_t* mapped) {
+  DEBUG_ASSERT(!pt_->IsUnified());
   if (!IsValidVaddr(vaddr))
     return ZX_ERR_INVALID_ARGS;
 
@@ -764,6 +863,7 @@ zx_status_t X86ArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t 
 
 zx_status_t X86ArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uint mmu_flags,
                                  ExistingEntryAction existing_action, size_t* mapped) {
+  DEBUG_ASSERT(!pt_->IsUnified());
   if (!IsValidVaddr(vaddr))
     return ZX_ERR_INVALID_ARGS;
 
@@ -773,6 +873,7 @@ zx_status_t X86ArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uin
 }
 
 zx_status_t X86ArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_flags) {
+  DEBUG_ASSERT(!pt_->IsUnified());
   if (!IsValidVaddr(vaddr))
     return ZX_ERR_INVALID_ARGS;
 
@@ -833,6 +934,15 @@ void X86ArchVmAspace::ContextSwitch(X86ArchVmAspace* old_aspace, X86ArchVmAspace
     }
 
     aspace->active_since_last_check_.store(true, ktl::memory_order_relaxed);
+    // If we are switching to a unified aspace, we need to mark the associated shared and
+    // restricted aspaces as active since the last check as well.
+    if (aspace->IsUnified()) {
+      X86ArchVmAspace* shared = static_cast<X86ArchVmAspace*>(aspace->pt_->get_shared_pt()->ctx());
+      X86ArchVmAspace* restricted =
+          static_cast<X86ArchVmAspace*>(aspace->pt_->get_restricted_pt()->ctx());
+      shared->active_since_last_check_.store(true, ktl::memory_order_relaxed);
+      restricted->active_since_last_check_.store(true, ktl::memory_order_relaxed);
+    }
   } else {
     // Switching to the kernel aspace
     LTRACEF_LEVEL(3, "switching to kernel aspace, pt %#" PRIxPTR "\n", kernel_pt_phys);
@@ -858,6 +968,7 @@ void X86ArchVmAspace::ContextSwitch(X86ArchVmAspace* old_aspace, X86ArchVmAspace
 }
 
 zx_status_t X86ArchVmAspace::Query(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) {
+  DEBUG_ASSERT(!pt_->IsUnified());
   if (!IsValidVaddr(vaddr))
     return ZX_ERR_INVALID_ARGS;
 
@@ -867,6 +978,7 @@ zx_status_t X86ArchVmAspace::Query(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flag
 zx_status_t X86ArchVmAspace::HarvestAccessed(vaddr_t vaddr, size_t count,
                                              NonTerminalAction non_terminal_action,
                                              TerminalAction terminal_action) {
+  DEBUG_ASSERT(!pt_->IsUnified());
   if (!IsValidVaddr(vaddr)) {
     return ZX_ERR_INVALID_ARGS;
   }

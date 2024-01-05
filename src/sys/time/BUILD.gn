@@ -7,7 +7,8 @@ group("recovery") {
   deps = [
     "httpsdate_time_source:httpsdate-time-source",
     "httpsdate_time_source:httpsdate-time-source-pull",
-    "timekeeper",
+    "timekeeper:service",
+    "timekeeper:timekeeper-config-values",
   ]
 }
 
@@ -20,7 +21,8 @@ group("tests") {
     "lib/pull-source:tests",
     "lib/push-source:tests",
     "lib/time-util:tests",
+    "testing",
     "timekeeper:tests",
-    "timekeeper_integration",
+    "timekeeper_integration:tests",
   ]
 }

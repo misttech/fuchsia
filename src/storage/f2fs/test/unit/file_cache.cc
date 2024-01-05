@@ -222,8 +222,6 @@ TEST_F(FileCacheTest, Recycle) {
     raw_page = locked_page.get();
   }
 
-  // raw_page should have a reference in the dirty list.
-  ASSERT_TRUE(raw_page->IsActive());
   // Remove |raw_page| from the list to invoke Page::fbl_recycle().
   WritebackOperation op = {.bSync = true, .bReleasePages = false};
   file.Writeback(op);
@@ -357,7 +355,7 @@ TEST_F(FileCacheTest, Basic) {
     LockedPage page = GetPage(i);
     ASSERT_EQ(page->IsUptodate(), true);
     ASSERT_EQ(page->IsDirty(), true);
-    FsBlock read_buffer;
+    BlockBuffer read_buffer;
     page->Read(read_buffer.get());
     ASSERT_EQ(memcmp(buf, read_buffer.get(), kPageSize), 0);
   }
@@ -379,7 +377,7 @@ TEST_F(FileCacheTest, Basic) {
   }
 }
 
-TEST_F(FileCacheTest, Truncate) {
+TEST_F(FileCacheTest, Truncate) TA_NO_THREAD_SAFETY_ANALYSIS {
   uint8_t buf[kPageSize];
   const uint16_t nblocks = 256;
   auto &file = vnode<File>();
@@ -400,7 +398,7 @@ TEST_F(FileCacheTest, Truncate) {
 
   // Truncate test_vnode to the half.
   pgoff_t start = static_cast<pgoff_t>(nblocks) / 2 * kPageSize;
-  file.TruncateBlocks(start);
+  file.Truncate(start);
 
   // Check if each page has correct flags.
   for (size_t i = 0; i < nblocks; ++i) {
@@ -420,7 +418,7 @@ TEST_F(FileCacheTest, Truncate) {
 
   --start;
   // Punch a hole at start
-  file.TruncateHole(start, start + 1);
+  file.TruncateHole(start, start + 1, true);
 
   {
     LockedPage page = GetPage(start);

@@ -7,10 +7,10 @@
 #include <fuchsia/sys2/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/diagnostics/reader/cpp/archive_reader.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/fpromise/result.h>
 #include <lib/fpromise/single_threaded_executor.h>
-#include <lib/inspect/contrib/cpp/archive_reader.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/sys/component/cpp/testing/realm_builder_types.h>
 #include <lib/sys/cpp/component_context.h>
@@ -26,133 +26,14 @@ namespace {
 class AccessorTest : public zxtest::Test {};
 using namespace component_testing;
 
-// Hard transition: test must accept both old (bucket-style) histograms and new
-// (parameter-style) histograms.
-// TODO(fxbug.dev/125876): Remove "buckets" after rolls have happened.
-
-const char EXPECTED_DATA_BUCKETS_HISTOGRAMS[] = R"JSON({
+const char EXPECTED[] = R"JSON({
     "data_source": "Inspect",
     "metadata": {
         "component_url": "COMPONENT_URL",
         "filename": "fuchsia.inspect.Tree",
         "timestamp": TIMESTAMP
     },
-    "moniker": "realm_builder\\:CHILD_NAME/inspect-publisher",
-    "payload": {
-        "root": {
-            "arrays": {
-                "doubles": [
-                    0.0,
-                    0.0,
-                    3.5,
-                    0.0
-                ],
-                "ints": [
-                    -1,
-                    0
-                ],
-                "uints": [
-                    0,
-                    2,
-                    0
-                ]
-            },
-            "buffers": {
-                "bytes": "b64:AQID",
-                "string": "foo"
-            },
-            "exponential_histograms": {
-                "double": {
-                    "counts": [
-                        1.0
-                    ],
-                    "floor": 1.5,
-                    "indexes": [
-                        2
-                    ],
-                    "initial_step": 2.0,
-                    "size": 5,
-                    "step_multiplier": 3.5
-                },
-                "int": {
-                    "counts": [
-                        1
-                    ],
-                    "floor": -10,
-                    "indexes": [
-                        2
-                    ],
-                    "initial_step": 2,
-                    "size": 5,
-                    "step_multiplier": 3
-                },
-                "uint": {
-                    "counts": [
-                        1
-                    ],
-                    "floor": 1,
-                    "indexes": [
-                        2
-                    ],
-                    "initial_step": 2,
-                    "size": 5,
-                    "step_multiplier": 3
-                }
-            },
-            "linear_histgorams": {
-                "double": {
-                    "counts": [
-                        1.0
-                    ],
-                    "floor": 1.5,
-                    "indexes": [
-                        2
-                    ],
-                    "size": 5,
-                    "step": 2.5
-                },
-                "int": {
-                    "counts": [
-                        1
-                    ],
-                    "floor": -10,
-                    "indexes": [
-                        3
-                    ],
-                    "size": 5,
-                    "step": 2
-                },
-                "uint": {
-                    "counts": [
-                        1
-                    ],
-                    "floor": 1,
-                    "indexes": [
-                        2
-                    ],
-                    "size": 5,
-                    "step": 2
-                }
-            },
-            "numeric": {
-                "bool": true,
-                "double": 1.5,
-                "int": -1,
-                "uint": 1
-            }
-        }
-    },
-    "version": 1
-})JSON";
-
-const char EXPECTED_DATA_PARAMS_HISTOGRAMS[] = R"JSON({
-    "data_source": "Inspect",
-    "metadata": {
-        "component_url": "COMPONENT_URL",
-        "filename": "fuchsia.inspect.Tree",
-        "timestamp": TIMESTAMP
-    },
-    "moniker": "realm_builder\\:CHILD_NAME/inspect-publisher",
+    "moniker": "MONIKER",
     "payload": {
         "root": {
             "arrays": {
@@ -316,18 +197,34 @@ TEST_F(AccessorTest, StreamDiagnosticsInspect) {
 
   auto _binder = realm.component().ConnectSync<fuchsia::component::Binder>();
 
-  auto moniker = "realm_builder\\:" + realm.component().GetChildName() + "/inspect-publisher";
+  auto moniker =
+      "test_suite/realm_builder\\:" + realm.component().GetChildName() + "/inspect-publisher";
   auto selector = moniker + ":root";
-  inspect::contrib::ArchiveReader reader(std::move(accessor), {selector});
+  diagnostics::reader::ArchiveReader reader(std::move(accessor), {selector});
 
-  fpromise::result<std::vector<inspect::contrib::InspectData>, std::string> actual_result;
+  fpromise::result<std::vector<diagnostics::reader::InspectData>, std::string> actual_result;
   fpromise::single_threaded_executor executor;
 
-  executor.schedule_task(reader.SnapshotInspectUntilPresent({moniker}).then(
-      [&](fpromise::result<std::vector<inspect::contrib::InspectData>, std::string>&
-              result) mutable { actual_result = std::move(result); }));
-
-  executor.run();
+  // TODO(b/302150818): once the removal of escaping in the moniker response lands, we can switch
+  // back to just using SnapshotInspectUntilPresent.
+  bool keepTrying = true;
+  while (keepTrying) {
+    fpromise::result<std::vector<diagnostics::reader::InspectData>, std::string> result;
+    executor.schedule_task(reader.GetInspectSnapshot().then(
+        [&](fpromise::result<std::vector<diagnostics::reader::InspectData>, std::string>& r) {
+          result = std::move(r);
+        }));
+    executor.run();
+    ASSERT_TRUE(result.is_ok());
+    for (auto& value : result.value()) {
+      auto monikerSuffix = realm.component().GetChildName() + "/inspect-publisher";
+      if (value.moniker().find(monikerSuffix) != std::string::npos) {
+        keepTrying = false;
+        actual_result = std::move(result);
+        break;
+      }
+    }
+  }
 
   EXPECT_TRUE(actual_result.is_ok());
 
@@ -336,26 +233,21 @@ TEST_F(AccessorTest, StreamDiagnosticsInspect) {
   std::string actual = data.PrettyJson();
   re2::RE2::GlobalReplace(&actual, re2::RE2("\"component_url\": \".+\""),
                           "\"component_url\": \"COMPONENT_URL\"");
+  re2::RE2::GlobalReplace(&actual, re2::RE2("\"moniker\": \".+\""), "\"moniker\": \"MONIKER\"");
   re2::RE2::GlobalReplace(&actual, re2::RE2("        \"errors\": null,\n"), "");
 
   std::string timestamp;
   EXPECT_TRUE(re2::RE2::PartialMatch(actual, re2::RE2("\"timestamp\": (\\d+)"), &timestamp));
 
-  std::string expected_buckets = EXPECTED_DATA_BUCKETS_HISTOGRAMS;
-  std::string expected_params = EXPECTED_DATA_PARAMS_HISTOGRAMS;
+  std::string expected = EXPECTED;
 
   // Replace non-deterministic expected values.
-  re2::RE2::GlobalReplace(&expected_buckets, re2::RE2("CHILD_NAME"),
-                          realm.component().GetChildName());
-  re2::RE2::GlobalReplace(&expected_buckets, re2::RE2("TIMESTAMP"), timestamp);
-  re2::RE2::GlobalReplace(&expected_params, re2::RE2("CHILD_NAME"),
-                          realm.component().GetChildName());
-  re2::RE2::GlobalReplace(&expected_params, re2::RE2("TIMESTAMP"), timestamp);
+  re2::RE2::GlobalReplace(&expected, re2::RE2("CHILD_NAME"), realm.component().GetChildName());
+  re2::RE2::GlobalReplace(&expected, re2::RE2("TIMESTAMP"), timestamp);
 
   std::string actual_sorted = SortJsonFile(actual);
 
-  EXPECT_TRUE(expected_buckets == actual_sorted || expected_params == actual_sorted,
-              "Histogram format didn't match buckets or params");
+  EXPECT_TRUE(expected == actual_sorted, "Histogram format didn't match buckets or params");
 }
 
 }  // namespace

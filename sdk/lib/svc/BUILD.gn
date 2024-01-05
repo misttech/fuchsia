@@ -17,8 +17,8 @@ sdk_shared_library("svc") {
   public_deps = [ "//zircon/system/ulib/async" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
-    "//src/lib/storage/vfs/cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/fbl",
   ]
 
@@ -29,10 +29,4 @@ sdk_shared_library("svc") {
   libcxx_linkage = "static"
 
   public_configs = [ "//sdk/config" ]
-
-  runtime_deps = [
-    "//sdk/lib/fdio:fdio_sdk",
-    "//zircon/system/ulib/async-default:async-default_sdk",
-    "//zircon/system/ulib/trace-engine:trace-engine_sdk",
-  ]
 }

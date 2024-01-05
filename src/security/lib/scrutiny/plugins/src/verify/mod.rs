@@ -13,23 +13,24 @@ use {
             build::VerifyBuildController,
             capability_routing::{CapabilityRouteController, V2ComponentModelMappingController},
             component_resolvers::ComponentResolversController,
+            pre_signing::PreSigningController,
             route_sources::RouteSourcesController,
             structured_config::ExtractStructuredConfigController,
             structured_config::VerifyStructuredConfigController,
         },
     },
-    cm_fidl_analyzer::{
-        node_path::NodePath, route::CapabilityRouteError, serde_ext::ErrorWithMessage,
-    },
+    cm_fidl_analyzer::route::CapabilityRouteError,
     cm_rust::CapabilityTypeName,
     cm_types::Name,
+    moniker::Moniker,
     routing::mapper::RouteSegment,
     scrutiny::prelude::*,
     serde::{Deserialize, Serialize},
-    std::{collections::HashSet, path::PathBuf, sync::Arc},
+    std::{collections::HashSet, error::Error, path::PathBuf, sync::Arc},
 };
 
 pub use controller::{
+    pre_signing::PreSigningResponse,
     route_sources::{
         RouteSourceError, Source, VerifyRouteSourcesResult, VerifyRouteSourcesResults,
     },
@@ -47,6 +48,7 @@ plugin!(
             "/verify/build" => VerifyBuildController::default(),
             "/verify/v2_component_model" => V2ComponentModelMappingController::default(),
             "/verify/capability_routes" => CapabilityRouteController::default(),
+            "/verify/pre_signing" => PreSigningController::default(),
             "/verify/route_sources" => RouteSourcesController::default(),
             "/verify/component_resolvers" => ComponentResolversController::default(),
             "/verify/structured_config" => VerifyStructuredConfigController::default(),
@@ -58,6 +60,44 @@ plugin!(
     ),
     vec![PluginDescriptor::new("CorePlugin")]
 );
+
+/// Error for use with serialization: Stores both structured error and message,
+/// and assesses equality using structured error.
+#[derive(Clone, Default, Deserialize, Serialize)]
+pub struct ErrorWithMessage<E: Clone + Error + Serialize> {
+    pub error: E,
+    #[serde(default)]
+    pub message: String,
+}
+
+impl<E: Clone + Error + PartialEq + Serialize> PartialEq<ErrorWithMessage<E>>
+    for ErrorWithMessage<E>
+{
+    fn eq(&self, other: &Self) -> bool {
+        // Ignore `message` when comparing.
+        self.error == other.error
+    }
+}
+
+impl<'de, E> From<E> for ErrorWithMessage<E>
+where
+    E: Clone + Deserialize<'de> + Error + Serialize,
+{
+    fn from(error: E) -> Self {
+        Self::from(&error)
+    }
+}
+
+impl<'de, E> From<&E> for ErrorWithMessage<E>
+where
+    E: Clone + Deserialize<'de> + Error + Serialize,
+{
+    fn from(error: &E) -> Self {
+        let message = error.to_string();
+        let error = error.clone();
+        Self { error, message }
+    }
+}
 
 /// Top-level result type for `CapabilityRouteController` query result.
 #[derive(Deserialize, Serialize)]
@@ -88,7 +128,7 @@ pub struct ResultsBySeverity {
 /// Error-severity results from `CapabilityRouteController`.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct ErrorResult {
-    pub using_node: NodePath,
+    pub using_node: Moniker,
     pub capability: Option<Name>,
     pub error: ErrorWithMessage<CapabilityRouteError>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -109,7 +149,7 @@ impl PartialEq for ErrorResult {
 /// Warning-severity results from `CapabilityRouteController`.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct WarningResult {
-    pub using_node: NodePath,
+    pub using_node: Moniker,
     pub capability: Option<Name>,
     pub warning: ErrorWithMessage<CapabilityRouteError>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -130,7 +170,7 @@ impl PartialEq for WarningResult {
 /// Ok-severity results from `CapabilityRouteController`.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct OkResult {
-    pub using_node: NodePath,
+    pub using_node: Moniker,
     pub capability: Name,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub route: Vec<RouteSegment>,
@@ -143,14 +183,16 @@ mod tests {
         crate::{
             core::collection::{
                 testing::fake_component_src_pkg, Component, Components, CoreDataDeps, Manifest,
-                ManifestData, Manifests, Zbi,
+                ManifestData, Manifests,
             },
             verify::{
                 collection::V2ComponentModel,
                 collector::component_model::{DEFAULT_CONFIG_PATH, DEFAULT_ROOT_URL},
             },
+            zbi::Zbi,
         },
         anyhow::Result,
+        cm_config::RuntimeConfig,
         cm_fidl_analyzer::component_model::ModelBuilderForAnalyzer,
         cm_rust::{
             Availability, CapabilityDecl, ChildDecl, ComponentDecl, DependencyType, DirectoryDecl,
@@ -158,20 +200,17 @@ mod tests {
             OfferSource, OfferTarget, ProgramDecl, UseDecl, UseDirectoryDecl, UseProtocolDecl,
             UseSource,
         },
+        component_id_index::InstanceId,
         fidl::persist,
         fidl_fuchsia_component_decl as fdecl,
         fidl_fuchsia_component_internal as component_internal, fidl_fuchsia_io as fio,
         maplit::hashset,
         moniker::{Moniker, MonikerBase},
-        routing::{
-            component_id_index::{ComponentIdIndex, ComponentInstanceId},
-            component_instance::ComponentInstanceInterface,
-            config::RuntimeConfig,
-            environment::RunnerRegistry,
-        },
+        routing::{component_instance::ComponentInstanceInterface, environment::RunnerRegistry},
         scrutiny_testing::fake::*,
+        scrutiny_utils::bootfs::{BootfsFileIndex, BootfsPackageIndex},
         serde_json::json,
-        std::{collections::HashMap, convert::TryFrom, str::FromStr},
+        std::{collections::HashMap, convert::TryFrom},
         url::Url,
     };
 
@@ -237,6 +276,7 @@ mod tests {
         UseDirectoryDecl {
             source,
             source_name,
+            source_dictionary: None,
             target_path: "/dir".parse().unwrap(),
             rights,
             subdir: None,
@@ -255,6 +295,7 @@ mod tests {
         OfferDirectoryDecl {
             source,
             source_name,
+            source_dictionary: None,
             target,
             target_name,
             rights,
@@ -272,6 +313,7 @@ mod tests {
         UseProtocolDecl {
             source,
             source_name,
+            source_dictionary: None,
             target_path: "/dir/svc".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -287,6 +329,7 @@ mod tests {
         OfferProtocolDecl {
             source,
             source_name,
+            source_dictionary: None,
             target,
             target_name,
             dependency_type: DependencyType::Strong,
@@ -296,17 +339,13 @@ mod tests {
 
     fn make_v2_component(id: i32, url: String) -> Component {
         let url = Url::parse(&url).unwrap();
-        Component { id, url, version: 2, source: fake_component_src_pkg() }
+        Component { id, url, source: fake_component_src_pkg() }
     }
 
     fn make_v2_manifest(component_id: i32, decl: ComponentDecl) -> Result<Manifest> {
         let decl_fidl: fdecl::Component = decl.native_into_fidl();
         let cm_base64 = base64::encode(&persist(&decl_fidl)?);
-        Ok(Manifest {
-            component_id,
-            manifest: ManifestData::Version2 { cm_base64, cvf_bytes: None },
-            uses: vec![],
-        })
+        Ok(Manifest { component_id, manifest: ManifestData { cm_base64, cvf_bytes: None } })
     }
 
     // Creates a data model with a ZBI containing one component manifest and the provided component
@@ -487,7 +526,7 @@ mod tests {
         let build_model_result = ModelBuilderForAnalyzer::new(root_url.clone()).build(
             decls,
             Arc::new(RuntimeConfig::default()),
-            Arc::new(ComponentIdIndex::default()),
+            Arc::new(component_id_index::Index::default()),
             RunnerRegistry::default(),
         );
         assert!(build_model_result.errors.is_empty());
@@ -505,7 +544,7 @@ mod tests {
         component_id_index_path: Option<String>,
         component_id_index: component_id_index::Index,
     ) -> Zbi {
-        let mut bootfs: HashMap<String, Vec<u8>> = HashMap::default();
+        let mut bootfs_files: HashMap<String, Vec<u8>> = HashMap::default();
         let mut runtime_config = component_internal::Config::default();
         runtime_config.root_component_url = root_component_url;
         runtime_config.component_id_index_path = component_id_index_path.clone();
@@ -513,7 +552,7 @@ mod tests {
         if let Some(path) = component_id_index_path {
             let split_index_path: Vec<&str> = path.split_inclusive("/").collect();
             if split_index_path.as_slice()[..2] == ["/", "boot/"] {
-                bootfs.insert(
+                bootfs_files.insert(
                     split_index_path[2..].join(""),
                     fidl::persist(
                         &component_internal::ComponentIdIndex::try_from(component_id_index)
@@ -524,8 +563,16 @@ mod tests {
             }
         }
 
-        bootfs.insert(DEFAULT_CONFIG_PATH.to_string(), fidl::persist(&runtime_config).unwrap());
-        return Zbi { sections: Vec::default(), bootfs, cmdline: "".to_string() };
+        bootfs_files
+            .insert(DEFAULT_CONFIG_PATH.to_string(), fidl::persist(&runtime_config).unwrap());
+        let bootfs_files = BootfsFileIndex { bootfs_files };
+        return Zbi {
+            deps: HashSet::default(),
+            sections: Vec::default(),
+            bootfs_files,
+            bootfs_packages: BootfsPackageIndex::default(),
+            cmdline: vec![],
+        };
     }
 
     fn json_pretty(data: &serde_json::Value) -> String {
@@ -555,17 +602,16 @@ mod tests {
     // contains the expected entry.
     #[test]
     fn collect_component_model_with_id_index() -> Result<()> {
-        let iid = "0".repeat(64);
+        let iid = "0".repeat(64).parse::<InstanceId>().unwrap();
+        let component_id_index = {
+            let mut index = component_id_index::Index::default();
+            index.insert(Moniker::parse_str("a/b/c").unwrap(), iid.clone()).unwrap();
+            index
+        };
         let model = single_v2_component_model(
             None,
             Some("/boot/index_path".to_string()),
-            component_id_index::Index {
-                instances: vec![component_id_index::InstanceIdEntry {
-                    instance_id: Some(iid.clone()),
-                    moniker: Some(Moniker::parse_str("/a/b/c").unwrap()),
-                }],
-                ..component_id_index::Index::default()
-            },
+            component_id_index,
         )?;
         V2ComponentModelDataCollector::new().collect(model.clone())?;
 
@@ -576,10 +622,10 @@ mod tests {
         let root_instance = collection.component_model.get_root_instance()?;
 
         assert_eq!(
-            Some(&ComponentInstanceId::from_str(&iid).unwrap()),
+            Some(&iid),
             root_instance
                 .component_id_index()
-                .look_up_moniker(&Moniker::parse_str("/a/b/c").unwrap())
+                .id_for_moniker(&Moniker::parse_str("a/b/c").unwrap())
         );
         Ok(())
     }
@@ -588,7 +634,7 @@ mod tests {
     fn test_component_resolvers_child_source() -> Result<()> {
         let model = cmls_to_model(vec![
             (
-                "fuchsia-boot:///#meta/root.cm",
+                "fuchsia-boot:///root#meta/root.cm",
                 json!({
                     "capabilities": [
                         {
@@ -695,7 +741,7 @@ mod tests {
     fn test_component_resolvers_self_source() -> Result<()> {
         let model = cmls_to_model(vec![
             (
-                "fuchsia-boot:///#meta/root.cm",
+                "fuchsia-boot:///root#meta/root.cm",
                 json!({
                     "capabilities": [
                         {
@@ -767,7 +813,7 @@ mod tests {
     fn test_component_resolvers_parent_source() -> Result<()> {
         let model = cmls_to_model(vec![
             (
-                "fuchsia-boot:///#meta/root.cm",
+                "fuchsia-boot:///root#meta/root.cm",
                 json!({
                     "capabilities": [
                         {
@@ -859,7 +905,7 @@ mod tests {
     fn test_component_resolvers_ignores_invalid_resolver_registration() -> Result<()> {
         let model = cmls_to_model(vec![
             (
-                "fuchsia-boot:///#meta/root.cm",
+                "fuchsia-boot:///root#meta/root.cm",
                 json!({
                     "children": [
                         {
@@ -902,20 +948,20 @@ mod tests {
                 json!({
                     "children": [
                         {
-                            "name": "base_resolver",
+                            "name": "pkg-cache",
                             // A declared but undefined child component, so its capabilities cannot
                             // be analyzed.
-                            "url": "fuchsia-boot:///#meta/base-resolver.cm",
+                            "url": "fuchsia-boot:///#meta/pkg-cache.cm",
                         },
                     ],
                     "expose": [
                         {
                             "protocol": "fuchsia.component.resolution.Resolver",
-                            "from": "#base_resolver",
+                            "from": "#pkg-cache",
                         },
                         {
                             "resolver": "base_resolver",
-                            "from": "#base_resolver",
+                            "from": "#pkg-cache",
                         },
                     ],
                 }),
@@ -968,11 +1014,11 @@ mod tests {
                     ]
                 }),
             ),
-            // Don't provide a definition of the base-resolver component
+            // Don't provide a definition of the pkg-cache component
             // to ensure the walker ignores invalid resolver configurations
             /*
             (
-                "fuchsia-boot:///#meta/base-resolver.cm",
+                "fuchsia-boot:///#meta/pkg-cache.cm",
                 json!({
                     "program": {
                         "runner": "elf",
@@ -1052,7 +1098,7 @@ mod tests {
         let response = controller.query(model.clone(), json!("{}"))?;
         assert_json_eq(
             response,
-            json!({"instances":  [{ "instance": "/", "url": DEFAULT_ROOT_URL.to_string() }]}),
+            json!({"instances":  [{ "instance": ".", "url": DEFAULT_ROOT_URL.to_string() }]}),
         );
         Ok(())
     }
@@ -1069,7 +1115,7 @@ mod tests {
 
         let controller = V2ComponentModelMappingController::default();
         let response = controller.query(model.clone(), json!("{}"))?;
-        assert_json_eq(response, json!({"instances": [ {"instance": "/", "url": root_url }]}));
+        assert_json_eq(response, json!({"instances": [ {"instance": ".", "url": root_url }]}));
 
         Ok(())
     }
@@ -1083,15 +1129,15 @@ mod tests {
         let response = controller.query(model.clone(), json!("{}"))?;
         assert!(
             (response
-                == json!({"instances": [{"instance": "/", "url": DEFAULT_ROOT_URL.to_string()},
-                                 {"instance": "/foo","url": "fuchsia-boot:///#meta/foo.cm"},
-                                 {"instance": "/bar", "url": "fuchsia-boot:///#meta/bar.cm"},
-                                 {"instance": "/foo/baz", "url": "fuchsia-boot:///#meta/baz.cm"}]}))
+                == json!({"instances": [{"instance": ".", "url": DEFAULT_ROOT_URL.to_string()},
+                                 {"instance": "foo","url": "fuchsia-boot:///#meta/foo.cm"},
+                                 {"instance": "bar", "url": "fuchsia-boot:///#meta/bar.cm"},
+                                 {"instance": "foo/baz", "url": "fuchsia-boot:///#meta/baz.cm"}]}))
                 | (response
-                    == json!({"instances": [{"instance": "/", "url": DEFAULT_ROOT_URL.to_string()},
-                                 {"instance": "/bar","url": "fuchsia-boot:///#meta/bar.cm"},
-                                 {"instance": "/foo", "url": "fuchsia-boot:///#meta/foo.cm"},
-                                 {"instance": "/foo/baz", "url": "fuchsia-boot:///#meta/baz.cm"}]}))
+                    == json!({"instances": [{"instance": ".", "url": DEFAULT_ROOT_URL.to_string()},
+                                 {"instance": "bar","url": "fuchsia-boot:///#meta/bar.cm"},
+                                 {"instance": "foo", "url": "fuchsia-boot:///#meta/foo.cm"},
+                                 {"instance": "foo/baz", "url": "fuchsia-boot:///#meta/baz.cm"}]}))
         );
 
         Ok(())
@@ -1130,7 +1176,7 @@ mod tests {
                                     },
                                     "message": "`bad_dir` was not offered to `child` by parent.",
                                 },
-                                "using_node": "/child",
+                                "using_node": "child",
                                 "route": [
                                     {
                                         "action": "use_by",
@@ -1139,6 +1185,7 @@ mod tests {
                                             "dependency_type": "strong",
                                             "rights": 1,
                                             "source": "parent",
+                                            "source_dictionary": null,
                                             "source_name": "bad_dir",
                                             "subdir": null,
                                             "target_path": "/dir",
@@ -1152,7 +1199,7 @@ mod tests {
                         "ok": [
                             {
                                 "capability": "good_dir",
-                                "using_node": "/child",
+                                "using_node": "child",
                             },
                         ],
                     }
@@ -1177,7 +1224,7 @@ mod tests {
                                     },
                                     "message": "`.` does not have child `#missing_child`.",
                                 },
-                                "using_node": "/child",
+                                "using_node": "child",
                                 "route": [
                                     {
                                         "action": "use_by",
@@ -1185,6 +1232,7 @@ mod tests {
                                             "availability": "required",
                                             "dependency_type": "strong",
                                             "source": "parent",
+                                            "source_dictionary": null,
                                             "source_name": "protocol",
                                             "target_path": "/dir/svc",
                                             "type": "protocol",
@@ -1202,6 +1250,7 @@ mod tests {
                                                     "name": "missing_child",
                                                 },
                                             },
+                                            "source_dictionary": null,
                                             "source_name": "protocol",
                                             "target": {
                                                 "child": {
@@ -1260,7 +1309,7 @@ mod tests {
                               },
                               "message": "`bad_dir` was not offered to `child` by parent.",
                           },
-                          "using_node": "/child",
+                          "using_node": "child",
                           "route": [
                               {
                                   "action": "use_by",
@@ -1270,6 +1319,7 @@ mod tests {
                                       "rights": 1,
                                       "source": "parent",
                                       "source_name": "bad_dir",
+                                      "source_dictionary": null,
                                       "subdir": null,
                                       "target_path": "/dir",
                                       "type": "directory",
@@ -1291,6 +1341,7 @@ mod tests {
                                       "rights": 1,
                                       "source": "parent",
                                       "source_name": "good_dir",
+                                      "source_dictionary": null,
                                       "subdir": null,
                                       "target_path": "/dir",
                                       "type": "directory"
@@ -1305,6 +1356,7 @@ mod tests {
                                       "rights": 1,
                                       "source": "self_",
                                       "source_name": "good_dir",
+                                      "source_dictionary": null,
                                       "subdir": null,
                                       "target": {
                                           "child": {
@@ -1328,7 +1380,7 @@ mod tests {
                                   "moniker": "."
                               }
                           ],
-                          "using_node": "/child"
+                          "using_node": "child"
                       }
                   ]
               }
@@ -1353,7 +1405,7 @@ mod tests {
                             },
                             "message": "`.` does not have child `#missing_child`.",
                         },
-                        "using_node": "/child",
+                        "using_node": "child",
                         "route": [
                             {
                                 "action": "use_by",
@@ -1362,6 +1414,7 @@ mod tests {
                                     "dependency_type": "strong",
                                     "source": "parent",
                                     "source_name": "protocol",
+                                    "source_dictionary": null,
                                     "target_path": "/dir/svc",
                                     "type": "protocol",
                                 },
@@ -1379,6 +1432,7 @@ mod tests {
                                         },
                                     },
                                     "source_name": "protocol",
+                                    "source_dictionary": null,
                                     "target": {
                                         "child": {
                                             "collection": null,
@@ -1438,7 +1492,7 @@ mod tests {
                                     },
                                     "message": "`bad_dir` was not offered to `child` by parent.",
                                 },
-                                "using_node": "/child",
+                                "using_node": "child",
                                 "route": [
                                     {
                                         "action": "use_by",
@@ -1448,6 +1502,7 @@ mod tests {
                                             "rights": 1,
                                             "source": "parent",
                                             "source_name": "bad_dir",
+                                            "source_dictionary": null,
                                             "subdir": null,
                                             "target_path": "/dir",
                                             "type": "directory",
@@ -1465,7 +1520,7 @@ mod tests {
                         "warnings": [
                             {
                                 "capability": "protocol",
-                                "using_node": "/child",
+                                "using_node": "child",
                                 "warning": {
                                     "error": {
                                         "analyzer_model_error": {
@@ -1488,6 +1543,7 @@ mod tests {
                                             "dependency_type": "strong",
                                             "source": "parent",
                                             "source_name": "protocol",
+                                            "source_dictionary": null,
                                             "target_path": "/dir/svc",
                                             "type": "protocol",
                                         },
@@ -1505,6 +1561,7 @@ mod tests {
                                                 },
                                             },
                                             "source_name": "protocol",
+                                            "source_dictionary": null,
                                             "target": {
                                                 "child": {
                                                     "collection": null,
@@ -1562,7 +1619,7 @@ mod tests {
                               },
                               "message": "`bad_dir` was not offered to `child` by parent.",
                           },
-                          "using_node": "/child",
+                          "using_node": "child",
                           "route": [
                               {
                                   "action": "use_by",
@@ -1572,6 +1629,7 @@ mod tests {
                                       "rights": 1,
                                       "source": "parent",
                                       "source_name": "bad_dir",
+                                      "source_dictionary": null,
                                       "subdir": null,
                                       "target_path": "/dir",
                                       "type": "directory",

@@ -721,16 +721,29 @@ void Gvnic::DdkRelease() { delete this; }
 // The quotes in the comments in this section come from the documentation of these fields in
 // sdk/fidl/fuchsia.hardware.network.driver/network-device.fidl
 
-zx_status_t Gvnic::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface) {
+void Gvnic::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                                  network_device_impl_init_callback callback, void* cookie) {
   // "`Init` is only called once during the lifetime of the device..."
   static bool called = false;
   ZX_ASSERT_MSG(!called, "NetworkDeviceImplInit already called.");
   called = true;
 
+  using Context = std::tuple<network_device_impl_init_callback, void*>;
+  auto context = std::make_unique<Context>(callback, cookie);
+
   fbl::AutoLock lock(&ifc_lock_);
   ifc_ = ddk::NetworkDeviceIfcProtocolClient(iface);
-  ifc_.AddPort(kNetworkPortId, this, &network_port_protocol_ops_);
-  return ZX_OK;
+  ifc_.AddPort(
+      kNetworkPortId, this, &network_port_protocol_ops_,
+      [](void* ctx, zx_status_t status) {
+        std::unique_ptr<Context> context(static_cast<Context*>(ctx));
+        auto [callback, cookie] = *context;
+        if (status != ZX_OK) {
+          zxlogf(ERROR, "Failed to add port: %s", zx_status_get_string(status));
+        }
+        callback(cookie, status);
+      },
+      context.release());
 }
 
 void Gvnic::NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie) {
@@ -776,6 +789,8 @@ void Gvnic::AbortPendingRX() {
   for (uint32_t i = 0; i < rx_total_count; i++) {
     completed_rx_parts[i] = {.id = rx_space_buffer_queue_.Front().id};
     completed_rx[i] = {
+        .meta = {.frame_type =
+                     static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
         .data_list = &completed_rx_parts[i],
         .data_count = 1,
     };
@@ -797,7 +812,7 @@ void Gvnic::NetworkDeviceImplStop(network_device_impl_stop_callback callback, vo
   callback(cookie);
 }
 
-void Gvnic::NetworkDeviceImplGetInfo(device_info_t* out_info) {
+void Gvnic::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
   memset(out_info, 0, sizeof(*out_info));  // Ensure unset fields are zero.
   out_info->tx_depth = tx_ring_len_;
   out_info->rx_depth = rx_ring_len_;
@@ -943,7 +958,7 @@ void Gvnic::NetworkDeviceImplSetSnoop(bool snoop) {
 
 // ------- NetworkPort -------
 
-void Gvnic::NetworkPortGetInfo(port_info_t* out_info) {
+void Gvnic::NetworkPortGetInfo(port_base_info_t* out_info) {
   memset(out_info, 0, sizeof(*out_info));  // Ensure unset fields are zero.
 
   constexpr uint8_t eth =
@@ -951,7 +966,7 @@ void Gvnic::NetworkPortGetInfo(port_info_t* out_info) {
   // It expects pointers to a list. These "lists" are only one element long. These are static so
   // that they continue to exist after this function returns.
   static const uint8_t rx_type = eth;
-  static const tx_support_t tx_type = {
+  static const frame_type_support_t tx_type = {
       .type = eth,
       .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw,
   };
@@ -973,17 +988,19 @@ void Gvnic::NetworkPortSetActive(bool active) {
   // Nohing to do.
 }
 
-void Gvnic::NetworkPortGetMac(mac_addr_protocol_t* out_mac_ifc) {
-  memset(out_mac_ifc, 0, sizeof(*out_mac_ifc));
-  out_mac_ifc->ops = &mac_addr_protocol_ops_;
-  out_mac_ifc->ctx = this;
+void Gvnic::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
+  if (out_mac_ifc) {
+    *out_mac_ifc = &mac_addr_proto_;
+  }
 }
 
 void Gvnic::NetworkPortRemoved() {
   // The port is never removed, there's no extra cleanup needed here.
 }
 
-void Gvnic::MacAddrGetAddress(uint8_t* out_mac) { memcpy(out_mac, dev_descr_.mac, ETH_ALEN); }
+void Gvnic::MacAddrGetAddress(mac_address_t* out_mac) {
+  memcpy(out_mac->octets, dev_descr_.mac, ETH_ALEN);
+}
 
 void Gvnic::MacAddrGetFeatures(features_t* out_features) {
   memset(out_features, 0, sizeof(*out_features));
@@ -993,9 +1010,9 @@ void Gvnic::MacAddrGetFeatures(features_t* out_features) {
   out_features->supported_modes = SUPPORTED_MAC_FILTER_MODE_PROMISCUOUS;
 }
 
-void Gvnic::MacAddrSetMode(mode_t mode, const uint8_t* multicast_macs_list,
+void Gvnic::MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
                            size_t multicast_macs_count) {
-  ZX_ASSERT_MSG(mode == MODE_PROMISCUOUS, "unsupported mode %d", mode);
+  ZX_ASSERT_MSG(mode == MAC_FILTER_MODE_PROMISCUOUS, "unsupported mode %d", mode);
   ZX_ASSERT_MSG(multicast_macs_count == 0, "unsupported multicast count %zu", multicast_macs_count);
 }
 

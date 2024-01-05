@@ -57,6 +57,8 @@ class Phase3Test : public l2cap::testing::FakeChannelTest {
   Phase3Test() = default;
   ~Phase3Test() override = default;
 
+  pw::async::HeapDispatcher& heap_dispatcher() { return heap_dispatcher_; }
+
  protected:
   void SetUp() override { NewPhase3(); }
 
@@ -167,6 +169,7 @@ class Phase3Test : public l2cap::testing::FakeChannelTest {
   std::unique_ptr<Phase3> phase_3_;
   int phase_3_complete_count_ = 0;
   PairingData pairing_data_;
+  pw::async::HeapDispatcher heap_dispatcher_{dispatcher()};
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(Phase3Test);
 };
@@ -211,7 +214,7 @@ TEST_F(Phase3Test, EncryptionInformationReceivedTwice) {
   fake_chan()->SetSendCallback([&](ByteBufferPtr sdu) { sent = std::move(sdu); }, dispatcher());
   phase_3()->Start();
   Receive128BitCmd(kEncryptionInformation, UInt128());
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_FALSE(sent);
   // When we receive the second Encryption Info packet, we should respond with pairing failed, as a
   // device should only ever send one Encryption Info packet in Phase 3.
@@ -279,7 +282,7 @@ TEST_F(Phase3Test, ReceiveExampleRandAborts) {
 
   // Pairing should still proceed after accepting the LTK
   Receive128BitCmd(kEncryptionInformation, UInt128());
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(0, listener()->pairing_error_count());
   ASSERT_EQ(0, phase_3_complete_count());
   // We disallow pairing with spec sample values as using known values for encryption parameters
@@ -349,7 +352,7 @@ TEST_F(Phase3Test, InitiatorReceivesEncKey) {
   phase_3()->Start();
   Receive128BitCmd(kEncryptionInformation, kExpectedLtk.key().value());
   ReceiveCentralIdentification(kExpectedLtk.key().rand(), kExpectedLtk.key().ediv());
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We were not supposed to distribute any keys in Phase 3
   EXPECT_EQ(0u, sent_msg_count);
@@ -376,7 +379,7 @@ TEST_F(Phase3Test, InitiatorSendsLocalIdKey) {
   IdentityInfo kLocalIdentity{.irk = Random<IRK>(), .address = kSampleDeviceAddress};
   listener()->set_identity_info(kLocalIdentity);
   phase_3()->Start();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Local ID Info should be sent to the peer & pairing should be complete
   ASSERT_TRUE(irk.has_value());
@@ -404,7 +407,7 @@ TEST_F(Phase3Test, InitiatorSendsEncKey) {
       [&](ByteBufferPtr sdu) { ExpectEncryptionInfo(std::move(sdu), &ltk_bytes, &central_id); },
       dispatcher());
   phase_3()->Start();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Local LTK should be sent to the peer & pairing should be complete
   EXPECT_EQ(1, phase_3_complete_count());
@@ -431,7 +434,7 @@ TEST_F(Phase3Test, InitiatorReceivesThenSendsEncKey) {
   phase_3()->Start();
   Receive128BitCmd(kEncryptionInformation, kExpectedLtk.key().value());
   ReceiveCentralIdentification(kExpectedLtk.key().rand(), kExpectedLtk.key().ediv());
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Local LTK should be sent to the peer & pairing should be complete
   EXPECT_EQ(0, listener()->pairing_error_count());
@@ -454,7 +457,11 @@ TEST_F(Phase3Test, AbortsIfLocalIdKeyIsRemoved) {
   NewPhase3(args);
   listener()->set_identity_info(std::nullopt);
 
-  async::PostTask(dispatcher(), [this] { phase_3()->Start(); });
+  heap_dispatcher().Post([this](pw::async::Context /*ctx*/, pw::Status status) {
+    if (status.ok()) {
+      phase_3()->Start();
+    }
+  });
   const StaticByteBuffer<PacketSize<ErrorCode>()> kExpectedFailure{kPairingFailed,
                                                                    ErrorCode::kUnspecifiedReason};
   ASSERT_TRUE(Expect(kExpectedFailure));
@@ -469,7 +476,7 @@ TEST_F(Phase3Test, IRKReceivedTwice) {
   NewPhase3(args);
 
   Receive128BitCmd(kIdentityInformation, UInt128());
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should be waiting for identity address.
   EXPECT_EQ(0, listener()->pairing_error_count());
@@ -506,7 +513,7 @@ TEST_F(Phase3Test, IdentityAddressReceivedTwice) {
 
   Receive128BitCmd(kIdentityInformation, UInt128());
   ReceiveIdentityAddress(kSampleDeviceAddress);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should not complete as we still have not obtained all the requested keys.
   EXPECT_EQ(0, listener()->pairing_error_count());
@@ -556,7 +563,7 @@ TEST_F(Phase3Test, InitiatorCompleteWithIdKey) {
   phase_3()->Start();
   Receive128BitCmd(kIdentityInformation, kIrk.value());
   ReceiveIdentityAddress(kSampleDeviceAddress);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We were not supposed to distribute any keys in Phase 3
   EXPECT_EQ(0u, sent_msg_count);
@@ -587,7 +594,7 @@ TEST_F(Phase3Test, InitiatorCompleteWithEncAndIdKey) {
   ReceiveCentralIdentification(kExpectedLtk.key().rand(), kExpectedLtk.key().ediv());
   Receive128BitCmd(kIdentityInformation, kIrk.value());
   ReceiveIdentityAddress(kSampleDeviceAddress);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We were not supposed to distribute any keys in Phase 3
   EXPECT_EQ(0u, sent_msg_count);
@@ -615,7 +622,7 @@ TEST_F(Phase3Test, ResponderLTKDistributionNoRemoteKeys) {
       [&](ByteBufferPtr sdu) { ExpectEncryptionInfo(std::move(sdu), &ltk_bytes, &central_id); },
       dispatcher());
   phase_3()->Start();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // We should have sent both the Encryption Info and Central ID to the peer
   ASSERT_TRUE(ltk_bytes.has_value());
   ASSERT_TRUE(central_id.has_value());
@@ -643,7 +650,7 @@ TEST_F(Phase3Test, ResponderAcceptsInitiatorEncKey) {
   phase_3()->Start();
   Receive128BitCmd(kEncryptionInformation, kExpectedLtk.key().value());
   ReceiveCentralIdentification(kExpectedLtk.key().rand(), kExpectedLtk.key().ediv());
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We were not supposed to distribute any keys in Phase 3
   EXPECT_EQ(0u, sent_msg_count);
@@ -670,7 +677,7 @@ TEST_F(Phase3Test, ResponderLTKDistributionWithRemoteKeys) {
       [&](ByteBufferPtr sdu) { ExpectEncryptionInfo(std::move(sdu), &ltk_bytes, &central_id); },
       dispatcher());
   phase_3()->Start();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // We should have sent the Encryption Info and Central ID & be waiting for the peer's IRK
   ASSERT_TRUE(ltk_bytes.has_value());
   ASSERT_TRUE(central_id.has_value());
@@ -683,7 +690,7 @@ TEST_F(Phase3Test, ResponderLTKDistributionWithRemoteKeys) {
   central_id.reset();
   Receive128BitCmd(kIdentityInformation, kIrk.value());
   ReceiveIdentityAddress(kSampleDeviceAddress);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_FALSE(ltk_bytes.has_value());
   ASSERT_FALSE(central_id.has_value());
@@ -711,7 +718,7 @@ TEST_F(Phase3Test, ResponderLocalLTKMaxLength) {
       [&](ByteBufferPtr sdu) { ExpectEncryptionInfo(std::move(sdu), &ltk_bytes, &central_id); },
       dispatcher());
   phase_3()->Start();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Local LTK, EDiv, and Rand should be sent to the peer & listener should be notified.
   ASSERT_TRUE(ltk_bytes.has_value());
@@ -742,7 +749,7 @@ TEST_F(Phase3Test, ResponderLocalIdKeyDistributionWithRemoteKeys) {
   IdentityInfo kLocalIdentity{.irk = Random<IRK>(), .address = kSampleDeviceAddress};
   listener()->set_identity_info(kLocalIdentity);
   phase_3()->Start();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Local ID Info should be sent to the peer & we should be waiting for the peer's ID info
   ASSERT_TRUE(irk.has_value());
@@ -756,7 +763,7 @@ TEST_F(Phase3Test, ResponderLocalIdKeyDistributionWithRemoteKeys) {
   const DeviceAddress kPeerAddr(DeviceAddress::Type::kLEPublic, {2});
   Receive128BitCmd(kIdentityInformation, kIrk.value());
   ReceiveIdentityAddress(kPeerAddr);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should be complete with the peer's identity information.
   ASSERT_EQ(1, phase_3_complete_count());
@@ -772,7 +779,7 @@ TEST_F(Phase3Test, ReceivePairingFailed) {
   NewPhase3(args);
   phase_3()->Start();
   fake_chan()->Receive(StaticByteBuffer{kPairingFailed, ErrorCode::kPairingNotSupported});
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(1, listener()->pairing_error_count());
   EXPECT_EQ(Error(ErrorCode::kPairingNotSupported), listener()->last_error());

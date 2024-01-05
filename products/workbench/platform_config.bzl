@@ -9,6 +9,7 @@ products. This platform configuration is meant to feed into Fuchsia's product
 assembly process.
 """
 
+load("@legacy_ninja_build_outputs//:build_args.bzl", "delegated_network_provisioning")
 load(
     "@fuchsia_sdk//fuchsia:assembly.bzl",
     "BUILD_TYPES",
@@ -19,12 +20,26 @@ workbench_platform_config = {
     "battery": {
         "enabled": True,
     },
-    "input": {
-        "supported_input_devices": [
-            "keyboard",
-            "mouse",
-            "touchscreen",
-        ],
+    "connectivity": {
+        "network": {
+            "networking": "standard",
+            "netcfg_config_path": "LABEL(//src/connectivity/policy/netcfg/config:%s.json)" % ("delegated_network_provisioning" if delegated_network_provisioning else "default"),
+        },
+    },
+    "forensics": {
+        "feedback": {
+            "low_memory": True,
+        },
+    },
+    "icu": {
+        "revision": "default",
+    },
+    "intl": {
+        "config_type": "default",
+    },
+    "setui": {
+        "use_icu": "with_icu",
+        "with_camera": False,
     },
     "media": {
         "audio_device_registry_enabled": True,
@@ -36,21 +51,17 @@ workbench_platform_config = {
     "storage": {
         "configure_fshost": True,
         "live_usb_enabled": False,
-        "filesystems": {
-            "volume": {
-                "fvm": {
-                    "data": {
-                    },
-                    "blob": {
-                    },
-                },
-            },
-        },
     },
     "session": {
         "enabled": True,
     },
     "ui": {
         "enabled": True,
+        "supported_input_devices": [
+            "button",
+            "keyboard",
+            "mouse",
+            "touchscreen",
+        ],
     },
 }

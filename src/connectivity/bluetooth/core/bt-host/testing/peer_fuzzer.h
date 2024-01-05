@@ -54,8 +54,8 @@ class PeerFuzzer final {
         &PeerFuzzer::LEDataSetServiceChangedGattData,
         &PeerFuzzer::LEDataSetAutoConnectBehavior,
         &PeerFuzzer::BrEdrDataSetInquiryData,
-        &PeerFuzzer::BrEdrDataSetInquiryData<hci_spec::InquiryResultRSSI>,
-        &PeerFuzzer::BrEdrDataSetInquiryData<hci_spec::ExtendedInquiryResultEventParams>,
+        &PeerFuzzer::BrEdrDataSetInquiryDataWithRssi,
+        &PeerFuzzer::BrEdrDataSetInquiryDataFromExtendedInquiryResult,
         &PeerFuzzer::BrEdrDataRegisterInitializingConnection,
         &PeerFuzzer::BrEdrDataUnregisterInitializingConnection,
         &PeerFuzzer::BrEdrDataRegisterConnection,
@@ -78,7 +78,7 @@ class PeerFuzzer final {
     peer_.MutLe().SetAdvertisingData(
         fdp().ConsumeIntegral<uint8_t>(),
         DynamicByteBuffer(BufferView(fdp().ConsumeBytes<uint8_t>(kMaxLeAdvDataLength))),
-        zx::time());
+        pw::chrono::SystemClock::time_point());
   }
 
   void LEDataRegisterInitializingConnection() {
@@ -163,20 +163,26 @@ class PeerFuzzer final {
       return;
     }
     StaticPacket<pw::bluetooth::emboss::InquiryResultWriter> inquiry_data;
-    fdp().ConsumeData(inquiry_data.mutable_data().mutable_data(), sizeof(inquiry_data));
+    fdp().ConsumeData(inquiry_data.mutable_data().mutable_data(), inquiry_data.data().size());
     inquiry_data.view().bd_addr().CopyFrom(peer_.address().value().view());
     peer_.MutBrEdr().SetInquiryData(inquiry_data.view());
   }
 
-  template <typename T>
-  void BrEdrDataSetInquiryData() {
+  void BrEdrDataSetInquiryDataWithRssi() {
+    StaticPacket<pw::bluetooth::emboss::InquiryResultWithRssiWriter> inquiry_data;
+    fdp().ConsumeData(inquiry_data.mutable_data().mutable_data(), inquiry_data.data().size());
+    inquiry_data.view().bd_addr().CopyFrom(peer_.address().value().view());
+    peer_.MutBrEdr().SetInquiryData(inquiry_data.view());
+  }
+
+  void BrEdrDataSetInquiryDataFromExtendedInquiryResult() {
     if (!peer_.identity_known()) {
       return;
     }
-    T inquiry_data = {};
-    fdp().ConsumeData(&inquiry_data, sizeof(inquiry_data));
-    inquiry_data.bd_addr = peer_.address().value();
-    peer_.MutBrEdr().SetInquiryData(inquiry_data);
+    StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> inquiry_data;
+    fdp().ConsumeData(inquiry_data.mutable_data().mutable_data(), inquiry_data.data().size());
+    inquiry_data.view().bd_addr().CopyFrom(peer_.address().value().view());
+    peer_.MutBrEdr().SetInquiryData(inquiry_data.view());
   }
 
   void BrEdrDataRegisterInitializingConnection() {

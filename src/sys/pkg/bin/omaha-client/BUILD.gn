@@ -58,6 +58,7 @@ rustc_library("lib") {
   ]
 
   test_deps = [
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia-url",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/sys/pkg/testing/mock-crash-reporter:lib",
@@ -110,6 +111,7 @@ fuchsia_component("component") {
 
 fuchsia_package("omaha-client-unconfigured") {
   deps = [ ":component" ]
+  validate_structured_config = false
   package_name = "omaha-client"
 }
 
@@ -139,8 +141,8 @@ fuchsia_unittest_package("omaha-client-service-bin-tests") {
     ":omaha-client-channels-test-config",
     ":omaha-client-service-bin-tests-test-driver",
     ":omaha-client-structured-config",
+    "//src/connectivity/network:netstack-for-tests",
     "//src/connectivity/network/dns:component",
-    "//src/connectivity/network/netstack:component",
     "//src/power/shutdown-shim/tests:shutdown_shim_component",
     "//src/sys/pkg/bin/fake-channel-control:fake-channel-control",
     "//src/sys/stash:stash2_v2",

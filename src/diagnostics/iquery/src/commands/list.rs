@@ -4,7 +4,7 @@
 
 use {
     crate::{commands::types::*, types::Error},
-    argh::FromArgs,
+    argh::{ArgsInfo, FromArgs},
     async_trait::async_trait,
     diagnostics_data::{Inspect, InspectData},
     serde::{Serialize, Serializer},
@@ -25,10 +25,11 @@ pub enum ListResultItem {
 
 impl ListResultItem {
     pub fn into_moniker(self) -> String {
-        match self {
+        let moniker = match self {
             Self::Moniker(moniker) => moniker,
             Self::MonikerWithUrl(MonikerWithUrl { moniker, .. }) => moniker,
-        }
+        };
+        selectors::sanitize_moniker_for_selectors(&moniker)
     }
 }
 
@@ -74,9 +75,11 @@ impl fmt::Display for ListResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for item in self.0.iter() {
             match item {
-                ListResultItem::Moniker(moniker) => writeln!(f, "{}", moniker)?,
+                ListResultItem::Moniker(moniker) => {
+                    writeln!(f, "{}", selectors::sanitize_moniker_for_selectors(moniker))?
+                }
                 ListResultItem::MonikerWithUrl(MonikerWithUrl { component_url, moniker }) => {
-                    writeln!(f, "{}:", moniker)?;
+                    writeln!(f, "{}:", selectors::sanitize_moniker_for_selectors(moniker))?;
                     writeln!(f, "  {}", component_url)?;
                 }
             }
@@ -135,7 +138,7 @@ pub fn list_response_items_from_components(
 
 /// Lists all components (relative to the scope where the archivist receives events from) of
 /// components that expose inspect.
-#[derive(Default, FromArgs, PartialEq, Debug)]
+#[derive(Default, ArgsInfo, FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "list")]
 pub struct ListCommand {
     #[argh(option)]

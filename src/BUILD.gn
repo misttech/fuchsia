@@ -29,7 +29,6 @@ group("tests_no_e2e") {
     "fonts:tests",
     "graphics:tests",
     "hwinfo:tests",
-    "identity:tests",
     "intl:tests",
     "lib:tests",
     "media:tests",
@@ -46,14 +45,6 @@ group("tests_no_e2e") {
     "ui:tests",
     "virtualization:tests",
     "zircon:tests",
-  ]
-
-  # These targets should be removed when the tests are moved to //src.
-  deps += [
-    "//zircon/kernel:tests",
-    "//zircon/system/ulib:tests",
-    "//zircon/system/utest:tests",
-    "//zircon/tools:tests",
   ]
 }
 

@@ -10,16 +10,18 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"go.fuchsia.dev/fuchsia/src/sys/pkg/bin/pm/build"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
 )
 
+var hostDir = map[string]string{"arm64": "host_arm64", "amd64": "host_x64"}[runtime.GOARCH]
+
 // createTestPackage fills the given directory with a new repository.
-func createTestPackage(t *testing.T, dir string) (*Repository, string) {
+func createTestPackage(t *testing.T, dir string) (*Repository, build.MerkleRoot) {
 	ctx := context.Background()
 
 	// Initialize a repo.
@@ -45,13 +47,17 @@ func createTestPackage(t *testing.T, dir string) (*Repository, string) {
 	if err := json.Unmarshal(manifest, &packageManifest); err != nil {
 		t.Fatal(err)
 	}
-	metaMerkle := ""
+
+	foundMerkle := false
+	var metaMerkle build.MerkleRoot
 	for _, blob := range packageManifest.Blobs {
 		if blob.Path == "meta/" {
-			metaMerkle = blob.Merkle.String()
+			foundMerkle = true
+			metaMerkle = blob.Merkle
+			break
 		}
 	}
-	if metaMerkle == "" {
+	if !foundMerkle {
 		t.Fatal("did not find meta.far in manifest")
 	}
 
@@ -60,7 +66,7 @@ func createTestPackage(t *testing.T, dir string) (*Repository, string) {
 	if err != nil {
 		t.Fatalf("failed to create FFXTool: %s", err)
 	}
-	keysDir := "host_x64/test_data/ffx_lib_pkg/empty-repo/keys"
+	keysDir := filepath.Join(hostDir, "test_data/ffx_lib_pkg/empty-repo/keys")
 	err = ffx.RepositoryCreate(ctx, dir, keysDir)
 	if err != nil {
 		t.Fatalf("failed to create repository: %s", err)
@@ -82,11 +88,11 @@ func createTestPackage(t *testing.T, dir string) (*Repository, string) {
 }
 
 // expandPackage expands the given merkle from the given repository into the given directory.
-func expandPackage(t *testing.T, pkgRepo *Repository, merkle string, dir string) {
+func expandPackage(t *testing.T, pkgRepo *Repository, merkle build.MerkleRoot, dir string) {
 	ctx := context.Background()
 
 	// Parse the package we want.
-	pkg, err := newPackage(ctx, pkgRepo, merkle)
+	pkg, err := newPackage(ctx, pkgRepo, "", merkle)
 	if err != nil {
 		t.Fatalf("failed to read package: %s", err)
 	}
@@ -196,25 +202,26 @@ func TestPublish(t *testing.T) {
 	pkgBuilder.AddResource(newResource, bytes.NewReader([]byte(newResource)))
 
 	// Update repo with updated package. We don't check the merkle since the package includes randomly generated files.
-	actualPkgName, pkgMerkle, err := pkgBuilder.Publish(ctx, pkgRepo)
+	actualPkg, err := pkgBuilder.Publish(ctx, pkgRepo)
 	if err != nil {
 		t.Fatalf("Publishing package failed. %s", err)
 	}
 
-	if actualPkgName != fullPkgName {
-		t.Fatalf("package path should be %q, not %q", fullPkgName, actualPkgName)
+	if actualPkg.Path() != fullPkgName {
+		t.Fatalf("package path should be %q, not %q", fullPkgName, actualPkg.Path())
 	}
 
-	_, err = pkgRepo.BlobStore.OpenBlob(ctx, "1/"+pkgMerkle)
+	deliveryBlobType := 1
+	_, err = pkgRepo.blobStore.OpenBlob(ctx, &deliveryBlobType, actualPkg.Merkle())
 	if err != nil {
-		t.Fatalf("Delivery blob does not exist '%s'. %s", pkgMerkle, err)
+		t.Fatalf("Delivery blob does not exist '%s'. %s", actualPkg.Merkle(), err)
 	}
 
 	ffx, err := ffx.NewFFXTool("host-tools/ffx")
 	if err != nil {
 		t.Fatalf("failed to create FFXTool: %s", err)
 	}
-	pkgRepo, err = NewRepository(ctx, path.Dir(pkgRepo.Dir), pkgRepo.BlobStore, ffx, nil)
+	pkgRepo, err = NewRepository(ctx, pkgRepo.rootDir, pkgRepo.blobStore, ffx, nil)
 
 	// Confirm that the package is published and updated.
 	pkg, err = pkgRepo.OpenPackage(ctx, fullPkgName)

@@ -5,7 +5,7 @@
 #ifndef THIRD_PARTY_PIGWEED_BACKENDS_PW_ASYNC_FUCHSIA_PUBLIC_PW_ASYNC_FUCHSIA_DISPATCHER_H_
 #define THIRD_PARTY_PIGWEED_BACKENDS_PW_ASYNC_FUCHSIA_PUBLIC_PW_ASYNC_FUCHSIA_DISPATCHER_H_
 
-#include <lib/async-loop/default.h>
+#include <zircon/assert.h>
 
 #include "pw_async/dispatcher.h"
 #include "pw_async/task.h"
@@ -40,31 +40,22 @@ inline void Post(pw::async::Dispatcher* dispatcher, pw::async::TaskFunction&& ta
 
 }  // namespace pw_async_fuchsia
 
+// TODO(fxbug.dev/132962): move to pw_async_fuchsia namespace
 namespace pw::async::fuchsia {
 
 class FuchsiaDispatcher final : public Dispatcher {
  public:
-  explicit FuchsiaDispatcher() {
-    async_loop_create(&kAsyncLoopConfigNoAttachToCurrentThread, &loop_);
-  }
-  ~FuchsiaDispatcher() override { DestroyLoop(); }
-
-  void DestroyLoop();
+  explicit FuchsiaDispatcher(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
+  ~FuchsiaDispatcher() = default;
 
   chrono::SystemClock::time_point now() override;
 
   void PostAt(Task& task, chrono::SystemClock::time_point time) override;
-  // No-op
-  void PostPeriodicAt(Task& task, chrono::SystemClock::duration interval,
-                      chrono::SystemClock::time_point start_time) override;
+
   bool Cancel(Task& task) override;
 
-  void RunUntilIdle();
-  void RunUntil(chrono::SystemClock::time_point end_time);
-  void RunFor(chrono::SystemClock::duration duration);
-
  private:
-  async_loop_t* loop_;
+  async_dispatcher_t* dispatcher_;
 };
 
 }  // namespace pw::async::fuchsia

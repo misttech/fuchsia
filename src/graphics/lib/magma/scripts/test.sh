@@ -15,11 +15,11 @@ intel)
     magma_sys_driver_test \
     msd_intel_gen_nonhardware_tests \
     mesa_unit_tests \
-    magma-conformance-tests \
+    magma-conformance-tests# \
     msd_intel_gen_integration_tests \
     vkreadback_test \
-    vkloop \
-    vkext_unprotected \
+    vkloop_test \
+    vkext_unprotected_test \
     mesa_integration_tests
   ;;
 mali)
@@ -29,10 +29,10 @@ mali)
     msd_arm_mali_nonhardware_tests \
     magma-conformance-tests-arm \
     vkreadback_test \
-    vkloop \
-    vkext_protected \
-    vkext_unprotected \
-    vk_timer_query \
+    vkloop_test \
+    vkext_protected_test \
+    vkext_unprotected_test \
+    vk_timer_query_test \
     msd-arm-mali-integration-tests
   ;;
 vsi)

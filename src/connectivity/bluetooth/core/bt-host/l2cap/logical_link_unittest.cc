@@ -20,7 +20,7 @@ namespace bt::l2cap::internal {
 namespace {
 using Conn = hci::Connection;
 
-using TestingBase = bt::testing::ControllerTest<bt::testing::MockController>;
+using TestingBase = bt::testing::FakeDispatcherControllerTest<bt::testing::MockController>;
 
 const hci_spec::ConnectionHandle kConnHandle = 0x0001;
 
@@ -49,14 +49,14 @@ class LogicalLinkTest : public TestingBase {
   }
   void NewLogicalLink(bt::LinkType type = bt::LinkType::kLE) {
     const size_t kMaxPayload = kDefaultMTU;
-    auto query_service_cb = [](hci_spec::ConnectionHandle, PSM) { return std::nullopt; };
+    auto query_service_cb = [](hci_spec::ConnectionHandle, Psm) { return std::nullopt; };
     a2dp_offload_manager_ =
         std::make_unique<A2dpOffloadManager>(transport()->command_channel()->AsWeakPtr());
     link_ = std::make_unique<LogicalLink>(
         kConnHandle, type, pw::bluetooth::emboss::ConnectionRole::CENTRAL, kMaxPayload,
         std::move(query_service_cb), transport()->acl_data_channel(),
         transport()->command_channel(),
-        /*random_channel_ids=*/true, *a2dp_offload_manager_);
+        /*random_channel_ids=*/true, *a2dp_offload_manager_, dispatcher());
   }
   void ResetAndCreateNewLogicalLink(LinkType type = LinkType::kACL) {
     link()->Close();
@@ -136,7 +136,7 @@ TEST_F(LogicalLinkTest, DropsBroadcastPackets) {
 
 // LE links are unsupported, so result should be an error. No command should be sent.
 TEST_F(LogicalLinkTest, SetBrEdrAutomaticFlushTimeoutFailsForLELink) {
-  constexpr zx::duration kTimeout(zx::msec(100));
+  constexpr std::chrono::milliseconds kTimeout(100);
   ResetAndCreateNewLogicalLink(LinkType::kLE);
 
   bool cb_called = false;
@@ -175,16 +175,16 @@ TEST_F(LogicalLinkTest, SetAutomaticFlushTimeoutSuccess) {
   EXPECT_CMD_PACKET_OUT(test_device(),
                         bt::testing::WriteAutomaticFlushTimeoutPacket(link()->handle(), 0),
                         &kCommandCompleteError);
-  link()->SetBrEdrAutomaticFlushTimeout(zx::duration::infinite(), result_cb);
-  RunLoopUntilIdle();
+  link()->SetBrEdrAutomaticFlushTimeout(pw::chrono::SystemClock::duration::max(), result_cb);
+  RunUntilIdle();
   ASSERT_TRUE(cb_status.has_value());
   ASSERT_TRUE(cb_status->is_error());
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::UNKNOWN_CONNECTION_ID), *cb_status);
   cb_status.reset();
 
   // Test flush timeout = 0 (no command should be sent)
-  link()->SetBrEdrAutomaticFlushTimeout(zx::msec(0), result_cb);
-  RunLoopUntilIdle();
+  link()->SetBrEdrAutomaticFlushTimeout(std::chrono::milliseconds(0), result_cb);
+  RunUntilIdle();
   ASSERT_TRUE(cb_status.has_value());
   EXPECT_TRUE(cb_status->is_error());
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::INVALID_HCI_COMMAND_PARAMETERS),
@@ -196,8 +196,8 @@ TEST_F(LogicalLinkTest, SetAutomaticFlushTimeoutSuccess) {
   EXPECT_CMD_PACKET_OUT(test_device(),
                         bt::testing::WriteAutomaticFlushTimeoutPacket(link()->handle(), 0),
                         &kCommandComplete);
-  link()->SetBrEdrAutomaticFlushTimeout(zx::duration::infinite(), result_cb);
-  RunLoopUntilIdle();
+  link()->SetBrEdrAutomaticFlushTimeout(pw::chrono::SystemClock::duration::max(), result_cb);
+  RunUntilIdle();
   ASSERT_TRUE(cb_status.has_value());
   EXPECT_EQ(fit::ok(), *cb_status);
   cb_status.reset();
@@ -208,15 +208,15 @@ TEST_F(LogicalLinkTest, SetAutomaticFlushTimeoutSuccess) {
                         bt::testing::WriteAutomaticFlushTimeoutPacket(link()->handle(), 2046),
                         &kCommandComplete);
   link()->SetBrEdrAutomaticFlushTimeout(hci_spec::kMaxAutomaticFlushTimeoutDuration, result_cb);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(cb_status.has_value());
   EXPECT_EQ(fit::ok(), *cb_status);
   cb_status.reset();
 
   // Test too large flush timeout (no command should be sent).
-  link()->SetBrEdrAutomaticFlushTimeout(hci_spec::kMaxAutomaticFlushTimeoutDuration + zx::msec(1),
-                                        result_cb);
-  RunLoopUntilIdle();
+  link()->SetBrEdrAutomaticFlushTimeout(
+      hci_spec::kMaxAutomaticFlushTimeoutDuration + std::chrono::milliseconds(1), result_cb);
+  RunUntilIdle();
   ASSERT_TRUE(cb_status.has_value());
   EXPECT_TRUE(cb_status->is_error());
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::INVALID_HCI_COMMAND_PARAMETERS),

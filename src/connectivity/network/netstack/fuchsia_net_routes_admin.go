@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"syscall/zx"
 	"syscall/zx/fidl"
 
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/fidlconv"
@@ -32,12 +33,13 @@ const (
 
 type routeSet[A fidlconv.IpAddress] struct {
 	ns *Netstack
-	id routetypes.RouteSetId
+	id *routetypes.RouteSetId
 }
 
-func makeRouteSet[A fidlconv.IpAddress](ns *Netstack) routeSet[A] {
+func makeUserRouteSet[A fidlconv.IpAddress](ns *Netstack) routeSet[A] {
 	return routeSet[A]{
 		ns: ns,
+		id: &routetypes.RouteSetId{},
 	}
 }
 
@@ -65,7 +67,7 @@ func (r *routeSet[A]) addRoute(route fidlconv.Route[A]) (bool, error) {
 		return false, err
 	}
 
-	addResult, err := r.ns.AddRoute(gvisorRoute, metric, false /* dynamic */, false /* replaceMatchingGvisorRoutes */, &r.id)
+	addResult, err := r.ns.AddRoute(gvisorRoute, metric, false /* dynamic */, false /* replaceMatchingGvisorRoutes */, r.id)
 	return addResult.NewlyAddedToSet, err
 }
 
@@ -93,14 +95,13 @@ func (r *routeSet[A]) removeRoute(route fidlconv.Route[A]) (bool, error) {
 		return false, err
 	}
 
-	removeResult, err := r.ns.DelRouteExactMatch(gvisorRoute, metric, &r.id)
+	removeResult, err := r.ns.DelRouteExactMatch(gvisorRoute, metric, r.id)
 	return removeResult.NewlyRemovedFromSet, err
 }
 
-// close deletes the routeSet and decrements the routing table's reference count
-// for every route in the route set.
+// close deletes the routeSet in the Netstack.
 func (r *routeSet[A]) close() {
-	r.ns.DelRouteSet(&r.id)
+	r.ns.DelRouteSet(r.id)
 }
 
 var _ routesAdmin.SetProviderV4WithCtx = (*routesAdminSetProviderV4Impl)(nil)
@@ -110,20 +111,24 @@ type routesAdminSetProviderV4Impl struct {
 }
 
 func (impl *routesAdminSetProviderV4Impl) NewRouteSet(ctx_ fidl.Context, request routesAdmin.RouteSetV4WithCtxInterfaceRequest) error {
+	return bindV4RouteSet(request.Channel, makeUserRouteSet[fuchsianet.Ipv4Address](impl.ns))
+}
+
+func bindV4RouteSet(ch zx.Channel, rs routeSet[fuchsianet.Ipv4Address]) error {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		defer cancel()
 
 		setImpl := routeSetV4Impl{
-			routeSet: makeRouteSet[fuchsianet.Ipv4Address](impl.ns),
+			routeSet: rs,
 		}
 		defer setImpl.routeSet.close()
 
 		component.Serve(
 			ctx,
 			&routesAdmin.RouteSetV4WithCtxStub{Impl: &setImpl},
-			request.Channel,
+			ch,
 			component.ServeOptions{
 				Concurrent: true,
 				OnError: func(err error) {
@@ -143,20 +148,24 @@ type routesAdminSetProviderV6Impl struct {
 }
 
 func (impl *routesAdminSetProviderV6Impl) NewRouteSet(ctx_ fidl.Context, request routesAdmin.RouteSetV6WithCtxInterfaceRequest) error {
+	return bindV6RouteSet(request.Channel, makeUserRouteSet[fuchsianet.Ipv6Address](impl.ns))
+}
+
+func bindV6RouteSet(ch zx.Channel, rs routeSet[fuchsianet.Ipv6Address]) error {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		defer cancel()
 
 		setImpl := routeSetV6Impl{
-			routeSet: makeRouteSet[fuchsianet.Ipv6Address](impl.ns),
+			routeSet: rs,
 		}
 		defer setImpl.routeSet.close()
 
 		component.Serve(
 			ctx,
 			&routesAdmin.RouteSetV6WithCtxStub{Impl: &setImpl},
-			request.Channel,
+			ch,
 			component.ServeOptions{
 				Concurrent: true,
 				OnError: func(err error) {
@@ -199,6 +208,10 @@ func (r *routeSetV4Impl) AddRoute(ctx_ fidl.Context, fidlRoute fnetRoutes.RouteV
 		result.SetErr(routesAdmin.RouteSetErrorInvalidNextHop)
 	case fidlconv.RouteInvalidUnknownAction:
 		result.SetErr(routesAdmin.RouteSetErrorUnsupportedAction)
+	case fidlconv.RouteInvalidMissingRouteProperties:
+		result.SetErr(routesAdmin.RouteSetErrorMissingRouteProperties)
+	case fidlconv.RouteInvalidMissingMetric:
+		result.SetErr(routesAdmin.RouteSetErrorMissingMetric)
 	default:
 		panic(fmt.Sprintf("unrecognized RouteValidationResult: %d", validationResult))
 	}
@@ -207,7 +220,7 @@ func (r *routeSetV4Impl) AddRoute(ctx_ fidl.Context, fidlRoute fnetRoutes.RouteV
 }
 
 func (*routeSetV4Impl) AuthenticateForInterface(ctx_ fidl.Context, credential admin.ProofOfInterfaceAuthorization) (routesAdmin.RouteSetV4AuthenticateForInterfaceResult, error) {
-	_ = syslog.WarnTf(routeSetV4Name, "TODO(https://fxbug.dev/129218): implement interface authentication")
+	_ = syslog.WarnTf(routeSetV4Name, "TODO(https://fxbug.dev/117846): implement interface authentication")
 	var result routesAdmin.RouteSetV4AuthenticateForInterfaceResult
 	result.SetResponse(routesAdmin.RouteSetV4AuthenticateForInterfaceResponse{})
 	return result, nil
@@ -237,6 +250,10 @@ func (r *routeSetV4Impl) RemoveRoute(ctx_ fidl.Context, fidlRoute fnetRoutes.Rou
 		result.SetErr(routesAdmin.RouteSetErrorInvalidNextHop)
 	case fidlconv.RouteInvalidUnknownAction:
 		result.SetErr(routesAdmin.RouteSetErrorUnsupportedAction)
+	case fidlconv.RouteInvalidMissingRouteProperties:
+		result.SetErr(routesAdmin.RouteSetErrorMissingRouteProperties)
+	case fidlconv.RouteInvalidMissingMetric:
+		result.SetErr(routesAdmin.RouteSetErrorMissingMetric)
 	default:
 		panic(fmt.Sprintf("unrecognized RouteValidationResult: %d", validationResult))
 	}
@@ -276,6 +293,10 @@ func (r *routeSetV6Impl) AddRoute(ctx_ fidl.Context, fidlRoute fnetRoutes.RouteV
 		result.SetErr(routesAdmin.RouteSetErrorInvalidNextHop)
 	case fidlconv.RouteInvalidUnknownAction:
 		result.SetErr(routesAdmin.RouteSetErrorUnsupportedAction)
+	case fidlconv.RouteInvalidMissingRouteProperties:
+		result.SetErr(routesAdmin.RouteSetErrorMissingRouteProperties)
+	case fidlconv.RouteInvalidMissingMetric:
+		result.SetErr(routesAdmin.RouteSetErrorMissingMetric)
 	default:
 		panic(fmt.Sprintf("unrecognized RouteValidationResult: %d", validationResult))
 	}
@@ -284,7 +305,7 @@ func (r *routeSetV6Impl) AddRoute(ctx_ fidl.Context, fidlRoute fnetRoutes.RouteV
 }
 
 func (*routeSetV6Impl) AuthenticateForInterface(ctx_ fidl.Context, credential admin.ProofOfInterfaceAuthorization) (routesAdmin.RouteSetV6AuthenticateForInterfaceResult, error) {
-	_ = syslog.WarnTf(routeSetV6Name, "TODO(https://fxbug.dev/129218): implement interface authentication")
+	_ = syslog.WarnTf(routeSetV6Name, "TODO(https://fxbug.dev/117846): implement interface authentication")
 	var result routesAdmin.RouteSetV6AuthenticateForInterfaceResult
 	result.SetResponse(routesAdmin.RouteSetV6AuthenticateForInterfaceResponse{})
 	return result, nil
@@ -314,6 +335,10 @@ func (r *routeSetV6Impl) RemoveRoute(ctx_ fidl.Context, fidlRoute fnetRoutes.Rou
 		result.SetErr(routesAdmin.RouteSetErrorInvalidNextHop)
 	case fidlconv.RouteInvalidUnknownAction:
 		result.SetErr(routesAdmin.RouteSetErrorUnsupportedAction)
+	case fidlconv.RouteInvalidMissingRouteProperties:
+		result.SetErr(routesAdmin.RouteSetErrorMissingRouteProperties)
+	case fidlconv.RouteInvalidMissingMetric:
+		result.SetErr(routesAdmin.RouteSetErrorMissingMetric)
 	default:
 		panic(fmt.Sprintf("unrecognized RouteValidationResult: %d", validationResult))
 	}

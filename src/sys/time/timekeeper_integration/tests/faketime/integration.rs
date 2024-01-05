@@ -1,7 +1,14 @@
-// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::{Context, Result};
+use fidl::{endpoints, AsHandleRef, HandleBased};
+use fidl_fuchsia_testing as ffte;
+use fidl_fuchsia_testing_harness as ftth;
+use fidl_fuchsia_time as fft;
+use fidl_test_time_realm as fttr;
+use fuchsia_component::client;
 use {
     fidl_fuchsia_metrics_test::{LogMethod, MetricEventLoggerQuerierProxy},
     fidl_fuchsia_testing::Increment,
@@ -16,10 +23,37 @@ use {
         TIMEKEEPER_TIME_SOURCE_EVENTS_MIGRATED_METRIC_ID,
     },
     timekeeper_integration_lib::{
-        create_cobalt_event_stream, new_clock, poll_until, poll_until_async, FakeClockController,
-        NestedTimekeeper, PushSourcePuppet, STD_DEV, VALID_TIME,
+        create_cobalt_event_stream, new_nonshareable_clock, poll_until_async, poll_until_async_2,
+        FakeClockController, RemotePushSourcePuppet, STD_DEV, VALID_TIME,
     },
 };
+
+use fidl_fuchsia_testing as _; // TODO: fmil - Figure out why this is needed.
+
+fn koid_of(c: &zx::Clock) -> u64 {
+    c.as_handle_ref().get_koid().expect("infallible").raw_koid()
+}
+
+/// Connect to the FIDL protocol defined by the marker `T`, which served from
+/// the realm associated with the realm proxy `p`. Since `ConnectToNamedProtocol`
+/// is "stringly typed", this function allows us to use a less error prone protocol
+/// marker instead of a string name.
+async fn connect_into_realm<T>(
+    realm_proxy: &ftth::RealmProxy_Proxy,
+) -> <T as endpoints::ProtocolMarker>::Proxy
+where
+    T: endpoints::ProtocolMarker,
+{
+    let (proxy, server_end) = endpoints::create_proxy::<T>().expect("infallible");
+    let _result = realm_proxy
+        .connect_to_named_protocol(
+            <T as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
+            server_end.into_channel(),
+        )
+        .await
+        .expect("connection failed");
+    proxy
+}
 
 /// Run a test against an instance of timekeeper with fake time. Timekeeper will maintain the
 /// provided clock.
@@ -32,21 +66,55 @@ use {
 ///
 /// The provided `test_fn` is provided with handles to manipulate the time source, observe events
 /// passed to cobalt, and manipulate the fake time.
-fn faketime_test<F, Fut>(clock: Arc<zx::Clock>, test_fn: F)
+async fn faketime_test<F, Fut>(utc_clock: zx::Clock, test_fn: F) -> Result<()>
 where
-    F: FnOnce(Arc<PushSourcePuppet>, MetricEventLoggerQuerierProxy, FakeClockController) -> Fut,
+    F: FnOnce(
+        Arc<zx::Clock>,
+        Arc<RemotePushSourcePuppet>,
+        MetricEventLoggerQuerierProxy,
+        FakeClockController,
+    ) -> Fut,
     Fut: Future<Output = ()>,
 {
-    let mut executor = fasync::LocalExecutor::new();
-    executor.run_singlethreaded(async move {
-        let clock_arc = Arc::new(clock);
-        let (_timekeeper, push_source_controller, _, cobalt, fake_clock) =
-            NestedTimekeeper::new(Arc::clone(&clock_arc), None, true /* use fake clock */).await;
-        test_fn(push_source_controller, cobalt, fake_clock.unwrap()).await;
-    });
+    let utc_clock_copy = utc_clock.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicated");
+    tracing::debug!("using utc_clock_copy with koid: {}", koid_of(&utc_clock_copy));
+    let utc_clock = Arc::new(utc_clock);
+    tracing::debug!("using utc_clock with koid     : {}", koid_of(&*utc_clock));
+    let test_realm_proxy =
+        client::connect_to_protocol::<fttr::RealmFactoryMarker>().with_context(|| {
+            format!(
+                "while connecting to: {}",
+                <fttr::RealmFactoryMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME
+            )
+        })?;
+
+    // realm_proxy must live as long as you need your test realm to live.
+    let (realm_proxy, realm_server_end) =
+        endpoints::create_proxy::<ftth::RealmProxy_Marker>().expect("infallible");
+
+    let (push_source_puppet, _opts, cobalt_metric_client) = test_realm_proxy
+        .create_realm(fttr::RealmOptions { ..Default::default() }, utc_clock_copy, realm_server_end)
+        .await
+        .expect("FIDL protocol error")
+        .expect("Error value returned from the call");
+    let cobalt = cobalt_metric_client.into_proxy().expect("infallible");
+
+    // Fake clock controller for the tests that need that.
+    let fake_clock_proxy = connect_into_realm::<ffte::FakeClockMarker>(&realm_proxy).await;
+    let fake_clock_control_proxy =
+        connect_into_realm::<ffte::FakeClockControlMarker>(&realm_proxy).await;
+    let fake_clock_controller =
+        FakeClockController::new(fake_clock_control_proxy, fake_clock_proxy);
+
+    let push_source_puppet = push_source_puppet.into_proxy().expect("infallible");
+    let push_source_controller = RemotePushSourcePuppet::new(push_source_puppet);
+    tracing::debug!("faketime_test: about to run test_fn");
+    let result = test_fn(utc_clock, push_source_controller, cobalt, fake_clock_controller).await;
+    tracing::debug!("faketime_test: done with run test_fn");
+    Ok(result)
 }
 
-/// Start freely running the fake time at 60,000x the real time.
+/// Start freely running the fake time at 60,000x the real time rate.
 async fn freerun_time_fast(fake_clock: &FakeClockController) {
     fake_clock.pause().await.expect("Failed to pause time");
     fake_clock
@@ -63,9 +131,9 @@ async fn freerun_time_fast(fake_clock: &FakeClockController) {
 const INACTIVE_SOURCE_RESTART_DURATION: zx::Duration = zx::Duration::from_hours(1);
 
 #[fuchsia::test]
-fn test_restart_inactive_time_source_that_claims_healthy() {
-    let clock = new_clock();
-    faketime_test(Arc::clone(&clock), |push_source_controller, cobalt, fake_time| async move {
+async fn test_restart_inactive_time_source_that_claims_healthy() -> Result<()> {
+    let clock = new_nonshareable_clock();
+    faketime_test(clock, |clock, push_source_controller, cobalt, fake_time| async move {
         let cobalt_event_stream =
             create_cobalt_event_stream(Arc::new(cobalt), LogMethod::LogMetricEvents);
 
@@ -79,11 +147,19 @@ fn test_restart_inactive_time_source_that_claims_healthy() {
                 ..Default::default()
             })
             .await;
+        tracing::debug!("before CLOCK_STARTED");
         fasync::OnSignals::new(&*clock, zx::Signals::CLOCK_STARTED)
             .await
             .expect("Failed to wait for CLOCK_STARTED");
+        fasync::OnSignals::new(
+            &*clock,
+            zx::Signals::from_bits(fft::SIGNAL_UTC_CLOCK_SYNCHRONIZED).unwrap(),
+        )
+        .await
+        .expect("Failed to wait for SIGNAL_UTC_CLOCK_SYNCHRONIZED");
+        tracing::debug!("after SIGNAL_UTC_CLOCK_SYNCHRONIZED");
 
-        assert_eq!(push_source_controller.lifetime_served_connections(), 1);
+        assert_eq!(push_source_controller.lifetime_served_connections().await, 1);
 
         // Timekeeper should restart the time source after approximately an hour of inactivity.
         // Here, we run time quickly rather than leaping forward in one step. This is done as
@@ -94,7 +170,9 @@ fn test_restart_inactive_time_source_that_claims_healthy() {
 
         // Wait for Timekeeper to restart the time source. This is visible to the test as a second
         // connection to the fake time source.
-        poll_until!(|| push_source_controller.lifetime_served_connections() > 1).await;
+        poll_until_async_2!(async {
+            push_source_controller.lifetime_served_connections().await > 1
+        });
 
         // At least an hour should've passed.
         let mono_after =
@@ -118,13 +196,14 @@ fn test_restart_inactive_time_source_that_claims_healthy() {
         assert!(restart_event
             .event_codes
             .contains(&(TimeSourceEvent::RestartedSampleTimeOut as u32)));
-    });
+    })
+    .await
 }
 
 #[fuchsia::test]
-fn test_dont_restart_inactive_time_source_with_unhealthy_dependency() {
-    let clock = new_clock();
-    faketime_test(Arc::clone(&clock), |push_source_controller, _, fake_time| async move {
+async fn test_dont_restart_inactive_time_source_with_unhealthy_dependency() -> Result<()> {
+    let clock = new_nonshareable_clock();
+    faketime_test(clock, |clock, push_source_controller, _, fake_time| async move {
         push_source_controller
             .set_sample(TimeSample {
                 utc: Some(VALID_TIME.into_nanos()),
@@ -133,9 +212,17 @@ fn test_dont_restart_inactive_time_source_with_unhealthy_dependency() {
                 ..Default::default()
             })
             .await;
+        tracing::debug!("before CLOCK_STARTED");
         fasync::OnSignals::new(&*clock, zx::Signals::CLOCK_STARTED)
             .await
             .expect("Failed to wait for CLOCK_STARTED");
+        fasync::OnSignals::new(
+            &*clock,
+            zx::Signals::from_bits(fft::SIGNAL_UTC_CLOCK_SYNCHRONIZED).unwrap(),
+        )
+        .await
+        .unwrap();
+        tracing::debug!("after SIGNAL_UTC_CLOCK_SYNCHRONIZED");
         // Report unhealthy after first sample accepted.
         push_source_controller.set_status(Status::Network).await;
 
@@ -152,6 +239,7 @@ fn test_dont_restart_inactive_time_source_with_unhealthy_dependency() {
         .await;
 
         // Since there should be no restart attempts, only one connection was made to our fake.
-        assert_eq!(push_source_controller.lifetime_served_connections(), 1);
-    });
+        assert_eq!(push_source_controller.lifetime_served_connections().await, 1);
+    })
+    .await
 }

@@ -15,6 +15,7 @@
 #include <optional>
 
 #include "src/developer/forensics/feedback/config.h"
+#include "src/developer/forensics/feedback/constants.h"
 #include "src/developer/forensics/feedback/redactor_factory.h"
 #include "src/developer/forensics/feedback_data/constants.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/controller.h"
@@ -51,6 +52,12 @@ int main() {
     return EXIT_FAILURE;
   }
 
+  if (!product_config->persisted_logs_num_files.has_value() ||
+      !product_config->persisted_logs_total_size.has_value()) {
+    FX_LOGS(FATAL) << "Missing required persisted_logs fields in product config";
+    return EXIT_FAILURE;
+  }
+
   async::Loop main_loop(&kAsyncLoopConfigAttachToCurrentThread);
   async::Loop write_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   trace::TraceProviderWithFdio trace_provider(main_loop.dispatcher(), "system_log_recorder");
@@ -67,9 +74,9 @@ int main() {
       SystemLogRecorder::WriteParameters{
           .period = kWritePeriod,
           .max_write_size = kMaxWriteSize,
-          .logs_dir = kCurrentLogsDir,
-          .max_num_files = product_config->persisted_logs_num_files,
-          .total_log_size = product_config->persisted_logs_total_size,
+          .logs_dir = feedback::kCurrentLogsDir,
+          .max_num_files = *product_config->persisted_logs_num_files,
+          .total_log_size = *product_config->persisted_logs_total_size,
       },
       // Don't set up Inspect because all messages in the previous boot log
       // are in the current boot log and counted in Inspect.
@@ -85,7 +92,7 @@ int main() {
   controller.SetStop([&] {
     recorder.Flush(kStopMessageStr);
     lifecycle_binding.Close(ZX_OK);
-    // Don't stop the loop so incoming logs can be persisted while appmgr is waiting to terminate v1
+    // Don't stop the loop so incoming logs can be persisted while waiting to terminate
     // components.
   });
 

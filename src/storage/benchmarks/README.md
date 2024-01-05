@@ -19,6 +19,8 @@ file. The benchmarks measure how long each read/write operation takes.
     it a second time.
 * **Sequential**: the reads/writes are performed sequentially from the start of the file to the end
   of the file.
+* **Sparse**: the reads/writes are performed linearly but sparsely, with large gaps where no data is
+  read/written between the accessed regions.
 * **Random**: the reads/writes are performed randomly across the entire file. Every part of the file
   is accessed exactly once.
 * **Fsync**: the fsync is performed for every write.
@@ -63,6 +65,15 @@ fast updates in production and development workflows.
 * `WriteRealisticBlobs` creates several realistically compressible blobs with varying sizes and
   concurrently writes 2 blobs to a blob filesystem. This ideally mimics how pkg-cache writes blobs.
   The benchmark measure how long it takes to write all of the blobs.
+
+The `OpenAndGetVmo` benchmarks measure how long it takes to open a package and
+get the VMO for a blob within it. Notably, `OpenAndGetVmo` goes through the
+package directory as opposed to directly opening the blob through Blobfs/Fxblob,
+and thus allows us to more accurately measure open times via SWD.
+
+* `OpenAndGetVmoMetaFile` creates and opens a metafile (prefix "meta/" in the resource path).
+* `OpenAndGetVmoContentBlob` creates and opens a content blob (non-"meta" prefix in the
+  resource path i.e. "data/").
 
 ## "Cold" Benchmarks
 At the beginning of most benchmarks is a setup phase that creates files within the filesystem.

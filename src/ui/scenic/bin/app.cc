@@ -10,6 +10,7 @@
 #include <lib/syslog/cpp/macros.h>
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 
 #include "rapidjson/document.h"
@@ -19,22 +20,25 @@
 #include "src/ui/lib/escher/vk/pipeline_builder.h"
 #include "src/ui/scenic/lib/display/color_converter.h"
 #include "src/ui/scenic/lib/display/display_power_manager.h"
+#include "src/ui/scenic/lib/flatland/engine/engine.h"
 #include "src/ui/scenic/lib/flatland/engine/engine_types.h"
+#include "src/ui/scenic/lib/flatland/renderer/cpu_renderer.h"
+#include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
-#include "src/ui/scenic/lib/gfx/api/internal_snapshot_impl.h"
-#include "src/ui/scenic/lib/gfx/gfx_system.h"
-#include "src/ui/scenic/lib/gfx/screenshotter.h"
 #include "src/ui/scenic/lib/scheduling/frame_metrics_registry.cb.h"
 #include "src/ui/scenic/lib/scheduling/windowed_frame_predictor.h"
 #include "src/ui/scenic/lib/screen_capture/screen_capture.h"
 #include "src/ui/scenic/lib/screen_capture/screen_capture_buffer_collection_importer.h"
 #include "src/ui/scenic/lib/screenshot/screenshot_manager.h"
+#include "src/ui/scenic/lib/utils/escher_provider.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/metrics_impl.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_dump.h"
 #include "src/ui/scenic/scenic_structured_config.h"
 
 namespace {
+
+using scenic_impl::RendererType;
 
 // App installs the loader manifest FS at this path so it can use
 // fsl::DeviceWatcher on it.
@@ -46,20 +50,52 @@ static constexpr zx::duration kShutdownTimeout = zx::sec(1);
 // escher/profiling/timestamp_profiler.cc.
 static constexpr zx::duration kEscherCleanupRetryInterval{1'000'000};  // 1 millisecond
 
-std::optional<fuchsia::hardware::display::DisplayId> GetDisplayId(
-    scenic_structured_config::Config values) {
+std::optional<fuchsia::hardware::display::types::DisplayId> GetDisplayId(
+    const scenic_structured_config::Config& values) {
   if (values.i_can_haz_display_id() < 0) {
     return std::nullopt;
   }
-  return std::make_optional<fuchsia::hardware::display::DisplayId>(
+  return std::make_optional<fuchsia::hardware::display::types::DisplayId>(
       {.value = static_cast<uint64_t>(values.i_can_haz_display_id())});
 }
 
-std::optional<uint64_t> GetDisplayMode(scenic_structured_config::Config values) {
+std::optional<uint64_t> GetDisplayMode(const scenic_structured_config::Config& values) {
   if (values.i_can_haz_display_mode() < 0) {
     return std::nullopt;
   }
   return values.i_can_haz_display_mode();
+}
+
+std::string ToString(RendererType type) {
+  switch (type) {
+    case RendererType::CPU_RENDERER:
+      return "cpu";
+    case RendererType::NULL_RENDERER:
+      return "null";
+    case RendererType::VULKAN:
+      return "vulkan";
+  }
+}
+
+RendererType GetRendererType(const scenic_structured_config::Config& values) {
+  if (ToString(RendererType::CPU_RENDERER).compare(values.renderer()) == 0)
+    return RendererType::CPU_RENDERER;
+  if (ToString(RendererType::NULL_RENDERER).compare(values.renderer()) == 0)
+    return RendererType::NULL_RENDERER;
+  if (ToString(RendererType::VULKAN).compare(values.renderer()) == 0)
+    return RendererType::VULKAN;
+  FX_LOGS(WARNING) << "Unknown renderer type: " << values.renderer() << ". Falling back to vulkan";
+  return RendererType::VULKAN;
+}
+
+uint64_t GetDisplayRotation(scenic_structured_config::Config values) {
+  uint64_t rotation = values.display_rotation();
+  if (rotation >= 0) {
+    FX_CHECK(rotation < 360) << "Rotation should be less than 360 degrees.";
+    return rotation;
+  }
+  FX_LOGS(WARNING) << "Invalid value for display_rotation. Falling back to the default value 0.";
+  return 0;
 }
 
 // Gets Scenic's structured config values and logs them.
@@ -67,37 +103,20 @@ scenic_structured_config::Config GetConfig() {
   // Retrieve structured configuration
   auto values = scenic_structured_config::Config::TakeFromStartupHandle();
 
+  FX_LOGS(INFO) << "Scenic renderer: " << ToString(GetRendererType(values));
   FX_LOGS(INFO) << "Scenic min_predicted_frame_duration(us): "
                 << values.frame_scheduler_min_predicted_frame_duration_in_us();
-  FX_LOGS(INFO) << "i_can_haz_flatland: " << values.i_can_haz_flatland();
-  FX_LOGS(INFO) << "enable_allocator_for_flatland: " << values.enable_allocator_for_flatland();
   FX_LOGS(INFO) << "Scenic pointer auto focus: " << values.pointer_auto_focus();
-  FX_LOGS(INFO) << "flatland_enable_display_composition: "
-                << values.flatland_enable_display_composition();
+  FX_LOGS(INFO) << "display_composition: " << values.display_composition();
   FX_LOGS(INFO) << "Scenic i_can_haz_display_id: "
                 << GetDisplayId(values)
-                       .value_or(fuchsia::hardware::display::DisplayId{
-                           .value = fuchsia::hardware::display::INVALID_DISP_ID})
+                       .value_or(fuchsia::hardware::display::types::DisplayId{
+                           .value = fuchsia::hardware::display::types::INVALID_DISP_ID})
                        .value;
   FX_LOGS(INFO) << "Scenic i_can_haz_display_mode: " << GetDisplayMode(values).value_or(0);
+  FX_LOGS(INFO) << "Scenic display_rotation: " << GetDisplayRotation(values);
 
   return values;
-}
-
-// Get Scenic's display rotation config value from its config file.
-uint64_t GetDisplayRotation() {
-  if (std::string display_rotation_config;
-      files::ReadFileToString("/config/data/display_rotation", &display_rotation_config)) {
-    if (int rotation = stoi(display_rotation_config); rotation >= 0) {
-      FX_CHECK(rotation < 360) << "Rotation should be less than 360 degrees.";
-      return rotation;
-    }
-    FX_LOGS(WARNING) << "Invalid value for display_rotation. Falling back to the default value 0.";
-  } else {
-    FX_LOGS(INFO)
-        << "No config file found at /config/data/display_rotation, using default rotation value 0";
-  }
-  return 0;
 }
 
 #ifdef NDEBUG
@@ -189,69 +208,29 @@ App::App(std::unique_ptr<sys::ComponentContext> app_context, inspect::Node inspe
               scheduling::DefaultFrameScheduler::kInitialRenderDuration,
               scheduling::DefaultFrameScheduler::kInitialUpdateDuration),
           inspect_node_.CreateChild("FrameScheduler"), &metrics_logger_),
-      image_pipe_updater_(std::make_shared<gfx::ImagePipeUpdater>(frame_scheduler_)),
-      scenic_(
-          app_context_.get(), inspect_node_, frame_scheduler_,
-          [weak = std::weak_ptr<ShutdownManager>(shutdown_manager_)] {
-            if (auto strong = weak.lock()) {
-              strong->Shutdown(kShutdownTimeout);
-            }
-          },
-          config_values_.i_can_haz_flatland()),
+      renderer_type_(GetRendererType(config_values_)),
+      scenic_(app_context_.get()),
       uber_struct_system_(std::make_shared<flatland::UberStructSystem>()),
       link_system_(
           std::make_shared<flatland::LinkSystem>(uber_struct_system_->GetNextInstanceId())),
       flatland_presenter_(std::make_shared<flatland::FlatlandPresenterImpl>(
           async_get_default_dispatcher(), frame_scheduler_)),
-      color_converter_(app_context_.get(),
-                       /*set_color_conversion_values*/
-                       config_values_.i_can_haz_flatland()
-                           ? display::SetColorConversionFunc([this](const auto& coefficients,
-                                                                    const auto& preoffsets,
-                                                                    const auto& postoffsets) {
-                               FX_DCHECK(flatland_compositor_);
-                               flatland_compositor_->SetColorConversionValues(
-                                   coefficients, preoffsets, postoffsets);
-                             })
-                           : display::SetColorConversionFunc([this](const auto& coefficients,
-                                                                    const auto& preoffsets,
-                                                                    const auto& postoffsets) {
-                               FX_DCHECK(engine_);
-                               for (auto compositor : engine_->scene_graph()->compositors()) {
-                                 if (auto swapchain = compositor->swapchain()) {
-                                   const bool success = swapchain->SetDisplayColorConversion(
-                                       {.preoffsets = preoffsets,
-                                        .matrix = coefficients,
-                                        .postoffsets = postoffsets});
-                                   FX_DCHECK(success);
-                                 }
-                               }
-                             }),
-                       /*set_minimum_rgb*/
-                       config_values_.i_can_haz_flatland()
-                           ? display::SetMinimumRgbFunc([this](const uint8_t minimum_rgb) {
-                               FX_DCHECK(flatland_compositor_);
-                               flatland_compositor_->SetMinimumRgb(minimum_rgb);
-                             })
-                           : display::SetMinimumRgbFunc([this](const uint8_t minimum_rgb) {
-                               FX_DCHECK(engine_);
-                               for (auto compositor : engine_->scene_graph()->compositors()) {
-                                 if (auto swapchain = compositor->swapchain()) {
-                                   const bool success = swapchain->SetMinimumRgb(minimum_rgb);
-                                   FX_DCHECK(success);
-                                 }
-                               }
-                             })),
-      focus_manager_(inspect_node_.CreateChild("FocusManager"),
-                     /*legacy_focus_listener*/
-                     [this](zx_koid_t old_focus, zx_koid_t new_focus) {
-                       FX_DCHECK(engine_);
-                       engine_->scene_graph()->OnNewFocusedView(old_focus, new_focus);
-                     }),
+      color_converter_(
+          app_context_.get(),
+          /*set_color_conversion_values*/
+          display::SetColorConversionFunc([this](const auto& coefficients, const auto& preoffsets,
+                                                 const auto& postoffsets) {
+            FX_DCHECK(flatland_compositor_);
+            flatland_compositor_->SetColorConversionValues(coefficients, preoffsets, postoffsets);
+          }),
+          /*set_minimum_rgb*/
+          display::SetMinimumRgbFunc([this](const uint8_t minimum_rgb) {
+            FX_DCHECK(flatland_compositor_);
+            return flatland_compositor_->SetMinimumRgb(minimum_rgb);
+          })),
       geometry_provider_(),
       observer_registry_(geometry_provider_),
       scoped_observer_registry_(geometry_provider_),
-      annotation_registry_(app_context_.get()),
       watchdog_("Scenic main thread", kWatchdogWarningIntervalMs, kWatchdogTimeoutMs,
                 async_get_default_dispatcher()) {
   fpromise::bridge<escher::EscherUniquePtr> escher_bridge;
@@ -276,26 +255,31 @@ App::App(std::unique_ptr<sys::ComponentContext> app_context, inspect::Node inspe
       [] { FX_LOGS(WARNING) << "SCENIC IS WAITING FOR VULKAN TO BE AVAILABLE..."; });
   PostDelayedTaskUntilCancelled(vulkan_wait_log->callback(), kWaitWarningInterval);
 
-  // Wait for a Vulkan ICD to become advertised before trying to launch escher.
-  FX_DCHECK(!device_watcher_);
-  device_watcher_ = fsl::DeviceWatcher::Create(
-      kDependencyPath,
-      [this, vulkan_loader = std::move(vulkan_loader),
-       completer = std::move(escher_bridge.completer),
-       vulkan_wait_log = std::move(vulkan_wait_log)](
-          const fidl::ClientEnd<fuchsia_io::Directory>& dir, const std::string& filename) mutable {
-        auto escher = gfx::GfxSystem::CreateEscher(app_context_.get());
-        if (!escher) {
-          FX_LOGS(WARNING) << "Escher creation failed.";
-          // This should almost never happen, but might if the device was removed quickly after it
-          // was added or if the Vulkan driver doesn't actually work on this hardware. Retry when a
-          // new device is added.
-          return;
-        }
-        completer.complete_ok(std::move(escher));
-        device_watcher_.reset();
-      });
-  FX_DCHECK(device_watcher_);
+  if (renderer_type_ == RendererType::VULKAN) {
+    // Wait for a Vulkan ICD to become advertised before trying to launch escher.
+    FX_DCHECK(!device_watcher_);
+    device_watcher_ = fsl::DeviceWatcher::Create(
+        kDependencyPath, [this, vulkan_loader = std::move(vulkan_loader),
+                          completer = std::move(escher_bridge.completer),
+                          vulkan_wait_log = std::move(vulkan_wait_log)](
+                             const fidl::ClientEnd<fuchsia_io::Directory>& dir,
+                             const std::string& filename) mutable {
+          auto escher = utils::CreateEscher(app_context_.get());
+          if (!escher) {
+            FX_LOGS(WARNING) << "Escher creation failed.";
+            // This should almost never happen, but might if the device was removed quickly after it
+            // was added or if the Vulkan driver doesn't actually work on this hardware. Retry when
+            // a new device is added.
+            return;
+          }
+          completer.complete_ok(std::move(escher));
+          device_watcher_.reset();
+        });
+    FX_DCHECK(device_watcher_);
+  } else {
+    // Immediately complete promise if we aren't using vulkan renderer.
+    escher_bridge.completer.complete_ok(nullptr);
+  }
 
   auto display_wait_log = std::make_unique<fxl::CancelableClosure>(
       [] { FX_LOGS(WARNING) << "SCENIC IS WAITING FOR DISPLAY TO BE AVAILABLE..."; });
@@ -343,22 +327,24 @@ void App::InitializeServices(escher::EscherUniquePtr escher,
     return;
   }
 
-  if (!escher || !escher->device()) {
-    FX_LOGS(ERROR) << "No Vulkan on device, Graphics system exiting.";
-    shutdown_manager_->Shutdown(kShutdownTimeout);
-    return;
-  }
+  if (renderer_type_ == RendererType::VULKAN) {
+    if (!escher || !escher->device()) {
+      FX_LOGS(ERROR) << "No Vulkan on device, Graphics system exiting.";
+      shutdown_manager_->Shutdown(kShutdownTimeout);
+      return;
+    }
 
-  escher_ = std::move(escher);
-  escher_cleanup_ = std::make_shared<utils::CleanupUntilDone>(kEscherCleanupRetryInterval,
-                                                              [escher = escher_->GetWeakPtr()]() {
-                                                                if (!escher) {
-                                                                  // Escher is destroyed, so there
-                                                                  // is no cleanup to be done.
-                                                                  return true;
-                                                                }
-                                                                return escher->Cleanup();
-                                                              });
+    escher_ = std::move(escher);
+    escher_cleanup_ = std::make_shared<utils::CleanupUntilDone>(kEscherCleanupRetryInterval,
+                                                                [escher = escher_->GetWeakPtr()]() {
+                                                                  if (!escher) {
+                                                                    // Escher is destroyed, so there
+                                                                    // is no cleanup to be done.
+                                                                    return true;
+                                                                  }
+                                                                  return escher->Cleanup();
+                                                                });
+  }
 
   InitializeGraphics(display);
   InitializeInput();
@@ -381,7 +367,7 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
   // unexpected lazy pipeline creation.  This allows us to detect when this slips through our
   // testing and occurs in the wild.  In order to detect problems ASAP during development, debug
   // builds CHECK instead of logging to Cobalt.
-  {
+  if (renderer_type_ == RendererType::VULKAN) {
     auto pipeline_builder = std::make_unique<escher::PipelineBuilder>(escher_->vk_device());
     pipeline_builder->set_log_pipeline_creation_callback(
         [metrics_logger = &metrics_logger_](const vk::GraphicsPipelineCreateInfo* graphics_info,
@@ -405,53 +391,36 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
     escher_->set_pipeline_builder(std::move(pipeline_builder));
   }
 
-  auto gfx_buffer_collection_importer =
-      std::make_shared<gfx::GfxBufferCollectionImporter>(escher_->GetWeakPtr());
-  {
-    TRACE_DURATION("gfx", "App::InitializeServices[engine]");
-    engine_.emplace(escher_->GetWeakPtr(), gfx_buffer_collection_importer,
-                    inspect_node_.CreateChild("Engine"));
-  }
-
-  annotation_registry_.InitializeWithGfxAnnotationManager(engine_->annotation_manager());
-
-  auto gfx = scenic_.RegisterSystem<gfx::GfxSystem>(&engine_.value(), &sysmem_,
-                                                    &display_manager_.value(), image_pipe_updater_);
-  FX_DCHECK(gfx);
-
-  scenic_.SetScreenshotDelegate(gfx.get());
-
   {
     singleton_display_service_.emplace(display);
     singleton_display_service_->AddPublicService(scenic_.app_context()->outgoing().get());
     display_info_delegate_.emplace(display);
-    scenic_.SetDisplayInfoDelegate(&display_info_delegate_.value());
   }
 
-  // Create the snapshotter and pass it to scenic.
-  auto snapshotter =
-      std::make_unique<gfx::InternalSnapshotImpl>(engine_->scene_graph(), escher_->GetWeakPtr());
-  scenic_.InitializeSnapshotService(std::move(snapshotter));
-  scenic_.SetRegisterViewFocuser(
-      [this](zx_koid_t view_ref_koid, fidl::InterfaceRequest<fuchsia::ui::views::Focuser> focuser) {
-        focus_manager_.RegisterViewFocuser(view_ref_koid, std::move(focuser));
-      });
-  auto flatland_renderer = std::make_shared<flatland::VkRenderer>(escher_->GetWeakPtr());
+  std::shared_ptr<flatland::Renderer> flatland_renderer;
+  switch (renderer_type_) {
+    case RendererType::CPU_RENDERER:
+      flatland_renderer = std::make_shared<flatland::CpuRenderer>();
+      break;
+    case RendererType::NULL_RENDERER:
+      flatland_renderer = std::make_shared<flatland::NullRenderer>();
+      break;
+    case RendererType::VULKAN:
+      flatland_renderer = std::make_shared<flatland::VkRenderer>(escher_->GetWeakPtr());
+      break;
+  }
   // TODO(fxbug.dev/78186): flatland::VkRenderer hardcodes the framebuffer pixel format.
   // Eventually we won't, instead choosing one from the list of acceptable formats advertised by
   // each plugged-in display.  This will raise the issue of where to do pipeline cache warming: it
   // will be too early to do it here, since we're not yet aware of any displays nor the formats they
   // support.  It will probably be OK to warm the cache when a new display is plugged in, because
   // users don't expect plugging in a display to be completely jank-free.
-  if (config_values_.i_can_haz_flatland()) {
-    // Warming the pipeline cache causes some non-Flatland tests to time out, so don't warm unless
-    // |i_can_haz_flatland| is true.
-    flatland_renderer->WarmPipelineCache();
 
-    // TODO(fxb/122155) Support camera image in shader pre-warmup.
-    // Disabling this line allows any shaders that weren't warmed up to be lazily created later.
-    // flatland_renderer->set_disable_lazy_pipeline_creation(true);
-  }
+  flatland_renderer->WarmPipelineCache();
+
+  // TODO(fxb/122155) Support camera image in shader pre-warmup.
+  // Disabling this line allows any shaders that weren't warmed up to be lazily created later.
+  // flatland_renderer->set_disable_lazy_pipeline_creation(true);
 
   // Flatland compositor must be made first; it is needed by the manager and the engine.
   {
@@ -460,7 +429,7 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
     flatland_compositor_ = std::make_shared<flatland::DisplayCompositor>(
         async_get_default_dispatcher(), display_manager_->default_display_coordinator(),
         flatland_renderer, utils::CreateSysmemAllocatorSyncPtr("flatland::DisplayCompositor"),
-        config_values_.flatland_enable_display_composition());
+        config_values_.display_composition(), /*max_display_layers=*/1);
   }
 
   // Flatland manager depends on compositor, and is required by engine.
@@ -496,8 +465,12 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
     // TODO(fxbug.dev/67206): these should be moved into FlatlandManager.
     {
+      // Note: can't use `fit::bind_member()` here, because `CreateFlatland()` returns non-void.
       fit::function<void(fidl::InterfaceRequest<fuchsia::ui::composition::Flatland>)> handler =
-          fit::bind_member(flatland_manager_.get(), &flatland::FlatlandManager::CreateFlatland);
+          [flatland_manager = flatland_manager_.get()](
+              fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request) {
+            flatland_manager->CreateFlatland(std::move(request));
+          };
       FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
     }
     {
@@ -519,10 +492,7 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
     screen_capture_importers.push_back(screen_capture_buffer_collection_importer);
 
     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> default_importers;
-    if (!config_values_.i_can_haz_flatland())
-      default_importers.push_back(gfx_buffer_collection_importer);
-    if (config_values_.enable_allocator_for_flatland() && flatland_compositor_)
-      default_importers.push_back(flatland_compositor_);
+    default_importers.push_back(flatland_compositor_);
 
     allocator_ = std::make_shared<allocation::Allocator>(
         app_context_.get(), default_importers, screen_capture_importers,
@@ -571,7 +541,11 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
           FX_DCHECK(flatland_engine_);
 
           auto display = flatland_manager_->GetPrimaryFlatlandDisplayForRendering();
-          FX_DCHECK(display);
+          if (!display) {
+            FX_LOGS(WARNING)
+                << "No FlatlandDisplay attached at root. Returning an empty screenshot.";
+            return flatland::Renderables();
+          }
 
           return flatland_engine_->GetRenderables(*display);
         });
@@ -591,17 +565,22 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
     // Capture flatland_manager since the primary display may not have been initialized yet.
     screenshot_manager_.emplace(
-        config_values_.i_can_haz_flatland(), allocator_, flatland_renderer,
+        allocator_, flatland_renderer,
         [this]() {
+          FX_DCHECK(flatland_manager_);
+          FX_DCHECK(flatland_engine_);
+
           auto display = flatland_manager_->GetPrimaryFlatlandDisplayForRendering();
+          if (!display) {
+            FX_LOGS(WARNING)
+                << "No FlatlandDisplay attached at root. Returning an empty screenshot.";
+            return flatland::Renderables();
+          }
+
           return flatland_engine_->GetRenderables(*display);
         },
-        [this](fuchsia::ui::scenic::Scenic::TakeScreenshotCallback callback) {
-          gfx::Screenshotter::TakeScreenshot(&engine_.value(), std::move(callback),
-                                             escher_cleanup_);
-        },
         std::move(screen_capture_importers), display_info_delegate_->GetDisplayDimensions(),
-        GetDisplayRotation());
+        GetDisplayRotation(config_values_));
 
     fit::function<void(fidl::InterfaceRequest<fuchsia::ui::composition::Screenshot>)> handler =
         fit::bind_member(&screenshot_manager_.value(),
@@ -632,17 +611,6 @@ void App::InitializeInput() {
                      focus_manager_.RequestFocus(requestor, request);
                    }
                  });
-  scenic_.SetRegisterTouchSource(
-      [this](fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource> touch_source,
-             zx_koid_t vrf) { input_->RegisterTouchSource(std::move(touch_source), vrf); });
-  scenic_.SetRegisterMouseSource(
-      [this](fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source,
-             zx_koid_t vrf) { input_->RegisterMouseSource(std::move(mouse_source), vrf); });
-
-  scenic_.SetViewRefFocusedRegisterFunction(
-      [this](zx_koid_t koid, fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused> vrf) {
-        focus_manager_.RegisterViewRefFocused(koid, std::move(vrf));
-      });
 }
 
 void App::InitializeHeartbeat(display::Display& display) {
@@ -660,14 +628,6 @@ void App::InitializeHeartbeat(display::Display& display) {
         return view_tree::SubtreeSnapshot{};  // Empty snapshot.
       }
     });
-    // The i_can_haz_flatland flag is about eager-forcing of Flatland.
-    // If true, then we KNOW that GFX should *not* run. Workstation is true.
-    // if false, then either system could legitimately run. This flag is false for tests and
-    // GFX-based products.
-    if (!config_values_.i_can_haz_flatland()) {
-      subtrees_generator_callbacks.emplace_back(
-          [this] { return engine_->scene_graph()->view_tree().Snapshot(); });
-    }
 
     // All subscriber callbacks get called with the new snapshot every time one is generated (once
     // per frame).
@@ -713,21 +673,14 @@ void App::InitializeHeartbeat(display::Display& display) {
       /*update_sessions*/
       [this](auto& sessions_to_update, auto trace_id, auto fences_from_previous_presents) {
         TRACE_DURATION("gfx", "App update_sessions");
-        if (config_values_.i_can_haz_flatland()) {
-          // Flatland doesn't pass release fences into the FrameScheduler. Instead, they are stored
-          // in the FlatlandPresenter and pulled out by the flatland::Engine during rendering.
-          FX_CHECK(fences_from_previous_presents.empty())
-              << "Flatland fences should not be handled by FrameScheduler.";
-        } else {
-          engine_->SignalFencesWhenPreviousRendersAreDone(std::move(fences_from_previous_presents));
-        }
 
-        const scheduling::SessionsWithFailedUpdates failed_sessions =
-            scenic_.UpdateSessions(sessions_to_update, trace_id);
-        image_pipe_updater_->UpdateSessions(sessions_to_update);
+        // Flatland doesn't pass release fences into the FrameScheduler. Instead, they are stored
+        // in the FlatlandPresenter and pulled out by the flatland::Engine during rendering.
+        FX_CHECK(fences_from_previous_presents.empty())
+            << "Flatland fences should not be handled by FrameScheduler.";
+
         flatland_manager_->UpdateInstances(sessions_to_update);
         flatland_presenter_->AccumulateReleaseFences(sessions_to_update);
-        return failed_sessions;
       },
       /*on_cpu_work_done*/
       [this] {
@@ -737,25 +690,25 @@ void App::InitializeHeartbeat(display::Display& display) {
         view_tree_snapshotter_->UpdateSnapshot();
         // Always defer the first cleanup attempt, because the first try is almost guaranteed to
         // fail, and checking the status of a `VkFence` is fairly expensive.
-        escher_cleanup_->Cleanup(/*ok_to_run_immediately=*/false);
+        if (escher_cleanup_)
+          escher_cleanup_->Cleanup(/*ok_to_run_immediately=*/false);
       },
       /*on_frame_presented*/
       [this](auto latched_times, auto present_times) {
         TRACE_DURATION("gfx", "App on_frame_presented");
-        scenic_.OnFramePresented(latched_times, present_times);
-        image_pipe_updater_->OnFramePresented(latched_times, present_times);
         flatland_manager_->OnFramePresented(latched_times, present_times);
       },
       /*render_scheduled_frame*/
       [this](auto frame_number, auto presentation_time, auto callback) {
         TRACE_DURATION("gfx", "App render_scheduled_frame");
-        FX_CHECK(flatland_frame_count_ + gfx_frame_count_ == frame_number - 1);
+        FX_CHECK(flatland_frame_count_ + skipped_frame_count_ == frame_number - 1);
         if (auto display = flatland_manager_->GetPrimaryFlatlandDisplayForRendering()) {
           flatland_engine_->RenderScheduledFrame(++flatland_frame_count_, presentation_time,
                                                  *display, std::move(callback));
         } else {
-          // Render the good ol' Gfx Engine way.
-          engine_->RenderScheduledFrame(++gfx_frame_count_, presentation_time, std::move(callback));
+          FX_LOGS(INFO) << "No FlatlandDisplay; skipping render scheduled frame.";
+          skipped_frame_count_++;
+          flatland_engine_->SkipRender(std::move(callback));
         }
       });
 }

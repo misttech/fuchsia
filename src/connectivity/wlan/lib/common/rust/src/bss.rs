@@ -5,8 +5,6 @@
 use {
     crate::{
         channel::Channel,
-        format::MacFmt as _,
-        hasher::WlanHasher,
         ie::{
             self,
             rsn::suite_filter,
@@ -18,7 +16,7 @@ use {
     anyhow::format_err,
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
     fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_sme as fidl_sme,
-    ieee80211::{Bssid, Ssid},
+    ieee80211::{Bssid, MacAddrBytes, Ssid},
     static_assertions::assert_eq_size,
     std::{
         cmp::Ordering,
@@ -466,28 +464,13 @@ impl BssDescription {
         }
     }
 
-    /// Returns an obfuscated string representation of the BssDescriptionExt suitable
-    /// for protecting the privacy of an SSID and BSSID.
-    // TODO(fxbug.dev/71906): Hashing SSID and BSSID should be removed once log redaction
-    // retains consistent identifiers across Inspect and syslog.
-    pub fn to_string(&self, hasher: &WlanHasher) -> String {
-        format!(
-            "SSID: {}, BSSID: {}, Protection: {}, Pri Chan: {}, Rx dBm: {}",
-            hasher.hash_ssid(&self.ssid),
-            hasher.hash_mac_addr(&self.bssid.0),
-            self.protection(),
-            self.channel.primary,
-            self.rssi_dbm,
-        )
-    }
-
     /// Returns a string representation of the BssDescriptionExt. This representation
     /// is not suitable for protecting the privacy of an SSID and BSSID.
     pub fn to_non_obfuscated_string(&self) -> String {
         format!(
             "SSID: {}, BSSID: {}, Protection: {}, Pri Chan: {}, Rx dBm: {}",
             self.ssid.to_string_not_redactable(),
-            self.bssid.0.to_mac_string(),
+            self.bssid,
             self.protection(),
             self.channel.primary,
             self.rssi_dbm,
@@ -528,7 +511,7 @@ impl BssDescription {
 impl From<BssDescription> for fidl_internal::BssDescription {
     fn from(bss: BssDescription) -> fidl_internal::BssDescription {
         fidl_internal::BssDescription {
-            bssid: bss.bssid.0,
+            bssid: bss.bssid.to_array(),
             bss_type: bss.bss_type,
             beacon_period: bss.beacon_period,
             capability_info: bss.capability_info,
@@ -540,6 +523,19 @@ impl From<BssDescription> for fidl_internal::BssDescription {
     }
 }
 
+impl fmt::Display for BssDescription {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "SSID: {}, BSSID: {}, Protection: {}, Pri Chan: {}, Rx dBm: {}",
+            self.ssid,
+            self.bssid,
+            self.protection(),
+            self.channel.primary,
+            self.rssi_dbm,
+        )
+    }
+}
 // TODO(fxbug.dev/83708): The error printed should include a minimal amount of information
 // about the BSS Description that could not be converted to aid debugging.
 impl TryFrom<fidl_internal::BssDescription> for BssDescription {
@@ -612,7 +608,7 @@ impl TryFrom<fidl_internal::BssDescription> for BssDescription {
 
         Ok(Self {
             ssid: Ssid::from_bytes_unchecked(bss.ies[ssid_range].to_vec()),
-            bssid: Bssid(bss.bssid),
+            bssid: Bssid::from(bss.bssid),
             bss_type: bss.bss_type,
             beacon_period: bss.beacon_period,
             capability_info: bss.capability_info,

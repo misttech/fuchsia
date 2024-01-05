@@ -15,7 +15,7 @@ File::File(F2fs *fs, ino_t ino, umode_t mode) : VnodeF2fs(fs, ino, mode) {}
 //   return 0;
 //   //   Page *page = vmf->page;
 //   //   VnodeF2fs *vnode = this;
-//   //   // SuperblockInfo &superblock_info = Vfs()->GetSuperblockInfo();
+//   //   // SuperblockInfo &superblock_info = Vsuperblock_info_;
 //   //   Page *node_page;
 //   //   block_t old_blk_addr;
 //   //   DnodeOfData dn;
@@ -148,7 +148,7 @@ File::File(F2fs *fs, ino_t ino, umode_t mode) : VnodeF2fs(fs, ino, mode) {}
 // }
 
 // int File::ExpandInodeData(loff_t offset, off_t len, int mode) {
-//   SuperblockInfo &superblock_info = Vfs()->GetSuperblockInfo();
+//   SuperblockInfo &superblock_info = Vsuperblock_info_;
 //   pgoff_t pg_start, pg_end;
 //   loff_t new_size = i_size;
 //   loff_t off_start, off_end;
@@ -295,128 +295,10 @@ File::File(F2fs *fs, ino_t ino, umode_t mode) : VnodeF2fs(fs, ino, mode) {}
 // }
 #endif
 
-zx_status_t File::Read(void *data, size_t length, size_t offset, size_t *out_actual) {
-  // MUST NOT enable this path except for unit tests.
-  TRACE_DURATION("f2fs", "File::Read", "event", "File::Read", "ino", Ino(), "offset",
-                 offset / kBlockSize, "length", length / kBlockSize);
-
-  if (offset >= GetSize()) {
-    *out_actual = 0;
-    return ZX_OK;
-  }
-
-  size_t num_bytes = std::min(length, GetSize() - offset);
-  if (TestFlag(InodeInfoFlag::kInlineData)) {
-    return ReadInline(data, num_bytes, offset, out_actual);
-  }
-
-  const pgoff_t vmo_node_start = safemath::CheckDiv<pgoff_t>(offset, kVmoNodeSize).ValueOrDie();
-  const pgoff_t vmo_node_end =
-      CheckedDivRoundUp<pgoff_t>(safemath::CheckAdd(offset, num_bytes).ValueOrDie(), kVmoNodeSize);
-  size_t src_offset = safemath::CheckMod(offset, kVmoNodeSize).ValueOrDie();
-  size_t dst_offset = 0;
-
-  for (size_t node = vmo_node_start; node < vmo_node_end && num_bytes; ++node) {
-    VmoHolder vmo_node(vmo_manager(), kBlocksPerVmoNode * node);
-    size_t num_bytes_in_node = safemath::CheckSub<size_t>(kVmoNodeSize, src_offset).ValueOrDie();
-    num_bytes_in_node = std::min(num_bytes_in_node, num_bytes);
-    vmo_node.Read(static_cast<uint8_t *>(data) + dst_offset, src_offset, num_bytes_in_node);
-
-    dst_offset += num_bytes_in_node;
-    num_bytes -= num_bytes_in_node;
-    src_offset = 0;
-  }
-
-  *out_actual = dst_offset;
-
-  return ZX_OK;
-}
-
-zx_status_t File::DoWrite(const void *data, size_t len, size_t offset, size_t *out_actual) {
-  // MUST NOT enable this path except for unit tests.
-  if (len == 0) {
-    return ZX_OK;
-  }
-
-  if (offset + len > static_cast<size_t>(MaxFileSize(fs()->RawSb().log_blocksize))) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  if (TestFlag(InodeInfoFlag::kInlineData)) {
-    if (offset + len < MaxInlineData()) {
-      return WriteInline(data, len, offset, out_actual);
-    }
-    ConvertInlineData();
-  }
-
-  // We need to check if there is enough space here as there is no way to get ZX_ERR_NO_SPACE from
-  // File::VmoDirty().
-  {
-    std::lock_guard lock(mutex_);
-    block_t num_blocks =
-        CheckedDivRoundUp(static_cast<block_t>(len), static_cast<block_t>(Page::Size()));
-    if (zx_status_t ret = fs()->IncValidBlockCount(this, num_blocks); ret != ZX_OK) {
-      return ret;
-    }
-    fs()->DecValidBlockCount(this, num_blocks);
-  }
-
-  // Set the size to adjust the vmo and content sizes, and then we can access the range in the vmo.
-  if (offset + len > GetSize()) {
-    SetSize(offset + len);
-  }
-
-  size_t num_bytes = len;
-  const pgoff_t vmo_node_start = safemath::CheckDiv<pgoff_t>(offset, kVmoNodeSize).ValueOrDie();
-  const pgoff_t vmo_node_end =
-      CheckedDivRoundUp<pgoff_t>(safemath::CheckAdd(offset, num_bytes).ValueOrDie(), kVmoNodeSize);
-  size_t dst_offset = safemath::CheckMod(offset, kVmoNodeSize).ValueOrDie();
-  size_t src_offset = 0;
-
-  for (size_t node = vmo_node_start; node < vmo_node_end && num_bytes; ++node) {
-    VmoHolder vmo_node(vmo_manager(), kBlocksPerVmoNode * node);
-    size_t num_bytes_in_node = safemath::CheckSub<size_t>(kVmoNodeSize, dst_offset).ValueOrDie();
-    num_bytes_in_node = std::min(num_bytes_in_node, num_bytes);
-    vmo_node.Write(static_cast<const uint8_t *>(data) + src_offset, dst_offset, num_bytes_in_node);
-
-    src_offset += num_bytes_in_node;
-    num_bytes -= num_bytes_in_node;
-    dst_offset = 0;
-  }
-
-  *out_actual = src_offset;
-
-  return ZX_OK;
-}
-
-zx_status_t File::Write(const void *data, size_t len, size_t offset, size_t *out_actual) {
-  TRACE_DURATION("f2fs", "File::Write", "event", "File::Write", "ino", Ino(), "offset",
-                 offset / kBlockSize, "length", len / kBlockSize);
-
-  if (fs()->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag)) {
-    return ZX_ERR_BAD_STATE;
-  }
-  return DoWrite(data, len, offset, out_actual);
-}
-
-zx_status_t File::Append(const void *data, size_t len, size_t *out_end, size_t *out_actual) {
-  size_t off = GetSize();
-  TRACE_DURATION("f2fs", "File::Append", "event", "File::Append", "ino", Ino(), "offset", off,
-                 "length", len);
-
-  if (fs()->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag)) {
-    *out_end = off;
-    return ZX_ERR_BAD_STATE;
-  }
-  zx_status_t ret = DoWrite(data, len, off, out_actual);
-  *out_end = off + *out_actual;
-  return ret;
-}
-
 zx_status_t File::Truncate(size_t len) {
   TRACE_DURATION("f2fs", "File::Truncate", "event", "File::Truncate", "ino", Ino(), "length", len);
 
-  if (fs()->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag)) {
+  if (superblock_info_.TestCpFlags(CpFlag::kCpErrorFlag)) {
     return ZX_ERR_BAD_STATE;
   }
 
@@ -424,7 +306,7 @@ zx_status_t File::Truncate(size_t len) {
     return ZX_OK;
   }
 
-  if (len > static_cast<size_t>(MaxFileSize(fs()->RawSb().log_blocksize)))
+  if (len > MaxFileSize())
     return ZX_ERR_INVALID_ARGS;
 
   if (TestFlag(InodeInfoFlag::kInlineData)) {
@@ -438,9 +320,9 @@ zx_status_t File::Truncate(size_t len) {
   return DoTruncate(len);
 }
 
-loff_t File::MaxFileSize(unsigned bits) {
-  loff_t result = GetAddrsPerInode();
-  loff_t leaf_count = kAddrsPerBlock;
+size_t File::MaxFileSize() {
+  size_t result = GetAddrsPerInode();
+  size_t leaf_count = kAddrsPerBlock;
 
   // two direct node blocks
   result += (leaf_count * 2);
@@ -453,7 +335,7 @@ loff_t File::MaxFileSize(unsigned bits) {
   leaf_count *= kNidsPerBlock;
   result += leaf_count;
 
-  result <<= bits;
+  result <<= superblock_info_.GetLogBlocksize();
   return result;
 }
 
@@ -470,7 +352,7 @@ zx_status_t File::GetVmo(fuchsia_io::wire::VmoFlags flags, zx::vmo *out_vmo) {
 }
 
 void File::VmoDirty(uint64_t offset, uint64_t length) {
-  if (unlikely(offset + length > static_cast<size_t>(MaxFileSize(fs()->RawSb().log_blocksize)))) {
+  if (unlikely(offset + length > MaxFileSize())) {
     return ReportPagerError(ZX_PAGER_OP_DIRTY, offset, length, ZX_ERR_BAD_STATE);
   }
   // There's no need to touch anything when it is being purged, migrating inline data, or an
@@ -481,6 +363,7 @@ void File::VmoDirty(uint64_t offset, uint64_t length) {
   }
 
   fs()->GetSegmentManager().BalanceFs();
+  fs::SharedLock lock(f2fs::GetGlobalLock());
   auto pages_or = WriteBegin(offset, length);
   if (unlikely(pages_or.is_error())) {
     return ReportPagerError(ZX_PAGER_OP_DIRTY, offset, length, pages_or.error_value());
@@ -510,5 +393,7 @@ zx_status_t File::CreateStream(uint32_t stream_options, zx::stream *out_stream) 
 }
 
 bool File::SupportsClientSideStreams() { return true; }
+
+block_t File::GetBlockAddr(LockedPage &page) { return GetBlockAddrOnDataSegment(page); }
 
 }  // namespace f2fs

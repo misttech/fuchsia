@@ -210,15 +210,15 @@ class DpDisplay : public DisplayDevice {
  private:
   // DisplayDevice overrides:
   bool InitDdi() final;
-  bool DdiModeset(const display_mode_t& mode) final;
-  bool PipeConfigPreamble(const display_mode_t& mode, PipeId pipe_id,
+  bool DdiModeset(const display::DisplayTiming& mode) final;
+  bool PipeConfigPreamble(const display::DisplayTiming& mode, PipeId pipe_id,
                           TranscoderId transcoder_id) final;
-  bool PipeConfigEpilogue(const display_mode_t& mode, PipeId pipe_id,
+  bool PipeConfigEpilogue(const display::DisplayTiming& mode, PipeId pipe_id,
                           TranscoderId transcoder_id) final;
-  DdiPllConfig ComputeDdiPllConfig(int32_t pixel_clock_10khz) final;
-  uint32_t LoadClockRateForTranscoder(TranscoderId transcoder_id) final;
+  DdiPllConfig ComputeDdiPllConfig(int32_t pixel_clock_khz) final;
+  int32_t LoadPixelRateForTranscoderKhz(TranscoderId transcoder_id) final;
 
-  bool CheckPixelRate(uint64_t pixel_rate) final;
+  bool CheckPixelRate(int64_t pixel_rate_hz) final;
 
   ddk::I2cImplProtocolClient i2c() final { return i2c_; }
 

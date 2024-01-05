@@ -29,12 +29,13 @@ class ChannelManagerImpl final : public ChannelManager {
   using LinkErrorCallback = fit::closure;
 
   ChannelManagerImpl(hci::AclDataChannel* acl_data_channel, hci::CommandChannel* cmd_channel,
-                     bool random_channel_ids);
+                     bool random_channel_ids, pw::async::Dispatcher& dispatcher);
   ~ChannelManagerImpl() override;
 
-  void AddACLConnection(hci_spec::ConnectionHandle handle,
-                        pw::bluetooth::emboss::ConnectionRole role, LinkErrorCallback link_error_cb,
-                        SecurityUpgradeCallback security_cb) override;
+  BrEdrFixedChannels AddACLConnection(hci_spec::ConnectionHandle handle,
+                                      pw::bluetooth::emboss::ConnectionRole role,
+                                      LinkErrorCallback link_error_cb,
+                                      SecurityUpgradeCallback security_cb) override;
 
   [[nodiscard]] LEFixedChannels AddLEConnection(hci_spec::ConnectionHandle handle,
                                                 pw::bluetooth::emboss::ConnectionRole role,
@@ -50,11 +51,11 @@ class ChannelManagerImpl final : public ChannelManager {
   Channel::WeakPtr OpenFixedChannel(hci_spec::ConnectionHandle connection_handle,
                                     ChannelId channel_id) override;
 
-  void OpenL2capChannel(hci_spec::ConnectionHandle handle, PSM psm, ChannelParameters params,
+  void OpenL2capChannel(hci_spec::ConnectionHandle handle, Psm psm, ChannelParameters params,
                         ChannelCallback cb) override;
 
-  bool RegisterService(PSM psm, ChannelParameters params, ChannelCallback cb) override;
-  void UnregisterService(PSM psm) override;
+  bool RegisterService(Psm psm, ChannelParameters params, ChannelCallback cb) override;
+  void UnregisterService(Psm psm) override;
 
   void RequestConnectionParameterUpdate(
       hci_spec::ConnectionHandle handle, hci_spec::LEPreferredConnectionParameters params,
@@ -83,7 +84,9 @@ class ChannelManagerImpl final : public ChannelManager {
   // registrant. The callback may be called repeatedly to pass multiple channels for |psm|, but
   // should not be stored because the service may be unregistered at a later time. Calls for
   // unregistered services return null.
-  std::optional<ServiceInfo> QueryService(hci_spec::ConnectionHandle handle, PSM psm);
+  std::optional<ServiceInfo> QueryService(hci_spec::ConnectionHandle handle, Psm psm);
+
+  pw::async::Dispatcher& pw_dispatcher_;
 
   // Maximum sizes for data packet payloads from host to controller.
   size_t max_acl_payload_size_;
@@ -110,11 +113,11 @@ class ChannelManagerImpl final : public ChannelManager {
   struct ServiceData {
     void AttachInspect(inspect::Node& parent);
     ServiceInfo info;
-    PSM psm;
+    Psm psm;
     inspect::Node node;
     inspect::StringProperty psm_property;
   };
-  using ServiceMap = std::unordered_map<PSM, ServiceData>;
+  using ServiceMap = std::unordered_map<Psm, ServiceData>;
   ServiceMap services_;
   inspect::Node services_node_;
   inspect::Node node_;
@@ -128,8 +131,10 @@ class ChannelManagerImpl final : public ChannelManager {
 };
 
 ChannelManagerImpl::ChannelManagerImpl(hci::AclDataChannel* acl_data_channel,
-                                       hci::CommandChannel* cmd_channel, bool random_channel_ids)
-    : acl_data_channel_(acl_data_channel),
+                                       hci::CommandChannel* cmd_channel, bool random_channel_ids,
+                                       pw::async::Dispatcher& dispatcher)
+    : pw_dispatcher_(dispatcher),
+      acl_data_channel_(acl_data_channel),
       cmd_channel_(cmd_channel),
       a2dp_offload_manager_(std::make_unique<A2dpOffloadManager>(cmd_channel_->AsWeakPtr())),
       random_channel_ids_(random_channel_ids),
@@ -160,15 +165,18 @@ hci::ACLPacketHandler ChannelManagerImpl::MakeInboundDataHandler() {
   };
 }
 
-void ChannelManagerImpl::AddACLConnection(hci_spec::ConnectionHandle handle,
-                                          pw::bluetooth::emboss::ConnectionRole role,
-                                          LinkErrorCallback link_error_cb,
-                                          SecurityUpgradeCallback security_cb) {
+ChannelManagerImpl::BrEdrFixedChannels ChannelManagerImpl::AddACLConnection(
+    hci_spec::ConnectionHandle handle, pw::bluetooth::emboss::ConnectionRole role,
+    LinkErrorCallback link_error_cb, SecurityUpgradeCallback security_cb) {
   bt_log(DEBUG, "l2cap", "register ACL link (handle: %#.4x)", handle);
 
   auto* ll = RegisterInternal(handle, bt::LinkType::kACL, role, max_acl_payload_size_);
   ll->set_error_callback(std::move(link_error_cb));
   ll->set_security_upgrade_callback(std::move(security_cb));
+
+  Channel::WeakPtr smp = OpenFixedChannel(handle, kSMPChannelId);
+  BT_ASSERT(smp.is_alive());
+  return BrEdrFixedChannels{.smp = std::move(smp)};
 }
 
 ChannelManagerImpl::LEFixedChannels ChannelManagerImpl::AddLEConnection(
@@ -229,7 +237,7 @@ Channel::WeakPtr ChannelManagerImpl::OpenFixedChannel(hci_spec::ConnectionHandle
   return iter->second->OpenFixedChannel(channel_id);
 }
 
-void ChannelManagerImpl::OpenL2capChannel(hci_spec::ConnectionHandle handle, PSM psm,
+void ChannelManagerImpl::OpenL2capChannel(hci_spec::ConnectionHandle handle, Psm psm,
                                           ChannelParameters params, ChannelCallback cb) {
   auto iter = ll_map_.find(handle);
   if (iter == ll_map_.end()) {
@@ -241,7 +249,7 @@ void ChannelManagerImpl::OpenL2capChannel(hci_spec::ConnectionHandle handle, PSM
   iter->second->OpenChannel(psm, params, std::move(cb));
 }
 
-bool ChannelManagerImpl::RegisterService(PSM psm, ChannelParameters params, ChannelCallback cb) {
+bool ChannelManagerImpl::RegisterService(Psm psm, ChannelParameters params, ChannelCallback cb) {
   // v5.0 Vol 3, Part A, Sec 4.2: PSMs shall be odd and the least significant
   // bit of the most significant byte shall be zero
   if (((psm & 0x0001) != 0x0001) || ((psm & 0x0100) != 0x0000)) {
@@ -253,13 +261,14 @@ bool ChannelManagerImpl::RegisterService(PSM psm, ChannelParameters params, Chan
     return false;
   }
 
-  ServiceData service{.info = ServiceInfo(params, std::move(cb)), .psm = psm};
+  ServiceData service{
+      .info = ServiceInfo(params, std::move(cb)), .psm = psm, .node = {}, .psm_property = {}};
   service.AttachInspect(services_node_);
   services_.emplace(psm, std::move(service));
   return true;
 }
 
-void ChannelManagerImpl::UnregisterService(PSM psm) { services_.erase(psm); }
+void ChannelManagerImpl::UnregisterService(Psm psm) { services_.erase(psm); }
 
 void ChannelManagerImpl::RequestConnectionParameterUpdate(
     hci_spec::ConnectionHandle handle, hci_spec::LEPreferredConnectionParameters params,
@@ -343,7 +352,7 @@ internal::LogicalLink* ChannelManagerImpl::RegisterInternal(
   auto ll = std::make_unique<internal::LogicalLink>(
       handle, ll_type, role, max_payload_size,
       fit::bind_member<&ChannelManagerImpl::QueryService>(this), acl_data_channel_, cmd_channel_,
-      random_channel_ids_, *a2dp_offload_manager_);
+      random_channel_ids_, *a2dp_offload_manager_, pw_dispatcher_);
 
   if (ll_node_) {
     ll->AttachInspect(ll_node_, ll_node_.UniqueName(kInspectLogicalLinkNodePrefix));
@@ -369,7 +378,7 @@ internal::LogicalLink* ChannelManagerImpl::RegisterInternal(
 }
 
 std::optional<ChannelManager::ServiceInfo> ChannelManagerImpl::QueryService(
-    hci_spec::ConnectionHandle handle, PSM psm) {
+    hci_spec::ConnectionHandle handle, Psm psm) {
   auto iter = services_.find(psm);
   if (iter == services_.end()) {
     return std::nullopt;
@@ -390,8 +399,10 @@ void ChannelManagerImpl::ServiceData::AttachInspect(inspect::Node& parent) {
 
 std::unique_ptr<ChannelManager> ChannelManager::Create(hci::AclDataChannel* acl_data_channel,
                                                        hci::CommandChannel* cmd_channel,
-                                                       bool random_channel_ids) {
-  return std::make_unique<ChannelManagerImpl>(acl_data_channel, cmd_channel, random_channel_ids);
+                                                       bool random_channel_ids,
+                                                       pw::async::Dispatcher& dispatcher) {
+  return std::make_unique<ChannelManagerImpl>(acl_data_channel, cmd_channel, random_channel_ids,
+                                              dispatcher);
 }
 
 }  // namespace bt::l2cap

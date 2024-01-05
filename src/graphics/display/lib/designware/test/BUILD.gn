@@ -5,16 +5,14 @@
 import("//build/components.gni")
 import("//build/test.gni")
 
-test("hdmi-dw") {
-  sources = [ "hdmi-dw-test.cc" ]
+test("hdmi-transmitter-controller-impl-test-bin") {
+  sources = [ "hdmi-transmitter-controller-impl-test.cc" ]
   deps = [
     "//sdk/banjo/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.hdmi:fuchsia.hardware.hdmi_cpp_wire",
     "//src/devices/lib/mmio",
     "//src/devices/testing/mock-mmio-range",
     "//src/devices/testing/no_ddk",
-    "//src/graphics/display/lib/designware:hdmi-dw",
-    "//src/graphics/display/lib/hdmi",
+    "//src/graphics/display/lib/designware:hdmi-transmitter-controller-impl",
     "//src/lib/ddk",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
@@ -24,12 +22,8 @@ test("hdmi-dw") {
 
   # TODO(https://fxbug.dev/58162): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
-
-  # TODO(fxbug.dev/94768): This target uses mutable tables which are deprecated,
-  # rather than builders.
-  configs += [ "//build/cpp:fidl-wire-deprecated-mutable-tables" ]
 }
 
-fuchsia_unittest_package("hdmi-dw-test") {
-  deps = [ ":hdmi-dw" ]
+fuchsia_unittest_package("hdmi-transmitter-controller-impl-test") {
+  deps = [ ":hdmi-transmitter-controller-impl-test-bin" ]
 }

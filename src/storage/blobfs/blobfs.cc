@@ -32,12 +32,6 @@
 #include <safemath/safe_conversions.h>
 
 #include "src/lib/digest/digest.h"
-#include "src/lib/storage/block_client/cpp/pass_through_read_only_device.h"
-#include "src/lib/storage/block_client/cpp/reader.h"
-#include "src/lib/storage/vfs/cpp/journal/journal.h"
-#include "src/lib/storage/vfs/cpp/journal/replay.h"
-#include "src/lib/storage/vfs/cpp/journal/superblock.h"
-#include "src/lib/storage/vfs/cpp/scoped_vnode_open.h"
 #include "src/storage/blobfs/allocator/extent_reserver.h"
 #include "src/storage/blobfs/blob.h"
 #include "src/storage/blobfs/blob_loader.h"
@@ -52,6 +46,12 @@
 #include "src/storage/blobfs/iterator/block_iterator.h"
 #include "src/storage/blobfs/transaction.h"
 #include "src/storage/blobfs/transfer_buffer.h"
+#include "src/storage/lib/block_client/cpp/pass_through_read_only_device.h"
+#include "src/storage/lib/block_client/cpp/reader.h"
+#include "src/storage/lib/vfs/cpp/journal/journal.h"
+#include "src/storage/lib/vfs/cpp/journal/replay.h"
+#include "src/storage/lib/vfs/cpp/journal/superblock.h"
+#include "src/storage/lib/vfs/cpp/scoped_vnode_open.h"
 
 namespace blobfs {
 namespace {
@@ -146,10 +146,10 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
 
   // Construct the Blobfs object, without intensive validation, since it
   // may require upgrades / journal replays to become valid.
-  auto fs = std::unique_ptr<Blobfs>(new Blobfs(
-      dispatcher, std::move(device), vfs, superblock, options.writability,
-      options.compression_settings, std::move(vmex_resource), options.pager_backed_cache_policy,
-      decompression_connector, options.allow_delivery_blobs));
+  auto fs = std::unique_ptr<Blobfs>(
+      new Blobfs(dispatcher, std::move(device), vfs, superblock, options.writability,
+                 options.compression_settings, std::move(vmex_resource),
+                 options.pager_backed_cache_policy, decompression_connector));
   fs->block_info_ = block_info;
 
   auto fs_ptr = fs.get();
@@ -359,8 +359,8 @@ void Blobfs::InitializeInspectTree() {
   fs_inspect::InfoData info{
       .version_major = kBlobfsCurrentMajorVersion,
       .version_minor = kBlobfsCurrentMinorVersion,
-      .oldest_version =
-          fs_inspect::InfoData::OldestVersion(Info().major_version, Info().oldest_minor_version),
+      .oldest_version = fs_inspect::InfoData::OldestVersion(
+          Info().major_version, static_cast<uint32_t>(Info().oldest_minor_version)),
   };
 
   zx::result<fs::FilesystemInfo> fs_info{GetFilesystemInfo()};
@@ -824,7 +824,7 @@ Blobfs::Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> devi
                fs::PagedVfs* vfs, const Superblock* info, Writability writable,
                CompressionSettings write_compression_settings, zx::resource vmex_resource,
                std::optional<CachePolicy> pager_backed_cache_policy,
-               DecompressorCreatorConnector* decompression_connector, bool allow_delivery_blobs)
+               DecompressorCreatorConnector* decompression_connector)
     : vfs_(vfs),
       info_(*info),
       dispatcher_(dispatcher),
@@ -834,8 +834,7 @@ Blobfs::Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> devi
       vmex_resource_(std::move(vmex_resource)),
       metrics_(CreateBlobfsMetrics(inspect_tree_.inspector())),
       pager_backed_cache_policy_(pager_backed_cache_policy),
-      decompression_connector_(decompression_connector),
-      allow_delivery_blobs_(allow_delivery_blobs) {
+      decompression_connector_(decompression_connector) {
   ZX_ASSERT(vfs_);
 
   // It's easy to forget to initialize the PagedVfs in tests which will cause mysterious failures

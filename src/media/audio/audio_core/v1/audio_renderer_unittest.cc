@@ -7,6 +7,10 @@
 #include <lib/fzl/vmar-manager.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/vmo.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
+
+#include <optional>
 
 #include <gtest/gtest.h>
 
@@ -248,6 +252,105 @@ TEST_F(AudioRendererTestSyntheticClocks, SendPacket_NO_TIMESTAMP) {
     EXPECT_EQ(buffer->length(), kPacketSizeFrames);
     EXPECT_NE(nullptr, buffer->payload());
     expected_packet_pts = buffer->end().Floor();
+  }
+}
+
+TEST_F(AudioRendererTestSyntheticClocks, SendPacket_ContinuityUnderflow) {
+  context().route_graph().AddRenderer(std::move(renderer_));
+  context().route_graph().AddDeviceToRoutes(fake_output_.get());
+
+  constexpr int64_t kPacketSizeFrames = 32;
+  fidl_renderer_->SetPcmStreamType(PcmStreamType());
+  AddPayloadBuffer(0, zx_system_get_page_size(), fidl_renderer_.get());
+  fuchsia::media::StreamPacket packet;
+  packet.payload_buffer_id = 0;
+  packet.payload_offset = 0;
+  packet.payload_size = kPacketSizeFrames * sizeof(float);
+  // packet.pts is NO_TIMESTAMP by default.
+  fidl_renderer_->SendPacketNoReply(fidl::Clone(packet));
+  fidl_renderer_->SendPacketNoReply(fidl::Clone(packet));
+  fidl_renderer_->SendPacketNoReply(fidl::Clone(packet));
+  fidl_renderer_->PlayNoReply(fuchsia::media::NO_TIMESTAMP, fuchsia::media::NO_TIMESTAMP);
+  RunLoopUntilIdle();
+
+  std::vector<LinkMatrix::LinkHandle> links;
+  context().link_matrix().SourceLinks(*fake_output_, &links);
+  ASSERT_EQ(1u, links.size());
+  auto stream = links[0].stream;
+  ASSERT_TRUE(stream);
+
+  // Expect 3 buffers. Since these have NO_TIMESTAMP and also no discontinutity flag, they should
+  // be continuous starting at pts 0.
+  int64_t expected_packet_pts = 0;
+  for (uint32_t i = 0; i < 3; ++i) {
+    auto buffer = stream->ReadLock(rlctx, Fixed(expected_packet_pts), kPacketSizeFrames);
+    ASSERT_TRUE(buffer);
+    EXPECT_EQ(buffer->start().Floor(), expected_packet_pts);
+    EXPECT_EQ(buffer->length(), kPacketSizeFrames);
+    EXPECT_NE(nullptr, buffer->payload());
+    expected_packet_pts = buffer->end().Floor();
+  }
+
+  // Send another packet, after first advancing the clock by lead_time+padding which ensures the
+  // implied PTS has already passed. Because we do not specify the flag DISCONTINUITY, the renderer
+  // should place it immediately after the previous packet, even though its payload will be dropped.
+  context().clock_factory()->AdvanceMonoTimeBy(stream->GetPresentationDelay() + zx::msec(10));
+  fidl_renderer_->SendPacketNoReply(fidl::Clone(packet));
+  RunLoopUntilIdle();
+  {
+    auto delay_ms = stream->GetPresentationDelay().to_msecs() + 10 + 1 /* round up */;
+    auto total_to_read = kPacketSizeFrames + delay_ms * kAudioRendererUnittestFrameRate / 1000;
+    auto buffer = stream->ReadLock(rlctx, Fixed(expected_packet_pts), total_to_read);
+    ASSERT_TRUE(buffer);
+    EXPECT_EQ(buffer->length(), kPacketSizeFrames);
+    EXPECT_NE(nullptr, buffer->payload());
+
+    // EXPECT_EQ here (instead of EXPECT_GT) even though it was late: this packet should be
+    // continuous with the previous packet. If we HAD specified FLAG_DISCONTINUITY, the renderer
+    // would have moved ths start of this buffer later in time, so that no payload was truncated
+    // (as shown in the previous test case SendPacket_NO_TIMESTAMP).
+    EXPECT_EQ(buffer->start().Floor(), expected_packet_pts);
+  }
+}
+
+TEST_F(AudioRendererTestSyntheticClocks, SendPacket_TimestampUnderflow) {
+  context().route_graph().AddRenderer(std::move(renderer_));
+  context().route_graph().AddDeviceToRoutes(fake_output_.get());
+
+  constexpr int64_t kPacketSizeFrames = 32;
+  fidl_renderer_->SetPcmStreamType(PcmStreamType());
+  AddPayloadBuffer(0, zx_system_get_page_size(), fidl_renderer_.get());
+  fuchsia::media::StreamPacket packet;
+  packet.payload_buffer_id = 0;
+  packet.payload_offset = 0;
+  packet.payload_size = kPacketSizeFrames * sizeof(float);
+  packet.pts = 0;
+  fidl_renderer_->SendPacketNoReply(fidl::Clone(packet));
+  fidl_renderer_->SendPacketNoReply(fidl::Clone(packet));
+  fidl_renderer_->SendPacketNoReply(fidl::Clone(packet));
+  fidl_renderer_->PlayNoReply(fuchsia::media::NO_TIMESTAMP, 0);
+  RunLoopUntilIdle();
+
+  std::vector<LinkMatrix::LinkHandle> links;
+  context().link_matrix().SourceLinks(*fake_output_, &links);
+  ASSERT_EQ(1u, links.size());
+  auto stream = links[0].stream;
+  ASSERT_TRUE(stream);
+
+  // Expect only 1 buffer -- the other two packets should generate Timestamp Underflows (overlaps).
+  int64_t expected_packet_pts = 0;
+  {
+    auto buffer = stream->ReadLock(rlctx, Fixed(expected_packet_pts), kPacketSizeFrames);
+    ASSERT_TRUE(buffer);
+    EXPECT_EQ(buffer->start().Floor(), expected_packet_pts);
+    EXPECT_EQ(buffer->length(), kPacketSizeFrames);
+    EXPECT_NE(nullptr, buffer->payload());
+    expected_packet_pts = buffer->end().Floor();
+  }
+  for (uint32_t i = 1; i < 3; ++i) {
+    auto buffer = stream->ReadLock(rlctx, Fixed(expected_packet_pts), kPacketSizeFrames);
+    ASSERT_FALSE(buffer);
+    expected_packet_pts += kPacketSizeFrames;
   }
 }
 
@@ -567,6 +670,109 @@ TEST_F(AudioRendererTestRealClocks, ReferenceClockIsCorrectAfterDeviceChange) {
   clock::testing::VerifyAdvances(fidl_clock);
   clock::testing::VerifyIsSystemMonotonic(fidl_clock);
   clock::testing::VerifyCannotBeRateAdjusted(fidl_clock);
+}
+
+class AudioRendererBadFormatTest : public AudioRendererTest {
+ public:
+  AudioRendererBadFormatTest() : AudioRendererTest(WithSyntheticClocks) {}
+};
+
+// If given a malformed format (channels == 0), an AudioRenderer should disconnect.
+TEST_F(AudioRendererBadFormatTest, ChannelsTooLowShouldDisconnect) {
+  fake_output_->SetPresentationDelay(kMinLeadTime);
+  context().route_graph().AddRenderer(std::move(renderer_));
+  context().route_graph().AddDeviceToRoutes(fake_output_.get());
+
+  std::optional<zx_status_t> received_status;
+  fidl_renderer_.set_error_handler([&received_status](auto status) { received_status = status; });
+
+  auto pcm_stream_type = PcmStreamType();
+  pcm_stream_type.channels = fuchsia::media::MIN_PCM_CHANNEL_COUNT - 1;
+  fidl_renderer_->SetPcmStreamType(pcm_stream_type);
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(received_status.has_value());
+  EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);
+}
+
+// AudioRenderers are limited to a maximum of 4 channels output.
+TEST_F(AudioRendererBadFormatTest, ChannelsTooHighShouldDisconnect) {
+  fake_output_->SetPresentationDelay(kMinLeadTime);
+  context().route_graph().AddRenderer(std::move(renderer_));
+  context().route_graph().AddDeviceToRoutes(fake_output_.get());
+
+  std::optional<zx_status_t> received_status;
+  fidl_renderer_.set_error_handler([&received_status](auto status) { received_status = status; });
+
+  auto pcm_stream_type = PcmStreamType();
+  pcm_stream_type.channels = 5;  // AudioRenderers limit this to 4 instead of MAX_PCM_CHANNEL_COUNT
+  fidl_renderer_->SetPcmStreamType(pcm_stream_type);
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(received_status.has_value());
+  EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);
+}
+
+// AudioRenderers are limited to a minimum frame rate of 1000 Hz.
+TEST_F(AudioRendererBadFormatTest, FrameRateTooLowShouldDisconnect) {
+  fake_output_->SetPresentationDelay(kMinLeadTime);
+  context().route_graph().AddRenderer(std::move(renderer_));
+  context().route_graph().AddDeviceToRoutes(fake_output_.get());
+
+  std::optional<zx_status_t> received_status;
+  fidl_renderer_.set_error_handler([&received_status](auto status) { received_status = status; });
+
+  auto pcm_stream_type = PcmStreamType();
+  pcm_stream_type.frames_per_second = fuchsia::media::MIN_PCM_FRAMES_PER_SECOND - 1;
+  fidl_renderer_->SetPcmStreamType(pcm_stream_type);
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(received_status.has_value());
+  EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);
+}
+
+// AudioRenderers are limited to a maximum frame rate of 192000 Hz.
+TEST_F(AudioRendererBadFormatTest, FrameRateTooHighShouldDisconnect) {
+  fake_output_->SetPresentationDelay(kMinLeadTime);
+  context().route_graph().AddRenderer(std::move(renderer_));
+  context().route_graph().AddDeviceToRoutes(fake_output_.get());
+
+  std::optional<zx_status_t> received_status;
+  fidl_renderer_.set_error_handler([&received_status](auto status) { received_status = status; });
+
+  auto pcm_stream_type = PcmStreamType();
+  pcm_stream_type.frames_per_second = fuchsia::media::MAX_PCM_FRAMES_PER_SECOND + 1;
+  fidl_renderer_->SetPcmStreamType(pcm_stream_type);
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(received_status.has_value());
+  EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);
+}
+
+TEST_F(AudioRendererBadFormatTest, SetFormatWhileOperatingShouldDisconnect) {
+  fake_output_->SetPresentationDelay(kMinLeadTime);
+  context().route_graph().AddRenderer(std::move(renderer_));
+  context().route_graph().AddDeviceToRoutes(fake_output_.get());
+
+  std::optional<zx_status_t> received_status;
+  fidl_renderer_.set_error_handler([&received_status](auto status) { received_status = status; });
+
+  fidl_renderer_->SetPcmStreamType(PcmStreamType());
+  AddPayloadBuffer(0, zx_system_get_page_size(), fidl_renderer_.get());
+
+  fuchsia::media::StreamPacket packet;
+  packet.payload_buffer_id = 0;
+  packet.payload_offset = 0;
+  packet.payload_size = 128;
+  fidl_renderer_->SendPacketNoReply(fidl::Clone(packet));
+  RunLoopUntilIdle();  // A packet is queued, so this renderer is now "operating".
+  ASSERT_FALSE(received_status.has_value()) << "Unexpected failure while setting up conditions";
+
+  // Even if SetPcmStreamType doesn't change the format, it cannot be called if packets are active.
+  fidl_renderer_->SetPcmStreamType(PcmStreamType());
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_status.has_value());
+  EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);
 }
 
 }  // namespace

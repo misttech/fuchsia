@@ -1,0 +1,399 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/sdk/product_bundle.gni")
+import("//build/testing/test_spec.gni")
+
+# The test runners have no better way to determine that a boot test succeeded
+# than to look for an exact string in the console log output.  zbi_test()
+# targets produce metadata to drive the test runners, which tells them to
+# match this particular string.  When booted in standalone mode, userboot
+# prints this message after the initial process exits iff its return_code was
+# zero, but shutting down.  This string includes some random data that
+# shouldn't appear elsewhere, to avoid false-positive matches.
+boot_test_success_string =
+    "***Boot-test-successful!-MDd7/O65SuVZ23yGAaQG4CedYQGH9E1/58r73pSAVK0=***"
+
+_all_emu_types = [
+  "QEMU",
+  "AEMU",
+]
+
+# Helper template defining a boot test for a particular host architecture. This
+# flexibility is needed as we wish to define one for emulators on $target_cpu
+# hosts even when $target_cpu != $host_cpu in order to take advantage of KVM,
+# HVF, etc.
+#
+# Parameters
+#
+#  * output_name
+#    - Optional: The name of the associated test.
+#    - Default: target_name
+#
+#  * cpu_for_host
+#    - Required: The host CPU to generate the test for.
+#
+#  * deps
+#    - Optional: The usual GN meaning.
+#
+# See boot_test() for all other parameters.
+template("_boot_test") {
+  main_target = target_name
+  script_target = "_boot_test.${target_name}.create_script"
+
+  toolchain = "//build/toolchain:host_${invoker.cpu_for_host}"
+  test_script = "$root_out_dir/$main_target.sh"
+
+  timeout_secs = 600
+  if (defined(invoker.timeout)) {
+    if (invoker.timeout != false) {
+      timeout_secs = invoker.timeout
+    }
+  }
+
+  action(script_target) {
+    visibility = [ ":*" ]
+    testonly = true
+
+    deps = [ "//tools/testing/seriallistener($toolchain)" ]
+    inputs = [ get_label_info(deps[0], "root_out_dir") + "/seriallistener" ]
+    outputs = [ test_script ]
+
+    script = "//build/testing/create_test.sh"
+    args = [
+      rebase_path(outputs[0], root_build_dir),
+      rebase_path(inputs[0], root_build_dir),
+      "-success-str",
+      boot_test_success_string,
+      "-timeout",
+      "${timeout_secs}s",
+    ]
+
+    metadata = {
+      test_runtime_deps = []
+      if (defined(invoker.metadata)) {
+        forward_variables_from(invoker.metadata, "*")
+      }
+      test_runtime_deps += inputs + outputs
+    }
+  }
+
+  test_spec(main_target) {
+    target = get_label_info(invoker.label, "label_with_toolchain")
+    name = target_name
+    if (defined(invoker.output_name)) {
+      name = invoker.output_name
+    }
+    path = test_script
+    os = host_os
+    cpu = invoker.cpu_for_host
+    isolated = true
+    product_bundle = name
+
+    forward_variables_from(invoker,
+                           [
+                             "assert_no_deps",
+                             "deps",
+                             "visibility",
+                           ])
+
+    timeout_secs = timeout_secs
+
+    if (!defined(deps)) {
+      deps = []
+    }
+    deps += [ ":$script_target" ]
+
+    if (defined(invoker.efi_disk)) {
+      deps += [ invoker.efi_disk ]
+    }
+    if (defined(invoker.qemu_kernel)) {
+      deps += [ invoker.qemu_kernel ]
+    }
+    if (defined(invoker.vbmeta)) {
+      deps += [ invoker.vbmeta ]
+    }
+    if (defined(invoker.zbi)) {
+      deps += [ invoker.zbi ]
+    }
+
+    image_overrides = {
+      forward_variables_from(invoker,
+                             [
+                               "efi_disk",
+                               "qemu_kernel",
+                               "vbmeta",
+                               "zbi",
+                             ])
+
+      # Absolutize the path part in any provided labels.
+      if (defined(efi_disk)) {
+        efi_disk = get_label_info(efi_disk, "label_with_toolchain")
+      }
+      if (defined(qemu_kernel)) {
+        qemu_kernel = get_label_info(qemu_kernel, "label_with_toolchain")
+      }
+      if (defined(vbmeta)) {
+        vbmeta = get_label_info(vbmeta, "label_with_toolchain")
+      }
+      if (defined(zbi)) {
+        zbi = get_label_info(zbi, "label_with_toolchain")
+      }
+    }
+
+    environments = []
+    foreach(device_type, invoker.device_types) {
+      environments += [
+        {
+          dimensions = {
+            device_type = device_type
+          }
+        },
+      ]
+    }
+  }
+}
+
+# Specifies a boot test.
+#
+# A boot test is a general category of test defined by booting select images on
+# a device and declaring success if a certain magic string is written by the
+# booted system. This set-up allows us to execute test logic in constrained
+# environments (e.g., in physical memory or UEFI) that lack finer command-control
+# options for driving testing from the outside or a robust means of exfiltrating
+# test results for later analysis.
+#
+# While this template does define host-side test target(s) for listening on
+# serial for the success string, the contained logic expects to already be run
+# after the associated system has been booted as a 'host-target interaction'
+# test, specifically with the environment variables of `$FUCHSIA_SERIAL_SOCKET`
+# and `$FUCHSIA_DEVICE_TYPE` set, specifying a Unix socket path from which
+# serial can be read and a device type (as spelled in
+# //build/testing/environments.gni). This eventually define a test that is
+# less geared towards automation, but for now boot tests can be discovered and
+# run locally with `fx run-boot-test`.
+#
+# Subtargets
+#
+#   * $target_name.product_bundle
+#     - The associated product_bundle() target, creating a testing product
+#       bundle based on the images comprising the boot test.
+#
+# Parameters:
+#
+#  * device_types
+#    - Required: A list of device types on which this test is meant to run.
+#      The full set of device types can be found in
+#      //build/testing/environments.gni. An empty list signifies a disabled
+#      test.
+#    - Type: list of strings
+#
+#  * zbi, qemu_kernel, vbmeta, efi_disk
+#    - Optional: A label specifying a ZBI, QEMU kernel, VBMeta, UEFI
+#      executable, or a bootable UEFI filesystem or disk image, respectively.
+#      At least one of these parameters must be set, but each on their own is
+#      optional.
+#    - Type: label
+#
+#  * timeout
+#    - Optional: The test's timeout, in seconds.
+#      TODO(ihuh): Once we have more data, we can override this with a more
+#      sensible timeout for each test.
+#    - Type: int
+#    - Default: 600 (10 minutes)
+#
+#  * assert_no_deps, metadata, visibility
+#    - Optional: Usual GN meanings.
+#
+template("boot_test") {
+  assert(defined(invoker.device_types),
+         "boot_test(\"$target_name\") must define `device_types`")
+  assert(
+      defined(invoker.zbi) || defined(invoker.qemu_kernel) ||
+          defined(invoker.vbmeta) || defined(invoker.efi_disk),
+      "boot_test(\"$target_name\") must define at least one of `zbi`, `qemu_kernel`, `vbmeta`, `efi_disk`")
+
+  main_target = target_name
+  image_manifest_target = "_boot_test.${target_name}.image_manifest"
+  rebased_image_manifest_target =
+      "_boot_test.${target_name}.rebased_image_manifest"
+  product_bundle_target = "$target_name.product_bundle"
+
+  image_manifest = "${target_gen_dir}/${main_target}.images.json"
+  generated_file(image_manifest_target) {
+    forward_variables_from(invoker,
+                           [
+                             "zbi",
+                             "qemu_kernel",
+                             "vbmeta",
+                           ])
+    testonly = true
+    data_keys = [ "images" ]
+    walk_keys = [ "images_barrier" ]
+    output_conversion = "json"
+
+    deps = []
+    if (defined(zbi)) {
+      deps += [ zbi ]
+    }
+    if (defined(vbmeta)) {
+      deps += [ vbmeta ]
+    }
+    if (defined(qemu_kernel)) {
+      deps += [ qemu_kernel ]
+    }
+
+    outputs = [ image_manifest ]
+  }
+
+  # The above generated_file() contains path fields that are relative to the
+  # build directory. `ffx product create`, however, expects these paths to be
+  # relative to the manifest itself. To account for the mismatch we run the
+  # metadata through some simple post-processing.
+  rebased_image_manifest = "${target_out_dir}/${main_target}.images.json"
+  action(rebased_image_manifest_target) {
+    testonly = true
+
+    sources = [ image_manifest ]
+    outputs = [ rebased_image_manifest ]
+
+    script = "//build/testing/boot_tests/rebase_metadata_paths.py"
+    args = [
+      "--root-build-dir",
+      ".",
+      "--new-base",
+      rebase_path(get_path_info(outputs[0], "dir"), root_build_dir),
+      "--metadata",
+      rebase_path(sources[0], root_build_dir),
+      "--output",
+      rebase_path(outputs[0], root_build_dir),
+    ]
+
+    deps = [ ":$image_manifest_target" ]
+  }
+
+  # If the boot test specifies an EFI disk image, then this should be regarded
+  # as the contents of a bootloader partition. Otherwise, default to the
+  # board-specific partition contents.
+  partition_contents = []
+  if (defined(invoker.efi_disk)) {
+    efi_disk_manifest_target = "_boot_test.${target_name}.efi_disk_manifest"
+    efi_disk_manifest = "${target_gen_dir}/${main_target}.efi_disks.json"
+    generated_file(efi_disk_manifest_target) {
+      testonly = true
+
+      data_keys = [ "images" ]
+      walk_keys = [ "images_barrier" ]
+      output_conversion = "json"
+
+      deps = [ invoker.efi_disk ]
+      outputs = [ efi_disk_manifest ]
+    }
+
+    partition_config_path =
+        "${target_out_dir}/${main_target}.partition_config.json"
+    partition_config_target =
+        "_boot_test.${target_name}.create_efi_partition_config"
+    action(partition_config_target) {
+      testonly = true
+
+      sources = [ efi_disk_manifest ]
+      outputs = [ partition_config_path ]
+
+      script = "//build/testing/boot_tests/create_efi_partition_config.py"
+      args = [
+        "--metadata",
+        rebase_path(sources[0], root_build_dir),
+        "--output",
+        rebase_path(outputs[0], root_build_dir),
+        "--hardware-revision",
+        current_cpu,
+      ]
+
+      deps = [ ":$efi_disk_manifest_target" ]
+    }
+
+    _partition_config_label = ":$partition_config_target"
+  } else {
+    _partition_config_label = "//boards/partitions:default($default_toolchain)"
+    if (has_board) {
+      assert(partitions_config_label != false,
+             "Need to define partitions_config_label")
+      _partition_config_label = partitions_config_label
+    }
+    partition_config_path =
+        get_label_info(_partition_config_label, "target_out_dir") + "/" +
+        get_label_info(_partition_config_label, "name") + ".json"
+    partition_contents = partitions_config_contents
+  }
+
+  product_bundle(product_bundle_target) {
+    testonly = true
+
+    name = main_target
+    system_a = rebased_image_manifest
+    partitions = partition_config_path
+    partitions_contents = partition_contents
+
+    deps = [
+      ":$rebased_image_manifest_target",
+      _partition_config_label,
+    ]
+  }
+
+  # If host_cpu != target_cpu, then we make sure to define a separate boot
+  # test for a target_cpu host in order to take advantage of KVM, HVF, etc.
+  #
+  # TODO(mcgrathr): No riscv64 hosts are available yet.
+  if (host_cpu != target_cpu && target_cpu != "riscv64") {
+    hw_types = invoker.device_types + _all_emu_types - _all_emu_types
+    emu_types = invoker.device_types - hw_types
+
+    common_params = {
+      forward_variables_from(invoker,
+                             "*",
+                             [
+                               "assert_no_deps",
+                               "device_types",
+                               "visibility",
+                             ])
+      visibility = [ ":*" ]
+      output_name = main_target
+      label = ":$main_target"
+      deps = [ ":$product_bundle_target" ]
+    }
+
+    _boot_test("$main_target.emu") {
+      cpu_for_host = target_cpu
+      device_types = emu_types
+      forward_variables_from(common_params, "*")
+    }
+
+    _boot_test("$main_target.hw") {
+      cpu_for_host = host_cpu
+      device_types = hw_types
+      forward_variables_from(common_params, "*")
+    }
+
+    group(main_target) {
+      forward_variables_from(invoker,
+                             [
+                               "assert_no_deps",
+                               "visibility",
+                             ])
+      testonly = true
+      deps = [
+        ":$main_target.emu",
+        ":$main_target.hw",
+      ]
+    }
+  } else {
+    _boot_test(main_target) {
+      label = ":$main_target"
+      forward_variables_from(invoker, "*")
+      cpu_for_host = host_cpu
+      deps = [ ":$product_bundle_target" ]
+    }
+  }
+}

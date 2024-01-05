@@ -35,7 +35,6 @@
                 "fuchsia.session.scene.Manager",
                 "fuchsia.tracing.provider.Registry",
                 "fuchsia.ui.composition.Flatland",
-                "fuchsia.ui.scenic.Scenic",
             ],
         },
         {
@@ -62,7 +61,6 @@
                 "fuchsia.ui.display.singleton.Info",
                 "fuchsia.ui.input.ImeService",
                 "fuchsia.ui.input3.Keyboard",
-                "fuchsia.ui.scenic.Scenic",
                 "fuchsia.vulkan.loader.Loader",
             ],
             from: "parent",
@@ -84,6 +82,7 @@
                 "fuchsia.net.stack.Stack",
                 "fuchsia.paver.Paver",
                 "fuchsia.power.battery.BatteryManager",
+                "fuchsia.sensors.Manager",
                 "fuchsia.update.CommitStatusProvider",
                 "fuchsia.update.installer.Installer",
                 "fuchsia.wlan.wlanix.Wlanix",
@@ -92,13 +91,26 @@
             to: "#elements",
             availability: "same_as_target",
         },
+        {
+            directory: "dev-bt-hci",
+            from: "parent",
+            to: "#elements",
+            availability: "same_as_target",
+        },
+        {
+            directory: "dev-temperature",
+            from: "parent",
+            to: "#elements",
+            availability: "same_as_target",
+        },
+        {
+            directory: "dev-thermal",
+            from: "parent",
+            to: "#elements",
+            availability: "same_as_target",
+        },
 
         // Dependencies for element_manager
-        {
-            protocol: [ "fuchsia.ui.scenic.Scenic" ],
-            from: "parent",
-            to: [ "#element_manager" ],
-        },
         {
             protocol: [ "fuchsia.element.GraphicalPresenter" ],
             from: "self",

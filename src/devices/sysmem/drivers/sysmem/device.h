@@ -33,8 +33,8 @@
 #include <fbl/vector.h>
 #include <region-alloc/region-alloc.h>
 
-#include "memory_allocator.h"
-#include "sysmem_metrics.h"
+#include "src/devices/sysmem/drivers/sysmem/memory_allocator.h"
+#include "src/devices/sysmem/drivers/sysmem/sysmem_metrics.h"
 
 namespace sys {
 class ServiceDirectory;
@@ -43,17 +43,19 @@ class ServiceDirectory;
 namespace sysmem_driver {
 
 // For now, sysmem-connector (not a driver) uses DriverConnector, both to get Allocator channels,
-// and to notice when/if sysmem crashes.  Iff DFv2 allows for sysmem-connector to potentially
-// connect via FidlDevice (see below) instead, we could potentially move this protocol to FidlDevice
-// or combine with fuchsia_hardware_sysmem::Sysmem.  But for now DriverConnector is still a separate
+// and to notice when/if sysmem crashes. Iff DFv2 allows for sysmem-connector to potentially connect
+// via FidlDevice (see below) instead, we could potentially move this protocol to FidlDevice or
+// combine with fuchsia_hardware_sysmem::Sysmem. But for now DriverConnector is still a separate
 // protocol for use by sysmem-connector, not for use by other drivers.
 
 class Device;
 using DdkDeviceType =
-    ddk::Device<Device, ddk::Messageable<fuchsia_sysmem2::DriverConnector>::Mixin, ddk::Unbindable>;
+    ddk::Device<Device, ddk::Messageable<fuchsia_hardware_sysmem::DriverConnector>::Mixin,
+                ddk::Unbindable>;
 
 class Driver;
 class BufferCollectionToken;
+class LogicalBuffer;
 class LogicalBufferCollection;
 class Node;
 
@@ -88,17 +90,17 @@ class Device final : public DdkDeviceType,
   [[nodiscard]] zx_status_t CommonSysmemConnectV1(zx::channel allocator_request);
   [[nodiscard]] zx_status_t CommonSysmemConnectV2(zx::channel allocator_request);
   [[nodiscard]] zx_status_t CommonSysmemRegisterHeap(
-      uint64_t heap, fidl::ClientEnd<fuchsia_sysmem2::Heap> heap_connection);
+      uint64_t heap, fidl::ClientEnd<fuchsia_hardware_sysmem::Heap> heap_connection);
   [[nodiscard]] zx_status_t CommonSysmemRegisterSecureMem(
       fidl::ClientEnd<fuchsia_sysmem::SecureMem> secure_mem_connection);
   [[nodiscard]] zx_status_t CommonSysmemUnregisterSecureMem();
 
-  // SysmemProtocol "direct == true" Banjo implementation. This will be removed soon in favor of
-  // a FIDL implementation.  Currently these complain to the log on first use, and then delegate to
-  // the "Common" methods above.
+  // SysmemProtocol "direct == true" Banjo implementation. This will be removed soon in favor of a
+  // FIDL implementation. Currently these complain to the log on first use, and then delegate to the
+  // "Common" methods above.
   //
-  // This "direct == true" implementation is used when the banjo protocol is requested on
-  // "sysmem" instead of "sysmem-banjo".
+  // This "direct == true" implementation is used when the banjo protocol is requested on "sysmem"
+  // instead of "sysmem-banjo".
   //
   // Requesting banjo using "sysmem-banjo" is slightly preferred over "sysmem" (worth the CL), but
   // switching to sysmem FIDL is much better, since sysmem banjo is deprecated.
@@ -131,10 +133,9 @@ class Device final : public DdkDeviceType,
 
   [[nodiscard]] uint32_t pdev_device_info_pid();
 
-  // Track/untrack the token by the koid of the server end of its FIDL
-  // channel.  TrackToken() is only allowed after/during token->OnServerKoid().
-  // UntrackToken() is allowed even if there was never a token->OnServerKoid()
-  // (in which case it's a nop).
+  // Track/untrack the token by the koid of the server end of its FIDL channel. TrackToken() is only
+  // allowed after/during token->OnServerKoid(). UntrackToken() is allowed even if there was never a
+  // token->OnServerKoid() (in which case it's a nop).
   //
   // While tracked, a token can be found with FindTokenByServerChannelKoid().
   void TrackToken(BufferCollectionToken* token);
@@ -143,44 +144,47 @@ class Device final : public DdkDeviceType,
   // Finds and removes token_server_koid from unfound_token_koids_.
   [[nodiscard]] bool TryRemoveKoidFromUnfoundTokenList(zx_koid_t token_server_koid);
 
-  // Find the BufferCollectionToken (if any) by the koid of the server end of
-  // its FIDL channel.
+  // Find the BufferCollectionToken (if any) by the koid of the server end of its FIDL channel.
   [[nodiscard]] BufferCollectionToken* FindTokenByServerChannelKoid(zx_koid_t token_server_koid);
 
-  // Get allocator for |settings|. Returns NULL if allocator is not
-  // registered for settings.
+  struct FindLogicalBufferByVmoKoidResult {
+    LogicalBuffer* logical_buffer;
+    bool is_koid_of_weak_vmo;
+  };
+  [[nodiscard]] FindLogicalBufferByVmoKoidResult FindLogicalBufferByVmoKoid(zx_koid_t vmo_koid);
+
+  // Get allocator for |settings|. Returns NULL if allocator is not registered for settings.
   [[nodiscard]] MemoryAllocator* GetAllocator(
       const fuchsia_sysmem2::BufferMemorySettings& settings);
 
   // Get heap properties of a specific memory heap allocator.
   //
-  // Clients should guarantee that the heap is valid and already registered
-  // to sysmem driver.
-  [[nodiscard]] const fuchsia_sysmem2::HeapProperties& GetHeapProperties(
+  // If the heap is not valid or not registered to sysmem driver, nullptr is returned.
+  [[nodiscard]] const fuchsia_hardware_sysmem::HeapProperties* GetHeapProperties(
       fuchsia_sysmem2::HeapType heap) const;
 
   [[nodiscard]] const sysmem_protocol_t* proto() const { return &in_proc_sysmem_protocol_; }
   [[nodiscard]] const zx_device_t* device() const { return zxdev_; }
   [[nodiscard]] async_dispatcher_t* dispatcher() { return loop_.dispatcher(); }
 
-  // Test hook
   [[nodiscard]] std::unordered_set<LogicalBufferCollection*>& logical_buffer_collections() {
     std::lock_guard checker(*loop_checker_);
     return logical_buffer_collections_;
   }
 
-  // Test hook
   void AddLogicalBufferCollection(LogicalBufferCollection* collection) {
     std::lock_guard checker(*loop_checker_);
     logical_buffer_collections_.insert(collection);
   }
 
-  // Test hook
   void RemoveLogicalBufferCollection(LogicalBufferCollection* collection) {
     std::lock_guard checker(*loop_checker_);
     logical_buffer_collections_.erase(collection);
     CheckForUnbind();
   }
+
+  void AddVmoKoid(zx_koid_t koid, bool is_weak, LogicalBuffer& logical_buffer);
+  void RemoveVmoKoid(zx_koid_t koid);
 
   [[nodiscard]] inspect::Node& collections_node() { return collections_node_; }
 
@@ -191,7 +195,53 @@ class Device final : public DdkDeviceType,
   void ResetThreadCheckerForTesting() { loop_checker_.emplace(fit::thread_checker()); }
 
   bool protected_ranges_disable_dynamic() const override {
+    std::lock_guard checker(*loop_checker_);
     return cmdline_protected_ranges_disable_dynamic_;
+  }
+
+  // false - no secure heaps are expected to exist
+  // true - secure heaps are expected to exist (regardless of whether any of them currently exist)
+  bool is_secure_mem_expected() const {
+    std::lock_guard checker(*loop_checker_);
+    // Currently, we can base this on secure_allocators_ non-empty() since in all current cases
+    // there will be at least one secure allocator added before any clients can connect iff there
+    // will be any secure heaps available. Non-empty here does not imply that all secure heaps are
+    // already present and ready. For that, use is_secure_mem_ready().
+    return !secure_allocators_.empty();
+  }
+
+  // false - secure mem is expected, but is not yet ready
+  //
+  // true - secure mem is not expected (and is therefore as ready as it will ever be / ready in the
+  // "secure mem system is ready for allocation requests" sense), or secure mem is expected and
+  // ready.
+  bool is_secure_mem_ready() const {
+    std::lock_guard checker(*loop_checker_);
+    if (!is_secure_mem_expected()) {
+      // attempts to use secure mem can go ahead and try to allocate and fail to allocate, so this
+      // means "as ready
+      return true;
+    }
+    return is_secure_mem_ready_;
+  }
+
+  template <typename F>
+  void postTask(F to_run) {
+    zx_status_t post_status = async::PostTask(loop_.dispatcher(), std::move(to_run));
+    ZX_ASSERT_MSG(post_status == ZX_OK || (post_status == ZX_ERR_BAD_STATE && waiting_for_unbind_),
+                  "async::PostTask failed: %d", post_status);
+  }
+
+  template <typename F>
+  void runSyncOnLoop(F to_run) {
+    // Must not call runSyncOnLoop() from the loop_ thread, since that would get stuck.
+    ZX_DEBUG_ASSERT(!loop_checker_->is_thread_valid());
+    sync_completion_t done;
+    postTask([&done, to_run = std::move(to_run)]() mutable {
+      std::move(to_run)();
+      sync_completion_signal(&done);
+    });
+    ZX_ASSERT(ZX_OK == sync_completion_wait_deadline(&done, ZX_TIME_INFINITE));
   }
 
  private:
@@ -205,6 +255,23 @@ class Device final : public DdkDeviceType,
     fidl::WireSyncClient<fuchsia_sysmem::SecureMem> connection_;
     std::unique_ptr<async::Wait> wait_for_close_;
   };
+
+  // to_run must not cause creation or deletion of any LogicalBufferCollection(s), with the one
+  // exception of causing deletion of the passed-in LogicalBufferCollection, which is allowed
+  void ForEachLogicalBufferCollection(fit::function<void(LogicalBufferCollection*)> to_run) {
+    std::lock_guard checker(*loop_checker_);
+    // to_run can erase the current item, but std::unordered_set only invalidates iterators pointing
+    // at the erased item, so we can just save the pointer and advance iter before calling to_run
+    //
+    // to_run must not cause any other iterator invalidation
+    LogicalBufferCollections::iterator next;
+    for (auto iter = logical_buffer_collections_.begin(); iter != logical_buffer_collections_.end();
+         /* iter already advanced in the loop */) {
+      auto* item = *iter;
+      ++iter;
+      to_run(item);
+    }
+  }
 
   Driver* parent_driver_ = nullptr;
   inspect::Inspector inspector_;
@@ -238,20 +305,14 @@ class Device final : public DdkDeviceType,
   std::deque<zx_koid_t> unfound_token_koids_ __TA_GUARDED(*loop_checker_);
 
   // This map contains all registered memory allocators.
-  std::map<fuchsia_sysmem2::HeapType, std::shared_ptr<MemoryAllocator>> allocators_
-      __TA_GUARDED(*loop_checker_);
-
-  // Some memory allocators need to be registered with properties before
-  // we can use them to allocate memory. We keep this map to store all the
-  // unregistered allocators.
-  std::map<MemoryAllocator*, std::pair<fuchsia_sysmem2::HeapType, std::unique_ptr<MemoryAllocator>>>
-      unregistered_allocators_ __TA_GUARDED(*loop_checker_);
+  std::map<fuchsia_sysmem2::HeapType, std::shared_ptr<MemoryAllocator>> allocators_ __TA_GUARDED(
+      *loop_checker_);
 
   // This map contains only the secure allocators, if any.  The pointers are owned by allocators_.
   //
   // TODO(dustingreen): Consider unordered_map for this and some of above.
-  std::map<fuchsia_sysmem2::HeapType, MemoryAllocator*> secure_allocators_
-      __TA_GUARDED(*loop_checker_);
+  std::map<fuchsia_sysmem2::HeapType, MemoryAllocator*> secure_allocators_ __TA_GUARDED(
+      *loop_checker_);
 
   struct SecureMemControl : public protected_ranges::ProtectedRangesCoreControl {
     // ProtectedRangesCoreControl implementation.  These are essentially backed by
@@ -284,8 +345,8 @@ class Device final : public DdkDeviceType,
     bool has_mod_protected_range{};
   };
   // This map has the secure_mem_ properties for each HeapType in secure_allocators_.
-  std::map<fuchsia_sysmem2::HeapType, SecureMemControl> secure_mem_controls_
-      __TA_GUARDED(*loop_checker_);
+  std::map<fuchsia_sysmem2::HeapType, SecureMemControl> secure_mem_controls_ __TA_GUARDED(
+      *loop_checker_);
 
   // This flag is used to determine if the closing of the current secure mem
   // connection is an error (true), or expected (false).
@@ -300,16 +361,24 @@ class Device final : public DdkDeviceType,
 
   std::unique_ptr<MemoryAllocator> contiguous_system_ram_allocator_ __TA_GUARDED(*loop_checker_);
 
-  std::unordered_set<LogicalBufferCollection*> logical_buffer_collections_
-      __TA_GUARDED(*loop_checker_);
+  using LogicalBufferCollections = std::unordered_set<LogicalBufferCollection*>;
+  LogicalBufferCollections logical_buffer_collections_ __TA_GUARDED(*loop_checker_);
+
+  // A single LogicalBuffer can be in this map multiple times, once per VMO koid that has been
+  // handed out by sysmem. Entries are removed when the TrackedParentVmo parent of the handed-out
+  // VMO sees ZX_VMO_ZERO_CHILDREN, which occurs before LogicalBuffer is deleted.
+  using VmoKoids = std::unordered_map<zx_koid_t, FindLogicalBufferByVmoKoidResult>;
+  VmoKoids vmo_koids_;
 
   Settings settings_;
 
-  bool waiting_for_unbind_ __TA_GUARDED(*loop_checker_) = false;
+  std::atomic<bool> waiting_for_unbind_ = false;
 
   SysmemMetrics metrics_;
 
-  bool cmdline_protected_ranges_disable_dynamic_ = false;
+  bool cmdline_protected_ranges_disable_dynamic_ __TA_GUARDED(*loop_checker_) = false;
+
+  bool is_secure_mem_ready_ __TA_GUARDED(*loop_checker_) = false;
 };
 
 class FidlDevice;
@@ -328,11 +397,6 @@ class FidlDevice : public DdkFidlDeviceBase, public fidl::Server<fuchsia_hardwar
   zx_status_t Bind();
   void DdkRelease() { delete this; }
 
-  // SysmemProtocol FIDL implementation.
-  void ConnectServer(ConnectServerRequest& request,
-                     ConnectServerCompleter::Sync& completer) override;
-  void ConnectServerV2(ConnectServerV2Request& request,
-                       ConnectServerV2Completer::Sync& completer) override;
   void RegisterHeap(RegisterHeapRequest& request, RegisterHeapCompleter::Sync& completer) override;
   void RegisterSecureMem(RegisterSecureMemRequest& request,
                          RegisterSecureMemCompleter::Sync& completer) override;
@@ -342,7 +406,9 @@ class FidlDevice : public DdkFidlDeviceBase, public fidl::Server<fuchsia_hardwar
   sysmem_driver::Device* sysmem_device_;
   fidl::ServerBindingGroup<fuchsia_hardware_sysmem::Sysmem> bindings_;
   async_dispatcher_t* dispatcher_;
-  component::OutgoingDirectory outgoing_;
+  std::optional<fit::thread_checker> dispatcher_checker_;
+  // std::optional<> so we can init on the dispatcher_ thread
+  std::optional<component::OutgoingDirectory> outgoing_ __TA_GUARDED(*dispatcher_checker_);
 };
 
 class BanjoDevice;

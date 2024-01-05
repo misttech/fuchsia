@@ -7,21 +7,20 @@
 
 #include <fidl/fuchsia.wlan.softmac/cpp/fidl.h>
 #include <fuchsia/wlan/common/c/banjo.h>
-#include <fuchsia/wlan/minstrel/cpp/fidl.h>
+#include <lib/ddk/device.h>
+#include <lib/fdf/cpp/dispatcher.h>
 #include <zircon/types.h>
 
 #include <cstdint>
 #include <cstring>
-#include <memory>
 
 #include <fbl/ref_counted.h>
-#include <fbl/ref_ptr.h>
 #include <wlan/common/macaddr.h>
-#include <wlan/mlme/mac_frame.h>
 
+#include "buffer_allocator.h"
 #include "src/connectivity/wlan/drivers/wlansoftmac/rust_driver/c-binding/bindings.h"
 
-namespace wlan {
+namespace wlan::drivers {
 
 class Packet;
 
@@ -29,18 +28,10 @@ class Packet;
 // interacting with external systems.
 class DeviceState : public fbl::RefCounted<DeviceState> {
  public:
-  const common::MacAddr& address() const { return addr_; }
-  void set_address(const common::MacAddr& addr) { addr_ = addr; }
-
-  wlan_channel_t channel() const { return chan_; }
-  void set_channel(const wlan_channel_t& channel) { chan_ = channel; }
-
-  bool online() { return online_; }
+  bool online() const { return online_; }
   void set_online(bool online) { online_ = online; }
 
  private:
-  common::MacAddr addr_;
-  wlan_channel_t chan_ = {.cbw = CHANNEL_BANDWIDTH_CBW20};
   bool online_ = false;
 };
 
@@ -48,39 +39,21 @@ class DeviceState : public fbl::RefCounted<DeviceState> {
 // systems.
 class DeviceInterface {
  public:
-  virtual ~DeviceInterface() {}
+  virtual ~DeviceInterface() = default;
+  static DeviceInterface* from(void* device) { return static_cast<DeviceInterface*>(device); }
 
   virtual zx_status_t Start(const rust_wlan_softmac_ifc_protocol_copy_t* ifc,
                             zx::channel* out_sme_channel) = 0;
 
   virtual zx_status_t DeliverEthernet(cpp20::span<const uint8_t> eth_frame) = 0;
-  virtual zx_status_t QueueTx(std::unique_ptr<Packet> packet, wlan_tx_info_t tx_info) = 0;
+  virtual zx_status_t QueueTx(UsedBuffer used_buffer, wlan_tx_info_t tx_info) = 0;
 
-  virtual zx_status_t SetChannel(wlan_channel_t channel) = 0;
   virtual zx_status_t SetEthernetStatus(uint32_t status) = 0;
-  virtual zx_status_t JoinBss(join_bss_request_t* cfg) = 0;
-  virtual zx_status_t EnableBeaconing(wlan_softmac_enable_beaconing_request_t* request) = 0;
-  virtual zx_status_t DisableBeaconing() = 0;
   virtual zx_status_t InstallKey(wlan_key_configuration_t* key_config) = 0;
-  virtual zx_status_t StartPassiveScan(
-      const wlan_softmac_start_passive_scan_request_t* passive_scan_args,
-      uint64_t* out_scan_id) = 0;
-  virtual zx_status_t StartActiveScan(
-      const wlan_softmac_start_active_scan_request_t* active_scan_args, uint64_t* out_scan_id) = 0;
-  virtual zx_status_t CancelScan(uint64_t scan_id) = 0;
-  virtual fidl::Response<fuchsia_wlan_softmac::WlanSoftmacBridge::NotifyAssociationComplete>
-  NotifyAssociationComplete(
-      fuchsia_wlan_softmac::wire::WlanSoftmacBridgeNotifyAssociationCompleteRequest* request) = 0;
-  virtual zx_status_t ClearAssociation(const uint8_t[fuchsia_wlan_ieee80211_MAC_ADDR_LEN]) = 0;
 
   virtual fbl::RefPtr<DeviceState> GetState() = 0;
-  virtual const wlan_softmac_query_response_t& GetWlanSoftmacQueryResponse() const = 0;
-  virtual const discovery_support_t& GetDiscoverySupport() const = 0;
-  virtual const mac_sublayer_support_t& GetMacSublayerSupport() const = 0;
-  virtual const security_support_t& GetSecuritySupport() const = 0;
-  virtual const spectrum_management_support_t& GetSpectrumManagementSupport() const = 0;
 };
 
-}  // namespace wlan
+}  // namespace wlan::drivers
 
 #endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_WLANSOFTMAC_DEVICE_INTERFACE_H_

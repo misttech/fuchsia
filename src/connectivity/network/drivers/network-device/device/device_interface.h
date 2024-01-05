@@ -77,7 +77,8 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
 
   // NetworkDevice interface implementation.
   void NetworkDeviceIfcPortStatusChanged(uint8_t port_id, const port_status_t* new_status);
-  void NetworkDeviceIfcAddPort(uint8_t port_id, const network_port_protocol_t* port);
+  void NetworkDeviceIfcAddPort(uint8_t port_id, const network_port_protocol_t* port,
+                               network_device_ifc_add_port_callback callback, void* cookie);
   void NetworkDeviceIfcRemovePort(uint8_t port_id);
   void NetworkDeviceIfcCompleteRx(const rx_buffer_t* rx_list, size_t rx_count);
   void NetworkDeviceIfcCompleteTx(const tx_result_t* tx_list, size_t tx_count);
@@ -96,7 +97,7 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   SharedLock& control_lock() __TA_RETURN_CAPABILITY(control_lock_) { return control_lock_; }
   fbl::Mutex& rx_lock() __TA_RETURN_CAPABILITY(rx_lock_) { return rx_lock_; }
   fbl::Mutex& tx_lock() __TA_RETURN_CAPABILITY(tx_lock_) { return tx_lock_; }
-  const device_info_t& info() { return device_info_; }
+  const device_impl_info_t& info() { return device_info_; }
 
   // Loads rx path descriptors from the primary session into a session transaction.
   zx_status_t LoadRxDescriptors(RxSessionTransaction& transact) __TA_REQUIRES_SHARED(control_lock_);
@@ -274,7 +275,7 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   void NotifyTxQueueAvailable() __TA_REQUIRES_SHARED(control_lock_);
 
   // Immutable information BEFORE initialization:
-  device_info_t device_info_{};
+  device_impl_info_t device_info_{};
   // dispatcher used for slow-path operations:
   async_dispatcher_t* const dispatcher_;
   DiagnosticsService diagnostics_;

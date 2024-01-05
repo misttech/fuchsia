@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use {argh::FromArgs, ffx_core::ffx_command};
+use {
+    argh::{ArgsInfo, FromArgs},
+    ffx_core::ffx_command,
+};
 
 #[ffx_command()]
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "snapshot", description = "Snapshot current heap memory usage")]
 pub struct SnapshotCommand {
     #[argh(option, description = "moniker of the collector to be queried (default: autodetect)")]
@@ -16,6 +19,8 @@ pub struct SnapshotCommand {
     pub by_koid: Option<u64>,
     #[argh(option, description = "output protobuf file")]
     pub output_file: String,
+    #[argh(switch, description = "write per-block metadata (as tags) in the protobuf file")]
+    pub with_tags: bool,
     #[argh(option, description = "optional directory to dump each blocks' contents into")]
     pub output_contents_dir: Option<String>,
 }

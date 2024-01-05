@@ -225,7 +225,7 @@ void LogPlugState(const fuchsia_hardware_audio::PlugState& plug_state) {
 }
 
 void LogDeviceInfo(const fuchsia_audio_device::Info& device_info) {
-  if constexpr (kLogSummaryFinalDeviceInfoOnly) {
+  if constexpr (kLogSummaryFinalDeviceInfo) {
     FX_LOGS(INFO) << "Detected " << device_info.device_type() << " device "
                   << (device_info.device_name()
                           ? std::string("'") + *device_info.device_name() + "'"
@@ -233,8 +233,6 @@ void LogDeviceInfo(const fuchsia_audio_device::Info& device_info) {
                   << ", assigned token_id "
                   << (device_info.token_id() ? std::to_string(*device_info.token_id())
                                              : "NONE (non-compliant)");
-
-    return;
   }
   if constexpr (!kLogDetailedFinalDeviceInfo) {
     return;
@@ -369,12 +367,6 @@ void LogRingBufferProperties(const fuchsia_hardware_audio::RingBufferProperties&
   }
 
   FX_LOGS(INFO) << "fuchsia_hardware_audio/RingBufferProperties:";
-  if (props.external_delay()) {
-    FX_LOGS(INFO) << "    external_delay          " << *props.external_delay() << " ns";
-  } else {
-    FX_LOGS(INFO) << "    external_delay          NONE (0 ns)";
-  }
-
   FX_LOGS(INFO) << "    needs_cache_flush       "
                 << (props.needs_cache_flush_or_invalidate()
                         ? (*props.needs_cache_flush_or_invalidate() ? "TRUE" : "FALSE")

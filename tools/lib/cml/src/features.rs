@@ -40,8 +40,8 @@ impl From<Vec<Feature>> for FeatureSet {
 /// A feature that can be enabled/opt-into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Feature {
-    /// Allows `hub` framework capability to be used.
-    Hub,
+    /// Allows `dictionary` capabilities to be used
+    Dictionaries,
 
     // Allows dynamic child name lengths to exceed the default limit.
     AllowLongNames,
@@ -56,19 +56,23 @@ pub enum Feature {
 
     // Restrict test types in facet. This helps us to only restrict this in-tree.
     RestrictTestTypeInFacet,
+
+    // Allows `config` capabilities to be used.
+    ConfigCapabilities,
 }
 
 impl FromStr for Feature {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "hub" => Ok(Feature::Hub),
+            "dictionaries" => Ok(Feature::Dictionaries),
             "allow_long_names" => Ok(Feature::AllowLongNames),
             "allow_non_hermetic_packages" => Ok(Feature::AllowNonHermeticPackages),
             "enable_allow_non_hermetic_packages_feature" => {
                 Ok(Feature::EnableAllowNonHermeticPackagesFeature)
             }
             "restrict_test_type_in_facets" => Ok(Feature::RestrictTestTypeInFacet),
+            "config_capabilities" => Ok(Feature::ConfigCapabilities),
             _ => Err(format!("unrecognized feature \"{}\"", s)),
         }
     }
@@ -77,13 +81,14 @@ impl FromStr for Feature {
 impl fmt::Display for Feature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Feature::Hub => "hub",
+            Feature::Dictionaries => "dictionaries",
             Feature::AllowLongNames => "allow_long_names",
             Feature::AllowNonHermeticPackages => "allow_non_hermetic_packages",
             Feature::EnableAllowNonHermeticPackagesFeature => {
                 "enable_allow_non_hermetic_packages_feature"
             }
             Feature::RestrictTestTypeInFacet => "restrict_test_type_in_facets",
+            Feature::ConfigCapabilities => "config_capabilities",
         })
     }
 }
@@ -94,7 +99,6 @@ mod tests {
 
     #[test]
     fn feature_is_parsed() {
-        assert_eq!(Feature::Hub, "hub".parse::<Feature>().unwrap());
         assert_eq!(Feature::AllowLongNames, "allow_long_names".parse::<Feature>().unwrap());
         assert_eq!(
             Feature::AllowNonHermeticPackages,
@@ -104,7 +108,6 @@ mod tests {
 
     #[test]
     fn feature_is_printed() {
-        assert_eq!("hub", Feature::Hub.to_string());
         assert_eq!("allow_long_names", Feature::AllowLongNames.to_string());
         assert_eq!("allow_non_hermetic_packages", Feature::AllowNonHermeticPackages.to_string());
         assert_eq!(
@@ -117,18 +120,21 @@ mod tests {
     #[test]
     fn feature_set_has() {
         let set = FeatureSet::empty();
-        assert!(!set.has(&Feature::Hub));
+        assert!(!set.has(&Feature::AllowLongNames));
 
-        let set = FeatureSet::from(vec![Feature::Hub]);
-        assert!(set.has(&Feature::Hub));
+        let set = FeatureSet::from(vec![Feature::AllowLongNames]);
+        assert!(set.has(&Feature::AllowLongNames));
     }
 
     #[test]
     fn feature_set_check() {
         let set = FeatureSet::empty();
-        assert_matches!(set.check(Feature::Hub), Err(Error::RestrictedFeature(f)) if f == "hub");
+        assert_matches!(
+            set.check(Feature::AllowLongNames),
+            Err(Error::RestrictedFeature(f)) if f == "allow_long_names"
+        );
 
-        let set = FeatureSet::from(vec![Feature::Hub]);
-        assert_matches!(set.check(Feature::Hub), Ok(()));
+        let set = FeatureSet::from(vec![Feature::AllowLongNames]);
+        assert_matches!(set.check(Feature::AllowLongNames), Ok(()));
     }
 }

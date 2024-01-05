@@ -15,7 +15,7 @@ driver_bind_rules("qmi_usb_bind") {
   rules = "qmi_usb.bind"
   tests = "bind_tests.json"
   deps = [
-    "//src/devices/bind/fuchsia.sierra.usb",
+    "//src/devices/bind/fuchsia.sierra.platform.usb",
     "//src/devices/bind/fuchsia.usb",
   ]
 }
@@ -50,8 +50,8 @@ source_set("qmi_driver_src") {
     ":qmi_usb_bind",
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.telephony.transport:fuchsia.hardware.telephony.transport_cpp_wire",
-    "//sdk/fidl/fuchsia.telephony.snoop:fuchsia.telephony.snoop_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.telephony.transport:fuchsia.hardware.telephony.transport_cpp",
+    "//sdk/fidl/fuchsia.telephony.snoop:fuchsia.telephony.snoop_cpp",
     "//src/devices/lib/driver",
     "//src/devices/usb/lib/usb",
     "//src/devices/usb/lib/usb:cdc",
@@ -61,6 +61,11 @@ source_set("qmi_driver_src") {
     "//zircon/system/ulib/zx",
   ]
 
-  # TODO(https://fxbug.dev/58162): delete the below and fix compiler warnings
-  configs += [ "//build/config:Wno-conversion" ]
+  configs += [
+    # TODO(https://fxbug.dev/58162): delete below and fix conversion warnings.
+    "//build/config:Wno-conversion",
+
+    # TODO(https://fxbug.dev/135694): delete below and fix VLA warnings.
+    "//build/config:Wno-vla-cxx-extension",
+  ]
 }

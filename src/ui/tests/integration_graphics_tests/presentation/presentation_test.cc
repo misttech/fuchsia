@@ -16,8 +16,7 @@
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/testing/ui_test_manager/ui_test_manager.h"
 #include "src/ui/testing/ui_test_realm/ui_test_realm.h"
-#include "src/ui/testing/util/flatland_test_view.h"
-#include "src/ui/testing/util/gfx_test_view.h"
+#include "src/ui/testing/util/test_view.h"
 
 namespace integration_tests {
 
@@ -31,33 +30,20 @@ using component_testing::Route;
 
 constexpr auto kViewProvider = "view-provider";
 
-std::vector<ui_testing::UITestRealm::Config> UIConfigurationsToTest() {
-  std::vector<ui_testing::UITestRealm::Config> configs;
-
-  // Flatland x scene manager
-  {
-    ui_testing::UITestRealm::Config config;
-    config.use_flatland = true;
-    config.use_scene_owner = true;
-    config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
-    config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_,
-                                    fuchsia::ui::composition::Allocator::Name_};
-    configs.push_back(std::move(config));
-  }
-  return configs;
-}
-
 }  // namespace
 
 // This test verifies that the scene owner correctly connects the scene graph to
 // the display so that pixels render, and enforces the expected presentation
 // semantics.
-class PresentationTest : public gtest::RealLoopFixture,
-                         public ::testing::WithParamInterface<ui_testing::UITestRealm::Config> {
+class PresentationTest : public gtest::RealLoopFixture {
  protected:
   // |testing::Test|
   void SetUp() override {
-    auto config = GetParam();
+    ui_testing::UITestRealm::Config config;
+    config.use_scene_owner = true;
+    config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
+    config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_,
+                                    fuchsia::ui::composition::Allocator::Name_};
     ui_test_manager_.emplace(config);
 
     // Build realm.
@@ -66,20 +52,12 @@ class PresentationTest : public gtest::RealLoopFixture,
 
     test_view_access_ = std::make_shared<ui_testing::TestViewAccess>();
 
-    component_testing::LocalComponentFactory test_view;
-    // Add a test view provider. Make either a gfx test view or flatland test view depending
-    // on the config parameters.
-    if (config.use_flatland) {
-      test_view = [d = dispatcher(), a = test_view_access_]() {
-        return std::make_unique<ui_testing::FlatlandTestView>(
-            d, /* content = */ ui_testing::TestView::ContentType::COORDINATE_GRID, a);
-      };
-    } else {
-      test_view = [d = dispatcher(), a = test_view_access_]() {
-        return std::make_unique<ui_testing::GfxTestView>(
-            d, /* content = */ ui_testing::TestView::ContentType::COORDINATE_GRID, a);
-      };
-    }
+    // Add a test view provider.
+    component_testing::LocalComponentFactory test_view = [d = dispatcher(),
+                                                          a = test_view_access_]() {
+      return std::make_unique<ui_testing::TestView>(
+          d, /* content = */ ui_testing::TestView::ContentType::COORDINATE_GRID, a);
+    };
 
     realm_->AddLocalChild(kViewProvider, std::move(test_view));
     realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::app::ViewProvider::Name_}},
@@ -115,19 +93,14 @@ class PresentationTest : public gtest::RealLoopFixture,
   std::optional<Realm> realm_;
 };
 
-INSTANTIATE_TEST_SUITE_P(PresentationTestWithParams, PresentationTest,
-                         ::testing::ValuesIn(UIConfigurationsToTest()));
-
-TEST_P(PresentationTest, RenderCoordinateGridPattern) {
+TEST_F(PresentationTest, RenderCoordinateGridPattern) {
   auto data = TakeScreenshot();
 
-  EXPECT_EQ(data.GetPixelAt(data.width() / 4, data.height() / 4), ui_testing::Screenshot::kBlack);
-  EXPECT_EQ(data.GetPixelAt(data.width() / 4, 3 * data.height() / 4),
-            ui_testing::Screenshot::kBlue);
-  EXPECT_EQ(data.GetPixelAt(3 * data.width() / 4, data.height() / 4), ui_testing::Screenshot::kRed);
-  EXPECT_EQ(data.GetPixelAt(3 * data.width() / 4, 3 * data.height() / 4),
-            ui_testing::Screenshot::kMagenta);
-  EXPECT_EQ(data.GetPixelAt(data.width() / 2, data.height() / 2), ui_testing::Screenshot::kGreen);
+  EXPECT_EQ(data.GetPixelAt(data.width() / 4, data.height() / 4), utils::kBlack);
+  EXPECT_EQ(data.GetPixelAt(data.width() / 4, 3 * data.height() / 4), utils::kBlue);
+  EXPECT_EQ(data.GetPixelAt(3 * data.width() / 4, data.height() / 4), utils::kRed);
+  EXPECT_EQ(data.GetPixelAt(3 * data.width() / 4, 3 * data.height() / 4), utils::kMagenta);
+  EXPECT_EQ(data.GetPixelAt(data.width() / 2, data.height() / 2), utils::kGreen);
 }
 
 }  // namespace integration_tests

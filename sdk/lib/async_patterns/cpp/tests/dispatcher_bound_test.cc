@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include <lib/async-loop/cpp/loop.h>
+#include <lib/async-loop/testing/cpp/real_loop.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/async_patterns/cpp/dispatcher_bound.h>
 #include <lib/sync/cpp/completion.h>
 
@@ -16,19 +18,18 @@
 namespace {
 
 // In this test fixture, the loop should always be run from the main thread.
-class DispatcherBound : public testing::Test {
+class DispatcherBound : public testing::Test, public loop_fixture::RealLoop {
  protected:
   void SetUp() override { loop_thread_id_ = std::this_thread::get_id(); }
 
   void TearDown() override {}
 
-  async::Loop& loop() { return loop_; }
+  async::Loop& loop() { return loop_fixture::RealLoop::loop(); }
 
   std::thread::id loop_thread_id() const { return loop_thread_id_; }
 
  private:
   std::thread::id loop_thread_id_;
-  async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
 };
 
 using ArcAtomic = std::shared_ptr<std::atomic_int>;
@@ -311,7 +312,7 @@ TEST_F(DispatcherBound, AsyncCallWithReply) {
       // Passing incompatible types is not allowed.
 #if 0
       background_.AsyncCall(&Background::Concat, std::string("def"))
-          .Then(receiver_.Once([] (Owner*, int not_a_string) {}));
+          .Then(receiver_.Once([](Owner*, int not_a_string) {}));
 #endif
     }
 
@@ -374,6 +375,74 @@ TEST_F(DispatcherBound, AsyncCallOverloaded) {
 
   loop().RunUntilIdle();
   EXPECT_EQ(2, owner.count);
+}
+
+namespace {
+
+// This is shared among the next few tests.
+class Background {
+ public:
+  explicit Background(std::shared_ptr<int> count) : count_(std::move(count)) {}
+
+  std::string Concat(const std::string& arg) {
+    (*count_)++;
+    return arg;
+  }
+
+ private:
+  std::shared_ptr<int> count_;
+};
+
+TEST_F(DispatcherBound, AsyncCallFireAndForget) {
+  std::shared_ptr<int> count = std::make_shared<int>(0);
+  async_patterns::DispatcherBound<Background> obj{loop().dispatcher(), std::in_place, count};
+  obj.AsyncCall(&Background::Concat, std::string("foo"));
+  EXPECT_EQ(*count, 0);
+  loop().RunUntilIdle();
+  EXPECT_EQ(*count, 1);
+}
+
+TEST_F(DispatcherBound, AsyncCallToPromise) {
+  std::shared_ptr<int> count = std::make_shared<int>(0);
+  async_patterns::DispatcherBound<Background> obj{loop().dispatcher(), std::in_place, count};
+  auto promise = obj.AsyncCall(&Background::Concat, std::string("foo")).promise();
+  async::Executor executor(loop().dispatcher());
+  bool received = false;
+  executor.schedule_task(promise.and_then([&](std::string& result) {
+    EXPECT_EQ(result, "foo");
+    received = true;
+  }));
+  EXPECT_EQ(*count, 0);
+  EXPECT_FALSE(received);
+  loop().RunUntilIdle();
+  EXPECT_EQ(*count, 1);
+  EXPECT_TRUE(received);
+}
+
+}  // namespace
+
+TEST_F(DispatcherBound, WaitForVoidAsyncCallToFinish) {
+  class Background {
+   public:
+    explicit Background(std::shared_ptr<int> count) : count_(std::move(count)) {}
+
+    void DoThing() { (*count_)++; }
+
+   private:
+    std::shared_ptr<int> count_;
+  };
+
+  std::shared_ptr<int> count = std::make_shared<int>(0);
+  async_patterns::DispatcherBound<Background> obj{loop().dispatcher(), std::in_place, count};
+  auto promise = obj.AsyncCall(&Background::DoThing).promise();
+  async::Executor executor(loop().dispatcher());
+  bool received = false;
+  executor.schedule_task(promise.and_then([&]() { received = true; }));
+  EXPECT_EQ(*count, 0);
+  EXPECT_FALSE(received);
+  loop().RunUntilIdle();
+  EXPECT_EQ(*count, 1);
+  EXPECT_TRUE(received);
 }
 
 TEST_F(DispatcherBound, PassDispatcherInConstructor) {
@@ -467,6 +536,113 @@ TEST_F(DispatcherBound, MakeDispatcherBound) {
   EXPECT_EQ(0, object_count->load());
   loop().RunUntilIdle();
   EXPECT_EQ(1, object_count->load());
+}
+
+TEST(DispatcherBoundDeathTest, DispatcherIsNotSynchronized) {
+  struct Object {
+    void Method() {}
+  };
+
+  // Construct the object on the main thread.
+  async::Loop loop{&kAsyncLoopConfigNeverAttachToThread};
+  async_patterns::DispatcherBound<Object> object(loop.dispatcher());
+  object.emplace();
+
+  ASSERT_OK(loop.RunUntilIdle());
+
+  // Call a member method, while the loop is now run from thread B.
+  // This should panic while running the loop.
+  object.AsyncCall(&Object::Method);
+  std::thread thread_b([&] {
+    ASSERT_DEATH(loop.RunUntilIdle(),
+                 "\\|async_patterns::DispatcherBound\\| is meant to manage thread-unsafe "
+                 "asynchronous objects.");
+  });
+  thread_b.join();
+}
+
+TEST_F(DispatcherBound, SubClass) {
+  struct Base {
+    explicit Base(int a) : a_(a) {}
+    virtual ~Base() {}
+    virtual std::string Speak() { return "Base"; }
+    int a_;
+  };
+  struct Derived : public Base {
+    Derived(int a, int b) : Base(a), b_(b) {}
+    std::string Speak() override { return "Derived"; }
+    int b_;
+  };
+
+  {
+    async_patterns::DispatcherBound<Base> base(dispatcher());
+    base.emplace(1);
+    EXPECT_EQ(RunPromise(base.AsyncCall(&Base::Speak).promise()).value(), "Base");
+  }
+
+  {
+    async_patterns::DispatcherBound<Base> base(dispatcher());
+    base.emplace<Derived>(1, 2);
+    EXPECT_EQ(RunPromise(base.AsyncCall(&Base::Speak).promise()).value(), "Derived");
+  }
+}
+
+TEST_F(DispatcherBound, PureVirtualMethod) {
+  struct Base {
+    Base() = default;
+    virtual ~Base() {}
+    virtual std::string Speak() = 0;
+    int a_;
+  };
+  struct Derived : public Base {
+    Derived() = default;
+    std::string Speak() override { return "Derived"; }
+    int b_;
+  };
+
+  {
+    async_patterns::DispatcherBound<Base> base(dispatcher());
+    base.emplace<Derived>();
+    EXPECT_EQ(RunPromise(base.AsyncCall(&Base::Speak).promise()).value(), "Derived");
+  }
+}
+
+TEST_F(DispatcherBound, ComplexLayout) {
+  class Foo {
+   public:
+    Foo() = default;
+    virtual ~Foo() {}
+
+   private:
+    virtual std::string GetFoo() { return std::to_string(foo_); }
+    int foo_;
+  };
+  class Bar {
+   public:
+    Bar() = default;
+    virtual ~Bar() {}
+
+   private:
+    virtual std::string GetBar() { return std::to_string(bar_); }
+    int bar_;
+  };
+  struct Base {
+    Base() = default;
+    virtual ~Base() {}
+    virtual std::string Speak() = 0;
+    int a_;
+  };
+  struct Derived : public Foo, public Base, public Bar {
+    Derived() = default;
+    std::string Speak() override { return "Derived"; }
+    int b_;
+  };
+
+  {
+    async_patterns::DispatcherBound<Base> base(dispatcher());
+    base.emplace<Derived>();
+    EXPECT_EQ(RunPromise(base.AsyncCall(&Base::Speak).promise()).value(), "Derived");
+  }
 }
 
 }  // namespace

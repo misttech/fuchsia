@@ -9,7 +9,14 @@
 #include <lib/ddk/device.h>
 #include <lib/ddk/driver.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/driver/component/cpp/composite_node_spec.h>
+#include <lib/driver/component/cpp/node_add_args.h>
 
+#include <bind/fuchsia/clock/cpp/bind.h>
+#include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/google/platform/cpp/bind.h>
+#include <bind/fuchsia/gpio/cpp/bind.h>
+#include <bind/fuchsia/power/cpp/bind.h>
 #include <soc/aml-common/aml-cpu-metadata.h>
 #include <soc/aml-meson/g12a-clk.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
@@ -17,8 +24,11 @@
 
 #include "astro-gpios.h"
 #include "astro.h"
-#include "src/devices/board/drivers/astro/astro-cpu-bind.h"
 #include "src/devices/bus/lib/platform-bus-composites/platform-bus-composite.h"
+
+namespace fdf {
+using namespace fuchsia_driver_framework;
+}  // namespace fdf
 
 namespace {
 namespace fpbus = fuchsia_hardware_platform_bus;
@@ -66,12 +76,39 @@ static const std::vector<fpbus::Metadata> cpu_metadata{
     }},
 };
 
+const std::vector<fdf::BindRule> kPowerRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
+                            bind_fuchsia_power::BIND_FIDL_PROTOCOL_DEVICE),
+    fdf::MakeAcceptBindRule(bind_fuchsia::POWER_DOMAIN,
+                            static_cast<uint32_t>(S905d2PowerDomains::kArmCore)),
+};
+
+const std::vector<fdf::NodeProperty> kPowerProperties = std::vector{
+    fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_power::BIND_FIDL_PROTOCOL_DEVICE),
+    fdf::MakeProperty(bind_fuchsia_power::POWER_DOMAIN,
+                      bind_fuchsia_power::POWER_DOMAIN_ARM_CORE_BIG),
+};
+
+const std::vector<fdf::BindRule> kGpioInitRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+};
+const std::vector<fdf::NodeProperty> kGpioInitProperties = std::vector{
+    fdf::MakeProperty(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+};
+
+// Contains all the clock parent nodes for the composite. Maps the clock id to the clock function.
+const std::map<uint32_t, std::string> kClockFunctionMap = {
+    {g12a_clk::CLK_SYS_PLL_DIV16, bind_fuchsia_clock::FUNCTION_SYS_PLL_DIV16},
+    {g12a_clk::CLK_SYS_CPU_CLK_DIV16, bind_fuchsia_clock::FUNCTION_SYS_CPU_DIV16},
+    {g12a_clk::CLK_SYS_CPU_CLK, bind_fuchsia_clock::FUNCTION_SYS_CPU_BIG_CLK},
+};
+
 static const fpbus::Node cpu_dev = []() {
   fpbus::Node result = {};
   result.name() = "aml-cpu";
-  result.vid() = PDEV_VID_GOOGLE;
-  result.pid() = PDEV_PID_ASTRO;
-  result.did() = PDEV_DID_GOOGLE_AMLOGIC_CPU;
+  result.vid() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE;
+  result.pid() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_ASTRO;
+  result.did() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_DID_GOOGLE_AMLOGIC_CPU;
   result.metadata() = cpu_metadata;
   result.mmio() = cpu_mmios;
   return result;
@@ -82,36 +119,46 @@ static const fpbus::Node cpu_dev = []() {
 namespace astro {
 
 zx_status_t Astro::CpuInit() {
-  zx_status_t result;
-  result = gpio_impl_.ConfigOut(S905D2_PWM_D_PIN, 0);
-  if (result != ZX_OK) {
-    zxlogf(ERROR, "%s: ConfigOut failed: %d", __func__, result);
-    return result;
-  }
+  gpio_init_steps_.push_back({S905D2_PWM_D_PIN, GpioConfigOut(0)});
 
   // Configure the GPIO to be Output & set it to alternate
   // function 3 which puts in PWM_D mode.
-  result = gpio_impl_.SetAltFunction(S905D2_PWM_D_PIN, S905D2_PWM_D_FN);
-  if (result != ZX_OK) {
-    zxlogf(ERROR, "%s: SetAltFunction failed: %d", __func__, result);
-    return result;
-  }
+  gpio_init_steps_.push_back({S905D2_PWM_D_PIN, GpioSetAltFunction(S905D2_PWM_D_FN)});
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('CPU_');
-  auto composite_result = pbus_.buffer(arena)->AddComposite(
+
+  std::vector<fdf::ParentSpec> parents;
+  parents.reserve(kClockFunctionMap.size() + 2);
+  parents.push_back(fdf::ParentSpec{{kPowerRules, kPowerProperties}});
+  parents.push_back(fdf::ParentSpec{{kGpioInitRules, kGpioInitProperties}});
+
+  for (auto& [clock_id, function] : kClockFunctionMap) {
+    auto rules = std::vector{
+        fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
+                                bind_fuchsia_clock::BIND_FIDL_PROTOCOL_SERVICE),
+        fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, clock_id),
+    };
+    auto properties = std::vector{
+        fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
+                          bind_fuchsia_clock::BIND_FIDL_PROTOCOL_SERVICE),
+        fdf::MakeProperty(bind_fuchsia_clock::FUNCTION, function),
+    };
+    parents.push_back(fdf::ParentSpec{{rules, properties}});
+  }
+
+  auto composite_result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, cpu_dev),
-      platform_bus_composite::MakeFidlFragment(fidl_arena, aml_cpu_fragments,
-                                               std::size(aml_cpu_fragments)),
-      fidl::StringView::FromExternal("power-01"));
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "aml_cpu", .parents = parents}}));
 
   if (!composite_result.ok()) {
-    zxlogf(ERROR, "%s: AddComposite request failed: %s", __func__,
+    zxlogf(ERROR, "AddCompositeNodeSpec request failed: %s",
            composite_result.FormatDescription().data());
     return composite_result.status();
   }
   if (composite_result->is_error()) {
-    zxlogf(ERROR, "%s: AddComposite failed: %s", __func__,
+    zxlogf(ERROR, "AddCompositeNodeSpec failed: %s",
            zx_status_get_string(composite_result->error_value()));
     return composite_result->error_value();
   }

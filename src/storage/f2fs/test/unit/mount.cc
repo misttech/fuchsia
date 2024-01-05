@@ -7,8 +7,8 @@
 
 #include <gtest/gtest.h>
 
-#include "src/lib/storage/block_client/cpp/fake_block_device.h"
 #include "src/storage/f2fs/f2fs.h"
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "unit_lib.h"
 
 namespace f2fs {
@@ -36,7 +36,6 @@ void MountTestVerifyOptions(F2fs *fs, MountOptions &options) {
       case MountOption::kNoAcl:
       case MountOption::kDisableRollForward:
       case MountOption::kInlineXattr:
-      case MountOption::kInlineData:
       case MountOption::kInlineDentry:
       case MountOption::kForceLfs:
         ASSERT_EQ(*value_or != 0, superblock_info.TestOpt(option));
@@ -62,7 +61,7 @@ void MountTestDisableExt(F2fs *fs, uint32_t expectation) {
     // create regular files with cold file extensions
     ASSERT_EQ(root_dir->Create(name, S_IFREG, &vnode), ZX_OK);
     File *file = static_cast<File *>(vnode.get());
-    ASSERT_EQ(NodeManager::IsColdFile(*file), result);
+    ASSERT_EQ(file->IsColdFile(), result);
     vnode->Close();
   }
 
@@ -85,7 +84,7 @@ void TestSegmentType(F2fs *fs, Dir *root_dir, std::string_view name, bool is_dir
   {
     LockedPage page;
     vn->GrabCachePage(0, &page);
-    type = fs->GetSegmentManager().GetSegmentType(*page, PageType::kData);
+    type = GetSegmentType(*page, PageType::kData, fs->GetSuperblockInfo().GetActiveLogs());
     out.push_back(type);
   }
 
@@ -97,7 +96,7 @@ void TestSegmentType(F2fs *fs, Dir *root_dir, std::string_view name, bool is_dir
     page.Zero();
     node_page->FillNodeFooter(static_cast<nid_t>(node_page->GetIndex()), vn->Ino(), inode_ofs);
     node_page->SetColdNode(vn->IsDir());
-    type = fs->GetSegmentManager().GetSegmentType(*node_page, PageType::kNode);
+    type = GetSegmentType(*node_page, PageType::kNode, fs->GetSuperblockInfo().GetActiveLogs());
     out.push_back(type);
   }
 
@@ -110,7 +109,7 @@ void TestSegmentType(F2fs *fs, Dir *root_dir, std::string_view name, bool is_dir
     node_page->FillNodeFooter(static_cast<nid_t>(node_page->GetIndex()), vn->Ino(),
                               indirect_node_ofs);
     node_page->SetColdNode(vn->IsDir());
-    type = fs->GetSegmentManager().GetSegmentType(*node_page, PageType::kNode);
+    type = GetSegmentType(*node_page, PageType::kNode, fs->GetSuperblockInfo().GetActiveLogs());
     out.push_back(type);
   }
 
@@ -171,7 +170,7 @@ void MountTestActiveLogs(F2fs *fs, MountOptions options) {
 }
 
 void MountTestMain(MountOptions &options, uint32_t test, uint32_t priv) {
-  std::unique_ptr<f2fs::Bcache> bc;
+  std::unique_ptr<f2fs::BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
@@ -224,7 +223,7 @@ TEST(MountTest, ActiveLogsOptions) {
 }
 
 TEST(MountTest, EnableDiscardOptions) {
-  std::unique_ptr<f2fs::Bcache> bc;
+  std::unique_ptr<f2fs::BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;

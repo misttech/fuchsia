@@ -7,6 +7,7 @@ use {
     async_trait::async_trait,
     fuchsia_inspect::{self, health::Reporter, NumericProperty, Property},
     std::any::Any,
+    std::cell::RefCell,
     std::fmt::{Debug, Formatter},
     std::rc::Rc,
 };
@@ -54,6 +55,10 @@ pub trait InputHandler: AsRcAny {
         input_event: input_device::InputEvent,
     ) -> Vec<input_device::InputEvent>;
 
+    fn set_handler_healthy(self: std::rc::Rc<Self>);
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str);
+
     /// Returns the name of the input handler.
     ///
     /// The default implementation returns the name of the struct implementing
@@ -84,6 +89,10 @@ pub trait UnhandledInputHandler: AsRcAny {
         self: std::rc::Rc<Self>,
         unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent>;
+
+    fn set_handler_healthy(self: std::rc::Rc<Self>);
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str);
 }
 
 #[async_trait(?Send)]
@@ -111,6 +120,14 @@ where
             }
         }
     }
+
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        T::set_handler_healthy(self);
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        T::set_handler_unhealthy(self, msg);
+    }
 }
 
 pub struct InputHandlerStatus {
@@ -127,7 +144,7 @@ pub struct InputHandlerStatus {
     last_received_timestamp_ns: fuchsia_inspect::UintProperty,
 
     // This node records the health status of the `InputHandler`.
-    _health_node: fuchsia_inspect::health::Node,
+    pub health_node: RefCell<fuchsia_inspect::health::Node>,
 }
 
 impl PartialEq for InputHandlerStatus {
@@ -165,7 +182,7 @@ impl InputHandlerStatus {
             events_received_count: events_received_count,
             events_handled_count: events_handled_count,
             last_received_timestamp_ns: last_received_timestamp_ns,
-            _health_node: health_node,
+            health_node: RefCell::new(health_node),
         }
     }
 
@@ -210,6 +227,14 @@ mod tests {
                 .unbounded_send(unhandled_input_event.clone())
                 .expect("failed to send");
             vec![InputEvent::from(unhandled_input_event).into_handled_if(self.mark_events_handled)]
+        }
+
+        fn set_handler_healthy(self: std::rc::Rc<Self>) {
+            // No inspect data on FakeUnhandledInputHandler. Do nothing.
+        }
+
+        fn set_handler_unhealthy(self: std::rc::Rc<Self>, _msg: &str) {
+            // No inspect data on FakeUnhandledInputHandler. Do nothing.
         }
     }
 
@@ -328,6 +353,14 @@ mod tests {
             ) -> Vec<InputEvent> {
                 unimplemented!()
             }
+
+            fn set_handler_healthy(self: std::rc::Rc<Self>) {
+                unimplemented!()
+            }
+
+            fn set_handler_unhealthy(self: std::rc::Rc<Self>, _msg: &str) {
+                unimplemented!()
+            }
         }
 
         let handler = std::rc::Rc::new(NeuralInputHandler {});
@@ -341,7 +374,7 @@ mod tests {
         let input_handlers_node = input_pipeline_node.create_child("input_handlers");
         let _input_handler_status =
             InputHandlerStatus::new(&input_handlers_node, "test_handler", false);
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_pipeline: {
                 input_handlers: {
                     test_handler: {
@@ -352,7 +385,7 @@ mod tests {
                             status: "STARTING_UP",
                             // Timestamp value is unpredictable and not relevant in this context,
                             // so we only assert that the property is present.
-                            start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                            start_timestamp_nanos: diagnostics_assertions::AnyProperty
                         },
                     }
                 }

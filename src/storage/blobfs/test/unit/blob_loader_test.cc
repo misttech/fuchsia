@@ -18,8 +18,6 @@
 #include "src/lib/digest/digest.h"
 #include "src/lib/digest/merkle-tree.h"
 #include "src/lib/digest/node-digest.h"
-#include "src/lib/storage/block_client/cpp/fake_block_device.h"
-#include "src/lib/storage/vfs/cpp/paged_vfs.h"
 #include "src/storage/blobfs/blob.h"
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blobfs.h"
@@ -32,6 +30,8 @@
 #include "src/storage/blobfs/test/test_scoped_vnode_open.h"
 #include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 #include "src/storage/blobfs/test/unit/utils.h"
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/lib/vfs/cpp/paged_vfs.h"
 
 namespace blobfs {
 
@@ -270,7 +270,7 @@ TEST_P(BlobLoaderTest, NullBlobWithCorruptedMerkleRootFailsToLoad) {
 
 TEST_P(BlobLoaderTest, LoadBlobWithAnInvalidNodeIndexIsAnError) {
   uint32_t invalid_node_index = kMaxNodeId - 1;
-  auto result = loader().LoadBlob(invalid_node_index, nullptr);
+  auto result = loader().LoadBlob(invalid_node_index);
   ASSERT_TRUE(result.is_error());
   EXPECT_EQ(result.error_value(), ZX_ERR_INVALID_ARGS);
 }
@@ -287,7 +287,7 @@ TEST_P(BlobLoaderTest, LoadBlobWithACorruptNextNodeIndexIsAnError) {
   inode->header.next_node = invalid_node_index;
   inode->extent_count = 2;
 
-  auto result = loader().LoadBlob(node_index, nullptr);
+  auto result = loader().LoadBlob(node_index);
   ASSERT_TRUE(result.is_error());
   EXPECT_EQ(result.error_value(), ZX_ERR_IO_DATA_INTEGRITY);
 }

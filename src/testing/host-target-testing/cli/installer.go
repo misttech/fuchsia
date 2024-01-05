@@ -145,6 +145,13 @@ func (c *InstallerConfig) OmahaTool(ctx context.Context, device *device.Client) 
 	return omahaTool, nil
 }
 
+func (c *InstallerConfig) NeedsInitialization() bool {
+	// The omaha-client needs the device to be flashed or paved since the
+	// tests start a fake omaha server and inject's the address into a
+	// custom vbmeta.
+	return c.installerMode == Omaha
+}
+
 // ConfigureBuild configures a build for the updater.
 func (c *InstallerConfig) ConfigureBuild(ctx context.Context, device *device.Client, build artifacts.Build) (artifacts.Build, error) {
 	switch c.installerMode {
@@ -181,7 +188,12 @@ func (c *InstallerConfig) ConfigureBuild(ctx context.Context, device *device.Cli
 }
 
 // Updater returns the configured updater.
-func (c *InstallerConfig) Updater(repo *packages.Repository, updatePackageURL string, checkForUnkownFirmware bool) (updater.Updater, error) {
+func (c *InstallerConfig) Updater(
+	repo *packages.Repository,
+	updatePackageURL string,
+	checkForUnkownFirmware bool,
+	useNewUpdateFormat bool,
+) (updater.Updater, error) {
 	switch c.installerMode {
 	case Omaha:
 		avbTool, err := c.AVBTool()
@@ -194,17 +206,23 @@ func (c *InstallerConfig) Updater(repo *packages.Repository, updatePackageURL st
 			return nil, err
 		}
 
-		return updater.NewOmahaUpdater(repo, updatePackageURL, c.omahaTool, avbTool, zbiTool, c.workaroundOtaNoRewriteRules, checkForUnkownFirmware)
+		return updater.NewOmahaUpdater(
+			repo,
+			updatePackageURL,
+			c.omahaTool,
+			avbTool,
+			zbiTool,
+			c.workaroundOtaNoRewriteRules,
+			checkForUnkownFirmware,
+			useNewUpdateFormat,
+		)
 
 	case SystemUpdateChecker:
-		// TODO: The e2e tests only support using the system-update-checker
-		// with the standard update package URL. Otherwise we need to
-		// fall back to manually triggering the system-updater.
-		if updatePackageURL == defaultUpdatePackageURL {
-			return updater.NewSystemUpdateChecker(repo, checkForUnkownFirmware), nil
-		}
-
-		return updater.NewSystemUpdater(repo, updatePackageURL, checkForUnkownFirmware), nil
+		return updater.NewSystemUpdateChecker(
+			repo,
+			updatePackageURL,
+			checkForUnkownFirmware,
+		), nil
 
 	case SystemUpdater:
 		return updater.NewSystemUpdater(repo, updatePackageURL, checkForUnkownFirmware), nil

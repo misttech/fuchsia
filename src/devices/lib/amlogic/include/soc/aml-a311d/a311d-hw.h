@@ -199,6 +199,7 @@
 #define A311D_SD_EMMC_B_IRQ 222
 #define A311D_SD_EMMC_C_IRQ 223
 #define A311D_I2C_AO_IRQ 227
+#define A311D_SARADC_IRQ 232
 #define A311D_I2C_M1_IRQ 246
 #define A311D_I2C_M2_IRQ 247
 
@@ -255,8 +256,21 @@
 // Display Related
 #define A311D_DMC_BASE 0xff638000
 #define A311D_DMC_LENGTH 0x2000
-#define A311D_HDMITX_BASE 0xff600000
-#define A311D_HDMITX_LENGTH 0x10000
+
+// The Memory Map in A311D Datasheet Section 8.1 (page 78-82) lists "HDMITX"
+// as the whole region from 0xff60'0000 to 0xff60'ffff.
+//
+// However, A311D Datasheet Section 10.2.3.43 "HDMITX Top-Level and HDMI TX
+// Controller IP Register Access" (page 1135) states that their data widths and
+// the ways to access top-level and controller IP registers are different, so
+// it makes more sense for the driver to separate the region into two
+// sub-regions (HDMITX_CONTROLLER_IP and HDMITX_TOP_LEVEL) so that the driver
+// can apply different memory access policies on different MMIO regions.
+#define A311D_HDMITX_CONTROLLER_IP_BASE 0xff600000
+#define A311D_HDMITX_CONTROLLER_IP_LENGTH 0x8000
+#define A311D_HDMITX_TOP_LEVEL_BASE 0xff608000
+#define A311D_HDMITX_TOP_LEVEL_LENGTH 0x8000
+
 #define A311D_VPU_BASE 0xff900000
 #define A311D_VPU_LENGTH 0x40000
 #define A311D_CBUS_BASE 0xff634400
@@ -277,5 +291,8 @@
 
 #define A311D_MSR_CLK_BASE 0xffd18000
 #define A311D_MSR_CLK_LENGTH 0x1000
+
+#define A311D_SARADC_BASE 0xff809000
+#define A311D_SARADC_LENGTH 0x1000
 
 #endif  // SRC_DEVICES_LIB_AMLOGIC_INCLUDE_SOC_AML_A311D_A311D_HW_H_

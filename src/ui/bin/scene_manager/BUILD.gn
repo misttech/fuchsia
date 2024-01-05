@@ -14,13 +14,13 @@ icu_rustc_binary("scene_manager_bin") {
   edition = "2021"
 
   icu_deps = [
-    "//src/lib/icu:icudtl",
     "//src/lib/icu_data/rust/icu_data:icu_data",
     "//src/ui/lib/input_pipeline:input_pipeline",
+    "//src/ui/lib/scene_management:scene_management",
   ]
 
   deps = [
-    ":input_config_lib",
+    ":scene_manager_structured_config",
     "//sdk/fidl/fuchsia.accessibility:fuchsia.accessibility_rust",
     "//sdk/fidl/fuchsia.accessibility.scene:fuchsia.accessibility.scene_rust",
     "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
@@ -49,7 +49,6 @@ icu_rustc_binary("scene_manager_bin") {
     "//src/lib/trace/rust:trace-provider",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/ui/lib/focus_chain_provider:lib_with_includes",
-    "//src/ui/lib/scene_management",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:serde_json",
@@ -81,7 +80,10 @@ fuchsia_component_manifest("manifest") {
 
 icu_fuchsia_component("scene_manager_component") {
   cm_label = ":manifest"
-  icu_deps = [ ":scene_manager_bin" ]
+  icu_deps = [
+    ":scene_manager_bin",
+    "//src/lib/icu:icudtl",
+  ]
 }
 
 # TODO(fxbug.dev/106573): Remove test-only target when
@@ -94,6 +96,7 @@ group("scene_manager_component_for_test") {
 }
 
 icu_fuchsia_package("scene_manager") {
+  validate_structured_config = false
   icu_deps = [ ":scene_manager_component" ]
 }
 
@@ -102,7 +105,7 @@ fuchsia_unittest_package("scene_manager_tests") {
   test_type = "system"
 }
 
-fuchsia_structured_config_rust_lib("input_config_lib") {
+fuchsia_structured_config_rust_lib("scene_manager_structured_config") {
   cm_label = ":manifest"
 }
 
@@ -117,5 +120,8 @@ fuchsia_structured_config_values("config_for_test") {
       "mouse",
       "touchscreen",
     ]
+    display_rotation = 270
+    display_pixel_density = "4.1668"
+    viewing_distance = "near"
   }
 }

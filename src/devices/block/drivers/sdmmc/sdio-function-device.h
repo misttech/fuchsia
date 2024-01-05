@@ -7,12 +7,11 @@
 
 #include <fidl/fuchsia.hardware.sdio/cpp/wire.h>
 #include <fuchsia/hardware/sdio/cpp/banjo.h>
+#include <lib/driver/compat/cpp/compat.h>
+#include <lib/driver/component/cpp/driver_base.h>
 
 #include <atomic>
 #include <memory>
-
-#include <ddktl/device.h>
-#include <ddktl/fidl.h>
 
 namespace sdmmc {
 
@@ -20,22 +19,15 @@ using fuchsia_hardware_sdio::wire::SdioRwTxn;
 
 class SdioControllerDevice;
 
-class SdioFunctionDevice;
-using SdioFunctionDeviceType =
-    ddk::Device<SdioFunctionDevice, ddk::Messageable<fuchsia_hardware_sdio::Device>::Mixin>;
-
-class SdioFunctionDevice : public SdioFunctionDeviceType,
-                           public ddk::SdioProtocol<SdioFunctionDevice, ddk::base_protocol> {
+class SdioFunctionDevice : public fidl::WireServer<fuchsia_hardware_sdio::Device>,
+                           public ddk::SdioProtocol<SdioFunctionDevice> {
  public:
-  SdioFunctionDevice(zx_device_t* parent, SdioControllerDevice* sdio_parent)
-      : SdioFunctionDeviceType(parent), sdio_parent_(sdio_parent) {}
+  SdioFunctionDevice(SdioControllerDevice* sdio_parent, uint32_t func);
 
-  static zx_status_t Create(zx_device_t* parent, SdioControllerDevice* sdio_parent,
+  static zx_status_t Create(SdioControllerDevice* sdio_parent, uint32_t func,
                             std::unique_ptr<SdioFunctionDevice>* out_dev);
 
-  void DdkRelease() { delete this; }
-
-  zx_status_t AddDevice(const sdio_func_hw_info_t& hw_info, uint32_t func);
+  zx_status_t AddDevice(const sdio_func_hw_info_t& hw_info);
 
   zx_status_t SdioGetDevHwInfo(sdio_hw_info_t* out_hw_info);
   zx_status_t SdioEnableFn();
@@ -55,8 +47,8 @@ class SdioFunctionDevice : public SdioFunctionDeviceType,
                               uint32_t vmo_rights);
   zx_status_t SdioUnregisterVmo(uint32_t vmo_id, zx::vmo* out_vmo);
   zx_status_t SdioDoRwTxn(const sdio_rw_txn_t* txn);
-  void SdioRequestCardReset(sdio_request_card_reset_callback callback, void* cookie);
-  void SdioPerformTuning(sdio_perform_tuning_callback callback, void* cookie);
+  zx_status_t SdioRequestCardReset();
+  zx_status_t SdioPerformTuning();
 
   // FIDL methods
   void GetDevHwInfo(GetDevHwInfoCompleter::Sync& completer) override;
@@ -74,10 +66,26 @@ class SdioFunctionDevice : public SdioFunctionDeviceType,
   void IntrPending(IntrPendingCompleter::Sync& completer) override;
   void DoVendorControlRwByte(DoVendorControlRwByteRequestView request,
                              DoVendorControlRwByteCompleter::Sync& completer) override;
+  void AckInBandIntr(AckInBandIntrCompleter::Sync& completer) override;
+  void RegisterVmo(RegisterVmoRequestView request, RegisterVmoCompleter::Sync& completer) override;
+  void UnregisterVmo(UnregisterVmoRequestView request,
+                     UnregisterVmoCompleter::Sync& completer) override;
+  void RequestCardReset(RequestCardResetCompleter::Sync& completer) override;
+  void PerformTuning(PerformTuningCompleter::Sync& completer) override;
+
+  fdf::Logger& logger();
 
  private:
+  void Serve(fidl::ServerEnd<fuchsia_hardware_sdio::Device> request);
+
   uint8_t function_ = SDIO_MAX_FUNCS;
-  SdioControllerDevice* sdio_parent_;
+  SdioControllerDevice* const sdio_parent_;
+
+  std::string sdio_function_name_;
+  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
+
+  compat::BanjoServer sdio_server_{ZX_PROTOCOL_SDIO, this, &sdio_protocol_ops_};
+  std::optional<compat::DeviceServer> compat_server_;
 };
 
 }  // namespace sdmmc

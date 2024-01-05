@@ -210,6 +210,11 @@ mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig{
+            failure_persistence: None,
+            ..Default::default()
+        })]
+
         #[test]
         fn test_adding_temporary_callback_sends_current_state(
                 update_state: Option<State>,
@@ -349,9 +354,9 @@ mod test {
 #[cfg(test)]
 mod test_inspect {
     use super::*;
+    use diagnostics_assertions::assert_data_tree;
     use event_queue::{ClosedClient, Notify};
     use fuchsia_async as fasync;
-    use fuchsia_inspect::assert_data_tree;
 
     #[derive(Clone, Debug)]
     struct FakeStateNotifier;

@@ -76,7 +76,14 @@ pub struct Params {
 
 impl Params {
     fn add_param<'a, T: Into<GA4Value>>(&mut self, param_key: &str, param_value: T) {
-        self.params.insert(param_key.into(), param_value.into());
+        let value = match param_value.into() {
+            GA4Value::Str(s) => {
+                let truncated_value = truncate_string_to_len(&s, PARAM_VALUE_LENGTH_MAX);
+                truncated_value.into()
+            }
+            x => x,
+        };
+        self.params.insert(param_key.into(), value);
     }
 
     fn validate(&self) -> Result<(), anyhow::Error> {
@@ -265,7 +272,7 @@ pub(crate) fn make_ga4_event<'a>(
 
     let params: &mut HashMap<String, GA4Value> = &mut HashMap::new();
     if let Some(s) = invoker {
-        params.insert("invoker".into(), s.clone().into());
+        params.insert("invoker".into(), s.into());
     }
     insert_if_present("label", params, label);
 
@@ -309,7 +316,7 @@ pub(crate) fn make_ga4_crash_event(
 ) -> Event {
     let params: &mut HashMap<String, GA4Value> = &mut HashMap::new();
     if let Some(s) = invoker {
-        params.insert("invoker".into(), s.clone().into());
+        params.insert("invoker".into(), s.into());
     }
     insert_if_present(
         "fatal",
@@ -345,7 +352,7 @@ pub(crate) fn make_ga4_timing_event<'a>(
         params.insert(key.into(), value.clone());
     }
     if let Some(s) = invoker {
-        params.insert("invoker".into(), s.clone().into());
+        params.insert("invoker".into(), s.into());
     }
     Event::new("timing".into(), Some(Params { items: None, params: params.to_owned() }))
 }
@@ -354,6 +361,13 @@ pub fn validate_string_len(string: &str, max_len: usize) -> Result<(), anyhow::E
     match string.len() <= max_len {
         true => Ok(()),
         false => bail!("String, {}, longer than max length {}", string, max_len),
+    }
+}
+
+pub fn truncate_string_to_len(string: &str, max_len: usize) -> &str {
+    match string.len() <= max_len {
+        true => string,
+        false => &string[0..(max_len)],
     }
 }
 
@@ -524,6 +538,24 @@ mod tests {
             _ => false,
         });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn truncate_str_len_too_long() {
+        let result = truncate_string_to_len(&"foo", 2);
+        assert_eq!(result, "fo");
+    }
+
+    #[test]
+    fn truncate_str_len_one() {
+        let result = truncate_string_to_len(&"foo", 1);
+        assert_eq!(result, "f");
+    }
+
+    #[test]
+    fn truncate_str_len_empty() {
+        let result = truncate_string_to_len(&"", 3);
+        assert_eq!(result, "");
     }
 
     #[test]

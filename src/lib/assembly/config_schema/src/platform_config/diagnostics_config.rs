@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
 /// Diagnostics configuration options for the diagnostics area.
@@ -11,7 +12,13 @@ pub struct DiagnosticsConfig {
     #[serde(default)]
     pub archivist: Option<ArchivistConfig>,
     #[serde(default)]
+    pub archivist_pipelines: Vec<ArchivistPipeline>,
+    #[serde(default)]
     pub additional_serial_log_components: Vec<String>,
+    #[serde(default)]
+    pub sampler: SamplerConfig,
+    #[serde(default)]
+    pub memory_monitor: MemoryMonitorConfig,
 }
 
 /// Diagnostics configuration options for the archivist configuration area.
@@ -20,6 +27,35 @@ pub struct DiagnosticsConfig {
 pub enum ArchivistConfig {
     Default,
     LowMem,
+}
+
+/// A single archivist pipeline config.
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ArchivistPipeline {
+    pub name: String,
+    pub files: Vec<Utf8PathBuf>,
+}
+
+/// Diagnostics configuration options for the sampler configuration area.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SamplerConfig {
+    /// The metrics configs to pass to sampler.
+    #[serde(default)]
+    pub metrics_configs: Vec<Utf8PathBuf>,
+    /// The fire configs to pass to sampler.
+    #[serde(default)]
+    pub fire_configs: Vec<Utf8PathBuf>,
+}
+
+/// Diagnostics configuration options for the memory monitor configuration area.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryMonitorConfig {
+    /// The memory buckets config file to provide to memory monitor.
+    #[serde(default)]
+    pub buckets: Option<Utf8PathBuf>,
 }
 
 #[cfg(test)]
@@ -58,7 +94,13 @@ mod tests {
         let config: PlatformConfig = util::from_reader(&mut cursor).unwrap();
         assert_eq!(
             config.diagnostics,
-            DiagnosticsConfig { archivist: None, additional_serial_log_components: Vec::new() }
+            DiagnosticsConfig {
+                archivist: None,
+                archivist_pipelines: Vec::new(),
+                additional_serial_log_components: Vec::new(),
+                sampler: SamplerConfig::default(),
+                memory_monitor: MemoryMonitorConfig::default(),
+            }
         );
     }
 
@@ -76,7 +118,13 @@ mod tests {
         let config: PlatformConfig = util::from_reader(&mut cursor).unwrap();
         assert_eq!(
             config.diagnostics,
-            DiagnosticsConfig { archivist: None, additional_serial_log_components: Vec::new() }
+            DiagnosticsConfig {
+                archivist: None,
+                archivist_pipelines: Vec::new(),
+                additional_serial_log_components: Vec::new(),
+                sampler: SamplerConfig::default(),
+                memory_monitor: MemoryMonitorConfig::default(),
+            }
         );
     }
 
@@ -100,7 +148,10 @@ mod tests {
             config.diagnostics,
             DiagnosticsConfig {
                 archivist: None,
-                additional_serial_log_components: vec!["/foo".to_string()]
+                archivist_pipelines: Vec::new(),
+                additional_serial_log_components: vec!["/foo".to_string()],
+                sampler: SamplerConfig::default(),
+                memory_monitor: MemoryMonitorConfig::default(),
             }
         );
     }

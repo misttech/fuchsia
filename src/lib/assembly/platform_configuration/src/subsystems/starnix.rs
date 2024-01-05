@@ -20,8 +20,24 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
             );
             builder.platform_bundle("starnix_support");
 
+            let has_fullmac = context.board_info.provides_feature("fuchsia::wlan_fullmac");
+            let has_softmac = context.board_info.provides_feature("fuchsia::wlan_softmac");
             if starnix_config.enable_android_support {
-                builder.platform_bundle("wlan_wlanix");
+                if has_fullmac || has_softmac {
+                    builder.platform_bundle("wlan_wlanix");
+                }
+
+                builder.platform_bundle("sensors_framework");
+
+                builder
+                    .package("starnix")
+                    .component("meta/starnix_runner.cm")?
+                    .field("enable_data_collection", *context.build_type == BuildType::UserDebug)?;
+            } else {
+                builder
+                    .package("starnix")
+                    .component("meta/starnix_runner.cm")?
+                    .field("enable_data_collection", false)?;
             }
         }
         Ok(())

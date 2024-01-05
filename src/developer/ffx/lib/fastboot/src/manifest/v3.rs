@@ -3,10 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{
-    common::{
-        cmd::{ManifestParams, OemFile},
-        file::FileResolver,
-    },
+    common::cmd::{ManifestParams, OemFile},
+    file_resolver::FileResolver,
     manifest::{
         v1::{FlashManifest as FlashManifestV1, Partition as PartitionV1, Product as ProductV1},
         v2::FlashManifest as FlashManifestV2,
@@ -15,7 +13,7 @@ use crate::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use fidl_fuchsia_developer_ffx::FastbootProxy;
+use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use serde::{Deserialize, Serialize};
 use std::{convert::From, io::Write};
 
@@ -103,55 +101,58 @@ impl From<&FlashManifest> for FlashManifestV2 {
 #[async_trait(?Send)]
 impl Flash for FlashManifest {
     #[tracing::instrument(skip(writer, file_resolver, cmd))]
-    async fn flash<W, F>(
+    async fn flash<W, F, T>(
         &self,
         writer: &mut W,
         file_resolver: &mut F,
-        fastboot_proxy: FastbootProxy,
+        fastboot_interface: &mut T,
         cmd: ManifestParams,
     ) -> Result<()>
     where
         W: Write,
         F: FileResolver + Sync,
+        T: FastbootInterface,
     {
         let v2: FlashManifestV2 = self.into();
-        v2.flash(writer, file_resolver, fastboot_proxy, cmd).await
+        v2.flash(writer, file_resolver, fastboot_interface, cmd).await
     }
 }
 
 #[async_trait(?Send)]
 impl Unlock for FlashManifest {
-    async fn unlock<W, F>(
+    async fn unlock<W, F, T>(
         &self,
         writer: &mut W,
         file_resolver: &mut F,
-        fastboot_proxy: FastbootProxy,
+        fastboot_interface: &mut T,
     ) -> Result<()>
     where
         W: Write,
         F: FileResolver + Sync,
+        T: FastbootInterface,
     {
         let v2: FlashManifestV2 = self.into();
-        v2.unlock(writer, file_resolver, fastboot_proxy).await
+        v2.unlock(writer, file_resolver, fastboot_interface).await
     }
 }
 
 #[async_trait(?Send)]
 impl Boot for FlashManifest {
-    async fn boot<W, F>(
+    async fn boot<W, F, T>(
         &self,
         writer: &mut W,
         file_resolver: &mut F,
         slot: String,
-        fastboot_proxy: FastbootProxy,
+        fastboot_interface: &mut T,
         cmd: ManifestParams,
     ) -> Result<()>
     where
         W: Write,
         F: FileResolver + Sync,
+        T: FastbootInterface,
     {
         let v2: FlashManifestV2 = self.into();
-        v2.boot(writer, file_resolver, slot, fastboot_proxy, cmd).await
+        v2.boot(writer, file_resolver, slot, fastboot_interface, cmd).await
     }
 }
 
@@ -161,7 +162,7 @@ impl Boot for FlashManifest {
 mod test {
     use super::*;
     use crate::{
-        common::{IS_USERSPACE_VAR, MAX_DOWNLOAD_SIZE_VAR, REVISION_VAR},
+        common::vars::{IS_USERSPACE_VAR, MAX_DOWNLOAD_SIZE_VAR, REVISION_VAR},
         test::{setup, TestResolver},
     };
     use serde_json::{from_str, json};
@@ -203,7 +204,7 @@ mod test {
         });
 
         let v: FlashManifest = from_str(&manifest.to_string())?;
-        let (state, proxy) = setup();
+        let (state, mut proxy) = setup();
         {
             let mut state = state.lock().unwrap();
             state.set_var(REVISION_VAR.to_string(), "rev_test-b4".to_string());
@@ -215,7 +216,7 @@ mod test {
         v.flash(
             &mut writer,
             &mut TestResolver::new(),
-            proxy,
+            &mut proxy,
             ManifestParams {
                 manifest: Some(PathBuf::from(tmp_file_name)),
                 product: "zedboot".to_string(),
@@ -272,7 +273,7 @@ mod test {
         });
 
         let v: FlashManifest = from_str(&manifest.to_string())?;
-        let (state, proxy) = setup();
+        let (state, mut proxy) = setup();
         {
             let mut state = state.lock().unwrap();
             state.set_var("var".to_string(), "val".to_string());
@@ -284,7 +285,7 @@ mod test {
         v.flash(
             &mut writer,
             &mut TestResolver::new(),
-            proxy,
+            &mut proxy,
             ManifestParams {
                 manifest: Some(PathBuf::from(tmp_file_name)),
                 product: "zedboot".to_string(),

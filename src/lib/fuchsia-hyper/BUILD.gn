@@ -12,13 +12,14 @@ rustc_library("fuchsia-hyper") {
   with_unit_tests = true
   deps = [
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:http",
     "//third_party/rust_crates:hyper",
     "//third_party/rust_crates:hyper-rustls",
     "//third_party/rust_crates:lru-cache",
-    "//third_party/rust_crates:parking_lot",
     "//third_party/rust_crates:rustls",
+    "//third_party/rust_crates:socket2",
     "//third_party/rust_crates:tokio",
   ]
   test_deps = [
@@ -43,7 +44,6 @@ rustc_library("fuchsia-hyper") {
       "//src/sys/lib/fidl-connector",
       "//third_party/rust_crates:itertools",
       "//third_party/rust_crates:pin-project",
-      "//third_party/rust_crates:socket2",
     ]
     test_deps += [
       "//src/lib/fidl/rust/fidl",
@@ -75,15 +75,7 @@ fuchsia_test_component("fuchsia-hyper-lib-test") {
 
 fuchsia_test_package("fuchsia-hyper-tests") {
   test_components = [ ":fuchsia-hyper-lib-test" ]
-  deps = [ "//src/connectivity/network/netstack:component" ]
-  if (current_cpu == "riscv64") {
-    # TODO(fxbug.dev/122609): Make this target depend on netstack3 on RISC-V
-    # and remove these lines.
-    deps -= [ "//src/connectivity/network/netstack:component" ]
-    test_specs = {
-      environments = []
-    }
-  }
+  deps = [ "//src/connectivity/network:netstack-for-tests" ]
 }
 
 group("tests") {

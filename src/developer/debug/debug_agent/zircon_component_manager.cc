@@ -217,9 +217,10 @@ ZirconComponentManager::ZirconComponentManager(SystemInterface* system_interface
         // The component is not running.
         continue;
       }
+      std::string moniker = *instance.moniker();
       fidl::Client<fuchsia_io::Directory> runtime_dir;
       auto open_res = realm_query->Open(
-          {*instance.moniker(),
+          {moniker,
            fuchsia_sys2::OpenDirType::kRuntimeDir,
            fuchsia_io::OpenFlags::kRightReadable,
            {},
@@ -228,14 +229,12 @@ ZirconComponentManager::ZirconComponentManager(SystemInterface* system_interface
       if (!open_res.is_ok()) {
         continue;
       }
-      // Remove the "." at the beginning of the moniker. It's safe because moniker is not empty.
-      std::string moniker = instance.moniker()->substr(1);
       ReadElfJobId(std::move(runtime_dir), moniker,
                    [weak_this = weak_factory_.GetWeakPtr(), moniker, url = *instance.url(),
                     deferred_ready](zx_koid_t job_id) {
                      if (weak_this && job_id != ZX_KOID_INVALID) {
-                       weak_this->running_component_info_[job_id] = {.moniker = moniker,
-                                                                     .url = url};
+                       weak_this->running_component_info_.insert(std::make_pair(
+                           job_id, debug_ipc::ComponentInfo{.moniker = moniker, .url = url}));
                      }
                    });
     }
@@ -271,8 +270,8 @@ void ZirconComponentManager::OnComponentEvent(fuchsia_component::Event event) {
                      [weak_this = weak_factory_.GetWeakPtr(), moniker, url,
                       break_on_start = std::move(break_on_start)](zx_koid_t job_id) mutable {
                        if (weak_this && job_id != ZX_KOID_INVALID) {
-                         weak_this->running_component_info_[job_id] = {.moniker = moniker,
-                                                                       .url = url};
+                         weak_this->running_component_info_.emplace(std::make_pair(
+                             job_id, debug_ipc::ComponentInfo{.moniker = moniker, .url = url}));
                          DEBUG_LOG(Process) << "Component started job_id=" << job_id
                                             << " moniker=" << moniker << " url=" << url;
                        }
@@ -302,11 +301,21 @@ void ZirconComponentManager::OnComponentEvent(fuchsia_component::Event event) {
   }
 }
 
-std::optional<debug_ipc::ComponentInfo> ZirconComponentManager::FindComponentInfo(
+std::vector<debug_ipc::ComponentInfo> ZirconComponentManager::FindComponentInfo(
     zx_koid_t job_koid) const {
-  if (auto it = running_component_info_.find(job_koid); it != running_component_info_.end())
-    return it->second;
-  return std::nullopt;
+  auto [start, end] = running_component_info_.equal_range(job_koid);
+  if (start == running_component_info_.end()) {
+    // Not found.
+    return {};
+  }
+
+  std::vector<debug_ipc::ComponentInfo> components;
+  components.reserve(std::distance(start, end));
+  for (auto& i = start; i != end; ++i) {
+    components.push_back(i->second);
+  }
+
+  return components;
 }
 
 // We need a class to help to launch a test because the lifecycle of GetEvents callbacks
@@ -483,10 +492,6 @@ debug::Status ZirconComponentManager::LaunchTest(std::string url, std::optional<
 }
 
 debug::Status ZirconComponentManager::LaunchComponent(std::string url) {
-  if (cpp20::ends_with(std::string_view{url}, ".cmx")) {
-    return debug::Status("V1 components are no longer supported.");
-  }
-
   constexpr char kParentMoniker[] = "core";
   constexpr char kCollection[] = "ffx-laboratory";
 
@@ -547,12 +552,12 @@ debug::Status ZirconComponentManager::LaunchComponent(std::string url) {
 
 bool ZirconComponentManager::OnProcessStart(const ProcessHandle& process, StdioHandles* out_stdio,
                                             std::string* process_name_override) {
-  if (auto component = ComponentManager::FindComponentInfo(process)) {
-    if (expected_v2_components_.count(component->moniker)) {
+  for (const auto& component : ComponentManager::FindComponentInfo(process)) {
+    if (expected_v2_components_.count(component.moniker)) {
       // It'll be erased in the stopped event.
       return true;
     }
-    if (auto it = running_tests_info_.find(component->url); it != running_tests_info_.end()) {
+    if (auto it = running_tests_info_.find(component.url); it != running_tests_info_.end()) {
       size_t idx = it->second.pids.size();
       it->second.pids.push_back(process.GetKoid());
       if (idx < it->second.ignored_process) {

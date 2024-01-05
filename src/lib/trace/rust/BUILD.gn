@@ -16,6 +16,7 @@ rustc_library("trace") {
     "//src/lib/cstr",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//third_party/rust_crates:libc",
+    "//third_party/rust_crates:pin-project",
     "//third_party/rust_crates:rand",
   ]
   non_rust_deps = [ "//zircon/system/ulib/trace-engine" ]
@@ -29,7 +30,10 @@ rustc_staticlib("rust-cpp-test-lib") {
   edition = "2021"
   testonly = true
 
-  deps = [ ":trace" ]
+  deps = [
+    ":trace",
+    "//src/lib/fuchsia-async",
+  ]
 
   public = [ "test/lib.h" ]
 
@@ -108,10 +112,29 @@ rustc_library("trace-provider") {
   name = "fuchsia_trace_provider"
   edition = "2021"
   source_root = "trace-provider/src/lib.rs"
-  non_rust_deps = [
-    ":rust-trace-provider",
-    "//zircon/system/ulib/trace-provider",
-  ]
+  non_rust_deps = [ ":rust-trace-provider" ]
 
   sources = [ "trace-provider/src/lib.rs" ]
+}
+
+shared_library("rust-trace-observer") {
+  visibility = [ ":*" ]
+  deps = [
+    "//zircon/system/ulib/async-loop:async-loop-cpp",
+    "//zircon/system/ulib/async-loop:async-loop-default",
+    "//zircon/system/ulib/trace",
+  ]
+  sources = [ "trace-observer/trace_observer.cc" ]
+}
+
+rustc_library("trace-observer") {
+  name = "fuchsia_trace_observer"
+  edition = "2021"
+  source_root = "trace-observer/src/lib.rs"
+  non_rust_deps = [
+    ":rust-trace-observer",
+    "//zircon/system/ulib/trace",
+  ]
+
+  sources = [ "trace-observer/src/lib.rs" ]
 }

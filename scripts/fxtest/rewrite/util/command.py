@@ -22,10 +22,12 @@ pipes using non-blocking async readers, we do not hang.
 """
 
 import asyncio
+import atexit
 from dataclasses import dataclass
 from dataclasses import field
 from io import StringIO
 import os
+import signal
 import time
 import typing
 
@@ -69,6 +71,9 @@ class TerminationEvent:
     # The monotonic timestamp this program received the termination event.
     timestamp: float = field(default_factory=lambda: time.monotonic())
 
+    # If true, this command is terminating due to hitting its timeout.
+    was_timeout: bool = False
+
 
 class AsyncCommandError(Exception):
     """An error occurred starting or running a command asynchronously."""
@@ -94,6 +99,9 @@ class CommandOutput:
     # the return code of that wrapper.
     wrapper_return_code: int | None
 
+    # If True, this command was forced to terminate due to timeout.
+    was_timeout: bool = False
+
 
 CommandEvent = StdoutEvent | StderrEvent | TerminationEvent
 
@@ -110,6 +118,7 @@ class AsyncCommand:
         self,
         process: asyncio.subprocess.Process,
         wrapped_process: asyncio.subprocess.Process | None = None,
+        timeout: float | None = None,
     ):
         """Create an AsyncCommand that wraps a subprocess.
 
@@ -121,6 +130,7 @@ class AsyncCommand:
         Args:
             process (asyncio.subprocess.Process): The process to wrap.
             wrapped_process (asyncio.subprocess.Process): A secondary process to wrap, which must also be closed.
+            timeout (float, optional): Terminate the process after this number of seconds.
         """
         self._process = process
         self._wrapped_process = wrapped_process
@@ -128,6 +138,7 @@ class AsyncCommand:
         self._done_iterating = False
         self._start = time.time()
         self._runner_task = asyncio.create_task(self._task())
+        self._timeout = timeout
 
     @classmethod
     async def create(
@@ -136,17 +147,22 @@ class AsyncCommand:
         *args: str,
         symbolizer_args: typing.List[str] | None = None,
         env: typing.Dict[str, str] | None = None,
+        timeout: float | None = None,
     ):
         """Create a new AsyncCommand that runs the given program.
 
         Args:
             program (str): Name of the program to run.
             args (List[str]): Arguments to pass to the program.
-            symbolizer_args (Optional[List[str]]): If set, pipe output from the program through this program.
-            env (Optional[Dict[str,str]]): If set, use this dict
-                to populate the command's environment. Note that the
-                CWD environment variable is handled specially to ensure
-                that the command runs in the given working directory.
+            symbolizer_args (List[str], optional): If set, pipe
+                output from the program through this program.
+            env (Dict[str,str], optional): If set, use this dict
+                to populate the command's environment.
+                Note: the CWD environment variable is handled specially to ensure
+                    that the command runs in the given working directory.
+                Note: fx test's own environment is inherited and overridden by
+                    the values in this dict, if set.
+            timeout (float, optional): Terminate the command after the given number of seconds.
 
         Returns:
             AsyncCommand: A new AsyncCommand executing the process.
@@ -159,10 +175,21 @@ class AsyncCommand:
             env.pop("CWD")
             if not env:
                 env = None
+        if env:
+            # Ensure that we inherit the incoming environment and
+            # extend it with the arguments to env, only if set.
+            new_env = dict(os.environ.items())
+            new_env.update(env)
+            env = new_env
+            if cwd is not None and "CWD" in env:
+                # CWD is already handled above, do not inherit.
+                env.pop("CWD")
 
         try:
 
-            async def make_process(output_pipe: typing.Union[int, typing.TextIO]):
+            async def make_process(
+                output_pipe: typing.Union[int, typing.TextIO]
+            ):
                 return await asyncio.subprocess.create_subprocess_exec(
                     program,
                     *args,
@@ -170,6 +197,7 @@ class AsyncCommand:
                     stderr=output_pipe,
                     env=env,
                     cwd=cwd,
+                    preexec_fn=os.setpgrp,  # To support killing by pgid.
                 )
 
             base_command = None
@@ -188,28 +216,43 @@ class AsyncCommand:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     stdin=read_pipe,
+                    preexec_fn=os.setpgrp,  # To support killing by pgid.
                 )
                 os.close(read_pipe)
             else:
                 command = await make_process(asyncio.subprocess.PIPE)
 
-            return AsyncCommand(command, base_command)
+            return AsyncCommand(command, base_command, timeout=timeout)
         except FileNotFoundError as e:
-            raise AsyncCommandError(f"The program '{e.filename}' was not found.")
+            raise AsyncCommandError(
+                f"The program '{e.filename}' was not found."
+            )
         except Exception as e:
             raise AsyncCommandError(f"An unknown error occurred: {e}")
 
+    def send_signal(self, sig: int):
+        """Send the given signal to the underlying process(es) and their
+        children in the same process group.
+
+        Args:
+            sig (int): The signal to send.
+        """
+        # We need to signal the entire process group we created, otherwise
+        # we run the risk of signallying only a shell script and not
+        # the processes run by that shell script (e.g. `fx`).
+        pg = os.getpgid(self._process.pid)
+        os.killpg(pg, sig)
+        if self._wrapped_process is not None:
+            pg = os.getpgid(self._wrapped_process.pid)
+            os.killpg(pg, sig)
+
     def terminate(self):
         """Terminate the underlying process(es) by sending SIGTERM."""
-        self._process.terminate()
-        if self._wrapped_process is not None:
-            self._wrapped_process.terminate()
+        self.send_signal(signal.SIGTERM)
 
     def kill(self):
         """Immediately kill the underlying process(es) by sending SIGKILL."""
-        self._process.kill()
-        if self._wrapped_process is not None:
-            self._wrapped_process.kill()
+        self.send_signal(signal.SIGKILL)
 
     async def run_to_completion(
         self,
@@ -218,10 +261,10 @@ class AsyncCommand:
         """Runs the program to completion, collecting the resulting outputs.
 
         Args:
-            callback (typing.Callable[[CommandEvent],
-            None] | None): If set, send all CommandEvents to
-                this callback function as they are produced. Defaults
-                to None.
+            callback (typing.Callable[[CommandEvent], None], optional): If set, send all
+                CommandEvents to this callback function as they are produced.
+                Defaults to None.
+            timeout (float, optional): Terminate the command after this many seconds.
 
         Raises:
             AsyncCommandError: If an internal error causes the task queue to be cancelled.
@@ -246,11 +289,20 @@ class AsyncCommand:
                         return_code=e.return_code,
                         wrapper_return_code=e.wrapper_return_code,
                         runtime=e.runtime,
+                        was_timeout=e.was_timeout,
                     )
 
         raise AsyncCommandError("Event stream unexpectedly stopped")
 
     async def _task(self):
+        # Make sure that the child process group is killed when this process
+        # exits. Otherwise the child process group keeps running if a user
+        # does Ctrl+C on this script.
+        def kill_async_process():
+            self.kill()
+
+        atexit.register(kill_async_process)
+
         tasks = []
 
         async def read_stream(
@@ -266,6 +318,33 @@ class AsyncCommand:
             async for line in input_stream:
                 await self._event_queue.put(event_type(text=line))
 
+        async def timeout_handler(
+            timeout: float, timeout_signal: asyncio.Event
+        ):
+            """Handle timeouts.
+
+            We first send SIGTERM after the timeout, and if the program has
+            still not terminated after an additional delay we send SIGKILL.
+
+            Args:
+                timeout (float): The initial wait time before termination.
+                timeout_signal (asyncio.Event): An event to set on timeout.
+            """
+            await asyncio.sleep(timeout)
+            timeout_signal.set()
+            self.terminate()
+            # Give the process at most 5 seconds to terminate, or less
+            # if timeout is less than 5 seconds.
+            await asyncio.sleep(min(timeout, 5))
+            self.kill()
+
+        timeout_task: asyncio.Task | None = None
+        did_timeout = asyncio.Event()
+        if self._timeout is not None:
+            timeout_task = asyncio.create_task(
+                timeout_handler(self._timeout, did_timeout)
+            )
+
         # Read stdout and stderr in parallel, forwarding the appropriate events.
         assert self._process.stdout
         assert self._process.stderr
@@ -278,19 +357,35 @@ class AsyncCommand:
 
         # Wait for the process to exit and get its return code.
         return_code = await self._process.wait()
+        if timeout_task and not timeout_task.done():
+            # Cancel the timeout task so we do not try to send signals to a terminated process.
+            timeout_task.cancel()
         wrapper_return_code: int | None = None
         if self._wrapped_process:
             # Also ensure we wait for the wrapped process, and use it's return code as the canonical code.
             wrapper_return_code = return_code
             return_code = await self._wrapped_process.wait()
 
+        # There is no longer a need to cleanup this process, since it already
+        # terminated.
+        atexit.unregister(kill_async_process)
+
         runtime = time.time() - self._start
+
+        if timeout_task is not None:
+            # Make sure the timeout task is cancelled and awaited
+            # so it is cleaned up.
+            timeout_task.cancel()
+            tasks.append(timeout_task)
 
         # Wait for all output to drain before termination event.
         await asyncio.wait(tasks)
         await self._event_queue.put(
             TerminationEvent(
-                return_code, runtime, wrapper_return_code=wrapper_return_code
+                return_code,
+                runtime,
+                wrapper_return_code=wrapper_return_code,
+                was_timeout=did_timeout.is_set(),
             )
         )
 

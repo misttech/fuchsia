@@ -6,7 +6,9 @@ group("lib") {
   deps = [
     "linux_uapi",
     "magma",
-    "starnix-sync",
+    "selinux",
+    "selinux_policy",
+    "starnix-uapi",
     "syncio",
   ]
 }
@@ -16,11 +18,20 @@ group("tests") {
 
   deps = [
     "extended_pstate:tests",
-    "starnix-sync:tests",
+    "range_map:tests",
+    "selinux:tests",
+    "selinux_policy:tests",
+    "starnix-uapi:tests",
     "syncio:tests",
     "ubpf:tests",
+    "usercopy:tests",
 
     # TODO(fxbug.dev/132040): Disabled due to flakiness.
     # "kill_job_on_panic:tests",
   ]
+}
+
+group("benchmarks") {
+  testonly = true
+  deps = [ "extended_pstate:benchmarks" ]
 }

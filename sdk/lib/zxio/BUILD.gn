@@ -9,9 +9,9 @@ import("//build/cpp/verify_public_symbols.gni")
 
 library_headers("headers") {
   headers = [
-    "lib/zxio/cpp/vector.h",
     "lib/zxio/null.h",
     "lib/zxio/ops.h",
+    "lib/zxio/fault_catcher.h",
     "lib/zxio/posix_mode.h",
     "lib/zxio/bsdsocket.h",
     "lib/zxio/types.h",
@@ -26,7 +26,7 @@ library_headers("create_with_type") {
 
   public_deps = [
     ":headers",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//zircon/system/ulib/zx",
   ]
 }
@@ -44,7 +44,7 @@ library_headers("inception") {
     ":headers",
 
     # <lib/zxio/cpp/inception.h> has #include <fidl/fuchsia.io/cpp/wire.h>.
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
   ]
 
   visibility = [
@@ -58,6 +58,7 @@ source_set("zxio") {
     "create.cc",
     "debuglog.cc",
     "dgram_cache.cc",
+    "fault_catcher.cc",
     "get_vmo.cc",
     "inception.cc",
     "null.cc",
@@ -71,19 +72,22 @@ source_set("zxio") {
   ]
   public_deps = [ ":headers" ]
   deps = [
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp_wire",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
-    "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_cpp_wire",
-    "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp_wire",
-    "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp_wire",
-    "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_cpp",
+    "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
+    "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp",
+    "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_cpp",
     "//sdk/lib/stdcompat",
     "//sdk/lib/zxio:inception",
     "//src/connectivity/network/netstack/udp_serde",
     "//zircon/system/ulib/zx",
     "//zircon/third_party/ulib/safemath",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 shared_library("zxio_standalone") {

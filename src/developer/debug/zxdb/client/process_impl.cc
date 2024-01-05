@@ -29,7 +29,7 @@ namespace zxdb {
 
 ProcessImpl::ProcessImpl(TargetImpl* target, uint64_t koid, const std::string& name,
                          Process::StartType start_type,
-                         std::optional<debug_ipc::ComponentInfo> component_info)
+                         const std::vector<debug_ipc::ComponentInfo>& component_info)
     : Process(target->session(), start_type),
       target_(target),
       koid_(koid),
@@ -44,6 +44,17 @@ ProcessImpl::~ProcessImpl() {
     for (auto& observer : session()->thread_observers())
       observer.WillDestroyThread(thread.second.get());
   }
+}
+
+// static.
+std::unique_ptr<ProcessImpl> ProcessImpl::FromPreviousProcess(
+    TargetImpl* target, const debug_ipc::ProcessRecord& record) {
+  auto process = std::make_unique<ProcessImpl>(target, record.process_koid, record.process_name,
+                                               StartType::kAttach, record.components);
+
+  process->UpdateThreads(record.threads);
+
+  return process;
 }
 
 ThreadImpl* ProcessImpl::GetThreadImplFromKoid(uint64_t koid) {

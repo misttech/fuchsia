@@ -12,14 +12,14 @@
 
 #include "src/developer/debug/zxdb/symbols/identifier.h"
 #include "src/developer/debug/zxdb/symbols/index_node.h"
+#include "src/developer/debug/zxdb/symbols/skeleton_unit.h"
+#include "src/developer/debug/zxdb/symbols/unit_index.h"
 #include "src/lib/fxl/macros.h"
 
 namespace llvm {
 
 class DWARFCompileUnit;
-class DWARFContext;
 class DWARFDie;
-class DWARFUnit;
 
 namespace object {
 class ObjectFile;
@@ -29,19 +29,26 @@ class ObjectFile;
 
 namespace zxdb {
 
+class DwarfBinary;
+class DwarfUnit;
+
 class Index {
  public:
   Index() = default;
   ~Index() = default;
 
-  // This function takes an object file rather than a context so it can create its own context, and
-  // then discard the context when it's done. Since most debugging information is not needed after
-  // indexing, this saves a lot of memory.
+  // Returns the information on the .dwo files that are referenced by this binary.
+  const std::vector<SkeletonUnit>& dwo_refs() const { return dwo_refs_; }
+
+  // Creates an index for one binary file. If there are skeleton units (references to separate .dwo
+  // files with the symbols for individual source files), those are collected in dwo_refs() and NOT
+  // indexed (the ModuleSymbols needs to have the ownership of the binaries so needs to create
+  // these). They should be separately indexed and merged into this index.
   //
   // Normal callers will want to use the fast path (which internally falls back to the slow path
   // for cross unit references). Tests can set the force_slow_path flag to cause everything to be
   // indexed with the slow path for validation purposes.
-  void CreateIndex(llvm::object::ObjectFile* object_file, bool force_slow_path = false);
+  void CreateIndex(DwarfBinary& binary, int32_t dwo_index, bool force_slow_path = false);
 
   // Dumps the file index to the stream for debugging.
   void DumpFileIndex(std::ostream& out) const;
@@ -67,10 +74,7 @@ class Index {
 
   // Looks up the given exact file path and returns all compile units it appears in. The file must
   // be an exact match (normally it's one of the results from FindFileMatches).
-  //
-  // The contents of the vector are indices into the compilation unit array. (see
-  // llvm::DWARFContext::getCompileUnitAtIndex).
-  const std::vector<unsigned>* FindFileUnitIndices(const std::string& name) const;
+  const std::vector<UnitIndex>* FindFileUnitIndices(const std::string& name) const;
 
   // See main_functions_ below.
   const std::vector<IndexNode::SymbolRef>& main_functions() const { return main_functions_; }
@@ -85,14 +89,17 @@ class Index {
   size_t CountSymbolsIndexed() const;
 
  private:
-  void IndexCompileUnit(llvm::DWARFContext* context, llvm::DWARFUnit* unit, unsigned unit_index,
+  void IndexCompileUnit(const DwarfUnit& unit, int32_t dwo_index, UnitIndex unit_index,
                         bool force_slow_path);
-
-  void IndexCompileUnitSourceFiles(llvm::DWARFContext* context, llvm::DWARFUnit* unit,
-                                   unsigned unit_index);
+  void IndexSkeletonCompileUnit(const DwarfUnit& unit, const llvm::DWARFDie& unit_die,
+                                UnitIndex unit_index);
+  void IndexCompileUnitSourceFiles(const DwarfUnit& unit, UnitIndex unit_index);
 
   // Populates the file_name_index_ given a now-unchanging files_ map.
   void IndexFileNames();
+
+  // DWO files referenced by this symbol file. SymbolRef.dwo_index_ is an index into this vector.
+  std::vector<SkeletonUnit> dwo_refs_;
 
   // Symbol index.
   IndexNode root_ = IndexNode(IndexNode::Kind::kRoot);
@@ -101,13 +108,12 @@ class Index {
   // file_name_index_ is built.
   //
   // The contents of the vector are indices into the compilation unit array. (see
-  // llvm::DWARFContext::getCompileUnitAtIndex). These are "unsigned" type because that's what LLVM
-  // uses for these indices.
+  // llvm::DWARFContext::get[DWO]UnitAtIndex).
   //
-  // This is a map, not a multimap, because some files will appear in many compilation units. I
+  // This is a map, not a multimap because some files will appear in many compilation units. I
   // suspect it's better to avoid duplicating the names (like a multimap would) and eating the cost
   // of indirect heap allocations for vectors in the single-item case.
-  using FileIndex = std::map<std::string, std::vector<unsigned>>;
+  using FileIndex = std::map<std::string, std::vector<UnitIndex>>;
   FileIndex files_;
 
   // Maps the last file name component (the part following the last slash) to the set of entries in

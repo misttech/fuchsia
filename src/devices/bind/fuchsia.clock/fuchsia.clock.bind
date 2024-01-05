@@ -1,0 +1,29 @@
+// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+library fuchsia.clock;
+
+extend uint fuchsia.BIND_PROTOCOL {
+  IMPL = 0x5B,
+};
+
+extend uint fuchsia.BIND_FIDL_PROTOCOL {
+  SERVICE = 0x16,
+};
+
+extend uint fuchsia.BIND_INIT_STEP {
+  CLOCK = 0x494B4C43,
+};
+
+enum FUNCTION {
+  CAMERA_SENSOR,
+  SYS_CPU_DIV16,
+  SYS_CPUB_DIV16,
+  SYS_PLL_DIV16,
+  SYS_PLLB_DIV16,
+  SYS_CPU_BIG_CLK,
+  SYS_CPU_LITTLE_CLK,
+  AUDIO_GATE,
+  AUDIO_PLL,
+};

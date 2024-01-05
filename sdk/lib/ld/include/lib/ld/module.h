@@ -6,6 +6,7 @@
 #define LIB_LD_MODULE_H_
 
 #include <lib/elfldltl/init-fini.h>
+#include <lib/elfldltl/link-map-list.h>
 #include <lib/elfldltl/symbol.h>
 #include <lib/stdcompat/span.h>
 
@@ -13,8 +14,10 @@
 #include <cstdint>
 
 #include "abi.h"
+#include "internal/filter-view.h"
 
-namespace ld::abi {
+namespace ld {
+namespace abi {
 
 // ld::abi::Abi::Module holds all the information about an ELF module that's
 // still relevant at runtime after it's been loaded and dynamically linked.
@@ -41,6 +44,13 @@ namespace ld::abi {
 
 template <class Elf, class AbiTraits>
 struct Abi<Elf, AbiTraits>::Module {
+  constexpr Module() = default;
+
+  constexpr explicit Module(elfldltl::LinkerZeroInitialized)
+      : symbols(elfldltl::kLinkerZeroInitialized) {}
+
+  constexpr void InitLinkerZeroInitialized() { symbols.InitLinkerZeroInitialized(); }
+
   // This is known to be the first member in the struct layout.  It forms the
   // old de facto ABI from SVR4 (traditionally `struct link_map` in <link.h>)
   // for enumerating the modules and their load/symbol-resolution order through
@@ -61,7 +71,7 @@ struct Abi<Elf, AbiTraits>::Module {
   // as the ld::abi::Module list as well.
   LinkMap link_map;
 
-  // The rest of the ld::abi::Module layout is a distinct extension that does
+  // The rest of the ld::abi::Module layout is a distinct extension that doesdsy
   // not overlap with any historical ABI.  (Traditional uses that have longer
   // data structures prefixed with `struct link_map` are all private formats.)
   //
@@ -102,7 +112,11 @@ struct Abi<Elf, AbiTraits>::Module {
   // program exit or when it's dynamically unloaded (if that's possible).
   Type<elfldltl::InitFiniInfo> fini;
 
-  // TODO(fxbug.dev/128502): TLS module ID
+  // Each module that has a PT_TLS segment of its own is assigned a module ID,
+  // which is a nonzero index.  This value is zero if the module has no PT_TLS.
+  // Note that a module's code might use TLS relocations (resolved to external
+  // symbols) even if that module has no PT_TLS segment of its own.
+  Addr tls_modid = 0;
 
   // Each and every module gets a "module ID" number that's used in symbolizer
   // markup contextual elements describing the module.  These are expected to
@@ -121,8 +135,71 @@ struct Abi<Elf, AbiTraits>::Module {
   // presumably point to read-only data in the module's load image, which can
   // always be repeated; this just caches the parsing result from load time.
   Span<const std::byte> build_id;
+
+  // This is true if the module participates in symbolic resolution. If false,
+  // the module will still be part of the unwinding domain, and therefore will
+  // still be visible to dl_iterate_phdr.
+  bool symbols_visible = false;
 };
 
-}  // namespace ld::abi
+}  // namespace abi
+
+// This provides a container-like view on the doubly-linked list of modules.
+template <class Elf = elfldltl::Elf<>>
+using AbiModuleList = elfldltl::LinkMapList<
+    const typename abi::Abi<Elf>::Module,
+    elfldltl::LinkMapListInFirstMemberTraits<const typename abi::Abi<Elf>::Module>>;
+
+// This returns the ld::AbiModuleList for an ld::Abi::Abi<>.
+template <class Elf = elfldltl::Elf<>>
+constexpr AbiModuleList<Elf> AbiLoadedModules(const abi::Abi<Elf>& abi) {
+  return AbiModuleList<Elf>(abi.loaded_modules.get());
+}
+
+// This returns a view similar to AbiModuleList, but only for modules where
+// symbols_visible is true.
+template <class Elf = elfldltl::Elf<>>
+constexpr auto AbiLoadedSymbolModules(const abi::Abi<Elf>& abi) {
+  using Module = typename abi::Abi<Elf>::Module;
+  return ld::internal::filter_view{AbiLoadedModules(abi), &Module::symbols_visible};
+}
+
+// This uses the symbolizer_markup::Writer API to emit the contextual elements
+// describing this Module.  It requires the page size used to load the module.
+template <class Module, class Writer>
+constexpr Writer& ModuleSymbolizerContext(
+    Writer& writer, const Module& module,
+    typename decltype(module.vaddr_start)::value_type page_size, std::string_view prefix = {}) {
+  using size_type = decltype(page_size);
+  using Phdr = std::decay_t<decltype(module.phdrs.front())>;
+
+  std::string_view name = module.link_map.name.get();
+  if (name.empty()) {
+    name = "<application>";
+  }
+  writer  //
+      .Prefix(prefix)
+      .ElfModule(module.symbolizer_modid, name, module.build_id.get())
+      .Newline();
+
+  const size_type load_bias = module.link_map.addr;
+  const uint32_t modid = module.symbolizer_modid;
+  for (const Phdr& phdr : module.phdrs) {
+    const size_type vaddr = phdr.vaddr & -page_size;
+    const size_type memsz = (vaddr + phdr.memsz + page_size - 1) & -page_size;
+    writer  //
+        .Prefix(prefix)
+        .LoadImageMmap(vaddr + load_bias, memsz, modid,
+                       {.read = (phdr.flags & Phdr::kRead) != 0,
+                        .write = (phdr.flags & Phdr::kWrite) != 0,
+                        .execute = (phdr.flags & Phdr::kExecute) != 0},
+                       vaddr)
+        .Newline();
+  }
+
+  return writer;
+}
+
+}  // namespace ld
 
 #endif  // LIB_LD_MODULE_H_

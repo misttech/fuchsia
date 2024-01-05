@@ -5,8 +5,9 @@
 pub mod component;
 
 use {
-    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_data as fdata, std::path::Path,
-    thiserror::Error,
+    fidl::endpoints::ServerEnd, fidl_fuchsia_component_runner as fcrunner,
+    fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
+    fidl_fuchsia_process as fprocess, fuchsia_zircon as zx, std::path::Path, thiserror::Error,
 };
 
 const ARGS_KEY: &str = "args";
@@ -25,13 +26,13 @@ pub enum StartInfoProgramError {
     #[error("the value of \"program.binary\" must be a relative path")]
     BinaryPathNotRelative,
 
-    #[error("invalid type in arguments")]
-    InvalidArguments,
+    #[error("the value of \"program.{0}\" must be an array of strings")]
+    InvalidStrVec(String),
 
     #[error("\"program\" must be specified")]
     NotFound,
 
-    #[error("invalid type for key \"{0}\"")]
+    #[error("invalid type for key \"{0}\", expected string")]
     InvalidType(String),
 
     #[error("invalid value for key \"{0}\", expected one of \"{1}\", found \"{2}\"")]
@@ -111,15 +112,18 @@ pub fn get_program_string<'a>(
     }
 }
 
-/// Retrieve a StrVec from the program dictionary in ComponentStartInfo.
+/// Retrieve a StrVec from the program dictionary in ComponentStartInfo. Returns StartInfoProgramError::InvalidStrVec if
+/// the value is not a StrVec.
 pub fn get_program_strvec<'a>(
     start_info: &'a fcrunner::ComponentStartInfo,
     key: &str,
-) -> Option<&'a Vec<String>> {
-    if let fdata::DictionaryValue::StrVec(value) = get_program_value(start_info, key)? {
-        Some(value)
-    } else {
-        None
+) -> Result<Option<&'a Vec<String>>, StartInfoProgramError> {
+    match get_program_value(start_info, key) {
+        Some(args_value) => match args_value {
+            fdata::DictionaryValue::StrVec(vec) => Ok(Some(vec)),
+            _ => Err(StartInfoProgramError::InvalidStrVec(key.to_string())),
+        },
+        None => Ok(None),
     }
 }
 
@@ -156,22 +160,25 @@ pub fn get_program_binary_from_dict(
 
 /// Retrieves program.args from ComponentStartInfo and validates them.
 // TODO(fxbug.dev/129604): This method should accept a program dict instead of start_info
-pub fn get_program_args(start_info: &fcrunner::ComponentStartInfo) -> Vec<String> {
-    // TODO(https://fxbug.dev/118831): Do not silently ignore bad types for "args" key
-    if let Some(vec) = get_program_strvec(start_info, ARGS_KEY) {
-        vec.iter().map(|v| v.clone()).collect()
-    } else {
-        vec![]
+pub fn get_program_args(
+    start_info: &fcrunner::ComponentStartInfo,
+) -> Result<Vec<String>, StartInfoProgramError> {
+    match get_program_strvec(start_info, ARGS_KEY)? {
+        Some(vec) => Ok(vec.iter().map(|v| v.clone()).collect()),
+        None => Ok(vec![]),
     }
 }
 
 /// Retrieves `args` from a ComponentStartInfo program dict and validates them.
-pub fn get_program_args_from_dict(dict: &fdata::Dictionary) -> Vec<String> {
-    // TODO(https://fxbug.dev/118831): Do not silently ignore bad types for "args" key
-    if let Some(fdata::DictionaryValue::StrVec(vec)) = get_value(&dict, ARGS_KEY) {
-        vec.iter().map(|v| v.clone()).collect()
-    } else {
-        vec![]
+pub fn get_program_args_from_dict(
+    dict: &fdata::Dictionary,
+) -> Result<Vec<String>, StartInfoProgramError> {
+    match get_value(&dict, ARGS_KEY) {
+        Some(args_value) => match args_value {
+            fdata::DictionaryValue::StrVec(vec) => Ok(vec.iter().map(|v| v.clone()).collect()),
+            _ => Err(StartInfoProgramError::InvalidStrVec(ARGS_KEY.to_string())),
+        },
+        None => Ok(vec![]),
     }
 }
 
@@ -209,6 +216,159 @@ pub fn get_environ(dict: &fdata::Dictionary) -> Result<Option<Vec<String>>, Star
             format!("{:?}", other),
         )),
         None => Ok(None),
+    }
+}
+
+/// Errors from parsing a component's configuration data.
+#[derive(Debug, Clone, Error)]
+pub enum ConfigDataError {
+    #[error("failed to create a vmo: {_0}")]
+    VmoCreate(#[source] zx::Status),
+    #[error("failed to write to vmo: {_0}")]
+    VmoWrite(#[source] zx::Status),
+    #[error("encountered an unrecognized variant of fuchsia.mem.Data")]
+    UnrecognizedDataVariant,
+}
+
+pub fn get_config_vmo(encoded_config: fmem::Data) -> Result<zx::Vmo, ConfigDataError> {
+    match encoded_config {
+        fmem::Data::Buffer(fmem::Buffer {
+            vmo,
+            size: _, // we get this vmo from component manager which sets the content size
+        }) => Ok(vmo),
+        fmem::Data::Bytes(bytes) => {
+            let size = bytes.len() as u64;
+            let vmo = zx::Vmo::create(size).map_err(ConfigDataError::VmoCreate)?;
+            vmo.write(&bytes, 0).map_err(ConfigDataError::VmoWrite)?;
+            Ok(vmo)
+        }
+        _ => Err(ConfigDataError::UnrecognizedDataVariant.into()),
+    }
+}
+
+/// Errors from parsing ComponentStartInfo.
+#[derive(Debug, Clone, Error)]
+pub enum StartInfoError {
+    #[error("missing program")]
+    MissingProgram,
+    #[error("missing resolved URL")]
+    MissingResolvedUrl,
+}
+
+impl StartInfoError {
+    /// Convert this error into its approximate `zx::Status` equivalent.
+    pub fn as_zx_status(&self) -> zx::Status {
+        match self {
+            StartInfoError::MissingProgram => zx::Status::INVALID_ARGS,
+            StartInfoError::MissingResolvedUrl => zx::Status::INVALID_ARGS,
+        }
+    }
+}
+
+/// [StartInfo] is convertible from the FIDL [fcrunner::ComponentStartInfo]
+/// type and performs validation that makes sense for all runners in the process.
+pub struct StartInfo {
+    /// The resolved URL of the component.
+    ///
+    /// This is the canonical URL obtained by the component resolver after
+    /// following redirects and resolving relative paths.
+    pub resolved_url: String,
+
+    /// The component's program declaration.
+    /// This information originates from `ComponentDecl.program`.
+    pub program: fdata::Dictionary,
+
+    /// The namespace to provide to the component instance.
+    ///
+    /// A namespace specifies the set of directories that a component instance
+    /// receives at start-up. Through the namespace directories, a component
+    /// may access capabilities available to it. The contents of the namespace
+    /// are mainly determined by the component's `use` declarations but may
+    /// also contain additional capabilities automatically provided by the
+    /// framework.
+    ///
+    /// By convention, a component's namespace typically contains some or all
+    /// of the following directories:
+    ///
+    /// - "/svc": A directory containing services that the component requested
+    ///           to use via its "import" declarations.
+    /// - "/pkg": A directory containing the component's package, including its
+    ///           binaries, libraries, and other assets.
+    ///
+    /// The mount points specified in each entry must be unique and
+    /// non-overlapping. For example, [{"/foo", ..}, {"/foo/bar", ..}] is
+    /// invalid.
+    pub namespace: Vec<fcrunner::ComponentNamespaceEntry>,
+
+    /// The directory this component serves.
+    pub outgoing_dir: Option<ServerEnd<fio::DirectoryMarker>>,
+
+    /// The directory served by the runner to present runtime information about
+    /// the component. The runner must either serve it, or drop it to avoid
+    /// blocking any consumers indefinitely.
+    pub runtime_dir: Option<ServerEnd<fio::DirectoryMarker>>,
+
+    /// The numbered handles that were passed to the component.
+    ///
+    /// If the component does not support numbered handles, the runner is expected
+    /// to close the handles.
+    pub numbered_handles: Vec<fprocess::HandleInfo>,
+
+    /// Binary representation of the component's configuration.
+    ///
+    /// # Layout
+    ///
+    /// The first 2 bytes of the data should be interpreted as an unsigned 16-bit
+    /// little-endian integer which denotes the number of bytes following it that
+    /// contain the configuration checksum. After the checksum, all the remaining
+    /// bytes are a persistent FIDL message of a top-level struct. The struct's
+    /// fields match the configuration fields of the component's compiled manifest
+    /// in the same order.
+    pub encoded_config: Option<fmem::Data>,
+
+    /// An eventpair that debuggers can use to defer the launch of the component.
+    ///
+    /// For example, ELF runners hold off from creating processes in the component
+    /// until ZX_EVENTPAIR_PEER_CLOSED is signaled on this eventpair. They also
+    /// ensure that runtime_dir is served before waiting on this eventpair.
+    /// ELF debuggers can query the runtime_dir to decide whether to attach before
+    /// they drop the other side of the eventpair, which is sent in the payload of
+    /// the DebugStarted event in fuchsia.component.events.
+    pub break_on_start: Option<zx::EventPair>,
+}
+
+impl TryFrom<fcrunner::ComponentStartInfo> for StartInfo {
+    type Error = StartInfoError;
+    fn try_from(start_info: fcrunner::ComponentStartInfo) -> Result<Self, Self::Error> {
+        let resolved_url =
+            start_info.resolved_url.ok_or_else(|| StartInfoError::MissingResolvedUrl)?;
+        let program = start_info.program.ok_or_else(|| StartInfoError::MissingProgram)?;
+        Ok(Self {
+            resolved_url,
+            program,
+            namespace: start_info.ns.unwrap_or_else(|| Vec::new()),
+            outgoing_dir: start_info.outgoing_dir,
+            runtime_dir: start_info.runtime_dir,
+            numbered_handles: start_info.numbered_handles.unwrap_or_else(|| Vec::new()),
+            encoded_config: start_info.encoded_config,
+            break_on_start: start_info.break_on_start,
+        })
+    }
+}
+
+impl From<StartInfo> for fcrunner::ComponentStartInfo {
+    fn from(start_info: StartInfo) -> Self {
+        Self {
+            resolved_url: Some(start_info.resolved_url),
+            program: Some(start_info.program),
+            ns: Some(start_info.namespace),
+            outgoing_dir: start_info.outgoing_dir,
+            runtime_dir: start_info.runtime_dir,
+            numbered_handles: Some(start_info.numbered_handles),
+            encoded_config: start_info.encoded_config,
+            break_on_start: start_info.break_on_start,
+            ..Default::default()
+        }
     }
 }
 
@@ -273,16 +433,32 @@ mod tests {
     #[test_case(&["a".to_owned()], vec!["a".to_owned()] ; "when args is a")]
     #[test_case(&["a".to_owned(), "b".to_owned()], vec!["a".to_owned(), "b".to_owned()] ; "when args a and b")]
     fn get_program_args_test(args: &[String], expected: Vec<String>) {
-        let start_info = new_start_info(Some(new_program_stanza_with_vec("args", Vec::from(args))));
-        assert_eq!(get_program_args(&start_info), expected);
+        let start_info =
+            new_start_info(Some(new_program_stanza_with_vec(ARGS_KEY, Vec::from(args))));
+        assert_eq!(get_program_args(&start_info).unwrap(), expected);
     }
 
     #[test_case(&[], vec![] ; "when args is empty")]
     #[test_case(&["a".to_owned()], vec!["a".to_owned()] ; "when args is a")]
     #[test_case(&["a".to_owned(), "b".to_owned()], vec!["a".to_owned(), "b".to_owned()] ; "when args a and b")]
     fn get_program_args_from_dict_test(args: &[String], expected: Vec<String>) {
-        let program = new_program_stanza_with_vec("args", Vec::from(args));
-        assert_eq!(get_program_args_from_dict(&program), expected);
+        let program = new_program_stanza_with_vec(ARGS_KEY, Vec::from(args));
+        assert_eq!(get_program_args_from_dict(&program).unwrap(), expected);
+    }
+
+    #[test]
+    fn get_program_args_invalid() {
+        let program = fdata::Dictionary {
+            entries: Some(vec![fdata::DictionaryEntry {
+                key: ARGS_KEY.to_string(),
+                value: Some(Box::new(fdata::DictionaryValue::Str("hello".to_string()))),
+            }]),
+            ..Default::default()
+        };
+        assert_eq!(
+            get_program_args_from_dict(&program),
+            Err(StartInfoProgramError::InvalidStrVec(ARGS_KEY.to_string()))
+        );
     }
 
     #[test_case(fdata::DictionaryValue::StrVec(vec!["foo=bar".to_owned(), "bar=baz".to_owned()]), Ok(Some(vec!["foo=bar".to_owned(), "bar=baz".to_owned()])); "when_values_are_valid")]

@@ -5,19 +5,21 @@
 #include "src/ui/scenic/lib/display/display_controller.h"
 
 #include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fuchsia/hardware/display/types/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
 namespace scenic_impl {
 namespace display {
 
-Display2::Display2(fuchsia::hardware::display::DisplayId display_id,
+Display2::Display2(fuchsia::hardware::display::types::DisplayId display_id,
                    std::vector<fuchsia::hardware::display::Mode> display_modes,
                    std::vector<fuchsia_images2::PixelFormat> pixel_formats)
     : display_id_(display_id),
       display_modes_(std::move(display_modes)),
       pixel_formats_(std::move(pixel_formats)) {}
 
-void Display2::OnVsync(zx::time timestamp, fuchsia::hardware::display::ConfigStamp config_stamp) {
+void Display2::OnVsync(zx::time timestamp,
+                       fuchsia::hardware::display::types::ConfigStamp config_stamp) {
   if (on_vsync_callback_) {
     on_vsync_callback_(timestamp, config_stamp);
   }
@@ -35,7 +37,7 @@ void DisplayCoordinator::AddDisplay(Display2 display) {
   }
 }
 
-bool DisplayCoordinator::RemoveDisplay(fuchsia::hardware::display::DisplayId display_id) {
+bool DisplayCoordinator::RemoveDisplay(fuchsia::hardware::display::types::DisplayId display_id) {
   auto it = std::find_if(displays_.begin(), displays_.end(), [display_id](const Display2& display) {
     return fidl::Equals(display.display_id(), display_id);
   });

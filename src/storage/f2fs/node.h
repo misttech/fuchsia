@@ -5,14 +5,12 @@
 #ifndef SRC_STORAGE_F2FS_NODE_H_
 #define SRC_STORAGE_F2FS_NODE_H_
 
-#include <numeric>
-
 #include <fbl/intrusive_double_list.h>
 #include <fbl/intrusive_wavl_tree.h>
 
+#include "src/storage/f2fs/bitmap.h"
 #include "src/storage/f2fs/f2fs_internal.h"
 #include "src/storage/f2fs/f2fs_layout.h"
-#include "src/storage/f2fs/file_cache.h"
 #include "src/storage/f2fs/node_page.h"
 
 class F2fs;
@@ -58,6 +56,23 @@ struct NodeInfo {
   uint8_t version = 0;   // version of the node
 };
 
+constexpr size_t kMaxNodeDepth = 4;
+struct NodePath {
+  nid_t ino = 0;
+  block_t num_new_nodes = 0;
+  size_t depth = 0;
+  size_t node_offset[kMaxNodeDepth] = {
+      0,
+  };
+  size_t offset_in_node[kMaxNodeDepth] = {
+      0,
+  };
+};
+
+bool IsSameDnode(NodePath &path, uint32_t node_offset);
+zx::result<NodePath> GetNodePath(VnodeF2fs &vnode, pgoff_t block);
+size_t GetOfsInDnode(NodePath &path);
+
 class NatEntry : public fbl::WAVLTreeContainable<std::unique_ptr<NatEntry>>,
                  public fbl::DoublyLinkedListable<NatEntry *> {
  public:
@@ -65,7 +80,7 @@ class NatEntry : public fbl::WAVLTreeContainable<std::unique_ptr<NatEntry>>,
   NatEntry(const NatEntry &) = delete;
   NatEntry &operator=(const NatEntry &) = delete;
   NatEntry(const NatEntry &&) = delete;
-  NatEntry &operator=(const NatEntry &&) = delete;
+  NatEntry &operator=(NatEntry &&) = delete;
 
   const NodeInfo &GetNodeInfo() { return ni_; }
   void SetNodeInfo(const NodeInfo &value) { ni_ = value; }
@@ -88,9 +103,7 @@ class NatEntry : public fbl::WAVLTreeContainable<std::unique_ptr<NatEntry>>,
   NodeInfo ni_;                // in-memory node information
 };
 
-inline uint8_t IncNodeVersion(uint8_t version) { return ++version; }
-
-class MapTester;
+class F2fsFakeDevTestFixture;
 
 class NodeManager {
  public:
@@ -101,80 +114,44 @@ class NodeManager {
   NodeManager &operator=(NodeManager &&) = delete;
 
   explicit NodeManager(F2fs *fs);
+  ~NodeManager();
 
-  void NodeInfoFromRawNat(NodeInfo &ni, RawNatEntry &raw_ne);
   zx_status_t BuildNodeManager();
-  void DestroyNodeManager();
-  zx::result<LockedPage> ReadNodePage(LockedPage page, nid_t nid, int type);
   zx_status_t GetNodePage(nid_t nid, LockedPage *out);
-  // If the node page at |start| doesn't hit in the cache, do readahead node pages
-  // from |start| in |parent|.
-  void ReadaheadNodePages(NodePage &parent, size_t start);
 
-  zx::result<bool> IsSameDnode(VnodeF2fs &vnode, pgoff_t index, uint32_t node_offset);
-  // If indices use the same node page, read the node page once and reuse it. This
-  // can reduce repeated node page access overhead.
-  // If |read_only| is true, it does not assign a new block address for kNullAddr.
-  zx::result<std::vector<block_t>> GetDataBlockAddresses(VnodeF2fs &vnode,
-                                                         const std::vector<pgoff_t> &indices,
-                                                         bool read_only = false);
-  zx::result<std::vector<block_t>> GetDataBlockAddresses(VnodeF2fs &vnode, pgoff_t index,
-                                                         size_t count, bool read_only = false) {
-    std::vector<pgoff_t> indices(count);
-    std::iota(indices.begin(), indices.end(), index);
-    return GetDataBlockAddresses(vnode, indices, read_only);
-  }
-
-  // If an unassigned node page is encountered while following the node path, a new node page is
-  // assigned. Caller should acquire LockType:kFileOp.
-  zx_status_t GetLockedDnodePage(VnodeF2fs &vnode, pgoff_t index, LockedPage *out);
-
-  // Read-only mode of GetLockedDnodePage().
-  zx_status_t FindLockedDnodePage(VnodeF2fs &vnode, pgoff_t index, LockedPage *out);
-
-  zx::result<uint32_t> GetOfsInDnode(VnodeF2fs &vnode, pgoff_t index);
-
-  zx_status_t RestoreNodeSummary(uint32_t segno, SummaryBlock &sum);
-
-  static bool IsColdFile(VnodeF2fs &vnode);
+  // If it fails to find a node at |path|, it creates and returns a new node.
+  zx::result<LockedPage> GetLockedDnodePage(NodePath &path, bool is_dir);
+  // It returns a node page if it succeeds to find one at |path|.
+  zx::result<LockedPage> FindLockedDnodePage(NodePath &path);
 
   void GetNodeInfo(nid_t nid, NodeInfo &out);
+  void SetNodeAddr(NodeInfo &ni, block_t new_blkaddr);
 
-  // It flushes all dirty node Pages that meet |operation|.if_page.
-  // It also removes dirty vnodes from the dirty list when there is no dirty Page for their vnodes
-  // and data. To ensure there is no access to the vnodes, it is called with LockType::kFileOp held
-  // during ckpt. This way guarantees that RecycleNode() for valid vnodes executes only at ckpt
-  // time.
-  pgoff_t FlushDirtyNodePages(WritebackOperation &operation);
-  pgoff_t FsyncNodePages(VnodeF2fs &vnode);
-
-  zx_status_t TruncateInodeBlocks(VnodeF2fs &vnode, pgoff_t from);
-
-  // Caller should acquire LockType:kFileOp.
-  zx_status_t RemoveInodePage(VnodeF2fs *vnode);
-  // Caller should acquire LockType:kFileOp.
-  zx::result<LockedPage> NewInodePage(VnodeF2fs &new_vnode);
+  pgoff_t FsyncNodePages(nid_t ino) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
 
   bool IsCheckpointedNode(nid_t nid);
 
-  void DecValidNodeCount(VnodeF2fs *vnode, uint32_t count, bool isInode);
   bool FlushNatsInJournal();
   zx_status_t FlushNatEntries();
-
-  zx::result<block_t> GetBlockAddrForDirtyNodePage(LockedPage &page, bool is_reclaim = false);
 
   zx_status_t RecoverInodePage(NodePage &page);
 
   // Check whether the given nid is within node id range.
   zx_status_t CheckNidRange(const nid_t &nid) const { return nid < max_nid_; }
 
-  // members for fsck and unit tests
+  zx::result<nid_t> AllocNid() __TA_EXCLUDES(free_nid_tree_lock_);
+  zx::result<nid_t> GetNextFreeNid() __TA_EXCLUDES(free_nid_tree_lock_);
+  int AddFreeNid(nid_t nid) __TA_EXCLUDES(free_nid_tree_lock_);
+
+  void TruncateNode(nid_t nid);
+  zx::result<LockedPage> NewNodePage(nid_t ino, nid_t nid, bool is_dirt, size_t ofs);
+
+  // for fsck and tests
   explicit NodeManager(SuperblockInfo *sb);
   void SetMaxNid(const nid_t value) { max_nid_ = value; }
   nid_t GetMaxNid() const { return max_nid_; }
   void SetNatAddress(const block_t value) { nat_blkaddr_ = value; }
   block_t GetNatAddress() const { return nat_blkaddr_; }
-
   void SetNextScanNid(const nid_t value) __TA_EXCLUDES(build_lock_) {
     std::lock_guard lock(build_lock_);
     next_scan_nid_ = value;
@@ -186,30 +163,25 @@ class NodeManager {
   nid_t GetNatCount() const { return nat_entries_count_; }
   zx_status_t AllocNatBitmap(const uint32_t size) {
     nat_bitmap_size_ = size;
-    nat_bitmap_ = std::make_unique<uint8_t[]>(nat_bitmap_size_);
-    memset(nat_bitmap_.get(), 0, nat_bitmap_size_);
+    nat_bitmap_.Reset(GetBitSize(nat_bitmap_size_));
     return ZX_OK;
   }
   void SetNatBitmap(const uint8_t *bitmap) {
-    std::memcpy(nat_bitmap_.get(), bitmap, nat_bitmap_size_);
+    CloneBits(nat_bitmap_, bitmap, 0, GetBitSize(nat_bitmap_size_));
   }
-  uint8_t *GetNatBitmap() const { return nat_bitmap_.get(); }
+  RawBitmap &GetNatBitmap() { return nat_bitmap_; }
   void GetNatBitmap(void *out);
-
-  SuperblockInfo &GetSuperblockInfo();
-
-  zx::result<> AllocNid(nid_t &out) __TA_EXCLUDES(free_nid_tree_lock_);
-  zx::result<nid_t> GetNextFreeNid() __TA_EXCLUDES(free_nid_tree_lock_);
-  int AddFreeNid(nid_t nid) __TA_EXCLUDES(free_nid_tree_lock_);
   size_t GetFreeNidCount() __TA_EXCLUDES(free_nid_tree_lock_) {
     fs::SharedLock free_nid_lock(free_nid_tree_lock_);
     return free_nid_tree_.size();
   }
 
  private:
+  void NodeInfoFromRawNat(NodeInfo &ni, RawNatEntry &raw_ne);
+  // If the node page at |start| doesn't hit in the cache, do readahead node pages
+  // from |start| in |parent|.
+  zx::result<LockedPage> GetNextNodePage(LockedPage &parent, size_t start);
   friend class MapTester;
-  bool IncValidNodeCount(VnodeF2fs *vnode, uint32_t count, bool isInode);
-
   pgoff_t CurrentNatAddr(nid_t start);
   bool IsUpdatedNatPage(nid_t start);
   pgoff_t NextNatAddr(pgoff_t block_addr);
@@ -226,21 +198,7 @@ class NodeManager {
   void DelFromNatCache(NatEntry &entry) __TA_REQUIRES_SHARED(nat_tree_lock_);
   NatEntry *GrabNatEntry(nid_t nid) __TA_REQUIRES_SHARED(nat_tree_lock_);
   void CacheNatEntry(nid_t nid, RawNatEntry &raw_entry);
-  void SetNodeAddr(NodeInfo &ni, block_t new_blkaddr);
   int TryToFreeNats(int nr_shrink);
-
-  zx::result<int32_t> GetNodePath(VnodeF2fs &vnode, pgoff_t block,
-                                  int32_t (&offset)[kMaxNodeBlockLevel],
-                                  uint32_t (&noffset)[kMaxNodeBlockLevel]);
-
-  // Caller should ensure node_page is locked.
-  void TruncateNode(VnodeF2fs &vnode, nid_t nid, NodePage &node_page);
-  zx::result<uint32_t> TruncateDnode(VnodeF2fs &vnode, nid_t nid);
-  zx::result<uint32_t> TruncateNodes(VnodeF2fs &vnode, nid_t start_nid, uint32_t nofs, int32_t ofs,
-                                     int32_t depth);
-  zx_status_t TruncatePartialNodes(VnodeF2fs &vnode, const Inode &ri,
-                                   const int32_t (&offset)[kMaxNodeBlockLevel], int32_t depth);
-  zx_status_t NewNodePage(VnodeF2fs &vnode, nid_t nid, uint32_t ofs, LockedPage *out);
 
   void BuildFreeNids() __TA_EXCLUDES(free_nid_tree_lock_) __TA_EXCLUDES(build_lock_);
   zx::result<> LookupFreeNidList(nid_t n) __TA_REQUIRES(free_nid_tree_lock_);
@@ -252,7 +210,7 @@ class NodeManager {
   zx_status_t InitNodeManager();
 
   F2fs *const fs_ = nullptr;
-  SuperblockInfo *superblock_info_ = nullptr;
+  SuperblockInfo &superblock_info_;
   block_t nat_blkaddr_ = 0;  // starting block address of NAT
 
   fs::SharedMutex nat_tree_lock_;   // protect nat_tree_lock
@@ -272,9 +230,9 @@ class NodeManager {
   nid_t next_scan_nid_ __TA_GUARDED(build_lock_) = 0;  // the next nid to be scanned
   std::set<nid_t> free_nid_tree_ __TA_GUARDED(free_nid_tree_lock_);  // tree for free nids
 
-  std::unique_ptr<uint8_t[]> nat_bitmap_ = nullptr;       // NAT bitmap pointer
-  std::unique_ptr<uint8_t[]> nat_prev_bitmap_ = nullptr;  // NAT previous checkpoint bitmap pointer
-  uint32_t nat_bitmap_size_ = 0;                          // NAT bitmap size
+  RawBitmap nat_bitmap_;          // NAT bitmap pointer
+  RawBitmap nat_prev_bitmap_;     // NAT previous checkpoint bitmap pointer
+  uint32_t nat_bitmap_size_ = 0;  // NAT bitmap size
 };
 
 }  // namespace f2fs

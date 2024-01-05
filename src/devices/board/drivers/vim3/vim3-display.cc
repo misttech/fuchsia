@@ -13,13 +13,13 @@
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <zircon/syscalls/smc.h>
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/display/dsi/cpp/bind.h>
+#include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/amlogiccanvas/cpp/bind.h>
-#include <bind/fuchsia/hardware/dsi/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/hdmi/cpp/bind.h>
 #include <bind/fuchsia/sysmem/cpp/bind.h>
 #include <soc/aml-a311d/a311d-gpio.h>
 #include <soc/aml-a311d/a311d-hw.h>
@@ -68,6 +68,16 @@ static const std::vector<fpbus::Mmio> display_mmios{
         .base = A311D_GPIO_BASE,
         .length = A311D_GPIO_LENGTH,
     }},
+    {{
+        // HDMITX (HDMI transmitter) Controller IP registers
+        .base = A311D_HDMITX_CONTROLLER_IP_BASE,
+        .length = A311D_HDMITX_CONTROLLER_IP_LENGTH,
+    }},
+    {{
+        // HDMITX (HDMI transmitter) Top-level registers
+        .base = A311D_HDMITX_TOP_LEVEL_BASE,
+        .length = A311D_HDMITX_TOP_LEVEL_LENGTH,
+    }},
 };
 
 static const std::vector<fpbus::Irq> display_irqs{
@@ -89,6 +99,14 @@ static const std::vector<fpbus::Bti> display_btis{
     {{
         .iommu_index = 0,
         .bti_id = BTI_DISPLAY,
+    }},
+};
+
+static const std::vector<fpbus::Smc> kDisplaySmcs{
+    {{
+        .service_call_num_base = ARM_SMC_SERVICE_CALL_NUM_SIP_SERVICE_BASE,
+        .count = 1,
+        .exclusive = false,
     }},
 };
 
@@ -122,52 +140,39 @@ zx_status_t Vim3::DisplayInit() {
     dev.mmio() = display_mmios;
     dev.irq() = display_irqs;
     dev.bti() = display_btis;
+    dev.smc() = kDisplaySmcs;
     return dev;
   }();
 
   std::vector<fuchsia_driver_framework::BindRule> dsi_bind_rules{
-      fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
-                              bind_fuchsia_hardware_dsi::BIND_PROTOCOL_IMPL),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL, bind_fuchsia_display_dsi::BIND_PROTOCOL_IMPL),
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty> dsi_properties{
-      fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_hardware_dsi::BIND_PROTOCOL_IMPL),
-  };
-
-  std::vector<fuchsia_driver_framework::BindRule> hdmi_bind_rules{
-      fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                              bind_fuchsia_hardware_hdmi::BIND_FIDL_PROTOCOL_SERVICE),
-  };
-
-  std::vector<fuchsia_driver_framework::NodeProperty> hdmi_properties{
-      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                        bind_fuchsia_hardware_hdmi::BIND_FIDL_PROTOCOL_SERVICE),
+      fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_display_dsi::BIND_PROTOCOL_IMPL),
   };
 
   std::vector<fuchsia_driver_framework::BindRule> gpio_lcd_reset_bind_rules{
       fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                              bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+                              bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(VIM3_LCD_RESET)),
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty> gpio_lcd_reset_properties{
-      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                        bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
-      fdf::MakeProperty(bind_fuchsia_hardware_gpio::FUNCTION,
-                        bind_fuchsia_hardware_gpio::FUNCTION_LCD_RESET),
+      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+      fdf::MakeProperty(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_LCD_RESET),
   };
 
   std::vector<fuchsia_driver_framework::BindRule> gpio_hdmi_hotplug_detect_bind_rules{
       fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                              bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+                              bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(VIM3_HPD_IN)),
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty> gpio_hdmi_hotplug_detect_properties{
-      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                        bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
-      fdf::MakeProperty(bind_fuchsia_hardware_gpio::FUNCTION,
-                        bind_fuchsia_hardware_gpio::FUNCTION_HDMI_HOTPLUG_DETECT),
+      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+      fdf::MakeProperty(bind_fuchsia_gpio::FUNCTION,
+                        bind_fuchsia_gpio::FUNCTION_HDMI_HOTPLUG_DETECT),
   };
 
   std::vector<fuchsia_driver_framework::BindRule> sysmem_bind_rules = std::vector{
@@ -194,10 +199,6 @@ zx_status_t Vim3::DisplayInit() {
       {{
           .bind_rules = dsi_bind_rules,
           .properties = dsi_properties,
-      }},
-      {{
-          .bind_rules = hdmi_bind_rules,
-          .properties = hdmi_properties,
       }},
       {{
           .bind_rules = gpio_lcd_reset_bind_rules,

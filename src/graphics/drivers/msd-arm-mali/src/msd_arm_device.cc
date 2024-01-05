@@ -7,6 +7,14 @@
 #include <fidl/fuchsia.hardware.gpu.mali/cpp/driver/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/fit/defer.h>
+#include <lib/magma/platform/platform_barriers.h>
+#include <lib/magma/platform/platform_logger.h>
+#include <lib/magma/platform/platform_port.h>
+#include <lib/magma/platform/platform_trace.h>
+#include <lib/magma/util/dlog.h>
+#include <lib/magma/util/macros.h>
+#include <lib/magma/util/short_macros.h>
+#include <lib/magma_service/msd_defs.h>
 
 #include <bitset>
 #include <chrono>
@@ -15,14 +23,6 @@
 #include <iterator>
 #include <string>
 
-#include "magma_util/dlog.h"
-#include "magma_util/macros.h"
-#include "magma_util/short_macros.h"
-#include "msd_defs.h"
-#include "platform_barriers.h"
-#include "platform_logger.h"
-#include "platform_port.h"
-#include "platform_trace.h"
 #include "src/graphics/drivers/msd-arm-mali/include/magma_vendor_queries.h"
 #include "src/graphics/drivers/msd-arm-mali/src/job_scheduler.h"
 #include "src/graphics/drivers/msd-arm-mali/src/registers.h"

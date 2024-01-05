@@ -38,7 +38,9 @@ host_test_data("errcat_other") {
   outputs = [ "$root_out_dir/fidlc-tests/{{source_file_part}}" ]
 }
 
+relative_root_out_dir = rebase_path(root_out_dir, root_build_dir)
 test("fidlc-test") {
+  defines = [ "TEST_DATA_ROOT=\"${relative_root_out_dir}\"" ]
   sources = [
     "alias_tests.cc",
     "array_tests.cc",
@@ -46,16 +48,14 @@ test("fidlc-test") {
     "availability_interleaving_tests.cc",
     "bits_tests.cc",
     "canonical_names_tests.cc",
-    "coded_types_generator_tests.cc",
-    "compiled_transformer_tests.cc",
     "consts_tests.cc",
     "declaration_order_tests.cc",
+    "decomposition_tests.cc",
     "direct_dependencies_tests.cc",
     "enums_tests.cc",
     "errcat_docs_tests.cc",
     "errcat_good_tests.cc",
     "errors_tests.cc",
-    "fix_tests.cc",
     "flat_ast_tests.cc",
     "flexible_tests.cc",
     "formatter_tests.cc",
@@ -70,7 +70,6 @@ test("fidlc-test") {
     "new_type_tests.cc",
     "ordinals_tests.cc",
     "overlay_tests.cc",
-    "parsed_transformer_tests.cc",
     "parsing_tests.cc",
     "protocol_tests.cc",
     "recoverable_compilation_tests.cc",
@@ -80,16 +79,12 @@ test("fidlc-test") {
     "resource_tests.cc",
     "resourceness_tests.cc",
     "service_tests.cc",
-    "source_map_generator_tests.cc",
-    "source_signature_tests.cc",
     "span_tests.cc",
     "strictness_tests.cc",
     "string_array_tests.cc",
     "structs_tests.cc",
     "table_tests.cc",
     "test_library.cc",
-    "token_list_tests.cc",
-    "token_tests.cc",
     "transport_tests.cc",
     "types_tests.cc",
     "typeshape_tests.cc",
@@ -105,9 +100,9 @@ test("fidlc-test") {
     ":errcat_fidl_good",
     ":errcat_md",
     ":errcat_other",
+    "//src/lib/fxl/test:gtest_main",
     "//third_party/boringssl",
+    "//third_party/googletest:gmock",
     "//tools/fidl/fidlc:fidl",
-    "//tools/fidl/fidlc:fidl-fix-cli",
-    "//zircon/system/ulib/zxtest",
   ]
 }

@@ -3,12 +3,9 @@
 // found in the LICENSE file.
 
 use {
-    crate::{
-        capability::{CapabilityProvider, CapabilitySource},
-        model::{
-            component::{ComponentInstance, Runtime, WeakComponentInstance},
-            error::ModelError,
-        },
+    crate::model::{
+        component::{ComponentInstance, ComponentRuntime, WeakComponentInstance},
+        error::ModelError,
     },
     anyhow::format_err,
     async_trait::async_trait,
@@ -23,6 +20,7 @@ use {
         collections::HashMap,
         convert::TryFrom,
         fmt,
+        path::PathBuf,
         sync::{Arc, Weak},
     },
     tracing::warn,
@@ -128,8 +126,6 @@ macro_rules! external_events {
                     $(
                         EventType::$name => Ok(fcomponent::EventType::$name),
                     )*
-                    EventType::CapabilityRouted =>
-                        Err(format_err!("can't serve capability routed")),
                 }
             }
         }
@@ -138,13 +134,9 @@ macro_rules! external_events {
 
 // Keep the event types listed below in alphabetical order!
 events!([
-    /// After a CapabilityProvider has been selected through the CapabilityRouted event,
-    /// the CapabilityRequested event is dispatched with the ServerEnd of the channel
-    /// for the capability.
+    /// After a CapabilityProvider has been selected, the CapabilityRequested event is dispatched
+    /// with the ServerEnd of the channel for the capability.
     (CapabilityRequested, capability_requested),
-    /// A capability is being requested by a component and requires routing.
-    /// The event propagation system is used to supply the capability being requested.
-    (CapabilityRouted, capability_routed),
     /// A directory exposed to the framework by a component is available.
     (DirectoryReady, directory_ready),
     /// A component instance was discovered.
@@ -217,14 +209,9 @@ pub enum EventPayload {
     CapabilityRequested {
         source_moniker: Moniker,
         name: String,
+        flags: fio::OpenFlags,
+        relative_path: PathBuf,
         capability: Arc<Mutex<Option<zx::Channel>>>,
-    },
-    CapabilityRouted {
-        source: CapabilitySource,
-        // Events are passed to hooks as immutable borrows. In order to mutate,
-        // a field within an Event, interior mutability is employed here with
-        // a Mutex.
-        capability_provider: Arc<Mutex<Option<Box<dyn CapabilityProvider>>>>,
     },
     DirectoryReady {
         name: String,
@@ -262,16 +249,13 @@ pub struct RuntimeInfo {
 }
 
 impl RuntimeInfo {
-    pub fn from_runtime(runtime: &mut Runtime) -> Self {
-        let diagnostics_receiver = Arc::new(Mutex::new(
-            runtime
-                .controller
-                .as_mut()
-                .and_then(|controller| controller.take_diagnostics_receiver()),
-        ));
-
+    pub fn from_runtime(
+        runtime: &ComponentRuntime,
+        diagnostics_receiver: oneshot::Receiver<fdiagnostics::ComponentDiagnostics>,
+    ) -> Self {
+        let diagnostics_receiver = Arc::new(Mutex::new(Some(diagnostics_receiver)));
         Self {
-            outgoing_dir: clone_dir(runtime.outgoing_dir.as_ref()),
+            outgoing_dir: clone_dir(runtime.outgoing_dir()),
             runtime_dir: clone_dir(runtime.runtime_dir.as_ref()),
             diagnostics_receiver,
             start_time: runtime.timestamp,
@@ -289,9 +273,6 @@ impl fmt::Debug for EventPayload {
             }
             EventPayload::CapabilityRequested { name, .. } => {
                 formatter.field("name", &name).finish()
-            }
-            EventPayload::CapabilityRouted { source: capability, .. } => {
-                formatter.field("capability", &capability).finish()
             }
             EventPayload::Started { component_decl, .. } => {
                 formatter.field("component_decl", &component_decl).finish()
@@ -386,11 +367,19 @@ impl Event {
 impl TransferEvent for EventPayload {
     async fn transfer(&self) -> Self {
         match self {
-            EventPayload::CapabilityRequested { source_moniker, name, capability } => {
+            EventPayload::CapabilityRequested {
+                source_moniker,
+                name,
+                capability,
+                flags,
+                relative_path,
+            } => {
                 let capability = capability.lock().await.take();
                 EventPayload::CapabilityRequested {
                     source_moniker: source_moniker.clone(),
                     name: name.to_string(),
+                    flags: *flags,
+                    relative_path: relative_path.clone(),
                     capability: Arc::new(Mutex::new(capability)),
                 }
             }
@@ -423,9 +412,6 @@ impl fmt::Display for Event {
             EventPayload::DirectoryReady { name, .. } => format!("serving {}", name),
             EventPayload::CapabilityRequested { source_moniker, name, .. } => {
                 format!("requested '{}' from '{}'", name.to_string(), source_moniker)
-            }
-            EventPayload::CapabilityRouted { source, .. } => {
-                format!("routed {}", source.to_string())
             }
             EventPayload::Stopped { status } => {
                 format!("with status: {}", status.to_string())
@@ -522,6 +508,8 @@ mod tests {
                 source_moniker: Moniker::root(),
                 name: "foo".to_string(),
                 capability: capability_server_end,
+                flags: fio::OpenFlags::empty(),
+                relative_path: "".into(),
             },
         );
 

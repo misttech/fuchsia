@@ -15,10 +15,6 @@
             environment: "#core-env",
         },
         {
-            name: "debug-dash-launcher",
-            url: "fuchsia-pkg://fuchsia.com/debug-dash-launcher#meta/debug_dash_launcher.cm",
-        },
-        {
             name: "session-manager",
             url: "fuchsia-pkg://fuchsia.com/session_manager#meta/session_manager.cm",
             startup: "eager",
@@ -87,6 +83,8 @@
             name: "cobalt",
             url: "fuchsia-pkg://fuchsia.com/cobalt#meta/cobalt.cm",
         },
+
+        // TODO(https://fxbug.dev/294908023) move to the relevant core shard
         {
             name: "starnix_runner",
             url: "fuchsia-pkg://fuchsia.com/starnix#meta/starnix_runner.cm",
@@ -111,20 +109,6 @@
         {
             name: "font_provider",
             url: "fuchsia-pkg://fuchsia.com/fonts#meta/fonts.cm",
-        },
-        {
-            name: "overnetstack",
-            url: "fuchsia-pkg://fuchsia.com/overnetstack#meta/overnetstack.cm",
-            environment: "#core-env",
-        },
-        {
-            name: "remote-diagnostics-bridge",
-            url: "fuchsia-pkg://fuchsia.com/remote-diagnostics-bridge#meta/remote-diagnostics-bridge.cm",
-            environment: "#core-env",
-        },
-        {
-            name: "debug_serial",
-            url: "fuchsia-pkg://fuchsia.com/debug-serial#meta/debug-serial.cm",
         },
         {
             name: "pkg-resolver",
@@ -157,6 +141,11 @@
             url: "fuchsia-pkg://fuchsia.com/agis#meta/agis.cm",
             environment: "#core-env",
         },
+        {
+            name: "vsock",
+            url: "fuchsia-pkg://fuchsia.com/vsock_service#meta/vsock_service.cm",
+            environment: "#core-env",
+        },
     ], // children
     capabilities: [
         // Note: `data`, `cache`, and `temp` storage capabilities are defined in a shard and
@@ -171,11 +160,6 @@
             dependency: "weak",
         },
         {
-            protocol: [ "fuchsia.kernel.DebugResource" ],
-            from: "parent",
-            to: "#debug_serial",
-        },
-        {
             protocol: [ "fuchsia.ui.activity.Provider" ],
             from: "#activity",
             to: [ "#cobalt_system_metrics" ],
@@ -185,6 +169,12 @@
             from: "void",
             to: "#font_provider",
             availability: "optional",
+        },
+        {
+            protocol: "fuchsia.bluetooth.snoop.Snoop",
+            from: "#bt-snoop",
+            to: "#bluetooth-core",
+            source_availability: "unknown",
         },
         {
             protocol: [ "fuchsia.device.NameProvider" ],
@@ -241,11 +231,6 @@
             protocol: [ "fuchsia.posix.socket.Provider" ],
             from: "#network",
             to: [ "#sl4f_bridge_server" ],
-        },
-        {
-            protocol: [ "fuchsia.posix.socket.Provider" ],
-            from: "#network",
-            to: [ "#starnix_runner" ],
         },
         {
             protocol: "fuchsia.stash.SecureStore",
@@ -306,16 +291,6 @@
             subdir: "pkg-resolver",
         },
         {
-            protocol: "fuchsia.hardware.pty.Device",
-            from: "parent",
-            to: "#debug-dash-launcher",
-        },
-        {
-            protocol: "fuchsia.pkg.PackageResolver",
-            from: "#pkg-resolver",
-            to: "#debug-dash-launcher",
-        },
-        {
             protocol: [
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.paver.Paver",
@@ -330,20 +305,12 @@
             to: "#system-update",
         },
         {
-            protocol: [ "fuchsia.kernel.VmexResource" ],
-            from: "parent",
-            to: "#starnix_runner",
-        },
-        {
             protocol: [
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
             ],
             from: "#sysmem_connector",
-            to: [
-                "#agis",
-                "#starnix_runner",
-            ],
+            to: [ "#agis" ],
         },
         {
             protocol: "fuchsia.factory.MiscFactoryStoreProvider",
@@ -366,15 +333,6 @@
             to: "#agis",
         },
         {
-            protocol: [
-                "fuchsia.diagnostics.ArchiveAccessor",
-                "fuchsia.sys2.RealmExplorer.root",
-                "fuchsia.sys2.RealmQuery.root",
-            ],
-            from: "parent",
-            to: "#remote-diagnostics-bridge",
-        },
-        {
             directory: "config-data",
             from: "parent",
             to: "#font_provider",
@@ -384,17 +342,6 @@
             protocol: "fuchsia.kernel.Stats",
             from: "parent",
             to: "#cobalt_system_metrics",
-        },
-        {
-            protocol: "fuchsia.process.Launcher",
-            from: "parent",
-            to: "#debug-dash-launcher",
-        },
-        {
-            protocol: "fuchsia.sys2.RealmQuery.root",
-            from: "parent",
-            as: "fuchsia.sys2.RealmQuery",
-            to: "#debug-dash-launcher",
         },
         {
             protocol: [ "fuchsia.ui.display.internal.DisplayPower" ],
@@ -435,6 +382,13 @@
             as: "dev-thermal",
             to: "#cobalt_system_metrics",
             subdir: "thermal",
+        },
+        {
+            directory: "dev-class",
+            from: "parent",
+            as: "dev-vsock",
+            to: "#vsock",
+            subdir: "vsock",
         },
         {
             directory: "root-ssl-certificates",
@@ -489,10 +443,7 @@
         {
             protocol: [ "fuchsia.vulkan.loader.Loader" ],
             from: "#vulkan_loader",
-            to: [
-                "#agis",
-                "#starnix_runner",
-            ],
+            to: [ "#agis" ],
         },
         {
             directory: "dev-class",
@@ -511,10 +462,7 @@
             directory: "dev-class",
             from: "parent",
             as: "dev-gpu",
-            to: [
-                "#starnix_runner",
-                "#vulkan_loader",
-            ],
+            to: [ "#vulkan_loader" ],
             subdir: "gpu",
         },
         {
@@ -552,12 +500,21 @@
             to: "#vulkan_loader",
             subdir: "goldfish-sync",
         },
+
+        // TODO(fxbug.dev/135645): Remove bt-host driver code
         {
             directory: "dev-class",
             from: "parent",
             as: "dev-bt-host",
             to: "#bluetooth-core",
             subdir: "bt-host",
+        },
+        {
+            directory: "dev-class",
+            from: "parent",
+            as: "dev-bt-hci",
+            to: "#bluetooth-core",
+            subdir: "bt-hci",
         },
         {
             directory: "dev-class",
@@ -645,6 +602,11 @@
     ],
     expose: [
         {
+            protocol: [ "fuchsia.dash.Launcher" ],
+            from: "#debug-dash-launcher",
+            source_availability: "unknown",
+        },
+        {
             protocol: "fuchsia.component.Binder",
             from: "framework",
         },
@@ -697,6 +659,15 @@
         {
             protocol: [ "fuchsia.virtualization.ZirconGuestManager" ],
             from: "#zircon-guest-manager",
+            source_availability: "unknown",
+        },
+        {
+            protocol: [
+                "fuchsia.tracing.controller.Controller",
+                "fuchsia.tracing.perfetto.ProducerConnector",
+                "fuchsia.tracing.provider.Registry",
+            ],
+            from: "#trace_manager",
             source_availability: "unknown",
         },
     ],

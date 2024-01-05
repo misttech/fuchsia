@@ -5,13 +5,15 @@
     children: [
         {
             name: "bootstrap",
-            url: "fuchsia-boot:///#meta/bootstrap.cm",
+            url: "fuchsia-boot:///bootstrap#meta/bootstrap.cm",
             startup: "eager",
+            environment: "#elf-env",
         },
         {
             name: "startup",
-            url: "fuchsia-boot:///#meta/startup.cm",
+            url: "fuchsia-boot:///startup#meta/startup.cm",
             startup: "eager",
+            environment: "#elf-env",
         },
         {
             name: "core",
@@ -19,8 +21,21 @@
             environment: "#core-env",
             on_terminate: "reboot",
         },
+        {
+            name: "elf_runner",
+            url: "fuchsia-builtin://#elf_runner.cm",
+        },
+        {
+            name: "config",
+            url: "fuchsia-boot:///config#meta/config.cm",
+        },
     ],
     offer: [
+        {
+            from: "#config",
+            to: "#bootstrap",
+            config: [ "fuchsia.driver.DriverLoadFuzzerMaxDelayMs" ],
+        },
         {
             protocol: "fuchsia.component.Binder",
             from: "#core",
@@ -36,6 +51,15 @@
             to: "#startup",
         },
 
+        // The LogSink capability comes from an ELF component, but running ELF components
+        // requires an ELF runner. Therefore the ELF runner can't get the LogSink capability.
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "void",
+            to: "#elf_runner",
+            availability: "optional",
+        },
+
         // We route these from void to bootstrap to satisfy the requirement
         // that the protocols routed everywhere. Bootstrap is exposing them itself.
         {
@@ -44,7 +68,10 @@
                 "fuchsia.logger.LogSink",
             ],
             from: "void",
-            to: "#bootstrap",
+            to: [
+                "#bootstrap",
+                "#config",
+            ],
             availability: "optional",
         },
 
@@ -71,13 +98,16 @@
                 "fuchsia.kernel.CpuResource",
                 "fuchsia.kernel.DebugResource",
                 "fuchsia.kernel.EnergyInfoResource",
+                "fuchsia.kernel.FramebufferResource",
                 "fuchsia.kernel.HypervisorResource",
                 "fuchsia.kernel.InfoResource",
+                "fuchsia.kernel.IommuResource",
                 "fuchsia.kernel.IoportResource",
                 "fuchsia.kernel.IrqResource",
                 "fuchsia.kernel.MexecResource",
                 "fuchsia.kernel.MmioResource",
                 "fuchsia.kernel.PowerResource",
+                "fuchsia.kernel.ProfileResource",
                 "fuchsia.kernel.RootJob",
                 "fuchsia.kernel.RootJobForInspect",
                 "fuchsia.kernel.SmcResource",
@@ -123,6 +153,11 @@
             to: "#core",
         },
         {
+            protocol: [ "fuchsia.memory.report.SnapshotProvider" ],
+            from: "#elf_runner",
+            to: "#core",
+        },
+        {
             protocol: [
                 "fuchsia.component.resolution.Resolver",
                 "fuchsia.sys2.SystemController",
@@ -158,7 +193,9 @@
                 "fuchsia.device.NameProvider",
                 "fuchsia.diagnostics.ArchiveAccessor",
                 "fuchsia.diagnostics.FeedbackArchiveAccessor",
+                "fuchsia.diagnostics.host.ArchiveAccessor",
                 "fuchsia.diagnostics.LegacyMetricsArchiveAccessor",
+                "fuchsia.diagnostics.LogSettings",
                 "fuchsia.diagnostics.LoWPANArchiveAccessor",
                 "fuchsia.driver.development.DriverDevelopment",
                 "fuchsia.driver.registrar.DriverRegistrar",
@@ -191,7 +228,6 @@
                 "fuchsia.tracing.kernel.Controller",
                 "fuchsia.tracing.kernel.Reader",
                 "fuchsia.update.verify.BlobfsVerifier",
-                "fuchsia.vboot.FirmwareParam",
                 "fuchsia.virtualconsole.SessionManager",
             ],
             from: "#bootstrap",
@@ -334,11 +370,27 @@
         {
             name: "core-env",
             extends: "realm",
+            runners: [
+                {
+                    runner: "elf",
+                    from: "#elf_runner",
+                },
+            ],
             resolvers: [
                 {
                     resolver: "base_resolver",
                     from: "#bootstrap",
                     scheme: "fuchsia-pkg",
+                },
+            ],
+        },
+        {
+            name: "elf-env",
+            extends: "realm",
+            runners: [
+                {
+                    runner: "elf",
+                    from: "#elf_runner",
                 },
             ],
         },

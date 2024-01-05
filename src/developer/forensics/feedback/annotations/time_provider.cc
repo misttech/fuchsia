@@ -4,6 +4,7 @@
 
 #include "src/developer/forensics/feedback/annotations/time_provider.h"
 
+#include <fuchsia/time/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 
@@ -31,9 +32,12 @@ ErrorOr<std::string> GetUptime() {
 TimeProvider::TimeProvider(async_dispatcher_t* dispatcher, zx::unowned_clock clock_handle,
                            std::unique_ptr<timekeeper::Clock> clock)
     : clock_(std::move(clock)),
-      wait_for_clock_start_(this, clock_handle->get_handle(), ZX_CLOCK_STARTED, /*options=*/0) {
-  if (const zx_status_t status = wait_for_clock_start_.Begin(dispatcher); status != ZX_OK) {
-    FX_PLOGS(FATAL, status) << "Failed to wait for clock start";
+      wait_for_logging_quality_clock_(this, clock_handle->get_handle(),
+                                      fuchsia::time::SIGNAL_UTC_CLOCK_LOGGING_QUALITY,
+                                      /*options=*/0) {
+  if (const zx_status_t status = wait_for_logging_quality_clock_.Begin(dispatcher);
+      status != ZX_OK) {
+    FX_PLOGS(FATAL, status) << "Failed to wait for logging quality clock";
   }
 }
 
@@ -59,12 +63,13 @@ Annotations TimeProvider::Get() {
   };
 }
 
-void TimeProvider::OnClockStart(async_dispatcher_t* dispatcher, async::WaitBase* wait,
-                                zx_status_t status, const zx_packet_signal_t* signal) {
+void TimeProvider::OnClockLoggingQuality(async_dispatcher_t* dispatcher, async::WaitBase* wait,
+                                         zx_status_t status, const zx_packet_signal_t* signal) {
   if (status != ZX_OK) {
-    FX_PLOGS(WARNING, status) << "Wait for clock start completed with error, trying again";
+    FX_PLOGS(WARNING, status)
+        << "Wait for logging quality clock completed with error, trying again";
 
-    // Attempt to wait for the clock to start again.
+    // Attempt to wait for the clock to achieve logging quality again.
     wait->Begin(dispatcher);
     return;
   }

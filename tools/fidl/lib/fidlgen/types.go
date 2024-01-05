@@ -12,7 +12,6 @@ import (
 	"math"
 	"os"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -81,7 +80,6 @@ type Experiment string
 // the source of truth for this mirror.
 const (
 	ExperimentAllowNewTypes       Experiment = "allow_new_types"
-	ExperimentNoOptionalStructs   Experiment = "no_optional_structs"
 	ExperimentOutputIndexJSON     Experiment = "output_index_json"
 	ExperimentUnknownInteractions Experiment = "unknown_interactions"
 )
@@ -295,7 +293,7 @@ func (typ PrimitiveSubtype) NumberOfBytes() int {
 type InternalSubtype string
 
 const (
-	TransportErr InternalSubtype = "transport_error"
+	FrameworkErr InternalSubtype = "framework_error"
 )
 
 type HandleSubtype string
@@ -564,7 +562,6 @@ type Type struct {
 	ProtocolTransport  string
 	ObjType            uint32
 	ResourceIdentifier string
-	TypeShapeV1        TypeShape
 	TypeShapeV2        TypeShape
 	PointeeType        *Type
 }
@@ -578,10 +575,6 @@ func (t *Type) UnmarshalJSON(b []byte) error {
 	}
 
 	err = json.Unmarshal(*obj["kind"], &t.Kind)
-	if err != nil {
-		return err
-	}
-	err = json.Unmarshal(*obj["type_shape_v1"], &t.TypeShapeV1)
 	if err != nil {
 		return err
 	}
@@ -711,7 +704,6 @@ func (t *Type) UnmarshalJSON(b []byte) error {
 func (t *Type) MarshalJSON() ([]byte, error) {
 	obj := map[string]interface{}{
 		"kind":          t.Kind,
-		"type_shape_v1": t.TypeShapeV1,
 		"type_shape_v2": t.TypeShapeV2,
 	}
 	switch t.Kind {
@@ -941,7 +933,6 @@ type TypeShape struct {
 	MaxHandles          int  `json:"max_handles"`
 	MaxOutOfLine        int  `json:"max_out_of_line"`
 	HasPadding          bool `json:"has_padding"`
-	HasEnvelope         bool `json:"has_envelope"`
 	HasFlexibleEnvelope bool `json:"has_flexible_envelope"`
 }
 
@@ -1167,6 +1158,9 @@ func (rl resourceableLayoutDecl) GetResourceness() Resourceness {
 // Alias represents the declaration of a FIDL alias.
 type Alias struct {
 	decl
+	Type       Type                    `json:"type"`
+	MaybeAlias *PartialTypeConstructor `json:"experimental_maybe_from_alias,omitempty"`
+	// TODO(fxbug.dev/7807): Remove PartialTypeConstructor.
 	PartialTypeConstructor PartialTypeConstructor `json:"partial_type_ctor"`
 }
 
@@ -1192,7 +1186,6 @@ type Union struct {
 	IsResult    bool          `json:"is_result"`
 	Members     []UnionMember `json:"members"`
 	Strictness  `json:"strict"`
-	TypeShapeV1 TypeShape `json:"type_shape_v1"`
 	TypeShapeV2 TypeShape `json:"type_shape_v2"`
 }
 
@@ -1213,7 +1206,6 @@ type Table struct {
 	resourceableLayoutDecl
 	Members     []TableMember `json:"members"`
 	Strictness  `json:"strict"`
-	TypeShapeV1 TypeShape `json:"type_shape_v1"`
 	TypeShapeV2 TypeShape `json:"type_shape_v2"`
 }
 
@@ -1228,43 +1220,12 @@ type TableMember struct {
 	MaxOutOfLine      int                     `json:"max_out_of_line"`
 }
 
-// byTableOrdinal is a wrapper type for sorting a []TableMember.
-type byTableOrdinal []TableMember
-
-func (s byTableOrdinal) Len() int {
-	return len(s)
-}
-
-func (s byTableOrdinal) Less(i, j int) bool {
-	return s[i].Ordinal < s[j].Ordinal
-}
-
-func (s byTableOrdinal) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-}
-
-// SortedMembersNoReserved returns the table's members sorted by ordinal,
-// excluding reserved members.
-//
-// TODO(fxbug.dev/115754): Remove.
-func (t *Table) SortedMembersNoReserved() []TableMember {
-	var members []TableMember
-	for _, member := range t.Members {
-		if !member.Reserved {
-			members = append(members, member)
-		}
-	}
-	sort.Sort(byTableOrdinal(members))
-	return members
-}
-
 // Struct represents a declaration of a FIDL struct.
 type Struct struct {
 	resourceableLayoutDecl
 	IsEmptySuccessStruct bool           `json:"is_empty_success_struct"`
 	Members              []StructMember `json:"members"`
 	MaxHandles           int            `json:"max_handles"`
-	TypeShapeV1          TypeShape      `json:"type_shape_v1"`
 	TypeShapeV2          TypeShape      `json:"type_shape_v2"`
 }
 
@@ -1274,7 +1235,6 @@ type StructMember struct {
 	Type              Type                    `json:"type"`
 	MaybeDefaultValue *Constant               `json:"maybe_default_value,omitempty"`
 	MaybeAlias        *PartialTypeConstructor `json:"experimental_maybe_from_alias,omitempty"`
-	FieldShapeV1      FieldShape              `json:"field_shape_v1"`
 	FieldShapeV2      FieldShape              `json:"field_shape_v2"`
 }
 
@@ -1308,7 +1268,6 @@ type Overlay struct {
 	resourceableLayoutDecl
 	Members     []OverlayMember `json:"members"`
 	Strictness  `json:"strict"`
-	TypeShapeV1 TypeShape `json:"type_shape_v1"`
 	TypeShapeV2 TypeShape `json:"type_shape_v2"`
 }
 
@@ -1507,9 +1466,9 @@ func (m *Method) HasResultUnion() bool {
 	return m.ValueType != nil
 }
 
-// HasTransportError returns true if the method uses a result union with
-// transport_err variant. This is true if it is a flexible two-way method.
-func (m *Method) HasTransportError() bool {
+// HasFrameworkError returns true if the method uses a result union with
+// framework_err variant. This is true if it is a flexible two-way method.
+func (m *Method) HasFrameworkError() bool {
 	return m.HasRequest && m.HasResponse && m.IsFlexible()
 }
 
@@ -2028,13 +1987,21 @@ func (r *Root) ForBindings(language string) Root {
 	})
 }
 
-// ForTransport filters out protocols (and nested anonymous layouts) that do
-// not support the given transport. It returns a new Root and does not modify r.
+// ForTransport filters out protocols and services (and any nested anonymous
+// layouts) that do not support the given transport. It returns a new Root and
+// does not modify r.
 func (r *Root) ForTransport(transport string) Root {
 	return r.filter(func(e Element) bool {
-		if protocol, ok := e.(*Protocol); ok {
-			if _, ok := protocol.Transports()[transport]; !ok {
+		switch e := e.(type) {
+		case *Protocol:
+			if _, ok := e.Transports()[transport]; !ok {
 				return false
+			}
+		case *Service:
+			for _, member := range e.Members {
+				if member.Type.ProtocolTransport != transport {
+					return false
+				}
 			}
 		}
 		return true

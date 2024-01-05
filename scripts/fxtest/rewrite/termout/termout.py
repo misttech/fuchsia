@@ -104,6 +104,15 @@ def init():
     _init = True
 
 
+def is_init() -> bool:
+    """Return if termout is initialized.
+
+    Returns:
+        bool: True if output is initialized, false otherwise.
+    """
+    return _init
+
+
 @dataclass
 class Size:
     """Represents the width and height of a terminal window."""
@@ -166,7 +175,9 @@ def write_lines(
                 _last_line_count = len(lines)
             for _ in range(_last_line_count - 1):
                 sys.stdout.write(
-                    "\r" + colorama.ansi.clear_line() + colorama.ansi.Cursor.UP()
+                    "\r"
+                    + colorama.ansi.clear_line()
+                    + colorama.ansi.Cursor.UP()
                 )
             sys.stdout.write("\r" + colorama.ansi.clear_line())
 

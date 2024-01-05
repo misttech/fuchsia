@@ -6,7 +6,6 @@ use anyhow::{anyhow, bail, Context, Result};
 use ffx_scrutiny_verify_args::kernel_cmdline::Command;
 use scrutiny_config::{ConfigBuilder, ModelConfig};
 use scrutiny_frontend::{command_builder::CommandBuilder, launcher};
-use scrutiny_plugins::zbi::CmdlineCollection;
 use scrutiny_utils::golden::{CompareResult, GoldenFile};
 use serde_json;
 use std::{
@@ -32,7 +31,7 @@ struct Query {
     recovery: bool,
 }
 
-fn verify_kernel_cmdline<P: AsRef<Path>>(query: &Query, golden_path: P) -> Result<()> {
+fn verify_kernel_cmdline<P: AsRef<Path>>(query: &Query, golden_paths: &Vec<P>) -> Result<()> {
     let command = CommandBuilder::new("zbi.cmdline").build();
     let plugins = vec!["ZbiPlugin".to_string()];
     let model = if query.recovery {
@@ -46,10 +45,11 @@ fn verify_kernel_cmdline<P: AsRef<Path>>(query: &Query, golden_path: P) -> Resul
     let scrutiny_output =
         launcher::launch_from_config(config).context("Failed to launch scrutiny")?;
 
-    let cmdline_collection: CmdlineCollection = serde_json::from_str(&scrutiny_output)
+    let cmdline: Vec<String> = serde_json::from_str(&scrutiny_output)
         .context(format!("Failed to deserialize scrutiny output: {}", scrutiny_output))?;
-    let cmdline = cmdline_collection.cmdline;
-    let golden_file = GoldenFile::open(&golden_path).context("Failed to open golden file")?;
+
+    let golden_file =
+        GoldenFile::from_files(&golden_paths).context("Failed to open golden files")?;
     match golden_file.compare(cmdline) {
         CompareResult::Matches => Ok(()),
         CompareResult::Mismatch { errors } => {
@@ -61,7 +61,7 @@ fn verify_kernel_cmdline<P: AsRef<Path>>(query: &Query, golden_path: P) -> Resul
             println!("");
             println!(
                 "If you intended to change the kernel command line, please acknowledge it by updating {:?} with the added or removed lines.",
-                golden_path.as_ref()
+                golden_paths[0].as_ref()
             );
             println!("{}", SOFT_TRANSITION_MSG);
             Err(anyhow!("kernel cmdline mismatch"))
@@ -76,11 +76,8 @@ pub async fn verify(cmd: &Command, recovery: bool) -> Result<HashSet<PathBuf>> {
     let mut deps = HashSet::new();
 
     let query = Query { product_bundle: cmd.product_bundle.clone(), recovery };
-    for golden_file_path in cmd.golden.iter() {
-        verify_kernel_cmdline(&query, golden_file_path)?;
+    verify_kernel_cmdline(&query, &cmd.golden)?;
 
-        deps.insert(golden_file_path.clone());
-    }
-
+    deps.extend(cmd.golden.clone());
     Ok(deps)
 }

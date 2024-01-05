@@ -11,7 +11,10 @@ driver_bind_rules("registers_bind") {
   rules = "registers.bind"
   bind_output = "registers.bindbc"
   tests = "tests.json"
-  deps = [ "//src/devices/bind/fuchsia.platform" ]
+  deps = [
+    "//src/devices/bind/fuchsia.devicetree",
+    "//src/devices/bind/fuchsia.platform",
+  ]
 }
 
 fuchsia_driver("registers-driver") {
@@ -33,6 +36,11 @@ fuchsia_driver_component("registers") {
   component_name = "registers"
   deps = [ ":registers-driver" ]
   manifest = "meta/registers.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "registers"
+  driver_components = [ ":registers" ]
 }
 
 test("registers-test") {
@@ -60,9 +68,10 @@ test("registers-test") {
 
 group("common") {
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//src/devices/bin/driver_runtime",
+    "//src/devices/bind/fuchsia.register:fuchsia.register_cpp",
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/metadata:llcpp",

@@ -3,59 +3,187 @@
 // found in the LICENSE file.
 
 use paste::paste;
+use starnix_sync::{Locked, Unlocked};
 
-use crate::{
-    arch::syscalls::*,
-    syscalls::{decls::Syscall, CurrentTask, SyscallResult},
-    types::Errno,
-};
+use crate::{arch::syscalls::sys_clone, task::CurrentTask};
+use fuchsia_inspect_contrib::profile_duration;
+use starnix_syscalls::{decls::Syscall, SyscallResult};
+use starnix_uapi::errors::Errno;
 
 macro_rules! syscall_match {
     {
-        $current_task:ident; $syscall_number:expr; $args:ident;
+        $locked:ident; $current_task:ident; $syscall_number:expr; $args:ident;
         $($(#[$match:meta])? $call:ident [$num_args:tt],)*
     } => {
         paste! {
             match $syscall_number as u32 {
                 $(
                     $(#[$match])?
-                    crate::types::[<__NR_ $call>] => {
-                        match syscall_match!(@call $current_task; $args; [<sys_ $call>][$num_args]) {
+                    starnix_uapi::[<__NR_ $call>] => {
+                        profile_duration!(stringify!($call));
+                        match syscall_match!(@call $locked; $current_task; $args; [<sys_ $call>][$num_args]) {
                             Ok(x) => Ok(SyscallResult::from(x)),
                             Err(err) => Err(err),
                         }
                     },
                 )*
-                _ => sys_unknown($current_task, $syscall_number),
+                _ => sys_unknown($locked, $current_task, $syscall_number),
             }
         }
     };
 
-    (@call $current_task:ident; $args:ident; $func:ident [0]) => ($func($current_task));
-    (@call $current_task:ident; $args:ident; $func:ident [1]) => ($func($current_task, $args.0.into()));
-    (@call $current_task:ident; $args:ident; $func:ident [2]) => ($func($current_task, $args.0.into(), $args.1.into()));
-    (@call $current_task:ident; $args:ident; $func:ident [3]) => ($func($current_task, $args.0.into(), $args.1.into(), $args.2.into()));
-    (@call $current_task:ident; $args:ident; $func:ident [4]) => ($func($current_task, $args.0.into(), $args.1.into(), $args.2.into(), $args.3.into()));
-    (@call $current_task:ident; $args:ident; $func:ident [5]) => ($func($current_task, $args.0.into(), $args.1.into(), $args.2.into(), $args.3.into(), $args.4.into()));
-    (@call $current_task:ident; $args:ident; $func:ident [6]) => ($func($current_task, $args.0.into(), $args.1.into(), $args.2.into(), $args.3.into(), $args.4.into(), $args.5.into()));
+    (@call $locked:ident; $current_task:ident; $args:ident; $func:ident [0]) => ($func($locked, $current_task));
+    (@call $locked:ident; $current_task:ident; $args:ident; $func:ident [1]) => ($func($locked, $current_task, $args.0.into()));
+    (@call $locked:ident; $current_task:ident; $args:ident; $func:ident [2]) => ($func($locked, $current_task, $args.0.into(), $args.1.into()));
+    (@call $locked:ident; $current_task:ident; $args:ident; $func:ident [3]) => ($func($locked, $current_task, $args.0.into(), $args.1.into(), $args.2.into()));
+    (@call $locked:ident; $current_task:ident; $args:ident; $func:ident [4]) => ($func($locked, $current_task, $args.0.into(), $args.1.into(), $args.2.into(), $args.3.into()));
+    (@call $locked:ident; $current_task:ident; $args:ident; $func:ident [5]) => ($func($locked, $current_task, $args.0.into(), $args.1.into(), $args.2.into(), $args.3.into(), $args.4.into()));
+    (@call $locked:ident; $current_task:ident; $args:ident; $func:ident [6]) => ($func($locked, $current_task, $args.0.into(), $args.1.into(), $args.2.into(), $args.3.into(), $args.4.into(), $args.5.into()));
 }
 
 pub fn dispatch_syscall(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &mut CurrentTask,
     syscall: &Syscall,
 ) -> Result<SyscallResult, Errno> {
     use crate::{
-        bpf::*,
-        fs::{socket::syscalls::*, syscalls::*},
-        mm::syscalls::*,
-        signals::syscalls::*,
-        syscalls::{misc::*, time::*},
-        task::syscalls::*,
+        mm::syscalls::{
+            sys_brk, sys_futex, sys_get_robust_list, sys_madvise, sys_membarrier, sys_mlock,
+            sys_mmap, sys_mprotect, sys_mremap, sys_msync, sys_munlock, sys_munmap,
+            sys_process_vm_readv, sys_process_vm_writev, sys_set_robust_list,
+        },
+        signals::syscalls::{
+            sys_kill, sys_pidfd_send_signal, sys_restart_syscall, sys_rt_sigaction,
+            sys_rt_sigprocmask, sys_rt_sigqueueinfo, sys_rt_sigreturn, sys_rt_sigsuspend,
+            sys_rt_sigtimedwait, sys_rt_tgsigqueueinfo, sys_sigaltstack, sys_signalfd4, sys_tgkill,
+            sys_tkill, sys_wait4, sys_waitid,
+        },
+        syscalls::{
+            misc::{
+                sys_getrandom, sys_personality, sys_reboot, sys_sched_yield, sys_setdomainname,
+                sys_sethostname, sys_sysinfo, sys_uname, sys_unknown,
+            },
+            time::{
+                sys_clock_getres, sys_clock_gettime, sys_clock_nanosleep, sys_getitimer,
+                sys_gettimeofday, sys_nanosleep, sys_setitimer, sys_timer_create, sys_timer_delete,
+                sys_timer_getoverrun, sys_timer_gettime, sys_timer_settime, sys_times,
+            },
+        },
+        task::syscalls::{
+            sys_capget, sys_capset, sys_clone3, sys_execve, sys_execveat, sys_exit, sys_exit_group,
+            sys_getcpu, sys_getegid, sys_geteuid, sys_getgid, sys_getgroups, sys_getpgid,
+            sys_getpid, sys_getppid, sys_getpriority, sys_getresgid, sys_getresuid, sys_getrlimit,
+            sys_getrusage, sys_getsid, sys_gettid, sys_getuid, sys_kcmp, sys_prctl, sys_prlimit64,
+            sys_ptrace, sys_sched_get_priority_max, sys_sched_get_priority_min,
+            sys_sched_getaffinity, sys_sched_getparam, sys_sched_getscheduler,
+            sys_sched_setaffinity, sys_sched_setparam, sys_sched_setscheduler, sys_seccomp,
+            sys_set_tid_address, sys_setfsgid, sys_setfsuid, sys_setgid, sys_setgroups, sys_setns,
+            sys_setpgid, sys_setpriority, sys_setregid, sys_setresgid, sys_setresuid, sys_setreuid,
+            sys_setrlimit, sys_setsid, sys_setuid, sys_syslog, sys_unshare,
+        },
+        vfs::{
+            bpf::sys_bpf,
+            socket::syscalls::{
+                sys_accept, sys_accept4, sys_bind, sys_connect, sys_getpeername, sys_getsockname,
+                sys_getsockopt, sys_listen, sys_recvfrom, sys_recvmmsg, sys_recvmsg, sys_sendmmsg,
+                sys_sendmsg, sys_sendto, sys_setsockopt, sys_shutdown, sys_socket, sys_socketpair,
+            },
+            syscalls::{
+                sys_chdir, sys_chroot, sys_close, sys_close_range, sys_dup, sys_dup3,
+                sys_epoll_create1, sys_epoll_ctl, sys_epoll_pwait, sys_epoll_pwait2, sys_eventfd2,
+                sys_faccessat, sys_faccessat2, sys_fadvise64, sys_fallocate, sys_fchdir,
+                sys_fchmod, sys_fchmodat, sys_fchown, sys_fchownat, sys_fcntl, sys_fdatasync,
+                sys_fgetxattr, sys_flistxattr, sys_flock, sys_fremovexattr, sys_fsetxattr,
+                sys_fstat, sys_fstatfs, sys_fsync, sys_ftruncate, sys_getcwd, sys_getdents64,
+                sys_getxattr, sys_inotify_add_watch, sys_inotify_init1, sys_inotify_rm_watch,
+                sys_ioctl, sys_lgetxattr, sys_linkat, sys_listxattr, sys_llistxattr,
+                sys_lremovexattr, sys_lseek, sys_lsetxattr, sys_memfd_create, sys_mkdirat,
+                sys_mknodat, sys_mount, sys_newfstatat, sys_openat, sys_pidfd_getfd,
+                sys_pidfd_open, sys_pipe2, sys_ppoll, sys_pread64, sys_preadv, sys_preadv2,
+                sys_pselect6, sys_pwrite64, sys_pwritev, sys_pwritev2, sys_read, sys_readlinkat,
+                sys_readv, sys_removexattr, sys_renameat2, sys_sendfile, sys_setxattr, sys_splice,
+                sys_statfs, sys_statx, sys_symlinkat, sys_sync, sys_syncfs, sys_timerfd_create,
+                sys_timerfd_gettime, sys_timerfd_settime, sys_truncate, sys_umask, sys_umount2,
+                sys_unlinkat, sys_utimensat, sys_write, sys_writev,
+            },
+        },
     };
+
+    #[cfg(target_arch = "aarch64")]
+    use crate::arch::syscalls::sys_renameat;
+
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_access;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_alarm;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_arch_prctl;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_chmod;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_chown;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_creat;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_dup2;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_epoll_create;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_epoll_wait;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_eventfd;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_fork;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_getdents;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_getpgrp;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_inotify_init;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_lchown;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_link;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_lstat;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_mkdir;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_mknod;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_open;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_pause;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_pipe;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_poll;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_readlink;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_rename;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_renameat;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_rmdir;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_signalfd;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_stat;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_symlink;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_time;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_unlink;
+    #[cfg(target_arch = "x86_64")]
+    use crate::arch::syscalls::sys_vfork;
+    #[cfg(target_arch = "x86_64")]
+    use crate::vfs::syscalls::sys_select;
 
     let args = (syscall.arg0, syscall.arg1, syscall.arg2, syscall.arg3, syscall.arg4, syscall.arg5);
     syscall_match! {
-        current_task; syscall.decl.number; args;
+        locked; current_task; syscall.decl.number; args;
         accept4[4],
         accept[3],
         #[cfg(target_arch = "x86_64")] alarm[1],
@@ -169,11 +297,13 @@ pub fn dispatch_syscall(
         mkdirat[3],
         #[cfg(target_arch = "x86_64")] mknod[3],
         mknodat[4],
+        mlock[2],
         mmap[6],
         mount[5],
         mprotect[3],
         mremap[5],
         msync[3],
+        munlock[2],
         munmap[2],
         nanosleep[2],
         newfstatat[4],
@@ -216,6 +346,7 @@ pub fn dispatch_syscall(
         #[cfg(target_arch = "x86_64")] rmdir[1],
         rt_sigaction[4],
         rt_sigprocmask[4],
+        rt_sigqueueinfo[3],
         rt_sigreturn[0],
         rt_sigsuspend[2],
         rt_sigtimedwait[4],
@@ -227,6 +358,7 @@ pub fn dispatch_syscall(
         sched_getscheduler[1],
         sched_setaffinity[3],
         sched_setscheduler[3],
+        sched_setparam[2],
         sched_yield[0],
         seccomp[3],
         #[cfg(target_arch = "x86_64")] select[5],
@@ -270,6 +402,7 @@ pub fn dispatch_syscall(
         sync[0],
         syncfs[1],
         sysinfo[1],
+        syslog[3],
         tgkill[3],
         #[cfg(target_arch = "x86_64")] time[1],
         timer_create[3],

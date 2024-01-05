@@ -45,9 +45,6 @@ struct ArchPhysHandoff {
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG) payload.
   ktl::optional<zbi_dcfg_generic32_watchdog_t> generic32_watchdog_driver;
 
-  // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_AS370_POWER) payload.
-  bool as370_power_driver = false;
-
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_MOTMOT_POWER) payload.
   bool motmot_power_driver = false;
 };
@@ -61,5 +58,8 @@ inline constexpr uint64_t kArchHandoffVirtualAddress = KERNEL_BASE;
 #else
 inline constexpr uint64_t kArchHandoffVirtualAddress = 0xffffffff10000000;
 #endif
+
+// Whether a peripheral range for the UART needs to be synthesized.
+inline constexpr bool kArchHandoffGenerateUartPeripheralRanges = true;
 
 #endif  // ZIRCON_KERNEL_ARCH_ARM64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_

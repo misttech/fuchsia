@@ -9,7 +9,7 @@ group("process_explorer") {
   testonly = true
   deps = [
     ":process_explorer_package",
-    "tests:tests",
+    ":tests",
   ]
 }
 
@@ -33,7 +33,7 @@ source_set("lib") {
   public_deps = [
     "//sdk/fidl/fuchsia.process.explorer:fuchsia.process.explorer_cpp",
     "//sdk/lib/component/outgoing/cpp",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
   ]
 }
 
@@ -44,6 +44,7 @@ executable("bin") {
 
   deps = [
     ":lib",
+    "//sdk/lib/syslog/cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
   ]
@@ -65,4 +66,9 @@ fuchsia_package("process_explorer_package") {
 
 core_shard("process_explorer_core_shard") {
   shard_file = "meta/process_explorer.core_shard.cml"
+}
+
+group("tests") {
+  testonly = true
+  deps = [ "//src/developer/process_explorer/tests" ]
 }

@@ -13,6 +13,7 @@ use {
     fidl_contrib::protocol_connector::ProtocolSender,
     fidl_fuchsia_io as fio,
     fidl_fuchsia_metrics::MetricEvent,
+    fidl_fuchsia_pkg as fpkg,
     fidl_fuchsia_pkg_ext::{self as pkg, cache, BlobId, RepositoryConfig, RepositoryConfigs},
     fuchsia_inspect as inspect,
     fuchsia_pkg::PackageDirectory,
@@ -262,6 +263,7 @@ impl RepositoryManager {
     pub fn get_package<'a>(
         &self,
         url: &'a AbsolutePackageUrl,
+        gc_protection: fpkg::GcProtection,
         cache: &'a cache::Client,
         blob_fetcher: &'a BlobFetcher,
         trace_id: ftrace::Id,
@@ -293,6 +295,7 @@ impl RepositoryManager {
                 repo,
                 &config,
                 url,
+                gc_protection,
                 cache,
                 blob_fetcher,
                 cobalt_sender,
@@ -901,9 +904,9 @@ impl ToResolveStatus for GetPackageHashError {
 mod tests {
     use {
         super::*,
+        diagnostics_assertions::assert_data_tree,
         fidl_fuchsia_pkg_ext::{MirrorConfigBuilder, RepositoryConfigBuilder, RepositoryKey},
         fuchsia_async as fasync,
-        fuchsia_inspect::assert_data_tree,
         http::Uri,
         maplit::hashmap,
         std::{borrow::Borrow, fs::File, io::Write, path::Path},

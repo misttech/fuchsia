@@ -29,7 +29,8 @@ source_set("component_context") {
   ]
 
   deps = [
-    "//src/lib/fxl",
+    "//sdk/lib/syslog/cpp",
+    "//src/lib/fxl:fxl_cli",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/zx",
@@ -49,7 +50,8 @@ source_set("gtest_main") {
   sources = [ "gtest_main.cc" ]
 
   deps = [
-    "//src/lib/fxl",
+    "//sdk/lib/syslog/cpp",
+    "//src/lib/fxl:fxl_cli",
     "//src/lib/fxl/test:test_settings",
   ]
 
@@ -77,6 +79,7 @@ source_set("run_test") {
 
   public_deps = [
     "//sdk/lib/sys/cpp",
+    "//sdk/lib/syslog/cpp",
     "//zircon/system/ulib/zx",
   ]
 
@@ -84,7 +87,7 @@ source_set("run_test") {
     ":component_context",
     ":integration_test_utils",
     "//sdk/lib/fdio",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//src/performance/lib/test_utils",
     "//src/performance/trace:options",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
@@ -110,7 +113,7 @@ source_set("integration_test_utils") {
 
   deps = [
     "//sdk/lib/fdio",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//third_party/rapidjson",
     "//zircon/system/ulib/async:async-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -141,7 +144,7 @@ source_set("integration_test_utils_with_trace_with_static_engine") {
 
   deps = [
     "//sdk/lib/fdio",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//third_party/rapidjson",
     "//zircon/system/ulib/async:async-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -159,6 +162,8 @@ executable("trace_integration_tests") {
     ":gtest_main",
     ":integration_test_utils",
     ":run_test",
+    "//sdk/lib/syslog/cpp",
+    "//src/lib/fxl:fxl_cli",
     "//src/lib/fxl/test:test_settings",
     "//src/performance/lib/test_utils",
     "//third_party/googletest:gtest",
@@ -181,7 +186,7 @@ executable("basic_integration_test_app") {
 
   deps = [
     ":integration_test_utils",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/trace",
@@ -196,7 +201,7 @@ executable("two_providers_one_engine") {
   sources = [ "two_providers_one_engine.cc" ]
 
   deps = [
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//zircon/system/ulib/async:async-cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -216,7 +221,7 @@ shared_library("self_contained_provider") {
 
   deps = [
     ":integration_test_utils_with_trace_with_static_engine",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/trace:trace-with-static-engine",
@@ -237,7 +242,7 @@ executable("two_providers_two_engines_test_app") {
   deps = [
     ":integration_test_utils",
     ":self_contained_provider",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//src/performance/trace:options",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -284,6 +289,7 @@ executable("detach_tests") {
     ":gtest_main",
     ":integration_test_utils",
     ":run_test",
+    "//sdk/lib/syslog/cpp",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/zx",
   ]
@@ -296,6 +302,7 @@ executable("shared_provider_app") {
 
   deps = [
     ":integration_test_utils",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/fxl",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -314,6 +321,7 @@ executable("shared_provider_integration_tests") {
     ":gtest_main",
     ":integration_test_utils",
     ":run_test",
+    "//sdk/lib/syslog/cpp",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/trace-reader",
     "//zircon/system/ulib/zx",
@@ -327,7 +335,7 @@ executable("provider_destruction_app") {
 
   deps = [
     ":integration_test_utils",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/trace",

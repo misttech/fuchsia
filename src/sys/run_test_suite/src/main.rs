@@ -29,7 +29,7 @@ struct Args {
     test_filter: Vec<String>,
 
     /// the realm to run the test in. This field is optional and takes the form:
-    /// /path/to/realm:test_collection.
+    /// /path/to/realm:test_collection. See https://fuchsia.dev/go/components/non-hermetic-tests
     #[argh(option)]
     realm: Option<String>,
 
@@ -130,6 +130,7 @@ async fn main() {
     }
 
     let mut provided_realm = None;
+    let hermetic_test = realm.is_none();
     if let Some(realm) = realm {
         let lifecycle_controller = fuchsia_component::client::connect_to_protocol_at_path::<
             fsys::LifecycleControllerMarker,
@@ -194,7 +195,7 @@ async fn main() {
         },
         experimental_parallel_execution: None,
         accumulate_debug_data: true, // must be true to support coverage via scp
-        log_protocol: Some(LogsIteratorOption::ArchiveIterator),
+        log_protocol: Some(LogsIteratorOption::SocketBatchIterator),
         min_severity_logs: min_severity_logs.clone(),
         // TODO(https://fxbug.dev/107998): make this configurable
         show_full_moniker: true,
@@ -228,6 +229,15 @@ async fn main() {
     tracing::info!("run test suite duration: {:?}", start_time.elapsed().as_secs_f32());
     if outcome != run_test_suite_lib::Outcome::Passed {
         println!("One or more test runs failed.");
+    }
+    let show_realm_warning = outcome == run_test_suite_lib::Outcome::Timedout
+        || outcome == run_test_suite_lib::Outcome::Failed
+        || outcome == run_test_suite_lib::Outcome::DidNotFinish;
+    if show_realm_warning && hermetic_test {
+        println!(
+            "The test was executed in the hermetic realm. If your test depends on system \
+capabilities, pass in correct realm. See https://fuchsia.dev/go/components/non-hermetic-tests"
+        );
     }
     match outcome {
         run_test_suite_lib::Outcome::Passed => {}

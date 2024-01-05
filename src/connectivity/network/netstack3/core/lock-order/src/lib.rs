@@ -172,8 +172,9 @@
 
 pub mod lock;
 pub mod relation;
+pub mod wrap;
 
-use core::marker::PhantomData;
+use core::{marker::PhantomData, ops::Deref};
 
 use crate::{
     lock::{LockFor, RwLockFor, UnlockedAccess},
@@ -205,8 +206,33 @@ impl<'a, T> Locked<&'a T, Unlocked> {
     /// Entry point for locked access.
     ///
     /// `Unlocked` is the "root" lock level and can be acquired before any lock.
+    ///
+    /// This function is equivalent to [`Locked::new_with_deref`] but coerces
+    /// the argument to a simple borrow, which is the expected common use case.
     pub fn new(t: &'a T) -> Self {
-        Self::new_locked(t)
+        Self::new_with_deref(t)
+    }
+}
+
+impl<T> Locked<T, Unlocked>
+where
+    T: Deref,
+    T::Target: Sized,
+{
+    /// Entry point for locked access.
+    ///
+    /// `Unlocked` is the "root" lock level and can be acquired before any lock.
+    ///
+    /// Unlike [`Locked::new`], this function just requires that `T` be
+    /// [`Deref`] and doesn't coerce the type. Use this function when creating a
+    /// new `Locked` from cell-like types.
+    ///
+    /// Prefer [`Locked::new`] in most situations given the coercion to a simple
+    /// borrow is generally less surprising. For example, `&mut T` also `Deref`s
+    /// to `T` and makes for sometimes hard to pin down compilation errors when
+    /// implementing traits for `Locked<&State, L>` as opposed to `&mut State`.
+    pub fn new_with_deref(t: T) -> Self {
+        Self::new_locked_with_deref(t)
     }
 }
 
@@ -216,8 +242,11 @@ impl<'a, T, L> Locked<&'a T, L> {
     /// Creates a new `Locked` that restricts locking to levels after `L`. This
     /// is safe because any acquirable locks must have a total ordering, and
     /// restricting the set of locks doesn't violate that ordering.
+    ///
+    /// See discussion on [`Locked::new_with_deref`] for when to use this
+    /// function versus [`Locked::new_locked_with_deref`].
     pub fn new_locked(t: &'a T) -> Locked<&'a T, L> {
-        Self(t, PhantomData)
+        Self::new_locked_with_deref(t)
     }
 
     /// Access some state that doesn't require locking.
@@ -231,34 +260,90 @@ impl<'a, T, L> Locked<&'a T, L> {
         let Self(t, PhantomData) = self;
         T::access(t)
     }
+
+    /// Access some state that doesn't require locking from an internal impl of
+    /// [`UnlockedAccess`].
+    ///
+    /// This allows access to state that doesn't require locking (and depends on
+    /// [`UnlockedAccess`] to be implemented only in cases where that is true).
+    pub fn unlocked_access_with<M, X>(&self, f: impl FnOnce(&'a T) -> &'a X) -> X::Guard<'a>
+    where
+        X: UnlockedAccess<M>,
+    {
+        let Self(t, PhantomData) = self;
+        X::access(f(t))
+    }
 }
 
 // It's important that the lifetime on `Locked` here be anonymous. That means
 // that the lifetimes in the returned `Locked` objects below are inferred to
 // be the lifetimes of the references to self (mutable or immutable).
-impl<T, L> Locked<&T, L> {
+impl<T, L> Locked<T, L>
+where
+    T: Deref,
+    T::Target: Sized,
+{
+    /// Entry point for locked access.
+    ///
+    /// Creates a new `Locked` that restricts locking to levels after `L`. This
+    /// is safe because any acquirable locks must have a total ordering, and
+    /// restricting the set of locks doesn't violate that ordering.
+    ///
+    /// See discussion on [`Locked::new_with_deref`] for when to use this
+    /// function versus [`Locked::new_locked`].
+    pub fn new_locked_with_deref(t: T) -> Locked<T, L> {
+        Self(t, PhantomData)
+    }
+
     /// Acquire the given lock.
     ///
     /// This requires that `M` can be locked after `L`.
-    pub fn lock<M>(&mut self) -> T::Guard<'_>
+    pub fn lock<M>(&mut self) -> <T::Target as LockFor<M>>::Guard<'_>
     where
-        T: LockFor<M>,
+        T::Target: LockFor<M>,
         L: LockBefore<M>,
     {
-        let (data, _): (_, Locked<&T, M>) = self.lock_and();
-        data
+        self.lock_with::<M, _>(|t| t)
     }
 
     /// Acquire the given lock and a new locked context.
     ///
     /// This requires that `M` can be locked after `L`.
-    pub fn lock_and<M>(&mut self) -> (T::Guard<'_>, Locked<&T, M>)
+    pub fn lock_and<M>(&mut self) -> (<T::Target as LockFor<M>>::Guard<'_>, Locked<&T::Target, M>)
     where
-        T: LockFor<M>,
+        T::Target: LockFor<M>,
+        L: LockBefore<M>,
+    {
+        self.lock_with_and::<M, _>(|t| t)
+    }
+
+    /// Acquire the given lock from an internal impl of [`LockFor`].
+    ///
+    /// This requires that `M` can be locked after `L`.
+    pub fn lock_with<M, X>(&mut self, f: impl FnOnce(&T::Target) -> &X) -> X::Guard<'_>
+    where
+        X: LockFor<M>,
+        L: LockBefore<M>,
+    {
+        let (data, _): (_, Locked<&T::Target, M>) = self.lock_with_and::<M, _>(f);
+        data
+    }
+
+    /// Acquire the given lock and a new locked context from an internal impl of
+    /// [`LockFor`].
+    ///
+    /// This requires that `M` can be locked after `L`.
+    pub fn lock_with_and<M, X>(
+        &mut self,
+        f: impl FnOnce(&T::Target) -> &X,
+    ) -> (X::Guard<'_>, Locked<&T::Target, M>)
+    where
+        X: LockFor<M>,
         L: LockBefore<M>,
     {
         let Self(t, PhantomData) = self;
-        let data = T::lock(t);
+        let t = Deref::deref(t);
+        let data = X::lock(f(t));
         (data, Locked(t, PhantomData))
     }
 
@@ -266,26 +351,58 @@ impl<T, L> Locked<&T, L> {
     ///
     /// For accessing state via reader/writer locks. This requires that `M` can
     /// be locked after `L`.
-    pub fn read_lock<M>(&mut self) -> T::ReadGuard<'_>
+    pub fn read_lock<M>(&mut self) -> <T::Target as RwLockFor<M>>::ReadGuard<'_>
     where
-        T: RwLockFor<M>,
+        T::Target: RwLockFor<M>,
         L: LockBefore<M>,
     {
-        let (data, _): (_, Locked<&T, M>) = self.read_lock_and();
-        data
+        self.read_lock_with::<M, _>(|t| t)
     }
 
     /// Attempt to acquire the given read lock and a new locked context.
     ///
     /// For accessing state via reader/writer locks. This requires that `M` can
     /// be locked after `L`.
-    pub fn read_lock_and<M>(&mut self) -> (T::ReadGuard<'_>, Locked<&T, M>)
+    pub fn read_lock_and<M>(
+        &mut self,
+    ) -> (<T::Target as RwLockFor<M>>::ReadGuard<'_>, Locked<&T::Target, M>)
     where
-        T: RwLockFor<M>,
+        T::Target: RwLockFor<M>,
+        L: LockBefore<M>,
+    {
+        self.read_lock_with_and::<M, _>(|t| t)
+    }
+
+    /// Attempt to acquire the given read lock from an internal impl of
+    /// [`RwLockFor`].
+    ///
+    /// For accessing state via reader/writer locks. This requires that `M` can
+    /// be locked after `L`.
+    pub fn read_lock_with<M, X>(&mut self, f: impl FnOnce(&T::Target) -> &X) -> X::ReadGuard<'_>
+    where
+        X: RwLockFor<M>,
+        L: LockBefore<M>,
+    {
+        let (data, _): (_, Locked<&T::Target, M>) = self.read_lock_with_and::<M, _>(f);
+        data
+    }
+
+    /// Attempt to acquire the given read lock and a new locked context from an
+    /// internal impl of [`RwLockFor`].
+    ///
+    /// For accessing state via reader/writer locks. This requires that `M` can
+    /// be locked after `L`.
+    pub fn read_lock_with_and<M, X>(
+        &mut self,
+        f: impl FnOnce(&T::Target) -> &X,
+    ) -> (X::ReadGuard<'_>, Locked<&T::Target, M>)
+    where
+        X: RwLockFor<M>,
         L: LockBefore<M>,
     {
         let Self(t, PhantomData) = self;
-        let data = T::read_lock(t);
+        let t = Deref::deref(t);
+        let data = X::read_lock(f(t));
         (data, Locked(t, PhantomData))
     }
 
@@ -293,26 +410,58 @@ impl<T, L> Locked<&T, L> {
     ///
     /// For accessing state via reader/writer locks. This requires that `M` can
     /// be locked after `L`.
-    pub fn write_lock<M>(&mut self) -> T::WriteGuard<'_>
+    pub fn write_lock<M>(&mut self) -> <T::Target as RwLockFor<M>>::WriteGuard<'_>
     where
-        T: RwLockFor<M>,
+        T::Target: RwLockFor<M>,
         L: LockBefore<M>,
     {
-        let (data, _): (_, Locked<&T, M>) = self.write_lock_and();
-        data
+        self.write_lock_with::<M, _>(|t| t)
     }
 
     /// Attempt to acquire the given write lock.
     ///
     /// For accessing state via reader/writer locks. This requires that `M` can
     /// be locked after `L`.
-    pub fn write_lock_and<M>(&mut self) -> (T::WriteGuard<'_>, Locked<&T, M>)
+    pub fn write_lock_and<M>(
+        &mut self,
+    ) -> (<T::Target as RwLockFor<M>>::WriteGuard<'_>, Locked<&T::Target, M>)
     where
-        T: RwLockFor<M>,
+        T::Target: RwLockFor<M>,
+        L: LockBefore<M>,
+    {
+        self.write_lock_with_and::<M, _>(|t| t)
+    }
+
+    /// Attempt to acquire the given write lock from an internal impl of
+    /// [`RwLockFor`].
+    ///
+    /// For accessing state via reader/writer locks. This requires that `M` can
+    /// be locked after `L`.
+    pub fn write_lock_with<M, X>(&mut self, f: impl FnOnce(&T::Target) -> &X) -> X::WriteGuard<'_>
+    where
+        X: RwLockFor<M>,
+        L: LockBefore<M>,
+    {
+        let (data, _): (_, Locked<&T::Target, M>) = self.write_lock_with_and::<M, _>(f);
+        data
+    }
+
+    /// Attempt to acquire the given write lock from an internal impl of
+    /// [`RwLockFor`].
+    ///
+    /// For accessing state via reader/writer locks. This requires that `M` can
+    /// be locked after `L`.
+    pub fn write_lock_with_and<M, X>(
+        &mut self,
+        f: impl FnOnce(&T::Target) -> &X,
+    ) -> (X::WriteGuard<'_>, Locked<&T::Target, M>)
+    where
+        X: RwLockFor<M>,
         L: LockBefore<M>,
     {
         let Self(t, PhantomData) = self;
-        let data = T::write_lock(t);
+        let t = Deref::deref(t);
+        let data = X::write_lock(f(t));
         (data, Locked(t, PhantomData))
     }
 
@@ -324,36 +473,39 @@ impl<T, L> Locked<&T, L> {
     /// This method is a shorthand for `self.cast_with(|s| s)`. This is safe
     /// because the returned `Locked` instance borrows `self` mutably so it
     /// can't be used until the new instance is dropped.
-    pub fn as_owned(&mut self) -> Locked<&T, L> {
-        let Self(t, PhantomData) = self;
-        Locked(t, PhantomData)
+    pub fn as_owned(&mut self) -> Locked<&T::Target, L> {
+        self.cast_with(|s| s)
     }
 
     /// Narrow the type on which locks can be acquired.
     ///
-    /// This allows scoping down the state on which locks are acquired. This is
-    /// safe because
-    ///   1. the lock ordering does not take the type being locked into
-    ///      account, so there's no danger of lock ordering being different for
-    ///      `T` and `R`,
-    ///   2. because the new `&R` references a part of the original `&S`, so it
-    ///      can't allow access to a different locking domain, and
-    ///   3. the returned `Locked` instance borrows `self` mutably so it can't
-    ///      be used until the new instance is dropped.
+    /// Like `cast_with`, but with `AsRef` instead of using a callable function.
+    /// The same safety arguments apply.
     pub fn cast<R>(&mut self) -> Locked<&R, L>
     where
-        T: AsRef<R>,
+        T::Target: AsRef<R>,
     {
         self.cast_with(AsRef::as_ref)
     }
 
     /// Narrow the type on which locks can be acquired.
     ///
-    /// Like `cast`, but with a callable function instead of using `AsRef`. The
-    /// same safety arguments apply.
-    pub fn cast_with<R>(&mut self, f: impl FnOnce(&T) -> &R) -> Locked<&R, L> {
+    /// This allows scoping down the state on which locks are acquired. This is
+    /// safe because
+    ///   1. the locked wrapper does not take the type `T` being locked into
+    ///      account, so there's no danger of lock ordering being different for
+    ///      `T` and some other type `R`,
+    ///   2. because the new `&R` references a part of the original `&T`, any
+    ///      state that was lockable from `&T` was lockable from `&R`, and
+    ///   3. the returned `Locked` instance borrows `self` mutably so it can't
+    ///      be used until the new instance is dropped.
+    ///
+    /// This method provides a flexible way to access some state held within the
+    /// protected instance of `T` by scoping down to an individual field, or
+    /// infallibly indexing into a `Vec`, slice, or map.
+    pub fn cast_with<R>(&mut self, f: impl FnOnce(&T::Target) -> &R) -> Locked<&R, L> {
         let Self(t, PhantomData) = self;
-        Locked(f(t), PhantomData)
+        Locked(f(Deref::deref(t)), PhantomData)
     }
 
     /// Restrict locking as if a lock was acquired.
@@ -361,30 +513,148 @@ impl<T, L> Locked<&T, L> {
     /// Like `lock_and` but doesn't actually acquire the lock `M`. This is
     /// safe because any locks that could be acquired with the lock `M` held can
     /// also be acquired without `M` being held.
-    pub fn cast_locked<M>(&mut self) -> Locked<&T, M>
+    pub fn cast_locked<M>(&mut self) -> Locked<&T::Target, M>
     where
         L: LockBefore<M>,
     {
         let Self(t, _marker) = self;
-        Locked(t, PhantomData)
+        Locked(Deref::deref(t), PhantomData)
     }
 
     /// Convenience function for accessing copyable state.
     ///
     /// This, combined with `cast` or `cast_with`, makes it easy to access
     /// non-locked state.
-    pub fn copied(&self) -> T
+    pub fn copied(&self) -> T::Target
     where
-        T: Copy,
+        T::Target: Copy,
     {
         let Self(t, PhantomData) = self;
-        **t
+        *t.deref()
+    }
+
+    /// Adopts reference `n` to the locked context.
+    ///
+    /// This allows access on disjoint structures to adopt the same lock level.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use lock_order::{Locked, relation::LockBefore};
+    /// struct StateA;
+    /// struct StateB;
+    /// # impl lock_order::lock::LockFor<LockX> for StateB {
+    /// #   type Data = u8;
+    /// #   type Guard<'l> = std::sync::MutexGuard<'l, u8>
+    /// #       where Self: 'l;
+    /// #   fn lock(&self) -> Self::Guard<'_> {
+    /// #       unimplemented!()
+    /// #   }
+    /// # }
+    /// enum LockX {}
+    ///
+    /// fn adopt_example<L: LockBefore<LockX>>(mut locked: Locked<&StateA, L>, state_b: &StateB) {
+    ///     let mut locked = locked.adopt(state_b);
+    ///     // Lock something from `StateB` advancing the lock level to `LockX`.
+    ///     let (guard, mut locked) = locked.lock_with_and::<LockX, _>(|c| c.right());
+    ///     // We can get back a `Locked` for `StateA` at the new lock level.
+    ///     let locked: Locked<&StateA, LockX> = locked.cast_with(|c| c.left());
+    /// }
+    /// ```
+    pub fn adopt<'a, N>(
+        &'a mut self,
+        n: &'a N,
+    ) -> Locked<OwnedTupleWrapper<&'a T::Target, &'a N>, L> {
+        let Self(t, PhantomData) = self;
+        Locked(OwnedWrapper(TupleWrapper(Deref::deref(t), n)), PhantomData)
+    }
+
+    /// Casts the left reference of the [`TupleWrapper`] deref'ed by `T`.
+    pub fn cast_left<'a, X, A: Deref + 'a, B: Deref + 'a, F: FnOnce(&A::Target) -> &X>(
+        &'a mut self,
+        f: F,
+    ) -> Locked<OwnedTupleWrapper<&X, &B::Target>, L>
+    where
+        T: Deref<Target = TupleWrapper<A, B>>,
+    {
+        let Self(t, PhantomData) = self;
+        Locked(Deref::deref(t).cast_left(f), PhantomData)
+    }
+
+    /// Casts the right reference of the [`TupleWrapper`] deref'ed by `T`.
+    pub fn cast_right<'a, X, A: Deref + 'a, B: Deref + 'a, F: FnOnce(&B::Target) -> &X>(
+        &'a mut self,
+        f: F,
+    ) -> Locked<OwnedTupleWrapper<&A::Target, &X>, L>
+    where
+        T: Deref<Target = TupleWrapper<A, B>>,
+    {
+        let Self(t, PhantomData) = self;
+        Locked(Deref::deref(t).cast_right(f), PhantomData)
+    }
+}
+
+/// An owned wrapper for `T` that implements [`Deref`].
+pub struct OwnedWrapper<T>(T);
+
+impl<T> Deref for OwnedWrapper<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        let Self(t) = self;
+        t
+    }
+}
+
+/// A convenient alias for a [`TupleWrapper`] inside an [`OwnedWrapper`].
+pub type OwnedTupleWrapper<A, B> = OwnedWrapper<TupleWrapper<A, B>>;
+
+/// A wrapper for tuples to support implementing [`Locked::adopt`].
+pub struct TupleWrapper<A, B>(A, B);
+
+impl<A, B> TupleWrapper<A, B>
+where
+    A: Deref,
+    B: Deref,
+{
+    pub fn left(&self) -> &A::Target {
+        let Self(a, _) = self;
+        a.deref()
+    }
+
+    pub fn right(&self) -> &B::Target {
+        let Self(_, b) = self;
+        b.deref()
+    }
+
+    pub fn both(&self) -> (&A::Target, &B::Target) {
+        let Self(a, b) = self;
+        (a.deref(), b.deref())
+    }
+
+    pub fn cast_left<X, F: FnOnce(&A::Target) -> &X>(
+        &self,
+        f: F,
+    ) -> OwnedTupleWrapper<&X, &B::Target> {
+        let Self(a, b) = self;
+        OwnedWrapper(TupleWrapper(f(Deref::deref(a)), Deref::deref(b)))
+    }
+
+    pub fn cast_right<X, F: FnOnce(&B::Target) -> &X>(
+        &self,
+        f: F,
+    ) -> OwnedTupleWrapper<&A::Target, &X> {
+        let Self(a, b) = self;
+        OwnedWrapper(TupleWrapper(Deref::deref(a), f(Deref::deref(b))))
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::sync::{Mutex, MutexGuard};
+    use std::{
+        ops::Deref,
+        sync::{Mutex, MutexGuard},
+    };
 
     mod lock_levels {
         //! Lock ordering tree:
@@ -398,18 +668,20 @@ mod test {
         pub enum B {}
         pub enum C {}
         pub enum D {}
+        pub enum E {}
 
         impl LockAfter<Unlocked> for A {}
         impl_lock_after!(A => B);
         impl_lock_after!(B => C);
         impl_lock_after!(B => D);
+        impl_lock_after!(D => E);
     }
 
     use crate::{
         lock::{LockFor, UnlockedAccess},
         Locked,
     };
-    use lock_levels::{A, B, C, D};
+    use lock_levels::{A, B, C, D, E};
 
     /// Data type with multiple locked fields.
     #[derive(Default)]
@@ -418,6 +690,7 @@ mod test {
         b: Mutex<u16>,
         c: Mutex<u64>,
         d: Mutex<u128>,
+        e: Vec<Mutex<usize>>,
         u: usize,
     }
 
@@ -453,10 +726,19 @@ mod test {
         }
     }
 
+    impl LockFor<E> for Mutex<usize> {
+        type Data = usize;
+        type Guard<'l> = MutexGuard<'l, usize>;
+        fn lock(&self) -> Self::Guard<'_> {
+            self.lock().unwrap()
+        }
+    }
+
     #[derive(Debug)]
     struct NotPresent;
 
     enum UnlockedUsize {}
+    enum UnlockedELen {}
 
     impl UnlockedAccess<UnlockedUsize> for Data {
         type Data = usize;
@@ -464,6 +746,24 @@ mod test {
 
         fn access(&self) -> Self::Guard<'_> {
             &self.u
+        }
+    }
+
+    struct DerefWrapper<T>(T);
+
+    impl<T> Deref for DerefWrapper<T> {
+        type Target = T;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl UnlockedAccess<UnlockedELen> for Data {
+        type Data = usize;
+        type Guard<'l> = DerefWrapper<usize>;
+
+        fn access(&self) -> Self::Guard<'_> {
+            DerefWrapper(self.e.len())
         }
     }
 
@@ -489,5 +789,48 @@ mod test {
         let a = locked.lock::<A>();
         assert_eq!(u, &34);
         assert_eq!(&*a, &15);
+    }
+
+    #[test]
+    fn unlocked_access_with_does_not_prevent_locking() {
+        let data = Data { a: Mutex::new(15), u: 34, ..Data::default() };
+        let data = (data,);
+
+        let mut locked = Locked::new(&data);
+        let u = locked.unlocked_access_with::<UnlockedUsize, _>(|(data,)| data);
+
+        // Prove that `u` does not prevent locked state from being accessed.
+        let a = locked.lock_with::<A, _>(|(data,)| data);
+        assert_eq!(u, &34);
+        assert_eq!(&*a, &15);
+    }
+
+    /// Demonstrate how [`Locked::cast_with`] can be used to index into a `Vec`.
+    #[test]
+    fn cast_with_for_indexing_into_sub_field_state() {
+        let data = Data { e: (0..10).map(Mutex::new).collect(), ..Data::default() };
+
+        let mut locked = Locked::new(&data);
+        for i in 0..*locked.unlocked_access::<UnlockedELen>() {
+            // Use cast_with to select an individual lock from the list.
+            let mut locked_element = locked.cast_with(|data| &data.e[i]);
+            let mut item = locked_element.lock::<E>();
+
+            assert_eq!(*item, i);
+            *item = i + 1;
+        }
+    }
+
+    #[test]
+    fn adopt() {
+        let data_left = Data { a: Mutex::new(55), b: Mutex::new(11), ..Data::default() };
+        let mut locked = Locked::new(&data_left);
+        let data_right = Data { a: Mutex::new(66), b: Mutex::new(22), ..Data::default() };
+        let mut locked = locked.adopt(&data_right);
+
+        let (guard_left, mut locked) = locked.lock_with_and::<A, Data>(|t| t.left());
+        let guard_right = locked.lock_with::<B, Data>(|t| t.right());
+        assert_eq!(*guard_left, 55);
+        assert_eq!(*guard_right, 22);
     }
 }

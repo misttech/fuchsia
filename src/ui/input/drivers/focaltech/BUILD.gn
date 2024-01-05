@@ -17,8 +17,10 @@ driver_bind_rules("focaltech_touch_bind") {
   # fragments for composite bind rules.
   disable_fragment_gen = true
   deps = [
-    "//src/devices/bind/fuchsia.hardware.gpio",
+    "//src/devices/bind/fuchsia.focaltech.platform",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.i2c",
+    "//src/devices/bind/fuchsia.platform",
   ]
 }
 
@@ -39,8 +41,8 @@ group("common") {
   public_deps = [
     ":focaltech_touch_bind",
     "//sdk/banjo/fuchsia.hardware.test:fuchsia.hardware.test_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//src/devices/i2c/lib/device-protocol-i2c-channel",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
@@ -76,6 +78,11 @@ fuchsia_driver_component("focaltech") {
   manifest = "meta/focaltech.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "focaltech"
+  driver_components = [ ":focaltech" ]
+}
+
 fuchsia_driver("focaltech-sherlock-driver") {
   output_name = "focaltech-sherlock"
   configs += [
@@ -100,6 +107,11 @@ fuchsia_driver_component("focaltech-sherlock") {
   deps = [ ":focaltech-sherlock-driver" ]
   info = "focaltech-sherlock-info.json"
   manifest = "meta/focaltech-sherlock.cml"
+}
+
+fuchsia_driver_package("focaltech-sherlock-package") {
+  package_name = "focaltech-sherlock"
+  driver_components = [ ":focaltech-sherlock" ]
 }
 
 test("focaltech-test-bin") {

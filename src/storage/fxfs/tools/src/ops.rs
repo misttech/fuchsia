@@ -7,12 +7,12 @@ use {
     chrono::{TimeZone, Utc},
     fxfs::{
         errors::FxfsError,
-        filesystem::{Filesystem, OpenFxFilesystem},
+        filesystem::OpenFxFilesystem,
         fsck,
-        object_handle::{GetProperties, ObjectHandle, ReadObjectHandle, WriteObjectHandle},
+        object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle},
         object_store::{
             directory::{replace_child, ReplacedChild},
-            transaction::{LockKey, Options, TransactionHandler},
+            transaction::{lock_keys, LockKey, Options},
             volume::root_volume,
             Directory, HandleOptions, ObjectDescriptor, ObjectStore, SetExtendedAttributeMode,
             StoreObjectHandle,
@@ -116,10 +116,11 @@ pub async fn unlink(
 ) -> Result<(), Error> {
     let dir = walk_dir(vol, path.parent().unwrap()).await?;
     // Not worried about the race between lookup and lock, this is a single-threaded mode.
-    let (mut transaction, object_id_and_descriptor) = dir
-        .acquire_transaction_for_replace(&[], path.file_name().unwrap().to_str().unwrap(), true)
+    let replace_context = dir
+        .acquire_context_for_replace(None, path.file_name().unwrap().to_str().unwrap(), true)
         .await?;
-    if object_id_and_descriptor.is_none() {
+    let mut transaction = replace_context.transaction;
+    if replace_context.dst_id_and_descriptor.is_none() {
         bail!("Object not found.");
     }
     let replaced_child =
@@ -135,7 +136,7 @@ pub async fn unlink(
 }
 
 // Used to fsck after mutating operations.
-pub async fn fsck(fs: &OpenFxFilesystem, verbose: bool) -> Result<(), Error> {
+pub async fn fsck(fs: &OpenFxFilesystem, verbose: bool) -> Result<fsck::FsckResult, Error> {
     // Re-open the filesystem to ensure it's locked.
     fsck::fsck_with_options(
         fs.deref().clone(),
@@ -161,7 +162,7 @@ pub async fn get(vol: &Arc<ObjectStore>, src: &Path) -> Result<Vec<u8>, Error> {
             ObjectStore::open_object(dir.owner(), object_id, HandleOptions::default(), None)
                 .await?;
         let mut out: Vec<u8> = Vec::new();
-        let mut buf = handle.allocate_buffer(handle.block_size() as usize);
+        let mut buf = handle.allocate_buffer(handle.block_size() as usize).await;
         let mut ofs = 0;
         loop {
             let bytes = handle.read(ofs, buf.as_mut()).await?;
@@ -189,7 +190,7 @@ pub async fn put(
     let mut transaction = (*fs)
         .clone()
         .new_transaction(
-            &[LockKey::object(vol.store_object_id(), dir.object_id())],
+            lock_keys![LockKey::object(vol.store_object_id(), dir.object_id())],
             Options::default(),
         )
         .await?;
@@ -198,7 +199,7 @@ pub async fn put(
     }
     let handle = dir.create_child_file(&mut transaction, &filename, None).await?;
     transaction.commit().await?;
-    let mut buf = handle.allocate_buffer(data.len());
+    let mut buf = handle.allocate_buffer(data.len()).await;
     buf.as_mut_slice().copy_from_slice(&data);
     handle.write_or_append(Some(0), buf.as_ref()).await?;
     handle.flush().await
@@ -215,7 +216,7 @@ pub async fn mkdir(
     let mut transaction = (*fs)
         .clone()
         .new_transaction(
-            &[LockKey::object(vol.store_object_id(), dir.object_id())],
+            lock_keys![LockKey::object(vol.store_object_id(), dir.object_id())],
             Options::default(),
         )
         .await?;
@@ -256,8 +257,13 @@ pub async fn set_extended_attribute_for_node(
     let dir = walk_dir(vol, path.parent().unwrap()).await?;
     let filename = path.file_name().unwrap().to_str().unwrap();
     let (node_id, _) = dir.lookup(filename).await?.ok_or(FxfsError::NotFound)?;
-    let handle =
-        StoreObjectHandle::new(vol.clone(), node_id, None, HandleOptions::default(), false);
+    let handle = StoreObjectHandle::new(
+        vol.clone(),
+        node_id,
+        /* permanent_keys: */ false,
+        HandleOptions::default(),
+        false,
+    );
     handle
         .set_extended_attribute(name.to_vec(), value.to_vec(), SetExtendedAttributeMode::Set)
         .await

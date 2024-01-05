@@ -128,7 +128,7 @@ class Node : public fbl::RefCounted<Node> {
 
   Device* parent_device() const;
 
-  void SetDebugClientInfoInternal(std::string name, uint64_t id);
+  void SetDebugClientInfoInternal(ClientDebugInfo debug_info);
 
  protected:
   // Called during Bind() to perform the sub-class protocol-specific bind itself.
@@ -215,8 +215,12 @@ class Node : public fbl::RefCounted<Node> {
       FailSync(FROM_HERE, completer, ZX_ERR_BAD_STATE, "SetDebugClientInfo() after Close()");
       return;
     }
-    SetDebugClientInfoInternal(std::string(request.name().begin(), request.name().end()),
-                               request.id());
+
+    ClientDebugInfo debug_info;
+    debug_info.name = std::string(request.name().begin(), request.name().end());
+    debug_info.id = request.id();
+
+    SetDebugClientInfoInternal(std::move(debug_info));
   }
 
   template <class SetDebugClientInfoRequest, class SetDebugClientInfoCompleterSync>
@@ -230,13 +234,17 @@ class Node : public fbl::RefCounted<Node> {
       FailSync(FROM_HERE, completer, ZX_ERR_BAD_STATE, "SetDebugClientInfo() requires name set");
       return;
     }
-    if (!request.id().has_value()) {
-      FailSync(FROM_HERE, completer, ZX_ERR_BAD_STATE, "SetDebugClientInfo() requires id set");
-      return;
+
+    uint64_t id = 0;
+    if (request.id().has_value()) {
+      id = *request.id();
     }
-    SetDebugClientInfoInternal(
-        std::string(request.name().value().begin(), request.name().value().end()),
-        request.id().value());
+
+    ClientDebugInfo debug_info;
+    debug_info.name = std::string(request.name()->begin(), request.name()->end());
+    debug_info.id = id;
+
+    SetDebugClientInfoInternal(std::move(debug_info));
   }
 
   template <class SetDebugTimeoutLogDeadlineRequestView,
@@ -390,6 +398,47 @@ class Node : public fbl::RefCounted<Node> {
     Response response;
     response.is_alternate() = is_alernate_for;
     completer.Reply(fit::ok(std::move(response)));
+  }
+
+  template <class GetBufferCollectionIdCompleterSync,
+            class Response = fuchsia_sysmem2::NodeGetBufferCollectionIdResponse>
+  void GetBufferCollectionIdImplV2(GetBufferCollectionIdCompleterSync& completer) {
+    if (is_done_) {
+      FailSync(FROM_HERE, completer, ZX_ERR_BAD_STATE, "GetBufferCollectionId after Close");
+      return;
+    }
+    Response response;
+    response.buffer_collection_id() = logical_buffer_collection().buffer_collection_id();
+    completer.Reply(std::move(response));
+  }
+
+  template <class SetWeakCompleterSync>
+  void SetWeakImplV2(SetWeakCompleterSync& completer) {
+    if (is_done_) {
+      FailSync(FROM_HERE, completer, ZX_ERR_BAD_STATE, "SetWeak after Close");
+      return;
+    }
+    if (ReadyForAllocation()) {
+      // BufferCollection after SetConstraints, or BufferCollectionTokenGroup after
+      // AllChildrenPresent.
+      FailSync(FROM_HERE, completer, ZX_ERR_BAD_STATE, "SetWeak after ready for allocation");
+      return;
+    }
+    node_properties().SetWeak();
+    // done
+    //
+    // ~completer; one-way message; no reply
+  }
+
+  template <class SetWeakOkRequest, class SetWeakOkCompleterSync>
+  void SetWeakOkImplV2(SetWeakOkRequest& request, SetWeakOkCompleterSync& completer) {
+    if (is_done_) {
+      FailSync(FROM_HERE, completer, ZX_ERR_BAD_STATE, "SetWeakOk() when already is_done_");
+      return;
+    }
+    bool for_child_nodes_also =
+        request.for_child_nodes_also().has_value() && *request.for_child_nodes_also();
+    node_properties().SetWeakOk(for_child_nodes_also);
   }
 
   void CloseChannel(zx_status_t epitaph);

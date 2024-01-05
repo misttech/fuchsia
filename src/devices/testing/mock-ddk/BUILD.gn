@@ -23,7 +23,8 @@ source_set("mock-ddk") {
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/stdcompat",
 
@@ -48,7 +49,8 @@ test("mock-ddk-test-bin") {
   deps = [
     ":mock-ddk",
     "//sdk/lib/component/outgoing/cpp",
-    "//src/devices/tests/fidl-service:echo_cpp_wire",
+    "//sdk/lib/driver/outgoing/cpp",
+    "//src/devices/tests/fidl-service:echo_cpp",
     "//src/lib/ddktl",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/fbl",

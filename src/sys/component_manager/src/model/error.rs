@@ -4,17 +4,18 @@
 
 use {
     crate::{
+        bedrock::program,
         capability::CapabilitySource,
         model::{events::error::EventsError, routing::RouteRequest, storage::StorageError},
     },
     ::routing::{
-        component_id_index::ComponentIdIndexError,
         error::{ComponentInstanceError, RoutingError},
         policy::PolicyError,
         resolving::ResolverError,
     },
     clonable_error::ClonableError,
     cm_moniker::{InstancedExtendedMoniker, InstancedMoniker},
+    cm_rust::UseDecl,
     cm_types::Name,
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_sys2 as fsys, fuchsia_zircon as zx,
     moniker::{ChildName, Moniker, MonikerError},
@@ -36,8 +37,6 @@ pub enum ModelError {
     },
     #[error("expected a component instance moniker")]
     UnexpectedComponentManagerMoniker,
-    #[error("The model is not available")]
-    ModelNotAvailable,
     #[error("Routing error: {}", err)]
     RoutingError {
         #[from]
@@ -89,7 +88,7 @@ pub enum ModelError {
     #[error("component id index error: {}", err)]
     ComponentIdIndexError {
         #[from]
-        err: ComponentIdIndexError,
+        err: component_id_index::IndexError,
     },
     #[error("error with resolve action: {err}")]
     ResolveActionError {
@@ -141,9 +140,7 @@ impl ModelError {
             ModelError::RoutingError { err } => err.as_zx_status(),
             ModelError::PolicyError { err } => err.as_zx_status(),
             ModelError::StartActionError { err } => err.as_zx_status(),
-            ModelError::ComponentInstanceError {
-                err: ComponentInstanceError::InstanceNotFound { .. },
-            } => zx::Status::NOT_FOUND,
+            ModelError::ComponentInstanceError { err } => err.as_zx_status(),
             ModelError::OpenOutgoingDirError { err } => err.as_zx_status(),
             ModelError::RouteAndOpenCapabilityError { err } => err.as_zx_status(),
             ModelError::CapabilityProviderError { err } => err.as_zx_status(),
@@ -161,6 +158,10 @@ pub enum StructuredConfigError {
     ConfigResolutionFailed(#[source] config_encoder::ResolutionError),
     #[error("couldn't create vmo: {_0}")]
     VmoCreateFailed(#[source] zx::Status),
+    #[error("Failed to match values for key: {}", key)]
+    ValueMismatch { key: String },
+    #[error("Failed to route structured config values: {_0}")]
+    RoutingError(#[from] RoutingError),
 }
 
 #[derive(Clone, Debug, Error)]
@@ -202,7 +203,8 @@ pub enum OpenOutgoingDirError {
 impl OpenOutgoingDirError {
     pub fn as_zx_status(&self) -> zx::Status {
         match self {
-            Self::InstanceNotRunning | Self::InstanceNonExecutable => zx::Status::UNAVAILABLE,
+            Self::InstanceNotRunning => zx::Status::NOT_FOUND,
+            Self::InstanceNonExecutable => zx::Status::NOT_FOUND,
             Self::Fidl(_) => zx::Status::INTERNAL,
         }
     }
@@ -222,6 +224,11 @@ pub enum AddDynamicChildError {
     NameTooLong { max_len: usize },
     #[error("collection {} does not allow dynamic offers", collection_name)]
     DynamicOffersNotAllowed { collection_name: String },
+    #[error("failed to start child in single-run collection: {}", err)]
+    StartSingleRun {
+        #[source]
+        err: StartActionError,
+    },
     #[error("failed to add child to parent: {}", err)]
     AddChildError {
         #[from]
@@ -253,11 +260,10 @@ impl Into<fcomponent::Error> for AddDynamicChildError {
             AddDynamicChildError::AddChildError {
                 err: AddChildError::InstanceAlreadyExists { .. },
             } => fcomponent::Error::InstanceAlreadyExists,
-
-            // Invalid Arguments
             AddDynamicChildError::DynamicOffersNotAllowed { .. } => {
                 fcomponent::Error::InvalidArguments
             }
+            AddDynamicChildError::StartSingleRun { err } => err.into(),
             AddDynamicChildError::NameTooLong { .. } => fcomponent::Error::InvalidArguments,
             AddDynamicChildError::AddChildError {
                 err: AddChildError::DynamicOfferError { .. },
@@ -290,6 +296,7 @@ impl Into<fsys::CreateError> for AddDynamicChildError {
             AddDynamicChildError::DynamicOffersNotAllowed { .. } => {
                 fsys::CreateError::DynamicOffersForbidden
             }
+            AddDynamicChildError::StartSingleRun { .. } => fsys::CreateError::Internal,
             AddDynamicChildError::NameTooLong { .. } => fsys::CreateError::BadChildDecl,
             AddDynamicChildError::AddChildError {
                 err: AddChildError::DynamicOfferError { .. },
@@ -376,13 +383,6 @@ pub enum ResolveActionError {
         #[source]
         err: VfsError,
     },
-    #[error("error in namespace dir VFS for component {moniker}: {err}")]
-    NamespaceDirError {
-        moniker: Moniker,
-
-        #[source]
-        err: VfsError,
-    },
     #[error("could not add static child \"{}\": {}", child_name, err)]
     AddStaticChildError {
         child_name: String,
@@ -407,6 +407,23 @@ pub enum ResolveActionError {
     },
 }
 
+impl ResolveActionError {
+    fn as_zx_status(&self) -> zx::Status {
+        match self {
+            ResolveActionError::DiscoverActionError { .. }
+            | ResolveActionError::InstanceShutDown { .. }
+            | ResolveActionError::InstanceDestroyed { .. }
+            | ResolveActionError::ComponentAddressParseError { .. }
+            | ResolveActionError::AbiCompatibilityError { .. } => zx::Status::NOT_FOUND,
+            ResolveActionError::ExposeDirError { .. }
+            | ResolveActionError::AddStaticChildError { .. }
+            | ResolveActionError::StructuredConfigError { .. }
+            | ResolveActionError::PackageDirProxyCreateError { .. } => zx::Status::INTERNAL,
+            ResolveActionError::ResolverError { err, .. } => err.as_zx_status(),
+        }
+    }
+}
+
 // This is implemented for fuchsia.sys2.LifecycleController protocol
 impl Into<fsys::ResolveError> for ResolveActionError {
     fn into(self) -> fsys::ResolveError {
@@ -420,7 +437,6 @@ impl Into<fsys::ResolveError> for ResolveActionError {
             ResolveActionError::InstanceShutDown { .. }
             | ResolveActionError::InstanceDestroyed { .. } => fsys::ResolveError::InstanceNotFound,
             ResolveActionError::ExposeDirError { .. }
-            | ResolveActionError::NamespaceDirError { .. }
             | ResolveActionError::ResolverError { .. }
             | ResolveActionError::StructuredConfigError { .. }
             | ResolveActionError::ComponentAddressParseError { .. }
@@ -446,7 +462,6 @@ impl Into<fsys::StartError> for ResolveActionError {
             ResolveActionError::InstanceShutDown { .. }
             | ResolveActionError::InstanceDestroyed { .. } => fsys::StartError::InstanceNotFound,
             ResolveActionError::ExposeDirError { .. }
-            | ResolveActionError::NamespaceDirError { .. }
             | ResolveActionError::ResolverError { .. }
             | ResolveActionError::StructuredConfigError { .. }
             | ResolveActionError::ComponentAddressParseError { .. }
@@ -473,7 +488,7 @@ impl PkgDirError {
     fn as_zx_status(&self) -> zx::Status {
         match self {
             Self::NoPkgDir => zx::Status::NOT_FOUND,
-            Self::OpenFailed { .. } => zx::Status::IO,
+            Self::OpenFailed { .. } => zx::Status::INTERNAL,
         }
     }
 }
@@ -508,12 +523,13 @@ impl ComponentProviderError {
 
 #[derive(Debug, Clone, Error)]
 pub enum CapabilityProviderError {
-    #[error("failed to create stream from channel")]
-    StreamCreationError,
     #[error("bad path")]
     BadPath,
-    #[error("bad flags")]
-    BadFlags,
+    #[error("component instance")]
+    ComponentInstanceError {
+        #[from]
+        err: ComponentInstanceError,
+    },
     #[error("error in pkg dir capability provider: {err}")]
     PkgDirError {
         #[from]
@@ -539,12 +555,12 @@ pub enum CapabilityProviderError {
 impl CapabilityProviderError {
     pub fn as_zx_status(&self) -> zx::Status {
         match self {
-            Self::StreamCreationError => zx::Status::BAD_HANDLE,
-            Self::BadFlags | Self::BadPath => zx::Status::INVALID_ARGS,
+            Self::BadPath => zx::Status::INVALID_ARGS,
+            Self::ComponentInstanceError { err } => err.as_zx_status(),
+            Self::CmNamespaceError { .. } => zx::Status::INTERNAL,
             Self::PkgDirError { err } => err.as_zx_status(),
             Self::EventSourceError { err } => err.as_zx_status(),
             Self::ComponentProviderError { err } => err.as_zx_status(),
-            Self::CmNamespaceError { .. } => zx::Status::INTERNAL,
         }
     }
 }
@@ -617,7 +633,7 @@ impl RouteAndOpenCapabilityError {
 
 #[derive(Debug, Clone, Error)]
 pub enum StartActionError {
-    #[error("Couldn't start `{moniker}` because it was shutdown")]
+    #[error("Couldn't start `{moniker}` because it has been destroyed")]
     InstanceShutDown { moniker: Moniker },
     #[error("Couldn't start `{moniker}` because it has been destroyed")]
     InstanceDestroyed { moniker: Moniker },
@@ -646,6 +662,12 @@ pub enum StartActionError {
         #[source]
         err: CreateNamespaceError,
     },
+    #[error("Couldn't start `{moniker}` because we failed to start its program: {err}")]
+    StartProgramError {
+        moniker: Moniker,
+        #[source]
+        err: program::StartError,
+    },
     #[error("Couldn't start `{moniker}` due to a structured configuration error: {err}")]
     StructuredConfigError {
         moniker: Moniker,
@@ -663,11 +685,16 @@ pub enum StartActionError {
 impl StartActionError {
     fn as_zx_status(&self) -> zx::Status {
         match self {
-            Self::RebootOnTerminateForbidden { err, .. } => err.as_zx_status(),
-            Self::ResolveRunnerError { err, .. } => err.as_zx_status(),
-            Self::InstanceDestroyed { .. } | Self::InstanceShutDown { .. } => zx::Status::NOT_FOUND,
-            Self::CreateNamespaceError { err, .. } => err.as_zx_status(),
-            _ => zx::Status::INTERNAL,
+            StartActionError::InstanceDestroyed { .. } | Self::InstanceShutDown { .. } => {
+                zx::Status::NOT_FOUND
+            }
+            StartActionError::StartProgramError { .. }
+            | StartActionError::StructuredConfigError { .. }
+            | StartActionError::EagerStartError { .. } => zx::Status::INTERNAL,
+            StartActionError::RebootOnTerminateForbidden { err, .. } => err.as_zx_status(),
+            StartActionError::ResolveRunnerError { err, .. } => err.as_zx_status(),
+            StartActionError::CreateNamespaceError { err, .. } => err.as_zx_status(),
+            StartActionError::ResolveActionError { err, .. } => err.as_zx_status(),
         }
     }
 }
@@ -699,10 +726,8 @@ impl Into<fcomponent::Error> for StartActionError {
 
 #[derive(Debug, Clone, Error)]
 pub enum StopActionError {
-    #[error("stop failed with unexpected FIDL error ({0})")]
-    ControllerStopFidlError(#[source] fidl::Error),
-    #[error("kill failed with unexpected FIDL error ({0})")]
-    ControllerKillFidlError(#[source] fidl::Error),
+    #[error("failed to stop program: {0}")]
+    ProgramStopError(#[source] program::StopError),
     #[error("failed to get top instance")]
     GetTopInstanceFailed,
     #[error("failed to get parent instance")]
@@ -728,14 +753,7 @@ impl Into<fcomponent::Error> for StopActionError {
 impl PartialEq for StopActionError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (
-                StopActionError::ControllerStopFidlError(_),
-                StopActionError::ControllerStopFidlError(_),
-            ) => true,
-            (
-                StopActionError::ControllerKillFidlError(_),
-                StopActionError::ControllerKillFidlError(_),
-            ) => true,
+            (StopActionError::ProgramStopError(_), StopActionError::ProgramStopError(_)) => true,
             (StopActionError::GetTopInstanceFailed, StopActionError::GetTopInstanceFailed) => true,
             (StopActionError::GetParentFailed, StopActionError::GetParentFailed) => true,
             (
@@ -743,26 +761,6 @@ impl PartialEq for StopActionError {
                 StopActionError::DestroyDynamicChildrenFailed { .. },
             ) => true,
             _ => false,
-        }
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        match (self, other) {
-            (
-                StopActionError::ControllerStopFidlError(_),
-                StopActionError::ControllerStopFidlError(_),
-            ) => false,
-            (
-                StopActionError::ControllerKillFidlError(_),
-                StopActionError::ControllerKillFidlError(_),
-            ) => false,
-            (StopActionError::GetTopInstanceFailed, StopActionError::GetTopInstanceFailed) => false,
-            (StopActionError::GetParentFailed, StopActionError::GetParentFailed) => false,
-            (
-                StopActionError::DestroyDynamicChildrenFailed { .. },
-                StopActionError::DestroyDynamicChildrenFailed { .. },
-            ) => false,
-            _ => true,
         }
     }
 }
@@ -835,19 +833,31 @@ pub enum CreateNamespaceError {
     #[error("failed to clone pkg dir: {0}")]
     ClonePkgDirFailed(#[source] fuchsia_fs::node::CloneError),
 
+    #[error("use decl without path cannot be installed into the namespace: {0:?}")]
+    UseDeclWithoutPath(UseDecl),
+
     #[error("{0}")]
     InstanceNotInInstanceIdIndex(#[source] RoutingError),
 
-    #[error("invalid additional namespace entries")]
-    InvalidAdditionalEntries(#[source] cm_runner::NamespaceError),
+    #[error(transparent)]
+    BuildNamespaceError(#[from] serve_processargs::BuildNamespaceError),
+
+    #[error("failed to convert namespace into directory")]
+    ConvertToDirectory(#[source] ClonableError),
+
+    #[error(transparent)]
+    ComponentInstanceError(#[from] ComponentInstanceError),
 }
 
 impl CreateNamespaceError {
     fn as_zx_status(&self) -> zx::Status {
         match self {
-            Self::ClonePkgDirFailed(_) => zx::Status::IO,
+            Self::ClonePkgDirFailed(_) => zx::Status::INTERNAL,
+            Self::UseDeclWithoutPath(_) => zx::Status::NOT_FOUND,
             Self::InstanceNotInInstanceIdIndex(e) => e.as_zx_status(),
-            Self::InvalidAdditionalEntries(_) => zx::Status::INVALID_ARGS,
+            Self::BuildNamespaceError(_) => zx::Status::NOT_FOUND,
+            Self::ConvertToDirectory(_) => zx::Status::INTERNAL,
+            Self::ComponentInstanceError(err) => err.as_zx_status(),
         }
     }
 }

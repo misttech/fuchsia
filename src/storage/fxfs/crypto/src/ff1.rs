@@ -4,7 +4,10 @@
 
 use {
     crate::UnwrappedKey,
-    aes::{cipher::generic_array::GenericArray, Aes256, BlockEncrypt, NewBlockCipher},
+    aes::{
+        cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit},
+        Aes256,
+    },
     byteorder::{BigEndian, ByteOrder},
 };
 
@@ -51,8 +54,8 @@ impl Ff1 {
     }
 
     // This differs from encrypt in three ways (see specification): the order of the indices is
-    // reversed, the roles of A and B are swapped and modular addtiion is replaced by modular
-    // subtracton.
+    // reversed, the roles of A and B are swapped and modular addition is replaced by modular
+    // subtraction.
     pub fn decrypt(&self, data: u32) -> u32 {
         let mut a = (data >> 16) as u16;
         let mut b = data as u16;

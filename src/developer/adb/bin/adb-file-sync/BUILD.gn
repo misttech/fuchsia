@@ -60,8 +60,8 @@ test("adb-file-sync-test-bin") {
   sources = [ "adb-file-sync-test.cc" ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.adb:fuchsia.hardware.adb_hlcpp",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire_testing",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp_wire_testing",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_testing",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp_testing",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_hlcpp",
     "//sdk/lib/sys/component/cpp/testing:cpp",
     "//src/developer/adb/third_party/adb-file-sync",
@@ -69,6 +69,9 @@ test("adb-file-sync-test-bin") {
     "//src/lib/testing/loop_fixture:gtest",
     "//third_party/googletest:gtest",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 fuchsia_component("adb-file-sync-test-component") {

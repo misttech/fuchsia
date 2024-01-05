@@ -31,12 +31,6 @@ fuchsia_package("device_registry") {
 
 fuchsia_unittest_package("audio_services_device_registry_unittests") {
   deps = [ ":device_registry_unittests_bin" ]
-
-  test_specs = {
-    log_settings = {
-      max_severity = "INFO"
-    }
-  }
 }
 
 fuchsia_unittest_package("audio_services_device_registry_warning_unittests") {
@@ -81,11 +75,13 @@ executable("device_registry_unittests_bin") {
     "provider_server_unittest.cc",
     "registry_server_unittest.cc",
     "ring_buffer_server_unittest.cc",
+    "validate_unittest.cc",
   ]
 
   deps = [
     ":unittest_base",
-    "//src/lib/storage/vfs/cpp",
+    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp_testing",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/sync:sync-cpp",
   ]
 }
@@ -102,6 +98,7 @@ executable("device_registry_warning_unittests_bin") {
     "provider_server_warning_unittest.cc",
     "registry_server_warning_unittest.cc",
     "ring_buffer_server_warning_unittest.cc",
+    "validate_warning_unittest.cc",
   ]
 
   deps = [ ":unittest_base" ]

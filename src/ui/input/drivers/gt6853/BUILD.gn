@@ -50,20 +50,20 @@ group("common") {
   public_deps = [
     ":gt6853-bind",
     "//sdk/banjo/fuchsia.hardware.hidbus:fuchsia.hardware.hidbus_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp_wire",
-    "//sdk/fidl/fuchsia.mem:fuchsia.mem_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
+    "//sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
     "//sdk/lib/input_report_reader",
     "//src/devices/i2c/lib/device-protocol-i2c-channel",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddk",
     "//src/lib/ddktl",
+    "//src/ui/input/lib/hid",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/hid",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
@@ -74,7 +74,18 @@ group("common") {
 driver_bind_rules("gt6853-bind") {
   rules = "gt6853.bind"
   tests = "gt6853-bind-test.json"
-  deps = [ "//src/devices/bind/fuchsia.goodix.platform" ]
+
+  # TODO(fxb/115757): Remove this once we no longer need to generate
+  # fragments for composite bind rules.
+  disable_fragment_gen = true
+
+  deps = [
+    "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
+    "//src/devices/bind/fuchsia.goodix.platform",
+    "//src/devices/bind/fuchsia.gpio",
+    "//src/devices/bind/fuchsia.i2c",
+    "//src/devices/bind/fuchsia.platform",
+  ]
 }
 
 fuchsia_driver("gt6853-module-driver") {
@@ -113,7 +124,7 @@ test("gt6853-test") {
   ]
   deps = [
     ":common",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//src/devices/gpio/testing/fake-gpio",
 
     # TODO(https://fxbug.dev/113997): Fix thread unsafety and switch to

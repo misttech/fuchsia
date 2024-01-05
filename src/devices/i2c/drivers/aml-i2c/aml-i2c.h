@@ -5,63 +5,65 @@
 #ifndef SRC_DEVICES_I2C_DRIVERS_AML_I2C_AML_I2C_H_
 #define SRC_DEVICES_I2C_DRIVERS_AML_I2C_AML_I2C_H_
 
-#include <fuchsia/hardware/i2cimpl/cpp/banjo.h>
-#include <lib/device-protocol/pdev-fidl.h>
+#include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/wire.h>
+#include <lib/async/cpp/irq.h>
+#include <lib/driver/compat/cpp/compat.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/mmio/mmio-buffer.h>
 #include <lib/zx/event.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/time.h>
-#include <threads.h>
-
-#include <ddktl/device.h>
 
 namespace aml_i2c {
 
-class AmlI2c;
-using DeviceType = ddk::Device<AmlI2c>;
-
-class AmlI2c : public DeviceType, public ddk::I2cImplProtocol<AmlI2c, ddk::base_protocol> {
+class AmlI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i2cimpl::Device> {
  public:
-  static zx_status_t Bind(void* ctx, zx_device_t* parent);
+  AmlI2c(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
 
-  AmlI2c(zx_device_t* parent, zx::interrupt irq, zx::event event, fdf::MmioBuffer regs_iobuff)
-      : DeviceType(parent),
-        irq_(std::move(irq)),
-        event_(std::move(event)),
-        regs_iobuff_(std::move(regs_iobuff)) {}
-  ~AmlI2c() {
-    irq_.destroy();
-    if (irqthrd_) {
-      thrd_join(irqthrd_, nullptr);
-    }
-  }
+  zx::result<> Start() override;
 
-  void DdkRelease() { delete this; }
+  void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
-  zx_status_t I2cImplGetMaxTransferSize(uint64_t* out_size);
-  zx_status_t I2cImplSetBitrate(uint32_t bitrate);
-  zx_status_t I2cImplTransact(const i2c_impl_op_t* rws, size_t count);
+  // I2cImpl protocol implementation
+  void GetMaxTransferSize(fdf::Arena& arena, GetMaxTransferSizeCompleter::Sync& completer) override;
+  void SetBitrate(SetBitrateRequestView request, fdf::Arena& arena,
+                  SetBitrateCompleter::Sync& completer) override;
+  void Transact(TransactRequestView request, fdf::Arena& arena,
+                TransactCompleter::Sync& completer) override;
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_i2cimpl::Device> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override;
+
+  void SetTimeout(zx::duration timeout) { timeout_ = timeout; }
 
  private:
-  friend class AmlI2cTest;
-
-  static zx_status_t SetClockDelay(zx_device_t* parent, const fdf::MmioBuffer& regs_iobuff);
+  zx_status_t ServeI2cImpl();
+  compat::DeviceServer::BanjoConfig CreateBanjoConfig();
+  zx_status_t CreateChildNode();
 
   void SetTargetAddr(uint16_t addr) const;
   void StartXfer() const;
   zx_status_t WaitTransferComplete() const;
 
-  zx_status_t Read(uint8_t* buff, uint32_t len, bool stop) const;
-  zx_status_t Write(const uint8_t* buff, uint32_t len, bool stop) const;
+  zx_status_t Read(cpp20::span<uint8_t> dst, bool stop) const;
+  zx_status_t Write(cpp20::span<uint8_t> src, bool stop) const;
 
-  void StartIrqThread();
-  int IrqThread() const;
+  zx_status_t StartIrqThread();
+  void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
+                 const zx_packet_interrupt_t* interrupt);
 
-  const zx::interrupt irq_;
-  const zx::event event_;
-  const fdf::MmioBuffer regs_iobuff_;
+  const fdf::MmioBuffer& regs_iobuff() const;
+
+  zx::interrupt irq_;
+  zx::event event_;
+  std::optional<fdf::MmioBuffer> regs_iobuff_;
   zx::duration timeout_ = zx::sec(1);
-  thrd_t irqthrd_{};
+  fdf::ServerBindingGroup<fuchsia_hardware_i2cimpl::Device> i2cimpl_bindings_;
+  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> child_controller_;
+  compat::DeviceServer device_server_;
+  // Only needed in order to set the role name for the code that waits for irq's.
+  std::optional<fdf::Dispatcher> irq_dispatcher_;
+  std::optional<fdf::PrepareStopCompleter> completer_;
+  async::IrqMethod<AmlI2c, &AmlI2c::HandleIrq> irq_handler_{this};
 };
 
 }  // namespace aml_i2c

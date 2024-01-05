@@ -4,7 +4,6 @@
 
 import("//build/components.gni")
 import("//build/fidl/fidl.gni")
-import("//build/sdk/sdk.gni")
 import("//build/test.gni")
 import("//build/testing/environments.gni")
 import("//third_party/protobuf/proto_library.gni")
@@ -51,7 +50,10 @@ static_library("fidl_codec") {
     "wire_types.cc",
   ]
 
-  public_deps = [ "//src/lib/fxl" ]
+  public_deps = [
+    "//sdk/lib/syslog/cpp",
+    "//src/lib/fxl",
+  ]
   deps = [
     ":value_proto",
     "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
@@ -112,7 +114,10 @@ fuchsia_unittest_package("fidl-codec-tests") {
 group("tests") {
   testonly = true
 
-  deps = [ ":fidl-codec-tests" ]
+  deps = [
+    ":fidl-codec-tests",
+    "rust:tests",
+  ]
 }
 
 action("json_for_test") {

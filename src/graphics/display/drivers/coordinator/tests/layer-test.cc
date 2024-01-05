@@ -4,6 +4,7 @@
 
 #include "src/graphics/display/drivers/coordinator/layer.h"
 
+#include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/fit/defer.h>
 
@@ -20,7 +21,7 @@
 #include "src/graphics/display/lib/api-types-cpp/event-id.h"
 #include "src/lib/testing/predicates/status.h"
 
-namespace fhd = fuchsia_hardware_display;
+namespace fhdt = fuchsia_hardware_display_types;
 
 namespace display {
 
@@ -35,10 +36,10 @@ class LayerTest : public TestBase {
     image_t dc_image = {
         .width = kDisplayWidth,
         .height = kDisplayHeight,
-        .type = fhd::wire::kTypeSimple,
+        .type = fhdt::wire::kTypeSimple,
         .handle = 0,
     };
-    EXPECT_OK(display()->ImportVmoImage(&dc_image, zx::vmo(0), 0));
+    EXPECT_OK(display()->ImportVmoImageForTesting(&dc_image, zx::vmo(0), 0));
     EXPECT_NE(dc_image.handle, 0u);
     fbl::RefPtr<Image> image =
         fbl::AdoptRef(new Image(controller(), dc_image, zx::vmo(0), nullptr, ClientId(1)));
@@ -61,12 +62,12 @@ class LayerTest : public TestBase {
 
 TEST_F(LayerTest, PrimaryBasic) {
   Layer layer(DriverLayerId(1));
-  fhd::wire::ImageConfig image_config = {
-      .width = kDisplayWidth, .height = kDisplayHeight, .type = fhd::wire::kTypeSimple};
-  fhd::wire::Frame frame = {.width = kDisplayWidth, .height = kDisplayHeight};
+  fhdt::wire::ImageConfig image_config = {
+      .width = kDisplayWidth, .height = kDisplayHeight, .type = fhdt::wire::kTypeSimple};
+  fhdt::wire::Frame frame = {.width = kDisplayWidth, .height = kDisplayHeight};
   layer.SetPrimaryConfig(image_config);
-  layer.SetPrimaryPosition(fhd::wire::Transform::kIdentity, frame, frame);
-  layer.SetPrimaryAlpha(fhd::wire::AlphaMode::kDisable, 0);
+  layer.SetPrimaryPosition(fhdt::wire::Transform::kIdentity, frame, frame);
+  layer.SetPrimaryAlpha(fhdt::wire::AlphaMode::kDisable, 0);
   auto image = CreateReadyImage();
   layer.SetImage(image, kInvalidEventId, kInvalidEventId);
   layer.ApplyChanges({.h_addressable = kDisplayWidth, .v_addressable = kDisplayHeight});
@@ -83,12 +84,12 @@ TEST_F(LayerTest, CursorBasic) {
 
 TEST_F(LayerTest, CleanUpImage) {
   Layer layer(DriverLayerId(1));
-  fhd::wire::ImageConfig image_config = {
-      .width = kDisplayWidth, .height = kDisplayHeight, .type = fhd::wire::kTypeSimple};
-  fhd::wire::Frame frame = {.width = kDisplayWidth, .height = kDisplayHeight};
+  fhdt::wire::ImageConfig image_config = {
+      .width = kDisplayWidth, .height = kDisplayHeight, .type = fhdt::wire::kTypeSimple};
+  fhdt::wire::Frame frame = {.width = kDisplayWidth, .height = kDisplayHeight};
   layer.SetPrimaryConfig(image_config);
-  layer.SetPrimaryPosition(fhd::wire::Transform::kIdentity, frame, frame);
-  layer.SetPrimaryAlpha(fhd::wire::AlphaMode::kDisable, 0);
+  layer.SetPrimaryPosition(fhdt::wire::Transform::kIdentity, frame, frame);
+  layer.SetPrimaryAlpha(fhdt::wire::AlphaMode::kDisable, 0);
 
   auto displayed_image = CreateReadyImage();
   layer.SetImage(displayed_image, kInvalidEventId, kInvalidEventId);
@@ -156,12 +157,12 @@ TEST_F(LayerTest, CleanUpImage_CheckConfigChange) {
   fbl::DoublyLinkedList<LayerNode*> current_layers;
 
   Layer layer(DriverLayerId(1));
-  fhd::wire::ImageConfig image_config = {
-      .width = kDisplayWidth, .height = kDisplayHeight, .type = fhd::wire::kTypeSimple};
-  fhd::wire::Frame frame = {.width = kDisplayWidth, .height = kDisplayHeight};
+  fhdt::wire::ImageConfig image_config = {
+      .width = kDisplayWidth, .height = kDisplayHeight, .type = fhdt::wire::kTypeSimple};
+  fhdt::wire::Frame frame = {.width = kDisplayWidth, .height = kDisplayHeight};
   layer.SetPrimaryConfig(image_config);
-  layer.SetPrimaryPosition(fhd::wire::Transform::kIdentity, frame, frame);
-  layer.SetPrimaryAlpha(fhd::wire::AlphaMode::kDisable, 0);
+  layer.SetPrimaryPosition(fhdt::wire::Transform::kIdentity, frame, frame);
+  layer.SetPrimaryAlpha(fhdt::wire::AlphaMode::kDisable, 0);
 
   // Clean up images, which doesn't change the current config.
   {
@@ -203,12 +204,12 @@ TEST_F(LayerTest, CleanUpImage_CheckConfigChange) {
 
 TEST_F(LayerTest, CleanUpAllImages) {
   Layer layer(DriverLayerId(1));
-  fhd::wire::ImageConfig image_config = {
-      .width = kDisplayWidth, .height = kDisplayHeight, .type = fhd::wire::kTypeSimple};
-  fhd::wire::Frame frame = {.width = kDisplayWidth, .height = kDisplayHeight};
+  fhdt::wire::ImageConfig image_config = {
+      .width = kDisplayWidth, .height = kDisplayHeight, .type = fhdt::wire::kTypeSimple};
+  fhdt::wire::Frame frame = {.width = kDisplayWidth, .height = kDisplayHeight};
   layer.SetPrimaryConfig(image_config);
-  layer.SetPrimaryPosition(fhd::wire::Transform::kIdentity, frame, frame);
-  layer.SetPrimaryAlpha(fhd::wire::AlphaMode::kDisable, 0);
+  layer.SetPrimaryPosition(fhdt::wire::Transform::kIdentity, frame, frame);
+  layer.SetPrimaryAlpha(fhdt::wire::AlphaMode::kDisable, 0);
 
   auto displayed_image = CreateReadyImage();
   layer.SetImage(displayed_image, kInvalidEventId, kInvalidEventId);
@@ -253,12 +254,12 @@ TEST_F(LayerTest, CleanUpAllImages_CheckConfigChange) {
   fbl::DoublyLinkedList<LayerNode*> current_layers;
 
   Layer layer(DriverLayerId(1));
-  fhd::wire::ImageConfig image_config = {
-      .width = kDisplayWidth, .height = kDisplayHeight, .type = fhd::wire::kTypeSimple};
-  fhd::wire::Frame frame = {.width = kDisplayWidth, .height = kDisplayHeight};
+  fhdt::wire::ImageConfig image_config = {
+      .width = kDisplayWidth, .height = kDisplayHeight, .type = fhdt::wire::kTypeSimple};
+  fhdt::wire::Frame frame = {.width = kDisplayWidth, .height = kDisplayHeight};
   layer.SetPrimaryConfig(image_config);
-  layer.SetPrimaryPosition(fhd::wire::Transform::kIdentity, frame, frame);
-  layer.SetPrimaryAlpha(fhd::wire::AlphaMode::kDisable, 0);
+  layer.SetPrimaryPosition(fhdt::wire::Transform::kIdentity, frame, frame);
+  layer.SetPrimaryAlpha(fhdt::wire::AlphaMode::kDisable, 0);
 
   // Clean up all images, which doesn't change the current config.
   {

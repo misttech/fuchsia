@@ -7,19 +7,40 @@
 use super::shared::{execute_syscall, process_completed_restricted_exit, TaskInfo};
 use crate::{
     arch::execution::{generate_cfi_directives, restore_cfi_directives},
-    logging::{log_warn, set_current_task_info, set_zx_name},
     mm::MemoryManager,
     signals::{deliver_signal, SignalActions, SignalInfo},
-    syscalls::decls::SyscallDecl,
     task::{
-        CurrentTask, ExceptionResult, ExitStatus, Kernel, ProcessGroup, ThreadGroup,
-        ThreadGroupWriteGuard,
+        ptrace_syscall_enter, ptrace_syscall_exit, CurrentTask, ExceptionResult, ExitStatus,
+        Kernel, ProcessGroup, Task, TaskBuilder, TaskFlags, ThreadGroup, ThreadGroupWriteGuard,
     },
-    types::*,
 };
 use anyhow::{format_err, Error};
-use fuchsia_zircon::{self as zx, AsHandleRef};
-use std::{os::unix::thread::JoinHandleExt, sync::Arc};
+use fuchsia_inspect_contrib::{profile_duration, ProfileDuration};
+use fuchsia_zircon::{
+    AsHandleRef, {self as zx},
+};
+use starnix_logging::{
+    firehose_trace_duration, firehose_trace_duration_begin, firehose_trace_duration_end,
+    firehose_trace_instant, log_error, log_warn, set_zx_name, trace_arg_name,
+    trace_category_starnix, trace_instant, trace_name_check_task_exit, trace_name_execute_syscall,
+    trace_name_handle_exception, trace_name_read_restricted_state, trace_name_restricted_kick,
+    trace_name_run_task, trace_name_write_restricted_state, CoreDumpInfo, TraceScope,
+    MAX_ARGV_LENGTH,
+};
+use starnix_sync::{Locked, Unlocked};
+use starnix_syscalls::decls::SyscallDecl;
+use starnix_uapi::{
+    errno,
+    errors::Errno,
+    from_status_like_fdio,
+    ownership::{Releasable, WeakRef},
+    pid_t,
+    signals::SIGKILL,
+};
+use std::{
+    os::unix::thread::JoinHandleExt,
+    sync::{mpsc::sync_channel, Arc},
+};
 
 extern "C" {
     /// The function which enters restricted mode. This function never technically returns, instead
@@ -83,14 +104,14 @@ impl RestrictedState {
     }
 
     pub fn write_state(&mut self, state: &zx::sys::zx_restricted_state_t) {
-        trace_duration!(trace_category_starnix!(), trace_name_write_restricted_state!());
+        firehose_trace_duration!(trace_category_starnix!(), trace_name_write_restricted_state!());
         debug_assert!(self.state_size >= std::mem::size_of::<zx::sys::zx_restricted_state_t>());
         self.bound_state[0..std::mem::size_of::<zx::sys::zx_restricted_state_t>()]
             .copy_from_slice(Self::restricted_state_as_bytes(state));
     }
 
     pub fn read_state(&self, state: &mut zx::sys::zx_restricted_state_t) {
-        trace_duration!(trace_category_starnix!(), trace_name_read_restricted_state!());
+        firehose_trace_duration!(trace_category_starnix!(), trace_name_read_restricted_state!());
         debug_assert!(self.state_size >= std::mem::size_of::<zx::sys::zx_restricted_state_t>());
         Self::restricted_state_as_bytes_mut(state).copy_from_slice(
             &self.bound_state[0..std::mem::size_of::<zx::sys::zx_restricted_state_t>()],
@@ -171,20 +192,17 @@ const RESTRICTED_ENTER_OPTIONS: u32 = 0;
 /// TODO(https://fxbug.dev/117302): Note, cross-process shared resources allocated in this function
 /// that aren't freed by the Zircon kernel upon thread and/or process termination (like mappings in
 /// the shared region) should be freed in `Task::destroy_do_not_use_outside_of_drop_if_possible()`.
-fn run_task(current_task: &mut CurrentTask) -> Result<ExitStatus, Error> {
+fn run_task(
+    locked: &mut Locked<'_, Unlocked>,
+    current_task: &mut CurrentTask,
+) -> Result<ExitStatus, Error> {
+    let mut profiling_guard = ProfileDuration::enter("TaskLoopSetup");
+
     set_zx_name(&fuchsia_runtime::thread_self(), current_task.command().as_bytes());
-    set_current_task_info(current_task);
+    let span = current_task.logging_span();
+    let _span_guard = span.enter();
 
-    trace_duration!(trace_category_starnix!(), trace_name_run_task!());
-
-    // We want to measure the task runtime in restricted mode ("user mode") separately from
-    // normal mode ("kernel mode"), so we'll measure it once on each transition to/from user code
-    // and record that delta.
-    let mut task_info_scope = trace_duration_begin_with_task_info!(
-        current_task,
-        trace_category_starnix!(),
-        trace_name_normal_mode!()
-    );
+    firehose_trace_duration!(trace_category_starnix!(), trace_name_run_task!());
 
     // This is the pointer that is passed to `restricted_enter`.
     let restricted_return_ptr = restricted_return as *const ();
@@ -216,26 +234,20 @@ fn run_task(current_task: &mut CurrentTask) -> Result<ExitStatus, Error> {
     // Map the restricted state VMO and arrange for it to be unmapped later.
     let mut restricted_state = RestrictedState::from_vmo(state_vmo)?;
     loop {
-        let mut state = zx::sys::zx_restricted_state_t::from(&*current_task.registers);
+        let mut state = zx::sys::zx_restricted_state_t::from(&*current_task.thread_state.registers);
 
         // Copy the register state into the mapped VMO.
         restricted_state.write_state(&state);
 
-        // We're about to hand control back to userspace, and traces should transition directly from
-        // the task loop. Compute the task runtime delta here if enabled.
-        trace_duration_end_with_task_info!(task_info_scope);
-        task_info_scope = trace_duration_begin_with_task_info!(
-            current_task,
-            trace_category_starnix!(),
-            trace_name_restricted_mode!()
-        );
+        // We're about to hand control back to userspace, start measuring time in user code.
+        profiling_guard.pivot("RestrictedMode");
 
         let mut reason_code: zx::sys::zx_restricted_reason_t = u64::MAX;
         let status = zx::Status::from_raw(unsafe {
             // The closure provided to run_with_saved_state must be minimal to avoid using
             // floating point or vector state. In particular, the zx::Status conversion compiles
             // to a vector register operation by default and must happen outside this closure.
-            current_task.extended_pstate.run_with_saved_state(|| {
+            current_task.thread_state.extended_pstate.run_with_saved_state(|| {
                 restricted_enter(
                     RESTRICTED_ENTER_OPTIONS,
                     restricted_return_ptr as usize,
@@ -252,50 +264,60 @@ fn run_task(current_task: &mut CurrentTask) -> Result<ExitStatus, Error> {
             _ => return Err(format_err!("failed to restricted_enter: {:?} {:?}", state, status)),
         }
 
-        // We just received control back from userspace and traces should transition directly to
-        // the task loop. Compute the task runtime delta here if enabled.
-        trace_duration_end_with_task_info!(task_info_scope);
-        task_info_scope = trace_duration_begin_with_task_info!(
-            current_task,
-            trace_category_starnix!(),
-            trace_name_normal_mode!()
-        );
+        // We just received control back from r-space, start measuring time in normal mode.
+        profiling_guard.pivot("NormalMode");
 
         // Copy the register state out of the VMO.
         restricted_state.read_state(&mut state);
 
         match reason_code {
             zx::sys::ZX_RESTRICTED_REASON_SYSCALL => {
-                trace_duration_begin!(trace_category_starnix!(), trace_name_execute_syscall!());
+                profile_duration!("ExecuteSyscall");
+                firehose_trace_duration_begin!(
+                    trace_category_starnix!(),
+                    trace_name_execute_syscall!()
+                );
 
                 // Store the new register state in the current task before dispatching the system call.
-                current_task.registers =
+                current_task.thread_state.registers =
                     zx::sys::zx_thread_state_general_regs_t::from(&state).into();
-                let syscall_decl =
-                    SyscallDecl::from_number(current_task.registers.syscall_register());
+
+                if current_task.trace_syscalls.load(std::sync::atomic::Ordering::Relaxed) {
+                    ptrace_syscall_enter(current_task);
+                }
+
+                let syscall_decl = SyscallDecl::from_number(
+                    current_task.thread_state.registers.syscall_register(),
+                );
 
                 // Generate CFI directives so the unwinder will be redirected to unwind the restricted
                 // stack.
                 generate_cfi_directives!(state);
 
-                if let Some(new_error_context) = execute_syscall(current_task, syscall_decl) {
+                if let Some(new_error_context) = execute_syscall(locked, current_task, syscall_decl)
+                {
                     error_context = Some(new_error_context);
                 }
 
                 // Restore the CFI directives before continuing.
                 restore_cfi_directives!();
 
-                trace_duration_end!(
+                if current_task.trace_syscalls.load(std::sync::atomic::Ordering::Relaxed) {
+                    ptrace_syscall_exit(current_task, error_context.is_some());
+                }
+
+                firehose_trace_duration_end!(
                     trace_category_starnix!(),
                     trace_name_execute_syscall!(),
                     trace_arg_name!() => syscall_decl.name
                 );
             }
             zx::sys::ZX_RESTRICTED_REASON_EXCEPTION => {
-                trace_duration!(trace_category_starnix!(), trace_name_handle_exception!());
+                firehose_trace_duration!(trace_category_starnix!(), trace_name_handle_exception!());
+                profile_duration!("HandleException");
                 let restricted_exception = restricted_state.read_exception();
 
-                current_task.registers =
+                current_task.thread_state.registers =
                     zx::sys::zx_thread_state_general_regs_t::from(&restricted_exception.state)
                         .into();
                 let exception_result =
@@ -303,14 +325,15 @@ fn run_task(current_task: &mut CurrentTask) -> Result<ExitStatus, Error> {
                 process_completed_exception(current_task, exception_result);
             }
             zx::sys::ZX_RESTRICTED_REASON_KICK => {
-                trace_instant!(
+                firehose_trace_instant!(
                     trace_category_starnix!(),
                     trace_name_restricted_kick!(),
                     fuchsia_trace::Scope::Thread
                 );
+                profile_duration!("RestrictedKick");
 
                 // Update the task's register state.
-                current_task.registers =
+                current_task.thread_state.registers =
                     zx::sys::zx_thread_state_general_regs_t::from(&state).into();
 
                 // Fall through to the post-syscall / post-exception handling logic. We were likely kicked because a
@@ -324,13 +347,18 @@ fn run_task(current_task: &mut CurrentTask) -> Result<ExitStatus, Error> {
             }
         }
 
-        trace_duration!(trace_category_starnix!(), trace_name_check_task_exit!());
+        firehose_trace_duration!(trace_category_starnix!(), trace_name_check_task_exit!());
+        profile_duration!("CheckTaskExit");
         if let Some(exit_status) = process_completed_restricted_exit(current_task, &error_context)?
         {
-            let dump_on_exit = current_task.read().dump_on_exit;
-            if dump_on_exit {
+            if current_task.flags().contains(TaskFlags::DUMP_ON_EXIT) {
                 // Make diagnostics tooling aware of the crash.
-                current_task.kernel().core_dumps.record_core_dump(&current_task.task);
+                profile_duration!("RecordCoreDump");
+                trace_instant!(trace_category_starnix!(), "RecordCoreDump", TraceScope::Process);
+                current_task
+                    .kernel()
+                    .core_dumps
+                    .record_core_dump(get_core_dump_info(&current_task.task));
 
                 // (Re)-generate CFI directives so that stack unwinders will trace into the Linux state.
                 generate_cfi_directives!(state);
@@ -340,6 +368,36 @@ fn run_task(current_task: &mut CurrentTask) -> Result<ExitStatus, Error> {
             return Ok(exit_status);
         }
     }
+}
+
+fn get_core_dump_info(task: &Task) -> CoreDumpInfo {
+    let process_koid = task
+        .thread_group
+        .process
+        .get_koid()
+        .expect("handles for processes with crashing threads are still valid");
+    let thread_koid = task
+        .thread
+        .read()
+        .as_ref()
+        .expect("coredumps occur in tasks with associated threads")
+        .get_koid()
+        .expect("handles for crashing threads are still valid");
+    let pid = task.thread_group.leader as i64;
+    let mut argv = task
+        .read_argv()
+        .unwrap_or_else(|_| vec![b"<unknown>".to_vec()])
+        .into_iter()
+        .map(|a| String::from_utf8_lossy(&a).to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let original_len = argv.len();
+    argv.truncate(MAX_ARGV_LENGTH - 3);
+    if argv.len() < original_len {
+        argv.push_str("...");
+    }
+    CoreDumpInfo { process_koid, thread_koid, pid, argv }
 }
 
 pub fn create_zircon_process(
@@ -363,38 +421,90 @@ pub fn create_zircon_process(
     Ok(TaskInfo { thread: None, thread_group, memory_manager })
 }
 
-pub fn execute_task<F>(mut current_task: CurrentTask, task_complete: F)
+pub fn execute_task_with_prerun_result<F, R, G>(
+    task_builder: TaskBuilder,
+    pre_run: F,
+    task_complete: G,
+) -> Result<R, Errno>
 where
-    F: FnOnce(Result<ExitStatus, Error>) + Send + Sync + 'static,
+    F: FnOnce(&mut Locked<'_, Unlocked>, &mut CurrentTask) -> Result<R, Errno>
+        + Send
+        + Sync
+        + 'static,
+    R: Send + Sync + 'static,
+    G: FnOnce(Result<ExitStatus, Error>) + Send + Sync + 'static,
+{
+    let (sender, receiver) = sync_channel::<Result<R, Errno>>(1);
+    execute_task(
+        task_builder,
+        move |current_task, locked| {
+            match pre_run(current_task, locked) {
+                Err(errno) => {
+                    let _ = sender.send(Err(errno.clone()));
+                    Err(errno)
+                }
+                Ok(value) => sender.send(Ok(value)).map_err(|error| {
+                    log_error!("Unable to send `pre_run` result: {error:?}");
+                    errno!(EINVAL)
+                }),
+            }
+        },
+        task_complete,
+    );
+    receiver.recv().map_err(|e| {
+        log_error!("Unable to retrieve result from `pre_run`: {e:?}");
+        errno!(EINVAL)
+    })?
+}
+
+pub fn execute_task<F, G>(task_builder: TaskBuilder, pre_run: F, task_complete: G)
+where
+    F: FnOnce(&mut Locked<'_, Unlocked>, &mut CurrentTask) -> Result<(), Errno>
+        + Send
+        + Sync
+        + 'static,
+    G: FnOnce(Result<ExitStatus, Error>) + Send + Sync + 'static,
 {
     // Set the process handle to the new task's process, so the new thread is spawned in that
     // process.
-    let process_handle = current_task.thread_group.process.raw_handle();
+    let process_handle = task_builder.task.thread_group.process.raw_handle();
     let old_process_handle = unsafe { thrd_set_zx_process(process_handle) };
 
-    let weak = current_task.weak_task();
-    let task = weak.upgrade().unwrap();
+    let weak_task = WeakRef::from(&task_builder.task);
+    let ref_task = weak_task.upgrade().unwrap();
     // Hold a lock on the task's thread slot until we have a chance to initialize it.
-    let mut task_thread_guard = task.thread.write();
+    let mut task_thread_guard = ref_task.thread.write();
 
     // Spawn the process' thread. Note, this closure ends up executing in the process referred to by
     // `process_handle`.
     let join_handle = std::thread::Builder::new()
         .name("user-thread".to_string())
         .spawn(move || {
-            let run_result = match run_task(&mut current_task) {
-                Err(error) => {
-                    log_warn!("Died unexpectedly from {:?}! treating as SIGKILL", error);
-                    let exit_status = ExitStatus::Kill(SignalInfo::default(SIGKILL));
+            let mut locked = Unlocked::new();
+            let mut current_task: CurrentTask = task_builder.into();
+            let pre_run_result = pre_run(&mut locked, &mut current_task);
+            if pre_run_result.is_err() {
+                log_error!("Pre run failed from {pre_run_result:?}. The task will not be run.");
+            } else {
+                let run_result = match run_task(&mut locked, &mut current_task) {
+                    Err(error) => {
+                        log_warn!("Died unexpectedly from {error:?}! treating as SIGKILL");
+                        let exit_status = ExitStatus::Kill(SignalInfo::default(SIGKILL));
 
-                    current_task.write().exit_status = Some(exit_status.clone());
-                    Ok(exit_status)
-                }
-                ok => ok,
-            };
+                        current_task.write().set_exit_status(exit_status.clone());
+                        Ok(exit_status)
+                    }
+                    ok => ok,
+                };
 
-            current_task.release(&());
-            task_complete(run_result);
+                task_complete(run_result);
+            }
+
+            current_task.set_ptrace_zombie();
+
+            // `release` must be called as the absolute last action on this thread to ensure that
+            // any deferred release are done before it.
+            current_task.release(());
         })
         .expect("able to spawn threads");
 
@@ -408,6 +518,12 @@ where
     unsafe {
         thrd_set_zx_process(old_process_handle);
     };
+
+    // Now that the task has a thread handle, update the thread's role using the policy configured.
+    drop(task_thread_guard);
+    if let Err(err) = ref_task.sync_scheduler_policy_to_role() {
+        log_warn!(?err, "Couldn't update freshly spawned thread's profile.");
+    }
 }
 
 fn process_completed_exception(current_task: &mut CurrentTask, exception_result: ExceptionResult) {
@@ -415,10 +531,17 @@ fn process_completed_exception(current_task: &mut CurrentTask, exception_result:
         ExceptionResult::Handled => {}
         ExceptionResult::Signal(signal) => {
             // TODO: Verify that the rip is actually in restricted code.
-            let mut registers = current_task.registers;
+            let mut registers = current_task.thread_state.registers;
             registers.reset_flags();
-            deliver_signal(current_task, signal, &mut registers);
-            current_task.registers = registers;
+            let task = &current_task.task;
+            deliver_signal(
+                &task,
+                task.write(),
+                signal,
+                &mut registers,
+                &current_task.thread_state.extended_pstate,
+            );
+            current_task.thread_state.registers = registers;
         }
     }
 }

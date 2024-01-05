@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use assembly_package_utils::{PackageInternalPathBuf, PackageManifestPathBuf, SourcePathBuf};
+use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::common::DriverDetails;
@@ -27,6 +28,15 @@ pub struct ProductConfig {
     /// Generic product information.
     #[serde(default)]
     pub info: Option<ProductInfoConfig>,
+
+    /// The file paths to various build information.
+    #[serde(default)]
+    pub build_info: Option<BuildInfoConfig>,
+
+    /// The policy given to component_manager that restricts where sensitive capabilities can be
+    /// routed.
+    #[serde(default)]
+    pub component_policy: ComponentPolicyConfig,
 }
 
 /// Packages provided by the product, to add to the assembled images.
@@ -113,6 +123,31 @@ pub struct ProductInfoConfig {
     pub model: String,
     /// Manufacturer of the product.
     pub manufacturer: String,
+}
+
+/// Configuration options for build info.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BuildInfoConfig {
+    /// Name of the product build target.
+    pub name: String,
+    /// Path to the version file.
+    pub version: Utf8PathBuf,
+    /// Path to the jiri snapshot.
+    pub jiri_snapshot: Utf8PathBuf,
+    /// Path to the latest commit date.
+    pub latest_commit_date: Utf8PathBuf,
+    /// Path to the minimum UTC stamp.
+    pub minimum_utc_stamp: Utf8PathBuf,
+}
+
+/// Configuration options for the component policy.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComponentPolicyConfig {
+    /// The file paths to a product-provided component policies.
+    #[serde(default)]
+    pub product_policies: Vec<Utf8PathBuf>,
 }
 
 #[cfg(test)]

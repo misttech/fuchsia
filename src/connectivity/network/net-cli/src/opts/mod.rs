@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::Context as _;
-use argh::FromArgs;
+use argh::{ArgsInfo, FromArgs};
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_interfaces as finterfaces;
 use fidl_fuchsia_net_interfaces_admin as finterfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as finterfaces_ext;
 use fidl_fuchsia_net_stack as fnet_stack;
+use fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration;
 use std::{
     collections::HashMap,
     convert::{TryFrom as _, TryInto as _},
@@ -41,14 +42,14 @@ fn parse_ip_version_str(value: &str) -> Result<fnet::IpVersion, String> {
     }
 }
 
-#[derive(FromArgs, Debug)]
+#[derive(ArgsInfo, FromArgs, Debug)]
 /// commands for net-cli
 pub struct Command {
     #[argh(subcommand)]
     pub cmd: CommandEnum,
 }
 
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum CommandEnum {
     Filter(Filter),
@@ -59,9 +60,10 @@ pub enum CommandEnum {
     Dhcp(Dhcp),
     Dhcpd(dhcpd::Dhcpd),
     Dns(dns::Dns),
+    NetstackMigration(NetstackMigration),
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "filter")]
 /// commands for packet filter
 pub struct Filter {
@@ -69,7 +71,7 @@ pub struct Filter {
     pub filter_cmd: FilterEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum FilterEnum {
     GetNatRules(FilterGetNatRules),
@@ -80,22 +82,22 @@ pub enum FilterEnum {
     SetRules(FilterSetRules),
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "get-nat-rules")]
 /// gets nat rules
 pub struct FilterGetNatRules {}
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "get-rdr-rules")]
 /// gets rdr rules
 pub struct FilterGetRdrRules {}
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "get-rules")]
 /// gets filter rules
 pub struct FilterGetRules {}
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "set-nat-rules")]
 /// sets nat rules (see the netfilter::parser library for the NAT rules format)
 pub struct FilterSetNatRules {
@@ -103,7 +105,7 @@ pub struct FilterSetNatRules {
     pub rules: String,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "set-rdr-rules")]
 /// sets rdr rules (see the netfilter::parser library for the RDR rules format)
 pub struct FilterSetRdrRules {
@@ -111,7 +113,7 @@ pub struct FilterSetRdrRules {
     pub rules: String,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "set-rules")]
 /// sets filter rules (see the netfilter::parser library for the rules format)
 pub struct FilterSetRules {
@@ -119,7 +121,7 @@ pub struct FilterSetRules {
     pub rules: String,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "if")]
 /// commands for network interfaces
 pub struct If {
@@ -127,7 +129,7 @@ pub struct If {
     pub if_cmd: IfEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum IfEnum {
     Addr(IfAddr),
@@ -214,7 +216,7 @@ impl From<u64> for InterfaceIdentifier {
     }
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "addr")]
 /// commands for updating network interface addresses
 pub struct IfAddr {
@@ -222,7 +224,7 @@ pub struct IfAddr {
     pub addr_cmd: IfAddrEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum IfAddrEnum {
     Add(IfAddrAdd),
@@ -230,7 +232,7 @@ pub enum IfAddrEnum {
     Wait(IfAddrWait),
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "add")]
 /// adds an address to the network interface
 pub struct IfAddrAdd {
@@ -245,7 +247,7 @@ pub struct IfAddrAdd {
     pub no_subnet_route: bool,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "del")]
 /// deletes an address from the network interface
 pub struct IfAddrDel {
@@ -257,7 +259,7 @@ pub struct IfAddrDel {
     pub prefix: Option<u8>,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "wait")]
 /// waits for an address to be assigned on the network interface.
 ///
@@ -271,7 +273,7 @@ pub struct IfAddrWait {
     pub ipv6: bool,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "bridge")]
 /// creates a bridge between network interfaces
 pub struct IfBridge {
@@ -279,7 +281,7 @@ pub struct IfBridge {
     pub interfaces: Vec<InterfaceIdentifier>,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "disable")]
 /// disables a network interface
 pub struct IfDisable {
@@ -287,7 +289,7 @@ pub struct IfDisable {
     pub interface: InterfaceIdentifier,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "enable")]
 /// enables a network interface
 pub struct IfEnable {
@@ -295,7 +297,7 @@ pub struct IfEnable {
     pub interface: InterfaceIdentifier,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "get")]
 /// queries a network interface
 pub struct IfGet {
@@ -303,7 +305,7 @@ pub struct IfGet {
     pub interface: InterfaceIdentifier,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "igmp")]
 /// get or set IGMP configuration
 pub struct IfIgmp {
@@ -311,14 +313,14 @@ pub struct IfIgmp {
     pub cmd: IfIgmpEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum IfIgmpEnum {
     Get(IfIgmpGet),
     Set(IfIgmpSet),
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "get")]
 /// get IGMP configuration for an interface
 pub struct IfIgmpGet {
@@ -326,7 +328,7 @@ pub struct IfIgmpGet {
     pub interface: InterfaceIdentifier,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "set")]
 /// set IGMP configuration for an interface
 pub struct IfIgmpSet {
@@ -350,7 +352,7 @@ fn parse_igmp_version(s: &str) -> Result<finterfaces_admin::IgmpVersion, String>
     }
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "ip-forward")]
 /// get or set IP forwarding for an interface
 pub struct IfIpForward {
@@ -358,14 +360,14 @@ pub struct IfIpForward {
     pub cmd: IfIpForwardEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum IfIpForwardEnum {
     Get(IfIpForwardGet),
     Set(IfIpForwardSet),
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "get")]
 /// get IP forwarding for an interface
 pub struct IfIpForwardGet {
@@ -376,7 +378,7 @@ pub struct IfIpForwardGet {
     pub ip_version: fnet::IpVersion,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "set")]
 /// set IP forwarding for an interface
 pub struct IfIpForwardSet {
@@ -390,7 +392,7 @@ pub struct IfIpForwardSet {
     pub enable: bool,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "list")]
 /// lists network interfaces (supports ffx machine output)
 pub struct IfList {
@@ -398,7 +400,7 @@ pub struct IfList {
     pub name_pattern: Option<String>,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "mld")]
 /// get or set MLD configuration
 pub struct IfMld {
@@ -406,14 +408,14 @@ pub struct IfMld {
     pub cmd: IfMldEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum IfMldEnum {
     Get(IfMldGet),
     Set(IfMldSet),
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "get")]
 /// get MLD configuration for an interface
 pub struct IfMldGet {
@@ -421,7 +423,7 @@ pub struct IfMldGet {
     pub interface: InterfaceIdentifier,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "set")]
 /// set MLD configuration for an interface
 pub struct IfMldSet {
@@ -444,7 +446,7 @@ fn parse_mld_version(s: &str) -> Result<finterfaces_admin::MldVersion, String> {
     }
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "log")]
 /// commands for logging
 pub struct Log {
@@ -452,13 +454,13 @@ pub struct Log {
     pub log_cmd: LogEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum LogEnum {
     SetPackets(LogSetPackets),
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "set-packets")]
 /// log packets to stdout
 pub struct LogSetPackets {
@@ -466,7 +468,7 @@ pub struct LogSetPackets {
     pub enabled: bool,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "neigh")]
 /// commands for neighbor tables
 pub struct Neigh {
@@ -474,7 +476,7 @@ pub struct Neigh {
     pub neigh_cmd: NeighEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum NeighEnum {
     Add(NeighAdd),
@@ -485,7 +487,7 @@ pub enum NeighEnum {
     Config(NeighConfig),
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "add")]
 /// adds an entry to the neighbor table
 pub struct NeighAdd {
@@ -497,7 +499,7 @@ pub struct NeighAdd {
     pub mac: fnet_ext::MacAddress,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "clear")]
 /// removes all entries associated with a network interface from the neighbor table
 pub struct NeighClear {
@@ -508,12 +510,12 @@ pub struct NeighClear {
     pub ip_version: fnet::IpVersion,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "list")]
 /// lists neighbor table entries (supports ffx machine output)
 pub struct NeighList {}
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "del")]
 /// removes an entry from the neighbor table
 pub struct NeighDel {
@@ -523,12 +525,12 @@ pub struct NeighDel {
     pub ip: fnet_ext::IpAddress,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "watch")]
 /// watches neighbor table entries for state changes (supports ffx machine output)
 pub struct NeighWatch {}
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "config")]
 /// commands for the Neighbor Unreachability Detection configuration
 pub struct NeighConfig {
@@ -536,14 +538,14 @@ pub struct NeighConfig {
     pub neigh_config_cmd: NeighConfigEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum NeighConfigEnum {
     Get(NeighGetConfig),
     Update(NeighUpdateConfig),
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "get")]
 /// returns the current NUD configuration options for the provided interface
 pub struct NeighGetConfig {
@@ -554,7 +556,7 @@ pub struct NeighGetConfig {
     pub ip_version: fnet::IpVersion,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "update")]
 /// updates the current NUD configuration options for the provided interface
 pub struct NeighUpdateConfig {
@@ -568,62 +570,9 @@ pub struct NeighUpdateConfig {
     /// time
     #[argh(option)]
     pub base_reachable_time: Option<i64>,
-
-    /// learn `base_reachable_time` during runtime from the neighbor discovery
-    /// protocol, if supported
-    #[argh(option)]
-    pub learn_base_reachable_time: Option<bool>,
-
-    /// the minimum value of the random factor used for computing reachable
-    /// time
-    #[argh(option)]
-    pub min_random_factor: Option<f32>,
-
-    /// the maximum value of the random factor used for computing reachable
-    /// time
-    #[argh(option)]
-    pub max_random_factor: Option<f32>,
-
-    /// duration, in nanoseconds, between retransmissions of reachability
-    /// probes in the PROBE state
-    #[argh(option)]
-    pub retransmit_timer: Option<i64>,
-
-    /// learn `retransmit_timer` during runtime from the neighbor discovery
-    /// protocol, if supported
-    #[argh(option)]
-    pub learn_retransmit_timer: Option<bool>,
-
-    /// duration, in nanoseconds, to wait for a non-Neighbor-Discovery related
-    /// protocol to reconfirm reachability after entering the DELAY state
-    #[argh(option)]
-    pub delay_first_probe_time: Option<i64>,
-
-    /// the number of reachability probes to send before concluding negative
-    /// reachability and deleting the entry from the INCOMPLETE state
-    #[argh(option)]
-    pub max_multicast_probes: Option<u32>,
-
-    /// the number of reachability probes to send before concluding
-    /// retransmissions from within the PROBE state should cease and the entry
-    /// SHOULD be deleted
-    #[argh(option)]
-    pub max_unicast_probes: Option<u32>,
-
-    /// if the target address is an anycast address, the stack SHOULD delay
-    /// sending a response for a random time between 0 and this duration, in
-    /// nanoseconds
-    #[argh(option)]
-    pub max_anycast_delay_time: Option<i64>,
-
-    /// a node MAY send up to this amount of unsolicited reachability
-    /// confirmations messages to all-nodes multicast address when a node
-    /// determines its link-layer address has changed
-    #[argh(option)]
-    pub max_reachability_confirmations: Option<u32>,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "route")]
 /// commands for routing tables
 pub struct Route {
@@ -631,7 +580,7 @@ pub struct Route {
     pub route_cmd: RouteEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum RouteEnum {
     List(RouteList),
@@ -664,14 +613,14 @@ fn subnet_mask_to_prefix_length(addr: std::net::IpAddr) -> u8 {
     .unwrap()
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "list")]
 /// lists devices (supports ffx machine output)
 pub struct RouteList {}
 
 macro_rules! route_struct {
     ($ty_name:ident, $name:literal, $comment:expr) => {
-        #[derive(FromArgs, Clone, Debug, PartialEq)]
+        #[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
         #[argh(subcommand, name = $name)]
         #[doc = $comment]
         pub struct $ty_name {
@@ -723,7 +672,7 @@ macro_rules! route_struct {
 route_struct!(RouteAdd, "add", "adds a route to the route table");
 route_struct!(RouteDel, "del", "deletes a route from the route table");
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "dhcp")]
 /// commands for an interfaces dhcp client
 pub struct Dhcp {
@@ -731,14 +680,14 @@ pub struct Dhcp {
     pub dhcp_cmd: DhcpEnum,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum DhcpEnum {
     Start(DhcpStart),
     Stop(DhcpStop),
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "start")]
 /// starts a dhcp client on the interface
 pub struct DhcpStart {
@@ -746,13 +695,58 @@ pub struct DhcpStart {
     pub interface: InterfaceIdentifier,
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "stop")]
 /// stops the dhcp client on the interface
 pub struct DhcpStop {
     #[argh(positional, arg_name = "nicid or name:ifname")]
     pub interface: InterfaceIdentifier,
 }
+
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
+#[argh(subcommand, name = "migration")]
+/// controls netstack selection for migration from netstack2 to netstack3
+pub struct NetstackMigration {
+    #[argh(subcommand)]
+    pub cmd: NetstackMigrationEnum,
+}
+
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
+#[argh(subcommand)]
+pub enum NetstackMigrationEnum {
+    Set(NetstackMigrationSet),
+    Get(NetstackMigrationGet),
+    Clear(NetstackMigrationClear),
+}
+
+fn parse_netstack_version(s: &str) -> Result<fnet_migration::NetstackVersion, String> {
+    match s {
+        "ns2" => Ok(fnet_migration::NetstackVersion::Netstack2),
+        "ns3" => Ok(fnet_migration::NetstackVersion::Netstack3),
+        // NB: argh already prints the bad value to the user, no need to repeat
+        // it.
+        _ => Err(format!("valid values are ns2 or ns3")),
+    }
+}
+
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
+#[argh(subcommand, name = "set")]
+/// sets the netstack version at next boot to |ns2| or |ns3|.
+pub struct NetstackMigrationSet {
+    #[argh(positional, from_str_fn(parse_netstack_version))]
+    /// ns2 or ns3
+    pub version: fnet_migration::NetstackVersion,
+}
+
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
+#[argh(subcommand, name = "get")]
+/// prints the currently configured netstack version for migration.
+pub struct NetstackMigrationGet {}
+
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
+#[argh(subcommand, name = "clear")]
+/// clears netstack version for migration configuration.
+pub struct NetstackMigrationClear {}
 
 #[cfg(test)]
 mod tests {

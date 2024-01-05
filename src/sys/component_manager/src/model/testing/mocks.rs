@@ -4,19 +4,20 @@
 
 use {
     crate::{
+        bedrock::program::Program,
         builtin::runner::BuiltinRunnerFactory,
         model::{component::WeakComponentInstance, resolver::Resolver, routing::RouteRequest},
     },
+    ::namespace::Namespace,
     ::routing::{
         capability_source::ComponentCapability,
+        legacy_router::RouteBundle,
         policy::ScopedPolicyChecker,
         resolving::{ComponentAddress, ResolvedComponent, ResolvedPackage, ResolverError},
-        router::RouteBundle,
     },
     anyhow::format_err,
     assert_matches::assert_matches,
     async_trait::async_trait,
-    cm_runner::{Namespace, Runner},
     cm_rust::{CapabilityTypeName, ComponentDecl, ConfigValuesData},
     fidl::prelude::*,
     fidl::{
@@ -52,7 +53,6 @@ use {
 
 #[derive(Clone, Copy)]
 pub enum DeclType {
-    Use,
     Expose,
 }
 
@@ -87,9 +87,6 @@ fn new_proxy_routing_fn(
             match ty {
                 CapabilityTypeName::Protocol => {
                     match decl_type {
-                        DeclType::Use => {
-                            assert_matches!(request, RouteRequest::UseProtocol(_));
-                        }
                         DeclType::Expose => {
                             assert_matches!(request, RouteRequest::ExposeProtocol(_));
                         }
@@ -103,9 +100,6 @@ fn new_proxy_routing_fn(
                 }
                 CapabilityTypeName::Service => {
                     match decl_type {
-                        DeclType::Use => {
-                            assert_matches!(request, RouteRequest::UseService(_));
-                        }
                         DeclType::Expose => {
                             assert_matches!(
                                 &request,
@@ -124,9 +118,6 @@ fn new_proxy_routing_fn(
                 }
                 CapabilityTypeName::Directory => {
                     match decl_type {
-                        DeclType::Use => {
-                            assert_matches!(request, RouteRequest::UseDirectory(_));
-                        }
                         DeclType::Expose => {
                             assert_matches!(request, RouteRequest::ExposeDirectory(_));
                         }
@@ -136,23 +127,12 @@ fn new_proxy_routing_fn(
                     );
                     sub_dir.open(ExecutionScope::new(), flags, path, server_end);
                 }
-                CapabilityTypeName::Storage => {
-                    match decl_type {
-                        DeclType::Use => {
-                            assert_matches!(request, RouteRequest::UseStorage(_));
-                        }
-                        DeclType::Expose => {
-                            panic!("can't expose storage");
-                        }
-                    }
-                    let sub_dir = pseudo_directory!(
-                        "hello" => read_only(b"friend"),
-                    );
-                    sub_dir.open(ExecutionScope::new(), flags, path, server_end);
-                }
+                CapabilityTypeName::Storage => panic!("storage capability unsupported"),
                 CapabilityTypeName::Runner => panic!("runner capability unsupported"),
+                CapabilityTypeName::Config => panic!("config capability unsupported"),
                 CapabilityTypeName::Resolver => panic!("resolver capability unsupported"),
                 CapabilityTypeName::EventStream => panic!("event stream capability unsupported"),
+                CapabilityTypeName::Dictionary => panic!("dictionary capability unsupported"),
             }
         },
     )
@@ -282,7 +262,7 @@ struct MockRunnerInner {
     namespaces: HashMap<String, Arc<Mutex<Namespace>>>,
 
     /// Functions for serving the `outgoing` and `runtime` directories
-    /// of a given compoment. When a component is started, these
+    /// of a given component. When a component is started, these
     /// functions will be called with the server end of the directories.
     outgoing_host_fns: HashMap<String, Arc<HostFn>>,
     runtime_host_fns: HashMap<String, Arc<HostFn>>,
@@ -380,32 +360,15 @@ impl MockRunner {
         controller.abort();
     }
 
-    pub fn last_checker(&self) -> Option<ScopedPolicyChecker> {
-        self.inner.lock().unwrap().last_checker.take()
-    }
-}
-
-impl BuiltinRunnerFactory for MockRunner {
-    fn get_scoped_runner(self: Arc<Self>, checker: ScopedPolicyChecker) -> Arc<dyn Runner> {
-        {
-            let mut state = self.inner.lock().unwrap();
-            state.last_checker = Some(checker);
-        }
-        self
-    }
-}
-
-#[async_trait]
-impl Runner for MockRunner {
     async fn start(
         &self,
-        start_info: cm_runner::StartInfo,
+        start_info: fcrunner::ComponentStartInfo,
         server_end: ServerEnd<fcrunner::ComponentControllerMarker>,
     ) {
         let outgoing_host_fn;
         let runtime_host_fn;
         let runner_requests;
-        let resolved_url = start_info.resolved_url;
+        let resolved_url = start_info.resolved_url.unwrap();
 
         // The koid is the only unique piece of information we have about a
         // component start request. Two start requests for the same component
@@ -434,9 +397,10 @@ impl Runner for MockRunner {
             runner_requests = state.runner_requests.clone();
 
             // Create a namespace for the component.
-            state
-                .namespaces
-                .insert(resolved_url.clone(), Arc::new(Mutex::new(start_info.namespace)));
+            state.namespaces.insert(
+                resolved_url.clone(),
+                Arc::new(Mutex::new(start_info.ns.unwrap().try_into().unwrap())),
+            );
 
             let abort_handle =
                 MockController::new(server_end, runner_requests, channel_koid).serve();
@@ -457,6 +421,29 @@ impl Runner for MockRunner {
                 waiter.send(()).expect("failed to send url notice");
             }
         }
+    }
+}
+
+impl BuiltinRunnerFactory for MockRunner {
+    fn get_scoped_runner(
+        self: Arc<Self>,
+        checker: ScopedPolicyChecker,
+        server_end: ServerEnd<fcrunner::ComponentRunnerMarker>,
+    ) {
+        {
+            let mut state = self.inner.lock().unwrap();
+            state.last_checker = Some(checker);
+        }
+        let mut stream = server_end.into_stream().expect("should not fail to create stream");
+        let runner = self.clone();
+        fasync::Task::spawn(async move {
+            while let Ok(Some(request)) = stream.try_next().await {
+                let fcrunner::ComponentRunnerRequest::Start { start_info, controller, .. } =
+                    request;
+                runner.start(start_info, controller).await;
+            }
+        })
+        .detach();
     }
 }
 
@@ -504,7 +491,7 @@ impl MockController {
     /// `ControlMessage`'s into the Vec in the HashMap keyed under the provided
     /// `Koid`. The `stop_response` controls the delay used before taking any
     /// action on the control channel when a request to stop is received. The
-    /// `kill_respone` provides the same control when the a request to kill is
+    /// `kill_response` provides the same control when the a request to kill is
     /// received.
     pub fn new_with_responses(
         server_end: ServerEnd<fcrunner::ComponentControllerMarker>,
@@ -616,4 +603,10 @@ impl MockController {
         .detach();
         handle
     }
+}
+
+/// Starts a program that does nothing but let us intercept requests to control its lifecycle.
+pub fn mock_program() -> (Program, ServerEnd<fcrunner::ComponentControllerMarker>) {
+    let (controller, server_end) = create_endpoints::<fcrunner::ComponentControllerMarker>();
+    (Program::mock_from_controller(controller), server_end)
 }

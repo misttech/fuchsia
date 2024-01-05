@@ -46,7 +46,7 @@
 #include "src/devices/bin/driver_manager/v2/driver_runner.h"
 #include "src/devices/bin/driver_manager/v2/shutdown_manager.h"
 #include "src/devices/lib/log/log.h"
-#include "src/lib/storage/vfs/cpp/synchronous_vfs.h"
+#include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
 
 namespace fio = fuchsia_io;
 
@@ -109,7 +109,7 @@ int RunDfv2(driver_manager_config::Config config,
 #endif
         return client;
       },
-      loop.dispatcher());
+      loop.dispatcher(), config.enable_test_shutdown_delays());
 
   // Setup devfs.
   std::optional<Devfs> devfs;
@@ -126,7 +126,7 @@ int RunDfv2(driver_manager_config::Config config,
   driver_manager::DriverDevelopmentService driver_development_service(driver_runner,
                                                                       loop.dispatcher());
   driver_development_service.Publish(outgoing);
-  driver_runner.ScheduleBaseDriversBinding();
+  driver_runner.ScheduleWatchForDriverLoad();
 
   dfv2::ShutdownManager shutdown_manager(&driver_runner, loop.dispatcher());
   shutdown_manager.Publish(outgoing);

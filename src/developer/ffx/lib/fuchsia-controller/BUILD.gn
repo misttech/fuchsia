@@ -4,24 +4,81 @@
 
 import("//build/python/python_binary.gni")
 import("//build/python/python_c_extension.gni")
+import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
 import("//build/rust/rustc_staticlib.gni")
+import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
+import("//tools/fidl/gidl/gidl.gni")
 
 assert(is_host)
+
+conformance_test_source = "$target_gen_dir/conformance_test.py"
+
+gidl("conformance_tests_py") {
+  type = "conformance"
+  language = "fuchsia_controller"
+
+  # Currently missing flexible enum tests, float tests, handle tests, protocol endpoint tests,
+  # recursive depth tests, strings_utf8.gen tests, transformer1 tests, and union tests.
+  #
+  # All tests are currently running with encode-success targets only.
+  inputs = [
+    "//src/tests/fidl/conformance_suite/alignment.gidl",
+    "//src/tests/fidl/conformance_suite/bits_flexible.gidl",
+    "//src/tests/fidl/conformance_suite/bits_strict.gidl",
+    "//src/tests/fidl/conformance_suite/bool.gidl",
+    "//src/tests/fidl/conformance_suite/conformance.gidl",
+    "//src/tests/fidl/conformance_suite/empty_struct.gidl",
+    "//src/tests/fidl/conformance_suite/enums_strict.gidl",
+    "//src/tests/fidl/conformance_suite/golden.gidl",
+    "//src/tests/fidl/conformance_suite/integer.gidl",
+    "//src/tests/fidl/conformance_suite/memcpy_compatibility.gidl",
+    "//src/tests/fidl/conformance_suite/padding.gidl",
+    "//src/tests/fidl/conformance_suite/ported_from_walker_handles.gidl",
+    "//src/tests/fidl/conformance_suite/ported_from_walker_strings.gidl",
+    "//src/tests/fidl/conformance_suite/ported_from_walker_vectors.gidl",
+    "//src/tests/fidl/conformance_suite/recursive_types.gidl",
+    "//src/tests/fidl/conformance_suite/strings.gidl",
+    "//src/tests/fidl/conformance_suite/tables.gidl",
+    "//src/tests/fidl/conformance_suite/transformer2.gidl",
+    "//src/tests/fidl/conformance_suite/vectors.gidl",
+  ]
+  fidl = conformance_suite_fidl_target
+  output = conformance_test_source
+  visibility = [ ":*" ]
+}
+
+python_host_test("fuchsia_controller_conformance_tests") {
+  libraries = [
+    ":fidl_bindings",
+    ":fuchsia_controller_py",
+  ]
+  deps = [ ":conformance_tests_py" ]
+  test_data_deps = [
+    "tests:fuchsia_controller_host_test_data",
+    "//src/tests/fidl/conformance_suite:conformance_fidl_host_test_data",
+  ]
+  main_source = conformance_test_source
+}
 
 rustc_staticlib("lib") {
   output_name = "fuchsia_controller"
   edition = "2021"
   with_unit_tests = true
 
+  test_deps = [ "//third_party/rust_crates:futures-test" ]
   deps = [
-    "//src/connectivity/overnet/lib/hoist",
+    "//src/connectivity/overnet/lib/core",
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/core:lib",
+    "//src/developer/ffx/daemon:lib",
     "//src/developer/ffx/daemon/proxy:lib",
+    "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/errors:lib",
+    "//src/developer/ffx/lib/netext:lib",
     "//src/developer/ffx/lib/rcs:lib",
     "//src/developer/ffx/lib/target:lib",
+    "//src/developer/ffx/lib/timeout:lib",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/versioning/version-history/rust:version-history",
@@ -32,9 +89,9 @@ rustc_staticlib("lib") {
     "//third_party/rust_crates:async-lock",
     "//third_party/rust_crates:async-net",
     "//third_party/rust_crates:byteorder",
+    "//third_party/rust_crates:camino",
     "//third_party/rust_crates:futures-lite",
     "//third_party/rust_crates:nix",
-    "//third_party/rust_crates:tempfile",
     "//third_party/rust_crates:tracing",
   ]
 
@@ -64,6 +121,8 @@ python_c_extension("fidl_codec") {
     "cpp/fidl_codec/object_converter.cc",
     "cpp/fidl_codec/object_converter.h",
     "cpp/fidl_codec/python_dict_visitor.h",
+    "cpp/python/py_header.h",
+    "cpp/raii/py_wrapper.h",
   ]
 
   deps = [
@@ -74,22 +133,18 @@ python_c_extension("fidl_codec") {
   ]
 }
 
-python_c_extension("fuchsia_controller_py") {
+python_c_extension("fuchsia_controller_internal") {
   sources = [
-    "cpp/abi/channel.cc",
-    "cpp/abi/channel.h",
     "cpp/abi/convert.h",
     "cpp/abi/error.cc",
     "cpp/abi/error.h",
     "cpp/abi/fuchsia_controller.h",
     "cpp/abi/fuchsia_controller_py.cc",
-    "cpp/abi/handle.cc",
-    "cpp/abi/handle.h",
-    "cpp/abi/isolate_directory.cc",
-    "cpp/abi/isolate_directory.h",
     "cpp/abi/macros.h",
     "cpp/abi/mod.cc",
     "cpp/abi/mod.h",
+    "cpp/python/py_header.h",
+    "cpp/raii/py_wrapper.h",
   ]
 
   deps = [
@@ -102,6 +157,19 @@ python_c_extension("fuchsia_controller_py") {
     "//sdk:marker-internal",
     "//sdk:marker-unknown",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
+}
+
+python_library("fuchsia_controller_py") {
+  library_name = "fuchsia_controller_py"
+  source_root = "python/fuchsia_controller_py"
+  library_deps = [
+    ":fidl_codec",
+    ":fuchsia_controller_internal",
+  ]
+  sources = [ "__init__.py" ]
 }
 
 python_library("fidl_bindings") {
@@ -113,10 +181,13 @@ python_library("fidl_bindings") {
   ]
   sources = [
     "__init__.py",
+    "_async_socket.py",
     "_client.py",
+    "_fidl_common.py",
     "_import.py",
     "_ipc.py",
     "_library.py",
+    "_server.py",
   ]
 }
 
@@ -151,11 +222,15 @@ group("tests") {
   # because of the infra machines running OSX 10.15
   if (host_os != "mac") {
     deps += [
+      ":fuchsia_controller_conformance_tests",
       "tests:fuchsia_controller_errors_test",
       "tests:fuchsia_controller_fidl_channel_test",
       "tests:fuchsia_controller_fidl_client_test",
+      "tests:fuchsia_controller_fidl_common_test",
+      "tests:fuchsia_controller_fidl_server_test",
       "tests:fuchsia_controller_importing_test",
       "tests:fuchsia_controller_isolate_directory_test",
+      "tests:fuchsia_controller_socket_test",
     ]
 
     # TODO(https://fxbug.dev/129633): Re-enable when the corrupt profile header

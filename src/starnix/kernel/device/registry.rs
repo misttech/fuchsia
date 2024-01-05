@@ -3,21 +3,39 @@
 // found in the LICENSE file.
 
 use crate::{
-    collections::RangeMap,
-    fs::{kobject::*, sysfs::SysFsDirectory, FileOps, FsNode},
-    lock::{Mutex, RwLock},
-    logging::log_error,
-    task::*,
-    types::*,
+    device::kobject::{
+        Bus, Class, Device, DeviceMetadata, KObject, KObjectBased, KObjectHandle, UEventAction,
+        UEventContext,
+    },
+    fs::{
+        devtmpfs::{devtmpfs_create_device, devtmpfs_remove_child},
+        sysfs::{
+            BusCollectionDirectory, ClassCollectionDirectory, DeviceSysfsOps, SysfsDirectory,
+            SYSFS_BLOCK, SYSFS_BUS, SYSFS_CLASS, SYSFS_DEVICES,
+        },
+    },
+    task::CurrentTask,
+    vfs::{FileOps, FsNode, FsStr},
+};
+use starnix_logging::log_error;
+use starnix_uapi::{
+    device_type::{DeviceType, DYN_MAJOR},
+    errno, error,
+    errors::Errno,
+    open_flags::OpenFlags,
 };
 
+use starnix_sync::{MappedMutexGuard, Mutex, MutexGuard, RwLock};
 use std::{
-    collections::btree_map::BTreeMap,
+    collections::btree_map::{BTreeMap, Entry},
     marker::{Send, Sync},
     sync::Arc,
 };
 
 use dyn_clone::{clone_trait_object, DynClone};
+use range_map::RangeMap;
+
+use super::kobject::Collection;
 
 const CHRDEV_MINOR_MAX: u32 = 256;
 const BLKDEV_MINOR_MAX: u32 = 2u32.pow(20);
@@ -29,7 +47,6 @@ pub enum DeviceMode {
     Block,
 }
 
-// TODO(fxb/130452): Remove Clone in all DeviceOps impls after RangeMap refactor.
 pub trait DeviceOps: DynClone + Send + Sync + 'static {
     fn open(
         &self,
@@ -46,7 +63,6 @@ clone_trait_object!(DeviceOps);
 #[derive(Clone)]
 struct DeviceOpsHandle(Arc<dyn DeviceOps>);
 
-// TODO(fxb/130452): Remove equality comparison after RangeMap refactor.
 impl PartialEq for DeviceOpsHandle {
     fn eq(&self, _other: &Self) -> bool {
         false
@@ -102,7 +118,7 @@ pub type DeviceListenerKey = u64;
 
 /// A listener for uevents on devices.
 pub trait DeviceListener: Send + Sync {
-    fn on_device_event(&self, action: UEventAction, kobject: KObjectHandle, context: UEventContext);
+    fn on_device_event(&self, action: UEventAction, device: Device, context: UEventContext);
 }
 
 struct MajorDevices {
@@ -135,6 +151,21 @@ impl MajorDevices {
         }
     }
 
+    /// Unregister a range of minors [`base_minor`, `base_minor` + `minor_count`).
+    fn unregister(&mut self, major: u32, base_minor: u32, minor_count: u32) -> Result<(), Errno> {
+        let range = base_minor..(base_minor + minor_count);
+        match self.map.entry(major) {
+            Entry::Occupied(minor_map) => {
+                minor_map.into_mut().remove(&range);
+                Ok(())
+            }
+            Entry::Vacant(_) => {
+                log_error!("No major {} entry registered in the map", major);
+                error!(EINVAL)
+            }
+        }
+    }
+
     /// Register a `DeviceOps` for all minor devices in the `major`.
     fn register_major(&mut self, major: u32, ops: impl DeviceOps) -> Result<(), Errno> {
         let minor_count: u32 = match self.mode {
@@ -142,6 +173,15 @@ impl MajorDevices {
             DeviceMode::Block => BLKDEV_MINOR_MAX,
         };
         self.register(major, 0, minor_count, ops)
+    }
+
+    /// Unregister all minor devices in the `major`.
+    fn unregister_major(&mut self, major: u32) -> Result<(), Errno> {
+        let minor_count: u32 = match self.mode {
+            DeviceMode::Char => CHRDEV_MINOR_MAX,
+            DeviceMode::Block => BLKDEV_MINOR_MAX,
+        };
+        self.unregister(major, 0, minor_count)
     }
 
     fn get(&self, id: DeviceType) -> Result<Arc<dyn DeviceOps>, Errno> {
@@ -158,6 +198,9 @@ impl MajorDevices {
 /// The kernel's registry of drivers.
 pub struct DeviceRegistry {
     root_kobject: KObjectHandle,
+    class_subsystem_kobject: KObjectHandle,
+    block_subsystem_kobject: KObjectHandle,
+    bus_subsystem_kobject: KObjectHandle,
     state: Mutex<DeviceRegistryState>,
 }
 
@@ -181,37 +224,153 @@ impl DeviceRegistry {
         self.root_kobject.clone()
     }
 
+    pub fn bus_subsystem_kobject(&self) -> KObjectHandle {
+        self.bus_subsystem_kobject.clone()
+    }
+
+    pub fn class_subsystem_kobject(&self) -> KObjectHandle {
+        self.class_subsystem_kobject.clone()
+    }
+
+    pub fn block_subsystem_kobject(&self) -> KObjectHandle {
+        self.block_subsystem_kobject.clone()
+    }
+
     /// Returns the virtual bus kobject where all virtual and pseudo devices are stored.
-    pub fn virtual_bus(&self) -> KObjectHandle {
-        self.root_kobject.get_or_create_child(b"virtual", KType::Bus, SysFsDirectory::new)
+    pub fn virtual_bus(&self) -> Bus {
+        Bus::new(self.root_kobject.get_or_create_child(b"virtual", SysfsDirectory::new), None)
     }
 
-    pub fn register_chrdev(
+    pub fn get_or_create_bus(&self, name: &FsStr) -> Bus {
+        let collection = Collection::new(
+            self.bus_subsystem_kobject.get_or_create_child(name, BusCollectionDirectory::new),
+        );
+        Bus::new(self.root_kobject.get_or_create_child(name, SysfsDirectory::new), Some(collection))
+    }
+
+    pub fn get_or_create_class(&self, name: &FsStr, bus: Bus) -> Class {
+        let collection = Collection::new(
+            self.class_subsystem_kobject.get_or_create_child(name, ClassCollectionDirectory::new),
+        );
+        Class::new(bus.kobject().get_or_create_child(name, SysfsDirectory::new), bus, collection)
+    }
+
+    pub fn add_device<F, N>(
+        &self,
+        current_task: &CurrentTask,
+        name: &FsStr,
+        metadata: DeviceMetadata,
+        class: Class,
+        create_device_sysfs_ops: F,
+    ) -> Device
+    where
+        F: Fn(Device) -> N + Send + Sync + 'static,
+        N: DeviceSysfsOps,
+    {
+        let class_cloned = class.clone();
+        let metadata_cloned = metadata.clone();
+        let device_kobject = class.kobject().get_or_create_child(name, move |kobject| {
+            create_device_sysfs_ops(Device::new(
+                kobject.upgrade().unwrap(),
+                class_cloned.clone(),
+                metadata_cloned.clone(),
+            ))
+        });
+
+        // Insert the created device kobject into its subsystems.
+        class.collection.kobject().insert_child(device_kobject.clone());
+        if metadata.mode == DeviceMode::Block {
+            self.block_subsystem_kobject.insert_child(device_kobject.clone());
+        }
+        if let Some(bus_collection) = &class.bus.collection {
+            bus_collection.kobject().insert_child(device_kobject.clone());
+        }
+
+        if let Err(err) = devtmpfs_create_device(current_task, metadata.clone()) {
+            log_error!("Cannot add device {:?} in devtmpfs ({:?})", metadata, err);
+        }
+
+        let device = device_kobject.ops().as_ref().as_any().downcast_ref::<N>().unwrap().device();
+        self.dispatch_uevent(UEventAction::Add, device.clone());
+        device
+    }
+
+    pub fn add_and_register_device<F, N>(
+        &self,
+        current_task: &CurrentTask,
+        name: &FsStr,
+        metadata: DeviceMetadata,
+        class: Class,
+        create_device_sysfs_ops: F,
+        dev_ops: impl DeviceOps,
+    ) -> Device
+    where
+        F: Fn(Device) -> N + Send + Sync + 'static,
+        N: DeviceSysfsOps,
+    {
+        if let Err(err) = self.register_device(
+            metadata.device_type.major(),
+            metadata.device_type.minor(),
+            1,
+            dev_ops,
+            metadata.mode,
+        ) {
+            log_error!("Cannot register device {:?} ({:?})", metadata, err);
+        }
+        self.add_device(current_task, name, metadata, class, create_device_sysfs_ops)
+    }
+
+    pub fn remove_device(&self, current_task: &CurrentTask, device: Device) {
+        let name = device.kobject().name();
+        device.class.collection.kobject().remove_child(&name);
+        if let Some(bus_collection) = &device.class.bus.collection {
+            bus_collection.kobject().remove_child(&name);
+        }
+        device.kobject().remove();
+        self.dispatch_uevent(UEventAction::Remove, device.clone());
+
+        devtmpfs_remove_child(current_task, &device.metadata.name);
+    }
+
+    fn major_devices(&self, mode: DeviceMode) -> MappedMutexGuard<'_, MajorDevices> {
+        MutexGuard::map(self.state.lock(), |state| match mode {
+            DeviceMode::Char => &mut state.char_devices,
+            DeviceMode::Block => &mut state.block_devices,
+        })
+    }
+
+    pub fn register_device(
         &self,
         major: u32,
         base_minor: u32,
         minor_count: u32,
         ops: impl DeviceOps,
+        mode: DeviceMode,
     ) -> Result<(), Errno> {
-        self.state.lock().char_devices.register(major, base_minor, minor_count, ops)
+        self.major_devices(mode).register(major, base_minor, minor_count, ops)
     }
 
-    pub fn register_blkdev(
+    pub fn unregister_device(
         &self,
         major: u32,
         base_minor: u32,
         minor_count: u32,
-        ops: impl DeviceOps,
+        mode: DeviceMode,
     ) -> Result<(), Errno> {
-        self.state.lock().block_devices.register(major, base_minor, minor_count, ops)
+        self.major_devices(mode).unregister(major, base_minor, minor_count)
     }
 
-    pub fn register_chrdev_major(&self, major: u32, device: impl DeviceOps) -> Result<(), Errno> {
-        self.state.lock().char_devices.register_major(major, device)
+    pub fn register_major(
+        &self,
+        major: u32,
+        device: impl DeviceOps,
+        mode: DeviceMode,
+    ) -> Result<(), Errno> {
+        self.major_devices(mode).register_major(major, device)
     }
 
-    pub fn register_blkdev_major(&self, major: u32, device: impl DeviceOps) -> Result<(), Errno> {
-        self.state.lock().block_devices.register_major(major, device)
+    pub fn unregister_major(&self, major: u32, mode: DeviceMode) -> Result<(), Errno> {
+        self.major_devices(mode).unregister_major(major)
     }
 
     pub fn register_dyn_chrdev(&self, device: impl DeviceOps) -> Result<DeviceType, Errno> {
@@ -242,14 +401,13 @@ impl DeviceRegistry {
     }
 
     /// Dispatch an uevent for the given `device`.
-    /// TODO(fxb/119437): move uevent to sysfs.
-    pub fn dispatch_uevent(&self, action: UEventAction, kobject: KObjectHandle) {
+    pub fn dispatch_uevent(&self, action: UEventAction, device: Device) {
         let mut state = self.state.lock();
         let event_id = state.next_event_id;
         state.next_event_id += 1;
         let context = UEventContext { seqnum: event_id };
         for listener in state.listeners.values() {
-            listener.on_device_event(action, kobject.clone(), context);
+            listener.on_device_event(action, device.clone(), context);
         }
     }
 
@@ -291,7 +449,13 @@ impl Default for DeviceRegistry {
             .char_devices
             .register_major(DYN_MAJOR, Arc::clone(&state.dyn_devices))
             .expect("Failed to register DYN_MAJOR");
-        Self { root_kobject: KObject::new_root(), state: Mutex::new(state) }
+        Self {
+            root_kobject: KObject::new_root(SYSFS_DEVICES),
+            class_subsystem_kobject: KObject::new_root(SYSFS_CLASS),
+            block_subsystem_kobject: KObject::new_root(SYSFS_BLOCK),
+            bus_subsystem_kobject: KObject::new_root(SYSFS_BUS),
+            state: Mutex::new(state),
+        }
     }
 }
 
@@ -332,19 +496,20 @@ impl DeviceOps for Arc<RwLock<DynRegistry>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{device::mem::DevNull, fs::*, testing::*};
+    use crate::{device::mem::DevNull, fs::sysfs::DeviceDirectory, testing::*, vfs::*};
+    use starnix_uapi::device_type::{INPUT_MAJOR, MEM_MAJOR};
 
     #[::fuchsia::test]
     fn registry_fails_to_add_duplicate_device() {
         let registry = DeviceRegistry::default();
         registry
-            .register_chrdev_major(MEM_MAJOR, simple_device_ops::<DevNull>)
+            .register_major(MEM_MAJOR, simple_device_ops::<DevNull>, DeviceMode::Char)
             .expect("registers once");
         registry
-            .register_chrdev_major(123, simple_device_ops::<DevNull>)
+            .register_major(123, simple_device_ops::<DevNull>, DeviceMode::Char)
             .expect("registers unique");
         registry
-            .register_chrdev_major(MEM_MAJOR, simple_device_ops::<DevNull>)
+            .register_major(MEM_MAJOR, simple_device_ops::<DevNull>, DeviceMode::Char)
             .expect_err("fail to register duplicate");
     }
 
@@ -354,7 +519,7 @@ mod tests {
 
         let registry = DeviceRegistry::default();
         registry
-            .register_chrdev_major(MEM_MAJOR, simple_device_ops::<DevNull>)
+            .register_major(MEM_MAJOR, simple_device_ops::<DevNull>, DeviceMode::Char)
             .expect("registers unique");
 
         let node = FsNode::new_root(PanickingFsNode);
@@ -394,7 +559,7 @@ mod tests {
     }
 
     #[::fuchsia::test]
-    async fn test_dynamic_misc() {
+    async fn registry_dynamic_misc() {
         let (_kernel, current_task) = create_kernel_and_task();
 
         fn create_test_device(
@@ -414,5 +579,105 @@ mod tests {
         let _ = registry
             .open_device(&current_task, &node, OpenFlags::RDONLY, device_type, DeviceMode::Char)
             .expect("opens device");
+    }
+
+    #[::fuchsia::test]
+    async fn registery_add_class() {
+        let (kernel, current_task) = create_kernel_and_task();
+        let registry = &kernel.device_registry;
+
+        let input_class = registry.get_or_create_class(b"input", registry.virtual_bus());
+        registry.add_device(
+            &current_task,
+            b"mice",
+            DeviceMetadata::new(b"mice", DeviceType::new(INPUT_MAJOR, 0), DeviceMode::Char),
+            input_class,
+            DeviceDirectory::new,
+        );
+
+        assert!(registry.class_subsystem_kobject().has_child(b"input"));
+        assert!(registry
+            .class_subsystem_kobject()
+            .get_child(b"input")
+            .and_then(|collection| collection.get_child(b"mice"))
+            .is_some());
+    }
+
+    #[::fuchsia::test]
+    async fn registry_add_bus() {
+        let (kernel, current_task) = create_kernel_and_task();
+        let registry = &kernel.device_registry;
+
+        let bus = registry.get_or_create_bus(b"bus");
+        let class = registry.get_or_create_class(b"class", bus);
+        registry.add_device(
+            &current_task,
+            b"device",
+            DeviceMetadata::new(b"device", DeviceType::new(0, 0), DeviceMode::Char),
+            class,
+            DeviceDirectory::new,
+        );
+        assert!(registry.bus_subsystem_kobject().has_child(b"bus"));
+        assert!(registry
+            .bus_subsystem_kobject()
+            .get_child(b"bus")
+            .and_then(|collection| collection.get_child(b"device"))
+            .is_some());
+    }
+
+    #[::fuchsia::test]
+    async fn registry_remove_device() {
+        let (kernel, current_task) = create_kernel_and_task();
+        let registry = &kernel.device_registry;
+
+        let pci_bus = registry.get_or_create_bus(b"pci");
+        let input_class = registry.get_or_create_class(b"input", pci_bus);
+        let mice_dev = registry.add_device(
+            &current_task,
+            b"mice",
+            DeviceMetadata::new(b"mice", DeviceType::new(INPUT_MAJOR, 0), DeviceMode::Char),
+            input_class.clone(),
+            DeviceDirectory::new,
+        );
+
+        registry.remove_device(&current_task, mice_dev);
+        assert!(!input_class.kobject().has_child(b"mice"));
+        assert!(!registry
+            .bus_subsystem_kobject()
+            .get_child(b"pci")
+            .expect("get pci collection")
+            .has_child(b"mice"));
+        assert!(!registry
+            .class_subsystem_kobject()
+            .get_child(b"input")
+            .expect("get input collection")
+            .has_child(b"mice"));
+    }
+
+    #[::fuchsia::test]
+    async fn registery_unregister_device() {
+        let (kernel, current_task) = create_kernel_and_task();
+        let registry = &kernel.device_registry;
+        let node = FsNode::new_root(PanickingFsNode);
+        let _ = registry
+            .open_device(
+                &current_task,
+                &node,
+                OpenFlags::RDONLY,
+                DeviceType::NULL,
+                DeviceMode::Char,
+            )
+            .expect("opens device");
+
+        let _ = registry.unregister_major(MEM_MAJOR, DeviceMode::Char);
+        assert!(registry
+            .open_device(
+                &current_task,
+                &node,
+                OpenFlags::RDONLY,
+                DeviceType::NULL,
+                DeviceMode::Char,
+            )
+            .is_err());
     }
 }

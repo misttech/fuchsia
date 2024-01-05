@@ -5,17 +5,21 @@
 library fuchsia.platform;
 
 extend uint fuchsia.BIND_PROTOCOL {
-  BUS = 84,
-  DEVICE = 85,
+  COMPOSITE = 0x07,
+  ROOT = 0x1B,
+  MISC = 0x1C,
+  BUS = 0x54,
+  DEVICE = 0x55,
 };
 
-// NOTE(fxbug.dev/66206): Don't add more definitions here. Instead create a new
-// bind library with the top-level namespace "fuchsia", use the name of the
-// device vendor as the second level, and the name of the library should be
-// "platform". For example, "fuchsia.realtek.platform".
+extend uint fuchsia.BIND_FIDL_PROTOCOL {
+  PLATFORM_BUS = 0x0B,  // fuchsia.hardware.platform.bus
+  DEVICE = 0x0D,        // fuchsia.hardware.platform.device
+};
+
 extend uint fuchsia.BIND_PLATFORM_DEV_VID {
-  GENERIC = 0,
-  QEMU = 1,
+  GENERIC = 0x0,
+  QEMU = 0x01,
 };
 
 extend uint fuchsia.BIND_PLATFORM_DEV_DID {
@@ -43,9 +47,12 @@ extend uint fuchsia.BIND_PLATFORM_DEV_DID {
   DEVICETREE = 0x32,
   FAKE_BATTERY = 0x33,
   TCS3400_LIGHT = 0x34,
+  ADC_BUTTONS = 0x35,
 };
 
 extend uint fuchsia.BIND_PLATFORM_DEV_PID {
-  GENERIC = 0,
-  QEMU = 1,
+  GENERIC = 0x0,
+  QEMU = 0x1,
 };
+
+uint DRIVER_FRAMEWORK_VERSION;

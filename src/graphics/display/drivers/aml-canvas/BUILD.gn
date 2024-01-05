@@ -22,10 +22,14 @@ source_set("common_srcs") {
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  sources = [ "aml-canvas.cc" ]
+  sources = [
+    "aml-canvas.cc",
+    "aml-canvas.h",
+    "dmc-regs.h",
+  ]
   public_deps = [
     ":aml_canvas_bind",
-    "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//src/devices/bin/driver_runtime",
     "//src/devices/bus/lib/device-protocol-pdev",
@@ -52,11 +56,15 @@ fuchsia_driver_component("aml-canvas") {
   manifest = "meta/aml-canvas.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "aml-canvas"
+  driver_components = [ ":aml-canvas" ]
+}
+
 test("aml-canvas-test") {
   sources = [ "aml-canvas-test.cc" ]
   deps = [
     ":common_srcs",
-    "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/driver/runtime/testing/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/testing/fake-bti",
@@ -65,6 +73,7 @@ test("aml-canvas-test") {
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
     "//third_party/googletest:gtest",
+    "//zircon/system/ulib/async-loop:async-loop-cpp",
   ]
 }
 

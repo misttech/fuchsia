@@ -9,12 +9,12 @@ use {
             types::{self, Bss, InternalSavedNetworkData, SecurityType, SecurityTypeDetailed},
         },
         config_management::{
-            select_authentication_method, select_subset_potentially_hidden_networks, Credential,
-            SavedNetworksManagerApi,
+            self, network_config, select_authentication_method,
+            select_subset_potentially_hidden_networks, Credential, SavedNetworksManagerApi,
         },
         telemetry::{self, TelemetryEvent, TelemetrySender},
     },
-    fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload},
+    anyhow::{format_err, Error},
     fidl_fuchsia_wlan_internal as fidl_internal, fuchsia_async as fasync,
     fuchsia_inspect::{Node as InspectNode, StringReference},
     fuchsia_inspect_contrib::{
@@ -28,22 +28,12 @@ use {
     std::collections::HashMap,
     std::{collections::HashSet, sync::Arc},
     tracing::{debug, error, info, warn},
-    wlan_common::{
-        self, hasher::WlanHasher, security::SecurityAuthenticator, sequestered::Sequestered,
-    },
+    wlan_common::{self, security::SecurityAuthenticator, sequestered::Sequestered},
     wlan_inspect::wrappers::InspectWlanChan,
-    wlan_metrics_registry::{
-        SavedNetworkInScanResultMigratedMetricDimensionBssCount,
-        SavedNetworkInScanResultWithActiveScanMigratedMetricDimensionActiveScanSsidsObserved as ActiveScanSsidsObserved,
-        ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount,
-        LAST_SCAN_AGE_WHEN_SCAN_REQUESTED_MIGRATED_METRIC_ID,
-        SAVED_NETWORK_IN_SCAN_RESULT_MIGRATED_METRIC_ID,
-        SAVED_NETWORK_IN_SCAN_RESULT_WITH_ACTIVE_SCAN_MIGRATED_METRIC_ID,
-        SCAN_RESULTS_RECEIVED_MIGRATED_METRIC_ID,
-    },
 };
 
 pub mod bss_selection;
+pub mod local_roam_manager;
 pub mod network_selection;
 pub mod scoring_functions;
 
@@ -65,7 +55,6 @@ pub struct ConnectionSelector {
     saved_network_manager: Arc<dyn SavedNetworksManagerApi>,
     scan_requester: Arc<dyn scan::ScanRequestApi>,
     last_scan_result_time: Arc<Mutex<zx::Time>>,
-    hasher: WlanHasher,
     _inspect_node_root: Arc<Mutex<InspectNode>>,
     inspect_node_for_connection_selection: Arc<Mutex<AutoPersist<InspectBoundedListNode>>>,
     telemetry_sender: TelemetrySender,
@@ -75,7 +64,6 @@ impl ConnectionSelector {
     pub fn new(
         saved_network_manager: Arc<dyn SavedNetworksManagerApi>,
         scan_requester: Arc<dyn scan::ScanRequestApi>,
-        hasher: WlanHasher,
         inspect_node: InspectNode,
         persistence_req_sender: auto_persist::PersistenceReqSender,
         telemetry_sender: TelemetrySender,
@@ -93,7 +81,6 @@ impl ConnectionSelector {
             saved_network_manager,
             scan_requester,
             last_scan_result_time: Arc::new(Mutex::new(zx::Time::ZERO)),
-            hasher,
             _inspect_node_root: Arc::new(Mutex::new(inspect_node)),
             inspect_node_for_connection_selection: Arc::new(Mutex::new(
                 inspect_node_for_connection_selection,
@@ -185,13 +172,8 @@ impl ConnectionSelector {
                 let scan_age = zx::Time::get_monotonic() - last_scan_result_time;
                 if last_scan_result_time != zx::Time::ZERO {
                     info!("Scan results are {}s old, triggering a scan", scan_age.into_seconds());
-                    self.telemetry_sender.send(TelemetryEvent::LogMetricEvents {
-                        events: vec![MetricEvent {
-                            metric_id: LAST_SCAN_AGE_WHEN_SCAN_REQUESTED_MIGRATED_METRIC_ID,
-                            event_codes: vec![],
-                            payload: MetricEventPayload::IntegerValue(scan_age.into_micros()),
-                        }],
-                        ctx: "ConnectionSelector::perform_scan",
+                    self.telemetry_sender.send(TelemetryEvent::NetworkSelectionScanInterval {
+                        time_since_last_scan: scan_age,
                     });
                 }
                 let passive_scan_results = match self
@@ -243,12 +225,9 @@ impl ConnectionSelector {
                 vec![]
             }
             Ok(scan_results) => {
-                let candidates = merge_saved_networks_and_scan_data(
-                    &self.saved_network_manager,
-                    scan_results,
-                    &self.hasher,
-                )
-                .await;
+                let candidates =
+                    merge_saved_networks_and_scan_data(&self.saved_network_manager, scan_results)
+                        .await;
                 if network.is_none() {
                     *self.last_scan_result_time.lock().await = zx::Time::get_monotonic();
                     record_metrics_on_scan(candidates.clone(), &self.telemetry_sender);
@@ -326,6 +305,84 @@ impl ConnectionSelector {
             Err(()) => scanned_candidate,
         }
     }
+
+    /// Return the best AP to connect to from the network. It may be the same AP that is currently
+    /// connected to. Returning None means that no APs were seen.
+    /// Credential is required to lookup the network config and ensure that the credential matches.
+    pub async fn find_and_select_roam_candidate(
+        &self,
+        network: types::NetworkIdentifier,
+        credential: &network_config::Credential,
+    ) -> Result<Option<types::ScannedCandidate>, Error> {
+        // Scan for APs in this network
+        // TODO(fxbug.dev/132103) Use an active scan in cases where a faster scan is justified.
+        let mut matching_scans = self
+            .scan_requester
+            .perform_scan(ScanReason::RoamSearch, vec![], vec![])
+            .await
+            .map_err(|e| format_err!("Error scanning: {:?}", e))?
+            .into_iter()
+            .filter(|s| {
+                s.ssid == network.ssid
+                    && network
+                        .security_type
+                        .is_compatible_with_scanned_type(&s.security_type_detailed)
+            })
+            .collect::<Vec<_>>();
+
+        // If no APs were found, do an active scan. If the network is not hidden, at least 1 scan
+        // result should be seen since the AP is close enough to be connected to.
+        if matching_scans.is_empty() {
+            match self
+                .scan_requester
+                .perform_scan(ScanReason::RoamSearch, vec![network.ssid.clone()], vec![])
+                .await
+            {
+                Ok(scan_results) => {
+                    matching_scans = scan_results
+                        .into_iter()
+                        .filter(|s| {
+                            network
+                                .security_type
+                                .is_compatible_with_scanned_type(&s.security_type_detailed)
+                        })
+                        .collect()
+                }
+                Err(e) => {
+                    info!("Active scan to find hidden APs to roam to failed: {:?}", e);
+                    return Ok(None);
+                }
+            }
+        }
+
+        let mut candidates = Vec::new();
+        // All APs should be grouped in the same scan result based on SSID and security,
+        // but combine all if there are multiple scan results.
+        for mut s in matching_scans {
+            if let Some(config) = self
+                .saved_network_manager
+                .lookup(&network)
+                .await
+                .into_iter()
+                .find(|c| &c.credential == credential)
+            {
+                candidates.append(&mut merge_config_and_scan_data(config, &mut s));
+            } else {
+                // This should only happen if the network config was just removed as the scan
+                // happened.
+                warn!("Failed to find config for network to roam from");
+            }
+        }
+
+        // Choose the best AP
+        Ok(bss_selection::select_bss(
+            candidates,
+            types::ConnectReason::ProactiveNetworkSwitch,
+            self.inspect_node_for_connection_selection.clone(),
+            self.telemetry_sender.clone(),
+        )
+        .await)
+    }
 }
 
 impl types::ScannedCandidate {
@@ -389,9 +446,9 @@ impl types::ScannedCandidate {
 
         format!(
             "{}({:4}), {}({:6}), {:>4}dBm, channel {:8}, score {:4}{}{}{}{}",
-            self.hasher.hash_ssid(&self.network.ssid),
+            self.network.ssid,
             self.saved_security_type_to_string(),
-            self.hasher.hash_mac_addr(&self.bss.bssid.0),
+            self.bss.bssid.to_string(),
             self.scanned_security_type_to_string(),
             rssi,
             channel,
@@ -415,8 +472,8 @@ impl types::ScannedCandidate {
 impl WriteInspect for types::ScannedCandidate {
     fn write_inspect(&self, writer: &InspectNode, key: impl Into<StringReference>) {
         inspect_insert!(writer, var key: {
-            ssid_hash: self.hasher.hash_ssid(&self.network.ssid),
-            bssid_hash: self.hasher.hash_mac_addr(&self.bss.bssid.0),
+            ssid: self.network.ssid.to_string(),
+            bssid: self.bss.bssid.to_string(),
             rssi: self.bss.rssi,
             score: scoring_functions::score_bss_scanned_candidate(self.clone()),
             security_type_saved: self.saved_security_type_to_string(),
@@ -453,12 +510,58 @@ fn get_authenticator(bss: &Bss, credential: &Credential) -> Option<SecurityAuthe
     }
 }
 
+fn merge_config_and_scan_data(
+    network_config: config_management::NetworkConfig,
+    scan_result: &mut types::ScanResult,
+) -> Vec<types::ScannedCandidate> {
+    if network_config.ssid != scan_result.ssid
+        || !network_config
+            .security_type
+            .is_compatible_with_scanned_type(&scan_result.security_type_detailed)
+    {
+        return Vec::new();
+    }
+
+    let mut merged_networks = Vec::new();
+    let multiple_bss_candidates = scan_result.entries.len() > 1;
+
+    for bss in scan_result.entries.iter() {
+        let authenticator = match get_authenticator(bss, &network_config.credential) {
+            Some(authenticator) => authenticator,
+            None => {
+                error!("Failed to create authenticator for bss candidate {:?} (SSID: {:?}). Removing from candidates.", bss.bssid, &network_config.ssid);
+                continue;
+            }
+        };
+        let scanned_candidate = types::ScannedCandidate {
+            network: types::NetworkIdentifier {
+                ssid: network_config.ssid.clone(),
+                security_type: network_config.security_type,
+            },
+            security_type_detailed: scan_result.security_type_detailed,
+            credential: network_config.credential.clone(),
+            network_has_multiple_bss: multiple_bss_candidates,
+            saved_network_info: InternalSavedNetworkData {
+                has_ever_connected: network_config.has_ever_connected,
+                recent_failures: network_config
+                    .perf_stats
+                    .connect_failures
+                    .get_recent_for_network(fasync::Time::now() - RECENT_FAILURE_WINDOW),
+                past_connections: network_config.perf_stats.past_connections.clone(),
+            },
+            bss: bss.clone(),
+            authenticator,
+        };
+        merged_networks.push(scanned_candidate)
+    }
+    return merged_networks;
+}
+
 /// Merge the saved networks and scan results into a vector of BSS candidates that correspond to a
 /// saved network.
 async fn merge_saved_networks_and_scan_data(
     saved_network_manager: &Arc<dyn SavedNetworksManagerApi>,
     mut scan_results: Vec<types::ScanResult>,
-    hasher: &WlanHasher,
 ) -> Vec<types::ScannedCandidate> {
     let mut merged_networks = vec![];
     for mut scan_result in scan_results.drain(..) {
@@ -471,7 +574,7 @@ async fn merge_saved_networks_and_scan_data(
                 let authenticator = match get_authenticator(&bss, &saved_config.credential) {
                     Some(authenticator) => authenticator,
                     None => {
-                        error!("Failed to create authenticator for bss candidate {:?} (SSID: {:?}). Removing from candidates.", bss.bssid, hasher.hash_ssid(&saved_config.ssid));
+                        error!("Failed to create authenticator for bss candidate {} (SSID: {}). Removing from candidates.", bss.bssid, saved_config.ssid);
                         continue;
                     }
                 };
@@ -492,7 +595,6 @@ async fn merge_saved_networks_and_scan_data(
                         past_connections: saved_config.perf_stats.past_connections.clone(),
                     },
                     bss,
-                    hasher: hasher.clone(),
                     authenticator,
                 };
                 merged_networks.push(scanned_candidate)
@@ -506,7 +608,6 @@ fn record_metrics_on_scan(
     mut merged_networks: Vec<types::ScannedCandidate>,
     telemetry_sender: &TelemetrySender,
 ) {
-    let mut metric_events = vec![];
     let mut merged_network_map: HashMap<types::NetworkIdentifier, Vec<types::ScannedCandidate>> =
         HashMap::new();
     for bss in merged_networks.drain(..) {
@@ -515,68 +616,23 @@ fn record_metrics_on_scan(
 
     let num_saved_networks_observed = merged_network_map.len();
     let mut num_actively_scanned_networks = 0;
-    for (_network_id, bsss) in merged_network_map {
-        // Record how many BSSs are visible in the scan results for this saved network.
-        let num_bss = match bsss.len() {
-            0 => unreachable!(), // The ::Zero enum exists, but we shouldn't get a scan result with no BSS
-            1 => SavedNetworkInScanResultMigratedMetricDimensionBssCount::One,
-            2..=4 => SavedNetworkInScanResultMigratedMetricDimensionBssCount::TwoToFour,
-            5..=10 => SavedNetworkInScanResultMigratedMetricDimensionBssCount::FiveToTen,
-            11..=20 => SavedNetworkInScanResultMigratedMetricDimensionBssCount::ElevenToTwenty,
-            21..=usize::MAX => {
-                SavedNetworkInScanResultMigratedMetricDimensionBssCount::TwentyOneOrMore
-            }
-            _ => unreachable!(),
-        };
-        metric_events.push(MetricEvent {
-            metric_id: SAVED_NETWORK_IN_SCAN_RESULT_MIGRATED_METRIC_ID,
-            event_codes: vec![num_bss as u32],
-            payload: MetricEventPayload::Count(1),
-        });
+    let bss_count_per_saved_network = merged_network_map
+        .values()
+        .map(|bsss| {
+            // Check if the network was found via active scan.
+            if bsss.iter().any(|bss| matches!(bss.bss.observation, types::ScanObservation::Active))
+            {
+                num_actively_scanned_networks += 1;
+            };
+            // Count how many BSSs are visible in the scan results for this saved network.
+            bsss.len()
+        })
+        .collect();
 
-        // Check if the network was found via active scan.
-        if bsss.iter().any(|bss| matches!(bss.bss.observation, types::ScanObservation::Active)) {
-            num_actively_scanned_networks += 1;
-        };
-    }
-
-    let saved_network_count_metric = match num_saved_networks_observed {
-        0 => ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount::Zero,
-        1 => ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount::One,
-        2..=4 => ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount::TwoToFour,
-        5..=20 => ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount::FiveToTwenty,
-        21..=40 => ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount::TwentyOneToForty,
-        41..=usize::MAX => {
-            ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount::FortyOneOrMore
-        }
-        _ => unreachable!(),
-    };
-    metric_events.push(MetricEvent {
-        metric_id: SCAN_RESULTS_RECEIVED_MIGRATED_METRIC_ID,
-        event_codes: vec![saved_network_count_metric as u32],
-        payload: MetricEventPayload::Count(1),
-    });
-
-    let actively_scanned_networks_metrics = match num_actively_scanned_networks {
-        0 => ActiveScanSsidsObserved::Zero,
-        1 => ActiveScanSsidsObserved::One,
-        2..=4 => ActiveScanSsidsObserved::TwoToFour,
-        5..=10 => ActiveScanSsidsObserved::FiveToTen,
-        11..=20 => ActiveScanSsidsObserved::ElevenToTwenty,
-        21..=50 => ActiveScanSsidsObserved::TwentyOneToFifty,
-        51..=100 => ActiveScanSsidsObserved::FiftyOneToOneHundred,
-        101..=usize::MAX => ActiveScanSsidsObserved::OneHundredAndOneOrMore,
-        _ => unreachable!(),
-    };
-    metric_events.push(MetricEvent {
-        metric_id: SAVED_NETWORK_IN_SCAN_RESULT_WITH_ACTIVE_SCAN_MIGRATED_METRIC_ID,
-        event_codes: vec![actively_scanned_networks_metrics as u32],
-        payload: MetricEventPayload::Count(1),
-    });
-
-    telemetry_sender.send(TelemetryEvent::LogMetricEvents {
-        events: metric_events,
-        ctx: "connection_selection::record_metrics_on_scan",
+    telemetry_sender.send(TelemetryEvent::ConnectionSelectionScanResults {
+        saved_network_count: num_saved_networks_observed,
+        bss_count_per_saved_network,
+        saved_network_count_found_by_active_scan: num_actively_scanned_networks,
     });
 }
 #[cfg(test)]
@@ -589,16 +645,17 @@ mod tests {
                 SavedNetworksManager,
             },
             util::testing::{
-                create_inspect_persistence_channel, create_wlan_hasher,
+                create_inspect_persistence_channel,
                 fakes::{FakeSavedNetworksManager, FakeScanRequester},
                 generate_channel, generate_random_bss, generate_random_connect_reason,
                 generate_random_scan_result, generate_random_scanned_candidate,
             },
         },
+        diagnostics_assertions::{assert_data_tree, AnyNumericProperty},
         fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_sme as fidl_sme,
-        fuchsia_async as fasync,
-        fuchsia_inspect::{self as inspect, assert_data_tree},
+        fuchsia_async as fasync, fuchsia_inspect as inspect,
         futures::{channel::mpsc, task::Poll},
+        ieee80211_testutils::BSSID_REGEX,
         lazy_static::lazy_static,
         pin_utils::pin_mut,
         rand::Rng,
@@ -624,8 +681,7 @@ mod tests {
     }
 
     async fn test_setup(use_real_save_network_manager: bool) -> TestValues {
-        let real_saved_network_manager =
-            Arc::new(SavedNetworksManager::new_for_test().await.unwrap());
+        let real_saved_network_manager = Arc::new(SavedNetworksManager::new_for_test().await);
         let saved_network_manager = Arc::new(FakeSavedNetworksManager::new());
         let scan_requester = Arc::new(FakeScanRequester::new());
         let inspector = inspect::Inspector::default();
@@ -640,7 +696,6 @@ mod tests {
                 saved_network_manager.clone()
             },
             scan_requester.clone(),
-            create_wlan_hasher(),
             inspect_node,
             persistence_req_sender,
             TelemetrySender::new(telemetry_sender),
@@ -791,7 +846,6 @@ mod tests {
             recent_failures: recent_failures.clone(),
             past_connections: HistoricalListsByBssid::new(),
         };
-        let hasher = create_wlan_hasher();
         let wpa3_authenticator = select_authentication_method(
             HashSet::from([SecurityDescriptor::WPA3_PERSONAL]),
             &credential_1,
@@ -809,7 +863,6 @@ mod tests {
                 saved_network_info: expected_internal_data_1.clone(),
                 bss: mock_scan_results[0].entries[0].clone(),
                 authenticator: wpa3_authenticator.clone(),
-                hasher: hasher.clone(),
             },
             types::ScannedCandidate {
                 network: test_id_1.clone(),
@@ -819,7 +872,6 @@ mod tests {
                 saved_network_info: expected_internal_data_1.clone(),
                 bss: mock_scan_results[0].entries[1].clone(),
                 authenticator: wpa3_authenticator.clone(),
-                hasher: hasher.clone(),
             },
             types::ScannedCandidate {
                 network: test_id_1.clone(),
@@ -829,7 +881,6 @@ mod tests {
                 saved_network_info: expected_internal_data_1.clone(),
                 bss: mock_scan_results[0].entries[2].clone(),
                 authenticator: wpa3_authenticator.clone(),
-                hasher: hasher.clone(),
             },
             types::ScannedCandidate {
                 network: test_id_2.clone(),
@@ -843,7 +894,6 @@ mod tests {
                 },
                 bss: mock_scan_results[1].entries[0].clone(),
                 authenticator: open_authenticator.clone(),
-                hasher: hasher.clone(),
             },
         ];
 
@@ -851,7 +901,6 @@ mod tests {
         let results = merge_saved_networks_and_scan_data(
             &test_values.real_saved_network_manager,
             mock_scan_results,
-            &hasher,
         )
         .await;
 
@@ -1209,7 +1258,7 @@ mod tests {
             connection_selection_test: {
                 connection_selection: {
                     "0": {
-                        "@time": inspect::testing::AnyProperty,
+                        "@time": AnyNumericProperty,
                         "candidates": {},
                     },
                 }
@@ -1243,14 +1292,14 @@ mod tests {
             security_type: types::SecurityType::Wpa3,
         };
         let credential_1 = Credential::Password("foo_pass".as_bytes().to_vec());
-        let bssid_1 = types::Bssid([1, 1, 1, 1, 1, 1]);
+        let bssid_1 = types::Bssid::from([1, 1, 1, 1, 1, 1]);
 
         let test_id_2 = types::NetworkIdentifier {
             ssid: types::Ssid::try_from("bar").unwrap(),
             security_type: types::SecurityType::Wpa,
         };
         let credential_2 = Credential::Password("bar_pass".as_bytes().to_vec());
-        let bssid_2 = types::Bssid([2, 2, 2, 2, 2, 2]);
+        let bssid_2 = types::Bssid::from([2, 2, 2, 2, 2, 2]);
 
         // insert some new saved networks
         assert!(exec
@@ -1386,20 +1435,20 @@ mod tests {
             connection_selection_test: {
                 connection_selection: {
                     "0": {
-                        "@time": inspect::testing::AnyProperty,
+                        "@time": AnyNumericProperty,
                         "candidates": {
                             "0": contains {
-                                bssid_hash: inspect::testing::AnyProperty,
-                                score: inspect::testing::AnyProperty,
+                                bssid: &*BSSID_REGEX,
+                                score: AnyNumericProperty,
                             },
                             "1": contains {
-                                bssid_hash: inspect::testing::AnyProperty,
-                                score: inspect::testing::AnyProperty,
+                                bssid: &*BSSID_REGEX,
+                                score: AnyNumericProperty,
                             },
                         },
                         "selected": contains {
-                            bssid_hash: inspect::testing::AnyProperty,
-                            score: inspect::testing::AnyProperty,
+                            bssid: &*BSSID_REGEX,
+                            score: AnyNumericProperty,
                         },
                     },
                 }
@@ -1412,11 +1461,13 @@ mod tests {
             Ok(Some(TelemetryEvent::ActiveScanRequested { num_ssids_requested: 0 }))
         );
         assert_variant!(
-            telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::LogMetricEvents {
-                ctx: "connection_selection::record_metrics_on_scan",
-                ..
-            }))
+            telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::ConnectionSelectionScanResults {
+                saved_network_count, bss_count_per_saved_network, saved_network_count_found_by_active_scan
+            })) => {
+                assert_eq!(saved_network_count, 2);
+                assert_eq!(bss_count_per_saved_network, vec![1, 1]);
+                assert_eq!(saved_network_count_found_by_active_scan, 0);
+            }
         );
         assert_variant!(telemetry_receiver.try_next(), Ok(Some(event)) => {
             assert_variant!(event, TelemetryEvent::NetworkSelectionDecision {
@@ -1614,49 +1665,14 @@ mod tests {
 
         record_metrics_on_scan(mock_scan_results, &telemetry_sender);
 
-        let metric_events = assert_variant!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::LogMetricEvents { events, .. })) => events);
-        assert_eq!(metric_events.len(), 4);
-
-        // The order of the first two cobalt events is not deterministic
-        // Three BSSs present for network 1 in scan results
-        assert!(metric_events[..2].iter().any(|event| *event
-            == MetricEvent {
-                metric_id: SAVED_NETWORK_IN_SCAN_RESULT_MIGRATED_METRIC_ID,
-                event_codes: vec![
-                    SavedNetworkInScanResultMigratedMetricDimensionBssCount::TwoToFour as u32
-                ],
-                payload: MetricEventPayload::Count(1),
-            }));
-
-        // One BSS present for network 2 in scan results
-        assert!(metric_events[..2].iter().any(|event| *event
-            == MetricEvent {
-                metric_id: SAVED_NETWORK_IN_SCAN_RESULT_MIGRATED_METRIC_ID,
-                event_codes: vec![
-                    SavedNetworkInScanResultMigratedMetricDimensionBssCount::One as u32
-                ],
-                payload: MetricEventPayload::Count(1),
-            }));
-
-        // Total of two saved networks in the scan results
-        assert_eq!(
-            metric_events[2],
-            MetricEvent {
-                metric_id: SCAN_RESULTS_RECEIVED_MIGRATED_METRIC_ID,
-                event_codes: vec![
-                    ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount::TwoToFour as u32
-                ],
-                payload: MetricEventPayload::Count(1),
-            }
-        );
-
-        // One saved networks that was discovered via active scan
-        assert_eq!(
-            metric_events[3],
-            MetricEvent {
-                metric_id: SAVED_NETWORK_IN_SCAN_RESULT_WITH_ACTIVE_SCAN_MIGRATED_METRIC_ID,
-                event_codes: vec![ActiveScanSsidsObserved::One as u32],
-                payload: MetricEventPayload::Count(1),
+        assert_variant!(
+            telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::ConnectionSelectionScanResults {
+                saved_network_count, mut bss_count_per_saved_network, saved_network_count_found_by_active_scan
+            })) => {
+                assert_eq!(saved_network_count, 2);
+                bss_count_per_saved_network.sort();
+                assert_eq!(bss_count_per_saved_network, vec![1, 3]);
+                assert_eq!(saved_network_count_found_by_active_scan, 1);
             }
         );
     }
@@ -1670,28 +1686,13 @@ mod tests {
 
         record_metrics_on_scan(mock_scan_results, &telemetry_sender);
 
-        let metric_events = assert_variant!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::LogMetricEvents { events, .. })) => events);
-        assert_eq!(metric_events.len(), 2);
-
-        // No saved networks in scan results
-        assert_eq!(
-            metric_events[0],
-            MetricEvent {
-                metric_id: SCAN_RESULTS_RECEIVED_MIGRATED_METRIC_ID,
-                event_codes: vec![
-                    ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount::Zero as u32
-                ],
-                payload: MetricEventPayload::Count(1),
-            }
-        );
-
-        // Also no saved networks that were discovered via active scan
-        assert_eq!(
-            metric_events[1],
-            MetricEvent {
-                metric_id: SAVED_NETWORK_IN_SCAN_RESULT_WITH_ACTIVE_SCAN_MIGRATED_METRIC_ID,
-                event_codes: vec![ActiveScanSsidsObserved::Zero as u32],
-                payload: MetricEventPayload::Count(1),
+        assert_variant!(
+            telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::ConnectionSelectionScanResults {
+                saved_network_count, bss_count_per_saved_network, saved_network_count_found_by_active_scan
+            })) => {
+                assert_eq!(saved_network_count, 0);
+                assert_eq!(bss_count_per_saved_network, Vec::<usize>::new());
+                assert_eq!(saved_network_count_found_by_active_scan, 0);
             }
         );
     }

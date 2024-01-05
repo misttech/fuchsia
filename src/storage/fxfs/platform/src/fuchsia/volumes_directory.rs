@@ -8,7 +8,7 @@ use {
         directory::FxDirectory,
         fxblob::BlobDirectory,
         memory_pressure::{MemoryPressureLevel, MemoryPressureMonitor},
-        volume::{FlushTaskConfig, FxVolume, FxVolumeAndRoot, RootDir},
+        volume::{FxVolume, FxVolumeAndRoot, MemoryPressureConfig, RootDir},
         RemoteCrypt,
     },
     anyhow::{anyhow, bail, ensure, Context, Error},
@@ -29,15 +29,16 @@ use {
         log::*,
         metrics,
         object_store::{
-            allocator::Allocator,
-            transaction::{LockKey, Options},
+            transaction::{lock_keys, LockKey, Options},
             volume::RootVolume,
             Directory, ObjectDescriptor, ObjectStore,
         },
     },
     fxfs_crypto::Crypt,
+    fxfs_trace::{trace_future_args, TraceFutureExt},
+    rustc_hash::FxHashMap as HashMap,
     std::{
-        collections::{hash_map::Entry::Occupied, HashMap},
+        collections::hash_map::Entry::Occupied,
         sync::{
             atomic::{AtomicU64, Ordering},
             Arc, Weak,
@@ -113,9 +114,9 @@ impl MountedVolumesGuard<'_> {
             FxfsError::AlreadyBound
         );
         if as_blob {
-            self.mount_store::<BlobDirectory>(name, store, FlushTaskConfig::default()).await
+            self.mount_store::<BlobDirectory>(name, store, MemoryPressureConfig::default()).await
         } else {
-            self.mount_store::<FxDirectory>(name, store, FlushTaskConfig::default()).await
+            self.mount_store::<FxDirectory>(name, store, MemoryPressureConfig::default()).await
         }
     }
 
@@ -124,7 +125,7 @@ impl MountedVolumesGuard<'_> {
         &mut self,
         name: &str,
         store: Arc<ObjectStore>,
-        flush_task_config: FlushTaskConfig,
+        flush_task_config: MemoryPressureConfig,
     ) -> Result<FxVolumeAndRoot, Error> {
         metrics::object_stores_tracker().register_store(name, Arc::downgrade(&store));
         let store_id = store.store_object_id();
@@ -153,7 +154,7 @@ impl MountedVolumesGuard<'_> {
         let transaction = store
             .filesystem()
             .new_transaction(
-                &[LockKey::object(
+                lock_keys![LockKey::object(
                     store.store_object_id(),
                     self.volumes_directory.root_volume.volume_directory().object_id(),
                 )],
@@ -217,7 +218,7 @@ impl VolumesDirectory {
         let me = Arc::new(Self {
             root_volume,
             directory_node: vfs::directory::immutable::simple(),
-            mounted_volumes: futures::lock::Mutex::new(HashMap::new()),
+            mounted_volumes: futures::lock::Mutex::new(HashMap::default()),
             inspect_tree,
             mem_monitor,
             pager_dirty_bytes_count: AtomicU64::new(0),
@@ -238,10 +239,6 @@ impl VolumesDirectory {
     /// Directly manipulating the entries in this node will result in strange behaviour.
     pub fn directory_node(&self) -> &Arc<vfs::directory::immutable::Simple> {
         &self.directory_node
-    }
-
-    pub fn root_volume(&self) -> &RootVolume {
-        &self.root_volume
     }
 
     // This serves as an exclusive lock for operations that manipulate the set of mounted volumes.
@@ -378,7 +375,8 @@ impl VolumesDirectory {
             let root_store = me.root_volume.volume_directory().store();
             let fs = root_store.filesystem();
             let _guard = fs
-                .transaction_lock(&[LockKey::object(
+                .lock_manager()
+                .txn_lock(lock_keys![LockKey::object(
                     root_store.store_object_id(),
                     me.root_volume.volume_directory().object_id(),
                 )])
@@ -458,62 +456,71 @@ impl VolumesDirectory {
         Ok(())
     }
 
-    /// Reports that a certain number of bytes will be dirtied in a pager-backed VMO.
-    ///
-    /// Note that this function may await flush tasks.
-    pub async fn report_pager_dirty(&self, num_bytes: u64) {
-        let mut total_dirty = self.pager_dirty_bytes_count.load(Ordering::Acquire);
-
-        let mut mem_pressure = self
+    fn is_flush_required_to_dirty(&self, byte_count: u64) -> bool {
+        let mem_pressure = self
             .mem_monitor
             .as_ref()
             .map(|mem_monitor| mem_monitor.level())
             .unwrap_or(MemoryPressureLevel::Normal);
-
-        if matches!(mem_pressure, MemoryPressureLevel::Critical)
-            && total_dirty + num_bytes >= Self::get_max_pager_dirty_when_mem_critical()
-        {
-            let volumes = self.mounted_volumes.lock().await;
-
-            mem_pressure = self
-                .mem_monitor
-                .as_ref()
-                .map(|mem_monitor| mem_monitor.level())
-                .unwrap_or(MemoryPressureLevel::Normal);
-
-            // Re-check the number of outstanding pager dirty bytes because another thread could
-            // have raced and flushed the volumes first.
-            total_dirty = self.pager_dirty_bytes_count.load(Ordering::Acquire);
-            if matches!(mem_pressure, MemoryPressureLevel::Critical)
-                && total_dirty + num_bytes >= Self::get_max_pager_dirty_when_mem_critical()
-            {
-                debug!(
-                    "Flushing all volumes. Memory pressure is critical & dirty pager bytes \
-                    ({} MiB) >= limit ({} MiB)",
-                    total_dirty / MEBIBYTE,
-                    Self::get_max_pager_dirty_when_mem_critical() / MEBIBYTE
-                );
-
-                let flushes = FuturesUnordered::new();
-                for vol_and_root in volumes.values() {
-                    let vol = vol_and_root.volume().clone();
-                    flushes.push(async move {
-                        vol.flush_all_files().await;
-                    });
-                }
-
-                flushes.collect::<Vec<_>>().await;
-            }
+        if !matches!(mem_pressure, MemoryPressureLevel::Critical) {
+            return false;
         }
 
-        self.pager_dirty_bytes_count.fetch_add(num_bytes, Ordering::AcqRel);
+        let total_dirty = self.pager_dirty_bytes_count.load(Ordering::Acquire);
+        total_dirty + byte_count >= Self::get_max_pager_dirty_when_mem_critical()
+    }
+
+    /// Reports that a certain number of bytes will be dirtied in a pager-backed VMO. If the memory
+    /// pressure level is critical and fxfs has lots of dirty pages then a new task will be spawned
+    /// in `volume` to flush the dirty pages before `mark_dirty` is called. If the memory pressure
+    /// level is not critical then `mark_dirty` will be synchronously called.
+    pub fn report_pager_dirty(
+        self: Arc<Self>,
+        byte_count: u64,
+        volume: Arc<FxVolume>,
+        mark_dirty: impl FnOnce() + Send + 'static,
+    ) {
+        if !self.is_flush_required_to_dirty(byte_count) {
+            self.pager_dirty_bytes_count.fetch_add(byte_count, Ordering::AcqRel);
+            mark_dirty();
+        } else {
+            volume.spawn(
+                async move {
+                    let volumes = self.mounted_volumes.lock().await;
+
+                    // Re-check the number of outstanding pager dirty bytes because another thread
+                    // could have raced and flushed the volumes first.
+                    if self.is_flush_required_to_dirty(byte_count) {
+                        debug!(
+                            "Flushing all volumes. Memory pressure is critical & dirty pager bytes \
+                            ({} MiB) >= limit ({} MiB)",
+                            self.pager_dirty_bytes_count.load(Ordering::Acquire) / MEBIBYTE,
+                            Self::get_max_pager_dirty_when_mem_critical() / MEBIBYTE
+                        );
+
+                        let flushes = FuturesUnordered::new();
+                        for vol_and_root in volumes.values() {
+                            let vol = vol_and_root.volume().clone();
+                            flushes.push(async move {
+                                vol.flush_all_files().await;
+                            });
+                        }
+
+                        flushes.collect::<()>().await;
+                    }
+                    self.pager_dirty_bytes_count.fetch_add(byte_count, Ordering::AcqRel);
+                    mark_dirty();
+                }
+                .trace(trace_future_args!("flush-before-mark-dirty")),
+            )
+        }
     }
 
     /// Reports that a certain number of bytes were cleaned in a pager-backed VMO.
-    pub fn report_pager_clean(&self, num_bytes: u64) {
-        let prev_dirty = self.pager_dirty_bytes_count.fetch_sub(num_bytes, Ordering::AcqRel);
+    pub fn report_pager_clean(&self, byte_count: u64) {
+        let prev_dirty = self.pager_dirty_bytes_count.fetch_sub(byte_count, Ordering::AcqRel);
 
-        if prev_dirty < num_bytes {
+        if prev_dirty < byte_count {
             // An unlikely scenario, but if there was an underflow, reset the pager dirty bytes to
             // zero.
             self.pager_dirty_bytes_count.store(0, Ordering::Release);
@@ -537,12 +544,15 @@ impl VolumesDirectory {
         } else {
             None
         };
-        fsck::fsck_volume(fs.as_ref(), store_id, crypt).await
+        let result = fsck::fsck_volume(fs.as_ref(), store_id, crypt).await?;
+        // TODO(b/311550633): Stash result in inspect.
+        tracing::info!(%store_id, "{:?}", result);
+        Ok(())
     }
 
     async fn handle_set_limit(self: &Arc<Self>, store_id: u64, bytes: u64) -> Result<(), Error> {
         let fs = self.root_volume.volume_directory().store().filesystem();
-        let mut transaction = fs.clone().new_transaction(&[], Options::default()).await?;
+        let mut transaction = fs.clone().new_transaction(lock_keys![], Options::default()).await?;
         fs.allocator().set_bytes_limit(&mut transaction, store_id, bytes).await?;
         transaction.commit().await?;
         Ok(())
@@ -588,7 +598,8 @@ impl VolumesDirectory {
                     let root_store = self.root_volume.volume_directory().store();
                     let fs = root_store.filesystem();
                     let guard = fs
-                        .transaction_lock(&[LockKey::object(
+                        .lock_manager()
+                        .txn_lock(lock_keys![LockKey::object(
                             root_store.store_object_id(),
                             self.root_volume.volume_directory().object_id(),
                         )])
@@ -619,25 +630,23 @@ impl VolumesDirectory {
 mod tests {
     use {
         crate::fuchsia::{testing::open_file_checked, volumes_directory::VolumesDirectory},
-        fidl::endpoints::{create_request_stream, ServerEnd},
+        fidl::endpoints::{create_proxy, create_request_stream, ServerEnd},
         fidl_fuchsia_fs::AdminMarker,
         fidl_fuchsia_fxfs::{KeyPurpose, MountOptions, VolumeMarker, VolumeProxy},
         fidl_fuchsia_io as fio, fuchsia, fuchsia_async as fasync,
         fuchsia_component::client::connect_to_protocol_at_dir_svc,
+        fuchsia_fs::file,
         fuchsia_zircon::Status,
         futures::join,
         fxfs::{
-            errors::FxfsError,
-            filesystem::{Filesystem, FxFilesystem},
-            fsck::fsck,
-            object_store::allocator::SimpleAllocator,
-            object_store::volume::root_volume,
+            errors::FxfsError, filesystem::FxFilesystem, fsck::fsck,
+            object_store::allocator::Allocator, object_store::volume::root_volume,
         },
         fxfs_crypto::Crypt,
         fxfs_insecure_crypto::InsecureCrypt,
         rand::Rng as _,
         std::{
-            sync::{Arc, Weak},
+            sync::{atomic::Ordering, Arc, Weak},
             time::Duration,
         },
         storage_device::{fake_device::FakeDevice, DeviceHolder},
@@ -685,6 +694,58 @@ mod tests {
             .err()
             .expect("Creating existing encrypted volume should fail");
         assert!(FxfsError::AlreadyExists.matches(&error));
+    }
+
+    #[fuchsia::test]
+    async fn test_dirty_pages_accumulate_in_parent() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, 512));
+        let filesystem = FxFilesystem::new_empty(device).await.unwrap();
+        let volumes_directory = VolumesDirectory::new(
+            root_volume(filesystem.clone()).await.unwrap(),
+            Weak::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let crypt = Arc::new(InsecureCrypt::new()) as Arc<dyn Crypt>;
+        let vol = volumes_directory
+            .create_and_mount_volume("encrypted", Some(crypt.clone()), false)
+            .await
+            .expect("create encrypted volume failed");
+        let old_dirty = volumes_directory.pager_dirty_bytes_count.load(Ordering::SeqCst);
+
+        let new_dirty = {
+            let (root, server_end) =
+                create_proxy::<fio::DirectoryMarker>().expect("create_proxy failed");
+            vol.root().clone().open(
+                vol.volume().scope().clone(),
+                fio::OpenFlags::DIRECTORY
+                    | fio::OpenFlags::RIGHT_READABLE
+                    | fio::OpenFlags::RIGHT_WRITABLE,
+                Path::dot(),
+                ServerEnd::new(server_end.into_channel()),
+            );
+
+            let f = open_file_checked(
+                &root,
+                fio::OpenFlags::CREATE
+                    | fio::OpenFlags::RIGHT_WRITABLE
+                    | fio::OpenFlags::NOT_DIRECTORY,
+                "foo",
+            )
+            .await;
+            let buf = vec![0xaa as u8; 8192];
+            file::write(&f, buf.as_slice()).await.expect("Write");
+            // It's important to check the dirty bytes before closing the file, as closing can
+            // trigger a flush.
+            volumes_directory.pager_dirty_bytes_count.load(Ordering::SeqCst)
+        };
+        assert_ne!(old_dirty, new_dirty);
+
+        volumes_directory.terminate().await;
+        std::mem::drop(volumes_directory);
+        filesystem.close().await.expect("close filesystem failed");
     }
 
     #[fuchsia::test]
@@ -1267,14 +1328,14 @@ mod tests {
 
             volume_proxy.set_limit(BYTES_LIMIT_1).await.unwrap().expect("To set limits");
             {
-                let limits = (filesystem.allocator() as Arc<SimpleAllocator>).owner_byte_limits();
+                let limits = (filesystem.allocator() as Arc<Allocator>).owner_byte_limits();
                 assert_eq!(limits.len(), 1);
                 assert_eq!(limits[0].1, BYTES_LIMIT_1);
             }
 
             volume_proxy.set_limit(BYTES_LIMIT_2).await.unwrap().expect("To set limits");
             {
-                let limits = (filesystem.allocator() as Arc<SimpleAllocator>).owner_byte_limits();
+                let limits = (filesystem.allocator() as Arc<Allocator>).owner_byte_limits();
                 assert_eq!(limits.len(), 1);
                 assert_eq!(limits[0].1, BYTES_LIMIT_2);
             }
@@ -1297,13 +1358,13 @@ mod tests {
             .await
             .unwrap();
             {
-                let limits = (filesystem.allocator() as Arc<SimpleAllocator>).owner_byte_limits();
+                let limits = (filesystem.allocator() as Arc<Allocator>).owner_byte_limits();
                 assert_eq!(limits.len(), 1);
                 assert_eq!(limits[0].1, BYTES_LIMIT_2);
             }
             volumes_directory.remove_volume(VOLUME_NAME).await.expect("Volume deletion failed");
             {
-                let limits = (filesystem.allocator() as Arc<SimpleAllocator>).owner_byte_limits();
+                let limits = (filesystem.allocator() as Arc<Allocator>).owner_byte_limits();
                 assert_eq!(limits.len(), 0);
             }
             volumes_directory.terminate().await;
@@ -1315,7 +1376,7 @@ mod tests {
         device.reopen(false);
         let filesystem = FxFilesystem::open(device as DeviceHolder).await.unwrap();
         fsck(filesystem.clone()).await.expect("Fsck");
-        let limits = (filesystem.allocator() as Arc<SimpleAllocator>).owner_byte_limits();
+        let limits = (filesystem.allocator() as Arc<Allocator>).owner_byte_limits();
         assert_eq!(limits.len(), 0);
     }
 

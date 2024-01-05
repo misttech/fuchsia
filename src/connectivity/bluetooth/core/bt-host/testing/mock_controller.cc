@@ -42,8 +42,8 @@ bool CommandTransaction::Match(const ByteBuffer& cmd) {
                          (prefix_ ? cmd.view(0, expected().data.size()) : cmd.view()));
 }
 
-MockController::MockController()
-    : WeakSelf(this), data_dispatcher_(nullptr), transaction_dispatcher_(nullptr) {}
+MockController::MockController(pw::async::Dispatcher& pw_dispatcher)
+    : ControllerTestDoubleBase(pw_dispatcher), WeakSelf(this) {}
 
 MockController::~MockController() {
   while (!cmd_transactions_.empty()) {
@@ -110,14 +110,11 @@ bool MockController::AllExpectedDataPacketsSent() const { return data_transactio
 
 bool MockController::AllExpectedCommandPacketsSent() const { return cmd_transactions_.empty(); }
 
-void MockController::SetDataCallback(DataCallback callback, async_dispatcher_t* dispatcher) {
+void MockController::SetDataCallback(DataCallback callback) {
   BT_DEBUG_ASSERT(callback);
-  BT_DEBUG_ASSERT(dispatcher);
   BT_DEBUG_ASSERT(!data_callback_);
-  BT_DEBUG_ASSERT(!data_dispatcher_);
 
   data_callback_ = std::move(callback);
-  data_dispatcher_ = dispatcher;
 }
 
 void MockController::ClearDataCallback() {
@@ -125,19 +122,14 @@ void MockController::ClearDataCallback() {
   data_callback_ = nullptr;
 }
 
-void MockController::SetTransactionCallback(fit::closure callback, async_dispatcher_t* dispatcher) {
-  SetTransactionCallback([f = std::move(callback)](const auto&) { f(); }, dispatcher);
+void MockController::SetTransactionCallback(fit::closure callback) {
+  SetTransactionCallback([f = std::move(callback)](const auto&) { f(); });
 }
 
-void MockController::SetTransactionCallback(TransactionCallback callback,
-                                            async_dispatcher_t* dispatcher) {
+void MockController::SetTransactionCallback(TransactionCallback callback) {
   BT_DEBUG_ASSERT(callback);
-  BT_DEBUG_ASSERT(dispatcher);
   BT_DEBUG_ASSERT(!transaction_callback_);
-  BT_DEBUG_ASSERT(!transaction_dispatcher_);
-
   transaction_callback_ = std::move(callback);
-  transaction_dispatcher_ = dispatcher;
 }
 
 void MockController::ClearTransactionCallback() {
@@ -181,8 +173,12 @@ void MockController::OnCommandReceived(const ByteBuffer& data) {
 
   if (transaction_callback_) {
     DynamicByteBuffer rx(data);
-    async::PostTask(transaction_dispatcher_,
-                    [rx = std::move(rx), f = transaction_callback_.share()] { f(rx); });
+    heap_dispatcher().Post(
+        [rx = std::move(rx), f = transaction_callback_.share()](auto, pw::Status status) {
+          if (status.ok()) {
+            f(rx);
+          }
+        });
   }
 }
 
@@ -205,8 +201,12 @@ void MockController::OnACLDataPacketReceived(const ByteBuffer& acl_data_packet) 
 
   if (data_callback_) {
     DynamicByteBuffer packet_copy(acl_data_packet);
-    async::PostTask(data_dispatcher_, [packet_copy = std::move(packet_copy),
-                                       cb = data_callback_.share()]() mutable { cb(packet_copy); });
+    heap_dispatcher().Post([packet_copy = std::move(packet_copy), cb = data_callback_.share()](
+                               auto, pw::Status status) mutable {
+      if (status.ok()) {
+        cb(packet_copy);
+      }
+    });
   }
 }
 
@@ -226,20 +226,32 @@ void MockController::OnScoDataPacketReceived(const ByteBuffer& sco_data_packet) 
 void MockController::SendCommand(pw::span<const std::byte> data) {
   // Post task to simulate async
   DynamicByteBuffer buffer(BufferView(data.data(), data.size()));
-  async::PostTask(async_get_default_dispatcher(),
-                  [this, buffer = std::move(buffer)]() { OnCommandReceived(buffer); });
+  heap_dispatcher().Post(
+      [this, buffer = std::move(buffer)](pw::async::Context /*ctx*/, pw::Status status) {
+        if (status.ok()) {
+          OnCommandReceived(buffer);
+        }
+      });
 }
 void MockController::SendAclData(pw::span<const std::byte> data) {
   // Post task to simulate async
   DynamicByteBuffer buffer(BufferView(data.data(), data.size()));
-  async::PostTask(async_get_default_dispatcher(),
-                  [this, buffer = std::move(buffer)]() { OnACLDataPacketReceived(buffer); });
+  heap_dispatcher().Post(
+      [this, buffer = std::move(buffer)](pw::async::Context /*ctx*/, pw::Status status) {
+        if (status.ok()) {
+          OnACLDataPacketReceived(buffer);
+        }
+      });
 }
 void MockController::SendScoData(pw::span<const std::byte> data) {
   // Post task to simulate async
   DynamicByteBuffer buffer(BufferView(data.data(), data.size()));
-  async::PostTask(async_get_default_dispatcher(),
-                  [this, buffer = std::move(buffer)]() { OnScoDataPacketReceived(buffer); });
+  heap_dispatcher().Post(
+      [this, buffer = std::move(buffer)](pw::async::Context /*ctx*/, pw::Status status) {
+        if (status.ok()) {
+          OnScoDataPacketReceived(buffer);
+        }
+      });
 }
 
 }  // namespace bt::testing

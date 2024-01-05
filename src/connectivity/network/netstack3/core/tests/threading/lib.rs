@@ -13,17 +13,17 @@ use loom::sync::Arc;
 use net_declare::{net_ip_v4, net_ip_v6, net_mac, net_subnet_v4, net_subnet_v6};
 use net_types::{
     ethernet::Mac,
-    ip::{Ip, IpInvariant, Ipv4, Ipv6, Subnet},
+    ip::{Ip, Ipv4, Ipv6, Subnet},
     SpecifiedAddr, UnicastAddr, Witness as _, ZonedAddr,
 };
 use netstack3_core::{
-    device::{
-        ndp::testutil::{neighbor_advertisement_ip_packet, neighbor_solicitation_ip_packet},
-        socket::{Protocol, TargetDevice},
-    },
-    ip::types::{AddableEntry, AddableMetric, RawMetric},
+    device_socket::{Protocol, TargetDevice},
+    routes::{AddableEntry, AddableMetric, RawMetric},
     sync::Mutex,
-    testutil::{FakeCtx, FakeEventDispatcherBuilder},
+    testutil::{
+        ndp::{neighbor_advertisement_ip_packet, neighbor_solicitation_ip_packet},
+        FakeCtx, FakeEventDispatcherBuilder,
+    },
 };
 use packet::{Buf, InnerPacketBuilder as _, ParseBuffer as _, Serializer as _};
 use packet_formats::{
@@ -55,23 +55,23 @@ fn packet_socket_change_device_and_protocol_atomic() {
         let mut builder = FakeEventDispatcherBuilder::default();
         let dev_indexes =
             [(); 2].map(|()| builder.add_device(UnicastAddr::new(DEVICE_MAC).unwrap()));
-        let (FakeCtx { sync_ctx, non_sync_ctx }, indexes_to_device_ids) = builder.build();
+        let (FakeCtx { core_ctx, bindings_ctx }, indexes_to_device_ids) = builder.build();
 
-        let sync_ctx = Arc::new(sync_ctx);
+        let core_ctx = Arc::new(core_ctx);
         let devs = dev_indexes.map(|i| indexes_to_device_ids[i].clone());
         drop(indexes_to_device_ids);
 
-        let socket = netstack3_core::device::socket::create(&*sync_ctx, Mutex::new(Vec::new()));
-        netstack3_core::device::socket::set_device_and_protocol(
-            &*sync_ctx,
+        let socket = netstack3_core::device_socket::create(&*core_ctx, Mutex::new(Vec::new()));
+        netstack3_core::device_socket::set_device_and_protocol(
+            &*core_ctx,
             &socket,
             TargetDevice::SpecificDevice(&devs[0].clone().into()),
             Protocol::Specific(first_proto),
         );
 
-        let thread_vars = (sync_ctx.clone(), non_sync_ctx.clone(), devs.clone());
+        let thread_vars = (core_ctx.clone(), bindings_ctx.clone(), devs.clone());
         let deliver = loom::thread::spawn(move || {
-            let (sync_ctx, mut non_sync_ctx, devs) = thread_vars;
+            let (core_ctx, mut bindings_ctx, devs) = thread_vars;
             for (device, ethertype) in [
                 (&devs[0], first_proto.get().into()),
                 (&devs[0], second_proto.get().into()),
@@ -79,20 +79,20 @@ fn packet_socket_change_device_and_protocol_atomic() {
                 (&devs[1], second_proto.get().into()),
             ] {
                 netstack3_core::device::receive_frame(
-                    &*sync_ctx,
-                    &mut non_sync_ctx,
+                    &*core_ctx,
+                    &mut bindings_ctx,
                     &device,
                     make_ethernet_frame(ethertype),
                 );
             }
         });
 
-        let thread_vars = (sync_ctx.clone(), devs[1].clone(), socket.clone());
+        let thread_vars = (core_ctx.clone(), devs[1].clone(), socket.clone());
 
         let change_device = loom::thread::spawn(move || {
-            let (sync_ctx, dev, socket) = thread_vars;
-            netstack3_core::device::socket::set_device_and_protocol(
-                &*sync_ctx,
+            let (core_ctx, dev, socket) = thread_vars;
+            netstack3_core::device_socket::set_device_and_protocol(
+                &*core_ctx,
                 &socket,
                 TargetDevice::SpecificDevice(&dev.clone().into()),
                 Protocol::Specific(second_proto),
@@ -256,15 +256,15 @@ fn neighbor_resolution_and_send_queued_packets_atomic<I: Ip + TestIpExt>() {
             I::DEVICE_ADDR,
             I::DEVICE_SUBNET,
         );
-        let (FakeCtx { sync_ctx, mut non_sync_ctx }, indexes_to_device_ids) = builder.build();
+        let (FakeCtx { core_ctx, mut bindings_ctx }, indexes_to_device_ids) = builder.build();
         let device = indexes_to_device_ids.into_iter().nth(dev_index).unwrap();
 
-        netstack3_core::add_route(
-            &sync_ctx,
-            &mut non_sync_ctx,
+        netstack3_core::testutil::add_route(
+            &core_ctx,
+            &mut bindings_ctx,
             AddableEntry::with_gateway(
                 I::DEVICE_GATEWAY,
-                Some(device.clone().into()),
+                device.clone().into(),
                 SpecifiedAddr::new(I::NEIGHBOR_ADDR).unwrap(),
                 AddableMetric::ExplicitMetric(RawMetric(0)),
             )
@@ -277,18 +277,18 @@ fn neighbor_resolution_and_send_queued_packets_atomic<I: Ip + TestIpExt>() {
 
         // Bind a UDP socket to the device we added so we can trigger link
         // resolution by sending IP packets.
-        let socket = netstack3_core::transport::udp::create_udp::<I, _>(&sync_ctx);
-        netstack3_core::transport::udp::listen_udp(
-            &sync_ctx,
-            &mut non_sync_ctx,
+        let socket = netstack3_core::udp::create_udp::<I, _>(&core_ctx);
+        netstack3_core::udp::listen_udp(
+            &core_ctx,
+            &mut bindings_ctx,
             &socket,
-            None,
+            SpecifiedAddr::new(I::DEVICE_ADDR).map(|a| ZonedAddr::Unzoned(a).into()),
             Some(LOCAL_PORT),
         )
         .unwrap();
-        netstack3_core::transport::udp::set_udp_device(
-            &sync_ctx,
-            &mut non_sync_ctx,
+        netstack3_core::udp::set_udp_device(
+            &core_ctx,
+            &mut bindings_ctx,
             &socket,
             Some(&device.clone().into()),
         )
@@ -296,52 +296,52 @@ fn neighbor_resolution_and_send_queued_packets_atomic<I: Ip + TestIpExt>() {
 
         // Trigger creation of an INCOMPLETE neighbor entry by queueing an
         // outgoing packet to that neighbor's IP address.
-        netstack3_core::transport::udp::send_udp_to(
-            &sync_ctx,
-            &mut non_sync_ctx,
+        netstack3_core::udp::send_udp_to(
+            &core_ctx,
+            &mut bindings_ctx,
             &socket,
-            ZonedAddr::Unzoned(SpecifiedAddr::new(I::NEIGHBOR_ADDR).unwrap()),
-            REMOTE_PORT,
+            Some(ZonedAddr::Unzoned(SpecifiedAddr::new(I::NEIGHBOR_ADDR).unwrap()).into()),
+            REMOTE_PORT.into(),
             Buf::new([1], ..),
         )
         .unwrap();
 
         // Expect the netstack to send a neighbor probe to resolve the link
         // address of the neighbor.
-        let frames = non_sync_ctx.take_frames();
+        let frames = bindings_ctx.take_frames();
         let (sent_device, frame) = assert_matches!(&frames[..], [frame] => frame);
         assert_eq!(sent_device, &device.downgrade());
         assert_eq!(frame, &I::make_neighbor_solicitation().into_inner());
 
-        let sync_ctx = Arc::new(sync_ctx);
+        let core_ctx = Arc::new(core_ctx);
 
         // Race the following:
         //  - Receipt of a neighbor confirmation for the INCOMPLETE neighbor
         //    entry, which causes it to move into COMPLETE.
         //  - Queueing of another packet to that neighbor.
 
-        let thread_vars = (sync_ctx.clone(), non_sync_ctx.clone(), device.clone());
+        let thread_vars = (core_ctx.clone(), bindings_ctx.clone(), device.clone());
         let resolve_neighbor = loom::thread::spawn(move || {
-            let (sync_ctx, mut non_sync_ctx, device) = thread_vars;
+            let (core_ctx, mut bindings_ctx, device) = thread_vars;
 
             netstack3_core::device::receive_frame(
-                &sync_ctx,
-                &mut non_sync_ctx,
+                &core_ctx,
+                &mut bindings_ctx,
                 &device,
                 I::make_neighbor_confirmation(),
             );
         });
 
-        let thread_vars = (sync_ctx.clone(), non_sync_ctx.clone(), socket.clone());
+        let thread_vars = (core_ctx.clone(), bindings_ctx.clone(), socket.clone());
         let queue_packet = loom::thread::spawn(move || {
-            let (sync_ctx, mut non_sync_ctx, socket) = thread_vars;
+            let (core_ctx, mut bindings_ctx, socket) = thread_vars;
 
-            netstack3_core::transport::udp::send_udp_to(
-                &sync_ctx,
-                &mut non_sync_ctx,
+            netstack3_core::udp::send_udp_to(
+                &core_ctx,
+                &mut bindings_ctx,
                 &socket,
-                ZonedAddr::Unzoned(SpecifiedAddr::new(I::NEIGHBOR_ADDR).unwrap()),
-                REMOTE_PORT,
+                Some(ZonedAddr::Unzoned(SpecifiedAddr::new(I::NEIGHBOR_ADDR).unwrap()).into()),
+                REMOTE_PORT.into(),
                 Buf::new([2], ..),
             )
             .unwrap();
@@ -350,7 +350,7 @@ fn neighbor_resolution_and_send_queued_packets_atomic<I: Ip + TestIpExt>() {
         resolve_neighbor.join().unwrap();
         queue_packet.join().unwrap();
 
-        for (i, (sent_device, frame)) in non_sync_ctx.take_frames().into_iter().enumerate() {
+        for (i, (sent_device, frame)) in bindings_ctx.take_frames().into_iter().enumerate() {
             assert_eq!(device, sent_device);
 
             let (mut body, src_mac, dst_mac, src_ip, dst_ip, proto, ttl) =
@@ -372,8 +372,12 @@ fn neighbor_resolution_and_send_queued_packets_atomic<I: Ip + TestIpExt>() {
 
         // Remove the device so that existing NUD timers get cleaned up;
         // otherwise, they would hold dangling references to the device when the
-        // sync context is dropped at the end of the test.
-        netstack3_core::device::remove_ethernet_device(&sync_ctx, &mut non_sync_ctx, device);
+        // core context is dropped at the end of the test.
+        netstack3_core::testutil::clear_routes_and_remove_ethernet_device(
+            &core_ctx,
+            &mut bindings_ctx,
+            device,
+        );
     })
 }
 
@@ -386,15 +390,15 @@ fn new_incomplete_neighbor_schedule_timer_atomic<I: Ip + TestIpExt>() {
             I::DEVICE_ADDR,
             I::DEVICE_SUBNET,
         );
-        let (FakeCtx { sync_ctx, mut non_sync_ctx }, indexes_to_device_ids) = builder.build();
+        let (FakeCtx { core_ctx, mut bindings_ctx }, indexes_to_device_ids) = builder.build();
         let device = indexes_to_device_ids.into_iter().nth(dev_index).unwrap();
 
-        netstack3_core::add_route(
-            &sync_ctx,
-            &mut non_sync_ctx,
+        netstack3_core::testutil::add_route(
+            &core_ctx,
+            &mut bindings_ctx,
             AddableEntry::with_gateway(
                 I::DEVICE_GATEWAY,
-                Some(device.clone().into()),
+                device.clone().into(),
                 SpecifiedAddr::new(I::NEIGHBOR_ADDR).unwrap(),
                 AddableMetric::ExplicitMetric(RawMetric(0)),
             )
@@ -407,24 +411,24 @@ fn new_incomplete_neighbor_schedule_timer_atomic<I: Ip + TestIpExt>() {
 
         // Bind a UDP socket to the device we added so we can trigger link
         // resolution by sending IP packets.
-        let socket = netstack3_core::transport::udp::create_udp::<I, _>(&sync_ctx);
-        netstack3_core::transport::udp::listen_udp(
-            &sync_ctx,
-            &mut non_sync_ctx,
+        let socket = netstack3_core::udp::create_udp::<I, _>(&core_ctx);
+        netstack3_core::udp::listen_udp(
+            &core_ctx,
+            &mut bindings_ctx,
             &socket,
-            None,
+            SpecifiedAddr::new(I::DEVICE_ADDR).map(|a| ZonedAddr::Unzoned(a).into()),
             Some(LOCAL_PORT),
         )
         .unwrap();
-        netstack3_core::transport::udp::set_udp_device(
-            &sync_ctx,
-            &mut non_sync_ctx,
+        netstack3_core::udp::set_udp_device(
+            &core_ctx,
+            &mut bindings_ctx,
             &socket,
             Some(&device.clone().into()),
         )
         .unwrap();
 
-        let sync_ctx = Arc::new(sync_ctx);
+        let core_ctx = Arc::new(core_ctx);
 
         // Race the following:
         //  - Creation of an INCOMPLETE neighbor entry, caused by queueing an
@@ -436,55 +440,44 @@ fn new_incomplete_neighbor_schedule_timer_atomic<I: Ip + TestIpExt>() {
         // atomically with entry insertion, the subsequent timer cancelation
         // will cause a panic.
 
-        let thread_vars = (sync_ctx.clone(), non_sync_ctx.clone(), socket.clone());
+        let thread_vars = (core_ctx.clone(), bindings_ctx.clone(), socket.clone());
         let create_incomplete_neighbor = loom::thread::spawn(move || {
-            let (sync_ctx, mut non_sync_ctx, socket) = thread_vars;
+            let (core_ctx, mut bindings_ctx, socket) = thread_vars;
 
-            netstack3_core::transport::udp::send_udp_to(
-                &sync_ctx,
-                &mut non_sync_ctx,
+            netstack3_core::udp::send_udp_to(
+                &core_ctx,
+                &mut bindings_ctx,
                 &socket,
-                ZonedAddr::Unzoned(SpecifiedAddr::new(I::NEIGHBOR_ADDR).unwrap()),
-                REMOTE_PORT,
+                Some(ZonedAddr::Unzoned(SpecifiedAddr::new(I::NEIGHBOR_ADDR).unwrap()).into()),
+                REMOTE_PORT.into(),
                 Buf::new([1], ..),
             )
             .unwrap();
         });
 
-        let thread_vars = (sync_ctx.clone(), non_sync_ctx.clone(), device.clone());
+        let thread_vars = (core_ctx.clone(), bindings_ctx.clone(), device.clone());
         let set_static_neighbor = loom::thread::spawn(move || {
-            let (sync_ctx, non_sync_ctx, device) = thread_vars;
+            let (core_ctx, mut bindings_ctx, device) = thread_vars;
 
-            I::map_ip::<_, ()>(
-                (I::NEIGHBOR_ADDR, IpInvariant((sync_ctx, non_sync_ctx, device))),
-                |(addr, IpInvariant((sync_ctx, mut non_sync_ctx, device)))| {
-                    netstack3_core::device::insert_static_arp_table_entry(
-                        &sync_ctx,
-                        &mut non_sync_ctx,
-                        &device.into(),
-                        addr,
-                        UnicastAddr::new(NEIGHBOR_MAC).unwrap(),
-                    )
-                    .unwrap();
-                },
-                |(addr, IpInvariant((sync_ctx, mut non_sync_ctx, device)))| {
-                    netstack3_core::device::insert_ndp_table_entry(
-                        &sync_ctx,
-                        &mut non_sync_ctx,
-                        &device.into(),
-                        UnicastAddr::new(addr).unwrap(),
-                        NEIGHBOR_MAC,
-                    )
-                    .unwrap();
-                },
-            );
+            netstack3_core::device::insert_static_neighbor_entry::<I, _>(
+                &core_ctx,
+                &mut bindings_ctx,
+                &device.into(),
+                I::NEIGHBOR_ADDR,
+                NEIGHBOR_MAC,
+            )
+            .unwrap();
         });
 
         create_incomplete_neighbor.join().unwrap();
         set_static_neighbor.join().unwrap();
 
         // Remove the device so that existing references to it get cleaned up
-        // before the sync context is dropped at the end of the test.
-        netstack3_core::device::remove_ethernet_device(&sync_ctx, &mut non_sync_ctx, device);
+        // before the core context is dropped at the end of the test.
+        netstack3_core::testutil::clear_routes_and_remove_ethernet_device(
+            &core_ctx,
+            &mut bindings_ctx,
+            device,
+        );
     })
 }

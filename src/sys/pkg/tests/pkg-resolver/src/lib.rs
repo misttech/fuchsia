@@ -8,7 +8,8 @@ use {
     assert_matches::assert_matches,
     blobfs_ramdisk::BlobfsRamdisk,
     cobalt_client::traits::AsEventCodes,
-    diagnostics_hierarchy::{testing::TreeAssertion, DiagnosticsHierarchy},
+    diagnostics_assertions::TreeAssertion,
+    diagnostics_hierarchy::DiagnosticsHierarchy,
     diagnostics_reader::{ArchiveReader, ComponentSelector, Inspect},
     fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker as _},
     fidl::persist,
@@ -24,14 +25,15 @@ use {
     fidl_fuchsia_pkg_internal::{PersistentEagerPackage, PersistentEagerPackages},
     fidl_fuchsia_pkg_rewrite as fpkg_rewrite,
     fidl_fuchsia_pkg_rewrite_ext::{Rule, RuleConfig},
-    fidl_fuchsia_sys2 as fsys2, fuchsia_async as fasync,
+    fidl_fuchsia_space as fspace, fidl_fuchsia_sys2 as fsys2, fidl_fuchsia_update as fupdate,
+    fuchsia_async as fasync,
     fuchsia_component_test::{
         Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route, ScopedInstance,
     },
     fuchsia_merkle::{Hash, MerkleTree},
     fuchsia_pkg_testing::{serve::ServedRepository, Package, PackageBuilder},
     fuchsia_url::{PinnedAbsolutePackageUrl, RepositoryUrl},
-    fuchsia_zircon as zx,
+    fuchsia_zircon::{self as zx, AsHandleRef as _, HandleBased as _},
     futures::prelude::*,
     mock_boot_arguments::MockBootArgumentsService,
     mock_metrics::MockMetricEventLoggerFactory,
@@ -321,6 +323,7 @@ pub struct TestEnvBuilder<BlobfsAndSystemImageFut, MountsFn> {
     blob_network_body_timeout_seconds: Option<u32>,
     blob_download_resumption_attempts_limit: Option<u32>,
     blob_implementation: Option<blobfs_ramdisk::Implementation>,
+    blob_download_concurrency_limit: Option<u16>,
 }
 
 impl TestEnvBuilder<future::BoxFuture<'static, (BlobfsRamdisk, Option<Hash>)>, fn() -> Mounts> {
@@ -358,6 +361,7 @@ impl TestEnvBuilder<future::BoxFuture<'static, (BlobfsRamdisk, Option<Hash>)>, f
             blob_network_body_timeout_seconds: None,
             blob_download_resumption_attempts_limit: None,
             blob_implementation: None,
+            blob_download_concurrency_limit: None,
         }
     }
 }
@@ -387,6 +391,7 @@ where
             blob_network_body_timeout_seconds: self.blob_network_body_timeout_seconds,
             blob_download_resumption_attempts_limit: self.blob_download_resumption_attempts_limit,
             blob_implementation: self.blob_implementation,
+            blob_download_concurrency_limit: self.blob_download_concurrency_limit,
         }
     }
 
@@ -418,6 +423,7 @@ where
             blob_network_body_timeout_seconds: self.blob_network_body_timeout_seconds,
             blob_download_resumption_attempts_limit: self.blob_download_resumption_attempts_limit,
             blob_implementation: Some(blobfs_ramdisk::Implementation::CppBlobfs),
+            blob_download_concurrency_limit: self.blob_download_concurrency_limit,
         }
     }
 
@@ -435,6 +441,7 @@ where
             blob_network_body_timeout_seconds: self.blob_network_body_timeout_seconds,
             blob_download_resumption_attempts_limit: self.blob_download_resumption_attempts_limit,
             blob_implementation: self.blob_implementation,
+            blob_download_concurrency_limit: self.blob_download_concurrency_limit,
         }
     }
 
@@ -459,6 +466,12 @@ where
     pub fn blob_download_resumption_attempts_limit(mut self, limit: u32) -> Self {
         assert_eq!(self.blob_download_resumption_attempts_limit, None);
         self.blob_download_resumption_attempts_limit = Some(limit);
+        self
+    }
+
+    pub fn blob_download_concurrency_limit(mut self, limit: u16) -> Self {
+        assert_eq!(self.blob_download_concurrency_limit, None);
+        self.blob_download_concurrency_limit = Some(limit);
         self
     }
 
@@ -508,6 +521,16 @@ where
                 fmetrics::MetricEventLoggerFactoryMarker::PROTOCOL_NAME,
                 vfs::service::host(move |stream| {
                     Arc::clone(&logger_factory_clone).run_logger_factory(stream)
+                }),
+            )
+            .unwrap();
+
+        let commit_status_provider_service = Arc::new(MockCommitStatusProviderService::new());
+        local_child_svc_dir
+            .add_entry(
+                fupdate::CommitStatusProviderMarker::PROTOCOL_NAME,
+                vfs::service::host(move |stream| {
+                    Arc::clone(&commit_status_provider_service).handle_request_stream(stream)
                 }),
             )
             .unwrap();
@@ -592,6 +615,7 @@ where
             || self.blob_network_header_timeout_seconds.is_some()
             || self.blob_network_body_timeout_seconds.is_some()
             || self.blob_download_resumption_attempts_limit.is_some()
+            || self.blob_download_concurrency_limit.is_some()
         {
             builder.init_mutable_config_from_package(&pkg_resolver).await.unwrap();
             if let Some(fetch_delivery_blob) = self.fetch_delivery_blob {
@@ -655,6 +679,16 @@ where
                         &pkg_resolver,
                         "blob_download_resumption_attempts_limit",
                         blob_download_resumption_attempts_limit,
+                    )
+                    .await
+                    .unwrap();
+            }
+            if let Some(blob_download_concurrency_limit) = self.blob_download_concurrency_limit {
+                builder
+                    .set_config_value_uint16(
+                        &pkg_resolver,
+                        "blob_download_concurrency_limit",
+                        blob_download_concurrency_limit,
                     )
                     .await
                     .unwrap();
@@ -725,11 +759,23 @@ where
             )
             .await
             .unwrap();
-
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fspace::ManagerMarker>())
+                    .from(&pkg_cache)
+                    .to(Ref::parent()),
+            )
+            .await
+            .unwrap();
         builder
             .add_route(
                 Route::new()
                     .capability(Capability::protocol::<fpkg::PackageResolverMarker>())
+                    .capability(Capability::protocol_by_name(format!(
+                        "{}-ota",
+                        fpkg::PackageResolverMarker::PROTOCOL_NAME
+                    )))
                     .capability(Capability::protocol::<fpkg::RepositoryManagerMarker>())
                     .capability(Capability::protocol::<fpkg_rewrite::EngineMarker>())
                     .capability(Capability::protocol::<fpkg::CupMarker>())
@@ -758,6 +804,7 @@ where
                             .rights(fio::RW_STAR_DIR | fio::Operations::EXECUTE),
                     )
                     .capability(Capability::protocol::<fboot::ArgumentsMarker>())
+                    .capability(Capability::protocol::<fupdate::CommitStatusProviderMarker>())
                     .from(&service_reflector)
                     .to(&pkg_cache),
             )
@@ -771,6 +818,12 @@ where
                             Capability::protocol::<ffxfs::BlobCreatorMarker>().path(format!(
                                 "/blob-svc/{}",
                                 ffxfs::BlobCreatorMarker::PROTOCOL_NAME
+                            )),
+                        )
+                        .capability(
+                            Capability::protocol::<ffxfs::BlobReaderMarker>().path(format!(
+                                "/blob-svc/{}",
+                                ffxfs::BlobReaderMarker::PROTOCOL_NAME
                             )),
                         )
                         .from(&service_reflector)
@@ -817,9 +870,11 @@ where
 
 pub struct Proxies {
     pub resolver: PackageResolverProxy,
+    pub resolver_ota: PackageResolverProxy,
     pub repo_manager: RepositoryManagerProxy,
     pub rewrite_engine: fpkg_rewrite::EngineProxy,
     pub cup: CupProxy,
+    pub space_manager: fspace::ManagerProxy,
 }
 
 impl Proxies {
@@ -828,6 +883,12 @@ impl Proxies {
             resolver: realm
                 .connect_to_protocol_at_exposed_dir::<PackageResolverMarker>()
                 .expect("connect to package resolver"),
+            resolver_ota: realm
+                .connect_to_named_protocol_at_exposed_dir::<PackageResolverMarker>(&format!(
+                    "{}-ota",
+                    fpkg::PackageResolverMarker::PROTOCOL_NAME
+                ))
+                .expect("connect to package resolver"),
             repo_manager: realm
                 .connect_to_protocol_at_exposed_dir::<RepositoryManagerMarker>()
                 .expect("connect to repository manager"),
@@ -835,6 +896,9 @@ impl Proxies {
                 .connect_to_protocol_at_exposed_dir::<fpkg_rewrite::EngineMarker>()
                 .expect("connect to rewrite engine"),
             cup: realm.connect_to_protocol_at_exposed_dir::<CupMarker>().expect("connect to cup"),
+            space_manager: realm
+                .connect_to_protocol_at_exposed_dir::<fspace::ManagerMarker>()
+                .expect("connect to space manager"),
         }
     }
 }
@@ -1015,7 +1079,7 @@ impl<B: Blobfs> TestEnv<B> {
     pub async fn assert_count_events(
         &self,
         expected_metric_id: u32,
-        expected_event_codes: Vec<impl AsEventCodes>,
+        expected_event_codes: Vec<impl AsEventCodes + std::fmt::Debug>,
     ) {
         let actual_events = self
             .mocks
@@ -1031,17 +1095,15 @@ impl<B: Blobfs> TestEnv<B> {
             "event count different than expected, actual_events: {actual_events:?}"
         );
 
-        for (event, expected_codes) in actual_events
-            .into_iter()
-            .zip(expected_event_codes.into_iter().map(|c| c.as_event_codes()))
-        {
+        for (event, expected_codes) in actual_events.into_iter().zip(expected_event_codes) {
             assert_matches!(
                 event,
                 MetricEvent {
                     metric_id,
                     event_codes,
                     payload: MetricEventPayload::Count(1),
-                } if metric_id == expected_metric_id && event_codes == expected_codes
+                } if metric_id == expected_metric_id && event_codes == expected_codes.as_event_codes(),
+                "expected metric id: {expected_metric_id}, expected codes: {expected_codes:?}",
             )
         }
     }
@@ -1187,4 +1249,35 @@ pub fn get_cup_response_with_name(package_url: &PinnedAbsolutePackageUrl) -> Vec
       }],
     }});
     serde_json::to_vec(&response).unwrap()
+}
+
+/// Always says the system is committed so that pkg-cache can run GC.
+struct MockCommitStatusProviderService {
+    _local: zx::EventPair,
+    remote: zx::EventPair,
+}
+
+impl MockCommitStatusProviderService {
+    fn new() -> Self {
+        let (_local, remote) = zx::EventPair::create();
+        let () = remote.signal_handle(zx::Signals::NONE, zx::Signals::USER_0).unwrap();
+        Self { _local, remote }
+    }
+
+    async fn handle_request_stream(
+        self: Arc<Self>,
+        mut stream: fupdate::CommitStatusProviderRequestStream,
+    ) {
+        while let Some(event) =
+            stream.try_next().await.expect("received fuchsia.update/CommitStatusProvider request")
+        {
+            match event {
+                fupdate::CommitStatusProviderRequest::IsCurrentSystemCommitted { responder } => {
+                    let () = responder
+                        .send(self.remote.duplicate_handle(zx::Rights::BASIC).unwrap())
+                        .unwrap();
+                }
+            }
+        }
+    }
 }

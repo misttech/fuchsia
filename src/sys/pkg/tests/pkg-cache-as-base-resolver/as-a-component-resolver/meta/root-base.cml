@@ -1,0 +1,74 @@
+// Copyright 2023 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    include: [ "inspect/offer.shard.cml" ],
+    children: [
+        {
+            name: "pkg-cache",
+            url: "#meta/pkg-cache.cm",
+        },
+        {
+            name: "integration_test",
+            url: "#meta/integration-test.cm",
+        },
+        {
+            name: "subpackage_exposer",
+            url: "subpackaged-component#meta/package-directory-exposer.cm",
+        },
+    ],
+    offer: [
+        {
+            directory: "pkg",
+            from: "#subpackage_exposer",
+            as: "the-subpackage",
+            to: "#fake_dependencies",
+        },
+        {
+            directory: "blob-exec",
+            from: "#fake_dependencies",
+            to: "#pkg-cache",
+        },
+        {
+            protocol: "fuchsia.boot.Arguments",
+            from: "#fake_dependencies",
+            to: "#pkg-cache",
+        },
+        {
+            protocol: "fuchsia.metrics.MetricEventLoggerFactory",
+            from: "#fake_dependencies",
+            to: "#pkg-cache",
+        },
+        {
+            storage: "tmp",
+            from: "parent",
+            to: "#fake_dependencies",
+        },
+        {
+            protocol: [ "fuchsia.process.Launcher" ],
+            from: "parent",
+            to: "#fake_dependencies",
+        },
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "parent",
+            to: [
+                "#fake_dependencies",
+                "#integration_test",
+                "#pkg-cache",
+                "#subpackage_exposer",
+            ],
+        },
+        {
+            resolver: "base_resolver",
+            from: "#pkg-cache",
+            to: "#integration_test",
+        },
+    ],
+    expose: [
+        {
+            protocol: "fuchsia.test.Suite",
+            from: "#integration_test",
+        },
+    ],
+}

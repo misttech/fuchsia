@@ -14,16 +14,41 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
         ui_config: &PlatformUiConfig,
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
-        match (&ui_config.enabled, context.build_type) {
-            (false, _) => return Ok(()),
-            (true, BuildType::Eng) => {
+        if !ui_config.enabled {
+            return Ok(());
+        }
+        match context.build_type {
+            BuildType::Eng => {
                 builder.platform_bundle("ui");
-                builder.platform_bundle("ui_eng");
-                builder.platform_bundle("ui_package_eng");
+                builder.icu_platform_bundle("ui_eng")?;
+                match &ui_config.with_synthetic_device_support {
+                    true => {
+                        builder.platform_bundle(
+                            "ui_package_eng_userdebug_with_synthetic_device_support",
+                        );
+                    }
+                    false => {
+                        builder.platform_bundle("ui_package_eng");
+                    }
+                }
             }
-            (true, _) => {
+            BuildType::UserDebug => {
                 builder.platform_bundle("ui");
-                builder.platform_bundle("ui_user_and_userdebug");
+                builder.icu_platform_bundle("ui_user_and_userdebug")?;
+                match &ui_config.with_synthetic_device_support {
+                    true => {
+                        builder.platform_bundle(
+                            "ui_package_eng_userdebug_with_synthetic_device_support",
+                        );
+                    }
+                    false => {
+                        builder.platform_bundle("ui_package_user_and_userdebug");
+                    }
+                }
+            }
+            BuildType::User => {
+                builder.platform_bundle("ui");
+                builder.icu_platform_bundle("ui_user_and_userdebug")?;
                 builder.platform_bundle("ui_package_user_and_userdebug");
             }
         }
@@ -36,16 +61,31 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
         // We should only configure scenic here when it has been added to assembly.
         let mut scenic_config = builder.package("scenic").component("meta/scenic.cm")?;
         scenic_config
+            .field("renderer", serde_json::to_value(ui_config.renderer.clone())?)?
             .field(
                 "frame_scheduler_min_predicted_frame_duration_in_us",
                 ui_config.frame_scheduler_min_predicted_frame_duration_in_us,
             )?
-            .field("i_can_haz_flatland", true)?
-            .field("enable_allocator_for_flatland", true)?
             .field("pointer_auto_focus", ui_config.pointer_auto_focus)?
-            .field("flatland_enable_display_composition", ui_config.enable_display_composition)?
+            .field("display_composition", ui_config.display_composition)?
             .field("i_can_haz_display_id", -1i64)?
-            .field("i_can_haz_display_mode", -1i64)?;
+            .field("i_can_haz_display_mode", -1i64)?
+            .field("display_rotation", ui_config.display_rotation)?;
+
+        let mut scene_manager_config =
+            builder.package("scene_manager").component("meta/scene_manager.cm")?;
+        scene_manager_config
+            .field(
+                "supported_input_devices",
+                ui_config
+                    .supported_input_devices
+                    .iter()
+                    .filter_map(|d| serde_json::to_value(d).ok())
+                    .collect::<serde_json::Value>(),
+            )?
+            .field("display_pixel_density", ui_config.display_pixel_density.clone())?
+            .field("display_rotation", ui_config.display_rotation)?
+            .field("viewing_distance", ui_config.viewing_distance.as_ref())?;
 
         let config_dir = builder.add_domain_config("sensor-config").directory("sensor-config");
         if let Some(sensor_config_path) = &ui_config.sensor_config {
@@ -54,6 +94,24 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
                 destination: "config.json".into(),
             })?;
         }
+
+        if let Some(brightness_manager) = &ui_config.brightness_manager {
+            builder.platform_bundle("brightness_manager");
+            let mut brightness_config =
+                builder.package("brightness_manager").component("meta/brightness_manager.cm")?;
+            if brightness_manager.with_display_power {
+                brightness_config
+                    .field("manage_display_power", true)?
+                    .field("power_on_delay_millis", 35)?
+                    .field("power_off_delay_millis", 85)?;
+            } else {
+                brightness_config
+                    .field("manage_display_power", false)?
+                    .field("power_on_delay_millis", 0)?
+                    .field("power_off_delay_millis", 0)?;
+            }
+        }
+
         Ok(())
     }
 }

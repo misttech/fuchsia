@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#if __Fuchsia_API_level__ >= 13
+#if __Fuchsia_API_level__ >= 15
 
 #include <lib/async/default.h>
 #include <lib/driver/testing/cpp/test_node.h>
@@ -163,6 +163,14 @@ void TestNode::RequestBind(RequestBindRequestView request, RequestBindCompleter:
   completer.ReplySuccess();
 }
 
+void TestNode::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_driver_framework::NodeController> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {}
+
+void TestNode::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_driver_framework::Node> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {}
+
 void TestNode::SetParent(TestNode* parent,
                          fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller) {
   std::lock_guard guard(checker_);
@@ -179,7 +187,17 @@ void TestNode::SetProperties(std::vector<fuchsia_driver_framework::NodeProperty>
 void TestNode::RemoveFromParent() {
   std::lock_guard guard(checker_);
   children_.clear();
+
+  if (node_binding_.has_value()) {
+    node_binding_.value().Close(ZX_OK);
+  }
+
   node_binding_.reset();
+
+  if (controller_binding_.has_value()) {
+    controller_binding_.value().Close(ZX_OK);
+  }
+
   controller_binding_.reset();
 
   if (!parent_.has_value()) {

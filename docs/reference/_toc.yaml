@@ -8,7 +8,7 @@
 toc:
 - title: "System calls"
   section:
-  - include: /docs/reference/syscalls/_toc.yaml
+  - include: /reference/syscalls/_toc.yaml
 - title: "Kernel objects"
   section:
   - include: /docs/reference/kernel_objects/_toc.yaml
@@ -39,3 +39,6 @@ toc:
 - title: "Platform specifications"
   section:
   - include: /docs/reference/platform-spec/_toc.yaml
+- title: "Testing"
+  section:
+  - include: /docs/reference/testing/_toc.yaml

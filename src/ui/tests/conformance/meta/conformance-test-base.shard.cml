@@ -5,7 +5,7 @@
     children: [
         {
             name: "context-factory",
-            url: "#meta/ui-context-factory.cm",
+            url: "ui-context-factory#meta/ui-context-factory.cm",
         },
     ],
     capabilities: [
@@ -36,6 +36,11 @@
         },
         {
             protocol: [ "fuchsia.ui.test.context.Factory" ],
+            from: "#context-factory",
+            to: "#validator",
+        },
+        {
+            protocol: [ "fuchsia.ui.test.context.RealmFactory" ],
             from: "#context-factory",
             to: "#validator",
         },

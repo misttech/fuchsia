@@ -7,7 +7,11 @@
 
 #include <lib/fit/function.h>
 
+#include <chrono>
 #include <optional>
+#include <variant>
+
+#include <pw_string/to_string.h>
 
 #include "src/connectivity/bluetooth/core/bt-host/common/macros.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/weak_self.h"
@@ -46,13 +50,32 @@ using LEFixedChannelsCallback =
 using SecurityUpgradeCallback = fit::function<void(
     hci_spec::ConnectionHandle ll_handle, sm::SecurityLevel level, sm::ResultFunction<> callback)>;
 
+// A variant that can hold any channel mode. While the `CreditBasedFlowControlMode` codes do not
+// intersect with the `RetransmissionAndFlowControlMode` retransmission and flow control codes, that
+// is not a property that is guaranteed to hold for all future versions, and the request-based codes
+// would not be valid in a configuration packet, unlike the "classic" modes. This type allows us to
+// treat them as separate namespaces and access each through the variant. Note: Equality comparison
+// with enum values for either enum are supported.
+using AnyChannelMode = std::variant<RetransmissionAndFlowControlMode, CreditBasedFlowControlMode>;
+
+bool operator==(const AnyChannelMode& any, RetransmissionAndFlowControlMode mode);
+bool operator==(RetransmissionAndFlowControlMode mode, const AnyChannelMode& any);
+bool operator==(const AnyChannelMode& any, CreditBasedFlowControlMode mode);
+bool operator==(CreditBasedFlowControlMode mode, const AnyChannelMode& any);
+bool operator!=(const AnyChannelMode& any, RetransmissionAndFlowControlMode mode);
+bool operator!=(RetransmissionAndFlowControlMode mode, const AnyChannelMode& any);
+bool operator!=(const AnyChannelMode& any, CreditBasedFlowControlMode mode);
+bool operator!=(CreditBasedFlowControlMode mode, const AnyChannelMode& any);
+std::string AnyChannelModeToString(const AnyChannelMode& mode);
+pw::StatusWithSize AnyChannelModeToPwString(const AnyChannelMode& mode, pw::span<char> span);
+
 // Channel configuration parameters specified by higher layers.
 struct ChannelParameters {
-  std::optional<ChannelMode> mode;
+  std::optional<AnyChannelMode> mode;
   // MTU
   std::optional<uint16_t> max_rx_sdu_size;
 
-  std::optional<zx::duration> flush_timeout;
+  std::optional<pw::chrono::SystemClock::duration> flush_timeout;
 
   bool operator==(const ChannelParameters& rhs) const {
     return mode == rhs.mode && max_rx_sdu_size == rhs.max_rx_sdu_size &&
@@ -60,15 +83,16 @@ struct ChannelParameters {
   }
 
   std::string ToString() const {
-    auto mode_string = mode.has_value()
-                           ? bt_lib_cpp_string::StringPrintf("%#.2x", static_cast<uint8_t>(*mode))
-                           : std::string("nullopt");
+    auto mode_string = mode.has_value() ? AnyChannelModeToString(*mode) : std::string("nullopt");
     auto sdu_string = max_rx_sdu_size.has_value()
                           ? bt_lib_cpp_string::StringPrintf("%hu", *max_rx_sdu_size)
                           : std::string("nullopt");
     auto flush_timeout_string =
-        flush_timeout ? bt_lib_cpp_string::StringPrintf("%ldms", flush_timeout->to_msecs())
-                      : std::string("nullopt");
+        flush_timeout
+            ? bt_lib_cpp_string::StringPrintf(
+                  "%lldms",
+                  std::chrono::duration_cast<std::chrono::milliseconds>(*flush_timeout).count())
+            : std::string("nullopt");
     return bt_lib_cpp_string::StringPrintf(
         "ChannelParameters{mode: %s, max_rx_sdu_size: %s, flush_timeout: %s}", mode_string.c_str(),
         sdu_string.c_str(), flush_timeout_string.c_str());
@@ -80,27 +104,27 @@ struct ChannelParameters {
 struct ChannelInfo {
   ChannelInfo() = default;
 
-  static ChannelInfo MakeBasicMode(uint16_t max_rx_sdu_size, uint16_t max_tx_sdu_size,
-                                   std::optional<PSM> psm = std::nullopt,
-                                   std::optional<zx::duration> flush_timeout = std::nullopt) {
-    return ChannelInfo(ChannelMode::kBasic, max_rx_sdu_size, max_tx_sdu_size, 0, 0, 0, psm,
-                       flush_timeout);
+  static ChannelInfo MakeBasicMode(
+      uint16_t max_rx_sdu_size, uint16_t max_tx_sdu_size, std::optional<Psm> psm = std::nullopt,
+      std::optional<pw::chrono::SystemClock::duration> flush_timeout = std::nullopt) {
+    return ChannelInfo(RetransmissionAndFlowControlMode::kBasic, max_rx_sdu_size, max_tx_sdu_size,
+                       0, 0, 0, psm, flush_timeout);
   }
 
   static ChannelInfo MakeEnhancedRetransmissionMode(
       uint16_t max_rx_sdu_size, uint16_t max_tx_sdu_size, uint8_t n_frames_in_tx_window,
       uint8_t max_transmissions, uint16_t max_tx_pdu_payload_size,
-      std::optional<PSM> psm = std::nullopt,
-      std::optional<zx::duration> flush_timeout = std::nullopt) {
-    return ChannelInfo(ChannelMode::kEnhancedRetransmission, max_rx_sdu_size, max_tx_sdu_size,
-                       n_frames_in_tx_window, max_transmissions, max_tx_pdu_payload_size, psm,
-                       flush_timeout);
+      std::optional<Psm> psm = std::nullopt,
+      std::optional<pw::chrono::SystemClock::duration> flush_timeout = std::nullopt) {
+    return ChannelInfo(RetransmissionAndFlowControlMode::kEnhancedRetransmission, max_rx_sdu_size,
+                       max_tx_sdu_size, n_frames_in_tx_window, max_transmissions,
+                       max_tx_pdu_payload_size, psm, flush_timeout);
   }
 
-  ChannelInfo(ChannelMode mode, uint16_t max_rx_sdu_size, uint16_t max_tx_sdu_size,
+  ChannelInfo(AnyChannelMode mode, uint16_t max_rx_sdu_size, uint16_t max_tx_sdu_size,
               uint8_t n_frames_in_tx_window, uint8_t max_transmissions,
-              uint16_t max_tx_pdu_payload_size, std::optional<PSM> psm = std::nullopt,
-              std::optional<zx::duration> flush_timeout = std::nullopt)
+              uint16_t max_tx_pdu_payload_size, std::optional<Psm> psm = std::nullopt,
+              std::optional<pw::chrono::SystemClock::duration> flush_timeout = std::nullopt)
       : mode(mode),
         max_rx_sdu_size(max_rx_sdu_size),
         max_tx_sdu_size(max_tx_sdu_size),
@@ -110,22 +134,22 @@ struct ChannelInfo {
         psm(psm),
         flush_timeout(flush_timeout) {}
 
-  ChannelMode mode;
+  AnyChannelMode mode;
   uint16_t max_rx_sdu_size;
   uint16_t max_tx_sdu_size;
 
   // For Enhanced Retransmission Mode only. See Core Spec v5.0 Vol 3, Part A, Sec 5.4 for details on
-  // each field. Values are not meaningful if mode = ChannelMode::kBasic.
+  // each field. Values are not meaningful if mode = RetransmissionAndFlowControlMode::kBasic.
   uint8_t n_frames_in_tx_window;
   uint8_t max_transmissions;
   uint16_t max_tx_pdu_payload_size;
 
   // PSM of the service the channel is used for.
-  std::optional<PSM> psm;
+  std::optional<Psm> psm;
 
   // If present, the channel's packets will be marked as flushable. The value will be used to
   // configure the link's automatic flush timeout.
-  std::optional<zx::duration> flush_timeout;
+  std::optional<pw::chrono::SystemClock::duration> flush_timeout;
 };
 
 // Data stored for services registered by higher layers.
@@ -145,5 +169,11 @@ struct ServiceInfo {
 };
 
 }  // namespace bt::l2cap
+
+namespace pw {
+// AnyChannelMode supports pw::ToString.
+template <>
+StatusWithSize ToString(const bt::l2cap::AnyChannelMode& mode, span<char> buffer);
+}  // namespace pw
 
 #endif  // SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_L2CAP_TYPES_H_

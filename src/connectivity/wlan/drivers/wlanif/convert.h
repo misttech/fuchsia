@@ -6,8 +6,8 @@
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_WLANIF_CONVERT_H_
 
 #include <fidl/fuchsia.wlan.fullmac/cpp/driver/wire.h>
-#include <fuchsia/hardware/wlan/fullmac/c/banjo.h>
 #include <fuchsia/wlan/common/c/banjo.h>
+#include <fuchsia/wlan/fullmac/c/banjo.h>
 #include <fuchsia/wlan/internal/c/banjo.h>
 #include <fuchsia/wlan/internal/cpp/fidl.h>
 #include <fuchsia/wlan/mlme/cpp/fidl.h>
@@ -17,28 +17,27 @@ namespace wlanif {
 
 void ConvertCSsid(const cssid_t& cssid, fuchsia_wlan_ieee80211::wire::CSsid* out_cssid);
 
-void ConvertScanReq(const wlan_fullmac_scan_req_t& in,
+void ConvertScanReq(const wlan_fullmac_impl_start_scan_request_t& in,
                     fuchsia_wlan_fullmac::wire::WlanFullmacImplStartScanRequest* out,
                     fidl::AnyArena& arena);
 
-void ConvertConnectReq(const wlan_fullmac_connect_req_t& in,
-                       fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest* out,
+void ConvertConnectReq(const wlan_fullmac_impl_connect_request_t& in,
+                       fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest* out,
                        fidl::AnyArena& arena);
 
 fuchsia_wlan_fullmac::wire::WlanAuthResult ConvertAuthResult(uint8_t in);
 
 fuchsia_wlan_common::wire::WlanKeyType ConvertWlanKeyType(const wlan_key_type_t& in);
-void ConvertSetKeyDescriptor(const set_key_descriptor_t& in,
-                             fuchsia_wlan_fullmac::wire::SetKeyDescriptor* out,
-                             fidl::AnyArena& arena);
+
+fuchsia_wlan_common::wire::WlanKeyConfig ConvertWlanKeyConfig(const wlan_key_config_t& in,
+                                                              fidl::AnyArena& arena);
+
 void ConvertDeleteKeyDescriptor(const delete_key_descriptor_t& in,
                                 fuchsia_wlan_fullmac::wire::DeleteKeyDescriptor* out);
 
 fuchsia_wlan_common::wire::BssType ConvertBssType(const bss_type_t& in);
 
 fuchsia_wlan_fullmac::wire::WlanAssocResult ConvertAssocResult(uint8_t code);
-
-fuchsia_wlan_ieee80211::wire::ReasonCode ConvertReasonCode(uint16_t reason_code);
 
 fuchsia_wlan_common::wire::WlanMacRole ConvertMacRole(wlan_mac_role_t role);
 void ConvertBandCapability(const wlan_fullmac_band_capability_t& in,

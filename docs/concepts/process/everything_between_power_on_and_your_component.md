@@ -167,13 +167,13 @@ component_manager.
 [blobfs]: /docs/concepts/filesystems/blobfs.md
 [bootloader-and-kernel]: /docs/concepts/process/userboot.md#boot_loader_and_kernel_startup
 [component-manager]: /docs/concepts/components/v2/introduction.md#component-manager
-[critical-processes]: /docs/reference/syscalls/job_set_critical.md
+[critical-processes]: /reference/syscalls/job_set_critical.md
 [devfs]: /docs/development/drivers/concepts/device_driver_model/device-model.md
 [driver-manager-exposes]: /src/devices/bin/driver_manager/meta/driver-manager-base.shard.cml?l=83&drc=2deafe53a4a1626b5be2263c13e3dd57024be7db
 [dynamic-linking]: https://en.wikipedia.org/wiki/Dynamic_linker
 [fs-mount]: /docs/concepts/filesystems/filesystems.md#mounting
 [fshost-exposes]: /src/storage/fshost/meta/base_fshost.cml?l=73&drc=fe4110848aaad498a65278ac05d65fd8201f5ca2
-[fshost-magic-headers]: /src/lib/storage/fs_management/cpp/format.cc?l=60-61&drc=de246ad54cb9d6aab36ab29b48fdae69820c814e
+[fshost-magic-headers]: /src/storage/lib/fs_management/cpp/format.cc?l=60-61&drc=de246ad54cb9d6aab36ab29b48fdae69820c814e
 [fuchsia-io]: https://fuchsia.dev/reference/fidl/fuchsia.io
 [job]: /docs/reference/kernel_objects/job.md
 [kernel-command-line]: /docs/reference/kernel/kernel_cmdline.md

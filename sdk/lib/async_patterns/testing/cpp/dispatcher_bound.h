@@ -18,10 +18,23 @@ namespace async_patterns {
 // manually running an event loop.
 //
 // See |async_patterns::DispatcherBound| for general information.
+//
+// See |async_patterns::SyncProxy| which uses this class to manage a thread-unsafe
+// object and expose synchronous wrapper methods for every member method you specify.
 template <typename T>
 class TestDispatcherBound final : public DispatcherBound<T> {
  public:
+  // See |async_patterns::DispatcherBound| for how to construct a |DispatcherBound|.
+  // The same applies to |TestDispatcherBound|.
   using DispatcherBound<T>::DispatcherBound;
+
+  // See |async_patterns::DispatcherBound::emplace| for how to construct an object
+  // inside a |DispatcherBound|. The same applies to |TestDispatcherBound::emplace|.
+  using DispatcherBound<T>::emplace;
+
+  // See |async_patterns::DispatcherBound::reset| for how to destroy an object
+  // inside a |DispatcherBound|. The same applies to |TestDispatcherBound::reset|.
+  using DispatcherBound<T>::reset;
 
   // Refer to |DispatcherBound<T>::AsyncCall| for documentation.
   //
@@ -111,19 +124,18 @@ class TestDispatcherBound final : public DispatcherBound<T> {
   }
 
  private:
-  template <typename Task>
-  class [[nodiscard]] TestAsyncCallBuilder;
+  template <typename ReturnType, typename Task, typename Submit>
+  class TestAsyncCallBuilder;
 
-  template <typename Task>
-  std::invoke_result_t<Task> BlockOn(
-      typename async_patterns::DispatcherBound<T>::template AsyncCallBuilder<Task>&& builder) {
+  template <typename ReturnType, typename Task, typename Submit>
+  std::invoke_result_t<Task> BlockOn(PendingCall<ReturnType, Task, Submit>&& pending_call) {
     using R = std::invoke_result_t<Task>;
     struct Slot {
       async::Loop loop{&kAsyncLoopConfigNeverAttachToThread};
       std::optional<R> result;
       async_patterns::Receiver<Slot> receiver{this, loop.dispatcher()};
     } slot;
-    std::move(builder).Then(slot.receiver.Once([](Slot* slot, R result) {
+    std::move(pending_call).Then(slot.receiver.Once([](Slot* slot, R result) {
       slot->result.emplace(std::move(result));
       slot->loop.Quit();
     }));
@@ -132,31 +144,33 @@ class TestDispatcherBound final : public DispatcherBound<T> {
   }
 };
 
-// The return type of |TestDispatcherBound<T>::AsyncCall| when the method has a
-// return value. Supports chaining a callback via |Then|, or transforming to a
-// |std::future|.
+// The return type of |TestDispatcherBound<T>::AsyncCall|. In addition to
+// everything supported by |async_patterns::PendingCall|, it also supports
+// transforming the pending result to a |std::future|.
 template <typename T>
-template <typename Task>
-class [[nodiscard]] TestDispatcherBound<T>::TestAsyncCallBuilder
-    : public DispatcherBound<T>::template AsyncCallBuilder<Task> {
+template <typename ReturnType, typename Task, typename Submit>
+class TestDispatcherBound<T>::TestAsyncCallBuilder : public PendingCall<ReturnType, Task, Submit> {
  private:
-  using Base = typename DispatcherBound<T>::template AsyncCallBuilder<Task>;
-  using TaskResult = typename Base::TaskResult;
+  using Base = PendingCall<ReturnType, Task, Submit>;
 
  public:
   // Arranges the |on_result| callback to be called with the result of the async
   // call. See |DispatcherBound<T>::AsyncCall| for documentation.
   using Base::Then;
 
+  // Gets an asynchronous promise that will be resolved with the result of the async
+  // call. See |DispatcherBound<T>::AsyncCall| for documentation.
+  using Base::promise;
+
   // Gets a |std::future| that will resolve with the return value of the
   // async call. Because one needs to block on an |std::future| to obtain its
-  // value, this function is only for use in tests. Use |Then| and attach a
+  // value, this function is only for use in tests. Use |promise| or |Then| with a
   // |Callback| in production code instead.
-  std::future<TaskResult> ToFuture() && {
-    std::promise<TaskResult> promise;
-    std::future<TaskResult> fut = promise.get_future();
-    Base::Call(
-        [promise = std::move(promise)](TaskResult r) mutable { promise.set_value(std::move(r)); });
+  std::future<ReturnType> ToFuture() && {
+    std::promise<ReturnType> promise;
+    std::future<ReturnType> fut = promise.get_future();
+    Base::CallWithContinuation(
+        [promise = std::move(promise)](ReturnType r) mutable { promise.set_value(std::move(r)); });
     return fut;
   }
 

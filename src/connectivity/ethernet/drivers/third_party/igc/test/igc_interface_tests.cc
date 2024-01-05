@@ -86,8 +86,17 @@ class IgcInterfaceTest : public gtest::RealLoopFixture {
     // Verify that the netdev has been created during initialization process.
     EXPECT_EQ(1U, parent_->child_count());
 
+    libsync::Completion initialized;
     // AddPort() will be called inside this function and will also be verified.
-    driver_->NetworkDeviceImplInit(&ifc_);
+    driver_->NetworkDeviceImplInit(
+        &ifc_,
+        [](void* ctx, zx_status_t status) {
+          libsync::Completion* initialized = static_cast<libsync::Completion*>(ctx);
+          EXPECT_EQ(status, ZX_OK);
+          initialized->Signal();
+        },
+        &initialized);
+    initialized.Wait();
   }
 
   void TearDown() override {
@@ -99,7 +108,11 @@ class IgcInterfaceTest : public gtest::RealLoopFixture {
   }
 
   // network_device_ifc_protocol_ops_t implementations
-  void AddPort(uint8_t id, const network_port_protocol_t* port) { EXPECT_EQ(id, ei::kPortId); }
+  void AddPort(uint8_t id, const network_port_protocol_t* port,
+               network_device_ifc_add_port_callback callback, void* cookie) {
+    EXPECT_EQ(id, ei::kPortId);
+    callback(cookie, ZX_OK);
+  }
 
   void CompleteRx(const rx_buffer_t* rx_list, size_t rx_count) {
     // Deep copy rx buffers.
@@ -135,9 +148,9 @@ class IgcInterfaceTest : public gtest::RealLoopFixture {
   // The fake protocol handles the calls from driver to netdev driver.
   network_device_ifc_protocol_ops_t ifc_ops_ = {
       .add_port =
-          [](void* ctx, uint8_t id, const network_port_protocol_t* port) {
-            ((IgcInterfaceTest*)ctx)->AddPort(id, port);
-          },
+          [](void* ctx, uint8_t id, const network_port_protocol_t* port,
+             network_device_ifc_add_port_callback callback,
+             void* cookie) { ((IgcInterfaceTest*)ctx)->AddPort(id, port, callback, cookie); },
 
       .complete_rx =
           [](void* ctx, const rx_buffer_t* rx_list, size_t rx_count) {
@@ -162,7 +175,7 @@ class IgcInterfaceTest : public gtest::RealLoopFixture {
 };
 
 TEST_F(IgcInterfaceTest, NetworkDeviceImplGetInfo) {
-  device_info_t out_info;
+  device_impl_info_t out_info;
   driver_->NetworkDeviceImplGetInfo(&out_info);
 
   EXPECT_EQ(out_info.tx_depth, ei::kEthTxBufCount);
@@ -468,7 +481,7 @@ TEST_F(IgcInterfaceTest, NetworkDeviceImplStop) {
 
 // NetworkPort protocol tests
 TEST_F(IgcInterfaceTest, NetworkPortGetInfo) {
-  port_info_t out_info;
+  port_base_info_t out_info;
   driver_->NetworkPortGetInfo(&out_info);
 
   EXPECT_EQ(out_info.port_class,
@@ -492,15 +505,15 @@ TEST_F(IgcInterfaceTest, NetworkPortGetStatus) {
 }
 
 TEST_F(IgcInterfaceTest, NetworkPortGetMac) {
-  mac_addr_protocol_t mac_addr_proto_1;
-  mac_addr_protocol_t mac_addr_proto_2;
+  mac_addr_protocol_t* mac_addr_proto_1 = nullptr;
+  mac_addr_protocol_t* mac_addr_proto_2 = nullptr;
 
   // Verify that the ctx returns from NetworkPortGetMac() is this driver. Additionally, use this
   // driver to call NetworkPortGetMac() again and it returns the same ctx.
   driver_->NetworkPortGetMac(&mac_addr_proto_1);
-  ((ei::IgcDriver*)mac_addr_proto_1.ctx)->NetworkPortGetMac(&mac_addr_proto_2);
+  ((ei::IgcDriver*)mac_addr_proto_1->ctx)->NetworkPortGetMac(&mac_addr_proto_2);
 
-  EXPECT_EQ(mac_addr_proto_2.ctx, mac_addr_proto_1.ctx);
+  EXPECT_EQ(mac_addr_proto_2->ctx, mac_addr_proto_1->ctx);
 }
 
 constexpr uint8_t kFakeMacAddr[ei::kEtherAddrLen] = {7, 7, 8, 9, 3, 4};
@@ -511,10 +524,10 @@ TEST_F(IgcInterfaceTest, MacAddrGetAddress) {
   // Set the MAC address to the driver manually.
   memcpy(adapter->hw.mac.addr, kFakeMacAddr, ei::kEtherAddrLen);
 
-  uint8_t out_mac[ei::kEtherAddrLen];
+  mac_address_t out_mac;
 
-  driver_->MacAddrGetAddress(out_mac);
-  EXPECT_EQ(memcmp(out_mac, kFakeMacAddr, ei::kEtherAddrLen), 0);
+  driver_->MacAddrGetAddress(&out_mac);
+  EXPECT_EQ(memcmp(out_mac.octets, kFakeMacAddr, ei::kEtherAddrLen), 0);
 }
 
 TEST_F(IgcInterfaceTest, MacAddrGetFeatures) {

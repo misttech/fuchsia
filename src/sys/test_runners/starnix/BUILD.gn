@@ -12,7 +12,6 @@ rustc_binary("bin") {
   edition = "2021"
 
   deps = [
-    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
     "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
@@ -25,17 +24,16 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-sync",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/performance/lib/fuchsiaperf",
-    "//src/starnix/lib/kernel_manager",
+    "//src/sys/lib/namespace",
     "//src/sys/lib/runner",
-    "//src/sys/lib/socket_parsing",
     "//src/sys/test_runners:lib",
     "//src/sys/test_runners/gtest:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:heck",
-    "//third_party/rust_crates:parking_lot",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:tracing",
@@ -52,7 +50,6 @@ rustc_binary("bin") {
     "src/main.rs",
     "src/results_parser.rs",
     "src/runner.rs",
-    "src/test_container.rs",
     "src/test_suite.rs",
   ]
 }

@@ -41,12 +41,14 @@ rustc_binary("bin") {
     "//third_party/rust_crates:parking_lot",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:sha2",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:tracing",
   ]
 
   test_deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fdio/rust:fdio",
     "//src/sys/pkg/testing/mock-paver",
     "//third_party/rust_crates:assert_matches",

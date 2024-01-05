@@ -30,6 +30,16 @@
 
 #define LOCAL_TRACE 0
 
+KCOUNTER(exceptions_breakpoint, "exceptions.breakpoint")
+KCOUNTER(exceptions_illegal_instruction, "exceptions.illegal_instruction")
+KCOUNTER(exceptions_ipi, "exceptions.ipi")
+KCOUNTER(exceptions_irq, "exceptions.irq")
+KCOUNTER(exceptions_misaligned, "exceptions.misaligned")
+KCOUNTER(exceptions_page_fault, "exceptions.page_fault")
+KCOUNTER(exceptions_syscall, "exceptions.syscall")
+KCOUNTER(exceptions_timer, "exceptions.timer")
+KCOUNTER(exceptions_user, "exceptions.user")
+
 namespace {
 
 const char* cause_to_string(int64_t cause) {
@@ -119,6 +129,8 @@ zx_status_t try_dispatch_user_exception(zx_excp_type_t type, int64_t cause, uint
   // Interrupts need to be disabled from the original exception upon entry
   DEBUG_ASSERT(arch_ints_disabled());
 
+  kcounter_add(exceptions_user, 1);
+
   arch_exception_context_t context = {};
 
   context.frame = frame;
@@ -153,6 +165,11 @@ void riscv64_page_fault_handler(int64_t cause, uint64_t tval, struct iframe_t* f
                   (pf_flags & VMM_PF_FLAG_WRITE) ? "write" : "read", tval);
   }
 
+  // Locally sfence.vma the address in case this is a spurious page fault.
+  if (is_user_accessible(tval)) {
+    riscv64_tlb_flush_address_one_asid(tval, riscv64_current_asid());
+  }
+
   // Check if the current thread was expecting a data fault and we should return to its handler.
   // If the capture bit was set we should run the dfr routine first before calling the page fault
   // handler along with captured data about the exception.
@@ -164,6 +181,7 @@ void riscv64_page_fault_handler(int64_t cause, uint64_t tval, struct iframe_t* f
     return;
   }
 
+  // Reenable interrupts and call the upper VM layers to handle the fault.
   arch_enable_ints();
   CPU_STATS_INC(page_faults);
   zx_status_t pf_status = vmm_page_fault_handler(tval, pf_flags);
@@ -262,12 +280,15 @@ extern "C" void riscv64_exception_handler(int64_t cause, struct iframe_t* frame)
 
     switch (cause & INT64_MAX) {
       case RISCV64_INTERRUPT_SSWI:  // software interrupt
+        kcounter_add(exceptions_ipi, 1);
         riscv64_software_exception();
         break;
       case RISCV64_INTERRUPT_STIM:  // timer interrupt
+        kcounter_add(exceptions_timer, 1);
         riscv64_timer_exception();
         break;
       case RISCV64_INTERRUPT_SEXT:  // external interrupt
+        kcounter_add(exceptions_irq, 1);
         platform_irq(frame);
         break;
       default:
@@ -286,23 +307,28 @@ extern "C" void riscv64_exception_handler(int64_t cause, struct iframe_t* frame)
       case RISCV64_EXCEPTION_INS_PAGE_FAULT:
       case RISCV64_EXCEPTION_LOAD_PAGE_FAULT:
       case RISCV64_EXCEPTION_STORE_PAGE_FAULT:
+        kcounter_add(exceptions_page_fault, 1);
         riscv64_page_fault_handler(cause, tval, frame, user);
         break;
       case RISCV64_EXCEPTION_IADDR_MISALIGN:
       case RISCV64_EXCEPTION_LOAD_ADDR_MISALIGN:
       case RISCV64_EXCEPTION_STORE_ADDR_MISALIGN:
+        kcounter_add(exceptions_misaligned, 1);
         riscv64_misaligned_fault_handler(cause, tval, frame, user);
         break;
       case RISCV64_EXCEPTION_ILLEGAL_INS:
+        kcounter_add(exceptions_illegal_instruction, 1);
         riscv64_illegal_instruction_handler(cause, tval, frame, user);
         break;
       case RISCV64_EXCEPTION_BREAKPOINT:
+        kcounter_add(exceptions_breakpoint, 1);
         riscv64_breakpoint_handler(cause, tval, frame, user);
         break;
       case RISCV64_EXCEPTION_ENV_CALL_U_MODE:
         if (unlikely(!user)) {
           exception_die(frame, cause, tval, "syscall from supervisor mode\n");
         }
+        kcounter_add(exceptions_syscall, 1);
         riscv64_syscall_handler(frame);
         break;
       case RISCV64_EXCEPTION_ENV_CALL_S_MODE:

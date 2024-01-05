@@ -3,9 +3,21 @@
 # found in the LICENSE file.
 
 # buildifier: disable=module-docstring
+load(":fuchsia_component_manifest.bzl", "fuchsia_component_manifest")
 load(":fuchsia_debug_symbols.bzl", "collect_debug_symbols")
 load(":providers.bzl", "FuchsiaComponentInfo", "FuchsiaPackageResourcesInfo", "FuchsiaUnitTestComponentInfo")
-load(":utils.bzl", "make_resource_struct", "rule_variant", "rule_variants")
+load(":utils.bzl", "label_name", "make_resource_struct", "rule_variant", "rule_variants")
+
+def _manifest_target(name, manifest_in):
+    if manifest_in.endswith(".cml"):
+        # We need to compile the cml file
+        manifest_target = name + "_" + manifest_in
+        fuchsia_component_manifest(
+            name = manifest_target,
+            src = manifest_in,
+        )
+        return ":{}".format(manifest_target)
+    return manifest_in
 
 def fuchsia_component(name, manifest, deps = None, **kwargs):
     """Creates a Fuchsia component that can be added to a package.
@@ -16,9 +28,11 @@ def fuchsia_component(name, manifest, deps = None, **kwargs):
         deps: A list of targets that this component depends on.
         **kwargs: Extra attributes to forward to the build rule.
     """
+    manifest_target = _manifest_target(name, manifest)
+
     _fuchsia_component(
         name = name,
-        manifest = manifest,
+        manifest = manifest_target,
         deps = deps,
         is_driver = False,
         **kwargs
@@ -33,15 +47,17 @@ def fuchsia_test_component(name, manifest, deps = None, **kwargs):
         deps: A list of targets that this component depends on.
         **kwargs: Extra attributes to forward to the build rule.
     """
+    manifest_target = _manifest_target(name, manifest)
+
     _fuchsia_component_test(
         name = name,
-        manifest = manifest,
+        manifest = manifest_target,
         deps = deps,
         is_driver = False,
         **kwargs
     )
 
-def fuchsia_driver_component(name, manifest, driver_lib, bind_bytecode, deps = None, **kwargs):
+def fuchsia_driver_component(name, manifest, driver_lib, bind_bytecode, deps = [], **kwargs):
     """Creates a Fuchsia component that can be registered as a driver.
 
     Args:
@@ -55,16 +71,27 @@ def fuchsia_driver_component(name, manifest, driver_lib, bind_bytecode, deps = N
         deps: A list of targets that this component depends on.
         **kwargs: Extra attributes to forward to the build rule.
     """
+    manifest_target = _manifest_target(name, manifest)
+
     _fuchsia_component(
         name = name,
-        manifest = manifest,
-        deps = deps,
-        content = {
-            driver_lib: "driver/",
-            bind_bytecode: "meta/bind/",
-        },
+        manifest = manifest_target,
+        deps = deps + [
+            bind_bytecode,
+            driver_lib,
+        ],
         is_driver = True,
         **kwargs
+    )
+
+def _make_fuchsia_component_info(*, component_name, manifest, resources, is_driver, is_test, run_tag):
+    return FuchsiaComponentInfo(
+        name = component_name,
+        manifest = manifest,
+        resources = resources,
+        is_driver = is_driver,
+        is_test = is_test,
+        run_tag = run_tag,
     )
 
 def _fuchsia_component_impl(ctx):
@@ -82,30 +109,16 @@ def _fuchsia_component_impl(ctx):
             for f in dep.files.to_list():
                 resources.append(make_resource_struct(src = f, dest = f.short_path))
 
-    for src, dest in ctx.attr.content.items():
-        files_list = src[DefaultInfo].files.to_list()
-        if not dest.endswith("/") and len(files_list) > 1:
-            fail("To map multiple files in %s, the content mapping %s should end with a slash to indicate a directory." % (ctx.label.name, dest))
-
-        # pkgctl does not play well with paths starting with "/"
-        dest = dest.lstrip("/")
-
-        for f in files_list:
-            d = dest
-            if dest.endswith("/"):
-                d = d + f.basename
-
-            resources.append(make_resource_struct(src = f, dest = d))
-
     return [
-        FuchsiaComponentInfo(
-            name = component_name,
+        _make_fuchsia_component_info(
+            component_name = component_name,
             manifest = manifest,
             resources = resources,
             is_driver = ctx.attr.is_driver,
             is_test = ctx.attr._variant == "test",
+            run_tag = label_name(str(ctx.label)),
         ),
-        collect_debug_symbols(ctx.attr.deps, ctx.attr.content.keys()),
+        collect_debug_symbols(ctx.attr.deps),
     ]
 
 _fuchsia_component, _fuchsia_component_test = rule_variants(
@@ -121,18 +134,22 @@ number of dependencies which will be included in the final package.
         "deps": attr.label_list(
             doc = "A list of targets that this component depends on",
         ),
-        "content": attr.label_keyed_string_dict(
-            doc = """A map of dependencies and their destination in the Fuchsia component.
-                     If a destination ends with a slash, it is assumed to be a directory""",
-            mandatory = False,
-        ),
         "manifest": attr.label(
-            doc = "The component manifest file",
-            allow_single_file = [".cm", ".cmx"],
+            doc = """The component manifest file
+
+            This attribute can be a fuchsia_component_manifest target or a cml
+            file. If a cml file is provided it will be compiled into a cm file.
+            If component_name is provided the cm file will inherit that name,
+            otherwise it will keep the same basename.
+
+            If you need to have more control over the compilation of the .cm file
+            we suggest you create a fuchsia_component_manifest target.
+            """,
+            allow_single_file = [".cm", ".cml"],
             mandatory = True,
         ),
         "component_name": attr.string(
-            doc = "The name of the package, defaults to the target name",
+            doc = "The name of the component, defaults to the target name",
         ),
         "is_driver": attr.bool(
             doc = "True if this is a driver component",
@@ -143,8 +160,17 @@ number of dependencies which will be included in the final package.
 
 def _fuchsia_component_for_unit_test_impl(ctx):
     underlying_component = ctx.attr.unit_test[FuchsiaUnitTestComponentInfo].test_component
+    component_info = underlying_component[FuchsiaComponentInfo]
+
     return [
-        underlying_component[FuchsiaComponentInfo],
+        _make_fuchsia_component_info(
+            component_name = component_info.name,
+            manifest = component_info.manifest,
+            resources = component_info.resources,
+            is_driver = component_info.is_driver,
+            is_test = component_info.is_test,
+            run_tag = ctx.attr.run_tag,
+        ),
         collect_debug_symbols(underlying_component),
     ]
 
@@ -156,6 +182,14 @@ fuchsia_component_for_unit_test = rule_variant(
         "unit_test": attr.label(
             doc = "The unit test to convert into a test component",
             providers = [FuchsiaUnitTestComponentInfo],
+        ),
+        "run_tag": attr.string(
+            doc = """A tag used to identify the original component.
+
+            This is most likely going to be the label name for the target which
+            created the test component.
+            """,
+            mandatory = True,
         ),
     },
 )

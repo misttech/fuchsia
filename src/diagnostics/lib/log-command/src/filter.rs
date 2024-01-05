@@ -8,7 +8,7 @@ use moniker::Moniker;
 use std::str::FromStr;
 
 use crate::{
-    log_formatter::{LogData, LogEntry, LogSpamFilter},
+    log_formatter::{LogData, LogEntry},
     LogCommand,
 };
 
@@ -26,8 +26,6 @@ pub struct LogFilterCriteria {
     tags: Vec<String>,
     /// The tags to exclude.
     exclude_tags: Vec<String>,
-    /// Spam filter
-    spam_filter: Option<Box<dyn LogSpamFilter>>,
     /// Filter by PID
     pid: Option<zx_koid_t>,
     /// Filter by TID
@@ -45,26 +43,22 @@ impl Default for LogFilterCriteria {
             exclude_tags: vec![],
             pid: None,
             tid: None,
-            spam_filter: None,
         }
     }
 }
 
-impl TryFrom<&LogCommand> for LogFilterCriteria {
-    type Error = anyhow::Error;
-
-    fn try_from(cmd: &LogCommand) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<&LogCommand> for LogFilterCriteria {
+    fn from(cmd: &LogCommand) -> Self {
+        Self {
             min_severity: cmd.severity,
             filters: cmd.filter.clone(),
-            tags: cmd.tags.clone(),
+            tags: cmd.tag.clone(),
             excludes: cmd.exclude.clone(),
             moniker_filters: if cmd.kernel { vec!["klog".into()] } else { cmd.moniker.clone() },
             exclude_tags: cmd.exclude_tags.clone(),
             pid: cmd.pid.clone(),
             tid: cmd.tid.clone(),
-            spam_filter: None,
-        })
+        }
     }
 }
 
@@ -104,40 +98,6 @@ impl LogFilterCriteria {
         }
     }
 
-    /// Returns true if this is spam.
-    pub fn is_spam(&self, entry: &LogEntry) -> bool {
-        match entry {
-            LogEntry { data: LogData::TargetLog(data), .. } => self.inner_is_spam(
-                data.metadata.file.as_ref().map(|value| value.as_str()),
-                data.metadata.line,
-                data.msg().unwrap_or(""),
-            ),
-            LogEntry { data: LogData::SymbolizedTargetLog(data, message), .. } => self
-                .inner_is_spam(
-                    data.metadata.file.as_ref().map(|value| value.as_str()),
-                    data.metadata.line,
-                    message.as_str(),
-                ),
-            _ => false,
-        }
-    }
-
-    /// Sets a spam filter
-    pub fn with_spam_filter<S>(&mut self, spam_filter: S)
-    where
-        S: LogSpamFilter + 'static,
-    {
-        self.spam_filter = Some(Box::new(spam_filter));
-    }
-
-    /// Returns true if the given `LogsData` matches the filter criteria.
-    fn inner_is_spam(&self, file: Option<&str>, line: Option<u64>, msg: &str) -> bool {
-        match &self.spam_filter {
-            None => false,
-            Some(f) => f.is_spam(file, line, msg),
-        }
-    }
-
     /// Returns true if the given 'LogsData' matches the filter string by
     /// message, moniker, or component URL.
     fn matches_filter_string(filter_string: &str, message: &str, log: &LogsData) -> bool {
@@ -151,6 +111,35 @@ impl LogFilterCriteria {
                 _ => false,
             }
             || log.metadata.component_url.as_ref().map_or(false, |s| s.contains(filter_string));
+    }
+
+    // TODO(b/303315896): If/when debuglog is strutured remove this.
+    fn parse_tags(value: &str) -> Vec<&str> {
+        let mut tags = Vec::new();
+        let mut current = value;
+        if current.chars().next() != Some('[') {
+            return tags;
+        }
+        loop {
+            match current.find('[') {
+                Some(opening_index) => {
+                    current = &current[opening_index + 1..];
+                }
+                None => return tags,
+            }
+            match current.find(']') {
+                Some(closing_index) => {
+                    tags.push(&current[..closing_index]);
+                    current = &current[closing_index + 1..];
+                }
+                None => return tags,
+            }
+        }
+    }
+
+    fn match_synthetic_klog_tags(&self, klog_str: &str) -> bool {
+        let tags = Self::parse_tags(klog_str);
+        self.tags.iter().any(|f| tags.iter().filter(|t| t.contains(f)).next().is_some())
     }
 
     /// Returns true if the given `LogsData` matches the moniker string.
@@ -202,6 +191,9 @@ impl LogFilterCriteria {
         if !self.tags.is_empty()
             && !self.tags.iter().any(|f| data.tags().map(|t| t.contains(f)).unwrap_or(false))
         {
+            if data.moniker == "klog" {
+                return self.match_synthetic_klog_tags(data.msg().unwrap_or(""));
+            }
             return false;
         }
 
@@ -219,7 +211,7 @@ mod test {
     use diagnostics_data::Timestamp;
     use std::time::Duration;
 
-    use crate::{log_formatter::EventType, DumpCommand, LogSubCommand, SessionSpec};
+    use crate::{log_formatter::EventType, DumpCommand, LogSubCommand};
 
     use super::*;
 
@@ -227,9 +219,7 @@ mod test {
 
     fn empty_dump_command() -> LogCommand {
         LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             ..LogCommand::default()
         }
     }
@@ -245,7 +235,57 @@ mod test {
     #[fuchsia::test]
     async fn test_criteria_tag_filter() {
         let cmd = LogCommand {
-            tags: vec!["tag1".to_string()],
+            tag: vec!["tag1".to_string()],
+            exclude_tags: vec!["tag3".to_string()],
+            ..empty_dump_command()
+        };
+        let criteria = LogFilterCriteria::try_from(&cmd).unwrap();
+
+        assert!(criteria.matches(&make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp_nanos: 0.into(),
+                component_url: Some(String::default()),
+                moniker: String::default(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("included")
+            .add_tag("tag1")
+            .add_tag("tag2")
+            .build()
+            .into()
+        )));
+
+        assert!(!criteria.matches(&make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp_nanos: 0.into(),
+                component_url: Some(String::default()),
+                moniker: String::default(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("included")
+            .add_tag("tag2")
+            .build()
+            .into()
+        )));
+        assert!(!criteria.matches(&make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp_nanos: 0.into(),
+                component_url: Some(String::default()),
+                moniker: String::default(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("included")
+            .add_tag("tag1")
+            .add_tag("tag3")
+            .build()
+            .into()
+        )));
+    }
+
+    #[fuchsia::test]
+    async fn test_criteria_tag_filter_legacy() {
+        let cmd = LogCommand {
+            tag: vec!["tag1".to_string()],
             exclude_tags: vec!["tag3".to_string()],
             ..empty_dump_command()
         };
@@ -550,6 +590,79 @@ mod test {
 
     #[fuchsia::test]
     async fn test_criteria_klog_only() {
+        let cmd = LogCommand { tag: vec!["component_manager".into()], ..empty_dump_command() };
+        let criteria = LogFilterCriteria::try_from(&cmd).unwrap();
+
+        assert!(criteria.matches(&make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp_nanos: 0.into(),
+                component_url: Some(String::default()),
+                moniker: "klog".to_string(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("[component_manager] included message")
+            .build()
+            .into()
+        )));
+        assert!(!criteria.matches(&make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp_nanos: 0.into(),
+                component_url: Some(String::default()),
+                moniker: "klog".to_string(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("excluded message[component_manager]")
+            .build()
+            .into()
+        )));
+        assert!(criteria.matches(&make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp_nanos: 0.into(),
+                component_url: Some(String::default()),
+                moniker: "klog".to_string(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("[tag0][component_manager] included message")
+            .build()
+            .into()
+        )));
+        assert!(!criteria.matches(&make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp_nanos: 0.into(),
+                component_url: Some(String::default()),
+                moniker: "klog".to_string(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("[other] excluded message")
+            .build()
+            .into()
+        )));
+        assert!(!criteria.matches(&make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp_nanos: 0.into(),
+                component_url: Some(String::default()),
+                moniker: "klog".to_string(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("no tags, excluded")
+            .build()
+            .into()
+        )));
+        assert!(!criteria.matches(&make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp_nanos: 0.into(),
+                component_url: Some(String::default()),
+                moniker: "other/moniker".to_string(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("[component_manager] excluded message")
+            .build()
+            .into()
+        )));
+    }
+
+    #[fuchsia::test]
+    async fn test_criteria_klog_tag_hack() {
         let cmd = LogCommand { kernel: true, ..empty_dump_command() };
         let criteria = LogFilterCriteria::try_from(&cmd).unwrap();
 

@@ -2,22 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{
+    mm::{MemoryAccessor, MemoryAccessorExt, ProcMapsFile, ProcSmapsFile, PAGE_SIZE},
+    selinux::fs::selinux_proc_attrs,
+    task::{CurrentTask, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup},
+    vfs::{
+        buffers::{InputBuffer, OutputBuffer},
+        default_seek, fileops_impl_delegate_read_and_seek, fileops_impl_directory,
+        fs_node_impl_dir_readonly, parse_i32_file, serialize_i32_file, BytesFile, BytesFileOps,
+        CallbackSymlinkNode, DirectoryEntryType, DirentSink, DynamicFile, DynamicFileBuf,
+        DynamicFileSource, FdNumber, FileObject, FileOps, FileSystemHandle, FsNode, FsNodeHandle,
+        FsNodeInfo, FsNodeOps, FsStr, ProcMountinfoFile, ProcMountsFile, SeekTarget,
+        SimpleFileNode, StaticDirectoryBuilder, SymlinkTarget, VecDirectory, VecDirectoryEntry,
+    },
+};
 use fuchsia_zircon as zx;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::{borrow::Cow, ffi::CString, sync::Arc};
-
-use crate::{
-    fs::{
-        buffers::{InputBuffer, OutputBuffer},
-        *,
-    },
-    mm::{MemoryAccessor, MemoryAccessorExt, ProcMapsFile, ProcSmapsFile, PAGE_SIZE},
-    selinux::selinux_proc_attrs,
-    task::{CurrentTask, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup},
-    types::*,
+use starnix_uapi::{
+    auth::CAP_SYS_RESOURCE,
+    errno, error,
+    errors::Errno,
+    file_mode::mode,
+    off_t,
+    open_flags::OpenFlags,
+    ownership::{TempRef, WeakRef},
+    pid_t,
+    resource_limits::Resource,
+    time::duration_to_scheduler_clock,
+    uapi,
+    user_address::UserAddress,
+    OOM_ADJUST_MIN, OOM_DISABLE, OOM_SCORE_ADJ_MIN, RLIM_INFINITY,
 };
+use std::{borrow::Cow, ffi::CString, sync::Arc};
 
 /// TaskDirectory delegates most of its operations to StaticDirectory, but we need to override
 /// FileOps::as_pid so that these directories can be used in places that expect a pidfd.
@@ -29,12 +47,14 @@ struct TaskDirectory {
 
 impl TaskDirectory {
     fn new(
+        current_task: &CurrentTask,
         fs: &FileSystemHandle,
         task: &TempRef<'_, Task>,
         dir: StaticDirectoryBuilder<'_>,
     ) -> FsNodeHandle {
         let (node_ops, file_ops) = dir.build_ops();
         fs.create_node(
+            current_task,
             Arc::new(TaskDirectory { pid: task.id, node_ops, file_ops }),
             FsNodeInfo::new_factory(mode!(IFDIR, 0o777), task.as_fscred()),
         )
@@ -58,7 +78,7 @@ impl FsNodeOps for Arc<TaskDirectory> {
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
-    ) -> Result<Arc<FsNode>, Errno> {
+    ) -> Result<FsNodeHandle, Errno> {
         self.node_ops.lookup(node, current_task, name)
     }
 }
@@ -85,32 +105,47 @@ impl FileOps for Arc<TaskDirectory> {
         self.file_ops.readdir(file, current_task, sink)
     }
 
-    fn as_pid(&self, _file: &FileHandle) -> Result<pid_t, Errno> {
+    fn as_pid(&self, _file: &FileObject) -> Result<pid_t, Errno> {
         Ok(self.pid)
     }
 }
 
 /// Creates an [`FsNode`] that represents the `/proc/<pid>` directory for `task`.
-pub fn pid_directory(fs: &FileSystemHandle, task: &TempRef<'_, Task>) -> FsNodeHandle {
-    let mut dir =
-        static_directory_builder_with_common_task_entries(fs, task, StatsScope::ThreadGroup);
+pub fn pid_directory(
+    current_task: &CurrentTask,
+    fs: &FileSystemHandle,
+    task: &TempRef<'_, Task>,
+) -> FsNodeHandle {
+    let mut dir = static_directory_builder_with_common_task_entries(
+        current_task,
+        fs,
+        task,
+        StatsScope::ThreadGroup,
+    );
     dir.entry(
+        current_task,
         b"task",
         TaskListDirectory { thread_group: task.thread_group.clone() },
         mode!(IFDIR, 0o777),
     );
-    TaskDirectory::new(fs, task, dir)
+    TaskDirectory::new(current_task, fs, task, dir)
 }
 
 /// Creates an [`FsNode`] that represents the `/proc/<pid>/task/<tid>` directory for `task`.
-fn tid_directory(fs: &FileSystemHandle, task: &TempRef<'_, Task>) -> FsNodeHandle {
-    let dir = static_directory_builder_with_common_task_entries(fs, task, StatsScope::Task);
-    TaskDirectory::new(fs, task, dir)
+fn tid_directory(
+    current_task: &CurrentTask,
+    fs: &FileSystemHandle,
+    task: &TempRef<'_, Task>,
+) -> FsNodeHandle {
+    let dir =
+        static_directory_builder_with_common_task_entries(current_task, fs, task, StatsScope::Task);
+    TaskDirectory::new(current_task, fs, task, dir)
 }
 
 /// Creates a [`StaticDirectoryBuilder`] and pre-populates it with files that are present in both
 /// `/pid/<pid>` and `/pid/<pid>/task/<tid>`.
 fn static_directory_builder_with_common_task_entries<'a>(
+    current_task: &CurrentTask,
     fs: &'a FileSystemHandle,
     task: &TempRef<'_, Task>,
     scope: StatsScope,
@@ -118,6 +153,7 @@ fn static_directory_builder_with_common_task_entries<'a>(
     let mut dir = StaticDirectoryBuilder::new(fs);
     dir.entry_creds(task.as_fscred());
     dir.entry(
+        current_task,
         b"cwd",
         CallbackSymlinkNode::new({
             let task = WeakRef::from(task);
@@ -126,11 +162,12 @@ fn static_directory_builder_with_common_task_entries<'a>(
         mode!(IFLNK, 0o777),
     );
     dir.entry(
+        current_task,
         b"exe",
         CallbackSymlinkNode::new({
             let task = WeakRef::from(task);
             move || {
-                if let Some(node) = Task::from_weak(&task)?.mm.executable_node() {
+                if let Some(node) = Task::from_weak(&task)?.mm().executable_node() {
                     Ok(SymlinkTarget::Node(node))
                 } else {
                     error!(ENOENT)
@@ -139,13 +176,14 @@ fn static_directory_builder_with_common_task_entries<'a>(
         }),
         mode!(IFLNK, 0o777),
     );
-    dir.entry(b"fd", FdDirectory::new(task.into()), mode!(IFDIR, 0o777));
-    dir.entry(b"fdinfo", FdInfoDirectory::new(task.into()), mode!(IFDIR, 0o777));
-    dir.entry(b"io", IoFile::new_node(task.into()), mode!(IFREG, 0o444));
-    dir.entry(b"limits", LimitsFile::new_node(task.into()), mode!(IFREG, 0o444));
-    dir.entry(b"maps", ProcMapsFile::new_node(task.into()), mode!(IFREG, 0o444));
-    dir.entry(b"mem", MemFile::new_node(task.into()), mode!(IFREG, 0o600));
+    dir.entry(current_task, b"fd", FdDirectory::new(task.into()), mode!(IFDIR, 0o777));
+    dir.entry(current_task, b"fdinfo", FdInfoDirectory::new(task.into()), mode!(IFDIR, 0o777));
+    dir.entry(current_task, b"io", IoFile::new_node(task.into()), mode!(IFREG, 0o444));
+    dir.entry(current_task, b"limits", LimitsFile::new_node(task.into()), mode!(IFREG, 0o444));
+    dir.entry(current_task, b"maps", ProcMapsFile::new_node(task.into()), mode!(IFREG, 0o444));
+    dir.entry(current_task, b"mem", MemFile::new_node(task.into()), mode!(IFREG, 0o600));
     dir.entry(
+        current_task,
         b"root",
         CallbackSymlinkNode::new({
             let task = WeakRef::from(task);
@@ -153,33 +191,45 @@ fn static_directory_builder_with_common_task_entries<'a>(
         }),
         mode!(IFLNK, 0o777),
     );
-    dir.entry(b"smaps", ProcSmapsFile::new_node(task.into()), mode!(IFREG, 0o444));
-    dir.entry(b"stat", StatFile::new_node(task.into(), scope), mode!(IFREG, 0o444));
-    dir.entry(b"statm", StatmFile::new_node(task.into()), mode!(IFREG, 0o444));
+    dir.entry(current_task, b"smaps", ProcSmapsFile::new_node(task.into()), mode!(IFREG, 0o444));
+    dir.entry(current_task, b"stat", StatFile::new_node(task.into(), scope), mode!(IFREG, 0o444));
+    dir.entry(current_task, b"statm", StatmFile::new_node(task.into()), mode!(IFREG, 0o444));
     dir.entry(
+        current_task,
         b"status",
         StatusFile::new_node(task.into(), task.persistent_info.clone()),
         mode!(IFREG, 0o444),
     );
-    dir.entry(b"cmdline", CmdlineFile::new_node(task.into()), mode!(IFREG, 0o444));
-    dir.entry(b"environ", EnvironFile::new_node(task.into()), mode!(IFREG, 0o444));
-    dir.entry(b"auxv", AuxvFile::new_node(task.into()), mode!(IFREG, 0o444));
+    dir.entry(current_task, b"cmdline", CmdlineFile::new_node(task.into()), mode!(IFREG, 0o444));
+    dir.entry(current_task, b"environ", EnvironFile::new_node(task.into()), mode!(IFREG, 0o444));
+    dir.entry(current_task, b"auxv", AuxvFile::new_node(task.into()), mode!(IFREG, 0o444));
     dir.entry(
+        current_task,
         b"comm",
         CommFile::new_node(task.into(), task.persistent_info.clone()),
         mode!(IFREG, 0o644),
     );
-    dir.subdir(b"attr", 0o555, |dir| {
+    dir.subdir(current_task, b"attr", 0o555, |dir| {
         dir.entry_creds(task.as_fscred());
         dir.dir_creds(task.as_fscred());
-        selinux_proc_attrs(task, dir);
+        selinux_proc_attrs(current_task, task, dir);
     });
-    dir.entry(b"ns", NsDirectory { task: task.into() }, mode!(IFDIR, 0o777));
-    dir.entry(b"mountinfo", ProcMountinfoFile::new_node(task.into()), mode!(IFREG, 0o444));
-    dir.entry(b"mounts", ProcMountsFile::new_node(task.into()), mode!(IFREG, 0o444));
-    dir.entry(b"oom_adj", OomAdjFile::new_node(task.into()), mode!(IFREG, 0o744));
-    dir.entry(b"oom_score", OomScoreFile::new_node(task.into()), mode!(IFREG, 0o444));
-    dir.entry(b"oom_score_adj", OomScoreAdjFile::new_node(task.into()), mode!(IFREG, 0o744));
+    dir.entry(current_task, b"ns", NsDirectory { task: task.into() }, mode!(IFDIR, 0o777));
+    dir.entry(
+        current_task,
+        b"mountinfo",
+        ProcMountinfoFile::new_node(task.into()),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(current_task, b"mounts", ProcMountsFile::new_node(task.into()), mode!(IFREG, 0o444));
+    dir.entry(current_task, b"oom_adj", OomAdjFile::new_node(task.into()), mode!(IFREG, 0o744));
+    dir.entry(current_task, b"oom_score", OomScoreFile::new_node(task.into()), mode!(IFREG, 0o444));
+    dir.entry(
+        current_task,
+        b"oom_score_adj",
+        OomScoreAdjFile::new_node(task.into()),
+        mode!(IFREG, 0o744),
+    );
     dir.dir_creds(task.as_fscred());
     dir
 }
@@ -215,15 +265,16 @@ impl FsNodeOps for FdDirectory {
     fn lookup(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         name: &FsStr,
-    ) -> Result<Arc<FsNode>, Errno> {
+    ) -> Result<FsNodeHandle, Errno> {
         let fd = FdNumber::from_fs_str(name).map_err(|_| errno!(ENOENT))?;
         let task = Task::from_weak(&self.task)?;
         // Make sure that the file descriptor exists before creating the node.
         let _ = task.files.get(fd).map_err(|_| errno!(ENOENT))?;
         let task_reference = self.task.clone();
         Ok(node.fs().create_node(
+            current_task,
             CallbackSymlinkNode::new(move || {
                 let task = Task::from_weak(&task_reference)?;
                 //Task::try_from(&task_reference)?;
@@ -281,7 +332,7 @@ impl FsNodeOps for NsDirectory {
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
-    ) -> Result<Arc<FsNode>, Errno> {
+    ) -> Result<FsNodeHandle, Errno> {
         // If name is a given namespace, link to the current identifier of the that namespace for
         // the current task.
         // If name is {namespace}:[id], get a file descriptor for the given namespace.
@@ -305,18 +356,23 @@ impl FsNodeOps for NsDirectory {
             let node_info = FsNodeInfo::new_factory(mode!(IFREG, 0o444), task.as_fscred());
 
             Ok(match ns {
-                "mnt" => node.fs().create_node(current_task.task.fs().namespace(), node_info),
+                "mnt" => node.fs().create_node(
+                    current_task,
+                    current_task.task.fs().namespace(),
+                    node_info,
+                ),
                 _ => {
                     // TODO(https://fxbug.dev/76946) support other kinds of namespaces
-                    node.fs().create_node(BytesFile::new_node(vec![]), node_info)
+                    node.fs().create_node(current_task, BytesFile::new_node(vec![]), node_info)
                 }
             })
         } else {
             // The name is {namespace}, link to the correct one of the current task.
+            let id = current_task.task.fs().namespace().id;
             Ok(node.fs().create_node(
+                current_task,
                 CallbackSymlinkNode::new(move || {
-                    // For now, all namespace have the identifier 1.
-                    Ok(SymlinkTarget::Path(format!("{}:[1]", name).as_bytes().to_vec()))
+                    Ok(SymlinkTarget::Path(format!("{name}:[{id}]").as_bytes().to_vec()))
                 }),
                 FsNodeInfo::new_factory(mode!(IFLNK, 0o7777), task.as_fscred()),
             ))
@@ -356,7 +412,7 @@ impl FsNodeOps for FdInfoDirectory {
     fn lookup(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         let task = Task::from_weak(&self.task)?;
@@ -366,6 +422,7 @@ impl FsNodeOps for FdInfoDirectory {
         let flags = file.flags();
         let data = format!("pos:\t{}flags:\t0{:o}\n", pos, flags.bits()).into_bytes();
         Ok(node.fs().create_node(
+            current_task,
             BytesFile::new_node(data),
             FsNodeInfo::new_factory(mode!(IFREG, 0o444), task.as_fscred()),
         ))
@@ -412,9 +469,9 @@ impl FsNodeOps for TaskListDirectory {
     fn lookup(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         name: &FsStr,
-    ) -> Result<Arc<FsNode>, Errno> {
+    ) -> Result<FsNodeHandle, Errno> {
         let tid = std::str::from_utf8(name)
             .map_err(|_| errno!(ENOENT))?
             .parse::<pid_t>()
@@ -426,7 +483,7 @@ impl FsNodeOps for TaskListDirectory {
         let pid_state = self.thread_group.kernel.pids.read();
         let weak_task = pid_state.get_task(tid);
         let task = weak_task.upgrade().ok_or_else(|| errno!(ENOENT))?;
-        Ok(tid_directory(&node.fs(), &task))
+        Ok(tid_directory(current_task, &node.fs(), &task))
     }
 }
 
@@ -438,7 +495,7 @@ fn fill_buf_from_addr_range(
 ) -> Result<(), Errno> {
     #[allow(clippy::manual_saturating_arithmetic)]
     let len = range_end.ptr().checked_sub(range_start.ptr()).unwrap_or(0);
-    let buf = task.mm.read_memory_partial_to_vec(range_start, len)?;
+    let buf = task.mm().read_memory_partial_to_vec(range_start, len)?;
     sink.write(&buf[..]);
     Ok(())
 }
@@ -460,7 +517,7 @@ impl DynamicFileSource for CmdlineFile {
             return Ok(());
         };
         let (start, end) = {
-            let mm_state = task.mm.state.read();
+            let mm_state = task.mm().state.read();
             (mm_state.argv_start, mm_state.argv_end)
         };
         fill_buf_from_addr_range(&task, start, end, sink)
@@ -479,7 +536,7 @@ impl DynamicFileSource for EnvironFile {
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let task = Task::from_weak(&self.0)?;
         let (start, end) = {
-            let mm_state = task.mm.state.read();
+            let mm_state = task.mm().state.read();
             (mm_state.environ_start, mm_state.environ_end)
         };
         fill_buf_from_addr_range(&task, start, end, sink)
@@ -498,7 +555,7 @@ impl DynamicFileSource for AuxvFile {
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let task = Task::from_weak(&self.0)?;
         let (start, end) = {
-            let mm_state = task.mm.state.read();
+            let mm_state = task.mm().state.read();
             (mm_state.auxv_start, mm_state.auxv_end)
         };
         fill_buf_from_addr_range(&task, start, end, sink)
@@ -644,7 +701,7 @@ impl FileOps for MemFile {
     fn read(
         &self,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
@@ -658,10 +715,13 @@ impl FileOps for MemFile {
             TaskStateCode::Running | TaskStateCode::Sleeping => {
                 let mut addr = UserAddress::default() + offset;
                 data.write_each(&mut |bytes| {
-                    let actual = task
-                        .mm
-                        .read_memory_partial_to_slice(addr, bytes)
-                        .map_err(|_| errno!(EIO))?;
+                    let read_bytes = if current_task.has_same_address_space(&task) {
+                        task.mm().read_memory_partial(addr, bytes)
+                    } else {
+                        task.mm().vmo_read_memory_partial(addr, bytes)
+                    }
+                    .map_err(|_| errno!(EIO))?;
+                    let actual = read_bytes.len();
                     addr += actual;
                     Ok(actual)
                 })
@@ -672,7 +732,7 @@ impl FileOps for MemFile {
     fn write(
         &self,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
@@ -683,10 +743,12 @@ impl FileOps for MemFile {
                 let addr = UserAddress::default() + offset;
                 let mut written = 0;
                 let result = data.peek_each(&mut |bytes| {
-                    let actual = task
-                        .mm
-                        .write_memory_partial(addr + written, bytes)
-                        .map_err(|_| errno!(EIO))?;
+                    let actual = if current_task.has_same_address_space(&task) {
+                        task.mm().write_memory_partial(addr + written, bytes)
+                    } else {
+                        task.mm().vmo_write_memory_partial(addr + written, bytes)
+                    }
+                    .map_err(|_| errno!(EIO))?;
                     written += actual;
                     Ok(actual)
                 });
@@ -717,68 +779,120 @@ impl StatFile {
 impl DynamicFileSource for StatFile {
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let task = Task::from_weak(&self.task)?;
+
+        // All fields and their types as specified in the man page. Unimplemented fields are set to
+        // 0 here.
+        let pid: pid_t; // 1
+        let comm: &str;
+        let state: char;
+        let ppid: pid_t;
+        let pgrp: pid_t; // 5
+        let session: pid_t;
+        let tty_nr: i32;
+        let tpgid: i32 = 0;
+        let flags: u32 = 0;
+        let minflt: u64 = 0; // 10
+        let cminflt: u64 = 0;
+        let majflt: u64 = 0;
+        let cmajflt: u64 = 0;
+        let utime: i64;
+        let stime: i64; // 15
+        let cutime: i64;
+        let cstime: i64;
+        let priority: i64 = 0;
+        let nice: i64;
+        let num_threads: i64; // 20
+        let itrealvalue: i64 = 0;
+        let starttime: u64;
+        let vsize: usize;
+        let rss: usize;
+        let rsslim: u64; // 25
+        let startcode: u64 = 0;
+        let endcode: u64 = 0;
+        let startstack: usize;
+        let kstkesp: u64 = 0;
+        let kstkeip: u64 = 0; // 30
+        let signal: u64 = 0;
+        let blocked: u64 = 0;
+        let siginore: u64 = 0;
+        let sigcatch: u64 = 0;
+        let wchan: u64 = 0; // 35
+        let nswap: u64 = 0;
+        let cnswap: u64 = 0;
+        let exit_signal: i32 = 0;
+        let processor: i32 = 0;
+        let rt_priority: u32 = 0; // 40
+        let policy: u32 = 0;
+        let delayacct_blkio_ticks: u64 = 0;
+        let guest_time: u64 = 0;
+        let cguest_time: i64 = 0;
+        let start_data: u64 = 0; // 45
+        let end_data: u64 = 0;
+        let start_brk: u64 = 0;
+        let arg_start: usize;
+        let arg_end: usize;
+        let env_start: usize; // 50
+        let env_end: usize;
+        let exit_code: i32 = 0;
+
+        pid = task.get_tid();
         let command = task.command();
-        let command = command.as_c_str().to_str().unwrap_or("unknown");
-        let mut stats = [0u64; 48];
+        comm = command.as_c_str().to_str().unwrap_or("unknown");
+        state = task.state_code().code_char();
+        nice = 20 - task.read().scheduler_policy.raw_priority() as i64;
+
         {
             let thread_group = task.thread_group.read();
-            stats[0] = thread_group.get_ppid() as u64;
-            stats[1] = thread_group.process_group.leader as u64;
-            stats[2] = thread_group.process_group.session.leader as u64;
+            ppid = thread_group.get_ppid();
+            pgrp = thread_group.process_group.leader;
+            session = thread_group.process_group.session.leader;
 
             // TTY device ID.
             {
                 let session = thread_group.process_group.session.read();
-                stats[3] = session
+                tty_nr = session
                     .controlling_terminal
                     .as_ref()
                     .map(|t| t.terminal.device().bits())
-                    .unwrap_or(0);
+                    .unwrap_or(0) as i32;
             }
 
-            stats[12] =
-                duration_to_scheduler_clock(thread_group.children_time_stats.user_time) as u64;
-            stats[13] =
-                duration_to_scheduler_clock(thread_group.children_time_stats.system_time) as u64;
+            cutime = duration_to_scheduler_clock(thread_group.children_time_stats.user_time);
+            cstime = duration_to_scheduler_clock(thread_group.children_time_stats.system_time);
 
-            stats[16] = thread_group.tasks_count() as u64;
+            num_threads = thread_group.tasks_count() as i64;
         }
 
         let time_stats = match self.scope {
             StatsScope::Task => task.time_stats(),
             StatsScope::ThreadGroup => task.thread_group.time_stats(),
         };
-        stats[10] = duration_to_scheduler_clock(time_stats.user_time) as u64;
-        stats[11] = duration_to_scheduler_clock(time_stats.system_time) as u64;
+        utime = duration_to_scheduler_clock(time_stats.user_time);
+        stime = duration_to_scheduler_clock(time_stats.system_time);
 
         let info = task.thread_group.process.info().map_err(|_| errno!(EIO))?;
-        stats[18] =
+        starttime =
             duration_to_scheduler_clock(zx::Time::from_nanos(info.start_time) - zx::Time::ZERO)
                 as u64;
 
-        let mem_stats = task.mm.get_stats().map_err(|_| errno!(EIO))?;
+        let mem_stats = task.mm().get_stats().map_err(|_| errno!(EIO))?;
         let page_size = *PAGE_SIZE as usize;
-        stats[19] = mem_stats.vm_size as u64;
-        stats[20] = (mem_stats.vm_rss / page_size) as u64;
-        stats[21] = task.thread_group.limits.lock().get(Resource::RSS).rlim_max;
+        vsize = mem_stats.vm_size;
+        rss = mem_stats.vm_rss / page_size;
+        rsslim = task.thread_group.limits.lock().get(Resource::RSS).rlim_max;
 
         {
-            let mm_state = task.mm.state.read();
-            stats[24] = mm_state.stack_start.ptr() as u64;
-            stats[44] = mm_state.argv_start.ptr() as u64;
-            stats[45] = mm_state.argv_end.ptr() as u64;
-            stats[46] = mm_state.environ_start.ptr() as u64;
-            stats[47] = mm_state.environ_end.ptr() as u64;
+            let mm_state = task.mm().state.read();
+            startstack = mm_state.stack_start.ptr();
+            arg_start = mm_state.argv_start.ptr();
+            arg_end = mm_state.argv_end.ptr();
+            env_start = mm_state.environ_start.ptr();
+            env_end = mm_state.environ_end.ptr();
         }
-        let stat_str = stats.map(|n| n.to_string()).join(" ");
 
         writeln!(
             sink,
-            "{} ({}) {} {}",
-            task.get_pid(),
-            command,
-            task.state_code().code_char(),
-            stat_str
+            "{pid} ({comm}) {state} {ppid} {pgrp} {session} {tty_nr} {tpgid} {flags} {minflt} {cminflt} {majflt} {cmajflt} {utime} {stime} {cutime} {cstime} {priority} {nice} {num_threads} {itrealvalue} {starttime} {vsize} {rss} {rsslim} {startcode} {endcode} {startstack} {kstkesp} {kstkeip} {signal} {blocked} {siginore} {sigcatch} {wchan} {nswap} {cnswap} {exit_signal} {processor} {rt_priority} {policy} {delayacct_blkio_ticks} {guest_time} {cguest_time} {start_data} {end_data} {start_brk} {arg_start} {arg_end} {env_start} {env_end} {exit_code}"
         )?;
 
         Ok(())
@@ -794,7 +908,7 @@ impl StatmFile {
 }
 impl DynamicFileSource for StatmFile {
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
-        let mem_stats = Task::from_weak(&self.0)?.mm.get_stats().map_err(|_| errno!(EIO))?;
+        let mem_stats = Task::from_weak(&self.0)?.mm().get_stats().map_err(|_| errno!(EIO))?;
         let page_size = *PAGE_SIZE as usize;
 
         // 5th and 7th fields are deprecated and should be set to 0.
@@ -853,7 +967,7 @@ impl DynamicFileSource for StatusFile {
         writeln!(sink, "Groups:\t{}", creds.groups.iter().map(|n| n.to_string()).join(" "))?;
 
         if let Some(task) = task {
-            let mem_stats = task.mm.get_stats().map_err(|_| errno!(EIO))?;
+            let mem_stats = task.mm().get_stats().map_err(|_| errno!(EIO))?;
             writeln!(sink, "VmSize:\t{} kB", mem_stats.vm_size / 1024)?;
             writeln!(sink, "VmRSS:\t{} kB", mem_stats.vm_rss / 1024)?;
             writeln!(sink, "RssAnon:\t{} kB", mem_stats.rss_anonymous / 1024)?;

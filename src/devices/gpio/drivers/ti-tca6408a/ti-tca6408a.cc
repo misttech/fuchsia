@@ -4,9 +4,12 @@
 
 #include "ti-tca6408a.h"
 
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/metadata.h>
+#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/node_add_args.h>
+
+#include <bind/fuchsia/hardware/gpioimpl/cpp/bind.h>
 
 namespace {
 
@@ -18,96 +21,158 @@ constexpr zx::duration kI2cRetryDelay = zx::usec(1);
 
 namespace gpio {
 
-zx_status_t TiTca6408a::Create(void* ctx, zx_device_t* parent) {
-  ddk::I2cChannel i2c(parent, "i2c");
-  if (!i2c.is_valid()) {
-    zxlogf(ERROR, "Failed to get I2C channel");
-    return ZX_ERR_NO_RESOURCES;
-  }
-
+zx::result<> TiTca6408aDevice::Start() {
+  // Get I2C.
+  ddk::I2cChannel i2c;
   {
+    zx::result result = incoming()->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
+    if (result.is_error()) {
+      FDF_LOG(ERROR, "Failed to open i2c service: %s", result.status_string());
+      return result.take_error();
+    }
+    i2c = std::move(result.value());
+
     // Clear the polarity inversion register.
-    const uint8_t write_buf[2] = {static_cast<uint8_t>(Register::kPolarityInversion), 0};
+    const uint8_t write_buf[2] = {static_cast<uint8_t>(TiTca6408a::Register::kPolarityInversion),
+                                  0};
     i2c.WriteSyncRetries(write_buf, sizeof(write_buf), kI2cRetries, kI2cRetryDelay);
   }
 
-  uint32_t pin_index_offset = 0;
-  size_t actual = 0;
-  zx_status_t status = device_get_metadata(parent, DEVICE_METADATA_PRIVATE, &pin_index_offset,
-                                           sizeof(pin_index_offset), &actual);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to get metadata: %s", zx_status_get_string(status));
-    return status;
+  zx::result pin_index_offset =
+      compat::GetMetadata<uint32_t>(incoming(), DEVICE_METADATA_PRIVATE, "pdev");
+  if (pin_index_offset.is_error()) {
+    FDF_LOG(ERROR, "Failed to get pin_index_offset  %s", pin_index_offset.status_string());
+    return pin_index_offset.take_error();
   }
 
-  if (actual != sizeof(pin_index_offset)) {
-    zxlogf(ERROR, "Unexpected metadata size: got %zu, expected %zu", actual,
-           sizeof(pin_index_offset));
-    return ZX_ERR_INTERNAL;
+  compat_server_.emplace(incoming(), outgoing(), node_name(), kDeviceName, std::nullopt,
+                         compat::ForwardMetadata::All());
+
+  device_ = std::make_unique<TiTca6408a>(std::move(i2c), *pin_index_offset.value());
+
+  auto result = outgoing()->AddService<fuchsia_hardware_gpioimpl::Service>(
+      fuchsia_hardware_gpioimpl::Service::InstanceHandler({
+          .device = bindings_.CreateHandler(device_.get(), fdf::Dispatcher::GetCurrent()->get(),
+                                            fidl::kIgnoreBindingClosure),
+      }));
+  if (result.is_error()) {
+    FDF_LOG(ERROR, "Failed to add Device service %s", result.status_string());
+    return result.take_error();
   }
 
-  auto dev = std::make_unique<TiTca6408a>(parent, std::move(i2c), pin_index_offset);
-  if ((status = dev->DdkAdd(ddk::DeviceAddArgs("ti-tca6408a")
-                                .forward_metadata(parent, DEVICE_METADATA_GPIO_PINS))) != ZX_OK) {
-    zxlogf(ERROR, "DdkAdd failed: %s", zx_status_get_string(status));
-    return status;
-  }
-
-  [[maybe_unused]] auto* _ = dev.release();
-
-  return ZX_OK;
+  return CreateNode();
 }
 
-zx_status_t TiTca6408a::GpioImplConfigIn(uint32_t index, uint32_t flags) {
-  if (!IsIndexInRange(index)) {
-    return ZX_ERR_OUT_OF_RANGE;
+void TiTca6408aDevice::Stop() {
+  auto status = controller_->Remove();
+  if (!status.ok()) {
+    FDF_LOG(ERROR, "Could not remove child: %s", status.status_string());
+  }
+}
+
+zx::result<> TiTca6408aDevice::CreateNode() {
+  fidl::Arena arena;
+  auto offers = compat_server_->CreateOffers(arena);
+  offers.push_back(
+      fdf::MakeOffer<fuchsia_hardware_gpioimpl::Service>(arena, component::kDefaultInstance));
+  auto properties =
+      std::vector{fdf::MakeProperty(arena, bind_fuchsia_hardware_gpioimpl::SERVICE,
+                                    bind_fuchsia_hardware_gpioimpl::SERVICE_DRIVERTRANSPORT)};
+
+  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
+                  .name(arena, kDeviceName)
+                  .offers(arena, std::move(offers))
+                  .properties(arena, std::move(properties))
+                  .Build();
+
+  zx::result controller_endpoints =
+      fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
+  ZX_ASSERT_MSG(controller_endpoints.is_ok(), "Failed to create endpoints: %s",
+                controller_endpoints.status_string());
+
+  fidl::WireResult result =
+      fidl::WireCall(node())->AddChild(args, std::move(controller_endpoints->server), {});
+  if (!result.ok()) {
+    FDF_LOG(ERROR, "Failed to add child %s", result.status_string());
+    return zx::error(result.status());
+  }
+  controller_.Bind(std::move(controller_endpoints->client));
+
+  return zx::ok();
+}
+
+void TiTca6408a::ConfigIn(ConfigInRequest& request, ConfigInCompleter::Sync& completer) {
+  if (!IsIndexInRange(request.index())) {
+    completer.Reply(fit::error(ZX_ERR_OUT_OF_RANGE));
+    return;
   }
 
-  if (flags != GPIO_NO_PULL) {
-    return ZX_ERR_NOT_SUPPORTED;
+  if (request.flags() != fuchsia_hardware_gpio::GpioFlags::kNoPull) {
+    completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
+    return;
   }
 
-  return SetBit(Register::kConfiguration, index).status_value();
-}
-
-zx_status_t TiTca6408a::GpioImplConfigOut(uint32_t index, uint8_t initial_value) {
-  if (zx_status_t status = GpioImplWrite(index, initial_value); status != ZX_OK) {
-    return status;
+  auto result = SetBit(Register::kConfiguration, request.index());
+  if (result.is_error()) {
+    completer.Reply(fit::error(result.error_value()));
+    return;
   }
-  return ClearBit(Register::kConfiguration, index).status_value();
+  completer.Reply(fit::ok());
 }
 
-zx_status_t TiTca6408a::GpioImplSetAltFunction(uint32_t index, uint64_t function) {
-  return ZX_ERR_NOT_SUPPORTED;
+void TiTca6408a::ConfigOut(ConfigOutRequest& request, ConfigOutCompleter::Sync& completer) {
+  if (zx_status_t status = Write(request.index(), request.initial_value()); status != ZX_OK) {
+    completer.Reply(zx::error(status));
+    return;
+  }
+  auto result = ClearBit(Register::kConfiguration, request.index());
+  if (result.is_error()) {
+    completer.Reply(zx::error(result.status_value()));
+    return;
+  }
+  completer.Reply(fit::ok());
 }
 
-zx_status_t TiTca6408a::GpioImplSetDriveStrength(uint32_t index, uint64_t ua,
-                                                 uint64_t* out_actual_ua) {
-  return ZX_ERR_NOT_SUPPORTED;
+void TiTca6408a::SetAltFunction(SetAltFunctionRequest& request,
+                                SetAltFunctionCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-zx_status_t TiTca6408a::GpioImplGetDriveStrength(uint32_t index, uint64_t* ua) {
-  return ZX_ERR_NOT_SUPPORTED;
+void TiTca6408a::SetDriveStrength(SetDriveStrengthRequest& request,
+                                  SetDriveStrengthCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-zx_status_t TiTca6408a::GpioImplRead(uint32_t index, uint8_t* out_value) {
-  if (!IsIndexInRange(index)) {
-    return ZX_ERR_OUT_OF_RANGE;
+void TiTca6408a::GetDriveStrength(GetDriveStrengthRequest& request,
+                                  GetDriveStrengthCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
+void TiTca6408a::Read(ReadRequest& request, ReadCompleter::Sync& completer) {
+  if (!IsIndexInRange(request.index())) {
+    completer.Reply(zx::error(ZX_ERR_OUT_OF_RANGE));
+    return;
   }
 
-  zx::result<uint8_t> value = ReadBit(Register::kInputPort, index);
+  zx::result<uint8_t> value = ReadBit(Register::kInputPort, request.index());
   if (value.is_error()) {
-    return value.status_value();
+    completer.Reply(zx::error(value.error_value()));
+    return;
   }
 
-  if (out_value) {
-    *out_value = value.value();
-  }
-
-  return ZX_OK;
+  completer.Reply(fit::ok(value.value()));
 }
 
-zx_status_t TiTca6408a::GpioImplWrite(uint32_t index, uint8_t value) {
+void TiTca6408a::Write(WriteRequest& request, WriteCompleter::Sync& completer) {
+  auto status = Write(request.index(), request.value());
+  if (status != ZX_OK) {
+    completer.Reply(fit::error(status));
+    return;
+  }
+  completer.Reply(fit::ok());
+}
+
+zx_status_t TiTca6408a::Write(uint32_t index, uint8_t value) {
   if (!IsIndexInRange(index)) {
     return ZX_ERR_OUT_OF_RANGE;
   }
@@ -117,16 +182,25 @@ zx_status_t TiTca6408a::GpioImplWrite(uint32_t index, uint8_t value) {
   return status.status_value();
 }
 
-zx_status_t TiTca6408a::GpioImplGetInterrupt(uint32_t index, uint32_t flags,
-                                             zx::interrupt* out_irq) {
-  return ZX_ERR_NOT_SUPPORTED;
+void TiTca6408a::GetInterrupt(GetInterruptRequest& request,
+                              GetInterruptCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-zx_status_t TiTca6408a::GpioImplReleaseInterrupt(uint32_t index) { return ZX_ERR_NOT_SUPPORTED; }
-
-zx_status_t TiTca6408a::GpioImplSetPolarity(uint32_t index, gpio_polarity_t polarity) {
-  return ZX_ERR_NOT_SUPPORTED;
+void TiTca6408a::ReleaseInterrupt(ReleaseInterruptRequest& request,
+                                  ReleaseInterruptCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
+
+void TiTca6408a::SetPolarity(SetPolarityRequest& request, SetPolarityCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
+void TiTca6408a::GetPins(GetPinsCompleter::Sync& completer) {}
+
+void TiTca6408a::GetInitSteps(GetInitStepsCompleter::Sync& completer) {}
+
+void TiTca6408a::GetControllerId(GetControllerIdCompleter::Sync& completer) { completer.Reply(0); }
 
 zx::result<uint8_t> TiTca6408a::ReadBit(Register reg, uint32_t index) {
   const auto bit = static_cast<uint8_t>(1 << (index - pin_index_offset_));
@@ -136,7 +210,7 @@ zx::result<uint8_t> TiTca6408a::ReadBit(Register reg, uint32_t index) {
   auto status = i2c_.WriteReadSyncRetries(&address, sizeof(address), &value, sizeof(value),
                                           kI2cRetries, kI2cRetryDelay);
   if (status.status != ZX_OK) {
-    zxlogf(ERROR, "Failed to read register %u: %s", address, zx_status_get_string(status.status));
+    FDF_LOG(ERROR, "Failed to read register %u: %s", address, zx_status_get_string(status.status));
     return zx::error(status.status);
   }
 
@@ -151,14 +225,14 @@ zx::result<> TiTca6408a::SetBit(Register reg, uint32_t index) {
   auto status = i2c_.WriteReadSyncRetries(&address, sizeof(address), &value, sizeof(value),
                                           kI2cRetries, kI2cRetryDelay);
   if (status.status != ZX_OK) {
-    zxlogf(ERROR, "Failed to read register %u: %s", address, zx_status_get_string(status.status));
+    FDF_LOG(ERROR, "Failed to read register %u: %s", address, zx_status_get_string(status.status));
     return zx::error(status.status);
   }
 
   const uint8_t write_buf[2] = {address, static_cast<uint8_t>(value | bit)};
   status = i2c_.WriteSyncRetries(write_buf, sizeof(write_buf), kI2cRetries, kI2cRetryDelay);
   if (status.status != ZX_OK) {
-    zxlogf(ERROR, "Failed to write register %u: %s", address, zx_status_get_string(status.status));
+    FDF_LOG(ERROR, "Failed to write register %u: %s", address, zx_status_get_string(status.status));
     return zx::error(status.status);
   }
 
@@ -173,27 +247,20 @@ zx::result<> TiTca6408a::ClearBit(Register reg, uint32_t index) {
   auto status = i2c_.WriteReadSyncRetries(&address, sizeof(address), &value, sizeof(value),
                                           kI2cRetries, kI2cRetryDelay);
   if (status.status != ZX_OK) {
-    zxlogf(ERROR, "Failed to read register %u: %s", address, zx_status_get_string(status.status));
+    FDF_LOG(ERROR, "Failed to read register %u: %s", address, zx_status_get_string(status.status));
     return zx::error(status.status);
   }
 
   const uint8_t write_buf[2] = {address, static_cast<uint8_t>(value & ~bit)};
   status = i2c_.WriteSyncRetries(write_buf, sizeof(write_buf), kI2cRetries, kI2cRetryDelay);
   if (status.status != ZX_OK) {
-    zxlogf(ERROR, "Failed to write register %u: %s", address, zx_status_get_string(status.status));
+    FDF_LOG(ERROR, "Failed to write register %u: %s", address, zx_status_get_string(status.status));
     return zx::error(status.status);
   }
 
   return zx::ok();
 }
 
-static constexpr zx_driver_ops_t ti_tca6408a_driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = TiTca6408a::Create;
-  return ops;
-}();
-
 }  // namespace gpio
 
-ZIRCON_DRIVER(ti_tca6408a, gpio::ti_tca6408a_driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT(gpio::TiTca6408aDevice);

@@ -137,7 +137,7 @@ async fn enumerate_echo_test() {
 
     proxy
         .enumerate_in_realm(
-            "fuchsia-pkg://fuchsia.com/test_manager_test#meta/echo_test_realm.cm",
+            "fuchsia-pkg://fuchsia.com/test_manager_specified_realm_test#meta/echo_test_realm.cm",
             realm,
             &offers,
             ECHO_TEST_COL,
@@ -232,7 +232,7 @@ async fn collect_isolated_logs_using_batch() {
 async fn collect_isolated_logs_using_archive_iterator() {
     let test_url = "fuchsia-pkg://fuchsia.com/test-manager-diagnostics-tests#meta/test-root.cm";
     let options = RunOptions {
-        log_iterator: Some(ftest_manager::LogsIteratorOption::ArchiveIterator),
+        log_iterator: Some(ftest_manager::LogsIteratorOption::SocketBatchIterator),
         ..default_run_option()
     };
     let (_events, logs) = run_test_in_hermetic_test_realm(test_url, options).await.unwrap();
@@ -247,7 +247,7 @@ async fn collect_isolated_logs_using_archive_iterator() {
 async fn update_log_severity_for_all_components() {
     let test_url = "fuchsia-pkg://fuchsia.com/test-manager-diagnostics-tests#meta/test-root.cm";
     let options = RunOptions {
-        log_iterator: Some(ftest_manager::LogsIteratorOption::ArchiveIterator),
+        log_iterator: Some(ftest_manager::LogsIteratorOption::SocketBatchIterator),
         log_interest: Some(vec![
             selectors::parse_log_interest_selector_or_severity("DEBUG").unwrap()
         ]),
@@ -384,7 +384,7 @@ async fn debug_data_isolated_test() {
 
 #[fuchsia::test]
 async fn custom_artifact_realm_test() {
-    let test_url = "fuchsia-pkg://fuchsia.com/test_manager_test#meta/custom_artifact_realm_test.cm";
+    let test_url = "fuchsia-pkg://fuchsia.com/test_manager_specified_realm_test#meta/custom_artifact_realm_test.cm";
 
     let (events, _) =
         run_test_in_hermetic_test_realm(test_url, default_run_option()).await.unwrap();

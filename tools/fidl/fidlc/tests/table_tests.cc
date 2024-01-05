@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/flat_ast.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
@@ -76,13 +75,15 @@ type Foo = table {};
 TEST(TableTests, BadMissingOrdinals) {
   TestLibrary library;
   library.AddFile("bad/fi-0016-a.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrMissingOrdinalBeforeMember)
+  library.ExpectFail(fidl::ErrMissingOrdinalBeforeMember);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadOrdinalOutOfBoundsNegative) {
   TestLibrary library;
   library.AddFile("bad/fi-0017-a.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrOrdinalOutOfBound);
+  library.ExpectFail(fidl::ErrOrdinalOutOfBound);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadOrdinalOutOfBoundsLarge) {
@@ -93,7 +94,8 @@ type Foo = union {
   4294967296: foo string;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrOrdinalOutOfBound);
+  library.ExpectFail(fidl::ErrOrdinalOutOfBound);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadDuplicateFieldNames) {
@@ -105,15 +107,16 @@ type MyTable = table {
     2: my_field uint32;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrDuplicateElementName);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "table member");
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "my_field");
+  library.ExpectFail(fidl::ErrNameCollision, fidl::flat::Element::Kind::kTableMember, "my_field",
+                     fidl::flat::Element::Kind::kTableMember, "example.fidl:5:8");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadDuplicateOrdinals) {
   TestLibrary library;
   library.AddFile("bad/fi-0094.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrDuplicateTableFieldOrdinal);
+  library.ExpectFail(fidl::ErrDuplicateTableFieldOrdinal, "bad/fi-0094.test.fidl:7:5");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, GoodAttributesOnFields) {
@@ -171,7 +174,8 @@ type OptionalTableContainer = struct {
     foo Foo:optional;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotBeOptional);
+  library.ExpectFail(fidl::ErrCannotBeOptional, "Foo");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadTableMultipleConstraints) {
@@ -186,7 +190,8 @@ type OptionalTableContainer = struct {
     foo Foo:<1, 2, 3>;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTooManyConstraints);
+  library.ExpectFail(fidl::ErrTooManyConstraints, "Foo", 1, 3);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadOptionalInUnion) {
@@ -201,7 +206,8 @@ type OptionalTableContainer = union {
     1: foo Foo:optional;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotBeOptional);
+  library.ExpectFail(fidl::ErrCannotBeOptional, "Foo");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, GoodTableInTable) {
@@ -235,7 +241,8 @@ type OptionalTableContainer = flexible union {
 TEST(TableTests, BadOptionalTableMember) {
   TestLibrary library;
   library.AddFile("bad/fi-0048.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrOptionalTableMember);
+  library.ExpectFail(fidl::ErrOptionalTableMember);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadOptionalNonOptionalTableMember) {
@@ -247,7 +254,8 @@ type Foo = table {
     1: t int64:optional;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotBeOptional);
+  library.ExpectFail(fidl::ErrCannotBeOptional, "int64");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadDefaultNotAllowed) {
@@ -259,15 +267,18 @@ type Foo = table {
 };
 
 )FIDL");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrUnexpectedTokenOfKind,
-                                      fidl::ErrMissingOrdinalBeforeMember);
+  library.ExpectFail(fidl::ErrUnexpectedTokenOfKind,
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kEqual),
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kSemicolon));
+  library.ExpectFail(fidl::ErrMissingOrdinalBeforeMember);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadMustBeDense) {
   TestLibrary library;
   library.AddFile("bad/fi-0100.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrNonDenseOrdinal);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "2");
+  library.ExpectFail(fidl::ErrNonDenseOrdinal, 2);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, Good64OrdinalsMaxIsTable) {
@@ -279,7 +290,8 @@ TEST(TableTests, Good64OrdinalsMaxIsTable) {
 TEST(TableTests, BadMaxOrdinalNotTable) {
   TestLibrary library;
   library.AddFile("bad/fi-0093.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrMaxOrdinalNotTable);
+  library.ExpectFail(fidl::ErrMaxOrdinalNotTable);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadMaxOrdinalNotTableNotPrimitive) {
@@ -356,13 +368,15 @@ type Example = table {
 };
 
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrMaxOrdinalNotTable);
+  library.ExpectFail(fidl::ErrMaxOrdinalNotTable);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TableTests, BadTooManyOrdinals) {
   TestLibrary library;
   library.AddFile("bad/fi-0092.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTooManyTableOrdinals);
+  library.ExpectFail(fidl::ErrTooManyTableOrdinals);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 // TODO(fxbug.dev/35218): This should work once recursive types are fully supported.
@@ -370,8 +384,8 @@ TEST(TableTests, BadRecursionDisallowed) {
   TestLibrary library;
   library.AddFile("bad/fi-0057-d.test.fidl");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrIncludeCycle);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "table 'MySelf' -> table 'MySelf'");
+  library.ExpectFail(fidl::ErrIncludeCycle, "table 'MySelf' -> table 'MySelf'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 }  // namespace

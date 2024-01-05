@@ -30,8 +30,7 @@
 # to this file, but each entry needs a ticket assigned to the assembly team with
 # an agreed upon solution for how to address the tech-debt.
 
-# We use the minimal legacy AIB for workbench.
-import("//products/common/minimal.gni")
+include_shell_commands_package = true
 
 # Use Bazel-built images
 use_bazel_images_only = true
@@ -43,29 +42,15 @@ fuchsia_product_assembly_config_label = "//products/minimal"
 zedboot_product_assembly_config_label = "//products/zedboot"
 
 # Kernel command line arguments.
-product_bootfs_labels += [
-  "//products/kernel_cmdline:oom.reboot-timeout--low",
-  "//src/sys/component_manager:component_manager_bootfs_config",
-]
-
-legacy_base_package_labels += [
-  # TODO(http://fxb/103965): remove once we have config_data support in assembly_input_bundle()
-  "//src/connectivity/network/netcfg:config-default",
-]
-
-fuchsia_structured_config_policy =
-    "//products/minimal/minimal_user_structured_config_policy.json5"
+product_bootfs_labels = [ "//products/kernel_cmdline:oom.reboot-timeout--low" ]
 
 extra_bazel_assembly_targets =
     [ "//build/bazel/assembly/assembly_outputs:verifications" ]
 
 extra_gn_labels_for_bazel_inputs =
-    [ "//src/ui/bin/tiles-session:tiles_session_bazel_inputs" ]
+    [ "//products/workbench/workbench_session:workbench_session_bazel_inputs" ]
 
-# We need to skip the fshost configuration in Assembly for workbench until
-# minimal.gni supports configuring fshost via Assembly
-# TODO(fxbug.dev/121405): Remove once fshost is no longer configured via GN
-assembly_fshost = true
+fxfs_blob = true
 
 # BEGIN: Baseline eng support
 #
@@ -73,11 +58,11 @@ assembly_fshost = true
 #
 # TODO(fxbug.dev/121402): Delete this section and do the equivalent via
 # assembly.
-legacy_base_package_labels += [
-  "//src/connectivity:tools",
-  "//src/diagnostics/log_listener:log_listener_shell",
-]
+legacy_base_package_labels = [ "//src/connectivity:tools" ]
 
 # Debugging support
-discoverable_package_labels += [ "//src/developer/debug/debug_agent" ]
+discoverable_package_labels = [
+  "//bundles/tools",
+  "//src/developer/debug/debug_agent",
+]
 # END: Baseline eng support

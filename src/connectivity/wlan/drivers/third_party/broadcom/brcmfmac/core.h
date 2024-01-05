@@ -23,10 +23,9 @@
 
 #include <fidl/fuchsia.wlan.fullmac/cpp/driver/wire.h>
 #include <fidl/fuchsia.wlan.fullmac/cpp/fidl.h>
+#include <fidl/fuchsia.wlan.phyimpl/cpp/driver/wire.h>
+#include <fidl/fuchsia.wlan.phyimpl/cpp/fidl.h>
 #include <fuchsia/hardware/network/driver/c/banjo.h>
-#include <fuchsia/hardware/wlan/fullmac/c/banjo.h>
-#include <fuchsia/hardware/wlanphyimpl/c/banjo.h>
-#include <fuchsia/wlan/common/c/banjo.h>
 #include <lib/stdcompat/span.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/channel.h>
@@ -45,12 +44,10 @@
 
 #include "bus.h"
 #include "fuchsia/wlan/ieee80211/cpp/fidl.h"
-#include "fuchsia/wlan/internal/c/banjo.h"
 #include "fweh.h"
 #include "fwil_types.h"
 #include "linuxisms.h"
 #include "recovery/recovery_trigger.h"
-#include "src/connectivity/wlan/drivers/lib/fullmac_ifc/wlan_fullmac_ifc.h"
 #include "workqueue.h"
 
 #define TOE_TX_CSUM_OL 0x00000001
@@ -84,6 +81,9 @@
 #define RSSI_HISTOGRAM_LEN 129
 
 #define MAX_SUPPORTED_WEP_KEY_LEN 13
+
+namespace fuchsia_wlan_phyimpl_wire = fuchsia_wlan_phyimpl::wire;
+namespace fuchsia_wlan_common_wire = fuchsia_wlan_common::wire;
 
 static inline bool address_is_multicast(const uint8_t* address) { return 1 & *address; }
 
@@ -157,7 +157,7 @@ struct brcmf_pub {
   uint8_t clmver[BRCMF_DCMD_SMLEN];
 
   /* The last country code the driver set to firmware, used for recovery. */
-  uint8_t last_country_code[WLANPHY_ALPHA2_LEN];
+  uint8_t last_country_code[fuchsia_wlan_phyimpl_wire::kWlanphyAlpha2Len];
   /* Controller of recovery trigger point*/
   std::unique_ptr<wlan::brcmfmac::RecoveryTrigger> recovery_trigger;
   /* The start point of driver recovery process*/
@@ -195,6 +195,9 @@ using reassoc_context_t = struct {
   wlan::common::MacAddr bssid;
 };
 
+constexpr size_t kConnectReqBufferSize =
+    fidl::MaxSizeInChannel<fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest,
+                           fidl::MessageDirection::kSending>();
 /**
  * struct brcmf_if - interface control information.
  *
@@ -208,7 +211,6 @@ using reassoc_context_t = struct {
  * @bsscfgidx: index of bss associated with this interface.
  * @mac_addr: assigned mac address.
  * @netif_stop: bitmap indicates reason why netif queues are stopped.
- * //@netif_stop_lock: spinlock for update netif_stop from multiple sources.
  *  (replaced by irq_callback_lock)
  * @roam_req: request for a roam attempt, populated if a roam is requested from
  *   above the driver.
@@ -231,9 +233,10 @@ struct brcmf_if {
   int32_t bsscfgidx;
   uint8_t mac_addr[ETH_ALEN];
   uint8_t netif_stop;
-  fuchsia_wlan_fullmac::WlanFullmacImplConnectReqRequest connect_req;
+  fuchsia_wlan_fullmac::WlanFullmacImplConnectRequest connect_req;
+  // SSID of Successfully started SoftAP.
+  fuchsia_wlan_ieee80211::wire::CSsid saved_softap_ssid;
   reassoc_context_t reassoc_context;
-  // spinlock_t netif_stop_lock;
   std::atomic<int> pend_8021x_cnt;
   sync_completion_t pend_8021x_wait;
   sync_completion_t disconnect_done;
@@ -279,17 +282,17 @@ struct net_device {
   uint32_t scan_num_results;
   std::mutex scan_sync_id_mutex;  // Used to ensure that sync_id is stored before processing results
   std::shared_mutex if_proto_lock;  // Used as RW-lock for if_proto.
-  std::unique_ptr<wlan::WlanFullmacIfc> if_proto;
+  fdf::WireSyncClient<fuchsia_wlan_fullmac::WlanFullmacImplIfc> if_proto;
   uint8_t dev_addr[ETH_ALEN];
   char name[NET_DEVICE_NAME_MAX_LEN];
   void* priv;
   // The total number of times that brcmf_log_client_stats() has been called (only increases when
   // device is connected).
   uint32_t client_stats_log_count;
-  // The most recent times we have triggered a deauthentication for an rx freeze. We only track
-  // the most recent BRCMF_RX_FREEZE_MAX_REASSOCS_PER_HOUR times. The time point is represented by
-  // the count of client_stats logs.
-  std::list<uint32_t> rx_freeze_deauth_times;
+  // The most recent times we have triggered a deauthentication. We only track the most
+  // recent BRCMF_MAX_DEAUTHS_PER_HOUR times. The time point is represented by the count
+  // of client_stats logs.
+  std::list<uint32_t> deauth_trigger_times;
   struct {
     int tx_dropped;
     int tx_packets;
@@ -308,9 +311,16 @@ struct net_device {
     int tx_bad_pkts_prev;
     int total_rx_pkts_prev;
     int total_tx_pkts_prev;
+    int wme_rx_good_pkts_prev;
+    int wme_rx_bad_pkts_prev;
+    int wme_total_rx_pkts_prev;
 
-    int rx_freeze_count;  // The number of brcmf_log_client_stats called in which rx_packet number
-                          // freeze happens.
+    // The number of brcmf_log_client_stats called in which rx_packet number freeze happens.
+    int rx_freeze_count;
+    // Number of log periods (invocation of brcmf_log_client_stats) during which the wme rx error
+    // rate was high.
+    int high_wme_rx_error_rate_count;
+
     // The number of brcmf_log_client_stats() called in which data rate is low (gets reset any time
     // data rate goes higher and also when the client disconnects).
     int low_data_rate_count;

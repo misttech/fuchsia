@@ -4,19 +4,13 @@
 
 import("//build/assembly/product_assembly_configuration.gni")
 import("//build/assembly/sshd_config.gni")
+import("//build/info/info.gni")
 
 assert(
     is_fuchsia,
     "Product definitions and assemblies should only be defined in the fuchsia toolchain")
 
 _base_driver_packages = [
-  {
-    package_target = "//src/graphics/drivers/msd-arm-mali:msd-arm-mali-test"
-    driver_components = [
-      "meta/libmsd_arm_test.cm",
-      "meta/libmsd_arm_rebind.cm",
-    ]
-  },
   {
     package_target = "//src/graphics/drivers/msd-intel-gen:msd-intel-gen-test"
     driver_components = [ "meta/libmsd_intel_test.cm" ]
@@ -30,15 +24,41 @@ _base_driver_packages = [
 # This is the base platform configuration used by core
 _platform_configuration_base = {
   build_type = "eng"
-  input = {
+
+  input_groups = {
+    group1 = true
+  }
+
+  fonts = {
+    # See base_packages below.
+    font_collection = "small-open-fonts-collection"
+  }
+
+  intl = {
+    config_type = "small"
+  }
+
+  icu = {
+    revision = "default"
+  }
+
+  media = {
+    audio = {
+      full_stack = {
+      }
+    }
+  }
+
+  setui = {
+    use_icu = "with_icu"
+    with_camera = false
+  }
+
+  ui = {
     supported_input_devices = [
       "button",
       "touchscreen",
     ]
-  }
-
-  fonts = {
-    enabled = true
   }
 
   # If the 'authorized_ssh_keys_path' GN arg has been set, then pass that path
@@ -54,10 +74,17 @@ _platform_configuration_base = {
 _storage_default = {
   storage = {
     configure_fshost = true
+  }
+}
+
+_storage_f2fs = {
+  storage = {
+    configure_fshost = true
     filesystems = {
       volume = {
         fvm = {
           data = {
+            data_filesystem_format = "f2fs"
           }
           blob = {
           }
@@ -84,14 +111,12 @@ _storage_minfs = {
   }
 }
 
-_storage_fxfs = {
-  storage = {
-    configure_fshost = true
-    filesystems = {
-      volume = "fxfs"
-    }
-  }
-}
+_base_packages = [
+  {
+    # Provides font assets for `platform.fonts.font_collection` above.
+    package_target = "//src/fonts/asset_providers:small-open-fonts-collection.asset-provider.package"
+  },
+]
 
 product_assembly_configuration("core") {
   testonly = true
@@ -100,9 +125,27 @@ product_assembly_configuration("core") {
     forward_variables_from(_storage_default, "*")
   }
   product = {
+    build_info = default_product_build_info
   }
 
   base_driver_packages = _base_driver_packages
+  base_packages = _base_packages
+  deps = [ "//build/info:build_info_files" ]
+}
+
+product_assembly_configuration("core_with_f2fs") {
+  testonly = true
+  platform = {
+    forward_variables_from(_platform_configuration_base, "*")
+    forward_variables_from(_storage_f2fs, "*")
+  }
+  product = {
+    build_info = default_product_build_info
+  }
+
+  base_driver_packages = _base_driver_packages
+  base_packages = _base_packages
+  deps = [ "//build/info:build_info_files" ]
 }
 
 product_assembly_configuration("core_with_minfs") {
@@ -112,21 +155,12 @@ product_assembly_configuration("core_with_minfs") {
     forward_variables_from(_storage_minfs, "*")
   }
   product = {
+    build_info = default_product_build_info
   }
 
   base_driver_packages = _base_driver_packages
-}
-
-product_assembly_configuration("core_with_fxfs") {
-  testonly = true
-  platform = {
-    forward_variables_from(_platform_configuration_base, "*")
-    forward_variables_from(_storage_fxfs, "*")
-  }
-  product = {
-  }
-
-  base_driver_packages = _base_driver_packages
+  base_packages = _base_packages
+  deps = [ "//build/info:build_info_files" ]
 }
 
 product_assembly_configuration("core_with_netstack3") {
@@ -142,7 +176,33 @@ product_assembly_configuration("core_with_netstack3") {
     }
   }
   product = {
+    build_info = default_product_build_info
   }
 
   base_driver_packages = _base_driver_packages
+  base_packages = _base_packages
+  deps = [ "//build/info:build_info_files" ]
+}
+
+product_assembly_configuration("core_with_dfv2_fuzzing") {
+  testonly = true
+  platform = {
+    forward_variables_from(_platform_configuration_base, "*")
+    forward_variables_from(_storage_default, "*")
+
+    driver_framework = {
+      test_fuzzing_config = {
+        enable_load_fuzzer = true
+        max_load_delay_ms = 300
+        enable_test_shutdown_delays = true
+      }
+    }
+  }
+  product = {
+    build_info = default_product_build_info
+  }
+
+  base_driver_packages = _base_driver_packages
+  base_packages = _base_packages
+  deps = [ "//build/info:build_info_files" ]
 }

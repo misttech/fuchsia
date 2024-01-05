@@ -19,7 +19,7 @@
         "identity": {
             "password_pinweaver": "required"
         },
-        "input": {
+        "ui": {
             "supported_input_devices": [
                 "button",
                 "keyboard"
@@ -67,6 +67,6 @@
                 }
             ]
         },
-        "session_url": "fuchsia-pkg://fuchsia.com/tiles-session#meta/tiles-session.cm"
+        "session_url": "fuchsia-pkg://fuchsia.com/test_session#meta/test_session.cm"
     }
 }

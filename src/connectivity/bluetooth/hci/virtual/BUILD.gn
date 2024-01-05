@@ -33,7 +33,7 @@ source_set("common") {
     "//sdk/banjo/fuchsia.hardware.bt.hci:fuchsia.hardware.bt.hci_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.test:fuchsia.hardware.test_banjo_cpp",
     "//sdk/fidl/fuchsia.bluetooth.test:fuchsia.bluetooth.test_hlcpp",
-    "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_cpp",
     "//sdk/lib/fit-promise",
     "//src/connectivity/bluetooth/core/bt-host/fidl:helpers",
     "//src/connectivity/bluetooth/core/bt-host/hci",
@@ -41,12 +41,15 @@ source_set("common") {
     "//src/connectivity/bluetooth/lib/fidl",
     "//src/devices/lib/driver",
     "//src/lib/ddk",
+    "//third_party/pigweed/backends/pw_async_fuchsia:dispatcher",
     "//third_party/pigweed/backends/pw_log:dfv1",
     "//third_party/pigweed/backends/pw_random:zircon_random_generator",
     "//zircon/system/ulib/async:async-cpp",
     "//zircon/system/ulib/async-default",
+    "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/sync",
+    "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/zx",
   ]
 
@@ -58,10 +61,7 @@ fuchsia_driver("fuchsia_driver") {
   output_name = "bt-hci-virtual"
   testonly = true
   sources = []
-  deps = [
-    ":common",
-    "//sdk/lib/syslog/cpp:backend",
-  ]
+  deps = [ ":common" ]
 }
 
 fuchsia_driver_component("driver") {
@@ -91,7 +91,8 @@ executable("tests_executable") {
     ":common",
     "//sdk/banjo/fuchsia.hardware.bt.hci:fuchsia.hardware.bt.hci_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.test:fuchsia.hardware.test_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_cpp",
+    "//sdk/lib/syslog/cpp",
     "//sdk/lib/syslog/cpp:backend",
     "//src/devices/testing/mock-ddk",
     "//src/lib/fxl/test:gtest_main",

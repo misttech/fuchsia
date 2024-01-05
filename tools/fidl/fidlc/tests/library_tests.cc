@@ -5,10 +5,9 @@
 #include <string>
 #include <string_view>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/diagnostics.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
@@ -26,7 +25,8 @@ TEST(LibraryTests, BadFilesDisagreeOnLibraryName) {
   library.AddFile("bad/fi-0040-a.test.fidl");
   library.AddFile("bad/fi-0040-b.test.fidl");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrFilesDisagreeOnLibraryName);
+  library.ExpectFail(fidl::ErrFilesDisagreeOnLibraryName);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 }  // namespace

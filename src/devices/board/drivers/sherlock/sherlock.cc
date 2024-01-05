@@ -133,6 +133,53 @@ int Sherlock::Thread() {
     return -1;
   }
 
+  if (I2cInit() != ZX_OK) {
+    zxlogf(ERROR, "I2cInit() failed");
+  }
+
+  if (SpiInit() != ZX_OK) {
+    zxlogf(ERROR, "SpiInit() failed");
+  }
+
+  if (ThermalInit() != ZX_OK) {
+    zxlogf(ERROR, "ThermalInit() failed");
+  }
+
+  if (EmmcInit() != ZX_OK) {
+    zxlogf(ERROR, "EmmcInit() failed");
+  }
+
+  if (SdioInit() != ZX_OK) {
+    zxlogf(ERROR, "SdioInit() failed");
+  }
+
+  if (BluetoothInit() != ZX_OK) {
+    zxlogf(ERROR, "BluetoothInit() failed");
+  }
+
+  if (CameraInit() != ZX_OK) {
+    zxlogf(ERROR, "CameraInit() failed");
+  }
+
+  if (AudioInit() != ZX_OK) {
+    zxlogf(ERROR, "AudioInit() failed");
+  }
+
+  if (LightInit() != ZX_OK) {
+    zxlogf(ERROR, "LightInit() failed");
+    return -1;
+  }
+
+  // ClkInit() must be called after other subsystems that bind to clock have had a chance to add
+  // their init steps.
+  if (ClkInit() != ZX_OK) {
+    zxlogf(ERROR, "ClkInit() failed");
+    return -1;
+  }
+  clock_init_steps_.clear();
+
+  // GpioInit() must be called after other subsystems that bind to GPIO have had a chance to add
+  // their init steps.
   if (GpioInit() != ZX_OK) {
     zxlogf(ERROR, "GpioInit() failed");
     return -1;
@@ -153,21 +200,8 @@ int Sherlock::Thread() {
     return -1;
   }
 
-  if (ClkInit() != ZX_OK) {
-    zxlogf(ERROR, "ClkInit() failed");
-    return -1;
-  }
-
-  if (I2cInit() != ZX_OK) {
-    zxlogf(ERROR, "I2cInit() failed");
-  }
-
   if (CpuInit() != ZX_OK) {
     zxlogf(ERROR, "CpuInit() failed\n");
-  }
-
-  if (SpiInit() != ZX_OK) {
-    zxlogf(ERROR, "SpiInit() failed");
   }
 
   if (CanvasInit() != ZX_OK) {
@@ -176,10 +210,6 @@ int Sherlock::Thread() {
 
   if (PwmInit() != ZX_OK) {
     zxlogf(ERROR, "PwmInit() failed");
-  }
-
-  if (ThermalInit() != ZX_OK) {
-    zxlogf(ERROR, "ThermalInit() failed");
   }
 
   if (DsiInit() != ZX_OK) {
@@ -193,22 +223,6 @@ int Sherlock::Thread() {
   // Then the platform device drivers.
   if (UsbInit() != ZX_OK) {
     zxlogf(ERROR, "UsbInit() failed");
-  }
-
-  if (EmmcInit() != ZX_OK) {
-    zxlogf(ERROR, "EmmcInit() failed");
-  }
-
-  if (SdioInit() != ZX_OK) {
-    zxlogf(ERROR, "SdioInit() failed");
-  }
-
-  if (BluetoothInit() != ZX_OK) {
-    zxlogf(ERROR, "BluetoothInit() failed");
-  }
-
-  if (CameraInit() != ZX_OK) {
-    zxlogf(ERROR, "CameraInit() failed");
   }
 
   if (TeeInit() != ZX_OK) {
@@ -239,17 +253,8 @@ int Sherlock::Thread() {
     zxlogf(ERROR, "ButtonsInit() failed");
   }
 
-  if (AudioInit() != ZX_OK) {
-    zxlogf(ERROR, "AudioInit() failed");
-  }
-
   if (TouchInit() != ZX_OK) {
     zxlogf(ERROR, "TouchInit() failed");
-    return -1;
-  }
-
-  if (LightInit() != ZX_OK) {
-    zxlogf(ERROR, "LightInit() failed");
     return -1;
   }
 
@@ -269,6 +274,10 @@ int Sherlock::Thread() {
     zxlogf(ERROR, "RamCtlInit failed");
   }
 
+  if (auto result = AdcInit(); result.is_error()) {
+    zxlogf(ERROR, "AdcInit failed: %d", result.error_value());
+  }
+
   if (ThermistorInit() != ZX_OK) {
     zxlogf(ERROR, "ThermistorInit failed");
   }
@@ -280,6 +289,8 @@ int Sherlock::Thread() {
   // DDIC_DETECT -> DISP_SOC_ID2
   display_id_property_ =
       root_.CreateUint("display_id", GetDisplayVendor() | (GetDdicVersion() << 1));
+
+  ZX_ASSERT_MSG(clock_init_steps_.empty(), "Clock init steps added but not applied");
 
   return 0;
 }

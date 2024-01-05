@@ -39,6 +39,7 @@ source_set("flatland") {
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp_hlcpp_conversion",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
     "//sdk/fidl/fuchsia.ui.scenic:fuchsia.ui.scenic_hlcpp",
+    "//src/lib/fostr/fidl/fuchsia.math",
     "//src/lib/fxl",
 
     # TODO(fxbug.dev/56879): this dependency should be broken down into smaller libraries,
@@ -59,8 +60,6 @@ source_set("flatland") {
     "//sdk/lib/sys/cpp",
     "//sdk/lib/ui/scenic/cpp:cpp",
     "//src/lib/fsl",
-    "//src/ui/scenic/lib/gfx:object_linker",
-    "//src/ui/scenic/lib/gfx:validate_eventpair",
     "//src/ui/scenic/lib/scenic/util",
     "//src/ui/scenic/lib/scheduling:frame_scheduler_interface",
     "//src/ui/scenic/lib/scheduling:present_helpers",

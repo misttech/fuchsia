@@ -12,7 +12,6 @@ driver_bind_rules("virtio_gpu_bind") {
   tests = "bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.acpi",
-    "//src/devices/bind/fuchsia.hardware.sysmem",
     "//src/devices/bind/fuchsia.pci",
     "//src/devices/bind/fuchsia.sysmem",
   ]
@@ -29,15 +28,21 @@ group("tests") {
 source_set("common_srcs") {
   configs += [ "//build/config:all_source" ]
   sources = [
-    "gpu.cc",
+    "gpu-device-driver.cc",
+    "gpu-device-driver.h",
+    "gpu-device.cc",
+    "gpu-device.h",
     "virtio-abi.cc",
+    "virtio-abi.h",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp_wire",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/devfs/cpp",
     "//src/devices/bus/lib/virtio",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//src/devices/lib/driver:driver_runtime",
     "//src/lib/fsl",
     "//zircon/system/ulib/sysmem-version",
   ]
@@ -49,14 +54,10 @@ fuchsia_driver("virtio_gpu-driver") {
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  sources = [ "gpu_driver.cc" ]
   deps = [
     ":common_srcs",
     ":virtio_gpu_bind",
     "//sdk/lib/syslog/cpp:backend",
-    "//src/devices/bus/lib/virtio",
-    "//src/devices/lib/driver",
-    "//src/lib/ddktl",
   ]
 }
 
@@ -65,6 +66,11 @@ fuchsia_driver_component("virtio_gpu") {
   component_name = "virtio_gpu"
   manifest = "meta/virtio_gpu.cml"
   deps = [ ":virtio_gpu-driver" ]
+}
+
+fuchsia_driver_package("package") {
+  package_name = "virtio_gpu"
+  driver_components = [ ":virtio_gpu" ]
 }
 
 test("virtio-gpu-test") {
@@ -76,26 +82,33 @@ test("virtio-gpu-test") {
     }
   }
   sources = [
-    # TODO(b/282968393): tests pending conversion to dfv2
-    #"gpu_test.cc",
-    #"virtio-abi-test.cc",
+    "gpu-device-driver-test.cc",
+    "virtio-abi-test.cc",
   ]
   deps = [
     ":common_srcs",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp_wire_testing",
-    "//sdk/lib/async-loop-testing/cpp",
-    "//src/devices/bus/lib/virtio",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp_testing",
+    "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/driver/component/cpp:cpp_test",
+    "//sdk/lib/driver/testing/cpp",
     "//src/devices/testing/fake-bti",
-    "//src/devices/testing/no_ddk",
+    "//src/graphics/display/lib/api-types-cpp:api-types-cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
-    "//third_party/googletest:gtest",
-    "//zircon/system/ulib/async-loop:async-loop-cpp",
-    "//zircon/system/ulib/async-loop:async-loop-default",
   ]
 }
 
 fuchsia_unittest_package("virtio-gpu-test-package") {
   package_name = "virtio-gpu-test"
   deps = [ ":virtio-gpu-test" ]
+
+  # TODO(fxbug.dev/134883): Remove this block when below error is resolved.
+  # There's expected error logs that happen in the integration test where
+  # GetBtiAndBackend fails in GpuDevice::Create due to testing
+  # without a fake GPU backend in place.
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

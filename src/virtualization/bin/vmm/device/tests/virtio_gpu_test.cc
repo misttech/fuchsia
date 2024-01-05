@@ -17,6 +17,7 @@
 
 #include <virtio/gpu.h>
 
+#include "src/ui/scenic/lib/utils/pixel.h"
 #include "src/ui/testing/ui_test_manager/ui_test_manager.h"
 #include "src/ui/testing/ui_test_realm/ui_test_realm.h"
 #include "src/virtualization/bin/vmm/device/tests/test_with_device.h"
@@ -85,7 +86,6 @@ class VirtioGpuTest : public TestWithDevice,
 
     ui_testing::UITestRealm::Config ui_config;
     ui_config.use_scene_owner = true;
-    ui_config.use_flatland = true;
     ui_config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
     ui_config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_,
                                        fuchsia::ui::composition::Allocator::Name_};
@@ -386,9 +386,9 @@ TEST_P(VirtioGpuTest, UpdateCursor) {
   constexpr uint32_t kCursorX = 100;
   constexpr uint32_t kCursorY = 100;
 
-  const auto& kWhite = ui_testing::Pixel(0xff, 0xff, 0xff, 0xff);
-  const auto& kBlack = ui_testing::Screenshot::kBlack;
-  const auto& kMagenta = ui_testing::Screenshot::kMagenta;
+  const auto& kWhite = utils::Pixel(0xff, 0xff, 0xff, 0xff);
+  const auto& kBlack = utils::kBlack;
+  const auto& kMagenta = utils::kMagenta;
 
   // Create background resource
   {
@@ -490,7 +490,7 @@ TEST_P(VirtioGpuTest, UpdateCursor) {
 
   // We should have an opaque white background at this point.
   {
-    std::map<ui_testing::Pixel, uint32_t> expected_histogram{
+    std::map<utils::Pixel, uint32_t> expected_histogram{
         std::tuple{kWhite, display_width * display_height}};
 
     RunLoopUntil(
@@ -606,7 +606,7 @@ TEST_P(VirtioGpuTest, UpdateCursor) {
 
   // Verify the screenshot is as expected.
   {
-    std::map<ui_testing::Pixel, uint32_t> expected_histogram{
+    std::map<utils::Pixel, uint32_t> expected_histogram{
         std::tuple{kWhite, display_width * display_height - kCursorWidth * kCursorHeight},
         std::tuple{kBlack, kCursorWidth * kCursorHeight - 1}, std::tuple{kMagenta, 1}};
 
@@ -623,7 +623,7 @@ TEST_P(VirtioGpuTest, UpdateCursor) {
     size_t below_cursor = kCursorY + kCursorHeight;
     size_t right_of_cursor = kCursorX + kCursorWidth;
 
-    std::vector<ui_testing::Pixel> scanline{display_width, kWhite};
+    std::vector<utils::Pixel> scanline{display_width, kWhite};
     for (size_t row_idx = 0; row_idx < kCursorY; row_idx++) {
       EXPECT_EQ(screenshot[row_idx], scanline);
     }
@@ -667,7 +667,7 @@ TEST_P(VirtioGpuTest, UpdateCursor) {
 
   // Once more we should have just a white background.
   {
-    std::map<ui_testing::Pixel, uint32_t> expected_histogram{
+    std::map<utils::Pixel, uint32_t> expected_histogram{
         std::tuple{kWhite, display_width * display_height}};
 
     RunLoopUntil(

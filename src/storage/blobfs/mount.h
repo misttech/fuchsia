@@ -14,10 +14,10 @@
 
 #include <optional>
 
-#include "src/lib/storage/block_client/cpp/block_device.h"
 #include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/compression/external_decompressor.h"
 #include "src/storage/blobfs/compression_settings.h"
+#include "src/storage/lib/block_client/cpp/block_device.h"
 
 namespace blobfs {
 
@@ -52,10 +52,6 @@ struct MountOptions {
 #ifndef NDEBUG
   bool fsck_at_end_of_every_transaction = false;
 #endif
-
-  // Enable support for delivery blobs. Allows writing blobs in the format specified by RFC 0207.
-  // If set, `streaming_writes` should also be enabled to reduce memory pressure when writing blobs.
-  bool allow_delivery_blobs = false;
 };
 
 struct ComponentOptions {

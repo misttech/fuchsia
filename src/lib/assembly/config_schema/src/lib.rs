@@ -3,16 +3,21 @@
 // found in the LICENSE file.
 
 pub mod assembly_config;
+
+/// Configuration that's provided to Assembly by the Board
 pub mod board_config;
+
 pub mod common;
 pub mod image_assembly_config;
 pub mod platform_config;
 pub mod product_config;
 
 pub use assembly_config::AssemblyConfig;
-pub use board_config::BoardInformation;
-pub use common::{DriverDetails, FeatureControl, FileEntry, PackageSet};
-pub use image_assembly_config::{ImageAssemblyConfig, PartialImageAssemblyConfig};
+pub use board_config::{BoardInformation, BoardInputBundle, BoardProvidedConfig};
+pub use common::{
+    DriverDetails, FeatureControl, FileEntry, PackageDetails, PackageSet, PackagedDriverDetails,
+};
+pub use image_assembly_config::{BoardDriverArguments, ImageAssemblyConfig};
 pub use platform_config::{
     example_config::ExampleConfig,
     icu_config::{ICUConfig, Revision},

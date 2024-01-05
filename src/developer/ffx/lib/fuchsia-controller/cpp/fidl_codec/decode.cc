@@ -5,7 +5,6 @@
 #include "decode.h"
 
 #include <cinttypes>
-#include <iostream>
 #include <vector>
 
 #include "mod.h"
@@ -15,7 +14,7 @@
 
 namespace decode {
 
-enum Direction { REQUEST, RESPONSE };
+enum Direction : uint8_t { REQUEST, RESPONSE };
 
 PyObject *decode_fidl_message(PyObject *self, PyObject *args, PyObject *kwds,  // NOLINT
                               Direction direction) {
@@ -39,16 +38,11 @@ PyObject *decode_fidl_message(PyObject *self, PyObject *args, PyObject *kwds,  /
     PyErr_SetString(PyExc_TypeError, "Expected handles to be a list");
     return nullptr;
   }
-  auto display_options = DisplayOptions{
-      .pretty_print = true,
-      .with_process_info = false,
-      .needs_colors = false,
-  };
   char *c_bytes = PyByteArray_AsString(bytes);
   if (c_bytes == nullptr) {
     return nullptr;
   }
-  Py_ssize_t c_bytes_len = PyByteArray_GET_SIZE(bytes);
+  Py_ssize_t c_bytes_len = PyByteArray_Size(bytes);
   Py_ssize_t c_handles_len = PyList_Size(handles);
   std::unique_ptr<zx_handle_disposition_t[]> c_handles =
       std::make_unique<zx_handle_disposition_t[]>(c_handles_len);

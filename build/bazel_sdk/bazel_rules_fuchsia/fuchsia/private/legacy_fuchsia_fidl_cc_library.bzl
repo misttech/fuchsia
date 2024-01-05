@@ -68,6 +68,7 @@ def _codegen_impl(context):
         headers.append(context.actions.declare_file(dir + "/fidl.h"))
         headers.append(context.actions.declare_file(dir + "/fidl_test_base.h"))
         sources.append(context.actions.declare_file(dir + "/fidl.cc"))
+        sources.append(context.actions.declare_file(dir + "/tables.c"))
 
     outputs = [root] + headers + sources
     context.actions.run(
@@ -165,8 +166,6 @@ def _fidl_cc_library(name, library, binding_level, deps = [], tags = [], **kwarg
         ],
         srcs = [
             ":%s" % impl_name,
-            # For the coding tables.
-            library,
         ],
         # This is necessary in order to locate generated headers.
         strip_include_prefix = gen_name + "." + binding_level,

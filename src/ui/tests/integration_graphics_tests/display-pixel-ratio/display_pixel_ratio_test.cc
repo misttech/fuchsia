@@ -18,8 +18,7 @@
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/testing/ui_test_manager/ui_test_manager.h"
 #include "src/ui/testing/ui_test_realm/ui_test_realm.h"
-#include "src/ui/testing/util/flatland_test_view.h"
-#include "src/ui/testing/util/gfx_test_view.h"
+#include "src/ui/testing/util/test_view.h"
 
 namespace integration_tests {
 namespace {
@@ -27,31 +26,9 @@ namespace {
 constexpr auto kViewProvider = "view-provider";
 constexpr float kEpsilon = 0.005f;
 
-std::vector<ui_testing::UITestRealm::Config> UIConfigurationsToTest(
-    const std::vector<float>& pixel_densities) {
-  std::vector<ui_testing::UITestRealm::Config> configs;
-  std::vector<std::string> protocols_required = {fuchsia::ui::scenic::Scenic::Name_};
-
-  // Flatland x scene manager
-  {
-    ui_testing::UITestRealm::Config config;
-    config.use_flatland = true;
-    config.use_scene_owner = true;
-    config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
-    config.ui_to_client_services = protocols_required;
-    config.ui_to_client_services.push_back(fuchsia::ui::composition::Flatland::Name_);
-    for (auto dpr : pixel_densities) {
-      config.device_pixel_ratio = dpr;
-      configs.push_back(config);
-    }
-  }
-  return configs;
-}
-
 }  // namespace
 
 using component_testing::ChildRef;
-using component_testing::Directory;
 using component_testing::ParentRef;
 using component_testing::Protocol;
 using component_testing::Realm;
@@ -59,44 +36,29 @@ using component_testing::Route;
 
 // This test verifies that Scene Manager propagates
 // 'config/data/device_pixel_ratio' correctly.
-class DisplayPixelRatioTest
-    : public gtest::RealLoopFixture,
-      public ::testing::WithParamInterface<ui_testing::UITestRealm::Config> {
- public:
-  static std::vector<float> GetDevicePixelRatiosToTest() {
-    std::vector<float> pixel_density;
-    pixel_density.emplace_back(ui_testing::kDefaultDevicePixelRatio);
-    pixel_density.emplace_back(ui_testing::kMediumResolutionDevicePixelRatio);
-    pixel_density.emplace_back(ui_testing::kHighResolutionDevicePixelRatio);
-    return pixel_density;
-  }
-
+class DisplayPixelRatioTest : public gtest::RealLoopFixture,
+                              public ::testing::WithParamInterface<float> {
  protected:
   // |testing::Test|
   void SetUp() override {
-    auto config = GetParam();
+    ui_testing::UITestRealm::Config config;
+    config.use_scene_owner = true;
+    config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
+    config.ui_to_client_services.push_back(fuchsia::ui::composition::Flatland::Name_);
+    config.device_pixel_ratio = GetParam();
     ui_test_manager_.emplace(config);
 
     // Build realm.
     FX_LOGS(INFO) << "Building realm";
     realm_ = ui_test_manager_->AddSubrealm();
 
+    // Add a test view provider.
     test_view_access_ = std::make_shared<ui_testing::TestViewAccess>();
-
-    component_testing::LocalComponentFactory test_view;
-    // Add a test view provider. Make either a gfx test view or flatland test view depending
-    // on the config parameters.
-    if (config.use_flatland) {
-      test_view = [d = dispatcher(), a = test_view_access_]() {
-        return std::make_unique<ui_testing::FlatlandTestView>(
-            d, /* content = */ ui_testing::TestView::ContentType::COORDINATE_GRID, a);
-      };
-    } else {
-      test_view = [d = dispatcher(), a = test_view_access_]() {
-        return std::make_unique<ui_testing::GfxTestView>(
-            d, /* content = */ ui_testing::TestView::ContentType::COORDINATE_GRID, a);
-      };
-    }
+    component_testing::LocalComponentFactory test_view = [d = dispatcher(),
+                                                          a = test_view_access_]() {
+      return std::make_unique<ui_testing::TestView>(
+          d, /* content = */ ui_testing::TestView::ContentType::COORDINATE_GRID, a);
+    };
 
     realm_->AddLocalChild(kViewProvider, std::move(test_view));
     realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::app::ViewProvider::Name_}},
@@ -149,8 +111,9 @@ class DisplayPixelRatioTest
 };
 
 INSTANTIATE_TEST_SUITE_P(DisplayPixelRatioTestWithParams, DisplayPixelRatioTest,
-                         ::testing::ValuesIn(UIConfigurationsToTest(
-                             DisplayPixelRatioTest::GetDevicePixelRatiosToTest())));
+                         ::testing::Values(ui_testing::kDefaultDevicePixelRatio,
+                                           ui_testing::kMediumResolutionDevicePixelRatio,
+                                           ui_testing::kHighResolutionDevicePixelRatio));
 
 // This test leverage the coordinate test view to ensure that display pixel ratio is working
 // properly.
@@ -164,15 +127,11 @@ INSTANTIATE_TEST_SUITE_P(DisplayPixelRatioTestWithParams, DisplayPixelRatioTest,
 // |      RED       |     MAGENTA    |
 // |________________|________________|
 TEST_P(DisplayPixelRatioTest, TestScale) {
-  auto config = GetParam();
-  const auto expected_dpr = config.device_pixel_ratio;
+  const auto expected_dpr = GetParam();
 
-  // TODO(fxbug.dev/112999): Only run this check on GFX for now until we update ClientScaleFactor()
+  // TODO(fxbug.dev/112999): Run this check when we update ClientScaleFactor()
   // to work with Flatland.
-  if (!config.use_flatland) {
-    EXPECT_NEAR(ClientViewScaleFactor(), expected_dpr, kEpsilon);
-  }
-
+  // EXPECT_NEAR(ClientViewScaleFactor(), expected_dpr, kEpsilon);
   EXPECT_NEAR(display_width_ / test_view_access_->view()->width(), expected_dpr, kEpsilon);
   EXPECT_NEAR(display_height_ / test_view_access_->view()->height(), expected_dpr, kEpsilon);
 
@@ -180,23 +139,23 @@ TEST_P(DisplayPixelRatioTest, TestScale) {
   auto data = TakeScreenshot();
 
   // Check pixel content at all four corners.
-  EXPECT_EQ(data.GetPixelAt(0, 0), ui_testing::Screenshot::kBlack);                 // Top left
-  EXPECT_EQ(data.GetPixelAt(0, data.height() - 1), ui_testing::Screenshot::kBlue);  // Bottom left
-  EXPECT_EQ(data.GetPixelAt(data.width() - 1, 0), ui_testing::Screenshot::kRed);    // Top right
+  EXPECT_EQ(data.GetPixelAt(0, 0), utils::kBlack);                 // Top left
+  EXPECT_EQ(data.GetPixelAt(0, data.height() - 1), utils::kBlue);  // Bottom left
+  EXPECT_EQ(data.GetPixelAt(data.width() - 1, 0), utils::kRed);    // Top right
   EXPECT_EQ(data.GetPixelAt(data.width() - 1, data.height() - 1),
-            ui_testing::Screenshot::kMagenta);  // Bottom right
+            utils::kMagenta);  // Bottom right
 
   // Check pixel content at center of each rectangle.
   EXPECT_EQ(data.GetPixelAt(data.width() / 4, data.height() / 4),
-            ui_testing::Screenshot::kBlack);  // Top left
+            utils::kBlack);  // Top left
   EXPECT_EQ(data.GetPixelAt(data.width() / 4, (3 * data.height()) / 4),
-            ui_testing::Screenshot::kBlue);  // Bottom left
+            utils::kBlue);  // Bottom left
   EXPECT_EQ(data.GetPixelAt((3 * data.width()) / 4, data.height() / 4),
-            ui_testing::Screenshot::kRed);  // Top right
+            utils::kRed);  // Top right
   EXPECT_EQ(data.GetPixelAt((3 * data.width()) / 4, (3 * data.height()) / 4),
-            ui_testing::Screenshot::kMagenta);  // Bottom right
+            utils::kMagenta);  // Bottom right
   EXPECT_EQ(data.GetPixelAt(data.width() / 2, data.height() / 2),
-            ui_testing::Screenshot::kGreen);  // Center
+            utils::kGreen);  // Center
 }
 
 TEST_P(DisplayPixelRatioTest, TestPixelColorDistribution) {
@@ -217,11 +176,11 @@ TEST_P(DisplayPixelRatioTest, TestPixelColorDistribution) {
 
   auto histogram = data.Histogram();
 
-  EXPECT_EQ(histogram[ui_testing::Screenshot::kBlack], expected_black_pixels);
-  EXPECT_EQ(histogram[ui_testing::Screenshot::kBlue], expected_blue_pixels);
-  EXPECT_EQ(histogram[ui_testing::Screenshot::kRed], expected_red_pixels);
-  EXPECT_EQ(histogram[ui_testing::Screenshot::kMagenta], expected_magenta_pixels);
-  EXPECT_EQ(histogram[ui_testing::Screenshot::kGreen], expected_green_pixels);
+  EXPECT_EQ(histogram[utils::kBlack], expected_black_pixels);
+  EXPECT_EQ(histogram[utils::kBlue], expected_blue_pixels);
+  EXPECT_EQ(histogram[utils::kRed], expected_red_pixels);
+  EXPECT_EQ(histogram[utils::kMagenta], expected_magenta_pixels);
+  EXPECT_EQ(histogram[utils::kGreen], expected_green_pixels);
 }
 
 }  // namespace integration_tests

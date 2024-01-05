@@ -23,6 +23,7 @@
 
 #include <iterator>
 #include <limits>
+#include <optional>
 
 #include <fbl/algorithm.h>
 
@@ -71,12 +72,13 @@ class VirtualAudioUtil {
     SET_NOTIFICATION_FREQUENCY,
     ADJUST_CLOCK_RATE,
 
-    SET_IN,
-    SET_OUT,
-    SET_STREAM_CONFIG,
-    SET_DAI,
     SET_CODEC,
     SET_COMPOSITE,
+    SET_DAI,
+    SET_STREAM_CONFIG,
+    SET_IN,
+    SET_OUT,
+    SET_NO_DIRECTION,
     WAIT,
     HELP,
     INVALID,
@@ -113,12 +115,13 @@ class VirtualAudioUtil {
   static constexpr char kNotificationFrequencySwitch[] = "notifs";
   static constexpr char kClockRateSwitch[] = "rate";
 
-  static constexpr char kDirectionInSwitch[] = "in";
-  static constexpr char kDirectionOutSwitch[] = "out";
-  static constexpr char kStreamConfigSwitch[] = "stream";
-  static constexpr char kDaiSwitch[] = "dai";
   static constexpr char kCodecSwitch[] = "codec";
   static constexpr char kCompositeSwitch[] = "composite";
+  static constexpr char kDaiSwitch[] = "dai";
+  static constexpr char kStreamConfigSwitch[] = "stream";
+  static constexpr char kDirectionInSwitch[] = "in";
+  static constexpr char kDirectionOutSwitch[] = "out";
+  static constexpr char kDirectionlessSwitch[] = "no-direction";
   static constexpr char kWaitSwitch[] = "wait";
   static constexpr char kHelp1Switch[] = "help";
   static constexpr char kHelp2Switch[] = "?";
@@ -181,12 +184,13 @@ class VirtualAudioUtil {
       {kNotificationFrequencySwitch, Command::SET_NOTIFICATION_FREQUENCY},
       {kClockRateSwitch, Command::ADJUST_CLOCK_RATE},
 
-      {kDirectionInSwitch, Command::SET_IN},
-      {kDirectionOutSwitch, Command::SET_OUT},
-      {kStreamConfigSwitch, Command::SET_STREAM_CONFIG},
-      {kDaiSwitch, Command::SET_DAI},
       {kCodecSwitch, Command::SET_CODEC},
       {kCompositeSwitch, Command::SET_COMPOSITE},
+      {kDaiSwitch, Command::SET_DAI},
+      {kStreamConfigSwitch, Command::SET_STREAM_CONFIG},
+      {kDirectionInSwitch, Command::SET_IN},
+      {kDirectionOutSwitch, Command::SET_OUT},
+      {kDirectionlessSwitch, Command::SET_NO_DIRECTION},
       {kWaitSwitch, Command::WAIT},
       {kHelp1Switch, Command::HELP},
       {kHelp2Switch, Command::HELP},
@@ -230,7 +234,8 @@ class VirtualAudioUtil {
   bool SetRingBufferRestrictions(const std::string& rb_restr_str);
   bool SetGainProps(const std::string& gain_props_str);
   bool SetPlugProps(const std::string& plug_props_str);
-  bool ResetConfiguration(fuchsia::virtualaudio::DeviceType device_type, bool is_input);
+  bool ResetConfiguration(fuchsia::virtualaudio::DeviceType device_type,
+                          std::optional<bool> is_input);
   bool ResetAllConfigurations();
 
   // Methods using the FIDL Device interface
@@ -243,7 +248,7 @@ class VirtualAudioUtil {
   bool GetPosition();
   bool SetNotificationFrequency(const std::string& override_notifs_str);
   bool AdjustClockRate(const std::string& clock_adjust_str);
-  bool SetDirection(bool is_input);
+  bool SetDirection(std::optional<bool> is_input);
 
   // Convenience method that allows us to set configuration without having to check
   // that some FIDL table members have been defined.
@@ -254,22 +259,25 @@ class VirtualAudioUtil {
   bool key_quit_ = false;
 
   fuchsia::virtualaudio::ControlSyncPtr controller_ = nullptr;
-  fuchsia::virtualaudio::DevicePtr stream_config_input_ = nullptr;
-  fuchsia::virtualaudio::DevicePtr stream_config_output_ = nullptr;
-  fuchsia::virtualaudio::DevicePtr dai_input_ = nullptr;
-  fuchsia::virtualaudio::DevicePtr dai_output_ = nullptr;
+  fuchsia::virtualaudio::DevicePtr codec_ = nullptr;
   fuchsia::virtualaudio::DevicePtr codec_input_ = nullptr;
   fuchsia::virtualaudio::DevicePtr codec_output_ = nullptr;
   fuchsia::virtualaudio::DevicePtr composite_ = nullptr;
-  fuchsia::virtualaudio::Configuration stream_config_input_config_;
-  fuchsia::virtualaudio::Configuration stream_config_output_config_;
-  fuchsia::virtualaudio::Configuration dai_input_config_;
-  fuchsia::virtualaudio::Configuration dai_output_config_;
+  fuchsia::virtualaudio::DevicePtr dai_input_ = nullptr;
+  fuchsia::virtualaudio::DevicePtr dai_output_ = nullptr;
+  fuchsia::virtualaudio::DevicePtr stream_config_input_ = nullptr;
+  fuchsia::virtualaudio::DevicePtr stream_config_output_ = nullptr;
+
+  fuchsia::virtualaudio::Configuration codec_config_;
   fuchsia::virtualaudio::Configuration codec_input_config_;
   fuchsia::virtualaudio::Configuration codec_output_config_;
   fuchsia::virtualaudio::Configuration composite_config_;
+  fuchsia::virtualaudio::Configuration dai_input_config_;
+  fuchsia::virtualaudio::Configuration dai_output_config_;
+  fuchsia::virtualaudio::Configuration stream_config_input_config_;
+  fuchsia::virtualaudio::Configuration stream_config_output_config_;
 
-  bool configuring_input_ = false;  // Not applicable for Composite devices.
+  std::optional<bool> configuring_input_;  // Not applicable for Composite devices.
   static zx::vmo ring_buffer_vmo_;
 
   static uint32_t BytesPerSample(uint32_t format);
@@ -287,29 +295,32 @@ class VirtualAudioUtil {
  private:
   fuchsia::virtualaudio::DevicePtr* device() {
     switch (config()->device_specific().Which()) {
-      case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig:
-        return configuring_input_ ? &stream_config_input_ : &stream_config_output_;
-      case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai:
-        return configuring_input_ ? &dai_input_ : &dai_output_;
       case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
-        return configuring_input_ ? &codec_input_ : &codec_output_;
+        return configuring_input_ ? (*configuring_input_ ? &codec_input_ : &codec_output_)
+                                  : &codec_;
       case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite:
         return &composite_;
+      case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai:
+        return configuring_input_.value_or(false) ? &dai_input_ : &dai_output_;
+      case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig:
+        return configuring_input_.value_or(false) ? &stream_config_input_ : &stream_config_output_;
       default:
         ZX_ASSERT_MSG(0, "Unknown device type");
     }
   }
   fuchsia::virtualaudio::Configuration* ConfigForDevice(
-      bool is_input, fuchsia::virtualaudio::DeviceType device_type) {
+      std::optional<bool> is_input, fuchsia::virtualaudio::DeviceType device_type) {
     switch (device_type) {
-      case fuchsia::virtualaudio::DeviceType::STREAM_CONFIG:
-        return is_input ? &stream_config_input_config_ : &stream_config_output_config_;
-      case fuchsia::virtualaudio::DeviceType::DAI:
-        return is_input ? &dai_input_config_ : &dai_output_config_;
       case fuchsia::virtualaudio::DeviceType::CODEC:
-        return is_input ? &codec_input_config_ : &codec_output_config_;
+        return is_input ? (*is_input ? &codec_input_config_ : &codec_output_config_)
+                        : &codec_config_;
       case fuchsia::virtualaudio::DeviceType::COMPOSITE:
         return &composite_config_;
+      case fuchsia::virtualaudio::DeviceType::DAI:
+        return is_input.value_or(false) ? &dai_input_config_ : &dai_output_config_;
+      case fuchsia::virtualaudio::DeviceType::STREAM_CONFIG:
+        return is_input.value_or(false) ? &stream_config_input_config_
+                                        : &stream_config_output_config_;
       default:
         ZX_ASSERT_MSG(0, "Unknown device type");
     }
@@ -386,13 +397,14 @@ void VirtualAudioUtil::Run(fxl::CommandLine* cmdline) {
   ParseAndExecute(cmdline);
 
   // We are done!  Disconnect any error handlers.
-  stream_config_input_.set_error_handler(nullptr);
-  stream_config_output_.set_error_handler(nullptr);
-  dai_input_.set_error_handler(nullptr);
-  dai_output_.set_error_handler(nullptr);
+  codec_.set_error_handler(nullptr);
   codec_input_.set_error_handler(nullptr);
   codec_output_.set_error_handler(nullptr);
   composite_.set_error_handler(nullptr);
+  dai_input_.set_error_handler(nullptr);
+  dai_output_.set_error_handler(nullptr);
+  stream_config_input_.set_error_handler(nullptr);
+  stream_config_output_.set_error_handler(nullptr);
 
   // If any lingering callbacks were queued, let them drain.
   if (!WaitForNoCallback()) {
@@ -510,7 +522,21 @@ void VirtualAudioUtil::SetUpEvents() {
 }
 
 bool VirtualAudioUtil::ResetAllConfigurations() {
-  if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::STREAM_CONFIG, false)) {
+  if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::CODEC, true)) {
+    return false;
+  }
+  if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::CODEC, false)) {
+    return false;
+  }
+  if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::CODEC, std::nullopt)) {
+    return false;
+  }
+  // Composite drivers do not have a direction (is_input is undefined); just use `true`.
+  if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::COMPOSITE, true)) {
+    return false;
+  }
+
+  if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::DAI, true)) {
     return false;
   }
   if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::DAI, false)) {
@@ -520,12 +546,7 @@ bool VirtualAudioUtil::ResetAllConfigurations() {
   if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::STREAM_CONFIG, true)) {
     return false;
   }
-  if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::DAI, true)) {
-    return false;
-  }
-
-  // Composite drivers do not have a direction (is_input is undefined); just use `true`.
-  if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::COMPOSITE, true)) {
+  if (!ResetConfiguration(fuchsia::virtualaudio::DeviceType::STREAM_CONFIG, false)) {
     return false;
   }
 
@@ -671,20 +692,6 @@ bool VirtualAudioUtil::ExecuteCommand(Command cmd, const std::string& value) {
       success = AdjustClockRate(value);
       break;
 
-    case Command::SET_IN:
-      success = SetDirection(true);
-      break;
-    case Command::SET_OUT:
-      success = SetDirection(false);
-      break;
-    case Command::SET_STREAM_CONFIG:
-      device_type_ = fuchsia::virtualaudio::DeviceType::STREAM_CONFIG;
-      success = true;
-      break;
-    case Command::SET_DAI:
-      device_type_ = fuchsia::virtualaudio::DeviceType::DAI;
-      success = true;
-      break;
     case Command::SET_CODEC:
       device_type_ = fuchsia::virtualaudio::DeviceType::CODEC;
       success = true;
@@ -692,6 +699,23 @@ bool VirtualAudioUtil::ExecuteCommand(Command cmd, const std::string& value) {
     case Command::SET_COMPOSITE:
       device_type_ = fuchsia::virtualaudio::DeviceType::COMPOSITE;
       success = true;
+      break;
+    case Command::SET_DAI:
+      device_type_ = fuchsia::virtualaudio::DeviceType::DAI;
+      success = true;
+      break;
+    case Command::SET_STREAM_CONFIG:
+      device_type_ = fuchsia::virtualaudio::DeviceType::STREAM_CONFIG;
+      success = true;
+      break;
+    case Command::SET_IN:
+      success = SetDirection(true);
+      break;
+    case Command::SET_OUT:
+      success = SetDirection(false);
+      break;
+    case Command::SET_NO_DIRECTION:
+      success = SetDirection(std::nullopt);
       break;
     case Command::WAIT:
       success = WaitForKey();
@@ -725,6 +749,8 @@ void VirtualAudioUtil::Usage() {
   printf("  --%s\t\t\t  Switch to an Input configuration (same device type)\n", kDirectionInSwitch);
   printf("  --%s\t\t\t  Switch to an Output configuration (same device type)\n",
          kDirectionOutSwitch);
+  printf("  --%s\t  Switch to a direction-less configuration (same device type)\n",
+         kDirectionlessSwitch);
 
   printf("\n  The following commands customize a device configuration, before it is added\n");
   printf("  --%s[=<DEVICE_NAME>]\t  Set the device name (default '%s')\n", kDeviceNameSwitch,
@@ -853,16 +879,18 @@ bool VirtualAudioUtil::SetClockDomain(const std::string& clock_domain_str) {
 
   fuchsia::virtualaudio::ClockProperties* clock_properties = nullptr;
   switch (config()->device_specific().Which()) {
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig:
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
+      return false;  // Nothing to do here.
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite:
       clock_properties =
-          config()->mutable_device_specific()->stream_config().mutable_clock_properties();
+          config()->mutable_device_specific()->composite().mutable_clock_properties();
       break;
     case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai:
       clock_properties = config()->mutable_device_specific()->dai().mutable_clock_properties();
       break;
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite:
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig:
       clock_properties =
-          config()->mutable_device_specific()->composite().mutable_clock_properties();
+          config()->mutable_device_specific()->stream_config().mutable_clock_properties();
       break;
     default:
       return false;
@@ -885,16 +913,18 @@ bool VirtualAudioUtil::SetInitialClockRate(const std::string& initial_clock_rate
 
   fuchsia::virtualaudio::ClockProperties* clock_properties = nullptr;
   switch (config()->device_specific().Which()) {
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig:
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
+      return false;  // Nothing to do here.
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite:
       clock_properties =
-          config()->mutable_device_specific()->stream_config().mutable_clock_properties();
+          config()->mutable_device_specific()->composite().mutable_clock_properties();
       break;
     case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai:
       clock_properties = config()->mutable_device_specific()->dai().mutable_clock_properties();
       break;
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite:
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig:
       clock_properties =
-          config()->mutable_device_specific()->composite().mutable_clock_properties();
+          config()->mutable_device_specific()->stream_config().mutable_clock_properties();
       break;
     default:
       return false;
@@ -1031,9 +1061,14 @@ bool VirtualAudioUtil::AddFormatRange(const std::string& format_range_str) {
   EnsureTypesExist();
 
   switch (config()->device_specific().Which()) {
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
-      auto& stream_config = config()->mutable_device_specific()->stream_config();
-      stream_config.mutable_ring_buffer()->mutable_supported_formats()->push_back(range);
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
+      return false;  // Nothing to do here (no RingBuffer).
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
+      auto& composite = config()->mutable_device_specific()->composite();
+      // Set formats for all ring buffers.
+      for (auto& i : *composite.mutable_ring_buffers()) {
+        i.mutable_ring_buffer()->mutable_supported_formats()->push_back(range);
+      }
       return true;
     }
     case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai: {
@@ -1041,12 +1076,9 @@ bool VirtualAudioUtil::AddFormatRange(const std::string& format_range_str) {
       dai.mutable_ring_buffer()->mutable_supported_formats()->push_back(range);
       return true;
     }
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
-      auto& composite = config()->mutable_device_specific()->composite();
-      // Set formats for all ring buffers.
-      for (auto& i : *composite.mutable_ring_buffers()) {
-        i.mutable_ring_buffer()->mutable_supported_formats()->push_back(range);
-      }
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
+      auto& stream_config = config()->mutable_device_specific()->stream_config();
+      stream_config.mutable_ring_buffer()->mutable_supported_formats()->push_back(range);
       return true;
     }
     default:
@@ -1058,13 +1090,14 @@ bool VirtualAudioUtil::ClearFormatRanges() {
   EnsureTypesExist();
 
   switch (config()->device_specific().Which()) {
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
-      config()
-          ->mutable_device_specific()
-          ->stream_config()
-          .mutable_ring_buffer()
-          ->mutable_supported_formats()
-          ->clear();
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
+      return false;  // Nothing to do here (no RingBuffer).
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
+      auto& composite = config()->mutable_device_specific()->composite();
+      // Clear format ranges for all ring buffers.
+      for (auto& i : *composite.mutable_ring_buffers()) {
+        i.mutable_ring_buffer()->mutable_supported_formats()->clear();
+      }
       return true;
     }
     case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai: {
@@ -1076,12 +1109,13 @@ bool VirtualAudioUtil::ClearFormatRanges() {
           ->clear();
       return true;
     }
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
-      auto& composite = config()->mutable_device_specific()->composite();
-      // Clear format ranges for all ring buffers.
-      for (auto& i : *composite.mutable_ring_buffers()) {
-        i.mutable_ring_buffer()->mutable_supported_formats()->clear();
-      }
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
+      config()
+          ->mutable_device_specific()
+          ->stream_config()
+          .mutable_ring_buffer()
+          ->mutable_supported_formats()
+          ->clear();
       return true;
     }
     default:
@@ -1097,9 +1131,14 @@ bool VirtualAudioUtil::SetTransferBytes(const std::string& transfer_bytes_str) {
   EnsureTypesExist();
 
   switch (config()->device_specific().Which()) {
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
-      auto& stream_config = config()->mutable_device_specific()->stream_config();
-      stream_config.mutable_ring_buffer()->set_driver_transfer_bytes(driver_transfer_bytes);
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
+      return false;  // Nothing to do here (no RingBuffer).
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
+      auto& composite = config()->mutable_device_specific()->composite();
+      // Set driver transfer bytes for all ring buffers.
+      for (auto& i : *composite.mutable_ring_buffers()) {
+        i.mutable_ring_buffer()->set_driver_transfer_bytes(driver_transfer_bytes);
+      }
       return true;
     }
     case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai: {
@@ -1107,12 +1146,9 @@ bool VirtualAudioUtil::SetTransferBytes(const std::string& transfer_bytes_str) {
       dai.mutable_ring_buffer()->set_driver_transfer_bytes(driver_transfer_bytes);
       return true;
     }
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
-      auto& composite = config()->mutable_device_specific()->composite();
-      // Set driver transfer bytes for all ring buffers.
-      for (auto& i : *composite.mutable_ring_buffers()) {
-        i.mutable_ring_buffer()->set_driver_transfer_bytes(driver_transfer_bytes);
-      }
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
+      auto& stream_config = config()->mutable_device_specific()->stream_config();
+      stream_config.mutable_ring_buffer()->set_driver_transfer_bytes(driver_transfer_bytes);
       return true;
     }
     default:
@@ -1126,9 +1162,14 @@ bool VirtualAudioUtil::SetInternalDelay(const std::string& delay_str) {
 
   EnsureTypesExist();
   switch (config()->device_specific().Which()) {
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
-      auto& stream_config = config()->mutable_device_specific()->stream_config();
-      stream_config.mutable_ring_buffer()->set_internal_delay(internal_delay);
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
+      return false;  // Nothing to do here (no RingBuffer).
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
+      auto& composite = config()->mutable_device_specific()->composite();
+      // For now, set internal delay for all ring buffers.
+      for (auto& i : *composite.mutable_ring_buffers()) {
+        i.mutable_ring_buffer()->set_internal_delay(internal_delay);
+      }
       return true;
     }
     case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai: {
@@ -1136,12 +1177,9 @@ bool VirtualAudioUtil::SetInternalDelay(const std::string& delay_str) {
       dai.mutable_ring_buffer()->set_internal_delay(internal_delay);
       return true;
     }
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
-      auto& composite = config()->mutable_device_specific()->composite();
-      // For now, set internal delay for all ring buffers.
-      for (auto& i : *composite.mutable_ring_buffers()) {
-        i.mutable_ring_buffer()->set_internal_delay(internal_delay);
-      }
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
+      auto& stream_config = config()->mutable_device_specific()->stream_config();
+      stream_config.mutable_ring_buffer()->set_internal_delay(internal_delay);
       return true;
     }
     default:
@@ -1155,9 +1193,14 @@ bool VirtualAudioUtil::SetExternalDelay(const std::string& delay_str) {
 
   EnsureTypesExist();
   switch (config()->device_specific().Which()) {
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
-      auto& stream_config = config()->mutable_device_specific()->stream_config();
-      stream_config.mutable_ring_buffer()->set_external_delay(external_delay);
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
+      return false;  // Nothing to do here (no RingBuffer).
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
+      auto& composite = config()->mutable_device_specific()->composite();
+      // Set external delay for all ring buffers.
+      for (auto& i : *composite.mutable_ring_buffers()) {
+        i.mutable_ring_buffer()->set_external_delay(external_delay);
+      }
       return true;
     }
     case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai: {
@@ -1165,12 +1208,9 @@ bool VirtualAudioUtil::SetExternalDelay(const std::string& delay_str) {
       dai.mutable_ring_buffer()->set_external_delay(external_delay);
       return true;
     }
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
-      auto& composite = config()->mutable_device_specific()->composite();
-      // Set external delay for all ring buffers.
-      for (auto& i : *composite.mutable_ring_buffers()) {
-        i.mutable_ring_buffer()->set_external_delay(external_delay);
-      }
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
+      auto& stream_config = config()->mutable_device_specific()->stream_config();
+      stream_config.mutable_ring_buffer()->set_external_delay(external_delay);
       return true;
     }
     default:
@@ -1209,9 +1249,14 @@ bool VirtualAudioUtil::SetRingBufferRestrictions(const std::string& rb_restr_str
   EnsureTypesExist();
 
   switch (config()->device_specific().Which()) {
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
-      auto& stream_config = config()->mutable_device_specific()->stream_config();
-      stream_config.mutable_ring_buffer()->set_ring_buffer_constraints(ring_buffer_constraints);
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
+      return false;  // Nothing to do here (no RingBuffer).
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
+      auto& composite = config()->mutable_device_specific()->composite();
+      // Set ring buffer constrains for all ring buffers.
+      for (auto& i : *composite.mutable_ring_buffers()) {
+        i.mutable_ring_buffer()->set_ring_buffer_constraints(ring_buffer_constraints);
+      }
       return true;
     }
     case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai: {
@@ -1219,12 +1264,9 @@ bool VirtualAudioUtil::SetRingBufferRestrictions(const std::string& rb_restr_str
       dai.mutable_ring_buffer()->set_ring_buffer_constraints(ring_buffer_constraints);
       return true;
     }
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
-      auto& composite = config()->mutable_device_specific()->composite();
-      // Set ring buffer constrains for all ring buffers.
-      for (auto& i : *composite.mutable_ring_buffers()) {
-        i.mutable_ring_buffer()->set_ring_buffer_constraints(ring_buffer_constraints);
-      }
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
+      auto& stream_config = config()->mutable_device_specific()->stream_config();
+      stream_config.mutable_ring_buffer()->set_ring_buffer_constraints(ring_buffer_constraints);
       return true;
     }
     default:
@@ -1383,10 +1425,12 @@ bool VirtualAudioUtil::AdjustClockRate(const std::string& clock_adjust_str) {
   EnsureTypesExist();
 
   switch (config()->device_specific().Which()) {
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
-      auto& stream_config = config()->mutable_device_specific()->stream_config();
-      if (stream_config.has_clock_properties() && stream_config.clock_properties().has_domain()) {
-        clock_domain = stream_config.clock_properties().domain();
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
+      return false;  // Nothing to do here.
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
+      auto& composite = config()->mutable_device_specific()->composite();
+      if (composite.has_clock_properties() && composite.clock_properties().has_domain()) {
+        clock_domain = composite.clock_properties().domain();
       }
       break;
     }
@@ -1397,10 +1441,10 @@ bool VirtualAudioUtil::AdjustClockRate(const std::string& clock_adjust_str) {
       }
       break;
     }
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
-      auto& composite = config()->mutable_device_specific()->composite();
-      if (composite.has_clock_properties() && composite.clock_properties().has_domain()) {
-        clock_domain = composite.clock_properties().domain();
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
+      auto& stream_config = config()->mutable_device_specific()->stream_config();
+      if (stream_config.has_clock_properties() && stream_config.clock_properties().has_domain()) {
+        clock_domain = stream_config.clock_properties().domain();
       }
       break;
     }
@@ -1417,20 +1461,39 @@ bool VirtualAudioUtil::AdjustClockRate(const std::string& clock_adjust_str) {
   return WaitForCallback();
 }
 
-bool VirtualAudioUtil::SetDirection(bool is_input) {
+bool VirtualAudioUtil::SetDirection(std::optional<bool> is_input) {
   configuring_input_ = is_input;
   switch (device_type_) {
-    case fuchsia::virtualaudio::DeviceType::STREAM_CONFIG:
-      config()->mutable_device_specific()->stream_config().set_is_input(is_input);
-      return true;
-    case fuchsia::virtualaudio::DeviceType::DAI:
-      config()->mutable_device_specific()->dai().set_is_input(is_input);
-      return true;
     case fuchsia::virtualaudio::DeviceType::CODEC:
-      config()->mutable_device_specific()->codec().set_is_input(is_input);
+      // `is_input` is optional for a codec device.
+      if (is_input.has_value()) {
+        config()->mutable_device_specific()->codec().set_is_input(*is_input);
+      } else {
+        config()->mutable_device_specific()->codec().clear_is_input();
+      }
       return true;
     case fuchsia::virtualaudio::DeviceType::COMPOSITE:
-      return false;  // Can't set a direction on a composite device.
+      // Can't set a direction on a composite device.
+      return false;
+    case fuchsia::virtualaudio::DeviceType::DAI:
+      // Note: although `is_input` is a required DaiProperties field, a badly-behaved driver might
+      // still fail to set it. That said, this incorrect behavior isn't possible in VAD yet.
+      // So (for now at least) it is required for all virtual_audio DAI instances.
+      if (is_input.has_value()) {
+        config()->mutable_device_specific()->dai().set_is_input(*is_input);
+        return true;
+      }
+      return false;
+    case fuchsia::virtualaudio::DeviceType::STREAM_CONFIG:
+      // Note: `is_input` is a required StreamProperties field, however a badly-behaved driver might
+      // still fail to set it. That said, this incorrect behavior isn't possible in VAD yet: it uses
+      // this bool when registering the stream_config in devfs (`audio-input` vs. `audio-output`).
+      // So (for now at least) it is required for all virtual_audio StreamConfig instances.
+      if (is_input.has_value()) {
+        config()->mutable_device_specific()->stream_config().set_is_input(*is_input);
+        return true;
+      }
+      return false;
     default:
       printf("ERROR: Unknown device type\n");
       return false;
@@ -1438,13 +1501,15 @@ bool VirtualAudioUtil::SetDirection(bool is_input) {
 }
 
 bool VirtualAudioUtil::ResetConfiguration(fuchsia::virtualaudio::DeviceType device_type,
-                                          bool is_input) {
+                                          std::optional<bool> is_input) {
   zx_status_t status = ZX_OK;
   fuchsia::virtualaudio::Direction direction;
-  direction.set_is_input(is_input);
+  if (is_input) {
+    direction.set_is_input(*is_input);
+  }
   fuchsia::virtualaudio::Control_GetDefaultConfiguration_Result config_result;
-  if ((status = controller_->GetDefaultConfiguration(device_type, std::move(direction),
-                                                     &config_result)) == ZX_OK) {
+  status = controller_->GetDefaultConfiguration(device_type, std::move(direction), &config_result);
+  if (status == ZX_OK) {
     if (config_result.is_err()) {
       status = config_result.err();
     }
@@ -1482,7 +1547,8 @@ bool VirtualAudioUtil::AddDevice() {
   }
 
   device()->set_error_handler([is_input = configuring_input_](zx_status_t error) {
-    printf("%s device disconnected (%d)!\n", is_input ? "input" : "output", error);
+    printf("%s device disconnected (%d)!\n",
+           is_input ? (*is_input ? "input" : "output") : "directionless", error);
     QuitLoop();
   });
 
@@ -1765,20 +1831,8 @@ void VirtualAudioUtil::PositionCallback(fuchsia::virtualaudio::Device_GetPositio
 // table members have been defined.
 void VirtualAudioUtil::EnsureTypesExist() {
   switch (config()->device_specific().Which()) {
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
-      auto& stream_config = config()->mutable_device_specific()->stream_config();
-      if (!stream_config.has_ring_buffer()) {
-        stream_config.set_ring_buffer(fuchsia::virtualaudio::RingBuffer{});
-      }
-      break;
-    }
-    case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai: {
-      auto& dai = config()->mutable_device_specific()->dai();
-      if (!dai.has_ring_buffer()) {
-        dai.set_ring_buffer(fuchsia::virtualaudio::RingBuffer{});
-      }
-      break;
-    }
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kCodec:
+      break;  // Nothing for Codec to set up ahead of time (no RingBuffer).
     case fuchsia::virtualaudio::DeviceSpecific::Tag::kComposite: {
       auto& composite = config()->mutable_device_specific()->composite();
       // Not all composite drivers have a ring buffer, this convenience code sets a composite
@@ -1791,6 +1845,20 @@ void VirtualAudioUtil::EnsureTypesExist() {
         if (!i.has_ring_buffer()) {
           i.set_ring_buffer(fuchsia::virtualaudio::RingBuffer{});
         }
+      }
+      break;
+    }
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kDai: {
+      auto& dai = config()->mutable_device_specific()->dai();
+      if (!dai.has_ring_buffer()) {
+        dai.set_ring_buffer(fuchsia::virtualaudio::RingBuffer{});
+      }
+      break;
+    }
+    case fuchsia::virtualaudio::DeviceSpecific::Tag::kStreamConfig: {
+      auto& stream_config = config()->mutable_device_specific()->stream_config();
+      if (!stream_config.has_ring_buffer()) {
+        stream_config.set_ring_buffer(fuchsia::virtualaudio::RingBuffer{});
       }
       break;
     }

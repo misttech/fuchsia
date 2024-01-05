@@ -2325,8 +2325,8 @@ TEST_F(DispatcherTest, RunThenQuitAndRunAgain) {
   ASSERT_EQ(ZX_ERR_TIMED_OUT, fdf_testing_run(zx::deadline_after(zx::msec(1)).get(), false));
   ASSERT_FALSE(ran);
 
-  // This time quit task should run before our 1s deadline.
-  ASSERT_EQ(ZX_ERR_CANCELED, fdf_testing_run(zx::deadline_after(zx::sec(1)).get(), false));
+  // This time quit task should run since we are not setting any deadline.
+  ASSERT_EQ(ZX_ERR_CANCELED, fdf_testing_run(ZX_TIME_INFINITE, false));
   ASSERT_TRUE(ran);
 
   // Reset quit.
@@ -2346,8 +2346,8 @@ TEST_F(DispatcherTest, RunThenQuitAndRunAgain) {
   ASSERT_EQ(ZX_ERR_TIMED_OUT, fdf_testing_run(zx::deadline_after(zx::msec(1)).get(), false));
   ASSERT_FALSE(ran);
 
-  // Quit task should run before our 1s deadline again.
-  ASSERT_EQ(ZX_ERR_CANCELED, fdf_testing_run(zx::deadline_after(zx::sec(1)).get(), false));
+  // Quit task should run since there is no deadline.
+  ASSERT_EQ(ZX_ERR_CANCELED, fdf_testing_run(ZX_TIME_INFINITE, false));
   ASSERT_TRUE(ran);
 
   // Reset quit.
@@ -2989,6 +2989,44 @@ TEST_F(DispatcherTest, MaximumTenThreads) {
       dispatchers[i]->Destroy();
     }
   }
+}
+
+TEST_F(DispatcherTest, GetDefaultThreadPoolSize) {
+  ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->max_threads(), 10);
+}
+
+TEST_F(DispatcherTest, SetDefaultThreadPoolSize) {
+  ASSERT_OK(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->set_max_threads(3));
+  ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->max_threads(), 3);
+}
+
+TEST_F(DispatcherTest, ThreadPoolSizeNeverGrowsPastMax) {
+  static constexpr uint32_t kMaxThreads = 3;
+  auto* thread_pool = driver_runtime::GetDispatcherCoordinator().default_thread_pool();
+  ASSERT_EQ(thread_pool->set_max_threads(kMaxThreads), ZX_OK);
+
+  const void* driver = CreateFakeDriver();
+  fdf_dispatcher_t* dispatcher;
+  // Number of threads scales as we create dispatchers.
+  for (uint32_t i = thread_pool->num_threads(); i < kMaxThreads; i++) {
+    ASSERT_NO_FATAL_FAILURE(CreateDispatcher(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "",
+                                             driver, &dispatcher));
+    EXPECT_EQ(thread_pool->num_threads(), i + 1);
+  }
+
+  // Creating one more doesn't scale us past the max.
+  ASSERT_NO_FATAL_FAILURE(
+      CreateDispatcher(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "", driver, &dispatcher));
+  EXPECT_EQ(thread_pool->num_threads(), kMaxThreads);
+
+  // Trying to change it to be lower than current number of threads errors out.
+  ASSERT_STATUS(thread_pool->set_max_threads(thread_pool->num_threads() - 1), ZX_ERR_OUT_OF_RANGE);
+
+  // Changing the max one more doesn't scale us past the max.
+  ASSERT_OK(thread_pool->set_max_threads(kMaxThreads + 1));
+  ASSERT_NO_FATAL_FAILURE(
+      CreateDispatcher(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "", driver, &dispatcher));
+  EXPECT_EQ(thread_pool->num_threads(), kMaxThreads + 1);
 }
 
 // Tests shutting down and destroying multiple dispatchers concurrently.

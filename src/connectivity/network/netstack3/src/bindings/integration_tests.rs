@@ -2,30 +2,32 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::collections::HashMap;
-use std::sync::Once;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Once},
+};
 
-use anyhow::{format_err, Context as _, Error};
+use assert_matches::assert_matches;
 use fidl_fuchsia_net as fidl_net;
-use fidl_fuchsia_net_ext::IntoExt;
-use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
 use fidl_fuchsia_net_stack as fidl_net_stack;
 use fidl_fuchsia_net_stack_ext::FidlReturn as _;
 use fidl_fuchsia_netemul_network as net;
 use fuchsia_async as fasync;
-use futures::{FutureExt as _, StreamExt as _};
-use net_declare::{net_ip_v4, net_subnet_v4, net_subnet_v6};
+use futures::{channel::mpsc, StreamExt as _, TryFutureExt as _};
+use net_declare::{net_ip_v4, net_ip_v6, net_mac, net_subnet_v4, net_subnet_v6};
 use net_types::{
-    ip::{AddrSubnetEither, Ip, IpAddress, Ipv4, Ipv6},
-    SpecifiedAddr,
+    ethernet::Mac,
+    ip::{AddrSubnetEither, Ip, IpAddr, IpAddress, Ipv4, Ipv6},
+    SpecifiedAddr, Witness as _,
 };
 use netstack3_core::{
-    add_ip_addr_subnet,
-    device::update_ipv6_configuration,
-    ip::{
-        device::{slaac::STABLE_IID_SECRET_KEY_BYTES, Ipv6DeviceConfigurationUpdate},
-        types::{AddableEntry, AddableEntryEither, AddableMetric, RawMetric},
-    },
+    device::{insert_static_neighbor_entry, resolve_ethernet_link_addr, DeviceId},
+    error::AddressResolutionFailed,
+    ip::{Ipv6DeviceConfigurationUpdate, STABLE_IID_SECRET_KEY_BYTES},
+    neighbor::LinkResolutionResult,
+    routes::{AddableEntry, AddableEntryEither, AddableMetric, RawMetric},
 };
 use tracing::Subscriber;
 use tracing_subscriber::{
@@ -37,36 +39,12 @@ use tracing_subscriber::{
 };
 
 use crate::bindings::{
+    ctx::BindingsCtx,
     devices::{BindingId, Devices},
+    routes,
     util::{ConversionContext as _, IntoFidl as _, TryIntoFidlWithContext as _},
-    Ctx, RequestStreamExt as _, DEFAULT_INTERFACE_METRIC, LOOPBACK_NAME,
+    Ctx, DEFAULT_INTERFACE_METRIC, LOOPBACK_NAME,
 };
-
-mod util {
-    use fuchsia_async as fasync;
-    use netstack3_core::sync::Mutex;
-    use std::sync::Arc;
-
-    /// A thread-safe collection of [`fasync::Task`].
-    #[derive(Clone, Default)]
-    pub(super) struct TaskCollection(Arc<Mutex<Vec<fasync::Task<()>>>>);
-
-    impl TaskCollection {
-        /// Creates a new `TaskCollection` with the tasks in `i`.
-        pub(super) fn new(i: impl Iterator<Item = fasync::Task<()>>) -> Self {
-            Self(Arc::new(Mutex::new(i.collect())))
-        }
-
-        /// Pushes `task` into the collection.
-        ///
-        /// Hiding this in a method ensures that the task lock can't be
-        /// interleaved with executor yields.
-        pub(super) fn push(&self, task: fasync::Task<()>) {
-            let Self(t) = self;
-            t.lock().push(task);
-        }
-    }
-}
 
 struct LogFormatter;
 
@@ -106,106 +84,120 @@ pub(crate) fn set_logger_for_test() {
     })
 }
 
-#[derive(Clone)]
-/// A netstack context for testing.
-pub(crate) struct TestContext {
-    netstack: crate::bindings::Netstack,
-    interfaces_watcher_sink: crate::bindings::interfaces_watcher::WorkerWatcherSink,
-    tasks: util::TaskCollection,
-}
-
-impl TestContext {
-    fn new() -> Self {
-        let crate::bindings::NetstackSeed { netstack, interfaces_worker, interfaces_watcher_sink } =
-            crate::bindings::NetstackSeed::default();
-
-        Self {
-            netstack,
-            interfaces_watcher_sink,
-            tasks: util::TaskCollection::new(std::iter::once(fasync::Task::spawn(
-                interfaces_worker.run().map(|r| {
-                    let _: futures::stream::FuturesUnordered<_> = r.expect("watcher failed");
-                }),
-            ))),
-        }
-    }
-}
-
-/// A holder for a [`TestContext`].
 /// `TestStack` is obtained from [`TestSetupBuilder`] and offers utility methods
 /// to connect to the FIDL APIs served by [`TestContext`], as well as keeps
 /// track of configured interfaces during the setup procedure.
 pub(crate) struct TestStack {
-    ctx: TestContext,
+    // Keep a clone of the netstack so we can peek into core contexts and such
+    // in tests.
+    netstack: crate::bindings::Netstack,
+    // The main task running the netstack.
+    task: Option<fasync::Task<()>>,
+    // A channel sink standing in for ServiceFs when running tests.
+    services_sink: mpsc::UnboundedSender<crate::bindings::Service>,
+    // The inspector instance given to Netstack, can be used to probe available
+    // inspect data.
+    inspector: Arc<fuchsia_inspect::Inspector>,
+    // Keep track of installed endpoints.
     endpoint_ids: HashMap<String, BindingId>,
-    // We must keep this sender around to prevent the control task from removing
-    // the loopback interface.
-    loopback_termination_sender:
-        Option<futures::channel::oneshot::Sender<fnet_interfaces_admin::InterfaceRemovedReason>>,
 }
 
+impl Drop for TestStack {
+    fn drop(&mut self) {
+        if self.task.is_some() {
+            panic!("dropped TestStack without calling shutdown")
+        }
+    }
+}
+
+pub(crate) trait NetstackServiceMarker: fidl::endpoints::DiscoverableProtocolMarker {
+    fn make_service(server: fidl::endpoints::ServerEnd<Self>) -> crate::bindings::Service;
+}
+
+macro_rules! impl_service_marker {
+    ($proto:ty, $svc:ident) => {
+        impl_service_marker!($proto, $svc, stream);
+    };
+    ($proto:ty, $svc:ident, stream) => {
+        impl_service_marker!($proto, $svc, |server: fidl::endpoints::ServerEnd<Self>| server
+            .into_stream()
+            .unwrap());
+    };
+    ($proto:ty, $svc:ident, server_end) => {
+        impl_service_marker!($proto, $svc, |server: fidl::endpoints::ServerEnd<Self>| server);
+    };
+    ($proto:ty, $svc:ident, $transf:expr) => {
+        impl NetstackServiceMarker for $proto {
+            fn make_service(server: fidl::endpoints::ServerEnd<Self>) -> crate::bindings::Service {
+                let t = $transf;
+                crate::bindings::Service::$svc(t(server))
+            }
+        }
+    };
+}
+
+impl_service_marker!(fidl_fuchsia_net_debug::DiagnosticsMarker, DebugDiagnostics, server_end);
+impl_service_marker!(fidl_fuchsia_net_debug::InterfacesMarker, DebugInterfaces);
+impl_service_marker!(fidl_fuchsia_net_filter_deprecated::FilterMarker, FilterDeprecated);
+impl_service_marker!(fidl_fuchsia_net_interfaces::StateMarker, Interfaces);
+impl_service_marker!(fidl_fuchsia_net_interfaces_admin::InstallerMarker, InterfacesAdmin);
+impl_service_marker!(fidl_fuchsia_net_neighbor::ViewMarker, Neighbor);
+impl_service_marker!(fidl_fuchsia_net_neighbor::ControllerMarker, NeighborController);
+impl_service_marker!(fidl_fuchsia_posix_socket_packet::ProviderMarker, PacketSocket);
+impl_service_marker!(fidl_fuchsia_posix_socket_raw::ProviderMarker, RawSocket);
+impl_service_marker!(fidl_fuchsia_net_root::InterfacesMarker, RootInterfaces);
+impl_service_marker!(fidl_fuchsia_net_routes::StateMarker, RoutesState);
+impl_service_marker!(fidl_fuchsia_net_routes::StateV4Marker, RoutesStateV4);
+impl_service_marker!(fidl_fuchsia_net_routes::StateV6Marker, RoutesStateV6);
+impl_service_marker!(fidl_fuchsia_posix_socket::ProviderMarker, Socket);
+impl_service_marker!(fidl_fuchsia_net_stack::StackMarker, Stack);
+impl_service_marker!(fidl_fuchsia_update_verify::NetstackVerifierMarker, Verifier);
+
 impl TestStack {
+    /// Connects a service to the contained stack.
+    pub(crate) fn connect_service(&self, service: crate::bindings::Service) {
+        self.services_sink.unbounded_send(service).expect("send service request");
+    }
+
+    /// Connect to a discoverable service offered by the netstack.
+    pub(crate) fn connect_proxy<M: NetstackServiceMarker>(&self) -> M::Proxy {
+        let (proxy, server_end) = fidl::endpoints::create_proxy::<M>().expect("create proxy");
+        self.connect_service(M::make_service(server_end));
+        proxy
+    }
+
     /// Connects to the `fuchsia.net.stack.Stack` service.
-    pub(crate) fn connect_stack(&self) -> Result<fidl_fuchsia_net_stack::StackProxy, Error> {
-        let (stack, rs) =
-            fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_net_stack::StackMarker>()?;
-        fasync::Task::spawn(rs.serve_with(|rs| {
-            crate::bindings::stack_fidl_worker::StackFidlWorker::serve(
-                self.ctx.netstack.clone(),
-                rs,
-            )
-        }))
-        .detach();
-        Ok(stack)
+    pub(crate) fn connect_stack(&self) -> fidl_fuchsia_net_stack::StackProxy {
+        self.connect_proxy::<fidl_fuchsia_net_stack::StackMarker>()
     }
 
     /// Connects to the `fuchsia.net.interfaces.admin.Installer` service.
     pub(crate) fn connect_interfaces_installer(
         &self,
     ) -> fidl_fuchsia_net_interfaces_admin::InstallerProxy {
-        let (installer, rs) = fidl::endpoints::create_proxy_and_stream::<
-            fidl_fuchsia_net_interfaces_admin::InstallerMarker,
-        >()
-        .expect("create endpoints");
-        let task_stream = crate::bindings::interfaces_admin::serve(self.ctx.netstack.clone(), rs);
-        let task_sink = self.ctx.tasks.clone();
-        self.ctx.tasks.push(fasync::Task::spawn(task_stream.for_each(move |r| {
-            futures::future::ready(task_sink.push(r.expect("error serving interfaces installer")))
-        })));
-        installer
+        self.connect_proxy::<fidl_fuchsia_net_interfaces_admin::InstallerMarker>()
     }
 
     /// Creates a new `fuchsia.net.interfaces/Watcher` for this stack.
-    pub(crate) async fn new_interfaces_watcher(&self) -> fidl_fuchsia_net_interfaces::WatcherProxy {
-        let (watcher, rs) = fidl::endpoints::create_proxy_and_stream::<
-            fidl_fuchsia_net_interfaces::WatcherMarker,
-        >()
-        .expect("create proxy");
-        let mut sender = self.ctx.interfaces_watcher_sink.clone();
-        sender
-            .add_watcher(rs, crate::bindings::interfaces_watcher::WatcherOptions::default())
-            .await
-            .expect("add watcher");
+    pub(crate) fn new_interfaces_watcher(&self) -> fidl_fuchsia_net_interfaces::WatcherProxy {
+        let state = self.connect_proxy::<fidl_fuchsia_net_interfaces::StateMarker>();
+        let (watcher, server_end) =
+            fidl::endpoints::create_proxy::<fidl_fuchsia_net_interfaces::WatcherMarker>()
+                .expect("create proxy");
+        state
+            .get_watcher(&fidl_fuchsia_net_interfaces::WatcherOptions::default(), server_end)
+            .expect("get watcher");
         watcher
     }
 
     /// Connects to the `fuchsia.posix.socket.Provider` service.
-    pub(crate) fn connect_socket_provider(
-        &self,
-    ) -> Result<fidl_fuchsia_posix_socket::ProviderProxy, Error> {
-        let (stack, rs) = fidl::endpoints::create_proxy_and_stream::<
-            fidl_fuchsia_posix_socket::ProviderMarker,
-        >()?;
-        fasync::Task::spawn(
-            rs.serve_with(|rs| crate::bindings::socket::serve(self.ctx.netstack.ctx.clone(), rs)),
-        )
-        .detach();
-        Ok(stack)
+    pub(crate) fn connect_socket_provider(&self) -> fidl_fuchsia_posix_socket::ProviderProxy {
+        self.connect_proxy::<fidl_fuchsia_posix_socket::ProviderMarker>()
     }
 
     /// Waits for interface with given `if_id` to come online.
     pub(crate) async fn wait_for_interface_online(&mut self, if_id: BindingId) {
-        let watcher = self.new_interfaces_watcher().await;
+        let watcher = self.new_interfaces_watcher();
         loop {
             let event = watcher.watch().await.expect("failed to watch");
             let fidl_fuchsia_net_interfaces::Properties { id, online, .. } = match event {
@@ -229,6 +221,26 @@ impl TestStack {
         }
     }
 
+    async fn wait_for_loopback_id(&mut self) -> BindingId {
+        let watcher = self.new_interfaces_watcher();
+        loop {
+            let event = watcher.watch().await.expect("failed to watch");
+            let fidl_fuchsia_net_interfaces::Properties { id, name, .. } = match event {
+                fidl_fuchsia_net_interfaces::Event::Added(props)
+                | fidl_fuchsia_net_interfaces::Event::Existing(props) => props,
+                fidl_fuchsia_net_interfaces::Event::Changed(_)
+                | fidl_fuchsia_net_interfaces::Event::Idle(fidl_fuchsia_net_interfaces::Empty {})
+                | fidl_fuchsia_net_interfaces::Event::Removed(_) => {
+                    continue;
+                }
+            };
+            if name.expect("missing name") != LOOPBACK_NAME {
+                continue;
+            }
+            break BindingId::try_from(id.expect("missing id")).expect("bad id");
+        }
+    }
+
     /// Gets an installed interface identifier from the configuration endpoint
     /// `index`.
     pub(crate) fn get_endpoint_id(&self, index: usize) -> BindingId {
@@ -242,21 +254,61 @@ impl TestStack {
     }
 
     /// Creates a new `TestStack`.
-    pub(crate) fn new() -> Self {
-        let ctx = TestContext::new();
-        TestStack { ctx, endpoint_ids: HashMap::new(), loopback_termination_sender: None }
+    pub(crate) fn new(
+        spy_interface_event_sink: Option<
+            mpsc::UnboundedSender<crate::bindings::interfaces_watcher::InterfaceEvent>,
+        >,
+    ) -> Self {
+        let mut seed = crate::bindings::NetstackSeed::default();
+        seed.interfaces_worker.run_options.spy_interface_events = spy_interface_event_sink;
+
+        let (services_sink, services) = mpsc::unbounded();
+        let inspector = Arc::new(fuchsia_inspect::Inspector::default());
+        let netstack = seed.netstack.clone();
+        let inspector_cloned = inspector.clone();
+        let task =
+            fasync::Task::spawn(async move { seed.serve(services, &inspector_cloned).await });
+
+        Self {
+            netstack,
+            task: Some(task),
+            services_sink,
+            inspector: inspector,
+            endpoint_ids: Default::default(),
+        }
     }
 
     /// Helper function to invoke a closure that provides a locked
     /// [`Ctx< BindingsContext>`] provided by this `TestStack`.
     pub(crate) fn with_ctx<R, F: FnOnce(&mut Ctx) -> R>(&mut self, f: F) -> R {
-        let mut ctx = self.ctx.netstack.ctx.clone();
+        let mut ctx = self.netstack.ctx.clone();
         f(&mut ctx)
     }
 
     /// Acquire this `TestStack`'s context.
     pub(crate) fn ctx(&self) -> Ctx {
-        self.ctx.netstack.ctx.clone()
+        self.netstack.ctx.clone()
+    }
+
+    /// Acquire this `TestStack`'s netstack.
+    pub(crate) fn netstack(&self) -> crate::bindings::Netstack {
+        self.netstack.clone()
+    }
+
+    /// Gets a reference to the `Inspector` supplied to the `TestStack`.
+    pub(crate) fn inspector(&self) -> &fuchsia_inspect::Inspector {
+        &self.inspector
+    }
+
+    /// Synchronously shutdown the running stack.
+    pub(crate) async fn shutdown(mut self) {
+        let task = self.task.take().unwrap();
+
+        // Drop all the TestStack, which will release our clone of Ctx and close
+        // the services sink, which triggers the main loop shutdown.
+        std::mem::drop(self);
+
+        task.await;
     }
 }
 
@@ -267,7 +319,7 @@ pub(crate) struct TestSetup {
     sandbox: Option<netemul::TestSandbox>,
     // Keep around the handle to the virtual networks and endpoints we create to
     // ensure they're not cleaned up before test execution is complete.
-    _network: Option<net::SetupHandleProxy>,
+    network: Option<net::SetupHandleProxy>,
     stacks: Vec<TestStack>,
 }
 
@@ -278,41 +330,34 @@ impl TestSetup {
         &mut self.stacks[i]
     }
 
-    async fn get_endpoint(
+    pub(crate) async fn get_endpoint(
         &mut self,
         ep_name: &str,
-    ) -> Result<
-        (
-            fidl::endpoints::ClientEnd<fidl_fuchsia_hardware_network::DeviceMarker>,
-            fidl_fuchsia_hardware_network::PortId,
-        ),
-        Error,
-    > {
-        let epm = self.sandbox().get_endpoint_manager()?;
-        let ep = match epm.get_endpoint(ep_name).await? {
-            Some(ep) => ep.into_proxy()?,
-            None => {
-                return Err(format_err!("Failed to retrieve endpoint {}", ep_name));
-            }
-        };
-
-        let (port, server_end) = fidl::endpoints::create_proxy().context("create proxy")?;
-        ep.get_port(server_end).context("get port")?;
-        let (device, server_end) = fidl::endpoints::create_endpoints();
-        port.get_device(server_end).context("get device")?;
-        let port_id = port
-            .get_info()
+    ) -> (
+        fidl::endpoints::ClientEnd<fidl_fuchsia_hardware_network::DeviceMarker>,
+        fidl_fuchsia_hardware_network::PortId,
+    ) {
+        let epm = self.sandbox().get_endpoint_manager().expect("get endpoint manager");
+        let ep = epm
+            .get_endpoint(ep_name)
             .await
-            .context("get port info")?
-            .id
-            .ok_or_else(|| anyhow::anyhow!("missing port id"))?;
-        Ok((device, port_id))
+            .unwrap_or_else(|e| panic!("get endpoint {ep_name}: {e:?}"))
+            .unwrap_or_else(|| panic!("failed to retrieve endpoint {ep_name}"))
+            .into_proxy()
+            .expect("into proxy");
+
+        let (port, server_end) = fidl::endpoints::create_proxy().expect("create proxy");
+        ep.get_port(server_end).expect("get port");
+        let (device, server_end) = fidl::endpoints::create_endpoints();
+        port.get_device(server_end).expect("get device");
+        let port_id = port.get_info().await.expect("get port info").id.expect("missing port id");
+        (device, port_id)
     }
 
     /// Creates a new empty `TestSetup`.
-    fn new() -> Result<Self, Error> {
+    fn new() -> Self {
         set_logger_for_test();
-        Ok(Self { sandbox: None, _network: None, stacks: Vec::new() })
+        Self { sandbox: None, network: None, stacks: Vec::new() }
     }
 
     fn sandbox(&mut self) -> &netemul::TestSandbox {
@@ -320,10 +365,7 @@ impl TestSetup {
             .get_or_insert_with(|| netemul::TestSandbox::new().expect("create netemul sandbox"))
     }
 
-    async fn configure_network(
-        &mut self,
-        ep_names: impl Iterator<Item = String>,
-    ) -> Result<(), Error> {
+    async fn configure_network(&mut self, ep_names: impl Iterator<Item = String>) {
         let handle = self
             .sandbox()
             .setup_networks(vec![net::NetworkSetup {
@@ -332,15 +374,25 @@ impl TestSetup {
                 endpoints: ep_names.map(|name| new_endpoint_setup(name)).collect(),
             }])
             .await
-            .context("create network")?
+            .expect("create network")
             .into_proxy();
 
-        self._network = Some(handle);
-        Ok(())
+        self.network = Some(handle);
     }
 
     fn add_stack(&mut self, stack: TestStack) {
         self.stacks.push(stack)
+    }
+
+    /// Synchronously shut down all the contained stacks.
+    pub(crate) async fn shutdown(self) {
+        let Self { sandbox, network, stacks } = self;
+        // Destroy the sandbox and network, which will cause all devices in the
+        // stacks to be removed.
+        std::mem::drop(network);
+        std::mem::drop(sandbox);
+        // Shutdown all the stacks concurrently.
+        futures::stream::iter(stacks).for_each_concurrent(None, |stack| stack.shutdown()).await;
     }
 }
 
@@ -397,64 +449,60 @@ impl TestSetupBuilder {
     }
 
     /// Attempts to build a [`TestSetup`] with the provided configuration.
-    pub(crate) async fn build(self) -> Result<TestSetup, Error> {
-        let mut setup = TestSetup::new()?;
+    pub(crate) async fn build(self) -> TestSetup {
+        let mut setup = TestSetup::new();
         if !self.endpoints.is_empty() {
-            let () = setup.configure_network(self.endpoints.into_iter()).await?;
+            setup.configure_network(self.endpoints.into_iter()).await;
         }
 
         // configure all the stacks:
         for stack_cfg in self.stacks.into_iter() {
             println!("Adding stack: {:?}", stack_cfg);
-            let mut stack = TestStack::new();
-            let (loopback_termination_sender, binding_id, loopback_interface_control_task) =
-                stack.ctx.netstack.add_loopback();
-
-            stack.loopback_termination_sender = Some(loopback_termination_sender);
-            stack.ctx.tasks.push(loopback_interface_control_task);
-
+            let StackSetupBuilder { spy_interface_event_sink, endpoints } = stack_cfg;
+            let mut stack = TestStack::new(spy_interface_event_sink);
+            let binding_id = stack.wait_for_loopback_id().await;
             assert_eq!(stack.endpoint_ids.insert(LOOPBACK_NAME.to_string(), binding_id), None);
 
-            for (ep_name, addr) in stack_cfg.endpoints.into_iter() {
+            for (ep_name, addr) in endpoints.into_iter() {
                 // get the endpoint from the sandbox config:
-                let (endpoint, port_id) = setup.get_endpoint(&ep_name).await?;
+                let (endpoint, port_id) = setup.get_endpoint(&ep_name).await;
 
                 let installer = stack.connect_interfaces_installer();
 
                 let (device_control, server_end) =
-                    fidl::endpoints::create_proxy().context("create proxy")?;
-                installer.install_device(endpoint, server_end).context("install device")?;
+                    fidl::endpoints::create_proxy().expect("create proxy");
+                installer.install_device(endpoint, server_end).expect("install device");
 
                 // Discard strong ownership of device, we're already holding
                 // onto the device's netemul definition we don't need to hold on
                 // to the netstack side of it too.
-                device_control.detach().context("detach")?;
+                device_control.detach().expect("detach");
 
                 let (interface_control, server_end) =
-                    fidl::endpoints::create_proxy().context("create proxy")?;
+                    fidl::endpoints::create_proxy().expect("create proxy");
                 device_control
                     .create_interface(
                         &port_id,
                         server_end,
                         &fidl_fuchsia_net_interfaces_admin::Options::default(),
                     )
-                    .context("create interface")?;
+                    .expect("create interface");
 
                 let if_id = interface_control
                     .get_id()
+                    .map_ok(|i| BindingId::new(i).expect("nonzero id"))
                     .await
-                    .context("get id")
-                    .and_then(|i| BindingId::new(i).ok_or(Error::msg("id is 0")))?;
+                    .expect("get id");
 
                 // Detach interface_control for the same reason as
                 // device_control.
-                interface_control.detach().context("detach")?;
+                interface_control.detach().expect("detach");
 
                 assert!(interface_control
                     .enable()
                     .await
-                    .context("calling enable")?
-                    .map_err(|e| format_err!("enable error {:?}", e))?);
+                    .expect("calling enable")
+                    .expect("enable failed"));
 
                 // We'll ALWAYS await for the newly created interface to come up
                 // online before returning, so users of `TestSetupBuilder` can
@@ -462,34 +510,41 @@ impl TestSetupBuilder {
                 stack.wait_for_interface_online(if_id).await;
 
                 // Disable DAD for simplicity of testing.
-                stack.with_ctx(|Ctx { sync_ctx, non_sync_ctx }| {
-                    let devices: &Devices<_> = non_sync_ctx.as_ref();
+                stack.with_ctx(|ctx| {
+                    let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+                    let devices: &Devices<_> = bindings_ctx.as_ref();
                     let device = devices.get_core_id(if_id).unwrap();
-                    let _: Ipv6DeviceConfigurationUpdate = update_ipv6_configuration(
-                        sync_ctx,
-                        non_sync_ctx,
-                        &device,
-                        Ipv6DeviceConfigurationUpdate {
-                            dad_transmits: Some(None),
-                            ..Default::default()
-                        },
-                    )
-                    .unwrap();
+                    let _: Ipv6DeviceConfigurationUpdate =
+                        netstack3_core::device::new_ipv6_configuration_update(
+                            &device,
+                            Ipv6DeviceConfigurationUpdate {
+                                dad_transmits: Some(None),
+                                ..Default::default()
+                            },
+                        )
+                        .unwrap()
+                        .apply(core_ctx, bindings_ctx);
                 });
                 if let Some(addr) = addr {
-                    stack.with_ctx(|Ctx { sync_ctx, non_sync_ctx }| {
-                        let core_id = non_sync_ctx
+                    stack.with_ctx(|ctx| {
+                        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+                        let core_id = bindings_ctx
                             .devices
                             .get_core_id(if_id)
-                            .ok_or_else(|| format_err!("Failed to get device {} info", if_id))?;
+                            .unwrap_or_else(|| panic!("failed to get device {if_id} info"));
 
-                        add_ip_addr_subnet(sync_ctx, non_sync_ctx, &core_id, addr)
-                            .context("add interface address")
-                    })?;
+                        netstack3_core::device::add_ip_addr_subnet(
+                            core_ctx,
+                            bindings_ctx,
+                            &core_id,
+                            addr,
+                        )
+                        .expect("add interface address")
+                    });
 
                     let (_, subnet) = addr.addr_subnet();
 
-                    let stack = stack.connect_stack().context("connect stack")?;
+                    let stack = stack.connect_stack();
                     stack
                         .add_forwarding_entry(&fidl_fuchsia_net_stack::ForwardingEntry {
                             subnet: subnet.into_fidl(),
@@ -499,7 +554,7 @@ impl TestSetupBuilder {
                         })
                         .await
                         .squash_result()
-                        .context("add forwarding entry")?;
+                        .expect("add forwarding entry");
                 }
                 assert_eq!(stack.endpoint_ids.insert(ep_name, if_id), None);
             }
@@ -507,20 +562,22 @@ impl TestSetupBuilder {
             setup.add_stack(stack)
         }
 
-        Ok(setup)
+        setup
     }
 }
 
 /// Helper struct to create stack configuration for [`TestSetupBuilder`].
 #[derive(Debug)]
-pub struct StackSetupBuilder {
+pub(crate) struct StackSetupBuilder {
     endpoints: Vec<(String, Option<AddrSubnetEither>)>,
+    spy_interface_event_sink:
+        Option<mpsc::UnboundedSender<crate::bindings::interfaces_watcher::InterfaceEvent>>,
 }
 
 impl StackSetupBuilder {
     /// Creates a new empty stack (no endpoints) configuration.
     pub(crate) fn new() -> Self {
-        Self { endpoints: Vec::new() }
+        Self { endpoints: Vec::new(), spy_interface_event_sink: None }
     }
 
     /// Adds endpoint number  `index` with optional address configuration
@@ -539,8 +596,25 @@ impl StackSetupBuilder {
         self.endpoints.push((name.into(), address));
         self
     }
+
+    /// Adds a "spy" sink to which
+    /// [`crate::bindings::interfaces_watcher::InterfaceEvent`]s will be copied.
+    /// Panics if called more than once.
+    pub(crate) fn spy_interface_events(
+        mut self,
+        spy_interface_event_sink: mpsc::UnboundedSender<
+            crate::bindings::interfaces_watcher::InterfaceEvent,
+        >,
+    ) -> Self {
+        assert_matches::assert_matches!(
+            self.spy_interface_event_sink.replace(spy_interface_event_sink),
+            None
+        );
+        self
+    }
 }
 
+#[fixture::teardown(TestSetup::shutdown)]
 #[fasync::run_singlethreaded(test)]
 async fn test_add_device_routes() {
     // create a stack and add a single endpoint to it so we have the interface
@@ -549,10 +623,10 @@ async fn test_add_device_routes() {
         .add_endpoint()
         .add_stack(StackSetupBuilder::new().add_endpoint(1, None))
         .build()
-        .await
-        .unwrap();
+        .await;
+
     let test_stack = t.get(0);
-    let stack = test_stack.connect_stack().unwrap();
+    let stack = test_stack.connect_stack();
     let if_id = test_stack.get_endpoint_id(1);
 
     let fwd_entry1 = fidl_net_stack::ForwardingEntry {
@@ -628,8 +702,11 @@ async fn test_add_device_routes() {
         stack.add_forwarding_entry(&bad_entry).await.unwrap().unwrap_err(),
         fidl_net_stack::Error::NotFound
     );
+
+    t
 }
 
+#[fixture::teardown(TestSetup::shutdown)]
 #[fasync::run_singlethreaded(test)]
 async fn test_list_del_routes() {
     // create a stack and add a single endpoint to it so we have the interface
@@ -639,44 +716,59 @@ async fn test_list_del_routes() {
         .add_named_endpoint(EP_NAME)
         .add_stack(StackSetupBuilder::new().add_named_endpoint(EP_NAME, None))
         .build()
-        .await
-        .unwrap();
+        .await;
 
     let test_stack = t.get(0);
-    let stack = test_stack.connect_stack().unwrap();
+    let stack = test_stack.connect_stack();
     let if_id = test_stack.get_named_endpoint_id(EP_NAME);
     let loopback_id = test_stack.get_named_endpoint_id(LOOPBACK_NAME);
     assert_ne!(loopback_id, if_id);
-    let device = test_stack.ctx().non_sync_ctx.get_core_id(if_id).expect("device exists");
+    let device = test_stack.ctx().bindings_ctx().get_core_id(if_id).expect("device exists");
     let sub1 = net_subnet_v4!("192.168.0.0/24");
     let route1: AddableEntryEither<_> = AddableEntry::without_gateway(
         sub1,
-        device.clone(),
+        device.downgrade(),
         AddableMetric::ExplicitMetric(RawMetric(0)),
     )
     .into();
     let sub10 = net_subnet_v4!("10.0.0.0/24");
     let route2: AddableEntryEither<_> = AddableEntry::without_gateway(
         sub10,
-        device.clone(),
+        device.downgrade(),
         AddableMetric::ExplicitMetric(RawMetric(0)),
     )
     .into();
     let sub10_gateway = SpecifiedAddr::new(net_ip_v4!("10.0.0.1")).unwrap().into();
-    let route3 = AddableEntry::with_gateway(
+    let route3: AddableEntryEither<_> = AddableEntry::with_gateway(
         sub10,
-        None,
+        device.downgrade(),
         sub10_gateway,
         AddableMetric::ExplicitMetric(RawMetric(0)),
     )
     .into();
 
-    let () = test_stack.with_ctx(|Ctx { sync_ctx, non_sync_ctx }| {
-        // add a couple of routes directly into core:
-        netstack3_core::add_route(sync_ctx, non_sync_ctx, route1).unwrap();
-        netstack3_core::add_route(sync_ctx, non_sync_ctx, route2).unwrap();
-        netstack3_core::add_route(sync_ctx, non_sync_ctx, route3).unwrap();
-    });
+    for route in [route1, route2, route3] {
+        test_stack
+            .ctx()
+            .bindings_ctx()
+            .apply_route_change_either(match route.into() {
+                netstack3_core::routes::AddableEntryEither::V4(entry) => {
+                    routes::ChangeEither::V4(routes::Change::RouteOp(
+                        routes::RouteOp::Add(entry),
+                        routes::SetMembership::Global,
+                    ))
+                }
+                netstack3_core::routes::AddableEntryEither::V6(entry) => {
+                    routes::ChangeEither::V6(routes::Change::RouteOp(
+                        routes::RouteOp::Add(entry),
+                        routes::SetMembership::Global,
+                    ))
+                }
+            })
+            .await
+            .map(|outcome| assert_matches!(outcome, routes::ChangeOutcome::Changed))
+            .expect("add route should succeed");
+    }
 
     let route1_fwd_entry = fidl_net_stack::ForwardingEntry {
         subnet: sub1.into_ext(),
@@ -762,12 +854,12 @@ async fn test_list_del_routes() {
 
     fn get_routing_table(ts: &TestStack) -> Vec<fidl_net_stack::ForwardingEntry> {
         let mut ctx = ts.ctx();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-        netstack3_core::ip::get_all_routes(sync_ctx)
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        netstack3_core::routes::get_all_routes(core_ctx)
             .into_iter()
             .map(|entry| {
                 entry
-                    .try_into_fidl_with_ctx(&non_sync_ctx)
+                    .try_into_fidl_with_ctx(&bindings_ctx)
                     .expect("failed to map forwarding entry into FIDL")
             })
             .collect()
@@ -793,19 +885,21 @@ async fn test_list_del_routes() {
     let expected_routes =
         expected_routes.into_iter().filter(|route| route != &route1_fwd_entry).collect::<Vec<_>>();
     assert_eq!(routes, expected_routes);
+
+    t
 }
 
+#[fixture::teardown(TestSetup::shutdown)]
 #[fasync::run_singlethreaded(test)]
 async fn test_add_remote_routes() {
     let mut t = TestSetupBuilder::new()
         .add_endpoint()
         .add_stack(StackSetupBuilder::new().add_endpoint(1, None))
         .build()
-        .await
-        .unwrap();
+        .await;
 
     let test_stack = t.get(0);
-    let stack = test_stack.connect_stack().unwrap();
+    let stack = test_stack.connect_stack();
     let device_id = test_stack.get_endpoint_id(1).get();
 
     let subnet = fidl_net::Subnet {
@@ -826,6 +920,7 @@ async fn test_add_remote_routes() {
         stack.add_forwarding_entry(&fwd_entry).await.unwrap(),
         Err(fidl_net_stack::Error::BadState)
     );
+
     let device_fwd_entry = fidl_net_stack::ForwardingEntry {
         subnet: fwd_entry.subnet,
         device_id,
@@ -847,15 +942,18 @@ async fn test_add_remote_routes() {
         stack.add_forwarding_entry(&fwd_entry).await.unwrap(),
         Err(fidl_net_stack::Error::AlreadyExists)
     );
+
+    t
 }
 
 fn get_slaac_secret<'s>(
     test_stack: &'s mut TestStack,
     if_id: BindingId,
 ) -> Option<[u8; STABLE_IID_SECRET_KEY_BYTES]> {
-    test_stack.with_ctx(|Ctx { sync_ctx, non_sync_ctx }| {
-        let device = AsRef::<Devices<_>>::as_ref(non_sync_ctx).get_core_id(if_id).unwrap();
-        netstack3_core::device::get_ipv6_configuration_and_flags(sync_ctx, &device)
+    test_stack.with_ctx(|ctx| {
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        let device = AsRef::<Devices<_>>::as_ref(bindings_ctx).get_core_id(if_id).unwrap();
+        netstack3_core::device::get_ipv6_configuration_and_flags(core_ctx, &device)
             .config
             .slaac_config
             .temporary_address_configuration
@@ -863,17 +961,15 @@ fn get_slaac_secret<'s>(
     })
 }
 
+#[fixture::teardown(TestSetup::shutdown)]
 #[fasync::run_singlethreaded(test)]
 async fn test_ipv6_slaac_secret_stable() {
     const ENDPOINT: &'static str = "endpoint";
 
-    let mut t = TestSetupBuilder::new()
-        .add_named_endpoint(ENDPOINT)
-        .add_empty_stack()
-        .build()
-        .await
-        .unwrap();
-    let (endpoint, port_id) = t.get_endpoint(ENDPOINT).await.expect("has endpoint");
+    let mut t =
+        TestSetupBuilder::new().add_named_endpoint(ENDPOINT).add_empty_stack().build().await;
+
+    let (endpoint, port_id) = t.get_endpoint(ENDPOINT).await;
 
     let test_stack = t.get(0);
     let installer = test_stack.connect_interfaces_installer();
@@ -903,4 +999,291 @@ async fn test_ipv6_slaac_secret_stable() {
     assert_eq!(true, interface_control.enable().await.expect("FIDL call").expect("enabled"));
 
     assert_eq!(get_slaac_secret(test_stack, if_id), Some(enabled_secret));
+
+    t
+}
+
+#[fixture::teardown(TestSetup::shutdown)]
+#[fasync::run_singlethreaded(test)]
+async fn test_neighbor_table_inspect() {
+    const EP_IDX: usize = 1;
+    let mut t = TestSetupBuilder::new()
+        .add_endpoint()
+        .add_stack(StackSetupBuilder::new().add_endpoint(EP_IDX, None))
+        .build()
+        .await;
+
+    let test_stack = t.get(0);
+    let bindings_id = test_stack.get_endpoint_id(EP_IDX);
+    test_stack.with_ctx(|ctx| {
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        let devices: &Devices<_> = bindings_ctx.as_ref();
+        let device = devices.get_core_id(bindings_id).expect("get_core_id failed");
+        let v4_neigh_addr = net_ip_v4!("192.168.0.1");
+        let v4_neigh_mac = net_mac!("AA:BB:CC:DD:EE:FF");
+        insert_static_neighbor_entry::<Ipv4, BindingsCtx>(
+            core_ctx,
+            bindings_ctx,
+            &device,
+            v4_neigh_addr,
+            v4_neigh_mac,
+        )
+        .expect("failed to insert static neighbor entry");
+        let v6_neigh_addr = net_ip_v6!("2001:DB8::1");
+        let v6_neigh_mac = net_mac!("00:11:22:33:44:55");
+        insert_static_neighbor_entry::<Ipv6, BindingsCtx>(
+            core_ctx,
+            bindings_ctx,
+            &device,
+            v6_neigh_addr,
+            v6_neigh_mac,
+        )
+        .expect("failed to insert static neighbor entry");
+    });
+    let inspector = test_stack.inspector();
+    use diagnostics_hierarchy::DiagnosticsHierarchyGetter;
+    let data = inspector.get_diagnostics_hierarchy();
+    println!("{:#?}", data);
+    diagnostics_assertions::assert_data_tree!(data, "root": contains {
+        "Neighbors": {
+            "eth2": {
+                "0": {
+                    IpAddress: "192.168.0.1",
+                    State: "Static",
+                    LinkAddress: "AA:BB:CC:DD:EE:FF",
+                },
+                "1": {
+                    IpAddress: "2001:db8::1",
+                    State: "Static",
+                    LinkAddress: "00:11:22:33:44:55",
+                },
+            },
+        }
+    });
+
+    t
+}
+
+trait IpExt: Ip {
+    type OtherIp: IpExt;
+    const ADDR: SpecifiedAddr<Self::Addr>;
+    const PREFIX_LEN: u8;
+    const FIDL_IP_VERSION: fidl_net::IpVersion;
+}
+
+impl IpExt for Ipv4 {
+    type OtherIp = Ipv6;
+    const ADDR: SpecifiedAddr<Self::Addr> =
+        unsafe { SpecifiedAddr::new_unchecked(net_ip_v4!("192.0.2.1")) };
+    const PREFIX_LEN: u8 = 24;
+    const FIDL_IP_VERSION: fidl_net::IpVersion = fidl_net::IpVersion::V4;
+}
+
+impl IpExt for Ipv6 {
+    type OtherIp = Ipv4;
+    const ADDR: SpecifiedAddr<Self::Addr> =
+        unsafe { SpecifiedAddr::new_unchecked(net_ip_v6!("2001:db8::1")) };
+    const PREFIX_LEN: u8 = 64;
+    const FIDL_IP_VERSION: fidl_net::IpVersion = fidl_net::IpVersion::V6;
+}
+
+// TODO(https://fxbug.dev/135211): Use ip_test when it supports async.
+#[fixture::teardown(TestSetup::shutdown)]
+#[fasync::run_singlethreaded(test)]
+async fn add_remove_neighbor_entry_v4() {
+    add_remove_neighbor_entry::<Ipv4>().await
+}
+
+// TODO(https://fxbug.dev/135211): Use ip_test when it supports async.
+#[fixture::teardown(TestSetup::shutdown)]
+#[fasync::run_singlethreaded(test)]
+async fn add_remove_neighbor_entry_v6() {
+    add_remove_neighbor_entry::<Ipv6>().await
+}
+
+async fn add_remove_neighbor_entry<I: Ip + IpExt>() -> TestSetup {
+    const EP_IDX: usize = 1;
+    let mut t = TestSetupBuilder::new()
+        .add_endpoint()
+        .add_stack(StackSetupBuilder::new().add_endpoint(EP_IDX, None))
+        .build()
+        .await;
+
+    let test_stack = t.get(0);
+    let bindings_id = test_stack.get_endpoint_id(EP_IDX);
+    let mut ctx = test_stack.ctx();
+    let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+    let devices: &Devices<_> = bindings_ctx.as_ref();
+    let ethernet_device_id = assert_matches!(
+        devices.get_core_id(bindings_id).expect("get core id"),
+        DeviceId::Ethernet(ethernet_device_id) => ethernet_device_id
+    );
+    let observer = assert_matches!(
+        resolve_ethernet_link_addr::<I, _>(core_ctx, bindings_ctx, &ethernet_device_id, &I::ADDR),
+        LinkResolutionResult::Pending(observer) => observer
+    );
+    let controller = test_stack.connect_proxy::<fnet_neighbor::ControllerMarker>();
+    const MAC: Mac = net_mac!("00:11:22:33:44:55");
+    controller
+        .add_entry(bindings_id.into(), &IpAddr::from(I::ADDR.get()).into_ext(), &MAC.into_ext())
+        .await
+        .expect("add_entry FIDL")
+        .expect("add_entry");
+    assert_eq!(
+        observer
+            .await
+            .expect("address resolution should not be cancelled")
+            .expect("address resolution should succeed after adding static entry"),
+        MAC,
+    );
+
+    controller
+        .remove_entry(bindings_id.into(), &IpAddr::from(I::ADDR.get()).into_ext())
+        .await
+        .expect("remove_entry FIDL")
+        .expect("remove_entry");
+    assert_matches!(
+        resolve_ethernet_link_addr::<I, _>(core_ctx, bindings_ctx, &ethernet_device_id, &I::ADDR),
+        LinkResolutionResult::Pending(_)
+    );
+
+    t
+}
+
+// TODO(https://fxbug.dev/135211): Use ip_test when it supports async.
+#[fixture::teardown(TestSetup::shutdown)]
+#[fasync::run_singlethreaded(test)]
+async fn remove_dynamic_neighbor_entry_v4() {
+    remove_dynamic_neighbor_entry::<Ipv4>().await
+}
+
+// TODO(https://fxbug.dev/135211): Use ip_test when it supports async.
+#[fixture::teardown(TestSetup::shutdown)]
+#[fasync::run_singlethreaded(test)]
+async fn remove_dynamic_neighbor_entry_v6() {
+    remove_dynamic_neighbor_entry::<Ipv6>().await
+}
+
+async fn remove_dynamic_neighbor_entry<I: Ip + IpExt>() -> TestSetup {
+    const EP_IDX: usize = 1;
+    let mut t = TestSetupBuilder::new()
+        .add_endpoint()
+        .add_stack(StackSetupBuilder::new().add_endpoint(
+            EP_IDX,
+            // NB: Unfortunately AddrSubnetEither cannot be constructed with a
+            // const fn on `I`, so it must be constructed here.
+            Some(AddrSubnetEither::new(I::ADDR.get().into(), I::PREFIX_LEN).unwrap()),
+        ))
+        .build()
+        .await;
+
+    let test_stack = t.get(0);
+    let bindings_id = test_stack.get_endpoint_id(EP_IDX);
+    let mut ctx = test_stack.ctx();
+    let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+    let devices: &Devices<_> = bindings_ctx.as_ref();
+    let ethernet_device_id = assert_matches!(
+        devices.get_core_id(bindings_id).expect("get core id"),
+        DeviceId::Ethernet(ethernet_device_id) => ethernet_device_id
+    );
+    let observer = assert_matches!(
+        resolve_ethernet_link_addr::<I, _>(core_ctx, bindings_ctx, &ethernet_device_id, &I::ADDR),
+        LinkResolutionResult::Pending(observer) => observer
+    );
+
+    let controller = test_stack.connect_proxy::<fnet_neighbor::ControllerMarker>();
+    controller
+        .remove_entry(bindings_id.into(), &IpAddr::from(I::ADDR.get()).into_ext())
+        .await
+        .expect("remove_entry FIDL")
+        .expect("remove_entry");
+    assert_eq!(
+        observer.await.expect("observer should not be canceled"),
+        Err(AddressResolutionFailed)
+    );
+
+    t
+}
+
+#[fixture::teardown(TestSetup::shutdown)]
+#[fasync::run_singlethreaded(test)]
+async fn clear_entries_v4() {
+    clear_entries::<Ipv4>().await
+}
+
+#[fixture::teardown(TestSetup::shutdown)]
+#[fasync::run_singlethreaded(test)]
+async fn clear_entries_v6() {
+    clear_entries::<Ipv6>().await
+}
+
+async fn clear_entries<I: Ip + IpExt>() -> TestSetup {
+    const EP_IDX: usize = 1;
+    let mut t = TestSetupBuilder::new()
+        .add_endpoint()
+        .add_stack(StackSetupBuilder::new().add_endpoint(EP_IDX, None))
+        .build()
+        .await;
+
+    let test_stack = t.get(0);
+    let bindings_id = test_stack.get_endpoint_id(EP_IDX);
+    let mut ctx = test_stack.ctx();
+    let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+    let devices: &Devices<_> = bindings_ctx.as_ref();
+    let ethernet_device_id = assert_matches!(
+        devices.get_core_id(bindings_id).expect("get core id"),
+        DeviceId::Ethernet(ethernet_device_id) => ethernet_device_id
+    );
+    let controller = test_stack.connect_proxy::<fnet_neighbor::ControllerMarker>();
+    const MAC: Mac = net_mac!("00:11:22:33:44:55");
+    for addr in [IpAddr::from(Ipv4::ADDR.get()), IpAddr::from(Ipv6::ADDR.get())] {
+        controller
+            .add_entry(bindings_id.into(), &addr.into_ext(), &MAC.into_ext())
+            .await
+            .expect("add_entry FIDL")
+            .expect("add_entry");
+    }
+
+    controller
+        .clear_entries(bindings_id.into(), I::FIDL_IP_VERSION)
+        .await
+        .expect("clear_entries FIDL")
+        .expect("clear_entries");
+
+    assert_matches!(
+        resolve_ethernet_link_addr::<I, _>(core_ctx, bindings_ctx, &ethernet_device_id, &I::ADDR),
+        LinkResolutionResult::Pending(_)
+    );
+    assert_matches!(
+        resolve_ethernet_link_addr::<I::OtherIp, _>(
+            core_ctx,
+            bindings_ctx,
+            &ethernet_device_id,
+            &I::OtherIp::ADDR
+        ),
+        LinkResolutionResult::Resolved(mac) => assert_eq!(mac, MAC)
+    );
+
+    t
+}
+
+#[fasync::run_singlethreaded(test)]
+async fn device_strong_ids_delay_clean_shutdown() {
+    set_logger_for_test();
+    let mut t = TestSetupBuilder::new().add_empty_stack().build().await;
+    let test_stack = t.get(0);
+    let loopback_id = test_stack.wait_for_loopback_id().await;
+    let loopback_id = test_stack.ctx().bindings_ctx().devices.get_core_id(loopback_id).unwrap();
+
+    let shutdown = t.shutdown();
+    futures::pin_mut!(shutdown);
+    // Poll shutdown a number of times while yielding to executor to show that
+    // shutdown is stuck because we are holding onto a strong loopback id.
+    for _ in 0..50 {
+        assert_eq!(futures::poll!(&mut shutdown), futures::task::Poll::Pending);
+        async_utils::futures::YieldToExecutorOnce::new().await;
+    }
+    // Now we can finally shutdown.
+    std::mem::drop(loopback_id);
+    shutdown.await;
 }

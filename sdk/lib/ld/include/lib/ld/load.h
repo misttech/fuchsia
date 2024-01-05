@@ -23,16 +23,11 @@ namespace ld {
 template <class Elf = elfldltl::Elf<>>
 using AbiModule = typename abi::Abi<Elf>::Module;
 
-// Set the Module vaddr bounds and phdrs fields from the LoadInfo and runtime
-// load bias.
+// Set the module Phdrs, which is read directly from the load image, as opposed
+// to from a buffer read from the file.
 template <class Elf = elfldltl::Elf<>, class LoadInfo, class Memory>
-constexpr void SetModuleLoadInfo(AbiModule<Elf>& module, const typename Elf::Ehdr& ehdr,
-                                 const LoadInfo& load_info, typename Elf::size_type load_bias,
-                                 Memory& memory) {
-  module.link_map.addr = load_bias;
-  module.vaddr_start = load_info.vaddr_start() + load_bias;
-  module.vaddr_end = module.vaddr_start + load_info.vaddr_size();
-
+constexpr void SetModulePhdrs(AbiModule<Elf>& module, const typename Elf::Ehdr& ehdr,
+                              const LoadInfo& load_info, Memory& memory) {
   // Find the segment that covers the range of the file occupied by the phdrs:
   // [phoff, phoff + phnum * sizeof(Phdr)), if there is one.  Note this is
   // doing a linear search, but in canonical ELF layouts the first segment in
@@ -56,9 +51,19 @@ constexpr void SetModuleLoadInfo(AbiModule<Elf>& module, const typename Elf::Ehd
   });
 }
 
+// Set the module vaddr bounds, calculated from the runtime load bias.
+template <class Elf = elfldltl::Elf<>, class LoadInfo>
+constexpr void SetModuleVaddrBounds(AbiModule<Elf>& module, const LoadInfo& load_info,
+                                    typename Elf::size_type load_bias) {
+  module.link_map.addr = load_bias;
+  module.vaddr_start = load_info.vaddr_start() + load_bias;
+  module.vaddr_end = module.vaddr_start + load_info.vaddr_size();
+}
+
 template <class Elf = elfldltl::Elf<>>
 struct ModulePhdrInfo {
   std::optional<typename Elf::Phdr> dyn_phdr;
+  std::optional<typename Elf::Phdr> tls_phdr;
   std::optional<typename Elf::size_type> stack_size;
 };
 
@@ -72,13 +77,16 @@ struct ModulePhdrInfo {
 // already accessible in memory, other things like notes can be examined in the
 // same one pass using elfldltl::PhdrFileNoteObserver.
 template <class Elf = elfldltl::Elf<>, class Diagnostics, typename... PhdrObservers>
-constexpr ModulePhdrInfo<Elf> DecodeModulePhdrs(Diagnostics& diag,
-                                                cpp20::span<const typename Elf::Phdr> phdrs,
-                                                PhdrObservers&&... phdr_observers) {
+constexpr std::optional<ModulePhdrInfo<Elf>> DecodeModulePhdrs(
+    Diagnostics& diag, cpp20::span<const typename Elf::Phdr> phdrs,
+    PhdrObservers&&... phdr_observers) {
   ModulePhdrInfo<Elf> result;
-  elfldltl::DecodePhdrs(diag, phdrs, elfldltl::PhdrDynamicObserver<Elf>(result.dyn_phdr),
-                        elfldltl::PhdrStackObserver<Elf>(result.stack_size),
-                        std::forward<PhdrObservers>(phdr_observers)...);
+  if (!elfldltl::DecodePhdrs(diag, phdrs, elfldltl::PhdrDynamicObserver<Elf>(result.dyn_phdr),
+                             elfldltl::PhdrTlsObserver<Elf>(result.tls_phdr),
+                             elfldltl::PhdrStackObserver<Elf>(result.stack_size),
+                             std::forward<PhdrObservers>(phdr_observers)...)) {
+    return std::nullopt;
+  }
   return result;
 }
 
@@ -86,14 +94,14 @@ constexpr ModulePhdrInfo<Elf> DecodeModulePhdrs(Diagnostics& diag,
 // dynamic section observers can be passed to include in the same scan.
 template <class Elf = elfldltl::Elf<>, class Diagnostics, class Memory,
           typename... DynamicObservers>
-constexpr void DecodeModuleDynamic(AbiModule<Elf>& module, Diagnostics& diag, Memory& memory,
-                                   const std::optional<typename Elf::Phdr>& dyn_phdr,
-                                   DynamicObservers&&... dynamic_observers) {
+constexpr cpp20::span<const typename Elf::Dyn> DecodeModuleDynamic(
+    AbiModule<Elf>& module, Diagnostics& diag, Memory& memory,
+    const std::optional<typename Elf::Phdr>& dyn_phdr, DynamicObservers&&... dynamic_observers) {
   using Dyn = const typename Elf::Dyn;
 
   if (!dyn_phdr) [[unlikely]] {
     diag.FormatError("no PT_DYNAMIC program header found");
-    return;
+    return {};
   }
 
   const size_t count = dyn_phdr->filesz / sizeof(Dyn);
@@ -101,15 +109,18 @@ constexpr void DecodeModuleDynamic(AbiModule<Elf>& module, Diagnostics& diag, Me
   if (!read_dyn) [[unlikely]] {
     diag.FormatError("cannot read", count, "entries from PT_DYNAMIC",
                      elfldltl::FileAddress{dyn_phdr->vaddr});
-    return;
+    return {};
   }
   cpp20::span<const Dyn> dyn = *read_dyn;
 
   module.link_map.ld = dyn.data();
 
   elfldltl::DecodeDynamic(diag, memory, dyn, elfldltl::DynamicSymbolInfoObserver(module.symbols),
+                          elfldltl::DynamicInitObserver(module.init),
+                          elfldltl::DynamicFiniObserver(module.fini),
                           std::forward<DynamicObservers>(dynamic_observers)...);
   module.soname = module.symbols.soname();
+  return dyn;
 }
 
 // Return an observer object to be passed to elfldltl::*NoteObserver.  When
@@ -125,12 +136,14 @@ constexpr auto ObserveBuildIdNote(AbiModule<Elf>& module, bool keep_going = fals
     return elfldltl::ObserveBuildIdNote(build_id, keep_going);
   };
   using NoteObserver = decltype(make_observer(std::declval<ObserverResult>()));
+  using MakeObserver = decltype(make_observer);
 
   // This wraps the generic observer with one whose destructor copies the
   // results into the Module field.
   class BuildIdObserver : public NoteObserver {
    public:
-    constexpr explicit BuildIdObserver(typename abi::Abi<Elf>::Module& module)
+    constexpr BuildIdObserver(typename abi::Abi<Elf>::Module& module,
+                              const MakeObserver& make_observer)
         : NoteObserver(make_observer(build_id_)), module_(module) {}
 
     ~BuildIdObserver() {
@@ -144,7 +157,7 @@ constexpr auto ObserveBuildIdNote(AbiModule<Elf>& module, bool keep_going = fals
     std::optional<elfldltl::ElfNote> build_id_;
   };
 
-  return BuildIdObserver{module};
+  return BuildIdObserver{module, make_observer};
 }
 
 }  // namespace ld

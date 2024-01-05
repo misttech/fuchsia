@@ -13,32 +13,43 @@ use fidl_fuchsia_net_ext::{self as fnet_ext, FromExt as _, IntoExt as _};
 use fidl_fuchsia_net_routes as fnet_routes;
 use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
 use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
-use fuchsia_async::TimeoutExt as _;
+use fuchsia_async::{net::DatagramSocket, DurationExt as _, TimeoutExt as _};
 use fuchsia_zircon as zx;
 use fuchsia_zircon_types::zx_time_t;
 use futures::{
     future::TryFutureExt as _,
     stream::{self, StreamExt as _, TryStreamExt as _},
 };
-use net_declare::{fidl_ip_v4, fidl_mac, net_subnet_v4};
+use net_declare::{fidl_ip_v4, fidl_ip_v4_with_prefix, fidl_mac, net_subnet_v4};
 use net_types::ip::Ipv4;
-use netemul::DhcpClient;
+use netemul::{DhcpClient, DEFAULT_MTU};
 use netstack_testing_common::{
-    annotate, dhcpv4 as dhcpv4_helper, interfaces,
+    annotate, dhcpv4 as dhcpv4_helper,
+    interfaces::{self, TestInterfaceExt as _},
     realms::{
         constants, DhcpClientVersion, KnownServiceProvider, Netstack, NetstackAndDhcpClient,
         NetstackVersion, TestSandboxExt as _,
     },
-    Result,
+    Result, ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
 };
 use netstack_testing_macros::netstack_test;
+use packet::ParsablePacket as _;
+use sockaddr::{IntoSockAddr as _, TryToSockaddrLl as _};
+use test_case::test_case;
 
 const DEFAULT_NETWORK_NAME: &str = "net1";
 
 enum DhcpEndpointType {
-    Client { expected_acquired: fidl_fuchsia_net::Subnet },
-    Server { static_addrs: Vec<fidl_fuchsia_net::Subnet> },
-    Unbound { static_addrs: Vec<fidl_fuchsia_net::Subnet> },
+    Client {
+        expected_acquired: fidl_fuchsia_net::Subnet,
+        static_address: Option<fidl_fuchsia_net::Ipv4AddressWithPrefix>,
+    },
+    Server {
+        static_addrs: Vec<fidl_fuchsia_net::Subnet>,
+    },
+    Unbound {
+        static_addrs: Vec<fidl_fuchsia_net::Subnet>,
+    },
 }
 
 struct DhcpTestEndpointConfig<'a> {
@@ -203,7 +214,7 @@ async fn assert_interface_assigned_addr(
     >,
     mut properties: &mut fidl_fuchsia_net_interfaces_ext::InterfaceState<()>,
 ) -> zx_time_t {
-    let (addr, valid_until) = fidl_fuchsia_net_interfaces_ext::wait_interface_with_id(
+    let valid_until = fidl_fuchsia_net_interfaces_ext::wait_interface_with_id(
         event_stream,
         &mut properties,
         |iface| {
@@ -217,13 +228,8 @@ async fn assert_interface_assigned_addr(
                         assignment_state,
                         fidl_fuchsia_net_interfaces::AddressAssignmentState::Assigned
                     );
-                    let fidl_fuchsia_net::Subnet { addr, prefix_len: _ } = subnet;
-                    match addr {
-                        fidl_fuchsia_net::IpAddress::Ipv4(_) => {
-                            filter_valid_until(valid_until).then_some((subnet, valid_until))
-                        }
-                        fidl_fuchsia_net::IpAddress::Ipv6(_) => None,
-                    }
+                    (subnet == expected_acquired && filter_valid_until(valid_until))
+                        .then_some(valid_until)
                 },
             )
         },
@@ -239,7 +245,6 @@ async fn assert_interface_assigned_addr(
     )
     .await
     .expect("failed to observe DHCP acquisition on client ep");
-    assert_eq!(addr, expected_acquired);
 
     // Address acquired; bind is expected to succeed.
     let _: std::net::UdpSocket =
@@ -264,6 +269,127 @@ struct Settings<'a> {
 }
 
 #[netstack_test]
+#[test_case(true; "remove dhcp address")]
+#[test_case(false; "remove non-dhcp address")]
+async fn removing_acquired_address_stops_dhcp<SERVER: Netstack, CLIENT: NetstackAndDhcpClient>(
+    name: &str,
+    remove_dhcp_address: bool,
+) {
+    // TODO(https://github.com/rust-lang/libc/issues/3331): Use ETH_P_ALL from
+    // libc once it is made available.
+    const ETH_P_ALL: u16 = 0x0003;
+    const ETH_P_IP_BE: u16 = (libc::ETH_P_IP as u16).to_be();
+    const STATIC_ADDRESS: fidl_fuchsia_net::Ipv4AddressWithPrefix =
+        fidl_ip_v4_with_prefix!("192.0.2.1/24");
+    const DHCPV4_SERVER_PORT: u16 = 67;
+    const DHCPV4_CLIENT_PORT: u16 = 68;
+
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let network = DhcpTestNetwork::new(DEFAULT_NETWORK_NAME, &sandbox);
+    let expected_acquired = dhcpv4_helper::DEFAULT_TEST_CONFIG.expected_acquired();
+    let mut netstack_config = [
+        TestNetstackRealmConfig {
+            clients: &[DhcpTestEndpointConfig {
+                ep_type: DhcpEndpointType::Client {
+                    expected_acquired,
+                    static_address: Some(STATIC_ADDRESS),
+                },
+                network: &network,
+            }],
+            servers: &mut [],
+            netstack_version: CLIENT::Netstack::VERSION,
+        },
+        TestNetstackRealmConfig {
+            clients: &[],
+            servers: &mut [TestServerConfig {
+                endpoints: &[DhcpTestEndpointConfig {
+                    ep_type: DhcpEndpointType::Server {
+                        static_addrs: vec![dhcpv4_helper::DEFAULT_TEST_CONFIG
+                            .server_addr_with_prefix()
+                            .into_ext()],
+                    },
+                    network: &network,
+                }],
+                settings: Settings {
+                    parameters: &mut dhcpv4_helper::DEFAULT_TEST_CONFIG.dhcp_parameters(),
+                    options: &mut [],
+                },
+            }],
+            netstack_version: SERVER::VERSION,
+        },
+    ];
+
+    let dhcp_objects =
+        test_dhcp::<CLIENT::DhcpClient>(name, &sandbox, &mut netstack_config, 1, false).await;
+    let TestDhcpRealmAndInterfaces { realm, client_ifaces, _server_ifaces } = &dhcp_objects[0];
+    let client_iface = &client_ifaces[0];
+    let client = client_iface.control();
+    let (mut remove_address, timeout) = if remove_dhcp_address {
+        (expected_acquired, ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT)
+    } else {
+        (STATIC_ADDRESS.into_ext(), ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT)
+    };
+    assert!(client
+        .remove_address(&mut remove_address)
+        .await
+        .expect("send address removal request")
+        .expect("remove DHCP acquired address"),);
+    assert!(client.disable().await.expect("send disable request").expect("disable interface"));
+    let socket = realm
+        .packet_socket(fidl_fuchsia_posix_socket_packet::Kind::Network)
+        .await
+        .expect("get packet socket");
+    let sockaddr = libc::sockaddr_ll {
+        sll_family: u16::try_from(libc::AF_PACKET).unwrap(),
+        sll_protocol: ETH_P_ALL.to_be(), // Only ETH_P_ALL receives RX.
+        sll_ifindex: i32::try_from(client_iface.id()).unwrap(),
+        sll_hatype: 0,
+        sll_pkttype: 0,
+        sll_halen: 0,
+        sll_addr: [0; 8],
+    };
+    socket.bind(&sockaddr.into_sockaddr()).expect("bind packet socket to client interface");
+    assert!(client.enable().await.expect("send enable request").expect("enable interface"));
+    let socket = DatagramSocket::new_from_socket(socket).unwrap();
+    let fut = async {
+        let mut buf = [0; DEFAULT_MTU as usize];
+        loop {
+            let (n, sockaddr) = socket.recv_from(&mut buf).await.expect("recvfrom packet socket");
+            let data = &buf[..n];
+
+            let sockaddr = sockaddr.try_to_sockaddr_ll().unwrap();
+            if sockaddr.sll_protocol != ETH_P_IP_BE {
+                // Ignore non-IPv4 packets.
+                continue;
+            }
+
+            let (mut ipv4_body, src_ip, dst_ip, proto, _ttl) =
+                packet_formats::testutil::parse_ip_packet::<net_types::ip::Ipv4>(data)
+                    .expect("error parsing IPv4 packet");
+            if proto != packet_formats::ip::Ipv4Proto::Proto(packet_formats::ip::IpProto::Udp) {
+                // Ignore non-UDP packets.
+                continue;
+            }
+
+            let udp_v4_packet = packet_formats::udp::UdpPacket::parse(
+                &mut ipv4_body,
+                packet_formats::udp::UdpParseArgs::new(src_ip, dst_ip),
+            )
+            .expect("error parsing UDP datagram");
+
+            // Look for packets that are sent across the DHCP-specific ports.
+            let src_port = udp_v4_packet.src_port().expect("missing src port").get();
+            let dst_port = udp_v4_packet.dst_port().get();
+            if src_port == DHCPV4_CLIENT_PORT || dst_port == DHCPV4_SERVER_PORT {
+                break;
+            }
+        }
+        Some(())
+    };
+    assert_eq!(fut.on_timeout(timeout.after_now(), || None).await.is_none(), remove_dhcp_address);
+}
+
+#[netstack_test]
 async fn acquire_with_dhcpd_bound_device<SERVER: Netstack, CLIENT: NetstackAndDhcpClient>(
     name: &str,
 ) {
@@ -278,6 +404,7 @@ async fn acquire_with_dhcpd_bound_device<SERVER: Netstack, CLIENT: NetstackAndDh
                 clients: &[DhcpTestEndpointConfig {
                     ep_type: DhcpEndpointType::Client {
                         expected_acquired: dhcpv4_helper::DEFAULT_TEST_CONFIG.expected_acquired(),
+                        static_address: None,
                     },
                     network: &network,
                 }],
@@ -324,7 +451,10 @@ async fn does_not_crash_with_overlapping_subnet_route<
     let mut netstack_configs = [
         TestNetstackRealmConfig {
             clients: &[DhcpTestEndpointConfig {
-                ep_type: DhcpEndpointType::Client { expected_acquired: expected_acquired.clone() },
+                ep_type: DhcpEndpointType::Client {
+                    expected_acquired: expected_acquired.clone(),
+                    static_address: None,
+                },
                 network: &network,
             }],
             servers: &mut [],
@@ -353,8 +483,8 @@ async fn does_not_crash_with_overlapping_subnet_route<
     let realms_and_interfaces =
         test_dhcp::<CLIENT::DhcpClient>(name, &sandbox, &mut netstack_configs, 1, false).await;
     let (client_realm, client_interfaces) = match &realms_and_interfaces[..] {
-        [(client_realm, client_interfaces), (_server_realm, _server_interfaces)] => {
-            (client_realm, client_interfaces)
+        [TestDhcpRealmAndInterfaces { realm, client_ifaces, _server_ifaces: _ }, TestDhcpRealmAndInterfaces { realm: _, client_ifaces: _, _server_ifaces: _ }] => {
+            (realm, client_ifaces)
         }
         _ => panic!("should have a client realm and a server realm: {:?}", &realms_and_interfaces),
     };
@@ -470,6 +600,7 @@ async fn acquire_then_renew_with_dhcpd_bound_device<
                 clients: &[DhcpTestEndpointConfig {
                     ep_type: DhcpEndpointType::Client {
                         expected_acquired: dhcpv4_helper::DEFAULT_TEST_CONFIG.expected_acquired(),
+                        static_address: None,
                     },
                     network: &network,
                 }],
@@ -540,7 +671,10 @@ async fn acquire_with_dhcpd_bound_device_dup_addr<
         &mut [
             TestNetstackRealmConfig {
                 clients: &[DhcpTestEndpointConfig {
-                    ep_type: DhcpEndpointType::Client { expected_acquired: expected_addr },
+                    ep_type: DhcpEndpointType::Client {
+                        expected_acquired: expected_addr,
+                        static_address: None,
+                    },
                     network: &network,
                 }],
                 servers: &mut [],
@@ -579,6 +713,13 @@ async fn acquire_with_dhcpd_bound_device_dup_addr<
     .await;
 }
 
+#[derive(Debug)]
+struct TestDhcpRealmAndInterfaces<'a> {
+    realm: netemul::TestRealm<'a>,
+    client_ifaces: Vec<netemul::TestInterface<'a>>,
+    _server_ifaces: Vec<netemul::TestInterface<'a>>,
+}
+
 /// test_dhcp provides a flexible way to test DHCP acquisition across various network topologies.
 ///
 /// This method will:
@@ -594,8 +735,7 @@ fn test_dhcp<'a, D: DhcpClient>(
     netstack_configs: &'a mut [TestNetstackRealmConfig<'a>],
     dhcp_loop_cycles: usize,
     expect_client_renews: bool,
-) -> impl futures::Future<Output = Vec<(netemul::TestRealm<'a>, Vec<netemul::TestInterface<'a>>)>> + 'a
-{
+) -> impl futures::Future<Output = Vec<TestDhcpRealmAndInterfaces<'a>>> + 'a {
     async move {
         let dhcp_objects = stream::iter(netstack_configs.into_iter())
             .enumerate()
@@ -642,8 +782,9 @@ fn test_dhcp<'a, D: DhcpClient>(
                                     )
                                     .await
                                     .expect("failed to install server endpoint");
+                                iface.apply_nud_flake_workaround().await.expect("nud flake workaround");
                                 let (static_addrs, server_should_bind) = match ep_type {
-                                    DhcpEndpointType::Client { expected_acquired: _ } => {
+                                    DhcpEndpointType::Client { expected_acquired: _, static_address: _ } => {
                                         panic!(
                                             "found client endpoint instead of server or unbound endpoint"
                                         )
@@ -718,7 +859,15 @@ fn test_dhcp<'a, D: DhcpClient>(
                             .await
                             .expect("failed to install client endpoint");
                         let expected_acquired = match ep_type {
-                            DhcpEndpointType::Client { expected_acquired } => expected_acquired,
+                            DhcpEndpointType::Client {
+                                expected_acquired,
+                                static_address,
+                            } => {
+                                if let Some(static_address) = static_address {
+                                    iface.add_address(static_address.clone().into_ext()).await.expect("add static address");
+                                }
+                                expected_acquired
+                            },
                             DhcpEndpointType::Server { static_addrs: _ } => panic!(
                                 "found server endpoint instead of client endpoint"
                             ),
@@ -737,11 +886,40 @@ fn test_dhcp<'a, D: DhcpClient>(
             .await
             .expect("failed to create DHCP domain objects");
 
-        let mut realms = Vec::new();
+        // Gather all server MAC and IP addresses so we can add them to clients'
+        // neighbor tables to avoid flakes.
+        let server_ifaces = dhcp_objects
+            .iter()
+            .flat_map(|(_realm, servers, _clients)| servers)
+            .flat_map(|(_proxy, ifaces)| ifaces);
 
+        let all_server_macs_and_addrs = stream::iter(server_ifaces)
+            .then(|iface| async move {
+                let addrs = iface
+                    .get_addrs(fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned)
+                    .await
+                    .expect("get addresses");
+                (iface.mac().await, addrs.iter().map(|addr| addr.addr.addr).collect::<Vec<_>>())
+            })
+            .collect::<Vec<_>>()
+            .await;
+
+        let mut realms = Vec::new();
         for (netstack_realm, servers, clients) in dhcp_objects {
-            let mut ifaces = Vec::new();
+            let mut client_ifaces = Vec::new();
+
             for (client, expected_acquired) in clients {
+                // Add all servers as neighbor entries to avoid flakes.
+                for (mac, addr) in all_server_macs_and_addrs
+                    .iter()
+                    .flat_map(|(mac, addrs)| addrs.iter().map(|addr| (*mac, *addr)))
+                {
+                    netstack_realm
+                        .add_neighbor_entry(client.id(), addr, mac)
+                        .await
+                        .expect("add neighbor entry");
+                }
+
                 assert_client_acquires_addr::<D>(
                     &netstack_realm,
                     &client,
@@ -750,13 +928,18 @@ fn test_dhcp<'a, D: DhcpClient>(
                     expect_client_renews,
                 )
                 .await;
-                ifaces.push(client);
+                client_ifaces.push(client);
             }
-            for (server, mut server_ifaces) in servers {
+            let mut server_ifaces = Vec::new();
+            for (server, mut ifaces) in servers {
                 let () = server.stop_serving().await.expect("failed to stop server");
-                ifaces.append(&mut server_ifaces);
+                server_ifaces.append(&mut ifaces);
             }
-            realms.push((netstack_realm, ifaces));
+            realms.push(TestDhcpRealmAndInterfaces {
+                realm: netstack_realm,
+                client_ifaces,
+                _server_ifaces: server_ifaces,
+            });
         }
 
         realms

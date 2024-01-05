@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <trace.h>
+#include <zircon/compiler.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -134,6 +135,10 @@ VmObjectPaged::~VmObjectPaged() {
     if (parent) {
       // Holding refptr, can safely pass in the guard to RemoveChild.
       parent->RemoveChild(this, guard.take());
+      // As we constructed a RefPtr to our parent, and we are in our own destructor, there is now
+      // the potential for recursive destruction if we need to delete the parent due to holding the
+      // last ref, hit this same path, etc.
+      hierarchy_state_ptr_->DoDeferredDelete(ktl::move(parent));
     } else {
       // parent is up for deletion and so there's no need to use RemoveChild since there is no
       // user dispatcher to notify anyway and so just drop ourselves to keep the hierarchy correct.
@@ -174,12 +179,39 @@ zx_status_t VmObjectPaged::HintRange(uint64_t offset, uint64_t len, EvictionHint
       break;
     }
     case EvictionHint::AlwaysNeed: {
-      cow_pages_locked()->ProtectRangeFromReclamationLocked(offset, len, &guard);
+      cow_pages_locked()->ProtectRangeFromReclamationLocked(offset, len, /*set_always_need=*/true,
+                                                            &guard);
       break;
     }
   }
 
   return ZX_OK;
+}
+
+void VmObjectPaged::CommitHighPriorityPages(uint64_t offset, uint64_t len) {
+  canary_.Assert();
+  uint64_t end_offset;
+  if (add_overflow(offset, len, &end_offset)) {
+    return;
+  }
+  if (can_block_on_page_requests()) {
+    lockdep::AssertNoLocksHeld();
+  }
+  Guard<CriticalMutex> guard{lock()};
+  if (!InRange(offset, len, size_locked())) {
+    return;
+  }
+  if (!cow_pages_locked()->is_high_memory_priority_locked()) {
+    return;
+  }
+
+  if (cow_pages_locked()->is_root_source_user_pager_backed_locked()) {
+    cow_pages_locked()->ProtectRangeFromReclamationLocked(offset, len, /*set_always_need=*/false,
+                                                          &guard);
+  } else {
+    // Committing high priority pages is best effort, so ignore any errors from decompressing.
+    cow_pages_locked()->DecompressInRangeLocked(offset, len, &guard);
+  }
 }
 
 bool VmObjectPaged::CanDedupZeroPagesLocked() {
@@ -1100,10 +1132,10 @@ zx_status_t VmObjectPaged::CommitRangeInternal(uint64_t offset, uint64_t len, bo
       // call to VmCowPages::CommitRangeLocked(). This is required to make any COW copies of pages
       // that were just supplied.
       // - The first call to VmCowPages::CommitRangeLocked() returns early from
-      // LookupPagesLocked() with ZX_ERR_SHOULD_WAIT after queueing a page request for the absent
-      // page.
-      // - The second call to VmCowPages::CommitRangeLocked() calls LookupPagesLocked() which
-      // copies out the now present page (if required).
+      // LookupCursor::RequireOwnedPage with ZX_ERR_SHOULD_WAIT after queueing a page request
+      // for the absent page.
+      // - The second call to VmCowPages::CommitRangeLocked() calls LookupCursor::RequireOwnedPage
+      // which copies out the now present page (if required).
       if (commit_status == ZX_ERR_SHOULD_WAIT) {
         continue;
       }
@@ -1369,6 +1401,7 @@ zx_status_t VmObjectPaged::ReadWriteInternalLocked(uint64_t offset, size_t len, 
     const size_t first_page_offset = ROUNDDOWN(src_offset, PAGE_SIZE);
     const size_t last_page_offset = ROUNDDOWN(end_offset - 1, PAGE_SIZE);
     size_t remaining_pages = (last_page_offset - first_page_offset) / PAGE_SIZE + 1;
+    size_t pages_since_last_unlock = 0;
     __UNINITIALIZED zx::result<VmCowPages::LookupCursor> cursor =
         GetLookupCursorLocked(first_page_offset, remaining_pages * PAGE_SIZE);
     if (cursor.is_error()) {
@@ -1439,6 +1472,39 @@ zx_status_t VmObjectPaged::ReadWriteInternalLocked(uint64_t offset, size_t len, 
       src_offset += tocopy;
       dest_offset += tocopy;
       remaining_pages--;
+
+      // Periodically yield the lock in order to allow other read or write
+      // operations to advance sooner than they otherwise would.
+      constexpr size_t kPagesBetweenUnlocks = 16;
+      if (unlikely(++pages_since_last_unlock == kPagesBetweenUnlocks)) {
+        pages_since_last_unlock = 0;
+        if (guard->lock()->IsContested()) {
+          // Just drop the lock and re-acquire it. There is no need to yield.
+          //
+          // Since the lock is contested, the empty |CallUnlocked| will:
+          // 1. Immediately grant the lock to another thread. This thread may
+          //   continue running until #3, or it may be descheduled.
+          // 2. Run the empty lambda.
+          // 3. Attempt to re-acquire the lock. There are 3 possibilities:
+          //   3a. Mutex is owned by the other thread, and is contested (there
+          //       are more waiters besides the other thread). This thread will
+          //       immediately block on the Mutex.
+          //   3b. Mutex is owned by the other thread, and uncontested. This
+          //       thread will spin on the Mutex, and block after some time.
+          //   3c. Mutex is un-owned.  This thread will immediately own the
+          //       Mutex again and continue running.
+          //
+          // Thus, there is no danger of thrashing here. The other thread will
+          // always get the Mutex, even without an explicit yield.
+          guard->CallUnlocked([]() {});
+
+          status = check_and_trim();
+          if (status == ZX_OK) {
+            break;
+          }
+          return status;
+        }
+      }
     }
   }
 
@@ -1599,9 +1665,8 @@ zx_status_t VmObjectPaged::LookupContiguous(uint64_t offset, uint64_t len, paddr
   return ZX_OK;
 }
 
-zx_status_t VmObjectPaged::ReadUser(VmAspace* current_aspace, user_out_ptr<char> ptr,
-                                    uint64_t offset, size_t len, VmObjectReadWriteOptions options,
-                                    size_t* out_actual) {
+zx_status_t VmObjectPaged::ReadUser(user_out_ptr<char> ptr, uint64_t offset, size_t len,
+                                    VmObjectReadWriteOptions options, size_t* out_actual) {
   canary_.Assert();
 
   if (out_actual != nullptr) {
@@ -1609,9 +1674,8 @@ zx_status_t VmObjectPaged::ReadUser(VmAspace* current_aspace, user_out_ptr<char>
   }
 
   // read routine that uses copy_to_user
-  auto read_routine = [ptr, current_aspace, out_actual](
-                          const char* src, size_t offset, size_t len,
-                          Guard<CriticalMutex>* guard) -> zx_status_t {
+  auto read_routine = [ptr, out_actual](const char* src, size_t offset, size_t len,
+                                        Guard<CriticalMutex>* guard) -> zx_status_t {
     __UNINITIALIZED auto copy_result =
         ptr.byte_offset(offset).copy_array_to_user_capture_faults(src, len);
 
@@ -1619,8 +1683,8 @@ zx_status_t VmObjectPaged::ReadUser(VmAspace* current_aspace, user_out_ptr<char>
     // handle the fault.
     if (copy_result.fault_info.has_value()) {
       zx_status_t result;
-      guard->CallUnlocked([&info = *copy_result.fault_info, &result, current_aspace] {
-        result = current_aspace->SoftFault(info.pf_va, info.pf_flags);
+      guard->CallUnlocked([&info = *copy_result.fault_info, &result] {
+        result = Thread::Current::SoftFault(info.pf_va, info.pf_flags);
       });
       // If we handled the fault, tell the upper level to try again.
       return result == ZX_OK ? ZX_ERR_SHOULD_WAIT : result;
@@ -1649,9 +1713,8 @@ zx_status_t VmObjectPaged::ReadUser(VmAspace* current_aspace, user_out_ptr<char>
   return ReadWriteInternalLocked(offset, len, false, options, read_routine, &guard);
 }
 
-zx_status_t VmObjectPaged::WriteUser(VmAspace* current_aspace, user_in_ptr<const char> ptr,
-                                     uint64_t offset, size_t len, VmObjectReadWriteOptions options,
-                                     size_t* out_actual,
+zx_status_t VmObjectPaged::WriteUser(user_in_ptr<const char> ptr, uint64_t offset, size_t len,
+                                     VmObjectReadWriteOptions options, size_t* out_actual,
                                      const OnWriteBytesTransferredCallback& on_bytes_transferred) {
   canary_.Assert();
 
@@ -1660,9 +1723,9 @@ zx_status_t VmObjectPaged::WriteUser(VmAspace* current_aspace, user_in_ptr<const
   }
 
   // write routine that uses copy_from_user
-  auto write_routine = [ptr, current_aspace, base_vmo_offset = offset, out_actual,
-                        &on_bytes_transferred](char* dst, size_t offset, size_t len,
-                                               Guard<CriticalMutex>* guard) -> zx_status_t {
+  auto write_routine = [ptr, base_vmo_offset = offset, out_actual, &on_bytes_transferred](
+                           char* dst, size_t offset, size_t len,
+                           Guard<CriticalMutex>* guard) -> zx_status_t {
     __UNINITIALIZED auto copy_result =
         ptr.byte_offset(offset).copy_array_from_user_capture_faults(dst, len);
 
@@ -1670,8 +1733,8 @@ zx_status_t VmObjectPaged::WriteUser(VmAspace* current_aspace, user_in_ptr<const
     // handle the fault.
     if (copy_result.fault_info.has_value()) {
       zx_status_t result;
-      guard->CallUnlocked([&info = *copy_result.fault_info, &result, current_aspace] {
-        result = current_aspace->SoftFault(info.pf_va, info.pf_flags);
+      guard->CallUnlocked([&info = *copy_result.fault_info, &result] {
+        result = Thread::Current::SoftFault(info.pf_va, info.pf_flags);
       });
       // If we handled the fault, tell the upper level to try again.
       return result == ZX_OK ? ZX_ERR_SHOULD_WAIT : result;
@@ -1710,10 +1773,6 @@ zx_status_t VmObjectPaged::TakePages(uint64_t offset, uint64_t len, VmPageSplice
 
   Guard<CriticalMutex> src_guard{lock()};
 
-  // This is only used by the userpager API, which has significant restrictions on
-  // what sorts of vmos are acceptable. If splice starts being used in more places,
-  // then this restriction might need to be lifted.
-  //
   // TODO: Check that the region is locked once locking is implemented
   if (is_contiguous()) {
     return ZX_ERR_NOT_SUPPORTED;
@@ -1724,16 +1783,23 @@ zx_status_t VmObjectPaged::TakePages(uint64_t offset, uint64_t len, VmPageSplice
   return cow_pages_locked()->TakePagesLocked(offset, len, pages);
 }
 
-zx_status_t VmObjectPaged::SupplyPages(uint64_t offset, uint64_t len, VmPageSpliceList* pages) {
+zx_status_t VmObjectPaged::SupplyPages(uint64_t offset, uint64_t len, VmPageSpliceList* pages,
+                                       SupplyOptions options) {
   canary_.Assert();
+
+  // We need this check here instead of in SupplyPagesLocked, as we do use that
+  // function to provide pages to contiguous VMOs as well.
+  if (is_contiguous()) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
 
   __UNINITIALIZED LazyPageRequest page_request;
   while (len > 0) {
     Guard<CriticalMutex> guard{lock()};
 
     uint64_t supply_len = 0;
-    zx_status_t status = cow_pages_locked()->SupplyPagesLocked(
-        offset, len, pages, /*new_zeroed_pages=*/false, &supply_len, &page_request);
+    zx_status_t status = cow_pages_locked()->SupplyPagesLocked(offset, len, pages, options,
+                                                               &supply_len, &page_request);
     if (status != ZX_ERR_SHOULD_WAIT && status != ZX_OK) {
       return status;
     }

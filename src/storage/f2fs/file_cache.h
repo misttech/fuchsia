@@ -13,7 +13,7 @@
 #include <safemath/checked_math.h>
 #include <storage/buffer/block_buffer.h>
 
-#include "src/storage/f2fs/f2fs_types.h"
+#include "src/storage/f2fs/common.h"
 #include "src/storage/f2fs/vmo_manager.h"
 
 namespace f2fs {
@@ -30,6 +30,8 @@ enum class PageFlag {
   kPageVmoLocked,     // Its vmo is locked to prevent mm from reclaiming it.
   kPageActive,        // It is being referenced.
   kPageColdData,      // It is under garbage collecting. It must not be inplace updated.
+  kPageCommit,        // It is logged with pre-flush and flush.
+  kPageSync,          // It is logged with flush.
   kPageFlagSize,
 };
 
@@ -45,8 +47,9 @@ struct WritebackOperation {
   bool bReclaim = false;             // If true, it is invoked for memory reclaim.
   VnodeCallback if_vnode = nullptr;  // If set, it determines which vnodes are subject to writeback.
   PageCallback if_page = nullptr;    // If set, it determines which Pages are subject to writeback.
-  NodePageCallback node_page_cb = nullptr;  // If set, the callback is executed. This callback is
-                                            // for node page only and is executed before writeback.
+  PageTaggingCallback page_cb =
+      nullptr;  // If set, it can touch every page subject to writeback before disk I/O. It is used
+                // to set flags or update footer for fsync() or checkpoint().
 };
 
 template <typename T, bool EnableAdoptionValidator = ZX_DEBUG_ASSERT_IMPLEMENTED>
@@ -105,6 +108,8 @@ class Page : public PageRefCounted<Page>,
   bool IsVmoLocked() const { return TestFlag(PageFlag::kPageVmoLocked); }
   bool IsActive() const { return TestFlag(PageFlag::kPageActive); }
   bool IsColdData() const { return TestFlag(PageFlag::kPageColdData); }
+  bool IsCommit() const { return TestFlag(PageFlag::kPageCommit); }
+  bool IsSync() const { return TestFlag(PageFlag::kPageSync); }
 
   // Each Setxxx() method atomically sets a flag and returns the previous value.
   // It is called when the first reference is made.
@@ -136,6 +141,12 @@ class Page : public PageRefCounted<Page>,
 
   bool SetUptodate();
   void ClearUptodate();
+
+  bool SetCommit();
+  void ClearCommit();
+
+  bool SetSync();
+  void ClearSync();
 
   // Set its dirty flag and increase the corresponding count of its type.
   bool SetDirty();
@@ -263,9 +274,7 @@ class LockedPage final {
   // caller have to supply a vmo.
   zx::result<> SetVmoDirty();
 
-  // Call Page::SetDirty().
-  // If |add_to_list| is true, it is inserted into F2fs::dirty_data_page_list_.
-  bool SetDirty(bool add_to_list = true);
+  bool SetDirty();
   void Zero(size_t start = 0, size_t end = Page::Size()) const;
 
   // release() returns the unlocked page without changing its ref_count.
@@ -280,16 +289,16 @@ class LockedPage final {
 
   // CopyRefPtr() returns copied RefPtr, so that increases ref_count of page.
   // The page remains locked, and still managed by the LockedPage instance.
-  fbl::RefPtr<Page> CopyRefPtr() { return page_; }
+  fbl::RefPtr<Page> CopyRefPtr() const { return page_; }
 
   template <typename T = Page>
-  T &GetPage() {
+  T &GetPage() const {
     return static_cast<T &>(*page_);
   }
 
-  Page *get() { return page_.get(); }
-  Page &operator*() { return *page_; }
-  Page *operator->() { return page_.get(); }
+  Page *get() const { return page_.get(); }
+  Page &operator*() const { return *page_; }
+  Page *operator->() const { return page_.get(); }
   explicit operator bool() const { return page_ != nullptr; }
 
   // Comparison against nullptr operators (of the form, myptr == nullptr).
@@ -299,30 +308,6 @@ class LockedPage final {
  private:
   static constexpr std::array<uint8_t, Page::Size()> kZeroBuffer_ = {0};
   fbl::RefPtr<Page> page_ = nullptr;
-};
-
-class DirtyPageList {
- public:
-  DirtyPageList() = default;
-  DirtyPageList(const DirtyPageList &) = delete;
-  DirtyPageList &operator=(const DirtyPageList &) = delete;
-  DirtyPageList(const DirtyPageList &&) = delete;
-  DirtyPageList &operator=(const DirtyPageList &&) = delete;
-  ~DirtyPageList();
-
-  zx::result<> AddDirty(LockedPage &page) __TA_EXCLUDES(list_lock_);
-  zx_status_t RemoveDirty(LockedPage &page) __TA_EXCLUDES(list_lock_);
-
-  uint64_t Size() const __TA_EXCLUDES(list_lock_) {
-    fs::SharedLock lock(list_lock_);
-    return dirty_list_.size();
-  }
-
-  std::vector<LockedPage> TakePages(size_t count) __TA_EXCLUDES(list_lock_);
-
- private:
-  mutable fs::SharedMutex list_lock_{};
-  PageList dirty_list_ __TA_GUARDED(list_lock_){};
 };
 
 class FileCache {
@@ -360,16 +345,15 @@ class FileCache {
   // It tries to write out all dirty Pages from dirty_page_list_.
   pgoff_t WritebackFromDirtyList(const WritebackOperation &operation) __TA_EXCLUDES(tree_lock_);
 
-  // It invalidates Pages within the range of |start| to |end| in |page_tree_|.
-  std::vector<LockedPage> InvalidatePages(pgoff_t start = 0, pgoff_t end = kPgOffMax)
-      __TA_EXCLUDES(tree_lock_);
+  // It invalidates Pages within the range of |start| to |end| in |page_tree_|. If |zero| is set,
+  // the data of the corresponding pages are zeored.
+  std::vector<LockedPage> InvalidatePages(pgoff_t start = 0, pgoff_t end = kPgOffMax,
+                                          bool zero = true) __TA_EXCLUDES(tree_lock_);
   // It removes all Pages from |page_tree_|. It should be called when no one can get access to
   // |vnode_|. (e.g., fbl_recycle()) It assumes that all active Pages are under writeback.
   void Reset() __TA_EXCLUDES(tree_lock_);
   // Clear all dirty pages.
   void ClearDirtyPages() __TA_EXCLUDES(tree_lock_);
-  // Evict and release inactive pages.
-  void ReleaseInactivePages() __TA_EXCLUDES(tree_lock_);
 
   VnodeF2fs &GetVnode() const { return *vnode_; }
   // Only Page::RecyclePage() is allowed to call it.
@@ -380,7 +364,10 @@ class FileCache {
   std::vector<bool> GetDirtyPagesInfo(pgoff_t index, size_t max_scan) __TA_EXCLUDES(tree_lock_);
   F2fs *fs() const;
   VmoManager &GetVmoManager() { return *vmo_manager_; }
-  DirtyPageList &GetDirtyPageList() { return dirty_page_list_; }
+
+  // It returns a set of locked dirty Pages that meet |operation|.
+  std::vector<LockedPage> GetLockedDirtyPages(const WritebackOperation &operation)
+      __TA_EXCLUDES(tree_lock_);
 
  private:
   // If |page| is unlocked, it returns a locked |page|. If |page| is already locked,
@@ -391,9 +378,6 @@ class FileCache {
   // it is not allowed to acquire |tree_lock_| with |page| locked. Then, a caller may retry it
   // with the same |page|.
   zx::result<LockedPage> GetLockedPage(fbl::RefPtr<Page> page) __TA_REQUIRES(tree_lock_);
-  // It returns a set of locked dirty Pages that meet |operation|.
-  std::vector<LockedPage> GetLockedDirtyPagesUnsafe(const WritebackOperation &operation)
-      __TA_REQUIRES(tree_lock_);
   zx::result<LockedPage> GetLockedPageFromRawUnsafe(Page *raw_page) __TA_REQUIRES(tree_lock_);
   zx::result<LockedPage> GetPageUnsafe(const pgoff_t index) __TA_REQUIRES(tree_lock_);
   zx_status_t AddPageUnsafe(const fbl::RefPtr<Page> &page) __TA_REQUIRES(tree_lock_);
@@ -418,7 +402,6 @@ class FileCache {
   using PageTree = fbl::WAVLTree<pgoff_t, Page *, PageTreeTraits>;
 
   fs::SharedMutex tree_lock_;
-  DirtyPageList dirty_page_list_;
   // If its file is orphaned, set it to prevent further dirty Pages.
   std::atomic_flag is_orphan_ = ATOMIC_FLAG_INIT;
   std::condition_variable_any recycle_cvar_;

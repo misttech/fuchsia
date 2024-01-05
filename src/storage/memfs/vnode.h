@@ -5,9 +5,9 @@
 #ifndef SRC_STORAGE_MEMFS_VNODE_H_
 #define SRC_STORAGE_MEMFS_VNODE_H_
 
-#include "src/lib/storage/vfs/cpp/paged_vnode.h"
-#include "src/lib/storage/vfs/cpp/vfs_types.h"
-#include "src/lib/storage/vfs/cpp/vnode.h"
+#include "src/storage/lib/vfs/cpp/paged_vnode.h"
+#include "src/storage/lib/vfs/cpp/vfs_types.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
 #include "src/storage/memfs/memfs.h"
 
 namespace memfs {
@@ -16,7 +16,7 @@ class Dnode;
 
 class Vnode : public fs::PagedVnode {
  public:
-  zx_status_t SetAttributes(fs::VnodeAttributesUpdate a) final;
+  zx_status_t SetAttributes(fs::VnodeAttributesUpdate a) override;
   void Sync(SyncCallback closure) override;
 
   // To be more specific: Is this vnode connected into the directory hierarchy?

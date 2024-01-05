@@ -90,7 +90,7 @@ To run tests locally during development:
 
 Some of these tests require the test Scenic to connect to the real display controller.
 
-Run `fx shell killall scenic.cmx` to kill an active instance of Scenic.
+Run `fx shell killall scenic.cm` to kill an active instance of Scenic.
 
 * Run all Scenic tests:
 
@@ -107,12 +107,6 @@ Run `fx shell killall scenic.cmx` to kill an active instance of Scenic.
       flatland_display_compositor_pixeltests_with_fake_display \
       flatland_engine_unittests \
       flatland_renderer_unittests \
-      gfx_apptests \
-      gfx_pixeltests \
-      gfx_swapchain_tests \
-      gfx_unittests \
-      gfx_util_unittests \
-      gfx_viewstate_apptests \
       input_unittests \
       scenic_unittests \
       scheduling_unittests
@@ -121,22 +115,16 @@ Run `fx shell killall scenic.cmx` to kill an active instance of Scenic.
   Or from Fuchsia target device:
 
   ```
-  runtests --names gfx_apptests,gfx_unittests,escher_unittests,input_unittests,a11y_manager_apptests
+  runtests --names escher_unittests,input_unittests,a11y_manager_apptests
   ```
 
 * Run a specific test binary:
 
   From host workstation, ensure `fx serve` is running, then use the following
-  command to run the `gfx_unittests` test component:
+  command to run the `escher_unittests` test component:
 
   ```
-  fx test gfx_unittests
-  ```
-
-  Or from Fuchsia target device:
-
-  ```
-  runtests --names gfx_unittests
+  fx test escher_unittests
   ```
 
 * Run a single test within a component:
@@ -144,13 +132,7 @@ Run `fx shell killall scenic.cmx` to kill an active instance of Scenic.
   From host workstation, ensure `fx serve` is running, then:
 
   ```
-  fx test gfx_unittests -- --gtest_filter=HostImageTest.FindResource
-  ```
-
-  Or from Fuchsia target device:
-
-  ```
-  runtests --names gfx_unittests -- --gtest_filter=HostImageTest.FindResource
+  fx test escher_unittests -- --gtest_filter=NoOpMacTest.DummyTestCase
   ```
 
   See more documentation about the [glob pattern for the filter arg](https://github.com/google/googletest/blob/HEAD/docs/advanced.md).
@@ -160,32 +142,10 @@ Run `fx shell killall scenic.cmx` to kill an active instance of Scenic.
   From your host workstation:
 
   ```
-  fx test fuchsia-pkg://fuchsia.com/gfx_unittests#meta/gfx_unittests.cmx
+  fx test fuchsia-pkg://fuchsia.com/escher_unittests#meta/escher_unittests.cm
   ```
 
-  Note: `gfx_unittests.cmx` can be swapped for [any test component](/src/ui/scenic/BUILD.gn) . There is also fuzzy matching!
-
-* Pixel tests
-
-  If you get an error connecting to a display controller, first kill all UI services.
-
-  From your host workstation, run:
-
-  ```
-  ffx session restart
-  ```
-
-  Then run the pixel tests:
-
-  ```
-  fx test fuchsia-pkg://fuchsia.com/gfx_pixeltests#meta/gfx_pixeltests.cmx
-  ```
-
-  Alternatively, run:
-
-  ```
-  fx test gfx_pixeltests
-  ```
+  Note: `escher_unittests.cm` can be swapped for [any test component](/src/ui/scenic/BUILD.gn) . There is also fuzzy matching!
 
 ### Host tests
 

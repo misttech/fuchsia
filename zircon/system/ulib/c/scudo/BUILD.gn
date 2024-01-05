@@ -49,7 +49,6 @@ libc_source_set("scudo-allocator") {
     "mem_map_fuchsia.cpp",
     "release.cpp",
     "report.cpp",
-    "rss_limit_checker.cpp",
     "string_utils.cpp",
     "timing.cpp",
   ]
@@ -99,6 +98,11 @@ config("common.config") {
   defines = [
     "GWP_ASAN_HOOKS=1",
     "SCUDO_DEBUG=$scudo_debug",
+    "SCUDO_ENABLE_HOOKS=1",
+
+    # TODO(fxbug.dev/132760): Scudo, which lives in the C library, cannot
+    # see the hooks defined by the wrapper-tests in the test executable.
+    "SCUDO_ENABLE_HOOKS_TESTS=0",
   ]
 }
 
@@ -111,7 +115,7 @@ libc_source_set("wrappers") {
 
   sources = [
     "wrappers_c.cpp",
-    # TODO(mcgrathr): maybe use this later
+    # TODO(fxbug.dev/132773): Disable c++ wrappers provided by Scudo.
     #"wrappers_cpp.cpp",
   ]
 
@@ -284,7 +288,7 @@ libc_test("wrapper-tests") {
 
   sources = [
     "tests/wrappers_c_test.cpp",
-    # TODO(mcgrathr): see src/wrappers_cpp.cpp inclusion above.
+    # TODO(fxbug.dev/132773): see src/wrappers_cpp.cpp inclusion above.
     #"tests/wrappers_cpp_test.cpp",
   ]
 }

@@ -4,8 +4,6 @@
 
 #include "src/connectivity/bluetooth/core/bt-host/gap/low_energy_connector.h"
 
-#include <lib/async/default.h>
-
 #include <utility>
 
 #include "src/connectivity/bluetooth/core/bt-host/gap/peer_cache.h"
@@ -38,8 +36,10 @@ LowEnergyConnector::LowEnergyConnector(PeerId peer_id, LowEnergyConnectionOption
                                        hci::CommandChannel::WeakPtr cmd_channel,
                                        PeerCache* peer_cache,
                                        WeakSelf<LowEnergyConnectionManager>::WeakPtr conn_mgr,
-                                       l2cap::ChannelManager* l2cap, gatt::GATT::WeakPtr gatt)
-    : peer_id_(peer_id),
+                                       l2cap::ChannelManager* l2cap, gatt::GATT::WeakPtr gatt,
+                                       pw::async::Dispatcher& dispatcher)
+    : dispatcher_(dispatcher),
+      peer_id_(peer_id),
       peer_cache_(peer_cache),
       l2cap_(l2cap),
       gatt_(std::move(gatt)),
@@ -55,6 +55,13 @@ LowEnergyConnector::LowEnergyConnector(PeerId peer_id, LowEnergyConnectionOption
   auto peer = peer_cache_->FindById(peer_id_);
   BT_ASSERT(peer);
   peer_address_ = peer->address();
+
+  request_create_connection_task_.set_function(
+      [this](pw::async::Context /*ctx*/, pw::Status status) {
+        if (status.ok()) {
+          RequestCreateConnection();
+        }
+      });
 }
 
 LowEnergyConnector::~LowEnergyConnector() {
@@ -72,14 +79,14 @@ LowEnergyConnector::~LowEnergyConnector() {
   }
 }
 
-void LowEnergyConnector::StartOutbound(zx::duration request_timeout,
+void LowEnergyConnector::StartOutbound(pw::chrono::SystemClock::duration request_timeout,
                                        hci::LowEnergyConnector* connector,
                                        LowEnergyDiscoveryManager::WeakPtr discovery_manager,
                                        ResultCallback cb) {
   BT_ASSERT(*state_ == State::kDefault);
   BT_ASSERT(discovery_manager.is_alive());
   BT_ASSERT(connector);
-  BT_ASSERT(request_timeout.get() != 0);
+  BT_ASSERT(request_timeout.count() != 0);
   hci_connector_ = connector;
   discovery_manager_ = std::move(discovery_manager);
   hci_request_timeout_ = request_timeout;
@@ -218,13 +225,16 @@ void LowEnergyConnector::OnScanStart(LowEnergyDiscoverySessionPtr session) {
   state_.Set(State::kScanning);
 
   auto self = weak_self_.GetWeakPtr();
-  scan_timeout_task_.emplace([this] {
+  scan_timeout_task_.emplace(dispatcher_, [this](pw::async::Context& /*ctx*/, pw::Status status) {
+    if (!status.ok()) {
+      return;
+    }
     BT_ASSERT(*state_ == State::kScanning);
     bt_log(INFO, "gap-le", "scan for pending connection timed out (peer: %s)", bt_str(peer_id_));
     NotifyFailure(ToResult(HostError::kTimedOut));
   });
   // The scan timeout may include time during which scanning is paused.
-  scan_timeout_task_->PostDelayed(async_get_default_dispatcher(), kLEGeneralCepScanTimeout);
+  scan_timeout_task_->PostAfter(kLEGeneralCepScanTimeout);
 
   discovery_session_ = std::move(session);
   discovery_session_->filter()->set_connectable(true);
@@ -309,9 +319,9 @@ bool LowEnergyConnector::InitializeConnection(std::unique_ptr<hci::LowEnergyConn
 
   Peer* peer = peer_cache_->FindById(peer_id_);
   BT_ASSERT(peer);
-  auto connection =
-      LowEnergyConnection::Create(peer->GetWeakPtr(), std::move(link), options_, peer_disconnect_cb,
-                                  error_cb, le_connection_manager_, l2cap_, gatt_, cmd_);
+  auto connection = LowEnergyConnection::Create(
+      peer->GetWeakPtr(), std::move(link), options_, peer_disconnect_cb, error_cb,
+      le_connection_manager_, l2cap_, gatt_, cmd_, dispatcher_);
   if (!connection) {
     bt_log(WARN, "gap-le", "connection initialization failed (peer: %s)", bt_str(peer_id_));
     NotifyFailure();
@@ -395,12 +405,12 @@ bool LowEnergyConnector::MaybeRetryConnection() {
     state_.Set(State::kPauseBeforeConnectionRetry);
 
     // Exponential backoff (2s, 4s, 8s, ...)
-    zx::duration retry_delay = zx::sec(kRetryExponentialBackoffBase << *connection_attempt_);
+    std::chrono::seconds retry_delay(kRetryExponentialBackoffBase << *connection_attempt_);
 
     connection_attempt_.Set(*connection_attempt_ + 1);
-    bt_log(INFO, "gap-le", "Retrying connection in %lds (peer: %s, attempt: %d)",
-           retry_delay.to_secs(), bt_str(peer_id_), *connection_attempt_);
-    request_create_connection_task_.PostDelayed(async_get_default_dispatcher(), retry_delay);
+    bt_log(INFO, "gap-le", "Retrying connection in %llds (peer: %s, attempt: %d)",
+           retry_delay.count(), bt_str(peer_id_), *connection_attempt_);
+    request_create_connection_task_.PostAfter(retry_delay);
     return true;
   }
   return false;

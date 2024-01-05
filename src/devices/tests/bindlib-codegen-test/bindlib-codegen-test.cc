@@ -70,15 +70,16 @@ class BindLibToFidlCodeGenTest : public testing::Test {
   fuchsia::driver::development::DriverDevelopmentSyncPtr driver_dev_;
 };
 
-TEST_F(BindLibToFidlCodeGenTest, DeviceProperties) {
-  fuchsia::driver::development::DeviceInfoIteratorSyncPtr iterator;
-  ASSERT_EQ(ZX_OK, driver_dev_->GetDeviceInfo({kChildDevicePath}, iterator.NewRequest(),
-                                              /* exact_match= */ true));
+// TODO(b/316176095): Re-enable test after ensuring it works with DFv2.
+TEST_F(BindLibToFidlCodeGenTest, DISABLED_DeviceProperties) {
+  fuchsia::driver::development::NodeInfoIteratorSyncPtr iterator;
+  ASSERT_EQ(ZX_OK, driver_dev_->GetNodeInfo({kChildDevicePath}, iterator.NewRequest(),
+                                            /* exact_match= */ true));
 
-  std::vector<fuchsia::driver::development::DeviceInfo> devices;
+  std::vector<fuchsia::driver::development::NodeInfo> devices;
   ASSERT_EQ(iterator->GetNext(&devices), ZX_OK);
 
-  auto& str_props = devices[0].property_list().str_props;
+  auto& str_props = devices[0].versioned_info().v1().property_list().str_props;
   ASSERT_EQ(static_cast<size_t>(9), str_props.size());
 
   ASSERT_EQ(bind_fuchsia::PROTOCOL, str_props[0].key);

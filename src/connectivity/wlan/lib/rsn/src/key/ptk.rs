@@ -4,6 +4,7 @@
 
 use crate::{prf, Error};
 use anyhow::ensure;
+use ieee80211::MacAddr;
 use mundane::hash::Sha256;
 use std::cmp::{max, min};
 use wlan_common::ie::rsn::{
@@ -29,7 +30,8 @@ impl Ptk {
     pub fn from_ptk(ptk: Vec<u8>, akm: &Akm, cipher: Cipher) -> Result<Self, anyhow::Error> {
         let kck_len = akm.kck_bytes().ok_or(Error::PtkHierarchyUnsupportedAkmError)? as usize;
         let kek_len = akm.kek_bytes().ok_or(Error::PtkHierarchyUnsupportedAkmError)? as usize;
-        let tk_len = cipher.tk_bytes().ok_or(Error::PtkHierarchyUnsupportedCipherError)?;
+        let tk_len: usize =
+            cipher.tk_bytes().ok_or(Error::PtkHierarchyUnsupportedCipherError)?.into();
         ensure!(kck_len + kek_len + tk_len == ptk.len(), "invalid ptk length");
         Ok(Ptk { ptk, kck_len, kek_len, tk_len, cipher })
     }
@@ -37,8 +39,8 @@ impl Ptk {
     // IEEE 802.11-2016, 12.7.1.3
     pub fn new(
         pmk: &[u8],
-        aa: &[u8; 6],
-        spa: &[u8; 6],
+        aa: &MacAddr,
+        spa: &MacAddr,
         anonce: &[u8],
         snonce: &[u8],
         akm: &Akm,
@@ -59,8 +61,8 @@ impl Ptk {
 
         // data length = 6 (aa) + 6 (spa) + 32 (anonce) + 32 (snonce)
         let mut data: [u8; 76] = [0; 76];
-        data[0..6].copy_from_slice(&min(aa, spa)[..]);
-        data[6..12].copy_from_slice(&max(aa, spa)[..]);
+        data[0..6].copy_from_slice(&min(aa.as_slice(), spa.as_slice())[..]);
+        data[6..12].copy_from_slice(&max(aa.as_slice(), spa.as_slice())[..]);
         data[12..44].copy_from_slice(&min(anonce, snonce)[..]);
         data[44..].copy_from_slice(&max(anonce, snonce)[..]);
 
@@ -112,8 +114,8 @@ mod tests {
 
     struct TestData {
         pmk: Vec<u8>,
-        aa: [u8; 6],
-        spa: [u8; 6],
+        aa: MacAddr,
+        spa: MacAddr,
         anonce: [u8; 32],
         snonce: [u8; 32],
     }
@@ -122,8 +124,8 @@ mod tests {
     fn ieee_test_data() -> TestData {
         let pmk = Vec::from_hex("0dc0d6eb90555ed6419756b9a15ec3e3209b63df707dd508d14581f8982721af")
             .unwrap();
-        let aa = <[u8; 6]>::from_hex("a0a1a1a3a4a5").unwrap();
-        let spa = <[u8; 6]>::from_hex("b0b1b2b3b4b5").unwrap();
+        let aa = MacAddr::from(<[u8; 6]>::from_hex("a0a1a1a3a4a5").unwrap());
+        let spa = MacAddr::from(<[u8; 6]>::from_hex("b0b1b2b3b4b5").unwrap());
         let anonce = <[u8; 32]>::from_hex(
             "e0e1e2e3e4e5e6e7e8e9f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405",
         )

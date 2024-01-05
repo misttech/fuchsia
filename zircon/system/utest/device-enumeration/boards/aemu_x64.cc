@@ -11,7 +11,6 @@ TEST_F(DeviceEnumerationTest, AemuX64Test) {
       "sys/platform/00:00:1b/sysmem",
 
       "sys/platform/pt/acpi",
-      "sys/platform/pt/acpi/acpi-pwrbtn",
       "sys/platform/pt/PCI0/bus/00:1f.2/00_1f_2/ahci",
       "sys/platform/pt/acpi/acpi-_SB_/acpi-PCI0/acpi-ISA_/acpi-KBD_/pt/acpi-KBD_-composite/i8042/i8042-keyboard",
       "sys/platform/pt/acpi/acpi-_SB_/acpi-PCI0/acpi-ISA_/acpi-KBD_/pt/acpi-KBD_-composite/i8042/i8042-mouse",
@@ -22,7 +21,7 @@ TEST_F(DeviceEnumerationTest, AemuX64Test) {
   static const char* kAemuDevicePaths[] = {
       "sys/platform/pt/PCI0/bus/00:01.0/00_01_0/virtio-input",
       "sys/platform/pt/PCI0/bus/00:02.0/00_02_0/virtio-input",
-      "sys/platform/pt/PCI0/bus/00:0b.0/00:0b.0/goldfish-address-space",
+      "sys/platform/pt/PCI0/bus/00:0b.0/00_0b_0/goldfish-address-space",
 
       // Verify goldfish pipe root device created.
       "sys/platform/pt/acpi/acpi-_SB_/acpi-GFPP/pt/acpi-GFPP-composite/goldfish-pipe",

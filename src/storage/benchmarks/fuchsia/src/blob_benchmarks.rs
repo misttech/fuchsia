@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 use {
-    crate::filesystems::{BlobFilesystem, DeliveryBlob},
+    crate::filesystems::{BlobFilesystem, DeliveryBlob, PkgDirInstance},
     async_trait::async_trait,
     delivery_blob::CompressionMode,
-    fuchsia_zircon as zx,
+    fidl_fuchsia_io as fio,
+    fuchsia_pkg_testing::PackageBuilder,
+    fuchsia_runtime, fuchsia_zircon as zx,
     futures::stream::{self, StreamExt},
     rand::{
         distributions::{Distribution, WeightedIndex},
@@ -15,17 +17,102 @@ use {
     },
     rand_xorshift::XorShiftRng,
     std::{
-        fs::OpenOptions,
         iter::{Iterator, StepBy},
         ops::Range,
-        os::unix::io::AsRawFd,
-        path::Path,
         vec::Vec,
     },
-    storage_benchmarks::{trace_duration, Benchmark, OperationDuration, OperationTimer},
+    storage_benchmarks::{
+        trace_duration, Benchmark, CacheClearableFilesystem as _, OperationDuration, OperationTimer,
+    },
 };
 
 const RNG_SEED: u64 = 0xda782a0c3ce1819a;
+
+macro_rules! open_and_get_vmo_benchmark {
+    ($benchmark:ident, $resource_path:expr, $cold:expr) => {
+        #[derive(Clone)]
+        pub struct $benchmark {
+            resource_path: String,
+            cold: bool,
+        }
+
+        impl $benchmark {
+            pub fn new() -> Self {
+                Self { resource_path: $resource_path.to_string(), cold: $cold }
+            }
+
+            async fn run_test(&self, pkgdir: &fio::DirectoryProxy) -> OperationDuration {
+                let timer = OperationTimer::start();
+                let file = {
+                    trace_duration!("benchmark", "open-file");
+                    fuchsia_fs::directory::open_file(
+                        pkgdir,
+                        &self.resource_path,
+                        fio::OpenFlags::RIGHT_READABLE,
+                    )
+                    .await
+                    .expect("failed to open blob")
+                };
+                trace_duration!("benchmark", "get-vmo");
+                let _ = file.get_backing_memory(fio::VmoFlags::READ).await.unwrap().unwrap();
+
+                timer.stop()
+            }
+        }
+
+        #[async_trait]
+        impl Benchmark<PkgDirInstance> for $benchmark {
+            async fn run(&self, fs: &mut PkgDirInstance) -> Vec<OperationDuration> {
+                trace_duration!("benchmark", stringify!($benchmark));
+                let package = PackageBuilder::new("pkg")
+                    .add_resource_at(&self.resource_path, "data".as_bytes())
+                    .build()
+                    .await
+                    .unwrap();
+                let (meta, map) = package.contents();
+
+                {
+                    trace_duration!("benchmark", "write-package");
+                    fs.write_blob(&DeliveryBlob::new(meta.contents, CompressionMode::Always)).await;
+                    for (_, content) in map.clone() {
+                        fs.write_blob(&DeliveryBlob::new(content, CompressionMode::Always)).await;
+                    }
+                }
+
+                fs.clear_cache().await;
+                let pkgdir_client_end =
+                    fs.pkgdir_proxy().open_package_directory(&meta.merkle).await.unwrap().unwrap();
+                let mut pkgdir = pkgdir_client_end.into_proxy().unwrap();
+
+                const SAMPLES: usize = 10;
+                let mut durations = Vec::with_capacity(SAMPLES);
+                for _ in 0..SAMPLES {
+                    durations.push(self.run_test(&pkgdir).await);
+                    if self.cold {
+                        fs.clear_cache().await;
+                        let pkgdir_client_end = fs
+                            .pkgdir_proxy()
+                            .open_package_directory(&meta.merkle)
+                            .await
+                            .unwrap()
+                            .unwrap();
+                        pkgdir = pkgdir_client_end.into_proxy().unwrap();
+                    }
+                }
+                durations
+            }
+
+            fn name(&self) -> String {
+                stringify!($benchmark).to_string()
+            }
+        }
+    };
+}
+
+open_and_get_vmo_benchmark!(OpenAndGetVmoMetaFileCold, "meta/bar", true);
+open_and_get_vmo_benchmark!(OpenAndGetVmoMetaFileWarm, "meta/bar", false);
+open_and_get_vmo_benchmark!(OpenAndGetVmoContentBlobCold, "data/foo", true);
+open_and_get_vmo_benchmark!(OpenAndGetVmoContentBlobWarm, "data/foo", false);
 
 macro_rules! page_in_benchmark {
     ($benchmark:ident, $data_gen_fn:ident, $page_iter_gen_fn:ident) => {
@@ -46,7 +133,7 @@ macro_rules! page_in_benchmark {
                 trace_duration!(
                     "benchmark",
                     stringify!($benchmark),
-                    "blob_size" => self.blob_size as u64
+                    "blob_size" => self.blob_size
                 );
                 let mut rng = XorShiftRng::seed_from_u64(RNG_SEED);
                 let blob = $data_gen_fn(self.blob_size, &mut rng);
@@ -86,7 +173,7 @@ impl<T: BlobFilesystem> Benchmark<T> for WriteBlob {
         trace_duration!(
             "benchmark",
             "WriteBlob",
-            "blob_size" => self.blob_size as u64
+            "blob_size" => self.blob_size
         );
         const SAMPLES: usize = 5;
         let mut rng = XorShiftRng::seed_from_u64(RNG_SEED);
@@ -168,37 +255,29 @@ impl<T: BlobFilesystem> Benchmark<T> for WriteRealisticBlobs {
 }
 
 struct MappedBlob {
-    addr: *mut libc::c_void,
-    size: libc::size_t,
+    addr: usize,
+    size: usize,
 }
 
 impl MappedBlob {
-    fn new(blob_path: &Path) -> Self {
-        let file = OpenOptions::new().read(true).open(blob_path).unwrap();
-        let size = file.metadata().unwrap().len() as libc::size_t;
-        let addr = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                size,
-                libc::PROT_READ,
-                libc::MAP_SHARED,
-                file.as_raw_fd(),
-                0,
-            )
-        };
-        assert!(addr != libc::MAP_FAILED, "Failed to mmap blob: {:?}", errno_error());
+    fn new(vmo: &zx::Vmo) -> Self {
+        let size = vmo.get_size().unwrap() as usize;
+        let addr = fuchsia_runtime::vmar_root_self()
+            .map(0, vmo, 0, size, zx::VmarFlags::PERM_READ)
+            .unwrap();
         Self { addr, size }
     }
 
     fn data(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.addr as *const u8, self.size) }
+        unsafe { std::slice::from_raw_parts_mut(self.addr as *mut u8, self.size) }
     }
 }
 
 impl Drop for MappedBlob {
     fn drop(&mut self) {
-        let ret = unsafe { libc::munmap(self.addr, self.size) };
-        assert!(ret == 0, "Failed to munmap blob: {:?}", errno_error());
+        unsafe {
+            fuchsia_runtime::vmar_root_self().unmap(self.addr, self.size).expect("unmap");
+        }
     }
 }
 
@@ -267,7 +346,6 @@ async fn page_in_blob_benchmark(
     blob: DeliveryBlob,
     page_iter: impl Iterator<Item = usize>,
 ) -> Vec<OperationDuration> {
-    let blob_path = fs.benchmark_dir().join(blob.name.to_string());
     {
         trace_duration!("benchmark", "write-blob");
         fs.write_blob(&blob).await;
@@ -275,20 +353,17 @@ async fn page_in_blob_benchmark(
 
     fs.clear_cache().await;
 
-    let mapped_blob = MappedBlob::new(&blob_path);
+    let vmo = fs.get_vmo(&blob).await;
+    let mapped_blob = MappedBlob::new(&vmo);
     let data = mapped_blob.data();
     let mut durations = Vec::new();
     for i in page_iter {
-        trace_duration!("benchmark", "page_in", "offset" => i as u64);
+        trace_duration!("benchmark", "page_in", "offset" => i);
         let timer = OperationTimer::start();
         std::hint::black_box(data[i]);
         durations.push(timer.stop());
     }
     durations
-}
-
-fn errno_error() -> std::io::Error {
-    std::io::Error::last_os_error()
 }
 
 #[cfg(test)]
@@ -297,7 +372,7 @@ mod tests {
         super::*,
         crate::{
             block_devices::RamdiskFactory,
-            filesystems::{Blobfs, Fxblob},
+            filesystems::{Blobfs, Fxblob, PkgDirTest},
         },
         storage_benchmarks::FilesystemConfig,
         test_util::assert_lt,
@@ -380,6 +455,22 @@ mod tests {
     #[fuchsia::test]
     async fn write_realistic_blobs_fxblob_test() {
         check_benchmark(WriteRealisticBlobs::new(), Fxblob, 1).await;
+    }
+
+    #[fuchsia::test]
+    async fn open_and_get_vmo_blobfs_test() {
+        check_benchmark(OpenAndGetVmoContentBlobCold::new(), PkgDirTest::new_blobfs(), 10).await;
+        check_benchmark(OpenAndGetVmoContentBlobWarm::new(), PkgDirTest::new_blobfs(), 10).await;
+        check_benchmark(OpenAndGetVmoMetaFileCold::new(), PkgDirTest::new_blobfs(), 10).await;
+        check_benchmark(OpenAndGetVmoMetaFileWarm::new(), PkgDirTest::new_blobfs(), 10).await;
+    }
+
+    #[fuchsia::test]
+    async fn open_and_get_vmo_fxblob_test() {
+        check_benchmark(OpenAndGetVmoContentBlobCold::new(), PkgDirTest::new_fxblob(), 10).await;
+        check_benchmark(OpenAndGetVmoContentBlobWarm::new(), PkgDirTest::new_fxblob(), 10).await;
+        check_benchmark(OpenAndGetVmoMetaFileCold::new(), PkgDirTest::new_fxblob(), 10).await;
+        check_benchmark(OpenAndGetVmoMetaFileWarm::new(), PkgDirTest::new_fxblob(), 10).await;
     }
 
     #[fuchsia::test]

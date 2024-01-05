@@ -4,14 +4,17 @@
 
 use {
     crate::{
-        client::connection_selection::ConnectionSelector,
-        config_management::SavedNetworksManagerApi, telemetry::TelemetrySender, util::listener,
+        client::connection_selection::{
+            local_roam_manager::LocalRoamManagerApi, ConnectionSelector,
+        },
+        config_management::SavedNetworksManagerApi,
+        telemetry::TelemetrySender,
+        util::listener,
     },
     anyhow::Error,
     fuchsia_async as fasync,
     futures::{channel::mpsc, lock::Mutex, Future},
     std::{convert::Infallible, sync::Arc},
-    wlan_common::hasher::WlanHasher,
 };
 
 pub mod device_monitor;
@@ -20,6 +23,7 @@ pub mod iface_manager_api;
 mod iface_manager_types;
 pub mod low_power_manager;
 pub mod phy_manager;
+pub mod recovery;
 
 pub fn create_iface_manager(
     phy_manager: Arc<Mutex<dyn phy_manager::PhyManagerApi + Send>>,
@@ -27,14 +31,13 @@ pub fn create_iface_manager(
     ap_update_sender: listener::ApListenerMessageSender,
     dev_monitor_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
     saved_networks: Arc<dyn SavedNetworksManagerApi>,
+    local_roam_manager: Arc<Mutex<dyn LocalRoamManagerApi>>,
     connection_selector: Arc<ConnectionSelector>,
     telemetry_sender: TelemetrySender,
-    hasher: WlanHasher,
 ) -> (Arc<Mutex<iface_manager_api::IfaceManager>>, impl Future<Output = Result<Infallible, Error>>)
 {
     let (sender, receiver) = mpsc::channel(0);
     let iface_manager_sender = Arc::new(Mutex::new(iface_manager_api::IfaceManager { sender }));
-    let (stats_sender, stats_receiver) = mpsc::unbounded();
     let (defect_sender, defect_receiver) = mpsc::unbounded();
     let iface_manager = iface_manager::IfaceManagerService::new(
         phy_manager,
@@ -42,17 +45,14 @@ pub fn create_iface_manager(
         ap_update_sender,
         dev_monitor_proxy,
         saved_networks,
+        local_roam_manager,
         telemetry_sender,
-        stats_sender,
         defect_sender,
-        hasher,
     );
     let iface_manager_service = iface_manager::serve_iface_manager_requests(
         iface_manager,
-        iface_manager_sender.clone(),
         connection_selector,
         receiver,
-        stats_receiver,
         defect_receiver,
     );
 

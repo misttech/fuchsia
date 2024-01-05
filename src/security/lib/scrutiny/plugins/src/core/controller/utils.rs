@@ -108,9 +108,9 @@ mod tests {
         url::Url,
     };
 
-    fn make_component(id: i32, url: &str, version: i32, source: ComponentSource) -> Component {
+    fn make_component(id: i32, url: &str, source: ComponentSource) -> Component {
         let url = Url::parse(url).unwrap();
-        Component { id, url, version, source }
+        Component { id, url, source }
     }
 
     #[fuchsia::test]
@@ -119,8 +119,7 @@ mod tests {
 
         let comp = make_component(
             123,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let mut components = Components::default();
@@ -138,8 +137,7 @@ mod tests {
 
         let comp = make_component(
             123,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let mut components = Components::default();
@@ -156,8 +154,7 @@ mod tests {
         let model = fake_data_model();
         let comp = make_component(
             123,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let mut components = Components::default();
@@ -165,7 +162,7 @@ mod tests {
         model.set(components).unwrap();
         let request = DefaultComponentRequest {
             component_id: None,
-            url: Some("fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx".to_string()),
+            url: Some("fuchsia-pkg://fuchsia.com/fake#meta/fake.cm".to_string()),
         };
         let component_id = request.component_id(model).unwrap();
         assert_eq!(component_id, 123);
@@ -176,8 +173,7 @@ mod tests {
         let model = fake_data_model();
         let comp = make_component(
             123,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let mut components = Components::default();
@@ -192,8 +188,7 @@ mod tests {
         let model = fake_data_model();
         let comp = make_component(
             123,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let mut components = Components::default();

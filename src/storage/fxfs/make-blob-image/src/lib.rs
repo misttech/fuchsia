@@ -4,16 +4,19 @@
 
 use {
     anyhow::{anyhow, Context, Error},
+    delivery_blob::compression::ChunkedArchive,
     fuchsia_async as fasync,
     fuchsia_merkle::{Hash, MerkleTreeBuilder, HASH_SIZE},
     futures::{try_join, SinkExt as _, StreamExt as _, TryStreamExt as _},
     fxfs::{
         errors::FxfsError,
-        filesystem::{Filesystem, FxFilesystem, SyncOptions},
-        object_handle::{GetProperties, WriteBytes},
+        filesystem::{FxFilesystem, FxFilesystemBuilder, SyncOptions},
+        object_handle::WriteBytes,
         object_store::{
-            directory::Directory, transaction::LockKey, volume::root_volume, DirectWriter,
-            ObjectStore, BLOB_MERKLE_ATTRIBUTE_ID,
+            directory::Directory,
+            transaction::{lock_keys, LockKey},
+            volume::root_volume,
+            DirectWriter, ObjectStore, BLOB_MERKLE_ATTRIBUTE_ID,
         },
         round::round_up,
         serialized_types::BlobMetadata,
@@ -94,8 +97,12 @@ pub async fn make_blob_image(
         BLOCK_SIZE,
         block_count,
     ));
-    let filesystem =
-        FxFilesystem::new_empty(device).await.context("Failed to format filesystem")?;
+    let filesystem = FxFilesystemBuilder::new()
+        .format(true)
+        .trim_config(None)
+        .open(device)
+        .await
+        .context("Failed to format filesystem")?;
     let blobs_json = install_blobs(filesystem.clone(), "blob", blobs).await.map_err(|e| {
         if target_size != 0 && FxfsError::NoSpace.matches(&e) {
             e.context(format!(
@@ -149,7 +156,7 @@ fn create_sparse_image(
     let image = std::fs::OpenOptions::new()
         .read(true)
         .open(image_path)
-        .context(format!("Failed to open {:?}", image_path))?;
+        .with_context(|| format!("Failed to open {:?}", image_path))?;
     let actual_length = image.metadata()?.len();
     let mut output = std::fs::OpenOptions::new()
         .read(true)
@@ -157,7 +164,7 @@ fn create_sparse_image(
         .create(true)
         .truncate(true)
         .open(sparse_output_image_path)
-        .context(format!("Failed to create {:?}", sparse_output_image_path))?;
+        .with_context(|| format!("Failed to create {:?}", sparse_output_image_path))?;
     sparse::builder::SparseImageBuilder::new()
         .set_block_size(block_size)
         .add_chunk(sparse::builder::DataSource::Reader(Box::new(image)))
@@ -165,18 +172,47 @@ fn create_sparse_image(
         .build(&mut output)
 }
 
+enum BlobData {
+    Uncompressed(Vec<u8>),
+    Compressed(ChunkedArchive),
+}
+
+impl BlobData {
+    fn compressed_offsets(&self) -> Option<Vec<u64>> {
+        if let BlobData::Compressed(archive) = self {
+            let mut offsets = vec![0 as u64];
+            let chunks = archive.chunks();
+            if chunks.len() > 1 {
+                offsets.reserve(chunks.len() - 1);
+                for chunk in &chunks[..chunks.len() - 1] {
+                    offsets.push(*offsets.last().unwrap() + chunk.compressed_data.len() as u64);
+                }
+            }
+            Some(offsets)
+        } else {
+            None
+        }
+    }
+
+    fn chunk_size(&self) -> Option<u64> {
+        if let BlobData::Compressed(archive) = self {
+            Some(archive.chunk_size() as u64)
+        } else {
+            None
+        }
+    }
+}
+
 struct BlobToInstall {
     hash: Hash,
     path: PathBuf,
-    // Compressed blobs may be made up of several chunks. To reduce data copying and speed up image
-    // generation, we write each chunk in order, rather than copying them into a contiguous buffer.
-    contents: Vec<Vec<u8>>,
+    data: BlobData,
     uncompressed_size: usize,
     serialized_metadata: Vec<u8>,
 }
 
 async fn install_blobs(
-    filesystem: Arc<dyn Filesystem>,
+    filesystem: Arc<FxFilesystem>,
     volume_name: &str,
     blobs: Vec<(Hash, PathBuf)>,
 ) -> Result<BlobsJsonOutput, Error> {
@@ -215,16 +251,17 @@ async fn install_blobs(
 
 async fn install_blob(
     blob: BlobToInstall,
-    filesystem: &Arc<dyn Filesystem>,
+    filesystem: &Arc<FxFilesystem>,
     directory: &Directory<ObjectStore>,
 ) -> Result<BlobsJsonOutputEntry, Error> {
     let merkle = blob.hash.to_string();
 
     let handle;
-    let keys = [LockKey::object(directory.store().store_object_id(), directory.object_id())];
+    let keys =
+        lock_keys![LockKey::object(directory.store().store_object_id(), directory.object_id())];
     let mut transaction = filesystem
         .clone()
-        .new_transaction(&keys, Default::default())
+        .new_transaction(keys, Default::default())
         .await
         .context("new transaction")?;
     handle = directory
@@ -233,11 +270,20 @@ async fn install_blob(
         .context("create child file")?;
     transaction.commit().await.context("transaction commit")?;
 
-    // TODO(fxbug.dev/122125): Should we inline the data payload too?
     {
-        let mut writer = DirectWriter::new(&handle, Default::default());
-        for bytes in blob.contents {
-            writer.write_bytes(&bytes).await.context("write blob contents")?;
+        let mut writer = DirectWriter::new(&handle, Default::default()).await;
+        match blob.data {
+            BlobData::Uncompressed(data) => {
+                writer.write_bytes(&data).await.context("write blob contents")?;
+            }
+            BlobData::Compressed(archive) => {
+                for chunk in archive.chunks() {
+                    writer
+                        .write_bytes(&chunk.compressed_data)
+                        .await
+                        .context("write blob contents")?;
+                }
+            }
         }
         writer.complete().await.context("flush blob contents")?;
     }
@@ -264,9 +310,9 @@ async fn install_blob(
 fn generate_blob(hash: Hash, path: PathBuf, fs_block_size: usize) -> Result<BlobToInstall, Error> {
     let mut contents = Vec::new();
     std::fs::File::open(&path)
-        .context(format!("Unable to open `{:?}'", &path))?
+        .with_context(|| format!("Unable to open `{:?}'", &path))?
         .read_to_end(&mut contents)
-        .context(format!("Unable to read contents of `{:?}'", &path))?;
+        .with_context(|| format!("Unable to read contents of `{:?}'", &path))?;
     let hashes = {
         // TODO(fxbug.dev/122056): Refactor to share implementation with blob.rs.
         let mut builder = MerkleTreeBuilder::new();
@@ -286,68 +332,36 @@ fn generate_blob(hash: Hash, path: PathBuf, fs_block_size: usize) -> Result<Blob
 
     let uncompressed_size = contents.len();
 
-    let (contents, chunk_size, compressed_offsets) =
-        maybe_compress(contents, fuchsia_merkle::BLOCK_SIZE, fs_block_size);
+    let data = maybe_compress(contents, fuchsia_merkle::BLOCK_SIZE, fs_block_size);
 
     // We only need to store metadata with the blob if it's large enough or was compressed.
-    let serialized_metadata: Vec<u8> = if !hashes.is_empty() || !compressed_offsets.is_empty() {
-        let metadata = BlobMetadata {
-            hashes,
-            chunk_size,
-            compressed_offsets,
-            uncompressed_size: uncompressed_size as u64,
+    let serialized_metadata: Vec<u8> =
+        if !hashes.is_empty() || matches!(data, BlobData::Compressed(_)) {
+            let metadata = BlobMetadata {
+                hashes,
+                chunk_size: data.chunk_size().unwrap_or_default(),
+                compressed_offsets: data.compressed_offsets().unwrap_or_default(),
+                uncompressed_size: uncompressed_size as u64,
+            };
+            bincode::serialize(&metadata).context("serialize blob metadata")?
+        } else {
+            vec![]
         };
-        bincode::serialize(&metadata).context("serialize blob metadata")?
-    } else {
-        vec![]
-    };
 
-    Ok(BlobToInstall { hash, path, contents, uncompressed_size, serialized_metadata })
+    Ok(BlobToInstall { hash, path, data, uncompressed_size, serialized_metadata })
 }
 
-// TODO(fxbug.dev/124377): Support the blob delivery format.
-fn maybe_compress(
-    buf: Vec<u8>,
-    block_size: usize,
-    filesystem_block_size: usize,
-) -> (/*data*/ Vec<Vec<u8>>, /*chunk_size*/ u64, /*compressed_offsets*/ Vec<u64>) {
+fn maybe_compress(buf: Vec<u8>, block_size: usize, filesystem_block_size: usize) -> BlobData {
     if buf.len() <= filesystem_block_size {
-        // No savings, return original data.
-        return (vec![buf], 0, vec![]);
+        return BlobData::Uncompressed(buf); // No savings, return original data.
     }
-
-    const MAX_FRAMES: usize = 1023;
-    const TARGET_CHUNK_SIZE: usize = 32 * 1024;
-    let chunk_size = if buf.len() > MAX_FRAMES * TARGET_CHUNK_SIZE {
-        round_up(buf.len() / MAX_FRAMES, block_size).unwrap()
+    let archive: ChunkedArchive =
+        ChunkedArchive::new(&buf, block_size).expect("failed to compress data");
+    if round_up(archive.compressed_data_size(), filesystem_block_size).unwrap() >= buf.len() {
+        BlobData::Uncompressed(buf) // Compression expanded the file, return original data.
     } else {
-        TARGET_CHUNK_SIZE
-    };
-
-    let mut chunks: Vec<Vec<u8>> = vec![];
-    buf.par_chunks(chunk_size)
-        .map(|chunk| {
-            let mut compressor = zstd::bulk::Compressor::new(14).unwrap();
-            compressor.set_parameter(zstd::zstd_safe::CParameter::ChecksumFlag(true)).unwrap();
-            compressor.compress(chunk).unwrap()
-        })
-        .collect_into_vec(&mut chunks);
-
-    let mut compressed_offsets = vec![0 as u64];
-    if chunks.len() > 1 {
-        compressed_offsets.reserve(chunks.len() - 1);
-        for chunk in &chunks[..chunks.len() - 1] {
-            compressed_offsets.push(*compressed_offsets.last().unwrap() + chunk.len() as u64);
-        }
+        BlobData::Compressed(archive)
     }
-
-    let total_size = *compressed_offsets.last().unwrap() as usize + chunks.last().unwrap().len();
-    if round_up(total_size, filesystem_block_size).unwrap() >= buf.len() {
-        // Compression expanded the file, return original data.
-        return (vec![buf], 0, vec![]);
-    }
-
-    (chunks, chunk_size as u64, compressed_offsets)
 }
 
 #[cfg(test)]

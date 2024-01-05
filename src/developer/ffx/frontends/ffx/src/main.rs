@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use argh::{FromArgs, SubCommands};
+use argh::{ArgsInfo, FromArgs, SubCommands};
 use errors::ffx_error;
 use ffx_command::{
     Error, FfxCommandLine, FfxContext, FfxToolInfo, MetricsSession, Result, ToolRunner, ToolSuite,
@@ -12,7 +12,7 @@ use ffx_daemon_proxy::{DaemonVersionCheck, Injection};
 use ffx_lib_args::FfxBuiltIn;
 use ffx_lib_sub_command::SubCommand;
 use fho_search::ExternalSubToolSuite;
-use std::{os::unix::process::ExitStatusExt, process::ExitStatus, sync::Arc};
+use std::{collections::HashSet, os::unix::process::ExitStatusExt, process::ExitStatus, sync::Arc};
 
 /// The command to be invoked and everything it needs to invoke
 struct FfxSubCommand {
@@ -27,8 +27,6 @@ struct FfxSuite {
     external_commands: ExternalSubToolSuite,
 }
 
-const CIRCUIT_REFRESH_RATE: std::time::Duration = std::time::Duration::from_millis(500);
-
 #[async_trait::async_trait(?Send)]
 impl ToolSuite for FfxSuite {
     async fn from_env(env: &EnvironmentContext) -> Result<Self> {
@@ -41,6 +39,61 @@ impl ToolSuite for FfxSuite {
 
     fn global_command_list() -> &'static [&'static argh::CommandInfo] {
         SubCommand::COMMANDS
+    }
+
+    async fn get_args_info(&self) -> Result<ffx_command::CliArgsInfo> {
+        // Determine if we're handling a subcommand, or need to collect all the info
+        //from all the subcommands.
+        let argv = Vec::from_iter(std::env::args());
+        let cmdline0 =
+            FfxCommandLine::from_args_for_help(&argv).bug_context("cmd line for help")?;
+        if cmdline0.subcmd_iter().count() > 1 {
+            let args = Vec::from_iter(cmdline0.global.subcommand.iter().map(String::as_str));
+            let all_info = SubCommand::get_args_info();
+            let mut info: Option<ffx_command::CliArgsInfo> = None;
+            for c in args {
+                if c.starts_with("-") {
+                    continue;
+                }
+                if info.is_none() {
+                    info = all_info
+                        .commands
+                        .iter()
+                        .find(|s| s.name == c)
+                        .map(|s| s.command.clone().into());
+                } else {
+                    info = info
+                        .unwrap()
+                        .commands
+                        .iter()
+                        .find(|s| s.name == c)
+                        .map(|s| s.command.clone().into());
+                }
+            }
+            let args_info = info.ok_or(ffx_command::bug!("No args info found"))?;
+            return Ok(args_info);
+        } else {
+            // Gather information about all the subcommands, both internal and external.
+            let mut seen: HashSet<&str> = HashSet::new();
+            let mut info: ffx_command::CliArgsInfo = ffx_command::Ffx::get_args_info().into();
+            let internal_info: ffx_command::CliArgsInfo = SubCommand::get_args_info().into();
+            let external_info = self.external_commands.get_args_info().await?;
+
+            // filter out duplicate commands
+            for sub in &internal_info.commands {
+                if !seen.contains(sub.name.as_str()) {
+                    seen.insert(&sub.name);
+                    info.commands.push(sub.clone());
+                }
+            }
+            for sub in &external_info.commands {
+                if !seen.contains(sub.name.as_str()) {
+                    seen.insert(&sub.name);
+                    info.commands.push(sub.clone());
+                }
+            }
+            return Ok(info);
+        }
     }
 
     async fn command_list(&self) -> Vec<FfxToolInfo> {
@@ -104,21 +157,12 @@ async fn run_legacy_subcommand(
     context: EnvironmentContext,
     subcommand: FfxBuiltIn,
 ) -> Result<()> {
-    let router_interval = if is_daemon(&subcommand) { Some(CIRCUIT_REFRESH_RATE) } else { None };
-    let cache_path = context.get_cache_path()?;
-    let hoist_cache_dir = std::fs::create_dir_all(&cache_path)
-        .and_then(|_| tempfile::tempdir_in(&cache_path))
-        .user_message("Unable to create hoist cache directory")?;
     let daemon_version_string = DaemonVersionCheck::SameBuildId(context.daemon_version_string()?);
-    let injector = Injection::initialize_overnet(
-        context,
-        hoist_cache_dir.path(),
-        router_interval,
-        daemon_version_string,
-        app.global.machine,
-        app.global.target().await?,
-    )
-    .await?;
+    tracing::debug!("initializing overnet");
+    let injector =
+        Injection::initialize_overnet(context, None, daemon_version_string, app.global.machine)
+            .await?;
+    tracing::debug!("Overnet initialized, creating injector");
     let injector: Arc<dyn ffx_core::Injector> = Arc::new(injector);
     ffx_lib_suite::ffx_plugin_impl(&injector, subcommand).await
 }

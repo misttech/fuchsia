@@ -14,11 +14,28 @@ assert(
 product_assembly_configuration("minimal") {
   platform = {
     build_type = "eng"
+    connectivity = {
+      network = {
+        netcfg_config_path =
+            rebase_path("//src/connectivity/policy/netcfg/config/default.json",
+                        root_build_dir)
+      }
+    }
     fonts = {
       # minimal is headless, so ostensibly does not need fonts.
       enabled = false
     }
-    input = {
+    intl = {
+      config_type = "default"
+    }
+    icu = {
+      revision = "default"
+    }
+    setui = {
+      use_icu = "with_icu"
+      with_camera = false
+    }
+    ui = {
       supported_input_devices = [
         "button",
         "touchscreen",
@@ -49,33 +66,129 @@ product_assembly_configuration("minimal") {
     }
   }
   product = {
+    build_info = default_product_build_info
   }
+  deps = [
+    ":board_assembly_artifacts",
+    "//build/info:build_info_files",
+  ]
 }
 
 # LINT.ThenChange(//products/minimal/BUILD.bazel)
 
-bazel_product_bundle("product_bundle.x64") {
-  testonly = true
-  allow_eng_platform_bundle_use = true
-  bazel_product_bundle_target = ":product_bundle.x64"
-  bazel_product_image_target = ":image.x64"
-  bazel_recovery_image_target = "//products/zedboot:x64"
-  bazel_elf_sizes_target = ":elf_sizes.x64"
-  bazel_inputs_from_gn = [
-    "//build/images/fuchsia:fuchsia.bazel_legacy_aib",
-    "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:iwlwifi_for_bazel",
-  ]
+if (current_cpu == "x64") {
+  bazel_product_bundle("product_bundle.x64") {
+    testonly = true
+    allow_eng_platform_bundle_use = true
+    bazel_product_bundle_target = ":product_bundle.x64"
+    bazel_product_image_target = ":image.x64"
+    bazel_recovery_image_target = "//products/zedboot:x64_with_fvm"
+    bazel_elf_sizes_target = ":elf_sizes.x64"
+    bazel_inputs_from_gn = [
+      "//build/images/fuchsia:fuchsia.bazel_legacy_aib",
+      "//build/images/zedboot:zedboot.bazel_legacy_aib",
+    ]
+    if (board_configuration_label != false) {
+      bazel_inputs_from_gn += [
+        # Add the board configuration as a dependency via the GN arg, as vendor-
+        # repo boards can shadow the ones in //boards.
+        get_label_info(board_configuration_label, "label_no_toolchain") +
+            ".bazel_input",
+      ]
+    }
+  }
+
+  bazel_product_bundle("product_bundle.qemu-x64") {
+    testonly = true
+    allow_eng_platform_bundle_use = true
+    bazel_product_bundle_target = ":product_bundle.qemu-x64"
+    bazel_product_image_target = ":image.qemu-x64"
+    bazel_recovery_image_target = "//products/zedboot:qemu-x64_with_fvm"
+    bazel_elf_sizes_target = ":elf_sizes.qemu-x64"
+    bazel_inputs_from_gn = [
+      "//build/images/fuchsia:fuchsia.bazel_legacy_aib",
+      "//build/images/zedboot:zedboot.bazel_legacy_aib",
+    ]
+    if (board_configuration_label != false) {
+      bazel_inputs_from_gn += [
+        # Add the board configuration as a dependency via the GN arg, as vendor-
+        # repo boards can shadow the ones in //boards.
+        get_label_info(board_configuration_label, "label_no_toolchain") +
+            ".bazel_input",
+      ]
+    }
+  }
 }
 
-bazel_product_bundle("product_bundle.qemu-x64") {
-  testonly = true
-  allow_eng_platform_bundle_use = true
-  bazel_product_bundle_target = ":product_bundle.qemu-x64"
-  bazel_product_image_target = ":image.qemu-x64"
-  bazel_recovery_image_target = "//products/zedboot:qemu-x64"
-  bazel_elf_sizes_target = ":elf_sizes.qemu-x64"
-  bazel_inputs_from_gn = [
-    "//build/images/fuchsia:fuchsia.bazel_legacy_aib",
-    "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:iwlwifi_for_bazel",
+if (current_cpu == "arm64") {
+  bazel_product_bundle("product_bundle.arm64") {
+    testonly = true
+    allow_eng_platform_bundle_use = true
+    bazel_product_bundle_target = ":product_bundle.arm64"
+    bazel_product_image_target = ":image.arm64"
+    bazel_recovery_image_target = "//products/zedboot:arm64_with_fvm"
+    bazel_elf_sizes_target = ":elf_sizes.arm64"
+    bazel_inputs_from_gn = [
+      "//boards/arm64:arm64.bazel_input",
+      "//build/images/fuchsia:fuchsia.bazel_legacy_aib",
+      "//build/images/zedboot:zedboot.bazel_legacy_aib",
+    ]
+  }
+
+  bazel_product_bundle("product_bundle.vim3") {
+    testonly = true
+    allow_eng_platform_bundle_use = true
+    bazel_product_bundle_target = ":product_bundle.vim3"
+    bazel_product_image_target = ":image.vim3"
+    bazel_recovery_image_target = "//products/zedboot:vim3_with_fvm"
+    bazel_elf_sizes_target = ":elf_sizes.arm64"
+    bazel_inputs_from_gn = [
+      "//build/images/fuchsia:fuchsia.bazel_legacy_aib",
+      "//build/images/zedboot:zedboot.bazel_legacy_aib",
+    ]
+    if (board_configuration_label != false) {
+      bazel_inputs_from_gn += [
+        # Add the board configuration as a dependency via the GN arg, as vendor-
+        # repo boards can shadow the ones in //boards.
+        get_label_info(board_configuration_label, "label_no_toolchain") +
+            ".bazel_input",
+      ]
+    }
+  }
+}
+
+if (current_cpu == "riscv64") {
+  bazel_product_bundle("product_bundle.riscv64") {
+    testonly = true
+    allow_eng_platform_bundle_use = true
+    bazel_product_bundle_target = ":product_bundle.riscv64"
+    bazel_product_image_target = ":image.riscv64"
+    bazel_recovery_image_target = "//products/zedboot:riscv64_with_fvm"
+    bazel_elf_sizes_target = ":elf_sizes.riscv64"
+    bazel_inputs_from_gn = [
+      "//boards/riscv64:riscv64.bazel_input",
+      "//build/images/fuchsia:fuchsia.bazel_legacy_aib",
+      "//build/images/zedboot:zedboot.bazel_legacy_aib",
+    ]
+  }
+}
+
+# The board input bundles that minimal products needs to ship
+generated_file("board_assembly_artifacts") {
+  deps = [
+    # Include all the board input bundles for this arch.
+    "//boards:boards",
   ]
+  data_keys = [ "board_assembly_artifacts" ]
+  output_conversion = "json"
+  outputs = [ "${target_gen_dir}/board_assembly_artifacts.json" ]
+
+  metadata = {
+    assembly_inputs = [
+      {
+        path = rebase_path(outputs[0], root_build_dir)
+      },
+    ]
+    assembly_inputs_barrier = []
+  }
 }

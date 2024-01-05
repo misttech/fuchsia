@@ -29,10 +29,9 @@
 #include <fbl/alloc_checker.h>
 #include <fbl/string.h>
 #include <fbl/vector.h>
-#include <gpt/c/gpt.h>
 
 #include "mbr.h"
-#include "src/devices/block/lib/common/include/common.h"
+#include "src/devices/block/lib/common/include/common-dfv1.h"
 
 namespace {
 

@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/flat_ast.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
@@ -26,10 +25,10 @@ resource_definition SomeResource : uint32 {
   ASSERT_COMPILED(library);
 
   auto resource = library.LookupResource("SomeResource");
-  ASSERT_NOT_NULL(resource);
+  ASSERT_NE(resource, nullptr);
   ASSERT_EQ(resource->properties.size(), 1u);
 
-  ASSERT_NOT_NULL(resource->subtype_ctor);
+  ASSERT_NE(resource->subtype_ctor, nullptr);
   auto underlying = resource->subtype_ctor->type;
   ASSERT_EQ(underlying->kind, fidl::flat::Type::Kind::kPrimitive);
   auto underlying_primitive = static_cast<const fidl::flat::PrimitiveType*>(underlying);
@@ -58,10 +57,10 @@ resource_definition SomeResource : uint32 {
   ASSERT_COMPILED(library);
 
   auto resource = library.LookupResource("SomeResource");
-  ASSERT_NOT_NULL(resource);
+  ASSERT_NE(resource, nullptr);
   ASSERT_EQ(resource->properties.size(), 2u);
 
-  ASSERT_NOT_NULL(resource->subtype_ctor);
+  ASSERT_NE(resource->subtype_ctor, nullptr);
   auto underlying = resource->subtype_ctor->type;
   ASSERT_EQ(underlying->kind, fidl::flat::Type::Kind::kPrimitive);
   auto underlying_primitive = static_cast<const fidl::flat::PrimitiveType*>(underlying);
@@ -97,10 +96,10 @@ resource_definition SomeResource : via {
   ASSERT_COMPILED(library);
 
   auto resource = library.LookupResource("SomeResource");
-  ASSERT_NOT_NULL(resource);
+  ASSERT_NE(resource, nullptr);
   ASSERT_EQ(resource->properties.size(), 1u);
 
-  ASSERT_NOT_NULL(resource->subtype_ctor);
+  ASSERT_NE(resource->subtype_ctor, nullptr);
   auto underlying = resource->subtype_ctor->type;
   ASSERT_EQ(underlying->kind, fidl::flat::Type::Kind::kPrimitive);
   auto underlying_primitive = static_cast<const fidl::flat::PrimitiveType*>(underlying);
@@ -131,10 +130,10 @@ resource_definition SomeResource : via {
   ASSERT_COMPILED(library);
 
   auto resource = library.LookupResource("SomeResource");
-  ASSERT_NOT_NULL(resource);
+  ASSERT_NE(resource, nullptr);
   ASSERT_EQ(resource->properties.size(), 2u);
 
-  ASSERT_NOT_NULL(resource->subtype_ctor);
+  ASSERT_NE(resource->subtype_ctor, nullptr);
   auto underlying = resource->subtype_ctor->type;
   ASSERT_EQ(underlying->kind, fidl::flat::Type::Kind::kPrimitive);
   auto underlying_primitive = static_cast<const fidl::flat::PrimitiveType*>(underlying);
@@ -160,13 +159,17 @@ resource_definition SomeResource : uint32 {
 };
 
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnexpectedIdentifier);
+  library.ExpectFail(fidl::ErrUnexpectedIdentifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kRightCurly),
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kProperties));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ResourceTests, BadNoProperties) {
   TestLibrary library;
   library.AddFile("bad/fi-0029.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrMustHaveOneProperty);
+  library.ExpectFail(fidl::ErrMustHaveOneProperty);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ResourceTests, BadDuplicateProperty) {
@@ -181,27 +184,30 @@ resource_definition MyResource : uint32 {
     };
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrDuplicateElementName);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "resource property");
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "rights");
+  library.ExpectFail(fidl::ErrNameCollision, fidl::flat::Element::Kind::kResourceProperty, "rights",
+                     fidl::flat::Element::Kind::kResourceProperty, "example.fidl:7:9");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ResourceTests, BadNotUint32) {
   TestLibrary library;
   library.AddFile("bad/fi-0172.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrResourceMustBeUint32Derived);
+  library.ExpectFail(fidl::ErrResourceMustBeUint32Derived, "MyResource");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ResourceTests, BadMissingSubtypePropertyTest) {
   TestLibrary library;
   library.AddFile("bad/fi-0173.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrResourceMissingSubtypeProperty);
+  library.ExpectFail(fidl::ErrResourceMissingSubtypeProperty, "MyResource");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ResourceTests, BadSubtypeNotEnum) {
   TestLibrary library;
   library.AddFile("bad/fi-0175.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrResourceSubtypePropertyMustReferToEnum);
+  library.ExpectFail(fidl::ErrResourceSubtypePropertyMustReferToEnum, "MyResource");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ResourceTests, BadSubtypeNotIdentifier) {
@@ -214,13 +220,15 @@ resource_definition handle : uint32 {
     };
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrResourceSubtypePropertyMustReferToEnum);
+  library.ExpectFail(fidl::ErrResourceSubtypePropertyMustReferToEnum, "handle");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ResourceTests, BadNonBitsRights) {
   TestLibrary library;
   library.AddFile("bad/fi-0177.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrResourceRightsPropertyMustReferToBits);
+  library.ExpectFail(fidl::ErrResourceRightsPropertyMustReferToBits, "MyResource");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ResourceTests, BadIncludeCycle) {
@@ -233,8 +241,9 @@ resource_definition handle : uint32 {
     };
 };
 )FIDL");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrIncludeCycle,
-                                      fidl::ErrResourceSubtypePropertyMustReferToEnum);
+  library.ExpectFail(fidl::ErrIncludeCycle, "resource 'handle' -> resource 'handle'");
+  library.ExpectFail(fidl::ErrResourceSubtypePropertyMustReferToEnum, "handle");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 }  // namespace

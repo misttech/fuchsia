@@ -8,15 +8,20 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::From as _;
 
+use fidl_fuchsia_net_ext::FromExt as _;
+
 use anyhow::Context as _;
 use assert_matches::assert_matches;
 use futures::{stream, FutureExt as _, StreamExt as _, TryStreamExt as _};
 use net_declare::{fidl_ip, fidl_ip_v4_with_prefix, fidl_mac};
-use net_types::SpecifiedAddress;
 use netemul::{RealmUdpSocket as _, TestInterface, TestNetwork, TestRealm, TestSandbox};
-use netstack_testing_common::realms::{Netstack, TestRealmExt as _, TestSandboxExt as _};
 use netstack_testing_common::Result;
+use netstack_testing_common::{
+    nud::FrameMetadata,
+    realms::{Netstack, NetstackVersion, TestRealmExt as _, TestSandboxExt as _},
+};
 use netstack_testing_macros::netstack_test;
+use test_case::test_case;
 
 const ALICE_MAC: fidl_fuchsia_net::MacAddress = fidl_mac!("02:00:01:02:03:04");
 const ALICE_IP: fidl_fuchsia_net::IpAddress = fidl_ip!("192.168.0.100");
@@ -204,30 +209,56 @@ async fn list_existing_entries(
 /// `alice` will send a single UDP datagram to `bob`. This function will block
 /// until `bob` receives the datagram.
 async fn exchange_dgram(
-    alice: &TestRealm<'_>,
+    alice: &NeighborRealm<'_>,
     alice_addr: fidl_fuchsia_net::IpAddress,
-    bob: &TestRealm<'_>,
+    bob: &NeighborRealm<'_>,
     bob_addr: fidl_fuchsia_net::IpAddress,
 ) {
-    let fidl_fuchsia_net_ext::IpAddress(alice_addr) =
-        fidl_fuchsia_net_ext::IpAddress::from(alice_addr);
-    let alice_addr = std::net::SocketAddr::new(alice_addr, 1234);
+    #[track_caller]
+    fn socket_addr_with_scope_id(
+        addr: fidl_fuchsia_net::IpAddress,
+        port: u16,
+        interface_id: u64,
+    ) -> std::net::SocketAddr {
+        let fidl_fuchsia_net_ext::IpAddress(addr) = fidl_fuchsia_net_ext::IpAddress::from(addr);
+        match addr {
+            std::net::IpAddr::V4(_) => std::net::SocketAddr::new(addr, port),
+            std::net::IpAddr::V6(addr) => std::net::SocketAddrV6::new(
+                addr,
+                port,
+                0, /* flowinfo */
+                interface_id.try_into().expect("interface ID should fit into u32"),
+            )
+            .into(),
+        }
+    }
 
-    let fidl_fuchsia_net_ext::IpAddress(bob_addr) = fidl_fuchsia_net_ext::IpAddress::from(bob_addr);
-    let bob_addr = std::net::SocketAddr::new(bob_addr, 8080);
+    const ALICE_PORT: u16 = 1234;
+    const BOB_PORT: u16 = 8080;
 
-    let alice_sock = fuchsia_async::net::UdpSocket::bind_in_realm(alice, alice_addr)
-        .await
-        .expect("failed to create client socket");
+    let alice_sock = fuchsia_async::net::UdpSocket::bind_in_realm(
+        &alice.realm,
+        socket_addr_with_scope_id(alice_addr, ALICE_PORT, alice.ep.id()),
+    )
+    .await
+    .expect("failed to create client socket");
 
-    let bob_sock = fuchsia_async::net::UdpSocket::bind_in_realm(bob, bob_addr)
-        .await
-        .expect("failed to create server socket");
+    let bob_sock = fuchsia_async::net::UdpSocket::bind_in_realm(
+        &bob.realm,
+        socket_addr_with_scope_id(bob_addr, BOB_PORT, bob.ep.id()),
+    )
+    .await
+    .expect("failed to create server socket");
 
     const PAYLOAD: &'static str = "Hello Neighbor";
     let mut buf = [0u8; 512];
     let (sent, (rcvd, from)) = futures::future::try_join(
-        alice_sock.send_to(PAYLOAD.as_bytes(), bob_addr).map(|r| r.context("UDP send_to failed")),
+        alice_sock
+            .send_to(
+                PAYLOAD.as_bytes(),
+                socket_addr_with_scope_id(bob_addr, BOB_PORT, alice.ep.id()),
+            )
+            .map(|r| r.context("UDP send_to failed")),
         bob_sock.recv_from(&mut buf[..]).map(|r| r.context("UDP recv_from failed")),
     )
     .await
@@ -235,18 +266,15 @@ async fn exchange_dgram(
     assert_eq!(sent, PAYLOAD.as_bytes().len());
     assert_eq!(rcvd, PAYLOAD.as_bytes().len());
     assert_eq!(&buf[..rcvd], PAYLOAD.as_bytes());
-    // Check equality on IP and port separately since for IPv6 the scope ID may
-    // differ, making a direct equality fail.
-    assert_eq!(from.ip(), alice_addr.ip());
-    assert_eq!(from.port(), alice_addr.port());
+    assert_eq!(from, socket_addr_with_scope_id(alice_addr, ALICE_PORT, bob.ep.id()));
 }
 
 /// Helper function to exchange an IPv4 and IPv6 datagram between `alice` and
 /// `bob`.
 async fn exchange_dgrams(alice: &NeighborRealm<'_>, bob: &NeighborRealm<'_>) {
-    let () = exchange_dgram(&alice.realm, ALICE_IP, &bob.realm, BOB_IP).await;
+    let () = exchange_dgram(alice, ALICE_IP, bob, BOB_IP).await;
 
-    let () = exchange_dgram(&alice.realm, alice.ipv6, &bob.realm, bob.ipv6).await;
+    let () = exchange_dgram(alice, alice.ipv6, bob, bob.ipv6).await;
 }
 
 #[derive(Debug, Clone)]
@@ -276,6 +304,7 @@ enum ItemMatch {
     Idle,
 }
 
+#[track_caller]
 fn assert_entry(entry: fidl_fuchsia_net_neighbor::Entry, entry_match: EntryMatch) {
     let EntryMatch {
         interface: match_interface,
@@ -291,11 +320,16 @@ fn assert_entry(entry: fidl_fuchsia_net_neighbor::Entry, entry_match: EntryMatch
             state: Some(state),
             mac,
             updated_at: Some(updated_at), ..
-        } if interface == match_interface &&
-             neighbor == match_neighbor &&
-             state == match_state &&
-             mac == match_mac &&
-             updated_at != 0
+        } => {
+            assert!(
+                interface == match_interface
+                    && neighbor == match_neighbor
+                    && state == match_state
+                    && mac == match_mac
+                    && updated_at != 0,
+                "{entry:?} does not match {entry_match:?}"
+            )
+        }
     );
 }
 
@@ -365,12 +399,12 @@ async fn neigh_list_entries<N: Netstack>(name: &str) {
     // get by performing the exchange at the same time as we're hanging for the
     // entry updates.
     let ((), ()) = futures::future::join(
-        exchange_dgram(&alice.realm, ALICE_IP, &bob.realm, BOB_IP),
+        exchange_dgram(&alice, ALICE_IP, &bob, BOB_IP),
         assert_entries(&mut alice_iter, incomplete_then_reachable(alice.ep.id(), BOB_IP, BOB_MAC)),
     )
     .await;
     let ((), ()) = futures::future::join(
-        exchange_dgram(&alice.realm, alice.ipv6, &bob.realm, bob.ipv6),
+        exchange_dgram(&alice, alice.ipv6, &bob, bob.ipv6),
         assert_entries(
             &mut alice_iter,
             incomplete_then_reachable(alice.ep.id(), bob.ipv6.clone(), BOB_MAC),
@@ -447,7 +481,17 @@ async fn neigh_list_entries<N: Netstack>(name: &str) {
         EntryMatch::new(
             bob.ep.id(),
             alice.ipv6,
-            fidl_fuchsia_net_neighbor::EntryState::Stale,
+            // TODO(https://fxbug.dev/131547): Simpify to just asserting that the
+            // state is STALE when NS3 no longer consults the neighbor table
+            // when sending the NA message which causes a state transition from
+            // STALE to DELAY.
+            match N::VERSION {
+                NetstackVersion::Netstack2 { tracing: _, fast_udp: _ }
+                | NetstackVersion::ProdNetstack2 => fidl_fuchsia_net_neighbor::EntryState::Stale,
+                NetstackVersion::Netstack3 | NetstackVersion::ProdNetstack3 => {
+                    fidl_fuchsia_net_neighbor::EntryState::Delay
+                }
+            },
             Some(ALICE_MAC),
         ),
     );
@@ -473,117 +517,6 @@ fn incomplete_then_reachable(
             mac: Some(mac),
         }),
     ]
-}
-
-/// Frame metadata of interest to neighbor tests.
-#[derive(Debug, Eq, PartialEq)]
-enum FrameMetadata {
-    /// An ARP request or NDP Neighbor Solicitation target address.
-    NeighborSolicitation(fidl_fuchsia_net::IpAddress),
-    /// A UDP datagram destined to the address.
-    Udp(fidl_fuchsia_net::IpAddress),
-    /// Any other successfully parsed frame.
-    Other,
-}
-
-/// Helper function to extract specific frame metadata from a raw Ethernet
-/// frame.
-///
-/// Returns `Err` if the frame can't be parsed or `Ok(FrameMetadata)` with any
-/// interesting metadata of interest to neighbor tests.
-fn extract_frame_metadata(data: Vec<u8>) -> Result<FrameMetadata> {
-    use packet::ParsablePacket;
-    use packet_formats::{
-        arp::{ArpOp, ArpPacket},
-        ethernet::{EtherType, EthernetFrame, EthernetFrameLengthCheck},
-        icmp::{ndp::NdpPacket, IcmpParseArgs, Icmpv6Packet},
-        ip::{IpPacket, IpProto, Ipv6Proto},
-        ipv4::Ipv4Packet,
-        ipv6::Ipv6Packet,
-    };
-
-    let mut bv = &data[..];
-    let ethernet = EthernetFrame::parse(&mut bv, EthernetFrameLengthCheck::NoCheck)
-        .context("failed to parse Ethernet frame")?;
-    match ethernet
-        .ethertype()
-        .ok_or_else(|| anyhow::anyhow!("missing ethertype in Ethernet frame"))?
-    {
-        EtherType::Ipv4 => {
-            let ipv4 = Ipv4Packet::parse(&mut bv, ()).context("failed to parse IPv4 packet")?;
-            if ipv4.proto() != IpProto::Udp.into() {
-                return Ok(FrameMetadata::Other);
-            }
-            Ok(FrameMetadata::Udp(fidl_fuchsia_net::IpAddress::Ipv4(
-                fidl_fuchsia_net::Ipv4Address { addr: ipv4.dst_ip().ipv4_bytes() },
-            )))
-        }
-        EtherType::Arp => {
-            let arp = ArpPacket::<_, net_types::ethernet::Mac, net_types::ip::Ipv4Addr>::parse(
-                &mut bv,
-                (),
-            )
-            .context("failed to parse ARP packet")?;
-            match arp.operation() {
-                ArpOp::Request => Ok(FrameMetadata::NeighborSolicitation(
-                    fidl_fuchsia_net::IpAddress::Ipv4(fidl_fuchsia_net::Ipv4Address {
-                        addr: arp.target_protocol_address().ipv4_bytes(),
-                    }),
-                )),
-                ArpOp::Response => Ok(FrameMetadata::Other),
-                ArpOp::Other(other) => Err(anyhow::anyhow!("unrecognized ARP operation {}", other)),
-            }
-        }
-        EtherType::Ipv6 => {
-            let ipv6 = Ipv6Packet::parse(&mut bv, ()).context("failed to parse IPv6 packet")?;
-            match ipv6.proto() {
-                Ipv6Proto::Icmpv6 => {
-                    // NB: filtering out packets with an unspecified source address will
-                    // filter out DAD-related solicitations.
-                    if !ipv6.src_ip().is_specified() {
-                        return Ok(FrameMetadata::Other);
-                    }
-                    let parse_args = IcmpParseArgs::new(ipv6.src_ip(), ipv6.dst_ip());
-                    match Icmpv6Packet::parse(&mut bv, parse_args)
-                        .context("failed to parse ICMP packet")?
-                    {
-                        Icmpv6Packet::Ndp(NdpPacket::NeighborSolicitation(solicit)) => {
-                            Ok(FrameMetadata::NeighborSolicitation(
-                                fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
-                                    addr: solicit.message().target_address().ipv6_bytes(),
-                                }),
-                            ))
-                        }
-                        _ => Ok(FrameMetadata::Other),
-                    }
-                }
-                Ipv6Proto::Proto(IpProto::Udp) => {
-                    Ok(FrameMetadata::Udp(fidl_fuchsia_net::IpAddress::Ipv6(
-                        fidl_fuchsia_net::Ipv6Address { addr: ipv6.dst_ip().ipv6_bytes() },
-                    )))
-                }
-                _ => Ok(FrameMetadata::Other),
-            }
-        }
-        EtherType::Other(other) => {
-            Err(anyhow::anyhow!("unrecognized ethertype in Ethernet frame {}", other))
-        }
-    }
-}
-
-/// Creates a fake endpoint that extracts [`FrameMetadata`] from exchanged
-/// frames in `network`.
-fn create_metadata_stream<'a>(
-    ep: &'a netemul::TestFakeEndpoint<'a>,
-) -> impl futures::Stream<Item = Result<FrameMetadata>> + 'a {
-    ep.frame_stream().map(|r| {
-        let (data, dropped) = r.context("fake_ep FIDL error")?;
-        if dropped != 0 {
-            Err(anyhow::anyhow!("dropped {} frames on fake endpoint", dropped))
-        } else {
-            extract_frame_metadata(data)
-        }
-    })
 }
 
 /// Helper function to observe the next solicitation resolution on a
@@ -631,11 +564,25 @@ async fn next_solicitation_resolution(
 }
 
 #[netstack_test]
-async fn neigh_clear_entries_errors<N: Netstack>(name: &str) {
+#[test_case(
+    |controller, id| {
+        controller.clear_entries(id, fidl_fuchsia_net::IpVersion::V4)
+    };
+    "clear_entries"
+)]
+#[test_case(|controller, id| controller.add_entry(id, &BOB_IP, &BOB_MAC); "add_entry")]
+#[test_case(|controller, id| controller.remove_entry(id, &BOB_IP); "remove_entry")]
+async fn neigh_wrong_interface<N: Netstack>(
+    name: &str,
+    fidl_method: fn(
+        &fidl_fuchsia_net_neighbor::ControllerProxy,
+        u64,
+    ) -> fidl::client::QueryResponseFut<std::result::Result<(), i32>>,
+) {
     let sandbox = TestSandbox::new().expect("failed to create sandbox");
     let network = sandbox.create_network("net").await.expect("failed to create network");
 
-    let alice = create_realm::<N>(
+    let NeighborRealm { realm, ep, ipv6: _, loopback_id } = create_realm::<N>(
         &sandbox,
         &network,
         name,
@@ -646,14 +593,12 @@ async fn neigh_clear_entries_errors<N: Netstack>(name: &str) {
     .await;
 
     // Connect to the service and check some error cases.
-    let controller = alice
-        .realm
+    let controller = realm
         .connect_to_protocol::<fidl_fuchsia_net_neighbor::ControllerMarker>()
         .expect("failed to connect to Controller");
     // Clearing neighbors on loopback interface is not supported.
     assert_eq!(
-        controller
-            .clear_entries(alice.loopback_id, fidl_fuchsia_net::IpVersion::V4)
+        fidl_method(&controller, loopback_id)
             .await
             .expect("clear_entries FIDL error")
             .map_err(fuchsia_zircon::Status::from_raw),
@@ -661,8 +606,7 @@ async fn neigh_clear_entries_errors<N: Netstack>(name: &str) {
     );
     // Clearing neighbors on non-existing interface returns the proper error.
     assert_eq!(
-        controller
-            .clear_entries(alice.ep.id() + 100, fidl_fuchsia_net::IpVersion::V4)
+        fidl_method(&controller, ep.id() + 100)
             .await
             .expect("clear_entries FIDL error")
             .map_err(fuchsia_zircon::Status::from_raw),
@@ -678,7 +622,7 @@ async fn neigh_clear_entries<N: Netstack>(name: &str) {
     // Attach a fake endpoint that will capture all the ARP and NDP neighbor
     // solicitations.
     let fake_ep = network.create_fake_endpoint().expect("failed to create fake endpoint");
-    let mut solicit_stream = create_metadata_stream(&fake_ep);
+    let mut solicit_stream = netstack_testing_common::nud::create_metadata_stream(&fake_ep);
 
     let (alice, bob) = create_neighbor_realms::<N>(&sandbox, &network, name).await;
 
@@ -762,6 +706,131 @@ async fn neigh_clear_entries<N: Netstack>(name: &str) {
 }
 
 #[netstack_test]
+#[test_case(fidl_ip!("255.255.255.255"); "ipv4_limited_broadcast")]
+#[test_case(fidl_ip!("127.0.0.1"); "ipv4_loopback")]
+#[test_case(fidl_ip!("::1"); "ipv6_loopback")]
+#[test_case(fidl_ip!("224.0.0.0"); "ipv4_multicast")]
+#[test_case(fidl_ip!("ff00::"); "ipv6_multicast")]
+#[test_case(fidl_ip!("0.0.0.0"); "ipv4_unspecified")]
+#[test_case(fidl_ip!("::"); "ipv6_unspecified")]
+#[test_case(fidl_ip!("::ffff:0:1"); "ipv6_mapped")]
+async fn neigh_add_remove_entry_invalid_addr<N: Netstack>(
+    name: &str,
+    invalid_addr: fidl_fuchsia_net::IpAddress,
+) {
+    let sandbox = TestSandbox::new().expect("failed to create sandbox");
+    let network = sandbox.create_network("net").await.expect("failed to create network");
+
+    let alice = create_realm::<N>(
+        &sandbox,
+        &network,
+        name,
+        "alice",
+        fidl_fuchsia_net::Subnet { addr: ALICE_IP, prefix_len: SUBNET_PREFIX },
+        ALICE_MAC,
+    )
+    .await;
+
+    let controller = alice
+        .realm
+        .connect_to_protocol::<fidl_fuchsia_net_neighbor::ControllerMarker>()
+        .expect("failed to connect to Controller");
+
+    assert_eq!(
+        controller
+            .add_entry(alice.ep.id(), &invalid_addr, &BOB_MAC)
+            .await
+            .expect("add_entry FIDL error")
+            .map_err(fuchsia_zircon::Status::from_raw),
+        Err(fuchsia_zircon::Status::INVALID_ARGS),
+        "{} is an invalid neighbor addr and add_entry should fail",
+        net_types::ip::IpAddr::from_ext(invalid_addr)
+    );
+    assert_eq!(
+        controller
+            .remove_entry(alice.ep.id(), &invalid_addr)
+            .await
+            .expect("remove_entry FIDL error")
+            .map_err(fuchsia_zircon::Status::from_raw),
+        Err(fuchsia_zircon::Status::INVALID_ARGS),
+        "{} is an invalid neighbor addr and remove_entry should fail",
+        net_types::ip::IpAddr::from_ext(invalid_addr)
+    );
+}
+
+#[netstack_test]
+#[test_case(fidl_mac!("ff:ff:ff:ff:ff:ff"); "broadcast_mac")]
+#[test_case(fidl_mac!("01:00:00:00:00:00"); "multicast_mac")]
+async fn neigh_add_entry_invalid_mac<N: Netstack>(
+    name: &str,
+    invalid_mac: fidl_fuchsia_net::MacAddress,
+) {
+    let sandbox = TestSandbox::new().expect("failed to create sandbox");
+    let network = sandbox.create_network("net").await.expect("failed to create network");
+
+    let alice = create_realm::<N>(
+        &sandbox,
+        &network,
+        name,
+        "alice",
+        fidl_fuchsia_net::Subnet { addr: ALICE_IP, prefix_len: SUBNET_PREFIX },
+        ALICE_MAC,
+    )
+    .await;
+
+    let controller = alice
+        .realm
+        .connect_to_protocol::<fidl_fuchsia_net_neighbor::ControllerMarker>()
+        .expect("failed to connect to Controller");
+
+    for valid_addr in [fidl_ip!("2001:db8::1"), fidl_ip!("192.0.2.1")] {
+        assert_eq!(
+            controller
+                .add_entry(alice.ep.id(), &valid_addr, &invalid_mac)
+                .await
+                .expect("add_entry FIDL error")
+                .map_err(fuchsia_zircon::Status::from_raw),
+            Err(fuchsia_zircon::Status::INVALID_ARGS),
+            "{} is not a unicast mac addr and add_entry should fail",
+            net_types::ethernet::Mac::from_ext(invalid_mac)
+        );
+    }
+}
+
+// TODO(https://fxbug.dev/124960): Remove this test when NS3 passes
+// neigh_add_remove_entry since that test is a superset of this test but it
+// doesn't yet pass due to the lack of fuchsia.net.neighbor/EntryIterator.
+#[netstack_test]
+async fn neigh_remove_entry_not_found<N: Netstack>(name: &str) {
+    let sandbox = TestSandbox::new().expect("failed to create sandbox");
+    let network = sandbox.create_network("net").await.expect("failed to create network");
+
+    let alice = create_realm::<N>(
+        &sandbox,
+        &network,
+        name,
+        "alice",
+        fidl_fuchsia_net::Subnet { addr: ALICE_IP, prefix_len: SUBNET_PREFIX },
+        ALICE_MAC,
+    )
+    .await;
+
+    let controller = alice
+        .realm
+        .connect_to_protocol::<fidl_fuchsia_net_neighbor::ControllerMarker>()
+        .expect("failed to connect to Controller");
+
+    assert_eq!(
+        controller
+            .remove_entry(alice.ep.id(), &BOB_IP)
+            .await
+            .expect("remove_entry FIDL error")
+            .map_err(fuchsia_zircon::Status::from_raw),
+        Err(fuchsia_zircon::Status::NOT_FOUND)
+    );
+}
+
+#[netstack_test]
 async fn neigh_add_remove_entry<N: Netstack>(name: &str) {
     let sandbox = TestSandbox::new().expect("failed to create sandbox");
     let network = sandbox.create_network("net").await.expect("failed to create network");
@@ -769,12 +838,13 @@ async fn neigh_add_remove_entry<N: Netstack>(name: &str) {
     // Attach a fake endpoint that will observe neighbor solicitations and UDP
     // frames.
     let fake_ep = network.create_fake_endpoint().expect("failed to create fake endpoint");
-    let mut meta_stream = create_metadata_stream(&fake_ep).try_filter_map(|m| {
-        futures::future::ok(match m {
-            m @ FrameMetadata::NeighborSolicitation(_) | m @ FrameMetadata::Udp(_) => Some(m),
-            FrameMetadata::Other => None,
-        })
-    });
+    let mut meta_stream = netstack_testing_common::nud::create_metadata_stream(&fake_ep)
+        .try_filter_map(|m| {
+            futures::future::ok(match m {
+                m @ FrameMetadata::NeighborSolicitation(_) | m @ FrameMetadata::Udp(_) => Some(m),
+                FrameMetadata::Other => None,
+            })
+        });
 
     let (alice, bob) = create_neighbor_realms::<N>(&sandbox, &network, name).await;
 
@@ -1053,14 +1123,11 @@ async fn neigh_unreachability_config<N: Netstack>(name: &str) {
             Ok(original_config.clone()),
         );
 
-        // Update config with some non-defaults
+        // Update config with a non-default base reachable time.
         let mut updates = fidl_fuchsia_net_neighbor::UnreachabilityConfig::default();
         let updated_base_reachable_time =
             Some(fidl_fuchsia_net_neighbor::DEFAULT_BASE_REACHABLE_TIME * 2);
-        let updated_retransmit_timer =
-            Some(fidl_fuchsia_net_neighbor::DEFAULT_RETRANSMIT_TIMER / 2);
         updates.base_reachable_time = updated_base_reachable_time;
-        updates.retransmit_timer = updated_retransmit_timer;
         let () = controller
             .update_unreachability_config(alice.ep.id(), ip_version, &updates)
             .await
@@ -1078,7 +1145,6 @@ async fn neigh_unreachability_config<N: Netstack>(name: &str) {
             updated_config,
             Ok(fidl_fuchsia_net_neighbor::UnreachabilityConfig {
                 base_reachable_time: updated_base_reachable_time,
-                retransmit_timer: updated_retransmit_timer,
                 ..original_config
             })
         );
@@ -1127,21 +1193,30 @@ async fn neigh_unreachable_entries<N: Netstack>(name: &str) {
         PAYLOAD.as_bytes().len()
     );
 
+    let want_incomplete_entry = EntryMatch {
+        interface: alice.ep.id(),
+        neighbor: BOB_IP,
+        state: fidl_fuchsia_net_neighbor::EntryState::Incomplete,
+        mac: None,
+    };
     assert_entries(
         &mut iter,
         [
-            ItemMatch::Added(EntryMatch {
-                interface: alice.ep.id(),
-                neighbor: BOB_IP,
-                state: fidl_fuchsia_net_neighbor::EntryState::Incomplete,
-                mac: None,
-            }),
-            ItemMatch::Changed(EntryMatch {
-                interface: alice.ep.id(),
-                neighbor: BOB_IP,
-                state: fidl_fuchsia_net_neighbor::EntryState::Unreachable,
-                mac: None,
-            }),
+            ItemMatch::Added(want_incomplete_entry.clone()),
+            // TODO(https://fxbug.dev/132349): Expect the entry to change to sentinel
+            // state for NS3 instead of being removed entirely.
+            match N::VERSION {
+                NetstackVersion::Netstack2 { tracing: _, fast_udp: _ }
+                | NetstackVersion::ProdNetstack2 => ItemMatch::Changed(EntryMatch {
+                    interface: alice.ep.id(),
+                    neighbor: BOB_IP,
+                    state: fidl_fuchsia_net_neighbor::EntryState::Unreachable,
+                    mac: None,
+                }),
+                NetstackVersion::Netstack3 | NetstackVersion::ProdNetstack3 => {
+                    ItemMatch::Removed(want_incomplete_entry)
+                }
+            },
         ],
     )
     .await;
@@ -1209,6 +1284,15 @@ async fn channel_is_closed_if_not_polled<N: Netstack>(name: &str) {
             &fidl_fuchsia_net_neighbor::EntryIteratorOptions::default(),
         )
         .expect("failed to open EntryIterator");
+    // Poll at least once for the idle event to ensure that EntryIterator is
+    // actually implemented, otherwise this test passes against a netstack
+    // that doesn't expose the capability of implementing View at all.
+    assert_eq!(
+        iter.get_next().await.expect("get_next"),
+        vec![fidl_fuchsia_net_neighbor::EntryIteratorItem::Idle(
+            fidl_fuchsia_net_neighbor::IdleEvent {}
+        )]
+    );
 
     let controller = alice
         .realm

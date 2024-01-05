@@ -12,7 +12,9 @@ use fidl_fuchsia_io as fio;
 use fuchsia_zircon::{self as zx, AsHandleRef as _, HandleBased as _};
 use std::{
     ffi::CStr,
+    marker::PhantomData,
     mem::{size_of, size_of_val},
+    num::TryFromIntError,
     os::raw::{c_char, c_int, c_uint, c_void},
     pin::Pin,
 };
@@ -25,25 +27,37 @@ use zxio::{
 pub mod zxio;
 
 pub use zxio::{
-    zxio_dirent_t, zxio_node_attr_zxio_node_attr_has_t as zxio_node_attr_has_t,
-    zxio_node_attributes_t, zxio_signals_t,
+    zxio_dirent_t, zxio_fsverity_descriptor, zxio_fsverity_descriptor_t,
+    zxio_node_attr_zxio_node_attr_has_t as zxio_node_attr_has_t, zxio_node_attributes_t,
+    zxio_signals_t,
 };
 
-bitflags! {
-    // These values should match the values in sdk/lib/zxio/include/lib/zxio/types.h
-    pub struct ZxioSignals : zxio_signals_t {
-        const NONE            =      0;
-        const READABLE        = 1 << 0;
-        const WRITABLE        = 1 << 1;
-        const READ_DISABLED   = 1 << 2;
-        const WRITE_DISABLED  = 1 << 3;
-        const READ_THRESHOLD  = 1 << 4;
-        const WRITE_THRESHOLD = 1 << 5;
-        const OUT_OF_BAND     = 1 << 6;
-        const ERROR           = 1 << 7;
-        const PEER_CLOSED     = 1 << 8;
+// The inner mod is required because bitflags cannot pass the attribute through to the single
+// variant, and attributes cannot be applied to macro invocations.
+mod inner_signals {
+    // Part of the code for the NONE case that's produced by the macro triggers the lint, but as a
+    // whole, the produced code is still correct.
+    #![allow(clippy::bad_bit_mask)] // TODO(b/303500202) Remove once addressed in bitflags.
+    use super::{bitflags, zxio_signals_t};
+
+    bitflags! {
+        // These values should match the values in sdk/lib/zxio/include/lib/zxio/types.h
+        pub struct ZxioSignals : zxio_signals_t {
+            const NONE            =      0;
+            const READABLE        = 1 << 0;
+            const WRITABLE        = 1 << 1;
+            const READ_DISABLED   = 1 << 2;
+            const WRITE_DISABLED  = 1 << 3;
+            const READ_THRESHOLD  = 1 << 4;
+            const WRITE_THRESHOLD = 1 << 5;
+            const OUT_OF_BAND     = 1 << 6;
+            const ERROR           = 1 << 7;
+            const PEER_CLOSED     = 1 << 8;
+        }
     }
 }
+
+pub use inner_signals::ZxioSignals;
 
 bitflags! {
     /// The flags for shutting down sockets.
@@ -87,8 +101,12 @@ pub struct ZxioDirent {
     pub name: Vec<u8>,
 }
 
-pub struct DirentIterator {
+pub struct DirentIterator<'a> {
     iterator: Box<zxio_dirent_iterator_t>,
+
+    // zxio_dirent_iterator_t holds pointers to the underlying directory, so we must keep it alive
+    // until we've destroyed it.
+    _directory: PhantomData<&'a Zxio>,
 
     /// Whether the iterator has reached the end of dir entries.
     /// This is necessary because the zxio API returns only once the error code
@@ -97,7 +115,7 @@ pub struct DirentIterator {
     finished: bool,
 }
 
-impl DirentIterator {
+impl DirentIterator<'_> {
     /// Rewind the iterator to the beginning.
     pub fn rewind(&mut self) -> Result<(), zx::Status> {
         let status = unsafe { zxio::zxio_dirent_iterator_rewind(&mut *self.iterator) };
@@ -109,7 +127,7 @@ impl DirentIterator {
 
 /// It is important that all methods here are &mut self, to require the client
 /// to obtain exclusive access to the object, externally locking it.
-impl Iterator for DirentIterator {
+impl Iterator for DirentIterator<'_> {
     type Item = Result<ZxioDirent, zx::Status>;
 
     /// Returns the next dir entry for this iterator.
@@ -140,16 +158,16 @@ impl Iterator for DirentIterator {
     }
 }
 
-impl Drop for DirentIterator {
+impl Drop for DirentIterator<'_> {
     fn drop(&mut self) {
         unsafe {
             zxio::zxio_dirent_iterator_destroy(&mut *self.iterator.as_mut());
-        };
+        }
     }
 }
 
-unsafe impl Send for DirentIterator {}
-unsafe impl Sync for DirentIterator {}
+unsafe impl Send for DirentIterator<'_> {}
+unsafe impl Sync for DirentIterator<'_> {}
 
 impl ZxioDirent {
     fn from(dirent: zxio_dirent_t, name_buffer: Vec<u8>) -> ZxioDirent {
@@ -333,7 +351,7 @@ fn parse_control_messages(data: &[u8]) -> Vec<ControlMessage> {
 
 pub struct RecvMessageInfo {
     pub address: Vec<u8>,
-    pub message: Vec<u8>,
+    pub bytes_read: usize,
     pub message_length: usize,
     pub control_messages: Vec<ControlMessage>,
     pub flags: i32,
@@ -402,6 +420,25 @@ pub enum XattrSetMode {
     /// Replace the value of the extended attribute, failing if it doesn't exist.
     Replace = 3,
 }
+
+bitflags! {
+    /// Describes the mode of operation when allocating disk space using Allocate.
+    pub struct AllocateMode: u32 {
+        const KEEP_SIZE = 1 << 0;
+        const UNSHARE_RANGE = 1 << 1;
+        const PUNCH_HOLE = 1 << 2;
+        const COLLAPSE_RANGE = 1 << 3;
+        const ZERO_RANGE = 1 << 4;
+        const INSERT_RANGE = 1 << 5;
+    }
+}
+
+const_assert_eq!(AllocateMode::KEEP_SIZE.bits(), zxio::ZXIO_ALLOCATE_KEEP_SIZE);
+const_assert_eq!(AllocateMode::UNSHARE_RANGE.bits(), zxio::ZXIO_ALLOCATE_UNSHARE_RANGE);
+const_assert_eq!(AllocateMode::PUNCH_HOLE.bits(), zxio::ZXIO_ALLOCATE_PUNCH_HOLE);
+const_assert_eq!(AllocateMode::COLLAPSE_RANGE.bits(), zxio::ZXIO_ALLOCATE_COLLAPSE_RANGE);
+const_assert_eq!(AllocateMode::ZERO_RANGE.bits(), zxio::ZXIO_ALLOCATE_ZERO_RANGE);
+const_assert_eq!(AllocateMode::INSERT_RANGE.bits(), zxio::ZXIO_ALLOCATE_INSERT_RANGE);
 
 // `ZxioStorage` is marked as `PhantomPinned` in order to prevent unsafe moves
 // of the `zxio_storage_t`, because it may store self-referential types defined
@@ -487,6 +524,8 @@ unsafe extern "C" fn storage_allocator(
     .into();
     status.into_raw()
 }
+
+pub const ZXIO_ROOT_HASH_LENGTH: usize = 64;
 
 impl Zxio {
     pub fn new_socket<S: ServiceConnector>(
@@ -756,8 +795,39 @@ impl Zxio {
         Ok(zx::Vmo::from(handle))
     }
 
-    pub fn attr_get(&self) -> Result<zxio_node_attributes_t, zx::Status> {
-        let mut attributes = zxio_node_attributes_t::default();
+    fn node_attributes_from_query(
+        &self,
+        query: zxio_node_attr_has_t,
+        fsverity_root_hash: Option<&mut [u8; ZXIO_ROOT_HASH_LENGTH]>,
+    ) -> zxio_node_attributes_t {
+        if let Some(fsverity_root_hash) = fsverity_root_hash {
+            zxio_node_attributes_t {
+                has: query,
+                fsverity_root_hash: fsverity_root_hash as *mut u8,
+                ..Default::default()
+            }
+        } else {
+            zxio_node_attributes_t { has: query, ..Default::default() }
+        }
+    }
+
+    pub fn attr_get(
+        &self,
+        query: zxio_node_attr_has_t,
+    ) -> Result<zxio_node_attributes_t, zx::Status> {
+        let mut attributes = self.node_attributes_from_query(query, None);
+        let status = unsafe { zxio::zxio_attr_get(self.as_ptr(), &mut attributes) };
+        zx::ok(status)?;
+        Ok(attributes)
+    }
+
+    /// Assumes that the caller has set `query.fsverity_root_hash` to true.
+    pub fn attr_get_with_root_hash(
+        &self,
+        query: zxio_node_attr_has_t,
+        fsverity_root_hash: &mut [u8; ZXIO_ROOT_HASH_LENGTH],
+    ) -> Result<zxio_node_attributes_t, zx::Status> {
+        let mut attributes = self.node_attributes_from_query(query, Some(fsverity_root_hash));
         let status = unsafe { zxio::zxio_attr_get(self.as_ptr(), &mut attributes) };
         zx::ok(status)?;
         Ok(attributes)
@@ -765,6 +835,12 @@ impl Zxio {
 
     pub fn attr_set(&self, attributes: &zxio_node_attributes_t) -> Result<(), zx::Status> {
         let status = unsafe { zxio::zxio_attr_set(self.as_ptr(), attributes) };
+        zx::ok(status)?;
+        Ok(())
+    }
+
+    pub fn enable_verity(&self, descriptor: &zxio_fsverity_descriptor_t) -> Result<(), zx::Status> {
+        let status = unsafe { zxio::zxio_enable_verity(self.as_ptr(), descriptor) };
         zx::ok(status)?;
         Ok(())
     }
@@ -812,11 +888,12 @@ impl Zxio {
         zxio_signals
     }
 
-    pub fn create_dirent_iterator(&self) -> Result<DirentIterator, zx::Status> {
+    pub fn create_dirent_iterator(&self) -> Result<DirentIterator<'_>, zx::Status> {
         let mut zxio_iterator = Box::default();
         let status = unsafe { zxio::zxio_dirent_iterator_init(&mut *zxio_iterator, self.as_ptr()) };
         zx::ok(status)?;
-        let iterator = DirentIterator { iterator: zxio_iterator, finished: false };
+        let iterator =
+            DirentIterator { iterator: zxio_iterator, _directory: PhantomData, finished: false };
         Ok(iterator)
     }
 
@@ -987,9 +1064,9 @@ impl Zxio {
 
     pub fn sendmsg(
         &self,
-        mut addr: Vec<u8>,
-        mut buffer: Vec<u8>,
-        cmsg: Vec<ControlMessage>,
+        addr: &mut [u8],
+        buffer: &mut [zxio::iovec],
+        cmsg: &[ControlMessage],
         flags: u32,
     ) -> Result<Result<usize, ZxioErrorCode>, zx::Status> {
         let mut msg = zxio::msghdr::default();
@@ -999,12 +1076,11 @@ impl Zxio {
         };
         msg.msg_namelen = addr.len() as u32;
 
-        let mut iov =
-            zxio::iovec { iov_base: buffer.as_mut_ptr() as *mut c_void, iov_len: buffer.len() };
-        msg.msg_iov = &mut iov;
-        msg.msg_iovlen = 1;
+        msg.msg_iovlen =
+            i32::try_from(buffer.len()).map_err(|_: TryFromIntError| zx::Status::INVALID_ARGS)?;
+        msg.msg_iov = buffer.as_mut_ptr();
 
-        let mut cmsg_buffer = serialize_control_messages(&cmsg);
+        let mut cmsg_buffer = serialize_control_messages(cmsg);
         msg.msg_control = cmsg_buffer.as_mut_ptr() as *mut c_void;
         msg.msg_controllen = cmsg_buffer.len() as u32;
 
@@ -1024,7 +1100,7 @@ impl Zxio {
 
     pub fn recvmsg(
         &self,
-        iovec_length: usize,
+        buffer: &mut [zxio::iovec],
         flags: u32,
     ) -> Result<Result<RecvMessageInfo, ZxioErrorCode>, zx::Status> {
         let mut msg = msghdr::default();
@@ -1032,11 +1108,10 @@ impl Zxio {
         msg.msg_name = addr.as_mut_ptr() as *mut c_void;
         msg.msg_namelen = addr.len() as u32;
 
-        let mut iov_buf = vec![0u8; iovec_length];
-        let mut iov =
-            zxio::iovec { iov_base: iov_buf.as_mut_ptr() as *mut c_void, iov_len: iovec_length };
-        msg.msg_iov = &mut iov;
-        msg.msg_iovlen = 1;
+        let max_buffer_capacity = buffer.iter().map(|v| v.iov_len).sum();
+        msg.msg_iovlen =
+            i32::try_from(buffer.len()).map_err(|_: TryFromIntError| zx::Status::INVALID_ARGS)?;
+        msg.msg_iov = buffer.as_mut_ptr();
 
         let mut cmsg_buffer = vec![0u8; MAX_CMSGS_BUFFER];
         msg.msg_control = cmsg_buffer.as_mut_ptr() as *mut c_void;
@@ -1060,10 +1135,9 @@ impl Zxio {
         }
 
         let control_messages = parse_control_messages(&cmsg_buffer[..msg.msg_controllen as usize]);
-        let min_buf_len = std::cmp::min(iov_buf.len(), out_actual);
         Ok(Ok(RecvMessageInfo {
             address: addr[..msg.msg_namelen as usize].to_vec(),
-            message: iov_buf[..min_buf_len].to_vec(),
+            bytes_read: std::cmp::min(max_buffer_capacity, out_actual),
             message_length: out_actual,
             control_messages,
             flags: msg.msg_flags,
@@ -1175,6 +1249,11 @@ impl Zxio {
         zx::ok(unsafe {
             zxio::zxio_link_into(self.as_ptr(), handle, name.as_ptr() as *const c_char, name.len())
         })
+    }
+
+    pub fn allocate(&self, offset: u64, len: u64, mode: AllocateMode) -> Result<(), zx::Status> {
+        let status = unsafe { zxio::zxio_allocate(self.as_ptr(), offset, len, mode.bits()) };
+        zx::ok(status)
     }
 }
 

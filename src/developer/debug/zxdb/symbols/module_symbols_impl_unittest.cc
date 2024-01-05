@@ -590,4 +590,45 @@ TEST(ModuleSymbols, StrippedElfSymbols) {
   EXPECT_EQ("GetIntPtr()", elf_symbol->GetFullName());
 }
 
+// Tests that a unified index is created for all .dwo files.
+TEST(ModuleSymbols, IndexFission) {
+  std::string fission_data_dir = TestSymbolModule::GetTestDataDir() + "fission/";
+  TestSymbolModule setup(fission_data_dir + "fission", "fission");
+  // Passint "true" here creates the unified index.
+  ASSERT_TRUE(setup.Init(fission_data_dir, true).ok());
+
+  // The index in the ModuleSymbolsImpl should have the unified symbols from all .dwo files.
+  // Compare to the Index.Fission test which doesn't do the merging.
+  std::ostringstream out;
+  setup.symbols()->index_.root().Dump(out, setup.symbols()->symbol_factory(), 0);
+
+  const char kExpected[] = R"(  Types:
+    char: 0x3d, 0x3d
+    int: 0x32, 0x32
+    long int: 0x39, 0x39
+    long unsigned int: 0x1a, 0x1a
+    short int: 0x2e, 0x2e
+    short unsigned int: 0x26, 0x26
+    signed char: 0x2a, 0x2a
+    unsigned char: 0x22, 0x22
+    unsigned int: 0x1e, 0x1e
+  Functions:
+    CallOther: 0x41
+    UnusedFunction: 0x50
+    main: 0x47
+)";
+  EXPECT_EQ(kExpected, out.str());
+
+  // Resolve one of the functions in a .dwo to make sure we can look it up.
+  SymbolContext symbol_context(0x10000000);
+  std::vector<Location> result = setup.symbols()->ResolveInputLocation(
+      symbol_context, InputLocation(Identifier(IdentifierComponent("CallOther"))));
+  ASSERT_EQ(1u, result.size());
+
+  // The 114f is the address stored in the main binary for the CallOther function (referenced via
+  // the address table). This may change if the sample binary is recompiled.
+  constexpr uint64_t kCallOtherRelativeAddr = 0x114f;
+  EXPECT_EQ(symbol_context.RelativeToAbsolute(kCallOtherRelativeAddr), result[0].address());
+}
+
 }  // namespace zxdb

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{anyhow, Result};
-use argh::FromArgs;
+use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
 use ffx_core::ffx_command;
 use std::path::Path;
@@ -13,7 +13,7 @@ use std::str::FromStr;
 use assembly_images_config::BlobfsLayout;
 
 #[ffx_command()]
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "assembly", description = "Assemble images")]
 pub struct AssemblyCommand {
     /// the assembly operation to perform
@@ -22,17 +22,18 @@ pub struct AssemblyCommand {
 }
 
 /// This is the set of top-level operations within the `ffx assembly` plugin
-#[derive(Debug, FromArgs, PartialEq)]
+#[derive(Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand)]
 pub enum OperationClass {
     CreateSystem(CreateSystemArgs),
     CreateUpdate(CreateUpdateArgs),
     Product(ProductArgs),
     SizeCheck(SizeCheckArgs),
+    BoardInputBundle(BoardInputBundleArgs),
 }
 
 /// create the system images.
-#[derive(Debug, FromArgs, PartialEq)]
+#[derive(Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand, name = "create-system")]
 pub struct CreateSystemArgs {
     /// the configuration file that specifies the packages, binaries, and
@@ -92,7 +93,7 @@ fn default_package_mode() -> PackageMode {
 }
 
 /// construct an UpdatePackage using images and package.
-#[derive(Debug, FromArgs, PartialEq)]
+#[derive(Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand, name = "create-update")]
 pub struct CreateUpdateArgs {
     /// path to a partitions config, which specifies where in the partition
@@ -153,7 +154,7 @@ fn default_subpackage_blobs_package_name() -> String {
 }
 
 /// Perform size checks (on packages or product based on the sub-command).
-#[derive(Debug, FromArgs, PartialEq)]
+#[derive(Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand, name = "size-check")]
 pub struct SizeCheckArgs {
     #[argh(subcommand)]
@@ -161,7 +162,7 @@ pub struct SizeCheckArgs {
 }
 
 /// The set of operations available under `ffx assembly size-check`.
-#[derive(Debug, FromArgs, PartialEq)]
+#[derive(Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand)]
 pub enum SizeCheckOperationClass {
     /// Check that the set of all blobs included in the product fit in the blobfs capacity.
@@ -173,7 +174,7 @@ pub enum SizeCheckOperationClass {
 /// Measure package sizes and verify they fit in the specified budgets.
 /// Exit status is 2 when one or more budgets are exceeded, and 1 when
 /// a failure prevented the budget verification to happen.
-#[derive(Debug, FromArgs, PartialEq)]
+#[derive(Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand, name = "package")]
 pub struct PackageSizeCheckArgs {
     /// path to a JSON file containing the list of size budgets.
@@ -202,7 +203,7 @@ pub struct PackageSizeCheckArgs {
 
 /// (Not implemented yet) Check that the set of all blobs included in the product
 /// fit in the blobfs capacity.
-#[derive(Debug, FromArgs, PartialEq)]
+#[derive(Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand, name = "product")]
 pub struct ProductSizeCheckArgs {
     /// use specific auth mode for oauth2 (see examples; default: pkce).
@@ -241,8 +242,6 @@ pub enum AuthMode {
     Default,
     /// expects a path to a tool which will print an access token to stdout and exit 0.
     Exec(PathBuf),
-    /// uses Out-of-Band auth (cmd-line friendly).
-    Oob,
     /// uses PKCE auth flow to obtain an access token (requires GUI browser)
     Pkce,
 }
@@ -253,14 +252,13 @@ impl FromStr for AuthMode {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.as_ref() {
             "default" => Ok(AuthMode::Default),
-            "oob" => Ok(AuthMode::Oob),
             "pkce" => Ok(AuthMode::Pkce),
             exec => {
                 let path = Path::new(exec);
                 if path.is_file() {
                     Ok(AuthMode::Exec(path.to_path_buf()))
                 } else {
-                    Err("Unknown auth flow choice. Use one of oob, \
+                    Err("Unknown auth flow choice. Use one of \
                         pkce, default, or a path to an executable \
                         which prints an access token to stdout."
                         .to_string())
@@ -275,7 +273,7 @@ fn default_blobfs_layout() -> BlobfsLayout {
 }
 
 /// Arguments for performing a high-level product assembly operation.
-#[derive(Debug, FromArgs, PartialEq)]
+#[derive(Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand, name = "product")]
 pub struct ProductArgs {
     /// the configuration file that describes the product assembly to perform.
@@ -311,6 +309,15 @@ pub struct ProductArgs {
     /// disable validation of the assembly's packages
     #[argh(option, default = "Default::default()")]
     pub package_validation: PackageValidationHandling,
+
+    /// mode indicating where to place packages.
+    #[argh(option, default = "default_package_mode()")]
+    pub mode: PackageMode,
+
+    /// path to an AIB containing a customized kernel zbi to use instead of the
+    /// one in the platform AIBs.
+    #[argh(option)]
+    pub custom_kernel_aib: Option<Utf8PathBuf>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -330,4 +337,50 @@ impl FromStr for PackageValidationHandling {
             _ => Err(format!("Unknown handling for package validation, valid values are 'warning' and 'error' (the default): {}", s))
         }
     }
+}
+
+/// Arguments for creating a Board Input Bundle for use by Assembly.
+#[derive(ArgsInfo, Debug, FromArgs, PartialEq)]
+#[argh(subcommand, name = "board-input-bundle")]
+pub struct BoardInputBundleArgs {
+    /// the directory to write the board input bundle to.
+    #[argh(option)]
+    pub outdir: Utf8PathBuf,
+
+    /// the path to write a depfile to, which contains all the files read in the
+    /// process of creating the bundle.  The output file listed in the depfile
+    /// is '$outdir/board_input_bundle.json'.
+    #[argh(option)]
+    pub depfile: Option<Utf8PathBuf>,
+
+    /// the path to the file that describes all the drivers to add to the bundle.
+    /// The format of this file is a json list of dictionaries that specify the
+    /// following fields:
+    /// 1) 'package': The path to the package manifest
+    /// 2) 'set': The package set that it belongs to ("bootfs" or "base")
+    /// 3) 'components': A list of the driver components in this pacakge.
+    #[argh(option)]
+    pub drivers: Option<Utf8PathBuf>,
+
+    /// the paths to package manifests for all packages to add to the base
+    /// package set.
+    #[argh(option)]
+    pub base_packages: Vec<Utf8PathBuf>,
+
+    /// the paths to package manifests for all packages to add to the bootfs
+    /// package set.
+    #[argh(option)]
+    pub bootfs_packages: Vec<Utf8PathBuf>,
+
+    /// arguments to pass to the kernel on boot
+    #[argh(option)]
+    pub kernel_boot_args: Vec<String>,
+
+    /// power-manager configuration
+    #[argh(option)]
+    pub power_manager_config: Option<Utf8PathBuf>,
+
+    /// thermal management configuration
+    #[argh(option)]
+    pub thermal_config: Option<Utf8PathBuf>,
 }

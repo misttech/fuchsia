@@ -2,23 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{pid_directory::*, sysctl::*};
-
 use crate::{
-    auth::FsCred,
-    fs::{
-        buffers::{InputBuffer, OutputBuffer},
-        *,
+    fs::proc::{
+        pid_directory::pid_directory,
+        sysctl::{net_directory, sysctl_directory},
     },
-    logging::{log_error, not_implemented},
-    task::*,
-    types::*,
+    task::{CurrentTask, EventHandler, Kernel, KernelStats, TaskStateCode, WaitCanceler, Waiter},
+    vfs::{
+        buffers::{InputBuffer, OutputBuffer},
+        emit_dotdot, fileops_impl_delegate_read_and_seek, fileops_impl_directory,
+        fileops_impl_seekless, fs_node_impl_dir_readonly, fs_node_impl_symlink, unbounded_seek,
+        BytesFile, DirectoryEntryType, DirentSink, DynamicFile, DynamicFileBuf, DynamicFileSource,
+        FdEvents, FileObject, FileOps, FileSystemHandle, FsNode, FsNodeHandle, FsNodeInfo,
+        FsNodeOps, FsStr, SeekTarget, SimpleFileNode, StaticDirectoryBuilder, SymlinkTarget,
+    },
 };
-use fuchsia_component::client::connect_channel_to_protocol;
+use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_zircon as zx;
-use once_cell::sync::OnceCell;
-
 use maplit::btreemap;
+use once_cell::sync::Lazy;
+use starnix_logging::{log_error, not_implemented};
+use starnix_uapi::{
+    auth::FsCred, errno, error, errors::Errno, file_mode::mode, off_t, open_flags::OpenFlags,
+    pid_t, time::duration_to_scheduler_clock,
+};
 use std::{
     collections::BTreeMap,
     sync::{Arc, Weak},
@@ -32,48 +39,46 @@ use std::{
 /// It also contains a special symlink, `self`, which targets the task directory for the task
 /// that reads the symlink.
 pub struct ProcDirectory {
-    /// The kernel that this directory is associated with. This is used to populate the
-    /// directory contents on-demand.
-    kernel: Weak<Kernel>,
-
     /// A map that stores all the nodes that aren't task directories.
     nodes: BTreeMap<&'static FsStr, FsNodeHandle>,
 }
 
 impl ProcDirectory {
     /// Returns a new `ProcDirectory` exposing information about `kernel`.
-    pub fn new(fs: &FileSystemHandle, kernel: &Arc<Kernel>) -> Arc<ProcDirectory> {
-        // TODO: Move somewhere where it can be shared with other consumers.
-        let kernel_stats = Arc::new(KernelStatsStore::default());
+    pub fn new(current_task: &CurrentTask, fs: &FileSystemHandle) -> Arc<ProcDirectory> {
+        let kernel = current_task.kernel();
 
         let nodes = btreemap! {
-            &b"cpuinfo"[..] => fs.create_node(CpuinfoFile::new_node(), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
+            &b"cpuinfo"[..] => fs.create_node(current_task, CpuinfoFile::new_node(), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
             &b"cmdline"[..] => {
-                let cmdline = kernel.cmdline.clone();
-                fs.create_node(BytesFile::new_node(cmdline), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root()))
+                let cmdline = Vec::from(kernel.cmdline.clone());
+                fs.create_node(current_task, BytesFile::new_node(cmdline), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root()))
             },
-            &b"self"[..] => SelfSymlink::new_node(fs),
-            &b"thread-self"[..] => ThreadSelfSymlink::new_node(fs),
+            &b"self"[..] => SelfSymlink::new_node(current_task, fs),
+            &b"thread-self"[..] => ThreadSelfSymlink::new_node(current_task, fs),
             &b"meminfo"[..] =>
-                fs.create_node(MeminfoFile::new_node(&kernel_stats), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
+                fs.create_node(current_task, MeminfoFile::new_node(&kernel.stats), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
             // Fake kmsg as being empty.
             &b"kmsg"[..] =>
-                fs.create_node(SimpleFileNode::new(|| Ok(ProcKmsgFile)), FsNodeInfo::new_factory(mode!(IFREG, 0o100), FsCred::root())),
-            &b"mounts"[..] => MountsSymlink::new_node(fs),
+                fs.create_node(current_task, SimpleFileNode::new(|| Ok(ProcKmsgFile)), FsNodeInfo::new_factory(mode!(IFREG, 0o100), FsCred::root())),
+            &b"mounts"[..] => MountsSymlink::new_node(current_task, fs),
             // File must exist to pass the CgroupsAvailable check, which is a little bit optional
             // for init but not optional for a lot of the system!
-            &b"cgroups"[..] => fs.create_node(BytesFile::new_node(vec![]), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
-            &b"stat"[..] =>  fs.create_node(StatFile::new_node(&kernel_stats), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
-            &b"sys"[..] => sysctl_directory(fs, kernel),
-            &b"pressure"[..] => pressure_directory(fs),
-            &b"net"[..] => net_directory(fs),
+            &b"cgroups"[..] => fs.create_node(current_task, BytesFile::new_node(vec![]), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
+            &b"stat"[..] =>  fs.create_node(current_task, StatFile::new_node(&kernel.stats), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
+            &b"sys"[..] => sysctl_directory(current_task, fs),
+            &b"pressure"[..] => pressure_directory(current_task, fs),
+            &b"net"[..] => net_directory(current_task, fs),
             &b"uptime"[..] =>
-                fs.create_node(UptimeFile::new_node(&kernel_stats), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
+                fs.create_node(current_task, UptimeFile::new_node(&kernel.stats), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
             &b"loadavg"[..] =>
-                fs.create_node(LoadavgFile::new_node(kernel), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
+                fs.create_node(current_task, LoadavgFile::new_node(kernel), FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root())),
+            &b"config.gz"[..] => {
+                fs.create_node(current_task, ConfigFile::new_node(),  FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root()))
+            }
         };
 
-        Arc::new(ProcDirectory { kernel: Arc::downgrade(kernel), nodes })
+        Arc::new(ProcDirectory { nodes })
     }
 }
 
@@ -92,7 +97,7 @@ impl FsNodeOps for Arc<ProcDirectory> {
     fn lookup(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         match self.nodes.get(name) {
@@ -100,9 +105,9 @@ impl FsNodeOps for Arc<ProcDirectory> {
             None => {
                 let pid_string = std::str::from_utf8(name).map_err(|_| errno!(ENOENT))?;
                 let pid = pid_string.parse::<pid_t>().map_err(|_| errno!(ENOENT))?;
-                let weak_task = self.kernel.upgrade().unwrap().pids.read().get_task(pid);
+                let weak_task = current_task.get_task(pid);
                 let task = weak_task.upgrade().ok_or_else(|| errno!(ENOENT))?;
-                Ok(pid_directory(&node.fs(), &task))
+                Ok(pid_directory(current_task, &node.fs(), &task))
             }
         }
     }
@@ -146,7 +151,7 @@ impl FileOps for Arc<ProcDirectory> {
         // Adjust the offset to account for the other nodes in the directory.
         let adjusted_offset = (sink.offset() - pid_offset as i64) as usize;
         // Sort the pids, to keep the traversal order consistent.
-        let mut pids = current_task.thread_group.kernel.pids.read().process_ids();
+        let mut pids = current_task.kernel().pids.read().process_ids();
         pids.sort();
 
         // The adjusted offset is used to figure out which task directories are to be listed.
@@ -175,32 +180,40 @@ impl FileOps for ProcKmsgFile {
     fn wait_async(
         &self,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         waiter: &Waiter,
-        _events: FdEvents,
-        _handler: EventHandler,
+        events: FdEvents,
+        handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        Some(waiter.fake_wait())
+        let syslog = current_task.kernel().syslog.access(current_task).ok()?;
+        Some(syslog.wait(waiter, events, handler))
     }
 
     fn query_events(
         &self,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        Ok(FdEvents::empty())
+        let syslog = current_task.kernel().syslog.access(current_task)?;
+        let mut events = FdEvents::empty();
+        if syslog.size_unread()? > 0 {
+            events |= FdEvents::POLLIN;
+        }
+        Ok(events)
     }
 
     fn read(
         &self,
-        _file: &FileObject,
+        file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
-        _data: &mut dyn OutputBuffer,
+        data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        not_implemented!("ProcKmsgFile.read() is stubbed.");
-        Waiter::new().wait_until(current_task, zx::Time::INFINITE)?;
-        error!(EAGAIN)
+        let syslog = current_task.kernel().syslog.access(current_task)?;
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
+            let bytes_written = syslog.read(data)?;
+            Ok(bytes_written as usize)
+        })
     }
 
     fn write(
@@ -219,8 +232,12 @@ impl FileOps for ProcKmsgFile {
 struct SelfSymlink;
 
 impl SelfSymlink {
-    fn new_node(fs: &FileSystemHandle) -> FsNodeHandle {
-        fs.create_node(Self, FsNodeInfo::new_factory(mode!(IFLNK, 0o777), FsCred::root()))
+    fn new_node(current_task: &CurrentTask, fs: &FileSystemHandle) -> FsNodeHandle {
+        fs.create_node(
+            current_task,
+            Self,
+            FsNodeInfo::new_factory(mode!(IFLNK, 0o777), FsCred::root()),
+        )
     }
 }
 
@@ -237,8 +254,12 @@ impl FsNodeOps for SelfSymlink {
 struct ThreadSelfSymlink;
 
 impl ThreadSelfSymlink {
-    fn new_node(fs: &FileSystemHandle) -> FsNodeHandle {
-        fs.create_node(Self, FsNodeInfo::new_factory(mode!(IFLNK, 0o777), FsCred::root()))
+    fn new_node(current_task: &CurrentTask, fs: &FileSystemHandle) -> FsNodeHandle {
+        fs.create_node(
+            current_task,
+            Self,
+            FsNodeInfo::new_factory(mode!(IFLNK, 0o777), FsCred::root()),
+        )
     }
 }
 
@@ -256,8 +277,12 @@ impl FsNodeOps for ThreadSelfSymlink {
 struct MountsSymlink;
 
 impl MountsSymlink {
-    fn new_node(fs: &FileSystemHandle) -> FsNodeHandle {
-        fs.create_node(Self, FsNodeInfo::new_factory(mode!(IFLNK, 0o777), FsCred::root()))
+    fn new_node(current_task: &CurrentTask, fs: &FileSystemHandle) -> FsNodeHandle {
+        fs.create_node(
+            current_task,
+            Self,
+            FsNodeInfo::new_factory(mode!(IFLNK, 0o777), FsCred::root()),
+        )
     }
 }
 
@@ -274,10 +299,10 @@ impl FsNodeOps for MountsSymlink {
 }
 
 /// Creates the /proc/pressure directory. https://docs.kernel.org/accounting/psi.html
-fn pressure_directory(fs: &FileSystemHandle) -> FsNodeHandle {
+fn pressure_directory(current_task: &CurrentTask, fs: &FileSystemHandle) -> FsNodeHandle {
     let mut dir = StaticDirectoryBuilder::new(fs);
-    dir.entry(b"memory", PressureFile::new_node(), mode!(IFREG, 0o666));
-    dir.build()
+    dir.entry(current_task, b"memory", PressureFile::new_node(), mode!(IFREG, 0o666));
+    dir.build(current_task)
 }
 
 struct PressureFileSource;
@@ -332,19 +357,34 @@ impl FileOps for PressureFile {
     }
 }
 
-#[derive(Default)]
-struct KernelStatsStore(OnceCell<fidl_fuchsia_kernel::StatsSynchronousProxy>);
+struct SysInfo {
+    board_name: String,
+}
 
-impl KernelStatsStore {
-    pub fn get(&self) -> &fidl_fuchsia_kernel::StatsSynchronousProxy {
-        self.0.get_or_init(|| {
-            let (client_end, server_end) = zx::Channel::create();
-            connect_channel_to_protocol::<fidl_fuchsia_kernel::StatsMarker>(server_end)
-                .expect("Failed to connect to fuchsia.kernel.Stats.");
-            fidl_fuchsia_kernel::StatsSynchronousProxy::new(client_end)
-        })
+impl SysInfo {
+    fn is_qemu(&self) -> bool {
+        matches!(
+            self.board_name.as_str(),
+            "Standard PC (Q35 + ICH9, 2009)" | "qemu-arm64" | "qemu-riscv64"
+        )
+    }
+
+    fn fetch() -> Result<SysInfo, anyhow::Error> {
+        let sysinfo = connect_to_protocol_sync::<fidl_fuchsia_sysinfo::SysInfoMarker>()?;
+        let board_name = match sysinfo.get_board_name(zx::Time::INFINITE)? {
+            (zx::sys::ZX_OK, Some(name)) => name,
+            (_, _) => "Unknown".to_string(),
+        };
+        Ok(SysInfo { board_name })
     }
 }
+
+const SYSINFO: Lazy<SysInfo> = Lazy::new(|| {
+    SysInfo::fetch().unwrap_or_else(|e| {
+        log_error!("Failed to fetch sysinfo: {e}");
+        SysInfo { board_name: "Unknown".to_string() }
+    })
+});
 
 #[derive(Clone)]
 struct CpuinfoFile {}
@@ -355,50 +395,91 @@ impl CpuinfoFile {
 }
 impl DynamicFileSource for CpuinfoFile {
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+        let is_qemu = SYSINFO.is_qemu();
+
         for i in 0..fuchsia_zircon::system_get_num_cpus() {
             writeln!(sink, "processor\t: {}", i)?;
+
+            // Report emulated CPU as "QEMU Virtual CPU". Some LTP tests rely on this to detect
+            // that they running in a VM.
+            if is_qemu {
+                writeln!(sink, "model name\t: QEMU Virtual CPU")?;
+            }
+
             writeln!(sink)?;
         }
         Ok(())
     }
 }
 
+#[derive(Clone, Debug)]
+struct ConfigFile;
+impl ConfigFile {
+    pub fn new_node() -> impl FsNodeOps {
+        DynamicFile::new_node(Self)
+    }
+}
+impl DynamicFileSource for ConfigFile {
+    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+        let contents = std::fs::read("/pkg/data/config.gz").map_err(|e| {
+            log_error!("Error reading /pkg/data/config.gz: {e}");
+            errno!(EIO)
+        })?;
+        sink.write(&contents);
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
 struct MeminfoFile {
-    kernel_stats: Arc<KernelStatsStore>,
+    kernel_stats: Arc<KernelStats>,
 }
 impl MeminfoFile {
-    pub fn new_node(kernel_stats: &Arc<KernelStatsStore>) -> impl FsNodeOps {
+    pub fn new_node(kernel_stats: &Arc<KernelStats>) -> impl FsNodeOps {
         DynamicFile::new_node(Self { kernel_stats: kernel_stats.clone() })
     }
 }
 impl DynamicFileSource for MeminfoFile {
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
-        let memstats =
-            self.kernel_stats.get().get_memory_stats_extended(zx::Time::INFINITE).map_err(|e| {
-                log_error!("FIDL error getting memory stats: {e}");
+        let stats = self.kernel_stats.get();
+        let memory_stats = stats.get_memory_stats_extended(zx::Time::INFINITE).map_err(|e| {
+            log_error!("FIDL error getting memory stats: {e}");
+            errno!(EIO)
+        })?;
+        let compression_stats =
+            stats.get_memory_stats_compression(zx::Time::INFINITE).map_err(|e| {
+                log_error!("FIDL error getting memory compression stats: {e}");
                 errno!(EIO)
             })?;
-        writeln!(sink, "MemTotal:\t {} kB", memstats.total_bytes.unwrap_or_default() / 1024)?;
-        writeln!(sink, "MemFree:\t {} kB", memstats.free_bytes.unwrap_or_default() / 1024)?;
-        writeln!(
-            sink,
-            "MemAvailable:\t {} kB",
-            (memstats.free_bytes.unwrap_or_default()
-                + memstats.vmo_discardable_unlocked_bytes.unwrap_or_default())
-                / 1024
-        )?;
+
+        let mem_total = memory_stats.total_bytes.unwrap_or_default() / 1024;
+        let mem_free = memory_stats.free_bytes.unwrap_or_default() / 1024;
+        let mem_available = (memory_stats.free_bytes.unwrap_or_default()
+            + memory_stats.vmo_discardable_unlocked_bytes.unwrap_or_default())
+            / 1024;
+
+        let swap_used = compression_stats.uncompressed_storage_bytes.unwrap_or_default() / 1024;
+        // Fuchsia doesn't have a limit on the size of its swap file, so we just pretend that
+        // we're willing to grow the swap by half the amount of free memory.
+        let swap_free = mem_free / 2;
+        let swap_total = swap_used + swap_free;
+
+        writeln!(sink, "MemTotal:       {:8} kB", mem_total)?;
+        writeln!(sink, "MemFree:        {:8} kB", mem_free)?;
+        writeln!(sink, "MemAvailable:   {:8} kB", mem_available)?;
+        writeln!(sink, "SwapTotal:      {:8} kB", swap_total)?;
+        writeln!(sink, "SwapFree:       {:8} kB", swap_free)?;
         Ok(())
     }
 }
 
 #[derive(Clone)]
 struct UptimeFile {
-    kernel_stats: Arc<KernelStatsStore>,
+    kernel_stats: Arc<KernelStats>,
 }
 
 impl UptimeFile {
-    pub fn new_node(kernel_stats: &Arc<KernelStatsStore>) -> impl FsNodeOps {
+    pub fn new_node(kernel_stats: &Arc<KernelStats>) -> impl FsNodeOps {
         DynamicFile::new_node(Self { kernel_stats: kernel_stats.clone() })
     }
 }
@@ -422,10 +503,10 @@ impl DynamicFileSource for UptimeFile {
 
 #[derive(Clone)]
 struct StatFile {
-    kernel_stats: Arc<KernelStatsStore>,
+    kernel_stats: Arc<KernelStats>,
 }
 impl StatFile {
-    pub fn new_node(kernel_stats: &Arc<KernelStatsStore>) -> impl FsNodeOps {
+    pub fn new_node(kernel_stats: &Arc<KernelStats>) -> impl FsNodeOps {
         DynamicFile::new_node(Self { kernel_stats: kernel_stats.clone() })
     }
 }

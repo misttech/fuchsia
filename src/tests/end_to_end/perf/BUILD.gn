@@ -6,6 +6,7 @@ import("//build/dart/dart_library.gni")
 import("//build/dart/test.gni")
 import("//build/testing/environments.gni")
 import("//build/testing/host_test_data.gni")
+import("//build/testing/perf/test.gni")
 
 # This directory contains Dart wrappers for running performance tests
 # that are defined elsewhere in the Fuchsia tree.
@@ -16,37 +17,19 @@ import("//build/testing/host_test_data.gni")
 # test executables.
 
 test_list = [
-  "archivist_benchmarks_test",
-  "audio_mixer_profiler_test",
-  "diagnostics_benchmarks_test",
-  "extended_pstate_benchmarks_test",
-  "fidlc_microbenchmarks_test",
+  # keep-sorted start
   "flatland_benchmarks_test",
   "input_latency_benchmarks_test",
-  "kernel_boot_stats_test",
-  "microbenchmarks_test",
   "netstack3_benchmarks_test",
-  "netstack_benchmarks_test",
   "netstack_benchmarks_with_tracing_test",
-  "netstack_tun_socket_benchmarks_test",
-  "network_device_microbenchmarks_test",
-  "perftest_trace_events_test",
-  "rust_inspect_benchmarks_test",
   "storage_benchmarks_test",
   "tracing_microbenchmarks_test",
+
+  # keep-sorted end
 ]
 
-# TODO(https://fxbug.dev/131000): diagnostics_log_encoding_bench
-# currently fails to build for ARM64/VIM3 due to a toolchain bug.
-# Re-enable it for ARM64 when the bug is fixed.
-if (target_cpu != "arm64") {
-  test_list += [ "diagnostics_log_rust_benchmarks_test" ]
-}
-
-if (target_cpu == "x64" && !is_asan) {
-  if (host_os == "linux") {
-    test_list += [ "starnix_benchmarks_test" ]
-  }
+if (!is_asan && host_os == "linux") {
+  test_list += [ "storage_starnix_benchmarks_test" ]
 }
 
 foreach(target_name, test_list) {
@@ -69,24 +52,17 @@ foreach(target_name, test_list) {
     non_dart_deps = [ ":runtime_deps($host_toolchain)" ]
 
     environments = [
-      atlas_env,
       nuc_env,
       vim3_env,
     ]
 
-    # TODO(fxbug.dev/51799): Enable for all tests.
-    if (target_name == "kernel_boot_stats_test" ||
-        target_name == "audio_mixer_profiler_test") {
-      environments += [
-        astro_env,
-        sherlock_env,
-      ]
-    }
-
     # We don't enable this test on Astro because of the potential for
     # it to cause extra flash wear on that device type.
     if (target_name == "storage_benchmarks_test") {
-      environments += [ sherlock_env ]
+      environments += [
+        sherlock_env,
+        nelson_env,
+      ]
     }
   }
 }
@@ -131,11 +107,6 @@ shard_test_list = [
   "netstack_iperf_test",
 ]
 
-if (target_cpu == "x64" && !is_asan) {
-  if (host_os == "linux") {
-    shard_test_list += [ "starnix_gvisor_benchmarks_test" ]
-  }
-}
 foreach(test, shard_test_list) {
   foreach(shard, shards) {
     target_name = test + "_shard_" + shard
@@ -163,8 +134,6 @@ foreach(test, shard_test_list) {
       non_dart_deps = [ ":runtime_deps($host_toolchain)" ]
 
       environments = [
-        # TODO(fxb/88635): netstack_iperf fails on altas_env
-        # atlas_env,
         nuc_env,
         vim3_env,
       ]
@@ -173,15 +142,52 @@ foreach(test, shard_test_list) {
   }
 }
 
+_tests = [
+  {
+    name = "flatland_benchmark"
+    expected_metric_filename = "fuchsia.flatland_latency.txt"
+  },
+  {
+    name = "input_latency_benchmark"
+    expected_metric_filename = "fuchsia.input_latency.simplest_app.txt"
+    transport = "sl4f"
+  },
+  {
+    name = "perf_publish_example"
+    expected_metric_filename = "fuchsia.example.txt"
+    libraries = [ "//src/performance/lib/perf_publish" ]
+  },
+  {
+    name = "perftest_trace_events_test"
+    libraries = [ "//src/performance/lib/trace_processing" ]
+  },
+]
+
+_python_benchmarks = []
+foreach(test, _tests) {
+  _name = test.name
+  _test_name = "py_${_name}"
+  if (is_host) {
+    python_perf_test(_test_name) {
+      main_source = "test/${_name}.py"
+      forward_variables_from(test, [ "transport" ])
+      if (defined(test.expected_metric_filename)) {
+        expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/${test.expected_metric_filename}"
+      }
+      libraries =
+          [ "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test" ]
+      if (defined(test.libraries)) {
+        libraries += test.libraries
+      }
+    }
+  }
+  _python_benchmarks += [ ":${_test_name}($host_toolchain)" ]
+}
+
 if (is_host) {
   metric_files = [
-    "fuchsia.archivist.formatter.txt",
-    "fuchsia.archivist.logging.txt",
+    # keep-sorted start
     "fuchsia.audio.txt",
-    "fuchsia.diagnostics.txt",
-    "fuchsia.diagnostics_log_rust.core.txt",
-    "fuchsia.diagnostics_log_rust.encoding.txt",
-    "fuchsia.extended_pstate.txt",
     "fuchsia.fidl_microbenchmarks.cpp.txt",
     "fuchsia.fidl_microbenchmarks.driver_cpp.txt",
     "fuchsia.fidl_microbenchmarks.driver_llcpp.txt",
@@ -192,58 +198,24 @@ if (is_host) {
     "fuchsia.fidl_microbenchmarks.reference.txt",
     "fuchsia.fidl_microbenchmarks.rust.txt",
     "fuchsia.fidl_microbenchmarks.walker.txt",
-    "fuchsia.fidlc_microbenchmarks.txt",
     "fuchsia.flatland_latency.txt",
     "fuchsia.input_latency.simplest_app.txt",
-    "fuchsia.kernel.boot.txt",
-    "fuchsia.microbenchmarks.starnix.txt",
     "fuchsia.microbenchmarks.tracing.txt",
     "fuchsia.microbenchmarks.tracing_categories_disabled.txt",
-    "fuchsia.microbenchmarks.txt",
     "fuchsia.netstack.iperf_benchmarks.ethernet_tcp_recv.txt",
     "fuchsia.netstack.iperf_benchmarks.ethernet_tcp_send.txt",
     "fuchsia.netstack.iperf_benchmarks.ethernet_udp_recv.txt",
     "fuchsia.netstack.iperf_benchmarks.ethernet_udp_send.txt",
     "fuchsia.netstack.iperf_benchmarks.localhost_tcp.txt",
     "fuchsia.netstack.iperf_benchmarks.localhost_udp.txt",
-    "fuchsia.netstack.resource_usage.netstack3.txt",
-    "fuchsia.netstack.resource_usage.txt",
     "fuchsia.netstack3.core.txt",
-    "fuchsia.network.device.txt",
-    "fuchsia.network.socket.loopback.fake_netstack.txt",
-    "fuchsia.network.socket.loopback.fastudp.txt",
-    "fuchsia.network.socket.loopback.netstack3.txt",
-    "fuchsia.network.socket.loopback.txt",
-    "fuchsia.network.socket.tun.netstack3.txt",
-    "fuchsia.network.socket.tun.txt",
-    "fuchsia.network.udp_serde.txt",
-    "fuchsia.rust_inspect.benchmarks.txt",
-    "fuchsia.rust_inspect.reader_benchmarks.txt",
-    "fuchsia.rust_inspect.selectors.txt",
-    "fuchsia.starnix.gvisor_benchmarks.clock_getres.txt",
-    "fuchsia.starnix.gvisor_benchmarks.clock_gettime.txt",
-    "fuchsia.starnix.gvisor_benchmarks.dup.txt",
-    "fuchsia.starnix.gvisor_benchmarks.epoll.txt",
-    "fuchsia.starnix.gvisor_benchmarks.fork.txt",
-    "fuchsia.starnix.gvisor_benchmarks.futex.txt",
-    "fuchsia.starnix.gvisor_benchmarks.getdents.txt",
-    "fuchsia.starnix.gvisor_benchmarks.getpid.txt",
-    "fuchsia.starnix.gvisor_benchmarks.gettid.txt",
-    "fuchsia.starnix.gvisor_benchmarks.mapping.txt",
-    "fuchsia.starnix.gvisor_benchmarks.open.txt",
-    "fuchsia.starnix.gvisor_benchmarks.open_read_close.txt",
-    "fuchsia.starnix.gvisor_benchmarks.pipe.txt",
-    "fuchsia.starnix.gvisor_benchmarks.randread.txt",
-    "fuchsia.starnix.gvisor_benchmarks.read.txt",
-    "fuchsia.starnix.gvisor_benchmarks.sched_yield.txt",
-    "fuchsia.starnix.gvisor_benchmarks.send_recv.txt",
-    "fuchsia.starnix.gvisor_benchmarks.seqwrite.txt",
-    "fuchsia.starnix.gvisor_benchmarks.signal.txt",
-    "fuchsia.starnix.gvisor_benchmarks.sleep.txt",
-    "fuchsia.starnix.gvisor_benchmarks.stat.txt",
-    "fuchsia.starnix.gvisor_benchmarks.unlink.txt",
-    "fuchsia.starnix.gvisor_benchmarks.write.txt",
+    "fuchsia.storage.starnix_data.txt",
+    "fuchsia.storage.starnix_tmp.txt",
     "fuchsia.storage.txt",
+    "fuchsia.trace_records.rust.tracing_categories_disabled.txt",
+    "fuchsia.trace_records.rust.tracing_disabled.txt",
+
+    # keep-sorted end
   ]
 
   host_test_data("runtime_deps") {
@@ -272,12 +244,16 @@ if (is_host) {
 group("package_deps") {
   testonly = true
   public_deps = [
+    "//src/connectivity/network/drivers/network-device/device:benchmarks",
+    "//src/devices/bin/driver_runtime/microbenchmarks",
     "//src/diagnostics:benchmarks",
     "//src/lib/diagnostics:benchmarks",
-    "//src/media/audio/audio_core/shared/mixer/tools:audio_mixer_profiler",
-    "//src/tests/benchmarks:kernel-boot-benchmarks",
-    "//src/tests/benchmarks/fidl:benchmarks",
-    "//src/tests/microbenchmarks:fuchsia_microbenchmarks",
+    "//src/media/audio/audio_core/shared/mixer/tools:benchmarks",
+    "//src/starnix:benchmarks",
+    "//src/tests/benchmarks",
+    "//src/tests/benchmarks/fidl/fidlc:benchmarks",
+    "//src/tests/microbenchmarks:fuchsia_microbenchmarks_test",
+    "//third_party/sbase:sbase-pkgs",
 
     # Many tests use sl4f to communicate with the target.
     "//src/testing/sl4f",
@@ -285,29 +261,30 @@ group("package_deps") {
     # These are used by netstack benchmarks.
     "//src/connectivity/network/netstack3:netstack3_benchmarks",
     "//src/connectivity/network/tests/benchmarks",
-    "//third_party/iperf",
+    "//third_party/iperf:iperf3_pkg",
 
-    # Used by network device benchmarks.
-    "//src/connectivity/network/drivers/network-device/device:network-device-microbenchmarks",
-
-    # These are used by flatland_benchmarks.
+    # These are used by flatland_benchmarks and input_latency_benchmarks
     "//src/ui/examples:flatland-examples",
 
-    # These are used by storage_benchmarks_test
-    "//src/storage/benchmarks",
+    # This is used by storage_benchmarks_test.
+    "//src/storage/benchmarks/fuchsia:benchmarks",
 
-    # These are used by extended_pstate_test
-    "//src/starnix/lib/extended_pstate",
+    # Used by the tracing_microbenchmarks test
+    "//src/lib/trace/rust/bench",
   ]
 
-  if (target_cpu == "x64" && !is_asan) {
+  if (!is_asan) {
     public_deps += [
       # This is used by starnix benchmarks.
       "//src/starnix/tests/gvisor:starnix_gvisor_benchmarks",
+
+      # This is used by storage_starnix_benchmarks_test.
+      "//src/storage/benchmarks/starnix:benchmarks",
     ]
+
     if (host_os == "linux") {
       public_deps +=
-          [ "//src/tests/microbenchmarks:starnix_microbenchmarks_perftestmode" ]
+          [ "//src/tests/microbenchmarks:starnix_microbenchmarks_test" ]
     }
   }
 }
@@ -315,7 +292,7 @@ group("package_deps") {
 group("test") {
   testonly = true
 
-  deps = [ ":package_deps" ]
+  deps = [ ":package_deps" ] + _python_benchmarks
 
   foreach(target_name, test_list) {
     deps += [ ":$target_name($host_toolchain)" ]
@@ -326,10 +303,9 @@ group("tests_to_run_on_internal_builders") {
   testonly = true
 
   deps = [
-    ":audio_mixer_profiler_test($host_toolchain)",
-    ":kernel_boot_stats_test($host_toolchain)",
     ":storage_benchmarks_test($host_toolchain)",
-    "//src/storage/benchmarks",
-    "//src/tests/benchmarks:kernel-boot-benchmarks",
+    "//src/media/audio/audio_core/shared/mixer/tools:benchmarks",
+    "//src/storage/benchmarks/fuchsia:benchmarks",
+    "//src/tests/benchmarks:kernel_boot_benchmarks",
   ]
 }

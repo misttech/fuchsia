@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 if (is_host) {
-  import("//build/product.gni")
   import("//build/rust/rustc_library.gni")
 
   rustc_library("ffx_emulator_config") {
@@ -17,10 +16,8 @@ if (is_host) {
     ]
     deps = [
       "//build/sdk/meta:rust",
-      "//sdk/fidl/fuchsia.developer.ffx:fuchsia.developer.ffx_rust",
-      "//src/developer/ffx/config:lib",
+      "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
       "//src/developer/ffx/lib/emulator_instance:lib",
-      "//src/developer/ffx/lib/pbms:lib",
       "//src/lib/assembly/assembly_manifest",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:async-trait",
@@ -34,10 +31,6 @@ if (is_host) {
       "//third_party/rust_crates:tempfile",
     ]
     inputs = [ "//build/sdk/meta/test_data/virtual_device.json" ]
-    if (build_pb_v1) {
-      features = [ "build_pb_v1" ]
-      deps += [ "//src/developer/ffx/lib/fms" ]
-    }
   }
 
   group("tests") {

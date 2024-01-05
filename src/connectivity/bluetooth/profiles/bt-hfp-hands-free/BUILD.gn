@@ -25,16 +25,18 @@ rustc_binary("bin") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/zircon/rust:fuchsia-zircon",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:tracing",
   ]
   test_deps = [
+    "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
     "//src/connectivity/bluetooth/lib/profile-client:test-profile-server",
     "//src/lib/async-utils",
-    "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:paste",
   ]
 
   sources = [
@@ -42,15 +44,19 @@ rustc_binary("bin") {
     "src/features.rs",
     "src/fidl_service.rs",
     "src/hfp.rs",
+    "src/hfp/tests.rs",
     "src/main.rs",
     "src/peer.rs",
+    "src/peer/at_connection.rs",
     "src/peer/indicators.rs",
     "src/peer/peer_task.rs",
     "src/peer/procedure.rs",
     "src/peer/procedure/codec_connection_setup.rs",
     "src/peer/procedure/phone_status.rs",
     "src/peer/procedure/slc_initialization.rs",
-    "src/peer/service_level_connection.rs",
+    "src/peer/procedure/test.rs",
+    "src/peer/procedure_manager.rs",
+    "src/peer/procedure_manipulated_state.rs",
     "src/profile.rs",
     "src/service_definition.rs",
   ]

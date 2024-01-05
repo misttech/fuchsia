@@ -6,10 +6,11 @@ composite aml_thermal_pll;
 
 using fuchsia.platform;
 using fuchsia.amlogic.platform;
-using fuchsia.hardware.pwm;
+using fuchsia.pwm;
 using fuchsia.amlogic.platform.s905d3;
-using fuchsia.hardware.clock;
+using fuchsia.clock;
 using fuchsia.amlogic.platform.meson;
+using fuchsia.gpio;
 
 primary node "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
@@ -20,16 +21,20 @@ primary node "pdev" {
 }
 
 node "pwm-a" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.pwm.BIND_FIDL_PROTOCOL.DEVICE;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.pwm.BIND_FIDL_PROTOCOL.DEVICE;
   fuchsia.BIND_PWM_ID == fuchsia.amlogic.platform.s905d3.BIND_PWM_ID.PWM_AO_D;
 }
 
 node "clock-1" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.clock.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE;
   fuchsia.BIND_CLOCK_ID == fuchsia.amlogic.platform.meson.SM1_CLK_ID.CLK_SYS_PLL_DIV16;
 }
 
 node "clock-2" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.clock.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE;
   fuchsia.BIND_CLOCK_ID == fuchsia.amlogic.platform.meson.SM1_CLK_ID.CLK_SYS_CPU_CLK_DIV16;
+}
+
+node "gpio-init" {
+  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

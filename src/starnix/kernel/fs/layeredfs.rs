@@ -2,10 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{
+    task::{CurrentTask, Kernel},
+    vfs::{
+        fileops_impl_directory, fs_node_impl_dir_readonly, unbounded_seek, CacheMode,
+        DirectoryEntryType, DirentSink, FileHandle, FileObject, FileOps, FileSystem,
+        FileSystemHandle, FileSystemOps, FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString,
+        MountInfo, SeekTarget,
+    },
+};
+use starnix_uapi::{errno, errors::Errno, ino_t, off_t, open_flags::OpenFlags, statfs};
 use std::{collections::BTreeMap, sync::Arc};
-
-use super::*;
-use crate::{task::*, types::*};
 
 /// A filesystem that will delegate most operation to a base one, but have a number of top level
 /// directory that points to other filesystems.
@@ -67,11 +74,11 @@ impl FsNodeOps for Arc<LayeredFs> {
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
-    ) -> Result<Arc<FsNode>, Errno> {
+    ) -> Result<FsNodeHandle, Errno> {
         if let Some(fs) = self.mappings.get(name) {
             Ok(fs.root().node.clone())
         } else {
-            self.base_fs.root().node.lookup(current_task, name)
+            self.base_fs.root().node.lookup(current_task, &MountInfo::detached(), name)
         }
     }
 }

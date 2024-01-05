@@ -224,12 +224,11 @@ impl GpuUsageLogger {
         self.last_samples = current_samples;
 
         trace_args.push(fuchsia_trace::ArgValue::of("client_id", self.client_id.as_str()));
-        fuchsia_trace::counter(
-            fuchsia_trace::cstr!("metrics_logger"),
-            fuchsia_trace::cstr!("gpu"),
-            0,
-            &trace_args,
-        );
+        if let Some(context) =
+            fuchsia_trace::TraceCategoryContext::acquire(fuchsia_trace::cstr!("metrics_logger"))
+        {
+            fuchsia_trace::counter(&context, fuchsia_trace::cstr!("gpu"), 0, &trace_args);
+        }
     }
 }
 
@@ -275,8 +274,8 @@ pub mod tests {
     use {
         super::*,
         assert_matches::assert_matches,
+        diagnostics_assertions::assert_data_tree,
         futures::{task::Poll, FutureExt, TryStreamExt},
-        inspect::assert_data_tree,
         std::{cell::Cell, pin::Pin},
     };
 
@@ -396,7 +395,7 @@ pub mod tests {
         }
 
         fn iterate_task(&mut self, task: &mut Pin<Box<dyn futures::Future<Output = ()>>>) -> bool {
-            let Some(next_time) = self.executor.next_timer() else { return false };
+            let Some(next_time) = fasync::TestExecutor::next_timer() else { return false };
             self.executor.set_fake_time(next_time);
             let _ = self.executor.run_until_stalled(task);
             true

@@ -9,24 +9,21 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include "fuchsia/bluetooth/cpp/fidl.h"
+#include "lib/fpromise/result.h"
 #include "weave_inspector.h"
 
 #if WEAVE_DEVICE_CONFIG_ENABLE_WOBLE
 
-#define MAX_CHARACTERISTIC_UUID_SIZE 40
+namespace gatt = fuchsia::bluetooth::gatt2;
 
 namespace nl::Weave::DeviceLayer::Internal {
 namespace {
 using nl::Weave::WeaveInspector;
 
+constexpr gatt::ServiceHandle kServiceHandle{1};
 /// UUID of weave service obtained from SIG, in canonical 8-4-4-4-12 string format.
 constexpr char kServiceUuid[] = "0000FEAF-0000-1000-8000-00805F9B34FB";
-
-// Define structure that holds both the canonical and WeaveBLEUUID format.
-struct BLECharUUID {
-  const char canonical_uuid[MAX_CHARACTERISTIC_UUID_SIZE];
-  const WeaveBleUUID weave_uuid;
-};
 
 // Offsets into |kWeaveBleChars| for specific characteristic.
 enum WeaveBleChar {
@@ -36,22 +33,24 @@ enum WeaveBleChar {
   kWeaveBleCharIndicate = 1,
 };
 
+// Type definitions for the Write & Indicate characteristics.
+constexpr gatt::Handle kWeaveBleCharWriteHandle{WeaveBleChar::kWeaveBleCharWrite};
+constexpr gatt::Handle kWeaveBleCharIndicateHandle{WeaveBleChar::kWeaveBleCharIndicate};
+
 // An array that holds the UUID for each |WeaveBleChar|
-constexpr BLECharUUID kWeaveBleChars[] = {
+constexpr WeaveBleUUID kWeaveBleChars[] = {
     // UUID for |kWeaveBleCharWrite|
-    {"18EE2EF5-263D-4559-959F-4F9C429F9D11",
-     {{0x18, 0xEE, 0x2E, 0xF5, 0x26, 0x3D, 0x45, 0x59, 0x95, 0x9F, 0x4F, 0x9C, 0x42, 0x9F, 0x9D,
-       0x11}}},
+    {{0x18, 0xEE, 0x2E, 0xF5, 0x26, 0x3D, 0x45, 0x59, 0x95, 0x9F, 0x4F, 0x9C, 0x42, 0x9F, 0x9D,
+      0x11}},
     // UUID for |kWeaveBleCharIndicate|
-    {"18EE2EF5-263D-4559-959F-4F9C429F9D12",
-     {{0x18, 0xEE, 0x2E, 0xF5, 0x26, 0x3D, 0x45, 0x59, 0x95, 0x9F, 0x4F, 0x9C, 0x42, 0x9F, 0x9D,
-       0x12}}}};
+    {{0x18, 0xEE, 0x2E, 0xF5, 0x26, 0x3D, 0x45, 0x59, 0x95, 0x9F, 0x4F, 0x9C, 0x42, 0x9F, 0x9D,
+      0x12}}};
 
 }  // unnamed namespace
 
 BLEManagerImpl BLEManagerImpl::sInstance;
 
-BLEManagerImpl::BLEManagerImpl() : woble_connection_(this), gatt_binding_(this) {
+BLEManagerImpl::BLEManagerImpl() : woble_connection_(this), gatt_service_(this) {
   // BleLayer does not initialize this callback, set it NULL to avoid accessing location pointed by
   // garbage value when not set explicitly.
   OnWeaveBleConnectReceived = nullptr;
@@ -62,7 +61,7 @@ WEAVE_ERROR BLEManagerImpl::_Init() {
   auto svc = PlatformMgrImpl().GetComponentContextForProcess()->svc();
 
   FX_CHECK(svc->Connect(gatt_server_.NewRequest()) == ZX_OK)
-      << "Failed to connect to " << fuchsia::bluetooth::gatt::Server::Name_;
+      << "Failed to connect to " << gatt::Server::Name_;
   FX_CHECK(svc->Connect(peripheral_.NewRequest()) == ZX_OK)
       << "Failed to connect to " << fuchsia::bluetooth::le::Peripheral::Name_;
 
@@ -165,9 +164,8 @@ void BLEManagerImpl::_OnPlatformEvent(const WeaveDeviceEvent* event) {
                     "Received WoBLE subscribe event without connection state");
       instance = connection_state->instance;
       ZX_ASSERT_MSG(instance != nullptr, "Received WoBLE subscribe event with NULL instance");
-      instance->HandleSubscribeReceived(
-          event->WoBLESubscribe.ConId, &WEAVE_BLE_SVC_ID,
-          &kWeaveBleChars[WeaveBleChar::kWeaveBleCharIndicate].weave_uuid);
+      instance->HandleSubscribeReceived(event->WoBLESubscribe.ConId, &WEAVE_BLE_SVC_ID,
+                                        &kWeaveBleChars[WeaveBleChar::kWeaveBleCharIndicate]);
 
       // Post a WoBLEConnectionEstablished event to the DeviceLayer
       WeaveDeviceEvent connection_established_event;
@@ -182,9 +180,8 @@ void BLEManagerImpl::_OnPlatformEvent(const WeaveDeviceEvent* event) {
                     "Received WoBLE unsubscribe event without connection state");
       instance = connection_state->instance;
       ZX_ASSERT_MSG(instance != nullptr, "Received WoBLE unsubscribe event with NULL instance");
-      instance->HandleUnsubscribeReceived(
-          event->WoBLEUnsubscribe.ConId, &WEAVE_BLE_SVC_ID,
-          &kWeaveBleChars[WeaveBleChar::kWeaveBleCharIndicate].weave_uuid);
+      instance->HandleUnsubscribeReceived(event->WoBLEUnsubscribe.ConId, &WEAVE_BLE_SVC_ID,
+                                          &kWeaveBleChars[WeaveBleChar::kWeaveBleCharIndicate]);
       inspector.NotifySetupStateChange(WeaveInspector::kSetupState_Initialized);
       break;
     case DeviceEventType::kWoBLEWriteReceived:
@@ -194,7 +191,7 @@ void BLEManagerImpl::_OnPlatformEvent(const WeaveDeviceEvent* event) {
       instance = connection_state->instance;
       ZX_ASSERT_MSG(instance != nullptr, "Received WoBLE write event with NULL instance");
       instance->HandleWriteReceived(event->WoBLEWriteReceived.ConId, &WEAVE_BLE_SVC_ID,
-                                    &kWeaveBleChars[WeaveBleChar::kWeaveBleCharWrite].weave_uuid,
+                                    &kWeaveBleChars[WeaveBleChar::kWeaveBleCharWrite],
                                     event->WoBLEWriteReceived.Data);
       break;
     case DeviceEventType::kWoBLEIndicateConfirm:
@@ -204,9 +201,8 @@ void BLEManagerImpl::_OnPlatformEvent(const WeaveDeviceEvent* event) {
       instance = connection_state->instance;
       ZX_ASSERT_MSG(instance != nullptr,
                     "Received WoBLE indication confirmation event with NULL instance");
-      instance->HandleIndicationConfirmation(
-          event->WoBLEIndicateConfirm.ConId, &WEAVE_BLE_SVC_ID,
-          &kWeaveBleChars[WeaveBleChar::kWeaveBleCharIndicate].weave_uuid);
+      instance->HandleIndicationConfirmation(event->WoBLEIndicateConfirm.ConId, &WEAVE_BLE_SVC_ID,
+                                             &kWeaveBleChars[WeaveBleChar::kWeaveBleCharIndicate]);
       break;
     case DeviceEventType::kWoBLEConnectionError:
       connection_state = static_cast<WoBLEConState*>(event->WoBLEConnectionError.ConId);
@@ -224,6 +220,8 @@ void BLEManagerImpl::_OnPlatformEvent(const WeaveDeviceEvent* event) {
 
 bool BLEManagerImpl::SendIndication(BLE_CONNECTION_OBJECT conId, const WeaveBleUUID* svcId,
                                     const WeaveBleUUID* charId, PacketBuffer* data) {
+  FX_LOGS(INFO) << "SendIndication request (service id = " << svcId << ", char id = " << charId
+                << ")";
   auto connection_state = static_cast<WoBLEConState*>(conId);
   if (!connection_state) {
     PacketBuffer::Free(data);
@@ -233,13 +231,15 @@ bool BLEManagerImpl::SendIndication(BLE_CONNECTION_OBJECT conId, const WeaveBleU
   std::vector<uint8_t> value(data->DataLength());
   std::copy(data->Start(), data->Start() + data->DataLength(), value.begin());
 
-  WEAVE_ERROR err =
-      service_->NotifyValue(kWeaveBleCharIndicate, connection_state->peer_id, value, true);
-  if (err != WEAVE_NO_ERROR) {
-    FX_LOGS(ERROR) << "SendIndication failed: " << err;
-    PacketBuffer::Free(data);
-    return false;
-  }
+  gatt::ValueChangedParameters notification_value;
+  notification_value.set_handle(kWeaveBleCharIndicateHandle);
+  std::vector<fuchsia::bluetooth::PeerId> peer_ids = {connection_state->peer_id};
+  notification_value.set_peer_ids(std::move(peer_ids));
+  notification_value.set_value(std::move(value));
+  zx::eventpair confirm_ours;
+  zx::eventpair confirm_theirs;
+  zx::eventpair::create(/*options=*/0, &confirm_ours, &confirm_theirs);
+  gatt_service_.events().OnIndicateValue(std::move(notification_value), std::move(confirm_theirs));
 
   // Save a reference to the buffer until we get a indication for the notification.
   connection_state->pending_ind_buf = data;
@@ -266,51 +266,55 @@ void BLEManagerImpl::DriveBLEState() {
       ClearFlag(flags_, kFlag_Advertising);
     }
     if (GetFlag(flags_, kFlag_GATTServicePublished)) {
-      service_->RemoveService();
+      gatt_service_.Close(ZX_ERR_PEER_CLOSED);
       ClearFlag(flags_, kFlag_GATTServicePublished);
     }
     return;
   }
 
   if (!GetFlag(flags_, kFlag_GATTServicePublished)) {
-    fuchsia::bluetooth::Status out_status;
-    fuchsia::bluetooth::gatt::ServiceInfo gatt_service_info;
+    gatt::ServiceInfo gatt_service_info;
 
-    fuchsia::bluetooth::gatt::Characteristic weave_characteristic_c1;
-    weave_characteristic_c1.id = WeaveBleChar::kWeaveBleCharWrite;
-    weave_characteristic_c1.type = kWeaveBleChars[WeaveBleChar::kWeaveBleCharWrite].canonical_uuid;
-    weave_characteristic_c1.properties = fuchsia::bluetooth::gatt::kPropertyWrite;
-    weave_characteristic_c1.permissions =
-        std::make_unique<fuchsia::bluetooth::gatt::AttributePermissions>();
-    weave_characteristic_c1.permissions->write =
-        std::make_unique<fuchsia::bluetooth::gatt::SecurityRequirements>();
+    gatt::Characteristic weave_characteristic_c1;
+    weave_characteristic_c1.set_handle(kWeaveBleCharWriteHandle);
+    fuchsia::bluetooth::Uuid c1_uuid;
+    std::copy(std::rbegin(kWeaveBleChars[WeaveBleChar::kWeaveBleCharWrite].bytes),
+              std::rend(kWeaveBleChars[WeaveBleChar::kWeaveBleCharWrite].bytes),
+              std::begin(c1_uuid.value));
+    weave_characteristic_c1.set_type(c1_uuid);
+    weave_characteristic_c1.set_properties(gatt::CharacteristicPropertyBits::WRITE);
+    weave_characteristic_c1.mutable_permissions()->mutable_write();
 
-    fuchsia::bluetooth::gatt::Characteristic weave_characteristic_c2;
-    weave_characteristic_c2.id = WeaveBleChar::kWeaveBleCharIndicate;
-    weave_characteristic_c2.type =
-        kWeaveBleChars[WeaveBleChar::kWeaveBleCharIndicate].canonical_uuid;
-    weave_characteristic_c2.properties =
-        fuchsia::bluetooth::gatt::kPropertyRead | fuchsia::bluetooth::gatt::kPropertyIndicate;
-    weave_characteristic_c2.permissions =
-        std::make_unique<fuchsia::bluetooth::gatt::AttributePermissions>();
-    weave_characteristic_c2.permissions->read =
-        std::make_unique<fuchsia::bluetooth::gatt::SecurityRequirements>();
-    weave_characteristic_c2.permissions->update =
-        std::make_unique<fuchsia::bluetooth::gatt::SecurityRequirements>();
+    gatt::Characteristic weave_characteristic_c2;
+    weave_characteristic_c2.set_handle(kWeaveBleCharIndicateHandle);
+    fuchsia::bluetooth::Uuid c2_uuid;
+    std::copy(std::rbegin(kWeaveBleChars[WeaveBleChar::kWeaveBleCharIndicate].bytes),
+              std::rend(kWeaveBleChars[WeaveBleChar::kWeaveBleCharIndicate].bytes),
+              std::begin(c2_uuid.value));
+    weave_characteristic_c2.set_type(c2_uuid);
+    weave_characteristic_c2.set_properties(gatt::CharacteristicPropertyBits::READ |
+                                           gatt::CharacteristicPropertyBits::INDICATE);
+    weave_characteristic_c2.mutable_permissions()->mutable_read();
+    weave_characteristic_c2.mutable_permissions()->mutable_update();
 
-    std::vector<fuchsia::bluetooth::gatt::Characteristic> characteristics;
+    std::vector<gatt::Characteristic> characteristics;
     characteristics.push_back(std::move(weave_characteristic_c1));
     characteristics.push_back(std::move(weave_characteristic_c2));
 
-    gatt_service_info.primary = true;
-    gatt_service_info.type = kServiceUuid;
-    gatt_service_info.characteristics = std::move(characteristics);
-    gatt_server_->PublishService(std::move(gatt_service_info), gatt_binding_.NewBinding(),
-                                 service_.NewRequest(), &out_status);
-    if (out_status.error) {
-      FX_LOGS(ERROR) << "Failed to publish GATT service for Weave. Error: "
-                     << static_cast<bool>(out_status.error->error_code) << " ("
-                     << out_status.error->description << "). Disabling WoBLE service";
+    gatt_service_info.set_handle(kServiceHandle);
+    gatt_service_info.set_kind(gatt::ServiceKind::PRIMARY);
+    fuchsia::bluetooth::Uuid uuid;
+    std::copy(std::rbegin(WEAVE_BLE_SVC_ID.bytes), std::rend(WEAVE_BLE_SVC_ID.bytes),
+              std::begin(uuid.value));
+    gatt_service_info.set_type(uuid);
+    gatt_service_info.set_characteristics(std::move(characteristics));
+
+    gatt::Server_PublishService_Result result;
+    gatt_server_->PublishService(std::move(gatt_service_info), gatt_service_.NewBinding(), &result);
+
+    if (result.is_err()) {
+      FX_LOGS(ERROR) << "Failed to publish GATT service for Weave. Error: " << result.err()
+                     << ". Disabling WoBLE service";
       service_mode_ = ConnectivityManager::kWoBLEServiceMode_Disabled;
       return;
     }
@@ -376,10 +380,11 @@ void BLEManagerImpl::DriveBLEState(intptr_t arg) {
   instance->DriveBLEState();
 }
 
-void BLEManagerImpl::OnCharacteristicConfiguration(uint64_t characteristic_id, std::string peer_id,
-                                                   bool notify, bool indicate) {
-  FX_LOGS(INFO) << "CharacteristicConfiguration on peer " << peer_id << " (notify: " << notify
-                << ", indicate: " << indicate << ") characteristic id " << characteristic_id;
+void BLEManagerImpl::CharacteristicConfiguration(fuchsia::bluetooth::PeerId peer_id,
+                                                 gatt::Handle handle, bool notify, bool indicate,
+                                                 CharacteristicConfigurationCallback callback) {
+  FX_LOGS(INFO) << "CharacteristicConfiguration on peer " << peer_id.value << " (notify: " << notify
+                << ", indicate: " << indicate << ") characteristic id " << handle.value;
 
   // Post an event to the Weave queue to process either a WoBLE Subscribe or Unsubscribe based on
   // whether the client is enabling or disabling indications.
@@ -390,39 +395,50 @@ void BLEManagerImpl::OnCharacteristicConfiguration(uint64_t characteristic_id, s
   PlatformMgr().PostEvent(&event);
 }
 
-void BLEManagerImpl::OnReadValue(uint64_t id, int32_t offset, OnReadValueCallback callback) {
-  callback({}, fuchsia::bluetooth::gatt::ErrorCode::NOT_PERMITTED);
+void BLEManagerImpl::ReadValue(fuchsia::bluetooth::PeerId peer_id, gatt::Handle handle,
+                               int32_t offset, ReadValueCallback callback) {
+  callback(fpromise::error(gatt::Error::READ_NOT_PERMITTED));
 }
 
-void BLEManagerImpl::OnWriteValue(uint64_t id, uint16_t offset, std::vector<uint8_t> value,
-                                  OnWriteValueCallback callback) {
+void BLEManagerImpl::WriteValue(gatt::LocalServiceWriteValueRequest request,
+                                WriteValueCallback callback) {
   PacketBuffer* buf = nullptr;
-  FX_LOGS(INFO) << "Write request received for characteristic id " << id << " at offset " << offset
-                << " length " << value.size();
-  if (id != kWeaveBleCharWrite) {
+
+  if (!request.has_peer_id() || !request.has_handle() || !request.has_offset() ||
+      !request.has_value()) {
+    FX_LOGS(WARNING) << "Write request is missing mandatory arguments. Ignoring.";
+    callback(fpromise::error(gatt::Error::INVALID_PARAMETERS));
+    return;
+  }
+
+  FX_LOGS(INFO) << "Write request received for peer " << request.peer_id().value
+                << " at characteristic id " << request.handle().value << " at offset "
+                << request.offset() << " length " << request.value().size();
+  if (request.handle().value != kWeaveBleCharWriteHandle.value) {
     FX_LOGS(WARNING) << "Ignoring writes to characteristic other than weave characteristic "
                         "C1(write). Expected characteristic: "
                      << kWeaveBleCharWrite;
-    callback(fuchsia::bluetooth::gatt::ErrorCode::NOT_PERMITTED);
+    callback(fpromise::error(gatt::Error::WRITE_NOT_PERMITTED));
     return;
   }
-  if (offset != 0) {
+
+  if (request.offset() != 0) {
     FX_LOGS(ERROR) << "No offset expected on write to control point";
-    callback(fuchsia::bluetooth::gatt::ErrorCode::INVALID_OFFSET);
+    callback(fpromise::error(gatt::Error::INVALID_OFFSET));
     return;
   }
 
   // Copy the data to a PacketBuffer.
   buf = PacketBuffer::New(0);
-  if (!buf || buf->AvailableDataLength() < value.size()) {
+  if (!buf || buf->AvailableDataLength() < request.value().size()) {
     FX_LOGS(ERROR) << "Buffer not available";
-    callback(fuchsia::bluetooth::gatt::ErrorCode::INVALID_VALUE_LENGTH);
+    callback(fpromise::error(gatt::Error::INVALID_ATTRIBUTE_VALUE_LENGTH));
     PacketBuffer::Free(buf);
     return;
   }
 
-  std::copy(value.begin(), value.end(), buf->Start());
-  buf->SetDataLength(value.size());
+  std::copy(request.value().begin(), request.value().end(), buf->Start());
+  buf->SetDataLength(request.value().size());
 
   // Post an event to the Weave queue to deliver the data into the Weave stack.
   WeaveDeviceEvent event;
@@ -432,7 +448,7 @@ void BLEManagerImpl::OnWriteValue(uint64_t id, uint16_t offset, std::vector<uint
   PlatformMgr().PostEvent(&event);
   buf = nullptr;
 
-  callback(fuchsia::bluetooth::gatt::ErrorCode::NO_ERROR);
+  callback(fpromise::ok());
 }
 
 }  // namespace nl::Weave::DeviceLayer::Internal

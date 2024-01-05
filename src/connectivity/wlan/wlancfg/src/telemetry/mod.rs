@@ -17,6 +17,7 @@ use {
         },
     },
     anyhow::{format_err, Context, Error},
+    cobalt_client::traits::AsEventCode,
     fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload},
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
     fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_sme as fidl_sme,
@@ -33,14 +34,15 @@ use {
         make_inspect_loggable,
         nodes::BoundedListNode,
     },
+    fuchsia_sync::Mutex,
     fuchsia_zircon::{self as zx, DurationNum},
     futures::{
         channel::{mpsc, oneshot},
         future::BoxFuture,
-        select, Future, FutureExt, StreamExt, TryFutureExt,
+        select, Future, FutureExt, StreamExt,
     },
+    ieee80211::OuiFmt,
     num_traits::SaturatingAdd,
-    parking_lot::Mutex,
     static_assertions::const_assert_eq,
     std::{
         cmp::{max, min, Reverse},
@@ -52,7 +54,6 @@ use {
         },
     },
     tracing::{error, info, warn},
-    wlan_common::{format::MacFmt, hasher::WlanHasher},
     wlan_metrics_registry as metrics,
 };
 
@@ -65,6 +66,8 @@ const USER_RESTART_TIME_THRESHOLD: zx::Duration = zx::Duration::from_seconds(5);
 pub const METRICS_SHORT_CONNECT_DURATION: zx::Duration = zx::Duration::from_seconds(90);
 // Minimum connection duration for logging average connection score deltas.
 pub const AVERAGE_SCORE_DELTA_MINIMUM_DURATION: zx::Duration = zx::Duration::from_seconds(30);
+// Maximum value of reason code accepted by cobalt metrics (set by max_event_code)
+pub const COBALT_REASON_CODE_MAX: u16 = 1000;
 
 #[derive(Clone, Debug, PartialEq)]
 // Connection score and the time at which it was calculated.
@@ -138,7 +141,7 @@ pub struct DisconnectInfo {
 pub trait DisconnectSourceExt {
     fn inspect_string(&self) -> String;
     fn flattened_reason_code(&self) -> u32;
-    fn raw_reason_code(&self) -> u16;
+    fn cobalt_reason_code(&self) -> u16;
     fn locally_initiated(&self) -> bool;
 }
 
@@ -165,17 +168,26 @@ impl DisconnectSourceExt for fidl_sme::DisconnectSource {
     /// This is mainly used for metric.
     fn flattened_reason_code(&self) -> u32 {
         match self {
-            fidl_sme::DisconnectSource::Ap(cause) => cause.reason_code as u32,
+            fidl_sme::DisconnectSource::Ap(cause) => cause.reason_code.into_primitive() as u32,
             fidl_sme::DisconnectSource::User(reason) => (1u32 << 16) + *reason as u32,
-            fidl_sme::DisconnectSource::Mlme(cause) => (1u32 << 17) + cause.reason_code as u32,
+            fidl_sme::DisconnectSource::Mlme(cause) => {
+                (1u32 << 17) + (cause.reason_code.into_primitive() as u32)
+            }
         }
     }
 
-    fn raw_reason_code(&self) -> u16 {
+    fn cobalt_reason_code(&self) -> u16 {
         match self {
-            fidl_sme::DisconnectSource::Ap(cause) => cause.reason_code as u16,
-            fidl_sme::DisconnectSource::User(reason) => *reason as u16,
-            fidl_sme::DisconnectSource::Mlme(cause) => cause.reason_code as u16,
+            // Cobalt metrics expects reason_code value to be less than COBALT_REASON_CODE_MAX.
+            fidl_sme::DisconnectSource::Ap(cause) => {
+                std::cmp::min(cause.reason_code.into_primitive(), COBALT_REASON_CODE_MAX)
+            }
+            fidl_sme::DisconnectSource::User(reason) => {
+                std::cmp::min(*reason as u16, COBALT_REASON_CODE_MAX)
+            }
+            fidl_sme::DisconnectSource::Mlme(cause) => {
+                std::cmp::min(cause.reason_code.into_primitive(), COBALT_REASON_CODE_MAX)
+            }
         }
     }
 
@@ -270,6 +282,26 @@ pub enum TelemetryEvent {
     /// Notify telemetry that there was a decision to look for networks to roam to after evaluating
     /// the existing connection.
     RoamingScan,
+    /// Proactive roams do not happen yet, but we want to analyze metrics for when they would
+    /// happen. Roams are set up to log metrics when disconnects happen to roam, so this event
+    /// covers when roams would happen but no actual disconnect happens.
+    WouldRoamConnect,
+    /// Counts of saved networks and count of configurations for each of those networks, to be
+    /// recorded periodically.
+    SavedNetworkCount {
+        saved_network_count: usize,
+        config_count_per_saved_network: Vec<usize>,
+    },
+    /// Record the time since the last network selection scan
+    NetworkSelectionScanInterval {
+        time_since_last_scan: zx::Duration,
+    },
+    /// Statistics about networks observed in scan results for Connection Selection
+    ConnectionSelectionScanResults {
+        saved_network_count: usize,
+        bss_count_per_saved_network: Vec<usize>,
+        saved_network_count_found_by_active_scan: usize,
+    },
     /// Notify telemetry event loop that connection duration has reached threshold to log
     /// post-connect score deltas.
     PostConnectionScores {
@@ -290,19 +322,12 @@ pub enum TelemetryEvent {
     UpdateExperiment {
         experiment: experiment::ExperimentUpdate,
     },
-    /// This is a stepping stone for some metrics to Cobalt 1.1.  Metrics are currently being
-    /// migrated out of `LogMetricEvent` and toward their own `TelemetryEvent`s.  Please do not use
-    /// `LogMetricEvent` for new metrics.
-    LogMetricEvents {
-        events: Vec<MetricEvent>,
-        ctx: &'static str,
-    },
-    /// Notify the telemtry event loop that a PHY has failed to create an interface.
-    IfaceCreationFailure,
-    /// Notify the telemtry event loop that a PHY has failed to destroy an interface.
-    IfaceDestructionFailure,
-    /// Notify telemetry that the AP failed to start.
-    ApStartFailure,
+    /// Notify telemetry of the result of a create iface request.
+    IfaceCreationResult(Result<(), ()>),
+    /// Notify telemetry of the result of destroying an interface.
+    IfaceDestructionResult(Result<(), ()>),
+    /// Notify telemetry of the result of a StartAp request.
+    StartApResult(Result<(), ()>),
     /// Record scan fulfillment time
     ScanRequestFulfillmentTime {
         duration: zx::Duration,
@@ -313,7 +338,7 @@ pub enum TelemetryEvent {
         fulfilled_requests: usize,
         remaining_requests: usize,
     },
-    // Record the results of a completed BSS selection
+    /// Record the results of a completed BSS selection
     BssSelectionResult {
         reason: client::types::ConnectReason,
         scored_candidates: Vec<(client::types::ScannedCandidate, i16)>,
@@ -325,6 +350,15 @@ pub enum TelemetryEvent {
     },
     LongDurationConnectionScoreAverage {
         scores: Vec<TimestampedConnectionScore>,
+    },
+    /// Record recovery events and store recovery-related metadata so that the
+    /// efficacy of the recovery mechanism can be evaluated later.
+    RecoveryEvent {
+        reason: RecoveryReason,
+    },
+    /// Get the TimeSeries held by telemetry loop. Intended for test only.
+    GetTimeSeries {
+        sender: oneshot::Sender<Arc<Mutex<TimeSeriesStats>>>,
     },
 }
 
@@ -369,6 +403,63 @@ impl ScanIssue {
     }
 }
 
+pub type ClientRecoveryMechanism = metrics::ConnectivityWlanMetricDimensionClientRecoveryMechanism;
+pub type ApRecoveryMechanism = metrics::ConnectivityWlanMetricDimensionApRecoveryMechanism;
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum PhyRecoveryMechanism {
+    PhyReset,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum RecoveryReason {
+    CreateIfaceFailure(PhyRecoveryMechanism),
+    DestroyIfaceFailure(PhyRecoveryMechanism),
+    ConnectFailure(ClientRecoveryMechanism),
+    StartApFailure(ApRecoveryMechanism),
+    ScanFailure(ClientRecoveryMechanism),
+    ScanCancellation(ClientRecoveryMechanism),
+    ScanResultsEmpty(ClientRecoveryMechanism),
+}
+
+struct RecoveryRecord {
+    scan_failure: Option<RecoveryReason>,
+    scan_cancellation: Option<RecoveryReason>,
+    scan_results_empty: Option<RecoveryReason>,
+    connect_failure: Option<RecoveryReason>,
+    start_ap_failure: Option<RecoveryReason>,
+    create_iface_failure: Option<RecoveryReason>,
+    destroy_iface_failure: Option<RecoveryReason>,
+}
+
+impl RecoveryRecord {
+    fn new() -> Self {
+        RecoveryRecord {
+            scan_failure: None,
+            scan_cancellation: None,
+            scan_results_empty: None,
+            connect_failure: None,
+            start_ap_failure: None,
+            create_iface_failure: None,
+            destroy_iface_failure: None,
+        }
+    }
+
+    fn record_recovery_attempt(&mut self, reason: RecoveryReason) {
+        match reason {
+            RecoveryReason::ScanFailure(_) => self.scan_failure = Some(reason),
+            RecoveryReason::ScanCancellation(_) => self.scan_cancellation = Some(reason),
+            RecoveryReason::ScanResultsEmpty(_) => self.scan_results_empty = Some(reason),
+            RecoveryReason::ConnectFailure(_) => self.connect_failure = Some(reason),
+            RecoveryReason::StartApFailure(_) => self.start_ap_failure = Some(reason),
+            RecoveryReason::CreateIfaceFailure(_) => self.create_iface_failure = Some(reason),
+            RecoveryReason::DestroyIfaceFailure(_) => self.destroy_iface_failure = Some(reason),
+        }
+    }
+}
+
+pub type RecoveryOutcome = metrics::ConnectivityWlanMetricDimensionResult;
+
 pub type CreateMetricsLoggerFn = Box<
     dyn Fn(
         Vec<u32>,
@@ -393,7 +484,6 @@ pub fn serve_telemetry(
     monitor_svc_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
     cobalt_1dot1_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
     new_cobalt_1dot1_proxy: CreateMetricsLoggerFn,
-    hasher: WlanHasher,
     inspect_node: InspectNode,
     external_inspect_node: InspectNode,
     persistence_req_sender: auto_persist::PersistenceReqSender,
@@ -415,7 +505,6 @@ pub fn serve_telemetry(
             monitor_svc_proxy,
             cobalt_1dot1_proxy,
             new_cobalt_1dot1_proxy,
-            hasher,
             inspect_node,
             external_inspect_node,
             persistence_req_sender,
@@ -446,12 +535,6 @@ pub fn serve_telemetry(
                     // rather than 23 hours.
                     if interval_tick % INTERVAL_TICKS_PER_HR == 0 {
                         telemetry.signal_hr_passed().await;
-                    }
-
-                    if interval_tick % INTERVAL_TICKS_PER_MINUTE == 0 {
-                        // Slide the window of all time series stats only after
-                        // `handle_periodic_telemetry` is called.
-                        telemetry.stats_logger.time_series_stats.lock().slide_minute();
                     }
                 }
             }
@@ -538,13 +621,8 @@ fn inspect_create_counters(
     })
 }
 
-fn inspect_record_connection_status(
-    inspect_node: &InspectNode,
-    hasher: WlanHasher,
-    telemetry_sender: TelemetrySender,
-) {
+fn inspect_record_connection_status(inspect_node: &InspectNode, telemetry_sender: TelemetrySender) {
     inspect_node.record_lazy_child("connection_status", move|| {
-        let hasher = hasher.clone();
         let telemetry_sender = telemetry_sender.clone();
         async move {
             let inspector = Inspector::default();
@@ -568,10 +646,8 @@ fn inspect_record_connection_status(
                 inspect_insert!(inspector.root(), connected_network: {
                     rssi_dbm: ap_state.tracked.signal.rssi_dbm,
                     snr_db: ap_state.tracked.signal.snr_db,
-                    bssid: ap_state.original().bssid.0.to_mac_string(),
-                    bssid_hash: hasher.hash_mac_addr(&ap_state.original().bssid.0),
+                    bssid: ap_state.original().bssid.to_string(),
                     ssid: ap_state.original().ssid.to_string(),
-                    ssid_hash: hasher.hash_ssid(&ap_state.original().ssid),
                     protection: format!("{:?}", ap_state.original().protection()),
                     channel: {
                         primary: fidl_channel.primary,
@@ -626,11 +702,12 @@ fn inspect_record_external_data(
                         )),
                 });
 
-                // TODO(fxbug.dev/90121): This timeout is no longer needed once diagnostics
-                //                        has a timeout on reading LazyNode.
                 if let Some(proxy) = telemetry_proxy {
-                    match proxy.get_histogram_stats().map_err(|_e| ())
-                        .on_timeout(GET_IFACE_STATS_TIMEOUT, || Err(()))
+                    match proxy.get_histogram_stats()
+                        .on_timeout(GET_IFACE_STATS_TIMEOUT, || {
+                            warn!("Timed out waiting for histogram stats");
+                            Ok(Err(zx::Status::TIMED_OUT.into_raw()))
+                        })
                         .await {
                             Ok(Ok(stats)) => {
                                 let mut histograms = HistogramsNode::new(
@@ -650,7 +727,9 @@ fn inspect_record_external_data(
 
                                 inspector.root().record(histograms);
                             }
-                            _ => (),
+                            error => {
+                                info!("Error reading histogram stats: {:?}", error);
+                            },
                         }
                 }
             }
@@ -804,9 +883,6 @@ pub struct Telemetry {
     last_checked_connection_state: fasync::Time,
     stats_logger: StatsLogger,
 
-    // For hashing SSID and BSSID before outputting into Inspect
-    hasher: WlanHasher,
-
     // Inspect properties/nodes that telemetry hangs onto
     inspect_node: InspectNode,
     get_iface_stats_fail_count: UintProperty,
@@ -837,13 +913,12 @@ impl Telemetry {
         monitor_svc_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
         cobalt_1dot1_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
         new_cobalt_1dot1_proxy: CreateMetricsLoggerFn,
-        hasher: WlanHasher,
         inspect_node: InspectNode,
         external_inspect_node: InspectNode,
         persistence_req_sender: auto_persist::PersistenceReqSender,
     ) -> Self {
         let stats_logger = StatsLogger::new(cobalt_1dot1_proxy, &inspect_node);
-        inspect_record_connection_status(&inspect_node, hasher.clone(), telemetry_sender.clone());
+        inspect_record_connection_status(&inspect_node, telemetry_sender.clone());
         let get_iface_stats_fail_count = inspect_node.create_uint("get_iface_stats_fail_count", 0);
         let scan_events = inspect_node.create_child("scan_events");
         let connect_events = inspect_node.create_child("connect_events");
@@ -856,7 +931,6 @@ impl Telemetry {
             connection_state: ConnectionState::Idle(IdleState { connect_start_time: None }),
             last_checked_connection_state: fasync::Time::now(),
             stats_logger,
-            hasher,
             inspect_node,
             get_iface_stats_fail_count,
             scan_events_node: Mutex::new(AutoPersist::new(
@@ -900,8 +974,10 @@ impl Telemetry {
                 if let Some(proxy) = &state.telemetry_proxy {
                     match proxy
                         .get_counter_stats()
-                        .map_err(|_e| ())
-                        .on_timeout(GET_IFACE_STATS_TIMEOUT, || Err(()))
+                        .on_timeout(GET_IFACE_STATS_TIMEOUT, || {
+                            warn!("Timed out waiting for counter stats");
+                            Ok(Err(zx::Status::TIMED_OUT.into_raw()))
+                        })
                         .await
                     {
                         Ok(Ok(stats)) => {
@@ -917,7 +993,8 @@ impl Telemetry {
                             }
                             let _prev = state.prev_counters.replace(stats);
                         }
-                        _ => {
+                        error => {
+                            info!("Failed to get interface stats: {:?}", error);
                             self.get_iface_stats_fail_count.add(1);
                             *state.num_consecutive_get_counter_stats_failures.get_mut() += 1;
                             // Safe to unwrap: If we've exceeded 63 bits of consecutive failures,
@@ -1090,6 +1167,16 @@ impl Telemetry {
                             .log_reconnect_cobalt_metrics(total_downtime, disconnect_source)
                             .await;
                     }
+
+                    // Log successful post-recovery connection attempt if relevant.
+                    if let Some(recovery_reason) =
+                        self.stats_logger.recovery_record.connect_failure.take()
+                    {
+                        self.stats_logger
+                            .log_post_recovery_result(recovery_reason, RecoveryOutcome::Success)
+                            .await
+                    }
+
                     let telemetry_proxy = match fidl::endpoints::create_proxy() {
                         Ok((proxy, server)) => {
                             match self.monitor_svc_proxy.get_sme_telemetry(iface_id, server).await {
@@ -1138,7 +1225,16 @@ impl Telemetry {
                 } else if !result.is_credential_rejected {
                     // In the case where the connection failed for a reason other than a credential
                     // mismatch, log a connection failure occurrence metric.
-                    self.stats_logger.log_connection_failure().await
+                    self.stats_logger.log_connection_failure().await;
+
+                    // Log failed post-recovery connection attempt if relevant.
+                    if let Some(recovery_reason) =
+                        self.stats_logger.recovery_record.connect_failure.take()
+                    {
+                        self.stats_logger
+                            .log_post_recovery_result(recovery_reason, RecoveryOutcome::Failure)
+                            .await
+                    }
                 }
             }
             TelemetryEvent::Disconnected { track_subsequent_downtime, info } => {
@@ -1230,6 +1326,33 @@ impl Telemetry {
             TelemetryEvent::RoamingScan => {
                 self.stats_logger.log_roaming_scan_metrics().await;
             }
+            TelemetryEvent::WouldRoamConnect => {
+                self.stats_logger.log_would_roam_connect().await;
+            }
+            TelemetryEvent::SavedNetworkCount {
+                saved_network_count,
+                config_count_per_saved_network,
+            } => {
+                self.stats_logger
+                    .log_saved_network_counts(saved_network_count, config_count_per_saved_network)
+                    .await;
+            }
+            TelemetryEvent::NetworkSelectionScanInterval { time_since_last_scan } => {
+                self.stats_logger.log_network_selection_scan_interval(time_since_last_scan).await;
+            }
+            TelemetryEvent::ConnectionSelectionScanResults {
+                saved_network_count,
+                bss_count_per_saved_network,
+                saved_network_count_found_by_active_scan,
+            } => {
+                self.stats_logger
+                    .log_connection_selection_scan_results(
+                        saved_network_count,
+                        bss_count_per_saved_network,
+                        saved_network_count_found_by_active_scan,
+                    )
+                    .await;
+            }
             TelemetryEvent::StartClientConnectionsRequest => {
                 let now = fasync::Time::now();
                 if self.last_enabled_client_connections.is_none() {
@@ -1270,17 +1393,14 @@ impl Telemetry {
                     };
                 self.stats_logger.replace_cobalt_proxy(cobalt_1dot1_proxy);
             }
-            TelemetryEvent::LogMetricEvents { events, ctx } => {
-                self.stats_logger.log_metric_events(events, ctx).await
+            TelemetryEvent::IfaceCreationResult(result) => {
+                self.stats_logger.log_iface_creation_result(result).await;
             }
-            TelemetryEvent::IfaceCreationFailure => {
-                self.stats_logger.log_iface_creation_failure().await;
+            TelemetryEvent::IfaceDestructionResult(result) => {
+                self.stats_logger.log_iface_destruction_result(result).await;
             }
-            TelemetryEvent::IfaceDestructionFailure => {
-                self.stats_logger.log_iface_destruction_failure().await;
-            }
-            TelemetryEvent::ApStartFailure => {
-                self.stats_logger.log_ap_start_failure().await;
+            TelemetryEvent::StartApResult(result) => {
+                self.stats_logger.log_ap_start_result(result).await;
             }
             TelemetryEvent::ScanRequestFulfillmentTime { duration, reason } => {
                 self.stats_logger.log_scan_request_fulfillment_time(duration, reason).await;
@@ -1306,9 +1426,7 @@ impl Telemetry {
             }
             TelemetryEvent::ScanEvent { inspect_data, scan_defects } => {
                 self.log_scan_event_inspect(inspect_data);
-                for defect in scan_defects {
-                    self.stats_logger.log_scan_issue(defect).await;
-                }
+                self.stats_logger.log_scan_issues(scan_defects).await;
             }
             TelemetryEvent::LongDurationConnectionScoreAverage { scores } => {
                 self.stats_logger
@@ -1317,6 +1435,12 @@ impl Telemetry {
                         scores,
                     )
                     .await;
+            }
+            TelemetryEvent::RecoveryEvent { reason } => {
+                self.stats_logger.log_recovery_occurrence(reason).await;
+            }
+            TelemetryEvent::GetTimeSeries { sender } => {
+                let _result = sender.send(Arc::clone(&self.stats_logger.time_series_stats));
             }
         }
     }
@@ -1337,10 +1461,8 @@ impl Telemetry {
         inspect_log!(self.connect_events_node.lock().get_mut(), {
             multiple_bss_candidates: multiple_bss_candidates,
             network: {
-                bssid: ap_state.original().bssid.0.to_mac_string(),
-                bssid_hash: self.hasher.hash_mac_addr(&ap_state.original().bssid.0),
+                bssid: ap_state.original().bssid.to_string(),
                 ssid: ap_state.original().ssid.to_string(),
-                ssid_hash: self.hasher.hash_ssid(&ap_state.original().ssid),
                 rssi_dbm: ap_state.tracked.signal.rssi_dbm,
                 snr_db: ap_state.tracked.signal.snr_db,
             },
@@ -1355,10 +1477,8 @@ impl Telemetry {
             network: {
                 rssi_dbm: info.ap_state.tracked.signal.rssi_dbm,
                 snr_db: info.ap_state.tracked.signal.snr_db,
-                bssid: info.ap_state.original().bssid.0.to_mac_string(),
-                bssid_hash: self.hasher.hash_mac_addr(&info.ap_state.original().bssid.0),
+                bssid: info.ap_state.original().bssid.to_string(),
                 ssid: info.ap_state.original().ssid.to_string(),
-                ssid_hash: self.hasher.hash_ssid(&info.ap_state.original().ssid),
                 protection: format!("{:?}", info.ap_state.original().protection()),
                 channel: {
                     primary: fidl_channel.primary,
@@ -1530,6 +1650,7 @@ struct StatsLogger {
     hr_tick: u32,
     rssi_velocity_hist: HashMap<u32, fidl_fuchsia_metrics::HistogramBucket>,
     rssi_hist: HashMap<u32, fidl_fuchsia_metrics::HistogramBucket>,
+    recovery_record: RecoveryRecord,
 
     // Inspect nodes
     _time_series_inspect_node: LazyNode,
@@ -1565,6 +1686,7 @@ impl StatsLogger {
             hr_tick: 0,
             rssi_velocity_hist: HashMap::new(),
             rssi_hist: HashMap::new(),
+            recovery_record: RecoveryRecord::new(),
             _1d_counters_inspect_node,
             _7d_counters_inspect_node,
             _time_series_inspect_node,
@@ -1591,22 +1713,22 @@ impl StatsLogger {
                 self.time_series_stats
                     .lock()
                     .total_duration_sec
-                    .add_value(&(round_to_nearest_second(*duration) as i32));
+                    .log_value(&(round_to_nearest_second(*duration) as i32));
             }
             StatOp::AddConnectedDuration(duration) => {
                 self.time_series_stats
                     .lock()
                     .connected_duration_sec
-                    .add_value(&(round_to_nearest_second(*duration) as i32));
+                    .log_value(&(round_to_nearest_second(*duration) as i32));
             }
             StatOp::AddConnectAttemptsCount => {
-                self.time_series_stats.lock().connect_attempt_count.add_value(&1u32);
+                self.time_series_stats.lock().connect_attempt_count.log_value(&1u32);
             }
             StatOp::AddConnectSuccessfulCount => {
-                self.time_series_stats.lock().connect_successful_count.add_value(&1u32);
+                self.time_series_stats.lock().connect_successful_count.log_value(&1u32);
             }
             StatOp::AddDisconnectCount(..) => {
-                self.time_series_stats.lock().disconnect_count.add_value(&1u32);
+                self.time_series_stats.lock().disconnect_count.log_value(&1u32);
             }
             StatOp::AddRxTxPacketCounters {
                 rx_unicast_total,
@@ -1617,19 +1739,19 @@ impl StatsLogger {
                 self.time_series_stats
                     .lock()
                     .rx_unicast_total_count
-                    .add_value(&(*rx_unicast_total as u32));
+                    .log_value(&(*rx_unicast_total as u32));
                 self.time_series_stats
                     .lock()
                     .rx_unicast_drop_count
-                    .add_value(&(*rx_unicast_drop as u32));
-                self.time_series_stats.lock().tx_total_count.add_value(&(*tx_total as u32));
-                self.time_series_stats.lock().tx_drop_count.add_value(&(*tx_drop as u32));
+                    .log_value(&(*rx_unicast_drop as u32));
+                self.time_series_stats.lock().tx_total_count.log_value(&(*tx_total as u32));
+                self.time_series_stats.lock().tx_drop_count.log_value(&(*tx_drop as u32));
             }
             StatOp::AddNoRxDuration(duration) => {
                 self.time_series_stats
                     .lock()
                     .no_rx_duration_sec
-                    .add_value(&(round_to_nearest_second(*duration) as i32));
+                    .log_value(&(round_to_nearest_second(*duration) as i32));
             }
             StatOp::AddDowntimeDuration(..)
             | StatOp::AddDowntimeNoSavedNeighborDuration(..)
@@ -2203,7 +2325,7 @@ impl StatsLogger {
         metric_events.push(MetricEvent {
             metric_id: metrics::DISCONNECT_BREAKDOWN_BY_REASON_CODE_METRIC_ID,
             event_codes: vec![
-                disconnect_info.disconnect_source.raw_reason_code() as u32,
+                disconnect_info.disconnect_source.cobalt_reason_code() as u32,
                 disconnect_source_dim as u32,
             ],
             payload: MetricEventPayload::Count(1),
@@ -2305,8 +2427,7 @@ impl StatsLogger {
             11..=20 => ActiveScanSsidsRequested::ElevenToTwenty,
             21..=50 => ActiveScanSsidsRequested::TwentyOneToFifty,
             51..=100 => ActiveScanSsidsRequested::FiftyOneToOneHundred,
-            101..=usize::MAX => ActiveScanSsidsRequested::OneHundredAndOneOrMore,
-            _ => unreachable!(),
+            101.. => ActiveScanSsidsRequested::OneHundredAndOneOrMore,
         };
         log_cobalt_1dot1!(
             self.cobalt_1dot1_proxy,
@@ -2330,8 +2451,7 @@ impl StatsLogger {
             11..=20 => ActiveScanSsidsRequested::ElevenToTwenty,
             21..=50 => ActiveScanSsidsRequested::TwentyOneToFifty,
             51..=100 => ActiveScanSsidsRequested::FiftyOneToOneHundred,
-            101..=usize::MAX => ActiveScanSsidsRequested::OneHundredAndOneOrMore,
-            _ => unreachable!(),
+            101.. => ActiveScanSsidsRequested::OneHundredAndOneOrMore,
         };
         log_cobalt_1dot1!(
             self.cobalt_1dot1_proxy,
@@ -2339,6 +2459,129 @@ impl StatsLogger {
             metrics::ACTIVE_SCAN_REQUESTED_FOR_POLICY_API_METRIC_ID,
             1,
             &[active_scan_ssids_requested_dim as u32],
+        );
+    }
+
+    async fn log_saved_network_counts(
+        &mut self,
+        saved_network_count: usize,
+        config_count_per_saved_network: Vec<usize>,
+    ) {
+        let mut metric_events = vec![];
+
+        // Count the total number of saved networks
+        use metrics::SavedNetworksMigratedMetricDimensionSavedNetworks as SavedNetworksCount;
+        let num_networks = match saved_network_count {
+            0 => SavedNetworksCount::Zero,
+            1 => SavedNetworksCount::One,
+            2..=4 => SavedNetworksCount::TwoToFour,
+            5..=40 => SavedNetworksCount::FiveToForty,
+            41..=500 => SavedNetworksCount::FortyToFiveHundred,
+            501.. => SavedNetworksCount::FiveHundredAndOneOrMore,
+        };
+        metric_events.push(MetricEvent {
+            metric_id: metrics::SAVED_NETWORKS_MIGRATED_METRIC_ID,
+            event_codes: vec![num_networks as u32],
+            payload: MetricEventPayload::Count(1),
+        });
+
+        // Count the number of configs for each saved network
+        use metrics::SavedConfigurationsForSavedNetworkMigratedMetricDimensionSavedConfigurations as ConfigCountDimension;
+        for config_count in config_count_per_saved_network {
+            let num_configs = match config_count {
+                0 => ConfigCountDimension::Zero,
+                1 => ConfigCountDimension::One,
+                2..=4 => ConfigCountDimension::TwoToFour,
+                5..=40 => ConfigCountDimension::FiveToForty,
+                41..=500 => ConfigCountDimension::FortyToFiveHundred,
+                501.. => ConfigCountDimension::FiveHundredAndOneOrMore,
+            };
+            metric_events.push(MetricEvent {
+                metric_id: metrics::SAVED_CONFIGURATIONS_FOR_SAVED_NETWORK_MIGRATED_METRIC_ID,
+                event_codes: vec![num_configs as u32],
+                payload: MetricEventPayload::Count(1),
+            });
+        }
+
+        log_cobalt_1dot1_batch!(
+            self.cobalt_1dot1_proxy,
+            &metric_events,
+            "log_saved_network_counts",
+        );
+    }
+
+    async fn log_network_selection_scan_interval(&mut self, time_since_last_scan: zx::Duration) {
+        log_cobalt_1dot1!(
+            self.cobalt_1dot1_proxy,
+            log_integer,
+            metrics::LAST_SCAN_AGE_WHEN_SCAN_REQUESTED_MIGRATED_METRIC_ID,
+            time_since_last_scan.into_micros(),
+            &[],
+        );
+    }
+
+    async fn log_connection_selection_scan_results(
+        &mut self,
+        saved_network_count: usize,
+        bss_count_per_saved_network: Vec<usize>,
+        saved_network_count_found_by_active_scan: usize,
+    ) {
+        let mut metric_events = vec![];
+
+        use metrics::SavedNetworkInScanResultMigratedMetricDimensionBssCount as BssCount;
+        for bss_count in bss_count_per_saved_network {
+            // Record how many BSSs are visible in the scan results for this saved network.
+            let bss_count_metric = match bss_count {
+                0 => BssCount::Zero, // The ::Zero enum exists, but we shouldn't get a scan result with no BSS
+                1 => BssCount::One,
+                2..=4 => BssCount::TwoToFour,
+                5..=10 => BssCount::FiveToTen,
+                11..=20 => BssCount::ElevenToTwenty,
+                21.. => BssCount::TwentyOneOrMore,
+            };
+            metric_events.push(MetricEvent {
+                metric_id: metrics::SAVED_NETWORK_IN_SCAN_RESULT_MIGRATED_METRIC_ID,
+                event_codes: vec![bss_count_metric as u32],
+                payload: MetricEventPayload::Count(1),
+            });
+        }
+
+        use metrics::ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount as SavedNetworkCount;
+        let saved_network_count_metric = match saved_network_count {
+            0 => SavedNetworkCount::Zero,
+            1 => SavedNetworkCount::One,
+            2..=4 => SavedNetworkCount::TwoToFour,
+            5..=20 => SavedNetworkCount::FiveToTwenty,
+            21..=40 => SavedNetworkCount::TwentyOneToForty,
+            41.. => SavedNetworkCount::FortyOneOrMore,
+        };
+        metric_events.push(MetricEvent {
+            metric_id: metrics::SCAN_RESULTS_RECEIVED_MIGRATED_METRIC_ID,
+            event_codes: vec![saved_network_count_metric as u32],
+            payload: MetricEventPayload::Count(1),
+        });
+
+        use metrics::SavedNetworkInScanResultWithActiveScanMigratedMetricDimensionActiveScanSsidsObserved as ActiveScanSsidsObserved;
+        let actively_scanned_networks_metrics = match saved_network_count_found_by_active_scan {
+            0 => ActiveScanSsidsObserved::Zero,
+            1 => ActiveScanSsidsObserved::One,
+            2..=4 => ActiveScanSsidsObserved::TwoToFour,
+            5..=10 => ActiveScanSsidsObserved::FiveToTen,
+            11..=20 => ActiveScanSsidsObserved::ElevenToTwenty,
+            21..=50 => ActiveScanSsidsObserved::TwentyOneToFifty,
+            51..=100 => ActiveScanSsidsObserved::FiftyOneToOneHundred,
+            101.. => ActiveScanSsidsObserved::OneHundredAndOneOrMore,
+        };
+        metric_events.push(MetricEvent {
+            metric_id: metrics::SAVED_NETWORK_IN_SCAN_RESULT_WITH_ACTIVE_SCAN_MIGRATED_METRIC_ID,
+            event_codes: vec![actively_scanned_networks_metrics as u32],
+            payload: MetricEventPayload::Count(1),
+        });
+
+        log_cobalt_1dot1_batch!(
+            self.cobalt_1dot1_proxy,
+            &metric_events,
+            "log_connection_selection_scan_results",
         );
     }
 
@@ -2451,7 +2694,7 @@ impl StatsLogger {
             payload: MetricEventPayload::Count(1),
         });
 
-        let oui = ap_state.original().bssid.0.to_oui_uppercase("");
+        let oui = ap_state.original().bssid.to_oui_uppercase("");
         metric_events.push(MetricEvent {
             metric_id: metrics::SUCCESSFUL_CONNECT_PER_OUI_METRIC_ID,
             event_codes: vec![],
@@ -2473,7 +2716,7 @@ impl StatsLogger {
             metrics::DOWNTIME_BREAKDOWN_BY_DISCONNECT_REASON_METRIC_ID,
             downtime.into_micros(),
             &[
-                disconnect_info.disconnect_source.raw_reason_code() as u32,
+                disconnect_info.disconnect_source.cobalt_reason_code() as u32,
                 disconnect_source_dim as u32
             ],
         );
@@ -2558,8 +2801,7 @@ impl StatsLogger {
         }
 
         if let Some(rm_enabled_cap) = ap_state.original().rm_enabled_cap() {
-            let rm_enabled_cap_head = rm_enabled_cap.rm_enabled_caps_head;
-            if rm_enabled_cap_head.link_measurement_enabled() {
+            if rm_enabled_cap.link_measurement_enabled() {
                 metric_events.push(MetricEvent {
                     metric_id:
                         metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_LINK_MEASUREMENT_METRIC_ID,
@@ -2567,7 +2809,7 @@ impl StatsLogger {
                     payload: MetricEventPayload::Count(1),
                 });
             }
-            if rm_enabled_cap_head.neighbor_report_enabled() {
+            if rm_enabled_cap.neighbor_report_enabled() {
                 metric_events.push(MetricEvent {
                     metric_id:
                         metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_NEIGHBOR_REPORT_METRIC_ID,
@@ -2602,7 +2844,7 @@ impl StatsLogger {
             payload: MetricEventPayload::Count(1),
         });
 
-        let oui = ap_state.original().bssid.0.to_oui_uppercase("");
+        let oui = ap_state.original().bssid.to_oui_uppercase("");
         metric_events.push(MetricEvent {
             metric_id: metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID,
             event_codes: vec![],
@@ -2646,6 +2888,19 @@ impl StatsLogger {
             self.cobalt_1dot1_proxy,
             log_occurrence,
             metrics::POLICY_PROACTIVE_ROAMING_SCAN_COUNTS_METRIC_ID,
+            1,
+            &[],
+        );
+    }
+
+    /// Log metrics that will be used to analyze when roaming would happen before roams are
+    /// enabled. This doesn't effect general disconnect metrics, including ones that include roam
+    /// event codes.
+    async fn log_would_roam_connect(&mut self) {
+        log_cobalt_1dot1!(
+            self.cobalt_1dot1_proxy,
+            log_occurrence,
+            metrics::NETWORK_ROAMING_DISCONNECT_COUNTS_METRIC_ID,
             1,
             &[],
         );
@@ -2717,32 +2972,73 @@ impl StatsLogger {
         entry.count = entry.count + 1;
     }
 
-    async fn log_metric_events(&mut self, metric_events: Vec<MetricEvent>, ctx: &'static str) {
-        log_cobalt_1dot1_batch!(self.cobalt_1dot1_proxy, &metric_events, ctx,);
+    async fn log_iface_creation_result(&mut self, result: Result<(), ()>) {
+        if result.is_err() {
+            log_cobalt_1dot1!(
+                self.cobalt_1dot1_proxy,
+                log_occurrence,
+                metrics::INTERFACE_CREATION_FAILURE_METRIC_ID,
+                1,
+                &[]
+            )
+        }
+
+        if let Some(reason) = self.recovery_record.create_iface_failure.take() {
+            match result {
+                Ok(()) => self.log_post_recovery_result(reason, RecoveryOutcome::Success).await,
+                Err(()) => self.log_post_recovery_result(reason, RecoveryOutcome::Failure).await,
+            }
+        }
     }
 
-    async fn log_iface_creation_failure(&mut self) {
-        log_cobalt_1dot1!(
-            self.cobalt_1dot1_proxy,
-            log_occurrence,
-            metrics::INTERFACE_CREATION_FAILURE_METRIC_ID,
-            1,
-            &[]
-        )
+    async fn log_iface_destruction_result(&mut self, result: Result<(), ()>) {
+        if result.is_err() {
+            log_cobalt_1dot1!(
+                self.cobalt_1dot1_proxy,
+                log_occurrence,
+                metrics::INTERFACE_DESTRUCTION_FAILURE_METRIC_ID,
+                1,
+                &[]
+            )
+        }
+
+        if let Some(reason) = self.recovery_record.destroy_iface_failure.take() {
+            match result {
+                Ok(()) => self.log_post_recovery_result(reason, RecoveryOutcome::Success).await,
+                Err(()) => self.log_post_recovery_result(reason, RecoveryOutcome::Failure).await,
+            }
+        }
     }
 
-    async fn log_iface_destruction_failure(&mut self) {
-        log_cobalt_1dot1!(
-            self.cobalt_1dot1_proxy,
-            log_occurrence,
-            metrics::INTERFACE_DESTRUCTION_FAILURE_METRIC_ID,
-            1,
-            &[]
-        )
-    }
+    async fn log_scan_issues(&mut self, issues: Vec<ScanIssue>) {
+        // If this is a scan result following a recovery intervention, judge whether or not the
+        // recovery mechanism was successful.
+        if let Some(reason) = self.recovery_record.scan_failure.take() {
+            let outcome = match issues.contains(&ScanIssue::ScanFailure) {
+                true => RecoveryOutcome::Failure,
+                false => RecoveryOutcome::Success,
+            };
+            self.log_post_recovery_result(reason, outcome).await;
+        }
+        if let Some(reason) = self.recovery_record.scan_cancellation.take() {
+            let outcome = match issues.contains(&ScanIssue::AbortedScan) {
+                true => RecoveryOutcome::Failure,
+                false => RecoveryOutcome::Success,
+            };
+            self.log_post_recovery_result(reason, outcome).await;
+        }
+        if let Some(reason) = self.recovery_record.scan_results_empty.take() {
+            let outcome = match issues.contains(&ScanIssue::EmptyScanResults) {
+                true => RecoveryOutcome::Failure,
+                false => RecoveryOutcome::Success,
+            };
+            self.log_post_recovery_result(reason, outcome).await;
+        }
 
-    async fn log_scan_issue(&mut self, issue: ScanIssue) {
-        log_cobalt_1dot1!(self.cobalt_1dot1_proxy, log_occurrence, issue.as_metric_id(), 1, &[])
+        // Log general occurrence metrics for any observed defects
+        for issue in issues {
+            log_cobalt_1dot1!(self.cobalt_1dot1_proxy, log_occurrence, issue.as_metric_id(), 1, &[])
+        }
     }
 
     async fn log_connection_failure(&mut self) {
@@ -2755,14 +3051,23 @@ impl StatsLogger {
         )
     }
 
-    async fn log_ap_start_failure(&mut self) {
-        log_cobalt_1dot1!(
-            self.cobalt_1dot1_proxy,
-            log_occurrence,
-            metrics::AP_START_FAILURE_METRIC_ID,
-            1,
-            &[]
-        )
+    async fn log_ap_start_result(&mut self, result: Result<(), ()>) {
+        if result.is_err() {
+            log_cobalt_1dot1!(
+                self.cobalt_1dot1_proxy,
+                log_occurrence,
+                metrics::AP_START_FAILURE_METRIC_ID,
+                1,
+                &[]
+            )
+        }
+
+        if let Some(reason) = self.recovery_record.start_ap_failure.take() {
+            match result {
+                Ok(()) => self.log_post_recovery_result(reason, RecoveryOutcome::Success).await,
+                Err(()) => self.log_post_recovery_result(reason, RecoveryOutcome::Failure).await,
+            }
+        }
     }
 
     async fn log_scan_request_fulfillment_time(
@@ -2794,6 +3099,7 @@ impl StatsLogger {
                 ScanReason::NetworkSelection => NetworkSelection,
                 ScanReason::BssSelection => BssSelection,
                 ScanReason::BssSelectionAugmentation => BssSelectionAugmentation,
+                ScanReason::RoamSearch => ProactiveRoaming,
             }
         };
         log_cobalt_1dot1!(
@@ -2820,8 +3126,6 @@ impl StatsLogger {
                 4 => Four,
                 5..=9 => FiveToNine,
                 10.. => TenOrMore,
-                // `usize` does not have a fixed maximum, so `_` is necessary to match exhaustively
-                _ => Unknown,
             }
         };
         let remaining_requests_dim = {
@@ -2835,8 +3139,6 @@ impl StatsLogger {
                 5..=9 => FiveToNine,
                 10..=14 => TenToFourteen,
                 15.. => FifteenOrMore,
-                // `usize` does not have a fixed maximum, so `_` is necessary to match exhaustively
-                _ => Unknown,
             }
         };
         log_cobalt_1dot1!(
@@ -3224,6 +3526,111 @@ impl StatsLogger {
             warn!("Connection score list is unexpectedly empty.");
         }
     }
+
+    async fn log_recovery_occurrence(&mut self, reason: RecoveryReason) {
+        self.recovery_record.record_recovery_attempt(reason);
+
+        let dimension = match reason {
+            RecoveryReason::CreateIfaceFailure(_) => {
+                metrics::RecoveryOccurrenceMetricDimensionReason::InterfaceCreationFailure
+            }
+            RecoveryReason::DestroyIfaceFailure(_) => {
+                metrics::RecoveryOccurrenceMetricDimensionReason::InterfaceDestructionFailure
+            }
+            RecoveryReason::ConnectFailure(_) => {
+                metrics::RecoveryOccurrenceMetricDimensionReason::ClientConnectionFailure
+            }
+            RecoveryReason::StartApFailure(_) => {
+                metrics::RecoveryOccurrenceMetricDimensionReason::ApStartFailure
+            }
+            RecoveryReason::ScanFailure(_) => {
+                metrics::RecoveryOccurrenceMetricDimensionReason::ScanFailure
+            }
+            RecoveryReason::ScanCancellation(_) => {
+                metrics::RecoveryOccurrenceMetricDimensionReason::ScanCancellation
+            }
+            RecoveryReason::ScanResultsEmpty(_) => {
+                metrics::RecoveryOccurrenceMetricDimensionReason::ScanResultsEmpty
+            }
+        };
+
+        log_cobalt_1dot1!(
+            self.cobalt_1dot1_proxy,
+            log_integer,
+            metrics::RECOVERY_OCCURRENCE_METRIC_ID,
+            1,
+            &[dimension.as_event_code()],
+        )
+    }
+
+    async fn log_post_recovery_result(&mut self, reason: RecoveryReason, outcome: RecoveryOutcome) {
+        async fn log_post_recovery_metric(
+            proxy: &mut fidl_fuchsia_metrics::MetricEventLoggerProxy,
+            metric_id: u32,
+            event_codes: &[u32],
+        ) {
+            log_cobalt_1dot1!(proxy, log_integer, metric_id, 1, event_codes,)
+        }
+
+        match reason {
+            RecoveryReason::CreateIfaceFailure(_) => {
+                log_post_recovery_metric(
+                    &mut self.cobalt_1dot1_proxy,
+                    metrics::INTERFACE_CREATION_RECOVERY_OUTCOME_METRIC_ID,
+                    &[outcome.as_event_code()],
+                )
+                .await;
+            }
+            RecoveryReason::DestroyIfaceFailure(_) => {
+                log_post_recovery_metric(
+                    &mut self.cobalt_1dot1_proxy,
+                    metrics::INTERFACE_DESTRUCTION_RECOVERY_OUTCOME_METRIC_ID,
+                    &[outcome.as_event_code()],
+                )
+                .await;
+            }
+            RecoveryReason::ConnectFailure(mechanism) => {
+                log_post_recovery_metric(
+                    &mut self.cobalt_1dot1_proxy,
+                    metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+                    &[outcome.as_event_code(), mechanism.as_event_code()],
+                )
+                .await;
+            }
+            RecoveryReason::StartApFailure(mechanism) => {
+                log_post_recovery_metric(
+                    &mut self.cobalt_1dot1_proxy,
+                    metrics::START_ACCESS_POINT_RECOVERY_OUTCOME_METRIC_ID,
+                    &[outcome.as_event_code(), mechanism.as_event_code()],
+                )
+                .await;
+            }
+            RecoveryReason::ScanFailure(mechanism) => {
+                log_post_recovery_metric(
+                    &mut self.cobalt_1dot1_proxy,
+                    metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+                    &[outcome.as_event_code(), mechanism.as_event_code()],
+                )
+                .await;
+            }
+            RecoveryReason::ScanCancellation(mechanism) => {
+                log_post_recovery_metric(
+                    &mut self.cobalt_1dot1_proxy,
+                    metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+                    &[outcome.as_event_code(), mechanism.as_event_code()],
+                )
+                .await;
+            }
+            RecoveryReason::ScanResultsEmpty(mechanism) => {
+                log_post_recovery_metric(
+                    &mut self.cobalt_1dot1_proxy,
+                    metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+                    &[outcome.as_event_code(), mechanism.as_event_code()],
+                )
+                .await;
+            }
+        }
+    }
 }
 
 fn append_device_connected_channel_cobalt_metrics(
@@ -3462,19 +3869,23 @@ impl ConnectAttemptsCounter {
 
 #[cfg(test)]
 mod tests {
-    use futures::stream::FusedStream;
-
     use {
         super::*,
         crate::util::testing::{
-            create_inspect_persistence_channel, create_wlan_hasher, generate_random_bss,
-            generate_random_channel, generate_random_scanned_candidate,
+            create_inspect_persistence_channel, generate_random_bss, generate_random_channel,
+            generate_random_scanned_candidate,
+        },
+        diagnostics_assertions::{
+            AnyBoolProperty, AnyNumericProperty, AnyStringProperty, NonZeroUintProperty,
         },
         fidl::endpoints::create_proxy_and_stream,
         fidl_fuchsia_metrics::{MetricEvent, MetricEventLoggerRequest, MetricEventPayload},
         fidl_fuchsia_wlan_stats,
-        fuchsia_inspect::{testing::NonZeroUintProperty, Inspector},
-        futures::{pin_mut, task::Poll, TryStreamExt},
+        fuchsia_inspect::Inspector,
+        futures::{pin_mut, stream::FusedStream, task::Poll, TryStreamExt},
+        ieee80211_testutils::{BSSID_REGEX, SSID_REGEX},
+        rand::Rng,
+        regex::Regex,
         std::{cmp::min, collections::VecDeque, pin::Pin},
         test_case::test_case,
         wlan_common::{
@@ -3495,7 +3906,7 @@ mod tests {
     macro_rules! assert_data_tree_with_respond_blocking_req {
         ($test_helper:expr, $test_fut:expr, $($rest:tt)+) => {{
             use {
-                fuchsia_inspect::{assert_data_tree, reader},
+                fuchsia_inspect::reader, diagnostics_assertions::assert_data_tree,
             };
 
             let inspector = $test_helper.inspector.clone();
@@ -3600,6 +4011,114 @@ mod tests {
         );
     }
 
+    #[fuchsia::test]
+    fn test_log_connect_event_correct_shape() {
+        let (mut test_helper, mut test_fut) = setup_test();
+        test_helper.send_connected_event(random_bss_description!(Wpa2));
+
+        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
+            stats: contains {
+                connect_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        multiple_bss_candidates: AnyBoolProperty,
+                        network: {
+                            bssid: &*BSSID_REGEX,
+                            ssid: &*SSID_REGEX,
+                            rssi_dbm: AnyNumericProperty,
+                            snr_db: AnyNumericProperty,
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    fn test_log_connection_status_correct_shape() {
+        let (mut test_helper, mut test_fut) = setup_test();
+        test_helper.send_connected_event(random_bss_description!(Wpa2));
+
+        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
+            stats: contains {
+                connection_status: contains {
+                    status_string: AnyStringProperty,
+                    connected_network: contains {
+                        rssi_dbm: AnyNumericProperty,
+                        snr_db: AnyNumericProperty,
+                        bssid: &*BSSID_REGEX,
+                        ssid: &*SSID_REGEX,
+                        protection: AnyStringProperty,
+                        channel: {
+                            primary: AnyNumericProperty,
+                            cbw: AnyStringProperty,
+                            secondary80: AnyNumericProperty,
+                        },
+                        is_wmm_assoc: AnyBoolProperty,
+                    }
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    fn test_log_disconnect_event_correct_shape() {
+        let (mut test_helper, mut test_fut) = setup_test();
+
+        test_helper.telemetry_sender.send(TelemetryEvent::Disconnected {
+            track_subsequent_downtime: false,
+            info: fake_disconnect_info(),
+        });
+        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
+            external: contains {
+                stats: contains {
+                    disconnect_events: {
+                        "0": {
+                            "@time": AnyNumericProperty,
+                            flattened_reason_code: AnyNumericProperty,
+                            locally_initiated: AnyBoolProperty,
+                            network: {
+                                channel: {
+                                    primary: AnyNumericProperty,
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            stats: contains {
+                disconnect_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        connected_duration: AnyNumericProperty,
+                        disconnect_source: Regex::new("^source: [^,]+, reason: [^,]+(?:, mlme_event_name: [^,]+)?$").unwrap(),
+                        network: contains {
+                            rssi_dbm: AnyNumericProperty,
+                            snr_db: AnyNumericProperty,
+                            bssid: &*BSSID_REGEX,
+                            ssid: &*SSID_REGEX,
+                            protection: AnyStringProperty,
+                            channel: {
+                                primary: AnyNumericProperty,
+                                cbw: AnyStringProperty,
+                                secondary80: AnyNumericProperty,
+                            },
+                            is_wmm_assoc: AnyBoolProperty,
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // TODO(b/318035491) - Re-enable this test once flake has been resolved.
+    #[ignore]
     #[fuchsia::test]
     fn test_stat_cycles() {
         let (mut test_helper, mut test_fut) = setup_test();
@@ -3768,31 +4287,15 @@ mod tests {
         let (mut test_helper, mut test_fut) = setup_test();
 
         test_helper.advance_by(25.seconds(), test_fut.as_mut());
-        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
-            stats: contains {
-                time_series: contains {
-                    total_duration_sec: {
-                        "@time": 25_000_000_000i64,
-                        "1m": vec![15i64],
-                        "15m": vec![15i64],
-                        "1h": vec![15i64],
-                    }
-                },
-            }
-        });
+        let time_series = test_helper.get_time_series(&mut test_fut);
+        let total_duration_sec: Vec<_> =
+            time_series.lock().total_duration_sec.minutely_iter().map(|v| *v).collect();
+        assert_eq!(total_duration_sec, vec![15]);
 
         test_helper.advance_to_next_telemetry_checkpoint(test_fut.as_mut());
-        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
-            stats: contains {
-                time_series: contains {
-                    total_duration_sec: contains {
-                        "1m": vec![30i64],
-                        "15m": vec![30i64],
-                        "1h": vec![30i64],
-                    }
-                },
-            }
-        });
+        let total_duration_sec: Vec<_> =
+            time_series.lock().total_duration_sec.minutely_iter().map(|v| *v).collect();
+        assert_eq!(total_duration_sec, vec![30]);
     }
 
     /// This test is to verify that after a `TelemetryEvent::UpdateExperiment`,
@@ -4196,25 +4699,13 @@ mod tests {
         }
         test_helper.send_connected_event(random_bss_description!(Wpa2));
         test_helper.drain_cobalt_events(&mut test_fut);
-
-        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
-            stats: contains {
-                time_series: contains {
-                    connect_attempt_count: {
-                        "@time": 0i64,
-                        "1m": vec![11u64],
-                        "15m": vec![11u64],
-                        "1h": vec![11u64],
-                    },
-                    connect_successful_count: {
-                        "@time": 0i64,
-                        "1m": vec![1u64],
-                        "15m": vec![1u64],
-                        "1h": vec![1u64],
-                    }
-                },
-            }
-        });
+        let time_series = test_helper.get_time_series(&mut test_fut);
+        let connect_attempt_count: Vec<_> =
+            time_series.lock().connect_attempt_count.minutely_iter().map(|v| *v).collect();
+        let connect_successful_count: Vec<_> =
+            time_series.lock().connect_successful_count.minutely_iter().map(|v| *v).collect();
+        assert_eq!(connect_attempt_count, vec![11]);
+        assert_eq!(connect_successful_count, vec![1]);
     }
 
     #[fuchsia::test]
@@ -4324,18 +4815,10 @@ mod tests {
         test_helper.send_connected_event(random_bss_description!(Wpa2));
         assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
 
-        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
-            stats: contains {
-                time_series: contains {
-                    disconnect_count: {
-                        "@time": 0i64,
-                        "1m": vec![0u64],
-                        "15m": vec![0u64],
-                        "1h": vec![0u64],
-                    }
-                },
-            }
-        });
+        let time_series = test_helper.get_time_series(&mut test_fut);
+        let disconnect_count: Vec<_> =
+            time_series.lock().disconnect_count.minutely_iter().map(|v| *v).collect();
+        assert_eq!(disconnect_count, vec![0]);
 
         let info = DisconnectInfo {
             disconnect_source: fidl_sme::DisconnectSource::Ap(fidl_sme::DisconnectCause {
@@ -4349,17 +4832,10 @@ mod tests {
             .send(TelemetryEvent::Disconnected { track_subsequent_downtime: true, info });
         test_helper.drain_cobalt_events(&mut test_fut);
 
-        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
-            stats: contains {
-                time_series: contains {
-                    disconnect_count: contains {
-                        "1m": vec![1u64],
-                        "15m": vec![1u64],
-                        "1h": vec![1u64],
-                    }
-                },
-            }
-        });
+        let time_series = test_helper.get_time_series(&mut test_fut);
+        let disconnect_count: Vec<_> =
+            time_series.lock().disconnect_count.minutely_iter().map(|v| *v).collect();
+        assert_eq!(disconnect_count, vec![1]);
     }
 
     #[fuchsia::test]
@@ -4369,18 +4845,10 @@ mod tests {
         assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
         test_helper.advance_by(90.seconds(), test_fut.as_mut());
 
-        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
-            stats: contains {
-                time_series: contains {
-                    connected_duration_sec: {
-                        "@time": 90_000_000_000i64,
-                        "1m": vec![60i64, 30i64],
-                        "15m": vec![90i64],
-                        "1h": vec![90i64],
-                    }
-                },
-            }
-        });
+        let time_series = test_helper.get_time_series(&mut test_fut);
+        let connected_duration_sec: Vec<_> =
+            time_series.lock().connected_duration_sec.minutely_iter().map(|v| *v).collect();
+        assert_eq!(connected_duration_sec, vec![45, 45]);
     }
 
     #[fuchsia::test]
@@ -4550,38 +5018,26 @@ mod tests {
         assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
 
         test_helper.advance_by(2.minutes(), test_fut.as_mut());
-        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
-            stats: contains {
-                time_series: contains {
-                    rx_unicast_drop_count: {
-                        "@time": 120_000_000_000i64,
-                        // Note: Packets from the first 15 seconds are not accounted because we
-                        //       we did not take packet measurement at 0th second mark.
-                        "1m": vec![135u64, 180u64, 0u64],
-                        "15m": vec![315u64],
-                        "1h": vec![315u64],
-                    },
-                    rx_unicast_total_count: {
-                        "@time": 120_000_000_000i64,
-                        "1m": vec![4500u64, 6000u64, 0u64],
-                        "15m": vec![10500u64],
-                        "1h": vec![10500u64],
-                    },
-                    tx_drop_count: {
-                        "@time": 120_000_000_000i64,
-                        "1m": vec![90u64, 120u64, 0u64],
-                        "15m": vec![210u64],
-                        "1h": vec![210u64],
-                    },
-                    tx_total_count: {
-                        "@time": 120_000_000_000i64,
-                        "1m": vec![450u64, 600u64, 0u64],
-                        "15m": vec![1050u64],
-                        "1h": vec![1050u64],
-                    },
-                },
-            }
-        });
+
+        let time_series = test_helper.get_time_series(&mut test_fut);
+        let rx_unicast_drop_count: Vec<_> =
+            time_series.lock().rx_unicast_drop_count.minutely_iter().map(|v| *v).collect();
+        let rx_unicast_total_count: Vec<_> =
+            time_series.lock().rx_unicast_total_count.minutely_iter().map(|v| *v).collect();
+        let tx_drop_count: Vec<_> =
+            time_series.lock().tx_drop_count.minutely_iter().map(|v| *v).collect();
+        let tx_total_count: Vec<_> =
+            time_series.lock().tx_total_count.minutely_iter().map(|v| *v).collect();
+
+        // Note: Packets from the first 15 seconds are not accounted because we
+        //       we did not take packet measurement at 0th second mark.
+        //       Additionally, the count for 45th-60th second mark is logged
+        //       at the 60th mark, which is considered to be part of the second
+        //       window.
+        assert_eq!(rx_unicast_drop_count, vec![90, 180, 45]);
+        assert_eq!(rx_unicast_total_count, vec![3000, 6000, 1500]);
+        assert_eq!(tx_drop_count, vec![60, 120, 30]);
+        assert_eq!(tx_total_count, vec![300, 600, 150]);
     }
 
     #[fuchsia::test]
@@ -4637,20 +5093,10 @@ mod tests {
         assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
 
         test_helper.advance_by(150.seconds(), test_fut.as_mut());
-        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
-            stats: contains {
-                time_series: contains {
-                    no_rx_duration_sec: {
-                        "@time": 150_000_000_000i64,
-                        // Note: Packets from the first 15 seconds are not accounted because we
-                        //       we did not take packet measurement at 0th second mark.
-                        "1m": vec![45i64, 60i64, 30i64],
-                        "15m": vec![135i64],
-                        "1h": vec![135i64],
-                    },
-                },
-            }
-        });
+        let time_series = test_helper.get_time_series(&mut test_fut);
+        let no_rx_duration_sec: Vec<_> =
+            time_series.lock().no_rx_duration_sec.minutely_iter().map(|v| *v).collect();
+        assert_eq!(no_rx_duration_sec, vec![30, 60, 45]);
     }
 
     #[fuchsia::test]
@@ -5641,6 +6087,106 @@ mod tests {
             test_helper.get_logged_metrics(metrics::NETWORK_DISCONNECT_COUNTS_METRIC_ID);
         assert_eq!(total_disconnect_counts.len(), 1);
         assert_eq!(total_disconnect_counts[0].payload, MetricEventPayload::Count(1));
+    }
+
+    #[fuchsia::test]
+    fn test_log_saved_networks_count() {
+        let (mut test_helper, mut test_fut) = setup_test();
+
+        let event = TelemetryEvent::SavedNetworkCount {
+            saved_network_count: 4,
+            config_count_per_saved_network: vec![1, 1],
+        };
+        test_helper.telemetry_sender.send(event);
+        test_helper.drain_cobalt_events(&mut test_fut);
+
+        let saved_networks_count =
+            test_helper.get_logged_metrics(metrics::SAVED_NETWORKS_MIGRATED_METRIC_ID);
+        assert_eq!(saved_networks_count.len(), 1);
+        assert_eq!(
+            saved_networks_count[0].event_codes,
+            vec![metrics::SavedNetworksMigratedMetricDimensionSavedNetworks::TwoToFour as u32]
+        );
+
+        let config_count = test_helper
+            .get_logged_metrics(metrics::SAVED_CONFIGURATIONS_FOR_SAVED_NETWORK_MIGRATED_METRIC_ID);
+        assert_eq!(config_count.len(), 2);
+        assert_eq!(
+            config_count[0].event_codes,
+            vec![metrics::SavedConfigurationsForSavedNetworkMigratedMetricDimensionSavedConfigurations::One as u32]
+        );
+        assert_eq!(
+            config_count[1].event_codes,
+            vec![metrics::SavedConfigurationsForSavedNetworkMigratedMetricDimensionSavedConfigurations::One as u32]
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_log_network_selection_scan_interval() {
+        let (mut test_helper, mut test_fut) = setup_test();
+
+        let duration = zx::Duration::from_seconds(rand::thread_rng().gen_range(0..100));
+
+        let event = TelemetryEvent::NetworkSelectionScanInterval { time_since_last_scan: duration };
+        test_helper.telemetry_sender.send(event);
+        test_helper.drain_cobalt_events(&mut test_fut);
+
+        let last_scan_age = test_helper
+            .get_logged_metrics(metrics::LAST_SCAN_AGE_WHEN_SCAN_REQUESTED_MIGRATED_METRIC_ID);
+        assert_eq!(last_scan_age.len(), 1);
+        assert_eq!(
+            last_scan_age[0].payload,
+            fidl_fuchsia_metrics::MetricEventPayload::IntegerValue(duration.into_micros())
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_log_connection_selection_scan_results() {
+        let (mut test_helper, mut test_fut) = setup_test();
+
+        let event = TelemetryEvent::ConnectionSelectionScanResults {
+            saved_network_count: 4,
+            saved_network_count_found_by_active_scan: 1,
+            bss_count_per_saved_network: vec![10, 10],
+        };
+        test_helper.telemetry_sender.send(event);
+        test_helper.drain_cobalt_events(&mut test_fut);
+
+        let saved_networks_count =
+            test_helper.get_logged_metrics(metrics::SCAN_RESULTS_RECEIVED_MIGRATED_METRIC_ID);
+        assert_eq!(saved_networks_count.len(), 1);
+        assert_eq!(
+            saved_networks_count[0].event_codes,
+            vec![
+                metrics::ScanResultsReceivedMigratedMetricDimensionSavedNetworksCount::TwoToFour
+                    as u32
+            ]
+        );
+
+        let active_scanned_network = test_helper.get_logged_metrics(
+            metrics::SAVED_NETWORK_IN_SCAN_RESULT_WITH_ACTIVE_SCAN_MIGRATED_METRIC_ID,
+        );
+        assert_eq!(active_scanned_network.len(), 1);
+        assert_eq!(
+            active_scanned_network[0].event_codes,
+            vec![metrics::SavedNetworkInScanResultWithActiveScanMigratedMetricDimensionActiveScanSsidsObserved::One as u32]
+        );
+
+        let bss_count = test_helper
+            .get_logged_metrics(metrics::SAVED_NETWORK_IN_SCAN_RESULT_MIGRATED_METRIC_ID);
+        assert_eq!(bss_count.len(), 2);
+        assert_eq!(
+            bss_count[0].event_codes,
+            vec![
+                metrics::SavedNetworkInScanResultMigratedMetricDimensionBssCount::FiveToTen as u32
+            ]
+        );
+        assert_eq!(
+            bss_count[1].event_codes,
+            vec![
+                metrics::SavedNetworkInScanResultMigratedMetricDimensionBssCount::FiveToTen as u32
+            ]
+        );
     }
 
     #[fuchsia::test]
@@ -6700,35 +7246,6 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_log_metric_events() {
-        let (mut test_helper, mut test_fut) = setup_test();
-
-        let metric_event_1 = MetricEvent {
-            metric_id: 1,
-            event_codes: vec![1],
-            payload: MetricEventPayload::Count(1),
-        };
-        let metric_event_2 = MetricEvent {
-            metric_id: 2,
-            event_codes: vec![2, 3],
-            payload: MetricEventPayload::IntegerValue(10),
-        };
-        test_helper.telemetry_sender.send(TelemetryEvent::LogMetricEvents {
-            events: vec![metric_event_1.clone(), metric_event_2.clone()],
-            ctx: "blah",
-        });
-
-        test_helper.drain_cobalt_events(&mut test_fut);
-        let metrics = test_helper.get_logged_metrics(metric_event_1.metric_id);
-        assert_eq!(metrics.len(), 1);
-        assert_eq!(metrics[0], metric_event_1);
-
-        let metrics = test_helper.get_logged_metrics(metric_event_2.metric_id);
-        assert_eq!(metrics.len(), 1);
-        assert_eq!(metrics[0], metric_event_2);
-    }
-
-    #[fuchsia::test]
     fn test_data_persistence_called_every_five_minutes() {
         let (mut test_helper, mut test_fut) = setup_test();
         test_helper.advance_by(5.minutes(), test_fut.as_mut());
@@ -6824,7 +7341,7 @@ mod tests {
         let (mut test_helper, mut test_fut) = setup_test();
 
         // Send a notification that interface creation has failed.
-        test_helper.telemetry_sender.send(TelemetryEvent::IfaceCreationFailure);
+        test_helper.telemetry_sender.send(TelemetryEvent::IfaceCreationResult(Err(())));
 
         // Run the telemetry loop until it stalls.
         assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
@@ -6841,7 +7358,7 @@ mod tests {
         let (mut test_helper, mut test_fut) = setup_test();
 
         // Send a notification that interface creation has failed.
-        test_helper.telemetry_sender.send(TelemetryEvent::IfaceDestructionFailure);
+        test_helper.telemetry_sender.send(TelemetryEvent::IfaceDestructionResult(Err(())));
 
         // Run the telemetry loop until it stalls.
         assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
@@ -6882,7 +7399,7 @@ mod tests {
         let (mut test_helper, mut test_fut) = setup_test();
 
         // Send a notification that starting the AP has failed.
-        test_helper.telemetry_sender.send(TelemetryEvent::ApStartFailure);
+        test_helper.telemetry_sender.send(TelemetryEvent::StartApResult(Err(())));
 
         // Run the telemetry loop until it stalls.
         assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
@@ -6891,6 +7408,832 @@ mod tests {
         test_helper.drain_cobalt_events(&mut test_fut);
         let logged_metrics = test_helper.get_logged_metrics(metrics::AP_START_FAILURE_METRIC_ID);
         assert_eq!(logged_metrics.len(), 1);
+    }
+
+    #[test_case(
+        RecoveryReason::CreateIfaceFailure(PhyRecoveryMechanism::PhyReset),
+        metrics::RecoveryOccurrenceMetricDimensionReason::InterfaceCreationFailure ;
+        "log recovery event for iface creation failure"
+    )]
+    #[test_case(
+        RecoveryReason::DestroyIfaceFailure(PhyRecoveryMechanism::PhyReset),
+        metrics::RecoveryOccurrenceMetricDimensionReason::InterfaceDestructionFailure ;
+        "log recovery event for iface destruction failure"
+    )]
+    #[test_case(
+        RecoveryReason::ConnectFailure(ClientRecoveryMechanism::Disconnect),
+        metrics::RecoveryOccurrenceMetricDimensionReason::ClientConnectionFailure ;
+        "log recovery event for connect failure"
+    )]
+    #[test_case(
+        RecoveryReason::StartApFailure(ApRecoveryMechanism::StopAp),
+        metrics::RecoveryOccurrenceMetricDimensionReason::ApStartFailure ;
+        "log recovery event for start AP failure"
+    )]
+    #[test_case(
+        RecoveryReason::ScanFailure(ClientRecoveryMechanism::Disconnect),
+        metrics::RecoveryOccurrenceMetricDimensionReason::ScanFailure ;
+        "log recovery event for scan failure"
+    )]
+    #[test_case(
+        RecoveryReason::ScanCancellation(ClientRecoveryMechanism::Disconnect),
+         metrics::RecoveryOccurrenceMetricDimensionReason::ScanCancellation ;
+        "log recovery event for scan cancellation"
+    )]
+    #[test_case(
+        RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::Disconnect),
+        metrics::RecoveryOccurrenceMetricDimensionReason::ScanResultsEmpty ;
+        "log recovery event for empty scan results"
+    )]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_log_recovery_occurrence(
+        reason: RecoveryReason,
+        expected_dimension: metrics::RecoveryOccurrenceMetricDimensionReason,
+    ) {
+        let (mut test_helper, mut test_fut) = setup_test();
+
+        // Send the recovery event metric.
+        test_helper.telemetry_sender.send(TelemetryEvent::RecoveryEvent { reason });
+
+        // Run the telemetry loop until it stalls.
+        assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        // Expect that Cobalt has been notified of the recovery event
+        test_helper.drain_cobalt_events(&mut test_fut);
+        let logged_metrics = test_helper.get_logged_metrics(metrics::RECOVERY_OCCURRENCE_METRIC_ID);
+        assert_eq!(logged_metrics.len(), 1);
+
+        // Verify the reason dimension.
+        assert_eq!(logged_metrics[0].event_codes.len(), 1);
+        assert_eq!(logged_metrics[0].event_codes[0], expected_dimension.as_event_code());
+    }
+
+    #[test_case(
+        RecoveryReason::CreateIfaceFailure(PhyRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Success,
+        metrics::INTERFACE_CREATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32] ;
+        "create iface fixed by resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::CreateIfaceFailure(PhyRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Failure,
+        metrics::INTERFACE_CREATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32] ;
+        "create iface not fixed by resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::DestroyIfaceFailure(PhyRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Success,
+        metrics::INTERFACE_DESTRUCTION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32] ;
+        "destroy iface fixed by resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::DestroyIfaceFailure(PhyRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Failure,
+        metrics::INTERFACE_DESTRUCTION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32] ;
+        "destroy iface not fixed by resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::ConnectFailure(ClientRecoveryMechanism::Disconnect),
+        RecoveryOutcome::Success,
+        metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "connect works after disconnecting"
+    )]
+    #[test_case(
+        RecoveryReason::ConnectFailure(ClientRecoveryMechanism::DestroyIface),
+        RecoveryOutcome::Success,
+        metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "connect works after destroying iface"
+    )]
+    #[test_case(
+        RecoveryReason::ConnectFailure(ClientRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Success,
+        metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "connect works after resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::ConnectFailure(ClientRecoveryMechanism::Disconnect),
+        RecoveryOutcome::Failure,
+        metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "connect still fails after disconnecting"
+    )]
+    #[test_case(
+        RecoveryReason::ConnectFailure(ClientRecoveryMechanism::DestroyIface),
+        RecoveryOutcome::Failure,
+        metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "connect still fails after destroying iface"
+    )]
+    #[test_case(
+        RecoveryReason::ConnectFailure(ClientRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Failure,
+        metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "connect still fails after resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::StartApFailure(ApRecoveryMechanism::StopAp),
+        RecoveryOutcome::Success,
+        metrics::START_ACCESS_POINT_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ApRecoveryMechanism::StopAp as u32] ;
+        "start AP works after stopping AP"
+    )]
+    #[test_case(
+        RecoveryReason::StartApFailure(ApRecoveryMechanism::DestroyIface),
+        RecoveryOutcome::Success,
+        metrics::START_ACCESS_POINT_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ApRecoveryMechanism::DestroyIface as u32] ;
+        "start AP works after destroying iface"
+    )]
+    #[test_case(
+        RecoveryReason::StartApFailure(ApRecoveryMechanism::ResetPhy),
+        RecoveryOutcome::Success,
+        metrics::START_ACCESS_POINT_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ApRecoveryMechanism::ResetPhy as u32] ;
+        "start AP works after resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::StartApFailure(ApRecoveryMechanism::StopAp),
+        RecoveryOutcome::Failure,
+        metrics::START_ACCESS_POINT_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ApRecoveryMechanism::StopAp as u32] ;
+        "start AP still fails after stopping AP"
+    )]
+    #[test_case(
+        RecoveryReason::StartApFailure(ApRecoveryMechanism::DestroyIface),
+        RecoveryOutcome::Failure,
+        metrics::START_ACCESS_POINT_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ApRecoveryMechanism::DestroyIface as u32] ;
+        "start AP still fails after destroying iface"
+    )]
+    #[test_case(
+        RecoveryReason::StartApFailure(ApRecoveryMechanism::ResetPhy),
+        RecoveryOutcome::Failure,
+        metrics::START_ACCESS_POINT_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ApRecoveryMechanism::ResetPhy as u32] ;
+        "start AP still fails after resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::ScanFailure(ClientRecoveryMechanism::Disconnect),
+        RecoveryOutcome::Success,
+        metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "scan works after disconnecting"
+    )]
+    #[test_case(
+        RecoveryReason::ScanFailure(ClientRecoveryMechanism::DestroyIface),
+        RecoveryOutcome::Success,
+        metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "scan works after destroying iface"
+    )]
+    #[test_case(
+        RecoveryReason::ScanFailure(ClientRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Success,
+        metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "scan works after resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::ScanFailure(ClientRecoveryMechanism::Disconnect),
+        RecoveryOutcome::Failure,
+        metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "scan still fails after disconnecting"
+    )]
+    #[test_case(
+        RecoveryReason::ScanFailure(ClientRecoveryMechanism::DestroyIface),
+        RecoveryOutcome::Failure,
+        metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "scan still fails after destroying iface"
+    )]
+    #[test_case(
+        RecoveryReason::ScanFailure(ClientRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Failure,
+        metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "scan still fails after resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::ScanCancellation(ClientRecoveryMechanism::Disconnect),
+        RecoveryOutcome::Success,
+        metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "scan is no longer cancelled after disconnecting"
+    )]
+    #[test_case(
+        RecoveryReason::ScanCancellation(ClientRecoveryMechanism::DestroyIface),
+        RecoveryOutcome::Success,
+        metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "scan is no longer cancelled after destroying iface"
+    )]
+    #[test_case(
+        RecoveryReason::ScanCancellation(ClientRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Success,
+        metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "scan is no longer cancelled after resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::ScanCancellation(ClientRecoveryMechanism::Disconnect),
+        RecoveryOutcome::Failure,
+        metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "scan is still cancelled after disconnect"
+    )]
+    #[test_case(
+        RecoveryReason::ScanCancellation(ClientRecoveryMechanism::DestroyIface),
+        RecoveryOutcome::Failure,
+        metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "scan is still cancelled after destroying iface"
+    )]
+    #[test_case(
+        RecoveryReason::ScanCancellation(ClientRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Failure,
+        metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "scan is still cancelled after resetting PHY"
+    )]
+    #[test_case(
+        RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::Disconnect),
+        RecoveryOutcome::Success,
+        metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "scan results not empty after disconnect"
+    )]
+    #[test_case(
+        RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::DestroyIface),
+        RecoveryOutcome::Success,
+        metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "scan results not empty after destroy iface"
+    )]
+    #[test_case(
+        RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Success,
+        metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "scan results not empty after PHY reset"
+    )]
+    #[test_case(
+        RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::Disconnect),
+        RecoveryOutcome::Failure,
+        metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "scan results still empty after disconnect"
+    )]
+    #[test_case(
+        RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::DestroyIface),
+        RecoveryOutcome::Failure,
+        metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "scan results still empty after destroy iface"
+    )]
+    #[test_case(
+        RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::PhyReset),
+        RecoveryOutcome::Failure,
+        metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "scan results still empty after PHY reset"
+    )]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_log_post_recovery_result(
+        reason: RecoveryReason,
+        outcome: RecoveryOutcome,
+        expected_metric_id: u32,
+        expected_event_codes: Vec<u32>,
+    ) {
+        let mut exec = fasync::TestExecutor::new();
+
+        // Construct a StatsLogger
+        let (cobalt_1dot1_proxy, mut cobalt_1dot1_stream) =
+            create_proxy_and_stream::<fidl_fuchsia_metrics::MetricEventLoggerMarker>()
+                .expect("failed to create MetricsEventLogger proxy");
+
+        let inspector = Inspector::default();
+        let inspect_node = inspector.root().create_child("stats");
+
+        let mut stats_logger = StatsLogger::new(cobalt_1dot1_proxy, &inspect_node);
+
+        // Log the test telemetry event.
+        let fut = stats_logger.log_post_recovery_result(reason, outcome);
+        pin_mut!(fut);
+        assert_variant!(exec.run_until_stalled(&mut fut), Poll::Pending);
+
+        // Verify the metric that was emitted.
+        assert_variant!(
+            exec.run_until_stalled(&mut cobalt_1dot1_stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_metrics::MetricEventLoggerRequest::LogInteger {
+                metric_id, event_codes, responder, ..
+            }))) => {
+                assert_eq!(metric_id, expected_metric_id);
+                assert_eq!(event_codes, expected_event_codes);
+
+                assert!(responder.send(Ok(())).is_ok());
+        });
+
+        // The future should complete.
+        assert_variant!(exec.run_until_stalled(&mut fut), Poll::Ready(()));
+    }
+
+    #[fuchsia::test]
+    fn test_post_recovery_connect_success() {
+        let (mut test_helper, mut test_fut) = setup_test();
+
+        // Send the recovery event metric.
+        let reason = RecoveryReason::ConnectFailure(ClientRecoveryMechanism::PhyReset);
+        let event = TelemetryEvent::RecoveryEvent { reason };
+        test_helper.telemetry_sender.send(event);
+
+        // Run the telemetry loop until it stalls.
+        assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        // Expect that Cobalt has been notified of the recovery event
+        test_helper.drain_cobalt_events(&mut test_fut);
+        let logged_metrics = test_helper.get_logged_metrics(metrics::RECOVERY_OCCURRENCE_METRIC_ID);
+        assert_eq!(logged_metrics.len(), 1);
+
+        // Verify the reason dimension.
+        assert_eq!(
+            logged_metrics[0].event_codes,
+            vec![metrics::RecoveryOccurrenceMetricDimensionReason::ClientConnectionFailure
+                .as_event_code()]
+        );
+
+        // Send a successful connect result.
+        test_helper.telemetry_sender.send(TelemetryEvent::ConnectResult {
+            iface_id: IFACE_ID,
+            policy_connect_reason: Some(
+                client::types::ConnectReason::RetryAfterFailedConnectAttempt,
+            ),
+            result: fake_connect_result(fidl_ieee80211::StatusCode::Success),
+            multiple_bss_candidates: true,
+            ap_state: random_bss_description!(Wpa1).into(),
+            network_is_likely_hidden: false,
+        });
+
+        // Run the telemetry loop until it stalls.
+        assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        // Verify the connect post-recovery success metric was logged.
+        test_helper.drain_cobalt_events(&mut test_fut);
+        let logged_metrics =
+            test_helper.get_logged_metrics(metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID);
+        assert_eq!(
+            logged_metrics[0].event_codes,
+            vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::PhyReset as u32]
+        );
+
+        // Verify a subsequent connect result does not cause another metric to be logged.
+        test_helper.telemetry_sender.send(TelemetryEvent::ConnectResult {
+            iface_id: IFACE_ID,
+            policy_connect_reason: Some(
+                client::types::ConnectReason::RetryAfterFailedConnectAttempt,
+            ),
+            result: fake_connect_result(fidl_ieee80211::StatusCode::Success),
+            multiple_bss_candidates: true,
+            ap_state: random_bss_description!(Wpa1).into(),
+            network_is_likely_hidden: false,
+        });
+
+        assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        test_helper.cobalt_events = Vec::new();
+        test_helper.drain_cobalt_events(&mut test_fut);
+        let logged_metrics =
+            test_helper.get_logged_metrics(metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID);
+        assert!(logged_metrics.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_post_recovery_connect_failure() {
+        let (mut test_helper, mut test_fut) = setup_test();
+
+        // Send the recovery event metric.
+        let reason = RecoveryReason::ConnectFailure(ClientRecoveryMechanism::PhyReset);
+        let event = TelemetryEvent::RecoveryEvent { reason };
+        test_helper.telemetry_sender.send(event);
+
+        // Run the telemetry loop until it stalls.
+        assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        // Expect that Cobalt has been notified of the recovery event
+        test_helper.drain_cobalt_events(&mut test_fut);
+        let logged_metrics = test_helper.get_logged_metrics(metrics::RECOVERY_OCCURRENCE_METRIC_ID);
+        assert_eq!(logged_metrics.len(), 1);
+
+        // Verify the reason dimension.
+        assert_eq!(
+            logged_metrics[0].event_codes,
+            vec![metrics::RecoveryOccurrenceMetricDimensionReason::ClientConnectionFailure
+                .as_event_code()]
+        );
+
+        // Send a failed connect result.
+        test_helper.telemetry_sender.send(TelemetryEvent::ConnectResult {
+            iface_id: IFACE_ID,
+            policy_connect_reason: Some(
+                client::types::ConnectReason::RetryAfterFailedConnectAttempt,
+            ),
+            result: fake_connect_result(fidl_ieee80211::StatusCode::RefusedReasonUnspecified),
+            multiple_bss_candidates: true,
+            ap_state: random_bss_description!(Wpa1).into(),
+            network_is_likely_hidden: false,
+        });
+
+        // Run the telemetry loop until it stalls.
+        assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        // Verify the connect post-recovery failure metric was logged.
+        test_helper.drain_cobalt_events(&mut test_fut);
+        let logged_metrics =
+            test_helper.get_logged_metrics(metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID);
+        assert_eq!(
+            logged_metrics[0].event_codes,
+            vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::PhyReset as u32]
+        );
+
+        // Verify a subsequent connect result does not cause another metric to be logged.
+        test_helper.telemetry_sender.send(TelemetryEvent::ConnectResult {
+            iface_id: IFACE_ID,
+            policy_connect_reason: Some(
+                client::types::ConnectReason::RetryAfterFailedConnectAttempt,
+            ),
+            result: fake_connect_result(fidl_ieee80211::StatusCode::RefusedReasonUnspecified),
+            multiple_bss_candidates: true,
+            ap_state: random_bss_description!(Wpa1).into(),
+            network_is_likely_hidden: false,
+        });
+
+        assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        test_helper.cobalt_events = Vec::new();
+        test_helper.drain_cobalt_events(&mut test_fut);
+        let logged_metrics =
+            test_helper.get_logged_metrics(metrics::CONNECT_FAILURE_RECOVERY_OUTCOME_METRIC_ID);
+        assert!(logged_metrics.is_empty());
+    }
+
+    fn test_generic_post_recovery_event(
+        recovery_event: TelemetryEvent,
+        post_recovery_event: TelemetryEvent,
+        duplicate_check_event: TelemetryEvent,
+        expected_metric_id: u32,
+        dimensions: Vec<u32>,
+    ) {
+        let (mut test_helper, mut test_fut) = setup_test();
+
+        // Send the recovery event metric
+        test_helper.telemetry_sender.send(recovery_event);
+        assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        // Send the post-recovery result metric
+        test_helper.telemetry_sender.send(post_recovery_event);
+        assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        // Get the metric that was logged and verify that it was constructed properly.
+        test_helper.drain_cobalt_events(&mut test_fut);
+        let logged_metrics = test_helper.get_logged_metrics(expected_metric_id);
+
+        assert_eq!(logged_metrics.len(), 1);
+        assert_eq!(logged_metrics[0].event_codes, dimensions);
+
+        // Re-send the result metric and verify that nothing new was logged.
+        test_helper.cobalt_events = Vec::new();
+        test_helper.telemetry_sender.send(duplicate_check_event);
+        assert_variant!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+        let logged_metrics = test_helper.get_logged_metrics(expected_metric_id);
+        assert!(logged_metrics.is_empty());
+    }
+
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanFailure(ClientRecoveryMechanism::Disconnect)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![]
+        },
+        metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "Scan succeeds after recovery with no other defects"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanFailure(ClientRecoveryMechanism::Disconnect)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::ScanFailure]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::ScanFailure]
+        },
+        metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "Scan still fails following recovery"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanFailure(ClientRecoveryMechanism::DestroyIface)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::AbortedScan]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::AbortedScan]
+        },
+        metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "Scan succeeds after recovery but the scan was cancelled"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanFailure(ClientRecoveryMechanism::PhyReset)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::EmptyScanResults]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::EmptyScanResults]
+        },
+        metrics::SCAN_FAILURE_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "Scan succeeds after recovery but the results are empty"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanCancellation(ClientRecoveryMechanism::Disconnect)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![]
+        },
+        metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "Scan no longer cancelled after recovery"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanCancellation(ClientRecoveryMechanism::Disconnect)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::ScanFailure]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::ScanFailure]
+        },
+        metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "Scan not cancelled after recovery but fails instead"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanCancellation(ClientRecoveryMechanism::DestroyIface)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::AbortedScan]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::AbortedScan]
+        },
+        metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "Scan still cancelled after recovery"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanCancellation(ClientRecoveryMechanism::PhyReset)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::EmptyScanResults]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::EmptyScanResults]
+        },
+        metrics::SCAN_CANCELLATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "Scan not cancelled after recovery but results are empty"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::Disconnect)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![]
+        },
+        metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "Scan results not empty after recovery and no other errors"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::Disconnect)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::ScanFailure]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::ScanFailure]
+        },
+        metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::Disconnect as u32] ;
+        "Scan results no longer empty after recovery, but scan fails"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::DestroyIface)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::AbortedScan]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::AbortedScan]
+        },
+        metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ClientRecoveryMechanism::DestroyIface as u32] ;
+        "Scan results not empty after recovery but scan is cancelled"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::ScanResultsEmpty(ClientRecoveryMechanism::PhyReset)
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::EmptyScanResults]
+        },
+        TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData { unknown_protection_ies: vec![] },
+            scan_defects: vec![ScanIssue::EmptyScanResults]
+        },
+        metrics::EMPTY_SCAN_RESULTS_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ClientRecoveryMechanism::PhyReset as u32] ;
+        "Scan results still empty after recovery"
+    )]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_post_recovery_scan_metrics(
+        recovery_event: TelemetryEvent,
+        post_recovery_event: TelemetryEvent,
+        duplicate_check_event: TelemetryEvent,
+        expected_metric_id: u32,
+        dimensions: Vec<u32>,
+    ) {
+        test_generic_post_recovery_event(
+            recovery_event,
+            post_recovery_event,
+            duplicate_check_event,
+            expected_metric_id,
+            dimensions,
+        );
+    }
+
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::StartApFailure(ApRecoveryMechanism::ResetPhy)
+        },
+        TelemetryEvent::StartApResult(Err(())),
+        TelemetryEvent::StartApResult(Err(())),
+        metrics::START_ACCESS_POINT_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32, ApRecoveryMechanism::ResetPhy as u32] ;
+        "start AP still does not work after recovery"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::StartApFailure(ApRecoveryMechanism::ResetPhy)
+        },
+        TelemetryEvent::StartApResult(Ok(())),
+        TelemetryEvent::StartApResult(Ok(())),
+        metrics::START_ACCESS_POINT_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32, ApRecoveryMechanism::ResetPhy as u32] ;
+        "start AP works after recovery"
+    )]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_post_recovery_start_ap(
+        recovery_event: TelemetryEvent,
+        post_recovery_event: TelemetryEvent,
+        duplicate_check_event: TelemetryEvent,
+        expected_metric_id: u32,
+        dimensions: Vec<u32>,
+    ) {
+        test_generic_post_recovery_event(
+            recovery_event,
+            post_recovery_event,
+            duplicate_check_event,
+            expected_metric_id,
+            dimensions,
+        );
+    }
+
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::CreateIfaceFailure(PhyRecoveryMechanism::PhyReset)
+        },
+        TelemetryEvent::IfaceCreationResult(Err(())),
+        TelemetryEvent::IfaceCreationResult(Err(())),
+        metrics::INTERFACE_CREATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32] ;
+        "create iface still does not work after recovery"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::CreateIfaceFailure(PhyRecoveryMechanism::PhyReset)
+        },
+        TelemetryEvent::IfaceCreationResult(Ok(())),
+        TelemetryEvent::IfaceCreationResult(Ok(())),
+        metrics::INTERFACE_CREATION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32] ;
+        "create iface works after recovery"
+    )]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_post_recovery_create_iface(
+        recovery_event: TelemetryEvent,
+        post_recovery_event: TelemetryEvent,
+        duplicate_check_event: TelemetryEvent,
+        expected_metric_id: u32,
+        dimensions: Vec<u32>,
+    ) {
+        test_generic_post_recovery_event(
+            recovery_event,
+            post_recovery_event,
+            duplicate_check_event,
+            expected_metric_id,
+            dimensions,
+        );
+    }
+
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::DestroyIfaceFailure(PhyRecoveryMechanism::PhyReset)
+        },
+        TelemetryEvent::IfaceDestructionResult(Err(())),
+        TelemetryEvent::IfaceDestructionResult(Err(())),
+        metrics::INTERFACE_DESTRUCTION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Failure as u32] ;
+        "destroy iface does not work after recovery"
+    )]
+    #[test_case(
+        TelemetryEvent::RecoveryEvent {
+            reason: RecoveryReason::DestroyIfaceFailure(PhyRecoveryMechanism::PhyReset)
+        },
+        TelemetryEvent::IfaceDestructionResult(Ok(())),
+        TelemetryEvent::IfaceDestructionResult(Ok(())),
+        metrics::INTERFACE_DESTRUCTION_RECOVERY_OUTCOME_METRIC_ID,
+        vec![RecoveryOutcome::Success as u32] ;
+        "destroy iface works after recovery"
+    )]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_post_recovery_destroy_iface(
+        recovery_event: TelemetryEvent,
+        post_recovery_event: TelemetryEvent,
+        duplicate_check_event: TelemetryEvent,
+        expected_metric_id: u32,
+        dimensions: Vec<u32>,
+    ) {
+        test_generic_post_recovery_event(
+            recovery_event,
+            post_recovery_event,
+            duplicate_check_event,
+            expected_metric_id,
+            dimensions,
+        );
     }
 
     #[fuchsia::test]
@@ -7544,6 +8887,17 @@ mod tests {
                 }
             }
         }
+
+        fn get_time_series(
+            &mut self,
+            test_fut: &mut (impl Future<Output = ()> + Unpin),
+        ) -> Arc<Mutex<TimeSeriesStats>> {
+            let (sender, mut receiver) = oneshot::channel();
+            self.telemetry_sender.send(TelemetryEvent::GetTimeSeries { sender });
+            assert_variant!(self.advance_test_fut(test_fut), Poll::Pending);
+            self.drain_cobalt_events(test_fut);
+            assert_variant!(receiver.try_recv(), Ok(Some(stats)) => stats)
+        }
     }
 
     fn respond_iface_counter_stats_req(
@@ -7723,7 +9077,6 @@ mod tests {
                 let cobalt_1dot1_proxy = cobalt_1dot1_proxy.clone();
                 async move { Ok(cobalt_1dot1_proxy) }.boxed()
             }),
-            create_wlan_hasher(),
             inspect_node,
             external_inspect_node.create_child("stats"),
             persistence_req_sender,

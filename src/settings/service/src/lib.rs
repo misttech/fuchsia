@@ -9,16 +9,14 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+#[cfg(test)]
 use ::fidl::endpoints::{create_proxy, ServerEnd};
 #[cfg(test)]
 use anyhow::format_err;
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error};
 #[cfg(test)]
 use fidl_fuchsia_io::DirectoryMarker;
 use fidl_fuchsia_io::DirectoryProxy;
-use fidl_fuchsia_metrics::{
-    MetricEventLoggerFactoryProxy, MetricEventLoggerMarker, MetricEventLoggerProxy, ProjectSpec,
-};
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
@@ -29,8 +27,7 @@ use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObj};
 use fuchsia_fs::OpenFlags;
 use fuchsia_inspect::component;
 use fuchsia_zircon::{Duration, DurationNum};
-use futures::lock::Mutex;
-use futures::StreamExt;
+use futures::{lock::Mutex, StreamExt};
 use settings_storage::device_storage::DeviceStorage;
 use settings_storage::fidl_storage::FidlStorage;
 
@@ -41,7 +38,6 @@ pub use input::input_device_configuration::InputConfiguration;
 pub use light::light_hardware_configuration::LightHardwareConfiguration;
 use serde::Deserialize;
 pub use service::{Address, Payload};
-use setui_metrics_registry::{CUSTOMER_ID, PROJECT_ID};
 #[cfg(test)]
 use vfs::directory::entry::DirectoryEntry;
 #[cfg(test)]
@@ -190,7 +186,7 @@ impl ServiceConfiguration {
         .into();
 
         // Consolidate display type.
-        // TODO(fxbug.dev/82297): Remove this special handling once light sensor is its own FIDL
+        // TODO(fxbug.dev/123112): Remove this special handling once light sensor is its own FIDL
         // interface.
         if self.fidl_interfaces.is_superset(&display_subinterfaces) {
             self.fidl_interfaces = &self.fidl_interfaces - &display_subinterfaces;
@@ -272,7 +268,6 @@ pub struct EnvironmentBuilder<T: StorageFactory<Storage = DeviceStorage> + Send 
     storage_dir: Option<DirectoryProxy>,
     store_proxy: Option<StoreProxy>,
     fidl_storage_factory: Option<Arc<FidlStorageFactory>>,
-    metric_event_logger_factory_proxy: Option<MetricEventLoggerFactoryProxy>,
 }
 
 impl<T: StorageFactory<Storage = DeviceStorage> + Send + Sync + 'static> EnvironmentBuilder<T> {
@@ -293,7 +288,6 @@ impl<T: StorageFactory<Storage = DeviceStorage> + Send + Sync + 'static> Environ
             storage_dir: None,
             store_proxy: None,
             fidl_storage_factory: None,
-            metric_event_logger_factory_proxy: None,
         }
     }
 
@@ -404,14 +398,6 @@ impl<T: StorageFactory<Storage = DeviceStorage> + Send + Sync + 'static> Environ
         self
     }
 
-    pub fn metric_event_logger_factory_proxy(
-        mut self,
-        metric_event_logger_factory_proxy: Option<MetricEventLoggerFactoryProxy>,
-    ) -> Self {
-        self.metric_event_logger_factory_proxy = metric_event_logger_factory_proxy;
-        self
-    }
-
     /// Prepares an environment so that it may be spawned. This ensures that all necessary
     /// components are spawned and ready to handle events and FIDL requests.
     async fn prepare_env(
@@ -456,18 +442,6 @@ impl<T: StorageFactory<Storage = DeviceStorage> + Send + Sync + 'static> Environ
             factory
         } else {
             let (migration_id, storage_dir) = if let Some(storage_dir) = self.storage_dir {
-                let metric_event_logger_proxy =
-                    if let Some(factory_proxy) = self.metric_event_logger_factory_proxy {
-                        get_metric_event_logger_proxy(factory_proxy)
-                            .await
-                            .map_err(|e| {
-                                tracing::warn!("Unable to connect to metric event logger: {e:?}")
-                            })
-                            .ok()
-                    } else {
-                        None
-                    };
-
                 let store_proxy = self.store_proxy.unwrap_or_else(|| {
                     let store_proxy = connect_to_protocol::<fidl_fuchsia_stash::StoreMarker>()
                         .expect("failed to connect to stash");
@@ -483,18 +457,17 @@ impl<T: StorageFactory<Storage = DeviceStorage> + Send + Sync + 'static> Environ
                     store_proxy,
                 )
                 .context("failed to register migrations")?;
-                let migration_id =
-                    match migration_manager.run_tracked_migrations(metric_event_logger_proxy).await
-                    {
-                        Ok(id) => {
-                            tracing::info!("migrated storage to {id:?}");
-                            id
-                        }
-                        Err((id, e)) => {
-                            tracing::error!("Settings migration failed: {e:?}");
-                            id
-                        }
-                    };
+                let migration_id = match migration_manager.run_migrations().await {
+                    Ok(id) => {
+                        tracing::info!("migrated storage to {id:?}");
+                        id
+                    }
+                    Err((id, e)) => {
+                        tracing::error!("Settings migration failed: {e:?}");
+                        id
+                    }
+                };
+                let migration_id = migration_id.map(|migration| migration.migration_id);
                 (migration_id, storage_dir)
             } else {
                 (None, init_storage_dir())
@@ -751,27 +724,6 @@ impl<T: StorageFactory<Storage = DeviceStorage> + Send + Sync + 'static> Environ
                 .register(SettingType::Setup, Box::new(DataHandler::<SetupController>::spawn));
         }
     }
-}
-
-async fn get_metric_event_logger_proxy(
-    factory_proxy: MetricEventLoggerFactoryProxy,
-) -> Result<MetricEventLoggerProxy, Error> {
-    let (metric_event_logger_proxy, server_end) = create_proxy::<MetricEventLoggerMarker>()
-        .context("failed to create metric event logger proxy")?;
-
-    factory_proxy
-        .create_metric_event_logger(
-            &ProjectSpec {
-                customer_id: Some(CUSTOMER_ID),
-                project_id: Some(PROJECT_ID),
-                ..Default::default()
-            },
-            ServerEnd::new(server_end.into_channel()),
-        )
-        .await
-        .context("failed fidl call")?
-        .map_err(|e| anyhow!("creating metric event logger: {:?}", e))?;
-    Ok(metric_event_logger_proxy)
 }
 
 /// Brings up the settings service environment.

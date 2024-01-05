@@ -166,45 +166,34 @@ zx::result<Tcs3400InputReport> Tcs3400Device::ReadInputRpt() {
     // Use memcpy here because i.out is a misaligned pointer and dereferencing a
     // misaligned pointer is UB. This ends up getting lowered to a 16-bit store.
     memcpy(i.out, &out, sizeof(out));
-    saturatedReading |= (out == 65'535);
 
     zxlogf(DEBUG, "raw: 0x%04X  again: %u  atime: %u", out, again_, atime_);
   }
-  if (saturatedReading) {
-    // Saturated, ignoring the IR channel because we only looked at RGBC.
-    // Return very bright value so that consumers can adjust screens etc accordingly.
+
+  uint8_t status_val;
+  zx_status_t status;
+  status = ReadReg(TCS_I2C_STATUS, status_val);
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "i2c_write_read_sync failed: %d", status);
+    return zx::error(status);
+  }
+  if ((status_val & TCS_I2C_STATUS_ASAT) == TCS_I2C_STATUS_ASAT) {
+    status = WriteReg(TCS_I2C_CICLEAR, 0x00);
+    if (status != ZX_OK) {
+      zxlogf(ERROR, "Unable to clear saturation status");
+    }
+
     report.red = kMaxSaturationRed;
     report.green = kMaxSaturationGreen;
     report.blue = kMaxSaturationBlue;
     report.illuminance = kMaxSaturationClear;
-    // log one message when saturation starts and then
+    saturatedReading = true;
     if (!isSaturated_ || zx::clock::get_monotonic() - lastSaturatedLog_ >= kSaturatedLogTimeSecs) {
-      zxlogf(INFO, "sensor is saturated");
+      zxlogf(INFO, "sensor is saturated via status register");
       lastSaturatedLog_ = zx::clock::get_monotonic();
     }
-  } else {
-    uint8_t status_val;
-    zx_status_t status;
-    status = ReadReg(TCS_I2C_STATUS, status_val);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "i2c_write_read_sync failed: %d", status);
-      return zx::error(status);
-    }
-    if ((status_val & TCS_I2C_STATUS_ASAT) == TCS_I2C_STATUS_ASAT) {
-      report.red = kMaxSaturationRed;
-      report.green = kMaxSaturationGreen;
-      report.blue = kMaxSaturationBlue;
-      report.illuminance = kMaxSaturationClear;
-      saturatedReading = true;
-      if (!isSaturated_ ||
-          zx::clock::get_monotonic() - lastSaturatedLog_ >= kSaturatedLogTimeSecs) {
-        zxlogf(INFO, "sensor is saturated via status register");
-        lastSaturatedLog_ = zx::clock::get_monotonic();
-      }
-    }
-    if (isSaturated_) {
-      zxlogf(INFO, "sensor is no longer saturated");
-    }
+  } else if (isSaturated_) {
+    zxlogf(INFO, "sensor is no longer saturated");
   }
   isSaturated_ = saturatedReading;
 
@@ -255,9 +244,9 @@ void Tcs3400Device::Configure() {
     }
   }
 
-  if (feature_report.report_interval_us == 0) {  // per spec 0 is device's default
-    polling_handler_.Cancel();                   // we define the default as no polling
-  } else if (!polling_handler_.is_pending()) {
+  // per spec 0 is device's default. we define the default as no polling.
+  polling_handler_.Cancel();
+  if (feature_report.report_interval_us != 0) {
     polling_handler_.PostDelayed(dispatcher_, zx::usec(feature_report.report_interval_us));
   }
 }
@@ -274,14 +263,12 @@ void Tcs3400Device::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* ir
 
   const zx::result<Tcs3400InputReport> report = ReadInputRpt();
   if (report.is_error()) {
-    async::PostDelayedTask(dispatcher_, fit::bind_member(this, &Tcs3400Device::RearmIrq),
-                           zx::duration(INTERRUPTS_HYSTERESIS));
+    rearm_irq_handler_.PostDelayed(dispatcher_, zx::duration(INTERRUPTS_HYSTERESIS));
     return;
   }
   if (feature_report.reporting_state ==
       fuchsia_input_report::wire::SensorReportingState::kReportNoEvents) {
-    async::PostDelayedTask(dispatcher_, fit::bind_member(this, &Tcs3400Device::RearmIrq),
-                           zx::duration(INTERRUPTS_HYSTERESIS));
+    rearm_irq_handler_.PostDelayed(dispatcher_, zx::duration(INTERRUPTS_HYSTERESIS));
     return;
   }
 
@@ -293,8 +280,7 @@ void Tcs3400Device::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* ir
   fbl::AutoLock lock(&input_lock_);
   input_rpt_ = *report;
 
-  async::PostDelayedTask(dispatcher_, fit::bind_member(this, &Tcs3400Device::RearmIrq),
-                         zx::duration(INTERRUPTS_HYSTERESIS));
+  rearm_irq_handler_.PostDelayed(dispatcher_, zx::duration(INTERRUPTS_HYSTERESIS));
 }
 
 void Tcs3400Device::RearmIrq() {
@@ -306,8 +292,7 @@ void Tcs3400Device::RearmIrq() {
   }
 }
 
-void Tcs3400Device::HandlePoll(async_dispatcher_t* dispatcher, async::TaskBase* task,
-                               zx_status_t status) {
+void Tcs3400Device::HandlePoll() {
   Tcs3400FeatureReport feature_report;
   {
     fbl::AutoLock lock(&feature_lock_);
@@ -678,6 +663,7 @@ zx_status_t Tcs3400Device::Bind() {
 
 void Tcs3400Device::DdkUnbind(ddk::UnbindTxn txn) {
   irq_handler_.Cancel();
+  rearm_irq_handler_.Cancel();
   polling_handler_.Cancel();
   irq_.destroy();
   txn.Reply();

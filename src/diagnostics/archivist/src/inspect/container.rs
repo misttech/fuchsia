@@ -187,17 +187,6 @@ impl InspectArtifactsContainer {
     }
 }
 
-#[cfg(test)]
-impl InspectArtifactsContainer {
-    pub fn get_handle_by_koid(&self, koid: &zx::Koid) -> Option<Arc<InspectHandle>> {
-        self.inspect_handles.get(koid).cloned()
-    }
-
-    pub fn len(&self) -> usize {
-        self.inspect_handles.len()
-    }
-}
-
 lazy_static! {
     static ref TIMEOUT_MESSAGE: &'static str =
         "Exceeded per-component time limit for fetching diagnostics data";
@@ -340,7 +329,7 @@ struct State {
     batch_timeout: Option<zx::Duration>,
     elapsed_time: zx::Duration,
     global_stats: Arc<GlobalConnectionStats>,
-    trace_guard: Arc<ftrace::AsyncScope>,
+    trace_guard: Arc<Option<ftrace::AsyncScope>>,
     trace_id: ftrace::Id,
 }
 
@@ -379,12 +368,10 @@ impl State {
                 }
                 Status::Pending(ref mut pending) => match pending.pop_front() {
                     None => {
-                        self.global_stats
-                            .record_component_duration(
-                                self.unpopulated.identity.moniker.to_string(),
-                                self.elapsed_time + (zx::Time::get_monotonic() - start_time),
-                            )
-                            .await;
+                        self.global_stats.record_component_duration(
+                            self.unpopulated.identity.moniker.to_string(),
+                            self.elapsed_time + (zx::Time::get_monotonic() - start_time),
+                        );
                         return None;
                     }
                     Some((name, data)) => {
@@ -564,7 +551,8 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn only_one_directory_proxy_is_populated() {
+    fn only_one_directory_proxy_is_populated() {
+        let _executor = fuchsia_async::LocalExecutor::new();
         let (directory, _) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>().unwrap();
         let (mut container, _rx) = InspectArtifactsContainer::new(directory);
         let (directory2, _) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>().unwrap();

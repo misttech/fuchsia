@@ -2,96 +2,121 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, Result};
 use at_commands as at;
+use std::fmt;
+use std::fmt::Debug;
+use std::marker::Unpin;
 
+use crate::peer::procedure_manipulated_state::ProcedureManipulatedState;
+
+#[cfg(test)]
+pub mod test;
+
+// Individual procedures
 pub mod codec_connection_setup;
-pub mod phone_status;
-pub mod slc_initialization;
-
 use codec_connection_setup::CodecConnectionSetupProcedure;
+
+pub mod phone_status;
 use phone_status::PhoneStatusProcedure;
+
+pub mod slc_initialization;
 use slc_initialization::SlcInitProcedure;
 
-use super::service_level_connection::SharedState;
+macro_rules! at_ok {
+    () => {
+        ProcedureInput::AtResponseFromAg(at::Response::Ok)
+    };
+}
+pub(crate) use at_ok;
 
-#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy)]
-pub enum ProcedureMarker {
-    /// The Service Level Connection Initialization procedure as defined in HFP v1.8 Section 4.2.
-    SlcInitialization,
-    /// The Transfer of Phone Status procedures as defined in HFP v1.8 Section 4.4 - 4.7.
-    PhoneStatus,
-    /// The Codec Connection Setup where the AG informs the HF which codeic ID will be used.
-    CodecConnectionSetup,
+macro_rules! at_resp {
+    ($variant: ident) => {
+        ProcedureInput::AtResponseFromAg(at::Response::Success(
+            at::Success::$variant { .. },
+        ))
+    };
+    ($variant: ident $args: tt) => {
+        ProcedureInput::AtResponseFromAg(at::Response::Success(at::Success::$variant $args ))
+    };
+}
+pub(crate) use at_resp;
+
+macro_rules! at_cmd {
+    ($variant: ident $args: tt) => {
+        ProcedureOutput::AtCommandToAg(at::Command::$variant $args)
+    };
+}
+pub(crate) use at_cmd;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CommandFromHf {}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProcedureInput {
+    AtResponseFromAg(at::Response),
+    // TODO(fxb/127025) Use this in task.rs.
+    #[allow(unused)]
+    CommandFromHf(CommandFromHf),
 }
 
-impl ProcedureMarker {
-    /// Matches a specific marker to procedure
-    pub fn initialize(&self) -> Box<dyn Procedure> {
+#[derive(Clone, Debug, PartialEq)]
+pub enum CommandToHf {}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProcedureOutput {
+    AtCommandToAg(at::Command),
+    // TODO(fxbug.dev/127025) use this in PeerTask and procedures.
+    #[allow(unused)]
+    CommandToHf(CommandToHf),
+}
+
+pub trait ProcedureInputT<O: ProcedureOutputT>: Clone + Debug + PartialEq + Unpin {
+    fn to_initialized_procedure(&self) -> Option<Box<dyn Procedure<Self, O>>>;
+
+    fn can_start_procedure(&self) -> bool;
+}
+
+impl ProcedureInputT<ProcedureOutput> for ProcedureInput {
+    /// Matches a specific input to procedure
+    fn to_initialized_procedure(&self) -> Option<Box<dyn Procedure<Self, ProcedureOutput>>> {
         match self {
-            Self::SlcInitialization => Box::new(SlcInitProcedure::new()),
-            Self::PhoneStatus => Box::new(PhoneStatusProcedure::new()),
-            Self::CodecConnectionSetup => Box::new(CodecConnectionSetupProcedure::new()),
+            // TODO(fxb/130999) This is wrong--we need to start SLCI ourselves, not wait for an AT command.
+            at_resp!(Brsf) => Some(Box::new(SlcInitProcedure::new())),
+            at_resp!(Ciev) => Some(Box::new(PhoneStatusProcedure::new())),
+            at_resp!(Bcs) => Some(Box::new(CodecConnectionSetupProcedure::new())),
+            _ => None,
         }
     }
 
-    /// Returns the procedure identifier based on AT response.
-    pub fn identify_procedure_from_response(
-        initialized: bool,
-        response: &at::Response,
-    ) -> Result<ProcedureMarker, Error> {
-        if !initialized {
-            match response {
-                at::Response::Success(at::Success::Brsf { .. })
-                | at::Response::Success(at::Success::Cind { .. })
-                | at::Response::RawBytes(_)
-                | at::Response::Success(at::Success::BindList { .. })
-                | at::Response::Success(at::Success::BindStatus { .. })
-                | at::Response::Ok => Ok(Self::SlcInitialization),
-                _ => Err(format_err!(
-                    "Non-SLCI AT response received when SLCI has not completed: {:?}",
-                    response
-                )),
-            }
-        } else {
-            match response {
-                at::Response::Success(at::Success::Ciev { .. }) => Ok(Self::PhoneStatus),
-                at::Response::Success(at::Success::Bcs { .. }) | at::Response::Ok => {
-                    Ok(Self::CodecConnectionSetup)
-                }
-                _ => Err(format_err!("Other procedures not implemented yet.")),
-            }
+    fn can_start_procedure(&self) -> bool {
+        match self {
+            at_resp!(Brsf) | at_resp!(Ciev) | at_resp!(Bcs) => true,
+            _ => false,
         }
     }
 }
 
-pub trait Procedure: Send {
-    /// Returns the unique identifier associated with this procedure.
-    fn marker(&self) -> ProcedureMarker;
+pub trait ProcedureOutputT: Clone + Debug + PartialEq + Unpin {}
+impl ProcedureOutputT for ProcedureOutput {}
 
-    /// Initial command that will be sent to peer. Not all procedures
-    /// will have an initial command.
-    fn init_command(&self) -> Option<at::Command> {
-        None
-    }
+pub trait Procedure<I: ProcedureInputT<O>, O: ProcedureOutputT>: fmt::Debug {
+    /// Create a new instance of the procedure.
+    fn new() -> Self
+    where
+        Self: Sized;
 
-    /// Receive an AG `update` to progress the procedure. Returns an error in updating
-    /// the procedure or command(s) to be sent back to AG
-    ///
-    /// `update` is the incoming AT response received from the AG.
-    ///
-    /// Developers should ensure that the final request of a Procedure does not require
-    /// a response.
-    fn ag_update(
+    /// Returns the name of this procedure for logging.
+    fn name(&self) -> &str;
+
+    /// Receive a ProcedureInput to progress the procedure. Returns an error in updating
+    /// the procedure or a ProcedureOutput.
+    fn transition(
         &mut self,
-        _state: &mut SharedState,
-        _update: &Vec<at::Response>,
-    ) -> Result<Vec<at::Command>, Error> {
-        Ok(vec![])
-    }
+        state: &mut ProcedureManipulatedState,
+        input: I,
+    ) -> Result<Vec<O>, Error>;
 
     /// Returns true if the Procedure is finished.
-    fn is_terminated(&self) -> bool {
-        false
-    }
+    fn is_terminated(&self) -> bool;
 }

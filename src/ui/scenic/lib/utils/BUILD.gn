@@ -19,6 +19,8 @@ source_set("utils") {
     "cleanup_until_done.h",
     "dispatcher_holder.cc",
     "dispatcher_holder.h",
+    "escher_provider.cc",
+    "escher_provider.h",
     "helpers.cc",
     "helpers.h",
     "logging.h",
@@ -27,16 +29,30 @@ source_set("utils") {
     "metrics.h",
     "metrics_impl.cc",
     "metrics_impl.h",
+    "object_linker.cc",
+    "object_linker.h",
+    "pixel.cc",
+    "pixel.h",
     "shader_warmup.cc",
     "shader_warmup.h",
     "task_utils.h",
+    "time.h",
+    "validate_eventpair.cc",
+    "validate_eventpair.h",
   ]
+
+  defines = []
+
+  if (scenic_enable_vulkan_validation) {
+    defines += [ "SCENIC_ENABLE_VULKAN_VALIDATION" ]
+  }
 
   public_deps = [
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_cpp",
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
     "//sdk/fidl/fuchsia.ui.scenic:fuchsia.ui.scenic_hlcpp",
     "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/sys/cpp",
     "//src/lib/fidl/cpp/contrib/connection:service_hub_connector",
     "//src/ui/lib/escher",
     "//src/ui/scenic/lib/scheduling:frame_metrics_registry_cc",
@@ -50,8 +66,11 @@ source_set("utils") {
     "//sdk/lib/fdio",
     "//sdk/lib/fidl/cpp:cpp_base",
     "//sdk/lib/fit",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/fsl",
     "//src/lib/fxl",
+    "//src/ui/scenic/lib/scenic/util",
+    "//zircon/system/public",
     "//zircon/system/ulib/zx",
   ]
 

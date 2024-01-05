@@ -1,83 +1,66 @@
-# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""ffx product-bundle get invokation as a workflow task."""
+# buildifier: disable=module-docstring
+load(":fuchsia_task_ffx.bzl", "fuchsia_task_ffx")
+load(":fuchsia_task_flash.bzl", "fuchsia_task_flash")
+load(":fuchsia_task_repo_add.bzl", "fuchsia_task_repo_add")
+load(":fuchsia_task_verbs.bzl", "verbs")
+load(":fuchsia_workflow.bzl", "fuchsia_workflow")
 
-load(":providers.bzl", "FuchsiaProductBundleInfo")
-load(":fuchsia_task_ffx.bzl", "ffx_task_rule")
-load(":utils.bzl", "full_product_bundle_url")
+# buildifier: disable=function-docstring
+def fuchsia_product_bundle_tasks(
+        *,
+        name,
+        product_bundle):
+    name = name.replace("_tasks", "")
 
-def _fuchsia_task_fetch_product_bundle_impl(ctx, _make_ffx_task):
-    pb_info = ctx.attr.product_bundle[FuchsiaProductBundleInfo]
-    if not pb_info.is_remote:
-        fail("Local product bundles do not need to be fetched.")
-    args = [
-        "product-bundle",
-        "get",
-        full_product_bundle_url(ctx, pb_info),
-    ]
-
-    if pb_info.repository:
-        args.extend([
-            "--repository",
-            pb_info.repository,
-        ])
-
-    if ctx.attr.force_repository_creation:
-        args.append("--force-repo")
-
-    return _make_ffx_task(
-        prepend_args = args,
+    # For `bazel run :product_bundle.flash`
+    flash_task = verbs.flash(name)
+    fuchsia_task_flash(
+        name = flash_task,
+        product_bundle = product_bundle,
     )
 
-(
-    _fuchsia_task_fetch_product_bundle,
-    _fuchsia_task_fetch_product_bundle_for_test,
-    fuchsia_task_fetch_product_bundle,
-) = ffx_task_rule(
-    doc = """Fetches a remote product bundle.""",
-    implementation = _fuchsia_task_fetch_product_bundle_impl,
-    attrs = {
-        "product_bundle": attr.label(
-            doc = "Product bundle to fetch.",
-            providers = [[FuchsiaProductBundleInfo]],
-            mandatory = True,
-        ),
-        "force_repository_creation": attr.bool(
-            doc = """If True, will pass --force-repo causing forcing the package
-            repository creation even if it already exists.
-            """,
-            default = True,
-        ),
-    },
-)
-
-def _fuchsia_task_remove_product_bundle_impl(ctx, _make_ffx_task):
-    pb_info = ctx.attr.product_bundle[FuchsiaProductBundleInfo]
-    args = [
-        "product-bundle",
-        "remove",
-        full_product_bundle_url(ctx, pb_info),
-        "--force",
-    ]
-
-    return _make_ffx_task(
-        prepend_args = args,
+    # For `bazel run :product_bundle.ota`
+    package_repository_prefix = "devhost"
+    repo_add_task = verbs.repo_add(name)
+    fuchsia_task_repo_add(
+        name = repo_add_task,
+        product_bundle = product_bundle,
+        package_repository_prefix = package_repository_prefix,
     )
 
-(
-    _fuchsia_task_remove_product_bundle,
-    _fuchsia_task_remove_product_bundle_for_test,
-    fuchsia_task_remove_product_bundle,
-) = ffx_task_rule(
-    doc = """Removes a downloaded product bundle.""",
-    implementation = _fuchsia_task_remove_product_bundle_impl,
-    attrs = {
-        "product_bundle": attr.label(
-            doc = "Product bundle to fetch.",
-            providers = [[FuchsiaProductBundleInfo]],
-            mandatory = True,
-        ),
-    },
-)
+    set_channel_task = verbs.set_channel(name)
+    fuchsia_task_ffx(
+        name = set_channel_task,
+        arguments = [
+            "target",
+            "update",
+            "channel",
+            "set",
+            "%s.fuchsia.com" % package_repository_prefix,
+        ],
+    )
+
+    check_now_task = verbs.check_now(name)
+    fuchsia_task_ffx(
+        name = check_now_task,
+        arguments = [
+            "target",
+            "update",
+            "check-now",
+            "--monitor",
+        ],
+    )
+
+    ota_task = verbs.ota(name)
+    fuchsia_workflow(
+        name = ota_task,
+        sequence = [
+            repo_add_task,
+            set_channel_task,
+            check_now_task,
+        ],
+    )

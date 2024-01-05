@@ -14,12 +14,13 @@ rustc_test("verify_wlan_inspect") {
     "//src/connectivity/wlan/lib/ieee80211",
     "//src/connectivity/wlan/testing/hw-sim:wlan-hw-sim",
     "//src/lib/diagnostics/hierarchy/rust",
-    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/diagnostics/reader/rust",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/testing/realm_proxy",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:pin-utils",
   ]
 

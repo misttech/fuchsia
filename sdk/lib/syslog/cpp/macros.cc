@@ -59,13 +59,13 @@ LogMessage::~LogMessage() {
     stream_ << ": " << status_ << " (" << zx_status_get_string(status_) << ")";
   }
 #endif
-  auto buffer = std::make_unique<syslog_backend::LogBuffer>();
+  auto buffer = std::make_unique<syslog_runtime::LogBuffer>();
   auto str = stream_.str();
-  syslog_backend::BeginRecord(buffer.get(), severity_, file_, line_, str.data(), condition_);
+  syslog_runtime::BeginRecord(buffer.get(), severity_, file_, line_, str.data(), condition_);
   if (tag_) {
-    syslog_backend::WriteKeyValue(buffer.get(), "tag", tag_);
+    syslog_runtime::WriteKeyValue(buffer.get(), "tag", tag_);
   }
-  syslog_backend::FlushRecord(buffer.get());
+  syslog_runtime::FlushRecord(buffer.get());
   if (severity_ >= LOG_FATAL)
     __builtin_debugtrap();
 }
@@ -74,6 +74,32 @@ bool LogFirstNState::ShouldLog(uint32_t n) {
   const uint32_t counter_value = counter_.fetch_add(1, std::memory_order_relaxed);
   return counter_value < n;
 }
+
+bool LogEveryNSecondsState::ShouldLog(uint32_t n) {
+  if (ShouldLogInternal(n)) {
+    counter_++;
+    last_ = GetCurrentTime();
+    return true;
+  }
+  return false;
+}
+
+__attribute__((weak)) std::chrono::high_resolution_clock::time_point
+LogEveryNSecondsState::GetCurrentTime() {
+  return std::chrono::steady_clock::now();
+}
+
+bool LogEveryNSecondsState::ShouldLogInternal(uint32_t n) {
+  if (counter_ == 0) {
+    return true;
+  }
+  if (std::chrono::duration_cast<std::chrono::seconds>(GetCurrentTime() - last_).count() >= n) {
+    return true;
+  }
+  return false;
+}
+
+uint32_t LogEveryNSecondsState::GetCounter() { return counter_; }
 
 uint8_t GetVlogVerbosity() {
   LogSeverity min_level = GetMinLogLevel();

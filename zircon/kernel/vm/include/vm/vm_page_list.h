@@ -144,28 +144,34 @@ class VmPageOrMarker {
     }
   }
 
-  // Changes the content from a reference to a page, preserving the split bits and returning the
+  // Changes the content from a reference to a page, moving over the split bits and returning the
   // original reference.
   [[nodiscard]] VmPageOrMarker::ReferenceValue SwapReferenceForPage(vm_page_t* p) {
     DEBUG_ASSERT(p);
-    // Ensure the caller has correctly set the split bits in the page as this swap is not supposed
-    // to change any other information.
-    DEBUG_ASSERT(p->object.cow_left_split == PageOrRefLeftSplit());
-    DEBUG_ASSERT(p->object.cow_right_split == PageOrRefRightSplit());
+    // Ensure no split bits were already set.
+    DEBUG_ASSERT(p->object.cow_left_split == 0);
+    DEBUG_ASSERT(p->object.cow_right_split == 0);
+    p->object.cow_left_split = PageOrRefLeftSplit();
+    p->object.cow_right_split = PageOrRefRightSplit();
     VmPageOrMarker::ReferenceValue ref = ReleaseReference();
     *this = VmPageOrMarker::Page(p);
+    // The ReferenceValue that we return, unlike a page, has no split bit information and so at this
+    // point the bits have been fully moved.
     return ref;
   }
-  // Changes the content from a page to a reference, preserving the split bits and returning the
+  // Changes the content from a page to a reference, moving over the split bits and returning the
   // original page.
   [[nodiscard]] vm_page_t* SwapPageForReference(VmPageOrMarker::ReferenceValue ref) {
     const bool left_split = PageOrRefLeftSplit();
     const bool right_split = PageOrRefRightSplit();
     vm_page_t* page = ReleasePage();
+    // Clear the page split bits before returning it, as these are moved to the reference.
+    page->object.cow_left_split = 0;
+    page->object.cow_right_split = 0;
     *this = VmPageOrMarker::Reference(ref, left_split, right_split);
     return page;
   }
-  // Changes the content from one reference to a different one, preserving the split bits an
+  // Changes the content from one reference to a different one, moving over the split bits and
   // returning the original reference.
   [[nodiscard]] VmPageOrMarker::ReferenceValue ChangeReferenceValue(
       VmPageOrMarker::ReferenceValue ref) {
@@ -173,6 +179,8 @@ class VmPageOrMarker {
     const bool right_split = PageOrRefRightSplit();
     const VmPageOrMarker::ReferenceValue old = ReleaseReference();
     *this = VmPageOrMarker::Reference(ref, left_split, right_split);
+    // The ReferenceValue that we return, unlike a page, has no split bit information and so at this
+    // point the bits have been fully moved.
     return old;
   }
 
@@ -733,8 +741,15 @@ class VmPageSpliceList final {
   // Pops the next page off of the splice.
   VmPageOrMarker Pop();
 
+  // Peeks at the head of the splice list and returns a non-null VmPageOrMarkerRef pointing to it
+  // if and only if it is a reference.
+  VmPageOrMarkerRef PeekReference();
+
   // Returns true after the whole collection has been processed by Pop.
   bool IsDone() const { return pos_ >= length_; }
+
+  // Returns the current position in the list.
+  uint64_t Position() const { return pos_; }
 
   DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(VmPageSpliceList);
 

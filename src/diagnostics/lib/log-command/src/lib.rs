@@ -2,40 +2,39 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use argh::{FromArgs, TopLevelCommand};
+use argh::{ArgsInfo, FromArgs, TopLevelCommand};
 use chrono::{DateTime, Local};
 use chrono_english::{parse_date_string, Dialect};
+use component_debug::query::get_instances_from_query;
 use diagnostics_data::Severity;
-use fidl_fuchsia_diagnostics::LogInterestSelector;
-use std::{ops::Deref, time::Duration};
+use errors::{ffx_bail, FfxError};
+use fidl_fuchsia_diagnostics::{LogInterestSelector, LogSettingsProxy};
+use fidl_fuchsia_sys2::RealmQueryProxy;
+use moniker::Moniker;
+use selectors::{sanitize_moniker_for_selectors, SelectorExt};
+use std::{borrow::Cow, io::Write, ops::Deref, string::FromUtf8Error, time::Duration};
+use thiserror::Error;
 pub mod filter;
 pub mod log_formatter;
 pub mod log_socket_stream;
 
 // Subcommand for ffx log (either watch or dump).
-#[derive(FromArgs, Clone, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug)]
 #[argh(subcommand)]
 pub enum LogSubCommand {
     Watch(WatchCommand),
     Dump(DumpCommand),
 }
 
-#[derive(FromArgs, Clone, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug)]
 /// Watches for and prints logs from a target. Default if no sub-command is specified.
 #[argh(subcommand, name = "watch")]
 pub struct WatchCommand {}
 
-#[derive(FromArgs, Clone, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug)]
 /// Dumps all log from a given target's session.
 #[argh(subcommand, name = "dump")]
-pub struct DumpCommand {
-    /// A specifier indicating which session you'd like to retrieve logs for.
-    /// For example, providing ~1 retrieves the most-recent session,
-    /// ~2 the second-most-recent, and so on.
-    /// Defaults to the most recent session.
-    #[argh(positional, default = "SessionSpec::Relative(0)", from_str_fn(parse_session_spec))]
-    pub session: SessionSpec,
-}
+pub struct DumpCommand {}
 
 pub fn parse_time(value: &str) -> Result<DetailedDateTime, String> {
     let d = parse_date_string(value, Local::now(), Dialect::Us)
@@ -44,50 +43,12 @@ pub fn parse_time(value: &str) -> Result<DetailedDateTime, String> {
     d
 }
 
-/// Specifies the session to subscribe to.
-/// This lets you get logs based on a specific absolute timestamp
-/// or relative time.
-#[derive(Debug, Clone, PartialEq)]
-pub enum SessionSpec {
-    TimestampNanos(u64),
-    Relative(u32),
-}
-
 /// Parses a duration from a string. The input is in seconds
 /// and the output is a Rust duration.
 pub fn parse_seconds_string_as_duration(value: &str) -> Result<Duration, String> {
     Ok(Duration::from_secs(
         value.parse().map_err(|e| format!("value '{}' is not a number: {}", value, e))?,
     ))
-}
-
-/// Parses a session spec from a string. The session spec is a number
-/// that can be either a relative timestamp or an absolute timestamp.
-/// Values starting with ~ are parsed as relative timestamps.
-/// Values starting without ~ are parsed as absolute timestamps.
-/// All timestamps are specified in nanoseconds.
-pub fn parse_session_spec(value: &str) -> Result<SessionSpec, String> {
-    if value.is_empty() {
-        return Err(String::from("session identifier cannot be empty"));
-    }
-
-    if value == "0" {
-        return Err(String::from("'0' is not a valid session specifier: use ~1 for the most recent session in `dump` mode."));
-    }
-
-    let split = value.split_once('~');
-    if let Some((_, val)) = split {
-        Ok(SessionSpec::Relative(val.parse().map_err(|e| {
-            format!(
-                "previous session provided with '~' but could not parse the rest as a number: {}",
-                e
-            )
-        })?))
-    } else {
-        Ok(SessionSpec::TimestampNanos(value.parse().map_err(|e| {
-            format!("session identifier was provided, but could not be parsed as a number: {}", e)
-        })?))
-    }
 }
 
 // Time format for displaying logs
@@ -140,7 +101,7 @@ impl Deref for DetailedDateTime {
     }
 }
 
-#[derive(FromArgs, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "log",
@@ -207,7 +168,7 @@ pub struct LogCommand {
 
     /// filter for only logs with a given tag. May be repeated.
     #[argh(option)]
-    pub tags: Vec<String>,
+    pub tag: Vec<String>,
 
     /// exclude logs with a given tag. May be repeated.
     #[argh(option)]
@@ -287,6 +248,15 @@ pub struct LogCommand {
     /// filters by tid
     #[argh(option)]
     pub tid: Option<u64>,
+    /// if enabled, selectors will be passed directly to Archivist without any filtering.
+    /// If disabled and no matching components are found, the user will be prompted to
+    /// either enable this or be given a list of selectors to choose from.
+    #[argh(switch)]
+    pub force_select: bool,
+    /// enables structured JSON logs.
+    #[cfg(target_os = "fuchsia")]
+    #[argh(switch)]
+    pub json: bool,
 }
 
 impl Default for LogCommand {
@@ -295,7 +265,7 @@ impl Default for LogCommand {
             filter: vec![],
             moniker: vec![],
             exclude: vec![],
-            tags: vec![],
+            tag: vec![],
             exclude_tags: vec![],
             hide_tags: false,
             hide_file: false,
@@ -305,6 +275,7 @@ impl Default for LogCommand {
             severity: Severity::Info,
             show_metadata: false,
             raw: false,
+            force_select: false,
             since: None,
             since_monotonic: None,
             until: None,
@@ -314,7 +285,156 @@ impl Default for LogCommand {
             show_full_moniker: false,
             pid: None,
             tid: None,
+            #[cfg(target_os = "fuchsia")]
+            json: false,
         }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum LogError {
+    #[error(transparent)]
+    UnknownError(#[from] anyhow::Error),
+    #[error("No boot timestamp")]
+    NoBootTimestamp,
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
+    #[error("Cannot use dump with --since now")]
+    DumpWithSinceNow,
+    #[error("No symbolizer configuration provided")]
+    NoSymbolizerConfig,
+    #[error(transparent)]
+    FfxError(#[from] FfxError),
+    #[error(transparent)]
+    Utf8Error(#[from] FromUtf8Error),
+    #[error(transparent)]
+    FidlError(#[from] fidl::Error),
+}
+
+/// Trait used to get available instances given a moniker query.
+#[async_trait::async_trait(?Send)]
+pub trait InstanceGetter {
+    async fn get_monikers_from_query(&self, query: &str) -> Result<Vec<Moniker>, LogError>;
+}
+
+#[async_trait::async_trait(?Send)]
+impl InstanceGetter for RealmQueryProxy {
+    async fn get_monikers_from_query(&self, query: &str) -> Result<Vec<Moniker>, LogError> {
+        Ok(get_instances_from_query(query, &self)
+            .await?
+            .into_iter()
+            .map(|value| value.moniker)
+            .collect())
+    }
+}
+
+impl LogCommand {
+    async fn map_interest_selectors(
+        &self,
+        realm_query: &impl InstanceGetter,
+    ) -> Result<Vec<Cow<'_, LogInterestSelector>>, LogError> {
+        let selectors = self.get_selectors_and_monikers();
+        let mut translated_selectors = vec![];
+        for (moniker, selector) in selectors {
+            // Attempt to translate to a single instance
+            let instances = realm_query.get_monikers_from_query(moniker.as_str()).await?;
+            // If exactly one match, perform rewrite
+            if instances.len() == 1 {
+                let mut translated_selector = selector.clone();
+                translated_selector.selector = instances[0].clone().into_component_selector();
+                translated_selectors.push((Cow::Owned(translated_selector), instances));
+            } else {
+                translated_selectors.push((Cow::Borrowed(selector), instances));
+            }
+        }
+        if translated_selectors.iter().any(|(_, matches)| matches.len() > 1) {
+            let mut err_output = vec![];
+            writeln!(
+                &mut err_output,
+                "WARN: One or more of your selectors appears to be ambiguous"
+            )?;
+            writeln!(&mut err_output, "and may not match any components on your system.\n")?;
+            writeln!(
+                &mut err_output,
+                "If this is unintentional you can explicitly match using the"
+            )?;
+            writeln!(&mut err_output, "following command:\n")?;
+            writeln!(&mut err_output, "ffx log \\")?;
+            let mut output = vec![];
+            for (oselector, instances) in translated_selectors {
+                for selector in instances {
+                    writeln!(
+                        output,
+                        "\t--select {}#{} \\",
+                        sanitize_moniker_for_selectors(selector.to_string().as_str())
+                            .replace("\\", "\\\\"),
+                        format!("{:?}", oselector.interest.min_severity.unwrap()).to_uppercase()
+                    )?;
+                }
+            }
+            // Intentionally ignored, removes the newline, space, and \
+            let _ = output.pop();
+            let _ = output.pop();
+            let _ = output.pop();
+
+            writeln!(&mut err_output, "{}", String::from_utf8(output).unwrap())?;
+            writeln!(&mut err_output, "\nIf this is intentional, you can disable this with")?;
+            writeln!(&mut err_output, "ffx log --force-select.")?;
+
+            ffx_bail!("{}", String::from_utf8(err_output)?);
+        }
+        Ok(translated_selectors.into_iter().map(|(selector, _)| selector).collect())
+    }
+
+    /// Sets interest based on configured selectors.
+    /// If a single ambiguous match is found, the monikers in the selectors
+    /// are automatically re-written.
+    pub async fn maybe_set_interest(
+        &self,
+        log_settings_client: &LogSettingsProxy,
+        realm_query: &impl InstanceGetter,
+        is_machine: bool,
+    ) -> Result<(), LogError> {
+        let mut selectors = Cow::Borrowed(&self.select);
+        if !self.select.is_empty() && !is_machine && !self.force_select {
+            let new_selectors = self.map_interest_selectors(realm_query).await?;
+            if !new_selectors.is_empty() {
+                selectors = Cow::Owned(
+                    new_selectors.into_iter().map(|selector| selector.into_owned()).collect(),
+                );
+            }
+        }
+        if !self.select.is_empty() {
+            log_settings_client.set_interest(selectors.as_ref()).await?;
+        }
+        Ok(())
+    }
+
+    fn get_selectors_and_monikers(&self) -> Vec<(String, &LogInterestSelector)> {
+        let mut selectors = vec![];
+        for selector in &self.select {
+            let segments = selector.selector.moniker_segments.as_ref().unwrap();
+            let mut full_moniker = String::new();
+            for segment in segments {
+                match segment {
+                    fidl_fuchsia_diagnostics::StringSelector::ExactMatch(segment) => {
+                        if full_moniker.is_empty() {
+                            full_moniker.push_str(segment);
+                        } else {
+                            full_moniker.push_str("/");
+                            full_moniker.push_str(segment);
+                        }
+                    }
+                    _ => {
+                        // If the user passed a non-exact match we assume they
+                        // know what they're doing and skip this logic.
+                        return vec![];
+                    }
+                }
+            }
+            selectors.push((full_moniker, selector));
+        }
+        selectors
     }
 }
 
@@ -327,8 +447,194 @@ fn log_interest_selector(s: &str) -> Result<LogInterestSelector, String> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use assert_matches::assert_matches;
+    use async_trait::async_trait;
+    use fidl::endpoints::create_proxy;
+    use fidl_fuchsia_diagnostics::{LogSettingsMarker, LogSettingsRequest};
+    use futures_util::{future::Either, stream::FuturesUnordered, StreamExt};
     use selectors::parse_log_interest_selector;
 
+    #[derive(Default)]
+    struct FakeInstanceGetter {
+        output: Vec<Moniker>,
+        expected_selector: Option<String>,
+    }
+
+    #[async_trait(?Send)]
+    impl InstanceGetter for FakeInstanceGetter {
+        async fn get_monikers_from_query(&self, query: &str) -> Result<Vec<Moniker>, LogError> {
+            if let Some(expected) = &self.expected_selector {
+                assert_eq!(expected, query);
+            }
+            Ok(self.output.clone())
+        }
+    }
+
+    #[fuchsia::test]
+    async fn maybe_set_interest_errors_if_ambiguous_selector() {
+        let (settings_proxy, settings_server) = create_proxy::<LogSettingsMarker>().unwrap();
+        let mut getter = FakeInstanceGetter::default();
+        getter.expected_selector = Some("ambiguous_selector".into());
+        getter.output = vec![
+            Moniker::try_from("core/some/ambiguous_selector:thing/test").unwrap(),
+            Moniker::try_from("core/other/ambiguous_selector:thing/test").unwrap(),
+        ];
+        // Main should return an error
+
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            select: vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()],
+            ..LogCommand::default()
+        };
+        let mut set_interest_result = None;
+
+        let mut scheduler = FuturesUnordered::new();
+        scheduler.push(Either::Left(async {
+            set_interest_result =
+                Some(cmd.maybe_set_interest(&settings_proxy, &getter, false).await);
+            drop(settings_proxy);
+        }));
+        scheduler.push(Either::Right(async {
+            let request = settings_server.into_stream().unwrap().next().await;
+            // The channel should be closed without sending any requests.
+            assert_matches!(request, None);
+        }));
+        while let Some(_) = scheduler.next().await {}
+        drop(scheduler);
+
+        let error = format!("{}", set_interest_result.unwrap().unwrap_err());
+
+        const EXPECTED_INTEREST_ERROR: &str = r#"WARN: One or more of your selectors appears to be ambiguous
+and may not match any components on your system.
+
+If this is unintentional you can explicitly match using the
+following command:
+
+ffx log \
+	--select core/some/ambiguous_selector\\:thing/test#INFO \
+	--select core/other/ambiguous_selector\\:thing/test#INFO
+
+If this is intentional, you can disable this with
+ffx log --force-select.
+"#;
+        assert_eq!(error, EXPECTED_INTEREST_ERROR);
+    }
+
+    #[fuchsia::test]
+    async fn logger_translates_selector_if_one_match() {
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            select: vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()],
+            ..LogCommand::default()
+        };
+        let mut set_interest_result = None;
+        let mut getter = FakeInstanceGetter::default();
+        getter.expected_selector = Some("ambiguous_selector".into());
+        getter.output = vec![Moniker::try_from("core/some/ambiguous_selector").unwrap()];
+        let mut scheduler = FuturesUnordered::new();
+        let (settings_proxy, settings_server) = create_proxy::<LogSettingsMarker>().unwrap();
+        scheduler.push(Either::Left(async {
+            set_interest_result =
+                Some(cmd.maybe_set_interest(&settings_proxy, &getter, false).await);
+            drop(settings_proxy);
+        }));
+        scheduler.push(Either::Right(async {
+            let request = settings_server.into_stream().unwrap().next().await;
+            let (selectors, responder) = assert_matches!(
+                request,
+                Some(Ok(LogSettingsRequest::SetInterest { selectors, responder })) =>
+                (selectors, responder)
+            );
+            responder.send().unwrap();
+            assert_eq!(
+                selectors,
+                vec![parse_log_interest_selector("core/some/ambiguous_selector#INFO").unwrap()]
+            );
+        }));
+        while let Some(_) = scheduler.next().await {}
+        drop(scheduler);
+        assert_matches!(set_interest_result, Some(Ok(())));
+    }
+
+    #[fuchsia::test]
+    async fn logger_prints_ignores_ambiguity_if_force_select_is_used() {
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            select: vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()],
+            force_select: true,
+            ..LogCommand::default()
+        };
+        let mut getter = FakeInstanceGetter::default();
+        getter.expected_selector = Some("ambiguous_selector".into());
+        getter.output = vec![
+            Moniker::try_from("core/some/ambiguous_selector:thing/test").unwrap(),
+            Moniker::try_from("core/other/ambiguous_selector:thing/test").unwrap(),
+        ];
+        let mut set_interest_result = None;
+        let mut scheduler = FuturesUnordered::new();
+        let (settings_proxy, settings_server) = create_proxy::<LogSettingsMarker>().unwrap();
+        scheduler.push(Either::Left(async {
+            set_interest_result =
+                Some(cmd.maybe_set_interest(&settings_proxy, &getter, false).await);
+            drop(settings_proxy);
+        }));
+        scheduler.push(Either::Right(async {
+            let request = settings_server.into_stream().unwrap().next().await;
+            let (selectors, responder) = assert_matches!(
+                request,
+                Some(Ok(LogSettingsRequest::SetInterest { selectors, responder })) =>
+                (selectors, responder)
+            );
+            responder.send().unwrap();
+            assert_eq!(
+                selectors,
+                vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()]
+            );
+        }));
+        while let Some(_) = scheduler.next().await {}
+        drop(scheduler);
+        assert_matches!(set_interest_result, Some(Ok(())));
+    }
+
+    #[fuchsia::test]
+    async fn logger_prints_ignores_ambiguity_if_machine_output_is_used() {
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            select: vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()],
+            force_select: true,
+            ..LogCommand::default()
+        };
+        let mut getter = FakeInstanceGetter::default();
+        getter.expected_selector = Some("ambiguous_selector".into());
+        getter.output = vec![
+            Moniker::try_from("core/some/collection:thing/test").unwrap(),
+            Moniker::try_from("core/other/collection:thing/test").unwrap(),
+        ];
+        let mut set_interest_result = None;
+        let mut scheduler = FuturesUnordered::new();
+        let (settings_proxy, settings_server) = create_proxy::<LogSettingsMarker>().unwrap();
+        scheduler.push(Either::Left(async {
+            set_interest_result =
+                Some(cmd.maybe_set_interest(&settings_proxy, &getter, false).await);
+            drop(settings_proxy);
+        }));
+        scheduler.push(Either::Right(async {
+            let request = settings_server.into_stream().unwrap().next().await;
+            let (selectors, responder) = assert_matches!(
+                request,
+                Some(Ok(LogSettingsRequest::SetInterest { selectors, responder })) =>
+                (selectors, responder)
+            );
+            responder.send().unwrap();
+            assert_eq!(
+                selectors,
+                vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()]
+            );
+        }));
+        while let Some(_) = scheduler.next().await {}
+        drop(scheduler);
+        assert_matches!(set_interest_result, Some(Ok(())));
+    }
     #[test]
     fn test_parse_selector() {
         assert_eq!(
@@ -347,22 +653,5 @@ mod test {
             res.date(),
             parse_date_string(date_string, Local::now(), Dialect::Us).unwrap().date()
         );
-    }
-
-    #[test]
-    fn test_session_spec_non_zero() {
-        assert_eq!(parse_session_spec("~1").unwrap(), SessionSpec::Relative(1));
-        assert_eq!(parse_session_spec("~15").unwrap(), SessionSpec::Relative(15));
-    }
-
-    #[test]
-    fn test_session_spec_absolute() {
-        assert_eq!(parse_session_spec("1234567").unwrap(), SessionSpec::TimestampNanos(1234567));
-    }
-
-    #[test]
-    fn test_session_spec_error() {
-        assert!(parse_session_spec("~abc").is_err());
-        assert!(parse_session_spec("abc").is_err());
     }
 }

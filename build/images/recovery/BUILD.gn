@@ -36,11 +36,6 @@ if (is_fuchsia) {
   assert(current_toolchain == default_toolchain,
          "//build/images/* are only valid in the Fuchsia toolchain")
 
-  if (has_board) {
-    assert(board_information_for_assembly != false,
-           "Need to define board_information_for_assembly for cuckoo tests")
-  }
-
   # Parameters shared between recovery-eng and recovery-installer
   recovery_base = {
     testonly = true
@@ -56,17 +51,12 @@ if (is_fuchsia) {
     } else {
       generate_fxfs = !bootfs_only
     }
-    board_config = board_information_for_assembly
-    fshost_config = board_fshost_config
+    board_config_label = board_configuration_label
 
-    include_component_id_index = true
     additional_boot_args =
         [ "virtcon.disable=true" ] + zedboot_additional_boot_args
-    use_assembly_fshost = true
 
     bootfs_labels = [ "//build/input:recovery_bootfs" ]
-    bootfs_labels +=
-        [ "//src/sys/component_manager:component_manager_bootfs_config" ]
 
     if (custom_signing_script != "") {
       inputs = custom_signing_script_inputs
@@ -104,7 +94,6 @@ if (is_fuchsia) {
 
     # Basic command-line tools:
     "//bundles/assembly:third_party_sbase_for_transition",
-    "//src/diagnostics/log_listener:for_transition",
 
     # Command-line interface to wlan stack:
     "//src/connectivity/wlan/wlancfg/tool:for_transition",
@@ -140,7 +129,6 @@ if (is_fuchsia) {
     deps =
         _core_realm_deps + core_realm_testing_aib_shards + [
           # required for SL4F
-          "//src/developer:default-laboratory-env-core-shard",
           "//src/developer/memory/monitor:memory_monitor_core_shard",
           "//src/factory/factory_store_providers:factory_store_providers_shard",
           "//src/recovery/system:system_recovery_core_shard",
@@ -156,11 +144,9 @@ if (is_fuchsia) {
   recovery_packages = board_recovery_package_labels + core_realm_aib_pkgs +
                       core_realm_network_aib_pkgs +
                       [
-                        ":build-info-recovery",
-                        "//src/connectivity/network/netcfg:config-default",
+                        "//src/connectivity/policy/netcfg:config-default",
                         "//src/recovery/factory_reset",
                         "//src/recovery/system:system_recovery",
-                        "//src/sys/core:component_id_index_no_restrict_storage",
                         "//src/ui/bin/brightness_manager:auto-brightness",
 
                         # Flattened from //src/sys/pkg:recovery
@@ -177,7 +163,6 @@ if (is_fuchsia) {
       recovery_packages + core_realm_eng_aib_pkgs +
       core_realm_testing_aib_pkgs +
       [
-        "//src/cobalt/bin/app:build_type_eng",
         "//src/cobalt/bin/app:cobalt",
         "//src/cobalt/bin/app:cobalt_registry",
         "//src/cobalt/bin/app:config",
@@ -193,10 +178,6 @@ if (is_fuchsia) {
 
         # Support privacy switch
         "//src/settings/service:setui_service",
-
-        # Forensics and crash reporting
-        "//src/developer/forensics:user_configs",
-        "//src/developer/forensics:feedback_remote_device_id_provider",
       ]
 
   recovery_installer_packages =
@@ -214,7 +195,6 @@ if (is_fuchsia) {
       storage = {
         configure_fshost = true
         filesystems = {
-          image_mode = "ramdisk"
           volume = {
             fvm = {
               data = {
@@ -231,10 +211,6 @@ if (is_fuchsia) {
     _storage_config = {
       storage = {
         configure_fshost = true
-        filesystems = {
-          image_mode = "ramdisk"
-          volume = "fxfs"
-        }
       }
     }
   }
@@ -252,6 +228,11 @@ if (is_fuchsia) {
       connectivity = {
         wlan = {
           legacy_privacy_support = true
+        }
+      }
+      forensics = {
+        feedback = {
+          remote_device_id_provider = true
         }
       }
       forward_variables_from(_storage_config, "*")
@@ -304,19 +285,14 @@ if (is_fuchsia) {
     base_packages = core_realm_aib_pkgs + core_realm_eng_aib_pkgs +
                     core_realm_network_aib_pkgs +
                     [
-                      "//build/info:build-info",
-                      "//src/connectivity/network/netcfg:config-default",
-                      "//src/sys/core:component_id_index_no_restrict_storage",
+                      "//src/connectivity/policy/netcfg:config-default",
                       "//src/firmware/fastboot-tcp",
                       "//src/firmware/fastboot-tcp:fastboot_tcp_mdns_config",
                       "//src/firmware/fastboot-usb",
                     ]
 
     bootfs_labels = []
-    bootfs_labels = [
-      "//build/input:recovery_bootfs",
-      "//src/sys/component_manager:component_manager_bootfs_config",
-    ]
+    bootfs_labels = [ "//build/input:recovery_bootfs" ]
 
     if (recovery_is_recovery_fastboot) {
       image_metadata_overrides = {
@@ -368,7 +344,6 @@ if (is_fuchsia) {
     base_packages = recovery_fdr_packages
     core_realm_definition = ":core"
     generate_vbmeta = use_vbmeta
-    use_assembly_fshost = true
 
     if (!fxfs_blob) {
       generate_fvm = !bootfs_only
@@ -380,18 +355,13 @@ if (is_fuchsia) {
 
     ramdisk_in_zbi = true
 
-    include_component_id_index = true
-
     additional_boot_args = [ "virtcon.disable=true" ]
     cmdline = []
 
     product_assembly_config_label = ":for-fdr"
-    board_config = board_information_for_assembly
-    fshost_config = board_fshost_config
+    board_config_label = board_configuration_label
 
     bootfs_labels = [ "//build/input:recovery_bootfs" ]
-    bootfs_labels +=
-        [ "//src/sys/component_manager:component_manager_bootfs_config" ]
 
     if (custom_signing_script != "") {
       inputs = custom_signing_script_inputs
@@ -444,50 +414,5 @@ if (is_fuchsia) {
     product_assembly_config_label = ":for-installer"
 
     core_realm_definition = ":core-installer"
-  }
-
-  recovery_build_info_product = "${target_gen_dir}/product.txt"
-
-  generated_file("recovery_build_info_product") {
-    outputs = [ recovery_build_info_product ]
-    contents = "${build_info_product}_recovery"
-  }
-
-  resource_group("build-info-resources") {
-    files = [
-      {
-        source = recovery_build_info_product
-        dest = "data/product"
-      },
-      {
-        source = build_info_files.board
-        dest = "data/board"
-      },
-      {
-        source = build_info_files.version
-        dest = "data/version"
-      },
-      {
-        source = build_info_files.jiri_snapshot
-        dest = "data/snapshot"
-      },
-      {
-        source = build_info_files.latest_commit_date
-        dest = "data/latest-commit-date"
-      },
-      {
-        source = build_info_files.minimum_utc_stamp
-        dest = "data/minimum-utc-stamp"
-      },
-    ]
-    deps = [
-      ":recovery_build_info_product",
-      "//build/info:latest-commit-date",
-    ]
-  }
-
-  fuchsia_package("build-info-recovery") {
-    package_name = "build-info"
-    deps = [ ":build-info-resources" ]
   }
 }

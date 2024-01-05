@@ -5,7 +5,9 @@
 #ifndef SRC_STORAGE_F2FS_COMPONENT_RUNNER_H_
 #define SRC_STORAGE_F2FS_COMPONENT_RUNNER_H_
 
-#include "src/lib/storage/vfs/cpp/pseudo_dir.h"
+#include <lib/inspect/component/cpp/component.h>
+
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 
 namespace f2fs {
 
@@ -23,7 +25,7 @@ class ComponentRunner final : public PlatformVfs {
 
   zx::result<> ServeRoot(fidl::ServerEnd<fuchsia_io::Directory> root,
                          fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle);
-  zx::result<> Configure(std::unique_ptr<Bcache> bcache, const MountOptions& options);
+  zx::result<> Configure(std::unique_ptr<BcacheMapper> bcache, const MountOptions& options);
 
   // fs::PagedVfs interface
   void Shutdown(fs::FuchsiaVfs::ShutdownCallback cb) final;
@@ -47,6 +49,8 @@ class ComponentRunner final : public PlatformVfs {
 
   // These are only initialized by configure after a call to the startup service.
   std::unique_ptr<F2fs> f2fs_;
+
+  std::optional<inspect::ComponentInspector> exposed_inspector_ = {};
 };
 
 }  // namespace f2fs

@@ -60,11 +60,12 @@
 //!
 //! ```rust
 //! use fuchsia_inspect::component;
-//! use fuchsia_component::server::ServiceFs;
 //! use inspect_runtime;
 //!
-//! let mut fs = ServiceFs::new();
-//! inspect_runtime::serve(component::inspector(), &mut fs)?;
+//! let _inspect_server_task = inspect_runtime::publish(
+//!     component::inspector(),
+//!     inspect_runtime::PublishOptions::default(),
+//! );
 //!
 //! // Now you can create nodes and properties anywhere!
 //! let child = component::inspector().root().create_child("foo");
@@ -89,20 +90,10 @@ pub mod hierarchy {
 
 pub use {
     crate::{state::Stats, writer::*},
-    diagnostics_hierarchy::{ExponentialHistogramParams, LinearHistogramParams},
-    testing::*,
+    diagnostics_hierarchy::{
+        DiagnosticsHierarchyGetter, ExponentialHistogramParams, LinearHistogramParams,
+    },
 };
-
-pub mod testing {
-    pub use diagnostics_hierarchy::{
-        assert_data_tree, assert_json_diff,
-        testing::{
-            AnyProperty, DiagnosticsHierarchyGetter, HistogramAssertion, NonZeroUintProperty,
-            PropertyAssertion, TreeAssertion,
-        },
-        tree_assertion,
-    };
-}
 
 /// Directiory within the outgoing directory of a component where the diagnostics service should be
 /// added.

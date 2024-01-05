@@ -122,8 +122,8 @@ pattern:
           (b) does not appear in any other third_party directory anywhere in the
           Fuchsia Source Tree
         * The code is open source
-    * See more details about `third_party` source layout in [third party source
-      management](/docs/concepts/source_code/third-party-management.md)
+    * See more details about `third_party` source layout in
+      [third party source code management](/docs/development/source_code/third-party-management.md)
  * `tools/` (optional)
    * This directory contains command-line tools provided by the area.  These
      are usually things that can (or must) be built for the development host
@@ -243,7 +243,7 @@ executable("test") {
 }
 
 fuchsia_component("component") {
-  manifest = "meta/fortune.cmx"
+  manifest = "meta/fortune.cml"
   deps = [ ":bin" ]
 }
 
@@ -307,8 +307,6 @@ populated from CIPD).
     * `...` *
  * `prebuilt/`
     * `chromium/` *
-    * `dart/` *
-    * `flutter/` *
     * `llvm/` *
  * `tools/`
     * `banjo/`

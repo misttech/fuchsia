@@ -16,8 +16,20 @@ import sys
 import logging
 from typing import Dict, List, Set, Tuple, Optional
 
-from assembly import AssemblyInputBundle, AIBCreator, FileEntry, FilePath, ImageAssemblyConfig, PackageManifest
-from assembly.assembly_input_bundle import CompiledPackageAdditionalShards, DuplicatePackageException, PackageManifestParsingException, CompiledPackageMainDefinition
+from assembly import (
+    AssemblyInputBundle,
+    AIBCreator,
+    FileEntry,
+    FilePath,
+    PackageManifest,
+    KernelInfo,
+)
+from assembly.assembly_input_bundle import (
+    CompiledPackageAdditionalShards,
+    DuplicatePackageException,
+    PackageManifestParsingException,
+    CompiledPackageMainDefinition,
+)
 from depfile import DepFile
 from serialization import json_load
 
@@ -33,7 +45,12 @@ DepSet = Set[FilePath]
 
 
 def copy_to_assembly_input_bundle(
-    legacy: ImageAssemblyConfig,
+    base: List[FilePath],
+    cache: List[FilePath],
+    system: List[FilePath],
+    bootfs_packages: List[FilePath],
+    kernel: KernelInfo,
+    boot_args: List[str],
     config_data_entries: FileEntryList,
     outdir: FilePath,
     base_driver_packages_list: List[str],
@@ -46,8 +63,9 @@ def copy_to_assembly_input_bundle(
     bootfs_files_package: Optional[FilePath],
 ) -> Tuple[AssemblyInputBundle, FilePath, DepSet]:
     """
-    Copy all the artifacts from the ImageAssemblyConfig into an AssemblyInputBundle that is in
-    outdir, tracking all copy operations in a DepFile that is returned with the resultant bundle.
+    Copy all the artifacts into an AssemblyInputBundle that is in outdir,
+    tracking all copy operations in a DepFile that is returned with the
+    resultant bundle.
 
     Some notes on operation:
         - <outdir> is removed and recreated anew when called.
@@ -56,12 +74,12 @@ def copy_to_assembly_input_bundle(
         copying operation (ie. depfile contents)
     """
     aib_creator = AIBCreator(outdir)
-    aib_creator.base = legacy.base
-    aib_creator.cache = legacy.cache
-    aib_creator.system = legacy.system
-    aib_creator.bootfs_packages = legacy.bootfs_packages
-    aib_creator.kernel = legacy.kernel
-    aib_creator.boot_args = legacy.boot_args
+    aib_creator.base.update(base)
+    aib_creator.cache.update(cache)
+    aib_creator.system.update(system)
+    aib_creator.bootfs_packages.update(bootfs_packages)
+    aib_creator.kernel = kernel
+    aib_creator.boot_args.update(boot_args)
 
     aib_creator.base_drivers = set(base_driver_packages_list)
 
@@ -70,20 +88,23 @@ def copy_to_assembly_input_bundle(
 
     # Strip any base_driver and base pkgs from the cache set
     aib_creator.cache = aib_creator.cache.difference(
-        aib_creator.base).difference(aib_creator.base_drivers)
+        aib_creator.base
+    ).difference(aib_creator.base_drivers)
     aib_creator.base = aib_creator.base.difference(aib_creator.base_drivers)
 
     if len(aib_creator.base_drivers) != len(base_driver_packages_list):
         raise ValueError(
             f"Duplicate package specified "
-            " in base_driver_packages: {base_driver_packages_list}")
+            " in base_driver_packages: {base_driver_packages_list}"
+        )
     aib_creator.base_driver_component_files = base_driver_components_files_list
 
     aib_creator.boot_drivers = set(boot_driver_packages_list)
     if len(aib_creator.boot_drivers) != len(boot_driver_packages_list):
         raise ValueError(
             f"Duplicate package specified "
-            " in boot_driver_packages: {boot_driver_packages_list}")
+            " in boot_driver_packages: {boot_driver_packages_list}"
+        )
     aib_creator.boot_driver_component_files = boot_driver_components_files_list
 
     aib_creator.config_data = config_data_entries
@@ -109,7 +130,8 @@ def copy_to_assembly_input_bundle(
         # Pass the rest as compiled_package_shards
         if len(core_realm_shards) > 1:
             additional_shards = CompiledPackageAdditionalShards(
-                "core", {"core": set(core_realm_shards[1:])})
+                "core", {"core": set(core_realm_shards[1:])}
+            )
             aib_creator.compiled_package_shards.append(additional_shards)
 
     return aib_creator.build()
@@ -117,42 +139,52 @@ def copy_to_assembly_input_bundle(
 
 def main():
     parser = argparse.ArgumentParser(
-        description=
-        "Create an image assembly configuration that is what remains after removing the configs to 'subtract'"
+        description="Create an image assembly configuration"
+    )
+
+    parser.add_argument("--base-packages-list", type=argparse.FileType("r"))
+    parser.add_argument("--cache-packages-list", type=argparse.FileType("r"))
+    parser.add_argument(
+        "--extra-files-packages-list", type=argparse.FileType("r")
     )
     parser.add_argument(
-        "--image-assembly-config", type=argparse.FileType('r'), required=True)
-    parser.add_argument("--config-data-entries", type=argparse.FileType('r'))
+        "--extra-deps-files-packages-list", type=argparse.FileType("r")
+    )
     parser.add_argument(
-        "--subtract", default=[], nargs="*", type=argparse.FileType('r'))
+        "--kernel-cmdline", type=argparse.FileType("r"), required=True
+    )
+    parser.add_argument(
+        "--kernel-clock-backstop", type=argparse.FileType("r"), required=True
+    )
+    parser.add_argument("--boot-args", type=argparse.FileType("r"))
+    parser.add_argument("--bootfs-packages-list", type=argparse.FileType("r"))
+
+    parser.add_argument("--config-data-entries", type=argparse.FileType("r"))
     parser.add_argument("--outdir", required=True)
-    parser.add_argument("--depfile", type=argparse.FileType('w'))
-    parser.add_argument("--export-manifest", type=argparse.FileType('w'))
+    parser.add_argument("--depfile", type=argparse.FileType("w"))
+    parser.add_argument("--export-manifest", type=argparse.FileType("w"))
     parser.add_argument(
-        "--base-driver-packages-list", type=argparse.FileType('r'))
+        "--base-driver-packages-list", type=argparse.FileType("r")
+    )
     parser.add_argument(
-        "--base-driver-components-files-list", type=argparse.FileType('r'))
+        "--base-driver-components-files-list", type=argparse.FileType("r")
+    )
     parser.add_argument(
-        "--boot-driver-packages-list", type=argparse.FileType('r'))
+        "--boot-driver-packages-list", type=argparse.FileType("r")
+    )
     parser.add_argument(
-        "--boot-driver-components-files-list", type=argparse.FileType('r'))
+        "--boot-driver-components-files-list", type=argparse.FileType("r")
+    )
     parser.add_argument(
-        "--shell-commands-packages-list", type=argparse.FileType('r'))
-    parser.add_argument("--core-realm-shards-list", type=argparse.FileType('r'))
+        "--shell-commands-packages-list", type=argparse.FileType("r")
+    )
+    parser.add_argument("--core-realm-shards-list", type=argparse.FileType("r"))
     parser.add_argument(
-        "--core-realm-includes-list", type=argparse.FileType('r'))
+        "--core-realm-includes-list", type=argparse.FileType("r")
+    )
     parser.add_argument("--core-package-name", default="core")
     parser.add_argument("--bootfs-files-package", required=True)
     args = parser.parse_args()
-
-    # Read in the legacy config and the others to subtract from it
-    legacy: ImageAssemblyConfig = ImageAssemblyConfig.json_load(
-        args.image_assembly_config)
-    subtract = [ImageAssemblyConfig.json_load(other) for other in args.subtract]
-
-    # Subtract each from the legacy config, in the order given in args.
-    for other in subtract:
-        legacy = legacy.difference(other)
 
     # Read in the config_data entries if available.
     if args.config_data_entries:
@@ -167,21 +199,25 @@ def main():
     if args.base_driver_packages_list:
         base_driver_packages_list = json.load(args.base_driver_packages_list)
         base_driver_components_files_list = json.load(
-            args.base_driver_components_files_list)
+            args.base_driver_components_files_list
+        )
 
     boot_driver_packages_list = None
     if args.boot_driver_packages_list:
         boot_driver_packages_list = json.load(args.boot_driver_packages_list)
         boot_driver_components_files_list = json.load(
-            args.boot_driver_components_files_list)
+            args.boot_driver_components_files_list
+        )
 
     shell_commands = dict()
     shell_deps = set()
     if args.shell_commands_packages_list:
         shell_commands = defaultdict(set)
         for package in json.load(args.shell_commands_packages_list):
-            manifest_path, package_name = package["manifest_path"], package[
-                "package_name"]
+            manifest_path, package_name = (
+                package["manifest_path"],
+                package["package_name"],
+            )
             with open(manifest_path, "r") as fname:
                 package_aib = json_load(PackageManifest, fname)
                 shell_deps.add(manifest_path)
@@ -190,7 +226,8 @@ def main():
                         blob.path
                         for blob in package_aib.blobs
                         if blob.path.startswith("bin/")
-                    })
+                    }
+                )
 
     core_realm_shards: List[FilePath] = []
     core_realm_includes: FileEntryList = []
@@ -203,25 +240,85 @@ def main():
         # is its location relative to the fuchsia root.
         for include in json.load(args.core_realm_includes_list):
             core_realm_includes.append(
-                FileEntry(include["source"], include["destination"]))
+                FileEntry(include["source"], include["destination"])
+            )
+
+    base = []
+    if args.base_packages_list is not None:
+        base_packages_list = json.load(args.base_packages_list)
+        base = base_packages_list
+
+    cache = []
+    if args.cache_packages_list is not None:
+        cache_packages_list = json.load(args.cache_packages_list)
+
+        # Strip all base pkgs from the cache pkgs set, so there are no
+        # duplicates across the two sets.
+        if base:
+            cache_packages_set = set(cache_packages_list)
+            cache_packages_set.difference_update(base)
+            cache_packages_list = list(sorted(cache_packages_set))
+
+        cache = cache_packages_list
+
+    system = []
+    if args.extra_files_packages_list is not None:
+        extra_file_packages = json.load(args.extra_files_packages_list)
+        system.extend(extra_file_packages)
+    if args.extra_deps_files_packages_list is not None:
+        extra_deps_file_packages = json.load(
+            args.extra_deps_files_packages_list
+        )
+        for extra_dep in extra_deps_file_packages:
+            system.append(extra_dep["package_manifest"])
+
+    kernel = KernelInfo()
+    kernel.args.update(json.load(args.kernel_cmdline))
+    kernel.clock_backstop = json.load(args.kernel_clock_backstop)
+
+    boot_args = []
+    if args.boot_args is not None:
+        boot_args = sorted(json.load(args.boot_args))
+
+    bootfs_packages = []
+    if args.bootfs_packages_list is not None:
+        bootfs_packages_list = json.load(args.bootfs_packages_list)
+        bootfs_packages = bootfs_packages_list
 
     # Create an Assembly Input Bundle from the remaining contents
-    (assembly_input_bundle, assembly_config_manifest_path,
-     deps) = copy_to_assembly_input_bundle(
-         legacy, config_data_entries, args.outdir, base_driver_packages_list,
-         base_driver_components_files_list, boot_driver_packages_list,
-         boot_driver_components_files_list, {
-             package: sorted(list(components))
-             for (package, components) in shell_commands.items()
-         }, core_realm_shards, core_realm_includes,
-         args.bootfs_files_package)
+    (
+        assembly_input_bundle,
+        assembly_config_manifest_path,
+        deps,
+    ) = copy_to_assembly_input_bundle(
+        base,
+        cache,
+        system,
+        bootfs_packages,
+        kernel,
+        boot_args,
+        config_data_entries,
+        args.outdir,
+        base_driver_packages_list,
+        base_driver_components_files_list,
+        boot_driver_packages_list,
+        boot_driver_components_files_list,
+        {
+            package: sorted(list(components))
+            for (package, components) in shell_commands.items()
+        },
+        core_realm_shards,
+        core_realm_includes,
+        args.bootfs_files_package,
+    )
 
     deps.update(shell_deps)
     # Write out a fini manifest of the files that have been copied, to create a
     # package or archive that contains all of the files in the bundle.
     if args.export_manifest:
         assembly_input_bundle.write_fini_manifest(
-            args.export_manifest, base_dir=args.outdir)
+            args.export_manifest, base_dir=args.outdir
+        )
 
     # Write out a depfile.
     if args.depfile:
@@ -236,10 +333,12 @@ if __name__ == "__main__":
     except DuplicatePackageException as exc:
         logger.exception(
             "The Legacy Assembly Input Bundle could not be constructed due to \
-        a duplicate package declaration in the build")
+        a duplicate package declaration in the build"
+        )
     except PackageManifestParsingException as exc:
         logger.exception(
-            "A problem occurred attempting to load a PackageManifest")
+            "A problem occurred attempting to load a PackageManifest"
+        )
     except AssemblyInputBundleCreationException as exc:
         logger.exception("A problem occured building the legacy bundle")
     finally:

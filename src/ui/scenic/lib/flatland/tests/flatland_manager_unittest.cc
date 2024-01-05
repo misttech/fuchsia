@@ -11,8 +11,8 @@
 #include <gtest/gtest.h>
 
 #include "fuchsia/ui/composition/cpp/fidl.h"
-#include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/scenic/lib/allocation/mock_buffer_collection_importer.h"
+#include "src/ui/scenic/lib/flatland/tests/logging_event_loop.h"
 #include "src/ui/scenic/lib/flatland/tests/mock_flatland_presenter.h"
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
 #include "src/ui/scenic/lib/scheduling/id.h"
@@ -64,14 +64,14 @@ using fuchsia::ui::composition::OnNextFrameBeginValues;
 
 namespace {
 
-class FlatlandManagerTest : public gtest::RealLoopFixture {
+class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
  public:
   FlatlandManagerTest()
       : uber_struct_system_(std::make_shared<UberStructSystem>()),
         link_system_(std::make_shared<LinkSystem>(uber_struct_system_->GetNextInstanceId())) {}
 
   void SetUp() override {
-    gtest::RealLoopFixture::SetUp();
+    ::testing::Test::SetUp();
 
     mock_flatland_presenter_ = std::make_shared<::testing::StrictMock<MockFlatlandPresenter>>();
 
@@ -115,7 +115,7 @@ class FlatlandManagerTest : public gtest::RealLoopFixture {
               });
             }));
 
-    constexpr fuchsia::hardware::display::DisplayId kDisplayId = {.value = 1};
+    constexpr fuchsia::hardware::display::types::DisplayId kDisplayId = {.value = 1};
     constexpr uint32_t kDisplayWidth = 640;
     constexpr uint32_t kDisplayHeight = 480;
     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> importers;
@@ -135,12 +135,17 @@ class FlatlandManagerTest : public gtest::RealLoopFixture {
     // the tests.
     {
       std::lock_guard lock(removed_session_thread_checker_);
+      std::for_each(removed_sessions_.begin(), removed_sessions_.end(), [](auto session_id) {
+        FX_LOGS(INFO) << "`removed_sessions_` includes " << session_id;
+      });
       removed_sessions_.clear();
     }
     if (manager_) {
-      const size_t session_count = manager_->GetSessionCount();
-      EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(_, _)).Times(AtLeast(session_count));
-      RunLoopUntil([this, session_count] {
+      const size_t initial_session_count = manager_->GetSessionCount();
+      FX_LOGS(INFO) << "initial_session_count=" << initial_session_count;
+      EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(_, _))
+          .Times(AtLeast(initial_session_count));
+      RunLoopUntil([this, initial_session_count] {
         std::lock_guard lock(removed_session_thread_checker_);
         // It could be tempting to only check a single condition here. However,
         // it won't work as expected. `FlatlandManager` posts the task
@@ -151,7 +156,17 @@ class FlatlandManagerTest : public gtest::RealLoopFixture {
         // session, which is handled on the presenter handler's FIDL loop.
         // There may be a critical section in between and we should make sure
         // both conditions are fulfilled before proceeding.
-        return manager_->GetSessionCount() == 0 && removed_sessions_.size() == session_count;
+        auto current_session_count = manager_->GetSessionCount();
+        std::for_each(removed_sessions_.begin(), removed_sessions_.end(), [](auto session_id) {
+          FX_LOGS(INFO) << "`removed_sessions_` includes " << session_id;
+        });
+        FX_LOGS(INFO) << "current_session_count=" << current_session_count;
+
+        // We can't test for equality between `removed_sessions_.size()` and `initial_session_count`
+        // due to a race condition: the about-to-be-destroyed session might already have been
+        // removed from the manager, but the presenter is not notified until the end of the Flatland
+        // destructor, which occurs on a different thread.
+        return current_session_count == 0 && removed_sessions_.size() >= initial_session_count;
       });
     }
 
@@ -171,12 +186,13 @@ class FlatlandManagerTest : public gtest::RealLoopFixture {
       removed_sessions_.clear();
     }
 
-    gtest::RealLoopFixture::TearDown();
+    ::testing::Test::TearDown();
   }
 
   fidl::InterfacePtr<fuchsia::ui::composition::Flatland> CreateFlatland() {
     fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland;
-    manager_->CreateFlatland(flatland.NewRequest(dispatcher()));
+    const scheduling::SessionId id = manager_->CreateFlatland(flatland.NewRequest(dispatcher()));
+    FX_LOGS(INFO) << "Created flatland with ID " << id;
     return flatland;
   }
 
@@ -212,8 +228,8 @@ class FlatlandManagerTest : public gtest::RealLoopFixture {
   // to make sure that it is only used on the test loop (which runs on the same
   // thread as test main thread).
   fit::thread_checker removed_session_thread_checker_;
-  std::unordered_set<scheduling::SessionId> removed_sessions_
-      FIT_GUARDED(removed_session_thread_checker_);
+  std::unordered_set<scheduling::SessionId> removed_sessions_ FIT_GUARDED(
+      removed_session_thread_checker_);
 
   const std::shared_ptr<LinkSystem> link_system_;
 

@@ -28,6 +28,15 @@ FuchsiaComponentInfo = provider(
         "resources": "any additional resources the component needs",
         "is_driver": "True if this is a driver",
         "is_test": "True if this is a test component",
+        "run_tag": "A tag used to identify the component when put in a package to be later used by the run command",
+    },
+)
+
+FuchsiaPackagedComponentInfo = provider(
+    "Contains information about a fuchsia component that has been included in a package",
+    fields = {
+        "component_info": "The original FuchsiaComponentInfo provider if this is built locally. Otherwise it will be empty",
+        "dest": "The install location for this component in a package (meta/foo.cm)",
     },
 )
 
@@ -57,14 +66,6 @@ FuchsiaComponentManifestShardCollectionInfo = provider(
     "Contains information about a collection of shards to add as dependencies for for each cmc invocation",
     fields = {
         "shards": "A list of shards's as targets in the collection",
-    },
-)
-
-FuchsiaEmulatorInfo = provider(
-    "Contains information about a fuchsia emulator.",
-    fields = {
-        "name": "The name of the emulator",
-        "launch_options": "The list of additional options to use when launching",
     },
 )
 
@@ -112,14 +113,14 @@ FuchsiaPackageGroupInfo = provider(
 FuchsiaPackageInfo = provider(
     doc = "Contains information about a fuchsia package.",
     fields = {
+        "fuchsia_cpu": "The target CPU specified when building this package in fuchsia format (x64, arm64, riscv64)",
         "package_manifest": "JSON package manifest file representing the Fuchsia package.",
         "package_name": "The name of the package",
         "far_file": "The far archive",
         "meta_far": "The meta.far file",
         "files": "all files that compose this package, including the manifest and meta.far",
         "build_id_dir": "Directory containing the debug symbols",
-        "components": "A list of all of the component manifest strings inclusive of driver components.",
-        "drivers": "A list of driver manifest strings.",
+        "packaged_components": "A list of all the components in the form of FuchsiaPackagedComponentInfo structs",
         "package_resources": "A list of resources added to this package",
     },
 )
@@ -195,27 +196,12 @@ AccessTokenInfo = provider(
     },
 )
 
-FuchsiaPackageRepoPathInfo = provider(
-    doc = "A provider which provides the path to a fuchsia package repo",
-    fields = {
-        "path": "The path to the repository.",
-    },
-)
-
 FuchsiaPackageRepoInfo = provider(
     doc = "A provider which provides the contents of a fuchsia package repo",
     fields = {
         "packages": "The paths to the package_manifest.json files",
         "repo_dir": "The directory of the package repo.",
         "blobs": "The blobs needed by packages in this package repo.",
-    },
-)
-
-FuchsiaLocalPackageRepositoryInfo = provider(
-    doc = "A provider which provides the configuration for a local package repo.",
-    fields = {
-        "repo_name": "The name of the repository",
-        "repo_path": "The path of the repository. If relative it is treated as relative to the workspace root",
     },
 )
 

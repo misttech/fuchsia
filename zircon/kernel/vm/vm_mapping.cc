@@ -438,7 +438,7 @@ void VmMapping::AspaceUnmapLockedObject(uint64_t offset, uint64_t len) const {
   // If we're currently faulting and are responsible for the vmo code to be calling
   // back to us, detect the recursion and abort here.
   // The specific path we're avoiding is if the VMO calls back into us during
-  // vmo->LookupPagesLocked() via AspaceUnmapLockedObject(). If we set this flag we're short
+  // a VmCowPages::LookupCursor call via AspaceUnmapLockedObject(). If we set this flag we're short
   // circuiting the unmap operation so that we don't do extra work.
   if (unlikely(currently_faulting_)) {
     LTRACEF("recursing to ourself, abort\n");
@@ -738,6 +738,16 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
               // Not committing so get a page if one exists. This increments the cursor, returning
               // nullptr if no page.
               page = cursor->MaybePage(writing);
+              // This page was not present and if we are in a run of absent pages we would like to
+              // efficiently skip them, instead of querying each virtual address individually. Due
+              // to the assumptions of the cursor, we cannot call SkipMissingPages if we had just
+              // requested the last page in the range of the cursor.
+              if (!page && off + PAGE_SIZE < len) {
+                // Increment |off| for the any pages we skip and let the original page from
+                // MaybePage get incremented on the way around the loop before the range gets
+                // checked.
+                off += cursor->SkipMissingPages() * PAGE_SIZE;
+              }
             }
             if (page) {
               zx_status_t status = coalescer.Append(base + off, page->paddr());
@@ -848,7 +858,8 @@ zx_status_t VmMapping::DestroyLocked() {
   return ZX_OK;
 }
 
-zx_status_t VmMapping::PageFault(vaddr_t va, const uint pf_flags, LazyPageRequest* page_request) {
+zx_status_t VmMapping::PageFaultLocked(vaddr_t va, const uint pf_flags,
+                                       LazyPageRequest* page_request) {
   VM_KTRACE_DURATION(
       2, "VmMapping::PageFault",
       ("user_id", KTRACE_ANNOTATED_VALUE(AssertHeld(lock_ref()), object_->user_id())),
@@ -910,7 +921,7 @@ zx_status_t VmMapping::PageFault(vaddr_t va, const uint pf_flags, LazyPageReques
 
   // set the currently faulting flag for any recursive calls the vmo may make back into us
   // The specific path we're avoiding is if the VMO calls back into us during
-  // vmo->LookupPagesLocked() via AspaceUnmapLockedObject(). Since we're responsible for
+  // a VmCowPages::LookupCursor call via AspaceUnmapLockedObject(). Since we're responsible for
   // that page, signal to ourself to skip the unmap operation.
   DEBUG_ASSERT(!currently_faulting_);
   currently_faulting_ = true;
@@ -944,7 +955,7 @@ zx_status_t VmMapping::PageFault(vaddr_t va, const uint pf_flags, LazyPageReques
     // If this is a write fault and the VMO supports dirty tracking, only lookup 1 page. The pages
     // will also be marked dirty for a write, which we only want for the current page. We could
     // optimize this to lookup following pages here too and map them in, however we would have to
-    // not mark them dirty in LookupPagesLocked, and map them in without write permissions here, so
+    // not mark them dirty during the lookup, and map them in without write permissions here, so
     // that we can take a permission fault on a write to update their dirty tracking later. Instead,
     // we can keep things simple by just looking up 1 page.
     // TODO(rashaeqbal): Revisit this decision if there are performance issues.
@@ -1130,6 +1141,32 @@ void VmMapping::ActivateLocked() {
 
   state_ = LifeCycleState::ALIVE;
   object_->AddMappingLocked(this);
+
+  // Now that we have added a mapping to the VMO it's cache policy becomes fixed, and we can read it
+  // and augment our arch_mmu_flags.
+  uint32_t cache_policy = object_->GetMappingCachePolicyLocked();
+  uint arch_mmu_flags = protection_ranges_.FirstRegionMmuFlags();
+  if ((arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK) != cache_policy) {
+    // Warn in the event that we somehow receive a VMO that has a cache
+    // policy set while also holding cache policy flags within the arch
+    // flags. The only path that should be able to achieve this is if
+    // something in the kernel maps into their aspace incorrectly.
+    if ((arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK) != 0) {
+      TRACEF(
+          "warning: mapping has conflicting cache policies: vmo %02x "
+          "arch_mmu_flags %02x.\n",
+          cache_policy, arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK);
+      // Clear the existing cache policy and use the new one.
+      arch_mmu_flags &= ~ARCH_MMU_FLAG_CACHE_MASK;
+    }
+    // If we are changing the cache policy then this can only happen if this is a new mapping region
+    // and not a new mapping occurring as a result of an unmap split. In the case of a new mapping
+    // region we know there cannot yet be any protection ranges.
+    DEBUG_ASSERT(protection_ranges_.IsSingleRegion());
+    arch_mmu_flags |= cache_policy;
+    protection_ranges_.SetFirstRegionMmuFlags(arch_mmu_flags);
+  }
+
   AssertHeld(parent_->lock_ref());
   parent_->subregions_.InsertRegion(fbl::RefPtr<VmAddressRegionOrMapping>(this));
 }
@@ -1306,6 +1343,25 @@ zx_status_t VmMapping::SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority p
   Guard<CriticalMutex> guard{object_->lock()};
   object_->ChangeHighPriorityCountLocked(is_high ? 1 : -1);
   return ZX_OK;
+}
+
+void VmMapping::CommitHighMemoryPriority() {
+  fbl::RefPtr<VmObject> vmo;
+  uint64_t offset;
+  uint64_t len;
+  {
+    Guard<CriticalMutex> guard{lock()};
+    if (state_ != LifeCycleState::ALIVE || memory_priority_ != MemoryPriority::HIGH) {
+      return;
+    }
+    vmo = object_;
+    offset = object_offset_locked();
+    len = size_locked();
+  }
+  DEBUG_ASSERT(vmo);
+  vmo->CommitHighPriorityPages(offset, len);
+  // Ignore the return result of MapRange as this is just best effort.
+  MapRange(offset, len, false, true);
 }
 
 zx_status_t MappingProtectionRanges::EnumerateProtectionRanges(

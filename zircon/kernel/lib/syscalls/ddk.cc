@@ -170,7 +170,8 @@ zx_status_t sys_framebuffer_get_info(zx_handle_t handle, user_out_ptr<uint32_t> 
                                      user_out_ptr<uint32_t> width, user_out_ptr<uint32_t> height,
                                      user_out_ptr<uint32_t> stride) {
   zx_status_t status;
-  if ((status = validate_resource(handle, ZX_RSRC_KIND_ROOT)) < 0) {
+  if ((status = validate_resource_kind_base(handle, ZX_RSRC_KIND_SYSTEM,
+                                            ZX_RSRC_SYSTEM_FRAMEBUFFER_BASE)) < 0) {
     return status;
   }
 #if ARCH_X86
@@ -204,7 +205,8 @@ zx_status_t sys_framebuffer_set_range(zx_handle_t hrsrc, zx_handle_t vmo_handle,
                                       uint32_t format, uint32_t width, uint32_t height,
                                       uint32_t stride) {
   zx_status_t status;
-  if ((status = validate_resource(hrsrc, ZX_RSRC_KIND_ROOT)) < 0) {
+  if ((status = validate_resource_kind_base(hrsrc, ZX_RSRC_KIND_SYSTEM,
+                                            ZX_RSRC_SYSTEM_FRAMEBUFFER_BASE)) < 0) {
     return status;
   }
 
@@ -242,9 +244,9 @@ zx_status_t sys_framebuffer_set_range(zx_handle_t hrsrc, zx_handle_t vmo_handle,
 // zx_status_t zx_iommu_create
 zx_status_t sys_iommu_create(zx_handle_t resource, uint32_t type, user_in_ptr<const void> desc,
                              size_t desc_size, zx_handle_t* out) {
-  // TODO: finer grained validation
   zx_status_t status;
-  if ((status = validate_resource(resource, ZX_RSRC_KIND_ROOT)) < 0) {
+  if ((status = validate_resource_kind_base(resource, ZX_RSRC_KIND_SYSTEM,
+                                            ZX_RSRC_SYSTEM_IOMMU_BASE)) < 0) {
     return status;
   }
 
@@ -370,9 +372,8 @@ zx_status_t sys_msi_create(zx_handle_t msi_alloc, uint32_t options, uint32_t msi
 // zx_status_t zx_pc_firmware_tables
 zx_status_t sys_pc_firmware_tables(zx_handle_t hrsrc, user_out_ptr<zx_paddr_t> acpi_rsdp,
                                    user_out_ptr<zx_paddr_t> smbios) {
-  // TODO(fxbug.dev/30918): finer grained validation
   zx_status_t status;
-  if ((status = validate_resource(hrsrc, ZX_RSRC_KIND_ROOT)) < 0) {
+  if ((status = validate_resource(hrsrc, ZX_RSRC_KIND_MMIO)) < 0) {
     return status;
   }
   if ((status = acpi_rsdp.copy_to_user(gAcpiRsdp)) != ZX_OK) {

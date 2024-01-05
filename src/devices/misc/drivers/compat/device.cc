@@ -19,8 +19,8 @@
 #include <zircon/errors.h>
 
 #include "driver.h"
-#include "src/devices/bin/driver_host/composite_node_spec_util.h"
 #include "src/devices/misc/drivers/compat/composite.h"
+#include "src/devices/misc/drivers/compat/composite_node_spec_util.h"
 
 namespace fdf {
 using namespace fuchsia_driver_framework;
@@ -186,6 +186,20 @@ std::vector<fuchsia_driver_framework::wire::NodeProperty> CreateProperties(
   return properties;
 }
 
+Device::DelayedReleaseOp::DelayedReleaseOp(std::shared_ptr<Device> device) {
+  memcpy(&compat_symbol, &device->compat_symbol_, sizeof(compat_symbol));
+  memcpy(&ops, &device->ops_, sizeof(ops));
+}
+
+Device::DelayedReleaseOp::~DelayedReleaseOp() {
+  // We shouldn't need to call the parent's pre-release hook here,
+  // as we should have only delayed the release hook if the device
+  // was the last device of the driver.
+  if (HasOp(ops, &zx_protocol_device_t::release)) {
+    ops->release(compat_symbol.context);
+  }
+}
+
 Device::Device(device_t device, const zx_protocol_device_t* ops, Driver* driver,
                std::optional<Device*> parent, std::shared_ptr<fdf::Logger> logger,
                async_dispatcher_t* dispatcher)
@@ -203,6 +217,14 @@ Device::Device(device_t device, const zx_protocol_device_t* ops, Driver* driver,
       executor_(dispatcher) {}
 
 Device::~Device() {
+  if (!children_.empty()) {
+    FDF_LOGL(WARNING, *logger_, "%s: Destructing device, but still had %lu children", Name(),
+             children_.size());
+    // Ensure we do not get use-after-free from calling child_pre_release
+    // on a destructed parent device.
+    children_.clear();
+  }
+
   if (ShouldCallRelease()) {
     // Call the parent's pre-release.
     if (HasOp((*parent_)->ops_, &zx_protocol_device_t::child_pre_release)) {
@@ -210,7 +232,7 @@ Device::~Device() {
                                           compat_symbol_.context);
     }
 
-    if (HasOp(ops_, &zx_protocol_device_t::release)) {
+    if (!release_after_dispatcher_shutdown_ && HasOp(ops_, &zx_protocol_device_t::release)) {
       ops_->release(compat_symbol_.context);
     }
   }
@@ -326,11 +348,6 @@ zx_status_t Device::Add(device_add_args_t* zx_args, zx_device_t** out) {
     return ZX_ERR_BAD_STATE;
   }
   device_t compat_device = {
-      .proto_ops =
-          {
-              .ops = zx_args->proto_ops,
-              .id = zx_args->proto_id,
-          },
       .name = zx_args->name,
       .context = zx_args->ctx,
   };
@@ -367,21 +384,40 @@ zx_status_t Device::Add(device_add_args_t* zx_args, zx_device_t** out) {
     }
   }
 
-  device->device_server_ = DeviceServer(
-      outgoing_name, zx_args->proto_id, device->topological_path_, std::move(service_offers),
+  DeviceServer::BanjoConfig banjo_config{zx_args->proto_id};
+
+  // Set the callback specifically for the base proto_id if there is one.
+  if (zx_args->proto_ops != nullptr && zx_args->proto_id != 0) {
+    banjo_config.callbacks[zx_args->proto_id] = [ops = zx_args->proto_ops, ctx = zx_args->ctx]() {
+      return DeviceServer::GenericProtocol{.ops = const_cast<void*>(ops), .ctx = ctx};
+    };
+  }
+
+  // Set a generic callback for other proto_ids.
+  banjo_config.generic_callback =
       [device =
            std::weak_ptr(device)](uint32_t proto_id) -> zx::result<DeviceServer::GenericProtocol> {
-        DeviceServer::GenericProtocol protocol;
-        std::shared_ptr dev = device.lock();
-        if (!dev) {
-          return zx::error(ZX_ERR_BAD_STATE);
-        }
-        zx_status_t status = dev->GetProtocol(proto_id, &protocol);
-        if (status != ZX_OK) {
-          return zx::error(status);
-        }
-        return zx::ok(protocol);
-      });
+    std::shared_ptr dev = device.lock();
+    if (!dev) {
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+
+    DeviceServer::GenericProtocol protocol;
+    if (HasOp(dev->ops_, &zx_protocol_device_t::get_protocol)) {
+      zx_status_t status =
+          dev->ops_->get_protocol(dev->compat_symbol_.context, proto_id, &protocol);
+      if (status != ZX_OK) {
+        return zx::error(status);
+      }
+
+      return zx::ok(protocol);
+    }
+
+    return zx::error(ZX_ERR_PROTOCOL_NOT_SUPPORTED);
+  };
+
+  device->device_server_.Init(outgoing_name, device->topological_path_, std::move(service_offers),
+                              std::move(banjo_config));
 
   // Add the metadata from add_args:
   for (size_t i = 0; i < zx_args->metadata_count; i++) {
@@ -437,7 +473,6 @@ zx_status_t Device::ExportAfterInit() {
 zx_status_t Device::CreateNode() {
   // Create NodeAddArgs from `zx_args`.
   fidl::Arena arena;
-
   auto offers = device_server_.CreateOffers(arena);
 
   std::vector<fdf::wire::NodeSymbol> symbols;
@@ -542,8 +577,12 @@ zx_status_t Device::CreateNode() {
                topological_path_.c_str(), connector.status_string());
       return connector.error_value();
     }
-    auto devfs_args =
-        fdf::wire::DevfsAddArgs::Builder(arena).connector(std::move(connector.value()));
+
+    auto devfs_args = fdf::wire::DevfsAddArgs::Builder(arena)
+                          .connector(std::move(connector.value()))
+                          .connector_supports(fuchsia_device_fs::ConnectionType::kDevice |
+                                              fuchsia_device_fs::ConnectionType::kNode |
+                                              fuchsia_device_fs::ConnectionType::kController);
     fidl::StringView class_name = ProtocolIdToClassName(device_server_.proto_id());
     if (!class_name.empty()) {
       devfs_args.class_name(class_name);
@@ -694,6 +733,18 @@ void Device::UnbindAndRelease() {
   // while being run in a promise on our own executor.
   parent_.value()->executor_.schedule_task(
       UnbindOp().then([device = shared_from_this()](fpromise::result<void>& init) {
+        if (device->parent_.value()->parent_ == std::nullopt &&
+            device->parent_.value()->children_.size() == 1) {
+          // We are the last remaining child. We should delay
+          // calling the driver's release hook until the driver destructs, so the hook
+          // is only invoked after the the dispatcher is shutdown.
+          device->release_after_dispatcher_shutdown_ = true;
+          if (device->ShouldCallRelease()) {
+            auto op = std::make_unique<DelayedReleaseOp>(device);
+            device->parent_.value()->AddDelayedChildReleaseOp(std::move(op));
+          }
+          // The device will otherwise destruct as normal.
+        }
         // Our device should be destructed at the end of this callback when the reference to the
         // shared pointer is removed.
         device->parent_.value()->children_.remove(device);
@@ -743,8 +794,19 @@ zx_status_t Device::GetProtocol(uint32_t proto_id, void* out) const {
     return ops_->get_protocol(compat_symbol_.context, proto_id, out);
   }
 
-  if ((compat_symbol_.proto_ops.id != proto_id) || (compat_symbol_.proto_ops.ops == nullptr)) {
-    return ZX_ERR_NOT_SUPPORTED;
+  if (!device_server_.has_banjo_config()) {
+    if (driver_ == nullptr) {
+      FDF_LOGL(ERROR, *logger_, "Driver is null");
+      return ZX_ERR_BAD_STATE;
+    }
+
+    return driver_->GetProtocol(proto_id, out);
+  }
+
+  compat::DeviceServer::GenericProtocol device_server_out;
+  zx_status_t status = device_server_.GetProtocol(proto_id, &device_server_out);
+  if (status != ZX_OK) {
+    return status;
   }
 
   if (!out) {
@@ -757,8 +819,8 @@ zx_status_t Device::GetProtocol(uint32_t proto_id, void* out) const {
   };
 
   auto proto = static_cast<GenericProtocol*>(out);
-  proto->ops = compat_symbol_.proto_ops.ops;
-  proto->ctx = compat_symbol_.context;
+  proto->ctx = device_server_out.ctx;
+  proto->ops = device_server_out.ops;
   return ZX_OK;
 }
 
@@ -789,18 +851,6 @@ bool Device::MessageOp(fidl::IncomingHeaderAndMessage msg, device_fidl_txn_t txn
     return true;
   }
   return false;
-}
-
-zx::result<uint32_t> Device::SetPerformanceStateOp(uint32_t state) {
-  if (!HasOp(ops_, &zx_protocol_device_t::set_performance_state)) {
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
-  uint32_t out_state;
-  zx_status_t status = ops_->set_performance_state(compat_symbol_.context, state, &out_state);
-  if (status != ZX_OK) {
-    return zx::error(status);
-  }
-  return zx::ok(out_state);
 }
 
 void Device::InitReply(zx_status_t status) {
@@ -944,9 +994,10 @@ zx_status_t Device::AddCompositeNodeSpec(const char* name, const composite_node_
     return ZX_ERR_INVALID_ARGS;
   }
 
-  if (!spec->metadata_list && spec->metadata_count > 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
+  ZX_ASSERT_MSG(spec->metadata_list == nullptr,
+                "Metadata not supported on composite node specs. Please add metadata to a child.");
+  ZX_ASSERT_MSG(spec->metadata_count == 0,
+                "Metadata not supported on composite node specs. Please add metadata to a child.");
 
   auto composite_node_manager =
       driver_->driver_namespace().Connect<fuchsia_driver_framework::CompositeNodeManager>();
@@ -1020,6 +1071,10 @@ zx_status_t Device::ServeInspectVmo(zx::vmo inspect_vmo) {
   return ZX_OK;
 }
 
+void Device::AddDelayedChildReleaseOp(std::unique_ptr<DelayedReleaseOp> op) {
+  delayed_child_release_ops_.push_back(std::move(op));
+}
+
 void Device::LogError(const char* error) {
   FDF_LOGL(ERROR, *logger_, "%s: %s", topological_path_.c_str(), error);
 }
@@ -1040,6 +1095,10 @@ void Device::Bind(BindRequestView request, BindCompleter::Sync& completer) {
   auto bind_request = fdf::wire::NodeControllerRequestBindRequest::Builder(arena)
                           .force_rebind(false)
                           .driver_url_suffix(request->driver);
+  if (!controller_.is_valid()) {
+    completer.Reply(zx::error(ZX_ERR_INTERNAL));
+    return;
+  }
   controller_->RequestBind(bind_request.Build())
       .ThenExactlyOnce(
           [completer = completer.ToAsync()](
@@ -1052,15 +1111,15 @@ void Device::Bind(BindRequestView request, BindCompleter::Sync& completer) {
           });
 }
 
-void Device::GetCurrentPerformanceState(GetCurrentPerformanceStateCompleter::Sync& completer) {
-  completer.Reply(0);
-}
-
 void Device::Rebind(RebindRequestView request, RebindCompleter::Sync& completer) {
   fidl::Arena arena;
   auto bind_request = fdf::wire::NodeControllerRequestBindRequest::Builder(arena)
                           .force_rebind(true)
                           .driver_url_suffix(request->driver);
+  if (!controller_.is_valid()) {
+    completer.Reply(zx::error(ZX_ERR_INTERNAL));
+    return;
+  }
   controller_->RequestBind(bind_request.Build())
       .ThenExactlyOnce(
           [completer = completer.ToAsync()](
@@ -1130,12 +1189,6 @@ void Device::SetMinDriverLogSeverity(SetMinDriverLogSeverityRequestView request,
   FuchsiaLogSeverity severity = static_cast<FuchsiaLogSeverity>(request->severity);
   logger().SetSeverity(severity);
   completer.Reply(ZX_OK);
-}
-
-void Device::SetPerformanceState(SetPerformanceStateRequestView request,
-                                 SetPerformanceStateCompleter::Sync& completer) {
-  zx::result result = SetPerformanceStateOp(request->requested_state);
-  completer.Reply(result.status_value(), result.is_ok() ? result.value() : 0);
 }
 
 }  // namespace compat

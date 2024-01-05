@@ -13,12 +13,12 @@
 #include <zircon/types.h>
 
 #include <arch/mp.h>
+#include <arch/mp_unplug_event.h>
 #include <arch/ops.h>
 #include <arch/riscv64.h>
 #include <arch/riscv64/mmu.h>
 #include <arch/riscv64/sbi.h>
 #include <dev/interrupt.h>
-#include <kernel/event.h>
 #include <lk/init.h>
 #include <lk/main.h>
 #include <vm/vm.h>
@@ -40,7 +40,7 @@ riscv64_percpu riscv64_percpu_array[SMP_MAX_CPUS];
 // local helper routine to help convert cpu masks to hart masks
 template <typename Callback>
 void for_every_hart_in_cpu_mask(cpu_mask_t cmask, Callback callback) {
-  for (cpu_num_t cpu = 0; cpu < SMP_MAX_CPUS && cmask; cpu++, cmask >>= 1) {
+  for (cpu_num_t cpu = 0; cpu < riscv64_num_cpus && cmask; cpu++, cmask >>= 1) {
     if (cmask & 1) {
       auto hart = cpu_to_hart_map[cpu];
       callback(hart, cpu);
@@ -82,7 +82,7 @@ void riscv64_software_exception() {
     arch_disable_ints();
     mb();
     while (true) {
-      __asm__("wfi" ::: "memory");
+      __wfi();
     }
 
     reason &= ~(1u << MP_IPI_HALT);
@@ -154,9 +154,14 @@ void riscv64_mp_early_init_percpu(uint32_t hart_id, cpu_num_t cpu_num) {
   wmb();
 }
 
+uint32_t arch_cpu_num_to_hart_id(cpu_num_t cpu_num) {
+  DEBUG_ASSERT(cpu_num < ktl::size(cpu_to_hart_map));
+  return cpu_to_hart_map[cpu_num];
+}
+
 void arch_mp_init_percpu() { interrupt_init_percpu(); }
 
-void arch_flush_state_and_halt(Event* flush_done) {
+void arch_flush_state_and_halt(MpUnplugEvent* flush_done) {
   DEBUG_ASSERT(arch_ints_disabled());
   Thread::Current::Get()->preemption_state().PreemptDisable();
   flush_done->Signal();
@@ -179,11 +184,18 @@ zx_status_t arch_mp_cpu_unplug(uint cpu_id) {
   return ZX_OK;
 }
 
-zx_status_t arch_mp_cpu_hotplug(cpu_num_t cpu_id) { return ZX_ERR_NOT_SUPPORTED; }
+zx_status_t arch_mp_cpu_hotplug(cpu_num_t cpu_id) {
+  if (cpu_id == 0 || cpu_id >= riscv64_num_cpus) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  if (mp_is_cpu_online(cpu_id)) {
+    return ZX_ERR_BAD_STATE;
+  }
+  return riscv64_start_cpu(cpu_id, arch_cpu_num_to_hart_id(cpu_id));
+}
 
 void arch_setup_percpu(cpu_num_t cpu_num, struct percpu* percpu) {
   riscv64_percpu* arch_percpu = &riscv64_percpu_array[cpu_num];
-  DEBUG_ASSERT(arch_percpu->high_level_percpu == nullptr);
   arch_percpu->high_level_percpu = percpu;
 }
 
@@ -270,13 +282,13 @@ zx_status_t riscv64_start_cpu(cpu_num_t cpu_num, uint32_t hart_id) {
 
   // Tell SBI to start the secondary cpu.
   dprintf(INFO, "RISCV: Starting cpu %u, hart id %u\n", cpu_num, hart_id);
-  arch::RiscvSbiError ret = sbi_hart_start(hart_id, kernel_secondary_entry_paddr, sp).error;
-  if (ret != arch::RiscvSbiError::kSuccess) {
+  status = power_cpu_on(hart_id, kernel_secondary_entry_paddr, sp);
+  if (status != ZX_OK) {
     // start failed, free the stack
-    KERNEL_OOPS("RISCV: failed to start secondary cpu, SBI error %ld\n", static_cast<long>(ret));
-    status = riscv64_free_secondary_stack(cpu_num);
-    DEBUG_ASSERT(status == ZX_OK);
-    return ZX_ERR_INTERNAL;
+    KERNEL_OOPS("RISCV: failed to start secondary cpu, error %d\n", status);
+    zx_status_t sstatus = riscv64_free_secondary_stack(cpu_num);
+    DEBUG_ASSERT(sstatus == ZX_OK);
+    return status;
   }
   return ZX_OK;
 }

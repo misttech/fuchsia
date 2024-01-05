@@ -14,6 +14,7 @@
 
 #include "test_thread.h"
 #include "userpager.h"
+#include "zircon/system/utest/core/vmo/helpers.h"
 
 namespace pager_tests {
 
@@ -1973,6 +1974,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(DirtyAfterMapProtect, 0) {
   zx_vaddr_t base_addr;
   ASSERT_OK(zx::vmar::root_self()->allocate(ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0,
                                             zx_system_get_page_size(), &vmar, &base_addr));
+  auto destroy = fit::defer([&vmar]() { vmar.destroy(); });
 
   Vmo* vmo;
   ASSERT_TRUE(pager.CreateVmoWithOptions(1, create_option, &vmo));
@@ -1985,11 +1987,6 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(DirtyAfterMapProtect, 0) {
   zx_vaddr_t ptr;
   // Map the vmo read-only first so that the protect step below is not a no-op.
   ASSERT_OK(vmar.map(ZX_VM_PERM_READ, 0, vmo->vmo(), 0, zx_system_get_page_size(), &ptr));
-
-  auto unmap = fit::defer([&]() {
-    // Cleanup the mapping we created.
-    vmar.unmap(ptr, zx_system_get_page_size());
-  });
 
   // Read the VMO through the mapping so that the hardware mapping is created.
   uint8_t data = *reinterpret_cast<uint8_t*>(ptr);
@@ -7142,21 +7139,10 @@ TEST(PagerWriteback, EvictAfterDirtyRequest) {
   constexpr char k_command[] = "scanner reclaim_all";
   ASSERT_OK(zx_debug_send_command(root_resource->get(), k_command, strlen(k_command)));
 
+  // Check if the middle page has been evicted yet.
   // Eviction is asynchronous. Wait for the eviction to occur.
-  while (true) {
-    zx::nanosleep(zx::deadline_after(zx::msec(50)));
-    printf("polling page count...\n");
-
-    // Verify that the vmo has evicted pages.
-    zx_info_vmo_t info;
-    ASSERT_OK(vmo->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
-
-    // Check if the middle page has been evicted yet.
-    if (info.committed_bytes == (kNumPages - 1) * zx_system_get_page_size()) {
-      break;
-    }
-    printf("page count %zu\n", info.committed_bytes / zx_system_get_page_size());
-  }
+  ASSERT_TRUE(
+      vmo_test::PollVmoPopulatedBytes(vmo->vmo(), (kNumPages - 1) * zx_system_get_page_size()));
 
   // Try to resolve the DIRTY request now. The entire operation should fail.
   ASSERT_FALSE(pager.DirtyPages(vmo, 0, kNumPages));
@@ -7342,6 +7328,11 @@ TEST(PagerWriteback, DelayedDirtyNotFound) {
   // Verify that no pages are dirty now.
   ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, nullptr, 0));
 
+  // No new requests generated.
+  uint64_t offset, length;
+  ASSERT_FALSE(pager.GetPageDirtyRequest(vmo, 0, &offset, &length));
+  ASSERT_FALSE(pager.GetPageReadRequest(vmo, 0, &offset, &length));
+
   // Now try to resolve the DIRTY request we saw earlier. This will fail with ZX_ERR_NOT_FOUND as
   // there is no committed page for the kernel to dirty.
   ASSERT_EQ(ZX_ERR_NOT_FOUND,
@@ -7361,6 +7352,114 @@ TEST(PagerWriteback, DelayedDirtyNotFound) {
   ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, &range, 1));
 
   // No more requests.
+  ASSERT_FALSE(pager.GetPageDirtyRequest(vmo, 0, &offset, &length));
+  ASSERT_FALSE(pager.GetPageReadRequest(vmo, 0, &offset, &length));
+}
+
+// Tests zeroing a range and then marking it clean with an outstanding READ request.
+TEST(PagerWriteback, DelayedReadZeroRange) {
+  UserPager pager;
+  ASSERT_TRUE(pager.Init());
+
+  Vmo* vmo;
+  ASSERT_TRUE(pager.CreateVmoWithOptions(1, ZX_VMO_TRAP_DIRTY | ZX_VMO_RESIZABLE, &vmo));
+
+  // Read from the VMO. This will generate a READ request.
+  TestThread t([vmo]() -> bool {
+    uint8_t data = 0xaa;
+    if (vmo->vmo().read(&data, 0, sizeof(data)) != ZX_OK) {
+      return false;
+    }
+    return data == 0;
+  });
+  ASSERT_TRUE(t.Start());
+  ASSERT_TRUE(pager.WaitForPageRead(vmo, 0, 1, ZX_TIME_INFINITE));
+
+  // Zero the VMO.
+  ASSERT_OK(vmo->vmo().op_range(ZX_VMO_OP_ZERO, 0, zx_system_get_page_size(), nullptr, 0));
+
+  // Verify that the range is dirty and zero.
+  zx_vmo_dirty_range_t range = {.offset = 0, .length = 1, .options = ZX_VMO_DIRTY_RANGE_IS_ZERO};
+  ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, &range, 1));
+
+  // The zeroing should also have unblocked the read request to be fulfilled with zeros now.
+  ASSERT_TRUE(t.Wait());
+
+  // Meanwhile writeback the dirty zero range. This will reset the zero tail so that the pager is
+  // now responsible for supplying all pages.
+  ASSERT_TRUE(pager.WritebackBeginZeroPages(vmo, 0, 1));
+  ASSERT_TRUE(pager.WritebackEndPages(vmo, 0, 1));
+
+  // Verify that no pages are dirty now.
+  ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, nullptr, 0));
+
+  // No new requests generated.
+  uint64_t offset, length;
+  ASSERT_FALSE(pager.GetPageDirtyRequest(vmo, 0, &offset, &length));
+  ASSERT_FALSE(pager.GetPageReadRequest(vmo, 0, &offset, &length));
+
+  // No pages populated in the VMO.
+  zx_info_vmo_t info;
+  ASSERT_OK(vmo->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
+  ASSERT_EQ(0, info.committed_bytes);
+
+  // No more requests.
+  ASSERT_FALSE(pager.GetPageDirtyRequest(vmo, 0, &offset, &length));
+  ASSERT_FALSE(pager.GetPageReadRequest(vmo, 0, &offset, &length));
+}
+
+// Tests zeroing a range and then marking it clean with an outstanding DIRTY request.
+TEST(PagerWriteback, DelayedDirtyZeroRange) {
+  UserPager pager;
+  ASSERT_TRUE(pager.Init());
+
+  Vmo* vmo;
+  ASSERT_TRUE(pager.CreateVmoWithOptions(1, ZX_VMO_TRAP_DIRTY | ZX_VMO_RESIZABLE, &vmo));
+  ASSERT_TRUE(pager.SupplyPages(vmo, 0, 1));
+
+  // Write to the VMO. This will generate a DIRTY request.
+  TestThread t([vmo]() -> bool {
+    uint8_t data = 0xaa;
+    return vmo->vmo().write(&data, 0, sizeof(data)) == ZX_OK;
+  });
+  ASSERT_TRUE(t.Start());
+  ASSERT_TRUE(pager.WaitForPageDirty(vmo, 0, 1, ZX_TIME_INFINITE));
+
+  // Zero the VMO.
+  ASSERT_OK(vmo->vmo().op_range(ZX_VMO_OP_ZERO, 0, zx_system_get_page_size(), nullptr, 0));
+
+  // Verify that the range is dirty and zero.
+  zx_vmo_dirty_range_t range = {.offset = 0, .length = 1, .options = ZX_VMO_DIRTY_RANGE_IS_ZERO};
+  ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, &range, 1));
+
+  // Meanwhile writeback the dirty zero range. This will reset the zero tail so that the pager is
+  // now responsible for supplying all pages.
+  ASSERT_TRUE(pager.WritebackBeginZeroPages(vmo, 0, 1));
+  ASSERT_TRUE(pager.WritebackEndPages(vmo, 0, 1));
+
+  // Verify that no pages are dirty now.
+  ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, nullptr, 0));
+
+  // Now try to resolve the DIRTY request we saw earlier. This will fail with ZX_ERR_NOT_FOUND as
+  // there is no committed page for the kernel to dirty.
+  ASSERT_EQ(ZX_ERR_NOT_FOUND, zx_pager_op_range(pager.pager().get(), ZX_PAGER_OP_DIRTY,
+                                                vmo->vmo().get(), 0, zx_system_get_page_size(), 0));
+
+  // Failing the DIRTY request will cause the kernel to try again, this time with a READ request
+  // first as the zero page has been marked clean without being committed.
+  ASSERT_TRUE(pager.WaitForPageRead(vmo, 0, 1, ZX_TIME_INFINITE));
+  zx::vmo empty_src;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &empty_src));
+  ASSERT_OK(pager.pager().supply_pages(vmo->vmo(), 0, zx_system_get_page_size(), empty_src, 0));
+  ASSERT_TRUE(pager.WaitForPageDirty(vmo, 0, 1, ZX_TIME_INFINITE));
+  ASSERT_TRUE(pager.DirtyPages(vmo, 0, 1));
+  ASSERT_TRUE(t.Wait());
+
+  // The page is now non-zero and dirty.
+  range.options = 0;
+  ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, &range, 1));
+
+  // No new requests generated.
   uint64_t offset, length;
   ASSERT_FALSE(pager.GetPageDirtyRequest(vmo, 0, &offset, &length));
   ASSERT_FALSE(pager.GetPageReadRequest(vmo, 0, &offset, &length));
@@ -7596,6 +7695,59 @@ TEST(PagerWriteback, InvalidQuery) {
   ASSERT_EQ(ZX_ERR_ACCESS_DENIED, zx_pager_query_dirty_ranges(pager.get(), vmo.get(), 0, 0, nullptr,
                                                               0, nullptr, nullptr));
   ASSERT_EQ(ZX_ERR_ACCESS_DENIED, zx_pager_query_vmo_stats(pager.get(), vmo.get(), 0, nullptr, 0));
+}
+
+// Tests that attempt to exercise the early termination of the query dirty ranges loop to avoid
+// redundantly calculating an additional range prior to terminating if the user did not provide a
+// large enough buffer.
+TEST(PagerWriteback, QueryEarlyTermination) {
+  zx::pager pager;
+  ASSERT_OK(zx::pager::create(0, &pager));
+
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  zx::vmo vmo;
+  ASSERT_OK(zx_pager_create_vmo(pager.get(), 0, port.get(), 0, zx_system_get_page_size() * 3,
+                                vmo.reset_and_get_address()));
+  // Dirty some pages first, so the query has something to enumerate.
+  zx::vmo vmo2;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo2));
+  ASSERT_OK(
+      zx_pager_supply_pages(pager.get(), vmo.get(), 0, zx_system_get_page_size(), vmo2.get(), 0));
+  ASSERT_OK(zx_pager_supply_pages(pager.get(), vmo.get(), zx_system_get_page_size() * 2,
+                                  zx_system_get_page_size(), vmo2.get(), 0));
+  uint64_t data = 42;
+  ASSERT_OK(vmo.write(&data, 0, sizeof(data)));
+  ASSERT_OK(vmo.write(&data, zx_system_get_page_size() * 2, sizeof(data)));
+
+  // Query with a buffer size too small to hold any of the results, but otherwise valid.
+  size_t actual = 0;
+  ASSERT_EQ(ZX_OK, zx_pager_query_dirty_ranges(pager.get(), vmo.get(), 0, zx_system_get_page_size(),
+                                               &data, sizeof(data), &actual, nullptr));
+  EXPECT_EQ(actual, 0);
+  // Now query with a buffer large enough for the first dirty range, but not the second.
+  zx_vmo_dirty_range_t dirty_range = {};
+  ASSERT_EQ(ZX_OK,
+            zx_pager_query_dirty_ranges(pager.get(), vmo.get(), 0, zx_system_get_page_size() * 3,
+                                        &dirty_range, sizeof(dirty_range), &actual, nullptr));
+  EXPECT_EQ(dirty_range.offset, 0);
+  EXPECT_EQ(dirty_range.length, zx_system_get_page_size());
+  EXPECT_EQ(actual, 1);
+  // Query again to get and check avail.
+  size_t avail = 0;
+  ASSERT_EQ(ZX_OK,
+            zx_pager_query_dirty_ranges(pager.get(), vmo.get(), 0, zx_system_get_page_size() * 3,
+                                        &dirty_range, sizeof(dirty_range), &actual, &avail));
+  EXPECT_EQ(avail, 2);
+  // Now query both ranges;
+  zx_vmo_dirty_range_t dirty_ranges[2] = {};
+  ASSERT_EQ(ZX_OK, zx_pager_query_dirty_ranges(pager.get(), vmo.get(), 0,
+                                               zx_system_get_page_size() * 3, dirty_ranges,
+                                               sizeof(zx_vmo_dirty_range_t) * 2, &actual, nullptr));
+  EXPECT_EQ(dirty_range.offset, 0);
+  EXPECT_EQ(dirty_range.length, zx_system_get_page_size());
+  EXPECT_EQ(actual, 2);
 }
 
 }  // namespace pager_tests

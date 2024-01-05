@@ -4,8 +4,9 @@
 
 """Rule for declaring a FIDL library"""
 
-load(":providers.bzl", "FuchsiaFidlLibraryInfo")
+load(":fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL_ATTRS", "get_fuchsia_api_level")
 load(":fuchsia_fidl_cc_library.bzl", "fuchsia_fidl_cc_library", "get_cc_lib_name")
+load(":providers.bzl", "FuchsiaFidlLibraryInfo")
 
 def _gather_dependencies(deps):
     info = []
@@ -22,7 +23,6 @@ def _gather_dependencies(deps):
 def _fidl_impl(context):
     sdk = context.toolchains["@fuchsia_sdk//fuchsia:toolchain"]
     ir = context.outputs.ir
-    tables = context.outputs.coding_tables
     library_name = context.attr.library
 
     info = _gather_dependencies(context.attr.deps)
@@ -37,8 +37,7 @@ def _fidl_impl(context):
         files_argument += ["--files"] + [f.path for f in lib.files]
         inputs.extend(lib.files)
 
-    # The default Fuchsia target API level of this package
-    api_level = context.attr.target_api_level or str(sdk.default_fidl_target_api)
+    api_level = get_fuchsia_api_level(context)
 
     context.actions.run(
         executable = sdk.fidlc,
@@ -49,21 +48,13 @@ def _fidl_impl(context):
             library_name,
             "--available",
             "fuchsia:%s" % api_level,
-            "--tables",
-            tables.path,
         ] + files_argument,
         inputs = inputs,
-        outputs = [
-            ir,
-            tables,
-        ],
+        outputs = [ir],
         mnemonic = "Fidlc",
     )
 
     return [
-        # Exposing the coding tables here so that the target can be consumed as a
-        # C++ source.
-        DefaultInfo(files = depset([tables])),
         # Passing library info for dependent libraries.
         FuchsiaFidlLibraryInfo(info = info, name = library_name, ir = ir),
     ]
@@ -75,10 +66,6 @@ _fidl_library = rule(
         "library": attr.string(
             doc = "The name of the FIDL library",
             mandatory = True,
-        ),
-        "target_api_level": attr.string(
-            doc = "The version of the Fuchsia platform that this FIDL library will be built for",
-            mandatory = False,
         ),
         "srcs": attr.label_list(
             doc = "The list of .fidl source files",
@@ -95,29 +82,26 @@ _fidl_library = rule(
             doc = "list of FIDL CC binding types that this library will generate",
             mandatory = False,
         ),
-    },
+    } | FUCHSIA_API_LEVEL_ATTRS,
     outputs = {
         # The intermediate representation of the library, to be consumed by bindings
         # generators.
         "ir": "%{name}.fidl.json",
-        # The C coding tables.
-        "coding_tables": "%{name}_tables.c",
     },
 )
 
-def fuchsia_fidl_library(name, srcs, library = None, target_api_level = None, sdk_for_default_deps = None, cc_bindings = [], deps = [], **kwargs):
+def fuchsia_fidl_library(name, srcs, library = None, sdk_for_default_deps = None, cc_bindings = [], deps = [], **kwargs):
     """
     A FIDL library.
 
     Args:
         name: Name of the target
         library: Name of the FIDL library, defaults to the library name
-        target_api_level: The version of the Fuchsia platform that this FIDL library will be built for.
         srcs: List of source files.
         cc_bindings: list of FIDL CC binding types to generate. Each binding specified will be represented by
             a new target named {name}_{cc_binding} of type fuchsia_fidl_cc_library.
         deps: List of labels for FIDL libraries this library depends on.
-        sdk_for_default_deps: Name of the Bazel workspace where default FIDL library dependencies are defined. If empty or not defined, defaults to the current repository.
+        sdk_for_default_deps: Name of the Bazel workspace where default FIDL library dependencies are defined. If empty or not defined, defaults to @fuchsia_sdk.
         **kwargs: Remaining args to be passed to the C++ binding rules
     """
 
@@ -127,7 +111,6 @@ def fuchsia_fidl_library(name, srcs, library = None, target_api_level = None, sd
     _fidl_library(
         library = library,
         name = name,
-        target_api_level = target_api_level,
         srcs = srcs,
         deps = deps,
         cc_bindings = cc_bindings,

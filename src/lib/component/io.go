@@ -175,7 +175,7 @@ func (*Service) QueryFilesystem(fidl.Context) (int32, *io.FilesystemInfo, error)
 }
 
 func (*Service) Query(fidl.Context) ([]uint8, error) {
-	return []byte(io.NodeProtocolName), nil
+	return []byte(io.NodeProtocolName_), nil
 }
 
 type Directory interface {
@@ -483,7 +483,7 @@ func (*directoryState) QueryFilesystem(fidl.Context) (int32, *io.FilesystemInfo,
 }
 
 func (*directoryState) Query(fidl.Context) ([]uint8, error) {
-	return []byte(io.DirectoryProtocolName), nil
+	return []byte(io.DirectoryProtocolName_), nil
 }
 
 type File interface {
@@ -700,6 +700,14 @@ func (*fileState) RemoveExtendedAttribute(fidl.Context, []uint8) (io.Node2Remove
 	return io.Node2RemoveExtendedAttributeResultWithErr(int32(zx.ErrNotSupported)), nil
 }
 
+func (*fileState) Allocate(fidl.Context, uint64, uint64, io.AllocateMode) (io.FileAllocateResult, error) {
+	return io.FileAllocateResultWithErr(int32(zx.ErrNotSupported)), nil
+}
+
+func (*fileState) EnableVerity(fidl.Context, io.VerificationOptions) (io.FileEnableVerityResult, error) {
+	return io.FileEnableVerityResultWithErr(int32(zx.ErrNotSupported)), nil
+}
+
 func (fState *fileState) Read(_ fidl.Context, count uint64) (io.ReadableReadResult, error) {
 	if l := fState.size; l < count {
 		count = l
@@ -763,7 +771,7 @@ func (*fileState) QueryFilesystem(fidl.Context) (int32, *io.FilesystemInfo, erro
 }
 
 func (*fileState) Query(fidl.Context) ([]byte, error) {
-	return []byte(io.FileProtocolName), nil
+	return []byte(io.FileProtocolName_), nil
 }
 
 func (fState *fileState) AdvisoryLock(fidl.Context, io.AdvisoryLockRequest) (io.AdvisoryLockingAdvisoryLockResult, error) {

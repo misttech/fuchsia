@@ -4,6 +4,7 @@
 
 #include "src/graphics/display/drivers/coordinator/client.h"
 
+#include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
 #include <fuchsia/hardware/display/controller/c/banjo.h>
@@ -49,6 +50,7 @@
 #include "src/graphics/display/lib/api-types-cpp/buffer-id.h"
 #include "src/graphics/display/lib/api-types-cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
+#include "src/graphics/display/lib/api-types-cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-capture-image-id.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-layer-id.h"
 #include "src/graphics/display/lib/api-types-cpp/event-id.h"
@@ -59,6 +61,7 @@
 #include "src/lib/fsl/handles/object_info.h"
 
 namespace fhd = fuchsia_hardware_display;
+namespace fhdt = fuchsia_hardware_display_types;
 
 namespace {
 
@@ -86,6 +89,14 @@ void DisplayConfig::InitializeInspect(inspect::Node* parent) {
       node_.CreateBool("pending_apply_layer_change", pending_apply_layer_change_);
 }
 
+void DisplayConfig::DiscardNonLayerPendingConfig() {
+  pending_layer_change_ = false;
+  pending_layer_change_property_.Set(false);
+
+  pending_ = current_;
+  display_config_change_ = false;
+}
+
 void Client::ImportImage(ImportImageRequestView request, ImportImageCompleter::Sync& completer) {
   const ImageId image_id = ToImageId(request->image_id);
   if (image_id == kInvalidImageId) {
@@ -103,7 +114,7 @@ void Client::ImportImage(ImportImageRequestView request, ImportImageCompleter::S
     return;
   }
 
-  if (request->image_config.type == fuchsia_hardware_display::wire::kTypeCapture) {
+  if (request->image_config.type == fuchsia_hardware_display_types::wire::kTypeCapture) {
     completer.Reply(
         ImportImageForCapture(request->image_config, ToBufferId(request->buffer_id), image_id));
     return;
@@ -113,9 +124,9 @@ void Client::ImportImage(ImportImageRequestView request, ImportImageCompleter::S
 }
 
 zx_status_t Client::ImportImageForDisplay(
-    const fuchsia_hardware_display::wire::ImageConfig& image_config, BufferId buffer_id,
+    const fuchsia_hardware_display_types::wire::ImageConfig& image_config, BufferId buffer_id,
     ImageId image_id) {
-  ZX_DEBUG_ASSERT(image_config.type != fuchsia_hardware_display::wire::kTypeCapture);
+  ZX_DEBUG_ASSERT(image_config.type != fuchsia_hardware_display_types::wire::kTypeCapture);
   ZX_DEBUG_ASSERT(!images_.find(image_id).IsValid());
   ZX_DEBUG_ASSERT(!capture_images_.find(image_id).IsValid());
 
@@ -130,16 +141,13 @@ zx_status_t Client::ImportImageForDisplay(
   dc_image.width = image_config.width;
   dc_image.type = image_config.type;
 
-  const uint64_t banjo_driver_buffer_collection_id =
-      display::ToBanjoDriverBufferCollectionId(collections.driver_buffer_collection_id);
-  zx_status_t status = controller_->dc()->ImportImage(&dc_image, banjo_driver_buffer_collection_id,
-                                                      buffer_id.buffer_index);
+  zx_status_t status = controller_->driver()->ImportImage(
+      &dc_image, collections.driver_buffer_collection_id, buffer_id.buffer_index);
   if (status != ZX_OK) {
     return status;
   }
 
-  auto release_image =
-      fit::defer([this, &dc_image]() { controller_->dc()->ReleaseImage(&dc_image); });
+  auto release_image = fit::defer([this, &dc_image]() { controller_->ReleaseImage(&dc_image); });
 
   fbl::AllocChecker alloc_checker;
   fbl::RefPtr<Image> image = fbl::AdoptRef(
@@ -212,10 +220,8 @@ void Client::ImportBufferCollection(ImportBufferCollectionRequestView request,
 
   const display::DriverBufferCollectionId driver_buffer_collection_id =
       controller_->GetNextDriverBufferCollectionId();
-  const uint64_t banjo_driver_buffer_collection_id =
-      display::ToBanjoDriverBufferCollectionId(driver_buffer_collection_id);
-  zx_status_t import_status = controller_->dc()->ImportBufferCollection(
-      banjo_driver_buffer_collection_id, request->buffer_collection_token.TakeChannel());
+  zx_status_t import_status = controller_->driver()->ImportBufferCollection(
+      driver_buffer_collection_id, request->buffer_collection_token.TakeChannel());
   if (import_status != ZX_OK) {
     zxlogf(WARNING, "Cannot import BufferCollection to display driver: %s",
            zx_status_get_string(import_status));
@@ -237,10 +243,8 @@ void Client::ReleaseBufferCollection(ReleaseBufferCollectionRequestView request,
     return;
   }
 
-  const uint64_t banjo_driver_buffer_collection_id =
-      display::ToBanjoDriverBufferCollectionId(it->second.driver_buffer_collection_id);
   // TODO(fxbug.dev/97955) Consider handling the error instead of ignoring it.
-  controller_->dc()->ReleaseBufferCollection(banjo_driver_buffer_collection_id);
+  controller_->driver()->ReleaseBufferCollection(it->second.driver_buffer_collection_id);
 
   collection_map_.erase(it);
 }
@@ -264,10 +268,8 @@ void Client::SetBufferCollectionConstraints(
 
   zx_status_t status = ZX_ERR_INTERNAL;
 
-  const uint64_t banjo_driver_buffer_collection_id =
-      display::ToBanjoDriverBufferCollectionId(collections.driver_buffer_collection_id);
-  status = controller_->dc()->SetBufferCollectionConstraints(&dc_image,
-                                                             banjo_driver_buffer_collection_id);
+  status = controller_->driver()->SetBufferCollectionConstraints(
+      &dc_image, collections.driver_buffer_collection_id);
   if (status != ZX_OK) {
     zxlogf(WARNING,
            "Cannot set BufferCollection constraints using imported buffer collection (id=%lu) %s.",
@@ -344,15 +346,19 @@ void Client::SetDisplayMode(SetDisplayModeRequestView request,
   }
 
   fbl::AutoLock lock(controller_->mtx());
-  const fbl::Vector<edid::timing_params_t>* edid_timings;
+  const fbl::Vector<display::DisplayTiming>* edid_timings;
   const display_params_t* params;
   controller_->GetPanelConfig(display_id, &edid_timings, &params);
 
   if (edid_timings) {
-    for (auto timing : *edid_timings) {
-      if (timing.horizontal_addressable == request->mode.horizontal_resolution &&
-          timing.vertical_addressable == request->mode.vertical_resolution &&
-          timing.vertical_refresh_e2 == request->mode.refresh_rate_e2) {
+    for (const display::DisplayTiming& timing : *edid_timings) {
+      const int vertical_field_refresh_rate_centihertz =
+          (timing.vertical_field_refresh_rate_millihertz() + 5) / 10;
+      if (timing.horizontal_active_px ==
+              static_cast<int32_t>(request->mode.horizontal_resolution) &&
+          timing.vertical_active_lines == static_cast<int32_t>(request->mode.vertical_resolution) &&
+          vertical_field_refresh_rate_centihertz ==
+              static_cast<int32_t>(request->mode.refresh_rate_e2)) {
         Controller::PopulateDisplayMode(timing, &config->pending_.mode);
         pending_config_valid_ = false;
         config->display_config_change_ = true;
@@ -470,7 +476,7 @@ void Client::SetLayerPrimaryPosition(SetLayerPrimaryPositionRequestView request,
     TearDown();
     return;
   }
-  if (request->transform > fhd::wire::Transform::kRot90ReflectY) {
+  if (request->transform > fhdt::wire::Transform::kRot90ReflectY) {
     zxlogf(ERROR, "Invalid transform %hhu", static_cast<uint8_t>(request->transform));
     TearDown();
     return;
@@ -494,7 +500,7 @@ void Client::SetLayerPrimaryAlpha(SetLayerPrimaryAlphaRequestView request,
     return;
   }
 
-  if (request->mode > fhd::wire::AlphaMode::kHwMultiply ||
+  if (request->mode > fhdt::wire::AlphaMode::kHwMultiply ||
       (!isnan(request->val) && (request->val < 0 || request->val > 1))) {
     zxlogf(ERROR, "Invalid args %hhu %f", static_cast<uint8_t>(request->mode), request->val);
     TearDown();
@@ -619,30 +625,16 @@ void Client::SetLayerImage(SetLayerImageRequestView request,
 }
 
 void Client::CheckConfig(CheckConfigRequestView request, CheckConfigCompleter::Sync& completer) {
-  fhd::wire::ConfigResult res;
-  std::vector<fhd::wire::ClientCompositionOp> ops;
+  fhdt::wire::ConfigResult res;
+  std::vector<fhdt::wire::ClientCompositionOp> ops;
 
   pending_config_valid_ = CheckConfig(&res, &ops);
 
   if (request->discard) {
-    // Go through layers and release any pending resources they claimed
-    for (auto& layer : layers_) {
-      layer.DiscardChanges();
-    }
-    // Reset pending layers lists of all displays to their current layers
-    // respectively.
-    SetAllConfigPendingLayersToCurrentLayers();
-    for (auto& config : configs_) {
-      config.pending_layer_change_ = false;
-      config.pending_layer_change_property_.Set(false);
-
-      config.pending_ = config.current_;
-      config.display_config_change_ = false;
-    }
-    pending_config_valid_ = true;
+    DiscardConfig();
   }
 
-  completer.Reply(res, ::fidl::VectorView<fhd::wire::ClientCompositionOp>::FromExternal(ops));
+  completer.Reply(res, ::fidl::VectorView<fhdt::wire::ClientCompositionOp>::FromExternal(ops));
 }
 
 void Client::ApplyConfig(ApplyConfigCompleter::Sync& /*_completer*/) {
@@ -764,9 +756,9 @@ void Client::IsCaptureSupported(IsCaptureSupportedCompleter::Sync& completer) {
 }
 
 zx_status_t Client::ImportImageForCapture(
-    const fuchsia_hardware_display::wire::ImageConfig& image_config, BufferId buffer_id,
+    const fuchsia_hardware_display_types::wire::ImageConfig& image_config, BufferId buffer_id,
     ImageId image_id) {
-  ZX_DEBUG_ASSERT(image_config.type == fuchsia_hardware_display::wire::kTypeCapture);
+  ZX_DEBUG_ASSERT(image_config.type == fuchsia_hardware_display_types::wire::kTypeCapture);
   ZX_DEBUG_ASSERT(!images_.find(image_id).IsValid());
   ZX_DEBUG_ASSERT(!capture_images_.find(image_id).IsValid());
 
@@ -781,20 +773,15 @@ zx_status_t Client::ImportImageForCapture(
     return ZX_ERR_INVALID_ARGS;
   }
   const auto& collections = it->second;
-  const uint64_t banjo_driver_buffer_collection_id =
-      display::ToBanjoDriverBufferCollectionId(collections.driver_buffer_collection_id);
-
-  uint64_t banjo_driver_capture_image_id = INVALID_ID;
-  zx_status_t status = controller_->dc()->ImportImageForCapture(
-      banjo_driver_buffer_collection_id, buffer_id.buffer_index, &banjo_driver_capture_image_id);
+  DriverCaptureImageId driver_capture_image_id = ToDriverCaptureImageId(INVALID_ID);
+  zx_status_t status = controller_->driver()->ImportImageForCapture(
+      collections.driver_buffer_collection_id, buffer_id.buffer_index, &driver_capture_image_id);
   if (status != ZX_OK) {
     return status;
   }
-  auto release_image = fit::defer([this, banjo_driver_capture_image_id]() {
-    controller_->dc()->ReleaseCapture(banjo_driver_capture_image_id);
+  auto release_image = fit::defer([this, driver_capture_image_id]() {
+    controller_->driver()->ReleaseCapture(driver_capture_image_id);
   });
-  const DriverCaptureImageId driver_capture_image_id =
-      ToDriverCaptureImageId(banjo_driver_capture_image_id);
 
   fbl::AllocChecker alloc_checker;
   fbl::RefPtr<CaptureImage> capture_image = fbl::AdoptRef(new (&alloc_checker) CaptureImage(
@@ -840,8 +827,7 @@ void Client::StartCapture(StartCaptureRequestView request, StartCaptureCompleter
   }
 
   capture_fence_id_ = ToEventId(request->signal_event_id);
-  auto status = controller_->dc()->StartCapture(
-      ToBanjoDriverCaptureImageId(image->driver_capture_image_id()));
+  auto status = controller_->driver()->StartCapture(image->driver_capture_image_id());
   if (status == ZX_OK) {
     fbl::AutoLock lock(controller_->mtx());
     proxy_->EnableCapture(true);
@@ -856,15 +842,11 @@ void Client::StartCapture(StartCaptureRequestView request, StartCaptureCompleter
 
 void Client::SetMinimumRgb(SetMinimumRgbRequestView request,
                            SetMinimumRgbCompleter::Sync& completer) {
-  if (controller_->dc_clamp_rgb() == nullptr) {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
   if (!is_owner_) {
     completer.ReplyError(ZX_ERR_NOT_CONNECTED);
     return;
   }
-  auto status = controller_->dc_clamp_rgb()->SetMinimumRgb(request->minimum_rgb);
+  auto status = controller_->driver()->SetMinimumRgb(request->minimum_rgb);
   if (status == ZX_OK) {
     client_minimum_rgb_ = request->minimum_rgb;
     completer.ReplySuccess();
@@ -875,9 +857,8 @@ void Client::SetMinimumRgb(SetMinimumRgbRequestView request,
 
 void Client::SetDisplayPower(SetDisplayPowerRequestView request,
                              SetDisplayPowerCompleter::Sync& completer) {
-  ZX_DEBUG_ASSERT(controller_->dc());
   const DisplayId display_id = ToDisplayId(request->display_id);
-  auto status = controller_->dc()->SetDisplayPower(ToBanjoDisplayId(display_id), request->power_on);
+  auto status = controller_->driver()->SetDisplayPower(display_id, request->power_on);
   if (status == ZX_OK) {
     completer.ReplySuccess();
   } else {
@@ -885,10 +866,10 @@ void Client::SetDisplayPower(SetDisplayPowerRequestView request,
   }
 }
 
-bool Client::CheckConfig(fhd::wire::ConfigResult* res,
-                         std::vector<fhd::wire::ClientCompositionOp>* ops) {
+bool Client::CheckConfig(fhdt::wire::ConfigResult* res,
+                         std::vector<fhdt::wire::ClientCompositionOp>* ops) {
   if (res && ops) {
-    *res = fhd::wire::ConfigResult::kOk;
+    *res = fhdt::wire::ConfigResult::kOk;
     ops->clear();
   }
   if (configs_.size() == 0) {
@@ -978,22 +959,22 @@ bool Client::CheckConfig(fhd::wire::ConfigResult* res,
 
   if (config_fail) {
     if (res) {
-      *res = fhd::wire::ConfigResult::kInvalidConfig;
+      *res = fhdt::wire::ConfigResult::kInvalidConfig;
     }
     // If the config is invalid, there's no point in sending it to the impl driver.
     return false;
   }
 
   size_t client_composition_opcodes_count_actual;
-  uint32_t display_cfg_result = controller_->dc()->CheckConfiguration(
+  uint32_t display_cfg_result = controller_->driver()->CheckConfiguration(
       configs, config_idx, client_composition_opcodes, client_composition_opcodes_count,
       &client_composition_opcodes_count_actual);
 
   if (display_cfg_result != CONFIG_CHECK_RESULT_OK) {
     if (res) {
       *res = display_cfg_result == CONFIG_CHECK_RESULT_TOO_MANY
-                 ? fhd::wire::ConfigResult::kTooManyDisplays
-                 : fhd::wire::ConfigResult::kUnsupportedDisplayModes;
+                 ? fhdt::wire::ConfigResult::kTooManyDisplays
+                 : fhdt::wire::ConfigResult::kUnsupportedDisplayModes;
     }
     return false;
   }
@@ -1013,7 +994,7 @@ bool Client::CheckConfig(fhd::wire::ConfigResult* res,
   if (!(res && ops)) {
     return false;
   }
-  *res = fhd::wire::ConfigResult::kUnsupportedConfig;
+  *res = fhdt::wire::ConfigResult::kUnsupportedConfig;
 
   // TODO(b/249297195): Once Gerrit IFTTT supports multiple paths, add IFTTT
   // comments to make sure that any change of type Client in
@@ -1051,10 +1032,10 @@ bool Client::CheckConfig(fhd::wire::ConfigResult* res,
 
       for (uint8_t i = 0; i < 32; i++) {
         if (err & (1 << i)) {
-          ops->emplace_back(fhd::wire::ClientCompositionOp{
+          ops->emplace_back(fhdt::wire::ClientCompositionOp{
               .display_id = ToFidlDisplayId(display_config.id),
               .layer_id = ToFidlLayerId(layer_id),
-              .opcode = static_cast<fhd::wire::ClientCompositionOpcode>(i),
+              .opcode = static_cast<fhdt::wire::ClientCompositionOpcode>(i),
           });
         }
       }
@@ -1178,7 +1159,7 @@ void Client::OnDisplaysChanged(cpp20::span<const DisplayId> added_display_ids,
     }
     config->cursor_infos_ = std::move(get_cursor_infos_result.value());
 
-    const fbl::Vector<edid::timing_params_t>* edid_timings;
+    const fbl::Vector<display::DisplayTiming>* edid_timings;
     const display_params_t* params;
     if (!controller_->GetPanelConfig(config->id, &edid_timings, &params)) {
       // This can only happen if the display was already disconnected.
@@ -1225,17 +1206,18 @@ void Client::OnDisplaysChanged(cpp20::span<const DisplayId> added_display_ids,
     fhd::wire::Info info;
     info.id = ToFidlDisplayId(config->id);
 
-    const fbl::Vector<edid::timing_params>* edid_timings;
+    const fbl::Vector<display::DisplayTiming>* edid_timings;
     const display_params_t* params;
     controller_->GetPanelConfig(config->id, &edid_timings, &params);
     std::vector<fhd::wire::Mode> modes;
     if (edid_timings) {
       modes.reserve(edid_timings->size());
-      for (auto timing : *edid_timings) {
+      for (const display::DisplayTiming& timing : *edid_timings) {
         modes.emplace_back(fhd::wire::Mode{
-            .horizontal_resolution = timing.horizontal_addressable,
-            .vertical_resolution = timing.vertical_addressable,
-            .refresh_rate_e2 = timing.vertical_refresh_e2,
+            .horizontal_resolution = static_cast<uint32_t>(timing.horizontal_active_px),
+            .vertical_resolution = static_cast<uint32_t>(timing.vertical_active_lines),
+            .refresh_rate_e2 =
+                static_cast<uint32_t>((timing.vertical_field_refresh_rate_millihertz() + 5) / 10),
         });
       }
     } else {
@@ -1257,7 +1239,7 @@ void Client::OnDisplaysChanged(cpp20::span<const DisplayId> added_display_ids,
     }
 
     info.cursor_configs =
-        fidl::VectorView<fhd::wire::CursorInfo>(arena, config->cursor_infos_.size());
+        fidl::VectorView<fhdt::wire::CursorInfo>(arena, config->cursor_infos_.size());
     for (size_t cursor_config_index = 0; cursor_config_index < info.cursor_configs.count();
          ++cursor_config_index) {
       info.cursor_configs[cursor_config_index] =
@@ -1292,7 +1274,7 @@ void Client::OnDisplaysChanged(cpp20::span<const DisplayId> added_display_ids,
     coded_configs.push_back(info);
   }
 
-  std::vector<fhd::wire::DisplayId> fidl_removed_display_ids;
+  std::vector<fhdt::wire::DisplayId> fidl_removed_display_ids;
   fidl_removed_display_ids.reserve(removed_display_ids.size());
 
   for (DisplayId removed_display_id : removed_display_ids) {
@@ -1308,7 +1290,7 @@ void Client::OnDisplaysChanged(cpp20::span<const DisplayId> added_display_ids,
     fidl::Status result = binding_state_.SendEvents([&](auto&& endpoint) {
       return fidl::WireSendEvent(endpoint)->OnDisplaysChanged(
           fidl::VectorView<fhd::wire::Info>::FromExternal(coded_configs),
-          fidl::VectorView<fhd::wire::DisplayId>::FromExternal(fidl_removed_display_ids));
+          fidl::VectorView<fhdt::wire::DisplayId>::FromExternal(fidl_removed_display_ids));
     });
     if (!result.ok()) {
       zxlogf(ERROR, "Error writing remove message: %s", result.FormatDescription().c_str());
@@ -1380,9 +1362,7 @@ void Client::TearDown() {
 
   // Release all imported buffer collections on display drivers.
   for (const auto& [k, v] : collection_map_) {
-    const uint64_t banjo_driver_buffer_collection_id =
-        display::ToBanjoDriverBufferCollectionId(v.driver_buffer_collection_id);
-    controller_->dc()->ReleaseBufferCollection(banjo_driver_buffer_collection_id);
+    controller_->driver()->ReleaseBufferCollection(v.driver_buffer_collection_id);
   }
   collection_map_.clear();
 
@@ -1457,6 +1437,25 @@ void Client::SetAllConfigPendingLayersToCurrentLayers() {
   }
 }
 
+void Client::DiscardConfig() {
+  // Go through layers and release any pending resources they claimed
+  for (Layer& layer : layers_) {
+    layer.DiscardChanges();
+  }
+
+  // Discard the changes to Display layers lists.
+  //
+  // Reset pending layers lists of all displays to their current layers
+  // respectively.
+  SetAllConfigPendingLayersToCurrentLayers();
+
+  // Discard the rest of the Display changes.
+  for (DisplayConfig& config : configs_) {
+    config.DiscardNonLayerPendingConfig();
+  }
+  pending_config_valid_ = true;
+}
+
 void Client::AcknowledgeVsync(AcknowledgeVsyncRequestView request,
                               AcknowledgeVsyncCompleter::Sync& /*_completer*/) {
   VsyncAckCookie ack_cookie = ToVsyncAckCookie(request->cookie);
@@ -1490,8 +1489,8 @@ Client::Init(fidl::ServerEnd<fuchsia_hardware_display::Coordinator> server_end) 
               return endpoints.error_value();
             }
             auto& [sysmem_allocator_client, sysmem_allocator_server] = endpoints.value();
-            if (zx_status_t status =
-                    controller_->dc()->GetSysmemConnection(sysmem_allocator_server.TakeChannel());
+            if (zx_status_t status = controller_->driver()->GetSysmemConnection(
+                    sysmem_allocator_server.TakeChannel());
                 status != ZX_OK) {
               return status;
             }
@@ -1572,9 +1571,7 @@ void ClientProxy::OnDisplaysChanged(cpp20::span<const DisplayId> added_display_i
 
 void ClientProxy::ReapplySpecialConfigs() {
   ZX_DEBUG_ASSERT(mtx_trylock(controller_->mtx()) == thrd_busy);
-  if (controller_->dc_clamp_rgb()) {
-    controller_->dc_clamp_rgb()->SetMinimumRgb(handler_.GetMinimumRgb());
-  }
+  controller_->driver()->SetMinimumRgb(handler_.GetMinimumRgb());
 }
 
 void ClientProxy::ReapplyConfig() {
@@ -1830,28 +1827,29 @@ ClientProxy::~ClientProxy() {
 // the long term, these two types should be unified.
 namespace {
 
-static_assert((1 << static_cast<int>(fhd::wire::ClientCompositionOpcode::kClientUsePrimary)) ==
+static_assert((1 << static_cast<int>(fhdt::wire::ClientCompositionOpcode::kClientUsePrimary)) ==
                   CLIENT_COMPOSITION_OPCODE_USE_PRIMARY,
               "Const mismatch");
-static_assert((1 << static_cast<int>(fhd::wire::ClientCompositionOpcode::kClientMergeBase)) ==
+static_assert((1 << static_cast<int>(fhdt::wire::ClientCompositionOpcode::kClientMergeBase)) ==
                   CLIENT_COMPOSITION_OPCODE_MERGE_BASE,
               "Const mismatch");
-static_assert((1 << static_cast<int>(fhd::wire::ClientCompositionOpcode::kClientMergeSrc)) ==
+static_assert((1 << static_cast<int>(fhdt::wire::ClientCompositionOpcode::kClientMergeSrc)) ==
                   CLIENT_COMPOSITION_OPCODE_MERGE_SRC,
               "Const mismatch");
-static_assert((1 << static_cast<int>(fhd::wire::ClientCompositionOpcode::kClientFrameScale)) ==
+static_assert((1 << static_cast<int>(fhdt::wire::ClientCompositionOpcode::kClientFrameScale)) ==
                   CLIENT_COMPOSITION_OPCODE_FRAME_SCALE,
               "Const mismatch");
-static_assert((1 << static_cast<int>(fhd::wire::ClientCompositionOpcode::kClientSrcFrame)) ==
+static_assert((1 << static_cast<int>(fhdt::wire::ClientCompositionOpcode::kClientSrcFrame)) ==
                   CLIENT_COMPOSITION_OPCODE_SRC_FRAME,
               "Const mismatch");
-static_assert((1 << static_cast<int>(fhd::wire::ClientCompositionOpcode::kClientTransform)) ==
+static_assert((1 << static_cast<int>(fhdt::wire::ClientCompositionOpcode::kClientTransform)) ==
                   CLIENT_COMPOSITION_OPCODE_TRANSFORM,
               "Const mismatch");
-static_assert((1 << static_cast<int>(fhd::wire::ClientCompositionOpcode::kClientColorConversion)) ==
-                  CLIENT_COMPOSITION_OPCODE_COLOR_CONVERSION,
-              "Const mismatch");
-static_assert((1 << static_cast<int>(fhd::wire::ClientCompositionOpcode::kClientAlpha)) ==
+static_assert(
+    (1 << static_cast<int>(fhdt::wire::ClientCompositionOpcode::kClientColorConversion)) ==
+        CLIENT_COMPOSITION_OPCODE_COLOR_CONVERSION,
+    "Const mismatch");
+static_assert((1 << static_cast<int>(fhdt::wire::ClientCompositionOpcode::kClientAlpha)) ==
                   CLIENT_COMPOSITION_OPCODE_ALPHA,
               "Const mismatch");
 

@@ -24,7 +24,7 @@ use {
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
     fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_softmac as fidl_softmac,
     fuchsia_zircon as zx,
-    ieee80211::MacAddr,
+    ieee80211::{Bssid, MacAddr, MacAddrBytes},
     tracing::{debug, error, info, trace, warn},
     wlan_common::{
         buffer_reader::BufferReader,
@@ -88,17 +88,13 @@ impl Joined {
 
         result.map_err(|status_code| {
             sta.send_connect_conf_failure(status_code);
-            if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-                error!("Auth Alg Error: clear_connect_context failed: {}", e);
-            }
+            let _ =
+                sta.clear_association().map_err(|e| error!("Failed to clear association: {}", e));
         })
     }
 
     fn on_sme_deauthenticate<D: DeviceOps>(&mut self, sta: &mut BoundClient<'_, D>) {
-        // Clear assoc context at the device
-        if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-            warn!("SME Deauthenticate: Error clearing association in vendor driver: {}", e);
-        }
+        let _ = sta.clear_association().map_err(|e| warn!("Failed to clear association: {}", e));
     }
 }
 
@@ -137,18 +133,18 @@ impl Authenticating {
                 error!("authentication with BSS failed");
                 // TODO(fxbug.dev/83828): pass the status code from the original auth frame
                 sta.send_connect_conf_failure(fidl_ieee80211::StatusCode::RefusedReasonUnspecified);
-                if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-                    error!("Auth Failed: clear_connect_context failed: {}", e);
-                }
+                let _ = sta
+                    .clear_association()
+                    .map_err(|e| error!("Failed to clear association: {}", e));
                 AuthProgress::Failed
             }
             Err(e) => {
                 error!("Internal error while authenticating: {}", e);
                 // TODO(fxbug.dev/83828): pass the status code from the original auth frame
                 sta.send_connect_conf_failure(fidl_ieee80211::StatusCode::RefusedReasonUnspecified);
-                if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-                    error!("Auth Internal Err: clear_connect_context failed: {}", e);
-                }
+                let _ = sta
+                    .clear_association()
+                    .map_err(|e| error!("Failed to clear association: {}", e));
                 AuthProgress::Failed
             }
         }
@@ -219,17 +215,12 @@ impl Authenticating {
 
         sta.sta.connect_timeout.take();
         sta.send_connect_conf_failure(fidl_ieee80211::StatusCode::SpuriousDeauthOrDisassoc);
-        if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-            error!("Deauth Frame: clear_connect_context failed: {}", e);
-        }
+        let _ = sta.clear_association().map_err(|e| error!("Failed to clear association: {}", e));
     }
 
     fn on_sme_deauthenticate<D: DeviceOps>(&mut self, sta: &mut BoundClient<'_, D>) {
         sta.sta.connect_timeout.take();
-        // Clear assoc context at the device
-        if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-            error!("SME Deauthenticate: Error clearing association in vendor driver: {}", e);
-        }
+        let _ = sta.clear_association().map_err(|e| error!("Failed to clear association: {}", e));
     }
 }
 
@@ -242,7 +233,8 @@ impl Authenticated {
         sta: &mut BoundClient<'_, D>,
         req: fidl_mlme::ReconnectRequest,
     ) -> Result<EventId, ()> {
-        if req.peer_sta_address == sta.sta.connect_req.selected_bss.bssid.0 {
+        let peer_sta_address: Bssid = req.peer_sta_address.into();
+        if peer_sta_address == sta.sta.connect_req.selected_bss.bssid {
             match sta.send_assoc_req_frame() {
                 Ok(()) => {
                     // Setting timeout in term of beacon period allows us to adjust the realtime
@@ -259,7 +251,7 @@ impl Authenticated {
         } else {
             info!("received reconnect request for a different BSSID, ignoring");
             sta.send_connect_conf_failure_with_bssid(
-                req.peer_sta_address,
+                peer_sta_address,
                 fidl_ieee80211::StatusCode::NotInSameBss,
             );
             Err(())
@@ -349,12 +341,12 @@ impl Associating {
         let qos = negotiated_cap.ht_cap.is_some();
 
         let assoc_cfg = fidl_softmac::WlanAssociationConfig {
-            bssid: Some(sta.sta.bssid().0),
+            bssid: Some(sta.sta.bssid().to_array()),
             aid: Some(assoc_resp_hdr.aid),
             // In the association request we sent out earlier, listen_interval is always set to 0,
             // indicating the client never enters power save mode.
             listen_interval: Some(0),
-            channel: Some(ddk::fidl_channel_from_ddk(main_channel)),
+            channel: Some(main_channel),
             qos: Some(qos),
             wmm_params: None,
             rates: Some(negotiated_cap.rates.iter().map(|r| r.0).collect()),
@@ -431,17 +423,12 @@ impl Associating {
             { deauth_hdr.reason_code }
         );
         sta.send_connect_conf_failure(fidl_ieee80211::StatusCode::SpuriousDeauthOrDisassoc);
-        if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-            error!("Deauth Frame: clear_connect_context failed: {}", e);
-        }
+        let _ = sta.clear_association().map_err(|e| error!("Failed to clear association: {}", e));
     }
 
     fn on_sme_deauthenticate<D: DeviceOps>(&mut self, sta: &mut BoundClient<'_, D>) {
         sta.sta.connect_timeout.take();
-        // Clear assoc context at the device
-        if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-            error!("Assoc timeout: Error clearing association in vendor driver: {}", e);
-        }
+        let _ = sta.clear_association().map_err(|e| error!("Failed to clear association: {}", e));
     }
 }
 
@@ -572,9 +559,7 @@ impl Associated {
         let reason_code = fidl_ieee80211::ReasonCode::from_primitive(deauth_hdr.reason_code.0)
             .unwrap_or(fidl_ieee80211::ReasonCode::UnspecifiedReason);
         sta.send_deauthenticate_ind(reason_code, LocallyInitiated(false));
-        if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-            error!("Deauth Frame: clear_connect_context failed: {}", e);
-        }
+        let _ = sta.clear_association().map_err(|e| error!("Failed to clear association: {}", e));
     }
 
     /// Process every inbound management frame before its being handed off to a more specific
@@ -774,7 +759,7 @@ impl Associated {
         // There may be more EAPoL frames (such as key rotation) coming after EAPoL established.
         // They need to be protected.
         let protected = sta.sta.eapol_required() && self.0.controlled_port_open;
-        sta.send_eapol_frame(req.src_addr, req.dst_addr, protected, &req.data);
+        sta.send_eapol_frame(req.src_addr.into(), req.dst_addr.into(), protected, &req.data);
     }
 
     fn on_sme_set_keys<D: DeviceOps>(
@@ -840,13 +825,10 @@ impl Associated {
         }
 
         self.pre_leaving_associated_state(sta);
-        // Clear assoc context at the device
-        if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-            error!("Error clearing association in vendor driver: {}", e);
-        }
+        let _ = sta.clear_association().map_err(|e| error!("Failed to clear association: {}", e));
 
         if let Err(e) = sta.ctx.device.send_mlme_event(fidl_mlme::MlmeEvent::DeauthenticateConf {
-            resp: fidl_mlme::DeauthenticateConfirm { peer_sta_address: sta.sta.bssid().0 },
+            resp: fidl_mlme::DeauthenticateConfirm { peer_sta_address: sta.sta.bssid().to_array() },
         }) {
             error!("Error sending MLME-DEAUTHENTICATE.confirm: {}", e)
         }
@@ -1172,9 +1154,9 @@ impl States {
                 }
                 sta.sta.connect_timeout.take();
                 sta.send_connect_conf_failure(fidl_ieee80211::StatusCode::RejectedSequenceTimeout);
-                if let Err(e) = sta.ctx.device.clear_association(&sta.sta.bssid().0) {
-                    error!("Connect Timeout: clear_connect_context failed: {}", e);
-                }
+                let _ = sta
+                    .clear_association()
+                    .map_err(|e| error!("Failed to clear association: {}", e));
                 match self {
                     States::Authenticating(state) => state.transition_to(Joined).into(),
                     States::Associating(state) => state.transition_to(Joined).into(),
@@ -1233,7 +1215,7 @@ impl States {
                 }
                 MlmeReq::Reconnect(req) => {
                     sta.send_connect_conf_failure_with_bssid(
-                        req.peer_sta_address,
+                        req.peer_sta_address.into(),
                         fidl_ieee80211::StatusCode::DeniedNoAssociationExists,
                     );
                     state.into()
@@ -1257,7 +1239,7 @@ impl States {
                 }
                 MlmeReq::Reconnect(req) => {
                     sta.send_connect_conf_failure_with_bssid(
-                        req.peer_sta_address,
+                        req.peer_sta_address.into(),
                         fidl_ieee80211::StatusCode::DeniedNoAssociationExists,
                     );
                     state.into()
@@ -1279,9 +1261,10 @@ impl States {
                     state.transition_to(Joined).into()
                 }
                 MlmeReq::Reconnect(req) => {
-                    if req.peer_sta_address != sta.sta.connect_req.selected_bss.bssid.0 {
+                    let peer_sta_address: Bssid = req.peer_sta_address.into();
+                    if peer_sta_address != sta.sta.connect_req.selected_bss.bssid {
                         sta.send_connect_conf_failure_with_bssid(
-                            req.peer_sta_address,
+                            peer_sta_address,
                             fidl_ieee80211::StatusCode::NotInSameBss,
                         );
                     }
@@ -1307,9 +1290,10 @@ impl States {
                     state.transition_to(Joined).into()
                 }
                 MlmeReq::Reconnect(req) => {
-                    if req.peer_sta_address != sta.sta.connect_req.selected_bss.bssid.0 {
+                    let peer_sta_address: Bssid = req.peer_sta_address.into();
+                    if peer_sta_address != sta.sta.connect_req.selected_bss.bssid {
                         sta.send_connect_conf_failure_with_bssid(
-                            req.peer_sta_address,
+                            peer_sta_address,
                             fidl_ieee80211::StatusCode::NotInSameBss,
                         );
                     } else {
@@ -1407,7 +1391,8 @@ mod tests {
         akm::AkmAlgorithm,
         banjo_fuchsia_wlan_common as banjo_common, fidl_fuchsia_wlan_common as fidl_common,
         fuchsia_async as fasync, fuchsia_zircon as zx,
-        ieee80211::Bssid,
+        ieee80211::{Bssid, MacAddrBytes},
+        lazy_static::lazy_static,
         std::sync::{Arc, Mutex},
         test_case::test_case,
         wlan_common::{
@@ -1421,20 +1406,22 @@ mod tests {
                 fake_capabilities::fake_client_capabilities, fake_frames::*,
                 fake_stas::IesOverrides,
             },
-            timer::{create_timer, TimeStream, Timer},
+            timer::{self, create_timer, Timer},
         },
         wlan_frame_writer::write_frame_with_dynamic_buf,
         wlan_statemachine as statemachine,
     };
 
-    const BSSID: Bssid = Bssid([6u8; 6]);
-    const IFACE_MAC: MacAddr = [3u8; 6];
+    lazy_static! {
+        static ref BSSID: Bssid = [6u8; 6].into();
+        static ref IFACE_MAC: MacAddr = [3u8; 6].into();
+    }
 
     struct MockObjects {
         fake_device: FakeDevice,
         fake_device_state: Arc<Mutex<FakeDeviceState>>,
         timer: Option<Timer<TimedEvent>>,
-        time_stream: TimeStream<TimedEvent>,
+        time_stream: timer::EventStream<TimedEvent>,
         scanner: Scanner,
         channel_state: ChannelState,
     }
@@ -1448,7 +1435,7 @@ mod tests {
                 fake_device_state,
                 timer: Some(timer),
                 time_stream,
-                scanner: Scanner::new(IFACE_MAC),
+                scanner: Scanner::new(*IFACE_MAC),
                 channel_state: ChannelState::new_with_main_channel(fake_wlan_channel().into()),
             }
         }
@@ -1465,11 +1452,12 @@ mod tests {
                 .set_channel(fake_wlan_channel().into())
                 .expect("fake device is obedient");
             self.fake_device
-                .join_bss(banjo_common::JoinBssRequest {
-                    bssid: [1, 2, 3, 4, 5, 6],
-                    bss_type: banjo_common::BssType::PERSONAL,
-                    remote: true,
-                    beacon_period: 100,
+                .join_bss(&fidl_common::JoinBssRequest {
+                    bssid: Some([1, 2, 3, 4, 5, 6]),
+                    bss_type: Some(fidl_common::BssType::Personal),
+                    remote: Some(true),
+                    beacon_period: Some(100),
+                    ..Default::default()
                 })
                 .expect("error configuring bss");
             self.make_base_ctx()
@@ -1488,19 +1476,19 @@ mod tests {
 
     fn make_client_station() -> Client {
         let connect_req = ParsedConnectRequest {
-            selected_bss: fake_bss_description!(Open, bssid: BSSID.0),
+            selected_bss: fake_bss_description!(Open, bssid: BSSID.to_array()),
             connect_failure_timeout: 10,
             auth_type: fidl_mlme::AuthenticationTypes::OpenSystem,
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
         };
-        Client::new(connect_req, IFACE_MAC, fake_client_capabilities())
+        Client::new(connect_req, *IFACE_MAC, fake_client_capabilities())
     }
 
     fn make_protected_client_station() -> Client {
         let connect_req = ParsedConnectRequest {
-            selected_bss: fake_bss_description!(Wpa2, bssid: BSSID.0),
+            selected_bss: fake_bss_description!(Wpa2, bssid: BSSID.to_array()),
             connect_failure_timeout: 10,
             auth_type: fidl_mlme::AuthenticationTypes::OpenSystem,
             sae_password: vec![],
@@ -1516,12 +1504,12 @@ mod tests {
                 0xa8, 0x04, //  rsn capabilities
             ],
         };
-        Client::new(connect_req, IFACE_MAC, fake_client_capabilities())
+        Client::new(connect_req, *IFACE_MAC, fake_client_capabilities())
     }
 
     fn connect_conf_failure(result_code: fidl_ieee80211::StatusCode) -> fidl_mlme::ConnectConfirm {
         fidl_mlme::ConnectConfirm {
-            peer_sta_address: BSSID.0,
+            peer_sta_address: BSSID.to_array(),
             result_code,
             association_id: 0,
             association_ies: vec![],
@@ -1550,7 +1538,7 @@ mod tests {
 
     fn fake_assoc_cfg() -> fidl_softmac::WlanAssociationConfig {
         fidl_softmac::WlanAssociationConfig {
-            bssid: Some(BSSID.0),
+            bssid: Some(BSSID.to_array()),
             aid: Some(42),
             channel: Some(fidl_common::WlanChannel {
                 primary: 149,
@@ -1565,7 +1553,7 @@ mod tests {
 
     fn fake_deauth_req() -> wlan_sme::MlmeRequest {
         wlan_sme::MlmeRequest::Deauthenticate(fidl_mlme::DeauthenticateRequest {
-            peer_sta_address: BSSID.0,
+            peer_sta_address: BSSID.to_array(),
             reason_code: fidl_ieee80211::ReasonCode::LeavingNetworkDeauth,
         })
     }
@@ -1601,7 +1589,7 @@ mod tests {
         assert_eq!(
             msg,
             fidl_mlme::ConnectConfirm {
-                peer_sta_address: BSSID.0,
+                peer_sta_address: BSSID.to_array(),
                 result_code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
                 association_id: 0,
                 association_ies: vec![],
@@ -1615,7 +1603,7 @@ mod tests {
         let mut m = MockObjects::new(&exec);
         let mut ctx = m.make_ctx_with_bss();
         let connect_req = ParsedConnectRequest {
-            selected_bss: fake_bss_description!(Open, bssid: BSSID.0),
+            selected_bss: fake_bss_description!(Open, bssid: BSSID.to_array()),
             connect_failure_timeout: 10,
             // use an unsupported AuthenticationType
             auth_type: fidl_mlme::AuthenticationTypes::SharedKey,
@@ -1623,7 +1611,7 @@ mod tests {
             wep_key: None,
             security_ie: vec![],
         };
-        let mut sta = Client::new(connect_req, IFACE_MAC, fake_client_capabilities());
+        let mut sta = Client::new(connect_req, *IFACE_MAC, fake_client_capabilities());
         let mut sta = sta.bind(&mut ctx, &mut m.scanner, &mut m.channel_state);
         let state = Joined;
 
@@ -1684,7 +1672,7 @@ mod tests {
         assert_eq!(
             msg,
             fidl_mlme::ConnectConfirm {
-                peer_sta_address: BSSID.0,
+                peer_sta_address: BSSID.to_array(),
                 result_code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
                 association_id: 0,
                 association_ies: vec![],
@@ -1718,7 +1706,7 @@ mod tests {
         assert_eq!(
             msg,
             fidl_mlme::ConnectConfirm {
-                peer_sta_address: BSSID.0,
+                peer_sta_address: BSSID.to_array(),
                 result_code: fidl_ieee80211::StatusCode::SpuriousDeauthOrDisassoc,
                 association_id: 0,
                 association_ies: vec![],
@@ -1767,7 +1755,7 @@ mod tests {
         assert_eq!(
             msg,
             fidl_mlme::ConnectConfirm {
-                peer_sta_address: BSSID.0,
+                peer_sta_address: BSSID.to_array(),
                 result_code: fidl_ieee80211::StatusCode::Success,
                 association_id: 42,
                 association_ies: assoc_resp_ies,
@@ -1789,7 +1777,7 @@ mod tests {
 
         assert!(m.fake_device_state.lock().unwrap().join_bss_request.is_some());
         let assoc_resp_ies =
-            fake_bss_description!(Wpa2, bssid: BSSID.0, ies_overrides: IesOverrides::new()
+            fake_bss_description!(Wpa2, bssid: BSSID.to_array(), ies_overrides: IesOverrides::new()
                 .set(IeType::HT_CAPABILITIES, ie::fake_ht_cap_bytes().to_vec())
                 .set(IeType::VHT_CAPABILITIES, ie::fake_vht_cap_bytes().to_vec())
             )
@@ -1817,7 +1805,7 @@ mod tests {
             .lock()
             .unwrap()
             .assocs
-            .get(&BSSID.0)
+            .get(&(*BSSID).into())
             .expect("expect assoc ctx to be set")
             .clone();
         assert_eq!(assoc_cfg.aid, Some(42));
@@ -1842,7 +1830,7 @@ mod tests {
         assert_eq!(
             msg,
             fidl_mlme::ConnectConfirm {
-                peer_sta_address: BSSID.0,
+                peer_sta_address: BSSID.to_array(),
                 result_code: fidl_ieee80211::StatusCode::Success,
                 association_id: 42,
                 association_ies: assoc_resp_ies,
@@ -2004,7 +1992,7 @@ mod tests {
                             client.sta.iface_mac,
                             client.sta.bssid(),
                             mac::SequenceControl(0)
-                                .with_seq_num(client.ctx.seq_mgr.next_sns1(&client.sta.bssid().0) as u16),
+                                .with_seq_num(client.ctx.seq_mgr.next_sns1(&client.sta.bssid().into()) as u16),
                         ),
                     },
                 }
@@ -2072,7 +2060,7 @@ mod tests {
         assert_eq!(
             msg,
             fidl_mlme::DeauthenticateIndication {
-                peer_sta_address: BSSID.0,
+                peer_sta_address: BSSID.to_array(),
                 reason_code: fidl_ieee80211::ReasonCode::ApInitiated,
                 locally_initiated: false,
             }
@@ -2121,7 +2109,7 @@ mod tests {
         assert_eq!(
             msg,
             fidl_mlme::DisassociateIndication {
-                peer_sta_address: BSSID.0,
+                peer_sta_address: BSSID.to_array(),
                 reason_code: fidl_ieee80211::ReasonCode::ApInitiated,
                 locally_initiated: false,
             }
@@ -2235,7 +2223,7 @@ mod tests {
         let mut sta = sta.bind(&mut ctx, &mut m.scanner, &mut m.channel_state);
         let state = Associated(empty_association(&mut sta));
 
-        let (src_addr, dst_addr, eapol_frame) = make_eapol_frame(IFACE_MAC);
+        let (src_addr, dst_addr, eapol_frame) = make_eapol_frame(*IFACE_MAC);
         let (fixed, addr4, qos, body) = parse_data_frame(&eapol_frame[..]);
         state.on_data_frame(&mut sta, &fixed, addr4, qos, body);
 
@@ -2251,7 +2239,11 @@ mod tests {
             .expect("error reading EAPOL.indication");
         assert_eq!(
             eapol_ind,
-            fidl_mlme::EapolIndication { src_addr, dst_addr, data: EAPOL_PDU.to_vec() }
+            fidl_mlme::EapolIndication {
+                src_addr: src_addr.to_array(),
+                dst_addr: dst_addr.to_array(),
+                data: EAPOL_PDU.to_vec()
+            }
         );
     }
 
@@ -2264,7 +2256,7 @@ mod tests {
         let mut sta = sta.bind(&mut ctx, &mut m.scanner, &mut m.channel_state);
         let state = Associated(empty_association(&mut sta));
 
-        let (src_addr, dst_addr, eapol_frame) = make_eapol_frame(IFACE_MAC);
+        let (src_addr, dst_addr, eapol_frame) = make_eapol_frame(*IFACE_MAC);
         let (fixed, addr4, qos, body) = parse_data_frame(&eapol_frame[..]);
         state.on_data_frame(&mut sta, &fixed, addr4, qos, body);
 
@@ -2280,7 +2272,11 @@ mod tests {
             .expect("error reading EAPOL.indication");
         assert_eq!(
             eapol_ind,
-            fidl_mlme::EapolIndication { src_addr, dst_addr, data: EAPOL_PDU.to_vec() }
+            fidl_mlme::EapolIndication {
+                src_addr: src_addr.to_array(),
+                dst_addr: dst_addr.to_array(),
+                data: EAPOL_PDU.to_vec()
+            }
         );
     }
 
@@ -2369,9 +2365,9 @@ mod tests {
                     .with_mgmt_subtype(mac::MgmtSubtype::BEACON)
                     .with_more_data(true),
                 duration: 0,
-                addr1: [3; 6],
-                addr2: BSSID.0,
-                addr3: BSSID.0,
+                addr1: [3; 6].into(),
+                addr2: (*BSSID).into(),
+                addr3: (*BSSID).into(),
                 seq_ctrl: mac::SequenceControl(0),
             },
         );
@@ -2819,7 +2815,7 @@ mod tests {
         assert!(m.fake_device_state.lock().unwrap().join_bss_request.is_some());
         // (sme->mlme) Send a reconnect request
         let reconnect_req = wlan_sme::MlmeRequest::Reconnect(fidl_mlme::ReconnectRequest {
-            peer_sta_address: BSSID.0,
+            peer_sta_address: BSSID.to_array(),
         });
         state = state.handle_mlme_req(&mut sta, reconnect_req);
         assert_variant!(state, States::Associating(_), "not in associating state");
@@ -2909,7 +2905,7 @@ mod tests {
         assert_eq!(
             disassoc_ind,
             fidl_mlme::DisassociateIndication {
-                peer_sta_address: BSSID.0,
+                peer_sta_address: BSSID.to_array(),
                 reason_code: fidl_ieee80211::ReasonCode::ReasonInactivity,
                 locally_initiated: false,
             }
@@ -2917,7 +2913,7 @@ mod tests {
 
         // (sme->mlme) Send a reconnect request
         let reconnect_req = wlan_sme::MlmeRequest::Reconnect(fidl_mlme::ReconnectRequest {
-            peer_sta_address: BSSID.0,
+            peer_sta_address: BSSID.to_array(),
         });
         state = state.handle_mlme_req(&mut sta, reconnect_req);
         assert_variant!(state, States::Associating(_), "not in associating state");
@@ -2972,7 +2968,7 @@ mod tests {
             .unwrap()
             .next_mlme_msg::<fidl_mlme::ConnectConfirm>()
             .expect("error reading Connect.confirm");
-        assert_eq!(connect_conf.peer_sta_address, BSSID.0);
+        assert_eq!(&connect_conf.peer_sta_address, BSSID.as_array());
         assert_eq!(connect_conf.result_code, fidl_ieee80211::StatusCode::Success);
         assert_eq!(connect_conf.association_id, 11);
     }
@@ -3016,7 +3012,7 @@ mod tests {
 
         // (sme->mlme) Send a reconnect request
         let reconnect_req = wlan_sme::MlmeRequest::Reconnect(fidl_mlme::ReconnectRequest {
-            peer_sta_address: BSSID.0,
+            peer_sta_address: BSSID.to_array(),
         });
         state = state.handle_mlme_req(&mut sta, reconnect_req);
         assert_variant!(state, States::Associating(_), "not in associating state");
@@ -3042,7 +3038,7 @@ mod tests {
         assert_eq!(
             connect_conf,
             fidl_mlme::ConnectConfirm {
-                peer_sta_address: BSSID.0,
+                peer_sta_address: BSSID.to_array(),
                 result_code: fidl_ieee80211::StatusCode::RejectedSequenceTimeout,
                 association_id: 0,
                 association_ies: vec![],
@@ -3134,7 +3130,7 @@ mod tests {
 
         // (sme->mlme) Send a reconnect request
         let reconnect_req = wlan_sme::MlmeRequest::Reconnect(fidl_mlme::ReconnectRequest {
-            peer_sta_address: BSSID.0,
+            peer_sta_address: BSSID.to_array(),
         });
         state = state.handle_mlme_req(&mut sta, reconnect_req);
         assert_variant!(state, States::Associated(_), "not in associated state");
@@ -3147,7 +3143,7 @@ mod tests {
             .unwrap()
             .next_mlme_msg::<fidl_mlme::ConnectConfirm>()
             .expect("error reading Connect.confirm");
-        assert_eq!(connect_conf.peer_sta_address, BSSID.0);
+        assert_eq!(&connect_conf.peer_sta_address, BSSID.as_array());
         assert_eq!(connect_conf.result_code, fidl_ieee80211::StatusCode::Success);
         assert_eq!(connect_conf.association_id, 42);
     }
@@ -3274,9 +3270,9 @@ mod tests {
 
         sta.ctx
             .device
-            .set_channel(banjo_common::WlanChannel {
+            .set_channel(fidl_common::WlanChannel {
                 primary: 42,
-                cbw: banjo_common::ChannelBandwidth::CBW20,
+                cbw: fidl_common::ChannelBandwidth::Cbw20,
                 secondary80: 0,
             })
             .expect("fake device is obedient");
@@ -3452,7 +3448,10 @@ mod tests {
             .unwrap()
             .next_mlme_msg::<fidl_mlme::DeauthenticateConfirm>()
             .expect("should see deauth conf");
-        assert_eq!(deauth_conf, fidl_mlme::DeauthenticateConfirm { peer_sta_address: BSSID.0 });
+        assert_eq!(
+            deauth_conf,
+            fidl_mlme::DeauthenticateConfirm { peer_sta_address: BSSID.to_array() }
+        );
         m.fake_device_state
             .lock()
             .unwrap()
@@ -3470,8 +3469,8 @@ mod tests {
 
     fn fake_eapol_req() -> wlan_sme::MlmeRequest {
         wlan_sme::MlmeRequest::Eapol(fidl_mlme::EapolRequest {
-            dst_addr: BSSID.0,
-            src_addr: IFACE_MAC,
+            dst_addr: BSSID.to_array(),
+            src_addr: IFACE_MAC.to_array(),
             data: vec![1, 2, 3, 4],
         })
     }
@@ -3556,15 +3555,15 @@ mod tests {
         let mut sta = sta.bind(&mut ctx, &mut m.scanner, &mut m.channel_state);
 
         let state = States::from(statemachine::testing::new_state(Joined));
-        let _state = state.handle_mlme_req(&mut sta, fake_set_keys_req(BSSID.0));
+        let _state = state.handle_mlme_req(&mut sta, fake_set_keys_req((*BSSID).into()));
         assert_eq!(m.fake_device_state.lock().unwrap().keys.len(), 0);
 
         let state = States::from(statemachine::testing::new_state(open_authenticating(&mut sta)));
-        let _state = state.handle_mlme_req(&mut sta, fake_set_keys_req(BSSID.0));
+        let _state = state.handle_mlme_req(&mut sta, fake_set_keys_req((*BSSID).into()));
         assert_eq!(m.fake_device_state.lock().unwrap().keys.len(), 0);
 
         let state = States::from(statemachine::testing::new_state(Associating::default()));
-        let _state = state.handle_mlme_req(&mut sta, fake_set_keys_req(BSSID.0));
+        let _state = state.handle_mlme_req(&mut sta, fake_set_keys_req((*BSSID).into()));
         assert_eq!(m.fake_device_state.lock().unwrap().keys.len(), 0);
     }
 
@@ -3579,7 +3578,7 @@ mod tests {
 
         let state =
             States::from(statemachine::testing::new_state(Associated(empty_association(&mut sta))));
-        let _state = state.handle_mlme_req(&mut sta, fake_set_keys_req(BSSID.0));
+        let _state = state.handle_mlme_req(&mut sta, fake_set_keys_req((*BSSID).into()));
         assert_eq!(m.fake_device_state.lock().unwrap().keys.len(), 0);
     }
 
@@ -3594,7 +3593,7 @@ mod tests {
 
         let state =
             States::from(statemachine::testing::new_state(Associated(empty_association(&mut sta))));
-        let _state = state.handle_mlme_req(&mut sta, fake_set_keys_req(BSSID.0));
+        let _state = state.handle_mlme_req(&mut sta, fake_set_keys_req((*BSSID).into()));
         assert_eq!(m.fake_device_state.lock().unwrap().keys.len(), 1);
         let conf = assert_variant!(m.fake_device_state.lock().unwrap().next_mlme_msg::<fidl_mlme::SetKeysConfirm>(), Ok(conf) => conf);
         assert_eq!(conf.results.len(), 1);
@@ -3608,7 +3607,7 @@ mod tests {
         assert_eq!(key.cipher_oui, [1, 2, 3]);
         assert_eq!(key.cipher_type, 4);
         assert_eq!(key.key_type, crate::key::KeyType::PAIRWISE,);
-        assert_eq!(key.peer_addr, BSSID.0);
+        assert_eq!(key.peer_addr, (*BSSID).into());
         assert_eq!(key.key_idx, 6);
         assert_eq!(key.key[0..key.key_len as usize], [1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(key.rsc, 8);
@@ -3628,7 +3627,7 @@ mod tests {
         m.fake_device_state.lock().unwrap().set_key_results.push_back(Err(zx::Status::BAD_STATE));
         m.fake_device_state.lock().unwrap().set_key_results.push_back(Ok(()));
         // Create a SetKeysReq with one success and one failure.
-        let mut set_keys_req = fake_set_keys_req(BSSID.0);
+        let mut set_keys_req = fake_set_keys_req((*BSSID).into());
         match &mut set_keys_req {
             wlan_sme::MlmeRequest::SetKeys(req) => {
                 req.keylist
@@ -3651,7 +3650,7 @@ mod tests {
 
     fn fake_set_ctrl_port_open(open: bool) -> wlan_sme::MlmeRequest {
         wlan_sme::MlmeRequest::SetCtrlPort(fidl_mlme::SetControlledPortRequest {
-            peer_sta_address: BSSID.0,
+            peer_sta_address: BSSID.to_array(),
             state: match open {
                 true => fidl_mlme::ControlledPortState::Open,
                 false => fidl_mlme::ControlledPortState::Closed,

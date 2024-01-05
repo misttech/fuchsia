@@ -38,6 +38,7 @@ import (
 	"fidl/fuchsia/net/debug"
 	"fidl/fuchsia/net/interfaces"
 	"fidl/fuchsia/net/interfaces/admin"
+	"fidl/fuchsia/net/name"
 	"fidl/fuchsia/net/neighbor"
 	"fidl/fuchsia/net/root"
 	fnetRoutes "fidl/fuchsia/net/routes"
@@ -268,7 +269,7 @@ func InstallThreadProfiles(ctx context.Context, componentCtx *component.Context)
 			if status := zx.Status(status); status != zx.ErrOk {
 				switch status {
 				case zx.ErrNotFound:
-					_ = syslog.WarnTf("did not find thread profile %s for koid=%s", threadProfile, koid)
+					_ = syslog.Warnf("did not find thread profile %s for koid=%s", threadProfile, koid)
 				default:
 					_ = syslog.Errorf("failed to set thread profile %s for koid=%s; rejected with %s", threadProfile, koid, status)
 				}
@@ -460,7 +461,7 @@ func Main() {
 		}
 	}
 
-	f := filter.New(stk)
+	f := filter.New(stk, &filterNicInfoProvider{stack: stk})
 
 	interfaceEventChan := make(chan interfaceEvent)
 	interfacesWatcherChan := make(chan interfaceWatcherRequest)
@@ -681,8 +682,7 @@ func Main() {
 			},
 		)
 		stub := stack.StackWithCtxStub{Impl: &stackImpl{
-			ns:          ns,
-			dnsWatchers: dnsWatchers,
+			ns: ns,
 		}}
 		componentCtx.OutgoingService.AddService(
 			stack.StackName,
@@ -696,6 +696,11 @@ func Main() {
 			},
 		)
 	}
+
+	componentCtx.OutgoingService.AddService(
+		name.DnsServerWatcherName,
+		dnsWatchers.bind,
+	)
 
 	{
 		stub := stack.LogWithCtxStub{Impl: &logImpl{
@@ -860,6 +865,36 @@ func Main() {
 				go component.Serve(ctx, &stub, c, component.ServeOptions{
 					OnError: func(err error) {
 						_ = syslog.WarnTf(debug.InterfacesName, "%s", err)
+					},
+				})
+				return nil
+			},
+		)
+	}
+
+	{
+		stub := root.RoutesV4WithCtxStub{Impl: &rootRoutesV4Impl{ns: ns}}
+		componentCtx.OutgoingService.AddService(
+			root.RoutesV4Name,
+			func(ctx context.Context, c zx.Channel) error {
+				go component.Serve(ctx, &stub, c, component.ServeOptions{
+					OnError: func(err error) {
+						_ = syslog.WarnTf(root.RoutesV4Name, "%s", err)
+					},
+				})
+				return nil
+			},
+		)
+	}
+
+	{
+		stub := root.RoutesV6WithCtxStub{Impl: &rootRoutesV6Impl{ns: ns}}
+		componentCtx.OutgoingService.AddService(
+			root.RoutesV6Name,
+			func(ctx context.Context, c zx.Channel) error {
+				go component.Serve(ctx, &stub, c, component.ServeOptions{
+					OnError: func(err error) {
+						_ = syslog.WarnTf(root.RoutesV6Name, "%s", err)
 					},
 				})
 				return nil

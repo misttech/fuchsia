@@ -54,8 +54,10 @@ class FakeNetDevice : public ddk::NetworkDeviceIfcProtocol<FakeNetDevice> {
   void NetworkDeviceIfcPortStatusChanged(uint8_t port_id, const port_status_t* new_status) {
     FAIL() << "Not supported by the FakeNetDevice";
   }
-  void NetworkDeviceIfcAddPort(uint8_t port_id, const network_port_protocol_t* port) {
-    FAIL() << "Not supported by the FakeNetDevice";
+  void NetworkDeviceIfcAddPort(uint8_t port_id, const network_port_protocol_t* port,
+                               network_device_ifc_add_port_callback callback, void* cookie) {
+    []() { FAIL() << "Not supported by the FakeNetDevice"; }();
+    callback(cookie, ZX_OK);
   }
   void NetworkDeviceIfcRemovePort(uint8_t port_id) {
     FAIL() << "Not supported by the FakeNetDevice";

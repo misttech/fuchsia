@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use argh::FromArgs;
+use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 
 #[ffx_command()]
-#[derive(FromArgs, Debug, PartialEq, Clone)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
 #[argh(
     subcommand,
     name = "wait",
@@ -16,6 +16,10 @@ use ffx_core::ffx_command;
 
 pub struct WaitCommand {
     #[argh(option, short = 't', default = "120")]
-    /// the timeout in seconds [default = 120]
+    /// the timeout in seconds [default = 120]. A value of 0 implies no timeout.
     pub timeout: usize,
+
+    #[argh(switch, short = 'd', description = "wait for target to go down")]
+    /// wait for the target to go down
+    pub down: bool,
 }

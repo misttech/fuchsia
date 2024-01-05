@@ -3,50 +3,81 @@
 // found in the LICENSE file.
 
 use {
-    anyhow::{bail, Error, Result},
-    fidl::endpoints::{create_endpoints, create_proxy, ClientEnd, DiscoverableProtocolMarker},
-    fidl_fuchsia_testing_harness::{
-        RealmFactoryMarker, RealmFactoryProxy, RealmProxy_Marker, RealmProxy_Proxy,
+    anyhow::{bail, format_err, Error, Result},
+    fdio::Namespace,
+    fidl::endpoints::{
+        create_endpoints, ClientEnd, DiscoverableProtocolMarker, Proxy, ServiceMarker, ServiceProxy,
     },
+    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_sandbox as fsandbox,
+    fidl_fuchsia_io as fio,
+    fidl_fuchsia_testing_harness::{RealmProxy_Marker, RealmProxy_Proxy},
     fuchsia_component::client::connect_to_protocol,
+    std::fmt::Debug,
+    uuid::Uuid,
 };
 
-// RealmFactoryClient is a client for fuchsia.testing.harness.RealmFactory.
-//
-// The calling component must have a handle to the RealmFactory protocol in
-// order to use this struct.
-//
-// # Example Usage
-//
-// ```
-// let realm_factory = RealmFactoryClient::connect()?;
-// let realm_proxy = realm_factory.create_realm().await?;
-// ```
-pub struct RealmFactoryClient {
-    inner: RealmFactoryProxy,
+pub struct InstalledNamespace {
+    prefix: String,
+    /// This is not used, but it keeps the RealmFactory connection alive.
+    ///
+    /// The RealmFactory server may use this connection to pin the lifetime of the realm created
+    /// for the test.
+    _realm_factory: fidl::AsyncChannel,
 }
 
-impl RealmFactoryClient {
-    pub fn connect() -> Result<Self, Error> {
-        let inner = connect_to_protocol::<RealmFactoryMarker>()?;
-        Ok(Self { inner })
+impl InstalledNamespace {
+    pub fn prefix(&self) -> &str {
+        &self.prefix
     }
+}
 
-    pub async fn create_realm(&self) -> Result<RealmProxyClient, Error> {
-        let (realm_proxy, realm_server) = create_proxy::<RealmProxy_Marker>()?;
-        let result = self.inner.create_realm(realm_server).await;
-
-        if result.is_err() {
-            bail!("fidl error {:?}", result.unwrap_err());
-        }
-
-        let result = result.unwrap();
-        if result.is_err() {
-            bail!("operation error {:?}", result.unwrap_err());
-        }
-
-        Ok(RealmProxyClient::from(realm_proxy))
+impl Drop for InstalledNamespace {
+    fn drop(&mut self) {
+        let Ok(namespace) = Namespace::installed() else {
+            return;
+        };
+        let _ = namespace.unbind(&self.prefix);
     }
+}
+
+/// Converts the given dict to a namespace and adds it this component's namespace.
+pub async fn extend_namespace<T>(
+    realm_factory: T,
+    dict: ClientEnd<fsandbox::DictMarker>,
+) -> Result<InstalledNamespace>
+where
+    T: Proxy + Debug,
+{
+    let namespace_proxy = connect_to_protocol::<fcomponent::NamespaceMarker>()?;
+    // TODO: What should we use for the namespace's unique id? Could also
+    // consider an atomic counter, or the name of the test
+    let prefix = format!("/dict-{}", Uuid::new_v4());
+    let dicts = vec![fcomponent::NamespaceDictPair { path: prefix.clone().into(), dict }];
+    let mut namespace_entries =
+        namespace_proxy.create_from_dicts(dicts).await?.map_err(|e| format_err!("{:?}", e))?;
+    let namespace = Namespace::installed()?;
+    let count = namespace_entries.len();
+    if count != 1 {
+        bail!(
+            "namespace {prefix} should have exactly one entry but it has {count}. This suggests a \
+            bug in the namespace protocol. {namespace_entries:?}"
+        );
+    }
+    let entry = namespace_entries.remove(0);
+    if entry.path.is_none() || entry.directory.is_none() {
+        bail!(
+            "namespace {prefix} contains incomplete entry. This suggests a bug in the namespace \
+            protocol {entry:?}"
+        );
+    }
+    if entry.path.as_ref().unwrap() != &prefix {
+        bail!(
+            "namespace {prefix} does not match path. This suggests a bug in the namespace protocol. \
+            {entry:?}"
+        );
+    }
+    namespace.bind(&prefix, entry.directory.unwrap())?;
+    Ok(InstalledNamespace { prefix, _realm_factory: realm_factory.into_channel().unwrap() })
 }
 
 // RealmProxyClient is a client for fuchsia.testing.harness.RealmProxy.
@@ -111,5 +142,45 @@ impl RealmProxyClient {
         }
 
         Ok(client.into_proxy()?)
+    }
+
+    // Opens the given service capability, via the proxy.
+    //
+    // See https://fuchsia.dev/fuchsia-src/concepts/components/v2/capabilities/service
+    // for more information about service capabilities.
+    //
+    // Returns an error if the connection fails.
+    pub async fn open_service<T: ServiceMarker>(&self) -> Result<fio::DirectoryProxy, Error> {
+        let (client, server) = create_endpoints::<fio::DirectoryMarker>();
+        let res = self.inner.open_service(T::SERVICE_NAME, server.into_channel()).await?;
+        if let Some(op_err) = res.err() {
+            bail!("{:?}", op_err);
+        }
+
+        Ok(client.into_proxy()?)
+    }
+
+    // Connects to the given service instance, via the proxy.
+    //
+    // See https://fuchsia.dev/fuchsia-src/concepts/components/v2/capabilities/service
+    // for more information about service capabilities.
+    //
+    // Returns an error if the connection fails.
+    pub async fn connect_to_service_instance<T: ServiceMarker>(
+        &self,
+        instance: &str,
+    ) -> Result<T::Proxy, Error> {
+        let (client, server) = create_endpoints::<fio::DirectoryMarker>();
+        let res = self
+            .inner
+            .connect_to_service_instance(T::SERVICE_NAME, instance, server.into_channel())
+            .await?;
+        if let Some(op_err) = res.err() {
+            bail!("{:?}", op_err);
+        }
+
+        Ok(T::Proxy::from_member_opener(Box::new(
+            fuchsia_component::client::ServiceInstanceDirectory(client.into_proxy()?),
+        )))
     }
 }

@@ -7,18 +7,16 @@ import("//build/fidl/fidl.gni")
 fidl("fuchsia.hardware.display") {
   sources = [
     "buffer-collection.fidl",
-    "config.fidl",
     "coordinator.fidl",
-    "cursor.fidl",
     "display.fidl",
     "event.fidl",
-    "image.fidl",
-    "layer.fidl",
+    "overview.fidl",
     "provider.fidl",
     "virtcon.fidl",
   ]
 
   public_deps = [
+    "//sdk/fidl/fuchsia.hardware.display.types",
     "//sdk/fidl/fuchsia.images2",
     "//sdk/fidl/fuchsia.sysmem",
   ]

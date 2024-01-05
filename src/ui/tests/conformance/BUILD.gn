@@ -12,22 +12,37 @@ group("conformance") {
   ]
 }
 
+source_set("conformance-test-base") {
+  testonly = true
+  sources = [
+    "conformance-test-base.cc",
+    "conformance-test-base.h",
+  ]
+  output_name = "conformance-test-base"
+  public_deps = [
+    "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_hlcpp",
+    "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context_hlcpp",
+    "//sdk/lib/sys/cpp",
+    "//src/lib/testing/loop_fixture",
+    "//third_party/googletest:gtest",
+  ]
+}
+
 ############# TOUCH CONFORMANCE TEST #############
 executable("touch-validator-bin") {
   testonly = true
   sources = [ "touch-validator.cc" ]
   output_name = "touch-validator"
   deps = [
+    ":conformance-test-base",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
     "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_hlcpp",
     "//sdk/fidl/fuchsia.ui.test.conformance:fuchsia.ui.test.conformance_hlcpp",
-    "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context_hlcpp",
     "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_hlcpp",
-    "//sdk/lib/sys/cpp",
+    "//sdk/fidl/fuchsia.ui.test.scene:fuchsia.ui.test.scene_hlcpp",
+    "//sdk/lib/syslog/cpp",
+    "//sdk/lib/ui/scenic/cpp",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/testing/loop_fixture",
-    "//third_party/googletest:gtest",
-    "//zircon/system/ulib/async-loop:async-loop-cpp",
-    "//zircon/system/ulib/async-loop:async-loop-default",
   ]
 }
 
@@ -35,6 +50,12 @@ fuchsia_component("touch-validator") {
   testonly = true
   manifest = "meta/touch-validator.cml"
   deps = [ ":touch-validator-bin" ]
+}
+
+fuchsia_package("touch-test-suite") {
+  package_name = "touch-test-suite"
+  testonly = true
+  deps = [ ":touch-validator" ]
 }
 
 fuchsia_test_component("touch-conformance-test-component") {
@@ -46,9 +67,9 @@ fuchsia_test_component("touch-conformance-test-component") {
 
 fuchsia_test_package("touch-conformance-test") {
   test_components = [ ":touch-conformance-test-component" ]
-  deps = [
-    ":touch-validator",
-    "//src/ui/testing/context:ui-context-factory-component",
+  subpackages = [
+    ":touch-test-suite",
+    "//src/ui/testing/context:ui-context-factory",
   ]
   test_specs = {
     log_settings = {
@@ -71,15 +92,14 @@ executable("mouse-validator-bin") {
   sources = [ "mouse-validator.cc" ]
   output_name = "mouse-validator"
   deps = [
+    ":conformance-test-base",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
     "//sdk/fidl/fuchsia.ui.test.conformance:fuchsia.ui.test.conformance_hlcpp",
-    "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context_hlcpp",
     "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_hlcpp",
-    "//sdk/lib/sys/cpp",
+    "//sdk/fidl/fuchsia.ui.test.scene:fuchsia.ui.test.scene_hlcpp",
+    "//sdk/lib/syslog/cpp",
+    "//sdk/lib/ui/scenic/cpp",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/testing/loop_fixture",
-    "//third_party/googletest:gtest",
-    "//zircon/system/ulib/async-loop:async-loop-cpp",
-    "//zircon/system/ulib/async-loop:async-loop-default",
   ]
 }
 
@@ -87,6 +107,12 @@ fuchsia_component("mouse-validator") {
   testonly = true
   manifest = "meta/mouse-validator.cml"
   deps = [ ":mouse-validator-bin" ]
+}
+
+fuchsia_package("mouse-test-suite") {
+  package_name = "mouse-test-suite"
+  testonly = true
+  deps = [ ":mouse-validator" ]
 }
 
 fuchsia_test_component("mouse-conformance-test-component") {
@@ -98,9 +124,9 @@ fuchsia_test_component("mouse-conformance-test-component") {
 
 fuchsia_test_package("mouse-conformance-test") {
   test_components = [ ":mouse-conformance-test-component" ]
-  deps = [
-    ":mouse-validator",
-    "//src/ui/testing/context:ui-context-factory-component",
+  subpackages = [
+    ":mouse-test-suite",
+    "//src/ui/testing/context:ui-context-factory",
   ]
   test_specs = {
     log_settings = {

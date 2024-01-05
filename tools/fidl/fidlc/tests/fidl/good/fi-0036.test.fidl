@@ -4,7 +4,7 @@
 @available(added=1)
 library test.good.fi0036;
 
-@available(removed=2)
+@available(replaced=2)
 type Color = strict enum {
     RED = 1;
 };

@@ -67,6 +67,9 @@ func (s *socketReader) Read(p []byte) (int, error) {
 }
 
 func execute(ctx context.Context, socketPath string, stdout io.Writer) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	if socketPath == "" {
 		flag.Usage()
 		return fmt.Errorf("could not find socket in environment")
@@ -85,9 +88,6 @@ func execute(ctx context.Context, socketPath string, stdout io.Writer) error {
 	defer socket.Close()
 
 	socketTee := io.TeeReader(&socketReader{ctx, socket, 10 * time.Second}, stdout)
-
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	// Print out a log periodically to give an estimate of the timestamp at which
 	// logs are getting read from the socket.
@@ -127,13 +127,17 @@ func main() {
 		if serialOutput, err := osmisc.CreateFile(filepath.Join(outDir, "serial_output")); err != nil {
 			logger.Errorf(ctx, "%s", err)
 		} else {
-			stdout = serialOutput
+			// TODO(fxbug.dev/135386): Temporarily write to stdout while
+			// emulator serial output has been temporarily disabled from
+			// being written to stdout.
+			stdout = io.MultiWriter(os.Stdout, serialOutput)
 			// Have the logger write to the file as well to get a
 			// better sense of how much is read from the socket before
 			// the socket io or ticker timeouts are reached.
 			log := logger.NewLogger(logger.DebugLevel, color.NewColor(color.ColorAuto),
 				io.MultiWriter(os.Stdout, serialOutput), io.MultiWriter(os.Stderr, serialOutput), "seriallistener ")
 			ctx = logger.WithLogger(ctx, log)
+			defer serialOutput.Close()
 		}
 	}
 	deviceType := os.Getenv(constants.DeviceTypeEnvKey)

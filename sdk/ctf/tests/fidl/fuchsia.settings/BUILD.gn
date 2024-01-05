@@ -4,12 +4,13 @@
 
 import("//sdk/ctf/build/ctf.gni")
 
-ctf_executable("settings_test_bin") {
+executable("settings_test_bin") {
   testonly = true
 
   sources = [ "privacy_test.cc" ]
 
   deps = [
+    "//sdk/ctf/tests/fidl/fuchsia.settings/testing/fidl:fuchsia.settings.test_hlcpp",
     "//sdk/fidl/fuchsia.settings:fuchsia.settings_hlcpp",
     "//sdk/lib/sys/cpp",
     "//sdk/testing/fidl:fidl_test_hlcpp",
@@ -19,7 +20,7 @@ ctf_executable("settings_test_bin") {
   ]
 }
 
-ctf_fuchsia_component("test-suite") {
+fuchsia_component("test-suite") {
   testonly = true
   manifest = "meta/settings_test.cml"
   deps = [ ":settings_test_bin" ]
@@ -39,7 +40,10 @@ fuchsia_test_component("test-root") {
 
 fuchsia_test_package("fuchsia-settings-tests-package") {
   test_components = [ ":test-root" ]
-  subpackages = [ ":fuchsia-settings-tests" ]
+  subpackages = [
+    ":fuchsia-settings-tests",
+    "testing/realm-factory",
+  ]
 }
 
 group("tests") {

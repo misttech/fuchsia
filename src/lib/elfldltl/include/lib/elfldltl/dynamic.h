@@ -85,26 +85,39 @@ constexpr bool DecodeDynamic(DiagnosticsType&& diagnostics, Memory&& memory, con
     ok = static_cast<Observer&>(observer).Observe(diagnostics, memory, dt, entry.val);
     return true;
   };
+
   ((entry.tag == Tags && call_observer(DynamicTagMatch<Tags>{})) || ...);
+
   return ok;
 }
 
-// This is a very simple observer that rejects DT_TEXTREL.
+// This is a very simple observer that rejects DT_TEXTREL and DF_TEXTREL.
 class DynamicTextrelRejectObserver
-    : public DynamicTagObserver<DynamicTextrelRejectObserver, ElfDynTag::kTextRel> {
+    : public DynamicTagObserver<DynamicTextrelRejectObserver, ElfDynTag::kTextRel,
+                                ElfDynTag::kFlags> {
  public:
-  static constexpr std::string_view Message() { return "DT_TEXTREL not supported"sv; }
+  static constexpr std::string_view kMessage = "DT_TEXTREL and DF_TEXTREL not supported";
 
   template <class DiagnosticsType, class Memory, typename ValueType>
   constexpr bool Observe(DiagnosticsType& diagnostics, Memory& memory,
                          DynamicTagMatch<ElfDynTag::kTextRel> tag, ValueType val) {
     // If this is called at all, that's an error.
-    return diagnostics.FormatError(Message());
+    return diagnostics.FormatError(kMessage);
+  }
+
+  template <class DiagnosticsType, class Memory, typename ValueType>
+  constexpr bool Observe(DiagnosticsType& diagnostics, Memory& memory,
+                         DynamicTagMatch<ElfDynTag::kFlags> tag, ValueType val) {
+    if (val & ElfDynFlags::kTextRel) {
+      return diagnostics.FormatError(kMessage);
+    }
+    return true;
   }
 
   template <class DiagnosticsType, class Memory>
   constexpr bool Finish(DiagnosticsType& diagnostics, Memory& memory) {
-    // There is no state kept aside from in the diagnostics object, so nothing to do.
+    // There is no state kept aside from in the diagnostics object, so nothing
+    // to do.
     return true;
   }
 };
@@ -371,7 +384,8 @@ template <class Elf>
 using DynamicSymbolInfoObserverBase =
     DynamicInfoObserver<DynamicSymbolInfoObserver<Elf>, SymbolInfo<Elf>, Elf, ElfDynTag::kSymTab,
                         ElfDynTag::kSymEnt, ElfDynTag::kHash, ElfDynTag::kGnuHash,
-                        ElfDynTag::kStrTab, ElfDynTag::kStrSz, ElfDynTag::kSoname>;
+                        ElfDynTag::kStrTab, ElfDynTag::kStrSz, ElfDynTag::kSoname,
+                        ElfDynTag::kFlags, ElfDynTag::kFlags1>;
 
 template <class Elf>
 class DynamicSymbolInfoObserver : public DynamicSymbolInfoObserverBase<Elf> {
@@ -442,7 +456,21 @@ class DynamicSymbolInfoObserver : public DynamicSymbolInfoObserverBase<Elf> {
   constexpr bool Observe(DiagnosticsType& diagnostics, Memory& memory,
                          DynamicTagMatch<ElfDynTag::kSymEnt> tag, size_type val) {
     return val == sizeof(typename Elf::Sym) ||
-           diagnostics.FormatError("incorrect DT_SYMENT value"sv);
+           diagnostics.FormatError("incorrect DT_SYMENT value"sv, val);
+  }
+
+  template <class DiagnosticsType, class Memory>
+  constexpr bool Observe(DiagnosticsType& diagnostics, Memory& memory,
+                         DynamicTagMatch<ElfDynTag::kFlags> tag, size_type val) {
+    this->info().set_flags(val);
+    return true;
+  }
+
+  template <class DiagnosticsType, class Memory>
+  constexpr bool Observe(DiagnosticsType& diagnostics, Memory& memory,
+                         DynamicTagMatch<ElfDynTag::kFlags1> tag, size_type val) {
+    this->info().set_flags1(val);
+    return true;
   }
 
   // Check and finalize what's been observed.
@@ -614,7 +642,7 @@ class DynamicNeededObserver
 // Deduction guides.
 
 template <class Elf, class AbiTraits, template <class, class> class SymbolInfo, class Callback>
-DynamicNeededObserver(SymbolInfo<Elf, AbiTraits>& info, Callback)
+DynamicNeededObserver(const SymbolInfo<Elf, AbiTraits>& info, Callback)
     -> DynamicNeededObserver<Elf, SymbolInfo<Elf, AbiTraits>, Callback>;
 
 // This provides a trivial observer that simply counts how many occurrences of
@@ -623,7 +651,7 @@ template <class Elf, ElfDynTag... Tag>
 class DynamicTagCountObserver
     : public DynamicTagObserver<DynamicTagCountObserver<Elf, Tag...>, Tag...> {
  public:
-  size_t count() const { return count_; }
+  explicit DynamicTagCountObserver(size_t& count) : count_(count) {}
 
   template <class DiagnosticsType, class Memory, ElfDynTag Match>
   constexpr bool Observe(DiagnosticsType&, Memory&, DynamicTagMatch<Match>,
@@ -639,7 +667,33 @@ class DynamicTagCountObserver
   }
 
  private:
-  size_t count_ = 0;
+  size_t& count_;
+};
+
+// An observer that will match the given tag and add its value to the provided
+// container. This observer will call the `push_back` method from the
+// container.h API with `Elf::size_type` values onto the container.
+template <class Elf, ElfDynTag Tag, class Container, const std::string_view& ErrorString>
+class DynamicValueCollectionObserver
+    : public DynamicTagObserver<DynamicValueCollectionObserver<Elf, Tag, Container, ErrorString>,
+                                Tag> {
+ public:
+  explicit DynamicValueCollectionObserver(Container& values) : values_(values) {}
+
+  template <class DiagnosticsType, class Memory, ElfDynTag Match>
+  constexpr bool Observe(DiagnosticsType& diag, Memory&, DynamicTagMatch<Match>,
+                         typename Elf::size_type val) {
+    static_assert(Match == Tag);
+    return values_.push_back(diag, ErrorString, val);
+  }
+
+  template <class DiagnosticsType, class Memory>
+  constexpr bool Finish(DiagnosticsType&, Memory&) {
+    return true;
+  }
+
+ private:
+  Container& values_;
 };
 
 }  // namespace elfldltl

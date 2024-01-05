@@ -6,14 +6,16 @@ use {
     assert_matches::assert_matches,
     async_trait::async_trait,
     fidl::endpoints::{create_endpoints, ServerEnd},
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    fidl_fuchsia_io as fio,
+    fsverity_merkle::{MerkleTreeBuilder, Sha256Struct},
+    fuchsia_async as fasync,
     fuchsia_zircon::{self as zx, HandleBased, Status},
-    futures::lock::Mutex,
-    fxfs_testing::TestFixture,
-    std::{collections::HashMap, sync::Arc},
+    fxfs_testing::{close_file_checked, open_file_checked, TestFixture},
+    mundane::hash::Digest,
+    std::sync::Arc,
     syncio::{
-        zxio, zxio_node_attr_has_t, zxio_node_attributes_t, OpenOptions, SeekOrigin, XattrSetMode,
-        Zxio,
+        zxio, zxio_fsverity_descriptor_t, zxio_node_attr_has_t, zxio_node_attributes_t,
+        OpenOptions, SeekOrigin, XattrSetMode, Zxio, ZXIO_ROOT_HASH_LENGTH,
     },
     vfs::{
         directory::entry::{DirectoryEntry, EntryInfo},
@@ -63,6 +65,154 @@ async fn test_symlink() {
         let symlink_zxio =
             dir_zxio.open(fio::OpenFlags::RIGHT_READABLE, "symlink").expect("open failed");
         assert_eq!(symlink_zxio.read_link().expect("read_link failed"), b"target");
+    })
+    .await;
+
+    fixture.close().await;
+}
+
+#[fuchsia::test]
+async fn test_fsverity_enabled() {
+    let fixture = TestFixture::new().await;
+    let root = fixture.root();
+    let file = open_file_checked(
+        &root,
+        fio::OpenFlags::CREATE
+            | fio::OpenFlags::RIGHT_READABLE
+            | fio::OpenFlags::RIGHT_WRITABLE
+            | fio::OpenFlags::NOT_DIRECTORY,
+        "foo",
+    )
+    .await;
+    let data = vec![0xFF; 8192];
+    file.write(&data).await.expect("FIDL call failed").expect("write failed");
+
+    close_file_checked(file).await;
+
+    let (dir_client, dir_server) = zx::Channel::create();
+    root.clone(fio::OpenFlags::CLONE_SAME_RIGHTS, dir_server.into()).expect("clone failed");
+
+    fasync::unblock(move || {
+        let dir_zxio = Zxio::create(dir_client.into_handle()).expect("create failed");
+        let mut attrs = zxio_node_attributes_t {
+            has: zxio_node_attr_has_t { fsverity_enabled: true, ..Default::default() },
+            ..Default::default()
+        };
+        let foo_zxio = Arc::new(
+            dir_zxio
+                .open2(
+                    "foo",
+                    syncio::OpenOptions {
+                        node_protocols: Some(fio::NodeProtocols {
+                            file: Some(Default::default()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                    Some(&mut attrs),
+                )
+                .expect("open failed"),
+        );
+        assert!(!attrs.fsverity_enabled);
+        let mut builder = MerkleTreeBuilder::new(Sha256Struct::new(vec![0xFF; 8], 4096));
+        builder.write(data.as_slice());
+        let tree = builder.finish();
+        let mut expected_root: [u8; 64] = [0u8; 64];
+        expected_root[0..32].copy_from_slice(&tree.root().bytes());
+
+        // NOTE: The root hash will be calculated and set by the filesystem.
+        let expected_descriptor =
+            zxio_fsverity_descriptor_t { hash_algorithm: 1, salt_size: 8, salt: [0xFF; 32] };
+        let () = foo_zxio
+            .enable_verity(&expected_descriptor)
+            .expect("failed to set verified file metadata");
+        let query = zxio_node_attr_has_t {
+            content_size: true,
+            fsverity_options: true,
+            fsverity_root_hash: true,
+            fsverity_enabled: true,
+            ..Default::default()
+        };
+
+        let mut fsverity_root_hash = [0; ZXIO_ROOT_HASH_LENGTH];
+        let attrs = foo_zxio
+            .attr_get_with_root_hash(query, &mut fsverity_root_hash)
+            .expect("attr_get failed");
+        assert!(attrs.fsverity_enabled);
+        assert_eq!(attrs.fsverity_options.hash_alg, 1);
+        assert_eq!(attrs.fsverity_options.salt_size, 8);
+        assert_eq!(attrs.content_size, data.len() as u64);
+        assert_eq!(fsverity_root_hash, expected_root);
+        let mut buf = [0; 32];
+        buf[0..8].copy_from_slice(&[0xFF; 8]);
+        assert_eq!(attrs.fsverity_options.salt, buf);
+    })
+    .await;
+
+    fixture.close().await;
+}
+
+#[fuchsia::test]
+async fn test_not_fsverity_enabled() {
+    let fixture = TestFixture::new().await;
+    let root = fixture.root();
+    let file = open_file_checked(
+        &root,
+        fio::OpenFlags::CREATE
+            | fio::OpenFlags::RIGHT_READABLE
+            | fio::OpenFlags::RIGHT_WRITABLE
+            | fio::OpenFlags::NOT_DIRECTORY,
+        "foo",
+    )
+    .await;
+    let data = vec![0xFF; 8192];
+    file.write(&data).await.expect("FIDL call failed").expect("write failed");
+
+    close_file_checked(file).await;
+
+    let (dir_client, dir_server) = zx::Channel::create();
+    root.clone(fio::OpenFlags::CLONE_SAME_RIGHTS, dir_server.into()).expect("clone failed");
+
+    fasync::unblock(move || {
+        let dir_zxio = Zxio::create(dir_client.into_handle()).expect("create failed");
+        let mut attrs = zxio_node_attributes_t {
+            has: zxio_node_attr_has_t { fsverity_enabled: true, ..Default::default() },
+            ..Default::default()
+        };
+        let foo_zxio = Arc::new(
+            dir_zxio
+                .open2(
+                    "foo",
+                    syncio::OpenOptions {
+                        node_protocols: Some(fio::NodeProtocols {
+                            file: Some(Default::default()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                    Some(&mut attrs),
+                )
+                .expect("open failed"),
+        );
+        assert!(!attrs.fsverity_enabled);
+        let query = zxio_node_attr_has_t { fsverity_enabled: true, ..Default::default() };
+        let attrs = foo_zxio.attr_get(query).expect("attr_get failed");
+        assert!(!attrs.fsverity_enabled);
+
+        let query = zxio_node_attr_has_t { fsverity_options: true, ..Default::default() };
+        assert_eq!(
+            foo_zxio.attr_get(query).expect_err("attr_get succeeded for the 'options' attribute"),
+            zx::Status::INVALID_ARGS
+        );
+
+        let mut fsverity_root_hash = [0; ZXIO_ROOT_HASH_LENGTH];
+        let query = zxio_node_attr_has_t { fsverity_root_hash: true, ..Default::default() };
+        assert_eq!(
+            foo_zxio
+                .attr_get_with_root_hash(query, &mut fsverity_root_hash)
+                .expect_err("attr_get succeeded for the 'root_hash' attribute"),
+            zx::Status::INVALID_ARGS
+        );
     })
     .await;
 
@@ -220,133 +370,6 @@ async fn test_xattr_dir_multiple_attributes() {
     fixture.close().await;
 }
 
-// TODO(fxbug.dev/122123): Once fxfs supports large attributes, point this test at the fixture
-// instead of using a fake file implementation.
-struct XattrFile {
-    extended_attributes: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
-}
-
-impl XattrFile {
-    fn new() -> Arc<Self> {
-        Arc::new(XattrFile { extended_attributes: Mutex::new(HashMap::new()) })
-    }
-}
-
-impl DirectoryEntry for XattrFile {
-    fn open(
-        self: Arc<Self>,
-        scope: ExecutionScope,
-        flags: fio::OpenFlags,
-        _path: Path,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) {
-        flags.to_object_request(server_end).handle(|object_request| {
-            object_request.spawn_connection(
-                scope.clone(),
-                self.clone(),
-                flags,
-                FidlIoConnection::create,
-            )
-        });
-    }
-
-    fn entry_info(&self) -> EntryInfo {
-        EntryInfo::new(fio::INO_UNKNOWN, fio::DirentType::File)
-    }
-}
-
-#[async_trait]
-impl FileIo for XattrFile {
-    async fn read_at(&self, _offset: u64, _buffer: &mut [u8]) -> Result<u64, Status> {
-        unimplemented!()
-    }
-    async fn write_at(&self, _offset: u64, _content: &[u8]) -> Result<u64, Status> {
-        unimplemented!()
-    }
-    async fn append(&self, _content: &[u8]) -> Result<(u64, u64), Status> {
-        unimplemented!()
-    }
-}
-
-#[async_trait]
-impl vfs::node::Node for XattrFile {
-    async fn get_attrs(&self) -> Result<fio::NodeAttributes, Status> {
-        unimplemented!()
-    }
-
-    async fn get_attributes(
-        &self,
-        _query: fio::NodeAttributesQuery,
-    ) -> Result<fio::NodeAttributes2, Status> {
-        unimplemented!()
-    }
-}
-
-#[async_trait]
-impl File for XattrFile {
-    fn writable(&self) -> bool {
-        true
-    }
-    async fn open_file(&self, _options: &FileOptions) -> Result<(), Status> {
-        Ok(())
-    }
-    async fn truncate(&self, _length: u64) -> Result<(), Status> {
-        unimplemented!()
-    }
-    async fn get_backing_memory(&self, _flags: fio::VmoFlags) -> Result<zx::Vmo, Status> {
-        unimplemented!()
-    }
-    async fn get_size(&self) -> Result<u64, Status> {
-        unimplemented!()
-    }
-    async fn set_attrs(
-        &self,
-        _flags: fio::NodeAttributeFlags,
-        _attrs: fio::NodeAttributes,
-    ) -> Result<(), Status> {
-        unimplemented!()
-    }
-    async fn update_attributes(
-        &self,
-        _attributes: fio::MutableNodeAttributes,
-    ) -> Result<(), Status> {
-        unimplemented!()
-    }
-    async fn sync(&self, _mode: SyncMode) -> Result<(), Status> {
-        Ok(())
-    }
-    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, Status> {
-        let map = self.extended_attributes.lock().await;
-        Ok(map.keys().map(|k| k.clone()).collect())
-    }
-    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, Status> {
-        let map = self.extended_attributes.lock().await;
-        map.get(&name).cloned().ok_or(zx::Status::NOT_FOUND)
-    }
-    async fn set_extended_attribute(
-        &self,
-        name: Vec<u8>,
-        value: Vec<u8>,
-        mode: fio::SetExtendedAttributeMode,
-    ) -> Result<(), Status> {
-        let mut map = self.extended_attributes.lock().await;
-        match mode {
-            fio::SetExtendedAttributeMode::Create if map.contains_key(&name) => {
-                return Err(Status::ALREADY_EXISTS)
-            }
-            fio::SetExtendedAttributeMode::Replace if !map.contains_key(&name) => {
-                return Err(Status::NOT_FOUND)
-            }
-            _ => (),
-        }
-        Ok(map.insert(name, value).map(|_| ()).unwrap_or(()))
-    }
-    async fn remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), Status> {
-        let mut map = self.extended_attributes.lock().await;
-        map.remove(&name).map(|_| ()).ok_or(zx::Status::NOT_FOUND)
-    }
-}
-
 #[fuchsia::test]
 async fn test_xattr_symlink() {
     let fixture = TestFixture::new().await;
@@ -391,24 +414,23 @@ async fn test_xattr_symlink() {
 
 #[fuchsia::test]
 async fn test_xattr_file_large_attribute() {
-    let dir = pseudo_directory! {
-        "foo" => XattrFile::new(),
-    };
-    let (dir_client, dir_server) = create_endpoints();
-    let scope = ExecutionScope::new();
-    dir.open(
-        scope,
-        fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_WRITABLE | fio::OpenFlags::DIRECTORY,
-        Path::dot(),
-        dir_server,
-    );
+    let fixture = TestFixture::new().await;
+
+    let (foo_client, foo_server) = zx::Channel::create();
+    fixture
+        .root()
+        .open(
+            fio::OpenFlags::RIGHT_READABLE
+                | fio::OpenFlags::RIGHT_WRITABLE
+                | fio::OpenFlags::CREATE,
+            fio::ModeType::empty(),
+            "foo",
+            foo_server.into(),
+        )
+        .expect("open failed");
 
     fasync::unblock(|| {
-        let dir_zxio =
-            Zxio::create(dir_client.into_channel().into_handle()).expect("create failed");
-        let foo_zxio = dir_zxio
-            .open(fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_WRITABLE, "foo")
-            .expect("open failed");
+        let foo_zxio = Zxio::create(foo_client.into_handle()).expect("create failed");
 
         let value_len = fio::MAX_INLINE_ATTRIBUTE_VALUE as usize + 64;
         let value = std::iter::repeat(0xff).take(value_len).collect::<Vec<u8>>();
@@ -417,6 +439,8 @@ async fn test_xattr_file_large_attribute() {
         assert_eq!(foo_zxio.xattr_get(b"user.big_attribute").unwrap(), value);
     })
     .await;
+
+    fixture.close().await;
 }
 
 #[fuchsia::test]
@@ -683,6 +707,247 @@ async fn test_open2_node() {
 
         assert_eq!(attr.protocols, zxio::ZXIO_NODE_PROTOCOL_FILE);
         assert_eq!(attr.content_size, 5);
+    })
+    .await;
+
+    fixture.close().await;
+}
+
+// TODO(fxbug.dev/293943124): once fxfs supports allocate, use the test fixture.
+struct AllocateFile {
+    res: Result<(), Status>,
+}
+
+impl AllocateFile {
+    fn new(res: Result<(), Status>) -> Arc<Self> {
+        Arc::new(AllocateFile { res })
+    }
+}
+
+impl DirectoryEntry for AllocateFile {
+    fn open(
+        self: Arc<Self>,
+        scope: ExecutionScope,
+        flags: fio::OpenFlags,
+        _path: Path,
+        server_end: ServerEnd<fio::NodeMarker>,
+    ) {
+        flags.to_object_request(server_end).handle(|object_request| {
+            object_request.spawn_connection(
+                scope.clone(),
+                self.clone(),
+                flags,
+                FidlIoConnection::create,
+            )
+        });
+    }
+
+    fn entry_info(&self) -> EntryInfo {
+        EntryInfo::new(fio::INO_UNKNOWN, fio::DirentType::File)
+    }
+}
+
+#[async_trait]
+impl FileIo for AllocateFile {
+    async fn read_at(&self, _offset: u64, _buffer: &mut [u8]) -> Result<u64, Status> {
+        unimplemented!()
+    }
+    async fn write_at(&self, _offset: u64, _content: &[u8]) -> Result<u64, Status> {
+        unimplemented!()
+    }
+    async fn append(&self, _content: &[u8]) -> Result<(u64, u64), Status> {
+        unimplemented!()
+    }
+}
+
+#[async_trait]
+impl vfs::node::Node for AllocateFile {
+    async fn get_attrs(&self) -> Result<fio::NodeAttributes, Status> {
+        unimplemented!()
+    }
+    async fn get_attributes(
+        &self,
+        _query: fio::NodeAttributesQuery,
+    ) -> Result<fio::NodeAttributes2, Status> {
+        unimplemented!()
+    }
+}
+
+#[async_trait]
+impl File for AllocateFile {
+    fn writable(&self) -> bool {
+        true
+    }
+    async fn open_file(&self, _options: &FileOptions) -> Result<(), Status> {
+        Ok(())
+    }
+    async fn truncate(&self, _length: u64) -> Result<(), Status> {
+        unimplemented!()
+    }
+    async fn get_backing_memory(&self, _flags: fio::VmoFlags) -> Result<zx::Vmo, Status> {
+        unimplemented!()
+    }
+    async fn get_size(&self) -> Result<u64, Status> {
+        unimplemented!()
+    }
+    async fn set_attrs(
+        &self,
+        _flags: fio::NodeAttributeFlags,
+        _attrs: fio::NodeAttributes,
+    ) -> Result<(), Status> {
+        unimplemented!()
+    }
+    async fn update_attributes(
+        &self,
+        _attributes: fio::MutableNodeAttributes,
+    ) -> Result<(), Status> {
+        unimplemented!()
+    }
+    async fn sync(&self, _mode: SyncMode) -> Result<(), Status> {
+        Ok(())
+    }
+    async fn allocate(
+        &self,
+        _offset: u64,
+        _length: u64,
+        _mode: fio::AllocateMode,
+    ) -> Result<(), Status> {
+        self.res
+    }
+}
+
+#[fuchsia::test]
+async fn test_allocate_file() {
+    let dir = pseudo_directory! {
+        "foo" => AllocateFile::new(Ok(())),
+    };
+    let (dir_client, dir_server) = create_endpoints();
+    let scope = ExecutionScope::new();
+    dir.open(
+        scope,
+        fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_WRITABLE,
+        Path::dot(),
+        dir_server,
+    );
+
+    fasync::unblock(|| {
+        let dir_zxio =
+            Zxio::create(dir_client.into_channel().into_handle()).expect("create failed");
+        let foo_zxio = dir_zxio
+            .open(fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_WRITABLE, "foo")
+            .expect("open failed");
+
+        foo_zxio.allocate(0, 10, syncio::AllocateMode::empty()).unwrap();
+    })
+    .await;
+}
+
+#[fuchsia::test]
+async fn test_allocate_file_not_sup() {
+    // For now we just tell it what error to send back, but this is mimicking the first pass at
+    // allocate which won't support any options.
+    let dir = pseudo_directory! {
+        "foo" => AllocateFile::new(Err(Status::NOT_SUPPORTED)),
+    };
+    let (dir_client, dir_server) = create_endpoints();
+    let scope = ExecutionScope::new();
+    dir.open(
+        scope,
+        fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_WRITABLE,
+        Path::dot(),
+        dir_server,
+    );
+
+    fasync::unblock(|| {
+        let dir_zxio =
+            Zxio::create(dir_client.into_channel().into_handle()).expect("create failed");
+        let foo_zxio = dir_zxio
+            .open(fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_WRITABLE, "foo")
+            .expect("open failed");
+
+        assert_matches!(
+            foo_zxio.allocate(0, 10, syncio::AllocateMode::COLLAPSE_RANGE),
+            Err(zx::Status::NOT_SUPPORTED)
+        );
+        assert_matches!(
+            foo_zxio.allocate(0, 10, syncio::AllocateMode::KEEP_SIZE),
+            Err(zx::Status::NOT_SUPPORTED)
+        );
+        assert_matches!(
+            foo_zxio.allocate(0, 10, syncio::AllocateMode::INSERT_RANGE),
+            Err(zx::Status::NOT_SUPPORTED)
+        );
+        assert_matches!(
+            foo_zxio.allocate(0, 10, syncio::AllocateMode::PUNCH_HOLE),
+            Err(zx::Status::NOT_SUPPORTED)
+        );
+        assert_matches!(
+            foo_zxio.allocate(0, 10, syncio::AllocateMode::UNSHARE_RANGE),
+            Err(zx::Status::NOT_SUPPORTED)
+        );
+        assert_matches!(
+            foo_zxio.allocate(0, 10, syncio::AllocateMode::ZERO_RANGE),
+            Err(zx::Status::NOT_SUPPORTED)
+        );
+    })
+    .await;
+}
+
+#[fuchsia::test]
+async fn test_get_set_attributes_node() {
+    let fixture = TestFixture::new().await;
+
+    let (dir_client, dir_server) = zx::Channel::create();
+    fixture
+        .root()
+        .clone(fio::OpenFlags::CLONE_SAME_RIGHTS, dir_server.into())
+        .expect("clone failed");
+
+    fasync::unblock(|| {
+        let dir_zxio = Zxio::create(dir_client.into_handle()).expect("create failed");
+
+        dir_zxio
+            .open_node(".", fio::NodeProtocolFlags::MUST_BE_DIRECTORY, None)
+            .expect("open_node failed");
+
+        // Create a file.
+        let test_file = dir_zxio
+            .open2(
+                "test_file",
+                OpenOptions {
+                    mode: fio::OpenMode::AlwaysCreate,
+                    ..OpenOptions::file(fio::FileProtocolFlags::empty())
+                },
+                None,
+            )
+            .expect("open2 failed");
+
+        let attr = zxio_node_attributes_t {
+            gid: 111,
+            access_time: 222,
+            modification_time: 333,
+            has: zxio_node_attr_has_t {
+                gid: true,
+                access_time: true,
+                modification_time: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        test_file.attr_set(&attr).expect("attr_set failed");
+
+        let query = zxio_node_attr_has_t {
+            gid: true,
+            access_time: true,
+            modification_time: true,
+            ..Default::default()
+        };
+
+        let attributes = test_file.attr_get(query).expect("attr_get failed");
+        assert_eq!(attributes.gid, 111);
+        assert_eq!(attributes.access_time, 222);
+        assert_eq!(attributes.modification_time, 333);
     })
     .await;
 

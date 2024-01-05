@@ -26,24 +26,27 @@ rustc_binary("bin") {
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
+    "//third_party/rust_crates:euclid",
     "//third_party/rust_crates:futures",
   ]
 
   sources = [
     "src/commands.rs",
+    "src/commands/bouncing_squares.rs",
     "src/commands/display_color_layer.rs",
-    "src/commands/double_buffered_fence_loop.rs",
+    "src/commands/frame_rate_test.rs",
     "src/commands/static_config_vsync_loop.rs",
     "src/draw.rs",
     "src/fps.rs",
     "src/main.rs",
     "src/rgb.rs",
+    "src/runner.rs",
   ]
 
   test_deps = [ "//src/lib/fuchsia" ]
 }
 
-fuchsia_shell_package("display-tool") {
+fuchsia_package_with_single_component("display-tool") {
   manifest = "meta/display-tool.cml"
   deps = [ ":bin" ]
 }

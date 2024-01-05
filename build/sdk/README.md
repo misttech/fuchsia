@@ -27,6 +27,39 @@ Schemas for the various types of SDK elements are available under
 tools outside the Fuchsia build.
 
 
+## Building the Fuchsia Core IDK
+
+The simplest way to build the Fuchsia "Core" IDK, is to run the following
+command:
+
+```
+fx build final_fuchsia_idk
+```
+
+This generates the IDK, validates its content by running the Bazel SDK test
+suite locally, then creates a compressed archive that goes under
+`${BUILD_DIR}/sdk/archive/fuchsia_idk.tgz`.
+
+During local development, creation of the compressed archive can be skipped
+by using one of the following targets instead:
+
+```
+# Creates the IDK's export directory, under $BUILD_DIR/sdk/exported/fuchsia_idk
+# but does not validate its result.
+fx build final_fuchsia_idk.exported
+
+# Same, but also validates its result by running the Bazel SDK test suite.
+fx build final_fuchsia_idk.validation
+```
+
+## Building the Fuchsia Bazel SDK
+
+Due to technical limitations at the GN / Bazel boundary, the Fuchsia Bazel SDK
+is currently _not_ built from the Fuchsia "Core" IDK. For more details, see
+[//build/bazel_sdk/README.md](/build/bazel/sdk/README.md) and
+[//build/bazel/fuchsia_bazel_sdk.gni](/build/bazel/fuchsia_bazel_sdk.gni).
+
+
 ## Implementation
 
 Individual elements are declared using the [`sdk_atom`](sdk_atom.gni) template.
@@ -53,12 +86,11 @@ a given API/ABI. It will also create an "export directory" that follows
 the standard IDK layout for all its elements, under
 `$OUTPUT_DIR/sdk/exported/<name>`.
 
-The [`generate_final_idk`][generate_final_idk] template is used to
-generate the final IDK archive, by merging the content of one or more
-collections. It also ensures that all prebuilt binaries are provided
-for all supported target CPU architectures (achieved by performing
-specific sub-builds of the same collections), that are all stored in
-the same compressed archive output.
+The [`idk`](idk.gn) template generates the final IDK in
+`$BUILD_DIR/sdk/exported/<name>` by building its constituent `sdk_atom`s for
+all supported target CPU architectures and API levels, and merging them all
+together into a single IDK. The [`idk_archive`](idk_archive.gn) template can
+then be used to compress it into a `.tar.gz` file.
 
 It is possible to see an SDK collection as a "partial IDK" since it
 only contains a subset of atoms that go into the final IDK, but only
@@ -138,54 +170,19 @@ the current `target_cpu` value, and current API level. In theory
 they should not exist, nor distributed outside of the Fuchsia
 tree, though they currently are for historical reasons.
 
-They are nonetheless deprecated. Generating archives should ideally
-only be done using the `generate_final_idk()` GN template instead.
-
+They are nonetheless deprecated. Generating archives should only be done using
+the `idk_archive()` GN template instead.
 
 ## Creating a custom IDK
 
-Once elements have been set up for inclusion in an IDK, declaring such an IDK
-only takes a few steps:
+Historically, there have been a number of "custom IDKs" with different
+requirements. This led to more complexity and confusion than it was worth,
+given that only 2 or 3 were actually in use/not deprecated.
 
-1. Identify the collections needed in the IDK. Create a new collection, or
-   add atoms to an existing one if needed.
-
-2. Create a `final_fuchsia_idk("my_idk")` target under `//sdk/BUILD.gn`.
-
-3. If this new IDK only contains public or partner atoms, add its
-   collections to the `_fuchsia_sdk_deps` list defined in `//sdk/BUILD.gn`
-   to ensure its archives will be built and uploaded to cloud storage
-   by the Fuchsia SDK CI builders.
-
-4. Alternatively, or if this is not possible (e.g. if this new IDK is defined
-   in //vendor/.., which cannot be referenced from //sdk/BUILD.gn), add it
-   to the `sdk_archive_labels` list in your `args.gn` file.
-
-From there, the archive can be built locally with `fx build my_idk` and
-will be available as `$OUTPUT_DIR/sdk/archive/my_idk.tar.gz`.
-
-### Using a custom SDK in the build
-
-Any IDK or `sdk_collection` target creates an "export" directory following
-the [standard IDK layout][idk-layout], under `$OUTPUT_DIR/sdk/exported/<name>/`.
-This can be used to build certain third-party code which otherwise relies on
-an official IDK.
+If you think you need a custom IDK, please send an email to
+fuchsia-idk@google.com.
 
 ## GN build arguments
-
-##### `build_sdk_archives`
-
-Setting the deprecated `build_sdk_archives` build argument to `true` in
-`args.gn` will force the generation _by_ _default_ of a compressed archive
-for a few collections defined in `//sdk/BUILD.gn`.
-
-It will appear under `$OUTPUT_DIR/sdk/archive/<name>.tar.gz`. This is disabled
-by default since it is time-consuming and is only needed for a few legacy
-cases. Once all these use cases have been updated, this feature will be
-removed.
-
-For consistency reasons, IDK archives should be used instead whenever
-something needs to be distributed outside of the Fuchsia team.
 
 ##### `warn_on_sdk_changes`
 

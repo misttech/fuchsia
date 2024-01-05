@@ -54,15 +54,14 @@ rustc_binary("fshost") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
-    "//src/lib/storage/block_client/rust:remote-block-device",
-    "//src/lib/storage/fs_management/rust:fs_management",
-    "//src/lib/storage/key-bag",
-    "//src/lib/storage/ramdevice_client/rust",
-    "//src/lib/storage/vfs/rust:vfs",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/security/lib/kms-stateless/rust",
     "//src/storage/fshost:fshost_config_rust",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+    "//src/storage/lib/fs_management/rust:fs_management",
+    "//src/storage/lib/key-bag",
+    "//src/storage/lib/ramdevice_client/rust",
+    "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:assert_matches",
@@ -75,7 +74,7 @@ rustc_binary("fshost") {
     "//third_party/rust_crates:zstd",
     "//third_party/zstd",
   ]
-  non_rust_deps = [ "//src/lib/storage/fs_management/c" ]
+  non_rust_deps = [ "//src/storage/lib/fs_management/c" ]
   test_deps = [
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fuchsia-async",
@@ -122,7 +121,7 @@ bootfs_files_for_assembly("assembly_bundle_fshost_storage_common") {
     "//src/storage/memfs:memfs_component",
 
     # For now, we always need minfs to support migration
-    "//src/storage/bin/minfs:minfs-component",
+    "//src/storage/minfs/bin:minfs-component",
   ]
 }
 
@@ -133,15 +132,8 @@ bootfs_files_for_assembly("assembly_bundle_fshost_fxfs") {
   ]
 }
 
-bootfs_files_for_assembly("assembly_bundle_fshost_fxfs_vmex") {
-  deps = [
-    "//src/storage/fxfs:fxfs_with_vmex_component",
-    "//src/storage/fxfs-crypt",
-  ]
-}
-
 bootfs_files_for_assembly("assembly_bundle_fshost_f2fs") {
-  deps = [ "//src/storage/bin/f2fs:f2fs-component" ]
+  deps = [ "//src/storage/f2fs/bin:f2fs-component" ]
 }
 
 source_set("admin-client") {
@@ -150,8 +142,8 @@ source_set("admin-client") {
     "admin-client.h",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp_wire",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp_wire",
+    "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//zircon/system/ulib/zx",
   ]

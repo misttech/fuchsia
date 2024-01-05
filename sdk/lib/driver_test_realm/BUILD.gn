@@ -20,7 +20,6 @@ group("driver_test_realm") {
     "//src/devices/bin/driver-index:boot-driver-manifest",
     "//src/devices/bin/driver-index:component",
     "//src/devices/bin/driver-index:test_config",
-    "//src/devices/bin/driver_host:driver_host",
     "//src/devices/bin/driver_host2:component",
   ]
 }
@@ -38,7 +37,6 @@ group("realm_builder_version") {
     "//src/devices/bin/driver-index:boot-driver-manifest",
     "//src/devices/bin/driver-index:component",
     "//src/devices/bin/driver-index:test_config",
-    "//src/devices/bin/driver_host:driver_host",
     "//src/devices/bin/driver_host2:component",
   ]
 }
@@ -59,13 +57,16 @@ executable("bin") {
   sources = [ "driver_test_realm.cc" ]
   deps = [
     ":driver_test_realm_config",
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp_wire",
-    "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_cpp_wire",
-    "//sdk/fidl/fuchsia.device.manager:fuchsia.device.manager_cpp_wire",
-    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp_wire",
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+    "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_cpp",
+    "//sdk/fidl/fuchsia.device.manager:fuchsia.device.manager_cpp",
+    "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_cpp",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    "//sdk/fidl/fuchsia.driver.registrar:fuchsia.driver.registrar_cpp",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/sys/component/cpp/testing:cpp",
@@ -74,7 +75,7 @@ executable("bin") {
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
     "//src/lib/fxl",
-    "//src/lib/storage/vfs/cpp",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/mock-boot-arguments",
   ]
@@ -114,8 +115,8 @@ executable("fake_resolver_bin") {
   sources = [ "fake_resolver.cc" ]
   data_deps = [ "fake_driver:driver_package" ]
   deps = [
-    "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_cpp_wire",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/syslog/cpp",
@@ -147,6 +148,7 @@ fuchsia_structured_config_values("test_config") {
     use_driver_framework_v2 = false
     driver_host_crash_policy = "restart-driver-host"
     root_driver = "fuchsia-boot:///#meta/test-parent-sys.cm"
+    enable_test_shutdown_delays = false
   }
 }
 
@@ -163,6 +165,10 @@ fuchsia_component_manifest("test_realm_manifest") {
   testonly = true
   component_name = "test_realm"
   manifest = "meta/test_realm.cml"
+  restricted_features = [
+    "allow_long_names",
+    "config_capabilities",
+  ]
 }
 
 expect_includes("client_includes") {

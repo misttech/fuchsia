@@ -8,18 +8,23 @@
 
 namespace bt::gap::testing {
 
-FakeAdapter::FakeAdapter()
+FakeAdapter::FakeAdapter(pw::async::Dispatcher& pw_dispatcher)
     : init_state_(InitState::kNotInitialized),
       fake_le_(std::make_unique<FakeLowEnergy>(this)),
       fake_bredr_(std::make_unique<FakeBrEdr>()),
+      heap_dispatcher_(pw_dispatcher),
+      peer_cache_(pw_dispatcher),
       weak_self_(this) {}
 
 bool FakeAdapter::Initialize(InitializeCallback callback, fit::closure transport_closed_callback) {
   init_state_ = InitState::kInitializing;
-  async::PostTask(async_get_default_dispatcher(), [this, cb = std::move(callback)]() mutable {
-    init_state_ = InitState::kInitialized;
-    cb(/*success=*/true);
-  });
+  heap_dispatcher_.Post(
+      [this, cb = std::move(callback)](pw::async::Context /*ctx*/, pw::Status status) mutable {
+        if (status.ok()) {
+          init_state_ = InitState::kInitialized;
+          cb(/*success=*/true);
+        }
+      });
   return true;
 }
 
@@ -31,11 +36,11 @@ FakeAdapter::FakeBrEdr::~FakeBrEdr() {
   }
 }
 
-void FakeAdapter::FakeBrEdr::OpenL2capChannel(PeerId peer_id, l2cap::PSM psm,
+void FakeAdapter::FakeBrEdr::OpenL2capChannel(PeerId peer_id, l2cap::Psm psm,
                                               BrEdrSecurityRequirements security_requirements,
                                               l2cap::ChannelParameters params,
                                               l2cap::ChannelCallback cb) {
-  l2cap::ChannelInfo info(params.mode.value_or(l2cap::ChannelMode::kBasic),
+  l2cap::ChannelInfo info(params.mode.value_or(l2cap::RetransmissionAndFlowControlMode::kBasic),
                           params.max_rx_sdu_size.value_or(l2cap::kDefaultMTU),
                           /*max_tx_sdu_size=*/l2cap::kDefaultMTU, /*n_frames_in_tx_window=*/0,
                           /*max_transmissions=*/0, /*max_tx_pdu_payload_size=*/0, psm,

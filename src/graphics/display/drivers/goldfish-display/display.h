@@ -15,6 +15,7 @@
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fzl/pinned-vmo.h>
 #include <lib/zircon-internal/thread_annotations.h>
+#include <lib/zx/result.h>
 #include <threads.h>
 #include <zircon/types.h>
 
@@ -32,6 +33,7 @@
 #include "src/graphics/display/lib/api-types-cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-buffer-collection-id.h"
+#include "src/graphics/display/lib/api-types-cpp/driver-image-id.h"
 
 namespace goldfish {
 
@@ -67,15 +69,15 @@ class Display : public DisplayType,
       uint64_t banjo_driver_buffer_collection_id, zx::channel collection_token);
   zx_status_t DisplayControllerImplReleaseBufferCollection(
       uint64_t banjo_driver_buffer_collection_id);
-  zx_status_t DisplayControllerImplImportImage(image_t* image,
+  zx_status_t DisplayControllerImplImportImage(const image_t* image,
                                                uint64_t banjo_driver_buffer_collection_id,
-                                               uint32_t index);
+                                               uint32_t index, uint64_t* out_image_handle);
   zx_status_t DisplayControllerImplImportImageForCapture(uint64_t banjo_driver_buffer_collection_id,
                                                          uint32_t index,
                                                          uint64_t* out_capture_handle) {
     return ZX_ERR_NOT_SUPPORTED;
   }
-  void DisplayControllerImplReleaseImage(image_t* image);
+  void DisplayControllerImplReleaseImage(uint64_t image_handle);
   config_check_result_t DisplayControllerImplCheckConfiguration(
       const display_config_t** display_configs, size_t display_count,
       client_composition_opcode_t* out_client_composition_opcodes_list,
@@ -133,6 +135,10 @@ class Display : public DisplayType,
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t format = 0;
+
+    // TODO(costan): Rename to reflect ownership.
+    bool is_linear_format = false;
+
     zx::vmo vmo;
     fzl::PinnedVmo pinned_vmo;
   };
@@ -188,8 +194,9 @@ class Display : public DisplayType,
   // until the device is released.
   zx_status_t InitSysmemAllocatorClientLocked() TA_REQ(lock_);
 
-  zx_status_t ImportVmoImage(image_t* image, const fuchsia_sysmem::PixelFormat& pixel_format,
-                             zx::vmo vmo, size_t offset);
+  zx::result<display::DriverImageId> ImportVmoImage(const image_t* image,
+                                                    const fuchsia_sysmem::PixelFormat& pixel_format,
+                                                    zx::vmo vmo, size_t offset);
   zx_status_t PresentDisplayConfig(display::DisplayId display_id,
                                    const DisplayConfig& display_config);
   zx_status_t SetupDisplay(display::DisplayId display_id);

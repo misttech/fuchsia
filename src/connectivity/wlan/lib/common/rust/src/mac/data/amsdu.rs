@@ -8,11 +8,11 @@ use {
         buffer_reader::BufferReader,
         mac::{round_up, MacAddr},
     },
-    zerocopy::{AsBytes, ByteSlice, FromBytes, FromZeroes, Ref, Unaligned},
+    zerocopy::{AsBytes, ByteSlice, FromBytes, FromZeros, NoCell, Ref, Unaligned},
 };
 
 // IEEE Std 802.11-2016, 9.3.2.2.2
-#[derive(FromZeroes, FromBytes, AsBytes, Unaligned)]
+#[derive(FromZeros, FromBytes, AsBytes, NoCell, Unaligned)]
 #[repr(C, packed)]
 pub struct AmsduSubframeHdr {
     // Note this is the same as the IEEE 802.3 frame format.
@@ -71,15 +71,15 @@ mod tests {
         for Msdu { dst_addr, src_addr, llc_frame } in msdus.unwrap() {
             match found_msdus {
                 (false, false) => {
-                    assert_eq!(dst_addr, [0x78, 0x8a, 0x20, 0x0d, 0x67, 0x03]);
-                    assert_eq!(src_addr, [0xb4, 0xf7, 0xa1, 0xbe, 0xb9, 0xab]);
+                    assert_eq!(dst_addr, MacAddr::from([0x78, 0x8a, 0x20, 0x0d, 0x67, 0x03]));
+                    assert_eq!(src_addr, MacAddr::from([0xb4, 0xf7, 0xa1, 0xbe, 0xb9, 0xab]));
                     assert_eq!(llc_frame.hdr.protocol_id.to_native(), 0x0800);
                     assert_eq!(llc_frame.body, MSDU_1_PAYLOAD);
                     found_msdus = (true, false);
                 }
                 (true, false) => {
-                    assert_eq!(dst_addr, [0x78, 0x8a, 0x20, 0x0d, 0x67, 0x04]);
-                    assert_eq!(src_addr, [0xb4, 0xf7, 0xa1, 0xbe, 0xb9, 0xac]);
+                    assert_eq!(dst_addr, MacAddr::from([0x78, 0x8a, 0x20, 0x0d, 0x67, 0x04]));
+                    assert_eq!(src_addr, MacAddr::from([0xb4, 0xf7, 0xa1, 0xbe, 0xb9, 0xac]));
                     assert_eq!(llc_frame.hdr.protocol_id.to_native(), 0x0801);
                     assert_eq!(llc_frame.body, MSDU_2_PAYLOAD);
                     found_msdus = (true, true);
@@ -99,8 +99,8 @@ mod tests {
         let mut found_one_msdu = false;
         for Msdu { dst_addr, src_addr, llc_frame } in msdus.unwrap() {
             assert!(!found_one_msdu);
-            assert_eq!(dst_addr, [0x78, 0x8a, 0x20, 0x0d, 0x67, 0x03]);
-            assert_eq!(src_addr, [0xb4, 0xf7, 0xa1, 0xbe, 0xb9, 0xab]);
+            assert_eq!(dst_addr, MacAddr::from([0x78, 0x8a, 0x20, 0x0d, 0x67, 0x03]));
+            assert_eq!(src_addr, MacAddr::from([0xb4, 0xf7, 0xa1, 0xbe, 0xb9, 0xab]));
             assert_eq!(llc_frame.hdr.protocol_id.to_native(), 0x0800);
             assert_eq!(llc_frame.body, MSDU_1_PAYLOAD);
             found_one_msdu = true;

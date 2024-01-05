@@ -4,9 +4,9 @@
 
 """Utilities for extracting, creating, and manipulating debug symbols."""
 
+load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
 load(":providers.bzl", "FuchsiaDebugSymbolInfo")
 load(":utils.bzl", "flatten", "make_resource_struct")
-load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
 
 def strip_resources(ctx, resources):
     """Strips resources and returns FuchsiaDebugSymbolInfo.
@@ -20,6 +20,9 @@ def strip_resources(ctx, resources):
       and the second item is a FuchsiaDebugSymbolInfo provider for the
       corresponding .build-id directory.
     """
+    if not resources:
+        return [], FuchsiaDebugSymbolInfo(build_id_dirs = {})
+
     build_id_dir = ctx.actions.declare_directory(ctx.label.name + "/.build-id")
     stripped_resources = []
     all_maybe_elf_files = []

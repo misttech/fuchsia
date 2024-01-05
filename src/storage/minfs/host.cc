@@ -25,8 +25,8 @@
 
 #include <fbl/ref_ptr.h>
 
-#include "src/lib/storage/vfs/cpp/vfs.h"
-#include "src/lib/storage/vfs/cpp/vfs_types.h"
+#include "src/storage/lib/vfs/cpp/vfs.h"
+#include "src/storage/lib/vfs/cpp/vfs_types.h"
 #include "src/storage/minfs/format.h"
 #include "src/storage/minfs/minfs.h"
 #include "src/storage/minfs/runner.h"
@@ -493,6 +493,10 @@ DIR* emu_opendir(const char* name) {
 dirent* emu_readdir(DIR* dirp) {
   MinDir* dir = reinterpret_cast<MinDir*>(dirp);
   for (;;) {
+// TODO(b/293936429): Remove use of deprecated `vdirent_t` when transitioning ReadDir to Enumerate
+// as part of io2 migration.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     if (dir->size >= sizeof(vdirent_t)) {
       vdirent_t* vde = reinterpret_cast<vdirent_t*>(dir->ptr);
       dirent* ent = &dir->de;
@@ -506,6 +510,7 @@ dirent* emu_readdir(DIR* dirp) {
       dir->size -= entry_len;
       return ent;
     }
+#pragma clang diagnostic pop
     size_t actual = 0;
     zx_status_t status = dir->vn->Readdir(&dir->cookie, &dir->data, kDirBufSize, &actual);
     if (status != ZX_OK || actual == 0) {

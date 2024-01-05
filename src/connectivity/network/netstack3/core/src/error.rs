@@ -45,7 +45,8 @@ pub enum NetstackError {
 }
 
 /// Error when something is not supported.
-#[derive(Debug, PartialEq, Eq, Error)]
+#[derive(Debug, PartialEq, Eq, Error, GenericOverIp)]
+#[generic_over_ip()]
 #[error("Not supported")]
 pub struct NotSupportedError;
 
@@ -80,6 +81,7 @@ impl From<NotFoundError> for NetstackError {
 
 /// Error type for errors common to local addresses.
 #[derive(Error, Debug, PartialEq, GenericOverIp)]
+#[generic_over_ip()]
 pub enum LocalAddressError {
     /// Cannot bind to address.
     #[error("can't bind to address")]
@@ -103,10 +105,16 @@ pub enum LocalAddressError {
     /// sockets contain IP sockets.
     #[error("{}", _0)]
     Zone(#[from] ZonedAddressError),
+
+    /// The requested address is mapped (i.e. an IPv4-mapped-IPv6 address), but
+    /// the socket is not dual-stack enabled.
+    #[error("Address is mapped")]
+    AddressUnexpectedlyMapped,
 }
 
 /// Indicates a problem related to an address with a zone.
 #[derive(Copy, Clone, Debug, Error, Eq, PartialEq, GenericOverIp)]
+#[generic_over_ip()]
 pub enum ZonedAddressError {
     /// The address scope requires a zone but didn't have one.
     #[error("the address requires a zone but didn't have one")]
@@ -167,4 +175,46 @@ pub enum SetIpAddressPropertiesError {
     /// We tried to set properties on a non-manually-configured address.
     #[error("tried to set properties on a non-manually-configured address")]
     NotManual,
+}
+
+/// Error when link address resolution failed for a neighbor.
+#[derive(Debug, PartialEq)]
+pub struct AddressResolutionFailed;
+
+/// Error when a static neighbor entry cannot be inserted.
+#[derive(Debug, PartialEq, Eq, Error)]
+pub enum StaticNeighborInsertionError {
+    /// The MAC address used for a static neighbor entry is not unicast.
+    #[error("MAC address is not unicast")]
+    MacAddressNotUnicast,
+
+    /// The IP address is invalid as the address of a neighbor. A valid address
+    /// is:
+    /// - specified,
+    /// - not multicast,
+    /// - not loopback,
+    /// - not an IPv4-mapped address, and
+    /// - not the limited broadcast address of `255.255.255.255`.
+    #[error("IP address is invalid")]
+    IpAddressInvalid,
+
+    /// The device does not support neighbor entries, e.g. loopback.
+    #[error("{0}")]
+    NotSupported(#[from] NotSupportedError),
+}
+
+/// Error when a neighbor table entry cannot be removed.
+#[derive(Debug, PartialEq, Eq, Error)]
+pub enum NeighborRemovalError {
+    /// The IP address is invalid as the address of a neighbor.
+    #[error("IP address is invalid")]
+    IpAddressInvalid,
+
+    /// Entry cannot be found.
+    #[error("{0}")]
+    NotFound(#[from] NotFoundError),
+
+    /// The device does not support neighbor entries, e.g. loopback.
+    #[error("{0}")]
+    NotSupported(#[from] NotSupportedError),
 }

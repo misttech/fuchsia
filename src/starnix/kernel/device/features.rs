@@ -4,53 +4,168 @@
 
 use crate::{
     device::{
-        binder::create_binders, framebuffer::fb_device_init, input::init_input_devices,
-        starnix::magma_device_init,
+        ashmem::ashmem_device_init, framebuffer::fb_device_init, gralloc::gralloc_device_init,
+        input::init_input_devices, magma::magma_device_init,
+        perfetto_consumer::start_perfetto_consumer_thread,
     },
-    logging::log_warn,
-    task::Kernel,
-    types::*,
+    task::{CurrentTask, Kernel},
 };
+use anyhow::{anyhow, Context, Error};
+use bstr::BString;
+use fuchsia_zircon as zx;
+use selinux::security_server;
+use starnix_uapi::{error, errors::Errno};
 use std::sync::Arc;
 
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sysinfo as fsysinfo;
 use fidl_fuchsia_ui_composition as fuicomposition;
 use fidl_fuchsia_ui_input3 as fuiinput;
+use fidl_fuchsia_ui_policy as fuipolicy;
 use fidl_fuchsia_ui_views as fuiviews;
 
-/// Parses and runs the features from the provided "program strvec". Some features,
-/// should be enabled on a per-component basis. We run this when we first
-/// make the container. When we start the component, we run the run_component_features
-/// function.
-pub fn run_features(entries: &Vec<String>, kernel: &Arc<Kernel>) -> Result<(), Errno> {
+/// A collection of parsed features, and their arguments.
+#[derive(Default, Debug)]
+pub struct Features {
+    /// Configures whether SELinux is fully enabled, faked, or unavailable.
+    pub selinux: Option<security_server::Mode>,
+
+    pub ashmem: bool,
+
+    pub framebuffer: bool,
+
+    pub gralloc: bool,
+
+    pub magma: bool,
+
+    pub test_data: bool,
+
+    pub custom_artifacts: bool,
+
+    pub android_serialno: bool,
+
+    pub self_profile: bool,
+
+    pub aspect_ratio: Option<AspectRatio>,
+
+    pub perfetto: Option<String>,
+}
+
+/// An aspect ratio, as defined by the `ASPECT_RATIO` feature.
+#[derive(Default, Debug)]
+pub struct AspectRatio {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Parses all the featurse in `entries`.
+///
+/// Returns an error if parsing fails, or if an unsupported feature is present in `features`.
+pub fn parse_features(entries: &Vec<String>) -> Result<Features, Error> {
+    let mut features = Features::default();
     for entry in entries {
-        match entry.as_str() {
-            "binder" => {
-                // Creates the various binder drivers (/dev/binder, /dev/hwbinder, /dev/vndbinder).
-                create_binders(kernel)?;
+        let (raw_flag, raw_args) =
+            entry.split_once(':').map(|(f, a)| (f, Some(a.to_string()))).unwrap_or((entry, None));
+        match (raw_flag, raw_args) {
+            ("android_serialno", _) => features.android_serialno = true,
+            ("aspect_ratio", Some(args)) => {
+                let e = anyhow!("Invalid aspect_ratio: {:?}", args);
+                let components: Vec<_> = args.split(':').collect();
+                if components.len() != 2 {
+                    return Err(e);
+                }
+                let width: u32 = components[0].parse().map_err(|_| anyhow!("Invalid aspect ratio width"))?;
+                let height: u32 = components[1].parse().map_err(|_| anyhow!("Invalid aspect ratio height"))?;
+                features.aspect_ratio = Some(AspectRatio { width, height });
             }
-            "selinux_enabled" => {}
-            "framebuffer" => {
-                fb_device_init(kernel);
-                init_input_devices(kernel);
+            ("aspect_ratio", None) => {
+                return Err(anyhow!(
+                    "Aspect ratio feature must contain the aspect ratio in the format: aspect_ratio:w:h"
+                ))
             }
-            "magma" => {
-                magma_device_init(kernel);
+            ("custom_artifacts", _) => features.custom_artifacts = true,
+            ("ashmem", _) => features.ashmem = true,
+            ("framebuffer", _) => features.framebuffer = true,
+            ("gralloc", _) => features.gralloc = true,
+            ("magma", _) => features.magma = true,
+            ("perfetto", Some(socket_path)) => {
+                features.perfetto = Some(socket_path.to_string());
             }
-            "test_data" => {}
-            "custom_artifacts" => {}
-            feature => {
-                log_warn!("Unsupported feature: {:?}", feature);
+            ("perfetto", None) => {
+                return Err(anyhow!("Perfetto feature must contain a socket path"));
             }
-        }
+            ("self_profile", _) => features.self_profile = true,
+            ("selinux", mode_arg) => features.selinux = match mode_arg.as_ref() {
+                Some(mode) => if mode == "fake" {
+                    Some(security_server::Mode::Fake)
+                } else {
+                    return Err(anyhow!("Invalid SELinux mode"));
+                },
+                None => Some(security_server::Mode::Enable),
+            },
+            ("test_data", _) => features.test_data = true,
+            (f, _) => {
+                return Err(anyhow!("Unsupported feature: {}", f));
+            }
+        };
     }
+    Ok(features)
+}
+
+/// Runs all the features that are enabled in `system_task.kernel()`.
+pub fn run_container_features(system_task: &CurrentTask) -> Result<(), Error> {
+    let kernel = system_task.kernel();
+
+    let mut enabled_profiling = false;
+    if kernel.features.framebuffer {
+        fb_device_init(system_task);
+        init_input_devices(system_task);
+    }
+    if kernel.features.gralloc {
+        // The virtgralloc0 device allows vulkan_selector to indicate to gralloc
+        // whether swiftshader or magma will be used. This is separate from the
+        // magma feature because the policy choice whether to use magma or
+        // swiftshader is in vulkan_selector, and it can potentially choose
+        // switfshader for testing purposes even when magma0 is present. Also,
+        // it's nice to indicate swiftshader the same way regardless of whether
+        // the magma feature is enabled or disabled. If a call to gralloc AIDL
+        // IAllocator allocate2 occurs with this feature disabled, the call will
+        // fail.
+        gralloc_device_init(system_task);
+    }
+    if kernel.features.magma {
+        magma_device_init(system_task);
+    }
+    if kernel.features.perfetto.is_some() {
+        let socket_path =
+            kernel.features.perfetto.clone().ok_or(anyhow!("No perfetto socket path"))?;
+        start_perfetto_consumer_thread(kernel, socket_path.as_bytes())
+            .context("Failed to start perfetto consumer thread")?;
+    }
+    if kernel.features.self_profile {
+        enabled_profiling = true;
+        fuchsia_inspect::component::inspector().root().record_lazy_child(
+            "self_profile",
+            fuchsia_inspect_contrib::ProfileDuration::lazy_node_callback,
+        );
+        fuchsia_inspect_contrib::start_self_profiling();
+    }
+    if kernel.features.ashmem {
+        ashmem_device_init(system_task);
+    }
+    if !enabled_profiling {
+        fuchsia_inspect_contrib::stop_self_profiling();
+    }
+
     Ok(())
 }
 
-/// Runs features requested by individual components
+/// Runs features requested by individual components inside the container.
 pub fn run_component_features(
     entries: &Vec<String>,
     kernel: &Arc<Kernel>,
     outgoing_dir: &mut Option<fidl::endpoints::ServerEnd<fidl_fuchsia_io::DirectoryMarker>>,
+    mut maybe_svc: Option<fio::DirectorySynchronousProxy>,
 ) -> Result<(), Errno> {
     for entry in entries {
         match entry.as_str() {
@@ -69,23 +184,37 @@ pub fn run_component_features(
                 let keyboard =
                     fuchsia_component::client::connect_to_protocol::<fuiinput::KeyboardMarker>()
                         .expect("Failed to connect to keyboard");
-                kernel.framebuffer.start_server(
-                    view_bound_protocols,
-                    view_identity,
-                    outgoing_dir.take().unwrap(),
+                let registry_proxy = fuchsia_component::client::connect_to_protocol::<
+                    fuipolicy::DeviceListenerRegistryMarker,
+                >()
+                .expect("Failed to connect to device listener registry");
+                kernel
+                    .framebuffer
+                    .start_server(
+                        kernel,
+                        view_bound_protocols,
+                        view_identity,
+                        outgoing_dir.take().unwrap(),
+                        maybe_svc.take(),
+                    )
+                    .expect("Failed to start framebuffer server");
+                kernel.input_device.start_relay(
+                    touch_source_proxy,
+                    keyboard,
+                    registry_proxy,
+                    view_ref,
                 );
-                kernel.input_device.start_relay(touch_source_proxy, keyboard, view_ref);
             }
-            "binder" => {}
-            "logd" => {}
-            "selinux_enabled" => {}
-            "magma" => {}
-            "test_data" => {}
-            "custom_artifacts" => {}
             feature => {
-                log_warn!("Unsupported component feature: {:?}", feature);
+                return error!(ENOSYS, format!("Unsupported feature: {}", feature));
             }
         }
     }
     Ok(())
+}
+
+pub async fn get_serial_number() -> anyhow::Result<BString> {
+    let sysinfo = fuchsia_component::client::connect_to_protocol::<fsysinfo::SysInfoMarker>()?;
+    let serial = sysinfo.get_serial_number().await?.map_err(zx::Status::from_raw)?;
+    Ok(BString::from(serial))
 }

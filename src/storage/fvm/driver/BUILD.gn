@@ -11,7 +11,7 @@ driver_bind_rules("fvm_bind") {
   rules = "fvm.bind"
   bind_output = "fvm.bindbc"
   tests = "bind_tests.json"
-  deps = [ "//src/devices/bind/fuchsia.hardware.block" ]
+  deps = [ "//src/devices/bind/fuchsia.block" ]
 }
 
 fuchsia_driver("fuchsia_driver") {
@@ -61,15 +61,15 @@ source_set("shared") {
     "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//src/lib/ddk",
     "//src/lib/ddktl",
     "//src/lib/digest",
-    "//src/lib/storage/vfs/cpp",
     "//src/lib/uuid",
     "//src/storage/fvm",
     "//src/storage/gpt",
+    "//src/storage/lib/vfs/cpp",
     "//third_party/boringssl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",

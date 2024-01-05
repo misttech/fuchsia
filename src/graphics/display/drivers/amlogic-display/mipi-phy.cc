@@ -9,10 +9,9 @@
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 
-namespace amlogic_display {
+#include "src/graphics/display/drivers/amlogic-display/board-resources.h"
 
-#define READ32_DSI_PHY_REG(a) dsi_phy_mmio_->Read32(a)
-#define WRITE32_DSI_PHY_REG(a, v) dsi_phy_mmio_->Write32(v, a)
+namespace amlogic_display {
 
 template <typename T>
 constexpr inline uint8_t NsToLaneByte(T x, uint32_t lanebytetime) {
@@ -21,7 +20,7 @@ constexpr inline uint8_t NsToLaneByte(T x, uint32_t lanebytetime) {
 
 constexpr uint32_t kUnit = (1 * 1000 * 1000 * 100);
 
-zx_status_t MipiPhy::PhyCfgLoad(uint32_t bitrate) {
+zx::result<> MipiPhy::PhyCfgLoad(uint32_t bitrate) {
   // According to MIPI -PHY Spec, we need to define Unit Interval (UI).
   // This UI is defined as the time it takes to send a bit (i.e. bitrate)
   // The x100 is to ensure the ui is not rounded too much (i.e. 2.56 --> 256)
@@ -86,7 +85,7 @@ zx_status_t MipiPhy::PhyCfgLoad(uint32_t bitrate) {
     zxlogf(ERROR, "Invalid clk-trail and/or hs-trail exceed Teot!");
     zxlogf(ERROR, "clk-trail = 0x%02x, hs-trail =  0x%02x, Teot = 0x%02x", dsi_phy_cfg_.clk_trail,
            dsi_phy_cfg_.hs_trail, time_req_max);
-    return ZX_ERR_OUT_OF_RANGE;
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
   zxlogf(TRACE,
@@ -111,42 +110,48 @@ zx_status_t MipiPhy::PhyCfgLoad(uint32_t bitrate) {
          dsi_phy_cfg_.hs_prepare, dsi_phy_cfg_.clk_trail, dsi_phy_cfg_.clk_post,
          dsi_phy_cfg_.clk_zero, dsi_phy_cfg_.clk_prepare, dsi_phy_cfg_.clk_pre, dsi_phy_cfg_.init,
          dsi_phy_cfg_.wakeup);
-  return ZX_OK;
+  return zx::ok();
 }
 
 void MipiPhy::PhyInit() {
   // Enable phy clock.
-  WRITE32_REG(DSI_PHY, MIPI_DSI_PHY_CTRL,
-              PHY_CTRL_TXDDRCLK_EN | PHY_CTRL_DDRCLKPATH_EN | PHY_CTRL_CLK_DIV_COUNTER |
-                  PHY_CTRL_CLK_DIV_EN | PHY_CTRL_BYTECLK_EN);
+  dsi_phy_mmio_->Write32(PHY_CTRL_TXDDRCLK_EN | PHY_CTRL_DDRCLKPATH_EN | PHY_CTRL_CLK_DIV_COUNTER |
+                             PHY_CTRL_CLK_DIV_EN | PHY_CTRL_BYTECLK_EN,
+                         MIPI_DSI_PHY_CTRL);
 
   // Toggle PHY CTRL RST
-  SET_BIT32(DSI_PHY, MIPI_DSI_PHY_CTRL, 1, PHY_CTRL_RST_START, PHY_CTRL_RST_BITS);
-  SET_BIT32(DSI_PHY, MIPI_DSI_PHY_CTRL, 0, PHY_CTRL_RST_START, PHY_CTRL_RST_BITS);
+  dsi_phy_mmio_->Write32(SetFieldValue32(dsi_phy_mmio_->Read32(MIPI_DSI_PHY_CTRL),
+                                         /*field_begin_bit=*/PHY_CTRL_RST_START,
+                                         /*field_size_bits=*/PHY_CTRL_RST_BITS, /*field_value=*/1),
+                         MIPI_DSI_PHY_CTRL);
+  dsi_phy_mmio_->Write32(SetFieldValue32(dsi_phy_mmio_->Read32(MIPI_DSI_PHY_CTRL),
+                                         /*field_begin_bit=*/PHY_CTRL_RST_START,
+                                         /*field_size_bits=*/PHY_CTRL_RST_BITS, /*field_value=*/0),
+                         MIPI_DSI_PHY_CTRL);
 
-  WRITE32_REG(DSI_PHY, MIPI_DSI_CLK_TIM,
-              (dsi_phy_cfg_.clk_trail | (dsi_phy_cfg_.clk_post << 8) |
-               (dsi_phy_cfg_.clk_zero << 16) | (dsi_phy_cfg_.clk_prepare << 24)));
+  dsi_phy_mmio_->Write32((dsi_phy_cfg_.clk_trail | (dsi_phy_cfg_.clk_post << 8) |
+                          (dsi_phy_cfg_.clk_zero << 16) | (dsi_phy_cfg_.clk_prepare << 24)),
+                         MIPI_DSI_CLK_TIM);
 
-  WRITE32_REG(DSI_PHY, MIPI_DSI_CLK_TIM1, dsi_phy_cfg_.clk_pre);
+  dsi_phy_mmio_->Write32(dsi_phy_cfg_.clk_pre, MIPI_DSI_CLK_TIM1);
 
-  WRITE32_REG(DSI_PHY, MIPI_DSI_HS_TIM,
-              (dsi_phy_cfg_.hs_exit | (dsi_phy_cfg_.hs_trail << 8) | (dsi_phy_cfg_.hs_zero << 16) |
-               (dsi_phy_cfg_.hs_prepare << 24)));
+  dsi_phy_mmio_->Write32((dsi_phy_cfg_.hs_exit | (dsi_phy_cfg_.hs_trail << 8) |
+                          (dsi_phy_cfg_.hs_zero << 16) | (dsi_phy_cfg_.hs_prepare << 24)),
+                         MIPI_DSI_HS_TIM);
 
-  WRITE32_REG(DSI_PHY, MIPI_DSI_LP_TIM,
-              (dsi_phy_cfg_.lp_lpx | (dsi_phy_cfg_.lp_ta_sure << 8) |
-               (dsi_phy_cfg_.lp_ta_go << 16) | (dsi_phy_cfg_.lp_ta_get << 24)));
+  dsi_phy_mmio_->Write32((dsi_phy_cfg_.lp_lpx | (dsi_phy_cfg_.lp_ta_sure << 8) |
+                          (dsi_phy_cfg_.lp_ta_go << 16) | (dsi_phy_cfg_.lp_ta_get << 24)),
+                         MIPI_DSI_LP_TIM);
 
-  WRITE32_REG(DSI_PHY, MIPI_DSI_ANA_UP_TIM, ANA_UP_TIME);
-  WRITE32_REG(DSI_PHY, MIPI_DSI_INIT_TIM, dsi_phy_cfg_.init);
-  WRITE32_REG(DSI_PHY, MIPI_DSI_WAKEUP_TIM, dsi_phy_cfg_.wakeup);
-  WRITE32_REG(DSI_PHY, MIPI_DSI_LPOK_TIM, LPOK_TIME);
-  WRITE32_REG(DSI_PHY, MIPI_DSI_ULPS_CHECK, ULPS_CHECK_TIME);
-  WRITE32_REG(DSI_PHY, MIPI_DSI_LP_WCHDOG, LP_WCHDOG_TIME);
-  WRITE32_REG(DSI_PHY, MIPI_DSI_TURN_WCHDOG, TURN_WCHDOG_TIME);
+  dsi_phy_mmio_->Write32(ANA_UP_TIME, MIPI_DSI_ANA_UP_TIM);
+  dsi_phy_mmio_->Write32(dsi_phy_cfg_.init, MIPI_DSI_INIT_TIM);
+  dsi_phy_mmio_->Write32(dsi_phy_cfg_.wakeup, MIPI_DSI_WAKEUP_TIM);
+  dsi_phy_mmio_->Write32(LPOK_TIME, MIPI_DSI_LPOK_TIM);
+  dsi_phy_mmio_->Write32(ULPS_CHECK_TIME, MIPI_DSI_ULPS_CHECK);
+  dsi_phy_mmio_->Write32(LP_WCHDOG_TIME, MIPI_DSI_LP_WCHDOG);
+  dsi_phy_mmio_->Write32(TURN_WCHDOG_TIME, MIPI_DSI_TURN_WCHDOG);
 
-  WRITE32_REG(DSI_PHY, MIPI_DSI_CHAN_CTRL, 0);
+  dsi_phy_mmio_->Write32(0, MIPI_DSI_CHAN_CTRL);
 }
 
 void MipiPhy::Shutdown() {
@@ -156,14 +161,17 @@ void MipiPhy::Shutdown() {
 
   // Power down DSI
   dsiimpl_.PowerDown();
-  WRITE32_REG(DSI_PHY, MIPI_DSI_CHAN_CTRL, 0x1f);
-  SET_BIT32(DSI_PHY, MIPI_DSI_PHY_CTRL, 0, 7, 1);
+  dsi_phy_mmio_->Write32(0x1f, MIPI_DSI_CHAN_CTRL);
+  dsi_phy_mmio_->Write32(
+      SetFieldValue32(dsi_phy_mmio_->Read32(MIPI_DSI_PHY_CTRL), /*field_begin_bit=*/7,
+                      /*field_size_bits=*/1, /*field_value=*/0),
+      MIPI_DSI_PHY_CTRL);
   phy_enabled_ = false;
 }
 
-zx_status_t MipiPhy::Startup() {
+zx::result<> MipiPhy::Startup() {
   if (phy_enabled_) {
-    return ZX_OK;
+    return zx::ok();
   }
 
   // Power up DSI
@@ -185,14 +193,17 @@ zx_status_t MipiPhy::Startup() {
   zx_status_t status;
   if ((status = dsiimpl_.PhyWaitForReady()) != ZX_OK) {
     // no need to print additional info.
-    return status;
+    return zx::error(status);
   }
 
   // Trigger a sync active for esc_clk
-  SET_BIT32(DSI_PHY, MIPI_DSI_PHY_CTRL, 1, 1, 1);
+  dsi_phy_mmio_->Write32(
+      SetFieldValue32(dsi_phy_mmio_->Read32(MIPI_DSI_PHY_CTRL), /*field_begin_bit=*/1,
+                      /*field_size_bits=*/1, /*field_value=*/1),
+      MIPI_DSI_PHY_CTRL);
 
   phy_enabled_ = true;
-  return ZX_OK;
+  return zx::ok();
 }
 
 zx::result<std::unique_ptr<MipiPhy>> MipiPhy::Create(ddk::PDevFidl& pdev,
@@ -208,34 +219,34 @@ zx::result<std::unique_ptr<MipiPhy>> MipiPhy::Create(ddk::PDevFidl& pdev,
   self->phy_enabled_ = already_enabled;
 
   // Map Mipi Dsi and Dsi Phy registers
-  zx_status_t status = pdev.MapMmio(MMIO_DSI_PHY, &self->dsi_phy_mmio_);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "MipiPhy: Could not map DSI PHY mmio");
-    return zx::error(status);
+  zx::result<fdf::MmioBuffer> dsi_phy_mmio_result = MapMmio(MmioResourceIndex::kDsiPhy, pdev);
+  if (dsi_phy_mmio_result.is_error()) {
+    return dsi_phy_mmio_result.take_error();
   }
+  self->dsi_phy_mmio_ = std::move(dsi_phy_mmio_result).value();
 
   return zx::ok(std::move(self));
 }
 
 void MipiPhy::Dump() {
   zxlogf(INFO, "%s: DUMPING PHY REGS", __func__);
-  zxlogf(INFO, "MIPI_DSI_PHY_CTRL = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_PHY_CTRL));
-  zxlogf(INFO, "MIPI_DSI_CHAN_CTRL = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_CHAN_CTRL));
-  zxlogf(INFO, "MIPI_DSI_CHAN_STS = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_CHAN_STS));
-  zxlogf(INFO, "MIPI_DSI_CLK_TIM = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_CLK_TIM));
-  zxlogf(INFO, "MIPI_DSI_HS_TIM = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_HS_TIM));
-  zxlogf(INFO, "MIPI_DSI_LP_TIM = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_LP_TIM));
-  zxlogf(INFO, "MIPI_DSI_ANA_UP_TIM = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_ANA_UP_TIM));
-  zxlogf(INFO, "MIPI_DSI_INIT_TIM = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_INIT_TIM));
-  zxlogf(INFO, "MIPI_DSI_WAKEUP_TIM = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_WAKEUP_TIM));
-  zxlogf(INFO, "MIPI_DSI_LPOK_TIM = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_LPOK_TIM));
-  zxlogf(INFO, "MIPI_DSI_LP_WCHDOG = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_LP_WCHDOG));
-  zxlogf(INFO, "MIPI_DSI_ANA_CTRL = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_ANA_CTRL));
-  zxlogf(INFO, "MIPI_DSI_CLK_TIM1 = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_CLK_TIM1));
-  zxlogf(INFO, "MIPI_DSI_TURN_WCHDOG = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_TURN_WCHDOG));
-  zxlogf(INFO, "MIPI_DSI_ULPS_CHECK = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_ULPS_CHECK));
-  zxlogf(INFO, "MIPI_DSI_TEST_CTRL0 = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_TEST_CTRL0));
-  zxlogf(INFO, "MIPI_DSI_TEST_CTRL1 = 0x%x", READ32_REG(DSI_PHY, MIPI_DSI_TEST_CTRL1));
+  zxlogf(INFO, "MIPI_DSI_PHY_CTRL = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_PHY_CTRL));
+  zxlogf(INFO, "MIPI_DSI_CHAN_CTRL = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_CHAN_CTRL));
+  zxlogf(INFO, "MIPI_DSI_CHAN_STS = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_CHAN_STS));
+  zxlogf(INFO, "MIPI_DSI_CLK_TIM = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_CLK_TIM));
+  zxlogf(INFO, "MIPI_DSI_HS_TIM = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_HS_TIM));
+  zxlogf(INFO, "MIPI_DSI_LP_TIM = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_LP_TIM));
+  zxlogf(INFO, "MIPI_DSI_ANA_UP_TIM = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_ANA_UP_TIM));
+  zxlogf(INFO, "MIPI_DSI_INIT_TIM = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_INIT_TIM));
+  zxlogf(INFO, "MIPI_DSI_WAKEUP_TIM = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_WAKEUP_TIM));
+  zxlogf(INFO, "MIPI_DSI_LPOK_TIM = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_LPOK_TIM));
+  zxlogf(INFO, "MIPI_DSI_LP_WCHDOG = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_LP_WCHDOG));
+  zxlogf(INFO, "MIPI_DSI_ANA_CTRL = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_ANA_CTRL));
+  zxlogf(INFO, "MIPI_DSI_CLK_TIM1 = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_CLK_TIM1));
+  zxlogf(INFO, "MIPI_DSI_TURN_WCHDOG = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_TURN_WCHDOG));
+  zxlogf(INFO, "MIPI_DSI_ULPS_CHECK = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_ULPS_CHECK));
+  zxlogf(INFO, "MIPI_DSI_TEST_CTRL0 = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_TEST_CTRL0));
+  zxlogf(INFO, "MIPI_DSI_TEST_CTRL1 = 0x%x", dsi_phy_mmio_->Read32(MIPI_DSI_TEST_CTRL1));
   zxlogf(INFO, "");
 
   zxlogf(INFO, "#############################");

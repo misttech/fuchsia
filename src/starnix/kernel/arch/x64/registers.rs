@@ -4,7 +4,7 @@
 
 use fuchsia_zircon as zx;
 
-use crate::syscalls::decls::Syscall;
+use starnix_uapi::{error, errors::Errno, user_regs_struct};
 
 /// The state of the task's registers when the thread of execution entered the kernel.
 /// This is a thin wrapper around [`zx::sys::zx_thread_state_general_regs_t`].
@@ -22,14 +22,14 @@ pub struct RegisterState {
 }
 
 impl RegisterState {
-    /// Saves any register state required to restart `syscall`.
-    pub fn save_registers_for_restart(&mut self, syscall: &Syscall) {
+    /// Saves any register state required to restart `syscall_number`.
+    pub fn save_registers_for_restart(&mut self, syscall_number: u64) {
         // The `rax` register read from the thread's state is clobbered by zircon with
         // ZX_ERR_BAD_SYSCALL, but it really should be the syscall number.
-        self.rax = syscall.decl.number;
+        self.rax = syscall_number;
 
         // `orig_rax` should hold the original value loaded into `rax` by the userspace process.
-        self.orig_rax = syscall.decl.number;
+        self.orig_rax = syscall_number;
     }
 
     /// Returns the register that indicates the single-machine-word return value from a
@@ -94,6 +94,69 @@ impl RegisterState {
     /// Resets the register that contains the application status flags.
     pub fn reset_flags(&mut self) {
         self.real_registers.rflags = 0;
+    }
+
+    /// Returns the value of the register at the offset in the user_regs_struct
+    /// data type.
+    pub fn get_user_register(&self, offset: usize) -> Result<usize, Errno> {
+        let val = if offset == memoffset::offset_of!(user_regs_struct, r15) {
+            self.real_registers.r15
+        } else if offset == memoffset::offset_of!(user_regs_struct, r14) {
+            self.real_registers.r14
+        } else if offset == memoffset::offset_of!(user_regs_struct, r13) {
+            self.real_registers.r13
+        } else if offset == memoffset::offset_of!(user_regs_struct, r12) {
+            self.real_registers.r12
+        } else if offset == memoffset::offset_of!(user_regs_struct, rbp) {
+            self.real_registers.rbp
+        } else if offset == memoffset::offset_of!(user_regs_struct, rbx) {
+            self.real_registers.rbx
+        } else if offset == memoffset::offset_of!(user_regs_struct, r11) {
+            self.real_registers.r11
+        } else if offset == memoffset::offset_of!(user_regs_struct, r10) {
+            self.real_registers.r10
+        } else if offset == memoffset::offset_of!(user_regs_struct, r9) {
+            self.real_registers.r9
+        } else if offset == memoffset::offset_of!(user_regs_struct, r8) {
+            self.real_registers.r8
+        } else if offset == memoffset::offset_of!(user_regs_struct, rax) {
+            self.real_registers.rax
+        } else if offset == memoffset::offset_of!(user_regs_struct, rcx) {
+            self.real_registers.rcx
+        } else if offset == memoffset::offset_of!(user_regs_struct, rdx) {
+            self.real_registers.rdx
+        } else if offset == memoffset::offset_of!(user_regs_struct, rsi) {
+            self.real_registers.rsi
+        } else if offset == memoffset::offset_of!(user_regs_struct, rdi) {
+            self.real_registers.rdi
+        } else if offset == memoffset::offset_of!(user_regs_struct, orig_rax) {
+            self.orig_rax
+        } else if offset == memoffset::offset_of!(user_regs_struct, rip) {
+            self.real_registers.rip
+        } else if offset == memoffset::offset_of!(user_regs_struct, cs) {
+            0
+        } else if offset == memoffset::offset_of!(user_regs_struct, eflags) {
+            self.real_registers.rflags
+        } else if offset == memoffset::offset_of!(user_regs_struct, rsp) {
+            self.real_registers.rsp
+        } else if offset == memoffset::offset_of!(user_regs_struct, ss) {
+            0
+        } else if offset == memoffset::offset_of!(user_regs_struct, fs_base) {
+            self.real_registers.fs_base
+        } else if offset == memoffset::offset_of!(user_regs_struct, gs_base) {
+            self.real_registers.gs_base
+        } else if offset == memoffset::offset_of!(user_regs_struct, ds) {
+            0
+        } else if offset == memoffset::offset_of!(user_regs_struct, es) {
+            0
+        } else if offset == memoffset::offset_of!(user_regs_struct, fs) {
+            0
+        } else if offset == memoffset::offset_of!(user_regs_struct, gs) {
+            0
+        } else {
+            return error!(EINVAL);
+        };
+        Ok(val as usize)
     }
 }
 

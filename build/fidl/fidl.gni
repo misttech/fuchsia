@@ -113,6 +113,7 @@ import("//build/testing/host_test_data.gni")
 #     Set to true to enable Zither bindings for this library.
 #     See //zircon/tools/zither/README.md for details.
 #
+#   applicable_licenses
 #   public_deps
 #   testonly
 #   visibility
@@ -178,6 +179,7 @@ template("fidl") {
     fidl_library(target_name) {
       forward_variables_from(invoker,
                              fidl_only + [
+                                   "applicable_licenses",
                                    "testonly",
                                    "visibility",
                                    "public_deps",
@@ -200,9 +202,47 @@ template("fidl") {
   }
 
   if (is_host) {
-    host_test_data("${target_name}_host_test_data") {
-      forward_variables_from(invoker, [ "visibility" ])
+    fidl_ir_root_target = "${target_name}_ir_root"
+    fidl_ir_root_base = get_label_info(":anything($fidl_toolchain)",
+                                       "root_gen_dir") + "/ir_root"
+    fidl_library_name = common_parameters.library_name
+    fidl_ir_root_dir = fidl_ir_root_base + "/" + fidl_library_name
+    fidl_ir_root_outfile = "${fidl_ir_root_base}/${fidl_library_name}/${fidl_library_name}.fidl.json"
+
+    # This is intended as an alternative easily-searchable setup to all_fidl_json.txt
+    # The only caveat is that this will fail if there are FIDL libraries with duplicate names as
+    # dependencies. A future step may be to create this directory structure in a given package's
+    # gen dir rather than the root FIDL gen dir.
+    action(fidl_ir_root_target) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
       sources = [ common_parameters.fidl_ir_json ]
+      script = "//build/fidl/gen_ir_root_out.py"
+      args = [
+        "--root-dir",
+        rebase_path(fidl_ir_root_base, root_build_dir),
+        "--ir-path",
+        rebase_path(common_parameters.fidl_ir_json, fidl_ir_root_dir),
+        "--library-name",
+        fidl_library_name,
+      ]
+      outputs = [ fidl_ir_root_outfile ]
+      deps = [ ":${common_parameters.fidl_target}($fidl_toolchain)" ]
+    }
+
+    host_test_data("_${target_name}_host_test_data") {
+      forward_variables_from(invoker,
+                             [
+                               "applicable_licenses",
+                               "visibility",
+                             ])
+      sources = [
+        common_parameters.fidl_ir_json,
+        fidl_ir_root_outfile,
+      ]
 
       # It's only necessary to depend on fidl_ir_target got get the FIDL IR json
       # file, but without depending on fidl_target, there is no entry in
@@ -210,7 +250,15 @@ template("fidl") {
       # the list of current FIDL IR json files.
       # TODO(b/295190178): append all_fidl_json.txt with inclusion of
       # fidl_ir_target target.
-      deps = [ ":${common_parameters.fidl_target}($fidl_toolchain)" ]
+      deps = [
+        ":${common_parameters.fidl_target}($fidl_toolchain)",
+        ":${fidl_ir_root_target}",
+      ]
+    }
+
+    group("${target_name}_host_test_data") {
+      testonly = true
+      deps = [ ":_${target_name}" ]
       if (defined(invoker.public_deps)) {
         foreach(pdep, invoker.public_deps) {
           label = get_label_info(pdep, "label_no_toolchain")
@@ -230,6 +278,7 @@ template("fidl") {
     fidl_go("${target_name}_go") {
       forward_variables_from(invoker,
                              [
+                               "applicable_licenses",
                                "testonly",
                                "visibility",
                                "public_deps",
@@ -264,6 +313,7 @@ template("fidl") {
       fidl_cpp_family(target_name) {
         forward_variables_from(invoker,
                                non_go_only + [
+                                     "applicable_licenses",
                                      "testonly",
                                      "visibility",
                                      "public_deps",
@@ -307,6 +357,7 @@ template("fidl") {
       fidl_rust("${target_name}_rust") {
         forward_variables_from(invoker,
                                [
+                                 "applicable_licenses",
                                  "testonly",
                                  "visibility",
                                  "public_deps",
@@ -316,41 +367,42 @@ template("fidl") {
         deps = marker_deps
         fidl_gen_dir += "/rust"
       }
-
-      if (enable_bindlib) {
-        # Only import the fidl_bind_library() template if bindlib is enabled.
-        import("//build/bind/fidl_bind_library.gni")
-
-        # Define the bindlib bindings.
-        fidl_bind_library("${target_name}_bindlib") {
-          forward_variables_from(invoker,
-                                 [
-                                   "testonly",
-                                   "visibility",
-                                 ])
-          forward_variables_from(common_parameters, "*", [ "fidl_target" ])
-          fidl_gen_dir += "/bindlib"
-        }
-      }
-
-      if (enable_banjo) {
-        # Only import fidl_banjo() if banjo is enabled.
-        import("//build/banjo/fidl_banjo.gni")
-
-        # Define the banjo bindings.
-        fidl_banjo("${target_name}_banjo") {
-          forward_variables_from(invoker,
-                                 [
-                                   "testonly",
-                                   "visibility",
-                                   "public_deps",
-                                 ])
-          forward_variables_from(common_parameters, "*")
-          fidl_gen_dir += "/banjo"
-        }
-      }
     } else {
       not_needed(invoker, [ "disable_rustdoc" ])
+    }
+
+    if (enable_bindlib) {
+      # Only import the fidl_bind_library() template if bindlib is enabled.
+      import("//build/bind/fidl_bind_library.gni")
+
+      # Define the bindlib bindings.
+      fidl_bind_library("${target_name}_bindlib") {
+        forward_variables_from(invoker,
+                               [
+                                 "applicable_licenses",
+                                 "testonly",
+                                 "visibility",
+                               ])
+        forward_variables_from(common_parameters, "*", [ "fidl_target" ])
+        fidl_gen_dir += "/bindlib"
+      }
+    }
+
+    if (enable_banjo) {
+      # Only import fidl_banjo() if banjo is enabled.
+      import("//build/banjo/fidl_banjo.gni")
+
+      # Define the banjo bindings.
+      fidl_banjo("${target_name}_banjo") {
+        forward_variables_from(invoker,
+                               [
+                                 "testonly",
+                                 "visibility",
+                                 "public_deps",
+                               ])
+        forward_variables_from(common_parameters, "*")
+        fidl_gen_dir += "/banjo"
+      }
     }
 
     if (enable_zither) {
@@ -373,21 +425,6 @@ template("fidl") {
       }
     } else {
       not_needed(invoker, [ "sources" ])
-    }
-
-    if (!is_fidl_toolchain) {
-      # Only import the fidl_tables() template if not in the fidl toolchain.
-      import("//build/c/fidl_c.gni")
-
-      # Define the fidl table bindings.
-      fidl_tables("${target_name}_tables") {
-        forward_variables_from(invoker,
-                               [
-                                 "testonly",
-                                 "visibility",
-                               ])
-        forward_variables_from(common_parameters, [ "fidl_target" ])
-      }
     }
   } else {
     not_needed(invoker,

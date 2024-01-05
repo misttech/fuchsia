@@ -6,7 +6,7 @@
             "filename": "fuchsia.inspect.Tree",
             "timestamp": "TIMESTAMP"
         },
-        "moniker": "realm_builder\\:CHILD_NAME/basic-1",
+        "moniker": "realm_builder:CHILD_NAME/basic-1",
         "payload": {
             "root": {
                 "fuchsia.inspect.Health": {
@@ -24,7 +24,7 @@
             "filename": "fuchsia.inspect.Tree",
             "timestamp": "TIMESTAMP"
         },
-        "moniker": "realm_builder\\:CHILD_NAME/basic-2",
+        "moniker": "realm_builder:CHILD_NAME/basic-2",
         "payload": {
             "root": {
                 "iquery": "rocks"
@@ -39,7 +39,7 @@
             "filename": "fuchsia.inspect.Tree",
             "timestamp": "TIMESTAMP"
         },
-        "moniker": "realm_builder\\:CHILD_NAME/basic-3",
+        "moniker": "realm_builder:CHILD_NAME/basic-3",
         "payload": {
             "root": {
                 "fuchsia.inspect.Health": {
@@ -47,6 +47,20 @@
                     "status": "OK"
                 },
                 "iquery": "rocks"
+            }
+        },
+        "version": 1
+    },
+    {
+        "data_source": "Inspect",
+        "metadata": {
+            "component_url": "fuchsia-pkg://fuchsia.com/iquery-tests#meta/inspect_sink_component.cm",
+            "timestamp": "TIMESTAMP"
+        },
+        "moniker": "realm_builder:CHILD_NAME/inspect-sink",
+        "payload": {
+            "root": {
+                "iquery": "rules"
             }
         },
         "version": 1

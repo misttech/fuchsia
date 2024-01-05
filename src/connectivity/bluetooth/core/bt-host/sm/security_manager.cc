@@ -4,9 +4,6 @@
 
 #include "security_manager.h"
 
-// TODO(fxbug.dev/100594): Remove once migration to pw_async is complete.
-#include <zircon/status.h>
-
 #include <memory>
 #include <optional>
 #include <type_traits>
@@ -52,7 +49,8 @@ class SecurityManagerImpl final : public SecurityManager,
   ~SecurityManagerImpl() override;
   SecurityManagerImpl(hci::LowEnergyConnection::WeakPtr link, l2cap::Channel::WeakPtr smp,
                       IOCapability io_capability, Delegate::WeakPtr delegate,
-                      BondableMode bondable_mode, gap::LESecurityMode security_mode);
+                      BondableMode bondable_mode, gap::LESecurityMode security_mode,
+                      pw::async::Dispatcher& dispatcher);
   // SecurityManager overrides:
   bool AssignLongTermKey(const LTK& ltk) override;
   void UpgradeSecurity(SecurityLevel level, PairingCallback callback) override;
@@ -164,6 +162,8 @@ class SecurityManagerImpl final : public SecurityManager,
   // the link if it finds an issue. Should only be called when an LTK is expected to exist.
   Result<> ValidateExistingLocalLtk();
 
+  pw::async::Dispatcher& pw_dispatcher_;
+
   // The ID that will be assigned to the next pairing operation.
   PairingProcedureId next_pairing_id_;
 
@@ -193,8 +193,7 @@ class SecurityManagerImpl final : public SecurityManager,
   // The role of the local device in pairing.
   Role role_;
 
-  async::TaskClosureMethod<SecurityManagerImpl, &SecurityManagerImpl::OnPairingTimeout>
-      timeout_task_{this};
+  SmartTask timeout_task_{pw_dispatcher_};
 
   // The presence of a particular phase in this variant indicates that a security upgrade is in
   // progress at the stored phase. No security upgrade is in progress if std::monostate is present.
@@ -221,8 +220,10 @@ SecurityManagerImpl::~SecurityManagerImpl() {
 SecurityManagerImpl::SecurityManagerImpl(hci::LowEnergyConnection::WeakPtr link,
                                          l2cap::Channel::WeakPtr smp, IOCapability io_capability,
                                          Delegate::WeakPtr delegate, BondableMode bondable_mode,
-                                         gap::LESecurityMode security_mode)
+                                         gap::LESecurityMode security_mode,
+                                         pw::async::Dispatcher& dispatcher)
     : SecurityManager(bondable_mode, security_mode),
+      pw_dispatcher_(dispatcher),
       next_pairing_id_(0),
       delegate_(std::move(delegate)),
       le_link_(std::move(link)),
@@ -246,6 +247,12 @@ SecurityManagerImpl::SecurityManagerImpl(hci::LowEnergyConnection::WeakPtr link,
   le_link_->set_encryption_change_callback(
       fit::bind_member<&SecurityManagerImpl::OnEncryptionChange>(this));
   sm_chan_->SetChannelHandler(weak_handler_.GetWeakPtr());
+
+  timeout_task_.set_function([this](pw::async::Context /*ctx*/, pw::Status status) {
+    if (status.ok()) {
+      OnPairingTimeout();
+    }
+  });
 }
 
 void SecurityManagerImpl::OnSecurityRequest(AuthReqField auth_req) {
@@ -768,17 +775,14 @@ void SecurityManagerImpl::OnPairingFailed(Error error) {
 
 void SecurityManagerImpl::StartNewTimer() {
   if (timeout_task_.is_pending()) {
-    BT_ASSERT(timeout_task_.Cancel() == ZX_OK);
+    BT_ASSERT(timeout_task_.Cancel());
   }
-  timeout_task_.PostDelayed(async_get_default_dispatcher(), kPairingTimeout);
+  timeout_task_.PostAfter(kPairingTimeout);
 }
 
 void SecurityManagerImpl::StopTimer() {
-  if (timeout_task_.is_pending()) {
-    zx_status_t status = timeout_task_.Cancel();
-    if (status != ZX_OK) {
-      bt_log(TRACE, "sm", "smp: failed to stop timer: %s", zx_status_get_string(status));
-    }
+  if (timeout_task_.is_pending() && !timeout_task_.Cancel()) {
+    bt_log(TRACE, "sm", "smp: failed to stop timer");
   }
 }
 
@@ -834,9 +838,11 @@ Result<> SecurityManagerImpl::ValidateExistingLocalLtk() {
 
 std::unique_ptr<SecurityManager> SecurityManager::Create(
     hci::LowEnergyConnection::WeakPtr link, l2cap::Channel::WeakPtr smp, IOCapability io_capability,
-    Delegate::WeakPtr delegate, BondableMode bondable_mode, gap::LESecurityMode security_mode) {
+    Delegate::WeakPtr delegate, BondableMode bondable_mode, gap::LESecurityMode security_mode,
+    pw::async::Dispatcher& dispatcher) {
   return std::make_unique<SecurityManagerImpl>(std::move(link), std::move(smp), io_capability,
-                                               std::move(delegate), bondable_mode, security_mode);
+                                               std::move(delegate), bondable_mode, security_mode,
+                                               dispatcher);
 }
 
 SecurityManager::SecurityManager(BondableMode bondable_mode, gap::LESecurityMode security_mode)

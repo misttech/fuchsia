@@ -2,53 +2,14 @@
     security_policy: {
         job_policy: {
             ambient_mark_vmo_exec: [
-                // The v2 Flutter and Dart JIT runners (which are not used for
-                // release builds) execute VMOs in order to run Flutter and
-                // Dart components.
-                // TODO(fxb/88626): These runners are configured in
-                // experiences.git (a product) and references to them do not
-                // belong in fuchsia.git (the platform). Add support for
-                // per-product policies and remove the runners from here.
-                // TODO(fxbug.dev/105101): remove all dart/flutter runners when
-                // Dart is extracted from fuchsia.git into an external
-                // repository.
-                "/core/session-manager/session:session/dart_jit_runner",
-                "/core/session-manager/session:session/flutter_jit_runner",
-                "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/chrome",
-
-                // FOR _ENG BUILDS ONLY: We allow elements in the Workstation
-                // session to access ambient accessibility to develop
-                // runnerless Flutter apps using JIT compilation (which enables hot
-                // reload). This should never be exposed to release builds, which
-                // should use AOT compilation instead.
-                "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/elements:**",
-                "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/shell_settings:**",
-                "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/terminal:**",
-
                 // We allow tests to access ambient executability in the same
                 // way that we're permissive with use of the components v1
                 // deprecated-ambient-replace-as-executable feature and
                 // VmexResource protocol on eng builds.
                 "/core/test_manager/**",
                 "/core/testing/**",
-
-                // TODO(fxbug.dev/105101): remove all dart runners when Dart is
-                // extracted from fuchsia.git into an external repository.
-                "/core/dart_jit_runner",
-                "/core/dart_aot_runner",
-                "/core/dart_jit_product_runner",
-                "/core/dart_aot_product_runner",
-            ],
-            main_process_critical: [
-                "/bootstrap/archivist",
-                "/bootstrap/devfs",
-                "/bootstrap/devfs-with-pkg",
-                "/bootstrap/driver_manager",
-                "/bootstrap/power_manager",
-                "/bootstrap/shutdown_shim",
             ],
             create_raw_processes: [
-                "/core/starnix_runner/kernels:**",
                 "/core/test_manager/elf_test_create_raw_processes_ambient_exec_runner",
                 "/core/test_manager/elf_test_create_raw_processes_runner",
                 "/core/test_manager/starnix_unit_test_runner",
@@ -67,20 +28,6 @@
                 source_name: "fuchsia.boot.RootResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/console-launcher",
-                    "/bootstrap/driver_manager",
-
-                    // Driver component names vary depending on the
-                    // exact hardware configuration of the board.
-                    // Grant all drivers the ability to access the root
-                    // resource because of this.
-                    // TODO(fxbug.dev/93188): remove this once the root
-                    // resource is not widely used.
-                    "/bootstrap/boot-drivers:**",
-                    "/bootstrap/pkg-drivers:**",
-                    "/bootstrap/netsvc",
-                    "/bootstrap/svchost",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
 
@@ -95,10 +42,11 @@
                 source_name: "fuchsia.kernel.CpuResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/power_manager",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
+
+                    // TODO(b/316023943): Remove after SGA is ready.
+                    "/core/testing/starnix-tests:**",
 
                     // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
                     // no longer run in the sshd realm.
@@ -111,9 +59,21 @@
                 source_name: "fuchsia.kernel.DebugResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/console",
-                    "/core/debug_serial",
+                    "/core/testing/system-tests:**",
+                    "/core/test_manager/system-tests:**",
+
+                    // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
+                    // no longer run in the sshd realm.
+                    "/core/sshd-host/shell:**",
+                ],
+            },
+            {
+                source_moniker: "<component_manager>",
+                source: "component",
+                source_name: "fuchsia.kernel.FramebufferResource",
+                capability: "protocol",
+                target_monikers: [
+                    "/bootstrap/boot-drivers:dev",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
 
@@ -128,7 +88,6 @@
                 source_name: "fuchsia.kernel.HypervisorResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
                     "/core/zircon-guest-manager/vmm",
                     "/core/debian-guest-manager/vmm",
                     "/core/termina-guest-manager/vmm",
@@ -146,7 +105,6 @@
                 source_name: "fuchsia.kernel.InfoResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
                     "/bootstrap/boot-drivers:**",
                     "/bootstrap/pkg-drivers:**",
                     "/bootstrap/full-pkg-drivers:**",
@@ -161,10 +119,24 @@
             {
                 source_moniker: "<component_manager>",
                 source: "component",
+                source_name: "fuchsia.kernel.IommuResource",
+                capability: "protocol",
+                target_monikers: [
+                    "/bootstrap/boot-drivers:dev",
+                    "/core/testing/system-tests:**",
+                    "/core/test_manager/system-tests:**",
+
+                    // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
+                    // no longer run in the sshd realm.
+                    "/core/sshd-host/shell:**",
+                ],
+            },
+            {
+                source_moniker: "<component_manager>",
+                source: "component",
                 source_name: "fuchsia.kernel.IoportResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
                     "/bootstrap/boot-drivers:dev",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -180,7 +152,6 @@
                 source_name: "fuchsia.kernel.IrqResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
                     "/bootstrap/boot-drivers:dev",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -196,15 +167,9 @@
                 source_name: "fuchsia.kernel.RootJob",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/console-launcher",
-                    "/bootstrap/driver_manager",
-                    "/bootstrap/netsvc",
-                    "/bootstrap/pwrbtn-monitor",
-                    "/bootstrap/svchost",
                     "/core/process_explorer",
                     "/core/profiler",
-                    "/core/debug_agent",
+                    "/core/debugger/agents:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
 
@@ -219,10 +184,6 @@
                 source_name: "fuchsia.kernel.RootJobForInspect",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/console-launcher",
-                    "/bootstrap/netsvc",
-                    "/core/memory_monitor",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
 
@@ -237,7 +198,6 @@
                 source_name: "fuchsia.kernel.MexecResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap/driver_manager",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -248,7 +208,6 @@
                 source_name: "fuchsia.kernel.MmioResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
                     "/bootstrap/boot-drivers:dev",
                     "/core/zircon-guest-manager/vmm",
                     "/core/debian-guest-manager/vmm",
@@ -267,9 +226,6 @@
                 source_name: "fuchsia.kernel.PowerResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/driver_manager",
-                    "/core/thermd",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
 
@@ -284,7 +240,6 @@
                 source_name: "fuchsia.kernel.SmcResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
                     "/bootstrap/boot-drivers:dev",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -300,22 +255,18 @@
                 source_name: "fuchsia.kernel.VmexResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/fshost/blobfs",
-
                     // TODO(fxbug.dev/122055): Remove once merkle verification happens
                     // out-of-process.
                     "/bootstrap/fshost/fxfs",
                     "/core/zircon-guest-manager/vmm",
                     "/core/debian-guest-manager/vmm",
-                    "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/chrome",
                     "/core/termina-guest-manager/vmm",
-                    "/core/starnix_runner/kernels:**",
                     "/core/testing/starnix-tests:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                     "/core/test_manager/chromium-system-tests:**",
                     "/core/test_manager/chromium-tests:**",
+                    "/core/testing/chromium-tests:**",
 
                     // debug-dash-launcher is used in engineering builds to launch dash shells.
                     // It uses PackageResolver to add tool package directories into the dash
@@ -343,10 +294,6 @@
                 source_name: "blob",
                 capability: "directory",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/console-launcher",
-                    "/bootstrap/fshost",
-
                     // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
                     // no longer run in the sshd realm.
                     "/core/sshd-host/shell:**",
@@ -367,11 +314,6 @@
                 source_name: "data",
                 capability: "directory",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/console-launcher",
-                    "/bootstrap/fshost",
-                    "/core",
-                    "/core/minfs",
                     "/core/ssh-key-manager",
                     "/core/sshd-host",
 
@@ -393,9 +335,6 @@
                 source_name: "tmp",
                 capability: "directory",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/console-launcher",
-                    "/bootstrap/fshost",
                     "/bootstrap/netsvc",
                     "/core",
 
@@ -420,18 +359,6 @@
                 ],
             },
             {
-                source_moniker: "/bootstrap/fshost/blobfs",
-                source: "component",
-                source_name: "blob-exec",
-                capability: "directory",
-                target_monikers: [
-                    "/bootstrap/fshost",
-                    "/bootstrap/fshost/blobfs",
-                    "/bootstrap/pkg-cache",
-                    "/bootstrap/base_resolver",
-                ],
-            },
-            {
                 // We restrict access to PackageResolver because it gives direct access to package
                 // handles which provide executability which bypass VX security policy.
                 source_moniker: "/core/pkg-resolver",
@@ -449,10 +376,6 @@
                     // into the dash environment.
                     "/core/debug-dash-launcher",
                     "/core/process_resolver",
-                    "/core/full-resolver",
-                    "/core/system-update/omaha-client-service",
-                    "/core/system-update/system-update-checker",
-                    "/core/system-update/system-updater",
 
                     // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
                     // no longer run in the sshd realm.
@@ -474,23 +397,8 @@
                     // This protocol is available in the serial console
                     "/bootstrap/console-launcher",
 
-                    // This collection is used by CTS tests
-                    "/core/test_manager/cts-tests:**",
-
                     // This collection is used by CTF tests
                     "/core/testing/ctf-tests:**",
-
-                    // TODO(fxbug.dev/105828): terminal.cm instances are
-                    // launched as children of the application shell, via its
-                    // "elements" collection. Terminal requires some additional
-                    // permissions gated through this policy file. If/when these
-                    // permissions can be migrated to an ermine-specific policy
-                    // file (outside fuchsia.git), the following entry should be
-                    // removed here.
-                    //
-                    // This protocol is available to the terminal in workstation
-                    "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/elements:**",
-                    "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/terminal:**",
 
                     // TODO(https://fxbug.dev/106062): Scrutiny throws an routing error unless
                     // this is added. `process_resolver` does not have a `use` declaration for
@@ -507,7 +415,7 @@
             {
                 // We restrict access to PackageResolver because it gives direct access to
                 // executable package handles.
-                source_moniker: "/bootstrap/base_resolver",
+                source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
                 source_name: "fuchsia.pkg.PackageResolver",
                 capability: "protocol",
@@ -518,7 +426,7 @@
             {
                 // We restrict access to component.resolution.Resolver because it gives direct
                 // access to executable package handles.
-                source_moniker: "/bootstrap/base_resolver",
+                source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
                 source_name: "fuchsia.component.resolution.Resolver",
                 capability: "protocol",
@@ -581,16 +489,6 @@
                     // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
                     // no longer run in the sshd realm.
                     "/core/sshd-host/shell:**",
-
-                    // TODO(fxbug.dev/105828): terminal.cm instances are
-                    // launched as children of the application shell, via its
-                    // "elements" collection. Terminal requires some additional
-                    // permissions gated through this policy file. If/when these
-                    // permissions can be migrated to an ermine-specific policy
-                    // file (outside fuchsia.git), the following entry should be
-                    // removed here.
-                    "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/elements:**",
-                    "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/terminal:**",
                 ],
             },
             {
@@ -611,6 +509,7 @@
                     // we should remove this.
                     "/core/test_manager/chromium-system-tests:**",
                     "/core/test_manager/chromium-tests:**",
+                    "/core/testing/chromium-tests:**",
 
                     // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
                     // no longer run in the sshd realm.
@@ -630,16 +529,6 @@
                     // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
                     // no longer run in the sshd realm.
                     "/core/sshd-host/shell:**",
-
-                    // TODO(fxbug.dev/105828): terminal.cm instances are
-                    // launched as children of the application shell, via its
-                    // "elements" collection. Terminal requires some additional
-                    // permissions gated through this policy file. If/when these
-                    // permissions can be migrated to an ermine-specific policy
-                    // file (outside fuchsia.git), the following entry should be
-                    // removed here.
-                    "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/elements:**",
-                    "/core/session-manager/session:session/workstation_session/login_shell/application_shell:*/terminal:**",
                 ],
             },
             {
@@ -695,8 +584,6 @@
                 target_monikers: [
                     "/bootstrap",
                     "/bootstrap/cr50_agent",
-                    "/core/account",
-                    "/core/account/credential_manager",
 
                     // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
                     // no longer run in the sshd realm.
@@ -722,37 +609,6 @@
                 ],
             },
 
-            // TODO(fxbug.dev/91765) - Remove source moniker after from target.
-            {
-                source_moniker: "/core/account/credential_manager",
-                source: "component",
-                source_name: "fuchsia.identity.credential.Manager",
-                capability: "protocol",
-                target_monikers: [
-                    "/core/account/credential_manager",
-                    "/core/account/password_authenticator",
-                ],
-            },
-
-            // TODO(https://fxbug.dev/91765)
-            {
-                source_moniker: "/core/account/password_authenticator",
-                source: "component",
-                source_name: "fuchsia.identity.account.AccountManager",
-                capability: "protocol",
-                target_monikers: [
-                    "/core/account",
-                    "/core/account/password_authenticator",
-                    "/core/session-manager/session:session",
-                    "/core/session-manager/session:session/workstation_session",
-                    "/core/session-manager/session:session/workstation_session/login_shell",
-
-                    // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
-                    // no longer run in the sshd realm.
-                    "/core/sshd-host/shell:**",
-                ],
-            },
-
             // TODO(https://fxbug.dev/93790): not security policy; split out into separate file.
             // TODO(https://fxbug.dev/93579): once product assembly supports product-specific
             // components running in the network realm, remove this policy.
@@ -765,8 +621,6 @@
                     "/core/network",
                     "/core/network/netstack",
                     "/core/lowpan-ot-driver",
-                    "/core/starnix_runner",
-                    "/core/starnix_runner/kernels:**",
                     "/core/test_manager",
                     "/core/testing/starnix-tests:**",
                 ],
@@ -780,8 +634,6 @@
                     "/core/network",
                     "/core/network/netstack",
                     "/core/network/test-components:**",
-                    "/core/starnix_runner",
-                    "/core/starnix_runner/kernels:**",
 
                     // TODO(https://fxbug.dev/111695): Move away from Root API.
                     "/core/weavestack",
@@ -798,8 +650,6 @@
                     "/core/network/netstack/dhcp-client",
                     "/core/network/netstack",
                     "/core/network/test-components:**",
-                    "/core/starnix_runner",
-                    "/core/starnix_runner/kernels:**",
                 ],
             },
             {
@@ -808,8 +658,6 @@
                 source_name: "fuchsia.factory.lowpan.FactoryLookup",
                 capability: "protocol",
                 target_monikers: [
-                    "/core/lowpanservice",
-
                     // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
                     // no longer run in the sshd realm.
                     "/core/sshd-host/shell:**",
@@ -821,8 +669,6 @@
                 source_name: "fuchsia.lowpan.device.DeviceExtraConnector",
                 capability: "protocol",
                 target_monikers: [
-                    "/core/lowpanservice",
-
                     // TODO(https://fxbug.dev/107899): Create explicit security policies for
                     // out-of-tree product variants.
                     "/core/factory/realm_builder:**",
@@ -838,8 +684,6 @@
                 source_name: "fuchsia.lowpan.device.DeviceRouterExtraConnector",
                 capability: "protocol",
                 target_monikers: [
-                    "/core/lowpanservice",
-
                     // TODO(fxbug.dev/130576): Remove once the shell tools that use this capability
                     // no longer run in the sshd realm.
                     "/core/sshd-host/shell:**",
@@ -875,8 +719,6 @@
                     "/bootstrap/power_manager",
                     "/bootstrap/sysinfo",
                     "/bootstrap/vboot-fwparam",
-                    "/core/account/account_manager/account_handlers:**",
-                    "/core/account/password_authenticator",
                     "/core/audio_recording",
                     "/core/driver_playground",
                     "/core/factory",
@@ -913,46 +755,6 @@
                     "/bootstrap/devfs",
                     "/bootstrap/driver_manager",
                 ],
-            },
-        ],
-        child_policy: {
-            reboot_on_terminate: [
-                "/bootstrap/driver_index",
-                "/bootstrap/fshost",
-                "/core",
-                "/core/audio_core",
-                "/core/network/netstack",
-                "/core/setui_service",
-                "/core/sysmem_connector",
-                "/core/system-update/omaha-client-service",
-                "/core/system-update/system-update-checker",
-                "/core/system-update/system-update-committer",
-                "/core/wlancfg",
-                "/core/wlandevicemonitor",
-                "/core/wlanstack",
-            ],
-        },
-        debug_registration_policy: [
-            {
-                debug: "protocol",
-                environment_name: "test-env",
-                source_moniker: "/core/test_manager/**",
-                source_name: "fuchsia.debugdata.Publisher",
-                target_moniker: "/core/test_manager/**",
-            },
-            {
-                debug: "protocol",
-                environment_name: "test-env",
-                source_moniker: "/core/testing/**",
-                source_name: "fuchsia.debugdata.Publisher",
-                target_moniker: "/core/testing/**",
-            },
-            {
-                debug: "protocol",
-                environment_name: "fuzzed-env",
-                source_moniker: "/core/test_manager/tests:**",
-                source_name: "fuchsia.fuzzer.CoverageDataCollector",
-                target_moniker: "/core/test_manager/tests:**",
             },
         ],
     },

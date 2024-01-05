@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/assembly/assembled_system.gni")
+import("//build/assembly/board_configuration.gni")
 import("//build/assembly/generated_partitions_config.gni")
 import("//build/assembly/product_assembly_configuration.gni")
 import("//build/config.gni")
@@ -43,15 +44,11 @@ if (is_fuchsia) {
     outputs = [ "path/to/version" ]
   }
 
-  generated_file("board_config") {
-    outputs = [ files.board_config ]
-    output_conversion = "json"
-    contents = {
-      name = "test"
-      filesystems = {
-        fvm = {
-          sparse_output = {
-          }
+  board_configuration("board_config") {
+    name = "test"
+    filesystems = {
+      fvm = {
+        sparse_output = {
         }
       }
     }
@@ -66,7 +63,6 @@ if (is_fuchsia) {
         filesystems = {
           image_name = "assembly"
           image_mode = "no_image"
-          volume = "fxfs"
         }
       }
     }
@@ -74,11 +70,6 @@ if (is_fuchsia) {
 
   assembled_system("assembly") {
     allow_eng_platform_bundle_use = true
-    use_assembly_fshost = true
-
-    # We must skip validation because we are using the "empty" feature set level
-    # and are not generating a fshost in assembly.
-    skip_fshost_validator = true
     testonly = true
     bootfs_labels = [ ":bootfs" ]
     base_packages = []
@@ -88,14 +79,12 @@ if (is_fuchsia) {
     ]
 
     product_assembly_config_label = ":assembly_config"
-    board_config = files.board_config
-    deps = [ ":board_config" ]
+    board_config_label = ":board_config"
   }
 
   product_bundle("product_bundle") {
     testonly = true
-    skip_scrutiny = true
-    skip_scrutiny_recovery = true
+    name = "scrutiny"
     deps = [
       ":assembly",
       ":partitions",
@@ -150,21 +139,16 @@ if (is_host) {
       "//src/developer/ffx/plugins/scrutiny/verify/*",
     ]
 
-    configs += [
-      ":test_config",
-
-      # TODO(fxbug.dev/92670): Needed by test.  Remove when fixed.
-      "//build/config/rust:output_dir_sensitive",
-    ]
+    configs += [ ":test_config" ]
 
     deps = [
       "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
       "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
       "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia-url",
-      "//src/security/lib/scrutiny/config",
       "//src/security/lib/scrutiny/framework",
       "//src/security/lib/scrutiny/utils",
+      "//src/sys/lib/cm_config",
       "//src/sys/lib/cm_fidl_validator",
       "//src/sys/lib/cm_rust",
       "//src/sys/lib/cm_types",
@@ -198,13 +182,11 @@ if (is_host) {
         ":testdata",
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
         "//src/lib/fuchsia",
+        "//src/security/lib/scrutiny/config",
         "//src/security/lib/scrutiny/testing",
-        "//src/sys/lib/fuchsia-zbi/abi",
         "//third_party/rust_crates:assert_matches",
-        "//third_party/rust_crates:sha2",
         "//third_party/rust_crates:tempfile",
         "//third_party/rust_crates:uuid",
-        "//third_party/rust_crates:zerocopy",
         "//tools/lib/cml",
       ]
     }
@@ -220,9 +202,7 @@ if (is_host) {
       "src/core/controller/mod.rs",
       "src/core/controller/package.rs",
       "src/core/controller/package_extract.rs",
-      "src/core/controller/sysmgr.rs",
       "src/core/controller/utils.rs",
-      "src/core/controller/zbi.rs",
       "src/core/mod.rs",
       "src/core/package/collector.rs",
       "src/core/package/mod.rs",
@@ -240,7 +220,6 @@ if (is_host) {
       "src/engine/mod.rs",
       "src/lib.rs",
       "src/search/controller/components.rs",
-      "src/search/controller/manifests.rs",
       "src/search/controller/mod.rs",
       "src/search/controller/package_list.rs",
       "src/search/controller/packages.rs",
@@ -249,7 +228,6 @@ if (is_host) {
       "src/static_pkgs/collector.rs",
       "src/static_pkgs/controller.rs",
       "src/static_pkgs/mod.rs",
-      "src/sys/mod.rs",
       "src/toolkit/controller/blobfs.rs",
       "src/toolkit/controller/far.rs",
       "src/toolkit/controller/fvm.rs",
@@ -265,6 +243,7 @@ if (is_host) {
       "src/verify/controller/capability_routing.rs",
       "src/verify/controller/component_resolvers.rs",
       "src/verify/controller/mod.rs",
+      "src/verify/controller/pre_signing.rs",
       "src/verify/controller/route_sources.rs",
       "src/verify/controller/structured_config.rs",
       "src/verify/mod.rs",

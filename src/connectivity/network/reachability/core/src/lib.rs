@@ -4,6 +4,7 @@
 
 #![deny(clippy::unused_async)]
 
+pub mod dig;
 mod inspect;
 mod neighbor_cache;
 pub mod ping;
@@ -22,6 +23,7 @@ use {
     fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fuchsia_async as fasync,
     fuchsia_inspect::{Inspector, Node as InspectNode},
+    fuchsia_zircon as zx,
     futures::channel::mpsc,
     inspect::InspectInfo,
     itertools::Itertools,
@@ -39,6 +41,11 @@ const IPV4_INTERNET_CONNECTIVITY_CHECK_ADDRESS: std::net::IpAddr = std_ip!("8.8.
 const IPV6_INTERNET_CONNECTIVITY_CHECK_ADDRESS: std::net::IpAddr = std_ip!("2001:4860:4860::8888");
 const UNSPECIFIED_V4: fidl_fuchsia_net::Subnet = fidl_subnet!("0.0.0.0/0");
 const UNSPECIFIED_V6: fidl_fuchsia_net::Subnet = fidl_subnet!("::0/0");
+const GSTATIC: &'static str = "www.gstatic.com";
+// Gstatic has a TTL of 300 seconds, therefore, we will perform a lookup every
+// 300 seconds since we won't get any better indication of DNS function.
+// TODO(fxbug.dev/121010): Dynamically query TTL based on the domain's DNS record
+const DNS_PROBE_PERIOD: zx::Duration = zx::Duration::from_seconds(300);
 
 // Timeout ID for the fake clock component that restrains the integration tests from reaching the
 // FIDL timeout and subsequently failing. Shared by the eventloop and integration library.
@@ -74,22 +81,47 @@ pub enum State {
     Gateway = 25,
     /// Expected response seen from reachability test URL.
     Internet = 30,
+    /// DNS Resolution succeeded.
+    DnsResolved = 35,
 }
 
 impl State {
     fn has_interface_up(&self) -> bool {
         match self {
             State::None | State::Removed | State::Down => false,
-            State::Up | State::Local | State::Gateway | State::Internet => true,
+            State::Up | State::Local | State::Gateway | State::Internet | State::DnsResolved => {
+                true
+            }
         }
     }
 
     fn has_internet(&self) -> bool {
-        *self == State::Internet
+        match self {
+            State::None
+            | State::Removed
+            | State::Down
+            | State::Up
+            | State::Local
+            | State::Gateway => false,
+            State::Internet | State::DnsResolved => true,
+        }
+    }
+
+    fn has_dns(&self) -> bool {
+        match self {
+            State::None
+            | State::Removed
+            | State::Down
+            | State::Up
+            | State::Local
+            | State::Gateway
+            | State::Internet => false,
+            State::DnsResolved => true,
+        }
     }
 
     fn has_gateway(&self) -> bool {
-        *self == State::Gateway || *self == State::Internet
+        *self == State::Gateway || self.has_internet()
     }
 
     fn log_state_vals_inspect(node: &InspectNode, name: &str) {
@@ -122,6 +154,7 @@ impl std::str::FromStr for State {
             "Local" => Ok(Self::Local),
             "Gateway" => Ok(Self::Gateway),
             "Internet" => Ok(Self::Internet),
+            "DnsResolved" => Ok(Self::DnsResolved),
             _ => Err(()),
         }
     }
@@ -263,6 +296,10 @@ impl IpVersions<Option<State>> {
         self.satisfies(State::has_internet)
     }
 
+    fn has_dns(&self) -> bool {
+        self.satisfies(State::has_dns)
+    }
+
     fn has_gateway(&self) -> bool {
         self.satisfies(State::has_gateway)
     }
@@ -356,6 +393,10 @@ impl StateInfo {
 
     pub fn system_has_gateway(&self) -> bool {
         self.get_system().state().has_gateway()
+    }
+
+    pub fn system_has_active_dns(&self) -> bool {
+        self.get_system().state().has_dns()
     }
 
     /// Report the duration of the current state for each interface and each protocol.
@@ -463,7 +504,7 @@ pub trait NetworkChecker {
     fn resume(
         &mut self,
         cookie: NetworkCheckCookie,
-        ping_success: bool,
+        result: NetworkCheckResult,
     ) -> Result<NetworkCheckerOutcome, anyhow::Error>;
 }
 
@@ -482,8 +523,12 @@ enum NetworkCheckState {
     // detected and no gateway pings successfully return.
     PingGateway,
     // `PingInternet` sends a ping to an IPv4 and IPv6 external address. It can only transition to
-    // `Idle` after it has completed internet pings.
+    // `ResolveDns` after it has completed internet pings.
     PingInternet,
+    // `ResolveDns` makes a DNS request for the provided domain and then transitions to `Idle`
+    // after.
+    ResolveDns,
+    // it has completed.
     // `Idle` terminates a network check. The system is ready to begin processing another network
     // check for interface associated with this check.
     Idle,
@@ -494,8 +539,28 @@ impl std::fmt::Display for NetworkCheckState {
             NetworkCheckState::Begin => write!(f, "Begin"),
             NetworkCheckState::PingGateway => write!(f, "Ping Gateway"),
             NetworkCheckState::PingInternet => write!(f, "Ping Internet"),
+            NetworkCheckState::ResolveDns => write!(f, "Resolve DNS"),
             NetworkCheckState::Idle => write!(f, "Idle"),
         }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ResolvedIps {
+    v4: Vec<std::net::Ipv4Addr>,
+    v6: Vec<std::net::Ipv6Addr>,
+}
+
+struct PersistentNetworkCheckContext {
+    // Map of resolved IP addresses indexed by domain name.
+    resolved_addrs: HashMap<String, ResolvedIps>,
+    // Dns Resolve Time
+    resolved_time: zx::Time,
+}
+
+impl Default for PersistentNetworkCheckContext {
+    fn default() -> Self {
+        Self { resolved_addrs: Default::default(), resolved_time: zx::Time::INFINITE_PAST }
     }
 }
 
@@ -519,7 +584,9 @@ struct NetworkCheckContext {
     router_discoverable: bool,
     // Whether the gateway successfully responded to pings.
     gateway_pingable: bool,
-    // TODO (fxbug.dev/123591): Add tombstone marker to inform NetworkCheck that the interface has
+    // Context that persists between check cycles
+    persistent_context: PersistentNetworkCheckContext,
+    // TODO(fxbug.dev/123591): Add tombstone marker to inform NetworkCheck that the interface has
     // been removed and we no longer need to run checks on this interface. This can occur when
     // receiving an interface remote event, but a network check for that interface is still in
     // progress.
@@ -529,6 +596,35 @@ impl NetworkCheckContext {
     fn set_global_state(&mut self, state: State) {
         self.discovered_state_v4 = state;
         self.discovered_state_v6 = state;
+    }
+
+    fn initiate_ping(
+        &mut self,
+        id: Id,
+        interface_name: &str,
+        network_check_sender: &mpsc::UnboundedSender<(NetworkCheckAction, NetworkCheckCookie)>,
+        new_state: NetworkCheckState,
+        addrs: Vec<std::net::SocketAddr>,
+    ) {
+        self.checker_state = new_state;
+        self.ping_addrs = addrs;
+        self.pings_expected = self.ping_addrs.len();
+        self.pings_completed = 0;
+        self.ping_addrs
+            .iter()
+            .map(|addr| {
+                let action = NetworkCheckAction::Ping(PingParameters {
+                    interface_name: interface_name.to_string(),
+                    addr: addr.clone(),
+                });
+                (action, NetworkCheckCookie { id })
+            })
+            .for_each(|message| match network_check_sender.unbounded_send(message) {
+                Ok(()) => {}
+                Err(e) => {
+                    debug!("unable to send network check internet msg: {:?}", e)
+                }
+            });
     }
 }
 
@@ -545,6 +641,7 @@ impl Default for NetworkCheckContext {
             always_ping_internet: true,
             router_discoverable: false,
             gateway_pingable: false,
+            persistent_context: Default::default(),
         }
     }
 }
@@ -554,19 +651,63 @@ impl Default for NetworkCheckContext {
 pub struct NetworkCheckCookie {
     /// The interface id.
     id: Id,
-    /// The action associated with this request.
-    action: NetworkCheckAction,
+}
+
+#[derive(Debug, Clone)]
+pub enum NetworkCheckResult {
+    Ping { parameters: PingParameters, success: bool },
+    ResolveDns { parameters: ResolveDnsParameters, ips: Option<ResolvedIps> },
+}
+
+#[derive(Debug, Clone)]
+pub struct PingParameters {
+    /// The name of the interface sending the ping.
+    pub interface_name: std::string::String,
+    /// The address to ping.
+    pub addr: std::net::SocketAddr,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolveDnsParameters {
+    /// The name of the interface sending the ping.
+    pub interface_name: std::string::String,
+    /// The domain to resolve.
+    pub domain: String,
+}
+
+impl NetworkCheckResult {
+    fn interface_name(&self) -> &str {
+        match self {
+            NetworkCheckResult::Ping {
+                parameters: PingParameters { interface_name, .. }, ..
+            } => interface_name,
+            NetworkCheckResult::ResolveDns {
+                parameters: ResolveDnsParameters { interface_name, .. },
+                ..
+            } => interface_name,
+        }
+    }
+
+    fn ping_result(self) -> Option<(PingParameters, bool)> {
+        match self {
+            NetworkCheckResult::Ping { parameters, success } => Some((parameters, success)),
+            _ => None,
+        }
+    }
+
+    fn resolve_dns_result(self) -> Option<(ResolveDnsParameters, Option<ResolvedIps>)> {
+        match self {
+            NetworkCheckResult::ResolveDns { parameters, ips } => Some((parameters, ips)),
+            _ => None,
+        }
+    }
 }
 
 /// `NetworkCheckAction` describes the action to be completed before resuming the network check.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum NetworkCheckAction {
-    Ping {
-        /// The name of the interface sending the ping.
-        interface_name: std::string::String,
-        /// The address to ping.
-        addr: std::net::SocketAddr,
-    },
+    Ping(PingParameters),
+    ResolveDns(ResolveDnsParameters),
 }
 
 /// `Monitor` monitors the reachability state.
@@ -723,96 +864,6 @@ impl Monitor {
         }
     }
 
-    fn handle_ping_action(
-        &mut self,
-        cookie: NetworkCheckCookie,
-        success: bool,
-    ) -> Result<NetworkCheckerOutcome, anyhow::Error> {
-        let id = Id::from(cookie.id);
-        let (interface_name, addr) = match cookie.action {
-            NetworkCheckAction::Ping { interface_name, addr } => (interface_name, addr),
-        };
-        info!("handle ping: success: {}; interface id: {}; ping address: {}", success, id, addr);
-
-        let ctx = self
-            .interface_context
-            .get_mut(&id)
-            .ok_or(anyhow!("handle ping: interface id {} should already exist in map", id))?;
-
-        ctx.pings_completed = ctx.pings_completed + 1;
-
-        match ctx.checker_state {
-            NetworkCheckState::Begin | NetworkCheckState::Idle => {
-                return Err(anyhow!(
-                    "handle ping: interface id: {}; state: {:?}; {}/{} pings completed",
-                    ctx.checker_state,
-                    id,
-                    ctx.pings_completed,
-                    ctx.pings_expected
-                ));
-            }
-            NetworkCheckState::PingGateway | NetworkCheckState::PingInternet => {}
-        }
-
-        info!(
-            "handle ping: after ping response {}/{} pings completed",
-            ctx.pings_completed, ctx.pings_expected
-        );
-
-        if success {
-            let () = Self::handle_ping_success(ctx, &addr);
-        }
-
-        if ctx.pings_completed == ctx.pings_expected {
-            match ctx.checker_state {
-                NetworkCheckState::PingGateway => {
-                    // By default, attempt to ping internet whether or not gateway succeeds. With
-                    // the following flag set to false, if the gateway pings have failed, do not
-                    // attempt to ping internet.
-                    let did_gateway_succeed = ctx.discovered_state_v4 == State::Gateway
-                        || ctx.discovered_state_v6 == State::Gateway;
-                    if !did_gateway_succeed && !ctx.always_ping_internet {
-                        return self.update_state_from_context(id, &interface_name);
-                    }
-
-                    ctx.checker_state = NetworkCheckState::PingInternet;
-                    let internet_ping_addrs = [
-                        IPV4_INTERNET_CONNECTIVITY_CHECK_ADDRESS,
-                        IPV6_INTERNET_CONNECTIVITY_CHECK_ADDRESS,
-                    ];
-                    ctx.ping_addrs = internet_ping_addrs
-                        .iter()
-                        .map(|addr| std::net::SocketAddr::new(*addr, 0))
-                        .collect();
-                    ctx.pings_expected = internet_ping_addrs.len();
-                    ctx.pings_completed = 0;
-                    ctx.ping_addrs
-                        .iter()
-                        .map(|addr| {
-                            let action = NetworkCheckAction::Ping {
-                                interface_name: interface_name.to_string().clone(),
-                                addr: addr.clone(),
-                            };
-                            (action.clone(), NetworkCheckCookie { id, action: action.clone() })
-                        })
-                        .for_each(|message| {
-                            match self.network_check_sender.unbounded_send(message) {
-                                Ok(()) => {}
-                                Err(e) => {
-                                    debug!("unable to send network check internet msg: {:?}", e)
-                                }
-                            }
-                        });
-                }
-                NetworkCheckState::PingInternet => {
-                    return self.update_state_from_context(id, &interface_name);
-                }
-                NetworkCheckState::Begin | NetworkCheckState::Idle => {}
-            }
-        }
-        Ok(NetworkCheckerOutcome::MustResume)
-    }
-
     fn handle_ping_success(ctx: &mut NetworkCheckContext, addr: &std::net::SocketAddr) {
         match ctx.checker_state {
             NetworkCheckState::PingGateway => {
@@ -826,7 +877,7 @@ impl Monitor {
                 std::net::SocketAddr::V4 { .. } => ctx.discovered_state_v4 = State::Internet,
                 std::net::SocketAddr::V6 { .. } => ctx.discovered_state_v6 = State::Internet,
             },
-            NetworkCheckState::Begin | NetworkCheckState::Idle => {
+            NetworkCheckState::ResolveDns | NetworkCheckState::Begin | NetworkCheckState::Idle => {
                 panic!("continue check had an invalid state")
             }
         }
@@ -864,10 +915,15 @@ impl NetworkChecker for Monitor {
         match ctx.checker_state {
             NetworkCheckState::Begin => {}
             NetworkCheckState::Idle => {
-                *ctx = Default::default();
+                let mut new_ctx = NetworkCheckContext::default();
+                // Copy persistent context context between passes
+                std::mem::swap(&mut new_ctx.persistent_context, &mut ctx.persistent_context);
+                *ctx = new_ctx;
             }
-            NetworkCheckState::PingGateway | NetworkCheckState::PingInternet => {
-                return Err(anyhow!("skipped, non-idle state found on interface {}", id));
+            NetworkCheckState::PingGateway
+            | NetworkCheckState::PingInternet
+            | NetworkCheckState::ResolveDns => {
+                return Err(anyhow!("skipped, non-idle state found on interface {id}"));
             }
         }
 
@@ -961,31 +1017,19 @@ impl NetworkChecker for Monitor {
                 // Internet can be pinged when either an online router is discovered or the gateway
                 // is pingable. In this case, the discovery of a router enables the internet ping.
                 // TODO(fxbug.dev/124034): Create an occurrence metric for this case
-                ctx.checker_state = NetworkCheckState::PingInternet;
-                let internet_ping_addrs = [
-                    IPV4_INTERNET_CONNECTIVITY_CHECK_ADDRESS,
-                    IPV6_INTERNET_CONNECTIVITY_CHECK_ADDRESS,
-                ];
-                ctx.ping_addrs = internet_ping_addrs
-                    .iter()
-                    .map(|addr| std::net::SocketAddr::new(*addr, 0))
-                    .collect();
-                ctx.pings_expected = internet_ping_addrs.len();
-                ctx.ping_addrs
-                    .iter()
-                    .map(|addr| {
-                        let action = NetworkCheckAction::Ping {
-                            interface_name: name.clone(),
-                            addr: addr.clone(),
-                        };
-                        (action.clone(), NetworkCheckCookie { id, action: action.clone() })
-                    })
-                    .for_each(|message| match self.network_check_sender.unbounded_send(message) {
-                        Ok(()) => {}
-                        Err(e) => {
-                            debug!("begin: unable to send msg for internet ping: {:?}", e)
-                        }
-                    });
+                ctx.initiate_ping(
+                    id,
+                    name,
+                    &self.network_check_sender,
+                    NetworkCheckState::PingInternet,
+                    [
+                        IPV4_INTERNET_CONNECTIVITY_CHECK_ADDRESS,
+                        IPV6_INTERNET_CONNECTIVITY_CHECK_ADDRESS,
+                    ]
+                    .into_iter()
+                    .map(|ip| std::net::SocketAddr::new(ip, 0))
+                    .collect(),
+                )
             } else {
                 // The router is not online and the gateway cannot be pinged; therefore, the
                 // internet pings can be skipped and the final reachability state can be
@@ -995,30 +1039,17 @@ impl NetworkChecker for Monitor {
             }
         } else {
             // Setup to ping gateway addresses.
-            ctx.checker_state = NetworkCheckState::PingGateway;
-            ctx.ping_addrs = gateway_ping_addrs;
-            ctx.pings_expected = ctx.ping_addrs.len();
-
             let discovered_state =
                 if discovered_online_router { State::Gateway } else { State::Local };
             ctx.discovered_state_v4 = discovered_state;
             ctx.discovered_state_v6 = discovered_state;
-
-            ctx.ping_addrs
-                .iter()
-                .map(|addr| {
-                    let action = NetworkCheckAction::Ping {
-                        interface_name: name.clone(),
-                        addr: addr.clone(),
-                    };
-                    (action.clone(), NetworkCheckCookie { id, action: action.clone() })
-                })
-                .for_each(|message| match self.network_check_sender.unbounded_send(message) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        debug!("begin: unable to send msg for gateway ping: {:?}", e)
-                    }
-                });
+            ctx.initiate_ping(
+                id,
+                name,
+                &self.network_check_sender,
+                NetworkCheckState::PingGateway,
+                gateway_ping_addrs,
+            );
         }
         Ok(NetworkCheckerOutcome::MustResume)
     }
@@ -1026,11 +1057,103 @@ impl NetworkChecker for Monitor {
     fn resume(
         &mut self,
         cookie: NetworkCheckCookie,
-        success: bool,
+        result: NetworkCheckResult,
     ) -> Result<NetworkCheckerOutcome, anyhow::Error> {
-        match cookie.action {
-            NetworkCheckAction::Ping { .. } => self.handle_ping_action(cookie, success),
+        let ctx = self
+            .interface_context
+            .get_mut(&cookie.id)
+            .ok_or(anyhow!("resume: interface id {} should already exist in map", cookie.id))?;
+        let interface_name = result.interface_name().to_string();
+        match ctx.checker_state {
+            NetworkCheckState::Begin | NetworkCheckState::Idle => {
+                return Err(anyhow!(
+                    "skipped, idle state found in resume for interface {}",
+                    cookie.id
+                ));
+            }
+            NetworkCheckState::PingGateway | NetworkCheckState::PingInternet => {
+                let (PingParameters { interface_name, addr }, success) =
+                    result.ping_result().ok_or(anyhow!(
+                        "resume: mismatched state and result {interface_name} ({})",
+                        cookie.id
+                    ))?;
+                ctx.pings_completed = ctx.pings_completed + 1;
+
+                info!(
+                    "handle ping: after ping response {}/{} pings completed",
+                    ctx.pings_completed, ctx.pings_expected
+                );
+
+                if success {
+                    let () = Self::handle_ping_success(ctx, &addr);
+                }
+
+                if ctx.pings_completed == ctx.pings_expected {
+                    if let NetworkCheckState::PingGateway = ctx.checker_state {
+                        ctx.initiate_ping(
+                            cookie.id,
+                            &interface_name,
+                            &self.network_check_sender,
+                            NetworkCheckState::PingInternet,
+                            [
+                                IPV4_INTERNET_CONNECTIVITY_CHECK_ADDRESS,
+                                IPV6_INTERNET_CONNECTIVITY_CHECK_ADDRESS,
+                            ]
+                            .into_iter()
+                            .map(|ip| std::net::SocketAddr::new(ip, 0))
+                            .collect(),
+                        );
+                    } else {
+                        if zx::Time::get_monotonic() - ctx.persistent_context.resolved_time
+                            < DNS_PROBE_PERIOD
+                        {
+                            debug!(
+                                "Skipping ResolveDns since it has not yet been {} seconds",
+                                DNS_PROBE_PERIOD.clone().into_seconds()
+                            );
+                            return self.update_state_from_context(cookie.id, &interface_name);
+                        }
+
+                        ctx.checker_state = NetworkCheckState::ResolveDns;
+                        let action = NetworkCheckAction::ResolveDns(ResolveDnsParameters {
+                            interface_name: interface_name.to_string(),
+                            domain: GSTATIC.into(),
+                        });
+                        match self
+                            .network_check_sender
+                            .unbounded_send((action, NetworkCheckCookie { id: cookie.id }))
+                        {
+                            Ok(()) => {}
+                            Err(e) => {
+                                debug!("unable to send network check internet msg: {e:?}")
+                            }
+                        }
+                    }
+                }
+            }
+            NetworkCheckState::ResolveDns => {
+                let (ResolveDnsParameters { interface_name, domain }, ips) =
+                    result.resolve_dns_result().ok_or(anyhow!(
+                        "resume: mismatched state and result {interface_name} ({})",
+                        cookie.id
+                    ))?;
+
+                if let Some(ips) = ips {
+                    if !ips.v4.is_empty() {
+                        ctx.discovered_state_v4 = State::DnsResolved;
+                    }
+                    if !ips.v6.is_empty() {
+                        ctx.discovered_state_v6 = State::DnsResolved;
+                    }
+                    ctx.persistent_context.resolved_time = zx::Time::get_monotonic();
+                    let _: Option<ResolvedIps> =
+                        ctx.persistent_context.resolved_addrs.insert(domain.clone(), ips);
+                }
+
+                return self.update_state_from_context(cookie.id, &interface_name);
+            }
         }
+        Ok(NetworkCheckerOutcome::MustResume)
     }
 }
 
@@ -1087,18 +1210,19 @@ mod tests {
     use {
         super::*,
         crate::{
+            dig::Dig,
             neighbor_cache::{NeighborHealth, NeighborState},
             ping::Ping,
             route_table::Route,
             testutil,
         },
         async_trait::async_trait,
+        diagnostics_assertions::assert_data_tree,
         fidl_fuchsia_net as fnet, fuchsia_async as fasync,
-        fuchsia_inspect::assert_data_tree,
         futures::StreamExt as _,
         net_declare::{fidl_ip, fidl_subnet, std_ip, std_socket_addr},
         net_types::ip,
-        std::task::Poll,
+        std::{net::IpAddr, task::Poll},
         test_case::test_case,
     };
 
@@ -1199,6 +1323,7 @@ mod tests {
         let expected_state = match ctx.checker_state {
             NetworkCheckState::PingGateway => State::Gateway,
             NetworkCheckState::PingInternet => State::Internet,
+            NetworkCheckState::ResolveDns => State::Internet,
             NetworkCheckState::Begin | NetworkCheckState::Idle => Default::default(),
         };
 
@@ -1244,6 +1369,31 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct FakeDig {
+        response: Option<ResolvedIps>,
+    }
+
+    impl FakeDig {
+        fn new(ips: Vec<std::net::IpAddr>) -> Self {
+            let mut ips_out = ResolvedIps::default();
+            for ip in ips {
+                match ip {
+                    IpAddr::V4(v4) => ips_out.v4.push(v4),
+                    IpAddr::V6(v6) => ips_out.v6.push(v6),
+                }
+            }
+            FakeDig { response: Some(ips_out) }
+        }
+    }
+
+    #[async_trait]
+    impl Dig for FakeDig {
+        async fn dig(&self, _interface_name: &str, _domain: &str) -> Option<ResolvedIps> {
+            self.response.clone()
+        }
+    }
+
     struct NetworkCheckTestResponder {
         receiver: mpsc::UnboundedReceiver<(NetworkCheckAction, NetworkCheckCookie)>,
     }
@@ -1255,13 +1405,30 @@ mod tests {
             Self { receiver }
         }
 
-        async fn respond_to_messages<P: Ping>(&mut self, monitor: &mut Monitor, p: P) {
+        async fn respond_to_messages<P: Ping, D: Dig>(
+            &mut self,
+            monitor: &mut Monitor,
+            p: P,
+            d: D,
+        ) {
             loop {
                 if let Some((action, cookie)) = self.receiver.next().await {
                     match action {
-                        NetworkCheckAction::Ping { interface_name, addr } => {
-                            let ping_success = p.ping(&interface_name, addr).await;
-                            match monitor.resume(cookie, ping_success) {
+                        NetworkCheckAction::Ping(parameters) => {
+                            let success = p.ping(&parameters.interface_name, parameters.addr).await;
+                            match monitor
+                                .resume(cookie, NetworkCheckResult::Ping { parameters, success })
+                            {
+                                // Has reached final state.
+                                Ok(NetworkCheckerOutcome::Complete) => return,
+                                _ => {}
+                            }
+                        }
+                        NetworkCheckAction::ResolveDns(parameters) => {
+                            let ips = d.dig(&parameters.interface_name, &parameters.domain).await;
+                            match monitor
+                                .resume(cookie, NetworkCheckResult::ResolveDns { parameters, ips })
+                            {
                                 // Has reached final state.
                                 Ok(NetworkCheckerOutcome::Complete) => return,
                                 _ => {}
@@ -1273,12 +1440,13 @@ mod tests {
         }
     }
 
-    fn run_network_check_partial_properties<P: Ping>(
+    fn run_network_check_partial_properties<P: Ping, D: Dig>(
         exec: &mut fasync::TestExecutor,
         name: &str,
         interface_id: u64,
         routes: &RouteTable,
         pinger: P,
+        digger: D,
         neighbors: Option<&InterfaceNeighborCache>,
         internet_ping_address: std::net::IpAddr,
     ) -> State {
@@ -1294,7 +1462,7 @@ mod tests {
             has_default_ipv6_route: Default::default(),
         };
 
-        match run_network_check(exec, properties, routes, neighbors, pinger) {
+        match run_network_check(exec, properties, routes, neighbors, pinger, digger) {
             Ok(Some(events)) => {
                 // Implementation checks v4 and v6 connectivity concurrently, although these tests
                 // only check for a single protocol at a time. The address being pinged determines
@@ -1315,12 +1483,13 @@ mod tests {
         }
     }
 
-    fn run_network_check<P: Ping>(
+    fn run_network_check<P: Ping, D: Dig>(
         exec: &mut fasync::TestExecutor,
         properties: &fnet_interfaces_ext::Properties,
         routes: &RouteTable,
         neighbors: Option<&InterfaceNeighborCache>,
         pinger: P,
+        digger: D,
     ) -> Result<Option<IpVersions<StateEvent>>, anyhow::Error> {
         let (sender, receiver) = mpsc::unbounded::<(NetworkCheckAction, NetworkCheckCookie)>();
         let mut monitor = Monitor::new(sender).unwrap();
@@ -1331,8 +1500,9 @@ mod tests {
             match monitor.begin(view) {
                 Ok(NetworkCheckerOutcome::Complete) => {}
                 Ok(NetworkCheckerOutcome::MustResume) => {
-                    let () =
-                        network_check_responder.respond_to_messages(&mut monitor, pinger).await;
+                    let () = network_check_responder
+                        .respond_to_messages(&mut monitor, pinger, digger)
+                        .await;
                 }
                 Err(e) => {
                     error!("begin had an issue calculating state: {:?}", e)
@@ -1458,10 +1628,11 @@ mod tests {
                     gateway_response: true,
                     internet_response: true,
                 },
+                FakeDig::new(vec![std_ip!("1.2.3.0"), std_ip!("123::")]),
                 None,
                 ping_internet_addr,
             ),
-            State::Internet,
+            State::DnsResolved,
             "All is good. Can reach internet"
         );
 
@@ -1476,6 +1647,7 @@ mod tests {
                     gateway_response: false,
                     internet_response: true,
                 },
+                FakeDig::default(),
                 Some(&InterfaceNeighborCache {
                     neighbors: [(
                         net1_gateway,
@@ -1504,6 +1676,7 @@ mod tests {
                     gateway_response: false,
                     internet_response: true,
                 },
+                FakeDig::default(),
                 Some(&InterfaceNeighborCache {
                     neighbors: [(
                         net1,
@@ -1532,6 +1705,7 @@ mod tests {
                     gateway_response: true,
                     internet_response: true,
                 },
+                FakeDig::default(),
                 Some(&InterfaceNeighborCache {
                     neighbors: [(
                         net1_gateway,
@@ -1560,6 +1734,7 @@ mod tests {
                     gateway_response: true,
                     internet_response: false,
                 },
+                FakeDig::default(),
                 None,
                 ping_internet_addr,
             ),
@@ -1574,6 +1749,7 @@ mod tests {
                 ID1,
                 &route_table,
                 FakePing::default(),
+                FakeDig::default(),
                 Some(&InterfaceNeighborCache {
                     neighbors: [(
                         net1_gateway,
@@ -1602,6 +1778,7 @@ mod tests {
                     gateway_response: false,
                     internet_response: false,
                 },
+                FakeDig::default(),
                 None,
                 ping_internet_addr,
             ),
@@ -1616,6 +1793,7 @@ mod tests {
                 ID1,
                 &route_table_2,
                 FakePing::default(),
+                FakeDig::default(),
                 None,
                 ping_internet_addr,
             ),
@@ -1634,6 +1812,7 @@ mod tests {
                     gateway_response: true,
                     internet_response: false,
                 },
+                FakeDig::default(),
                 None,
                 ping_internet_addr,
             ),
@@ -1648,6 +1827,7 @@ mod tests {
                 ID1,
                 &route_table_2,
                 FakePing::default(),
+                FakeDig::default(),
                 Some(&InterfaceNeighborCache {
                     neighbors: [(
                         net1,
@@ -1672,6 +1852,7 @@ mod tests {
                 ID1,
                 &route_table,
                 FakePing::default(),
+                FakeDig::default(),
                 Some(&InterfaceNeighborCache {
                     neighbors: [(
                         net1,
@@ -1696,6 +1877,7 @@ mod tests {
                 ID1,
                 &route_table_3,
                 FakePing::default(),
+                FakeDig::default(),
                 Some(&InterfaceNeighborCache {
                     neighbors: [(
                         net1,
@@ -1720,6 +1902,7 @@ mod tests {
                 ID1,
                 &route_table,
                 FakePing::default(),
+                FakeDig::default(),
                 Some(&InterfaceNeighborCache {
                     neighbors: [
                         (
@@ -1750,6 +1933,7 @@ mod tests {
                 ID1,
                 &route_table_3,
                 FakePing::default(),
+                FakeDig::default(),
                 Some(&InterfaceNeighborCache {
                     neighbors: [(
                         net1_gateway,
@@ -1772,6 +1956,7 @@ mod tests {
                 ID1,
                 &route_table_3,
                 FakePing::default(),
+                FakeDig::default(),
                 None,
                 ping_internet_addr,
             ),
@@ -1856,6 +2041,7 @@ mod tests {
             &Default::default(),
             None,
             FakePing::default(),
+            FakeDig::default(),
         )
         .expect(
             "error calling network check with non-ethernet interface, no addresses, interface down",
@@ -1868,6 +2054,7 @@ mod tests {
             &Default::default(),
             None,
             FakePing::default(),
+            FakeDig::default(),
         )
         .expect("error calling network check, want Down state");
         let want =
@@ -1884,17 +2071,22 @@ mod tests {
             &local_routes,
             None,
             FakePing::default(),
+            FakeDig::default(),
         )
         .expect("error calling network check, want Local state due to no default routes");
         let want =
             Some(IpVersions::<StateEvent>::construct(StateEvent { state: State::Local, time }));
         assert_eq!(got, want);
 
-        let got =
-            run_network_check(&mut exec, &properties, &route_table2, None, FakePing::default())
-                .expect(
-                "error calling network check, want Local state due to no matching default route",
-            );
+        let got = run_network_check(
+            &mut exec,
+            &properties,
+            &route_table2,
+            None,
+            FakePing::default(),
+            FakeDig::default(),
+        )
+        .expect("error calling network check, want Local state due to no matching default route");
         let want =
             Some(IpVersions::<StateEvent>::construct(StateEvent { state: State::Local, time }));
         assert_eq!(got, want);
@@ -1909,6 +2101,7 @@ mod tests {
                 gateway_response: true,
                 internet_response: false,
             },
+            FakeDig::default(),
         )
         .expect("error calling network check, want Gateway state");
         let want =
@@ -1925,6 +2118,7 @@ mod tests {
                 gateway_response: true,
                 internet_response: true,
             },
+            FakeDig::default(),
         )
         .expect("error calling network check, want Internet state");
         let want =
@@ -1999,21 +2193,28 @@ mod tests {
         assert_eq!(state, want_state);
     }
 
-    #[test_case(None, None, false, false;
+    #[test_case(None, None, false, false, false;
         "no interfaces available")]
-    #[test_case(Some(&State::Local), Some(&State::Local), false, false;
+    #[test_case(Some(&State::Local), Some(&State::Local), false, false, false;
         "no interfaces with gateway or internet state")]
-    #[test_case(Some(&State::Local), Some(&State::Gateway), false, true;
+    #[test_case(Some(&State::Local), Some(&State::Gateway), false, false, true;
         "only one interface with gateway state or above")]
-    #[test_case(Some(&State::Local), Some(&State::Internet), true, true;
+    #[test_case(Some(&State::Local), Some(&State::Internet), false, true, true;
         "only one interface with internet state")]
-    #[test_case(Some(&State::Internet), Some(&State::Internet), true, true;
+    #[test_case(Some(&State::Internet), Some(&State::Internet), false, true, true;
         "all interfaces with internet")]
-    #[test_case(Some(&State::Internet), None, true, true;
+    #[test_case(Some(&State::Internet), None, false, true, true;
         "only one interface available, has internet state")]
+    #[test_case(Some(&State::Local), Some(&State::DnsResolved), true, true, true;
+        "only one interface with DNS resolved state")]
+    #[test_case(Some(&State::DnsResolved), Some(&State::DnsResolved), true, true, true;
+        "all interfaces with DNS resolved state")]
+    #[test_case(Some(&State::DnsResolved), None, true, true, true;
+        "only one interface available, has DNS resolved state")]
     fn test_system_has_state(
         ipv4_state: Option<&State>,
         ipv6_state: Option<&State>,
+        expect_dns: bool,
         expect_internet: bool,
         expect_gateway: bool,
     ) {
@@ -2039,6 +2240,7 @@ mod tests {
             system: IpVersions { ipv4: system_interface_ipv4, ipv6: system_interface_ipv6 },
         };
 
+        assert_eq!(state.system_has_active_dns(), expect_dns);
         assert_eq!(state.system_has_internet(), expect_internet);
         assert_eq!(state.system_has_gateway(), expect_gateway);
     }

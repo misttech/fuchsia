@@ -19,6 +19,7 @@ import("//build/images/vboot/vboot.gni")
 import("//build/info/info.gni")
 import("//build/product.gni")
 import("//build/sdk/config.gni")
+import("//build/sdk/product_bundle.gni")
 import("//build/security.gni")
 import("//build/zbi/zbi_input.gni")
 import("//build/zircon/tools.gni")
@@ -193,6 +194,8 @@ compiled_action("uefi-disk") {
     rebase_path("$root_build_dir"),
     "--arch",
     target_cpu,
+    "--product-bundle-name",
+    main_product_bundle_name,
     "--bootloader",
     bootloader_path,
     "--depfile",
@@ -245,8 +248,8 @@ group("images") {
     "//build/images/archive:build_args_metadata",
   ]
 
-  if (defined(labels.images_netboot)) {
-    deps += [ labels.images_netboot ]
+  if (enable_netboot) {
+    deps += [ labels.netboot ]
   }
 }
 
@@ -257,10 +260,6 @@ group("default-images") {
   testonly = true
 
   deps = default_image_deps
-
-  # Downstream tools (e.g. bundle_fetcher in infra) relies on metadata generated
-  # by product_metadata, so keeping this dep for Bazel assembly.
-  deps += [ "//build/images/flash:product_metadata" ]
 
   # Prune unsupported targets when Bazel assembly is enabled. This makes sure
   # the build:
@@ -337,7 +336,7 @@ group("default-images") {
     deps += [ "//build/images/installer" ]
   }
 
-  if (bazel_product_bundle_target != "") {
+  if (!use_bringup_assembly && bazel_product_bundle_target != "") {
     deps += [ bazel_product_bundle_target ]
     deps += extra_bazel_assembly_targets
   }

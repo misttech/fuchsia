@@ -7,7 +7,6 @@ import("//build/components/fuchsia_structured_config.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
-import("//build/type/config.gni")
 import("//src/fonts/build/fonts.gni")
 
 declare_args() {
@@ -47,9 +46,6 @@ group("tests") {
 
 # Group of all the dependencies needed for downstream tests that rely on fonts,
 # such as Chromium tests.
-# Tests that use this dependency should also put
-# { "fuchsia.fonts.Provider": "fuchsia-pkg://fuchsia.com/fonts#meta/fonts_for_downstream_tests.cmx" }
-# in their component manifests' "facets" > "fuchsia.test" > "injected-services".
 group("downstream_test_deps") {
   testonly = true
   public_deps = [
@@ -104,6 +100,7 @@ rustc_binary("font_provider") {
   deps += [ "//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS" ]
 
   test_deps = [
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/intl/unicode_utils/char_collection",
     "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:pretty_assertions",
@@ -159,11 +156,8 @@ fuchsia_structured_config_rust_lib("config") {
 
 fuchsia_package("pkg") {
   package_name = "fonts"
+  validate_structured_config = false
   deps = [ ":font_provider_cm" ]
-}
-
-build_type_config_data("build_type") {
-  for_pkg = "fonts"
 }
 
 fuchsia_component_manifest("font_provider_unit_tests_cmp_manifest") {
@@ -199,6 +193,7 @@ fuchsia_component("font_provider_hermetic_for_test") {
   cm_label = ":font_provider_hermetic_for_test_manifest"
   deps = [
     ":font_provider",
+    ":font_provider_hermetic_for_test_config_values",
     "//src/fonts/collections:downstream-test-fonts-collection",
   ]
 

@@ -3,25 +3,23 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//build/dist/component_manifest_resources.gni")
-import("//build/rust/rustc_test.gni")
 
 executable("startup") {
   sources = [ "main.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.component:fuchsia.component_cpp_wire",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
     "//sdk/lib/component/incoming/cpp",
   ]
 }
 
-component_manifest_resources("meta") {
-  sources = [ "meta/startup.cml" ]
+fuchsia_package("package") {
+  package_name = "startup"
+  deps = [ ":component" ]
 }
 
-group("bootfs") {
-  deps = [
-    ":meta",
-    ":startup",
-  ]
+fuchsia_component("component") {
+  component_name = "startup"
+  manifest = "meta/startup.cml"
+  deps = [ ":startup" ]
 }

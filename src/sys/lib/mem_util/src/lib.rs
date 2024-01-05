@@ -4,12 +4,10 @@
 
 //! Utilities for working with the `fuchsia.mem` FIDL library.
 
-use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_mem as fmem;
 use fuchsia_zircon_status as zxs;
 use std::borrow::Cow;
-use thiserror::Error;
 
 /// Open `path` from given `parent` directory, returning an [`fmem::Data`] of the contents.
 ///
@@ -19,27 +17,22 @@ pub async fn open_file_data(
     parent: &fio::DirectoryProxy,
     path: &str,
 ) -> Result<fmem::Data, FileError> {
-    // open the file READ/DESCRIBE, expecting the server to return OnOpen
-    let (file, server_end) =
-        fidl::endpoints::create_proxy::<fio::FileMarker>().map_err(FileError::CreateProxy)?;
-    parent
-        .open(
-            fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::NOT_DIRECTORY,
-            fio::ModeType::empty(),
-            path,
-            ServerEnd::new(server_end.into_channel()),
-        )
-        .map_err(FileError::SendOpenRequest)?;
-
+    let file =
+        fuchsia_fs::directory::open_file_no_describe(parent, path, fio::OpenFlags::RIGHT_READABLE)?;
     match file
         .get_backing_memory(fio::VmoFlags::READ)
         .await
-        .map_err(FileError::GetBufferError)?
+        .map_err(|e| {
+            // Don't swallow the root cause of the error without a trace. It may
+            // be impossible to correlate resulting error to its root cause
+            // otherwise.
+            tracing::debug!("error for path={}: {}:", path, e);
+            FileError::GetBufferError(e)
+        })?
         .map_err(zxs::Status::from_raw)
     {
         Ok(vmo) => {
             let size = vmo.get_content_size().expect("failed to get VMO size");
-
             Ok(fmem::Data::Buffer(fmem::Buffer { vmo, size }))
         }
         Err(e) => {
@@ -52,32 +45,13 @@ pub async fn open_file_data(
 }
 
 /// Errors that can occur when operating on `DirectoryProxy`s and `FileProxy`s.
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum FileError {
-    #[error("Failed to create a FIDL proxy.")]
-    CreateProxy(#[source] fidl::Error),
-
-    #[error("Failed to send an open request.")]
-    SendOpenRequest(#[source] fidl::Error),
-
-    #[error("Event stream closed before we received the reply to the DESCRIBE flag.")]
-    FileEventStreamClosed,
-
-    #[error("Couldn't read a File event from the channel.")]
-    FileEventDecode(#[source] fidl::Error),
-
-    #[error("Open() call failed, as reported in the OnOpen event.")]
-    OnOpenError(#[source] zxs::Status),
-
-    #[error("We got an OK from OnOpen but didn't receive NodeInfoDeprecated.")]
-    MissingNodeInfo,
+    #[error("Failed to open a File.")]
+    OpenError(#[from] fuchsia_fs::node::OpenError),
 
     #[error("Couldn't read a file")]
-    ReadError(
-        #[source]
-        #[from]
-        fuchsia_fs::file::ReadError,
-    ),
+    ReadError(#[from] fuchsia_fs::file::ReadError),
 
     #[error("FIDL call to retrieve a file's buffer failed")]
     GetBufferError(#[source] fidl::Error),
@@ -100,7 +74,7 @@ pub fn bytes_from_data<'d>(data: &'d fmem::Data) -> Result<Cow<'d, [u8]>, DataEr
 }
 
 /// Errors that can occur when operating on `fuchsia.mem.Data` values.
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum DataError {
     #[error("Couldn't read from VMO")]
     VmoReadError(#[source] zxs::Status),

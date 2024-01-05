@@ -17,11 +17,7 @@
         {
             protocol: [
                 "fuchsia.sys2.CrashIntrospect",
-                "fuchsia.sys2.EventSource",
             ],
-        },
-        {
-            runner: "elf",
         },
         {
             runner: "realm_builder",

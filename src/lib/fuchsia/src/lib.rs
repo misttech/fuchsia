@@ -23,19 +23,56 @@ pub use tracing::error;
 // LOGGING INITIALIZATION
 //
 
+/// Options used when initializing logging.
+#[derive(Default, Clone)]
+pub struct LoggingOptions<'a> {
+    /// Tags with which to initialize the logging system. All logs will carry the tags configured
+    /// here.
+    pub tags: &'a [&'static str],
+
+    /// Allows to configure the minimum severity of the logs being emitted. Logs of lower severity
+    /// won't be emitted.
+    pub interest: fidl_fuchsia_diagnostics::Interest,
+
+    /// Whether or not logs will be blocking. By default logs are dropped when they can't be
+    /// written to the socket. However, when this is set, the log statement will block until the
+    /// log can be written to the socket or the socket is closed.
+    ///
+    /// NOTE: this is ignored on `host`.
+    pub blocking: bool,
+}
+
+#[cfg(not(target_os = "fuchsia"))]
+impl<'a> From<LoggingOptions<'a>> for diagnostics_log::PublishOptions<'a> {
+    fn from(logging: LoggingOptions<'a>) -> Self {
+        let mut options = diagnostics_log::PublishOptions::default().tags(logging.tags);
+        if let Some(severity) = logging.interest.min_severity {
+            options = options.minimum_severity(severity);
+        }
+        options
+    }
+}
+
+#[cfg(target_os = "fuchsia")]
+impl<'a> From<LoggingOptions<'a>> for diagnostics_log::PublishOptions<'a> {
+    fn from(logging: LoggingOptions<'a>) -> Self {
+        let mut options = diagnostics_log::PublishOptions::default().tags(logging.tags);
+        options = options.blocking(logging.blocking);
+        if let Some(severity) = logging.interest.min_severity {
+            options = options.minimum_severity(severity);
+        }
+        options
+    }
+}
+
 /// Initialize logging
 #[doc(hidden)]
 pub fn init_logging_for_component_with_executor<'a, R>(
     func: impl FnOnce() -> R + 'a,
-    logging_tags: &'a [&'static str],
-    _interest: fidl_fuchsia_diagnostics::Interest,
+    logging: LoggingOptions<'a>,
 ) -> impl FnOnce() -> R + 'a {
     move || {
-        let mut options = diagnostics_log::PublishOptions::default().tags(logging_tags);
-        if let Some(severity) = _interest.min_severity {
-            options = options.minimum_severity(severity);
-        }
-        diagnostics_log::initialize(options).expect("initialize_logging");
+        diagnostics_log::initialize(logging.into()).expect("initialize_logging");
         func()
     }
 }
@@ -44,11 +81,10 @@ pub fn init_logging_for_component_with_executor<'a, R>(
 #[doc(hidden)]
 pub fn init_logging_for_component_with_threads<'a, R>(
     func: impl FnOnce() -> R + 'a,
-    logging_tags: &'a [&'static str],
-    interest: fidl_fuchsia_diagnostics::Interest,
+    logging: LoggingOptions<'a>,
 ) -> impl FnOnce() -> R + 'a {
     move || {
-        let _guard = init_logging_with_threads(logging_tags, interest);
+        let _guard = init_logging_with_threads(logging);
         func()
     }
 }
@@ -57,18 +93,10 @@ pub fn init_logging_for_component_with_threads<'a, R>(
 #[doc(hidden)]
 pub fn init_logging_for_test_with_executor<'a, R>(
     func: impl Fn(usize) -> R + 'a,
-    name: &'static str,
-    logging_tags: &'a [&'static str],
-    interest: fidl_fuchsia_diagnostics::Interest,
+    logging: LoggingOptions<'a>,
 ) -> impl Fn(usize) -> R + 'a {
     move |n| {
-        let mut tags = vec![name];
-        tags.extend_from_slice(logging_tags);
-        let mut options = diagnostics_log::PublishOptions::default().tags(tags.as_slice());
-        if let Some(severity) = interest.min_severity {
-            options = options.minimum_severity(severity);
-        }
-        diagnostics_log::initialize(options).expect("initalize logging");
+        diagnostics_log::initialize(logging.clone().into()).expect("initalize logging");
         func(n)
     }
 }
@@ -77,14 +105,10 @@ pub fn init_logging_for_test_with_executor<'a, R>(
 #[doc(hidden)]
 pub fn init_logging_for_test_with_threads<'a, R>(
     func: impl Fn(usize) -> R + 'a,
-    name: &'static str,
-    logging_tags: &'a [&'static str],
-    interest: fidl_fuchsia_diagnostics::Interest,
+    logging: LoggingOptions<'a>,
 ) -> impl Fn(usize) -> R + 'a {
     move |n| {
-        let mut tags = vec![name];
-        tags.extend_from_slice(logging_tags);
-        let _guard = init_logging_with_threads(&tags, interest.clone());
+        let _guard = init_logging_with_threads(logging.clone());
         func(n)
     }
 }
@@ -92,27 +116,13 @@ pub fn init_logging_for_test_with_threads<'a, R>(
 /// Initializes logging on a background thread, returning a guard which cancels interest listening
 /// when dropped.
 #[cfg(target_os = "fuchsia")]
-fn init_logging_with_threads<'a>(
-    tags: &'a [&'static str],
-    interest: fidl_fuchsia_diagnostics::Interest,
-) -> impl Drop {
-    let mut options = diagnostics_log::PublishOptions::default().tags(tags);
-    if let Some(severity) = interest.min_severity {
-        options = options.minimum_severity(severity);
-    }
-    diagnostics_log::initialize_sync(options)
+fn init_logging_with_threads(logging: LoggingOptions<'_>) -> impl Drop {
+    diagnostics_log::initialize_sync(logging.into())
 }
 
 #[cfg(not(target_os = "fuchsia"))]
-fn init_logging_with_threads<'a>(
-    tags: &'a [&'static str],
-    interest: fidl_fuchsia_diagnostics::Interest,
-) {
-    let mut options = diagnostics_log::PublishOptions::default().tags(tags);
-    if let Some(severity) = interest.min_severity {
-        options = options.minimum_severity(severity);
-    }
-    diagnostics_log::initialize(options).expect("initialize logging");
+fn init_logging_with_threads(logging: LoggingOptions<'_>) {
+    diagnostics_log::initialize(logging.into()).expect("initialize logging");
 }
 
 //

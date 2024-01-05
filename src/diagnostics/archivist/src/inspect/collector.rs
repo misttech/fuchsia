@@ -163,7 +163,7 @@ async fn populate_data_map_from_dir(inspect_proxy: &fio::DirectoryProxy) -> Data
 
 /// Convert a fully-qualified path to a directory-proxy in the executing namespace.
 #[cfg(test)]
-pub async fn find_directory_proxy(
+pub fn find_directory_proxy(
     path: &str,
 ) -> Result<fio::DirectoryProxy, fuchsia_fs::node::OpenError> {
     fuchsia_fs::directory::open_in_namespace(path, fuchsia_fs::OpenFlags::RIGHT_READABLE)
@@ -172,7 +172,6 @@ pub async fn find_directory_proxy(
 #[cfg(test)]
 pub async fn collect(path: &str) -> Result<DataMap, anyhow::Error> {
     let inspect_proxy = find_directory_proxy(path)
-        .await
         .with_context(|| format!("Failed to open out directory at {path}"))?;
     Ok(populate_data_map(&[inspect_proxy.into()]).await)
 }
@@ -182,16 +181,17 @@ mod tests {
     use {
         super::*,
         assert_matches::assert_matches,
+        diagnostics_assertions::assert_data_tree,
         fdio,
         fidl::endpoints::{create_request_stream, DiscoverableProtocolMarker},
         fidl_fuchsia_inspect::TreeMarker,
         fuchsia_async as fasync,
         fuchsia_component::server::ServiceFs,
-        fuchsia_inspect::{assert_data_tree, reader, Inspector},
+        fuchsia_inspect::{reader, Inspector},
         fuchsia_zircon as zx,
         fuchsia_zircon::Peered,
         futures::{FutureExt, StreamExt},
-        inspect_runtime::service::{spawn_tree_server, TreeServerSettings},
+        inspect_runtime::{service::spawn_tree_server_with_stream, TreeServerSendPreference},
     };
 
     fn get_vmo(text: &[u8]) -> zx::Vmo {
@@ -211,11 +211,14 @@ mod tests {
         insp3.root().record_int("three", 3);
 
         let (tree1, request_stream) = create_request_stream::<TreeMarker>().unwrap();
-        spawn_tree_server(insp1, TreeServerSettings::default(), request_stream).detach();
+        spawn_tree_server_with_stream(insp1, TreeServerSendPreference::default(), request_stream)
+            .detach();
         let (tree2, request_stream) = create_request_stream::<TreeMarker>().unwrap();
-        spawn_tree_server(insp2, TreeServerSettings::default(), request_stream).detach();
+        spawn_tree_server_with_stream(insp2, TreeServerSendPreference::default(), request_stream)
+            .detach();
         let (tree3, request_stream) = create_request_stream::<TreeMarker>().unwrap();
-        spawn_tree_server(insp3, TreeServerSettings::default(), request_stream).detach();
+        spawn_tree_server_with_stream(insp3, TreeServerSendPreference::default(), request_stream)
+            .detach();
 
         let name1 = Some(InspectHandleName::name("tree1"));
         let name2 = Some(InspectHandleName::name("tree2"));
@@ -314,6 +317,7 @@ mod tests {
         ns.unbind(path).unwrap();
     }
 
+    // TODO(fxbug.dev/93344): remove this test when the out/diagnostics dir is removed
     #[fuchsia::test]
     async fn inspect_data_collector_tree() {
         let path = "/test-bindings2/out";
@@ -330,7 +334,7 @@ mod tests {
             }
             .boxed()
         });
-        inspect_runtime::serve(&inspector, &mut fs).expect("failed to serve inspector");
+        inspect_runtime::deprecated::serve(&inspector, &mut fs).expect("failed to serve inspector");
 
         // Create a connection to the ServiceFs.
         let (h0, h1) = fidl::endpoints::create_endpoints();

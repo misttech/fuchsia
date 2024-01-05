@@ -79,6 +79,16 @@ _buildidtool =
 #     otherwise it defaults to "".
 #     Type: string
 #
+#   cxx_rbe_enable
+#     If defined, override the global value of the same name.
+#     If true, compile remotely using re-client on RBE.
+#     Type: bool
+#
+#   link_rbe_enable
+#     If defined, override the global value of the same name.
+#     If true, link and strip remotely using re-client on RBE.
+#     Type: bool
+#
 #   use_goma
 #     Optional: If defined, overrides the $use_goma build argument.
 #     If true, compilation commands are prefixed with "$goma_dir/gomacc".
@@ -161,18 +171,61 @@ template("zircon_toolchain") {
   # Cached and distributed wrappers just go on the front of compiler commands.
   compiler_prefix_list = []
   if (defined(invoker.cxx_rbe_enable)) {
-    cxx_rbe_enable = invoker.cxx_rbe_enable
+    _cxx_rbe_enable = invoker.cxx_rbe_enable
+  } else {
+    _cxx_rbe_enable = cxx_rbe_enable
   }
   if (defined(invoker.use_goma)) {
     use_goma = invoker.use_goma
   }
-  if (cxx_rbe_enable) {
+  if (defined(invoker.link_rbe_enable)) {
+    _link_rbe_enable = invoker.link_rbe_enable
+  } else {
+    _link_rbe_enable = link_rbe_enable
+  }
+  _restat_link = _link_rbe_enable
+
+  _restat_cc_prefix_list = []
+  if (restat_cc) {
+    if (!_cxx_rbe_enable) {
+      # Local-only execution may use this wrapper script directly.
+      _restat_cc_wrapper = [
+        rebase_path(python_exe_src, root_build_dir),
+        "-S",
+        rebase_path(restat_wrapper, root_build_dir),
+      ]
+      _restat_cc_prefix_list = _restat_cc_wrapper + [
+                                 "--outputs",
+                                 "{{output}}",
+                                 "{{DEPFILE}}",
+                                 "--",
+                               ]
+    }
+    # For remote-building, --preserve_unchanged_output_mtime is sufficient
+    # to preserve timestamps of unchanged outputs, and provide restat benefit.
+    # However, in modes that also (conditionally) use local execution
+    # (i.e. --exec_strategy={racing,remote_local_fallback}),
+    # the local execution could unconditionally overwrite outputs.
+    # While this may be suboptimal as a missed opportunity to prune
+    # the action graph, it does not violate correctness.
+  }
+  _restat_cc_prefix = string_join(" ", _restat_cc_prefix_list) + " "
+
+  if (_cxx_rbe_enable) {
     # Use reclient to remotely build C++.
-    compiler_prefix_list = [
-      rebase_path(python_exe_src, root_build_dir),
-      "-S",
-      rebase_path(cxx_remote_wrapper, root_build_dir),
-    ]
+    if (cxx_rbe_minimalist_wrapper) {
+      _working_subdir = rebase_path(root_build_dir, "//")
+      compiler_prefix_list = [
+        rebase_path(cxx_remote_wrapper_minimalist, root_build_dir),
+        "--working-subdir=" + _working_subdir,
+      ]
+    } else {
+      compiler_prefix_list = [
+        rebase_path(python_exe_src, root_build_dir),
+        "-S",
+        rebase_path(cxx_remote_wrapper, root_build_dir),
+      ]
+    }
     if (cxx_rbe_check == "consistency") {
       # Compare local vs. remote build.
       # Allow caching.
@@ -199,11 +252,6 @@ template("zircon_toolchain") {
       ]
       _cxx_concurrent_jobs = concurrent_jobs.local
     } else {
-      assert(cxx_rbe_exec_strategy == "remote" ||
-                 cxx_rbe_exec_strategy == "local" ||
-                 cxx_rbe_exec_strategy == "remote_local_fallback" ||
-                 cxx_rbe_exec_strategy == "racing",
-             "Unsupported RBE exec_strategy: \"$cxx_rbe_exec_strategy\".")
       if (cxx_rbe_exec_strategy == "remote") {
         compiler_prefix_list += [ "--exec_strategy=remote" ]
       } else if (cxx_rbe_exec_strategy == "remote_local_fallback") {
@@ -216,7 +264,14 @@ template("zircon_toolchain") {
       } else if (cxx_rbe_exec_strategy == "racing") {
         compiler_prefix_list += [ "--exec_strategy=racing" ]
       }
+      if (!cxx_rbe_download_obj_files) {
+        compiler_prefix_list += [ "--download_outputs=false" ]
+      }
       _cxx_concurrent_jobs = concurrent_jobs.remote
+    }
+    if (restat_cc) {
+      # re-client has built-in support for write-if-changed behavior
+      compiler_prefix_list += [ "--preserve_unchanged_output_mtime" ]
     }
     compiler_prefix_list += [ "--" ]
     not_needed([ "use_goma" ])
@@ -461,6 +516,8 @@ template("zircon_toolchain") {
     runtime_outputs = [ outfile ]
     outputs = runtime_outputs
 
+    restat = _restat_link
+
     if (use_strip) {
       unstripped_outfile = "${outfile}.debug"
       outputs += [ unstripped_outfile ]
@@ -479,6 +536,23 @@ template("zircon_toolchain") {
         } else {
           strip_tool = "$dir_prefix${tc.tool_prefix}strip"
         }
+
+        _remote_strip_list = []
+        if (_link_rbe_enable) {
+          # TODO(http://fxbug.dev/133103): disable remote stripping when config includes //build/config:no_remote_link.
+          _remote_strip_list += [
+            rebase_path(python_exe_src, root_build_dir),
+            "-S",
+            rebase_path(prebuilt_tool_remote_wrapper, root_build_dir),
+            "--inputs",
+            "\"$unstripped_outfile\"",
+            "--output_files",
+            "\"$outfile\"",
+            "--preserve_unchanged_output_mtime",
+            "-- ",
+          ]
+        }
+        strip_command += string_join(" ", _remote_strip_list)
         strip_command += "$strip_tool -o \"$outfile\" \"$unstripped_outfile\""
       } else {
         strip_command += "$dir_prefix${tc.tool_prefix}objcopy ${_strip}" +
@@ -491,6 +565,9 @@ template("zircon_toolchain") {
 
     rspfile = "${outfile}.rsp"
     switches = "-o $unstripped_outfile {{ldflags}}"
+    linker_prefix = ""
+    _link_concurrent_jobs = concurrent_jobs.local
+
     if (invoker.os == "mac") {
       rspfile_content = "{{inputs_newline}}"
       link_inputs = "-Wl,-filelist,$rspfile {{libs}} {{solibs}}"
@@ -509,7 +586,32 @@ template("zircon_toolchain") {
         outputs += [ mapfile ]
         switches += " -Wl,-Map,$mapfile"
       }
+
+      # remote linking option
+      if (_link_rbe_enable) {
+        _linker_prefix_list = [
+          rebase_path(python_exe_src, root_build_dir),
+          "-S",
+          rebase_path(cxx_link_remote_wrapper, root_build_dir),
+        ]
+        if (link_rbe_check == "determinism") {
+          _linker_prefix_list += [
+            "--local",
+            "--check-determinism",
+          ]
+        } else if (link_rbe_check == "consistency") {
+          _linker_prefix_list += [ "--compare" ]
+        } else if (link_rbe_check == "none") {
+          _link_concurrent_jobs = concurrent_jobs.remote
+        }
+        _linker_prefix_list += [
+          "--preserve_unchanged_output_mtime",
+          "--",
+        ]
+        linker_prefix = string_join(" ", _linker_prefix_list)
+      }
     }
+    forward_variables_from(_link_concurrent_jobs, "*")
 
     if (invoker.os == "win") {
       # This assumes "-Wl,/debug" or suchlike is in ldflags.  If it's not
@@ -578,33 +680,74 @@ template("zircon_toolchain") {
       description = "ASM {{output}}"
       forward_variables_from(_compile_common, "*")
       command = "$cc $switches {{asmflags}} -c {{source}}"
-      command_launcher = compiler_prefix
+      command_launcher =
+          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
+          compiler_prefix
+      restat = restat_cc
     }
 
     tool("cc") {
       description = "CC {{output}}"
       forward_variables_from(_compile_common, "*")
       command = "$cc $switches {{cflags}} {{cflags_c}} -c {{source}}"
-      command_launcher = compiler_prefix
+      command_launcher =
+          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
+          compiler_prefix
+      restat = restat_cc
     }
 
     tool("cxx") {
       description = "CXX {{output}}"
       forward_variables_from(_compile_common, "*")
       command = "$cxx $switches {{cflags}} {{cflags_cc}} -c {{source}}"
-      command_launcher = compiler_prefix
+      command_launcher =
+          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
+          compiler_prefix
+      restat = restat_cc
     }
 
     tool("alink") {
       description = "AR {{output}}"
       rspfile = "{{output}}.rsp"
-      command =
-          "rm -f {{output}} && $ar {{arflags}} rcsD {{output}} \"@$rspfile\""
+      linker_prefix = ""
+      _link_concurrent_jobs = concurrent_jobs.local
+      if (_link_rbe_enable) {  # Assume non-thin archives, the simplest case of
+        # direct inclusion.
+        _linker_prefix_list = [
+          rebase_path(python_exe_src, root_build_dir),
+          "-S",
+          rebase_path(prebuilt_tool_remote_wrapper, root_build_dir),
+        ]
+        if (link_rbe_check == "determinism") {
+          _linker_prefix_list += [
+            "--local",
+            "--check-determinism",
+          ]
+        } else if (link_rbe_check == "consistency") {
+          _linker_prefix_list += [ "--compare" ]
+        } else if (link_rbe_check == "none") {
+          _link_concurrent_jobs = concurrent_jobs.remote
+        }
+        _linker_prefix_list += [
+          "--inputs",
+          "\"$rspfile\"",
+          "--input_list_paths",
+          "\"$rspfile\"",
+          "--output_files",
+          "{{output}}",
+          "--preserve_unchanged_output_mtime",
+          "--",
+        ]
+        linker_prefix = string_join(" ", _linker_prefix_list)
+      }
+      restat = _restat_link
+      command = "rm -f {{output}} && $linker_prefix $ar {{arflags}} rcsD {{output}} \"@$rspfile\""
       rspfile_content = "{{inputs}}"
       default_output_dir = "{{target_out_dir}}"
       default_output_extension = ".a"
       output_prefix = "lib"
       outputs = [ "{{output_dir}}/{{target_output_name}}{{output_extension}}" ]
+      forward_variables_from(_link_concurrent_jobs, "*")
     }
 
     tool("link") {
@@ -613,7 +756,7 @@ template("zircon_toolchain") {
       if (invoker.os == "win") {
         default_output_extension = ".exe"
       }
-      command = "$ld $switches $link_inputs$strip_command"
+      command = "$linker_prefix $ld $switches $link_inputs$strip_command"
     }
 
     if (_toolchain_variant.with_shared || _toolchain_variant.is_pic_default) {
@@ -655,7 +798,7 @@ template("zircon_toolchain") {
           switches = "-Wl,$switches"
         }
 
-        command = "$ld $switches $link_inputs$strip_command"
+        command = "$linker_prefix $ld $switches $link_inputs$strip_command"
 
         if (use_llvm_ifs) {
           # The Ninja dependency for linking in the shared library will be
@@ -702,7 +845,7 @@ template("zircon_toolchain") {
           switches = "-Wl,$switches"
         }
 
-        command = "$ld $switches $link_inputs$strip_command"
+        command = "$linker_prefix $ld $switches $link_inputs$strip_command"
       }
     }
 

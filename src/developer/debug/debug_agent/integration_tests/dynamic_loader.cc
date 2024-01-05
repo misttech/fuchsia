@@ -144,15 +144,15 @@ TEST(DynamicLoader, LoadUnload) {
   {
     auto* loop = loop_wrapper.loop();
 
-    DynamicLoaderStreamBackend backend(loop);
+    auto backend = std::make_unique<DynamicLoaderStreamBackend>(loop);
+    DynamicLoaderStreamBackend& mock_backend = *backend;
     DebugAgent agent(std::make_unique<ZirconSystemInterface>());
 
-    agent.Connect(&backend.stream());
-    backend.set_remote_api(&agent);
+    agent.Connect(std::move(backend));
+    mock_backend.set_remote_api(&agent);
 
     debug_ipc::RunBinaryRequest launch_request = {};
     launch_request.argv = {"/pkg/bin/load_so_exe"};
-    launch_request.inferior_type = debug_ipc::InferiorType::kBinary;
 
     debug_ipc::RunBinaryReply launch_reply;
     agent.OnRunBinary(launch_request, &launch_reply);

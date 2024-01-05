@@ -3,32 +3,37 @@
 // found in the LICENSE file.
 
 use {
+    crate::bedrock::program::{self as program, ComponentStopOutcome, Program, StopRequestSuccess},
+    crate::capability::CapabilitySource,
     crate::framework::controller,
     crate::model::{
         actions::{
+            resolve::sandbox_construction::{
+                build_component_sandbox, extend_dict_with_offers, CapabilitySourceFactory,
+            },
             shutdown, start, ActionSet, DestroyChildAction, DiscoverAction, ResolveAction,
-            ShutdownAction, StartAction, StopAction, UnresolveAction,
+            ShutdownAction, ShutdownType, StartAction, StopAction, UnresolveAction,
         },
         context::ModelContext,
         environment::Environment,
         error::{
-            AddChildError, AddDynamicChildError, DestroyActionError, DiscoverActionError,
-            DynamicOfferError, ModelError, OpenExposedDirError, OpenOutgoingDirError, RebootError,
-            ResolveActionError, StartActionError, StopActionError, StructuredConfigError,
-            UnresolveActionError,
+            AddChildError, AddDynamicChildError, CreateNamespaceError, DestroyActionError,
+            DiscoverActionError, DynamicOfferError, ModelError, OpenExposedDirError,
+            OpenOutgoingDirError, RebootError, ResolveActionError, StartActionError,
+            StopActionError, StructuredConfigError, UnresolveActionError,
         },
         exposed_dir::ExposedDir,
         hooks::{Event, EventPayload, Hooks},
-        ns_dir::NamespaceDir,
+        namespace::create_namespace,
         routing::{
-            self, route_and_open_capability,
-            service::{CollectionServiceDirectory, CollectionServiceRoute},
-            OpenOptions, RouteRequest,
+            self,
+            service::{AnonymizedAggregateServiceDir, AnonymizedServiceRoute},
         },
     },
+    crate::sandbox_util::{new_terminating_router, DictExt, LaunchTaskOnReceive},
+    ::namespace::Entry as NamespaceEntry,
     ::routing::{
-        capability_source::{BuiltinCapabilities, NamespaceCapabilities},
-        component_id_index::{ComponentIdIndex, ComponentInstanceId},
+        capability_source::{BuiltinCapabilities, ComponentCapability, NamespaceCapabilities},
         component_instance::{
             ComponentInstanceInterface, ExtendedInstanceInterface, ResolvedInstanceInterface,
             ResolvedInstanceInterfaceExt, TopInstanceInterface, WeakComponentInstanceInterface,
@@ -40,48 +45,53 @@ use {
         resolving::{
             ComponentAddress, ComponentResolutionContext, ResolvedComponent, ResolvedPackage,
         },
+        Router,
     },
+    anyhow::anyhow,
     async_trait::async_trait,
+    async_utils::async_once::Once,
+    clonable_error::ClonableError,
     cm_fidl_validator::error::DeclType,
     cm_logger::scoped::ScopedLogger,
     cm_moniker::{IncarnationId, InstancedChildName, InstancedMoniker},
-    cm_runner::{
-        builtin::NullRunner, builtin::RemoteRunner, component_controller::ComponentController,
-        NamespaceEntry, Runner,
-    },
     cm_rust::{
         self, ChildDecl, CollectionDecl, ComponentDecl, FidlIntoNative, NativeIntoFidl,
         OfferDeclCommon, UseDecl,
     },
-    cm_task_scope::TaskScope,
     cm_types::Name,
     cm_util::channel,
+    cm_util::TaskGroup,
+    component_id_index::InstanceId,
     config_encoder::ConfigFields,
-    fidl::endpoints::{self, Proxy, ServerEnd},
+    fidl::{
+        endpoints::{self, ServerEnd},
+        epitaph::ChannelEpitaphExt,
+    },
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_runner as fcrunner,
     fidl_fuchsia_hardware_power_statecontrol as fstatecontrol, fidl_fuchsia_io as fio,
     fidl_fuchsia_process as fprocess, fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync,
     fuchsia_component::client,
-    fuchsia_zircon as zx,
+    fuchsia_zircon::{self as zx},
     futures::{
-        future::{join_all, BoxFuture, Either, FutureExt},
+        future::{join_all, BoxFuture, FutureExt},
         lock::{MappedMutexGuard, Mutex, MutexGuard},
     },
     moniker::{ChildName, ChildNameBase, Moniker, MonikerBase},
-    std::iter::Iterator,
+    sandbox::{Dict, Receiver},
+    std::iter::{self, Iterator},
     std::{
         boxed::Box,
         clone::Clone,
         collections::{HashMap, HashSet},
         convert::TryFrom,
         fmt,
+        path::PathBuf,
         sync::{Arc, Weak},
         time::Duration,
     },
-    tracing::warn,
+    tracing::{debug, warn},
     version_history::AbiRevision,
-    vfs::{execution_scope::ExecutionScope, path::Path},
+    vfs::{directory::immutable::simple as pfs, execution_scope::ExecutionScope, path::Path},
 };
 
 pub type WeakComponentInstance = WeakComponentInstanceInterface<ComponentInstance>;
@@ -214,7 +224,7 @@ pub struct ComponentManagerInstance {
     pub builtin_capabilities: BuiltinCapabilities,
 
     /// Tasks owned by component manager's instance.
-    task_scope: TaskScope,
+    task_group: TaskGroup,
 
     /// Mutable state for component manager's instance.
     state: Mutex<ComponentManagerInstanceState>,
@@ -238,13 +248,13 @@ impl ComponentManagerInstance {
             namespace_capabilities,
             builtin_capabilities,
             state: Mutex::new(ComponentManagerInstanceState::new()),
-            task_scope: TaskScope::new(),
+            task_group: TaskGroup::new(),
         }
     }
 
-    /// Returns a scope for this instance where tasks can be run
-    pub fn task_scope(&self) -> TaskScope {
-        self.task_scope.clone()
+    /// Returns a group where tasks can be run scoped to this instance
+    pub fn task_group(&self) -> TaskGroup {
+        self.task_group.clone()
     }
 
     #[cfg(test)]
@@ -368,10 +378,10 @@ pub struct ComponentInstance {
     actions: Mutex<ActionSet>,
     /// Tasks owned by this component instance that will be cancelled if the component is
     /// destroyed.
-    nonblocking_task_scope: TaskScope,
+    nonblocking_task_group: TaskGroup,
     /// Tasks owned by this component instance that will block destruction if the component is
     /// destroyed.
-    blocking_task_scope: TaskScope,
+    blocking_task_group: TaskGroup,
 }
 
 impl ComponentInstance {
@@ -425,43 +435,52 @@ impl ComponentInstance {
             execution: Mutex::new(ExecutionState::new()),
             actions: Mutex::new(ActionSet::new()),
             hooks,
-            nonblocking_task_scope: TaskScope::new(),
-            blocking_task_scope: TaskScope::new(),
+            nonblocking_task_group: TaskGroup::new(),
+            blocking_task_group: TaskGroup::new(),
             persistent_storage,
         })
     }
 
     /// Locks and returns the instance's mutable state.
+    // TODO(b/309656051): Remove this method from ComponentInstance's public API
     pub async fn lock_state(&self) -> MutexGuard<'_, InstanceState> {
         self.state.lock().await
     }
 
     /// Locks and returns the instance's execution state.
+    // TODO(b/309656051): Remove this method from ComponentInstance's public API
     pub async fn lock_execution(&self) -> MutexGuard<'_, ExecutionState> {
         self.execution.lock().await
     }
 
     /// Locks and returns the instance's action set.
+    // TODO(b/309656051): Remove this method from ComponentInstance's public API
     pub async fn lock_actions(&self) -> MutexGuard<'_, ActionSet> {
         self.actions.lock().await
     }
 
-    /// Returns a scope for this instance where tasks can be run. Tasks run in this scope will
-    /// be cancelled if the component is destroyed.
-    pub fn nonblocking_task_scope(&self) -> TaskScope {
-        self.nonblocking_task_scope.clone()
+    /// Returns a group for this instance where tasks can be run scoped to this instance. Tasks run
+    /// in this group will be cancelled when the component is destroyed.
+    pub fn nonblocking_task_group(&self) -> TaskGroup {
+        self.nonblocking_task_group.clone()
     }
 
-    /// Returns a scope for this instance where tasks can be run. Tasks run in this scope will
-    /// block destruction if the component is destroyed.
-    pub fn blocking_task_scope(&self) -> TaskScope {
-        self.blocking_task_scope.clone()
+    /// Returns a group for this instance where tasks can be run scoped to this instance. Tasks run
+    /// in this group will block destruction if the component is destroyed.
+    pub fn blocking_task_group(&self) -> TaskGroup {
+        self.blocking_task_group.clone()
+    }
+
+    /// Returns true if the component is started, i.e. when it has a runtime.
+    pub async fn is_started(&self) -> bool {
+        self.lock_execution().await.is_started()
     }
 
     /// Locks and returns a lazily resolved and populated `ResolvedInstanceState`. Does not
     /// register a `Resolve` action unless the resolved state is not already populated, so this
     /// function can be called re-entrantly from a Resolved hook. Returns an `InstanceNotFound`
     /// error if the instance is destroyed.
+    // TODO(b/309656051): Remove this method from ComponentInstance's public API
     pub async fn lock_resolved_state<'a>(
         self: &'a Arc<Self>,
     ) -> Result<MappedMutexGuard<'a, InstanceState, ResolvedInstanceState>, ResolveActionError>
@@ -483,7 +502,7 @@ impl ComponentInstance {
                         moniker: self.moniker.clone(),
                     });
                 }
-                InstanceState::New | InstanceState::Unresolved => {}
+                InstanceState::New | InstanceState::Unresolved(_) => {}
             }
             // Drop the lock before doing the work to resolve the state.
         }
@@ -509,69 +528,17 @@ impl ComponentInstance {
         ActionSet::register(self.clone(), UnresolveAction::new()).await
     }
 
-    /// Resolves the runner that can start this component.
-    pub async fn resolve_runner<'a>(
-        self: &'a Arc<Self>,
-    ) -> Result<Arc<dyn Runner>, StartActionError> {
-        // Fetch component declaration.
-        let runner = {
-            let state = self.lock_state().await;
-            match *state {
-                InstanceState::Resolved(ref s) => s.decl.get_runner().cloned(),
-                InstanceState::Destroyed => {
-                    return Err(StartActionError::InstanceDestroyed {
-                        moniker: self.moniker.clone(),
-                    });
-                }
-                _ => {
-                    panic!("resolve_runner: not resolved")
-                }
-            }
-        };
-
-        // Find any explicit "use" runner declaration, resolve that.
-        if let Some(runner) = runner {
-            // Open up a channel to the runner.
-            let (client, server) =
-                endpoints::create_proxy::<fcrunner::ComponentRunnerMarker>().unwrap();
-            let mut server_channel = server.into_channel();
-            let options = OpenOptions {
-                flags: fio::OpenFlags::NOT_DIRECTORY,
-                relative_path: "".into(),
-                server_chan: &mut server_channel,
-            };
-            route_and_open_capability(RouteRequest::Runner(runner.clone()), self, options)
-                .await
-                .map_err(|err| StartActionError::ResolveRunnerError {
-                    err: Box::new(err),
-                    moniker: self.moniker.clone(),
-                    runner,
-                })?;
-
-            return Ok(Arc::new(RemoteRunner::new(client)) as Arc<dyn Runner>);
-        }
-
-        // Otherwise, use a null runner.
-        Ok(Arc::new(NullRunner {}) as Arc<dyn Runner>)
-    }
-
-    /// Adds the dynamic child defined by `child_decl` to the given `collection_name`. Once
-    /// added, the component instance exists but is not bound.
-    ///
-    /// Returns the collection durability of the collection the child was added to.
+    /// Adds the dynamic child defined by `child_decl` to the given `collection_name`.
     pub async fn add_dynamic_child(
         self: &Arc<Self>,
         collection_name: String,
         child_decl: &ChildDecl,
         child_args: fcomponent::CreateChildArgs,
-        numbered_handles_are_present: bool,
-    ) -> Result<fdecl::Durability, AddDynamicChildError> {
-        match child_decl.startup {
-            fdecl::StartupMode::Lazy => {}
-            fdecl::StartupMode::Eager => {
-                return Err(AddDynamicChildError::EagerStartupUnsupported);
-            }
+    ) -> Result<(), AddDynamicChildError> {
+        if child_decl.startup == fdecl::StartupMode::Eager {
+            return Err(AddDynamicChildError::EagerStartupUnsupported);
         }
+
         let mut state = self.lock_resolved_state().await?;
         let collection_decl = state
             .decl()
@@ -580,16 +547,13 @@ impl ComponentInstance {
                 name: collection_name.clone(),
             })?
             .clone();
+        let is_single_run_collection = collection_decl.durability == fdecl::Durability::SingleRun;
 
-        // Numbered handles which are to be given to a component in a single run collection are
-        // provided to the component as part of the start action. We want to disallow numbered
-        // handles being provided at component creation time for components not in a single run
-        // collection, but the collection decl isn't looked up until this point.
-        //
-        // The `numbered_handles_are_present` bool is thus used here to denote if an error should
-        // be returned when the collection is not single run.
-        if numbered_handles_are_present
-            && collection_decl.durability != fdecl::Durability::SingleRun
+        // Specifying numbered handles is only allowed if the component is started in
+        // a single-run collection.
+        if child_args.numbered_handles.is_some()
+            && !child_args.numbered_handles.as_ref().unwrap().is_empty()
+            && !is_single_run_collection
         {
             return Err(AddDynamicChildError::NumberedHandleNotInSingleRunCollection);
         }
@@ -603,17 +567,47 @@ impl ComponentInstance {
         {
             return Err(AddDynamicChildError::DynamicOffersNotAllowed { collection_name });
         }
-        let discover_fut = state
+
+        let collection_dict = state
+            .collection_dicts
+            .get(&Name::new(&collection_name).unwrap())
+            .expect("dict missing for declared collection");
+        let child_dict = collection_dict.copy();
+
+        let (child, discover_fut) = state
             .add_child(
                 self,
                 child_decl,
                 Some(&collection_decl),
                 child_args.dynamic_offers,
                 child_args.controller,
+                child_dict,
             )
             .await?;
+
+        // Release the component state lock so DiscoverAction can acquire it.
+        drop(state);
+
+        // Wait for the Discover action to finish.
         discover_fut.await?;
-        Ok(collection_decl.durability)
+
+        // Start the child if it's created in a `SingleRun` collection.
+        if is_single_run_collection {
+            child
+                .start(
+                    &StartReason::SingleRun,
+                    None,
+                    child_args.numbered_handles.unwrap_or_default(),
+                    vec![],
+                )
+                .await
+                .map_err(|err| {
+                    debug!(%err, moniker=%child.moniker, "failed to start component instance");
+                    AddDynamicChildError::StartSingleRun { err }
+                })?;
+        }
+
+        Ok(())
     }
 
     /// Removes the dynamic child, returning a future that will execute the
@@ -654,8 +648,11 @@ impl ComponentInstance {
 
     /// Shuts down this component. This means the component and its subrealm are stopped and never
     /// allowed to restart again.
-    pub async fn shutdown(self: &Arc<Self>) -> Result<(), StopActionError> {
-        ActionSet::register(self.clone(), ShutdownAction::new()).await
+    pub async fn shutdown(
+        self: &Arc<Self>,
+        shutdown_type: ShutdownType,
+    ) -> Result<(), StopActionError> {
+        ActionSet::register(self.clone(), ShutdownAction::new(shutdown_type)).await
     }
 
     /// Performs the stop protocol for this component instance. `shut_down` determines whether the
@@ -690,7 +687,10 @@ impl ComponentInstance {
                         )));
                         timer.await;
                     });
-                    let ret = runtime.stop_component(stop_timer, kill_timer).await?;
+                    let ret = runtime
+                        .stop_program(stop_timer, kill_timer)
+                        .await
+                        .map_err(StopActionError::ProgramStopError)?;
                     if ret.request == StopRequestSuccess::KilledAfterTimeout
                         || ret.request == StopRequestSuccess::Killed
                     {
@@ -711,19 +711,6 @@ impl ComponentInstance {
                             .await
                             .map_err(|_| StopActionError::GetTopInstanceFailed)?;
                         top_instance.trigger_reboot().await;
-                    }
-
-                    // Drop the controller and join on the exit listener. Dropping the controller
-                    // should cause the exit listener to stop waiting for the channel epitaph and
-                    // exit.
-                    //
-                    // Note: this is more reliable than just cancelling `exit_listener` because
-                    // even after cancellation future may still run for a short period of time
-                    // before getting dropped. If that happens there is a chance of scheduling a
-                    // duplicate Stop action.
-                    let _ = runtime.controller.take();
-                    if let Some(exit_listener) = runtime.exit_listener.take() {
-                        exit_listener.await;
                     }
 
                     if let Some(execution_controller_task) =
@@ -823,7 +810,7 @@ impl ComponentInstance {
         let uses = {
             let state = self.lock_state().await;
             match *state {
-                InstanceState::Resolved(ref s) => s.decl.uses.clone(),
+                InstanceState::Resolved(ref s) => s.resolved_component.decl.uses.clone(),
                 _ => {
                     // The instance was never resolved and therefore never ran, it can't possibly
                     // have storage to clean up.
@@ -887,8 +874,7 @@ impl ComponentInstance {
     ) -> Result<(), OpenOutgoingDirError> {
         let execution = self.lock_execution().await;
         let runtime = execution.runtime.as_ref().ok_or(OpenOutgoingDirError::InstanceNotRunning)?;
-        let out_dir =
-            runtime.outgoing_dir.as_ref().ok_or(OpenOutgoingDirError::InstanceNonExecutable)?;
+        let out_dir = runtime.outgoing_dir().ok_or(OpenOutgoingDirError::InstanceNonExecutable)?;
         let path = fuchsia_fs::canonicalize_path(&path);
         let server_chan = channel::take_channel(server_chan);
         let server_end = ServerEnd::new(server_chan);
@@ -970,7 +956,7 @@ impl ComponentInstance {
                         moniker: self.moniker.clone(),
                     });
                 }
-                InstanceState::New | InstanceState::Unresolved => {
+                InstanceState::New | InstanceState::Unresolved(_) => {
                     panic!("start: not resolved")
                 }
             }
@@ -1014,8 +1000,8 @@ impl ComponentInstance {
         }
     }
 
-    pub fn instance_id(self: &Arc<Self>) -> Option<ComponentInstanceId> {
-        self.context.component_id_index().look_up_moniker(&self.moniker).cloned()
+    pub fn instance_id(&self) -> Option<&InstanceId> {
+        self.context.component_id_index().id_for_moniker(&self.moniker)
     }
 
     /// Runs the provided closure with this component's logger (if any) set as the default
@@ -1026,7 +1012,7 @@ impl ComponentInstance {
     pub async fn with_logger_as_default<T>(&self, op: impl FnOnce() -> T) -> T {
         let execution = self.lock_execution().await;
         match &execution.runtime {
-            Some(Runtime { logger: Some(ref logger), .. }) => {
+            Some(ComponentRuntime { logger: Some(ref logger), .. }) => {
                 let logger = logger.clone() as Arc<dyn tracing::Subscriber + Send + Sync>;
                 tracing::subscriber::with_default(logger, op)
             }
@@ -1113,7 +1099,7 @@ impl ComponentInstanceInterface for ComponentInstance {
         &self.context.policy()
     }
 
-    fn component_id_index(&self) -> Arc<ComponentIdIndex> {
+    fn component_id_index(&self) -> &component_id_index::Index {
         self.context.component_id_index()
     }
 
@@ -1154,13 +1140,18 @@ pub struct ExecutionState {
 
     /// Runtime support for the component. From component manager's point of view, the component
     /// instance is running iff this field is set.
-    pub runtime: Option<Runtime>,
+    pub runtime: Option<ComponentRuntime>,
 }
 
 impl ExecutionState {
     /// Creates a new ExecutionState.
     pub fn new() -> Self {
         Self { shut_down: false, runtime: None }
+    }
+
+    /// Returns whether the component is started, i.e. if it has a runtime.
+    pub fn is_started(&self) -> bool {
+        self.runtime.is_some()
     }
 
     /// Returns whether the instance has shut down.
@@ -1190,7 +1181,7 @@ pub enum InstanceState {
     /// The instance was just created.
     New,
     /// A Discovered event has been dispatched for the instance, but it has not been resolved yet.
-    Unresolved,
+    Unresolved(UnresolvedInstanceState),
     /// The instance has been resolved.
     Resolved(ResolvedInstanceState),
     /// The instance has been destroyed. It has no content and no further actions may be registered
@@ -1207,13 +1198,13 @@ impl InstanceState {
         match (&self, &next) {
             (Self::New, Self::New)
             | (Self::New, Self::Resolved(_))
-            | (Self::Unresolved, Self::Unresolved)
-            | (Self::Unresolved, Self::New)
+            | (Self::Unresolved(_), Self::Unresolved(_))
+            | (Self::Unresolved(_), Self::New)
             | (Self::Resolved(_), Self::Resolved(_))
             | (Self::Resolved(_), Self::New)
             | (Self::Destroyed, Self::Destroyed)
             | (Self::Destroyed, Self::New)
-            | (Self::Destroyed, Self::Unresolved)
+            | (Self::Destroyed, Self::Unresolved(_))
             | (Self::Destroyed, Self::Resolved(_)) => {
                 panic!("Invalid instance state transition from {:?} to {:?}", self, next);
             }
@@ -1228,11 +1219,22 @@ impl fmt::Debug for InstanceState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::New => "New",
-            Self::Unresolved => "Discovered",
+            Self::Unresolved(_) => "Discovered",
             Self::Resolved(_) => "Resolved",
             Self::Destroyed => "Destroyed",
         };
         f.write_str(s)
+    }
+}
+
+pub struct UnresolvedInstanceState {
+    /// The dict containing all capabilities that the parent wished to provide to us.
+    pub component_input_dict: Dict,
+}
+
+impl UnresolvedInstanceState {
+    pub fn new(component_input_dict: Dict) -> Self {
+        Self { component_input_dict }
     }
 }
 
@@ -1263,7 +1265,7 @@ impl shutdown::Component for ResolvedInstanceState {
     }
 
     fn environments(&self) -> Vec<cm_rust::EnvironmentDecl> {
-        self.decl.environments.clone()
+        self.resolved_component.decl.environments.clone()
     }
 
     fn children(&self) -> Vec<shutdown::Child> {
@@ -1279,88 +1281,267 @@ impl shutdown::Component for ResolvedInstanceState {
 
 /// The mutable state of a resolved component instance.
 pub struct ResolvedInstanceState {
+    /// Weak reference to the component that owns this state.
+    weak_component: WeakComponentInstance,
+
     /// The ExecutionScope for this component. Pseudo directories should be hosted with this
     /// scope to tie their life-time to that of the component.
     execution_scope: ExecutionScope,
-    /// The component's declaration.
-    decl: ComponentDecl,
+
+    /// Result of resolving the component.
+    pub resolved_component: Component,
+
     /// All child instances, indexed by child moniker.
     children: HashMap<ChildName, Arc<ComponentInstance>>,
+
     /// The next unique identifier for a dynamic children created in this realm.
     /// (Static instances receive identifier 0.)
     next_dynamic_instance_id: IncarnationId,
+
     /// The set of named Environments defined by this instance.
     environments: HashMap<String, Arc<Environment>>,
+
+    /// Directory that represents the program's namespace.
+    ///
+    /// This is only used for introspection, e.g. in RealmQuery. The program receives a
+    /// namespace created in StartAction. The latter may have additional entries from
+    /// [StartChildArgs].
+    namespace_dir: Once<Arc<pfs::Simple>>,
+
     /// Hosts a directory mapping the component's exposed capabilities.
     exposed_dir: ExposedDir,
-    /// Hosts a directory mapping the component's namespace.
-    ns_dir: NamespaceDir,
-    /// Contains information about the package, if one exists
-    package: Option<Package>,
-    /// Contains the resolved configuration fields for this component, if they exist
-    config: Option<ConfigFields>,
+
     /// Dynamic offers targeting this component's dynamic children.
     ///
     /// Invariant: the `target` field of all offers must refer to a live dynamic
     /// child (i.e., a member of `live_children`), and if the `source` field
     /// refers to a dynamic child, it must also be live.
     dynamic_offers: Vec<cm_rust::OfferDecl>,
+
     /// The as-resolved location of the component: either an absolute component
     /// URL, or (with a package context) a relative path URL.
     address: ComponentAddress,
-    /// The context to be used to resolve a component from a path
-    /// relative to this component (for example, a component in a subpackage).
-    /// If `None`, the resolver cannot resolve relative path component URLs.
-    context_to_resolve_children: Option<ComponentResolutionContext>,
-    /// Service directories aggregated from children in this component's collection.
-    pub collection_services: HashMap<CollectionServiceRoute, Arc<CollectionServiceDirectory>>,
+
+    /// Anonymized service directories aggregated from collections and children.
+    pub anonymized_services: HashMap<AnonymizedServiceRoute, Arc<AnonymizedAggregateServiceDir>>,
+
+    /// The dict containing all capabilities that the parent wished to provide to us.
+    pub component_input_dict: Dict,
+
+    /// The router containing all capabilities that the parent wished to provide to us.
+    component_input: Router,
+
+    /// The dict containing all capabilities that we expose.
+    pub component_output_dict: Dict,
+
+    /// The dict containing all capabilities that we use.
+    pub program_input_dict: Dict,
+
+    /// The router containing all capabilities that we declare.
+    ///
+    /// Requesting capabilities from this router will start the component.
+    program_output: Router,
+
+    /// The dict containing receivers for all capabilities that we declare.
+    program_receivers_dict: Dict,
+
+    /// Dicts containing the capabilities we want to provide to each collection. Each new
+    /// dynamic child gets a clone of one of these dicts (which is potentially extended by
+    /// dynamic offers).
+    collection_dicts: HashMap<Name, Dict>,
 }
 
 impl ResolvedInstanceState {
     pub async fn new(
         component: &Arc<ComponentInstance>,
-        decl: ComponentDecl,
-        package: Option<Package>,
-        config: Option<ConfigFields>,
+        resolved_component: Component,
         address: ComponentAddress,
-        context_to_resolve_children: Option<ComponentResolutionContext>,
+        component_input_dict: Dict,
     ) -> Result<Self, ResolveActionError> {
+        let weak_component = WeakComponentInstance::new(component);
+
         // TODO(https://fxbug.dev/120627): Determine whether this is expected to fail.
-        let exposed_dir =
-            ExposedDir::new(ExecutionScope::new(), WeakComponentInstance::new(&component), &decl)?;
-        let ns_dir = NamespaceDir::new(
+        let exposed_dir = ExposedDir::new(
             ExecutionScope::new(),
-            WeakComponentInstance::new(&component),
-            &decl,
-            package.clone().map(|p| p.package_dir),
+            weak_component.clone(),
+            &resolved_component.decl,
         )?;
+        let environments = Self::instantiate_environments(component, &resolved_component.decl);
+        let decl = resolved_component.decl.clone();
+
+        // All declared capabilities must have a router, unless we are non-executable.
+        let program_output_dict = Dict::new();
+        let program_receivers_dict = Dict::new();
+        if decl.program.is_some() {
+            for capability in &decl.capabilities {
+                // We only support protocol capabilities right now
+                match &capability {
+                    cm_rust::CapabilityDecl::Protocol(_) => (),
+                    _ => continue,
+                }
+                let (receiver, sender) = Receiver::new();
+                let router = new_terminating_router(sender);
+                let router = router.with_policy_check(
+                    CapabilitySource::Component {
+                        capability: ComponentCapability::Protocol(match capability {
+                            cm_rust::CapabilityDecl::Protocol(p) => p.clone(),
+                            _ => panic!("we currently only support protocols"),
+                        }),
+                        component: weak_component.clone(),
+                    },
+                    component.policy_checker().clone(),
+                );
+                program_output_dict
+                    .insert_capability(iter::once(capability.name().as_str()), router);
+                program_receivers_dict
+                    .insert_capability(iter::once(capability.name().as_str()), receiver);
+            }
+        }
+        let program_output =
+            Self::start_component_on_request(Router::from_routable(program_output_dict), component);
+
+        let component_input = Router::from_routable(component_input_dict.clone());
+
         let mut state = Self {
+            weak_component,
             execution_scope: ExecutionScope::new(),
+            resolved_component,
             children: HashMap::new(),
             next_dynamic_instance_id: 1,
-            environments: Self::instantiate_environments(component, &decl),
+            environments,
+            namespace_dir: Once::default(),
             exposed_dir,
-            ns_dir,
-            package,
-            config,
             dynamic_offers: vec![],
             address,
-            context_to_resolve_children,
-            collection_services: HashMap::new(),
-            decl,
+            anonymized_services: HashMap::new(),
+            component_input_dict,
+            component_input,
+            component_output_dict: Dict::new(),
+            program_input_dict: Dict::new(),
+            program_output,
+            program_receivers_dict,
+            collection_dicts: HashMap::new(),
         };
         state.add_static_children(component).await?;
+
+        let component_sandbox = build_component_sandbox(
+            component,
+            &state.children,
+            &decl,
+            &state.component_input,
+            &state.component_output_dict,
+            &state.program_input_dict,
+            &state.program_output,
+            &mut state.collection_dicts,
+        );
+        state.discover_static_children(component_sandbox.child_dicts).await;
+
+        state.dispatch_receivers_to_providers(component, component_sandbox.sources_and_receivers);
         Ok(state)
+    }
+
+    /// Given a [`Router`] representing the program output, returns a router that starts the
+    /// component upon a capability request, then delegate the request to the provided router.
+    fn start_component_on_request(
+        program_output: Router,
+        component: &Arc<ComponentInstance>,
+    ) -> Router {
+        let weak_component = WeakComponentInstance::new(component);
+        Router::new(move |request, completer| {
+            let program_output = program_output.clone();
+            if let Ok(component) = weak_component.upgrade() {
+                let component_clone = component.clone();
+                component.nonblocking_task_group.spawn(async move {
+                    let target: WeakComponentInstance = request.target.unwrap();
+                    let target_moniker = target.moniker;
+                    // The path segments may be empty if one requested the entire program output.
+                    let name = request.relative_path.peek().map(String::as_str).unwrap_or("");
+                    let name = name.parse().unwrap();
+
+                    // If the component is already started, this will be a no-op.
+                    if let Err(e) = component_clone
+                        .start(
+                            &StartReason::AccessCapability { target: target_moniker, name },
+                            None,
+                            vec![],
+                            vec![],
+                        )
+                        .await
+                    {
+                        return completer.complete(Err(anyhow!(
+                            "failed to start component due to capability access: {}",
+                            e
+                        )));
+                    }
+
+                    program_output.route(request, completer);
+                });
+            } else {
+                completer.complete(Err(anyhow!("component is destroyed")));
+            }
+        })
+    }
+
+    fn dispatch_receivers_to_providers(
+        &self,
+        component: &Arc<ComponentInstance>,
+        sources_and_receivers: Vec<(CapabilitySourceFactory, Receiver<WeakComponentInstance>)>,
+    ) {
+        for (cap_source_factory, receiver) in sources_and_receivers {
+            let weak_component = WeakComponentInstance::new(component);
+            let capability_source = cap_source_factory.run(weak_component.clone());
+            self.execution_scope.spawn(
+                LaunchTaskOnReceive::new(
+                    component.nonblocking_task_group().as_weak(),
+                    "framework hook dispatcher",
+                    receiver,
+                    Some((component.context.policy().clone(), capability_source.clone())),
+                    Arc::new(move |mut channel, target| {
+                        let weak_component = weak_component.clone();
+                        let capability_source = capability_source.clone();
+                        async move {
+                            if let Ok(target) = target.upgrade() {
+                                if let Ok(component) = weak_component.upgrade() {
+                                    if let Some(provider) = target
+                                        .context
+                                        .find_internal_provider(
+                                            &capability_source,
+                                            target.as_weak(),
+                                        )
+                                        .await
+                                    {
+                                        provider
+                                            .open(
+                                                component.nonblocking_task_group(),
+                                                fio::OpenFlags::empty(),
+                                                PathBuf::from(""),
+                                                &mut channel,
+                                            )
+                                            .await?;
+                                        return Ok(());
+                                    }
+                                }
+
+                                let _ = channel.close_with_epitaph(zx::Status::UNAVAILABLE);
+                            }
+                            Ok(())
+                        }
+                        .boxed()
+                    }),
+                )
+                .run(),
+            );
+        }
     }
 
     /// Returns a reference to the component's validated declaration.
     pub fn decl(&self) -> &ComponentDecl {
-        &self.decl
+        &self.resolved_component.decl
     }
 
     #[cfg(test)]
     pub fn decl_as_mut(&mut self) -> &mut ComponentDecl {
-        &mut self.decl
+        &mut self.resolved_component.decl
     }
 
     /// This component's `ExecutionScope`.
@@ -1401,24 +1582,54 @@ impl ResolvedInstanceState {
             .collect()
     }
 
+    /// Returns a directory that represents the program's namespace at resolution time.
+    ///
+    /// This may not exactly match the namespace when the component is started since StartAction
+    /// may add additional entries.
+    pub async fn namespace_dir(&self) -> Result<Arc<pfs::Simple>, CreateNamespaceError> {
+        let create_namespace_dir = async {
+            let component = self
+                .weak_component
+                .upgrade()
+                .map_err(CreateNamespaceError::ComponentInstanceError)?;
+            // Build a namespace and convert it to a directory.
+            let namespace_builder = create_namespace(
+                self.resolved_component.package.as_ref(),
+                &component,
+                &self.resolved_component.decl,
+            )
+            .await?;
+            let (namespace, fut) =
+                namespace_builder.serve().map_err(CreateNamespaceError::BuildNamespaceError)?;
+            component.nonblocking_task_group().spawn(fasync::Task::spawn(fut));
+            let namespace_dir: Arc<pfs::Simple> = namespace.try_into().map_err(|err| {
+                CreateNamespaceError::ConvertToDirectory(ClonableError::from(anyhow::Error::from(
+                    err,
+                )))
+            })?;
+            Ok(namespace_dir)
+        };
+
+        Ok(self
+            .namespace_dir
+            .get_or_try_init::<_, CreateNamespaceError>(create_namespace_dir)
+            .await?
+            .clone())
+    }
+
     /// Returns the exposed directory bound to this instance.
     pub fn get_exposed_dir(&self) -> &ExposedDir {
         &self.exposed_dir
     }
 
-    /// Returns the namespace directory of this instance.
-    pub fn get_ns_dir(&self) -> &NamespaceDir {
-        &self.ns_dir
-    }
-
     /// Returns the resolved structured configuration of this instance, if any.
     pub fn config(&self) -> Option<&ConfigFields> {
-        self.config.as_ref()
+        self.resolved_component.config.as_ref()
     }
 
     /// Returns information about the package of the instance, if any.
     pub fn package(&self) -> Option<&Package> {
-        self.package.as_ref()
+        self.resolved_component.package.as_ref()
     }
 
     /// Removes a child.
@@ -1501,11 +1712,13 @@ impl ResolvedInstanceState {
         self.get_environment(component, collection.environment.as_ref())
     }
 
-    /// Adds a new child of this instance for the given `ChildDecl`. Returns a
-    /// future to wait on the child's `Discover` action, or `None` if a child
-    /// with the same name already existed. This function always succeeds - an
-    /// error returned by the `Future` means that the `Discover` action failed,
-    /// but the creation of the child still succeeded.
+    /// Adds a new child component instance.
+    ///
+    /// The new child starts with a registered `Discover` action. Returns the child and a future to
+    /// wait on the `Discover` action, or an error if a child with the same name already exists.
+    ///
+    /// If the outer `Result` is successful but the `Discover` future results in an error, the
+    /// `Discover` action failed, but the child was still created successfully.
     async fn add_child(
         &mut self,
         component: &Arc<ComponentInstance>,
@@ -1513,28 +1726,37 @@ impl ResolvedInstanceState {
         collection: Option<&CollectionDecl>,
         dynamic_offers: Option<Vec<fdecl::Offer>>,
         controller: Option<ServerEnd<fcomponent::ControllerMarker>>,
-    ) -> Result<BoxFuture<'static, Result<(), DiscoverActionError>>, AddChildError> {
-        let child = self
-            .add_child_internal(component, child, collection, dynamic_offers, controller)
+        dict: Dict,
+    ) -> Result<
+        (Arc<ComponentInstance>, BoxFuture<'static, Result<(), DiscoverActionError>>),
+        AddChildError,
+    > {
+        let (child, dict) = self
+            .add_child_internal(component, child, collection, dynamic_offers, controller, dict)
             .await?;
-        // We can dispatch a Discovered event for the component now that it's installed in the
-        // tree, which means any Discovered hooks will capture it.
-        let mut actions = child.lock_actions().await;
-        Ok(actions.register_no_wait(&child, DiscoverAction::new()).boxed())
+        // Register a Discover action.
+        let discover_fut = child
+            .clone()
+            .lock_actions()
+            .await
+            .register_no_wait(&child, DiscoverAction::new(dict))
+            .boxed();
+        Ok((child, discover_fut))
     }
 
     /// Adds a new child of this instance for the given `ChildDecl`. Returns
     /// a result indicating if the new child instance has been successfully added.
     /// Like `add_child`, but doesn't register a `Discover` action, and therefore
     /// doesn't return a future to wait for.
-    #[cfg(test)]
     pub async fn add_child_no_discover(
         &mut self,
         component: &Arc<ComponentInstance>,
         child: &ChildDecl,
         collection: Option<&CollectionDecl>,
     ) -> Result<(), AddChildError> {
-        self.add_child_internal(component, child, collection, None, None).await.map(|_| ())
+        self.add_child_internal(component, child, collection, None, None, Dict::new())
+            .await
+            .map(|_| ())
     }
 
     async fn add_child_internal(
@@ -1544,15 +1766,30 @@ impl ResolvedInstanceState {
         collection: Option<&CollectionDecl>,
         dynamic_offers: Option<Vec<fdecl::Offer>>,
         controller: Option<ServerEnd<fcomponent::ControllerMarker>>,
-    ) -> Result<Arc<ComponentInstance>, AddChildError> {
+        mut child_dict: Dict,
+    ) -> Result<(Arc<ComponentInstance>, Dict), AddChildError> {
         assert!(
             (dynamic_offers.is_none()) || collection.is_some(),
             "setting numbered handles or dynamic offers for static children",
         );
         let dynamic_offers =
             self.validate_and_convert_dynamic_offers(dynamic_offers, child, collection)?;
+
         let child_moniker =
             ChildName::try_new(child.name.as_str(), collection.map(|c| c.name.as_str()))?;
+
+        if !dynamic_offers.is_empty() {
+            let sources_and_receivers = extend_dict_with_offers(
+                component,
+                &self.children,
+                &self.component_input,
+                &self.program_output,
+                &dynamic_offers,
+                &mut child_dict,
+            );
+            self.dispatch_receivers_to_providers(component, sources_and_receivers);
+        }
+
         if self.get_child(&child_moniker).is_some() {
             return Err(AddChildError::InstanceAlreadyExists {
                 moniker: component.moniker().clone(),
@@ -1584,17 +1821,13 @@ impl ResolvedInstanceState {
         if let Some(controller) = controller {
             if let Ok(stream) = controller.into_stream() {
                 child
-                    .nonblocking_task_scope()
-                    .add_task(controller::run_controller(
-                        WeakComponentInstance::new(&child),
-                        stream,
-                    ))
-                    .await;
+                    .nonblocking_task_group()
+                    .spawn(controller::run_controller(WeakComponentInstance::new(&child), stream));
             }
         }
         self.children.insert(child_moniker, child.clone());
         self.dynamic_offers.extend(dynamic_offers.into_iter());
-        Ok(child)
+        Ok((child, child_dict))
     }
 
     fn validate_and_convert_dynamic_offers(
@@ -1642,7 +1875,7 @@ impl ResolvedInstanceState {
         all_dynamic_offers.append(&mut dynamic_offers.clone());
         cm_fidl_validator::validate_dynamic_offers(
             &all_dynamic_offers,
-            &self.decl.clone().native_into_fidl(),
+            &self.resolved_component.decl.clone().native_into_fidl(),
         )?;
         // Manifest validation is not informed of the contents of collections, and is thus unable
         // to confirm the source exists if it's in a collection. Let's check that here.
@@ -1662,13 +1895,25 @@ impl ResolvedInstanceState {
     ) -> Result<(), ResolveActionError> {
         // We can't hold an immutable reference to `self` while passing a mutable reference later
         // on. To get around this, clone the children.
-        let children = self.decl.children.clone();
+        let children = self.resolved_component.decl.children.clone();
         for child in &children {
-            self.add_child(component, child, None, None, None).await.map_err(|err| {
+            self.add_child_no_discover(component, child, None).await.map_err(|err| {
                 ResolveActionError::AddStaticChildError { child_name: child.name.to_string(), err }
             })?;
         }
         Ok(())
+    }
+
+    async fn discover_static_children(&self, mut child_dicts: HashMap<Name, Dict>) {
+        for (child_name, child_instance) in &self.children {
+            let child_name = Name::new(child_name.name()).unwrap();
+            let child_dict = child_dicts.remove(&child_name).expect("missing child dict");
+            let _discover_fut = child_instance
+                .clone()
+                .lock_actions()
+                .await
+                .register_no_wait(&child_instance, DiscoverAction::new(child_dict));
+        }
     }
 }
 
@@ -1676,23 +1921,29 @@ impl ResolvedInstanceInterface for ResolvedInstanceState {
     type Component = ComponentInstance;
 
     fn uses(&self) -> Vec<UseDecl> {
-        self.decl.uses.clone()
+        self.resolved_component.decl.uses.clone()
     }
 
     fn exposes(&self) -> Vec<cm_rust::ExposeDecl> {
-        self.decl.exposes.clone()
+        self.resolved_component.decl.exposes.clone()
     }
 
     fn offers(&self) -> Vec<cm_rust::OfferDecl> {
-        self.decl.offers.iter().chain(self.dynamic_offers.iter()).cloned().collect()
+        self.resolved_component
+            .decl
+            .offers
+            .iter()
+            .chain(self.dynamic_offers.iter())
+            .cloned()
+            .collect()
     }
 
     fn capabilities(&self) -> Vec<cm_rust::CapabilityDecl> {
-        self.decl.capabilities.clone()
+        self.resolved_component.decl.capabilities.clone()
     }
 
     fn collections(&self) -> Vec<cm_rust::CollectionDecl> {
-        self.decl.collections.clone()
+        self.resolved_component.decl.collections.clone()
     }
 
     fn get_child(&self, moniker: &ChildName) -> Option<Arc<ComponentInstance>> {
@@ -1711,30 +1962,25 @@ impl ResolvedInstanceInterface for ResolvedInstanceState {
     }
 
     fn context_to_resolve_children(&self) -> Option<ComponentResolutionContext> {
-        self.context_to_resolve_children.clone()
+        self.resolved_component.context_to_resolve_children.clone()
     }
 }
 
 /// The execution state for a component instance that has started running.
-pub struct Runtime {
-    /// A client handle to the component instance's outgoing directory.
-    pub outgoing_dir: Option<fio::DirectoryProxy>,
-
+///
+/// If the component instance has a program, it may also have a [`ProgramRuntime`].
+pub struct ComponentRuntime {
     /// A client handle to the component instance's runtime directory hosted by the runner.
     pub runtime_dir: Option<fio::DirectoryProxy>,
 
-    /// Used to interact with the Runner to influence the component's execution.
-    pub controller: Option<ComponentController>,
+    /// If set, that means this component is associated with a running program.
+    program: Option<ProgramRuntime>,
 
     /// Approximates when the component was started.
     pub timestamp: zx::Time,
 
     /// Describes why the component instance was started
     pub start_reason: StartReason,
-
-    /// Listens for the controller channel to close in the background. This task is cancelled when
-    /// the `Runtime` is dropped.
-    exit_listener: Option<fasync::Task<()>>,
 
     /// Channels scoped to lifetime of this component's execution context. This
     /// should only be used for the server_end of the `fuchsia.component.Binder`
@@ -1751,55 +1997,76 @@ pub struct Runtime {
     logger: Option<Arc<ScopedLogger>>,
 }
 
-#[derive(Debug, PartialEq)]
-/// Represents the result of a request to stop a component, which has two
-/// pieces. There is what happened to sending the request over the FIDL
-/// channel to the controller and then what the exit status of the component
-/// is. For example, the component might have exited with error before the
-/// request was sent, in which case we encountered no error processing the stop
-/// request and the component is considered to have terminated abnormally.
-pub struct ComponentStopOutcome {
-    /// The result of the request to stop the component.
-    pub request: StopRequestSuccess,
-    /// The final status of the component.
-    pub component_exit_status: zx::Status,
+/// The execution state for a program instance that is running.
+struct ProgramRuntime {
+    /// Used to interact with the Runner to influence the program's execution.
+    program: Program,
+
+    /// Listens for the controller channel to close in the background. This task is cancelled when
+    /// the [`ProgramRuntime`] is dropped.
+    exit_listener: fasync::Task<()>,
+
+    /// Reads messages from the program dict and dispatches those messages into the program's
+    /// outgoing directory.
+    _dict_dispatcher: DictDispatcher,
 }
 
-#[derive(Debug, PartialEq)]
-/// Outcomes of the stop request that are considered success. A request success
-/// indicates that the request was sent without error over the
-/// ComponentController channel or that sending the request was not necessary
-/// because the component stopped previously.
-pub enum StopRequestSuccess {
-    /// The component did not stop in time, but was killed before the kill
-    /// timeout.
-    Killed,
-    /// The component did not stop in time and was killed after the kill
-    /// timeout was reached.
-    KilledAfterTimeout,
-    /// The component had no Controller, no request was sent, and therefore no
-    /// error occurred in the send process.
-    NoController,
-    /// The component stopped within the timeout.
-    Stopped,
+impl ProgramRuntime {
+    pub fn new(program: Program, component: WeakComponentInstance) -> Self {
+        let terminated_fut = program.on_terminate();
+        let component_clone = component.clone();
+        let exit_listener = fasync::Task::spawn(async move {
+            terminated_fut.await;
+            if let Ok(component) = component.upgrade() {
+                let mut actions = component.lock_actions().await;
+                let stop_nf = actions.register_no_wait(&component, StopAction::new(false));
+                drop(actions);
+                component.nonblocking_task_group().spawn(fasync::Task::spawn(async move {
+                    let _ = stop_nf.await.map_err(
+                        |err| warn!(%err, "Watching for program termination: Stop failed"),
+                    );
+                }));
+            }
+        });
+        let dict_dispatcher = DictDispatcher::new(
+            <fio::DirectoryProxy as Clone>::clone(program.outgoing()),
+            component_clone,
+        );
+        Self { program, exit_listener, _dict_dispatcher: dict_dispatcher }
+    }
+
+    pub async fn stop<'a, 'b>(
+        self,
+        stop_timer: BoxFuture<'a, ()>,
+        kill_timer: BoxFuture<'b, ()>,
+    ) -> Result<ComponentStopOutcome, program::StopError> {
+        let stop_result = self.program.stop_or_kill_with_timeout(stop_timer, kill_timer).await;
+        // Drop the program and join on the exit listener. Dropping the program
+        // should cause the exit listener to stop waiting for the channel epitaph and
+        // exit.
+        //
+        // Note: this is more reliable than just cancelling `exit_listener` because
+        // even after cancellation future may still run for a short period of time
+        // before getting dropped. If that happens there is a chance of scheduling a
+        // duplicate Stop action.
+        drop(self.program);
+        self.exit_listener.await;
+        stop_result
+    }
 }
 
-impl Runtime {
-    pub fn start_from(
-        outgoing_dir: Option<fio::DirectoryProxy>,
+impl ComponentRuntime {
+    pub fn new(
         runtime_dir: Option<fio::DirectoryProxy>,
-        controller: Option<fcrunner::ComponentControllerProxy>,
         start_reason: StartReason,
         execution_controller_task: Option<controller::ExecutionControllerTask>,
         logger: Option<ScopedLogger>,
     ) -> Self {
         let timestamp = zx::Time::get_monotonic();
-        Runtime {
-            outgoing_dir,
+        ComponentRuntime {
             runtime_dir,
-            controller: controller.map(ComponentController::new),
+            program: None,
             timestamp,
-            exit_listener: None,
             binder_server_ends: vec![],
             start_reason,
             execution_controller_task,
@@ -1807,47 +2074,39 @@ impl Runtime {
         }
     }
 
-    /// If the Runtime has a controller this creates a background context which
-    /// watches for the controller's channel to close. If the channel closes,
-    /// the background context attempts to use the WeakComponentInstance to stop the
-    /// component.
-    pub fn watch_for_exit(&mut self, component: WeakComponentInstance) {
-        if let Some(controller) = &self.controller {
-            let epitaph_fut = controller.wait_for_epitaph();
-            let exit_listener = fasync::Task::spawn(async move {
-                epitaph_fut.await;
-                if let Ok(component) = component.upgrade() {
-                    let mut actions = component.lock_actions().await;
-                    let stop_nf = actions.register_no_wait(&component, StopAction::new(false));
-                    drop(actions);
-                    component
-                        .nonblocking_task_scope()
-                        .add_task(fasync::Task::spawn(async move {
-                            let _ = stop_nf
-                                .await
-                                .map_err(|err| warn!(%err, "watch_for_exit: Stop failed"));
-                        }))
-                        .await;
-                }
-            });
-            self.exit_listener = Some(exit_listener);
-        }
+    /// If this component is associated with a running [Program], obtain a capability
+    /// representing its outgoing directory.
+    pub fn outgoing_dir(&self) -> Option<&fio::DirectoryProxy> {
+        self.program.as_ref().map(|program_runtime| program_runtime.program.outgoing())
     }
 
-    /// Stop the component. The timer defines how long the component is given
-    /// to stop itself before we request the controller terminate the
-    /// component.
-    pub async fn stop_component<'a, 'b>(
+    /// Associates the [ComponentRuntime] with a running [Program].
+    ///
+    /// Creates a background task waiting for the program to terminate. When that happens, use the
+    /// [WeakComponentInstance] to stop the component.
+    ///
+    /// Creates a background task that watches for incoming requests directed to the program, and
+    /// dispatches them to the outgoing directory of the program.
+    pub fn set_program(&mut self, program: Program, component: WeakComponentInstance) {
+        self.program = Some(ProgramRuntime::new(program, component));
+    }
+
+    /// Stop the program, if any. The timer defines how long the runner is given to stop the
+    /// program gracefully before we request the controller to terminate the program.
+    ///
+    /// Regardless if the runner honored our request, after this method, the [`ComponentRuntime`] is
+    /// no longer associated with a [Program].
+    pub async fn stop_program<'a, 'b>(
         &'a mut self,
         stop_timer: BoxFuture<'a, ()>,
         kill_timer: BoxFuture<'b, ()>,
-    ) -> Result<ComponentStopOutcome, StopActionError> {
-        // Potentially there is no controller, perhaps because the component
+    ) -> Result<ComponentStopOutcome, program::StopError> {
+        let program = self.program.take();
+        // Potentially there is no program, perhaps because the component
         // has no running code. In this case this is a no-op.
-        if let Some(ref controller) = self.controller {
-            stop_component_internal(controller, stop_timer, kill_timer).await
+        if let Some(program) = program {
+            program.stop(stop_timer, kill_timer).await
         } else {
-            // TODO(jmatt) Need test coverage
             Ok(ComponentStopOutcome {
                 request: StopRequestSuccess::NoController,
                 component_exit_status: zx::Status::OK,
@@ -1859,77 +2118,111 @@ impl Runtime {
     pub fn add_scoped_server_end(&mut self, server_end: zx::Channel) {
         self.binder_server_ends.push(server_end);
     }
+
+    /// Gets a [`Koid`] that will uniquely identify the program.
+    #[cfg(test)]
+    pub fn program_koid(&self) -> Option<fuchsia_zircon::Koid> {
+        self.program.as_ref().map(|program_runtime| program_runtime.program.koid())
+    }
 }
 
-async fn stop_component_internal<'a, 'b>(
-    controller: &ComponentController,
-    stop_timer: BoxFuture<'a, ()>,
-    kill_timer: BoxFuture<'b, ()>,
-) -> Result<ComponentStopOutcome, StopActionError> {
-    match do_runner_stop(controller, stop_timer).await {
-        Some(r) => r,
-        None => {
-            // We must have hit the stop timeout because calling stop didn't return
-            // a result, move to killing the component.
-            do_runner_kill(controller, kill_timer).await
+/// Reads messages from Receivers in a Dict, writing open requests into the given directory.
+struct DictDispatcher {
+    _task: fasync::Task<()>,
+}
+
+impl DictDispatcher {
+    pub fn new(directory: fio::DirectoryProxy, component: WeakComponentInstance) -> Self {
+        Self {
+            _task: fasync::Task::spawn(async move {
+                // Obtain the receivers dict and capability declarations.
+                let (dict, capability_decls) = {
+                    let Some(component) = component.upgrade().ok() else {
+                        return;
+                    };
+                    let Some(resolved) = component.lock_resolved_state().await.ok() else {
+                        return;
+                    };
+                    (resolved.program_receivers_dict.clone(), resolved.capabilities().clone())
+                };
+
+                while let Some((name, message)) = dict.read_receivers().await {
+                    let capability_decl = capability_decls
+                        .iter()
+                        .find(|decl| decl.name() == &name)
+                        .expect("capability received for name not in dict");
+                    // Check if the hooks system wants to claim the handle.
+                    if let Some(channel) = Self::dispatch_capability_routed_hook(
+                        &component,
+                        name.to_string(),
+                        message.payload.channel,
+                        message.target,
+                        message.payload.flags,
+                        "".into(),
+                    )
+                    .await
+                    {
+                        // Deliver the handle to the component.
+                        let path = fuchsia_fs::canonicalize_path(
+                            capability_decl
+                                .path()
+                                .expect("invalid protocol capability decl")
+                                .as_str(),
+                        );
+                        let server_end = ServerEnd::new(channel);
+                        // There's not much we can do if the open fails. The component's probably
+                        // crashed, and the stop action should be initiated momentarily or already
+                        // have started.
+                        let _ = directory.open(
+                            message.payload.flags,
+                            fio::ModeType::empty(),
+                            path,
+                            server_end,
+                        );
+                    }
+                }
+            }),
         }
     }
-}
 
-async fn do_runner_stop<'a>(
-    controller: &ComponentController,
-    stop_timer: BoxFuture<'a, ()>,
-) -> Option<Result<ComponentStopOutcome, StopActionError>> {
-    // Ask the controller to stop the component
-    if let Err(e) = controller.stop() {
-        // There was some problem sending the message, perhaps a
-        // protocol error, but there isn't really a way to recover.
-        return Some(Err(StopActionError::ControllerStopFidlError(e)));
-    }
-
-    let channel_close = Box::pin(async move {
-        controller.on_closed().await.expect("failed waiting for channel to close");
-    });
-
-    // Wait for either the timer to fire or the channel to close
-    match futures::future::select(stop_timer, channel_close).await {
-        Either::Left(((), _channel_close)) => None,
-        Either::Right((_timer, _close_result)) => Some(Ok(ComponentStopOutcome {
-            request: StopRequestSuccess::Stopped,
-            component_exit_status: controller.wait_for_epitaph().await,
-        })),
-    }
-}
-
-async fn do_runner_kill<'a>(
-    controller: &ComponentController,
-    kill_timer: BoxFuture<'a, ()>,
-) -> Result<ComponentStopOutcome, StopActionError> {
-    match controller.kill() {
-        Ok(()) => {
-            // Wait for the controller to close the channel
-            let channel_close = Box::pin(async move {
-                controller.on_closed().await.expect("error waiting for channel to close");
-            });
-
-            // If the control channel closes first, report the component to be
-            // kill "normally", otherwise report it as killed after timeout.
-            match futures::future::select(kill_timer, channel_close).await {
-                Either::Left(((), _channel_close)) => Ok(ComponentStopOutcome {
-                    request: StopRequestSuccess::KilledAfterTimeout,
-                    component_exit_status: zx::Status::TIMED_OUT,
-                }),
-                Either::Right((_timer, _close_result)) => Ok(ComponentStopOutcome {
-                    request: StopRequestSuccess::Killed,
-                    component_exit_status: controller.wait_for_epitaph().await,
-                }),
+    /// Dispatches the capability routed hook. Returns the handle if none of the hooks took it.
+    async fn dispatch_capability_routed_hook(
+        source_component: &WeakComponentInstance,
+        name: String,
+        channel: zx::Channel,
+        target_component: WeakComponentInstance,
+        flags: fio::OpenFlags,
+        relative_path: PathBuf,
+    ) -> Option<zx::Channel> {
+        let capability = Arc::new(Mutex::new(Some(channel)));
+        let source_component = match source_component.upgrade() {
+            Ok(component) => component,
+            Err(_) => {
+                // If the source component doesn't exist anymore, then there's nothing to be done.
+                return None;
             }
-        }
-        Err(e) => {
-            // There was some problem sending the message, perhaps a
-            // protocol error, but there isn't really a way to recover.
-            Err(StopActionError::ControllerKillFidlError(e))
-        }
+        };
+        let target_component = match target_component.upgrade() {
+            Ok(component) => component,
+            Err(_) => {
+                // If the target component doesn't exist anymore, then we can't craft the following
+                // event payload.
+                return None;
+            }
+        };
+        let event = Event::new(
+            &target_component,
+            EventPayload::CapabilityRequested {
+                source_moniker: source_component.moniker.clone(),
+                name,
+                capability: capability.clone(),
+                flags,
+                relative_path,
+            },
+        );
+        source_component.hooks.dispatch(&event).await;
+        let mut guard = capability.lock().await;
+        guard.take()
     }
 }
 
@@ -1942,12 +2235,12 @@ pub mod tests {
             events::{registry::EventSubscription, stream::EventStream},
             hooks::EventType,
             testing::{
-                mocks::{ControlMessage, ControllerActionResponse, MockController},
+                out_dir::OutDir,
                 routing_test_helpers::{RoutingTest, RoutingTestBuilder},
                 test_helpers::{component_decl_with_test_runner, ActionsTest, ComponentInfo},
             },
         },
-        ::routing::component_id_index::ComponentInstanceId,
+        ::routing::component_instance::AnyWeakComponentInstance,
         assert_matches::assert_matches,
         cm_rust::{
             Availability, CapabilityDecl, ChildRef, DependencyType, ExposeDecl, ExposeProtocolDecl,
@@ -1957,467 +2250,27 @@ pub mod tests {
         },
         cm_rust_testing::{
             ChildDeclBuilder, CollectionDeclBuilder, ComponentDeclBuilder, EnvironmentDeclBuilder,
+            ProtocolDeclBuilder,
         },
-        component_id_index::gen_instance_id,
-        fidl::endpoints,
-        fuchsia_async as fasync,
-        fuchsia_zircon::{self as zx, AsHandleRef, Koid},
-        futures::lock::Mutex,
+        component_id_index::InstanceId,
+        fidl::endpoints::DiscoverableProtocolMarker,
+        fidl_fuchsia_logger as flogger, fuchsia_async as fasync, fuchsia_zircon as zx,
+        futures::{channel::mpsc, StreamExt, TryStreamExt},
         moniker::Moniker,
         routing_test_helpers::component_id_index::make_index_file,
         std::panic,
-        std::{boxed::Box, collections::HashMap, str::FromStr, sync::Arc, task::Poll},
+        std::sync::Arc,
+        tracing::info,
+        vfs::service::host,
     };
-
-    #[fuchsia::test]
-    /// Test scenario where we tell the controller to stop the component and
-    /// the component stops immediately.
-    async fn stop_component_well_behaved_component_stop() {
-        // Create a mock controller which simulates immediately shutting down
-        // the component.
-        let stop_timeout = zx::Duration::from_millis(50);
-        let kill_timeout = zx::Duration::from_millis(10);
-        let (client, server) = endpoints::create_endpoints::<fcrunner::ComponentControllerMarker>();
-        let server_channel_koid = server
-            .as_handle_ref()
-            .basic_info()
-            .expect("failed to get basic info on server channel")
-            .koid;
-
-        // Create a request map which the MockController will fill with
-        // requests it received related to mocked component.
-        let requests: Arc<Mutex<HashMap<Koid, Vec<ControlMessage>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let controller = MockController::new(server, requests.clone(), server_channel_koid);
-        controller.serve();
-
-        let stop_timer = Box::pin(fasync::Timer::new(fasync::Time::after(stop_timeout)));
-        let kill_timer = Box::pin(async move {
-            let timer = fasync::Timer::new(fasync::Time::after(kill_timeout));
-            timer.await;
-        });
-        let client_proxy = client.into_proxy().expect("failed to convert client to proxy");
-        let component = ComponentController::new(client_proxy);
-        match stop_component_internal(&component, stop_timer, kill_timer).await {
-            Ok(ComponentStopOutcome {
-                request: StopRequestSuccess::Stopped,
-                component_exit_status: zx::Status::OK,
-            }) => {}
-            Ok(result) => {
-                panic!("unexpected successful stop result {:?}", result);
-            }
-            Err(e) => {
-                panic!("unexpected error stopping component {:?}", e);
-            }
-        }
-
-        let msg_map = requests.lock().await;
-        let msg_list =
-            msg_map.get(&server_channel_koid).expect("No messages received on the channel");
-
-        // The controller should have only seen a STOP message since it stops
-        // the component immediately.
-        assert_eq!(msg_list, &vec![ControlMessage::Stop]);
-    }
-
-    #[fuchsia::test]
-    /// Test where the control channel is already closed when we try to stop
-    /// the component.
-    async fn stop_component_successful_component_already_gone() {
-        let stop_timeout = zx::Duration::from_millis(100);
-        let kill_timeout = zx::Duration::from_millis(1);
-        let (client, server) = endpoints::create_endpoints::<fcrunner::ComponentControllerMarker>();
-
-        let stop_timer = Box::pin(fasync::Timer::new(fasync::Time::after(stop_timeout)));
-        let kill_timer = Box::pin(async move {
-            let timer = fasync::Timer::new(fasync::Time::after(kill_timeout));
-            timer.await;
-        });
-        let client_proxy = client.into_proxy().expect("failed to convert client to proxy");
-        let component = ComponentController::new(client_proxy);
-
-        // Drop the server end so it closes
-        drop(server);
-        match stop_component_internal(&component, stop_timer, kill_timer).await {
-            Ok(ComponentStopOutcome {
-                request: StopRequestSuccess::Stopped,
-                component_exit_status: zx::Status::PEER_CLOSED,
-            }) => {}
-            Ok(result) => {
-                panic!("unexpected successful stop result {:?}", result);
-            }
-            Err(e) => {
-                panic!("unexpected error stopping component {:?}", e);
-            }
-        }
-    }
-
-    #[fuchsia::test]
-    /// The scenario where the controller stops the component after a delay
-    /// which is before the controller reaches its timeout.
-    fn stop_component_successful_stop_with_delay() {
-        let mut exec = fasync::TestExecutor::new_with_fake_time();
-
-        // Create a mock controller which simulates shutting down the component
-        // after a delay. The delay is much shorter than the period allotted
-        // for the component to stop.
-        let stop_timeout = zx::Duration::from_seconds(5);
-        let kill_timeout = zx::Duration::from_millis(1);
-        let (client, server) = endpoints::create_endpoints::<fcrunner::ComponentControllerMarker>();
-        let server_channel_koid = server
-            .as_handle_ref()
-            .basic_info()
-            .expect("failed to get basic info on server channel")
-            .koid;
-
-        // Create a request map which the MockController will fill with
-        // requests it received related to mocked component.
-        let requests: Arc<Mutex<HashMap<Koid, Vec<ControlMessage>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let component_stop_delay = zx::Duration::from_millis(stop_timeout.into_millis() / 1_000);
-        let controller = MockController::new_with_responses(
-            server,
-            requests.clone(),
-            server_channel_koid,
-            // stop the component after 60ms
-            ControllerActionResponse { close_channel: true, delay: Some(component_stop_delay) },
-            ControllerActionResponse { close_channel: true, delay: Some(component_stop_delay) },
-        );
-        controller.serve();
-
-        // Create the stop call that we expect to stop the component.
-        let stop_timer = Box::pin(fasync::Timer::new(fasync::Time::after(stop_timeout)));
-        let kill_timer = Box::pin(async move {
-            let timer = fasync::Timer::new(fasync::Time::after(kill_timeout));
-            timer.await;
-        });
-        let client_proxy = client.into_proxy().expect("failed to convert client to proxy");
-        let component = ComponentController::new(client_proxy);
-        let mut stop_future = Box::pin(stop_component_internal(&component, stop_timer, kill_timer));
-
-        // Poll the stop component future to where it has asked the controller
-        // to stop the component. This should also cause the controller to
-        // spawn the future with a delay to close the control channel.
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut stop_future));
-
-        // Advance the clock beyond where the future to close the channel
-        // should fire.
-        let new_time =
-            fasync::Time::from_nanos(exec.now().into_nanos() + component_stop_delay.into_nanos());
-        exec.set_fake_time(new_time);
-        exec.wake_expired_timers();
-
-        // The controller channel should be closed so we can drive the stop
-        // future to completion.
-        match exec.run_until_stalled(&mut stop_future) {
-            Poll::Ready(Ok(ComponentStopOutcome {
-                request: StopRequestSuccess::Stopped,
-                component_exit_status: zx::Status::OK,
-            })) => {}
-            Poll::Ready(Ok(result)) => {
-                panic!("unexpected successful stop result {:?}", result);
-            }
-            Poll::Ready(Err(e)) => {
-                panic!("unexpected error stopping component {:?}", e);
-            }
-            Poll::Pending => {
-                panic!("future should have completed!");
-            }
-        }
-
-        // Check that what we expect to be in the message map is there.
-        let mut test_fut = Box::pin(async {
-            let msg_map = requests.lock().await;
-            let msg_list =
-                msg_map.get(&server_channel_koid).expect("No messages received on the channel");
-
-            // The controller should have only seen a STOP message since it stops
-            // the component before the timeout is hit.
-            assert_eq!(msg_list, &vec![ControlMessage::Stop]);
-        });
-        assert_eq!(Poll::Ready(()), exec.run_until_stalled(&mut test_fut));
-    }
-
-    #[fuchsia::test]
-    /// Test scenario where the controller does not stop the component within
-    /// the allowed period and the component stop state machine has to send
-    /// the `kill` message to the controller. The runner then does not kill the
-    /// component within the kill time out period.
-    fn stop_component_successful_with_kill_timeout_result() {
-        let mut exec = fasync::TestExecutor::new_with_fake_time();
-
-        // Create a controller which takes far longer than allowed to stop the
-        // component.
-        let stop_timeout = zx::Duration::from_seconds(5);
-        let kill_timeout = zx::Duration::from_millis(200);
-        let (client, server) = endpoints::create_endpoints::<fcrunner::ComponentControllerMarker>();
-        let server_channel_koid = server
-            .as_handle_ref()
-            .basic_info()
-            .expect("failed to get basic info on server channel")
-            .koid;
-
-        // Create a request map which the MockController will fill with
-        // requests it received related to mocked component.
-        let requests: Arc<Mutex<HashMap<Koid, Vec<ControlMessage>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let stop_resp_delay = zx::Duration::from_millis(stop_timeout.into_millis() / 10);
-        // since we want the mock controller to close the controller channel
-        // before the kill timeout, set the response delay to less than the timeout
-        let kill_resp_delay = zx::Duration::from_millis(kill_timeout.into_millis() * 2);
-        let controller = MockController::new_with_responses(
-            server,
-            requests.clone(),
-            server_channel_koid,
-            // Process the stop message, but fail to close the channel. Channel
-            // closure is the indication that a component stopped.
-            ControllerActionResponse { close_channel: false, delay: Some(stop_resp_delay) },
-            ControllerActionResponse { close_channel: true, delay: Some(kill_resp_delay) },
-        );
-        let mut mock_controller_future = Box::pin(controller.into_serve_future());
-
-        let stop_timer = Box::pin(async move {
-            let timer = fasync::Timer::new(fasync::Time::after(stop_timeout));
-            timer.await;
-        });
-        let kill_timer = Box::pin(async move {
-            let timer = fasync::Timer::new(fasync::Time::after(kill_timeout));
-            timer.await;
-        });
-        let client_proxy = client.into_proxy().expect("failed to convert client to proxy");
-        let component = ComponentController::new(client_proxy);
-        let mut stop_fut = Box::pin(stop_component_internal(&component, stop_timer, kill_timer));
-
-        // The stop fn has sent the stop message and is now waiting for a response
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut stop_fut));
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut mock_controller_future));
-
-        let mut check_msgs = Box::pin(async {
-            // Check if the mock controller got all the messages we expected it to get.
-            let msg_map = requests.lock().await;
-            let msg_list =
-                msg_map.get(&server_channel_koid).expect("No messages received on the channel");
-            assert_eq!(msg_list, &vec![ControlMessage::Stop]);
-        });
-        assert_eq!(Poll::Ready(()), exec.run_until_stalled(&mut check_msgs));
-
-        // Roll time passed the stop timeout.
-        let mut new_time =
-            fasync::Time::from_nanos(exec.now().into_nanos() + stop_timeout.into_nanos());
-        exec.set_fake_time(new_time);
-        exec.wake_expired_timers();
-
-        // Advance our futures, we expect the mock controller will do nothing
-        // before the deadline
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut mock_controller_future));
-
-        // The stop fn should now send a kill signal
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut stop_fut));
-
-        // The kill signal should cause the mock controller to exit its loop
-        // We still expect the mock controller to be holding responses
-        assert_eq!(Poll::Ready(()), exec.run_until_stalled(&mut mock_controller_future));
-
-        // The ComponentController should have sent the kill message by now
-        let mut check_msgs = Box::pin(async {
-            // Check if the mock controller got all the messages we expected it to get.
-            let msg_map = requests.lock().await;
-            let msg_list =
-                msg_map.get(&server_channel_koid).expect("No messages received on the channel");
-            assert_eq!(msg_list, &vec![ControlMessage::Stop, ControlMessage::Kill]);
-        });
-
-        assert_eq!(Poll::Ready(()), exec.run_until_stalled(&mut check_msgs));
-
-        // Roll time beyond the kill timeout period
-        new_time = fasync::Time::from_nanos(exec.now().into_nanos() + kill_timeout.into_nanos());
-        exec.set_fake_time(new_time);
-        exec.wake_expired_timers();
-
-        // The stop fn should have given up and returned a result
-        assert_eq!(
-            Poll::Ready(Ok(ComponentStopOutcome {
-                request: StopRequestSuccess::KilledAfterTimeout,
-                component_exit_status: zx::Status::TIMED_OUT,
-            })),
-            exec.run_until_stalled(&mut stop_fut)
-        );
-    }
-
-    #[fuchsia::test]
-    /// Test scenario where the controller does not stop the component within
-    /// the allowed period and the component stop state machine has to send
-    /// the `kill` message to the controller. The controller then kills the
-    /// component before the kill timeout is reached.
-    fn stop_component_successful_with_kill_result() {
-        let mut exec = fasync::TestExecutor::new_with_fake_time();
-
-        // Create a controller which takes far longer than allowed to stop the
-        // component.
-        let stop_timeout = zx::Duration::from_seconds(5);
-        let kill_timeout = zx::Duration::from_millis(200);
-        let (client, server) = endpoints::create_endpoints::<fcrunner::ComponentControllerMarker>();
-        let server_channel_koid = server
-            .as_handle_ref()
-            .basic_info()
-            .expect("failed to get basic info on server channel")
-            .koid;
-
-        // Create a request map which the MockController will fill with
-        // requests it received related to mocked component.
-        let requests: Arc<Mutex<HashMap<Koid, Vec<ControlMessage>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let kill_resp_delay = zx::Duration::from_millis(kill_timeout.into_millis() / 2);
-        let controller = MockController::new_with_responses(
-            server,
-            requests.clone(),
-            server_channel_koid,
-            // Process the stop message, but fail to close the channel. Channel
-            // closure is the indication that a component stopped.
-            ControllerActionResponse { close_channel: false, delay: None },
-            ControllerActionResponse { close_channel: true, delay: Some(kill_resp_delay) },
-        );
-        controller.serve();
-
-        let stop_timer = Box::pin(async move {
-            let timer = fasync::Timer::new(fasync::Time::after(stop_timeout));
-            timer.await;
-        });
-        let kill_timer = Box::pin(async move {
-            let timer = fasync::Timer::new(fasync::Time::after(kill_timeout));
-            timer.await;
-        });
-        let client_proxy = client.into_proxy().expect("failed to convert client to proxy");
-        let component = ComponentController::new(client_proxy);
-        let mut stop_fut = Box::pin(stop_component_internal(&component, stop_timer, kill_timer));
-
-        // it should be the case we stall waiting for a response from the
-        // controller
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut stop_fut));
-
-        // Roll time passed the stop timeout.
-        let mut new_time =
-            fasync::Time::from_nanos(exec.now().into_nanos() + stop_timeout.into_nanos());
-        exec.set_fake_time(new_time);
-        exec.wake_expired_timers();
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut stop_fut));
-
-        // Roll forward to where the mock controller should have closed the
-        // controller channel.
-        new_time = fasync::Time::from_nanos(exec.now().into_nanos() + kill_resp_delay.into_nanos());
-        exec.set_fake_time(new_time);
-        exec.wake_expired_timers();
-
-        // At this point stop_component() will have completed, but the
-        // controller's future was not polled to completion.
-        assert_eq!(
-            Poll::Ready(Ok(ComponentStopOutcome {
-                request: StopRequestSuccess::Killed,
-                component_exit_status: zx::Status::OK
-            })),
-            exec.run_until_stalled(&mut stop_fut)
-        );
-    }
-
-    #[fuchsia::test]
-    /// In this case we expect success, but that the stop state machine races
-    /// with the controller. The state machine's timer expires, but when it
-    /// goes to send the kill message, it finds the control channel is closed,
-    /// indicating the component stopped.
-    fn stop_component_successful_race_with_controller() {
-        let mut exec = fasync::TestExecutor::new_with_fake_time();
-
-        // Create a controller which takes far longer than allowed to stop the
-        // component.
-        let stop_timeout = zx::Duration::from_seconds(5);
-        let kill_timeout = zx::Duration::from_millis(1);
-        let (client, server) = endpoints::create_endpoints::<fcrunner::ComponentControllerMarker>();
-        let server_channel_koid = server
-            .as_handle_ref()
-            .basic_info()
-            .expect("failed to get basic info on server channel")
-            .koid;
-
-        // Create a request map which the MockController will fill with
-        // requests it received related to mocked component.
-        let requests: Arc<Mutex<HashMap<Koid, Vec<ControlMessage>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let close_delta = zx::Duration::from_millis(10);
-        let resp_delay =
-            zx::Duration::from_millis(stop_timeout.into_millis() + close_delta.into_millis());
-        let controller = MockController::new_with_responses(
-            server,
-            requests.clone(),
-            server_channel_koid,
-            // Process the stop message, but fail to close the channel after
-            // the timeout of stop_component()
-            ControllerActionResponse { close_channel: true, delay: Some(resp_delay) },
-            // This is irrelevant because the controller should never receive
-            // the kill message
-            ControllerActionResponse { close_channel: true, delay: Some(resp_delay) },
-        );
-        controller.serve();
-
-        let stop_timer = Box::pin(fasync::Timer::new(fasync::Time::after(stop_timeout)));
-        let kill_timer = Box::pin(async move {
-            let timer = fasync::Timer::new(fasync::Time::after(kill_timeout));
-            timer.await;
-        });
-        let client_proxy = client.into_proxy().expect("failed to convert client to proxy");
-        let component = ComponentController::new(client_proxy);
-        let epitaph_fut = component.wait_for_epitaph();
-        let mut stop_fut = Box::pin(stop_component_internal(&component, stop_timer, kill_timer));
-
-        // it should be the case we stall waiting for a response from the
-        // controller
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut stop_fut));
-
-        // Roll time passed the stop timeout and beyond when the controller
-        // will close the channel
-        let new_time = fasync::Time::from_nanos(exec.now().into_nanos() + resp_delay.into_nanos());
-        exec.set_fake_time(new_time);
-        exec.wake_expired_timers();
-
-        // This future waits for the client channel to close. This creates a
-        // rendezvous between the controller's execution context and the test.
-        // Without this the message map state may be inconsistent.
-        let mut check_msgs = Box::pin(async {
-            epitaph_fut.await;
-
-            let msg_map = requests.lock().await;
-            let msg_list =
-                msg_map.get(&server_channel_koid).expect("No messages received on the channel");
-
-            assert_eq!(msg_list, &vec![ControlMessage::Stop]);
-        });
-
-        // Expect the message check future to complete because the controller
-        // should close the channel.
-        assert_eq!(Poll::Ready(()), exec.run_until_stalled(&mut check_msgs));
-
-        // At this point stop_component() should now poll to completion because
-        // the control channel is closed, but stop_component will perceive this
-        // happening after its timeout expired.
-        assert_eq!(
-            Poll::Ready(Ok(ComponentStopOutcome {
-                request: StopRequestSuccess::Killed,
-                component_exit_status: zx::Status::OK
-            })),
-            exec.run_until_stalled(&mut stop_fut)
-        );
-    }
 
     #[fuchsia::test]
     async fn started_event_timestamp_matches_component() {
         let test =
             RoutingTest::new("root", vec![("root", ComponentDeclBuilder::new().build())]).await;
 
-        let mut event_source = test
-            .builtin_environment
-            .event_source_factory
-            .create_for_above_root()
-            .await
-            .expect("create event source");
+        let mut event_source =
+            test.builtin_environment.event_source_factory.create_for_above_root();
         let mut event_stream = event_source
             .subscribe(
                 vec![
@@ -2481,14 +2334,8 @@ pub mod tests {
         ];
         let test = ActionsTest::new("root", components, None).await;
 
-        let mut event_source = test
-            .builtin_environment
-            .lock()
-            .await
-            .event_source_factory
-            .create_for_above_root()
-            .await
-            .expect("failed creating event stream");
+        let mut event_source =
+            test.builtin_environment.lock().await.event_source_factory.create_for_above_root();
         let mut stop_event_stream = event_source
             .subscribe(vec![EventSubscription::new(UseEventStreamDecl {
                 source_name: EventType::Stopped.into(),
@@ -2516,9 +2363,8 @@ pub mod tests {
             .wait_for_urls(&["test:///root_resolved", "test:///a_resolved", "test:///b_resolved"])
             .await;
 
-        // Check that the eagerly-started 'b' has a runtime, which indicates
-        // it is running.
-        assert!(component_b.lock_execution().await.runtime.is_some());
+        // Check that the eager 'b' has started.
+        assert!(component_b.is_started().await);
 
         let b_info = ComponentInfo::new(component_b.clone()).await;
         b_info.check_not_shut_down(&test.runner).await;
@@ -2537,9 +2383,12 @@ pub mod tests {
 
         // Verify that a parent of the exited component can still be stopped
         // properly.
-        ActionSet::register(test.look_up(a_moniker.clone()).await, ShutdownAction::new())
-            .await
-            .expect("Couldn't trigger shutdown");
+        ActionSet::register(
+            test.look_up(a_moniker.clone()).await,
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("Couldn't trigger shutdown");
         // Check that we get a stop even which corresponds to the parent.
         let parent_stop = stop_event_stream
             .wait_until(EventType::Stopped, a_moniker.clone())
@@ -2587,29 +2436,23 @@ pub mod tests {
             ("b", component_decl_with_test_runner()),
         ];
 
-        let instance_id = Some(gen_instance_id(&mut rand::thread_rng()));
-        let component_id_index_path = make_index_file(component_id_index::Index {
-            instances: vec![component_id_index::InstanceIdEntry {
-                instance_id: instance_id.clone(),
-                moniker: Some(Moniker::root()),
-            }],
-            ..component_id_index::Index::default()
-        })
-        .unwrap();
+        let instance_id = InstanceId::new_random(&mut rand::thread_rng());
+        let index = {
+            let mut index = component_id_index::Index::default();
+            index.insert(Moniker::root(), instance_id.clone()).unwrap();
+            index
+        };
+        let component_id_index_path = make_index_file(index).unwrap();
         let test = RoutingTestBuilder::new("root", components)
             .set_component_id_index_path(
-                component_id_index_path.path().to_str().unwrap().to_string(),
+                component_id_index_path.path().to_owned().try_into().unwrap(),
             )
             .build()
             .await;
 
         let root_realm =
             test.model.start_instance(&Moniker::root(), &StartReason::Root).await.unwrap();
-        assert_eq!(
-            instance_id.map(|id| ComponentInstanceId::from_str(&id)
-                .expect("generated instance ID could not be parsed into ComponentInstanceId")),
-            root_realm.instance_id()
-        );
+        assert_eq!(instance_id, *root_realm.instance_id().unwrap());
 
         let a_realm = test
             .model
@@ -2632,6 +2475,7 @@ pub mod tests {
             source: OfferSource::static_child("a".to_string()),
             target: OfferTarget::static_child("b".to_string()),
             source_name: "foo".parse().unwrap(),
+            source_dictionary: None,
             target_name: "foo".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             rights: None,
@@ -2646,12 +2490,14 @@ pub mod tests {
             source: ExposeSource::Self_,
             target: ExposeTarget::Parent,
             source_name: "bar".parse().unwrap(),
+            source_dictionary: None,
             target_name: "bar".parse().unwrap(),
             availability: cm_rust::Availability::Required,
         });
         let example_use = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Parent,
             source_name: "baz".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/baz".parse().expect("parsing"),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -2729,6 +2575,7 @@ pub mod tests {
             source: OfferSource::static_child("a".to_string()),
             target: OfferTarget::static_child("b".to_string()),
             source_name: "foo".parse().unwrap(),
+            source_dictionary: None,
             target_name: "foo".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             rights: None,
@@ -2805,6 +2652,7 @@ pub mod tests {
                 name: "b".into(),
                 collection: Some("coll_1".parse().unwrap()),
             }),
+            source_dictionary: None,
             source_name: "dyn_offer_source_name".parse().unwrap(),
             target_name: "dyn_offer_target_name".parse().unwrap(),
             dependency_type: DependencyType::Strong,
@@ -2916,6 +2764,7 @@ pub mod tests {
                 collection: Some("coll_1".parse().unwrap()),
             }),
             source_name: "dyn_offer2_source_name".parse().unwrap(),
+            source_dictionary: None,
             target_name: "dyn_offer2_target_name".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -2963,6 +2812,7 @@ pub mod tests {
         let example_offer = OfferDecl::Service(OfferServiceDecl {
             source: OfferSource::Collection("coll".parse().unwrap()),
             source_name: "foo".parse().unwrap(),
+            source_dictionary: None,
             source_instance_filter: None,
             renamed_instances: None,
             target: OfferTarget::static_child("static_child".to_string()),
@@ -3017,6 +2867,7 @@ pub mod tests {
         let static_collection_offer = OfferDecl::Service(OfferServiceDecl {
             source: OfferSource::Collection("coll1".parse().unwrap()),
             source_name: "foo".parse().unwrap(),
+            source_dictionary: None,
             source_instance_filter: None,
             renamed_instances: None,
             target: OfferTarget::Collection("coll2".parse().unwrap()),
@@ -3157,25 +3008,35 @@ pub mod tests {
     async fn new_resolved() -> InstanceState {
         let comp = new_component().await;
         let decl = ComponentDeclBuilder::new().build();
+        let resolved_component = Component {
+            resolved_url: "".to_string(),
+            context_to_resolve_children: None,
+            decl,
+            package: None,
+            config: None,
+            abi_revision: None,
+        };
         let ris = ResolvedInstanceState::new(
             &comp,
-            decl,
-            None,
-            None,
+            resolved_component,
             ComponentAddress::from(&comp.component_url, &comp).await.unwrap(),
-            None,
+            Dict::new(),
         )
         .await
         .unwrap();
         InstanceState::Resolved(ris)
     }
 
+    async fn new_unresolved() -> InstanceState {
+        InstanceState::Unresolved(UnresolvedInstanceState::new(Dict::new()))
+    }
+
     #[fuchsia::test]
     async fn instance_state_transitions_test() {
         // New --> Discovered.
         let mut is = InstanceState::New;
-        is.set(InstanceState::Unresolved);
-        assert_matches!(is, InstanceState::Unresolved);
+        is.set(new_unresolved().await);
+        assert_matches!(is, InstanceState::Unresolved(_));
 
         // New --> Destroyed.
         let mut is = InstanceState::New;
@@ -3183,19 +3044,19 @@ pub mod tests {
         assert_matches!(is, InstanceState::Destroyed);
 
         // Discovered --> Resolved.
-        let mut is = InstanceState::Unresolved;
+        let mut is = new_unresolved().await;
         is.set(new_resolved().await);
         assert_matches!(is, InstanceState::Resolved(_));
 
         // Discovered --> Destroyed.
-        let mut is = InstanceState::Unresolved;
+        let mut is = new_unresolved().await;
         is.set(InstanceState::Destroyed);
         assert_matches!(is, InstanceState::Destroyed);
 
         // Resolved --> Discovered.
         let mut is = new_resolved().await;
-        is.set(InstanceState::Unresolved);
-        assert_matches!(is, InstanceState::Unresolved);
+        is.set(new_unresolved().await);
+        assert_matches!(is, InstanceState::Unresolved(_));
 
         // Resolved --> Destroyed.
         let mut is = new_resolved().await;
@@ -3234,14 +3095,14 @@ pub mod tests {
         // Destroyed !-> {Destroyed, Resolved, Discovered, New}..
         p2p(InstanceState::Destroyed, InstanceState::Destroyed),
         p2r(InstanceState::Destroyed, new_resolved().await),
-        p2d(InstanceState::Destroyed, InstanceState::Unresolved),
+        p2d(InstanceState::Destroyed, new_unresolved().await),
         p2n(InstanceState::Destroyed, InstanceState::New),
         // Resolved !-> {Resolved, New}.
         r2r(new_resolved().await, new_resolved().await),
         r2n(new_resolved().await, InstanceState::New),
         // Discovered !-> {Discovered, New}.
-        d2d(InstanceState::Unresolved, InstanceState::Unresolved),
-        d2n(InstanceState::Unresolved, InstanceState::New),
+        d2d(new_unresolved().await, new_unresolved().await),
+        d2n(new_unresolved().await, InstanceState::New),
         // New !-> {Resolved, New}.
         n2r(InstanceState::New, new_resolved().await),
         n2n(InstanceState::New, InstanceState::New),
@@ -3276,6 +3137,7 @@ pub mod tests {
             .lock_resolved_state()
             .await
             .expect("failed to get resolved state")
+            .resolved_component
             .decl
             .collections
             .iter()
@@ -3322,6 +3184,7 @@ pub mod tests {
             vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::Parent,
                 source_name: "fuchsia.example.Echo".parse().unwrap(),
+                source_dictionary: None,
                 target: OfferTarget::Child(ChildRef {
                     name: "foo".into(),
                     collection: Some("col".parse().unwrap()),
@@ -3347,6 +3210,7 @@ pub mod tests {
             vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::Void,
                 source_name: "fuchsia.example.Echo".parse().unwrap(),
+                source_dictionary: None,
                 target: OfferTarget::Child(ChildRef {
                     name: "foo".into(),
                     collection: Some("col".parse().unwrap()),
@@ -3365,6 +3229,7 @@ pub mod tests {
                             collection: Some("col".parse().unwrap()),
                         })),
                         source_name: Some("fuchsia.example.Echo".to_string()),
+                        source_dictionary: None,
                         target: None,
                         target_name: Some("fuchsia.example.Echo".to_string()),
                         dependency_type: Some(fdecl::DependencyType::Strong),
@@ -3381,6 +3246,7 @@ pub mod tests {
                         collection: Some("col".parse().unwrap()),
                     }),
                     source_name: "fuchsia.example.Echo".parse().unwrap(),
+                    source_dictionary: None,
                     target: OfferTarget::Child(ChildRef {
                         name: "foo".into(),
                         collection: Some("col".parse().unwrap()),
@@ -3390,5 +3256,113 @@ pub mod tests {
                     availability: Availability::Optional,
                 })
         );
+    }
+
+    // Tests that logging in `with_logger_as_default` uses the LogSink routed to the component.
+    #[fuchsia::test]
+    async fn with_logger_as_default_uses_logsink() {
+        const TEST_CHILD_NAME: &str = "child";
+
+        let components = vec![
+            (
+                "root",
+                ComponentDeclBuilder::new()
+                    .protocol(
+                        ProtocolDeclBuilder::new(flogger::LogSinkMarker::PROTOCOL_NAME)
+                            .path("/svc/fuchsia.logger.LogSink")
+                            .build(),
+                    )
+                    .offer(OfferDecl::Protocol(OfferProtocolDecl {
+                        source: OfferSource::Self_,
+                        source_name: flogger::LogSinkMarker::PROTOCOL_NAME.parse().unwrap(),
+                        source_dictionary: None,
+                        target_name: flogger::LogSinkMarker::PROTOCOL_NAME.parse().unwrap(),
+                        target: OfferTarget::static_child(TEST_CHILD_NAME.to_string()),
+                        dependency_type: DependencyType::Strong,
+                        availability: Availability::Required,
+                    }))
+                    .add_lazy_child(TEST_CHILD_NAME)
+                    .build(),
+            ),
+            (
+                TEST_CHILD_NAME,
+                ComponentDeclBuilder::new()
+                    .use_(UseDecl::Protocol(UseProtocolDecl {
+                        source: UseSource::Parent,
+                        source_name: flogger::LogSinkMarker::PROTOCOL_NAME.parse().unwrap(),
+                        source_dictionary: None,
+                        target_path: "/svc/fuchsia.logger.LogSink".parse().unwrap(),
+                        dependency_type: DependencyType::Strong,
+                        availability: Availability::Required,
+                    }))
+                    .build(),
+            ),
+        ];
+        let test_topology = ActionsTest::new(components[0].0, components, None).await;
+
+        let (connect_tx, mut connect_rx) = mpsc::unbounded();
+        let serve_logsink = move |mut stream: flogger::LogSinkRequestStream| {
+            let connect_tx = connect_tx.clone();
+            async move {
+                while let Some(request) = stream.try_next().await.expect("failed to serve") {
+                    match request {
+                        flogger::LogSinkRequest::Connect { .. } => {
+                            unimplemented!()
+                        }
+                        flogger::LogSinkRequest::ConnectStructured { .. } => {
+                            connect_tx.unbounded_send(()).unwrap();
+                        }
+                        flogger::LogSinkRequest::WaitForInterestChange { .. } => {
+                            // It's expected that the log publisher calls this, but it's not
+                            // necessary to implement it.
+                        }
+                    }
+                }
+            }
+        };
+
+        // Serve LogSink from the root component.
+        let mut root_out_dir = OutDir::new();
+        root_out_dir.add_entry("/svc/fuchsia.logger.LogSink".parse().unwrap(), host(serve_logsink));
+        test_topology.runner.add_host_fn("test:///root_resolved", root_out_dir.host_fn());
+
+        let child = test_topology.look_up(vec![TEST_CHILD_NAME].try_into().unwrap()).await;
+
+        // Start the child.
+        ActionSet::register(
+            child.clone(),
+            StartAction::new(StartReason::Debug, None, vec![], vec![]),
+        )
+        .await
+        .expect("failed to start child");
+
+        assert!(child.is_started().await);
+
+        // Log a message using the child's scoped logger.
+        child.with_logger_as_default(|| info!("hello world")).await;
+
+        // Wait for the logger to connect to LogSink.
+        connect_rx.next().await.unwrap();
+    }
+
+    #[fuchsia::test]
+    fn test_unwrap_invalid_component_instance() {
+        let instance = AnyWeakComponentInstance::invalid_for_tests();
+        let unwrapped: WeakComponentInstanceInterface<ComponentInstance> = instance.unwrap();
+        assert!(unwrapped.upgrade().is_err());
+    }
+
+    #[fuchsia::test]
+    async fn test_unwrap_valid_component_instance() {
+        let component = ComponentInstance::new_root(
+            Environment::empty(),
+            Arc::new(ModelContext::new_for_test()),
+            Weak::new(),
+            "test:///root".to_string(),
+        );
+        let weak = WeakComponentInstanceInterface::new(&component);
+        let instance = AnyWeakComponentInstance::new(weak);
+        let unwrapped: WeakComponentInstanceInterface<ComponentInstance> = instance.unwrap();
+        assert_eq!(unwrapped.upgrade().unwrap().component_url, "test:///root".to_string());
     }
 }

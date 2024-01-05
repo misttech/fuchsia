@@ -3,11 +3,15 @@
 // found in the LICENSE file.
 
 use anyhow::{anyhow, Context, Result};
+use assembly_config_capabilities::CapabilityNamedMap;
+use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
 use std::collections::{btree_map::Entry, BTreeSet};
+use tempfile::TempDir;
 
 use assembly_config_schema::platform_config::icu_config::{ICUMap, Revision, ICU_CONFIG_INFO};
 use assembly_config_schema::{BoardInformation, BuildType, FileEntry, ICUConfig};
+use assembly_named_file_map::NamedFileMap;
 use assembly_util::NamedMap;
 
 /// The platform's base service level.
@@ -98,6 +102,9 @@ pub(crate) struct ConfigurationContext<'a> {
     pub feature_set_level: &'a FeatureSupportLevel,
     pub build_type: &'a BuildType,
     pub board_info: &'a BoardInformation,
+    pub ramdisk_image: bool,
+    pub gendir: Utf8PathBuf,
+    pub resource_dir: Utf8PathBuf,
 }
 
 /// A struct for collecting multiple kinds of platform configuration.
@@ -108,7 +115,8 @@ pub(crate) struct ConfigurationContext<'a> {
 /// Usage:
 /// ```
 /// use crate::subsystems::prelude::*;
-/// let builder = ConfigurationBuilder::new(&None);
+/// let icu_cfg = Default::default();
+/// let builder = ConfigurationBuilder::new(&icu_cfg);
 /// builder.platform_bundle("wlan")?;
 ///
 /// // to set a single field on a single component in a package:
@@ -145,12 +153,25 @@ pub(crate) trait ConfigurationBuilder {
 
     /// Create a new domain config package.
     fn add_domain_config(&mut self, name: &str) -> &mut dyn DomainConfigBuilder;
+
+    /// Add a core shard.
+    fn core_shard(&mut self, path: &Utf8PathBuf);
+
+    /// Sets a configuration capability.
+    fn set_config_capability(
+        &mut self,
+        name: &str,
+        config: assembly_config_capabilities::Config,
+    ) -> Result<()>;
 }
 
 /// The interface for specifying the configuration to provide for bootfs.
 pub(crate) trait BootfsConfigBuilder {
     /// Add configuration to the builder for a component within a package.
     fn component(&mut self, pkg_path: &str) -> Result<&mut dyn ComponentConfigBuilder>;
+
+    /// Add a file to bootfs.
+    fn file(&mut self, file_entry: FileEntry) -> Result<&mut dyn BootfsConfigBuilder>;
 }
 
 /// The interface for specifying the configuration to provide for a package.
@@ -166,11 +187,22 @@ pub(crate) trait PackageConfigBuilder {
 pub(crate) trait DomainConfigBuilder {
     /// Add a directory to the domain config which can hold config resources.
     fn directory(&mut self, name: &str) -> &mut dyn DomainConfigDirectoryBuilder;
+
+    /// Avoid exposing the directory via capability routing.
+    fn skip_expose(&mut self) -> &mut dyn DomainConfigBuilder;
 }
 
 /// The interface for specifying the config files to add to a domain config package directory.
 pub(crate) trait DomainConfigDirectoryBuilder {
+    /// Add a file to the directory.
     fn entry(&mut self, file_entry: FileEntry) -> Result<&mut dyn DomainConfigDirectoryBuilder>;
+
+    /// Add a file to the directory using the contents provided.
+    fn entry_from_contents(
+        &mut self,
+        destination: &str,
+        contents: &str,
+    ) -> Result<&mut dyn DomainConfigDirectoryBuilder>;
 }
 
 /// The interface for specifying the configuration to provide for a component.
@@ -205,7 +237,7 @@ impl ComponentConfigBuilderExt for &mut dyn ComponentConfigBuilder {
 }
 
 /// The in-progress builder, which hides its state.
-pub(crate) struct ConfigurationBuilderImpl<'a> {
+pub(crate) struct ConfigurationBuilderImpl {
     /// The Assembly Input Bundles to add.
     bundles: BTreeSet<String>,
 
@@ -222,27 +254,58 @@ pub(crate) struct ConfigurationBuilderImpl<'a> {
     /// ICU-flavor aware.
     ///
     /// If not set, use the unflavored version of the component.
-    icu_config: &'a Option<ICUConfig>,
+    icu_config: ICUConfig,
+
+    /// The core shards to add.
+    core_shards: Vec<Utf8PathBuf>,
+
+    /// The configuration capabilities to add.
+    configuration_capabilities: CapabilityNamedMap,
 }
 
-impl<'a> ConfigurationBuilderImpl<'a> {
-    /// Create a new builder. `icu_config` is an optional configuration for the
+#[cfg(test)]
+impl Default for ConfigurationBuilderImpl {
+    /// Bypasses the need to define an [ICUConfig] in tests.
+    fn default() -> Self {
+        ConfigurationBuilderImpl::new(ICUConfig::default())
+    }
+}
+
+impl ConfigurationBuilderImpl {
+    /// Create a new builder. `icu_config` is a configuration for the
     /// ICU library.
-    pub fn new(icu_config: &'a Option<ICUConfig>) -> Self {
+    pub fn new(icu_config: ICUConfig) -> Self {
         Self {
             bundles: BTreeSet::default(),
             bootfs: BootfsConfig::default(),
             package_configs: PackageConfigs::new("package configs"),
             domain_configs: DomainConfigs::new("domain configs"),
             icu_config,
+            core_shards: Vec::new(),
+            configuration_capabilities: CapabilityNamedMap::new("config capabilties"),
         }
     }
 
     /// Convert the builder into the completed configuration that can be used
     /// to create the configured platform itself.
     pub fn build(self) -> CompletedConfiguration {
-        let Self { bundles, bootfs, package_configs, domain_configs, icu_config: _ } = self;
-        CompletedConfiguration { bundles, bootfs, package_configs, domain_configs }
+        let Self {
+            bundles,
+            bootfs,
+            package_configs,
+            domain_configs,
+            icu_config: _,
+            core_shards,
+            configuration_capabilities,
+        } = self;
+        CompletedConfiguration {
+            bundles,
+            bootfs,
+            package_configs,
+            domain_configs,
+            core_shards,
+            configuration_capabilities,
+        }
     }
 }
 
@@ -265,6 +328,12 @@ pub struct CompletedConfiguration {
 
     /// The list of domain configs to add.
     pub domain_configs: DomainConfigs,
+
+    // The list of core shards to add.
+    pub core_shards: Vec<Utf8PathBuf>,
+
+    // The configuration capabilities to add.
+    pub configuration_capabilities: CapabilityNamedMap,
 }
 
 /// A map from package names to the configuration to apply to them.
@@ -289,7 +358,7 @@ pub struct PackageConfiguration {
     pub components: ComponentConfigs,
 
     /// A map of config data entries, keyed by the destination path.
-    pub config_data: NamedMap<FileEntry>,
+    pub config_data: NamedFileMap,
 
     /// The package name.
     pub name: String,
@@ -300,7 +369,7 @@ impl PackageConfiguration {
     pub fn new(name: impl AsRef<str>) -> Self {
         PackageConfiguration {
             components: ComponentConfigs::new("component configs"),
-            config_data: NamedMap::new("config data"),
+            config_data: NamedFileMap::new("config data"),
             name: name.as_ref().into(),
         }
     }
@@ -329,11 +398,18 @@ impl Default for ComponentConfiguration {
 pub struct DomainConfig {
     pub directories: NamedMap<DomainConfigDirectory>,
     pub name: String,
+    pub expose_directories: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub enum FileOrContents {
+    File(FileEntry),
+    Contents(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct DomainConfigDirectory {
-    pub entries: NamedMap<FileEntry>,
+    pub entries: NamedMap<FileOrContents>,
 }
 
 trait ICUMapExt<'a> {
@@ -361,7 +437,7 @@ impl<'a> ICUMapExt<'a> for ICUMap {
     }
 }
 
-impl ConfigurationBuilder for ConfigurationBuilderImpl<'_> {
+impl ConfigurationBuilder for ConfigurationBuilderImpl {
     fn platform_bundle(&mut self, name: &str) {
         self.bundles.insert(name.to_string());
     }
@@ -374,7 +450,7 @@ impl ConfigurationBuilder for ConfigurationBuilderImpl<'_> {
         self.package_configs.entry(name.to_string()).or_insert_with_key(|name| {
             PackageConfiguration {
                 components: ComponentConfigs::new("component configs"),
-                config_data: NamedMap::new("config data"),
+                config_data: NamedFileMap::new("config data"),
                 name: name.to_owned(),
             }
         })
@@ -384,24 +460,32 @@ impl ConfigurationBuilder for ConfigurationBuilderImpl<'_> {
         self.domain_configs.entry(name.to_string()).or_insert_with_key(|name| DomainConfig {
             directories: NamedMap::new("directories"),
             name: name.to_owned(),
+            expose_directories: true,
         })
     }
 
     fn icu_platform_bundle(&mut self, name: &str) -> Result<()> {
-        let bundle_name = match &self.icu_config {
-            // Use the unflavored platform bundle if icu_config is left unspecified.
-            None => name.into(),
-            // Use the ICU flavored platform bundle.
-            Some(ref icu_config) => {
-                let (revision, commit_id) =
-                    ICU_CONFIG_INFO.resolve_revision(&icu_config.revision).with_context(|| {
-                        format!("while resolving revision: {}", &icu_config.revision)
-                    })?;
-                format!("{}.icu_{}_{}", name, &revision, commit_id)
-            }
+        let icu_config = &self.icu_config;
+        let bundle_name = {
+            let (revision, commit_id) = ICU_CONFIG_INFO
+                .resolve_revision(&icu_config.revision)
+                .with_context(|| format!("while resolving revision: {}", &icu_config.revision))?;
+            format!("{}.icu_{}_{}", name, &revision, commit_id)
         };
         self.platform_bundle(&bundle_name);
         Ok(())
+    }
+
+    fn core_shard(&mut self, path: &Utf8PathBuf) {
+        self.core_shards.push(path.clone());
+    }
+
+    fn set_config_capability(
+        &mut self,
+        name: &str,
+        config: assembly_config_capabilities::Config,
+    ) -> Result<()> {
+        self.configuration_capabilities.try_insert_unique(name.to_string(), config)
     }
 }
 
@@ -411,12 +495,31 @@ impl DomainConfigBuilder for DomainConfig {
             .entry(name.to_string())
             .or_insert_with(|| DomainConfigDirectory { entries: NamedMap::new("domain configs") })
     }
+
+    fn skip_expose(&mut self) -> &mut dyn DomainConfigBuilder {
+        self.expose_directories = false;
+        self
+    }
 }
 
 impl DomainConfigDirectoryBuilder for DomainConfigDirectory {
     fn entry(&mut self, file_entry: FileEntry) -> Result<&mut dyn DomainConfigDirectoryBuilder> {
         self.entries
-            .try_insert_unique(file_entry.destination.clone(), file_entry)
+            .try_insert_unique(file_entry.destination.clone(), FileOrContents::File(file_entry))
+            .context("A config destination can only be set once for a domain config")?;
+        Ok(self)
+    }
+
+    fn entry_from_contents(
+        &mut self,
+        destination: &str,
+        contents: &str,
+    ) -> Result<&mut dyn DomainConfigDirectoryBuilder> {
+        self.entries
+            .try_insert_unique(
+                destination.to_string(),
+                FileOrContents::Contents(contents.to_string()),
+            )
             .context("A config destination can only be set once for a domain config")?;
         Ok(self)
     }
@@ -441,7 +544,7 @@ impl PackageConfigBuilder for PackageConfiguration {
 
     fn config_data(&mut self, file_entry: FileEntry) -> Result<&mut dyn PackageConfigBuilder> {
         self.config_data
-            .try_insert_unique(file_entry.destination.clone(), file_entry)
+            .add_entry_as_blob(file_entry)
             .context("A config data destination can only be set once for a package")?;
         Ok(self)
     }
@@ -470,11 +573,17 @@ pub struct BootfsConfig {
     /// A map from manifest paths within bootfs to the configuration values for
     /// the component.
     pub components: ComponentConfigs,
+
+    /// A map from bootfs destination to bootfs file entry.
+    pub files: NamedMap<FileEntry>,
 }
 
 impl Default for BootfsConfig {
     fn default() -> Self {
-        Self { components: ComponentConfigs::new("component configs") }
+        Self {
+            components: ComponentConfigs::new("component configs"),
+            files: NamedMap::new("bootfs files"),
+        }
     }
 }
 
@@ -498,6 +607,20 @@ impl BootfsConfigBuilder for BootfsConfig {
                     })
                     .context("Setting configuration in bootfs")
             }
+        }
+    }
+
+    /// Add a file to bootfs.
+    fn file(&mut self, file_entry: FileEntry) -> Result<&mut dyn BootfsConfigBuilder> {
+        match self.files.entry(file_entry.destination.to_owned()) {
+            entry @ Entry::Vacant(_) => {
+                entry.or_insert(file_entry);
+                Ok(self)
+            }
+            Entry::Occupied(_) => Err(anyhow!(
+                "A bootfs destination may only be used once: {}",
+                file_entry.destination
+            )),
         }
     }
 }
@@ -597,6 +720,25 @@ impl ICUMapGetExt for ICUMap {
     }
 }
 
+impl ConfigurationContext<'_> {
+    /// Return a new gendir that is nested under the top-level gendir
+    /// Subsystems can use this to generate files before adding them to the
+    /// builder.
+    pub fn get_gendir(&self) -> Result<Utf8PathBuf> {
+        let gendir =
+            TempDir::new_in(&self.gendir).map_err(|e| anyhow!("preparing new gendir: {}", e))?;
+        let gendir = Utf8PathBuf::from_path_buf(gendir.into_path())
+            .map_err(|_e| anyhow!("converting to utf8 path"))?;
+        Ok(gendir)
+    }
+
+    /// Retrieve the full path to a platform resource identified by a path into
+    /// the resource directory.
+    pub fn get_resource(&self, path: impl AsRef<Utf8Path>) -> Utf8PathBuf {
+        self.resource_dir.join(path.as_ref())
+    }
+}
+
 #[cfg(test)]
 impl ConfigurationContext<'_> {
     /// Use e.g. in tests that initialize only relevant fields.
@@ -616,6 +758,9 @@ impl ConfigurationContext<'_> {
             feature_set_level: &FeatureSupportLevel::Minimal,
             build_type: &BuildType::User,
             board_info: &tests::BOARD_INFORMATION_FOR_TESTS,
+            ramdisk_image: false,
+            gendir: Utf8PathBuf::new(),
+            resource_dir: Utf8PathBuf::new(),
         }
     }
 }
@@ -624,23 +769,40 @@ impl ConfigurationContext<'_> {
 mod tests {
     use super::*;
     use assembly_images_config::BoardFilesystemConfig;
+    use assembly_named_file_map::SourceMerklePair;
     use lazy_static::lazy_static;
+    use std::io::Write;
+    use tempfile::TempDir;
+    use utf8_path::path_relative_from_current_dir;
 
     lazy_static! {
         pub(crate) static ref BOARD_INFORMATION_FOR_TESTS: BoardInformation = BoardInformation {
             name: "Test Board".into(),
             provided_features: vec![],
-            main_support_bundle: None,
+            input_bundles: vec![],
             filesystems: BoardFilesystemConfig::default(),
+            ..Default::default()
         };
     }
 
     #[test]
     fn test_config_builder() {
-        let mut builder = ConfigurationBuilderImpl::new(&None);
+        let mut builder = ConfigurationBuilderImpl::default();
+
+        let temp_dir = TempDir::new().unwrap();
+        let write_temp_file = |name: &str, contents: &str| -> Utf8PathBuf {
+            let p = Utf8PathBuf::from_path_buf(temp_dir.path().join(name)).unwrap();
+            let mut f = std::fs::File::create(&p).unwrap();
+            write!(&mut f, "{}", contents).unwrap();
+            p
+        };
+        let one = write_temp_file("config_data1", "one");
+        let two = write_temp_file("config_data2", "two");
+        let relative_one = path_relative_from_current_dir(&one).unwrap();
+        let relative_two = path_relative_from_current_dir(&two).unwrap();
 
         // using an inner
-        fn make_config(builder: &mut dyn ConfigurationBuilder) -> Result<()> {
+        let make_config = |builder: &mut dyn ConfigurationBuilder| -> Result<()> {
             builder.bootfs().component("some/bootfs_component")?.field("key", "value")?;
 
             builder
@@ -657,21 +819,18 @@ mod tests {
                 .field("key_b1", "value_b1")?
                 .field("key_b2", "value_b2")?;
 
-            builder.package("package_a").config_data(FileEntry {
-                destination: "config/one".into(),
-                source: "config_data1".into(),
-            })?;
-            builder.package("package_a").config_data(FileEntry {
-                destination: "config/two".into(),
-                source: "config_data2".into(),
-            })?;
-            builder.package("package_b").config_data(FileEntry {
-                destination: "config/one".into(),
-                source: "config_data1".into(),
-            })?;
+            builder
+                .package("package_a")
+                .config_data(FileEntry { destination: "config/one".into(), source: one.clone() })?;
+            builder
+                .package("package_a")
+                .config_data(FileEntry { destination: "config/two".into(), source: two.clone() })?;
+            builder
+                .package("package_b")
+                .config_data(FileEntry { destination: "config/one".into(), source: one.clone() })?;
 
             Ok(())
-        }
+        };
         assert!(make_config(&mut builder).is_ok());
         let config = builder.build();
 
@@ -715,25 +874,27 @@ mod tests {
                     ]
                     .into(),
                 },
-                config_data: NamedMap {
-                    name: "config data".into(),
-                    entries: [
-                        (
-                            "config/one".into(),
-                            FileEntry {
-                                destination: "config/one".into(),
-                                source: "config_data1".into(),
-                            }
-                        ),
-                        (
-                            "config/two".into(),
-                            FileEntry {
-                                destination: "config/two".into(),
-                                source: "config_data2".into(),
-                            }
-                        ),
-                    ]
-                    .into(),
+                config_data: NamedFileMap {
+                    map: NamedMap {
+                        name: "config data".into(),
+                        entries: [
+                            (
+                                "config/one".into(),
+                                SourceMerklePair {
+                                    merkle: Some("dc966c915497607d4b7fdfef3b57d03fd4583771f255837545d1c7319a992566".parse().unwrap()),
+                                    source: relative_one.clone(),
+                                }
+                            ),
+                            (
+                                "config/two".into(),
+                                SourceMerklePair {
+                                    merkle: Some("08a4e9e7edc4d4c049f045870d4bd809956a1a0e3e3846003fa19fdc2ea79fc4".parse().unwrap()),
+                                    source: relative_two.clone(),
+                                }
+                            ),
+                        ]
+                        .into(),
+                    },
                 },
             }
         );
@@ -759,16 +920,18 @@ mod tests {
                     )]
                     .into(),
                 },
-                config_data: NamedMap {
-                    name: "config data".into(),
-                    entries: [(
-                        "config/one".into(),
-                        FileEntry {
-                            destination: "config/one".into(),
-                            source: "config_data1".into(),
-                        }
-                    )]
-                    .into(),
+                config_data: NamedFileMap {
+                    map: NamedMap {
+                        name: "config data".into(),
+                        entries: [(
+                            "config/one".into(),
+                            SourceMerklePair {
+                                merkle: Some("dc966c915497607d4b7fdfef3b57d03fd4583771f255837545d1c7319a992566".parse().unwrap()),
+                                source: relative_one.clone(),
+                            }
+                        )]
+                        .into(),
+                    },
                 },
             }
         );
@@ -776,7 +939,8 @@ mod tests {
 
     #[test]
     fn test_multiple_adds_fail() {
-        let mut builder = ConfigurationBuilderImpl::new(&None);
+        let temp_dir = TempDir::new().unwrap();
+        let mut builder = ConfigurationBuilderImpl::default();
 
         assert!(builder.bootfs().component("foo").is_ok());
         assert!(builder.bootfs().component("foo").is_err());
@@ -790,17 +954,31 @@ mod tests {
         assert!(component.field("key2", "value2").is_ok());
         assert!(component.field("key2", "value2").is_err());
 
+        let write_temp_file = |name: &str, contents: &str| -> Utf8PathBuf {
+            let p = Utf8PathBuf::from_path_buf(temp_dir.path().join(name)).unwrap();
+            let mut f = std::fs::File::create(&p).unwrap();
+            write!(&mut f, "{}", contents).unwrap();
+            p
+        };
+        let baz = write_temp_file("baz", "baz");
+        let cat = write_temp_file("cat", "cat");
+        let diz = write_temp_file("diz", "diz");
+
         assert!(builder
             .package("foo")
-            .config_data(FileEntry { destination: "bar".into(), source: "baz".into() })
+            .config_data(FileEntry { destination: "bar".into(), source: baz })
             .is_ok());
         assert!(builder
             .package("foo")
-            .config_data(FileEntry { destination: "cat".into(), source: "baz".into() })
+            .config_data(FileEntry { destination: "cat".into(), source: cat.clone() })
             .is_ok());
         assert!(builder
             .package("foo")
-            .config_data(FileEntry { destination: "cat".into(), source: "diz".into() })
+            .config_data(FileEntry { destination: "cat".into(), source: cat })
+            .is_ok());
+        assert!(builder
+            .package("foo")
+            .config_data(FileEntry { destination: "cat".into(), source: diz })
             .is_err());
     }
 
@@ -827,7 +1005,7 @@ mod tests {
             }
         }
 
-        let mut builder = ConfigurationBuilderImpl::new(&None);
+        let mut builder = ConfigurationBuilderImpl::default();
 
         builder.bootfs().component("foo").unwrap();
         let result = builder.bootfs().component("foo").context("Configuring Subsystem");

@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/magma/platform/platform_mmio.h>
+#include <lib/magma_service/mock/mock_bus_mapper.h>
+#include <lib/magma_service/mock/mock_mmio.h>
+
 #include <gtest/gtest.h>
 
-#include "mock/mock_bus_mapper.h"
-#include "mock/mock_mmio.h"
-#include "platform_mmio.h"
+#include "driver_logger_harness.h"
 #include "src/graphics/drivers/msd-arm-mali/src/address_manager.h"
 #include "src/graphics/drivers/msd-arm-mali/src/address_space.h"
 #include "src/graphics/drivers/msd-arm-mali/src/registers.h"
@@ -212,12 +214,17 @@ class TestAddressSpace {
   }
 };
 
-TEST(AddressSpace, Init) { TestAddressSpace::Init(); }
+class AddressSpaceTest : public testing::Test {
+  void SetUp() override { logger_harness_ = DriverLoggerHarness::Create(); }
+  std::unique_ptr<DriverLoggerHarness> logger_harness_;
+};
 
-TEST(AddressSpace, CoherentPageTable) { TestAddressSpace::CoherentPageTable(); }
+TEST_F(AddressSpaceTest, Init) { TestAddressSpace::Init(); }
 
-TEST(AddressSpace, Insert) { TestAddressSpace::Insert(); }
+TEST_F(AddressSpaceTest, CoherentPageTable) { TestAddressSpace::CoherentPageTable(); }
 
-TEST(AddressSpace, InsertOffset) { TestAddressSpace::InsertOffset(); }
+TEST_F(AddressSpaceTest, Insert) { TestAddressSpace::Insert(); }
 
-TEST(AddressSpace, GarbageCollect) { TestAddressSpace::GarbageCollect(); }
+TEST_F(AddressSpaceTest, InsertOffset) { TestAddressSpace::InsertOffset(); }
+
+TEST_F(AddressSpaceTest, GarbageCollect) { TestAddressSpace::GarbageCollect(); }

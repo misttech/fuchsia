@@ -3,21 +3,161 @@
 // found in the LICENSE file.
 
 use {
-    crate::{banjo_buffer_to_slice, banjo_list_to_slice, buffer::OutBuf, common::mac::WlanGi, key},
-    banjo_fuchsia_wlan_common as banjo_common, banjo_fuchsia_wlan_ieee80211 as banjo_ieee80211,
-    banjo_fuchsia_wlan_softmac::{
-        self as banjo_wlan_softmac, WlanRxPacket, WlanSoftmacQueryResponse, WlanTxPacket,
-    },
-    fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_softmac as fidl_softmac,
-    fuchsia_zircon as zx,
+    crate::{buffer::OutBuf, common::mac::WlanGi, error::Error, key},
+    anyhow::format_err,
+    banjo_fuchsia_wlan_common as banjo_common,
+    banjo_fuchsia_wlan_softmac::{self as banjo_wlan_softmac, WlanRxPacket, WlanTxPacket},
+    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_mlme as fidl_mlme,
+    fidl_fuchsia_wlan_softmac as fidl_softmac, fuchsia_zircon as zx,
     futures::channel::mpsc,
-    ieee80211::MacAddr,
-    std::{ffi::c_void, sync::Arc},
+    ieee80211::{MacAddr, MacAddrBytes},
+    std::{ffi::c_void, fmt::Display, sync::Arc},
     tracing::error,
     wlan_common::{mac::FrameControl, tx_vector, TimeUnit},
 };
 
-#[cfg(test)]
+pub mod completers {
+    use {fuchsia_zircon as zx, tracing::error};
+
+    pub struct StartStaCompleter<F>
+    where
+        F: FnOnce(Result<(), zx::Status>) + Send,
+    {
+        completer: Option<F>,
+    }
+
+    impl<F> StartStaCompleter<F>
+    where
+        F: FnOnce(Result<(), zx::Status>) + Send,
+    {
+        pub fn new(completer: F) -> Self {
+            Self { completer: Some(completer) }
+        }
+
+        pub fn complete(mut self, result: Result<(), zx::Status>) {
+            let completer = match self.completer.take() {
+                None => {
+                    error!("Failed to call completer because it is None.");
+                    return;
+                }
+                Some(completer) => completer,
+            };
+            completer(result)
+        }
+    }
+
+    impl<F> Drop for StartStaCompleter<F>
+    where
+        F: FnOnce(Result<(), zx::Status>) + Send,
+    {
+        fn drop(&mut self) {
+            if let Some(completer) = self.completer.take() {
+                error!(
+                    "About to drop start_sta() completer without calling it!\n\
+                     Calling start_sta() completer from drop() to mitigate potential deadlock."
+                );
+                completer(Err(zx::Status::BAD_STATE))
+            }
+        }
+    }
+
+    pub struct StopStaCompleter {
+        // TODO(42075638): Using dynamic dispatch since otherwise we would need to plumb generics
+        // everywhere MLME uses a DriverEventSink. Since we will remove DriverEventSink soon, this
+        // is not worthwhile.
+        completer: Option<Box<dyn FnOnce() + Send>>,
+    }
+
+    impl StopStaCompleter {
+        pub fn new(completer: Box<dyn FnOnce() + Send>) -> Self {
+            Self { completer: Some(completer) }
+        }
+
+        /// Safety: Must only be called if calling |completer| is thread-safe.
+        pub fn complete(mut self) {
+            let completer = match self.completer.take() {
+                None => {
+                    error!("Failed to call completer because it is None.");
+                    return;
+                }
+                Some(completer) => completer,
+            };
+            completer()
+        }
+    }
+
+    impl Drop for StopStaCompleter {
+        fn drop(&mut self) {
+            if let Some(completer) = self.completer.take() {
+                error!(
+                    "About to drop stop_sta() completer without calling it!\n\
+                     Calling stop_sta() completer from drop() to mitigate potential deadlock."
+                );
+                completer()
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use futures::channel::oneshot;
+
+        #[test]
+        fn start_sta_completer_sends_ok() {
+            let (sender, mut receiver) = oneshot::channel::<Result<(), zx::Status>>();
+            let start_sta_completer =
+                StartStaCompleter::new(move |result: Result<(), zx::Status>| {
+                    sender.send(result).expect("Failed to send result.");
+                });
+            start_sta_completer.complete(Ok(()));
+            assert_eq!(Ok(Some(Ok(()))), receiver.try_recv());
+        }
+
+        #[test]
+        fn start_sta_completer_sends_err() {
+            let (sender, mut receiver) = oneshot::channel::<Result<(), zx::Status>>();
+            let start_sta_completer =
+                StartStaCompleter::new(move |result: Result<(), zx::Status>| {
+                    sender.send(result).expect("Failed to send result.");
+                });
+            start_sta_completer.complete(Err(zx::Status::INTERNAL));
+            assert_eq!(Ok(Some(Err(zx::Status::INTERNAL))), receiver.try_recv());
+        }
+
+        #[test]
+        fn start_sta_completer_sends_err_on_drop() {
+            let (sender, mut receiver) = oneshot::channel::<Result<(), zx::Status>>();
+            let start_sta_completer =
+                StartStaCompleter::new(move |result: Result<(), zx::Status>| {
+                    sender.send(result).expect("Failed to send result.");
+                });
+            drop(start_sta_completer);
+            assert_eq!(Ok(Some(Err(zx::Status::BAD_STATE))), receiver.try_recv());
+        }
+
+        #[test]
+        fn stop_sta_completer_sends_value() {
+            let (sender, mut receiver) = oneshot::channel();
+            let stop_sta_completer = StopStaCompleter::new(Box::new(move || {
+                sender.send(()).expect("Failed to send.");
+            }));
+            stop_sta_completer.complete();
+            assert_eq!(Ok(Some(())), receiver.try_recv());
+        }
+
+        #[test]
+        fn stop_sta_completer_sends_value_on_drop() {
+            let (sender, mut receiver) = oneshot::channel();
+            let stop_sta_completer = StopStaCompleter::new(Box::new(move || {
+                sender.send(()).expect("Failed to send.");
+            }));
+            drop(stop_sta_completer);
+            assert_eq!(Ok(Some(())), receiver.try_recv());
+        }
+    }
+}
+
 pub use test_utils::*;
 
 #[derive(Debug, PartialEq)]
@@ -60,6 +200,21 @@ impl Device {
             event_sink,
         }
     }
+
+    fn flatten_and_log_error<T>(
+        method_name: impl Display,
+        result: Result<Result<T, zx::zx_status_t>, fidl::Error>,
+    ) -> Result<T, zx::Status> {
+        result
+            .map_err(|fidl_error| {
+                error!("FIDL error during {}: {:?}", method_name, fidl_error);
+                zx::Status::INTERNAL
+            })?
+            .map_err(|status| {
+                error!("{} failed: {:?}", method_name, status);
+                zx::Status::from_raw(status)
+            })
+    }
 }
 
 const REQUIRED_WLAN_HEADER_LEN: usize = 10;
@@ -70,11 +225,15 @@ const PEER_ADDR_OFFSET: usize = 4;
 /// and FIDL proxy.
 pub trait DeviceOps {
     fn start(&mut self, ifc: *const WlanSoftmacIfcProtocol<'_>) -> Result<zx::Handle, zx::Status>;
-    fn wlan_softmac_query_response(&mut self) -> QueryResponse;
-    fn discovery_support(&mut self) -> banjo_common::DiscoverySupport;
-    fn mac_sublayer_support(&mut self) -> banjo_common::MacSublayerSupport;
-    fn security_support(&mut self) -> banjo_common::SecuritySupport;
-    fn spectrum_management_support(&mut self) -> banjo_common::SpectrumManagementSupport;
+    fn wlan_softmac_query_response(
+        &mut self,
+    ) -> Result<fidl_softmac::WlanSoftmacQueryResponse, zx::Status>;
+    fn discovery_support(&mut self) -> Result<fidl_common::DiscoverySupport, zx::Status>;
+    fn mac_sublayer_support(&mut self) -> Result<fidl_common::MacSublayerSupport, zx::Status>;
+    fn security_support(&mut self) -> Result<fidl_common::SecuritySupport, zx::Status>;
+    fn spectrum_management_support(
+        &mut self,
+    ) -> Result<fidl_common::SpectrumManagementSupport, zx::Status>;
     fn deliver_eth_frame(&mut self, slice: &[u8]) -> Result<(), zx::Status>;
     fn send_wlan_frame(&mut self, buf: OutBuf, tx_flags: u32) -> Result<(), zx::Status>;
 
@@ -86,26 +245,34 @@ pub trait DeviceOps {
         self.set_ethernet_status(LinkStatus::DOWN)
     }
 
-    fn set_channel(&mut self, channel: banjo_common::WlanChannel) -> Result<(), zx::Status>;
-    fn channel(&mut self) -> banjo_common::WlanChannel;
+    fn set_channel(&mut self, channel: fidl_common::WlanChannel) -> Result<(), zx::Status>;
     fn set_key(&mut self, key: key::KeyConfig) -> Result<(), zx::Status>;
-    fn start_passive_scan(&mut self, passive_scan_args: PassiveScanArgs)
-        -> Result<u64, zx::Status>;
-    fn start_active_scan(&mut self, active_scan_args: ActiveScanArgs) -> Result<u64, zx::Status>;
-    fn cancel_scan(&mut self, scan_id: u64) -> Result<(), zx::Status>;
-    fn join_bss(&mut self, cfg: banjo_common::JoinBssRequest) -> Result<(), zx::Status>;
+    fn start_passive_scan(
+        &mut self,
+        request: &fidl_softmac::WlanSoftmacBridgeStartPassiveScanRequest,
+    ) -> Result<fidl_softmac::WlanSoftmacBridgeStartPassiveScanResponse, zx::Status>;
+    fn start_active_scan(
+        &mut self,
+        request: &fidl_softmac::WlanSoftmacStartActiveScanRequest,
+    ) -> Result<fidl_softmac::WlanSoftmacBridgeStartActiveScanResponse, zx::Status>;
+    fn cancel_scan(
+        &mut self,
+        request: &fidl_softmac::WlanSoftmacBridgeCancelScanRequest,
+    ) -> Result<(), zx::Status>;
+    fn join_bss(&mut self, request: &fidl_common::JoinBssRequest) -> Result<(), zx::Status>;
     fn enable_beaconing(
         &mut self,
-        buf: OutBuf,
-        tim_ele_offset: usize,
-        beacon_interval: TimeUnit,
+        request: fidl_softmac::WlanSoftmacBridgeEnableBeaconingRequest,
     ) -> Result<(), zx::Status>;
     fn disable_beaconing(&mut self) -> Result<(), zx::Status>;
     fn notify_association_complete(
         &mut self,
         assoc_cfg: fidl_softmac::WlanAssociationConfig,
     ) -> Result<(), zx::Status>;
-    fn clear_association(&mut self, addr: &MacAddr) -> Result<(), zx::Status>;
+    fn clear_association(
+        &mut self,
+        request: &fidl_softmac::WlanSoftmacBridgeClearAssociationRequest,
+    ) -> Result<(), zx::Status>;
     fn take_mlme_event_stream(&mut self) -> Option<mpsc::UnboundedReceiver<fidl_mlme::MlmeEvent>>;
     fn send_mlme_event(&mut self, event: fidl_mlme::MlmeEvent) -> Result<(), anyhow::Error>;
     fn set_minstrel(&mut self, minstrel: crate::MinstrelWrapper);
@@ -113,7 +280,7 @@ pub trait DeviceOps {
     fn tx_vector_idx(
         &mut self,
         frame_control: &FrameControl,
-        peer_addr: &[u8; 6],
+        peer_addr: &MacAddr,
         flags: u32,
     ) -> tx_vector::TxVecIdx {
         self.minstrel()
@@ -142,6 +309,59 @@ pub trait DeviceOps {
     }
 }
 
+pub fn try_query(
+    device: &mut impl DeviceOps,
+) -> Result<fidl_softmac::WlanSoftmacQueryResponse, Error> {
+    device
+        .wlan_softmac_query_response()
+        .map_err(|status| Error::Status(String::from("Failed to query device."), status))
+}
+
+pub fn try_query_iface_mac(device: &mut impl DeviceOps) -> Result<MacAddr, Error> {
+    try_query(device).and_then(|query_response| {
+        query_response.sta_addr.map(From::from).ok_or_else(|| {
+            Error::Internal(format_err!(
+                "Required field not set in device query response: iface MAC"
+            ))
+        })
+    })
+}
+
+pub fn try_query_discovery_support(
+    device: &mut impl DeviceOps,
+) -> Result<fidl_common::DiscoverySupport, Error> {
+    device.discovery_support().map_err(|status| {
+        Error::Status(String::from("Failed to query discovery support for device."), status)
+    })
+}
+
+pub fn try_query_mac_sublayer_support(
+    device: &mut impl DeviceOps,
+) -> Result<fidl_common::MacSublayerSupport, Error> {
+    device.mac_sublayer_support().map_err(|status| {
+        Error::Status(String::from("Failed to query MAC sublayer support for device."), status)
+    })
+}
+
+pub fn try_query_security_support(
+    device: &mut impl DeviceOps,
+) -> Result<fidl_common::SecuritySupport, Error> {
+    device.security_support().map_err(|status| {
+        Error::Status(String::from("Failed to query security support for device."), status)
+    })
+}
+
+pub fn try_query_spectrum_management_support(
+    device: &mut impl DeviceOps,
+) -> Result<fidl_common::SpectrumManagementSupport, Error> {
+    device.spectrum_management_support().map_err(|status| {
+        Error::Status(
+            String::from("Failed to query spectrum management support for device."),
+            status,
+        )
+    })
+}
+
 impl DeviceOps for Device {
     fn start(&mut self, ifc: *const WlanSoftmacIfcProtocol<'_>) -> Result<zx::Handle, zx::Status> {
         let mut out_channel = 0;
@@ -152,24 +372,43 @@ impl DeviceOps for Device {
         zx::ok(status).map(|_| unsafe { zx::Handle::from_raw(out_channel) })
     }
 
-    fn wlan_softmac_query_response(&mut self) -> QueryResponse {
-        (self.raw_device.get_wlan_softmac_query_response)(self.raw_device.device).into()
+    fn wlan_softmac_query_response(
+        &mut self,
+    ) -> Result<fidl_softmac::WlanSoftmacQueryResponse, zx::Status> {
+        Self::flatten_and_log_error(
+            "Query",
+            self.wlan_softmac_bridge_proxy.query(zx::Time::INFINITE),
+        )
     }
 
-    fn discovery_support(&mut self) -> banjo_common::DiscoverySupport {
-        (self.raw_device.get_discovery_support)(self.raw_device.device)
+    fn discovery_support(&mut self) -> Result<fidl_common::DiscoverySupport, zx::Status> {
+        Self::flatten_and_log_error(
+            "QueryDiscoverySupport",
+            self.wlan_softmac_bridge_proxy.query_discovery_support(zx::Time::INFINITE),
+        )
     }
 
-    fn mac_sublayer_support(&mut self) -> banjo_common::MacSublayerSupport {
-        (self.raw_device.get_mac_sublayer_support)(self.raw_device.device)
+    fn mac_sublayer_support(&mut self) -> Result<fidl_common::MacSublayerSupport, zx::Status> {
+        Self::flatten_and_log_error(
+            "QueryMacSublayerSupport",
+            self.wlan_softmac_bridge_proxy.query_mac_sublayer_support(zx::Time::INFINITE),
+        )
     }
 
-    fn security_support(&mut self) -> banjo_common::SecuritySupport {
-        (self.raw_device.get_security_support)(self.raw_device.device)
+    fn security_support(&mut self) -> Result<fidl_common::SecuritySupport, zx::Status> {
+        Self::flatten_and_log_error(
+            "QuerySecuritySupport",
+            self.wlan_softmac_bridge_proxy.query_security_support(zx::Time::INFINITE),
+        )
     }
 
-    fn spectrum_management_support(&mut self) -> banjo_common::SpectrumManagementSupport {
-        (self.raw_device.get_spectrum_management_support)(self.raw_device.device)
+    fn spectrum_management_support(
+        &mut self,
+    ) -> Result<fidl_common::SpectrumManagementSupport, zx::Status> {
+        Self::flatten_and_log_error(
+            "QuerySpectrumManagementSupport",
+            self.wlan_softmac_bridge_proxy.query_spectrum_management_support(zx::Time::INFINITE),
+        )
     }
 
     fn deliver_eth_frame(&mut self, slice: &[u8]) -> Result<(), zx::Status> {
@@ -191,8 +430,11 @@ impl DeviceOps for Device {
         if frame_control.protected() {
             tx_flags |= banjo_wlan_softmac::WlanTxInfoFlags::PROTECTED.0;
         }
-        let mut peer_addr = [0u8; 6];
-        peer_addr.copy_from_slice(&buf.as_slice()[PEER_ADDR_OFFSET..PEER_ADDR_OFFSET + 6]);
+        let peer_addr: MacAddr = {
+            let mut peer_addr = [0u8; 6];
+            peer_addr.copy_from_slice(&buf.as_slice()[PEER_ADDR_OFFSET..PEER_ADDR_OFFSET + 6]);
+            peer_addr.into()
+        };
         let tx_vector_idx = self.tx_vector_idx(frame_control, &peer_addr, tx_flags);
 
         let tx_info = wlan_common::tx_vector::TxVector::from_idx(tx_vector_idx)
@@ -204,8 +446,20 @@ impl DeviceOps for Device {
         zx::ok((self.raw_device.set_ethernet_status)(self.raw_device.device, status.0))
     }
 
-    fn set_channel(&mut self, channel: banjo_common::WlanChannel) -> Result<(), zx::Status> {
-        zx::ok((self.raw_device.set_wlan_channel)(self.raw_device.device, channel))
+    fn set_channel(&mut self, channel: fidl_common::WlanChannel) -> Result<(), zx::Status> {
+        self.wlan_softmac_bridge_proxy
+            .set_channel(
+                &fidl_softmac::WlanSoftmacBridgeSetChannelRequest {
+                    channel: Some(channel),
+                    ..Default::default()
+                },
+                zx::Time::INFINITE,
+            )
+            .map_err(|error| {
+                error!("SetChannel failed with FIDL error: {:?}", error);
+                zx::Status::INTERNAL
+            })?
+            .map_err(zx::Status::from_raw)
     }
 
     fn set_key(&mut self, key: key::KeyConfig) -> Result<(), zx::Status> {
@@ -226,7 +480,7 @@ impl DeviceOps for Device {
                 key::KeyType::PEER => banjo_common::WlanKeyType::PEER,
                 _ => return Err(zx::Status::INVALID_ARGS),
             },
-            peer_addr: key.peer_addr,
+            peer_addr: key.peer_addr.to_array(),
             key_idx: key.key_idx,
             key_list: key.key.as_ptr(),
             key_count: usize::from(key.key_len),
@@ -237,64 +491,82 @@ impl DeviceOps for Device {
 
     fn start_passive_scan(
         &mut self,
-        passive_scan_args: PassiveScanArgs,
-    ) -> Result<u64, zx::Status> {
-        let mut out_scan_id = 0;
-        let passive_scan_request = StartPassiveScanRequest::from(passive_scan_args);
-        let status = (self.raw_device.start_passive_scan)(
-            self.raw_device.device,
-            passive_scan_request.to_banjo_ptr(),
-            &mut out_scan_id as *mut u64,
-        );
-        zx::ok(status).map(|()| out_scan_id)
+        request: &fidl_softmac::WlanSoftmacBridgeStartPassiveScanRequest,
+    ) -> Result<fidl_softmac::WlanSoftmacBridgeStartPassiveScanResponse, zx::Status> {
+        Self::flatten_and_log_error(
+            "StartPassiveScan",
+            self.wlan_softmac_bridge_proxy.start_passive_scan(request, zx::Time::INFINITE),
+        )
     }
 
-    fn start_active_scan(&mut self, active_scan_args: ActiveScanArgs) -> Result<u64, zx::Status> {
-        let mut out_scan_id = 0;
-        let active_scan_request = StartActiveScanRequest::from(active_scan_args);
-        let status = (self.raw_device.start_active_scan)(
-            self.raw_device.device,
-            active_scan_request.to_banjo_ptr(),
-            &mut out_scan_id as *mut u64,
-        );
-        zx::ok(status).map(|()| out_scan_id)
+    fn start_active_scan(
+        &mut self,
+        request: &fidl_softmac::WlanSoftmacStartActiveScanRequest,
+    ) -> Result<fidl_softmac::WlanSoftmacBridgeStartActiveScanResponse, zx::Status> {
+        Self::flatten_and_log_error(
+            "StartActiveScan",
+            self.wlan_softmac_bridge_proxy.start_active_scan(request, zx::Time::INFINITE),
+        )
     }
 
-    fn cancel_scan(&mut self, scan_id: u64) -> Result<(), zx::Status> {
-        zx::ok((self.raw_device.cancel_scan)(self.raw_device.device, scan_id))
+    fn cancel_scan(
+        &mut self,
+        request: &fidl_softmac::WlanSoftmacBridgeCancelScanRequest,
+    ) -> Result<(), zx::Status> {
+        Self::flatten_and_log_error(
+            "CancelScan",
+            self.wlan_softmac_bridge_proxy.cancel_scan(request, zx::Time::INFINITE),
+        )
     }
 
-    fn channel(&mut self) -> banjo_common::WlanChannel {
-        (self.raw_device.get_wlan_channel)(self.raw_device.device)
-    }
-
-    fn join_bss(&mut self, mut cfg: banjo_common::JoinBssRequest) -> Result<(), zx::Status> {
-        zx::ok((self.raw_device.join_bss)(self.raw_device.device, &mut cfg))
+    fn join_bss(&mut self, request: &fidl_common::JoinBssRequest) -> Result<(), zx::Status> {
+        Self::flatten_and_log_error(
+            "JoinBss",
+            self.wlan_softmac_bridge_proxy.join_bss(request, zx::Time::INFINITE),
+        )
     }
 
     fn enable_beaconing(
         &mut self,
-        buf: OutBuf,
-        tim_ele_offset: usize,
-        beacon_interval: TimeUnit,
+        request: fidl_softmac::WlanSoftmacBridgeEnableBeaconingRequest,
     ) -> Result<(), zx::Status> {
-        zx::ok((self.raw_device.enable_beaconing)(
-            self.raw_device.device,
-            buf,
-            tim_ele_offset,
-            beacon_interval.0,
-        ))
+        self.wlan_softmac_bridge_proxy
+            .enable_beaconing(&request, zx::Time::INFINITE)
+            .map_err(|error| {
+                error!("FIDL error during EnableBeaconing: {:?}", error);
+                zx::Status::INTERNAL
+            })?
+            .map_err(zx::Status::from_raw)
     }
 
     fn disable_beaconing(&mut self) -> Result<(), zx::Status> {
-        zx::ok((self.raw_device.disable_beaconing)(self.raw_device.device))
+        self.wlan_softmac_bridge_proxy
+            .disable_beaconing(zx::Time::INFINITE)
+            .map_err(|error| {
+                error!("DisableBeaconing failed with FIDL error: {:?}", error);
+                zx::Status::INTERNAL
+            })?
+            .map_err(zx::Status::from_raw)
     }
 
-    fn clear_association(&mut self, addr: &MacAddr) -> Result<(), zx::Status> {
+    fn clear_association(
+        &mut self,
+        request: &fidl_softmac::WlanSoftmacBridgeClearAssociationRequest,
+    ) -> Result<(), zx::Status> {
+        let addr: MacAddr = request
+            .peer_addr
+            .ok_or_else(|| {
+                error!("ClearAssociation called with no peer_addr field.");
+                zx::Status::INVALID_ARGS
+            })?
+            .into();
         if let Some(minstrel) = &self.minstrel {
-            minstrel.lock().remove_peer(addr);
+            minstrel.lock().remove_peer(&addr);
         }
-        zx::ok((self.raw_device.clear_association)(self.raw_device.device, addr))
+        Self::flatten_and_log_error(
+            "ClearAssociation",
+            self.wlan_softmac_bridge_proxy.clear_association(request, zx::Time::INFINITE),
+        )
     }
 
     fn notify_association_complete(
@@ -304,13 +576,11 @@ impl DeviceOps for Device {
         if let Some(minstrel) = &self.minstrel {
             minstrel.lock().add_peer(&assoc_cfg)?;
         }
-        self.wlan_softmac_bridge_proxy
-            .notify_association_complete(&assoc_cfg, zx::Time::INFINITE)
-            .map_err(|fidl_error| {
-                error!("FIDL error during ConfigureAssoc: {:?}", fidl_error);
-                zx::Status::INTERNAL
-            })?
-            .map_err(|e| zx::Status::from_raw(e))
+        Self::flatten_and_log_error(
+            "NotifyAssociationComplete",
+            self.wlan_softmac_bridge_proxy
+                .notify_association_complete(&assoc_cfg, zx::Time::INFINITE),
+        )
     }
 
     fn take_mlme_event_stream(&mut self) -> Option<mpsc::UnboundedReceiver<fidl_mlme::MlmeEvent>> {
@@ -348,9 +618,9 @@ pub struct WlanSoftmacIfcProtocolOps {
         packet: *const WlanTxPacket,
         status: i32,
     ),
-    report_tx_status: extern "C" fn(
+    report_tx_result: extern "C" fn(
         ctx: &mut crate::DriverEventSink,
-        tx_status: *const banjo_common::WlanTxResult,
+        tx_result: *const banjo_common::WlanTxResult,
     ),
     scan_complete: extern "C" fn(ctx: &mut crate::DriverEventSink, status: i32, scan_id: u64),
 }
@@ -373,7 +643,7 @@ extern "C" fn handle_complete_tx(
     // TODO(fxbug.dev/85924): Implement this to support asynchronous packet delivery.
 }
 #[no_mangle]
-extern "C" fn handle_report_tx_status(
+extern "C" fn handle_report_tx_result(
     ctx: &mut crate::DriverEventSink,
     tx_result_in: *const banjo_common::WlanTxResult,
 ) {
@@ -394,7 +664,7 @@ extern "C" fn handle_scan_complete(ctx: &mut crate::DriverEventSink, status: i32
 const PROTOCOL_OPS: WlanSoftmacIfcProtocolOps = WlanSoftmacIfcProtocolOps {
     recv: handle_recv,
     complete_tx: handle_complete_tx,
-    report_tx_status: handle_report_tx_status,
+    report_tx_result: handle_report_tx_result,
     scan_complete: handle_scan_complete,
 };
 
@@ -405,257 +675,6 @@ impl<'a> WlanSoftmacIfcProtocol<'a> {
         Self { ops, ctx: sink }
     }
 }
-
-#[cfg_attr(test, derive(Clone, Debug, PartialEq))]
-pub struct PassiveScanArgs {
-    pub channels: Vec<u8>,
-    pub min_channel_time: zx::sys::zx_duration_t,
-    pub max_channel_time: zx::sys::zx_duration_t,
-    pub min_home_time: zx::sys::zx_duration_t,
-}
-
-impl From<banjo_wlan_softmac::WlanSoftmacStartPassiveScanRequest> for PassiveScanArgs {
-    fn from(banjo_args: banjo_wlan_softmac::WlanSoftmacStartPassiveScanRequest) -> PassiveScanArgs {
-        PassiveScanArgs {
-            channels: banjo_list_to_slice!(banjo_args, channels).to_vec(),
-            min_channel_time: banjo_args.min_channel_time,
-            max_channel_time: banjo_args.max_channel_time,
-            min_home_time: banjo_args.min_home_time,
-        }
-    }
-}
-
-#[cfg_attr(test, derive(Clone, Debug, PartialEq))]
-pub struct ActiveScanArgs {
-    pub min_channel_time: zx::sys::zx_duration_t,
-    pub max_channel_time: zx::sys::zx_duration_t,
-    pub min_home_time: zx::sys::zx_duration_t,
-    pub min_probes_per_channel: u8,
-    pub max_probes_per_channel: u8,
-    pub ssids_list: Vec<banjo_ieee80211::CSsid>,
-    pub mac_header: Vec<u8>,
-    pub channels: Vec<u8>,
-    pub ies: Vec<u8>,
-}
-
-impl From<banjo_wlan_softmac::WlanSoftmacStartActiveScanRequest> for ActiveScanArgs {
-    fn from(banjo_args: banjo_wlan_softmac::WlanSoftmacStartActiveScanRequest) -> ActiveScanArgs {
-        ActiveScanArgs {
-            min_channel_time: banjo_args.min_channel_time,
-            max_channel_time: banjo_args.max_channel_time,
-            min_home_time: banjo_args.min_home_time,
-            min_probes_per_channel: banjo_args.min_probes_per_channel,
-            max_probes_per_channel: banjo_args.max_probes_per_channel,
-            ssids_list: banjo_list_to_slice!(banjo_args, ssids).to_vec(),
-            channels: banjo_list_to_slice!(banjo_args, channels).to_vec(),
-            mac_header: banjo_buffer_to_slice!(banjo_args, mac_header).to_vec(),
-            ies: banjo_buffer_to_slice!(banjo_args, ies).to_vec(),
-        }
-    }
-}
-
-mod convert {
-    use {
-        super::*, crate::ddk_converter::convert_ddk_band_cap, anyhow::format_err,
-        fidl_fuchsia_wlan_common as fidl_common,
-    };
-
-    pub struct QueryResponse {
-        inner: banjo_wlan_softmac::WlanSoftmacQueryResponse,
-        supported_phys: Vec<banjo_common::WlanPhyType>,
-        band_caps: Vec<banjo_wlan_softmac::WlanSoftmacBandCapability>,
-    }
-
-    unsafe impl Send for QueryResponse {}
-    impl Clone for QueryResponse {
-        fn clone(&self) -> Self {
-            (*self.as_banjo()).into()
-        }
-    }
-
-    impl QueryResponse {
-        pub fn sta_addr(&self) -> MacAddr {
-            self.inner.sta_addr
-        }
-
-        pub fn mac_role(&self) -> banjo_common::WlanMacRole {
-            self.inner.mac_role
-        }
-
-        pub fn supported_phys(&self) -> &Vec<banjo_common::WlanPhyType> {
-            &self.supported_phys
-        }
-
-        pub fn hardware_capability(&self) -> u32 {
-            self.inner.hardware_capability
-        }
-
-        pub fn band_caps(&self) -> &Vec<banjo_wlan_softmac::WlanSoftmacBandCapability> {
-            &self.band_caps
-        }
-
-        pub fn as_banjo(&self) -> &banjo_wlan_softmac::WlanSoftmacQueryResponse {
-            &self.inner
-        }
-
-        pub(crate) fn fake() -> Self {
-            let mut supported_phys = vec![
-                banjo_common::WlanPhyType::DSSS,
-                banjo_common::WlanPhyType::HR,
-                banjo_common::WlanPhyType::OFDM,
-                banjo_common::WlanPhyType::ERP,
-                banjo_common::WlanPhyType::HT,
-                banjo_common::WlanPhyType::VHT,
-            ];
-            let mut band_caps = test_utils::fake_band_caps();
-            Self {
-                inner: banjo_wlan_softmac::WlanSoftmacQueryResponse {
-                    sta_addr: [7u8; 6],
-                    mac_role: banjo_common::WlanMacRole::CLIENT,
-                    supported_phys_list: supported_phys.as_mut_ptr(),
-                    supported_phys_count: supported_phys.len(),
-                    hardware_capability: 0,
-                    band_caps_list: band_caps.as_mut_ptr(),
-                    band_caps_count: band_caps.len(),
-                },
-                supported_phys,
-                band_caps,
-            }
-        }
-
-        pub(crate) fn with_mac_role(mut self, mac_role: banjo_common::WlanMacRole) -> Self {
-            self.inner.mac_role = mac_role;
-            self
-        }
-
-        pub(crate) fn with_sta_addr(mut self, sta_addr: MacAddr) -> Self {
-            self.inner.sta_addr = sta_addr;
-            self
-        }
-    }
-
-    impl From<banjo_wlan_softmac::WlanSoftmacQueryResponse> for QueryResponse {
-        fn from(mut query_response: banjo_wlan_softmac::WlanSoftmacQueryResponse) -> Self {
-            let mut supported_phys = banjo_list_to_slice!(query_response, supported_phys).to_vec();
-            query_response.supported_phys_list = supported_phys.as_mut_ptr();
-            let mut band_caps = banjo_list_to_slice!(query_response, band_caps).to_vec();
-            query_response.band_caps_list = band_caps.as_mut_ptr();
-
-            Self { inner: query_response, supported_phys, band_caps }
-        }
-    }
-
-    impl TryFrom<QueryResponse> for fidl_mlme::DeviceInfo {
-        type Error = anyhow::Error;
-
-        fn try_from(query_response: QueryResponse) -> Result<fidl_mlme::DeviceInfo, Self::Error> {
-            (&query_response).try_into()
-        }
-    }
-
-    impl TryFrom<&QueryResponse> for fidl_mlme::DeviceInfo {
-        type Error = anyhow::Error;
-
-        fn try_from(query_response: &QueryResponse) -> Result<fidl_mlme::DeviceInfo, Self::Error> {
-            let mut bands = vec![];
-            for band_cap in query_response.band_caps() {
-                bands.push(convert_ddk_band_cap(&band_cap)?)
-            }
-            Ok(fidl_mlme::DeviceInfo {
-                sta_addr: query_response.sta_addr(),
-                role: fidl_common::WlanMacRole::from_primitive(query_response.mac_role().0).ok_or(
-                    format_err!("Unknown WlanWlanMacRole: {}", query_response.mac_role().0),
-                )?,
-                bands,
-                qos_capable: false,
-                softmac_hardware_capability: query_response.hardware_capability(),
-            })
-        }
-    }
-
-    pub struct StartPassiveScanRequest {
-        banjo_args: banjo_wlan_softmac::WlanSoftmacStartPassiveScanRequest,
-        _args: PassiveScanArgs,
-    }
-
-    impl StartPassiveScanRequest {
-        #[cfg(test)]
-        pub fn as_banjo(&self) -> &banjo_wlan_softmac::WlanSoftmacStartPassiveScanRequest {
-            &self.banjo_args
-        }
-
-        /// Returns a raw pointer to the `banjo_wlan_softmac::WlanSoftmacStartPassiveScanRequest`
-        /// that `StartPassiveScanRequest` owns. The caller must ensure that the
-        /// `StartPassiveScanRequest` outlives the pointer this function returns, or else it
-        /// will end up pointing to garbage.
-        pub fn to_banjo_ptr(
-            &self,
-        ) -> *const banjo_wlan_softmac::WlanSoftmacStartPassiveScanRequest {
-            &self.banjo_args as *const banjo_wlan_softmac::WlanSoftmacStartPassiveScanRequest
-        }
-    }
-
-    impl From<PassiveScanArgs> for StartPassiveScanRequest {
-        fn from(passive_scan_args: PassiveScanArgs) -> StartPassiveScanRequest {
-            StartPassiveScanRequest {
-                banjo_args: banjo_wlan_softmac::WlanSoftmacStartPassiveScanRequest {
-                    channels_list: passive_scan_args.channels.as_ptr(),
-                    channels_count: passive_scan_args.channels.len(),
-                    min_channel_time: passive_scan_args.min_channel_time,
-                    max_channel_time: passive_scan_args.max_channel_time,
-                    min_home_time: passive_scan_args.min_home_time,
-                },
-                _args: passive_scan_args,
-            }
-        }
-    }
-
-    pub struct StartActiveScanRequest {
-        banjo_args: banjo_wlan_softmac::WlanSoftmacStartActiveScanRequest,
-        _args: ActiveScanArgs,
-    }
-
-    impl StartActiveScanRequest {
-        #[cfg(test)]
-        pub fn as_banjo(&self) -> &banjo_wlan_softmac::WlanSoftmacStartActiveScanRequest {
-            &self.banjo_args
-        }
-
-        /// Returns a raw pointer to the `banjo_wlan_softmac::WlanSoftmacStartActiveScanRequest`
-        /// that `StartActiveScanRequest` owns. The caller must ensure that the
-        /// `StartActiveScanRequest` outlives the pointer this function returns, or else it
-        /// will end up pointing to garbage.
-        pub fn to_banjo_ptr(&self) -> *const banjo_wlan_softmac::WlanSoftmacStartActiveScanRequest {
-            &self.banjo_args as *const banjo_wlan_softmac::WlanSoftmacStartActiveScanRequest
-        }
-    }
-
-    impl From<ActiveScanArgs> for StartActiveScanRequest {
-        fn from(active_scan_args: ActiveScanArgs) -> StartActiveScanRequest {
-            StartActiveScanRequest {
-                banjo_args: banjo_wlan_softmac::WlanSoftmacStartActiveScanRequest {
-                    min_channel_time: active_scan_args.min_channel_time,
-                    max_channel_time: active_scan_args.max_channel_time,
-                    min_home_time: active_scan_args.min_home_time,
-                    min_probes_per_channel: active_scan_args.min_probes_per_channel,
-                    max_probes_per_channel: active_scan_args.max_probes_per_channel,
-                    channels_list: active_scan_args.channels.as_ptr(),
-                    channels_count: active_scan_args.channels.len(),
-                    ssids_list: active_scan_args.ssids_list.as_ptr(),
-                    ssids_count: active_scan_args.ssids_list.len(),
-                    mac_header_buffer: active_scan_args.mac_header.as_ptr(),
-                    mac_header_size: active_scan_args.mac_header.len(),
-                    ies_buffer: active_scan_args.ies.as_ptr(),
-                    ies_size: active_scan_args.ies.len(),
-                },
-                _args: active_scan_args,
-            }
-        }
-    }
-}
-
-// Wrappers to manage the lifetimes of pointers exposed by Banjo.
-pub use convert::{QueryResponse, StartActiveScanRequest, StartPassiveScanRequest};
 
 // Our device is used inside a separate worker thread, so we force Rust to allow this.
 unsafe impl Send for DeviceInterface {}
@@ -681,57 +700,12 @@ pub struct DeviceInterface {
     ) -> i32,
     /// Reports the current status to the ethernet driver.
     set_ethernet_status: extern "C" fn(device: *mut c_void, status: u32) -> i32,
-    /// Returns the currently set WLAN channel.
-    get_wlan_channel: extern "C" fn(device: *mut c_void) -> banjo_common::WlanChannel,
-    /// Request the PHY to change its channel. If successful, get_wlan_channel will return the
-    /// chosen channel.
-    set_wlan_channel: extern "C" fn(device: *mut c_void, channel: banjo_common::WlanChannel) -> i32,
     /// Set a key on the device.
     /// |key| is mutable because the underlying API does not take a const wlan_key_configuration_t.
     set_key: extern "C" fn(
         device: *mut c_void,
         key: *mut banjo_wlan_softmac::WlanKeyConfiguration,
     ) -> i32,
-    /// Make passive scan request to the driver
-    start_passive_scan: extern "C" fn(
-        device: *mut c_void,
-        passive_scan_args: *const banjo_wlan_softmac::WlanSoftmacStartPassiveScanRequest,
-        out_scan_id: *mut u64,
-    ) -> zx::sys::zx_status_t,
-    /// Make active scan request to the driver
-    start_active_scan: extern "C" fn(
-        device: *mut c_void,
-        active_scan_args: *const banjo_wlan_softmac::WlanSoftmacStartActiveScanRequest,
-        out_scan_id: *mut u64,
-    ) -> zx::sys::zx_status_t,
-    /// Cancel ongoing scan in the driver
-    cancel_scan: extern "C" fn(device: *mut c_void, scan_id: u64) -> zx::sys::zx_status_t,
-    /// Get information and capabilities of this WLAN interface
-    get_wlan_softmac_query_response: extern "C" fn(device: *mut c_void) -> WlanSoftmacQueryResponse,
-    /// Get discovery features supported by this WLAN interface
-    get_discovery_support: extern "C" fn(device: *mut c_void) -> banjo_common::DiscoverySupport,
-    /// Get MAC sublayer features supported by this WLAN interface
-    get_mac_sublayer_support:
-        extern "C" fn(device: *mut c_void) -> banjo_common::MacSublayerSupport,
-    /// Get security features supported by this WLAN interface
-    get_security_support: extern "C" fn(device: *mut c_void) -> banjo_common::SecuritySupport,
-    /// Get spectrum management features supported by this WLAN interface
-    get_spectrum_management_support:
-        extern "C" fn(device: *mut c_void) -> banjo_common::SpectrumManagementSupport,
-    /// Configure the device's BSS.
-    /// |cfg| is mutable because the underlying API does not take a const join_bss_request_t.
-    join_bss: extern "C" fn(device: *mut c_void, cfg: &mut banjo_common::JoinBssRequest) -> i32,
-    /// Enable hardware offload of beaconing on the device.
-    enable_beaconing: extern "C" fn(
-        device: *mut c_void,
-        buf: OutBuf,
-        tim_ele_offset: usize,
-        beacon_interval: u16,
-    ) -> i32,
-    /// Disable beaconing on the device.
-    disable_beaconing: extern "C" fn(device: *mut c_void) -> i32,
-    /// Clear the association context.
-    clear_association: extern "C" fn(device: *mut c_void, addr: &[u8; 6]) -> i32,
 }
 
 pub mod test_utils {
@@ -739,13 +713,14 @@ pub mod test_utils {
         super::*,
         crate::{
             buffer::{BufferProvider, FakeBufferProvider},
-            ddk_converter::convert_ddk_band_cap,
+            ddk_converter,
             error::Error,
-            zeroed_array_from_prefix,
         },
-        banjo_fuchsia_wlan_common as banjo_common, fidl_fuchsia_wlan_internal as fidl_internal,
-        fidl_fuchsia_wlan_sme as fidl_sme, fuchsia_async as fasync,
+        fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
+        fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_sme as fidl_sme,
+        fuchsia_async as fasync,
         fuchsia_zircon::HandleBased,
+        ieee80211::Bssid,
         std::{
             collections::VecDeque,
             sync::{Arc, Mutex},
@@ -844,8 +819,8 @@ pub mod test_utils {
     }
 
     pub struct FakeDeviceConfig {
-        pub mac_role: banjo_common::WlanMacRole,
-        pub sta_addr: MacAddr,
+        pub mac_role: fidl_common::WlanMacRole,
+        pub sta_addr: Bssid,
         pub start_passive_scan_fails: bool,
         pub start_active_scan_fails: bool,
         pub send_wlan_frame_fails: bool,
@@ -854,8 +829,8 @@ pub mod test_utils {
     impl Default for FakeDeviceConfig {
         fn default() -> Self {
             Self {
-                mac_role: banjo_common::WlanMacRole::CLIENT,
-                sta_addr: [7u8; 6],
+                mac_role: fidl_common::WlanMacRole::Client,
+                sta_addr: [7u8; 6].into(),
                 start_passive_scan_fails: false,
                 start_active_scan_fails: false,
                 send_wlan_frame_fails: false,
@@ -883,17 +858,18 @@ pub mod test_utils {
             Option<fidl::endpoints::ClientEnd<fidl_sme::UsmeBootstrapMarker>>,
         pub usme_bootstrap_server_end:
             Option<fidl::endpoints::ServerEnd<fidl_sme::UsmeBootstrapMarker>>,
-        pub wlan_channel: banjo_common::WlanChannel,
+        pub wlan_channel: fidl_common::WlanChannel,
         pub keys: Vec<key::KeyConfig>,
         pub next_scan_id: u64,
-        pub captured_passive_scan_args: Option<PassiveScanArgs>,
-        pub captured_active_scan_args: Option<ActiveScanArgs>,
-        pub query_response: QueryResponse,
-        pub discovery_support: banjo_common::DiscoverySupport,
-        pub mac_sublayer_support: banjo_common::MacSublayerSupport,
-        pub security_support: banjo_common::SecuritySupport,
-        pub spectrum_management_support: banjo_common::SpectrumManagementSupport,
-        pub join_bss_request: Option<banjo_common::JoinBssRequest>,
+        pub captured_passive_scan_request:
+            Option<fidl_softmac::WlanSoftmacBridgeStartPassiveScanRequest>,
+        pub captured_active_scan_request: Option<fidl_softmac::WlanSoftmacStartActiveScanRequest>,
+        pub query_response: fidl_softmac::WlanSoftmacQueryResponse,
+        pub discovery_support: fidl_common::DiscoverySupport,
+        pub mac_sublayer_support: fidl_common::MacSublayerSupport,
+        pub security_support: fidl_common::SecuritySupport,
+        pub spectrum_management_support: fidl_common::SpectrumManagementSupport,
+        pub join_bss_request: Option<fidl_common::JoinBssRequest>,
         pub beacon_config: Option<(Vec<u8>, usize, TimeUnit)>,
         pub link_status: LinkStatus,
         pub assocs: std::collections::HashMap<MacAddr, fidl_softmac::WlanAssociationConfig>,
@@ -909,8 +885,21 @@ pub mod test_utils {
             _executor: &fasync::TestExecutor,
             config: FakeDeviceConfig,
         ) -> (FakeDevice, Arc<Mutex<FakeDeviceState>>) {
-            let query_response =
-                QueryResponse::fake().with_mac_role(config.mac_role).with_sta_addr(config.sta_addr);
+            let query_response = fidl_softmac::WlanSoftmacQueryResponse {
+                sta_addr: Some(config.sta_addr.to_array()),
+                mac_role: Some(config.mac_role),
+                supported_phys: Some(vec![
+                    fidl_common::WlanPhyType::Dsss,
+                    fidl_common::WlanPhyType::Hr,
+                    fidl_common::WlanPhyType::Ofdm,
+                    fidl_common::WlanPhyType::Erp,
+                    fidl_common::WlanPhyType::Ht,
+                    fidl_common::WlanPhyType::Vht,
+                ]),
+                hardware_capability: Some(0),
+                band_caps: Some(fake_band_caps()),
+                ..Default::default()
+            };
 
             // Create a channel for SME requests, to be surfaced by start().
             let (usme_bootstrap_client_end, usme_bootstrap_server_end) =
@@ -928,14 +917,14 @@ pub mod test_utils {
                 mlme_request_stream: Some(mlme_request_stream),
                 usme_bootstrap_client_end: Some(usme_bootstrap_client_end),
                 usme_bootstrap_server_end: Some(usme_bootstrap_server_end),
-                wlan_channel: banjo_common::WlanChannel {
+                wlan_channel: fidl_common::WlanChannel {
                     primary: 0,
-                    cbw: banjo_common::ChannelBandwidth::CBW20,
+                    cbw: fidl_common::ChannelBandwidth::Cbw20,
                     secondary80: 0,
                 },
                 next_scan_id: 0,
-                captured_passive_scan_args: None,
-                captured_active_scan_args: None,
+                captured_passive_scan_request: None,
+                captured_active_scan_request: None,
                 query_response,
                 discovery_support: fake_discovery_support(),
                 mac_sublayer_support: fake_mac_sublayer_support(),
@@ -989,24 +978,28 @@ pub mod test_utils {
             Ok(usme_bootstrap_server_end_handle)
         }
 
-        fn wlan_softmac_query_response(&mut self) -> QueryResponse {
-            self.state.lock().unwrap().query_response.clone()
+        fn wlan_softmac_query_response(
+            &mut self,
+        ) -> Result<fidl_softmac::WlanSoftmacQueryResponse, zx::Status> {
+            Ok(self.state.lock().unwrap().query_response.clone())
         }
 
-        fn discovery_support(&mut self) -> banjo_common::DiscoverySupport {
-            self.state.lock().unwrap().discovery_support
+        fn discovery_support(&mut self) -> Result<fidl_common::DiscoverySupport, zx::Status> {
+            Ok(self.state.lock().unwrap().discovery_support)
         }
 
-        fn mac_sublayer_support(&mut self) -> banjo_common::MacSublayerSupport {
-            self.state.lock().unwrap().mac_sublayer_support
+        fn mac_sublayer_support(&mut self) -> Result<fidl_common::MacSublayerSupport, zx::Status> {
+            Ok(self.state.lock().unwrap().mac_sublayer_support)
         }
 
-        fn security_support(&mut self) -> banjo_common::SecuritySupport {
-            self.state.lock().unwrap().security_support
+        fn security_support(&mut self) -> Result<fidl_common::SecuritySupport, zx::Status> {
+            Ok(self.state.lock().unwrap().security_support)
         }
 
-        fn spectrum_management_support(&mut self) -> banjo_common::SpectrumManagementSupport {
-            self.state.lock().unwrap().spectrum_management_support
+        fn spectrum_management_support(
+            &mut self,
+        ) -> Result<fidl_common::SpectrumManagementSupport, zx::Status> {
+            Ok(self.state.lock().unwrap().spectrum_management_support)
         }
 
         fn deliver_eth_frame(&mut self, data: &[u8]) -> Result<(), zx::Status> {
@@ -1032,14 +1025,10 @@ pub mod test_utils {
 
         fn set_channel(
             &mut self,
-            wlan_channel: banjo_common::WlanChannel,
+            wlan_channel: fidl_common::WlanChannel,
         ) -> Result<(), zx::Status> {
             self.state.lock().unwrap().wlan_channel = wlan_channel;
             Ok(())
-        }
-
-        fn channel(&mut self) -> banjo_common::WlanChannel {
-            self.state.lock().unwrap().wlan_channel
         }
 
         fn set_key(&mut self, key: key::KeyConfig) -> Result<(), zx::Status> {
@@ -1050,51 +1039,64 @@ pub mod test_utils {
 
         fn start_passive_scan(
             &mut self,
-            passive_scan_args: PassiveScanArgs,
-        ) -> Result<u64, zx::Status> {
+            request: &fidl_softmac::WlanSoftmacBridgeStartPassiveScanRequest,
+        ) -> Result<fidl_softmac::WlanSoftmacBridgeStartPassiveScanResponse, zx::Status> {
             let mut state = self.state.lock().unwrap();
             if state.config.start_passive_scan_fails {
                 return Err(zx::Status::NOT_SUPPORTED);
             }
             let scan_id = state.next_scan_id;
             state.next_scan_id += 1;
-            state.captured_passive_scan_args.replace(passive_scan_args);
-            Ok(scan_id)
+            state.captured_passive_scan_request.replace(request.clone());
+            Ok(fidl_softmac::WlanSoftmacBridgeStartPassiveScanResponse {
+                scan_id: Some(scan_id),
+                ..Default::default()
+            })
         }
 
         fn start_active_scan(
             &mut self,
-            active_scan_args: ActiveScanArgs,
-        ) -> Result<u64, zx::Status> {
+            request: &fidl_softmac::WlanSoftmacStartActiveScanRequest,
+        ) -> Result<fidl_softmac::WlanSoftmacBridgeStartActiveScanResponse, zx::Status> {
             let mut state = self.state.lock().unwrap();
             if state.config.start_active_scan_fails {
                 return Err(zx::Status::NOT_SUPPORTED);
             }
             let scan_id = state.next_scan_id;
             state.next_scan_id += 1;
-            state.captured_active_scan_args.replace(active_scan_args);
-            Ok(scan_id)
+            state.captured_active_scan_request.replace(request.clone());
+            Ok(fidl_softmac::WlanSoftmacBridgeStartActiveScanResponse {
+                scan_id: Some(scan_id),
+                ..Default::default()
+            })
         }
 
-        fn cancel_scan(&mut self, _scan_id: u64) -> Result<(), zx::Status> {
+        fn cancel_scan(
+            &mut self,
+            _request: &fidl_softmac::WlanSoftmacBridgeCancelScanRequest,
+        ) -> Result<(), zx::Status> {
             Err(zx::Status::NOT_SUPPORTED)
         }
 
-        fn join_bss(&mut self, cfg: banjo_common::JoinBssRequest) -> Result<(), zx::Status> {
-            self.state.lock().unwrap().join_bss_request.replace(cfg);
+        fn join_bss(&mut self, request: &fidl_common::JoinBssRequest) -> Result<(), zx::Status> {
+            self.state.lock().unwrap().join_bss_request.replace(request.clone());
             Ok(())
         }
 
         fn enable_beaconing(
             &mut self,
-            buf: OutBuf,
-            tim_ele_offset: usize,
-            beacon_interval: TimeUnit,
+            request: fidl_softmac::WlanSoftmacBridgeEnableBeaconingRequest,
         ) -> Result<(), zx::Status> {
-            self.state.lock().unwrap().beacon_config =
-                Some((buf.as_slice().to_vec(), tim_ele_offset, beacon_interval));
-            buf.free();
-            Ok(())
+            match (request.packet_template, request.tim_ele_offset, request.beacon_interval) {
+                (Some(packet_template), Some(tim_ele_offset), Some(beacon_interval)) => Ok({
+                    self.state.lock().unwrap().beacon_config = Some((
+                        packet_template.mac_frame.clone(),
+                        usize::try_from(tim_ele_offset).map_err(|_| zx::Status::INTERNAL)?,
+                        TimeUnit(beacon_interval),
+                    ));
+                }),
+                _ => Err(zx::Status::INVALID_ARGS),
+            }
         }
 
         fn disable_beaconing(&mut self) -> Result<(), zx::Status> {
@@ -1110,16 +1112,20 @@ pub mod test_utils {
             if let Some(minstrel) = &state.minstrel {
                 minstrel.lock().add_peer(&cfg)?
             }
-            state.assocs.insert(cfg.bssid.unwrap(), cfg);
+            state.assocs.insert(cfg.bssid.unwrap().into(), cfg);
             Ok(())
         }
 
-        fn clear_association(&mut self, addr: &MacAddr) -> Result<(), zx::Status> {
+        fn clear_association(
+            &mut self,
+            request: &fidl_softmac::WlanSoftmacBridgeClearAssociationRequest,
+        ) -> Result<(), zx::Status> {
+            let addr: MacAddr = request.peer_addr.unwrap().into();
             let mut state = self.state.lock().unwrap();
             if let Some(minstrel) = &state.minstrel {
-                minstrel.lock().remove_peer(addr);
+                minstrel.lock().remove_peer(&addr);
             }
-            state.assocs.remove(addr);
+            state.assocs.remove(&addr);
             state.join_bss_request = None;
             Ok(())
         }
@@ -1143,25 +1149,16 @@ pub mod test_utils {
         }
     }
 
-    pub fn fake_band_caps() -> Vec<banjo_wlan_softmac::WlanSoftmacBandCapability> {
-        let basic_rate_list = zeroed_array_from_prefix!(
-            [0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c],
-            banjo_ieee80211::MAX_SUPPORTED_BASIC_RATES as usize
-        );
-        let basic_rate_count = basic_rate_list.len() as u8;
-
+    pub fn fake_band_caps() -> Vec<fidl_softmac::WlanSoftmacBandCapability> {
         vec![
-            banjo_wlan_softmac::WlanSoftmacBandCapability {
-                band: banjo_common::WlanBand::TWO_GHZ,
-                basic_rate_list,
-                basic_rate_count,
-                operating_channel_list: zeroed_array_from_prefix!(
-                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-                    banjo_ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS as usize,
-                ),
-                operating_channel_count: 14,
-                ht_supported: true,
-                ht_caps: banjo_ieee80211::HtCapabilities {
+            fidl_softmac::WlanSoftmacBandCapability {
+                band: Some(fidl_common::WlanBand::TwoGhz),
+                basic_rates: Some(vec![
+                    0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
+                ]),
+                operating_channels: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]),
+                ht_supported: Some(true),
+                ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
                         0x17, // AMPDU params
@@ -1172,24 +1169,17 @@ pub mod test_utils {
                         0x00, 0x00, 0x00, 0x00, // TX beamforming capabilities
                         0x00, // ASEL capabilities
                     ],
-                },
-                vht_supported: false,
-                vht_caps: banjo_ieee80211::VhtCapabilities { bytes: Default::default() },
+                }),
+                vht_supported: Some(false),
+                vht_caps: Some(fidl_ieee80211::VhtCapabilities { bytes: Default::default() }),
+                ..Default::default()
             },
-            banjo_wlan_softmac::WlanSoftmacBandCapability {
-                band: banjo_common::WlanBand::FIVE_GHZ,
-                basic_rate_list: zeroed_array_from_prefix!(
-                    [0x02, 0x04, 0x0b, 0x16, 0x30, 0x60, 0x7e, 0x7f],
-                    banjo_ieee80211::MAX_SUPPORTED_BASIC_RATES as usize
-                ),
-                basic_rate_count: 8,
-                operating_channel_list: zeroed_array_from_prefix!(
-                    [36, 40, 44, 48, 149, 153, 157, 161],
-                    banjo_ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS as usize,
-                ),
-                operating_channel_count: 8,
-                ht_supported: true,
-                ht_caps: banjo_ieee80211::HtCapabilities {
+            fidl_softmac::WlanSoftmacBandCapability {
+                band: Some(fidl_common::WlanBand::FiveGhz),
+                basic_rates: Some(vec![0x02, 0x04, 0x0b, 0x16, 0x30, 0x60, 0x7e, 0x7f]),
+                operating_channels: Some(vec![36, 40, 44, 48, 149, 153, 157, 161]),
+                ht_supported: Some(true),
+                ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
                         0x17, // AMPDU params
@@ -1200,66 +1190,60 @@ pub mod test_utils {
                         0x00, 0x00, 0x00, 0x00, // TX beamforming capabilities
                         0x00, // ASEL capabilities
                     ],
-                },
-                vht_supported: true,
-                vht_caps: banjo_ieee80211::VhtCapabilities {
+                }),
+                vht_supported: Some(true),
+                vht_caps: Some(fidl_ieee80211::VhtCapabilities {
                     bytes: [0x32, 0x50, 0x80, 0x0f, 0xfe, 0xff, 0x00, 0x00, 0xfe, 0xff, 0x00, 0x00],
-                },
+                }),
+                ..Default::default()
             },
         ]
     }
 
-    pub fn fake_fidl_band_caps() -> Vec<fidl_mlme::BandCapability> {
+    pub fn fake_mlme_band_caps() -> Vec<fidl_mlme::BandCapability> {
         fake_band_caps()
             .into_iter()
-            .map(|band_cap| {
-                convert_ddk_band_cap(&band_cap).expect("Failed to convert Banjo band capability")
-            })
-            .collect()
+            .map(ddk_converter::mlme_band_cap_from_softmac)
+            .collect::<Result<_, _>>()
+            .expect("Failed to convert softmac driver band capabilities.")
     }
 
-    pub fn fake_discovery_support() -> banjo_common::DiscoverySupport {
-        banjo_common::DiscoverySupport {
-            scan_offload: banjo_common::ScanOffloadExtension {
+    pub fn fake_discovery_support() -> fidl_common::DiscoverySupport {
+        fidl_common::DiscoverySupport {
+            scan_offload: fidl_common::ScanOffloadExtension {
                 supported: true,
                 scan_cancel_supported: false,
             },
-            probe_response_offload: banjo_common::ProbeResponseOffloadExtension {
-                supported: false,
-            },
+            probe_response_offload: fidl_common::ProbeResponseOffloadExtension { supported: false },
         }
     }
 
-    pub fn fake_mac_sublayer_support() -> banjo_common::MacSublayerSupport {
-        banjo_common::MacSublayerSupport {
-            rate_selection_offload: banjo_common::RateSelectionOffloadExtension {
-                supported: false,
+    pub fn fake_mac_sublayer_support() -> fidl_common::MacSublayerSupport {
+        fidl_common::MacSublayerSupport {
+            rate_selection_offload: fidl_common::RateSelectionOffloadExtension { supported: false },
+            data_plane: fidl_common::DataPlaneExtension {
+                data_plane_type: fidl_common::DataPlaneType::EthernetDevice,
             },
-            data_plane: banjo_common::DataPlaneExtension {
-                data_plane_type: banjo_common::DataPlaneType::ETHERNET_DEVICE,
-            },
-            device: banjo_common::DeviceExtension {
+            device: fidl_common::DeviceExtension {
                 is_synthetic: true,
-                mac_implementation_type: banjo_common::MacImplementationType::SOFTMAC,
+                mac_implementation_type: fidl_common::MacImplementationType::Softmac,
                 tx_status_report_supported: true,
             },
         }
     }
 
-    pub fn fake_security_support() -> banjo_common::SecuritySupport {
-        banjo_common::SecuritySupport {
-            mfp: banjo_common::MfpFeature { supported: false },
-            sae: banjo_common::SaeFeature {
+    pub fn fake_security_support() -> fidl_common::SecuritySupport {
+        fidl_common::SecuritySupport {
+            mfp: fidl_common::MfpFeature { supported: false },
+            sae: fidl_common::SaeFeature {
                 driver_handler_supported: false,
                 sme_handler_supported: false,
             },
         }
     }
 
-    pub fn fake_spectrum_management_support() -> banjo_common::SpectrumManagementSupport {
-        banjo_common::SpectrumManagementSupport {
-            dfs: banjo_common::DfsFeature { supported: true },
-        }
+    pub fn fake_spectrum_management_support() -> fidl_common::SpectrumManagementSupport {
+        fidl_common::SpectrumManagementSupport { dfs: fidl_common::DfsFeature { supported: true } }
     }
 }
 
@@ -1267,13 +1251,9 @@ pub mod test_utils {
 mod tests {
     use {
         super::*,
-        crate::{
-            banjo_list_to_slice,
-            ddk_converter::{cssid_from_ssid_unchecked, test_utils::band_capability_eq},
-            zeroed_array_from_prefix,
-        },
-        banjo_fuchsia_wlan_ieee80211::*,
-        fidl_fuchsia_wlan_common as fidl_common, fuchsia_async as fasync,
+        crate::{ddk_converter, WlanTxPacketExt as _},
+        fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
+        fuchsia_async as fasync,
         ieee80211::Ssid,
         std::convert::TryFrom,
         wlan_common::assert_variant,
@@ -1294,38 +1274,31 @@ mod tests {
     fn fake_device_returns_expected_wlan_softmac_query_response() {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, _) = FakeDevice::new(&exec);
-        let query_response = fake_device.wlan_softmac_query_response();
-        assert_eq!(query_response.sta_addr(), [7u8; 6]);
-        assert_eq!(query_response.mac_role(), banjo_common::WlanMacRole::CLIENT);
+        let query_response = fake_device.wlan_softmac_query_response().unwrap();
+        assert_eq!(query_response.sta_addr, [7u8; 6].into());
+        assert_eq!(query_response.mac_role, Some(fidl_common::WlanMacRole::Client));
         assert_eq!(
-            query_response.supported_phys(),
-            &[
-                banjo_common::WlanPhyType::DSSS,
-                banjo_common::WlanPhyType::HR,
-                banjo_common::WlanPhyType::OFDM,
-                banjo_common::WlanPhyType::ERP,
-                banjo_common::WlanPhyType::HT,
-                banjo_common::WlanPhyType::VHT,
-            ]
+            query_response.supported_phys,
+            Some(vec![
+                fidl_common::WlanPhyType::Dsss,
+                fidl_common::WlanPhyType::Hr,
+                fidl_common::WlanPhyType::Ofdm,
+                fidl_common::WlanPhyType::Erp,
+                fidl_common::WlanPhyType::Ht,
+                fidl_common::WlanPhyType::Vht,
+            ]),
         );
-        assert_eq!(query_response.hardware_capability(), 0);
+        assert_eq!(query_response.hardware_capability, Some(0));
 
-        let band_caps = query_response.band_caps();
         let expected_band_caps = [
-            banjo_wlan_softmac::WlanSoftmacBandCapability {
-                band: banjo_common::WlanBand::TWO_GHZ,
-                basic_rate_list: zeroed_array_from_prefix!(
-                    [0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c],
-                    banjo_ieee80211::MAX_SUPPORTED_BASIC_RATES as usize
-                ),
-                basic_rate_count: 12,
-                operating_channel_list: zeroed_array_from_prefix!(
-                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-                    banjo_ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS as usize,
-                ),
-                operating_channel_count: 14,
-                ht_supported: true,
-                ht_caps: HtCapabilities {
+            fidl_softmac::WlanSoftmacBandCapability {
+                band: Some(fidl_common::WlanBand::TwoGhz),
+                basic_rates: Some(vec![
+                    0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
+                ]),
+                operating_channels: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]),
+                ht_supported: Some(true),
+                ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
                         0x17, // AMPDU params
@@ -1336,24 +1309,17 @@ mod tests {
                         0x00, 0x00, 0x00, 0x00, // TX beamforming capabilities
                         0x00, // ASEL capabilities
                     ],
-                },
-                vht_supported: false,
-                vht_caps: VhtCapabilities { bytes: Default::default() },
+                }),
+                vht_supported: Some(false),
+                vht_caps: Some(fidl_ieee80211::VhtCapabilities { bytes: Default::default() }),
+                ..Default::default()
             },
-            banjo_wlan_softmac::WlanSoftmacBandCapability {
-                band: banjo_common::WlanBand::FIVE_GHZ,
-                basic_rate_list: zeroed_array_from_prefix!(
-                    [0x02, 0x04, 0x0b, 0x16, 0x30, 0x60, 0x7e, 0x7f],
-                    banjo_ieee80211::MAX_SUPPORTED_BASIC_RATES as usize
-                ),
-                basic_rate_count: 8,
-                operating_channel_list: zeroed_array_from_prefix!(
-                    [36, 40, 44, 48, 149, 153, 157, 161],
-                    banjo_ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS as usize,
-                ),
-                operating_channel_count: 8,
-                ht_supported: true,
-                ht_caps: banjo_ieee80211::HtCapabilities {
+            fidl_softmac::WlanSoftmacBandCapability {
+                band: Some(fidl_common::WlanBand::FiveGhz),
+                basic_rates: Some(vec![0x02, 0x04, 0x0b, 0x16, 0x30, 0x60, 0x7e, 0x7f]),
+                operating_channels: Some(vec![36, 40, 44, 48, 149, 153, 157, 161]),
+                ht_supported: Some(true),
+                ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
                         0x17, // AMPDU params
@@ -1364,31 +1330,34 @@ mod tests {
                         0x00, 0x00, 0x00, 0x00, // TX beamforming capabilities
                         0x00, // ASEL capabilities
                     ],
-                },
-                vht_supported: true,
-                vht_caps: banjo_ieee80211::VhtCapabilities {
+                }),
+                vht_supported: Some(true),
+                vht_caps: Some(fidl_ieee80211::VhtCapabilities {
                     bytes: [0x32, 0x50, 0x80, 0x0f, 0xfe, 0xff, 0x00, 0x00, 0xfe, 0xff, 0x00, 0x00],
-                },
+                }),
+                ..Default::default()
             },
         ];
-        band_caps.iter().zip(expected_band_caps).for_each(|(band_cap, expected_band_cap)| {
-            assert!(band_capability_eq(&band_cap, &expected_band_cap));
-        });
+        let actual_band_caps = query_response.band_caps.as_ref().unwrap();
+        for (actual_band_cap, expected_band_cap) in actual_band_caps.iter().zip(&expected_band_caps)
+        {
+            assert_eq!(actual_band_cap, expected_band_cap);
+        }
     }
 
     #[test]
     fn fake_device_returns_expected_discovery_support() {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, _) = FakeDevice::new(&exec);
-        let discovery_support = fake_device.discovery_support();
+        let discovery_support = fake_device.discovery_support().unwrap();
         assert_eq!(
             discovery_support,
-            banjo_common::DiscoverySupport {
-                scan_offload: banjo_common::ScanOffloadExtension {
+            fidl_common::DiscoverySupport {
+                scan_offload: fidl_common::ScanOffloadExtension {
                     supported: true,
                     scan_cancel_supported: false,
                 },
-                probe_response_offload: banjo_common::ProbeResponseOffloadExtension {
+                probe_response_offload: fidl_common::ProbeResponseOffloadExtension {
                     supported: false,
                 },
             }
@@ -1399,19 +1368,19 @@ mod tests {
     fn fake_device_returns_expected_mac_sublayer_support() {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, _) = FakeDevice::new(&exec);
-        let mac_sublayer_support = fake_device.mac_sublayer_support();
+        let mac_sublayer_support = fake_device.mac_sublayer_support().unwrap();
         assert_eq!(
             mac_sublayer_support,
-            banjo_common::MacSublayerSupport {
-                rate_selection_offload: banjo_common::RateSelectionOffloadExtension {
+            fidl_common::MacSublayerSupport {
+                rate_selection_offload: fidl_common::RateSelectionOffloadExtension {
                     supported: false,
                 },
-                data_plane: banjo_common::DataPlaneExtension {
-                    data_plane_type: banjo_common::DataPlaneType::ETHERNET_DEVICE,
+                data_plane: fidl_common::DataPlaneExtension {
+                    data_plane_type: fidl_common::DataPlaneType::EthernetDevice,
                 },
-                device: banjo_common::DeviceExtension {
+                device: fidl_common::DeviceExtension {
                     is_synthetic: true,
-                    mac_implementation_type: banjo_common::MacImplementationType::SOFTMAC,
+                    mac_implementation_type: fidl_common::MacImplementationType::Softmac,
                     tx_status_report_supported: true,
                 },
             }
@@ -1422,12 +1391,12 @@ mod tests {
     fn fake_device_returns_expected_security_support() {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, _) = FakeDevice::new(&exec);
-        let security_support = fake_device.security_support();
+        let security_support = fake_device.security_support().unwrap();
         assert_eq!(
             security_support,
-            banjo_common::SecuritySupport {
-                mfp: banjo_common::MfpFeature { supported: false },
-                sae: banjo_common::SaeFeature {
+            fidl_common::SecuritySupport {
+                mfp: fidl_common::MfpFeature { supported: false },
+                sae: fidl_common::SaeFeature {
                     driver_handler_supported: false,
                     sme_handler_supported: false,
                 },
@@ -1439,11 +1408,11 @@ mod tests {
     fn fake_device_returns_expected_spectrum_management_support() {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, _) = FakeDevice::new(&exec);
-        let spectrum_management_support = fake_device.spectrum_management_support();
+        let spectrum_management_support = fake_device.spectrum_management_support().unwrap();
         assert_eq!(
             spectrum_management_support,
-            banjo_common::SpectrumManagementSupport {
-                dfs: banjo_common::DfsFeature { supported: true },
+            fidl_common::SpectrumManagementSupport {
+                dfs: fidl_common::DfsFeature { supported: true },
             }
         );
     }
@@ -1452,14 +1421,16 @@ mod tests {
     fn test_can_dynamically_change_fake_device_state() {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, fake_device_state) = FakeDevice::new(&exec);
-        let query_response = fake_device.wlan_softmac_query_response();
-        assert_eq!(query_response.mac_role(), banjo_common::WlanMacRole::CLIENT);
+        let query_response = fake_device.wlan_softmac_query_response().unwrap();
+        assert_eq!(query_response.mac_role, Some(fidl_common::WlanMacRole::Client));
 
-        fake_device_state.lock().unwrap().query_response =
-            query_response.with_mac_role(banjo_common::WlanMacRole::AP);
+        fake_device_state.lock().unwrap().query_response = fidl_softmac::WlanSoftmacQueryResponse {
+            mac_role: Some(fidl_common::WlanMacRole::Ap),
+            ..query_response
+        };
 
-        let query_response = fake_device.wlan_softmac_query_response();
-        assert_eq!(query_response.mac_role(), banjo_common::WlanMacRole::AP);
+        let query_response = fake_device.wlan_softmac_query_response().unwrap();
+        assert_eq!(query_response.mac_role, Some(fidl_common::WlanMacRole::Ap));
     }
 
     #[test]
@@ -1509,31 +1480,22 @@ mod tests {
     }
 
     #[test]
-    fn get_set_channel() {
+    fn set_channel() {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, fake_device_state) = FakeDevice::new(&exec);
         fake_device
-            .set_channel(banjo_common::WlanChannel {
+            .set_channel(fidl_common::WlanChannel {
                 primary: 2,
-                cbw: banjo_common::ChannelBandwidth::CBW80P80,
+                cbw: fidl_common::ChannelBandwidth::Cbw80P80,
                 secondary80: 4,
             })
             .expect("set_channel failed?");
         // Check the internal state.
         assert_eq!(
             fake_device_state.lock().unwrap().wlan_channel,
-            banjo_common::WlanChannel {
+            fidl_common::WlanChannel {
                 primary: 2,
-                cbw: banjo_common::ChannelBandwidth::CBW80P80,
-                secondary80: 4
-            }
-        );
-        // Check the external view of the internal state.
-        assert_eq!(
-            fake_device.channel(),
-            banjo_common::WlanChannel {
-                primary: 2,
-                cbw: banjo_common::ChannelBandwidth::CBW80P80,
+                cbw: fidl_common::ChannelBandwidth::Cbw80P80,
                 secondary80: 4
             }
         );
@@ -1550,7 +1512,7 @@ mod tests {
                 cipher_oui: [3, 4, 5],
                 cipher_type: 6,
                 key_type: key::KeyType::PAIRWISE,
-                peer_addr: [8; 6],
+                peer_addr: [8; 6].into(),
                 key_idx: 9,
                 key_len: 10,
                 key: [11; 32],
@@ -1561,99 +1523,31 @@ mod tests {
     }
 
     #[test]
-    fn successful_conversion_of_passive_scan_args_to_banjo() {
-        let args = StartPassiveScanRequest::from(PassiveScanArgs {
-            channels: vec![1u8, 2, 3],
-            min_channel_time: zx::Duration::from_millis(3).into_nanos(),
-            max_channel_time: zx::Duration::from_millis(123).into_nanos(),
-            min_home_time: 5,
-        });
-        let banjo_args = args.as_banjo();
-        assert_eq!(banjo_list_to_slice!(banjo_args, channels), &[1u8, 2, 3]);
-        assert_eq!(banjo_args.min_channel_time, zx::Duration::from_millis(3).into_nanos());
-        assert_eq!(banjo_args.max_channel_time, zx::Duration::from_millis(123).into_nanos());
-        assert_eq!(banjo_args.min_home_time, 5);
-    }
-
-    #[test]
     fn start_passive_scan() {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, fake_device_state) = FakeDevice::new(&exec);
 
-        let result = fake_device.start_passive_scan(PassiveScanArgs {
-            channels: vec![1u8, 2, 3],
-            min_channel_time: zx::Duration::from_millis(0).into_nanos(),
-            max_channel_time: zx::Duration::from_millis(200).into_nanos(),
-            min_home_time: 0,
-        });
+        let result = fake_device.start_passive_scan(
+            &fidl_softmac::WlanSoftmacBridgeStartPassiveScanRequest {
+                channels: Some(vec![1u8, 2, 3]),
+                min_channel_time: Some(zx::Duration::from_millis(0).into_nanos()),
+                max_channel_time: Some(zx::Duration::from_millis(200).into_nanos()),
+                min_home_time: Some(0),
+                ..Default::default()
+            },
+        );
         assert!(result.is_ok());
 
-        assert_variant!(fake_device_state.lock().unwrap().captured_passive_scan_args, Some(ref passive_scan_args) => {
-            assert_eq!(passive_scan_args.channels, vec![1, 2, 3]);
-            assert_eq!(passive_scan_args.min_channel_time, 0);
-            assert_eq!(passive_scan_args.max_channel_time, 200_000_000);
-            assert_eq!(passive_scan_args.min_home_time, 0);
-        }, "No passive scan argument available.");
-    }
-
-    #[test]
-    fn successful_conversion_of_active_scan_args_to_banjo() {
-        let args = StartActiveScanRequest::from(ActiveScanArgs {
-            min_channel_time: zx::Duration::from_millis(2).into_nanos(),
-            max_channel_time: zx::Duration::from_millis(301).into_nanos(),
-            min_home_time: 6,
-            min_probes_per_channel: 1,
-            max_probes_per_channel: 3,
-            channels: vec![4u8, 36, 149],
-            ssids_list: vec![
-                cssid_from_ssid_unchecked(&Ssid::try_from("foo").unwrap().into()),
-                cssid_from_ssid_unchecked(&Ssid::try_from("bar").unwrap().into()),
-            ],
-            #[rustfmt::skip]
-            mac_header: vec![
-                0x40u8, 0x00, // Frame Control
-                0x00, 0x00, // Duration
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Address 1
-                0x66, 0x66, 0x66, 0x66, 0x66, 0x66, // Address 2
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Address 3
-                0x70, 0xdc, // Sequence Control
-            ],
-            #[rustfmt::skip]
-            ies: vec![
-                0x01u8, // Element ID for Supported Rates
-                0x08, // Length
-                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 // Supported Rates
-            ],
-        });
-        let banjo_args = args.as_banjo();
-        assert_eq!(banjo_args.min_channel_time, zx::Duration::from_millis(2).into_nanos());
-        assert_eq!(banjo_args.max_channel_time, zx::Duration::from_millis(301).into_nanos());
-        assert_eq!(banjo_args.min_home_time, 6);
-        assert_eq!(banjo_args.min_probes_per_channel, 1);
-        assert_eq!(banjo_args.max_probes_per_channel, 3);
-        assert_eq!(banjo_list_to_slice!(banjo_args, channels), &[4, 36, 149]);
         assert_eq!(
-            banjo_list_to_slice!(banjo_args, ssids),
-            &[
-                cssid_from_ssid_unchecked(&Ssid::try_from("foo").unwrap().into()),
-                cssid_from_ssid_unchecked(&Ssid::try_from("bar").unwrap().into()),
-            ]
+            fake_device_state.lock().unwrap().captured_passive_scan_request,
+            Some(fidl_softmac::WlanSoftmacBridgeStartPassiveScanRequest {
+                channels: Some(vec![1, 2, 3]),
+                min_channel_time: Some(0),
+                max_channel_time: Some(200_000_000),
+                min_home_time: Some(0),
+                ..Default::default()
+            }),
         );
-        #[rustfmt::skip]
-        assert_eq!(banjo_buffer_to_slice!(banjo_args, mac_header), &[
-            0x40u8, 0x00, // Frame Control
-            0x00, 0x00, // Duration
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Address 1
-            0x66, 0x66, 0x66, 0x66, 0x66, 0x66, // Address 2
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Address 3
-            0x70, 0xdc, // Sequence Control
-        ]);
-        #[rustfmt::skip]
-        assert_eq!(banjo_buffer_to_slice!(banjo_args, ies), &[
-            0x01u8, // Element ID for Supported Rates
-            0x08, // Length
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 // Supported Rates
-        ]);
     }
 
     #[test]
@@ -1661,60 +1555,72 @@ mod tests {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, fake_device_state) = FakeDevice::new(&exec);
 
-        let result = fake_device.start_active_scan(ActiveScanArgs {
-            min_channel_time: zx::Duration::from_millis(0).into_nanos(),
-            max_channel_time: zx::Duration::from_millis(200).into_nanos(),
-            min_home_time: 0,
-            min_probes_per_channel: 1,
-            max_probes_per_channel: 3,
-            channels: vec![1u8, 2, 3],
-            ssids_list: vec![
-                cssid_from_ssid_unchecked(&Ssid::try_from("foo").unwrap().into()),
-                cssid_from_ssid_unchecked(&Ssid::try_from("bar").unwrap().into()),
-            ],
-            #[rustfmt::skip]
-                mac_header: vec![
+        let result =
+            fake_device.start_active_scan(&fidl_softmac::WlanSoftmacStartActiveScanRequest {
+                channels: Some(vec![1u8, 2, 3]),
+                ssids: Some(vec![
+                    ddk_converter::cssid_from_ssid_unchecked(
+                        &Ssid::try_from("foo").unwrap().into(),
+                    ),
+                    ddk_converter::cssid_from_ssid_unchecked(
+                        &Ssid::try_from("bar").unwrap().into(),
+                    ),
+                ]),
+                mac_header: Some(vec![
                     0x40u8, 0x00, // Frame Control
                     0x00, 0x00, // Duration
                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Address 1
                     0x66, 0x66, 0x66, 0x66, 0x66, 0x66, // Address 2
                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Address 3
                     0x70, 0xdc, // Sequence Control
-                ],
-            #[rustfmt::skip]
-                ies: vec![
+                ]),
+                ies: Some(vec![
                     0x01u8, // Element ID for Supported Rates
+                    0x08,   // Length
+                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // Supported Rates
+                ]),
+                min_channel_time: Some(zx::Duration::from_millis(0).into_nanos()),
+                max_channel_time: Some(zx::Duration::from_millis(200).into_nanos()),
+                min_home_time: Some(0),
+                min_probes_per_channel: Some(1),
+                max_probes_per_channel: Some(3),
+                ..Default::default()
+            });
+        assert!(result.is_ok());
+        assert_eq!(
+            fake_device_state.lock().unwrap().captured_active_scan_request,
+            Some(fidl_softmac::WlanSoftmacStartActiveScanRequest {
+                channels: Some(vec![1, 2, 3]),
+                ssids: Some(vec![
+                    ddk_converter::cssid_from_ssid_unchecked(
+                        &Ssid::try_from("foo").unwrap().into()
+                    ),
+                    ddk_converter::cssid_from_ssid_unchecked(
+                        &Ssid::try_from("bar").unwrap().into()
+                    ),
+                ]),
+                mac_header: Some(vec![
+                    0x40, 0x00, // Frame Control
+                    0x00, 0x00, // Duration
+                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Address 1
+                    0x66, 0x66, 0x66, 0x66, 0x66, 0x66, // Address 2
+                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Address 3
+                    0x70, 0xdc, // Sequence Control
+                ]),
+                ies: Some(vec![
+                    0x01, // Element ID for Supported Rates
                     0x08, // Length
                     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 // Supported Rates
-                ],
-        });
-        assert!(result.is_ok());
-        assert_variant!(fake_device_state.lock().unwrap().captured_active_scan_args.as_ref(), Some(active_scan_args) => {
-            assert_eq!(active_scan_args.min_channel_time, 0);
-            assert_eq!(active_scan_args.max_channel_time, 200_000_000);
-            assert_eq!(active_scan_args.min_home_time, 0);
-            assert_eq!(active_scan_args.min_probes_per_channel, 1);
-            assert_eq!(active_scan_args.max_probes_per_channel, 3);
-            assert_eq!(active_scan_args.channels, vec![1, 2, 3]);
-            assert_eq!(active_scan_args.ssids_list,
-                       vec![
-                           cssid_from_ssid_unchecked(&Ssid::try_from("foo").unwrap().into()),
-                           cssid_from_ssid_unchecked(&Ssid::try_from("bar").unwrap().into()),
-                       ]);
-            assert_eq!(active_scan_args.mac_header, vec![
-                0x40, 0x00, // Frame Control
-                0x00, 0x00, // Duration
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Address 1
-                0x66, 0x66, 0x66, 0x66, 0x66, 0x66, // Address 2
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Address 3
-                0x70, 0xdc, // Sequence Control
-            ]);
-            assert_eq!(active_scan_args.ies, vec![
-                0x01u8, // Element ID for Supported Rates
-                0x08, // Length
-                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 // Supported Rates
-            ][..]);
-        }, "No active scan argument available.");
+                ]),
+                min_channel_time: Some(0),
+                max_channel_time: Some(200_000_000),
+                min_home_time: Some(0),
+                min_probes_per_channel: Some(1),
+                max_probes_per_channel: Some(3),
+                ..Default::default()
+            }),
+            "No active scan argument available."
+        );
     }
 
     #[test]
@@ -1722,11 +1628,12 @@ mod tests {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, fake_device_state) = FakeDevice::new(&exec);
         fake_device
-            .join_bss(banjo_common::JoinBssRequest {
-                bssid: [1, 2, 3, 4, 5, 6],
-                bss_type: banjo_common::BssType::PERSONAL,
-                remote: true,
-                beacon_period: 100,
+            .join_bss(&fidl_common::JoinBssRequest {
+                bssid: Some([1, 2, 3, 4, 5, 6]),
+                bss_type: Some(fidl_common::BssType::Personal),
+                remote: Some(true),
+                beacon_period: Some(100),
+                ..Default::default()
             })
             .expect("error configuring bss");
         assert!(fake_device_state.lock().unwrap().join_bss_request.is_some());
@@ -1743,9 +1650,15 @@ mod tests {
             .get_buffer(4)
             .expect("error getting buffer");
         in_buf.as_mut_slice().copy_from_slice(&[1, 2, 3, 4][..]);
+        let mac_frame = in_buf.as_slice().to_vec();
 
         fake_device
-            .enable_beaconing(OutBuf::from(in_buf, 4), 1, TimeUnit(2))
+            .enable_beaconing(fidl_softmac::WlanSoftmacBridgeEnableBeaconingRequest {
+                packet_template: Some(fidl_softmac::WlanTxPacket::template(mac_frame)),
+                tim_ele_offset: Some(1),
+                beacon_interval: Some(2),
+                ..Default::default()
+            })
             .expect("error enabling beaconing");
         assert_variant!(
         fake_device_state.lock().unwrap().beacon_config.as_ref(),
@@ -1794,7 +1707,7 @@ mod tests {
                 ..Default::default()
             })
             .expect("error configuring assoc");
-        assert!(fake_device_state.lock().unwrap().assocs.contains_key(&[1, 2, 3, 4, 5, 6]));
+        assert!(fake_device_state.lock().unwrap().assocs.contains_key(&[1, 2, 3, 4, 5, 6].into()));
     }
 
     #[test]
@@ -1802,11 +1715,12 @@ mod tests {
         let exec = fasync::TestExecutor::new();
         let (mut fake_device, fake_device_state) = FakeDevice::new(&exec);
         fake_device
-            .join_bss(banjo_common::JoinBssRequest {
-                bssid: [1, 2, 3, 4, 5, 6],
-                bss_type: banjo_common::BssType::PERSONAL,
-                remote: true,
-                beacon_period: 100,
+            .join_bss(&fidl_common::JoinBssRequest {
+                bssid: Some([1, 2, 3, 4, 5, 6]),
+                bss_type: Some(fidl_common::BssType::Personal),
+                remote: Some(true),
+                beacon_period: Some(100),
+                ..Default::default()
             })
             .expect("error configuring bss");
 
@@ -1824,7 +1738,12 @@ mod tests {
         assert!(fake_device_state.lock().unwrap().join_bss_request.is_some());
         fake_device.notify_association_complete(assoc_cfg).expect("error configuring assoc");
         assert_eq!(fake_device_state.lock().unwrap().assocs.len(), 1);
-        fake_device.clear_association(&[1, 2, 3, 4, 5, 6]).expect("error clearing assoc");
+        fake_device
+            .clear_association(&fidl_softmac::WlanSoftmacBridgeClearAssociationRequest {
+                peer_addr: Some([1, 2, 3, 4, 5, 6]),
+                ..Default::default()
+            })
+            .expect("error clearing assoc");
         assert_eq!(fake_device_state.lock().unwrap().assocs.len(), 0);
         assert!(fake_device_state.lock().unwrap().join_bss_request.is_none());
     }

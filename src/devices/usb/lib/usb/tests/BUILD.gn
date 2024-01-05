@@ -85,4 +85,11 @@ fuchsia_test_package("usb-lib-tests") {
     ":usb-request-test",
     ":usb-wrapper-test",
   ]
+
+  if (current_cpu == "riscv64") {
+    test_components -= [
+      # TODO(fxbug.dev/124333): Remove when zx_cache_flush is supported on RISC-V.
+      ":usb-request-test",
+    ]
+  }
 }

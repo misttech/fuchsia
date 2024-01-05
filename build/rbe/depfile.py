@@ -10,17 +10,15 @@ import dataclasses
 import re
 
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Sequence
+from typing import AbstractSet, Callable, Iterable, Optional, Sequence
 
 
 class LexError(ValueError):
-
     def __init__(self, msg):
         super().__init__(msg)
 
 
 class ParseError(ValueError):
-
     def __init__(self, msg):
         super().__init__(msg)
 
@@ -41,10 +39,10 @@ class Token(object):
     type: TokenType
 
 
-_SPACE_RE = re.compile(r'[ \t]+')
-_NEWLINE_RE = re.compile(r'\r?\n')
-_PATH_RE = re.compile(r'[a-zA-Z0-9_/.+-]+')
-_COMMENT_RE = re.compile(r'#[^\n]*')
+_SPACE_RE = re.compile(r"[ \t]+")
+_NEWLINE_RE = re.compile(r"\r?\n")
+_PATH_RE = re.compile(r"[a-zA-Z0-9_/.+-]+")
+_COMMENT_RE = re.compile(r"#[^\n]*")
 
 
 def _lex_line(line: str) -> Iterable[Token]:
@@ -59,19 +57,19 @@ def _lex_line(line: str) -> Iterable[Token]:
                 yield prev
                 prev = None
                 yield Token(text=newline, type=TokenType.NEWLINE)
-                line = line[len(newline):]
+                line = line[len(newline) :]
                 continue
 
             # otherwise, we don't handle escaped sequences yet
             new = Token(text=prev.text + next_char, type=TokenType.ESCAPED)
-            raise LexError(f'Escape sequences are not handled yet: {new}')
+            raise LexError(f"Escape sequences are not handled yet: {new}")
 
-        if next_char == ':':
+        if next_char == ":":
             yield Token(text=next_char, type=TokenType.COLON)
             line = line[1:]
             continue
 
-        if next_char == '\\':
+        if next_char == "\\":
             prev = Token(text=next_char, type=TokenType.LINECONTINUE)
             # do not yield yet, look at text that follows
             line = line[1:]
@@ -81,28 +79,28 @@ def _lex_line(line: str) -> Iterable[Token]:
         if space_match:
             spaces = space_match.group(0)
             yield Token(text=spaces, type=TokenType.SPACE)
-            line = line[len(spaces):]
+            line = line[len(spaces) :]
             continue
 
         newline_match = _NEWLINE_RE.match(line)
         if newline_match:
             newline = newline_match.group(0)
             yield Token(text=newline, type=TokenType.NEWLINE)
-            line = line[len(newline):]
+            line = line[len(newline) :]
             continue
 
         comment_match = _COMMENT_RE.match(line)
         if comment_match:
             comment = comment_match.group(0)
             yield Token(text=comment, type=TokenType.COMMENT)
-            line = line[len(comment):]
+            line = line[len(comment) :]
             continue
 
         path_match = _PATH_RE.match(line)
         if path_match:
             path = path_match.group(0)
             yield Token(text=path, type=TokenType.PATH)
-            line = line[len(path):]
+            line = line[len(path) :]
             continue
 
         raise LexError(f'[depfile.lex] Unrecognized text: "{line}"')
@@ -117,8 +115,9 @@ def lex(lines: Iterable[str]) -> Iterable[Token]:
         yield from _lex_line(line)
 
 
-def _transform_paths(tokens: Iterable[Token],
-                     transform: Callable[[str], str]) -> Iterable[Token]:
+def _transform_paths(
+    tokens: Iterable[Token], transform: Callable[[str], str]
+) -> Iterable[Token]:
     """Space-preserving path transformation."""
     for token in tokens:
         if token.type == TokenType.PATH:
@@ -129,13 +128,14 @@ def _transform_paths(tokens: Iterable[Token],
 
 def unlex(tokens: Iterable[Token]) -> str:
     """Concatenates tokens' text."""
-    return ''.join(token.text for token in tokens)
+    return "".join(token.text for token in tokens)
 
 
 def transform_paths(text: str, transform: Callable[[str], str]) -> str:
     """Applies an arbitrary transformation to depfile paths."""
     return unlex(
-        _transform_paths(lex(text.splitlines(keepends=True)), transform))
+        _transform_paths(lex(text.splitlines(keepends=True)), transform)
+    )
 
 
 def consume_line_continuations(toks: Iterable[Token]) -> Iterable[Token]:
@@ -171,6 +171,12 @@ class Dep(object):
     @property
     def is_phony(self) -> bool:
         return len(self.deps) == 0
+
+    @property
+    def absolute_paths(self) -> AbstractSet[Path]:
+        return {
+            p for p in self.target_paths + self.deps_paths if p.is_absolute()
+        }
 
 
 class _ParserState(enum.Enum):
@@ -227,10 +233,10 @@ def _parse_one_dep(toks: Iterable[Token]) -> Optional[Dep]:
                 break  # newline terminator, done
 
         else:
-            assert False, f'Internal error: unknown parser state: {state}'
+            assert False, f"Internal error: unknown parser state: {state}"
 
         # reaching this point is a parse error
-        raise ParseError(f'In state {state}: Unexpected token: {tok}')
+        raise ParseError(f"In state {state}: Unexpected token: {tok}")
 
     if state == _ParserState.EXPECTING_FIRST_TARGET:
         return None
@@ -252,16 +258,18 @@ def _parse_filtered_tokens(toks: Iterable[Token]) -> Iterable[Dep]:
 
 def _parse_tokens(toks: Iterable[Token]) -> Iterable[Dep]:
     yield from _parse_filtered_tokens(
-        tok for tok in consume_line_continuations(toks)
+        tok
+        for tok in consume_line_continuations(toks)
         # keep NEWLINEs as separators between deps
-        if tok.type not in {TokenType.SPACE, TokenType.COMMENT})
+        if tok.type not in {TokenType.SPACE, TokenType.COMMENT}
+    )
 
 
 def parse_lines(lines: Iterable[str]) -> Iterable[Dep]:
     """Parse lines of a depfile.
 
     Args:
-      lines: lines of depfile
+      lines: lines of depfile (including trailing newline)
 
     Yields:
       Dep objects.
@@ -270,3 +278,10 @@ def parse_lines(lines: Iterable[str]) -> Iterable[Dep]:
       ParseError or LexError if input is malformed.
     """
     yield from _parse_tokens(lex(lines))
+
+
+def absolute_paths(deps: Iterable[Dep]) -> AbstractSet[Path]:
+    unique_paths = set()
+    for d in deps:
+        unique_paths.update(d.absolute_paths)
+    return unique_paths

@@ -209,8 +209,7 @@ impl InnerPacketBuilder for SendPayload<'_> {
 /// *Reserved* memory will never become readable or writable, and is non-empty
 /// only while a shrink is in progress. Once the reserved segment is large
 /// enough it will be removed to complete the shrinking.
-#[derive(Debug)]
-#[cfg_attr(test, derive(Clone, PartialEq, Eq))]
+#[cfg_attr(any(test, feature = "testutils"), derive(Clone, PartialEq, Eq))]
 pub struct RingBuffer {
     storage: Vec<u8>,
     /// The index where the reader starts to read.
@@ -229,8 +228,20 @@ pub struct RingBuffer {
     shrink: Option<PendingShrink>,
 }
 
+impl Debug for RingBuffer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let Self { storage, head, len, shrink } = self;
+        f.debug_struct("RingBuffer")
+            .field("storage (len, cap)", &(storage.len(), storage.capacity()))
+            .field("head", head)
+            .field("len", len)
+            .field("shrink", shrink)
+            .finish()
+    }
+}
+
 #[derive(Debug)]
-#[cfg_attr(test, derive(Copy, Clone, Eq, PartialEq))]
+#[cfg_attr(any(test, feature = "testutils"), derive(Copy, Clone, Eq, PartialEq))]
 struct PendingShrink {
     /// The target number of reserved bytes.
     target: NonZeroUsize,
@@ -647,6 +658,209 @@ impl<R: Default + ReceiveBuffer, S: Default + SendBuffer> IntoBuffers<R, S> for 
     }
 }
 
+#[cfg(any(test, feature = "testutils"))]
+pub(crate) mod testutil {
+    use super::*;
+
+    use alloc::{sync::Arc, vec::Vec};
+
+    use crate::sync::Mutex;
+    use crate::transport::tcp::socket::ListenerNotifier;
+
+    impl RingBuffer {
+        /// Enqueues as much of `data` as possible to the end of the buffer.
+        ///
+        /// Returns the number of bytes actually queued.
+        pub(crate) fn enqueue_data(&mut self, data: &[u8]) -> usize {
+            let nwritten = self.write_at(0, &data);
+            self.make_readable(nwritten);
+            nwritten
+        }
+    }
+
+    impl Buffer for Arc<Mutex<RingBuffer>> {
+        fn limits(&self) -> BufferLimits {
+            self.lock().limits()
+        }
+
+        fn target_capacity(&self) -> usize {
+            self.lock().target_capacity()
+        }
+
+        fn request_capacity(&mut self, size: usize) {
+            self.lock().set_target_size(size)
+        }
+    }
+
+    impl ReceiveBuffer for Arc<Mutex<RingBuffer>> {
+        fn write_at<P: Payload>(&mut self, offset: usize, data: &P) -> usize {
+            self.lock().write_at(offset, data)
+        }
+
+        fn make_readable(&mut self, count: usize) {
+            self.lock().make_readable(count)
+        }
+    }
+
+    #[derive(Debug, Default)]
+    pub struct TestSendBuffer {
+        fake_stream: Arc<Mutex<Vec<u8>>>,
+        ring: RingBuffer,
+    }
+
+    impl TestSendBuffer {
+        pub fn new(fake_stream: Arc<Mutex<Vec<u8>>>, ring: RingBuffer) -> TestSendBuffer {
+            Self { fake_stream, ring }
+        }
+    }
+
+    impl Buffer for TestSendBuffer {
+        fn limits(&self) -> BufferLimits {
+            let Self { fake_stream, ring } = self;
+            let BufferLimits { capacity: ring_capacity, len: ring_len } = ring.limits();
+            let guard = fake_stream.lock();
+            let len = ring_len + guard.len();
+            let capacity = ring_capacity + guard.capacity();
+            BufferLimits { len, capacity }
+        }
+
+        fn target_capacity(&self) -> usize {
+            let Self { fake_stream: _, ring } = self;
+            ring.target_capacity()
+        }
+
+        fn request_capacity(&mut self, size: usize) {
+            let Self { fake_stream: _, ring } = self;
+            ring.set_target_size(size)
+        }
+    }
+
+    impl SendBuffer for TestSendBuffer {
+        fn mark_read(&mut self, count: usize) {
+            let Self { fake_stream: _, ring } = self;
+            ring.mark_read(count)
+        }
+
+        fn peek_with<'a, F, R>(&'a mut self, offset: usize, f: F) -> R
+        where
+            F: FnOnce(SendPayload<'a>) -> R,
+        {
+            let Self { fake_stream, ring } = self;
+            let mut guard = fake_stream.lock();
+            if !guard.is_empty() {
+                // Pull from the fake stream into the ring if there is capacity.
+                let BufferLimits { capacity, len } = ring.limits();
+                let len = (capacity - len).min(guard.len());
+                let rest = guard.split_off(len);
+                let first = core::mem::replace(&mut *guard, rest);
+                assert_eq!(ring.enqueue_data(&first[..]), len);
+            }
+            ring.peek_with(offset, f)
+        }
+    }
+
+    fn arc_mutex_eq<T: PartialEq>(a: &Arc<Mutex<T>>, b: &Arc<Mutex<T>>) -> bool {
+        if Arc::ptr_eq(a, b) {
+            return true;
+        }
+        (&*a.lock()) == (&*b.lock())
+    }
+
+    #[derive(Clone, Debug, Default)]
+    pub struct ClientBuffers {
+        pub receive: Arc<Mutex<RingBuffer>>,
+        pub send: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl PartialEq for ClientBuffers {
+        fn eq(&self, ClientBuffers { receive: other_receive, send: other_send }: &Self) -> bool {
+            let Self { receive, send } = self;
+            arc_mutex_eq(receive, other_receive) && arc_mutex_eq(send, other_send)
+        }
+    }
+
+    impl Eq for ClientBuffers {}
+
+    impl ClientBuffers {
+        pub fn new(buffer_sizes: BufferSizes) -> Self {
+            let BufferSizes { send, receive } = buffer_sizes;
+            Self {
+                receive: Arc::new(Mutex::new(RingBuffer::new(receive))),
+                send: Arc::new(Mutex::new(Vec::with_capacity(send))),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Eq, PartialEq)]
+    pub enum ProvidedBuffers {
+        Buffers(WriteBackClientBuffers),
+        NoBuffers,
+    }
+
+    impl Default for ProvidedBuffers {
+        fn default() -> Self {
+            Self::NoBuffers
+        }
+    }
+
+    impl From<WriteBackClientBuffers> for ProvidedBuffers {
+        fn from(buffers: WriteBackClientBuffers) -> Self {
+            ProvidedBuffers::Buffers(buffers)
+        }
+    }
+
+    impl From<ProvidedBuffers> for WriteBackClientBuffers {
+        fn from(extra: ProvidedBuffers) -> Self {
+            match extra {
+                ProvidedBuffers::Buffers(buffers) => buffers,
+                ProvidedBuffers::NoBuffers => Default::default(),
+            }
+        }
+    }
+
+    impl From<ProvidedBuffers> for () {
+        fn from(_: ProvidedBuffers) -> Self {
+            ()
+        }
+    }
+
+    impl From<()> for ProvidedBuffers {
+        fn from(_: ()) -> Self {
+            Default::default()
+        }
+    }
+
+    #[derive(Debug, Default, Clone)]
+    pub struct WriteBackClientBuffers(pub Arc<Mutex<Option<ClientBuffers>>>);
+
+    impl PartialEq for WriteBackClientBuffers {
+        fn eq(&self, Self(other): &Self) -> bool {
+            let Self(this) = self;
+            arc_mutex_eq(this, other)
+        }
+    }
+
+    impl Eq for WriteBackClientBuffers {}
+
+    impl IntoBuffers<Arc<Mutex<RingBuffer>>, TestSendBuffer> for ProvidedBuffers {
+        fn into_buffers(
+            self,
+            buffer_sizes: BufferSizes,
+        ) -> (Arc<Mutex<RingBuffer>>, TestSendBuffer) {
+            let buffers = ClientBuffers::new(buffer_sizes);
+            if let ProvidedBuffers::Buffers(b) = self {
+                *b.0.as_ref().lock() = Some(buffers.clone());
+            }
+            let ClientBuffers { receive, send } = buffers;
+            (receive, TestSendBuffer::new(send, Default::default()))
+        }
+    }
+
+    impl ListenerNotifier for ProvidedBuffers {
+        fn new_incoming_connections(&mut self, _: usize) {}
+    }
+}
+
 #[cfg(test)]
 mod test {
     use assert_matches::assert_matches;
@@ -667,17 +881,6 @@ mod test {
     use crate::transport::tcp::seqnum::WindowSize;
 
     const TEST_BYTES: &'static [u8] = "Hello World!".as_bytes();
-
-    impl RingBuffer {
-        /// Enqueues as much of `data` as possible to the end of the buffer.
-        ///
-        /// Returns the number of bytes actually queued.
-        pub(crate) fn enqueue_data(&mut self, data: &[u8]) -> usize {
-            let nwritten = self.write_at(0, &data);
-            self.make_readable(nwritten);
-            nwritten
-        }
-    }
 
     proptest! {
         #![proptest_config(Config {

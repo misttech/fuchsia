@@ -4,6 +4,7 @@
 
 #include "src/devices/power/drivers/fusb302/state-machine-base.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <zircon/assert.h>
@@ -57,8 +58,8 @@ class MockStateMachine : public StateMachineBase<MockStateMachine, MockState, co
       case MockState::kLoopDone:
         return "LoopDone";
     }
-    ZX_DEBUG_ASSERT_MSG(false, "Invalid MockState: %" PRId32, static_cast<int>(state));
-    return nullptr;
+    ZX_DEBUG_ASSERT_MSG(false, "Invalid MockState: %" PRId32, static_cast<int32_t>(state));
+    return "(invalid)";
   }
 
   void ExpectEnterState(MockState state) {
@@ -144,7 +145,12 @@ class MockStateMachine : public StateMachineBase<MockStateMachine, MockState, co
 
 class StateMachineBaseTest : public inspect::InspectTestHelper, public zxtest::Test {
  public:
-  void TearDown() override { state_machine_.CheckAllAccessesReplayed(); }
+  void SetUp() override { fdf::Logger::SetGlobalInstance(&logger_); }
+
+  void TearDown() override {
+    state_machine_.CheckAllAccessesReplayed();
+    fdf::Logger::SetGlobalInstance(nullptr);
+  }
 
   void ExpectInspectStateEquals(MockState state) {
     ASSERT_NO_FATAL_FAILURE(ReadInspect(inspect_.DuplicateVmo()));
@@ -155,6 +161,9 @@ class StateMachineBaseTest : public inspect::InspectTestHelper, public zxtest::T
   }
 
  protected:
+  fdf::Logger logger_{"state-machine-base-test", FUCHSIA_LOG_DEBUG, zx::socket{},
+                      fidl::WireClient<fuchsia_logger::LogSink>()};
+
   inspect::Inspector inspect_;
   MockStateMachine state_machine_{inspect_.GetRoot().CreateChild("MockStateMachine")};
 };

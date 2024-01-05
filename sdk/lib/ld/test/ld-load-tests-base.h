@@ -21,11 +21,33 @@ namespace ld::testing {
 // called (unless the test is bailing out anyway).
 class LdLoadTestsBase {
  public:
+  // An indicator to GTEST of whether the test fixture supports the following
+  // features so that it may skip related tests if not supported.
+  static constexpr bool kHasPassiveAbi = true;
+  static constexpr bool kHasRelro = true;
+  static constexpr bool kHasTls = true;
+  static constexpr bool kCanCollectLog = true;
+
   void InitLog(fbl::unique_fd& log_fd);
 
   void ExpectLog(std::string_view expected_log);
 
+  std::string CollectLog();
+
+  // This is the least-common-denominator version used in non-Fuchsia tests.
+  // All the Fuchsia-specific test fixtures should override this (e.g. via
+  // LdLoadZirconLdsvcTestsBase).
+  void Needed(std::initializer_list<std::string_view> names);
+
+  void Needed(std::initializer_list<std::pair<std::string_view, bool>> name_found_pairs);
+
   ~LdLoadTestsBase();
+
+ protected:
+  static constexpr std::string_view kTestExecutableInProcessSuffix = ".in-process";
+
+  // This is overridden by LdStartupInProcessTests.
+  static constexpr std::string_view kTestExecutableSuffix = {};
 
  private:
   std::unique_ptr<elfldltl::testing::TestPipeReader> log_;
@@ -33,10 +55,6 @@ class LdLoadTestsBase {
 
 // The name given to elfldltl::GetTestLib to find the dynamic linker.
 extern const std::string kLdStartupName;
-
-inline std::string InProcessTestExecutable(std::string_view executable_name) {
-  return std::string(executable_name) + ".in-process";
-}
 
 }  // namespace ld::testing
 

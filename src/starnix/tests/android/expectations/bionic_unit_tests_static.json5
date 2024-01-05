@@ -15,9 +15,6 @@
         {
             type: "expect_failure",
             matchers: [
-                // TODO(https://fxbug.dev/119476): Implement pidfd
-                "pidfd_DeathTest.pidfd_send_signal",
-
                 // These tests expect /proc/version to exist
                 "dirent.scandir_filter",
                 "fcntl.fcntl_smoke",
@@ -42,29 +39,10 @@
                 // Depends on /sys/class/net
                 "ifaddrs.getifaddrs_interfaces",
 
-                // arm64 specific
-                "MemtagNoteTest.*",
-                "MemtagStackTest.*",
-                "__cxa_demangle.DISABLED_cxa_demangle_fuzz_167977068",
-
-                // Ptrace
-                "PtraceResumptionTest.*",
-
-                // Timers
-                "time.timer_create",
-                "time.timer_create_EINVAL",
-                "time.timer_create_NULL",
-                "time.timer_create_SIGEV_SIGNAL",
-                "time.timer_create_multiple",
-                "time.timer_delete_from_timer_thread",
-                "time.timer_delete_terminates",
-                "time.timer_disarm_terminates",
-                "time.timer_settime_0",
-                "time.timer_settime_repeats",
-
                 // Our test runner doesn't understand DISABLED
                 "android_mallopt.DISABLED_multiple_enable_gwp_asan",
                 "malloc.DISABLED_alloc_after_fork",
+                "__cxa_demangle.DISABLED_cxa_demangle_fuzz_167977068",
 
                 // Requires MTE support
                 "malloc.disable_mte",
@@ -90,8 +68,6 @@
 
                 // Untriaged
                 "pthread.pthread_attr_getstack__main_thread",
-                "pthread.pthread_attr_getstack_in_signal_handler",
-                "pthread.pthread_attr_setinheritsched_PTHREAD_INHERIT_SCHED_takes_effect",
                 "pthread.pthread_attr_setinheritsched__takes_effect_despite_SCHED_RESET_ON_FORK",
                 "pthread.pthread_create__mmap_failures",
                 "pthread.pthread_getcpuclockid__clock_gettime",
@@ -103,27 +79,16 @@
                 "pthread.pthread_mutex_timedlock_monotonic_np_pi",
                 "pthread.pthread_mutex_timedlock_pi",
                 "pthread.pthread_mutex_unlock_null_32",
-                "pthread.pthread_setschedprio",
                 "scs_test.stack_overflow",
                 "setjmp.setjmp_signal_mask",
                 "setjmp.sigsetjmp_1_signal_mask",
                 "signal.pthread_sigqueue_other",
-                "signal.rt_tgsigqueueinfo",
-                "signal.sigqueue",
                 "signal.sigsuspend64_sigpending64",
                 "signal.sigsuspend_sigpending",
-                "signal.sigtimedwait",
-                "signal.sigtimedwait64_SIGRTMIN",
-                "signal.sigwait64_SIGRTMIN",
-                "signal.sigwait_SIGALRM",
-                "signal.sigwaitinfo",
-                "signal.sigwaitinfo64_SIGRTMIN",
                 "spawn.posix_spawn_POSIX_SPAWN_SETSIGDEF",
                 "spawn.posix_spawn_POSIX_SPAWN_SETSIGMASK",
                 "spawn.posix_spawn_dup2_CLOEXEC",
                 "spawn.posix_spawn_file_actions",
-                "stack_unwinding.unwind_through_signal_frame",
-                "stack_unwinding.unwind_through_signal_frame_SA_SIGINFO",
                 "stdio.cantwrite_EBADF",
                 "stdio.fdopen_add_CLOEXEC",
                 "stdio.fdopen_failures",
@@ -149,18 +114,24 @@
                 "stdio_nofortify.fdopen_failures",
                 "stdio_nofortify.fdopen_remove_CLOEXEC",
                 "stdio_nofortify.fopen64_freopen64",
+                "stdio_nofortify.fprintf_to_read_only_stream",
+                "stdio_nofortify.fputc_to_read_only_stream",
                 "stdio_nofortify.freopen_add_CLOEXEC",
                 "stdio_nofortify.freopen_append_mode_and_ftell",
                 "stdio_nofortify.freopen_invalid_mode",
                 "stdio_nofortify.freopen_null_filename_add_CLOEXEC",
                 "stdio_nofortify.freopen_null_filename_remove_CLOEXEC",
                 "stdio_nofortify.freopen_remove_CLOEXEC",
+                "stdio_nofortify.fwrite_to_read_only_stream",
                 "stdio_nofortify.getc",
                 "stdio_nofortify.popen_r",
                 "stdio_nofortify.putc",
                 "stdio_nofortify.snprintf_1$ju_UINTMAX_MAX",
                 "stdio_nofortify.swprintf_1$ju_UINTMAX_MAX",
                 "stdio_nofortify.tmpfile_TMPDIR",
+                "stdio.fprintf_to_read_only_stream",
+                "stdio.fputc_to_read_only_stream",
+                "stdio.fwrite_to_read_only_stream",
                 "stdlib.getloadavg",
                 "stdlib.realpath__dot",
                 "stdlib.realpath__dot_dot",
@@ -206,6 +177,9 @@
         {
             type: "skip",
             matchers: [
+                // fxbug.dev/136325
+                "time.timer_disarm_terminates",
+
                 // This test is passing in some configurations.
                 "android_mallopt.set_allocation_limit_multiple_threads",
 
@@ -214,16 +188,6 @@
 
                 // This test tries to determine if the system has >=4GB of total memory which is not true in all test environments.
                 "*.fread_int_overflow",
-
-                // These tests currently pass on arm64 and are SKIPPED on x86_64. Our test harness thinks skipped tests fail.
-                // Mark these skipped until we can figure out how to annotate them more precisely.
-                "scs_test.stack_overflow",
-                "scs_DeathTest.stack_overflow",
-                "stack_unwinding.unwind_through_signal_frame",
-                "stack_unwinding.unwind_through_signal_frame_SA_SIGINFO",
-
-                // These tests are skipped on both arm64 and x86_64.
-                "sys_hwprobe.__riscv_hwprobe",
 
                 // These tests are arm32 specific
                 "aeabi.read_tp",
@@ -261,10 +225,25 @@
                 // TODO(https://fxbug.dev/131217): Flaky on the bots - needs to be investigated.
                 "android_mallopt.multiple_enable_gwp_asan",
                 "pidfd.pidfd_open",
+                "spawn.signal_stress",
 
                 // These tests were updated and no longer pass.
                 "stdio.popen_return_value_signal",
                 "stdio_nofortify.popen_return_value_signal",
+
+                // These tests are skipped on low memory devices.
+                "malloc.zeroed_allocations_small_medium_sizes",
+                "malloc.zeroed_allocations_large_sizes",
+                "malloc.zeroed_allocations_realloc",
+
+                // TODO(b/308967162): Flaky on the bots - needs to be investigated.
+                "properties.empty_value",
+                "properties.no_fd_leaks",
+                "properties.smoke",
+
+                // TODO(https://fxbug.dev/316443018): Flaky on the bots - needs to be investigated.
+                "pthread.pthread_mutex_clocklock",
+                "pthread.pthread_mutex_timedlock",
             ],
         },
     ],

@@ -230,6 +230,13 @@ pub enum Dot11VerifiedKeyFrame<B: ByteSlice> {
 }
 
 impl<B: ByteSlice> Dot11VerifiedKeyFrame<B> {
+    // [`key_replay_counter`] is the current value of the Key Replay Counter[1] in either the
+    // Supplicant or Authenticator. The Supplicant initializes its Key Replay Counter to 0 and
+    // updates the counter to the counter value contained in each valid message from the
+    // Authenticator. The Authenticator initializes its Key Replay Counter to 0 and updates
+    // the counter to the counter value contained in each message the Authenticator sends.
+    //
+    // [1]: IEEE 802.11-2016 12.7.2 EAPOL-Key frames
     pub fn from_frame(
         frame: eapol::KeyFrameRx<B>,
         role: &Role,
@@ -338,22 +345,26 @@ impl<B: ByteSlice> Dot11VerifiedKeyFrame<B> {
                 // To improve interoperability, a value of 0 or the pairwise temporal key length is
                 // allowed for frames sent by the Supplicant.
                 Role::Supplicant if frame.key_frame_fields.key_len.to_native() != 0 => {
-                    let tk_bits =
-                        protection.pairwise.tk_bits().ok_or(Error::UnsupportedCipherSuite)?;
-                    let tk_len = tk_bits / 8;
+                    let tk_len =
+                        protection.pairwise.tk_bytes().ok_or(Error::UnsupportedCipherSuite)?;
                     rsn_ensure!(
-                        frame.key_frame_fields.key_len.to_native() == tk_len,
-                        Error::InvalidKeyLength(frame.key_frame_fields.key_len.to_native(), tk_len)
+                        frame.key_frame_fields.key_len.to_native() == tk_len.into(),
+                        Error::InvalidKeyLength(
+                            frame.key_frame_fields.key_len.to_native().into(),
+                            tk_len.into()
+                        )
                     );
                 }
                 // Authenticator must use the pairwise cipher's key length.
                 Role::Authenticator => {
-                    let tk_bits =
-                        protection.pairwise.tk_bits().ok_or(Error::UnsupportedCipherSuite)?;
-                    let tk_len = tk_bits / 8;
+                    let tk_len: usize =
+                        protection.pairwise.tk_bytes().ok_or(Error::UnsupportedCipherSuite)?.into();
                     rsn_ensure!(
-                        frame.key_frame_fields.key_len.to_native() == tk_len,
-                        Error::InvalidKeyLength(frame.key_frame_fields.key_len.to_native(), tk_len)
+                        usize::from(frame.key_frame_fields.key_len.to_native()) == tk_len,
+                        Error::InvalidKeyLength(
+                            frame.key_frame_fields.key_len.to_native().into(),
+                            tk_len
+                        )
                     );
                 }
                 _ => {}
@@ -364,7 +375,6 @@ impl<B: ByteSlice> Dot11VerifiedKeyFrame<B> {
             eapol::KeyType::GROUP_SMK => {}
         };
 
-        // IEEE Std 802.11-2016, 12.7.2, d)
         if key_replay_counter > 0 {
             match sender {
                 // Supplicant responds to messages from the Authenticator with the same
@@ -379,6 +389,10 @@ impl<B: ByteSlice> Dot11VerifiedKeyFrame<B> {
                     );
                 }
                 // Authenticator must send messages with a strictly larger key replay counter.
+                //
+                // TODO(b/310698434): This logic only runs upon receipt of messages. It seems
+                // that an Authenticator should actually verify the current Key Replay Counter
+                // is equal to the Key Replay Counter value received.
                 Role::Authenticator => {
                     rsn_ensure!(
                         frame.key_frame_fields.key_replay_counter.to_native() > key_replay_counter,
@@ -487,9 +501,19 @@ pub enum SecAssocStatus {
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
+pub enum AuthRejectedReason {
+    /// Unable to generate a PMK with the peer.
+    AuthFailed,
+    /// The peer never responded or sent too many invalid responses.
+    TooManyRetries,
+    /// Association took too long, and the PMKSA has expired.
+    PmksaExpired,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum AuthStatus {
     Success,
-    Rejected,
+    Rejected(AuthRejectedReason),
     InternalError,
 }
 
@@ -567,17 +591,17 @@ mod tests {
     fn test_supplicant_sends_zeroed_and_non_zeroed_key_length() {
         let protection = NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne())
             .expect("could not derive negotiated RSNE");
-        let mut env = test_util::FourwayTestEnv::new();
+        let mut env = test_util::FourwayTestEnv::new(test_util::HandshakeKind::Wpa2, 1, 3);
 
         // Use arbitrarily chosen key_replay_counter.
-        let msg1 = env.initiate(12);
-        let (msg2_base, ptk) = env.send_msg1_to_supplicant(msg1.keyframe(), 12);
+        let msg1 = env.initiate(11.into());
+        let (msg2_base, ptk) = env.send_msg1_to_supplicant(msg1.keyframe(), 11.into());
 
         // IEEE 802.11 compliant key length.
         let mut buf = vec![];
         let mut msg2 = msg2_base.copy_keyframe_mut(&mut buf);
         msg2.key_frame_fields.key_len.set_from_native(0);
-        test_util::finalize_key_frame(&mut msg2, Some(ptk.kck()));
+        env.finalize_key_frame(&mut msg2, Some(ptk.kck()));
         let result = Dot11VerifiedKeyFrame::from_frame(msg2, &Role::Authenticator, &protection, 12);
         assert!(result.is_ok(), "failed verifying message: {}", result.unwrap_err());
 
@@ -586,7 +610,7 @@ mod tests {
         let mut buf = vec![];
         let mut msg2 = msg2_base.copy_keyframe_mut(&mut buf);
         msg2.key_frame_fields.key_len.set_from_native(16);
-        test_util::finalize_key_frame(&mut msg2, Some(ptk.kck()));
+        env.finalize_key_frame(&mut msg2, Some(ptk.kck()));
         let result = Dot11VerifiedKeyFrame::from_frame(msg2, &Role::Authenticator, &protection, 12);
         assert!(result.is_ok(), "failed verifying message: {}", result.unwrap_err());
     }
@@ -595,16 +619,16 @@ mod tests {
     // the PTK's length.
     #[test]
     fn test_supplicant_sends_random_key_length() {
-        let mut env = test_util::FourwayTestEnv::new();
+        let mut env = test_util::FourwayTestEnv::new(test_util::HandshakeKind::Wpa2, 1, 3);
 
         // Use arbitrarily chosen key_replay_counter.
-        let msg1 = env.initiate(12);
-        let (msg2, ptk) = env.send_msg1_to_supplicant(msg1.keyframe(), 12);
+        let msg1 = env.initiate(12.into());
+        let (msg2, ptk) = env.send_msg1_to_supplicant(msg1.keyframe(), 12.into());
         let mut buf = vec![];
         let mut msg2 = msg2.copy_keyframe_mut(&mut buf);
 
         msg2.key_frame_fields.key_len.set_from_native(29);
-        test_util::finalize_key_frame(&mut msg2, Some(ptk.kck()));
+        env.finalize_key_frame(&mut msg2, Some(ptk.kck()));
 
         let protection = NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne())
             .expect("could not derive negotiated RSNE");

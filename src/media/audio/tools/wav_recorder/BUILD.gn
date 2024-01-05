@@ -18,6 +18,7 @@ executable("bin") {
     "//sdk/lib/media/audio/cpp",
     "//sdk/lib/sys/cpp",
     "//src/lib/fsl",
+    "//src/lib/fxl:fxl_cli",
     "//src/media/audio/lib/clock",
     "//src/media/audio/lib/logging:cli",
     "//src/media/audio/lib/wav",
@@ -26,6 +27,6 @@ executable("bin") {
   ]
 }
 
-fuchsia_shell_package("wav_recorder") {
+fuchsia_package("wav_recorder") {
   deps = [ ":bin" ]
 }

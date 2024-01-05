@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use {
-    crate::{component_id_index::ComponentIdIndexError, policy::PolicyError, rights::Rights},
+    crate::{policy::PolicyError, rights::Rights},
     clonable_error::ClonableError,
     cm_rust::CapabilityTypeName,
     cm_types::Name,
@@ -36,23 +36,16 @@ pub enum ComponentInstanceError {
         #[source]
         err: ClonableError,
     },
-    // The capability routing static analyzer never produces this error subtype, so we don't need
-    // to serialize it.
-    #[cfg_attr(feature = "serde", serde(skip))]
-    #[error("Failed to unresolve `{}`: {}", moniker, err)]
-    UnresolveFailed {
-        moniker: Moniker,
-        #[source]
-        err: ClonableError,
-    },
 }
 
 impl ComponentInstanceError {
     pub fn as_zx_status(&self) -> zx::Status {
         match self {
             ComponentInstanceError::ResolveFailed { .. }
-            | ComponentInstanceError::InstanceNotFound { .. } => zx::Status::NOT_FOUND,
-            _ => zx::Status::UNAVAILABLE,
+            | ComponentInstanceError::InstanceNotFound { .. }
+            | ComponentInstanceError::ComponentManagerInstanceUnavailable {}
+            | ComponentInstanceError::NoAbsoluteUrl { .. } => zx::Status::NOT_FOUND,
+            ComponentInstanceError::MalformedUrl { .. } => zx::Status::INTERNAL,
         }
     }
 
@@ -66,10 +59,6 @@ impl ComponentInstanceError {
 
     pub fn resolve_failed(moniker: Moniker, err: impl Into<anyhow::Error>) -> Self {
         Self::ResolveFailed { moniker, err: err.into().into() }
-    }
-
-    pub fn unresolve_failed(moniker: Moniker, err: impl Into<anyhow::Error>) -> Self {
-        Self::UnresolveFailed { moniker, err: err.into().into() }
     }
 }
 
@@ -177,10 +166,18 @@ pub enum RoutingError {
         capability_type: String,
     },
 
-    #[error("`{}` was not offered to `{}` by parent.", capability_id, moniker)]
+    #[error(
+        "`{}` was not offered to `{}` by parent. For more, run `ffx component doctor {moniker}`.",
+        capability_id,
+        moniker
+    )]
     OfferFromParentNotFound { moniker: Moniker, capability_id: String },
 
-    #[error("`{}` was not offered to `{}` by parent.", capability_id, moniker)]
+    #[error(
+        "`{}` was not offered to `{}` by parent. For more, run `ffx component doctor {moniker}`.",
+        capability_id,
+        moniker
+    )]
     StorageFromParentNotFound { moniker: Moniker, capability_id: String },
 
     #[error("`{}` does not have child `#{}`.", moniker, child_moniker)]
@@ -194,7 +191,7 @@ pub enum RoutingError {
     OfferFromCollectionNotFound { collection: String, moniker: Moniker, capability: Name },
 
     #[error(
-        "`{}` was not exposed to `{}` from child `#{}`.",
+        "`{}` was not exposed to `{}` from child `#{}`. For more, run `ffx component doctor {moniker}`.",
         capability_id,
         moniker,
         child_moniker
@@ -220,14 +217,6 @@ pub enum RoutingError {
     #[error("`{}` is not a framework capability.", capability_id)]
     CapabilityFromComponentManagerNotFound { capability_id: String },
 
-    #[error(
-        "A capability was sourced to storage capability `{}` with id `{}`, but no matching \
-        capability was found.",
-        storage_capability,
-        capability_id
-    )]
-    CapabilityFromStorageCapabilityNotFound { storage_capability: String, capability_id: String },
-
     #[error("`{}` does not have child `#{}`.", moniker, child_moniker)]
     ExposeFromChildInstanceNotFound {
         child_moniker: ChildName,
@@ -239,7 +228,7 @@ pub enum RoutingError {
     ExposeFromCollectionNotFound { collection: String, moniker: Moniker, capability: Name },
 
     #[error(
-        "`{}` was not exposed to `{}` from child `#{}`.",
+        "`{}` was not exposed to `{}` from child `#{}`. For more, run `ffx component doctor {moniker}`.",
         capability_id,
         moniker,
         child_moniker
@@ -258,20 +247,12 @@ pub enum RoutingError {
     ExposeFromFrameworkNotFound { moniker: Moniker, capability_id: String },
 
     #[error(
-        "`{}` was not exposed to `{}` from child `#{}`.",
+        "`{}` was not exposed to `{}` from child `#{}`. For more, run `ffx component doctor {moniker}`.",
         capability_id,
         moniker,
         child_moniker
     )]
     UseFromChildExposeNotFound { child_moniker: ChildName, moniker: Moniker, capability_id: String },
-
-    #[error(
-        "`{}` was queried in an aggregate for `{}` at `{}` but it does not contain that child.",
-        child_moniker,
-        capability,
-        moniker
-    )]
-    UnexpectedChildInAggregate { child_moniker: ChildName, moniker: Moniker, capability: Name },
 
     #[error("Routing a capability from an unsupported source type: {}.", source_type)]
     UnsupportedRouteSource { source_type: String },
@@ -295,9 +276,6 @@ pub enum RoutingError {
     PolicyError(#[from] PolicyError),
 
     #[error(transparent)]
-    ComponentIdIndexError(#[from] ComponentIdIndexError),
-
-    #[error(transparent)]
     MonikerError(#[from] MonikerError),
 }
 
@@ -310,9 +288,39 @@ impl RoutingError {
     /// Convert this error into its approximate `zx::Status` equivalent.
     pub fn as_zx_status(&self) -> zx::Status {
         match self {
-            RoutingError::PolicyError(_) => zx::Status::ACCESS_DENIED,
+            RoutingError::UseFromRootEnvironmentNotAllowed { .. } => zx::Status::ACCESS_DENIED,
+            RoutingError::StorageFromChildExposeNotFound { .. }
+            | RoutingError::ComponentNotInIdIndex { .. }
+            | RoutingError::UseFromComponentManagerNotFound { .. }
+            | RoutingError::RegisterFromComponentManagerNotFound { .. }
+            | RoutingError::OfferFromComponentManagerNotFound { .. }
+            | RoutingError::UseFromParentNotFound { .. }
+            | RoutingError::UseFromChildInstanceNotFound { .. }
+            | RoutingError::UseFromEnvironmentNotFound { .. }
+            | RoutingError::EnvironmentFromParentNotFound { .. }
+            | RoutingError::EnvironmentFromChildExposeNotFound { .. }
+            | RoutingError::EnvironmentFromChildInstanceNotFound { .. }
+            | RoutingError::OfferFromParentNotFound { .. }
+            | RoutingError::StorageFromParentNotFound { .. }
+            | RoutingError::OfferFromChildInstanceNotFound { .. }
+            | RoutingError::OfferFromCollectionNotFound { .. }
+            | RoutingError::OfferFromChildExposeNotFound { .. }
+            | RoutingError::CapabilityFromFrameworkNotFound { .. }
+            | RoutingError::CapabilityFromCapabilityNotFound { .. }
+            | RoutingError::CapabilityFromComponentManagerNotFound { .. }
+            | RoutingError::ExposeFromChildInstanceNotFound { .. }
+            | RoutingError::ExposeFromCollectionNotFound { .. }
+            | RoutingError::ExposeFromChildExposeNotFound { .. }
+            | RoutingError::ExposeFromFrameworkNotFound { .. }
+            | RoutingError::UseFromChildExposeNotFound { .. }
+            | RoutingError::UnsupportedRouteSource { .. }
+            | RoutingError::UnsupportedCapabilityType { .. }
+            | RoutingError::EventsRoutingError(_)
+            | RoutingError::AvailabilityRoutingError(_) => zx::Status::NOT_FOUND,
+            RoutingError::MonikerError(_) => zx::Status::INTERNAL,
             RoutingError::ComponentInstanceError(err) => err.as_zx_status(),
-            _ => zx::Status::UNAVAILABLE,
+            RoutingError::RightsRoutingError(err) => err.as_zx_status(),
+            RoutingError::PolicyError(err) => err.as_zx_status(),
         }
     }
 
@@ -403,6 +411,18 @@ impl RoutingError {
         }
     }
 
+    pub fn use_from_child_expose_not_found(
+        child_moniker: &ChildName,
+        moniker: &Moniker,
+        capability_id: impl Into<String>,
+    ) -> Self {
+        Self::UseFromChildExposeNotFound {
+            child_moniker: child_moniker.clone(),
+            moniker: moniker.clone(),
+            capability_id: capability_id.into(),
+        }
+    }
+
     pub fn expose_from_child_instance_not_found(
         child_moniker: &ChildName,
         moniker: &Moniker,
@@ -451,16 +471,6 @@ impl RoutingError {
         Self::CapabilityFromComponentManagerNotFound { capability_id: capability_id.into() }
     }
 
-    pub fn capability_from_storage_capability_not_found(
-        storage_capability: impl Into<String>,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::CapabilityFromStorageCapabilityNotFound {
-            storage_capability: storage_capability.into(),
-            capability_id: capability_id.into(),
-        }
-    }
-
     pub fn expose_from_framework_not_found(
         moniker: &Moniker,
         capability_id: impl Into<String>,
@@ -504,7 +514,10 @@ pub enum RightsRoutingError {
 impl RightsRoutingError {
     /// Convert this error into its approximate `zx::Status` equivalent.
     pub fn as_zx_status(&self) -> zx::Status {
-        zx::Status::UNAVAILABLE
+        match self {
+            RightsRoutingError::Invalid { .. } => zx::Status::ACCESS_DENIED,
+            RightsRoutingError::MissingRightsSource => zx::Status::NOT_FOUND,
+        }
     }
 }
 
@@ -516,9 +529,6 @@ pub enum AvailabilityRoutingError {
 
     #[error("Offer uses void source, but target requires the capability")]
     OfferFromVoidToRequiredTarget,
-
-    #[error("Offer or expose uses void source, so the route cannot be completed")]
-    RouteFromVoidToOptionalTarget,
 
     #[error("Expose uses void source, but target requires the capability")]
     ExposeFromVoidToRequiredTarget,

@@ -143,7 +143,7 @@ struct SmallerTableOfStructEnvelopes {
 
 struct SampleXUnion {
   FIDL_ALIGNDECL
-  fidl_xunion_t header;
+  fidl_union_t header;
 
   // Representing out-of-line part.
   // There are three possibilities. All are allocated here, but only one will be set and used.
@@ -158,7 +158,7 @@ struct SampleXUnion {
 };
 struct SampleXUnionV2 {
   FIDL_ALIGNDECL
-  fidl_xunion_v2_t header;
+  fidl_union_t header;
 
   // Representing out-of-line part.
   // There are three possibilities. All are allocated here, but only one will be set and used.
@@ -177,7 +177,7 @@ constexpr uint32_t kSampleXUnionRawIntOrdinal = 3;
 
 struct SampleStrictXUnion {
   FIDL_ALIGNDECL
-  fidl_xunion_t header;
+  fidl_union_t header;
 
   // Representing out-of-line part.
   // There are three possibilities. All are allocated here, but only one will be set and used.

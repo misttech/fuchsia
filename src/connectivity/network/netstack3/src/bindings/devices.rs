@@ -4,6 +4,7 @@
 
 use std::{
     collections::hash_map::{self, HashMap},
+    fmt::{self, Debug, Display},
     num::NonZeroU64,
     ops::{Deref as _, DerefMut as _},
 };
@@ -11,7 +12,6 @@ use std::{
 use assert_matches::assert_matches;
 use derivative::Derivative;
 use fidl_fuchsia_net_interfaces as fnet_interfaces;
-use futures::stream::StreamExt as _;
 use net_types::{
     ethernet::Mac,
     ip::{IpAddr, Mtu},
@@ -19,21 +19,21 @@ use net_types::{
 };
 use netstack3_core::{
     device::{
-        handle_queued_rx_packets, loopback::LoopbackDeviceId, transmit_queued_tx_frames, DeviceId,
-        DeviceSendFrameError,
+        handle_queued_rx_packets, transmit_queued_tx_frames, DeviceId, DeviceSendFrameError,
+        LoopbackDeviceId,
     },
     sync::{Mutex as CoreMutex, RwLock as CoreRwLock},
+    types::WorkQueueReport,
 };
 use tracing::warn;
 
 use crate::bindings::{
-    interfaces_admin, util::NeedsDataNotifier, BindingsNonSyncCtxImpl, Ctx, DeviceIdExt as _,
-    Netstack,
+    interfaces_admin, neighbor_worker, util::NeedsDataNotifier, BindingsCtx, Ctx,
 };
 
-pub const LOOPBACK_MAC: Mac = Mac::new([0, 0, 0, 0, 0, 0]);
+pub(crate) const LOOPBACK_MAC: Mac = Mac::new([0, 0, 0, 0, 0, 0]);
 
-pub type BindingId = NonZeroU64;
+pub(crate) type BindingId = NonZeroU64;
 
 /// Keeps tabs on devices.
 ///
@@ -43,7 +43,7 @@ pub type BindingId = NonZeroU64;
 /// The type parameter `C` is for the extra information associated with the
 /// device. The type parameters are there to allow testing without dependencies
 /// on `core`.
-pub struct Devices<C> {
+pub(crate) struct Devices<C> {
     id_map: CoreRwLock<HashMap<BindingId, C>>,
     last_id: CoreMutex<BindingId>,
 }
@@ -60,7 +60,7 @@ where
 {
     /// Allocates a new [`BindingId`].
     #[must_use]
-    pub fn alloc_new_id(&self) -> BindingId {
+    pub(crate) fn alloc_new_id(&self) -> BindingId {
         let Self { id_map: _, last_id } = self;
         let mut last_id = last_id.lock();
         let id = *last_id;
@@ -74,7 +74,7 @@ where
     /// currently tracked by [`Devices`]). A new [`BindingId`] will be allocated
     /// and a [`DeviceInfo`] struct will be created with the provided `info` and
     /// IDs.
-    pub fn add_device(&self, id: BindingId, core_id: C) {
+    pub(crate) fn add_device(&self, id: BindingId, core_id: C) {
         let Self { id_map, last_id: _ } = self;
         assert_matches!(id_map.write().insert(id, core_id), None);
     }
@@ -83,69 +83,73 @@ where
     ///
     /// Removes a device from the internal [`Devices`] list and returns the
     /// associated [`DeviceInfo`] if `id` is found or `None` otherwise.
-    pub fn remove_device(&self, id: BindingId) -> Option<C> {
+    pub(crate) fn remove_device(&self, id: BindingId) -> Option<C> {
         let Self { id_map, last_id: _ } = self;
         id_map.write().remove(&id)
     }
 
     /// Retrieve associated `core_id` for [`BindingId`].
-    pub fn get_core_id(&self, id: BindingId) -> Option<C> {
+    pub(crate) fn get_core_id(&self, id: BindingId) -> Option<C> {
         self.id_map.read().get(&id).cloned()
     }
 
     /// Call the provided callback with an iterator over the devices.
-    pub fn with_devices<R>(&self, f: impl FnOnce(hash_map::Values<'_, BindingId, C>) -> R) -> R {
+    pub(crate) fn with_devices<R>(
+        &self,
+        f: impl FnOnce(hash_map::Values<'_, BindingId, C>) -> R,
+    ) -> R {
         let Self { id_map, last_id: _ } = self;
         f(id_map.read().values())
     }
 }
 
-impl Devices<DeviceId<BindingsNonSyncCtxImpl>> {
+impl Devices<DeviceId<BindingsCtx>> {
     /// Retrieves the device with the given name.
-    pub fn get_device_by_name(&self, name: &str) -> Option<DeviceId<BindingsNonSyncCtxImpl>> {
+    pub(crate) fn get_device_by_name(&self, name: &str) -> Option<DeviceId<BindingsCtx>> {
         self.id_map
             .read()
             .iter()
-            .find_map(|(_binding_id, c)| {
-                (c.external_state().static_common_info().name == name).then_some(c)
-            })
+            .find_map(|(_binding_id, c)| (c.bindings_id().name == name).then_some(c))
             .cloned()
     }
 }
 
 /// Device specific iformation.
 #[derive(Debug)]
-pub enum DeviceSpecificInfo<'a> {
+pub(crate) enum DeviceSpecificInfo<'a> {
     Netdevice(&'a NetdeviceInfo),
     Loopback(&'a LoopbackInfo),
 }
 
 impl DeviceSpecificInfo<'_> {
-    pub fn static_common_info(&self) -> &StaticCommonInfo {
+    pub(crate) fn static_common_info(&self) -> &StaticCommonInfo {
         match self {
             Self::Netdevice(i) => &i.static_common_info,
             Self::Loopback(i) => &i.static_common_info,
         }
     }
 
-    pub fn with_common_info<O, F: FnOnce(&DynamicCommonInfo) -> O>(&self, cb: F) -> O {
+    pub(crate) fn with_common_info<O, F: FnOnce(&DynamicCommonInfo) -> O>(&self, cb: F) -> O {
         match self {
-            Self::Netdevice(i) => {
-                i.with_dynamic_info(|DynamicNetdeviceInfo { phy_up: _, common_info }| {
+            Self::Netdevice(i) => i.with_dynamic_info(
+                |DynamicNetdeviceInfo { phy_up: _, common_info, neighbor_event_sink: _ }| {
                     cb(common_info)
-                })
-            }
+                },
+            ),
             Self::Loopback(i) => i.with_dynamic_info(cb),
         }
     }
 
-    pub fn with_common_info_mut<O, F: FnOnce(&mut DynamicCommonInfo) -> O>(&self, cb: F) -> O {
+    pub(crate) fn with_common_info_mut<O, F: FnOnce(&mut DynamicCommonInfo) -> O>(
+        &self,
+        cb: F,
+    ) -> O {
         match self {
-            Self::Netdevice(i) => {
-                i.with_dynamic_info_mut(|DynamicNetdeviceInfo { phy_up: _, common_info }| {
+            Self::Netdevice(i) => i.with_dynamic_info_mut(
+                |DynamicNetdeviceInfo { phy_up: _, common_info, neighbor_event_sink: _ }| {
                     cb(common_info)
-                })
-            }
+                },
+            ),
             Self::Loopback(i) => i.with_dynamic_info_mut(cb),
         }
     }
@@ -153,72 +157,68 @@ impl DeviceSpecificInfo<'_> {
 
 pub(crate) fn spawn_rx_task(
     notifier: &NeedsDataNotifier,
-    ns: &Netstack,
-    device_id: &LoopbackDeviceId<BindingsNonSyncCtxImpl>,
-) {
-    let mut watcher = notifier.watcher();
+    mut ctx: Ctx,
+    device_id: &LoopbackDeviceId<BindingsCtx>,
+) -> fuchsia_async::Task<()> {
+    let watcher = notifier.watcher();
     let device_id = device_id.downgrade();
 
-    let ns = ns.clone();
-    fuchsia_async::Task::spawn(async move {
-        // Loop while we are woken up to handle enqueued RX packets.
-        while let Some(device_id) = watcher.next().await.and_then(|()| device_id.upgrade()) {
-            let mut ctx = ns.ctx.clone();
-            let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-            handle_queued_rx_packets(sync_ctx, non_sync_ctx, &device_id)
-        }
-    })
-    .detach()
+    fuchsia_async::Task::spawn(crate::bindings::util::yielding_data_notifier_loop(
+        watcher,
+        move || {
+            let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+            device_id
+                .upgrade()
+                .map(|device_id| handle_queued_rx_packets(core_ctx, bindings_ctx, &device_id))
+        },
+    ))
 }
 
 pub(crate) fn spawn_tx_task(
     notifier: &NeedsDataNotifier,
-    ns: &Netstack,
-    device_id: DeviceId<BindingsNonSyncCtxImpl>,
-) {
-    let mut watcher = notifier.watcher();
+    mut ctx: Ctx,
+    device_id: DeviceId<BindingsCtx>,
+) -> fuchsia_async::Task<()> {
+    let watcher = notifier.watcher();
     let device_id = device_id.downgrade();
 
-    let ns = ns.clone();
-    fuchsia_async::Task::spawn(async move {
-        // Loop while we are woken up to handle enqueued TX frames.
-        while let Some(device_id) = watcher.next().await.and_then(|()| device_id.upgrade()) {
-            let mut ctx = ns.ctx.clone();
-            let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-            match transmit_queued_tx_frames(sync_ctx, non_sync_ctx, &device_id) {
-                Ok(()) => {}
-                Err(DeviceSendFrameError::DeviceNotReady(())) => {
-                    warn!(
-                        "TODO(https://fxbug.dev/105921): Support waiting for TX buffers to be available, dropping packet for now on device={}",
-                        device_id,
-                    )
-                }
-            }
-        }
-    })
-    .detach()
+    fuchsia_async::Task::spawn(crate::bindings::util::yielding_data_notifier_loop(
+        watcher,
+        move || {
+            let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+            device_id.upgrade().map(|device_id| {
+                transmit_queued_tx_frames(core_ctx, bindings_ctx, &device_id).unwrap_or_else(
+                    |DeviceSendFrameError::DeviceNotReady(())| {
+                        warn!(
+                            "TODO(https://fxbug.dev/105921): Support waiting for TX buffers to be \
+                            available, dropping packet for now on device={device_id:?}",
+                        );
+                        WorkQueueReport::AllDone
+                    },
+                )
+            })
+        },
+    ))
 }
 
 /// Static information common to all devices.
 #[derive(Derivative, Debug)]
-pub struct StaticCommonInfo {
-    pub binding_id: BindingId,
-    pub name: String,
+pub(crate) struct StaticCommonInfo {
     #[derivative(Debug = "ignore")]
-    pub tx_notifier: NeedsDataNotifier,
+    pub(crate) tx_notifier: NeedsDataNotifier,
 }
 
 /// Information common to all devices.
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct DynamicCommonInfo {
-    pub mtu: Mtu,
-    pub admin_enabled: bool,
-    pub events: super::InterfaceEventProducer,
+pub(crate) struct DynamicCommonInfo {
+    pub(crate) mtu: Mtu,
+    pub(crate) admin_enabled: bool,
+    pub(crate) events: super::InterfaceEventProducer,
     // An attach point to send `fuchsia.net.interfaces.admin/Control` handles to the Interfaces
     // Admin worker.
     #[derivative(Debug = "ignore")]
-    pub control_hook: futures::channel::mpsc::Sender<interfaces_admin::OwnedControlHandle>,
+    pub(crate) control_hook: futures::channel::mpsc::Sender<interfaces_admin::OwnedControlHandle>,
     pub(crate) addresses: HashMap<SpecifiedAddr<IpAddr>, AddressInfo>,
 }
 
@@ -238,19 +238,22 @@ pub(crate) struct AddressInfo {
 /// Loopback device information.
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct LoopbackInfo {
-    pub static_common_info: StaticCommonInfo,
-    pub dynamic_common_info: std::sync::RwLock<DynamicCommonInfo>,
+pub(crate) struct LoopbackInfo {
+    pub(crate) static_common_info: StaticCommonInfo,
+    pub(crate) dynamic_common_info: std::sync::RwLock<DynamicCommonInfo>,
     #[derivative(Debug = "ignore")]
-    pub rx_notifier: NeedsDataNotifier,
+    pub(crate) rx_notifier: NeedsDataNotifier,
 }
 
 impl LoopbackInfo {
-    pub fn with_dynamic_info<O, F: FnOnce(&DynamicCommonInfo) -> O>(&self, cb: F) -> O {
+    pub(crate) fn with_dynamic_info<O, F: FnOnce(&DynamicCommonInfo) -> O>(&self, cb: F) -> O {
         cb(self.dynamic_common_info.read().unwrap().deref())
     }
 
-    pub fn with_dynamic_info_mut<O, F: FnOnce(&mut DynamicCommonInfo) -> O>(&self, cb: F) -> O {
+    pub(crate) fn with_dynamic_info_mut<O, F: FnOnce(&mut DynamicCommonInfo) -> O>(
+        &self,
+        cb: F,
+    ) -> O {
         cb(self.dynamic_common_info.write().unwrap().deref_mut())
     }
 }
@@ -260,36 +263,60 @@ impl LoopbackInfo {
 pub(crate) struct FidlWorkerInfo<R> {
     // The worker `Task`, wrapped in a `Shared` future so that it can be awaited
     // multiple times.
-    pub worker: futures::future::Shared<fuchsia_async::Task<()>>,
+    pub(crate) worker: futures::future::Shared<fuchsia_async::Task<()>>,
     // Mechanism to cancel the worker with reason `R`. If `Some`, the worker is
     // active (and holds the `Receiver`). Otherwise, the worker has been
     // canceled.
-    pub cancelation_sender: Option<futures::channel::oneshot::Sender<R>>,
+    pub(crate) cancelation_sender: Option<futures::channel::oneshot::Sender<R>>,
 }
 
-#[derive(Debug)]
-pub struct DynamicNetdeviceInfo {
-    pub phy_up: bool,
-    pub common_info: DynamicCommonInfo,
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub(crate) struct DynamicNetdeviceInfo {
+    pub(crate) phy_up: bool,
+    pub(crate) common_info: DynamicCommonInfo,
+    #[derivative(Debug = "ignore")]
+    pub(crate) neighbor_event_sink: futures::channel::mpsc::UnboundedSender<neighbor_worker::Event>,
 }
 
 /// Network device information.
 #[derive(Debug)]
-pub struct NetdeviceInfo {
-    pub handler: super::netdevice_worker::PortHandler,
-    pub mac: UnicastAddr<Mac>,
-    pub static_common_info: StaticCommonInfo,
-    pub dynamic: std::sync::RwLock<DynamicNetdeviceInfo>,
+pub(crate) struct NetdeviceInfo {
+    pub(crate) handler: super::netdevice_worker::PortHandler,
+    pub(crate) mac: UnicastAddr<Mac>,
+    pub(crate) static_common_info: StaticCommonInfo,
+    pub(crate) dynamic: std::sync::RwLock<DynamicNetdeviceInfo>,
 }
 
 impl NetdeviceInfo {
-    pub fn with_dynamic_info<O, F: FnOnce(&DynamicNetdeviceInfo) -> O>(&self, cb: F) -> O {
+    pub(crate) fn with_dynamic_info<O, F: FnOnce(&DynamicNetdeviceInfo) -> O>(&self, cb: F) -> O {
         let dynamic = self.dynamic.read().unwrap();
         cb(dynamic.deref())
     }
 
-    pub fn with_dynamic_info_mut<O, F: FnOnce(&mut DynamicNetdeviceInfo) -> O>(&self, cb: F) -> O {
+    pub(crate) fn with_dynamic_info_mut<O, F: FnOnce(&mut DynamicNetdeviceInfo) -> O>(
+        &self,
+        cb: F,
+    ) -> O {
         let mut dynamic = self.dynamic.write().unwrap();
         cb(dynamic.deref_mut())
+    }
+}
+
+pub(crate) struct DeviceIdAndName {
+    pub(crate) id: BindingId,
+    pub(crate) name: String,
+}
+
+impl Debug for DeviceIdAndName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { id, name } = self;
+        write!(f, "{id}=>{name}")
+    }
+}
+
+impl Display for DeviceIdAndName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self, f)
     }
 }

@@ -14,11 +14,13 @@
 #include <string.h>
 #include <trace.h>
 #include <zircon/errors.h>
+#include <zircon/time.h>
 #include <zircon/types.h>
 
 #include <arch/mp.h>
 #include <arch/ops.h>
 #include <arch/regs.h>
+#include <arch/riscv64/feature.h>
 #include <arch/riscv64/mmu.h>
 #include <arch/riscv64/sbi.h>
 #include <arch/vm.h>
@@ -46,6 +48,9 @@ void riscv64_init_percpu() {
   riscv64_csr_write(RISCV64_CSR_SCOUNTEREN, RISCV64_CSR_SCOUNTEREN_CY | RISCV64_CSR_SCOUNTEREN_TM |
                                                 RISCV64_CSR_SCOUNTEREN_IR);
 
+  // disable all cache instructions and FIOM bit for user space (for now)
+  riscv64_csr_write(RISCV64_CSR_SENVCFG, 0);
+
   // Zero out the fpu state and set to initial
   riscv64_fpu_zero();
 }
@@ -60,6 +65,7 @@ extern "C" void riscv64_boot_cpu_init(PhysHandoff* handoff) {
 
 void arch_early_init() {
   riscv64_sbi_early_init();
+  riscv64_feature_early_init();
   riscv64_mmu_early_init();
   riscv64_mmu_early_init_percpu();
 
@@ -67,12 +73,14 @@ void arch_early_init() {
   mp_set_curr_cpu_online(true);
 }
 
-void arch_prevm_init() {}
+void arch_prevm_init() { riscv64_mmu_prevm_init(); }
 
 void arch_init() TA_NO_THREAD_SAFETY_ANALYSIS {
   // print some arch info
   dprintf(INFO, "RISCV: Boot HART ID %u\n", riscv64_boot_hart_id());
   dprintf(INFO, "RISCV: Supervisor mode\n");
+
+  riscv64_feature_init();
 
   riscv64_sbi_init();
 
@@ -84,8 +92,4 @@ void arch_late_init_percpu() {
   mp_set_curr_cpu_online(true);
 }
 
-__NO_RETURN int arch_idle_thread_routine(void*) {
-  for (;;) {
-    __asm__ volatile("wfi");
-  }
-}
+void arch_idle_enter(zx_duration_t max_latency) { __wfi(); }

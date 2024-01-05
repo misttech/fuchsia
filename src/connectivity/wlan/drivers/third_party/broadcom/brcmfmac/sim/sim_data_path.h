@@ -57,7 +57,7 @@ class SimDataPath {
   // networks_device_ifc_protocol_ops callbacks
   void OnTxComplete(const tx_result_t* tx_list, size_t tx_count);
   void OnRxComplete(const rx_buffer_t* rx_list, size_t rx_count);
-  void OnAddPort(uint8_t id, const network_port_protocol_t* port);
+  zx_status_t OnAddPort(uint8_t id, const network_port_protocol_t* port);
   void OnRemovePort(uint8_t id);
 
  private:
@@ -77,7 +77,7 @@ class SimDataPath {
   cpp20::span<uint8_t> rx_span_{};
 
   // Used for head/tail length requested by the device for transmits.
-  device_info_t device_info_{};
+  device_impl_info_t device_info_{};
 
   // The list of tx results received during the lifetime of the class.
   // Populated during calls to OnTxComplete().
@@ -91,8 +91,9 @@ class SimDataPath {
 
   network_device_ifc_protocol_ops_t ifc_ops_ = {
       .add_port =
-          [](void* ctx, uint8_t id, const network_port_protocol_t* port) {
-            static_cast<SimDataPath*>(ctx)->OnAddPort(id, port);
+          [](void* ctx, uint8_t id, const network_port_protocol_t* port,
+             network_device_ifc_add_port_callback callback, void* cookie) {
+            callback(cookie, static_cast<SimDataPath*>(ctx)->OnAddPort(id, port));
           },
       .remove_port = [](void* ctx,
                         uint8_t id) { static_cast<SimDataPath*>(ctx)->OnRemovePort(id); },

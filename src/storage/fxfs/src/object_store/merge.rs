@@ -138,7 +138,7 @@ fn merge_deleted_extents(
         return MergeResult::EmitLeft;
     }
     // Both of these are deleted extents which are either adjacent or overlapping, which means
-    // we can coalece the records.
+    // we can coalesce the records.
     if left_key.range.end >= right_key.range.end {
         // The left deletion eclipses the right, so just keep the left.
         return MergeResult::Other { emit: None, left: Keep, right: Discard };
@@ -1049,7 +1049,16 @@ mod tests {
         let tombstone = Item::new(ObjectKey::object(1), ObjectValue::None);
         let other_object = Item::new(
             ObjectKey::object(2),
-            ObjectValue::file(1, 0, Timestamp::default(), Timestamp::default(), 0, None),
+            ObjectValue::file(
+                1,
+                0,
+                Timestamp::default(),
+                Timestamp::default(),
+                Timestamp::default(),
+                Timestamp::default(),
+                0,
+                None,
+            ),
         );
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
         test_merge(
@@ -1058,7 +1067,16 @@ mod tests {
             &[
                 Item::new(
                     ObjectKey::object(1),
-                    ObjectValue::file(1, 100, Timestamp::default(), Timestamp::default(), 0, None),
+                    ObjectValue::file(
+                        1,
+                        100,
+                        Timestamp::default(),
+                        Timestamp::default(),
+                        Timestamp::default(),
+                        Timestamp::default(),
+                        0,
+                        None,
+                    ),
                 ),
                 Item::new(
                     ObjectKey::attribute(1, 0, AttributeKey::Attribute),

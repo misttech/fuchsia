@@ -15,7 +15,17 @@ import os
 import pathlib
 import shutil
 import json
-from typing import Any, Dict, List, ItemsView, Optional, Set, TextIO, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    ItemsView,
+    Optional,
+    Set,
+    TextIO,
+    Tuple,
+    Union,
+)
 
 import serialization
 from serialization import json_dump, json_dumps, json_load, serialize_json
@@ -25,7 +35,10 @@ from .common import FileEntry, FilePath, fast_copy, fast_copy_makedirs
 from .package_manifest import BlobEntry, PackageManifest, SubpackageEntry
 
 __all__ = [
-    "AssemblyInputBundle", "AIBCreator", "ConfigDataEntries", "DriverDetails"
+    "AssemblyInputBundle",
+    "AIBCreator",
+    "ConfigDataEntries",
+    "DriverDetails",
 ]
 
 PackageManifestList = List[FilePath]
@@ -43,17 +56,20 @@ ConfigDataEntries = Dict[PackageName, Set[FileEntry]]
 
 class AssemblyInputBundleCreationException(Exception):
     """To be raised when AIB creation fails for some reason"""
+
     ...
 
 
 class DuplicatePackageException(AssemblyInputBundleCreationException):
     """To be raised when an attempt is made to add multiple packages with the same name to the same
     invocation of the AIBCreator"""
+
     ...
 
 
 class PackageManifestParsingException(Exception):
     """To be raised when an attempt to parse a json file into a PackageManifest object fails"""
+
     ...
 
 
@@ -61,14 +77,35 @@ class PackageManifestParsingException(Exception):
 @serialize_json
 class DriverDetails:
     """Details for constructing a driver manifest fragment from a driver package"""
+
     package: FilePath = field()  # Path to the package manifest
     components: Set[FilePath] = field(default_factory=set)
+
+
+@dataclass
+@serialization.serialize_json
+class PackageDetails:
+    """Details for a package"""
+
+    package: FilePath = field()  # Path to the package manifest
+    set: str = field()  # Package set that includes the package
+
+    def __hash__(self):
+        """
+        This intentionally only hashes the package manifest in order to
+        deduplicate packages across package sets.
+        """
+        return hash(self.package)
+
+    def __lt__(self, other):
+        return self.package < other.package
 
 
 @dataclass
 @serialize_json
 class CompiledPackageMainDefinition:
     """Primary definition of a compiled package which is created by Assembly"""
+
     name: str = field()  # Name of the package
     # Dictionary mapping components to cml files by name
     components: Dict[str, FilePath] = field(default_factory=dict)
@@ -86,6 +123,7 @@ class CompiledPackageAdditionalShards:
     """
     Additional contents for a package defined by a CompiledPackageMainDefinition
     """
+
     # Name of the package
     name: str = field()
     # Additional component shards
@@ -94,7 +132,7 @@ class CompiledPackageAdditionalShards:
 
 @dataclass
 @serialize_json
-class AssemblyInputBundle(ImageAssemblyConfig):
+class AssemblyInputBundle:
     """AssemblyInputBundle wraps a set of artifacts together for use by out-of-tree assembly, both
     the manifest of the artifacts, and the artifacts themselves.
 
@@ -113,6 +151,8 @@ class AssemblyInputBundle(ImageAssemblyConfig):
             boot_drivers/
                 <package name>
             cache/
+                <package name>
+            flexible/
                 <package name>
             system/
                 <package name>
@@ -157,13 +197,31 @@ class AssemblyInputBundle(ImageAssemblyConfig):
     assembly_config.json schema::
 
         {
-            "base": [ "package1", "package2" ],
-            "cache": [ "package3", ... ],
+            "packages": [
+                {
+                    "package": "package1",
+                    "set": "base",
+                },
+                {
+                    "package": "package2",
+                    "set": "base",
+                },
+                {
+                    "package": "package3",
+                    "set": "cache",
+                },
+                {
+                    "package": "packageS1",
+                    "set": "system",
+                },
+                {
+                    "package": "packageB1",
+                    "set": "bootfs",
+                },
+            ],
             "base_drivers": [ "packageD1", ... ],
             "boot_drivers": [ "packageD1", ... ],
-            "system": [ "packageS1", ... ],
-            "bootfs_packages": [ "packageB1", ... ],
-            "bootfs_files_package": "packages/bootfs_packages/packageB2",
+            "bootfs_files_package": "packages/packageB2",
             "bootfs_files": [
                 { "destination": "path/in/bootfs", source: "path/in/layout" },
                 ...
@@ -216,65 +274,45 @@ class AssemblyInputBundle(ImageAssemblyConfig):
 
     All items are optional.  Files for `config_data` should be in the config_data section,
     not in a package called `config_data`.
-
-    The AssemblyInputBundle is an extension of the ImageAssemblyConfig class, adding new categories
-    that it supports which aren't in the ImageAssemblyConfig.
     """
+
+    # Fields shared with ImageAssemblyConfig.
+    kernel: KernelInfo = field(default_factory=KernelInfo)
+    qemu_kernel: Optional[FilePath] = None
+    boot_args: Set[str] = field(default_factory=set)
+    bootfs_files: Set[FileEntry] = field(default_factory=set)
+    bootfs_packages: Set[FilePath] = field(default_factory=set)
+
+    packages: Set[PackageDetails] = field(default_factory=set)
     config_data: ConfigDataEntries = field(default_factory=dict)
     blobs: Set[FilePath] = field(default_factory=set)
     base_drivers: List[DriverDetails] = field(default_factory=list)
     boot_drivers: List[DriverDetails] = field(default_factory=list)
     shell_commands: Dict[str, List[str]] = field(
-        default_factory=functools.partial(defaultdict, list))
-    packages_to_compile: List[Union[CompiledPackageMainDefinition,
-                                    CompiledPackageAdditionalShards]] = field(
-                                        default_factory=list)
+        default_factory=functools.partial(defaultdict, list)
+    )
+    packages_to_compile: List[
+        Union[CompiledPackageMainDefinition, CompiledPackageAdditionalShards]
+    ] = field(default_factory=list)
     bootfs_files_package: Optional[FilePath] = None
 
     def __repr__(self) -> str:
         """Serialize to a JSON string"""
         return serialization.json_dumps(self, indent=2)
 
-    def intersection(
-            self, other: 'AssemblyInputBundle') -> 'AssemblyInputBundle':
-        """Return the intersection of the two 'ImageAssemblyConfiguration's
-        """
-        result = super().intersection(other)
-        config_data: ConfigDataEntries = {}
-        for package in self.config_data.keys():
-            if package in other.config_data:
-                entries = self.config_data[package]
-                other_entries = other.config_data[package]
-                entries = entries.intersection(other_entries)
-                config_data[package] = entries
-        if config_data:
-            result.config_data = config_data
-        return result
-
-    def difference(self, other: 'AssemblyInputBundle') -> 'AssemblyInputBundle':
-        """Return the difference of the two 'ImageAssemblyConfiguration's
-        """
-        result = super().difference(other)
-        for (package, entries) in self.config_data.items():
-            if package not in other.config_data:
-                result.config_data[package] = entries
-            else:
-                entries = entries.difference(other.config_data[package])
-                if len(entries) > 0:
-                    result.config_data[package] = entries
-        return result
+    def add_packages(self, packages: List[PackageDetails]):
+        for details in packages:
+            # This 'in' check only looks at the package manifest file path and
+            # ignores the package set. This is intentional in order to
+            # deduplicate packages across sets.
+            if details in self.packages:
+                raise ValueError(f"Duplicate package {details.package}")
+            self.packages.add(details)
 
     def all_file_paths(self) -> List[FilePath]:
-        """Return a list of all files that are referenced by this AssemblyInputBundle.
-        """
+        """Return a list of all files that are referenced by this AssemblyInputBundle."""
         file_paths = []
-        file_paths.extend(self.base)
-        file_paths.extend(self.cache)
-        file_paths.extend(self.system)
-        file_paths.extend(self.bootfs_packages)
-        file_paths.extend([entry.source for entry in self.bootfs_files])
-        if self.bootfs_files_package:
-            file_paths.append(self.bootfs_files_package)
+        file_paths.extend([p.package for p in self.packages])
         if self.kernel.path is not None:
             file_paths.append(self.kernel.path)
         if self.qemu_kernel is not None:
@@ -296,15 +334,17 @@ class AssemblyInputBundle(ImageAssemblyConfig):
                         component_path
                         for shards in package.component_shards.values()
                         for component_path in shards
-                    ])
+                    ]
+                )
 
         return file_paths
 
     def write_fini_manifest(
-            self,
-            file: TextIO,
-            base_dir: Optional[FilePath] = None,
-            rebase: Optional[FilePath] = None) -> None:
+        self,
+        file: TextIO,
+        base_dir: Optional[FilePath] = None,
+        rebase: Optional[FilePath] = None,
+    ) -> None:
         """Write a fini-style manifest of all files in the AssemblyInputBundle
         to the given |file|.
 
@@ -332,13 +372,15 @@ class AssemblyInputBundle(ImageAssemblyConfig):
         if base_dir is not None:
             file_path_entries = [
                 FileEntry(
-                    os.path.relpath(os.path.join(base_dir, path), rebase), path)
+                    os.path.relpath(os.path.join(base_dir, path), rebase), path
+                )
                 for path in file_paths
             ]
             file_path_entries += [
                 FileEntry(
                     os.path.join(base_dir, "assembly_config.json"),
-                    "assembly_config.json")
+                    "assembly_config.json",
+                )
             ]
         else:
             file_path_entries = [FileEntry(path, path) for path in file_paths]
@@ -348,12 +390,13 @@ class AssemblyInputBundle(ImageAssemblyConfig):
 
 class AIBCreator:
     """The AIBCreator is a builder for AIBs that will copy all the files into
-       the correct layout for the AIB structure, rewriting package manifests
-       as needed to make them relative to the AIB manifest location.
+    the correct layout for the AIB structure, rewriting package manifests
+    as needed to make them relative to the AIB manifest location.
 
-       The AIBCreator has fields that match the AIB itself, but isn't an AIB
-       because the paths it contains are not valid for an AIB.
+    The AIBCreator has fields that match the AIB itself, but isn't an AIB
+    because the paths it contains are not valid for an AIB.
     """
+
     package_url_template = "{repository}/{package_name}"
 
     def __init__(self, outdir: FilePath):
@@ -364,6 +407,7 @@ class AIBCreator:
         # The package sets (paths to package manifests)
         self.base: Set[FilePath] = set()
         self.cache: Set[FilePath] = set()
+        self.flexible: Set[FilePath] = set()
         self.system: Set[FilePath] = set()
         self.shell_commands: Dict[str, List[str]] = defaultdict(list)
 
@@ -452,12 +496,22 @@ class AIBCreator:
         # Copy the manifests for the base package set into the assembly bundle
         (base_pkgs, base_blobs, base_deps) = self._copy_packages("base")
         deps.update(base_deps)
-        result.base.update(base_pkgs)
+        result.add_packages([PackageDetails(m, "base") for m in base_pkgs])
 
         # Copy the manifests for the cache package set into the assembly bundle
         (cache_pkgs, cache_blobs, cache_deps) = self._copy_packages("cache")
         deps.update(cache_deps)
-        result.cache.update(cache_pkgs)
+        result.add_packages([PackageDetails(m, "cache") for m in cache_pkgs])
+
+        (
+            flexible_pkgs,
+            flexible_blobs,
+            flexible_deps,
+        ) = self._copy_packages("flexible")
+        deps.update(flexible_deps)
+        result.packages.update(
+            [PackageDetails(m, "flexible") for m in flexible_pkgs]
+        )
 
         # Copy base driver packages into the base driver list of the assembly bundle
         for d in self.provided_base_driver_details:
@@ -466,14 +520,20 @@ class AIBCreator:
             else:
                 raise ValueError(
                     f"Duplicate driver package {d} specified in"
-                    " base drivers list: {self.base_drivers}")
-        (base_driver_pkgs, base_driver_blobs,
-         base_driver_deps) = self._copy_packages("base_drivers")
+                    " base drivers list: {self.base_drivers}"
+                )
+        (
+            base_driver_pkgs,
+            base_driver_blobs,
+            base_driver_deps,
+        ) = self._copy_packages("base_drivers")
         deps.update(base_driver_deps)
 
         (base_driver_details, base_driver_deps) = self._get_driver_details(
-            self.base_driver_component_files, self.provided_base_driver_details,
-            base_driver_pkgs)
+            self.base_driver_component_files,
+            self.provided_base_driver_details,
+            base_driver_pkgs,
+        )
         result.base_drivers.extend(base_driver_details)
         deps.update(base_driver_deps)
 
@@ -484,32 +544,43 @@ class AIBCreator:
             else:
                 raise ValueError(
                     f"Duplicate driver package {d} specified in"
-                    " base drivers list: {self.boot_drivers}")
-        (boot_driver_pkgs, boot_driver_blobs,
-         boot_driver_deps) = self._copy_packages("boot_drivers")
+                    " base drivers list: {self.boot_drivers}"
+                )
+        (
+            boot_driver_pkgs,
+            boot_driver_blobs,
+            boot_driver_deps,
+        ) = self._copy_packages("boot_drivers")
         deps.update(boot_driver_deps)
 
         (boot_driver_details, boot_driver_deps) = self._get_driver_details(
-            self.boot_driver_component_files, self.provided_boot_driver_details,
-            boot_driver_pkgs)
+            self.boot_driver_component_files,
+            self.provided_boot_driver_details,
+            boot_driver_pkgs,
+        )
         result.boot_drivers.extend(boot_driver_details)
         deps.update(boot_driver_deps)
 
         # Copy the manifests for the system package set into the assembly bundle
         (system_pkgs, system_blobs, system_deps) = self._copy_packages("system")
         deps.update(system_deps)
-        result.system.update(system_pkgs)
+        result.add_packages([PackageDetails(m, "system") for m in system_pkgs])
 
         # Copy the manifests for the bootfs package set into the assembly bundle
-        (bootfs_pkgs, bootfs_pkg_blobs,
-         bootfs_pkg_deps) = self._copy_packages("bootfs_packages")
+        (bootfs_pkgs, bootfs_pkg_blobs, bootfs_pkg_deps) = self._copy_packages(
+            "bootfs_packages"
+        )
         deps.update(bootfs_pkg_deps)
-        result.bootfs_packages.update(bootfs_pkgs)
+        result.add_packages([PackageDetails(m, "bootfs") for m in bootfs_pkgs])
 
         if self.bootfs_files_package:
-            (bootfs_files_pkg, bootfs_files_pkg_blobs,
-             bootfs_files_pkg_deps) = self._copy_package_from_path(
-                 self.bootfs_files_package, "bootfs_packages")
+            (
+                bootfs_files_pkg,
+                bootfs_files_pkg_blobs,
+                bootfs_files_pkg_deps,
+            ) = self._copy_package_from_path(
+                self.bootfs_files_package, "bootfs_packages"
+            )
             deps.update(bootfs_files_pkg_deps)
             result.bootfs_files_package = bootfs_files_pkg
             bootfs_pkg_blobs.extend(bootfs_files_pkg_blobs)
@@ -521,20 +592,28 @@ class AIBCreator:
         # each merkle, last one wins (we trust that in the in-tree build isn't going
         # to make invalid merkles).
         all_blobs = {}
-        for (merkle, source) in [*base_blobs, *cache_blobs, *base_driver_blobs,
-                                 *boot_driver_blobs, *system_blobs,
-                                 *bootfs_pkg_blobs]:
+        for merkle, source in [
+            *base_blobs,
+            *cache_blobs,
+            *flexible_blobs,
+            *base_driver_blobs,
+            *boot_driver_blobs,
+            *system_blobs,
+            *bootfs_pkg_blobs,
+        ]:
             all_blobs[merkle] = source
 
         # Copy all the blobs to their dir in the out-of-tree layout
         (all_blobs, blob_deps) = self._copy_blobs(all_blobs)
         deps.update(blob_deps)
         result.blobs = set(
-            [os.path.relpath(blob_path) for blob_path in all_blobs])
+            [os.path.relpath(blob_path) for blob_path in all_blobs]
+        )
 
         # Copy the bootfs entries
-        (bootfs,
-         bootfs_deps) = self._copy_file_entries(self.bootfs_files, "bootfs")
+        (bootfs, bootfs_deps) = self._copy_file_entries(
+            self.bootfs_files, "bootfs"
+        )
         deps.update(bootfs_deps)
         result.bootfs_files.update(bootfs)
 
@@ -567,7 +646,8 @@ class AIBCreator:
                 copied_cml, component_deps = self._copy_component_shard(
                     cml_file,
                     package_name=package.name,
-                    component_name=component_name)
+                    component_name=component_name,
+                )
                 copied_component_cmls[component_name] = copied_cml
 
                 deps.update(component_deps)
@@ -591,8 +671,12 @@ class AIBCreator:
             #
             # _copy_component_includes will check for and validate inconsistent
             # include entries.
-            copied_include_entries, component_includes_deps = self._copy_component_includes(
-                package.includes, all_copied_include_entries)
+            (
+                copied_include_entries,
+                component_includes_deps,
+            ) = self._copy_component_includes(
+                package.includes, all_copied_include_entries
+            )
             deps.update(component_includes_deps)
 
             # Save the copied entries so we can check for inconsistent
@@ -602,19 +686,22 @@ class AIBCreator:
 
             # The final copied includes to add to the AIB.
             copied_includes = set(
-                map(lambda x: x.destination, copied_include_entries))
+                map(lambda x: x.destination, copied_include_entries)
+            )
 
             # Copy the package contents entries
             (copied_package_files, package_deps) = self._copy_file_entries(
                 package.contents,
-                os.path.join("compiled_packages", package.name, "files"))
+                os.path.join("compiled_packages", package.name, "files"),
+            )
 
             copied_definition = CompiledPackageMainDefinition(
                 name=package.name,
                 components=copied_component_cmls,
                 includes=copied_includes,
                 contents=set(copied_package_files),
-                bootfs_unpackaged=package.bootfs_unpackaged)
+                bootfs_unpackaged=package.bootfs_unpackaged,
+            )
             result.packages_to_compile.append(copied_definition)
 
             deps.update(package_deps)
@@ -623,15 +710,17 @@ class AIBCreator:
             copied_component_shards = {}
             for name, shards in package.component_shards.items():
                 copied_shards, component_deps = self._copy_component_shards(
-                    shards, package_name=package.name, component_name=name)
+                    shards, package_name=package.name, component_name=name
+                )
 
                 deps.update(component_deps)
                 copied_component_shards[name] = set(copied_shards)
 
             result.packages_to_compile.append(
                 CompiledPackageAdditionalShards(
-                    name=package.name,
-                    component_shards=copied_component_shards))
+                    name=package.name, component_shards=copied_component_shards
+                )
+            )
 
         # Copy the config_data entries into the out-of-tree layout
         (config_data, config_data_deps) = self._copy_config_data_entries()
@@ -643,15 +732,17 @@ class AIBCreator:
 
         # Write the AIB manifest
         assembly_config_path = os.path.join(self.outdir, "assembly_config.json")
-        with open(assembly_config_path, 'w') as file:
+        with open(assembly_config_path, "w") as file:
             result.json_dump(file, indent=2)
 
         return (result, assembly_config_path, deps)
 
     def _get_driver_details(
-            self, driver_component_files: List[dict],
-            provided_driver_details: List[dict],
-            driver_pkgs: Set[FilePath]) -> List[DriverDetails]:
+        self,
+        driver_component_files: List[dict],
+        provided_driver_details: List[dict],
+        driver_pkgs: Set[FilePath],
+    ) -> List[DriverDetails]:
         """Read the driver package manifests and produce DriverDetails for the AIB config"""
         driver_details_list: List[DriverDetails] = list()
 
@@ -661,16 +752,18 @@ class AIBCreator:
         # Associate the set of base driver component files with their packages
         component_files: Dict[str, List[str]] = dict()
         for component_manifest in driver_component_files:
-            with open(component_manifest["distribution_manifest"],
-                      'r') as manifest_file:
+            with open(
+                component_manifest["distribution_manifest"], "r"
+            ) as manifest_file:
                 manifest: List[Dict] = json.load(manifest_file)
                 component_manifest_list = component_files.setdefault(
-                    component_manifest["package_name"], [])
+                    component_manifest["package_name"], []
+                )
                 component_manifest_list += [
                     f["destination"]
                     for f in manifest
-                    if f["destination"].startswith("meta/") and
-                    f["destination"].endswith(".cm")
+                    if f["destination"].startswith("meta/")
+                    and f["destination"].endswith(".cm")
                 ]
 
             deps.add(component_manifest["distribution_manifest"])
@@ -678,7 +771,7 @@ class AIBCreator:
         # Include the component lists which were provided directly for
         # packages instead of those which were generated by GN metadata walks
         for driver_details in provided_driver_details:
-            with open(driver_details.package, 'r') as file:
+            with open(driver_details.package, "r") as file:
                 try:
                     manifest = json_load(PackageManifest, file)
                 except Exception as exc:
@@ -691,12 +784,14 @@ class AIBCreator:
                     raise ValueError(
                         f"Duplicate package {package_name}"
                         " specified in driver_packages and"
-                        " provided_driver_details list")
+                        " provided_driver_details list"
+                    )
                 component_files[package_name] = driver_details.components
 
         for package_manifest_path in sorted(driver_pkgs):
-            with open(os.path.join(self.outdir, package_manifest_path),
-                      'r') as file:
+            with open(
+                os.path.join(self.outdir, package_manifest_path), "r"
+            ) as file:
                 try:
                     manifest = json_load(PackageManifest, file)
                 except Exception as exc:
@@ -709,7 +804,9 @@ class AIBCreator:
                     DriverDetails(
                         package_manifest_path,
                         # Include the driver components specified for this package
-                        component_files[package_name]))
+                        component_files[package_name],
+                    )
+                )
 
         return driver_details_list, deps
 
@@ -741,7 +838,8 @@ class AIBCreator:
         # sorted by path to the package manifest.
         for package_manifest_path in sorted(package_manifests):
             (manifest, blob_list, dep_set) = self._copy_package_from_path(
-                package_manifest_path, set_name)
+                package_manifest_path, set_name
+            )
             if manifest:
                 # Track the package manifest in our set of packages
                 packages.append(manifest)
@@ -780,7 +878,7 @@ class AIBCreator:
         # The deps touched by this function.
         deps: DepSet = set()
 
-        with open(package_manifest_path, 'r') as file:
+        with open(package_manifest_path, "r") as file:
             try:
                 manifest = json_load(PackageManifest, file)
             except Exception as exc:
@@ -803,7 +901,10 @@ class AIBCreator:
         validate_unique_packages(
             AIBCreator.package_url_template.format(
                 repository=manifest.repository,
-                package_name=manifest.package.name), rebased_destination)
+                package_name=manifest.package.name,
+            ),
+            rebased_destination,
+        )
 
         # But skip config-data, if we find it.
         if "config-data" == package_name:
@@ -811,8 +912,12 @@ class AIBCreator:
 
         try:
             self._copy_package(
-                manifest, os.path.dirname(package_manifest_path),
-                rebased_destination, blobs, deps)
+                manifest,
+                os.path.dirname(package_manifest_path),
+                rebased_destination,
+                blobs,
+                deps,
+            )
         except Exception as e:
             raise AssemblyInputBundleCreationException(
                 f"Copying '{set_name}' package '{package_name}' with manifest: {package_manifest_path}"
@@ -850,36 +955,44 @@ class AIBCreator:
             source = blob.source_path
             if source is None:
                 raise ValueError(
-                    f"Found a blob with no source path: {blob.path}")
+                    f"Found a blob with no source path: {blob.path}"
+                )
 
             # Make the path relative to the package manifest if necessary.
-            if manifest.blob_sources_relative == 'file':
+            if manifest.blob_sources_relative == "file":
                 source = os.path.join(package_manifest_dir, source)
 
             blobs.append((blob.merkle, source))
 
             blob_destination = _make_internal_blob_path(blob.merkle)
             relative_blob_destination = os.path.relpath(
-                blob_destination, os.path.dirname(rebased_destination))
+                blob_destination, os.path.dirname(rebased_destination)
+            )
             new_manifest.blobs.append(
                 BlobEntry(
                     blob.path,
                     blob.merkle,
                     blob.size,
-                    source_path=relative_blob_destination))
+                    source_path=relative_blob_destination,
+                )
+            )
 
         for subpackage in manifest.subpackages:
             # Copy the SubpackageEntry to the new_manifest, with the
             # updated `subpackages/<merkle>` path
             subpackage_destination = _make_internal_subpackage_path(
-                subpackage.merkle)
+                subpackage.merkle
+            )
             relative_subpackage_destination = os.path.relpath(
-                subpackage_destination, os.path.dirname(rebased_destination))
+                subpackage_destination, os.path.dirname(rebased_destination)
+            )
             new_manifest.subpackages.append(
                 SubpackageEntry(
                     subpackage.name,
                     subpackage.merkle,
-                    manifest_path=relative_subpackage_destination))
+                    manifest_path=relative_subpackage_destination,
+                )
+            )
 
             if subpackage.merkle not in self.subpackages:
                 # This is a new subpackage. Track it and copy it and any of its
@@ -888,11 +1001,12 @@ class AIBCreator:
 
                 # Make the path relative to the package manifest if necessary.
                 subpackage_manifest_path = subpackage.manifest_path
-                if manifest.blob_sources_relative == 'file':
+                if manifest.blob_sources_relative == "file":
                     subpackage_manifest_path = os.path.join(
-                        package_manifest_dir, subpackage_manifest_path)
+                        package_manifest_dir, subpackage_manifest_path
+                    )
 
-                with open(subpackage_manifest_path, 'r') as file:
+                with open(subpackage_manifest_path, "r") as file:
                     try:
                         subpackage_manifest = json_load(PackageManifest, file)
                     except Exception as exc:
@@ -907,20 +1021,24 @@ class AIBCreator:
                     self._copy_package(
                         subpackage_manifest,
                         os.path.dirname(subpackage_manifest_path),
-                        subpackage_destination, blobs, deps)
+                        subpackage_destination,
+                        blobs,
+                        deps,
+                    )
                 except Exception as e:
                     raise AssemblyInputBundleCreationException(
                         f"Copying subpackage '{subpackage.name}' with manifest: {subpackage_manifest_path}"
                     ) from e
 
         package_manifest_destination = os.path.join(
-            self.outdir, rebased_destination)
-        with open(package_manifest_destination, 'w') as new_manifest_file:
+            self.outdir, rebased_destination
+        )
+        with open(package_manifest_destination, "w") as new_manifest_file:
             json_dump(new_manifest, new_manifest_file)
 
     def _copy_blobs(
-            self, blobs: Dict[Merkle,
-                              FilePath]) -> Tuple[List[FilePath], DepSet]:
+        self, blobs: Dict[Merkle, FilePath]
+    ) -> Tuple[List[FilePath], DepSet]:
         blob_paths: List[FilePath] = []
         deps: DepSet = set()
 
@@ -933,7 +1051,7 @@ class AIBCreator:
         os.makedirs(blobs_dir)
 
         # Copy all blobs
-        for (merkle, source) in blobs.items():
+        for merkle, source in blobs.items():
             blob_path = _make_internal_blob_path(merkle)
             blob_destination = os.path.join(self.outdir, blob_path)
             blob_paths.append(blob_path)
@@ -950,16 +1068,18 @@ class AIBCreator:
         shard_includes: FileEntrySet = set()
         for entry in component_includes:
             rebased_destination = os.path.join(
-                "compiled_packages", "include", entry.destination)
+                "compiled_packages", "include", entry.destination
+            )
             copy_destination = os.path.join(self.outdir, rebased_destination)
 
             rebased_entry = FileEntry(entry.source, rebased_destination)
 
             # Check whether we have previously specified a different
             # source for the same include file
-            if rebased_destination in map(lambda x: x.destination,
-                                          existing_shard_includes |
-                                          shard_includes):
+            if rebased_destination in map(
+                lambda x: x.destination,
+                existing_shard_includes | shard_includes,
+            ):
                 if rebased_entry not in existing_shard_includes:
                     raise AssemblyInputBundleCreationException(
                         f"Include file already exists with a different source: {copy_destination}"
@@ -973,16 +1093,19 @@ class AIBCreator:
         return shard_includes, deps
 
     def _copy_component_shard(
-            self, component_shard: FilePath, package_name: str,
-            component_name: str) -> Tuple[FilePath, DepSet]:
+        self, component_shard: FilePath, package_name: str, component_name: str
+    ) -> Tuple[FilePath, DepSet]:
         deps: DepSet = set()
         # The shard is copied to a path based on the name of the package, the
         # name of the component, and the filename of the shard:
         # f"compiled_packages/{package_name}/{component_name}/{filename}"
         #
         bundle_destination = os.path.join(
-            "compiled_packages", package_name, component_name,
-            os.path.basename(component_shard))
+            "compiled_packages",
+            package_name,
+            component_name,
+            os.path.basename(component_shard),
+        )
 
         # The copy destination is the above path, with the bundle's outdir.
         copy_destination = os.path.join(self.outdir, bundle_destination)
@@ -992,21 +1115,24 @@ class AIBCreator:
         return bundle_destination, deps
 
     def _copy_component_shards(
-            self, component_shards: Union[ComponentShards,
-                                          List[FilePath]], package_name: str,
-            component_name: str) -> Tuple[List[FilePath], DepSet]:
+        self,
+        component_shards: Union[ComponentShards, List[FilePath]],
+        package_name: str,
+        component_name: str,
+    ) -> Tuple[List[FilePath], DepSet]:
         shard_file_paths: List[FilePath] = list()
         deps: DepSet = set()
         for shard in component_shards:
             destination, copy_deps = self._copy_component_shard(
-                shard, package_name, component_name)
+                shard, package_name, component_name
+            )
             deps.update(copy_deps)
             shard_file_paths.append(destination)
         return shard_file_paths, deps
 
     def _copy_file_entries(
-            self, entries: Union[FileEntrySet, FileEntryList],
-            subdirectory: str) -> Tuple[FileEntryList, DepSet]:
+        self, entries: Union[FileEntrySet, FileEntryList], subdirectory: str
+    ) -> Tuple[FileEntryList, DepSet]:
         results: FileEntryList = []
         deps: DepSet = set()
 
@@ -1026,7 +1152,9 @@ class AIBCreator:
             # out-of-tree layout, and the same destination.
             results.append(
                 FileEntry(
-                    source=rebased_destination, destination=entry.destination))
+                    source=rebased_destination, destination=entry.destination
+                )
+            )
 
         return (results, deps)
 
@@ -1055,12 +1183,14 @@ class AIBCreator:
             parts = pathlib.Path(entry.destination).parts
             if parts[:2] != ("meta", "data"):
                 raise ValueError(
-                    "Found an unexpected destination path: {}".format(parts))
+                    "Found an unexpected destination path: {}".format(parts)
+                )
             package_name = parts[2]
             file_path = os.path.join(*parts[3:])
 
             rebased_source_path = os.path.join(
-                "config_data", package_name, file_path)
+                "config_data", package_name, file_path
+            )
             copy_destination = os.path.join(self.outdir, rebased_source_path)
 
             # Hardlink the file from source to the destination
@@ -1068,7 +1198,8 @@ class AIBCreator:
 
             # Append the entry to the set of entries for the package
             results.setdefault(package_name, set()).add(
-                FileEntry(source=rebased_source_path, destination=file_path))
+                FileEntry(source=rebased_source_path, destination=file_path)
+            )
 
         return (results, deps)
 

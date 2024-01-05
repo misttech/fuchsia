@@ -5,8 +5,8 @@
 #ifndef SRC_DEVICES_GPIO_DRIVERS_GPIO_GPIO_H_
 #define SRC_DEVICES_GPIO_DRIVERS_GPIO_GPIO_H_
 
-#include <fidl/fuchsia.hardware.gpio.init/cpp/wire.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
+#include <fidl/fuchsia.hardware.gpioimpl/cpp/driver/wire.h>
 #include <fuchsia/hardware/gpio/cpp/banjo.h>
 #include <fuchsia/hardware/gpioimpl/cpp/banjo.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
@@ -34,18 +34,37 @@ static_assert(GPIO_PULL_UP ==
 static_assert(GPIO_NO_PULL ==
                   static_cast<uint32_t>(fuchsia_hardware_gpio::wire::GpioFlags::kNoPull),
               "ConfigIn NO_PULL flag doesn't match.");
-static_assert(GPIO_PULL_MASK ==
-                  static_cast<uint32_t>(fuchsia_hardware_gpio::wire::GpioFlags::kPullMask),
-              "ConfigIn PULL_MASK flag doesn't match.");
+
+class GpioImplProxy {
+ public:
+  GpioImplProxy(const ddk::GpioImplProtocolClient& gpio_banjo,
+                fdf::WireSyncClient<fuchsia_hardware_gpioimpl::GpioImpl> gpio_fidl)
+      : gpio_banjo_(gpio_banjo), gpio_fidl_(std::move(gpio_fidl)) {}
+
+  zx_status_t ConfigIn(uint32_t index, uint32_t flags) const;
+  zx_status_t ConfigOut(uint32_t index, uint8_t initial_value) const;
+  zx_status_t SetAltFunction(uint32_t index, uint64_t function) const;
+  zx_status_t SetDriveStrength(uint32_t index, uint64_t ua, uint64_t* out_actual_ua) const;
+  zx_status_t GetDriveStrength(uint32_t index, uint64_t* out_value) const;
+  zx_status_t Read(uint32_t index, uint8_t* out_value) const;
+  zx_status_t Write(uint32_t index, uint8_t value) const;
+  zx_status_t GetInterrupt(uint32_t index, uint32_t flags, zx::interrupt* out_irq) const;
+  zx_status_t ReleaseInterrupt(uint32_t index) const;
+  zx_status_t SetPolarity(uint32_t index, gpio_polarity_t polarity) const;
+
+ private:
+  ddk::GpioImplProtocolClient gpio_banjo_;
+  fdf::WireSyncClient<fuchsia_hardware_gpioimpl::GpioImpl> gpio_fidl_;
+};
 
 class GpioDevice : public GpioDeviceType, public ddk::GpioProtocol<GpioDevice, ddk::base_protocol> {
  public:
-  GpioDevice(zx_device_t* parent, gpio_impl_protocol_t* gpio, uint32_t pin, std::string_view name)
-      : GpioDeviceType(parent), gpio_(gpio), pin_(pin), name_(name) {}
+  GpioDevice(zx_device_t* parent, GpioImplProxy gpio, uint32_t pin, std::string_view name)
+      : GpioDeviceType(parent), gpio_(std::move(gpio)), pin_(pin), name_(name) {}
 
   static zx_status_t Create(void* ctx, zx_device_t* parent);
 
-  zx_status_t InitAddDevice();
+  zx_status_t InitAddDevice(uint32_t controller_id);
 
   void DdkUnbind(ddk::UnbindTxn txn);
   void DdkRelease();
@@ -160,7 +179,7 @@ class GpioDevice : public GpioDeviceType, public ddk::GpioProtocol<GpioDevice, d
   }
 
  private:
-  const ddk::GpioImplProtocolClient gpio_ TA_GUARDED(lock_);
+  const GpioImplProxy gpio_ TA_GUARDED(lock_);
   const uint32_t pin_;
   const std::string name_;
   using Binding = struct {
@@ -180,16 +199,15 @@ using GpioInitDeviceType = ddk::Device<GpioInitDevice>;
 
 class GpioInitDevice : public GpioInitDeviceType {
  public:
-  static void Create(zx_device_t* parent, const ddk::GpioImplProtocolClient& gpio);
+  static void Create(zx_device_t* parent, GpioImplProxy gpio, uint32_t controller_id);
 
   explicit GpioInitDevice(zx_device_t* parent) : GpioInitDeviceType(parent) {}
 
   void DdkRelease() { delete this; }
 
  private:
-  static zx_status_t ConfigureGpios(
-      const fuchsia_hardware_gpio_init::wire::GpioInitMetadata& metadata,
-      const ddk::GpioImplProtocolClient& gpio);
+  static zx_status_t ConfigureGpios(const fuchsia_hardware_gpioimpl::wire::InitMetadata& metadata,
+                                    const GpioImplProxy& gpio);
 };
 
 }  // namespace gpio

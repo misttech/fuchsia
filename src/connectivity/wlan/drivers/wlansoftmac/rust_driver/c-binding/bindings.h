@@ -79,73 +79,10 @@ typedef struct {
    */
   int32_t (*set_ethernet_status)(void *device, uint32_t status);
   /**
-   * Returns the currently set WLAN channel.
-   */
-  wlan_channel_t (*get_wlan_channel)(void *device);
-  /**
-   * Request the PHY to change its channel. If successful, get_wlan_channel will return the
-   * chosen channel.
-   */
-  int32_t (*set_wlan_channel)(void *device, wlan_channel_t channel);
-  /**
    * Set a key on the device.
    * |key| is mutable because the underlying API does not take a const wlan_key_configuration_t.
    */
   int32_t (*set_key)(void *device, wlan_key_configuration_t *key);
-  /**
-   * Make passive scan request to the driver
-   */
-  zx_status_t (*start_passive_scan)(
-      void *device, const wlan_softmac_start_passive_scan_request_t *passive_scan_args,
-      uint64_t *out_scan_id);
-  /**
-   * Make active scan request to the driver
-   */
-  zx_status_t (*start_active_scan)(void *device,
-                                   const wlan_softmac_start_active_scan_request_t *active_scan_args,
-                                   uint64_t *out_scan_id);
-  /**
-   * Cancel ongoing scan in the driver
-   */
-  zx_status_t (*cancel_scan)(void *device, uint64_t scan_id);
-  /**
-   * Get information and capabilities of this WLAN interface
-   */
-  wlan_softmac_query_response_t (*get_wlan_softmac_query_response)(void *device);
-  /**
-   * Get discovery features supported by this WLAN interface
-   */
-  discovery_support_t (*get_discovery_support)(void *device);
-  /**
-   * Get MAC sublayer features supported by this WLAN interface
-   */
-  mac_sublayer_support_t (*get_mac_sublayer_support)(void *device);
-  /**
-   * Get security features supported by this WLAN interface
-   */
-  security_support_t (*get_security_support)(void *device);
-  /**
-   * Get spectrum management features supported by this WLAN interface
-   */
-  spectrum_management_support_t (*get_spectrum_management_support)(void *device);
-  /**
-   * Configure the device's BSS.
-   * |cfg| is mutable because the underlying API does not take a const join_bss_request_t.
-   */
-  int32_t (*join_bss)(void *device, join_bss_request_t *cfg);
-  /**
-   * Enable hardware offload of beaconing on the device.
-   */
-  int32_t (*enable_beaconing)(void *device, wlansoftmac_out_buf_t buf, uintptr_t tim_ele_offset,
-                              uint16_t beacon_interval);
-  /**
-   * Disable beaconing on the device.
-   */
-  int32_t (*disable_beaconing)(void *device);
-  /**
-   * Clear the association context.
-   */
-  int32_t (*clear_association)(void *device, const uint8_t (*addr)[6]);
 } rust_device_interface_t;
 
 /**
@@ -185,11 +122,13 @@ typedef struct {
   uintptr_t size;
 } wlan_span_t;
 
-extern "C" wlansoftmac_handle_t *start_sta(rust_device_interface_t device,
-                                           wlansoftmac_buffer_provider_ops_t buf_provider,
-                                           zx_handle_t wlan_softmac_bridge_client_handle);
+extern "C" wlansoftmac_handle_t *start_sta(
+    void *completer, void (*run_completer)(void *completer, zx_status_t status),
+    rust_device_interface_t device, wlansoftmac_buffer_provider_ops_t buf_provider,
+    zx_handle_t wlan_softmac_bridge_client_handle);
 
-extern "C" void stop_sta(wlansoftmac_handle_t *softmac);
+extern "C" void stop_sta(void *completer, void (*run_completer)(void *completer),
+                         wlansoftmac_handle_t *softmac);
 
 /**
  * FFI interface: Stop and delete a WlanSoftmac via the WlanSoftmacHandle.
@@ -203,6 +142,6 @@ extern "C" void stop_sta(wlansoftmac_handle_t *softmac);
  */
 extern "C" void delete_sta(wlansoftmac_handle_t *softmac);
 
-extern "C" void sta_queue_eth_frame_tx(wlansoftmac_handle_t *softmac, wlan_span_t frame);
+extern "C" zx_status_t sta_queue_eth_frame_tx(wlansoftmac_handle_t *softmac, wlan_span_t frame);
 
 #endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_WLANSOFTMAC_RUST_DRIVER_C_BINDING_BINDINGS_H_

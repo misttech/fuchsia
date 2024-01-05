@@ -10,6 +10,7 @@
 #include <lib/fit/defer.h>
 #include <lib/fzl/owned-vmo-mapper.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
 #include <lib/zx/thread.h>
 #include <limits.h>
 #include <zircon/status.h>
@@ -18,7 +19,6 @@
 #include <algorithm>
 #include <memory>
 
-#include "src/lib/storage/vfs/cpp/trace.h"
 #include "src/storage/blobfs/blobfs_metrics.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/lib/watchdog/include/lib/watchdog/operations.h"

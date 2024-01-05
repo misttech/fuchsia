@@ -6,8 +6,8 @@ import("//build/components/fuchsia_unittest_package.gni")
 import("//build/cpp/cpp_fuzzer.gni")
 import("//build/fuzz.gni")
 import("//build/test.gni")
+import("//build/testing/boot_tests/zbi_test.gni")
 import("//build/testing/host_test_data.gni")
-import("//build/testing/zbi_test.gni")
 import("//build/toolchain/zircon/user_basic_redirect.gni")
 
 is_elf = current_os != "mac" && current_os != "win"
@@ -25,9 +25,11 @@ test("elfldltl-unittests") {
     "initfini-tests.cc",
     "internal-tests.cc",
     "layout-tests.cc",
+    "link-map-list-tests.cc",
     "load-tests.cc",
     "load-tests.h",
     "loadinfo-mapped-memory-tests.cc",
+    "loadinfo-mutable-memory-tests.cc",
     "mapped-fd-file-tests.cc",
     "memory-tests.cc",
     "note-tests.cc",
@@ -43,7 +45,10 @@ test("elfldltl-unittests") {
     sources += [ "self-tests.cc" ]
   }
   if (is_fuchsia) {
-    sources += [ "mapped-vmo-file-tests.cc" ]
+    sources += [
+      "mapped-vmo-file-tests.cc",
+      "segment-with-vmo-tests.cc",
+    ]
   }
 
   deps = [
@@ -53,6 +58,7 @@ test("elfldltl-unittests") {
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/symbolizer-markup",
     "//src/lib/trivial-allocator",
+    "//third_party/googletest:gmock",
   ]
 
   if (is_elf) {
@@ -71,6 +77,10 @@ resolve_dsos = [
   "data/second-32le.so",
   "data/second-64be.so",
   "data/second-64le.so",
+  "data/gnu_unique-32be.so",
+  "data/gnu_unique-32le.so",
+  "data/gnu_unique-64be.so",
+  "data/gnu_unique-64le.so",
 ]
 
 if (is_host) {

@@ -113,12 +113,15 @@
                 "fuchsia.net.routes.StateV4",
                 "fuchsia.net.routes.StateV6",
                 "fuchsia.net.stack.Stack",
+                "fuchsia.net.stackmigrationdeprecated.Control",
+                "fuchsia.net.stackmigrationdeprecated.State",
                 "fuchsia.paver.Paver",
                 "fuchsia.power.battery.BatteryManager",
                 "fuchsia.power.button.Monitor",
                 "fuchsia.power.profile.Watcher",
                 "fuchsia.power.systemmode.ClientConfigurator",
                 "fuchsia.recovery.FactoryReset",
+                "fuchsia.sensors.Manager",
                 "fuchsia.settings.Accessibility",
                 "fuchsia.settings.Audio",
                 "fuchsia.settings.Display",
@@ -307,10 +310,12 @@
                 "fuchsia.accessibility.tts.EngineRegistry",
                 "fuchsia.accessibility.tts.TtsManager",
                 "fuchsia.accessibility.virtualkeyboard.Registry",
+                "fuchsia.element.GraphicalPresenter",
                 "fuchsia.input.virtualkeyboard.ControllerCreator",
                 "fuchsia.input.virtualkeyboard.Manager",
                 "fuchsia.recovery.policy.Device",
                 "fuchsia.recovery.ui.FactoryResetCountdown",
+                "fuchsia.session.scene.Manager",
                 "fuchsia.ui.brightness.ColorAdjustmentHandler",
                 "fuchsia.ui.brightness.Control",
                 "fuchsia.ui.composition.Allocator",
@@ -334,13 +339,6 @@
             availability: "same_as_target",
         },
         {
-            // Routed to session-manager via ui.core_shard.cml.
-            protocol: [ "fuchsia.session.scene.Manager" ],
-            from: "parent",
-            to: "#session",
-            availability: "same_as_target",
-        },
-        {
             // Routed to session-manager via audio_core
             protocol: [
                 "fuchsia.media.ActivityReporter",
@@ -349,6 +347,7 @@
                 "fuchsia.media.AudioCore",
                 "fuchsia.media.AudioDeviceEnumerator",
                 "fuchsia.media.ProfileProvider",
+                "fuchsia.media.tuning.AudioTuner",
                 "fuchsia.media.UsageGainReporter",
                 "fuchsia.media.UsageReporter",
             ],
@@ -384,6 +383,7 @@
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
                 "fuchsia.tracing.provider.Registry",
+                "fuchsia.vsock.Connector",
                 "fuchsia.vulkan.loader.Loader",
             ],
             from: "parent",
@@ -406,6 +406,10 @@
                 "dev-class-radar",
                 "dev-input-report",
                 "root-ssl-certificates",
+
+                // `tzdata-icu` offers /config/tzdata/icu.
+                // `tzdata-icu-44-le` offers /config/tzdata/icu/44/le only.
+                "tzdata-icu",
                 "tzdata-icu-44-le",
             ],
             from: "parent",
@@ -483,6 +487,12 @@
                 "dev-block",
                 "dev-skip-block",
             ],
+            from: "parent",
+            to: "#session",
+            availability: "same_as_target",
+        },
+        {
+            directory: [ "dev-bt-hci" ],
             from: "parent",
             to: "#session",
             availability: "same_as_target",

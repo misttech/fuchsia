@@ -5,10 +5,11 @@
 #ifndef SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_GPU_PROGRESS_H_
 #define SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_GPU_PROGRESS_H_
 
+#include <lib/magma/util/dlog.h>
+#include <lib/magma/util/short_macros.h>
+
 #include <chrono>
 
-#include "magma_util/dlog.h"
-#include "magma_util/short_macros.h"
 #include "sequencer.h"
 
 class GpuProgress {
@@ -31,6 +32,10 @@ class GpuProgress {
     if (sequence_number != last_completed_sequence_number_) {
       DLOG("Completed 0x%x", sequence_number);
       DASSERT(sequence_number > last_completed_sequence_number_);
+      if (sequence_number <= last_completed_sequence_number_) {
+        MAGMA_LOG(ERROR, "Out of order sequence number (%d <= %d)", sequence_number,
+                  last_completed_sequence_number_);
+      }
       last_completed_sequence_number_ = sequence_number;
     } else {
       DLOG("completed 0x%x AGAIN", sequence_number);

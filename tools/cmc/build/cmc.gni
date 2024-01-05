@@ -9,6 +9,7 @@ template("cmc") {
   compiled_action(target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "args",
                              "depfile",
                              "deps",
@@ -21,7 +22,10 @@ template("cmc") {
                              "visibility",
                            ])
 
-    tool = "//tools/cmc"
+    # //tools/cmc is a group that contains a clippy target.
+    # //tools/cmc:cmc.actual is the actual executable target.
+    # Depending on the executable target lets GN correctly apply assert_no_deps logic.
+    tool = "//tools/cmc:cmc.actual"
     tool_output_name = "cmc"
     mnemonic = "CMC"
   }
@@ -49,6 +53,7 @@ template("cmc_merge") {
   cmc(target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "deps",
                              "metadata",
                              "output_name",
@@ -131,6 +136,7 @@ template("cmc_validate_references") {
     fini_manifest(fini_target) {
       forward_variables_from(invoker,
                              [
+                               "applicable_licenses",
                                "data_deps",
                                "deps",
                                "public_deps",
@@ -145,6 +151,7 @@ template("cmc_validate_references") {
   cmc(target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "data_deps",
                              "deps",
                              "metadata",

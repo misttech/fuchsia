@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 import("//src/sys/core/build/core_shard.gni")
 
 declare_args() {
@@ -33,9 +34,28 @@ fuchsia_component("component-basic") {
 group("for_transition") {
 }
 
-# Enabling a soft-transition, remove when complete
-# TODO(122864) Remove transitional labels
-group("basic-for_transition") {
+# Some tests depend on Netstack, but don't exercise its functionality and
+# don't care between Netstack 2 and 3. These tests currently use NS2,
+# which is unavailable on RISC-V. Instead, use NS3 there. Once NS3 is
+# widely deployed, this group can be deleted.
+# TODO(fxbug.dev/133188): Define a package here instead of a group, then
+# use it as a subpackage within the tests that need it.
+group("netstack-for-tests") {
+  deps = [ "netstack:component" ]
+
+  if (current_cpu == "riscv64") {
+    deps -= [ "netstack:component" ]
+    deps += [ "netstack3:component-dropin" ]
+  }
+}
+group("netstack-debug-for-tests") {
+  testonly = true
+  deps = [ "netstack:component-debug" ]
+
+  if (current_cpu == "riscv64") {
+    deps -= [ "netstack:component-debug" ]
+    deps += [ "netstack3:component-debug-dropin" ]
+  }
 }
 
 fuchsia_package("netstack2") {
@@ -44,17 +64,29 @@ fuchsia_package("netstack2") {
   visibility = [
     ":*",
     "//bundles/assembly:*",
+    "//src/connectivity/network/tests/benchmarks/socket-loopback:*",
   ]
 }
 
-fuchsia_package("netstack3") {
+network_unified_binary_regular_and_gub_packages("netstack3") {
   package_name = "netstack3"
-  deps = [
+  gub_deps = [
     # TODO(https://fxbug.dev/125773): Move this component out of this package
     # and into the network package once both Netstack2 and Netstack3 are using
     # the component for all DHCPv4 functionality.
     "dhcpv4/client/bindings:component",
     "netstack3:component",
+  ]
+  visibility = [
+    ":*",
+    "//bundles/assembly:*",
+  ]
+}
+
+network_unified_binary_regular_and_gub_packages("netstack-migration") {
+  gub_deps = [
+    "netstack-proxy:component",
+    "stack-migration:component",
   ]
   visibility = [
     ":*",
@@ -85,13 +117,14 @@ group("tests") {
     "lib:tests",
     "mdns:tests",
     "net-cli:tests",
-    "netcfg:tests",
     "netlink:tests",
+    "stack-migration:tests",
 
     # Ensure this target doesn't rot. This dependency can be removed if the
     # target becomes load bearing elsewhere.
     "netstack:component-with-tracing-dropin",
     "netstack:tests",
+    "netstack-proxy:tests",
     "netstack3:tests",
     "reachability:tests",
     "testing:tests",

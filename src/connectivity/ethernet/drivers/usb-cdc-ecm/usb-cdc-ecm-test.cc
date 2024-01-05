@@ -17,6 +17,7 @@
 #include <lib/fdio/directory.h>
 #include <lib/fdio/watcher.h>
 #include <lib/fzl/vmo-mapper.h>
+#include <lib/hid/boot.h>
 #include <lib/usb-virtual-bus-launcher/usb-virtual-bus-launcher.h>
 #include <lib/zx/fifo.h>
 #include <lib/zx/vmo.h>
@@ -28,7 +29,6 @@
 #include <vector>
 
 #include <fbl/string.h>
-#include <hid/boot.h>
 #include <usb/cdc.h>
 #include <usb/usb.h>
 #include <zxtest/zxtest.h>
@@ -360,7 +360,8 @@ void TransmitAndReceive(NetworkDeviceInterface& a, NetworkDeviceInterface& b,
   }
 }
 
-TEST_F(UsbCdcEcmTest, TransmitReceive) {
+// TODO(b/316176095): Re-enable test after ensuring it works with DFv2.
+TEST_F(UsbCdcEcmTest, DISABLED_TransmitReceive) {
   fdio_cpp::UnownedFdioCaller caller(bus_->GetRootFd());
   NetworkDeviceInterface peripheral(caller.directory(), peripheral_path_,
                                     "usb-cdc-function-peripheral");

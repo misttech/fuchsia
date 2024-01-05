@@ -20,10 +20,8 @@ namespace ufs {
 
 // UFS 3.1 only supports 32 inflight requests.
 constexpr uint8_t kMaxRequestListSize = 32;
-// The size of the transfer request and the transfer response is less than 1024 bytes. The PRDT
-// region limits the number of scatter gathers to 128, using a total of 2048 bytes. Therefore, only
-// one page size is allocated for the UTP command descriptor.
-constexpr size_t kUtpCommandDescriptorSize = 4096;
+
+struct IoCommand;
 
 enum class SlotState {
   kFree = 0,
@@ -33,10 +31,14 @@ enum class SlotState {
 
 struct RequestSlot {
   SlotState state = SlotState::kFree;
-  // Only populated for SCSI commands, else nullptr.
-  std::unique_ptr<scsi_xfer> xfer;
   ddk::IoBuffer command_descriptor_io;
   sync_completion_t complete;
+  zx::pmt pmt;
+  IoCommand *io_cmd;
+  bool is_scsi_command = false;
+  bool is_sync = false;
+  uint16_t response_upiu_offset;
+  zx_status_t result = ZX_OK;
 };
 
 // Implements the UTP 'transfer/task management' request list.

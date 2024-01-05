@@ -11,7 +11,6 @@ config("public_include_path") {
 
 config("backend_config") {
   include_dirs = [ "public_overrides" ]
-  visibility = [ ":*" ]
 }
 
 # Backend for //pw_async:task
@@ -41,7 +40,7 @@ pw_source_set("fake_dispatcher") {
   ]
 }
 
-pw_source_set("dispatcher") {
+source_set("dispatcher") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_async_fuchsia/dispatcher.h" ]
   sources = [ "dispatcher.cc" ]
@@ -54,6 +53,7 @@ pw_source_set("dispatcher") {
 pw_source_set("util") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_async_fuchsia/util.h" ]
+  visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
 }
 
 pw_source_set("fake_dispatcher_fixture") {
@@ -61,7 +61,12 @@ pw_source_set("fake_dispatcher_fixture") {
   public = [ "$dir_pw_async/public/pw_async/fake_dispatcher_fixture.h" ]
   public_deps = [
     ":fake_dispatcher",
+    "$dir_pw_unit_test",
     "//third_party/googletest:gtest",
+  ]
+  visibility = [
+    ":*",
+    "//src/connectivity/bluetooth/core/bt-host/*",
   ]
 }
 
@@ -75,11 +80,10 @@ executable("pigweed_backend_pw_async_fuchsia_tests_executable") {
     ":dispatcher",
     ":fake_dispatcher_fixture",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/loop_fixture",
   ]
 }
 
-# TODO(fxbug.dev/125377): Add this target to pigweed:tests group once API is stable.
-# In order to run these tests, manually include this target in your build.
 fuchsia_unittest_package("tests") {
   package_name = "pigweed-backend-pw-async-fuchsia-tests"
   deps = [ ":pigweed_backend_pw_async_fuchsia_tests_executable" ]

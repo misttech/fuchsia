@@ -4,6 +4,8 @@
 
 #include "test_util.h"
 
+#include <lib/sync/cpp/completion.h>
+
 #include <iostream>
 
 #include <gtest/gtest.h>
@@ -69,7 +71,7 @@ FakeNetworkPortImpl::~FakeNetworkPortImpl() {
   }
 }
 
-void FakeNetworkPortImpl::NetworkPortGetInfo(port_info_t* out_info) { *out_info = port_info_; }
+void FakeNetworkPortImpl::NetworkPortGetInfo(port_base_info_t* out_info) { *out_info = port_info_; }
 
 void FakeNetworkPortImpl::NetworkPortGetStatus(port_status_t* out_status) { *out_status = status_; }
 
@@ -81,8 +83,10 @@ void FakeNetworkPortImpl::NetworkPortSetActive(bool active) {
   ASSERT_OK(event_.signal(0, kEventPortActiveChanged));
 }
 
-void FakeNetworkPortImpl::NetworkPortGetMac(mac_addr_protocol_t* out_mac_ifc) {
-  *out_mac_ifc = mac_proto_;
+void FakeNetworkPortImpl::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
+  if (out_mac_ifc) {
+    *out_mac_ifc = &mac_proto_;
+  }
 }
 
 void FakeNetworkPortImpl::NetworkPortRemoved() {
@@ -93,12 +97,32 @@ void FakeNetworkPortImpl::NetworkPortRemoved() {
   }
 }
 
-void FakeNetworkPortImpl::AddPort(uint8_t port_id, ddk::NetworkDeviceIfcProtocolClient ifc_client) {
-  ASSERT_FALSE(port_added_) << "can't add the same port object twice";
+zx_status_t FakeNetworkPortImpl::AddPort(uint8_t port_id,
+                                         ddk::NetworkDeviceIfcProtocolClient ifc_client) {
+  if (port_added_) {
+    return ZX_ERR_ALREADY_EXISTS;
+  }
+
+  using Context = std::tuple<libsync::Completion, zx_status_t>;
+  Context context;
+
+  ifc_client.AddPort(
+      port_id, this, &network_port_protocol_ops_,
+      [](void* ctx, zx_status_t status) {
+        auto& [port_added, out_status] = *static_cast<Context*>(ctx);
+        out_status = status;
+        port_added.Signal();
+      },
+      &context);
+  auto& [port_added, status] = context;
+  port_added.Wait();
+  if (status != ZX_OK) {
+    return status;
+  }
   id_ = port_id;
   port_added_ = true;
   device_client_ = ifc_client;
-  ifc_client.AddPort(port_id, this, &network_port_protocol_ops_);
+  return ZX_OK;
 }
 
 void FakeNetworkPortImpl::RemoveSync() {
@@ -144,10 +168,11 @@ FakeNetworkDeviceImpl::~FakeNetworkDeviceImpl() {
   }
 }
 
-zx_status_t FakeNetworkDeviceImpl::NetworkDeviceImplInit(
-    const network_device_ifc_protocol_t* iface) {
+void FakeNetworkDeviceImpl::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                                                  network_device_impl_init_callback callback,
+                                                  void* cookie) {
   device_client_ = ddk::NetworkDeviceIfcProtocolClient(iface);
-  return ZX_OK;
+  callback(cookie, ZX_OK);
 }
 
 void FakeNetworkDeviceImpl::NetworkDeviceImplStart(network_device_impl_start_callback callback,
@@ -208,7 +233,9 @@ void FakeNetworkDeviceImpl::NetworkDeviceImplStop(network_device_impl_stop_callb
   EXPECT_OK(event_.signal(clear, kEventStop));
 }
 
-void FakeNetworkDeviceImpl::NetworkDeviceImplGetInfo(device_info_t* out_info) { *out_info = info_; }
+void FakeNetworkDeviceImpl::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
+  *out_info = info_;
+}
 
 void FakeNetworkDeviceImpl::NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list,
                                                      size_t buf_count) {

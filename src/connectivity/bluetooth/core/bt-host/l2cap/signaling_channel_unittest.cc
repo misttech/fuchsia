@@ -4,9 +4,11 @@
 
 #include "signaling_channel.h"
 
+#include <chrono>
+
+#include <pw_async/dispatcher.h>
+
 #include "fake_channel_test.h"
-#include "lib/zx/time.h"
-#include "src/connectivity/bluetooth/core/bt-host/common/packet_view.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/test_helpers.h"
 
 namespace bt::l2cap::internal {
@@ -26,8 +28,9 @@ const auto kTestResponseHandler = [](Status status, const ByteBuffer& rsp_payloa
 
 class TestSignalingChannel : public SignalingChannel {
  public:
-  explicit TestSignalingChannel(Channel::WeakPtr chan)
-      : SignalingChannel(std::move(chan), pw::bluetooth::emboss::ConnectionRole::CENTRAL) {
+  explicit TestSignalingChannel(Channel::WeakPtr chan, pw::async::Dispatcher& dispatcher)
+      : SignalingChannel(std::move(chan), pw::bluetooth::emboss::ConnectionRole::CENTRAL,
+                         dispatcher) {
     set_mtu(kTestMTU);
   }
   ~TestSignalingChannel() override = default;
@@ -86,7 +89,7 @@ class SignalingChannelTest : public testing::FakeChannelTest {
     options.conn_handle = kTestHandle;
 
     fake_channel_inst_ = CreateFakeChannel(options);
-    sig_ = std::make_unique<TestSignalingChannel>(fake_channel_inst_->GetWeakPtr());
+    sig_ = std::make_unique<TestSignalingChannel>(fake_channel_inst_->GetWeakPtr(), dispatcher());
   }
 
   void TearDown() override {
@@ -116,7 +119,7 @@ TEST_F(SignalingChannelTest, IgnoreEmptyFrame) {
   fake_chan()->SetSendCallback(std::move(send_cb), dispatcher());
   fake_chan()->Receive(BufferView());
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(send_cb_called);
 }
 
@@ -184,7 +187,7 @@ TEST_F(SignalingChannelTest, RejectNotUnderstoodWithResponder) {
   TestSignalingChannel::ResponderImpl responder(sig(), kCommandCode, kTestId);
   responder.RejectNotUnderstood();
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(cb_called);
 }
 
@@ -213,7 +216,7 @@ TEST_F(SignalingChannelTest, RejectInvalidCIdWithResponder) {
   TestSignalingChannel::ResponderImpl responder(sig(), kCommandCode, kTestId);
   responder.RejectInvalidChannelId(kLocalCId, kRemoteCId);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(cb_called);
 }
 
@@ -263,7 +266,7 @@ TEST_F(SignalingChannelTest, HandlePacket) {
 
   fake_chan()->Receive(cmd);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(called);
 }
 
@@ -281,7 +284,7 @@ TEST_F(SignalingChannelTest, UseChannelAfterSignalFree) {
   // Ensure that closing the channel (possibly firing callback) is OK.
   fake_chan()->Close();
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 TEST_F(SignalingChannelTest, ValidRequestCommandIds) {
@@ -305,7 +308,7 @@ TEST_F(SignalingChannelTest, DoNotRejectUnsolicitedResponse) {
   fake_chan()->SetSendCallback(std::move(send_cb), dispatcher());
 
   fake_chan()->Receive(cmd);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(0u, send_count);
 }
 
@@ -330,7 +333,7 @@ TEST_F(SignalingChannelTest, RejectRemoteResponseWithWrongType) {
     return SignalingChannel::ResponseHandlerAction::kCompleteOutboundTransaction;
   }));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(tx_success);
 
   const StaticByteBuffer reject_rsp(
@@ -348,7 +351,7 @@ TEST_F(SignalingChannelTest, RejectRemoteResponseWithWrongType) {
 
   fake_chan()->Receive(rsp_invalid_id);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(echo_cb_called);
   EXPECT_TRUE(reject_sent);
 }
@@ -381,7 +384,7 @@ TEST_F(SignalingChannelTest, ReuseCommandIdsUntilExhausted) {
   // type should be allowed to be sent.
   EXPECT_FALSE(sig()->SendRequest(kEchoRequest, req_data, kTestResponseHandler));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(kMaxCommandId, req_count);
 
   // Remote finally responds to a request, but not in order requests were sent.
@@ -391,12 +394,12 @@ TEST_F(SignalingChannelTest, ReuseCommandIdsUntilExhausted) {
       0x09, kRspId, 0x00, 0x00);
   fake_chan()->Receive(echo_rsp);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Request should use freed command ID.
   EXPECT_TRUE(sig()->SendRequest(kEchoRequest, req_data, kTestResponseHandler));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(kMaxCommandId + 1, req_count);
 }
 
@@ -422,7 +425,7 @@ TEST_F(SignalingChannelTest, ResponseHandlerThatDestroysSigDoesNotCrash) {
       0x23);
   fake_chan()->Receive(echo_rsp);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(sig());
   EXPECT_TRUE(rx_success);
 }
@@ -451,13 +454,13 @@ TEST_F(SignalingChannelTest, RemoteRejectionPassedToHandler) {
         return SignalingChannel::ResponseHandlerAction::kCompleteOutboundTransaction;
       }));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(tx_success);
 
   // Remote sends back a rejection.
   fake_chan()->Receive(reject_rsp);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(rx_success);
 }
 
@@ -479,11 +482,11 @@ TEST_F(SignalingChannelTest, HandlerCompletedByResponseNotCalledAgainAfterRtxTim
       0x09, 0x01, 0x00, 0x00);
   fake_chan()->Receive(echo_rsp);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(tx_success);
   EXPECT_EQ(1, rx_cb_count);
 
-  RunLoopFor(kSignalingChannelResponseTimeout);
+  RunFor(kSignalingChannelResponseTimeout);
   EXPECT_EQ(1, rx_cb_count);
 }
 
@@ -507,17 +510,17 @@ TEST_F(SignalingChannelTest, CallHandlerCalledAfterMaxNumberOfRtxTimeoutRetransm
         return SignalingChannel::ResponseHandlerAction::kCompleteOutboundTransaction;
       }));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(send_cb_count, 1u);
   EXPECT_FALSE(rx_cb_called);
 
   auto timeout = kSignalingChannelResponseTimeout;
   for (size_t i = 1; i < kMaxSignalingChannelTransmissions; i++) {
     // Ensure retransmission doesn't happen before timeout.
-    RunLoopFor(timeout - zx::msec(100));
+    RunFor(timeout - std::chrono::milliseconds(100));
     EXPECT_EQ(send_cb_count, i);
 
-    RunLoopFor(zx::msec(100));
+    RunFor(std::chrono::milliseconds(100));
     EXPECT_EQ(send_cb_count, 1 + i);
     EXPECT_FALSE(rx_cb_called);
 
@@ -525,7 +528,7 @@ TEST_F(SignalingChannelTest, CallHandlerCalledAfterMaxNumberOfRtxTimeoutRetransm
   }
 
   send_cb_count = 0;
-  RunLoopFor(timeout);
+  RunFor(timeout);
   EXPECT_EQ(send_cb_count, 0u);
   EXPECT_TRUE(rx_cb_called);
 }
@@ -548,11 +551,11 @@ TEST_F(SignalingChannelTest, TwoResponsesToARetransmittedOutboundRequest) {
         return SignalingChannel::ResponseHandlerAction::kCompleteOutboundTransaction;
       }));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, send_cb_count);
   EXPECT_EQ(0u, rx_cb_count);
 
-  RunLoopFor(kSignalingChannelResponseTimeout);
+  RunFor(kSignalingChannelResponseTimeout);
   EXPECT_EQ(2u, send_cb_count);
   EXPECT_EQ(0u, rx_cb_count);
 
@@ -586,7 +589,7 @@ TEST_F(SignalingChannelTest, ExpectAdditionalResponseExtendsRtxTimeoutToErtxTime
         return SignalingChannel::ResponseHandlerAction::kExpectAdditionalResponse;
       }));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(tx_success);
   EXPECT_EQ(0, rx_cb_calls);
 
@@ -597,16 +600,16 @@ TEST_F(SignalingChannelTest, ExpectAdditionalResponseExtendsRtxTimeoutToErtxTime
   EXPECT_EQ(1, rx_cb_calls);
 
   // The handler expects more responses so the RTX timer shouldn't have expired.
-  RunLoopFor(kSignalingChannelResponseTimeout);
+  RunFor(kSignalingChannelResponseTimeout);
 
   fake_chan()->Receive(echo_rsp);
   EXPECT_EQ(2, rx_cb_calls);
 
   // The second response should have reset the ERTX timer, so it shouldn't fire yet.
-  RunLoopFor(kSignalingChannelExtendedResponseTimeout - zx::msec(100));
+  RunFor(kSignalingChannelExtendedResponseTimeout - std::chrono::milliseconds(100));
 
   // If the renewed ERTX timer expires without a third response, receive a kTimeOut "response."
-  RunLoopFor(zx::sec(1));
+  RunFor(std::chrono::seconds(1));
   EXPECT_EQ(3, rx_cb_calls);
 }
 
@@ -674,7 +677,7 @@ TEST_F(SignalingChannelTest, DoNotRejectRemoteResponseInvalidId) {
     return SignalingChannel::ResponseHandlerAction::kCompleteOutboundTransaction;
   }));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(tx_success);
 
   bool reject_sent = false;
@@ -683,7 +686,7 @@ TEST_F(SignalingChannelTest, DoNotRejectRemoteResponseInvalidId) {
 
   fake_chan()->Receive(rsp_invalid_id);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(echo_cb_called);
   EXPECT_FALSE(reject_sent);
 }

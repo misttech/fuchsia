@@ -73,11 +73,11 @@ need to send a request to a remote server to “please open foo”. How can this
 accomplished? The program has the following tools:
 
   * One or more **handles** representing a connection to the CWD
-  * [zx_channel_write](/docs/reference/syscalls/channel_write.md):
+  * [zx_channel_write](/reference/syscalls/channel_write.md):
     A system call that can send bytes and handles (over a channel)
-  * [zx_channel_read](/docs/reference/syscalls/channel_read.md):
+  * [zx_channel_read](/reference/syscalls/channel_read.md):
     A system call that can receive bytes and handles (over a channel)
-  * [zx_object_wait_one](/docs/reference/syscalls/object_wait_one.md):
+  * [zx_object_wait_one](/reference/syscalls/object_wait_one.md):
     A system call that can wait for a handle to be readable / writable
 
 Using these primitives, the client can write a message to the filesystem server
@@ -197,10 +197,10 @@ merely understand the FIDL wire format. As a consequence, there could be
 any number of “VFS” implementations in a language. There are currently these
 implementations:
 
-  * [In-tree C++ VFS](/src/lib/storage/vfs/cpp): Used by Fuchsia's "main" filesystems minfs and
+  * [In-tree C++ VFS](/src/storage/lib/vfs/cpp): Used by Fuchsia's "main" filesystems minfs and
     blobfs. It currently has the most features of any VFS implementation, but can also be the most
     difficult to use.
-  * [In-tree Rust VFS](/src/lib/storage/vfs/rust): This is used by some Rust filesystems including
+  * [In-tree Rust VFS](/src/storage/lib/vfs/rust): This is used by some Rust filesystems including
     the fat32 implementation. It is newer and currently has fewer features than the C++
     implementation.
   * [SDK C++ VFS](/sdk/lib/vfs/cpp): A somewhat simplified version of of the "in-tree" C++ version

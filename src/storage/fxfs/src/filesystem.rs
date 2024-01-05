@@ -10,7 +10,7 @@ use {
         log::*,
         metrics,
         object_store::{
-            allocator::{Allocator, Hold, Reservation, SimpleAllocator},
+            allocator::{Allocator, Hold, Reservation},
             directory::Directory,
             graveyard::Graveyard,
             journal::{
@@ -18,15 +18,14 @@ use {
             },
             object_manager::ObjectManager,
             transaction::{
-                self, AssocObj, LockKey, LockManager, MetadataReservation, Mutation, ReadGuard,
-                Transaction, TransactionHandler, TransactionLocks, WriteGuard,
-                TRANSACTION_METADATA_MAX_AMOUNT,
+                self, lock_keys, AssocObj, LockKey, LockKeys, LockManager, MetadataReservation,
+                Mutation, ReadGuard, Transaction, TRANSACTION_METADATA_MAX_AMOUNT,
             },
             volume::{root_volume, VOLUMES_DIRECTORY},
             ObjectStore,
         },
+        range::RangeExt,
         serialized_types::Version,
-        trace_duration,
     },
     anyhow::{bail, Context, Error},
     async_trait::async_trait,
@@ -36,7 +35,6 @@ use {
     futures::FutureExt,
     fxfs_crypto::Crypt,
     once_cell::sync::OnceCell,
-    scopeguard::ScopeGuard,
     static_assertions::const_assert,
     std::sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -57,6 +55,15 @@ const_assert!(9223372036854771712 == MAX_FILE_SIZE);
 
 // The maximum number of transactions that can be in-flight at any time.
 const MAX_IN_FLIGHT_TRANSACTIONS: u64 = 4;
+
+// Start trimming 5 minutes after boot.  The idea here is to wait until the initial flurry of
+// activity during boot is finished.  This is a rough heuristic and may need to change later if
+// performance is affected.
+// TODO(b/293964968): We probably also want to reschedule trimming, e.g. every day.
+const TRIM_AFTER_BOOT_TIMER: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+// After the initial trim, perform another trim every 24 hours.
+const TRIM_INTERVAL_TIMER: std::time::Duration = std::time::Duration::from_secs(60 * 60 * 24);
 
 /// Holds information on an Fxfs Filesystem
 pub struct Info {
@@ -89,6 +96,12 @@ pub struct Options {
     /// If true, don't do an initial reap of the graveyard at mount time.  This is useful for
     /// testing.
     pub skip_initial_reap: bool,
+
+    // The first duration is how long after the filesystem has been mounted to perform an initial
+    // trim.  The second is the interval to repeat trimming thereafter.  If set to None, no trimming
+    // is done.
+    // Default values are (5 minutes, 24 hours).
+    pub trim_config: Option<(std::time::Duration, std::time::Duration)>,
 }
 
 impl Default for Options {
@@ -99,50 +112,9 @@ impl Default for Options {
             pre_commit_hook: None,
             post_commit_hook: None,
             skip_initial_reap: false,
+            trim_config: Some((TRIM_AFTER_BOOT_TIMER, TRIM_INTERVAL_TIMER)),
         }
     }
-}
-
-#[async_trait]
-pub trait Filesystem: TransactionHandler {
-    /// Returns access to the undeyling device.
-    fn device(&self) -> Arc<dyn Device>;
-
-    /// Returns the root store or panics if it is not available.
-    fn root_store(&self) -> Arc<ObjectStore>;
-
-    /// Returns the allocator or panics if it is not available.
-    fn allocator(&self) -> Arc<SimpleAllocator>;
-
-    /// Returns the object manager for the filesystem.
-    fn object_manager(&self) -> &Arc<ObjectManager>;
-
-    /// Returns the journal for the filesystem.
-    fn journal(&self) -> &Arc<Journal>;
-
-    /// Flushes buffered data to the underlying device.
-    async fn sync(&self, options: SyncOptions<'_>) -> Result<(), Error>;
-
-    /// Returns the filesystem block size.
-    fn block_size(&self) -> u64;
-
-    /// Returns filesystem information.
-    fn get_info(&self) -> Info;
-
-    /// Returns the super-block header.
-    fn super_block_header(&self) -> SuperBlockHeader;
-
-    /// Returns the graveyard manager (whilst there exists a graveyard per store, the manager
-    /// handles all of them).
-    fn graveyard(&self) -> &Arc<Graveyard>;
-
-    /// Whether to enable verbose logging.
-    fn trace(&self) -> bool {
-        false
-    }
-
-    /// Returns the filesystem options.
-    fn options(&self) -> &Options;
 }
 
 /// The context in which a transaction is being applied.
@@ -171,12 +143,13 @@ impl ApplyMode<'_, '_> {
     }
 }
 
+/// Objects that use journaling to track mutations (`Allocator` and `ObjectStore`) implement this.
+/// This is primarily used by `ObjectManager` and `SuperBlock` with flush calls used in a few tests.
 #[async_trait]
 pub trait JournalingObject: Send + Sync {
-    /// Objects that use the journaling system to track mutations should implement this trait.  This
-    /// method will get called when the transaction commits, which can either be during live
-    /// operation or during journal replay, in which case transaction will be None.  Also see
-    /// ObjectManager's apply_mutation method.
+    /// This method get called when the transaction commits, which can either be during live
+    /// operation (See `ObjectManager::apply_mutation`) or during journal replay, in which case
+    /// transaction will be None (See `super_block::read`).
     async fn apply_mutation(
         &self,
         mutation: Mutation,
@@ -253,7 +226,7 @@ pub struct FxFilesystemBuilder {
     trace: bool,
     options: Options,
     journal_options: JournalOptions,
-    on_new_allocator: Option<Box<dyn Fn(Arc<SimpleAllocator>) + Send + Sync>>,
+    on_new_allocator: Option<Box<dyn Fn(Arc<Allocator>) + Send + Sync>>,
     on_new_store: Option<Box<dyn Fn(&ObjectStore) + Send + Sync>>,
     fsck_after_every_transaction: bool,
 }
@@ -331,7 +304,7 @@ impl FxFilesystemBuilder {
     /// Sets a method to be called immediately after creating the allocator.
     pub fn on_new_allocator(
         mut self,
-        on_new_allocator: impl Fn(Arc<SimpleAllocator>) + Send + Sync + 'static,
+        on_new_allocator: impl Fn(Arc<Allocator>) + Send + Sync + 'static,
     ) -> Self {
         self.on_new_allocator = Some(Box::new(on_new_allocator));
         self
@@ -349,6 +322,14 @@ impl FxFilesystemBuilder {
     /// Enables or disables running fsck after every transaction. Defaults to `false`.
     pub fn fsck_after_every_transaction(mut self, fsck_after_every_transaction: bool) -> Self {
         self.fsck_after_every_transaction = fsck_after_every_transaction;
+        self
+    }
+
+    pub fn trim_config(
+        mut self,
+        delay_and_interval: Option<(std::time::Duration, std::time::Duration)>,
+    ) -> Self {
+        self.options.trim_config = delay_and_interval;
         self
     }
 
@@ -390,13 +371,15 @@ impl FxFilesystemBuilder {
             commit_mutex: futures::lock::Mutex::new(()),
             lock_manager: LockManager::new(),
             flush_task: Mutex::new(None),
+            trim_task: Mutex::new(None),
             closed: AtomicBool::new(true),
+            shutdown_event: Event::new(),
             trace: self.trace,
             graveyard: Graveyard::new(objects.clone()),
             completed_transactions: metrics::detail().create_uint("completed_transactions", 0),
             options: filesystem_options,
             in_flight_transactions: AtomicU64::new(0),
-            event: Event::new(),
+            transaction_limit_event: Event::new(),
         });
 
         if let Some(fsck_after_every_transaction) = fsck_after_every_transaction {
@@ -422,7 +405,10 @@ impl FxFilesystemBuilder {
             let mut transaction = filesystem
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(root_store.store_object_id(), root_directory.object_id())],
+                    lock_keys![LockKey::object(
+                        root_store.store_object_id(),
+                        root_directory.object_id()
+                    )],
                     transaction::Options::default(),
                 )
                 .await?;
@@ -446,12 +432,20 @@ impl FxFilesystemBuilder {
                 for store in objects.unlocked_stores() {
                     filesystem.graveyard.initial_reap(&store).await?;
                 }
-                // Now start the async reaper.
-                filesystem.graveyard.clone().reap_async();
             }
         }
 
         filesystem.closed.store(false, Ordering::SeqCst);
+
+        if !read_only {
+            // Start the background tasks.
+            filesystem.graveyard.clone().reap_async();
+
+            if let Some((delay, interval)) = filesystem.options.trim_config.clone() {
+                filesystem.start_trim_task(delay, interval);
+            }
+        }
+
         Ok(filesystem.into())
     }
 }
@@ -463,7 +457,10 @@ pub struct FxFilesystem {
     commit_mutex: futures::lock::Mutex<()>,
     lock_manager: LockManager,
     flush_task: Mutex<Option<fasync::Task<()>>>,
+    trim_task: Mutex<Option<fasync::Task<()>>>,
     closed: AtomicBool,
+    // An event that is signalled when the filesystem starts to shut down.
+    shutdown_event: Event,
     trace: bool,
     graveyard: Arc<Graveyard>,
     completed_transactions: UintProperty,
@@ -474,13 +471,14 @@ pub struct FxFilesystem {
 
     // An event that is used to wake up tasks that are blocked due to the in-flight transaction
     // limit.
-    event: Event,
+    transaction_limit_event: Event,
 
     // NOTE: This *must* go last so that when users take the device from a closed filesystem, the
     // filesystem has dropped all other members first (Rust drops members in declaration order).
     device: DeviceHolder,
 }
 
+#[fxfs_trace::trace]
 impl FxFilesystem {
     pub async fn new_empty(device: DeviceHolder) -> Result<OpenFxFilesystem, Error> {
         FxFilesystemBuilder::new().format(true).open(device).await
@@ -494,13 +492,14 @@ impl FxFilesystem {
         self.objects.root_parent_store()
     }
 
-    fn root_store(&self) -> Arc<ObjectStore> {
-        self.objects.root_store()
-    }
-
     pub async fn close(&self) -> Result<(), Error> {
         assert_eq!(self.closed.swap(true, Ordering::SeqCst), false);
+        self.shutdown_event.notify(usize::MAX);
         debug_assert_not_too_long!(self.graveyard.wait_for_reap());
+        let trim_task = self.trim_task.lock().unwrap().take();
+        if let Some(task) = trim_task {
+            debug_assert_not_too_long!(task);
+        }
         self.journal.stop_compactions().await;
         let sync_status =
             self.journal.sync(SyncOptions { flush_device: true, ..Default::default() }).await;
@@ -518,7 +517,218 @@ impl FxFilesystem {
         sync_status.map(|_| ())
     }
 
-    async fn reservation_for_transaction<'a>(
+    pub fn device(&self) -> Arc<dyn Device> {
+        Arc::clone(&self.device)
+    }
+
+    pub fn root_store(&self) -> Arc<ObjectStore> {
+        self.objects.root_store()
+    }
+
+    pub fn allocator(&self) -> Arc<Allocator> {
+        self.objects.allocator()
+    }
+
+    pub fn object_manager(&self) -> &Arc<ObjectManager> {
+        &self.objects
+    }
+
+    pub fn journal(&self) -> &Arc<Journal> {
+        &self.journal
+    }
+
+    pub async fn sync(&self, options: SyncOptions<'_>) -> Result<(), Error> {
+        self.journal.sync(options).await.map(|_| ())
+    }
+
+    pub fn block_size(&self) -> u64 {
+        self.block_size
+    }
+
+    pub fn get_info(&self) -> Info {
+        Info {
+            total_bytes: self.device.size(),
+            used_bytes: self.object_manager().allocator().get_used_bytes(),
+        }
+    }
+
+    pub fn super_block_header(&self) -> SuperBlockHeader {
+        self.journal.super_block_header()
+    }
+
+    pub fn graveyard(&self) -> &Arc<Graveyard> {
+        &self.graveyard
+    }
+
+    pub fn trace(&self) -> bool {
+        self.trace
+    }
+
+    pub fn options(&self) -> &Options {
+        &self.options
+    }
+
+    /// Returns a guard that must be taken before any transaction can commence.  This guard takes a
+    /// shared lock on the filesystem.  `fsck` will take an exclusive lock so that it can get a
+    /// consistent picture of the filesystem that it can verify.  It is important that this lock is
+    /// acquired before *all* other locks.  It is also important that this lock is not taken twice
+    /// by the same task since that can lead to deadlocks if another task tries to take a write
+    /// lock.
+    pub async fn txn_guard(self: Arc<Self>) -> TxnGuard<'static> {
+        unsafe fn extend_lifetime(guard: ReadGuard<'_>) -> ReadGuard<'static> {
+            std::mem::transmute(guard)
+        }
+
+        let guard = self.lock_manager.read_lock(lock_keys!(LockKey::Filesystem)).await;
+        // SAFETY: This is safe because we keep a reference to the filesystem until
+        // the guard is dropped.  See `TxnGuard`.
+        let guard = unsafe { extend_lifetime(guard) };
+
+        TxnGuard { fs: self, _guard: Some(guard) }
+    }
+
+    pub async fn new_transaction<'a>(
+        self: Arc<Self>,
+        locks: LockKeys,
+        options: transaction::Options<'a>,
+    ) -> Result<Transaction<'a>, Error> {
+        let guard = if options.txn_guard.is_some() {
+            // We can just pass None to guard.  The 'a lifetime on Options and Transaction mean that
+            // the guard will remain in place until after the new Transaction is dropped.
+            TxnGuard { _guard: None, fs: self }
+        } else {
+            self.txn_guard().await
+        };
+        Transaction::new(guard, options, locks).await
+    }
+
+    #[trace]
+    pub async fn commit_transaction(
+        &self,
+        transaction: &mut Transaction<'_>,
+        callback: &mut (dyn FnMut(u64) + Send),
+    ) -> Result<u64, Error> {
+        if let Some(hook) = self.options.pre_commit_hook.as_ref() {
+            hook(transaction)?;
+        }
+        debug_assert_not_too_long!(self.lock_manager.commit_prepare(&transaction));
+        self.maybe_start_flush_task();
+        let _guard = debug_assert_not_too_long!(self.commit_mutex.lock());
+        let journal_offset = self.journal.commit(transaction).await?;
+        self.completed_transactions.add(1);
+
+        // For now, call the callback whilst holding the lock.  Technically, we don't need to do
+        // that except if there's a post-commit-hook (which there usually won't be).  We can
+        // consider changing this if we need to for performance, but we'd need to double check that
+        // callers don't depend on this.
+        callback(journal_offset);
+
+        if let Some(hook) = self.options.post_commit_hook.as_ref() {
+            hook().await;
+        }
+
+        Ok(journal_offset)
+    }
+
+    pub fn lock_manager(&self) -> &LockManager {
+        &self.lock_manager
+    }
+
+    pub(crate) fn drop_transaction(&self, transaction: &mut Transaction<'_>) {
+        if !matches!(transaction.metadata_reservation, MetadataReservation::None) {
+            self.sub_transaction();
+        }
+        // If we placed a hold for metadata space, return it now.
+        if let MetadataReservation::Hold(hold_amount) =
+            std::mem::replace(&mut transaction.metadata_reservation, MetadataReservation::None)
+        {
+            let hold = transaction
+                .allocator_reservation
+                .unwrap()
+                .reserve(0)
+                .expect("Zero should always succeed.");
+            hold.add(hold_amount);
+        }
+        self.objects.drop_transaction(transaction);
+        self.lock_manager.drop_transaction(transaction);
+    }
+
+    fn maybe_start_flush_task(&self) {
+        let mut flush_task = self.flush_task.lock().unwrap();
+        if flush_task.is_none() {
+            let journal = self.journal.clone();
+            *flush_task = Some(fasync::Task::spawn(journal.flush_task()));
+        }
+    }
+
+    // Returns the number of bytes trimmed.
+    async fn do_trim(&self) -> Result<usize, Error> {
+        const MAX_EXTENTS_PER_BATCH: usize = 8;
+        const MAX_EXTENT_SIZE: usize = 256 * 1024;
+        let mut offset = 0;
+        let mut bytes_trimmed = 0;
+        loop {
+            if self.closed.load(Ordering::Relaxed) {
+                info!("Filesystem is closed, nothing to trim");
+                return Ok(bytes_trimmed);
+            }
+            let allocator = self.allocator();
+            let trimmable_extents =
+                allocator.take_for_trimming(offset, MAX_EXTENT_SIZE, MAX_EXTENTS_PER_BATCH).await?;
+            for device_range in trimmable_extents.extents() {
+                self.device.trim(device_range.clone()).await?;
+                bytes_trimmed += device_range.length()? as usize;
+            }
+            if let Some(device_range) = trimmable_extents.extents().last() {
+                offset = device_range.end;
+            } else {
+                break;
+            }
+        }
+        Ok(bytes_trimmed)
+    }
+
+    fn start_trim_task(
+        self: &Arc<Self>,
+        delay: std::time::Duration,
+        interval: std::time::Duration,
+    ) {
+        if !self.device.supports_trim() {
+            info!("Device does not support trim; not scheduling trimming");
+            return;
+        }
+        let this = self.clone();
+        let mut next_timer = delay;
+        *self.trim_task.lock().unwrap() = Some(fasync::Task::spawn(async move {
+            loop {
+                let shutdown_listener = this.shutdown_event.listen();
+                // Note that we need to check if the filesystem was closed after we start listening
+                // to the shutdown event, but before we start waiting on `timer`, because otherwise
+                // we might start listening on `shutdown_event` *after* the event was signaled, and
+                // so `shutdown_listener` will never fire, and this task will get stuck until
+                // `timer` expires.
+                if this.closed.load(Ordering::SeqCst) {
+                    return;
+                }
+                futures::select!(
+                    () = fasync::Timer::new(next_timer.clone()).fuse() => {},
+                    () = shutdown_listener.fuse() => return,
+                );
+                let start_time = std::time::Instant::now();
+                info!("Starting trim...");
+                let res = this.do_trim().await;
+                let duration = std::time::Instant::now() - start_time;
+                match res {
+                    Ok(bytes_trimmed) => info!("Trimmed {bytes_trimmed} bytes in {duration:?}"),
+                    Err(e) => error!(?e, "Failed to trim"),
+                }
+                next_timer = interval.clone();
+                info!("Scheduled next trim after {:?}", next_timer);
+            }
+        }));
+    }
+
+    pub(crate) async fn reservation_for_transaction<'a>(
         self: &Arc<Self>,
         options: transaction::Options<'a>,
     ) -> Result<(MetadataReservation, Option<&'a Reservation>, Option<Hold<'a>>), Error> {
@@ -564,7 +774,7 @@ impl FxFilesystem {
         Ok((metadata_reservation, options.allocator_reservation, hold))
     }
 
-    async fn add_transaction(&self, skip_journal_checks: bool) {
+    pub(crate) async fn add_transaction(&self, skip_journal_checks: bool) {
         if skip_journal_checks {
             self.in_flight_transactions.fetch_add(1, Ordering::Relaxed);
         } else {
@@ -584,7 +794,7 @@ impl FxFilesystem {
                 return false;
             };
             while !inc() {
-                let listener = self.event.listen();
+                let listener = self.transaction_limit_event.listen();
                 if inc() {
                     break;
                 }
@@ -593,163 +803,19 @@ impl FxFilesystem {
         }
     }
 
-    fn sub_transaction(&self) {
+    pub(crate) fn sub_transaction(&self) {
         let old = self.in_flight_transactions.fetch_sub(1, Ordering::Relaxed);
         assert!(old != 0);
         if old <= MAX_IN_FLIGHT_TRANSACTIONS {
-            self.event.notify(usize::MAX);
+            self.transaction_limit_event.notify(usize::MAX);
         }
     }
 }
 
-#[async_trait]
-impl Filesystem for FxFilesystem {
-    fn device(&self) -> Arc<dyn Device> {
-        Arc::clone(&self.device)
-    }
-
-    fn root_store(&self) -> Arc<ObjectStore> {
-        self.objects.root_store()
-    }
-
-    fn allocator(&self) -> Arc<SimpleAllocator> {
-        self.objects.allocator()
-    }
-
-    fn object_manager(&self) -> &Arc<ObjectManager> {
-        &self.objects
-    }
-
-    fn journal(&self) -> &Arc<Journal> {
-        &self.journal
-    }
-
-    async fn sync(&self, options: SyncOptions<'_>) -> Result<(), Error> {
-        self.journal.sync(options).await.map(|_| ())
-    }
-
-    fn block_size(&self) -> u64 {
-        self.block_size
-    }
-
-    fn get_info(&self) -> Info {
-        Info {
-            total_bytes: self.device.size(),
-            used_bytes: self.object_manager().allocator().get_used_bytes(),
-        }
-    }
-
-    fn super_block_header(&self) -> SuperBlockHeader {
-        self.journal.super_block_header()
-    }
-
-    fn graveyard(&self) -> &Arc<Graveyard> {
-        &self.graveyard
-    }
-
-    fn trace(&self) -> bool {
-        self.trace
-    }
-
-    fn options(&self) -> &Options {
-        &self.options
-    }
-}
-
-#[async_trait]
-impl TransactionHandler for FxFilesystem {
-    async fn new_transaction<'a>(
-        self: Arc<Self>,
-        locks: &[LockKey],
-        options: transaction::Options<'a>,
-    ) -> Result<Transaction<'a>, Error> {
-        self.add_transaction(options.skip_journal_checks).await;
-        let guard = scopeguard::guard((), |_| self.sub_transaction());
-        let (metadata_reservation, allocator_reservation, hold) =
-            self.reservation_for_transaction(options).await?;
-        let mut transaction =
-            Transaction::new(self.clone(), metadata_reservation, &[LockKey::Filesystem], locks)
-                .await;
-
-        ScopeGuard::into_inner(guard);
-        hold.map(|h| h.forget()); // Transaction takes ownership from here on.
-        transaction.allocator_reservation = allocator_reservation;
-        Ok(transaction)
-    }
-
-    async fn transaction_lock<'a>(&'a self, lock_keys: &[LockKey]) -> TransactionLocks<'a> {
-        let lock_manager: &LockManager = self.as_ref();
-        TransactionLocks(debug_assert_not_too_long!(lock_manager.txn_lock(lock_keys)))
-    }
-
-    async fn commit_transaction(
-        self: Arc<Self>,
-        transaction: &mut Transaction<'_>,
-        callback: &mut (dyn FnMut(u64) + Send),
-    ) -> Result<u64, Error> {
-        trace_duration!("FxFilesystem::commit_transaction");
-        if let Some(hook) = self.options.pre_commit_hook.as_ref() {
-            hook(transaction)?;
-        }
-        debug_assert_not_too_long!(self.lock_manager.commit_prepare(&transaction));
-        {
-            let mut flush_task = self.flush_task.lock().unwrap();
-            if flush_task.is_none() {
-                let this = self.clone();
-                *flush_task = Some(fasync::Task::spawn(async move {
-                    this.journal.flush_task().await;
-                }));
-            }
-        }
-        let _guard = debug_assert_not_too_long!(self.commit_mutex.lock());
-        let journal_offset = self.journal.commit(transaction).await?;
-        self.completed_transactions.add(1);
-
-        // For now, call the callback whilst holding the lock.  Technically, we don't need to do
-        // that except if there's a post-commit-hook (which there usually won't be).  We can
-        // consider changing this if we need to for performance, but we'd need to double check that
-        // callers don't depend on this.
-        callback(journal_offset);
-
-        if let Some(hook) = self.options.post_commit_hook.as_ref() {
-            hook().await;
-        }
-
-        Ok(journal_offset)
-    }
-
-    fn drop_transaction(&self, transaction: &mut Transaction<'_>) {
-        if !matches!(transaction.metadata_reservation, MetadataReservation::None) {
-            self.sub_transaction();
-        }
-        // If we placed a hold for metadata space, return it now.
-        if let MetadataReservation::Hold(hold_amount) =
-            std::mem::replace(&mut transaction.metadata_reservation, MetadataReservation::None)
-        {
-            let hold = transaction
-                .allocator_reservation
-                .unwrap()
-                .reserve(0)
-                .expect("Zero should always succeed.");
-            hold.add(hold_amount);
-        }
-        self.objects.drop_transaction(transaction);
-        self.lock_manager.drop_transaction(transaction);
-    }
-
-    async fn read_lock<'a>(&'a self, lock_keys: &[LockKey]) -> ReadGuard<'a> {
-        debug_assert_not_too_long!(self.lock_manager.read_lock(lock_keys))
-    }
-
-    async fn write_lock<'a>(&'a self, lock_keys: &[LockKey]) -> WriteGuard<'a> {
-        debug_assert_not_too_long!(self.lock_manager.write_lock(lock_keys))
-    }
-}
-
-impl AsRef<LockManager> for FxFilesystem {
-    fn as_ref(&self) -> &LockManager {
-        &self.lock_manager
-    }
+pub struct TxnGuard<'a> {
+    // Elsewhere we rely on _guard being dropped before `fs`: see the `txn_guard` function above.
+    _guard: Option<ReadGuard<'a>>,
+    pub fs: Arc<FxFilesystem>,
 }
 
 /// Helper method for making a new filesystem.
@@ -814,7 +880,7 @@ impl FsckAfterEveryTransaction {
 #[cfg(test)]
 mod tests {
     use {
-        super::{Filesystem, FxFilesystem, FxFilesystemBuilder, SyncOptions},
+        super::{FxFilesystem, FxFilesystemBuilder, SyncOptions},
         crate::{
             fsck::fsck,
             lsm_tree::{types::Item, Operation},
@@ -823,15 +889,16 @@ mod tests {
                 directory::replace_child,
                 directory::Directory,
                 journal::JournalOptions,
-                transaction::{LockKey, Options, TransactionHandler},
+                transaction::{lock_keys, LockKey, Options},
             },
         },
         fuchsia_async as fasync,
-        futures::future::join_all,
-        std::{
-            collections::HashMap,
-            sync::{Arc, Mutex},
+        futures::{
+            future::join_all,
+            stream::{FuturesUnordered, TryStreamExt},
         },
+        rustc_hash::FxHashMap as HashMap,
+        std::sync::{Arc, Mutex},
         storage_device::{fake_device::FakeDevice, DeviceHolder},
     };
 
@@ -853,7 +920,10 @@ mod tests {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(root_store.store_object_id(), root_directory.object_id())],
+                    lock_keys![LockKey::object(
+                        root_store.store_object_id(),
+                        root_directory.object_id()
+                    )],
                     Options::default(),
                 )
                 .await
@@ -865,7 +935,7 @@ mod tests {
             transaction.commit().await.expect("commit failed");
             tasks.push(fasync::Task::spawn(async move {
                 const TEST_DATA: &[u8] = b"hello";
-                let mut buf = handle.allocate_buffer(TEST_DATA.len());
+                let mut buf = handle.allocate_buffer(TEST_DATA.len()).await;
                 buf.as_mut_slice().copy_from_slice(TEST_DATA);
                 for _ in 0..1500 {
                     handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
@@ -929,7 +999,7 @@ mod tests {
         };
 
         let allocator_mutations = Arc::new(Mutations::new());
-        let object_mutations = Arc::new(Mutex::new(HashMap::new()));
+        let object_mutations = Arc::new(Mutex::new(HashMap::default()));
         let fs = open_fs(device, object_mutations.clone(), allocator_mutations.clone()).await;
 
         let root_store = fs.root_store();
@@ -940,7 +1010,10 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(root_store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(
+                    root_store.store_object_id(),
+                    root_directory.object_id()
+                )],
                 Options::default(),
             )
             .await
@@ -952,7 +1025,7 @@ mod tests {
         transaction.commit().await.expect("commit failed");
 
         // Append some data.
-        let buf = object.allocate_buffer(10000);
+        let buf = object.allocate_buffer(10000).await;
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
         // Overwrite some data.
@@ -965,7 +1038,10 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(root_store.store_object_id(), root_directory.object_id())],
+                lock_keys![
+                    LockKey::object(root_store.store_object_id(), root_directory.object_id()),
+                    LockKey::object(root_store.store_object_id(), object.object_id()),
+                ],
                 Options::default(),
             )
             .await
@@ -991,7 +1067,7 @@ mod tests {
         let device = fs.take_device().await;
         device.reopen(false);
 
-        let replayed_object_mutations = Arc::new(Mutex::new(HashMap::new()));
+        let replayed_object_mutations = Arc::new(Mutex::new(HashMap::default()));
         let replayed_allocator_mutations = Arc::new(Mutations::new());
         let fs = open_fs(
             device,
@@ -1036,18 +1112,75 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
 
-        let mut transactions = Vec::new();
+        let transactions = FuturesUnordered::new();
         for _ in 0..super::MAX_IN_FLIGHT_TRANSACTIONS {
-            transactions.push(fs.clone().new_transaction(&[], Options::default()).await);
+            transactions.push(fs.clone().new_transaction(lock_keys![], Options::default()));
         }
+        let mut transactions: Vec<_> = transactions.try_collect().await.unwrap();
 
         // Trying to create another one should be blocked.
-        let mut fut = fs.clone().new_transaction(&[], Options::default());
+        let mut fut = std::pin::pin!(fs.clone().new_transaction(lock_keys![], Options::default()));
         assert!(futures::poll!(&mut fut).is_pending());
 
         // Dropping one should allow it to proceed.
         transactions.pop();
 
         assert!(futures::poll!(&mut fut).is_ready());
+    }
+
+    // If run on a single thread, the trim tasks starve out other work.
+    #[fuchsia::test(threads = 10)]
+    async fn test_continuously_trim() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystemBuilder::new()
+            .trim_config(Some((std::time::Duration::ZERO, std::time::Duration::ZERO)))
+            .format(true)
+            .open(device)
+            .await
+            .expect("open failed");
+        // Do a small sleep so trim has time to get going.
+        fasync::Timer::new(std::time::Duration::from_millis(10)).await;
+
+        // Create and delete a bunch of files whilst trim is ongoing.  This just ensures that
+        // regular usage isn't affected by trim.
+        let root_store = fs.root_store();
+        let root_directory = Directory::open(&root_store, root_store.root_directory_object_id())
+            .await
+            .expect("open failed");
+        for _ in 0..100 {
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        root_store.store_object_id(),
+                        root_directory.object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let object = root_directory
+                .create_child_file(&mut transaction, "test", None)
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+
+            {
+                let buf = object.allocate_buffer(1024).await;
+                object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+            }
+            std::mem::drop(object);
+
+            let mut transaction = root_directory
+                .acquire_context_for_replace(None, "test", true)
+                .await
+                .expect("acquire_context_for_replace failed")
+                .transaction;
+            replace_child(&mut transaction, None, (&root_directory, "test"))
+                .await
+                .expect("replace_child failed");
+            transaction.commit().await.expect("commit failed");
+        }
+        fs.close().await.expect("close failed");
     }
 }

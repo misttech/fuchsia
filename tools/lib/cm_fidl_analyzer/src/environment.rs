@@ -6,8 +6,8 @@ use {
     crate::{
         component_instance::{ComponentInstanceForAnalyzer, TopInstanceForAnalyzer},
         component_model::{BuildAnalyzerModelError, Child},
-        node_path::NodePath,
     },
+    cm_config::RuntimeConfig,
     cm_rust::{EnvironmentDecl, RegistrationSource, ResolverRegistration},
     fidl_fuchsia_component_internal as component_internal,
     moniker::ChildNameBase,
@@ -15,7 +15,6 @@ use {
         component_instance::{
             ComponentInstanceInterface, ExtendedInstanceInterface, WeakExtendedInstanceInterface,
         },
-        config::RuntimeConfig,
         environment::{DebugRegistry, EnvironmentExtends, EnvironmentInterface, RunnerRegistry},
         error::ComponentInstanceError,
     },
@@ -153,7 +152,7 @@ impl EnvironmentForAnalyzer {
                     .ok_or(BuildAnalyzerModelError::EnvironmentNotFound(
                         child_env_name.clone(),
                         child.child_moniker.name().to_string(),
-                        NodePath::from(parent.moniker().clone()).to_string(),
+                        parent.moniker().to_string(),
                     ))?;
                 Self::new_from_decl(parent, env_decl)
             }

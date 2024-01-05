@@ -2,25 +2,32 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::task::TaskBuilder;
 use fidl_fuchsia_io as fio;
 use fuchsia_zircon as zx;
-use std::{ffi::CString, sync::Arc};
-use zerocopy::AsBytes;
+use starnix_sync::{Locked, Unlocked};
+use std::{ffi::CString, mem::MaybeUninit, sync::Arc};
+use zerocopy::{AsBytes, NoCell};
 
 use crate::{
-    device::init_common_devices,
-    fs::{
-        buffers::{InputBuffer, OutputBuffer},
-        fuchsia::RemoteFs,
-        tmpfs::TmpFs,
-        *,
-    },
+    device::{init_common_devices, Features},
+    fs::{fuchsia::RemoteFs, tmpfs::TmpFs},
     mm::{
         syscalls::{do_mmap, sys_mremap},
         MemoryAccessor, MemoryAccessorExt, MemoryManager, PAGE_SIZE,
     },
-    syscalls::*,
-    task::*,
+    task::{CurrentTask, Kernel, Task},
+    vfs::{
+        buffers::{InputBuffer, OutputBuffer},
+        fileops_impl_nonseekable, fs_node_impl_not_dir, Anon, CacheMode, FdNumber, FileHandle,
+        FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions,
+        FsContext, FsNode, FsNodeOps, FsStr,
+    },
+};
+use starnix_syscalls::{SyscallArg, SyscallResult};
+use starnix_uapi::{
+    errors::Errno, open_flags::OpenFlags, ownership::Releasable, statfs, user_address::UserAddress,
+    MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE,
 };
 
 /// Create a FileSystemHandle for use in testing.
@@ -39,55 +46,71 @@ fn create_pkgfs(kernel: &Arc<Kernel>) -> FileSystemHandle {
     .unwrap()
 }
 
-/// Creates a `Kernel` and `Task` with the package file system for testing purposes.
+/// Creates a `Kernel`, `Task`, and `Locked<Unlocked>` with the package file system for testing purposes.
 ///
 /// The `Task` is backed by a real process, and can be used to test syscalls.
-pub fn create_kernel_and_task_with_pkgfs() -> (Arc<Kernel>, AutoReleasableTask) {
-    create_kernel_and_task_with_fs(create_pkgfs)
+pub fn create_kernel_task_and_unlocked_with_pkgfs<'l>(
+) -> (Arc<Kernel>, AutoReleasableTask, Locked<'l, Unlocked>) {
+    create_kernel_task_and_unlocked_with_fs(create_pkgfs)
 }
 
 pub fn create_kernel_and_task() -> (Arc<Kernel>, AutoReleasableTask) {
-    create_kernel_and_task_with_fs(TmpFs::new_fs)
+    let (kernel, task, _) = create_kernel_task_and_unlocked();
+    (kernel, task)
 }
-/// Creates a `Kernel` and `Task` for testing purposes.
+
+pub fn create_kernel_task_and_unlocked<'l>(
+) -> (Arc<Kernel>, AutoReleasableTask, Locked<'l, Unlocked>) {
+    create_kernel_task_and_unlocked_with_fs(TmpFs::new_fs)
+}
+
+/// Creates a `Kernel`, `Task`, and `Locked<Unlocked>` for testing purposes.
 ///
 /// The `Task` is backed by a real process, and can be used to test syscalls.
-fn create_kernel_and_task_with_fs(
+fn create_kernel_task_and_unlocked_with_fs<'l>(
     create_fs: impl FnOnce(&Arc<Kernel>) -> FileSystemHandle,
-) -> (Arc<Kernel>, AutoReleasableTask) {
-    let kernel =
-        Kernel::new(b"test-kernel", &[], &Vec::new(), None, None, fuchsia_inspect::Node::default())
-            .expect("failed to create kernel");
+) -> (Arc<Kernel>, AutoReleasableTask, Locked<'l, Unlocked>) {
+    let unlocked = Unlocked::new();
+    let kernel = Kernel::new(
+        b"".into(),
+        Features::default(),
+        None,
+        None,
+        None,
+        fuchsia_inspect::Node::default(),
+    )
+    .expect("failed to create kernel");
 
     let fs = FsContext::new(create_fs(&kernel));
-    let task = Task::create_process_without_parent(
+    let init_task = CurrentTask::create_process_without_parent(
         &kernel,
         CString::new("test-task").unwrap(),
-        Some(fs.clone()),
+        fs.clone(),
     )
     .expect("failed to create first task");
-    kernel.kthreads.init(&kernel, fs).expect("failed to initialize kthreads");
+    let system_task = CurrentTask::create_system_task(&kernel, fs).expect("create system task");
+    kernel.kthreads.init(system_task).expect("failed to initialize kthreads");
 
-    init_common_devices(&kernel);
+    init_common_devices(&kernel.kthreads.system_task());
 
     // Take the lock on thread group and task in the correct order to ensure any wrong ordering
     // will trigger the tracing-mutex at the right call site.
     {
-        let _l1 = task.thread_group.read();
-        let _l2 = task.read();
+        let _l1 = init_task.thread_group.read();
+        let _l2 = init_task.read();
     }
 
-    (kernel, task.into())
+    (kernel, init_task.into(), unlocked)
 }
 
 /// Creates a new `Task` in the provided kernel.
 ///
 /// The `Task` is backed by a real process, and can be used to test syscalls.
 pub fn create_task(kernel: &Arc<Kernel>, task_name: &str) -> AutoReleasableTask {
-    let task = Task::create_process_without_parent(
+    let task = CurrentTask::create_process_without_parent(
         kernel,
         CString::new(task_name).unwrap(),
-        Some(FsContext::new(create_pkgfs(kernel))),
+        FsContext::new(create_pkgfs(kernel)),
     )
     .expect("failed to create second task");
 
@@ -111,9 +134,12 @@ pub fn map_memory_anywhere(current_task: &CurrentTask, len: u64) -> UserAddress 
 /// `MAP_ANONYMOUS | MAP_PRIVATE` and writes the object to it, returning the mapped address.
 ///
 /// Useful for syscall in-pointer parameters.
-pub fn map_object_anywhere<T: AsBytes>(current_task: &CurrentTask, object: &T) -> UserAddress {
+pub fn map_object_anywhere<T: AsBytes + NoCell>(
+    current_task: &CurrentTask,
+    object: &T,
+) -> UserAddress {
     let addr = map_memory_anywhere(current_task, std::mem::size_of::<T>() as u64);
-    current_task.mm.write_object(addr.into(), object).expect("could not write object");
+    current_task.mm().write_object(addr.into(), object).expect("could not write object");
     addr
 }
 
@@ -148,6 +174,7 @@ pub fn map_memory_with_flags(
 /// Convenience wrapper around [`sys_mremap`] which extracts the returned [`UserAddress`] from
 /// the generic [`SyscallResult`].
 pub fn remap_memory(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     old_addr: UserAddress,
     old_length: u64,
@@ -155,7 +182,15 @@ pub fn remap_memory(
     flags: u32,
     new_addr: UserAddress,
 ) -> Result<UserAddress, Errno> {
-    sys_mremap(current_task, old_addr, old_length as usize, new_length as usize, flags, new_addr)
+    sys_mremap(
+        locked,
+        current_task,
+        old_addr,
+        old_length as usize,
+        new_length as usize,
+        flags,
+        new_addr,
+    )
 }
 
 /// Fills one page in the `current_task`'s address space starting at `addr` with the ASCII character
@@ -214,7 +249,7 @@ pub fn check_page_ne(current_task: &CurrentTask, addr: UserAddress, data: char) 
 pub fn check_unmapped(current_task: &CurrentTask, addr: UserAddress) {
     match current_task.read_memory_to_vec(addr, *PAGE_SIZE as usize) {
         Ok(_) => panic!("read page: page @ {addr:?} should be unmapped"),
-        Err(err) if err == crate::types::errno::EFAULT => {}
+        Err(err) if err == starnix_uapi::errors::EFAULT => {}
         Err(err) => {
             panic!("read page: expected EFAULT reading page @ {addr:?} but got {err:?} instead")
         }
@@ -293,7 +328,7 @@ pub struct UserMemoryWriter<'a> {
 impl<'a> UserMemoryWriter<'a> {
     /// Constructs a new `UserMemoryWriter` to write to `task`'s memory at `addr`.
     pub fn new(task: &'a Task, addr: UserAddress) -> Self {
-        Self { mm: &task.mm, current_addr: addr }
+        Self { mm: task.mm(), current_addr: addr }
     }
 
     /// Writes all of `data` to the current address in the task's address space, incrementing the
@@ -310,7 +345,7 @@ impl<'a> UserMemoryWriter<'a> {
     /// Writes `object` to the current address in the task's address space, incrementing the
     /// current address by the size of `object`. Returns the address at which the data starts.
     /// Panics on failure.
-    pub fn write_object<T: AsBytes>(&mut self, object: &T) -> UserAddress {
+    pub fn write_object<T: AsBytes + NoCell>(&mut self, object: &T) -> UserAddress {
         self.write(object.as_bytes())
     }
 
@@ -339,9 +374,15 @@ impl From<CurrentTask> for AutoReleasableTask {
     }
 }
 
+impl From<TaskBuilder> for AutoReleasableTask {
+    fn from(builder: TaskBuilder) -> Self {
+        CurrentTask::from(builder).into()
+    }
+}
+
 impl Drop for AutoReleasableTask {
     fn drop(&mut self) {
-        self.0.take().unwrap().release(&());
+        self.0.take().unwrap().release(());
     }
 }
 
@@ -372,23 +413,75 @@ impl std::convert::AsRef<CurrentTask> for AutoReleasableTask {
 }
 
 impl MemoryAccessor for AutoReleasableTask {
-    fn read_memory_to_slice(&self, addr: UserAddress, bytes: &mut [u8]) -> Result<(), Errno> {
-        (**self).read_memory_to_slice(addr, bytes)
-    }
-    fn read_memory_partial_to_slice(
+    fn read_memory<'a>(
         &self,
         addr: UserAddress,
-        bytes: &mut [u8],
-    ) -> Result<usize, Errno> {
-        (**self).read_memory_partial_to_slice(addr, bytes)
+        bytes: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Errno> {
+        (**self).read_memory(addr, bytes)
+    }
+    fn vmo_read_memory<'a>(
+        &self,
+        addr: UserAddress,
+        bytes: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Errno> {
+        (**self).vmo_read_memory(addr, bytes)
+    }
+    fn read_memory_partial_until_null_byte<'a>(
+        &self,
+        addr: UserAddress,
+        bytes: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Errno> {
+        (**self).read_memory_partial_until_null_byte(addr, bytes)
+    }
+    fn read_memory_partial<'a>(
+        &self,
+        addr: UserAddress,
+        bytes: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Errno> {
+        (**self).read_memory_partial(addr, bytes)
+    }
+    fn vmo_read_memory_partial<'a>(
+        &self,
+        addr: UserAddress,
+        bytes: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Errno> {
+        (**self).vmo_read_memory_partial(addr, bytes)
     }
     fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
         (**self).write_memory(addr, bytes)
     }
+    fn vmo_write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
+        (**self).vmo_write_memory(addr, bytes)
+    }
     fn write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
         (**self).write_memory_partial(addr, bytes)
+    }
+    fn vmo_write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
+        (**self).vmo_write_memory_partial(addr, bytes)
     }
     fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
         (**self).zero(addr, length)
     }
+}
+
+struct TestFs;
+impl FileSystemOps for TestFs {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
+        Ok(statfs::default(0))
+    }
+    fn name(&self) -> &'static FsStr {
+        b"test"
+    }
+
+    fn generate_node_ids(&self) -> bool {
+        false
+    }
+}
+
+pub fn create_fs(kernel: &Arc<Kernel>, ops: impl FsNodeOps) -> FileSystemHandle {
+    let test_fs = FileSystem::new(&kernel, CacheMode::Uncached, TestFs, Default::default());
+    let bus_dir_node = FsNode::new_root(ops);
+    test_fs.set_root_node(bus_dir_node);
+    test_fs
 }

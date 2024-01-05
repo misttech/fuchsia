@@ -34,9 +34,9 @@
 //! ```
 
 use super::{health, stats, Inspector, InspectorConfig, LazyNode};
+use fuchsia_sync::Mutex;
 use inspect_format::constants;
 use lazy_static::lazy_static;
-use parking_lot::Mutex;
 use std::sync::Arc;
 
 lazy_static! {
@@ -114,10 +114,8 @@ pub fn serve_inspect_stats() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        assert_data_tree, assert_json_diff, health::Reporter, hierarchy::DiagnosticsHierarchy,
-        testing::AnyProperty,
-    };
+    use crate::health::Reporter;
+    use diagnostics_assertions::{assert_data_tree, assert_json_diff, AnyProperty};
     use futures::FutureExt;
 
     #[fuchsia::test]

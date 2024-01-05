@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "//src/starnix/containers/container.shard.cml",
-        "//src/starnix/containers/debian/meta/debian_container.shard.cml",
-    ],
+    include: [ "//src/starnix/containers/debian/meta/debian_container.base.cml" ],
     program: {
-        runner: "starnix",
+        features: [
+            "ashmem",
+            "custom_artifacts",
+            "framebuffer",
+            "magma",
+            "test_data",
+        ],
     },
 }

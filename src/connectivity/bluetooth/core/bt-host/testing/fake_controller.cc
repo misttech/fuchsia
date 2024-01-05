@@ -19,7 +19,7 @@
 #include "src/connectivity/bluetooth/core/bt-host/hci/util.h"
 #include "src/connectivity/bluetooth/lib/cpp-string/string_printf.h"
 
-#include <pw_bluetooth/vendor.emb.h>
+#include <pw_bluetooth/hci_vendor.emb.h>
 
 namespace bt::testing {
 namespace {
@@ -44,7 +44,7 @@ bool CheckBit(NUM_TYPE num_type, ENUM_TYPE bit) {
 namespace hci_android = hci_spec::vendor::android;
 
 void FakeController::Settings::ApplyDualModeDefaults() {
-  le_connection_delay = zx::sec(0);
+  le_connection_delay = std::chrono::seconds(0);
   hci_version = pw::bluetooth::emboss::CoreSpecificationVersion::V5_0;
   num_hci_command_packets = 250;
   event_mask = 0;
@@ -208,15 +208,15 @@ void FakeController::SendCommand(pw::span<const std::byte> command) {
   BT_ASSERT(command.size() >= sizeof(hci_spec::CommandHeader));
 
   // Post the packet to simulate async HCI behavior.
-  async::PostTask(dispatcher(),
-                  [self = GetWeakPtr(), command = DynamicByteBuffer(BufferView(command))]() {
-                    if (!self.is_alive()) {
-                      return;
-                    }
-                    const size_t payload_size = command.size() - sizeof(hci_spec::CommandHeader);
-                    PacketView<hci_spec::CommandHeader> packet_view(&command, payload_size);
-                    self->OnCommandPacketReceived(packet_view);
-                  });
+  heap_dispatcher().Post([self = GetWeakPtr(), command = DynamicByteBuffer(BufferView(command))](
+                             pw::async::Context /*ctx*/, pw::Status status) {
+    if (!self.is_alive() || !status.ok()) {
+      return;
+    }
+    const size_t payload_size = command.size() - sizeof(hci_spec::CommandHeader);
+    PacketView<hci_spec::CommandHeader> packet_view(&command, payload_size);
+    self->OnCommandPacketReceived(packet_view);
+  });
 }
 
 FakePeer* FakeController::FindByConnHandle(hci_spec::ConnectionHandle handle) {
@@ -340,7 +340,10 @@ void FakeController::SendNumberOfCompletedPacketsEvent(hci_spec::ConnectionHandl
 
 void FakeController::ConnectLowEnergy(const DeviceAddress& addr,
                                       pw::bluetooth::emboss::ConnectionRole role) {
-  async::PostTask(dispatcher(), [addr, role, this] {
+  heap_dispatcher().Post([addr, role, this](pw::async::Context /*ctx*/, pw::Status status) {
+    if (!status.ok()) {
+      return;
+    }
     FakePeer* peer = FindPeer(addr);
     if (!peer) {
       bt_log(WARN, "fake-hci", "no peer found with address: %s", addr.ToString().c_str());
@@ -387,7 +390,7 @@ void FakeController::SendConnectionRequest(const DeviceAddress& addr,
                                            pw::bluetooth::emboss::LinkType link_type) {
   FakePeer* peer = FindPeer(addr);
   BT_ASSERT(peer);
-  peer->set_last_connection_request_link_type(static_cast<hci_spec::LinkType>(link_type));
+  peer->set_last_connection_request_link_type(link_type);
 
   bt_log(DEBUG, "fake-hci", "sending connection request (addr: %s, link: %s)", bt_str(addr),
          hci_spec::LinkTypeToString(link_type));
@@ -400,7 +403,10 @@ void FakeController::SendConnectionRequest(const DeviceAddress& addr,
 
 void FakeController::L2CAPConnectionParameterUpdate(
     const DeviceAddress& addr, const hci_spec::LEPreferredConnectionParameters& params) {
-  async::PostTask(dispatcher(), [addr, params, this] {
+  heap_dispatcher().Post([addr, params, this](pw::async::Context /*ctx*/, pw::Status status) {
+    if (!status.ok()) {
+      return;
+    }
     FakePeer* peer = FindPeer(addr);
     if (!peer) {
       bt_log(WARN, "fake-hci", "no peer found with address: %s", addr.ToString().c_str());
@@ -446,7 +452,10 @@ void FakeController::SendLEConnectionUpdateCompleteSubevent(
 
 void FakeController::Disconnect(const DeviceAddress& addr,
                                 pw::bluetooth::emboss::StatusCode reason) {
-  async::PostTask(dispatcher(), [this, addr, reason] {
+  heap_dispatcher().Post([this, addr, reason](pw::async::Context /*ctx*/, pw::Status status) {
+    if (!status.ok()) {
+      return;
+    }
     FakePeer* peer = FindPeer(addr);
     if (!peer || !peer->connected()) {
       bt_log(WARN, "fake-hci", "no connected peer found with address: %s", addr.ToString().c_str());
@@ -532,7 +541,11 @@ void FakeController::SendAdvertisingReports() {
   // We'll send new reports for the same peers if duplicate filtering is
   // disabled.
   if (!le_scan_state_.filter_duplicates) {
-    async::PostTask(dispatcher(), [this] { SendAdvertisingReports(); });
+    heap_dispatcher().Post([this](pw::async::Context /*ctx*/, pw::Status status) {
+      if (status.ok()) {
+        SendAdvertisingReports();
+      }
+    });
   }
 }
 
@@ -622,21 +635,26 @@ void FakeController::OnCreateConnectionCommandReceived(
            peer_address.ToString().c_str());
 
     bredr_connect_rsp_task_.Cancel();
-    bredr_connect_rsp_task_.set_handler([this, peer_address] {
-      bredr_connect_pending_ = false;
+    bredr_connect_rsp_task_.set_function(
+        [this, peer_address](pw::async::Context /*ctx*/, pw::Status status) {
+          if (!status.ok()) {
+            return;
+          }
+          bredr_connect_pending_ = false;
 
-      auto response =
-          hci::EmbossEventPacket::New<pw::bluetooth::emboss::ConnectionCompleteEventWriter>(
-              hci_spec::kConnectionCompleteEventCode);
-      response.view_t().status().Write(pw::bluetooth::emboss::StatusCode::PAGE_TIMEOUT);
-      response.view_t().bd_addr().CopyFrom(peer_address.value().view());
-      SendCommandChannelPacket(response.data());
-    });
+          auto response =
+              hci::EmbossEventPacket::New<pw::bluetooth::emboss::ConnectionCompleteEventWriter>(
+                  hci_spec::kConnectionCompleteEventCode);
+          response.view_t().status().Write(pw::bluetooth::emboss::StatusCode::PAGE_TIMEOUT);
+          response.view_t().bd_addr().CopyFrom(peer_address.value().view());
+          SendCommandChannelPacket(response.data());
+        });
 
     // Default page timeout of 5.12s
     // See Core Spec v5.0 Vol 2, Part E, Section 6.6
-    constexpr zx::duration default_page_timeout = zx::usec(static_cast<int64_t>(625) * 0x2000);
-    bredr_connect_rsp_task_.PostDelayed(dispatcher(), default_page_timeout);
+    constexpr pw::chrono::SystemClock::duration default_page_timeout =
+        std::chrono::microseconds(static_cast<int64_t>(625) * 0x2000);
+    bredr_connect_rsp_task_.PostAfter(default_page_timeout);
     return;
   }
 
@@ -665,21 +683,25 @@ void FakeController::OnCreateConnectionCommandReceived(
     return;
 
   bredr_connect_rsp_task_.Cancel();
-  bredr_connect_rsp_task_.set_handler([response, peer, this]() mutable {
-    bredr_connect_pending_ = false;
+  bredr_connect_rsp_task_.set_function(
+      [response, peer, this](pw::async::Context /*ctx*/, pw::Status status) mutable {
+        if (!status.ok()) {
+          return;
+        }
+        bredr_connect_pending_ = false;
 
-    if (response.view_t().status().Read() == pw::bluetooth::emboss::StatusCode::SUCCESS) {
-      bool notify = !peer->connected();
-      hci_spec::ConnectionHandle handle = response.view_t().connection_handle().Read();
-      peer->AddLink(handle);
-      if (notify && peer->connected()) {
-        NotifyConnectionState(peer->address(), handle, /*connected=*/true);
-      }
-    }
+        if (response.view_t().status().Read() == pw::bluetooth::emboss::StatusCode::SUCCESS) {
+          bool notify = !peer->connected();
+          hci_spec::ConnectionHandle handle = response.view_t().connection_handle().Read();
+          peer->AddLink(handle);
+          if (notify && peer->connected()) {
+            NotifyConnectionState(peer->address(), handle, /*connected=*/true);
+          }
+        }
 
-    SendCommandChannelPacket(response.data());
-  });
-  bredr_connect_rsp_task_.Post(dispatcher());
+        SendCommandChannelPacket(response.data());
+      });
+  bredr_connect_rsp_task_.Post();
 }
 
 void FakeController::OnLECreateConnectionCommandReceived(
@@ -772,28 +794,29 @@ void FakeController::OnLECreateConnectionCommandReceived(
     return;
 
   le_connect_rsp_task_.Cancel();
-  le_connect_rsp_task_.set_handler([packet, address = peer_address, this]() {
-    auto peer = FindPeer(address);
-    if (!peer) {
-      // The peer has been removed; Ignore this response
-      return;
-    }
+  le_connect_rsp_task_.set_function(
+      [packet, address = peer_address, this](pw::async::Context /*ctx*/, pw::Status status) {
+        auto peer = FindPeer(address);
+        if (!peer || !status.ok()) {
+          // The peer has been removed or dispatcher shut down; Ignore this response
+          return;
+        }
 
-    le_connect_pending_ = false;
+        le_connect_pending_ = false;
 
-    auto view = packet.view<pw::bluetooth::emboss::LEConnectionCompleteSubeventView>();
-    if (view.status().Read() == pw::bluetooth::emboss::StatusCode::SUCCESS) {
-      bool not_previously_connected = !peer->connected();
-      hci_spec::ConnectionHandle handle = view.connection_handle().Read();
-      peer->AddLink(handle);
-      if (not_previously_connected && peer->connected()) {
-        NotifyConnectionState(peer->address(), handle, /*connected=*/true);
-      }
-    }
+        auto view = packet.view<pw::bluetooth::emboss::LEConnectionCompleteSubeventView>();
+        if (view.status().Read() == pw::bluetooth::emboss::StatusCode::SUCCESS) {
+          bool not_previously_connected = !peer->connected();
+          hci_spec::ConnectionHandle handle = view.connection_handle().Read();
+          peer->AddLink(handle);
+          if (not_previously_connected && peer->connected()) {
+            NotifyConnectionState(peer->address(), handle, /*connected=*/true);
+          }
+        }
 
-    SendCommandChannelPacket(packet.data());
-  });
-  le_connect_rsp_task_.PostDelayed(dispatcher(), settings_.le_connection_delay);
+        SendCommandChannelPacket(packet.data());
+      });
+  le_connect_rsp_task_.PostAfter(settings_.le_connection_delay);
 }
 
 void FakeController::OnLEConnectionUpdateCommandReceived(
@@ -944,16 +967,18 @@ void FakeController::OnInquiry(const pw::bluetooth::emboss::InquiryCommandView& 
   bt_log(INFO, "fake-hci", "sending inquiry responses..");
   SendInquiryResponses();
 
-  async::PostDelayedTask(
-      dispatcher(),
-      [this] {
+  heap_dispatcher().PostAfter(
+      [this](pw::async::Context /*ctx*/, pw::Status status) {
+        if (!status.ok()) {
+          return;
+        }
         auto output =
             hci::EmbossEventPacket::New<pw::bluetooth::emboss::InquiryCompleteEventWriter>(
                 hci_spec::kInquiryCompleteEventCode);
         output.view_t().status().Write(pw::bluetooth::emboss::StatusCode::SUCCESS);
         SendCommandChannelPacket(output.data());
       },
-      zx::msec(static_cast<int64_t>(params.inquiry_length().Read()) * 1280));
+      std::chrono::milliseconds(params.inquiry_length().Read()) * 1280);
 }
 
 void FakeController::OnLESetScanEnable(
@@ -1196,7 +1221,7 @@ void FakeController::OnReadLocalName() {
   hci_spec::ReadLocalNameReturnParams params;
   params.status = pw::bluetooth::emboss::StatusCode::SUCCESS;
   auto mut_view = MutableBufferView(params.local_name, hci_spec::kMaxNameLength);
-  mut_view.Write((uint8_t*)(local_name_.c_str()),
+  mut_view.Write((const uint8_t*)(local_name_.c_str()),
                  std::min(local_name_.length() + 1, hci_spec::kMaxNameLength));
   RespondWithCommandComplete(hci_spec::kReadLocalName, BufferView(&params, sizeof(params)));
 }
@@ -1507,9 +1532,10 @@ void FakeController::OnAuthenticationRequestedCommandReceived(
   RespondWithCommandStatus(hci_spec::kAuthenticationRequested,
                            pw::bluetooth::emboss::StatusCode::SUCCESS);
 
-  hci_spec::LinkKeyRequestParams request = {};
-  request.bd_addr = peer->address_.value();
-  SendEvent(hci_spec::kLinkKeyRequestEventCode, BufferView(&request, sizeof(request)));
+  auto event = hci::EmbossEventPacket::New<pw::bluetooth::emboss::LinkKeyRequestEventWriter>(
+      hci_spec::kLinkKeyRequestEventCode);
+  event.view_t().bd_addr().CopyFrom(peer->address_.value().view());
+  SendCommandChannelPacket(event.data());
 }
 
 void FakeController::OnLinkKeyRequestReplyCommandReceived(
@@ -1550,9 +1576,10 @@ void FakeController::OnLinkKeyRequestNegativeReplyCommandReceived(
   RespondWithCommandStatus(hci_spec::kLinkKeyRequestNegativeReply,
                            pw::bluetooth::emboss::StatusCode::SUCCESS);
 
-  hci_spec::IOCapabilityRequestEventParams request = {};
-  request.bd_addr = DeviceAddressBytes(params.bd_addr());
-  SendEvent(hci_spec::kIOCapabilityRequestEventCode, BufferView(&request, sizeof(request)));
+  auto event = hci::EmbossEventPacket::New<pw::bluetooth::emboss::IoCapabilityRequestEventWriter>(
+      hci_spec::kIOCapabilityRequestEventCode);
+  event.view_t().bd_addr().CopyFrom(params.bd_addr());
+  SendCommandChannelPacket(event.data());
 }
 
 void FakeController::OnIOCapabilityRequestReplyCommand(
@@ -1560,16 +1587,17 @@ void FakeController::OnIOCapabilityRequestReplyCommand(
   RespondWithCommandStatus(hci_spec::kIOCapabilityRequestReply,
                            pw::bluetooth::emboss::StatusCode::SUCCESS);
 
-  hci_spec::IOCapabilityResponseEventParams io_response = {};
-  io_response.bd_addr = DeviceAddressBytes(params.bd_addr());
-  // By specifying kNoInputNoOutput, we constrain the possible subsequent event types
-  // to just UserConfirmationRequestEventCode.
-  io_response.io_capability = pw::bluetooth::emboss::IoCapability::NO_INPUT_NO_OUTPUT;
-  io_response.oob_data_present = 0x00;  // OOB auth data not present
-  io_response.auth_requirements =
-      pw::bluetooth::emboss::AuthenticationRequirements::GENERAL_BONDING;
-  SendEvent(hci_spec::kIOCapabilityResponseEventCode,
-            BufferView(&io_response, sizeof(io_response)));
+  auto io_response =
+      hci::EmbossEventPacket::New<pw::bluetooth::emboss::IoCapabilityResponseEventWriter>(
+          hci_spec::kIOCapabilityResponseEventCode);
+  io_response.view_t().bd_addr().CopyFrom(params.bd_addr());
+  io_response.view_t().io_capability().Write(
+      pw::bluetooth::emboss::IoCapability::NO_INPUT_NO_OUTPUT);
+  io_response.view_t().oob_data_present().Write(
+      pw::bluetooth::emboss::GenericPresenceParam::NOT_PRESENT);
+  io_response.view_t().authentication_requirements().Write(
+      pw::bluetooth::emboss::AuthenticationRequirements::GENERAL_BONDING);
+  SendCommandChannelPacket(io_response.data());
 
   // Event type based on |params.io_capability| and |io_response.io_capability|.
   hci_spec::UserConfirmationRequestEventParams request = {};
@@ -1597,14 +1625,18 @@ void FakeController::OnUserConfirmationRequestReplyCommand(
   SendEvent(hci_spec::kSimplePairingCompleteEventCode,
             BufferView(&pairing_event, sizeof(pairing_event)));
 
-  hci_spec::LinkKeyNotificationEventParams link_key_event;
-  link_key_event.bd_addr = DeviceAddressBytes(params.bd_addr());
+  auto link_key_event =
+      hci::EmbossEventPacket::New<pw::bluetooth::emboss::LinkKeyNotificationEventWriter>(
+          hci_spec::kLinkKeyNotificationEventCode);
+  auto link_key_view = link_key_event.view_t();
+  link_key_view.bd_addr().CopyFrom(params.bd_addr());
   uint8_t key[] = {0xc0, 0xde, 0xfa, 0x57, 0x4b, 0xad, 0xf0, 0x0d,
                    0xa7, 0x60, 0x06, 0x1e, 0xca, 0x1e, 0xca, 0xfe};
-  std::copy(key, key + sizeof(key), link_key_event.link_key);
-  link_key_event.key_type = 4;  // Unauthenticated Combination Key generated from P-192
-  SendEvent(hci_spec::kLinkKeyNotificationEventCode,
-            BufferView(&link_key_event, sizeof(link_key_event)));
+  link_key_view.link_key().value().BackingStorage().CopyFrom(
+      ::emboss::support::ReadOnlyContiguousBuffer(key, sizeof(key)), sizeof(key));
+  link_key_view.key_type().Write(
+      pw::bluetooth::emboss::KeyType::UNAUTHENTICATED_COMBINATION_FROM_P192);
+  SendCommandChannelPacket(link_key_event.data());
 
   BT_ASSERT(!peer->logical_links().empty());
   for (auto& conn_handle : peer->logical_links()) {
@@ -1674,19 +1706,21 @@ void FakeController::OnEnhancedAcceptSynchronousConnectionRequestCommand(
   hci_spec::ConnectionHandle sco_handle = ++next_conn_handle_;
   peer->AddLink(sco_handle);
 
-  hci_spec::SynchronousConnectionCompleteEventParams response;
-  response.status = pw::bluetooth::emboss::StatusCode::SUCCESS;
-  response.connection_handle = htole16(sco_handle);
-  response.bd_addr = peer->address().value();
-  response.link_type = peer->last_connection_request_link_type().value();
-  response.transmission_interval = 1;
-  response.retransmission_window = 2;
-  response.rx_packet_length = 3;
-  response.tx_packet_length = 4;
-  response.air_coding_format = static_cast<pw::bluetooth::emboss::CodingFormat>(
+  auto packet =
+      hci::EmbossEventPacket::New<pw::bluetooth::emboss::SynchronousConnectionCompleteEventWriter>(
+          hci_spec::kSynchronousConnectionCompleteEventCode);
+  auto view = packet.view_t();
+  view.status().Write(pw::bluetooth::emboss::StatusCode::SUCCESS);
+  view.connection_handle().Write(sco_handle);
+  view.bd_addr().CopyFrom(peer->address().value().view());
+  view.link_type().Write(peer->last_connection_request_link_type().value());
+  view.transmission_interval().Write(1);
+  view.retransmission_window().Write(2);
+  view.rx_packet_length().Write(3);
+  view.tx_packet_length().Write(4);
+  view.air_mode().Write(
       params.connection_parameters().transmit_coding_format().coding_format().Read());
-  SendEvent(hci_spec::kSynchronousConnectionCompleteEventCode,
-            BufferView(&response, sizeof(response)));
+  SendCommandChannelPacket(packet.data());
 }
 
 void FakeController::OnEnhancedSetupSynchronousConnectionCommand(
@@ -1705,19 +1739,21 @@ void FakeController::OnEnhancedSetupSynchronousConnectionCommand(
   hci_spec::ConnectionHandle sco_handle = ++next_conn_handle_;
   peer->AddLink(sco_handle);
 
-  hci_spec::SynchronousConnectionCompleteEventParams response;
-  response.status = pw::bluetooth::emboss::StatusCode::SUCCESS;
-  response.connection_handle = htole16(sco_handle);
-  response.bd_addr = peer->address().value();
-  response.link_type = hci_spec::LinkType::kExtendedSCO;
-  response.transmission_interval = 1;
-  response.retransmission_window = 2;
-  response.rx_packet_length = 3;
-  response.tx_packet_length = 4;
-  response.air_coding_format = static_cast<pw::bluetooth::emboss::CodingFormat>(
+  auto packet =
+      hci::EmbossEventPacket::New<pw::bluetooth::emboss::SynchronousConnectionCompleteEventWriter>(
+          hci_spec::kSynchronousConnectionCompleteEventCode);
+  auto view = packet.view_t();
+  view.status().Write(pw::bluetooth::emboss::StatusCode::SUCCESS);
+  view.connection_handle().Write(sco_handle);
+  view.bd_addr().CopyFrom(peer->address().value().view());
+  view.link_type().Write(pw::bluetooth::emboss::LinkType::ESCO);
+  view.transmission_interval().Write(1);
+  view.retransmission_window().Write(2);
+  view.rx_packet_length().Write(3);
+  view.tx_packet_length().Write(4);
+  view.air_mode().Write(
       params.connection_parameters().transmit_coding_format().coding_format().Read());
-  SendEvent(hci_spec::kSynchronousConnectionCompleteEventCode,
-            BufferView(&response, sizeof(response)));
+  SendCommandChannelPacket(packet.data());
 }
 
 void FakeController::OnLEReadRemoteFeaturesCommand(
@@ -2823,6 +2859,95 @@ void FakeController::OnVendorCommand(const PacketView<hci_spec::CommandHeader>& 
   }
 }
 
+void FakeController::OnACLDataPacketReceived(const ByteBuffer& acl_data_packet) {
+  if (acl_data_callback_) {
+    BT_DEBUG_ASSERT(data_dispatcher_);
+    DynamicByteBuffer packet_copy(acl_data_packet);
+    data_dispatcher_->Post([packet_copy = std::move(packet_copy), cb = acl_data_callback_.share()](
+                               pw::async::Context /*ctx*/, pw::Status status) mutable {
+      if (status.ok()) {
+        cb(packet_copy);
+      }
+    });
+  }
+
+  if (acl_data_packet.size() < sizeof(hci_spec::ACLDataHeader)) {
+    bt_log(WARN, "fake-hci", "malformed ACL packet!");
+    return;
+  }
+
+  const auto& header = acl_data_packet.To<hci_spec::ACLDataHeader>();
+  hci_spec::ConnectionHandle handle = le16toh(header.handle_and_flags) & 0x0FFFF;
+  FakePeer* peer = FindByConnHandle(handle);
+  if (!peer) {
+    bt_log(WARN, "fake-hci", "ACL data received for unknown handle!");
+    return;
+  }
+
+  if (auto_completed_packets_event_enabled_) {
+    SendNumberOfCompletedPacketsEvent(handle, 1);
+  }
+  peer->OnRxL2CAP(handle, acl_data_packet.view(sizeof(hci_spec::ACLDataHeader)));
+}
+
+void FakeController::OnScoDataPacketReceived(const ByteBuffer& sco_data_packet) {
+  if (sco_data_callback_) {
+    sco_data_callback_(sco_data_packet);
+  }
+
+  if (sco_data_packet.size() < sizeof(hci_spec::SynchronousDataHeader)) {
+    bt_log(WARN, "fake-hci", "malformed SCO packet!");
+    return;
+  }
+
+  const auto& header = sco_data_packet.To<hci_spec::SynchronousDataHeader>();
+  hci_spec::ConnectionHandle handle = le16toh(header.handle_and_flags) & 0x0FFFF;
+  FakePeer* peer = FindByConnHandle(handle);
+  if (!peer) {
+    bt_log(WARN, "fake-hci", "SCO data received for unknown handle!");
+    return;
+  }
+
+  if (auto_completed_packets_event_enabled_) {
+    SendNumberOfCompletedPacketsEvent(handle, 1);
+  }
+}
+
+void FakeController::SetDataCallback(DataCallback callback, pw::async::Dispatcher& pw_dispatcher) {
+  BT_DEBUG_ASSERT(callback);
+  BT_DEBUG_ASSERT(!acl_data_callback_);
+  BT_DEBUG_ASSERT(!data_dispatcher_);
+
+  acl_data_callback_ = std::move(callback);
+  data_dispatcher_.emplace(pw_dispatcher);
+}
+
+void FakeController::ClearDataCallback() {
+  // Leave dispatcher set (if already set) to preserve its write-once-ness (this catches bugs with
+  // setting multiple data callbacks in class hierarchies).
+  acl_data_callback_ = nullptr;
+}
+
+bool FakeController::LEAdvertisingState::IsDirectedAdvertising() const {
+  return adv_type ==
+             pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_HIGH_DUTY_CYCLE_DIRECTED ||
+         adv_type == pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_LOW_DUTY_CYCLE_DIRECTED;
+}
+
+bool FakeController::LEAdvertisingState::IsScannableAdvertising() const {
+  return adv_type ==
+             pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_AND_SCANNABLE_UNDIRECTED ||
+         adv_type == pw::bluetooth::emboss::LEAdvertisingType::SCANNABLE_UNDIRECTED;
+}
+
+bool FakeController::LEAdvertisingState::IsConnectableAdvertising() const {
+  return adv_type ==
+             pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_AND_SCANNABLE_UNDIRECTED ||
+         adv_type ==
+             pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_HIGH_DUTY_CYCLE_DIRECTED ||
+         adv_type == pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_LOW_DUTY_CYCLE_DIRECTED;
+}
+
 void FakeController::HandleReceivedCommandPacket(
     const PacketView<hci_spec::CommandHeader>& command_packet) {
   hci_spec::OpCode opcode = le16toh(command_packet.header().opcode);
@@ -2931,54 +3056,54 @@ void FakeController::HandleReceivedCommandPacket(
       OnLEReadAdvertisingChannelTxPower();
       break;
     }
-    case hci_spec::kInquiry:
-    case hci_spec::kEnhancedAcceptSynchronousConnectionRequest:
-    case hci_spec::kEnhancedSetupSynchronousConnection:
+    case hci_spec::kAuthenticationRequested:
     case hci_spec::kCreateConnection:
     case hci_spec::kDisconnect:
-    case hci_spec::kLinkKeyRequestNegativeReply:
-    case hci_spec::kLESetAdvertisingEnable:
-    case hci_spec::kLESetExtendedAdvertisingEnable:
-    case hci_spec::kAuthenticationRequested:
-    case hci_spec::kSetConnectionEncryption:
-    case hci_spec::kRemoteNameRequest:
-    case hci_spec::kReadRemoteSupportedFeatures:
-    case hci_spec::kReadRemoteExtendedFeatures:
-    case hci_spec::kReadRemoteVersionInfo:
+    case hci_spec::kEnhancedAcceptSynchronousConnectionRequest:
+    case hci_spec::kEnhancedSetupSynchronousConnection:
     case hci_spec::kIOCapabilityRequestReply:
-    case hci_spec::kSetEventMask:
-    case hci_spec::kWriteLocalName:
-    case hci_spec::kWriteScanEnable:
-    case hci_spec::kWritePageScanActivity:
-    case hci_spec::kUserConfirmationRequestReply:
-    case hci_spec::kUserConfirmationRequestNegativeReply:
-    case hci_spec::kWriteSynchronousFlowControlEnable:
-    case hci_spec::kWriteExtendedInquiryResponse:
-    case hci_spec::kWriteSimplePairingMode:
-    case hci_spec::kWriteClassOfDevice:
-    case hci_spec::kWriteInquiryMode:
-    case hci_spec::kWritePageScanType:
-    case hci_spec::kWriteLEHostSupport:
-    case hci_spec::kWriteSecureConnectionsHostSupport:
-    case hci_spec::kReadEncryptionKeySize:
-    case hci_spec::kLESetEventMask:
-    case hci_spec::kLESetRandomAddress:
-    case hci_spec::kLESetAdvertisingData:
-    case hci_spec::kLESetScanResponseData:
-    case hci_spec::kLESetScanParameters:
-    case hci_spec::kLESetScanEnable:
-    case hci_spec::kLECreateConnection:
+    case hci_spec::kInquiry:
+    case hci_spec::kLEClearAdvertisingSets:
     case hci_spec::kLEConnectionUpdate:
-    case hci_spec::kLEStartEncryption:
-    case hci_spec::kReadLocalExtendedFeatures:
-    case hci_spec::kLESetAdvertisingParameters:
+    case hci_spec::kLECreateConnection:
     case hci_spec::kLEReadMaxAdvertisingDataLength:
     case hci_spec::kLEReadNumSupportedAdvertisingSets:
-    case hci_spec::kLEClearAdvertisingSets:
-    case hci_spec::kLESetExtendedAdvertisingData:
-    case hci_spec::kLESetExtendedScanResponseData:
+    case hci_spec::kLESetAdvertisingData:
+    case hci_spec::kLESetAdvertisingEnable:
+    case hci_spec::kLESetAdvertisingParameters:
     case hci_spec::kLESetAdvertisingSetRandomAddress:
-    case hci_spec::kLESetExtendedAdvertisingParameters: {
+    case hci_spec::kLESetEventMask:
+    case hci_spec::kLESetExtendedAdvertisingData:
+    case hci_spec::kLESetExtendedAdvertisingEnable:
+    case hci_spec::kLESetExtendedAdvertisingParameters:
+    case hci_spec::kLESetExtendedScanResponseData:
+    case hci_spec::kLESetRandomAddress:
+    case hci_spec::kLESetScanEnable:
+    case hci_spec::kLESetScanParameters:
+    case hci_spec::kLESetScanResponseData:
+    case hci_spec::kLEStartEncryption:
+    case hci_spec::kLinkKeyRequestNegativeReply:
+    case hci_spec::kReadEncryptionKeySize:
+    case hci_spec::kReadLocalExtendedFeatures:
+    case hci_spec::kReadRemoteExtendedFeatures:
+    case hci_spec::kReadRemoteSupportedFeatures:
+    case hci_spec::kReadRemoteVersionInfo:
+    case hci_spec::kRemoteNameRequest:
+    case hci_spec::kSetConnectionEncryption:
+    case hci_spec::kSetEventMask:
+    case hci_spec::kUserConfirmationRequestNegativeReply:
+    case hci_spec::kUserConfirmationRequestReply:
+    case hci_spec::kWriteClassOfDevice:
+    case hci_spec::kWriteExtendedInquiryResponse:
+    case hci_spec::kWriteInquiryMode:
+    case hci_spec::kWriteLEHostSupport:
+    case hci_spec::kWriteLocalName:
+    case hci_spec::kWritePageScanActivity:
+    case hci_spec::kWritePageScanType:
+    case hci_spec::kWriteScanEnable:
+    case hci_spec::kWriteSecureConnectionsHostSupport:
+    case hci_spec::kWriteSimplePairingMode:
+    case hci_spec::kWriteSynchronousFlowControlEnable: {
       // This case is for packet types that have been migrated to the new Emboss architecture.
       // Their old version can be still be assembled from the HciEmulator channel, so here we
       // repackage and forward them as Emboss packets.
@@ -3305,91 +3430,5 @@ void FakeController::HandleReceivedCommandPacket(const hci::EmbossCommandPacket&
       break;
     }
   }
-}
-
-void FakeController::OnACLDataPacketReceived(const ByteBuffer& acl_data_packet) {
-  if (acl_data_callback_) {
-    DynamicByteBuffer packet_copy(acl_data_packet);
-    async::PostTask(data_dispatcher_,
-                    [packet_copy = std::move(packet_copy),
-                     cb = acl_data_callback_.share()]() mutable { cb(packet_copy); });
-  }
-
-  if (acl_data_packet.size() < sizeof(hci_spec::ACLDataHeader)) {
-    bt_log(WARN, "fake-hci", "malformed ACL packet!");
-    return;
-  }
-
-  const auto& header = acl_data_packet.To<hci_spec::ACLDataHeader>();
-  hci_spec::ConnectionHandle handle = le16toh(header.handle_and_flags) & 0x0FFFF;
-  FakePeer* peer = FindByConnHandle(handle);
-  if (!peer) {
-    bt_log(WARN, "fake-hci", "ACL data received for unknown handle!");
-    return;
-  }
-
-  if (auto_completed_packets_event_enabled_) {
-    SendNumberOfCompletedPacketsEvent(handle, 1);
-  }
-  peer->OnRxL2CAP(handle, acl_data_packet.view(sizeof(hci_spec::ACLDataHeader)));
-}
-
-void FakeController::OnScoDataPacketReceived(const ByteBuffer& sco_data_packet) {
-  if (sco_data_callback_) {
-    sco_data_callback_(sco_data_packet);
-  }
-
-  if (sco_data_packet.size() < sizeof(hci_spec::SynchronousDataHeader)) {
-    bt_log(WARN, "fake-hci", "malformed SCO packet!");
-    return;
-  }
-
-  const auto& header = sco_data_packet.To<hci_spec::SynchronousDataHeader>();
-  hci_spec::ConnectionHandle handle = le16toh(header.handle_and_flags) & 0x0FFFF;
-  FakePeer* peer = FindByConnHandle(handle);
-  if (!peer) {
-    bt_log(WARN, "fake-hci", "SCO data received for unknown handle!");
-    return;
-  }
-
-  if (auto_completed_packets_event_enabled_) {
-    SendNumberOfCompletedPacketsEvent(handle, 1);
-  }
-}
-
-void FakeController::SetDataCallback(DataCallback callback, async_dispatcher_t* dispatcher) {
-  BT_DEBUG_ASSERT(callback);
-  BT_DEBUG_ASSERT(dispatcher);
-  BT_DEBUG_ASSERT(!acl_data_callback_);
-  BT_DEBUG_ASSERT(!data_dispatcher_);
-
-  acl_data_callback_ = std::move(callback);
-  data_dispatcher_ = dispatcher;
-}
-
-void FakeController::ClearDataCallback() {
-  // Leave dispatcher set (if already set) to preserve its write-once-ness (this catches bugs with
-  // setting multiple data callbacks in class hierarchies).
-  acl_data_callback_ = nullptr;
-}
-
-bool FakeController::LEAdvertisingState::IsDirectedAdvertising() const {
-  return adv_type ==
-             pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_HIGH_DUTY_CYCLE_DIRECTED ||
-         adv_type == pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_LOW_DUTY_CYCLE_DIRECTED;
-}
-
-bool FakeController::LEAdvertisingState::IsScannableAdvertising() const {
-  return adv_type ==
-             pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_AND_SCANNABLE_UNDIRECTED ||
-         adv_type == pw::bluetooth::emboss::LEAdvertisingType::SCANNABLE_UNDIRECTED;
-}
-
-bool FakeController::LEAdvertisingState::IsConnectableAdvertising() const {
-  return adv_type ==
-             pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_AND_SCANNABLE_UNDIRECTED ||
-         adv_type ==
-             pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_HIGH_DUTY_CYCLE_DIRECTED ||
-         adv_type == pw::bluetooth::emboss::LEAdvertisingType::CONNECTABLE_LOW_DUTY_CYCLE_DIRECTED;
 }
 }  // namespace bt::testing

@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+assert(is_fuchsia, "These targets are only compiled in the fuchsia toolchain.")
+
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 
@@ -11,8 +13,8 @@ rustc_test("rust_bin") {
   source_root = "rust/lib.rs"
 
   deps = [
-    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/diagnostics/reader/rust",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
   ]
@@ -28,7 +30,7 @@ executable("cpp_bin") {
   public_deps = [
     "//examples/diagnostics/inspect/codelab/cpp/testing:inspect-cpp-codelab-testing",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_hlcpp",
-    "//sdk/lib/inspect/contrib/cpp:archive_reader",
+    "//sdk/lib/diagnostics/reader/cpp:archive_reader",
     "//sdk/lib/sys/cpp",
     "//src/lib/fsl",
     "//src/lib/fxl/test:gtest_main",
@@ -80,7 +82,7 @@ fuchsia_test_package("rust_config_integration_test_with_json_values") {
   ]
 }
 
-group("integration_test") {
+group("hermetic_tests") {
   testonly = true
   deps = [
     ":cpp_config_integration_test",

@@ -30,8 +30,10 @@
     offer: [
         {
             protocol: [
+                "fuchsia.buildinfo.Provider",
                 "fuchsia.kernel.Stats",
                 "fuchsia.kernel.VmexResource",
+                "fuchsia.sysinfo.SysInfo",
             ],
             from: "parent",
             to: "#kernel",

@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use addr::TargetAddr;
+use anyhow::anyhow;
 use async_trait::async_trait;
+use chrono::Duration;
 use errors::ffx_bail;
 use ffx_bootloader_args::{
     BootCommand, BootloaderCommand,
@@ -11,14 +14,22 @@ use ffx_bootloader_args::{
 };
 use ffx_fastboot::{
     boot::boot,
-    common::{file::EmptyResolver, from_manifest, prepare},
+    common::fastboot::tcp_proxy,
+    common::fastboot::udp_proxy,
+    common::fastboot::usb_proxy,
+    common::{from_manifest, prepare},
+    file_resolver::resolvers::EmptyResolver,
     info::info,
     lock::lock,
     unlock::unlock,
 };
+use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use fho::{FfxContext, FfxMain, FfxTool, SimpleWriter};
-use fidl_fuchsia_developer_ffx::FastbootProxy;
+use fidl_fuchsia_developer_ffx::FastbootInterface as FidlFastbootInterface;
+use fidl_fuchsia_developer_ffx::{TargetInfo, TargetProxy, TargetRebootState, TargetState};
+use fuchsia_async::Timer;
 use std::io::{stdin, Write};
+use std::net::SocketAddr;
 
 const MISSING_ZBI: &str = "Error: vbmeta parameter must be used with zbi parameter";
 
@@ -29,7 +40,7 @@ const WARNING: &str = "WARNING: ALL SETTINGS USER CONTENT WILL BE ERASED!\n\
 pub struct BootloaderTool {
     #[command]
     cmd: BootloaderCommand,
-    fastboot_proxy: FastbootProxy,
+    target_proxy: TargetProxy,
 }
 
 fho::embedded_plugin!(BootloaderTool);
@@ -38,20 +49,109 @@ fho::embedded_plugin!(BootloaderTool);
 impl FfxMain for BootloaderTool {
     type Writer = SimpleWriter;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        bootloader_impl(self.fastboot_proxy, self.cmd, &mut writer).await
+        let mut info = self.target_proxy.identity().await.map_err(|e| anyhow!(e))?;
+
+        fn display_name(info: &TargetInfo) -> &str {
+            info.nodename.as_deref().or(info.serial_number.as_deref()).unwrap_or("<unknown>")
+        }
+
+        match info.target_state {
+            Some(TargetState::Fastboot) => {
+                // Nothing to do
+                tracing::debug!("Target already in Fastboot state");
+            }
+            Some(TargetState::Disconnected) => {
+                // Nothing to do, for a slightly different reason.
+                // Since there's no knowledge about the state of the target, assume the
+                // target is in Fastboot.
+                tracing::info!("Target not connected, assuming Fastboot state");
+            }
+            Some(mode) => {
+                // Wait 10 seconds to allow the target to fully cycle to the bootloader
+                write!(writer, "Waiting for 10 seconds for Target to reboot")
+                    .user_message("Error writing user message")?;
+                writer.flush().user_message("Error flushing writer buffer")?;
+
+                // Tell the target to reboot to the bootloader
+                tracing::debug!("Target in {:#?} state. Rebooting to bootloader...", mode);
+                self.target_proxy
+                    .reboot(TargetRebootState::Bootloader)
+                    .await
+                    .user_message("Got error rebooting")?
+                    .map_err(|e| anyhow!("Got error rebooting target: {:#?}", e))
+                    .user_message("Got an error rebooting")?;
+
+                Timer::new(
+                    Duration::seconds(10)
+                        .to_std()
+                        .user_message("Error converting 10 seconds to Duration")?,
+                )
+                .await;
+
+                // Get the info again since the target changed state
+                info = self
+                    .target_proxy
+                    .identity()
+                    .await
+                    .user_message("Error getting the target's identity")?;
+
+                if !matches!(info.target_state, Some(TargetState::Fastboot)) {
+                    ffx_bail!("Target was requested to reboot to the bootloader, but was found in {:#?} state",info.target_state)
+                }
+            }
+            None => {
+                ffx_bail!("Target had an unknown, non-existant state")
+            }
+        };
+        match info.fastboot_interface {
+            None => {
+                ffx_bail!("Could not connect to {}: Target not in fastboot", display_name(&info))
+            }
+            Some(FidlFastbootInterface::Usb) => {
+                let serial_num = info.serial_number.ok_or_else(|| {
+                    anyhow!("Target was detected in Fastboot USB but did not have a serial number")
+                })?;
+                let proxy = usb_proxy(serial_num).await?;
+                bootloader_impl(proxy, self.cmd, &mut writer).await
+            }
+            Some(FidlFastbootInterface::Udp) => {
+                // We take the first address as when a target is in Fastboot mode and over
+                // UDP it only exposes one address
+                if let Some(addr) = info.addresses.unwrap().into_iter().take(1).next() {
+                    let target_addr: TargetAddr = addr.into();
+                    let socket_addr: SocketAddr = target_addr.into();
+                    let proxy = udp_proxy(&socket_addr).await?;
+                    bootloader_impl(proxy, self.cmd, &mut writer).await
+                } else {
+                    ffx_bail!("Could not get a valid address for target");
+                }
+            }
+            Some(FidlFastbootInterface::Tcp) => {
+                // We take the first address as when a target is in Fastboot mode and over
+                // TCP it only exposes one address
+                if let Some(addr) = info.addresses.unwrap().into_iter().take(1).next() {
+                    let target_addr: TargetAddr = addr.into();
+                    let socket_addr: SocketAddr = target_addr.into();
+                    let proxy = tcp_proxy(&socket_addr).await?;
+                    bootloader_impl(proxy, self.cmd, &mut writer).await
+                } else {
+                    ffx_bail!("Could not get a valid address for target");
+                }
+            }
+        }
     }
 }
 
 pub async fn bootloader_impl<W: Write>(
-    fastboot_proxy: FastbootProxy,
+    mut fastboot_proxy: impl FastbootInterface,
     cmd: BootloaderCommand,
     writer: &mut W,
 ) -> fho::Result<()> {
     // SubCommands can overwrite the manifest with their own parameters, so check for those
     // conditions before continuing through to check the flash manifest.
     match &cmd.subcommand {
-        Info(_) => return info(writer, &fastboot_proxy).await.map_err(fho::Error::from),
-        Lock(_) => return lock(writer, &fastboot_proxy).await.map_err(fho::Error::from),
+        Info(_) => return info(writer, &mut fastboot_proxy).await.map_err(fho::Error::from),
+        Lock(_) => return lock(writer, &mut fastboot_proxy).await.map_err(fho::Error::from),
         Unlock(UnlockCommand { cred, force }) => {
             if !force {
                 writeln!(writer, "{}", WARNING).bug_context("failed to write")?;
@@ -70,12 +170,12 @@ pub async fn bootloader_impl<W: Write>(
             }
             match cred {
                 Some(cred_file) => {
-                    prepare(writer, &fastboot_proxy).await?;
+                    prepare(writer, &mut fastboot_proxy).await?;
                     return unlock(
                         writer,
                         &mut EmptyResolver::new()?,
                         &vec![cred_file.to_string()],
-                        &fastboot_proxy,
+                        &mut fastboot_proxy,
                     )
                     .await
                     .map_err(fho::Error::from);
@@ -89,13 +189,13 @@ pub async fn bootloader_impl<W: Write>(
             }
             match zbi {
                 Some(z) => {
-                    prepare(writer, &fastboot_proxy).await?;
+                    prepare(writer, &mut fastboot_proxy).await?;
                     return boot(
                         writer,
                         &mut EmptyResolver::new()?,
                         z.to_owned(),
                         vbmeta.to_owned(),
-                        &fastboot_proxy,
+                        &mut fastboot_proxy,
                     )
                     .await
                     .map_err(fho::Error::from);
@@ -105,7 +205,7 @@ pub async fn bootloader_impl<W: Write>(
         }
     }
 
-    from_manifest(writer, cmd, fastboot_proxy).await.map_err(fho::Error::from)
+    from_manifest(writer, cmd, &mut fastboot_proxy).await.map_err(fho::Error::from)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -115,7 +215,7 @@ pub async fn bootloader_impl<W: Write>(
 mod test {
     use super::*;
     use ffx_bootloader_args::LockCommand;
-    use ffx_fastboot::{common::LOCKED_VAR, test::setup};
+    use ffx_fastboot::{common::vars::LOCKED_VAR, test::setup};
     use tempfile::NamedTempFile;
 
     #[fuchsia_async::run_singlethreaded(test)]

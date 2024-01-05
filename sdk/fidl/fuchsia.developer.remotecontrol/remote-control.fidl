@@ -1,21 +1,19 @@
 // Copyright 2019 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+@available(added=16)
 library fuchsia.developer.remotecontrol;
 
-using fuchsia.boot as boot;
 using fuchsia.component as component;
 using fuchsia.diagnostics as diagnostics;
 using fuchsia.io as io;
-using fuchsia.kernel as kernel;
-using fuchsia.net as net;
 using fuchsia.sys2 as sys2;
 using zx;
 
 const MAX_NUM_MATCHES uint16 = 250;
 const MAX_CONNECT_MATCHES uint16 = 5;
 
-type TunnelError = strict enum {
+type TunnelError = flexible enum {
     // Couldn't connect to the address to forward.
     CONNECT_FAILED = 1;
     // Something was wrong with the socket which was being tunneled to.
@@ -24,8 +22,10 @@ type TunnelError = strict enum {
     CALLBACK_ERROR = 3;
 };
 
+// Strict methods in this protocol are due to them predating the introduction of
+// API levels and being hard to migrate.
 @discoverable
-closed protocol RemoteControl {
+open protocol RemoteControl {
     /// Returns the input.
     strict EchoString(struct {
         value string:255;
@@ -40,103 +40,23 @@ closed protocol RemoteControl {
         severity diagnostics.Severity;
     }) -> ();
 
-    /// Connects to the root [`fuchsia.sys2/RealmExplorer`] protocol.
-    strict RootRealmExplorer(resource struct {
-        server server_end:sys2.RealmExplorer;
-    }) -> () error zx.Status;
-
-    /// Connects to the root [`fuchsia.sys2/RealmQuery`] protocol.
-    strict RootRealmQuery(resource struct {
-        server server_end:sys2.RealmQuery;
-    }) -> () error zx.Status;
-
-    /// Connects to the root [`fuchsia.sys2/LifecycleController`] protocol.
-    strict RootLifecycleController(resource struct {
-        server server_end:sys2.LifecycleController;
-    }) -> () error zx.Status;
-
-    /// Connects to the root [`fuchsia.sys2/RouteValidator`] protocol.
-    strict RootRouteValidator(resource struct {
-        server server_end:sys2.RouteValidator;
-    }) -> () error zx.Status;
-
-    // Connects to the [`fuchsia.kernel/Stats`] protocol
-    strict KernelStats(resource struct {
-        server server_end:kernel.Stats;
-    }) -> () error zx.Status;
-
-    // Connects to the [`fuchsia.boot/Arguments`] protocol
-    strict BootArguments(resource struct {
-        server server_end:boot.Arguments;
-    }) -> () error zx.Status;
-
-    strict IdentifyHost() -> (struct {
+    flexible IdentifyHost() -> (struct {
         response IdentifyHostResponse;
     }) error IdentifyHostError;
-
-    // Connects a channel to a service, given a selector and a channel iff the selector
-    // matches exactly one service on the system.
-    // If successful, returns information about the service connected to.
-    @deprecated("Please use `ConnectCapability`")
-    strict Connect(resource struct {
-        selector diagnostics.Selector;
-        service_chan zx.Handle:CHANNEL;
-    }) -> (struct {
-        match ServiceMatch;
-    }) error ConnectError;
 
     // Connects a channel to a service, given a moniker and a channel iff the
     // component identified by the given moniker exposes a capability of the
     // requested name.
-    strict ConnectCapability(resource struct {
+    flexible OpenCapability(resource struct {
         moniker string:component.MAX_MONIKER_LENGTH;
+        capability_set sys2.OpenDirType;
         capability_name component.name;
-        server_chan zx.Handle:CHANNEL;
+        server_channel zx.Handle:CHANNEL;
         flags io.OpenFlags;
     }) -> () error ConnectCapabilityError;
-
-    // AddId adds an identifier that can be recovered from IdentifyHost in order
-    // to match this peer against a list of possible source peers. Callers are
-    // expected to pick IDs randomly across the ID space, and only to add new
-    // IDs to help identify transport or physical layer topologies. ffx uses
-    // this API to pair an RCS instance discovered on Overnet to a device that
-    // was discovered over mdns, for example.
-    strict AddId(struct {
-        id uint64;
-    }) -> ();
-
-    // Add a new Overnet link to this RCS instance. The node visible at the end
-    // of this link will host only the RemoteControl service. This method also
-    // performs the function of `AddId`, which is the purpose of the `id`
-    // argument.
-    strict AddOvernetLink(resource struct {
-        id uint64;
-        socket zx.Handle:SOCKET;
-    }) -> ();
-
-    // Establishes a TCP connection to the given address and forwards traffic through the given
-    // socket.
-    strict ForwardTcp(resource struct {
-        addr net.SocketAddress;
-        socket zx.Handle:SOCKET;
-    }) -> () error TunnelError;
-
-    // Listens on a TCP port and forwards any incoming connections to newly-created sockets which
-    // are passed back via the callback.
-    strict ReverseTcp(resource struct {
-        addr net.SocketAddress;
-        client client_end:ForwardCallback;
-    }) -> () error TunnelError;
 
     // Gets the current monotonic time in nanoseconds.
     strict GetTime() -> (struct {
         time int64;
-    });
-};
-
-closed protocol ForwardCallback {
-    strict Forward(resource struct {
-        socket zx.Handle:SOCKET;
-        addr net.SocketAddress;
     });
 };

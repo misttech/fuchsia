@@ -6,7 +6,6 @@
 
 #include <lib/fit/defer.h>
 #include <lib/fpromise/bridge.h>
-#include <lib/media/audio/cpp/types.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/clock.h>
 #include <zircon/errors.h>
@@ -16,10 +15,7 @@
 
 #include "src/media/audio/audio_core/shared/audio_admin.h"
 #include "src/media/audio/audio_core/shared/logging_flags.h"
-#include "src/media/audio/audio_core/v1/audio_core_impl.h"
-#include "src/media/audio/audio_core/v1/audio_driver.h"
 #include "src/media/audio/lib/clock/clone_mono.h"
-#include "src/media/audio/lib/clock/utils.h"
 
 namespace media::audio {
 namespace {
@@ -496,7 +492,12 @@ void BaseCapturer::RecomputePresentationDelay() {
     FX_LOGS(TRACE) << "Changing presentation_delay_ (ns) from " << presentation_delay_.get()
                    << " to " << cur_max.get();
 
-    reporter_->SetMinFenceTime(cur_max);
+    if (!min_fence_time_reported_) {
+      reporter_->SetInitialPresentationDelay(cur_max);
+      min_fence_time_reported_ = true;
+    } else {
+      reporter_->UpdatePresentationDelay(cur_max, zx::clock::get_monotonic());
+    }
     presentation_delay_ = cur_max;
   }
 }
@@ -677,15 +678,15 @@ void BaseCapturer::ReportOverflow(zx::time start_time, zx::time end_time) {
   if constexpr (kLogCaptureOverflow) {
     auto duration_ms = static_cast<double>((end_time - start_time).to_nsecs()) / ZX_MSEC(1);
     if ((overflow_count_ - 1) % kCaptureOverflowWarningInterval == 0) {
-      FX_LOGS(WARNING) << "CAPTURE OVERERFLOW #" << overflow_count_ << " (1/"
+      FX_LOGS(WARNING) << "CAPTURE OVERFLOW #" << overflow_count_ << " (1/"
                        << kCaptureOverflowWarningInterval << ") lasted " << std::setprecision(4)
                        << duration_ms << " ms";
     } else if ((overflow_count_ - 1) % kCaptureOverflowInfoInterval == 0) {
-      FX_LOGS(INFO) << "CAPTURE OVERERFLOW #" << overflow_count_ << " (1/"
+      FX_LOGS(INFO) << "CAPTURE OVERFLOW #" << overflow_count_ << " (1/"
                     << kCaptureOverflowInfoInterval << ") lasted " << std::setprecision(4)
                     << duration_ms << " ms";
     } else {
-      FX_LOGS(TRACE) << "CAPTURE OVERERFLOW #" << overflow_count_ << " lasted "
+      FX_LOGS(TRACE) << "CAPTURE OVERFLOW #" << overflow_count_ << " lasted "
                      << std::setprecision(4) << duration_ms << " ms";
     }
   }

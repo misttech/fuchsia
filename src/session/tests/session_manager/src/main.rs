@@ -84,11 +84,7 @@ mod tests {
 
         let realm = builder.build().await?;
 
-        // NOTE(hjfreyer): In theory there's a race condition here if
-        // session_manager exports inspect data before launching the session.
-        // I've run this many times and haven't seen it flake, but if it starts
-        // flaking, it may have to do with that.
-        let inspect = get_session_manager_inspect(&realm, "root/session_started_at").await?;
+        let inspect = get_session_manager_inspect(&realm, "root/session_started_at/0").await?;
 
         // Assert the session has been launched once.
         assert_eq!(

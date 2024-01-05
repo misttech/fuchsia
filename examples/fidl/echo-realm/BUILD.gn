@@ -5,6 +5,10 @@
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 
+group("echo-realm") {
+  deps = [ ":echo_realm" ]
+}
+
 # Realm component used to launch FIDL examples
 fuchsia_component("echo_realm") {
   manifest = "meta/echo_realm.cml"
@@ -31,7 +35,7 @@ fuchsia_component("fidl_examples_test") {
   deps = [ ":bin" ]
 }
 
-group("tests") {
+group("hermetic_tests") {
   testonly = true
   deps = [
     ":echo-cpp-async-test",

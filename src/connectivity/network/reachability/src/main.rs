@@ -17,7 +17,7 @@ mod eventloop;
 use crate::eventloop::EventLoop;
 
 #[fuchsia::main(logging_tags = ["reachability"])]
-fn main() {
+pub fn main() {
     // TODO(dpradilla): use a `StructOpt` to pass in a log level option where the user can control
     // how verbose logs should be.
     info!("Starting reachability monitor!");
@@ -29,7 +29,13 @@ fn main() {
     handler.publish_service(fs.dir("svc"));
 
     let inspector = component::inspector();
-    let () = inspect_runtime::serve(&inspector, &mut fs).expect("failed to serve inspect");
+    // Report data on the size of the inspect VMO, and the number of allocation
+    // failures encountered. (Allocation failures can lead to missing data.)
+    component::serve_inspect_stats();
+
+    let _inspect_server_task =
+        inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default())
+            .expect("publish Inspect task");
 
     let fs = fs.take_and_serve_directory_handle().expect("failed to serve ServiceFS directory");
 

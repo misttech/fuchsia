@@ -14,7 +14,7 @@
 #include "src/developer/forensics/crash_reports/annotation_map.h"
 #include "src/developer/forensics/crash_reports/product.h"
 #include "src/developer/forensics/crash_reports/report.h"
-#include "src/developer/forensics/crash_reports/snapshot.h"
+#include "src/developer/forensics/feedback/annotations/types.h"
 #include "src/lib/timekeeper/clock.h"
 
 namespace forensics {
@@ -23,13 +23,13 @@ namespace crash_reports {
 // Shorten |program_name| into a shortname by removing the "fuchsia-pkg://" prefix if present and
 // replacing all '/' with ':'.
 //
-// For example `fuchsia-pkg://fuchsia.com/foo-bar#meta/foo_bar.cmx` becomes
-// `fuchsia.com:foo-bar#meta:foo_bar.cmx`.
+// For example `fuchsia-pkg://fuchsia.com/foo-bar#meta/foo_bar.cm` becomes
+// `fuchsia.com:foo-bar#meta:foo_bar.cm`.
 std::string Shorten(std::string program_name);
 
-// Extract the component name without the ".cmx" suffix from |name|, if one is present.
+// Extract the component name without the ".cm" suffix from |name|, if one is present.
 //
-// For example `fuchsia-pkg://fuchsia.com/foo-bar#meta/foo_bar.cmx` becomes
+// For example `fuchsia-pkg://fuchsia.com/foo-bar#meta/foo_bar.cm` becomes
 // `foo_bar`.
 std::string Logname(std::string name);
 
@@ -46,7 +46,7 @@ AnnotationMap GetReportAnnotations(Product product, const AnnotationMap& annotat
 // * Some attachments are report-specific, e.g., Dart exception stack trace.
 // * Adds any attachments from |report|.
 fpromise::result<Report> MakeReport(fuchsia::feedback::CrashReport input_report, ReportId report_id,
-                                    const SnapshotUuid& snapshot_uuid,
+                                    const std::string& snapshot_uuid,
                                     const feedback::Annotations& snapshot_annotations,
                                     const std::optional<timekeeper::time_utc>& current_time,
                                     Product product, bool is_hourly_report);

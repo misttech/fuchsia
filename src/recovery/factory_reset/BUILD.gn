@@ -16,23 +16,23 @@ source_set("lib") {
 
   public_deps = [
     # <factory_reset.h> has #include <fidl/fuchsia.fshost/cpp.wire.h>
-    "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp_wire",
+    "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
 
     # <factory_reset.h> has #include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
-    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp",
 
     # <factory_reset.h> has #include <fidl/fuchsia.recovery/cpp/wire.h>
-    "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_cpp_wire",
+    "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_cpp",
   ]
 
   deps = [
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/syslog/cpp",
-    "//src/lib/storage/block_client/cpp",
-    "//src/lib/storage/fs_management",
     "//src/security/lib/kms-stateless",
     "//src/security/lib/zxcrypt:zxcrypt-client",
+    "//src/storage/lib/block_client/cpp",
+    "//src/storage/lib/fs_management",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
@@ -58,7 +58,7 @@ executable("fdr") {
   sources = [ "cli_main.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_cpp_wire",
+    "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_cpp",
     "//sdk/lib/component/incoming/cpp",
   ]
 }
@@ -77,7 +77,7 @@ group("factory_reset") {
   deps = [ ":factory_reset_pkg" ]
 }
 
-fuchsia_shell_package("fdr_cli") {
+fuchsia_package("fdr_cli") {
   deps = [ ":fdr" ]
 }
 
@@ -97,17 +97,19 @@ test("factory_reset_unittests") {
   deps = [
     ":lib",
     "////src/lib/testing/loop_fixture",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp_testing",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp_testing",
     "//sdk/lib/component/incoming/cpp",
     "//src/devices/testing/driver-integration-test-shim",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/storage/block_client/cpp",
-    "//src/lib/storage/fs_management",
-    "//src/lib/storage/ramdevice_client/cpp",
     "//src/lib/uuid",
     "//src/security/lib/fcrypto",
     "//src/security/lib/zxcrypt:zxcrypt-client",
+    "//src/storage/lib/block_client/cpp",
+    "//src/storage/lib/fs_management",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",

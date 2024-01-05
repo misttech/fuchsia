@@ -19,7 +19,7 @@ driver_bind_rules("mbr_bind") {
   disable_autobind = true
   rules = "mbr.bind"
   tests = "bind_tests.json"
-  deps = [ "//src/devices/bind/fuchsia.hardware.block" ]
+  deps = [ "//src/devices/bind/fuchsia.block" ]
 }
 
 fuchsia_driver("mbr-driver") {
@@ -38,12 +38,10 @@ fuchsia_driver("mbr-driver") {
     ":mbr_bind",
     "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//sdk/lib/syslog/cpp:backend",
-    "//src/devices/block/lib/common",
+    "//src/devices/block/lib/common:common-dfv1",
     "//src/devices/lib/driver",
     "//src/lib/ddk",
     "//src/lib/ddktl",
-    "//src/storage/gpt",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/mbr",
     "//zircon/system/ulib/sync",
@@ -58,6 +56,11 @@ fuchsia_driver_component("mbr") {
   manifest = "meta/mbr.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "mbr"
+  driver_components = [ ":mbr" ]
+}
+
 test("mbr-test-bin") {
   output_name = "mbr-test"
   sources = [
@@ -70,7 +73,7 @@ test("mbr-test-bin") {
     ":mbr_bind",
     "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//src/devices/block/lib/common",
+    "//src/devices/block/lib/common:common-dfv1",
     "//src/devices/testing/mock-ddk",
     "//src/lib/ddk",
     "//src/lib/ddktl",

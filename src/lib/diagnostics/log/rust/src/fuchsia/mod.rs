@@ -7,7 +7,7 @@ use fidl_fuchsia_logger::{LogSinkMarker, LogSinkProxy};
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_zircon::{self as zx};
-use std::{any::TypeId, collections::HashSet, fmt::Debug};
+use std::{cell::Cell, collections::HashSet, fmt::Debug, ops::Deref, sync::OnceLock};
 use thiserror::Error;
 use tracing::{
     span::{Attributes, Id, Record},
@@ -20,9 +20,16 @@ mod filter;
 mod sink;
 
 use filter::InterestFilter;
-use sink::Sink;
+use sink::{Sink, SinkConfig};
 
 pub use diagnostics_log_encoding::{encode::TestRecord, Metatag};
+pub use paste::paste;
+
+#[cfg(test)]
+use std::{
+    sync::atomic::{AtomicI64, Ordering},
+    time::Duration,
+};
 
 /// Callback for interest listeners
 pub trait OnInterestChanged {
@@ -32,17 +39,19 @@ pub trait OnInterestChanged {
 
 /// Options to configure a `Publisher`.
 pub struct PublisherOptions<'t> {
+    blocking: bool,
     pub(crate) interest: Interest,
-    pub(crate) metatags: HashSet<Metatag>,
-    pub(crate) tags: &'t [&'t str],
     listen_for_interest_updates: bool,
     log_sink_proxy: Option<LogSinkProxy>,
+    pub(crate) metatags: HashSet<Metatag>,
+    pub(crate) tags: &'t [&'t str],
     wait_for_initial_interest: bool,
 }
 
 impl<'t> Default for PublisherOptions<'t> {
     fn default() -> Self {
         Self {
+            blocking: false,
             interest: Interest::default(),
             listen_for_interest_updates: true,
             log_sink_proxy: None,
@@ -62,12 +71,13 @@ impl PublisherOptions<'_> {
     /// configuration that is desired in most scenarios.
     pub fn empty() -> Self {
         Self {
+            blocking: false,
             interest: Interest::default(),
+            listen_for_interest_updates: false,
+            log_sink_proxy: None,
             metatags: HashSet::new(),
             tags: &[],
             wait_for_initial_interest: false,
-            listen_for_interest_updates: false,
-            log_sink_proxy: None,
         }
     }
 }
@@ -105,6 +115,16 @@ macro_rules! publisher_options {
                 pub fn use_log_sink(mut $self, proxy: LogSinkProxy) -> Self {
                     let this = &mut $self$(.$self_arg)*;
                     this.log_sink_proxy = Some(proxy);
+                    $self
+                }
+
+                /// When set to true, writes to the log socket will be blocking. This is, we'll
+                /// retry every time the socket buffer is full until we are able to write the log.
+                ///
+                /// Default: false
+                pub fn blocking(mut $self, is_blocking: bool) -> Self {
+                    let this = &mut $self$(.$self_arg)*;
+                    this.blocking = is_blocking;
                     $self
                 }
             }
@@ -145,7 +165,8 @@ pub fn initialize(opts: PublishOptions<'_>) -> Result<(), PublishError> {
 pub fn set_minimum_severity(severity: Severity) {
     tracing::dispatcher::get_default(|dispatcher| {
         let publisher: &Publisher = dispatcher.downcast_ref().unwrap();
-        let filter: &InterestFilter = (&publisher.inner as &dyn Subscriber).downcast_ref().unwrap();
+        let filter: &InterestFilter =
+            (&*publisher.inner as &dyn Subscriber).downcast_ref().unwrap();
         filter.set_minimum_severity(severity);
     });
 }
@@ -185,11 +206,12 @@ pub fn initialize_sync(opts: PublishOptions<'_>) -> impl Drop {
     let PublishOptions {
         publisher:
             PublisherOptions {
+                blocking,
                 interest,
                 metatags,
-                tags,
                 listen_for_interest_updates,
                 log_sink_proxy,
+                tags,
                 wait_for_initial_interest,
             },
         ingest_log_events,
@@ -206,6 +228,7 @@ pub fn initialize_sync(opts: PublishOptions<'_>) -> impl Drop {
                 listen_for_interest_updates,
                 log_sink_proxy,
                 wait_for_initial_interest,
+                blocking,
             },
             ingest_log_events,
             install_panic_hook,
@@ -234,10 +257,42 @@ pub fn initialize_sync(opts: PublishOptions<'_>) -> impl Drop {
     AbortAndJoinOnDrop(recv.recv().map_or(None, |value| Some(value)), Some(bg_thread))
 }
 
+/// This custom Lazy implementation can be replaced by LazyLock once that is stabilized:
+/// https://github.com/rust-lang/rust/issues/109736
+struct Lazy<T, F> {
+    cell: OnceLock<T>,
+    init: Cell<Option<F>>,
+}
+
+// SAFETY: We never create a `&F` from a `&Lazy<T, F>` so it is fine to not impl `Sync`
+// for `F`. We do create a `&mut Option<F>` in `deref`, but that is properly synchronized
+// under `get_or_init`, so is safe.
+unsafe impl<T, F: Send> Sync for Lazy<T, F> where OnceLock<T>: Sync {}
+
+impl<T, F: FnOnce() -> T> Lazy<T, F> {
+    fn new(f: F) -> Self {
+        Self { cell: OnceLock::new(), init: Cell::new(Some(f)) }
+    }
+}
+
+impl<T, F: FnOnce() -> T> Deref for Lazy<T, F> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.cell.get_or_init(|| match self.init.take() {
+            Some(f) => f(),
+            None => panic!("Lazy poisoned"),
+        })
+    }
+}
+
 /// A `Publisher` acts as broker, implementing [`tracing::Subscriber`] to receive diagnostic
 /// events from a component, and then forwarding that data on to a diagnostics service.
 pub struct Publisher {
-    inner: Layered<InterestFilter, Layered<Sink, Registry>>,
+    inner: Lazy<
+        Layered<InterestFilter, Layered<Sink, Registry>>,
+        Box<dyn FnOnce() -> Layered<InterestFilter, Layered<Sink, Registry>> + Send>,
+    >,
     interest_listening_task: Option<fasync::Task<()>>,
 }
 
@@ -259,7 +314,14 @@ impl Publisher {
                 .map_err(|e| e.to_string())
                 .map_err(PublishError::LogSinkConnect)?,
         };
-        let sink = Sink::new(&proxy, opts.tags, opts.metatags)?;
+        let sink = Sink::new(
+            &proxy,
+            SinkConfig {
+                tags: opts.tags.into_iter().map(|s| s.to_string()).collect(),
+                metatags: opts.metatags,
+                retry_on_buffer_full: opts.blocking,
+            },
+        )?;
         let (filter, on_change) =
             InterestFilter::new(proxy, opts.interest, opts.wait_for_initial_interest);
         let interest_listening_task = if opts.listen_for_interest_updates {
@@ -268,15 +330,18 @@ impl Publisher {
             None
         };
 
-        Ok(Self { inner: Registry::default().with(sink).with(filter), interest_listening_task })
+        Ok(Self {
+            inner: Lazy::new(Box::new(move || Registry::default().with(sink).with(filter))),
+            interest_listening_task,
+        })
     }
 
     // TODO(fxbug.dev/71242) delete this and make Publisher private
     /// Publish the provided event for testing.
     pub fn event_for_testing(&self, record: TestRecord<'_>) {
-        let filter: &InterestFilter = (&self.inner as &dyn Subscriber).downcast_ref().unwrap();
+        let filter: &InterestFilter = (&*self.inner as &dyn Subscriber).downcast_ref().unwrap();
         if filter.enabled_for_testing(&record) {
-            let sink: &Sink = (&self.inner as &dyn Subscriber).downcast_ref().unwrap();
+            let sink: &Sink = (&*self.inner as &dyn Subscriber).downcast_ref().unwrap();
             sink.event_for_testing(record);
         }
     }
@@ -286,7 +351,7 @@ impl Publisher {
     where
         T: OnInterestChanged + Send + Sync + 'static,
     {
-        let filter: &InterestFilter = (&self.inner as &dyn Subscriber).downcast_ref().unwrap();
+        let filter: &InterestFilter = (&*self.inner as &dyn Subscriber).downcast_ref().unwrap();
         filter.set_interest_listener(listener);
     }
 
@@ -333,13 +398,6 @@ impl Subscriber for Publisher {
     fn current_span(&self) -> Current {
         self.inner.current_span()
     }
-    unsafe fn downcast_raw(&self, id: TypeId) -> Option<*const ()> {
-        if id == TypeId::of::<Self>() {
-            Some(self as *const Self as *const ())
-        } else {
-            None
-        }
-    }
 }
 
 /// Errors arising while forwarding a diagnostics stream to the environment.
@@ -367,11 +425,53 @@ pub enum PublishError {
 }
 
 #[cfg(test)]
+static CURRENT_TIME_NANOS: AtomicI64 = AtomicI64::new(Duration::from_secs(10).as_nanos() as i64);
+
+/// Increments the test clock.
+#[cfg(test)]
+pub fn increment_clock(duration: Duration) {
+    CURRENT_TIME_NANOS.fetch_add(duration.as_nanos() as i64, Ordering::SeqCst);
+}
+
+/// Gets the current monotonic time in nanoseconds.
+#[doc(hidden)]
+pub fn get_now() -> i64 {
+    #[cfg(not(test))]
+    return zx::Time::get_monotonic().into_nanos();
+
+    #[cfg(test)]
+    CURRENT_TIME_NANOS.load(Ordering::Relaxed)
+}
+
+/// Logs every N seconds using an Atomic variable
+/// to keep track of the time. This will have a higher
+/// performance impact on ARM compared to regular logging due to the use
+/// of an atomic.
+#[macro_export]
+macro_rules! log_every_n_seconds {
+    ($seconds:expr, $severity:expr, $($arg:tt)*) => {
+        use std::{time::Duration, sync::atomic::{Ordering, AtomicI64}};
+        use diagnostics_log::{paste, fuchsia::get_now};
+
+        let now = get_now();
+
+        static LAST_LOG_TIMESTAMP: AtomicI64 = AtomicI64::new(0);
+        if now - LAST_LOG_TIMESTAMP.load(Ordering::Acquire) >= Duration::from_secs($seconds).as_nanos() as i64 {
+            paste! {
+                tracing::[< $severity:lower >]!($($arg)*);
+            }
+            LAST_LOG_TIMESTAMP.store(now, Ordering::Release);
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use diagnostics_reader::{ArchiveReader, Logs};
     use futures::{future, StreamExt};
-    use tracing::{debug, info};
+    use itertools::Itertools;
+    use tracing::{debug, info, info_span};
 
     #[fuchsia::test(logging = false)]
     async fn verify_setting_minimum_log_severity() {
@@ -401,5 +501,134 @@ mod tests {
             .await;
         assert_eq!(results[0].msg().unwrap(), "I'm an info log");
         assert_eq!(results[1].msg().unwrap(), "I'm a debug log and I show up");
+    }
+
+    #[fuchsia::test]
+    async fn verify_nested_spans() {
+        let reader = ArchiveReader::new();
+        let (logs, _) = reader.snapshot_then_subscribe::<Logs>().unwrap().split_streams();
+        let s1 = info_span!("", key = "span1");
+        info!("Log with no span 1");
+        {
+            let _s1_guard = s1.enter();
+            info!("Log with s1");
+            {
+                let s2 = info_span!("", other = "span2");
+                let _s2_guard = s2.enter();
+                info!("Log with s1 and s2");
+            }
+            info!("Second log with s1");
+        }
+        info!("Log with no span 2");
+
+        let results = logs
+            .filter(|data| {
+                future::ready(data.tags().unwrap().iter().any(|t| t == "verify_nested_spans"))
+            })
+            .take(5)
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(results[0].msg().unwrap(), "Log with no span 1");
+        assert!(results[0].payload_keys_strings().collect::<Vec<_>>().is_empty());
+        assert_eq!(results[1].msg().unwrap(), "Log with s1");
+        assert_eq!(
+            results[1].payload_keys_strings().collect::<Vec<_>>(),
+            vec!["key=span1".to_string()]
+        );
+        assert_eq!(results[2].msg().unwrap(), "Log with s1 and s2");
+        assert_eq!(
+            results[2].payload_keys_strings().sorted().collect::<Vec<_>>(),
+            vec!["key=span1".to_string(), "other=span2".to_string()]
+        );
+        assert_eq!(results[3].msg().unwrap(), "Second log with s1");
+        assert_eq!(
+            results[3].payload_keys_strings().collect::<Vec<_>>(),
+            vec!["key=span1".to_string()]
+        );
+        assert_eq!(results[4].msg().unwrap(), "Log with no span 2");
+        assert!(results[4].payload_keys_strings().collect::<Vec<_>>().is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn verify_sibling_spans_nested_scopes() {
+        let reader = ArchiveReader::new();
+        let (logs, _) = reader.snapshot_then_subscribe::<Logs>().unwrap().split_streams();
+        let s1 = info_span!("", key = "span1");
+        let s2 = info_span!("", other = "span2");
+        info!("Log with no span 1");
+        {
+            let _s1_guard = s1.enter();
+            info!("Log with s1");
+            {
+                let _s2_guard = s2.enter();
+                info!("Log with s2 only");
+            }
+            info!("Second log with s1");
+        }
+        info!("Log with no span 2");
+
+        let results = logs
+            .filter(|data| {
+                future::ready(
+                    data.tags().unwrap().iter().any(|t| t == "verify_sibling_spans_nested_scopes"),
+                )
+            })
+            .take(5)
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(results[0].msg().unwrap(), "Log with no span 1");
+        assert!(results[0].payload_keys_strings().collect::<Vec<_>>().is_empty());
+        assert_eq!(results[1].msg().unwrap(), "Log with s1");
+        assert_eq!(
+            results[1].payload_keys_strings().collect::<Vec<_>>(),
+            vec!["key=span1".to_string()]
+        );
+        assert_eq!(results[2].msg().unwrap(), "Log with s2 only");
+        assert_eq!(
+            results[2].payload_keys_strings().sorted().collect::<Vec<_>>(),
+            vec!["other=span2".to_string()]
+        );
+        assert_eq!(results[3].msg().unwrap(), "Second log with s1");
+        assert_eq!(
+            results[3].payload_keys_strings().collect::<Vec<_>>(),
+            vec!["key=span1".to_string()]
+        );
+        assert_eq!(results[4].msg().unwrap(), "Log with no span 2");
+        assert!(results[4].payload_keys_strings().collect::<Vec<_>>().is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn verify_sibling_spans_multithreaded() {
+        let reader = ArchiveReader::new();
+        let (logs, _) = reader.snapshot_then_subscribe::<Logs>().unwrap().split_streams();
+
+        let total_threads = 300;
+
+        for i in 0..total_threads {
+            std::thread::spawn(move || {
+                let s = info_span!("", thread = i);
+                let _s_guard = s.enter();
+                info!("Log from thread");
+            });
+        }
+
+        let mut results = logs
+            .filter(|data| {
+                future::ready(
+                    data.tags().unwrap().iter().any(|t| t == "verify_sibling_spans_multithreaded"),
+                )
+            })
+            .take(total_threads);
+
+        let mut seen = vec![];
+        while let Some(log) = results.next().await {
+            assert_eq!(log.msg().unwrap(), "Log from thread");
+            let hierarchy = log.payload_keys().unwrap();
+            assert_eq!(hierarchy.properties.len(), 1);
+            assert_eq!(hierarchy.properties[0].name(), "thread");
+            seen.push(hierarchy.properties[0].uint().unwrap() as usize);
+        }
+        seen.sort();
+        assert_eq!(seen, (0..total_threads).collect::<Vec<_>>());
     }
 }

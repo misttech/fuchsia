@@ -53,9 +53,16 @@ fuchsia_unittest_package("httpdate-hyper-tests") {
   deps = [
     ":httpdate-hyper_test",
     "//src/connectivity/network/dns:component",
-    "//src/connectivity/network/netstack:component",
+    "//src/connectivity/network/netstack3:component-dropin",
   ]
 
   # This test depends on root ssl certificate which is a system capability.
   test_type = "system"
+
+  if (current_cpu == "riscv64") {
+    # TODO(fxbug.dev/298470623): Make this target pass on RISC-V and remove this.
+    test_specs = {
+      environments = []
+    }
+  }
 }

@@ -41,12 +41,12 @@ source_set("lib") {
   ]
   deps = [
     ":memory_metrics_registry",
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp_wire",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/devices/lib/amlogic",
     "//src/lib/cobalt/cpp:metric_event_builder",
     "//src/lib/fsl",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/trace-provider",
@@ -63,20 +63,29 @@ metrics_registry("memory_metrics_registry") {
   generate_binarypb = false
 }
 
+_common_deps = [
+  ":lib",
+  "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_hlcpp",
+  "//sdk/lib/sys/cpp",
+  "//src/lib/fsl",
+  "//src/lib/fxl:fxl_cli",
+  "//zircon/system/ulib/async-default",
+  "//zircon/system/ulib/async-loop:async-loop-cpp",
+  "//zircon/system/ulib/async-loop:async-loop-default",
+  "//zircon/system/ulib/trace-provider",
+]
+
 executable("bin") {
   output_name = "memory_monitor"
   sources = [ "main.cc" ]
-  deps = [
-    ":lib",
-    "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_hlcpp",
-    "//sdk/lib/sys/cpp",
-    "//src/lib/fsl",
-    "//src/lib/fxl",
-    "//zircon/system/ulib/async-default",
-    "//zircon/system/ulib/async-loop:async-loop-cpp",
-    "//zircon/system/ulib/async-loop:async-loop-default",
-    "//zircon/system/ulib/trace-provider",
-  ]
+  deps = _common_deps
+}
+
+executable("bin_with_memory_sampler") {
+  output_name = "memory_monitor_with_memory_sampler"
+  sources = [ "main.cc" ]
+  deps =
+      _common_deps + [ "//src/performance/memory/sampler/instrumentation:lib" ]
 }
 
 fuchsia_component("component") {
@@ -85,17 +94,22 @@ fuchsia_component("component") {
   deps = [ ":bin" ]
 }
 
-fuchsia_package("monitor") {
+fuchsia_component("component_with_memory_sampler") {
+  component_name = "memory_monitor"
+  manifest = "meta/memory_monitor_with_memory_sampler.cml"
+  deps = [ ":bin_with_memory_sampler" ]
+}
+
+fuchsia_package("monitor_without_memory_sampler") {
   package_name = "memory_monitor"
   deps = [ ":component" ]
 }
 
-core_shard("memory_monitor_core_shard") {
-  shard_file = "meta/memory_monitor.core_shard.cml"
+fuchsia_package("monitor_with_memory_sampler") {
+  package_name = "memory_monitor"
+  deps = [ ":component_with_memory_sampler" ]
 }
 
-config_data("userdebug_config") {
-  for_pkg = "memory_monitor"
-  sources = [ "config/send_critical_pressure_crash_reports" ]
-  outputs = [ "send_critical_pressure_crash_reports" ]
+core_shard("memory_monitor_core_shard") {
+  shard_file = "meta/memory_monitor.core_shard.cml"
 }

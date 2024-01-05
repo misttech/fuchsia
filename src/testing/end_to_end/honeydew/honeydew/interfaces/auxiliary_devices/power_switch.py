@@ -7,38 +7,48 @@
 from __future__ import annotations
 
 import abc
-from typing import Dict, Optional, Union
+import logging
+
+_LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+class PowerSwitchError(Exception):
+    """Exception class for PowerSwitch relates error."""
+
+    def __init__(self, msg: str | Exception) -> None:
+        """Inits PowerSwitchDmcError with 'msg' (an error message string).
+
+        Args:
+            msg: an error message string or an Exception instance.
+
+        Note: Additionally, logs 'msg' to debug log level file.
+        """
+        super().__init__(msg)
+        _LOGGER.debug(repr(self), exc_info=True)
 
 
 class PowerSwitch(abc.ABC):
     """Abstract base class for power switch hardware."""
 
-    @classmethod
-    @abc.abstractmethod
-    def from_station_config(
-            cls, config: Dict[str, Union[str, float, int]]) -> PowerSwitch:
-        """Class method to instantiate the power switch class.
-
-        Args:
-            config: Power switch configuration dict.
-
-        Returns:
-            PowerSwitch: PowerSwitch object.
-        """
-
     # List all the public methods in alphabetical order
     @abc.abstractmethod
-    def power_off(self, outlet: Optional[int] = None) -> None:
+    def power_off(self, outlet: int | None = None) -> None:
         """Turns off the power at the specified outlet on the power switch.
 
         Args:
             outlet: outlet on which we need to perform this operation.
+
+        Raises:
+            PowerSwitchError: In case of failure.
         """
 
     @abc.abstractmethod
-    def power_on(self, outlet: Optional[int] = None) -> None:
+    def power_on(self, outlet: int | None = None) -> None:
         """Turns on the power at the specified outlet on the power switch.
 
         Args:
             outlet: outlet on which we need to perform this operation.
+
+        Raises:
+            PowerSwitchError: In case of failure.
         """

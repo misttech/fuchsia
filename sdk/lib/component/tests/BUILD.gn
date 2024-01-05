@@ -39,8 +39,7 @@ fidl("fidl.service.test") {
 test("incoming_test_bin") {
   sources = [ "incoming_test.cc" ]
   deps = [
-    ":fidl.service.test_cpp",
-    ":fidl.service.test_cpp_wire",
+    ":fidl.service.test_cpp_testing",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//src/lib/fxl/test:gtest_main",
@@ -66,6 +65,7 @@ executable("incoming_integration_test_bin") {
     "//sdk/lib/fidl/cpp",
     "//sdk/lib/sys/component/cpp/testing:cpp",
     "//sdk/lib/sys/cpp",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
   ]
@@ -131,7 +131,7 @@ executable("echo_service_server_bin") {
   sources = [ "echo_service_server.cc" ]
 
   deps = [
-    "//examples/fidl/fuchsia.examples:fuchsia.examples_cpp_wire",
+    "//examples/fidl/fuchsia.examples:fuchsia.examples_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fidl",
     "//sdk/lib/syslog/cpp",
@@ -153,14 +153,14 @@ executable("cpp_outgoing_directory_test_bin") {
 
   deps = [
     "//examples/fidl/fuchsia.examples:fuchsia.examples_cpp",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//src/lib/fidl/cpp",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/storage/vfs/cpp",
     "//src/lib/testing/loop_fixture",
     "//src/lib/testing/predicates",
+    "//src/storage/lib/vfs/cpp",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/sync:sync-cpp",
   ]
@@ -179,8 +179,8 @@ executable("cpp_outgoing_directory_integration_test_bin") {
     "//sdk/lib/sys/component/cpp/testing:cpp",
     "//sdk/lib/sys/cpp",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/storage/vfs/cpp",
     "//src/lib/testing/loop_fixture",
+    "//src/storage/lib/vfs/cpp",
   ]
 }
 
@@ -209,9 +209,9 @@ test("service_server_test") {
   deps = [
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
-    "//sdk/lib/component/tests:fidl.service.test_cpp_wire",
+    "//sdk/lib/component/tests:fidl.service.test_cpp",
     "//sdk/lib/fdio",
-    "//src/lib/storage/vfs/cpp",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/zxtest",

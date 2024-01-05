@@ -12,6 +12,13 @@
         job_policy_create_raw_processes: "true",
         is_shared_process: "true",
         use_next_vdso: "true",
+
+        // Needed because starnix depends on the usercopy crate which takes
+        // the job's exception channel to handle page faults. Normally the
+        // ELF runner takes the job's exception channel so we need to ask
+        // it to make sure the starnix process's immediate parent job has
+        // its exception channel available for taking.
+        job_with_available_exception_channel: "true",
     },
     capabilities: [
         {
@@ -41,13 +48,16 @@
         },
         {
             protocol: [
+                "fuchsia.diagnostics.ArchiveAccessor",
                 "fuchsia.hardware.power.statecontrol.Admin",
+                "fuchsia.kernel.CpuResource",
                 "fuchsia.kernel.VmexResource",
             ],
             from: "parent",
         },
         {
             protocol: [
+                "fuchsia.buildinfo.Provider",
                 "fuchsia.kernel.Stats",
                 "fuchsia.net.interfaces.State",
                 "fuchsia.net.root.Interfaces",
@@ -58,6 +68,8 @@
                 "fuchsia.posix.socket.packet.Provider",
                 "fuchsia.posix.socket.Provider",
                 "fuchsia.posix.socket.raw.Provider",
+                "fuchsia.scheduler.ProfileProvider",
+                "fuchsia.sysinfo.SysInfo",
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
                 "fuchsia.tracing.provider.Registry",
@@ -65,8 +77,11 @@
                 "fuchsia.ui.composition.Flatland",
                 "fuchsia.ui.display.singleton.Info",
                 "fuchsia.ui.input3.Keyboard",
+                "fuchsia.ui.policy.DeviceListenerRegistry",
                 "fuchsia.ui.scenic.Scenic",
+                "fuchsia.ui.test.input.Registry",
                 "fuchsia.vulkan.loader.Loader",
+                "fuchsia.wlan.wlanix.Wlanix",
             ],
             from: "parent",
             availability: "optional",

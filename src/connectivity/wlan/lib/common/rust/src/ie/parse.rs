@@ -11,7 +11,6 @@ use {
     },
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
     paste::paste,
-    std::mem::size_of,
     zerocopy::{ByteSlice, Ref},
 };
 
@@ -104,55 +103,6 @@ pub fn parse_country<B: ByteSlice>(raw_body: B) -> FrameParseResult<CountryView<
     })
 }
 
-pub fn parse_mpm_open<B: ByteSlice>(raw_body: B) -> FrameParseResult<MpmOpenView<B>> {
-    let mut reader = BufferReader::new(raw_body);
-    let header = reader
-        .read()
-        .ok_or(FrameParseError::new("Element body is too short to include an MPM header"))?;
-    let pmk = reader.read();
-    if reader.bytes_remaining() > 0 {
-        return Err(FrameParseError::new("Extra bytes at the end of the MPM Open element"));
-    }
-    Ok(MpmOpenView { header, pmk })
-}
-
-pub fn parse_mpm_confirm<B: ByteSlice>(raw_body: B) -> FrameParseResult<MpmConfirmView<B>> {
-    let mut reader = BufferReader::new(raw_body);
-    let header = reader
-        .read()
-        .ok_or(FrameParseError::new("Element body is too short to include an MPM header"))?;
-    let peer_link_id = reader
-        .read_unaligned()
-        .ok_or(FrameParseError::new("Element body is too short to include a peer link ID"))?;
-    let pmk = reader.read();
-    if reader.bytes_remaining() > 0 {
-        return Err(FrameParseError::new("Extra bytes at the end of the MPM Confirm element"));
-    }
-    Ok(MpmConfirmView { header, peer_link_id, pmk })
-}
-
-pub fn parse_mpm_close<B: ByteSlice>(raw_body: B) -> FrameParseResult<MpmCloseView<B>> {
-    let mut reader = BufferReader::new(raw_body);
-    let header = reader
-        .read()
-        .ok_or(FrameParseError::new("Element body is too short to include an MPM header"))?;
-
-    let peer_link_id = if reader.bytes_remaining() % size_of::<MpmPmk>() == 4 {
-        reader.read_unaligned()
-    } else {
-        None
-    };
-
-    let reason_code = reader
-        .read_unaligned()
-        .ok_or(FrameParseError::new("Element body is too short to include a reason code"))?;
-    let pmk = reader.read();
-    if reader.bytes_remaining() > 0 {
-        return Err(FrameParseError::new("Extra bytes at the end of the MPM Close element"));
-    }
-    Ok(MpmCloseView { header, peer_link_id, reason_code, pmk })
-}
-
 pub fn parse_ext_capabilities<B: ByteSlice>(raw_body: B) -> ExtCapabilitiesView<B> {
     let mut reader = BufferReader::new(raw_body);
     let ext_caps_octet_1 = reader.read();
@@ -164,62 +114,6 @@ pub fn parse_ext_capabilities<B: ByteSlice>(raw_body: B) -> ExtCapabilitiesView<
         ext_caps_octet_3,
         remaining: reader.into_remaining(),
     }
-}
-
-pub fn parse_preq<B: ByteSlice>(raw_body: B) -> FrameParseResult<PreqView<B>> {
-    let mut reader = BufferReader::new(raw_body);
-    let header = reader
-        .read::<PreqHeader>()
-        .ok_or(FrameParseError::new("Element body is too short to include a PREQ header"))?;
-    let originator_external_addr = if header.flags.addr_ext() {
-        let addr = reader.read().ok_or(FrameParseError::new(
-            "Element body is too short to include an external address",
-        ))?;
-        Some(addr)
-    } else {
-        None
-    };
-    let middle = reader
-        .read::<PreqMiddle>()
-        .ok_or(FrameParseError::new("Element body is too short to include middle PREQ fields"))?;
-    let targets = reader
-        .read_array(middle.target_count as usize)
-        .ok_or(FrameParseError::new("Element body is too short to include all PREQ targets"))?;
-    if reader.bytes_remaining() > 0 {
-        return Err(FrameParseError::new("Extra bytes at the end of the PREQ element"));
-    }
-    Ok(PreqView { header, originator_external_addr, middle, targets })
-}
-
-pub fn parse_prep<B: ByteSlice>(raw_body: B) -> FrameParseResult<PrepView<B>> {
-    let mut reader = BufferReader::new(raw_body);
-    let header = reader
-        .read::<PrepHeader>()
-        .ok_or(FrameParseError::new("Element body is too short to include a PREP header"))?;
-    let target_external_addr = if header.flags.addr_ext() {
-        let addr = reader.read().ok_or(FrameParseError::new(
-            "Element body is too short to include an external address",
-        ))?;
-        Some(addr)
-    } else {
-        None
-    };
-    let tail = reader
-        .read()
-        .ok_or(FrameParseError::new("Element body is too short to include a PREP tail"))?;
-    if reader.bytes_remaining() > 0 {
-        return Err(FrameParseError::new("Extra bytes at the end of the PREP element"));
-    }
-    Ok(PrepView { header, target_external_addr, tail })
-}
-
-pub fn parse_perr<B: ByteSlice>(raw_body: B) -> FrameParseResult<PerrView<B>> {
-    let mut reader = BufferReader::new(raw_body);
-    let header = reader
-        .read::<PerrHeader>()
-        .ok_or(FrameParseError::new("Element body is too short to include a PERR header"))?;
-    let destinations = PerrDestinationListView(reader.into_remaining());
-    Ok(PerrView { header, destinations })
 }
 
 pub fn parse_wpa_ie<B: ByteSlice>(raw_body: B) -> FrameParseResult<wpa::WpaIe> {
@@ -344,11 +238,11 @@ mod tests {
         super::*,
         crate::assert_variant,
         std::convert::TryInto,
-        zerocopy::{AsBytes, FromBytes, FromZeroes},
+        zerocopy::{AsBytes, FromBytes, FromZeros, NoCell},
     };
 
     #[repr(C)]
-    #[derive(AsBytes, FromZeroes, FromBytes)]
+    #[derive(AsBytes, FromZeros, FromBytes, NoCell)]
     pub struct SomeIe {
         some_field: u16,
     }
@@ -710,24 +604,21 @@ mod tests {
         // HtOperation element without Element Id and length
         #[rustfmt::skip]
         let raw_body = [
-            99, // primary_channel(u8)
-            0xff, // ht_op_info_head(HtOpInfoHead(u8))
-            0xfe, 0xff, 0xff, 0xff, // ht_op_info_tail(HtOpInfoTail(u8),
+            99, // primary_channel
+            0xff, 0xfe, 0xff, 0xff, 0xff, // ht_op_info
+            // basic_ht_mcs_set
             0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0xab, 0xcd, 0x00, 0x00, 0x00, 0x00,
-            // basic_ht_mcs_set(SupportedMcsSet(u128))
         ];
         let ht_op = parse_ht_operation(&raw_body[..]).expect("valid frame should result in OK");
 
         assert_eq!(ht_op.primary_channel, 99);
 
-        let ht_op_info_head = ht_op.ht_op_info_head;
-        assert_eq!(ht_op_info_head.secondary_chan_offset(), SecChanOffset::SECONDARY_BELOW);
-        assert_eq!(ht_op_info_head.sta_chan_width(), StaChanWidth::ANY);
-        assert_eq!(ht_op_info_head.ht_protection(), HtProtection::TWENTY_MHZ);
-
-        let ht_op_info_tail = ht_op.ht_op_info_tail;
-        assert_eq!(ht_op_info_tail.pco_phase(), PcoPhase::FORTY_MHZ);
+        let ht_op_info = ht_op.ht_op_info;
+        assert_eq!(ht_op_info.secondary_chan_offset(), SecChanOffset::SECONDARY_BELOW);
+        assert_eq!(ht_op_info.sta_chan_width(), StaChanWidth::ANY);
+        assert_eq!(ht_op_info.ht_protection(), HtProtection::TWENTY_MHZ);
+        assert_eq!(ht_op_info.pco_phase(), PcoPhase::FORTY_MHZ);
 
         let basic_mcs_set = ht_op.basic_ht_mcs_set;
         assert_eq!(basic_mcs_set.0, 0x00000000_cdab0000_00000000_000000ff);
@@ -737,20 +628,16 @@ mod tests {
     fn rm_enabled_capabilities_ok() {
         #[rustfmt::skip]
         let raw_body = [
-            0x03, 0x00, 0x00, 0x00, // rm_enabled_capabilities_head(RmEnabledCapabilitiesHead(u32))
-            0x02,                   // rm_enabled_capabilities_tail(RmEnabledCapabilitiesTail(u8))
+            0x03, 0x00, 0x00, 0x00, 0x02, // rm_enabled_capabilities
         ];
 
-        let rm_enabled_caps =
+        let caps =
             parse_rm_enabled_capabilities(&raw_body[..]).expect("valid frame should result in OK");
-        let head = rm_enabled_caps.rm_enabled_caps_head;
-        assert!(head.link_measurement_enabled());
-        assert!(head.neighbor_report_enabled());
-        assert!(!head.lci_azimuth_enabled());
-
-        let tail = rm_enabled_caps.rm_enabled_caps_tail;
-        assert!(tail.antenna_enabled());
-        assert!(!tail.ftm_range_report_enabled());
+        assert!(caps.link_measurement_enabled());
+        assert!(caps.neighbor_report_enabled());
+        assert!(!caps.lci_azimuth_enabled());
+        assert!(caps.antenna_enabled());
+        assert!(!caps.ftm_range_report_enabled());
     }
 
     #[test]
@@ -758,186 +645,6 @@ mod tests {
         let sec_chan_offset =
             parse_sec_chan_offset(&[3][..]).expect("valid sec chan offset should result in OK");
         assert_eq!(sec_chan_offset.0, 3);
-    }
-
-    #[test]
-    fn mpm_open_ok_no_pmk() {
-        let r = parse_mpm_open(&[0x11, 0x22, 0x33, 0x44][..]).expect("expected Ok");
-        assert_eq!(0x2211, { r.header.protocol.0 });
-        assert_eq!(0x4433, { r.header.local_link_id });
-        assert!(r.pmk.is_none());
-    }
-
-    #[test]
-    fn mpm_open_ok_with_pmk() {
-        #[rustfmt::skip]
-        let data = [0x11, 0x22, 0x33, 0x44,
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-        let r = parse_mpm_open(&data[..]).expect("expected Ok");
-        assert_eq!(0x2211, { r.header.protocol.0 });
-        assert_eq!(0x4433, { r.header.local_link_id });
-        let pmk = r.pmk.expect("expected pmk to be present");
-        assert_eq!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pmk.0);
-    }
-
-    #[test]
-    fn mpm_open_too_short() {
-        let err = parse_mpm_open(&[0x11, 0x22, 0x33][..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include an MPM header", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_open_weird_length() {
-        let err = parse_mpm_open(&[0x11, 0x22, 0x33, 0x44, 0x55][..]).err().expect("expected Err");
-        assert_eq!("Extra bytes at the end of the MPM Open element", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_open_too_long() {
-        #[rustfmt::skip]
-        let data = [0x11, 0x22, 0x33, 0x44,
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
-        let err = parse_mpm_open(&data[..]).err().expect("expected Err");
-        assert_eq!("Extra bytes at the end of the MPM Open element", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_confirm_ok_no_pmk() {
-        let r = parse_mpm_confirm(&[0x11, 0x22, 0x33, 0x44, 0x55, 0x66][..]).expect("expected Ok");
-        assert_eq!(0x2211, { r.header.protocol.0 });
-        assert_eq!(0x4433, { r.header.local_link_id });
-        assert_eq!(0x6655, r.peer_link_id.get());
-        assert!(r.pmk.is_none());
-    }
-
-    #[test]
-    fn mpm_confirm_ok_with_pmk() {
-        #[rustfmt::skip]
-        let data = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-        let r = parse_mpm_confirm(&data[..]).expect("expected Ok");
-        assert_eq!(0x2211, { r.header.protocol.0 });
-        assert_eq!(0x4433, { r.header.local_link_id });
-        assert_eq!(0x6655, r.peer_link_id.get());
-        let pmk = r.pmk.expect("expected pmk to be present");
-        assert_eq!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pmk.0);
-    }
-
-    #[test]
-    fn mpm_confirm_too_short_for_header() {
-        let err = parse_mpm_confirm(&[0x11, 0x22, 0x33][..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include an MPM header", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_confirm_too_short_for_peer_link_id() {
-        let err =
-            parse_mpm_confirm(&[0x11, 0x22, 0x33, 0x44, 0x55][..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include a peer link ID", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_confirm_weird_length() {
-        let err = parse_mpm_confirm(&[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77][..])
-            .err()
-            .expect("expected Err");
-        assert_eq!("Extra bytes at the end of the MPM Confirm element", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_confirm_too_long() {
-        #[rustfmt::skip]
-        let data = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
-        let err = parse_mpm_confirm(&data[..]).err().expect("expected Err");
-        assert_eq!("Extra bytes at the end of the MPM Confirm element", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_close_ok_no_link_id_no_pmk() {
-        let data = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
-        let r = parse_mpm_close(&data[..]).expect("expected Ok");
-        assert_eq!(0x2211, { r.header.protocol.0 });
-        assert_eq!(0x4433, { r.header.local_link_id });
-        assert!(r.peer_link_id.is_none());
-        assert_eq!(0x6655, r.reason_code.get().0);
-        assert!(r.pmk.is_none());
-    }
-
-    #[test]
-    fn mpm_close_ok_with_link_id_no_pmk() {
-        let data = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
-        let r = parse_mpm_close(&data[..]).expect("expected Ok");
-        assert_eq!(0x4433, { r.header.local_link_id });
-        let peer_link_id = r.peer_link_id.expect("expected peer link id to be present");
-        assert_eq!(0x6655, peer_link_id.get());
-        assert_eq!(0x8877, r.reason_code.get().0);
-        assert!(r.pmk.is_none());
-    }
-
-    #[test]
-    fn mpm_close_ok_no_link_id_with_pmk() {
-        #[rustfmt::skip]
-        let data = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-        let r = parse_mpm_close(&data[..]).expect("expected Ok");
-        assert_eq!(0x2211, { r.header.protocol.0 });
-        assert_eq!(0x4433, { r.header.local_link_id });
-        assert!(r.peer_link_id.is_none());
-        assert_eq!(0x6655, r.reason_code.get().0);
-        let pmk = r.pmk.expect("expected pmk to be present");
-        assert_eq!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pmk.0);
-    }
-
-    #[test]
-    fn mpm_close_ok_with_link_id_with_pmk() {
-        #[rustfmt::skip]
-        let data = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-        let r = parse_mpm_close(&data[..]).expect("expected Ok");
-        assert_eq!(0x4433, { r.header.local_link_id });
-        let peer_link_id = r.peer_link_id.expect("expected peer link id to be present");
-        assert_eq!(0x6655, peer_link_id.get());
-        assert_eq!(0x8877, r.reason_code.get().0);
-        let pmk = r.pmk.expect("expected pmk to be present");
-        assert_eq!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pmk.0);
-    }
-
-    #[test]
-    fn mpm_close_too_short_for_header() {
-        let err = parse_mpm_close(&[0x11, 0x22, 0x33][..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include an MPM header", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_close_too_short_for_reason_code() {
-        let err = parse_mpm_close(&[0x11, 0x22, 0x33, 0x44, 0x55][..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include a reason code", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_close_weird_length_1() {
-        let err = parse_mpm_close(&[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77][..])
-            .err()
-            .expect("expected Err");
-        assert_eq!("Extra bytes at the end of the MPM Close element", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_close_weird_length_2() {
-        let err = parse_mpm_close(&[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99][..])
-            .err()
-            .expect("expected Err");
-        assert_eq!("Extra bytes at the end of the MPM Close element", err.debug_message());
-    }
-
-    #[test]
-    fn mpm_close_too_long() {
-        #[rustfmt::skip]
-        let data = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
-        let err = parse_mpm_close(&data[..]).err().expect("expected Err");
-        assert_eq!("Extra bytes at the end of the MPM Close element", err.debug_message());
     }
 
     #[test]
@@ -956,279 +663,6 @@ mod tests {
             assert!(!caps.ac_station_count());
         });
         assert_eq!(ext_capabilities.remaining, &[0x00, 0x00, 0x00, 0x00, 0x40]);
-    }
-
-    #[test]
-    fn preq_ok_minimal() {
-        #[rustfmt::skip]
-        let data = [
-            0x00, // flags
-            0x02, // hop count
-            0x03, // element ttl
-            0x04, 0x05, 0x06, 0x07, // path discovery ID
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, // originator addr
-            0x0e, 0x0f, 0x10, 0x11, // originator hwmp seqno
-            0x18, 0x19, 0x1a, 0x1b, // lifetime
-            0x1c, 0x1d, 0x1e, 0x1f, // metric
-            // Target count. Having no targets probably doesn't make sense,
-            // but we test this code path anyway.
-            0,
-        ];
-        let r = parse_preq(&data[..]).expect("expected Ok");
-        assert_eq!(0x02, r.header.hop_count);
-        assert!(r.originator_external_addr.is_none());
-        assert_eq!(0x1b1a1918, { r.middle.lifetime });
-        assert_eq!(0, r.targets.len());
-    }
-
-    #[test]
-    fn preq_ok_full() {
-        #[rustfmt::skip]
-        let data = [
-            0x40, // flags: address extension = true
-            0x02, // hop count
-            0x03, // element ttl
-            0x04, 0x05, 0x06, 0x07, // path discovery ID
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, // originator addr
-            0x0e, 0x0f, 0x10, 0x11, // originator hwmp seqno
-            0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, // originator external address
-            0x18, 0x19, 0x1a, 0x1b, // lifetime
-            0x1c, 0x1d, 0x1e, 0x1f, // metric
-            2, // target count
-            // Target 1
-            0x00, // target flags
-            0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, // target address
-            0xa1, 0xa2, 0xa3, 0xa4, // target hwmp seqno
-            // Target 2
-            0x00, // target flags
-            0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, // target address
-            0xb1, 0xb2, 0xb3, 0xb4, // target hwmp seqno
-        ];
-        let r = parse_preq(&data[..]).expect("expected Ok");
-        assert_eq!(0x02, r.header.hop_count);
-        let ext_addr = r.originator_external_addr.expect("expected ext addr to be present");
-        assert_eq!([0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b], *ext_addr);
-        assert_eq!(0x1b1a1918, { r.middle.lifetime });
-        assert_eq!(2, r.targets.len());
-        assert_eq!([0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb], r.targets[1].target_addr);
-    }
-
-    #[test]
-    fn preq_too_short_for_header() {
-        #[rustfmt::skip]
-        let data = [
-            0x00, // flags
-            0x02, // hop count
-            0x03, // element ttl
-            0x04, 0x05, 0x06, 0x07, // path discovery ID
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, // originator addr
-            0x0e, 0x0f, 0x10, // one byte missing from originator hwmp seqno
-        ];
-        let err = parse_preq(&data[..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include a PREQ header", err.debug_message());
-    }
-
-    #[test]
-    fn preq_too_short_for_ext_addr() {
-        #[rustfmt::skip]
-        let data = [
-            0x40, // flags: address extension = true
-            0x02, // hop count
-            0x03, // element ttl
-            0x04, 0x05, 0x06, 0x07, // path discovery ID
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, // originator addr
-            0x0e, 0x0f, 0x10, 0x11, // originator hwmp seqno
-            0x16, 0x17, 0x18, 0x19, 0x1a, // one byte missing from originator external address
-        ];
-        let err = parse_preq(&data[..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include an external address", err.debug_message());
-    }
-
-    #[test]
-    fn preq_too_short_for_middle() {
-        #[rustfmt::skip]
-        let data = [
-            0x00, // flags
-            0x02, // hop count
-            0x03, // element ttl
-            0x04, 0x05, 0x06, 0x07, // path discovery ID
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, // originator addr
-            0x0e, 0x0f, 0x10, 0x11, // originator hwmp seqno
-            0x18, 0x19, 0x1a, 0x1b, // lifetime
-            0x1c, 0x1d, 0x1e, 0x1f, // metric
-            // Target count missing
-        ];
-        let err = parse_preq(&data[..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include middle PREQ fields", err.debug_message());
-    }
-
-    #[test]
-    fn preq_too_short_for_targets() {
-        #[rustfmt::skip]
-        let data = [
-            0x40, // flags: address extension = true
-            0x02, // hop count
-            0x03, // element ttl
-            0x04, 0x05, 0x06, 0x07, // path discovery ID
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, // originator addr
-            0x0e, 0x0f, 0x10, 0x11, // originator hwmp seqno
-            0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, // originator external address
-            0x18, 0x19, 0x1a, 0x1b, // lifetime
-            0x1c, 0x1d, 0x1e, 0x1f, // metric
-            2, // target count
-            // Target 1
-            0x00, // target flags
-            0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, // target address
-            0xa1, 0xa2, 0xa3, 0xa4, // target hwmp seqno
-            // Target 2
-            0x00, // target flags
-            0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, // target address
-            0xb1, 0xb2, 0xb3, // one byte missing from target hwmp seqno
-        ];
-        let err = parse_preq(&data[..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include all PREQ targets", err.debug_message());
-    }
-
-    #[test]
-    fn preq_too_long() {
-        #[rustfmt::skip]
-        let data = [
-            0x00, // flags
-            0x02, // hop count
-            0x03, // element ttl
-            0x04, 0x05, 0x06, 0x07, // path discovery ID
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, // originator addr
-            0x0e, 0x0f, 0x10, 0x11, // originator hwmp seqno
-            0x18, 0x19, 0x1a, 0x1b, // lifetime
-            0x1c, 0x1d, 0x1e, 0x1f, // metric
-            0, // target count
-            1 // extra byte
-        ];
-        let err = parse_preq(&data[..]).err().expect("expected Err");
-        assert_eq!("Extra bytes at the end of the PREQ element", err.debug_message());
-    }
-
-    #[test]
-    fn prep_ok_no_ext() {
-        #[rustfmt::skip]
-        let data = [
-            0x00, 0x01, 0x02, // flags, hop count, elem ttl
-            0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // target addr
-            0x09, 0x0a, 0x0b, 0x0c, // target hwmp seqno
-            0x0d, 0x0e, 0x0f, 0x10, // lifetime
-            0x11, 0x12, 0x13, 0x14, // metric
-            0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, // originator addr
-            0x1b, 0x1c, 0x1d, 0x1e, // originator hwmp seqno
-        ];
-        let r = parse_prep(&data[..]).expect("expected Ok");
-        assert_eq!(0x0c0b0a09, { r.header.target_hwmp_seqno });
-        assert!(r.target_external_addr.is_none());
-        assert_eq!(0x14131211, { r.tail.metric });
-    }
-
-    #[test]
-    fn prep_ok_with_ext() {
-        #[rustfmt::skip]
-        let data = [
-            0x40, 0x01, 0x02, // flags, hop count, elem ttl
-            0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // target addr
-            0x09, 0x0a, 0x0b, 0x0c, // target hwmp seqno
-            0x44, 0x55, 0x66, 0x77, 0x88, 0x99, // target external addr
-            0x0d, 0x0e, 0x0f, 0x10, // lifetime
-            0x11, 0x12, 0x13, 0x14, // metric
-            0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, // originator addr
-            0x1b, 0x1c, 0x1d, 0x1e, // originator hwmp seqno
-        ];
-        let r = parse_prep(&data[..]).expect("expected Ok");
-        assert_eq!(0x0c0b0a09, { r.header.target_hwmp_seqno });
-        let ext_addr = r.target_external_addr.expect("expected an external address");
-        assert_eq!([0x44, 0x55, 0x66, 0x77, 0x88, 0x99], *ext_addr);
-        assert_eq!(0x14131211, { r.tail.metric });
-    }
-
-    #[test]
-    fn prep_too_short_for_header() {
-        #[rustfmt::skip]
-        let data = [
-            0x00, 0x01, 0x02, // flags, hop count, elem ttl
-            0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // target addr
-            0x09, 0x0a, 0x0b, // one byte missing from target hwmp seqno
-        ];
-        let err = parse_prep(&data[..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include a PREP header", err.debug_message());
-    }
-
-    #[test]
-    fn prep_too_short_for_ext_addr() {
-        #[rustfmt::skip]
-        let data = [
-            0x40, 0x01, 0x02, // flags, hop count, elem ttl
-            0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // target addr
-            0x09, 0x0a, 0x0b, 0x0c, // target hwmp seqno
-            0x44, 0x55, 0x66, 0x77, 0x88, // one byte missing from target external addr
-        ];
-        let err = parse_prep(&data[..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include an external address", err.debug_message());
-    }
-
-    #[test]
-    fn prep_too_short_for_tail() {
-        #[rustfmt::skip]
-        let data = [
-            0x00, 0x01, 0x02, // flags, hop count, elem ttl
-            0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // target addr
-            0x09, 0x0a, 0x0b, 0x0c, // target hwmp seqno
-            0x0d, 0x0e, 0x0f, 0x10, // lifetime
-            0x11, 0x12, 0x13, 0x14, // metric
-            0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, // originator addr
-            0x1b, 0x1c, 0x1d, // one byte missing from originator hwmp seqno
-        ];
-        let err = parse_prep(&data[..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include a PREP tail", err.debug_message());
-    }
-
-    #[test]
-    fn prep_too_long() {
-        #[rustfmt::skip]
-        let data = [
-            0x00, 0x01, 0x02, // flags, hop count, elem ttl
-            0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // target addr
-            0x09, 0x0a, 0x0b, 0x0c, // target hwmp seqno
-            0x0d, 0x0e, 0x0f, 0x10, // lifetime
-            0x11, 0x12, 0x13, 0x14, // metric
-            0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, // originator addr
-            0x1b, 0x1c, 0x1d, 0x1e, // originator hwmp seqno
-            0, // extra byte
-        ];
-        let err = parse_prep(&data[..]).err().expect("expected Err");
-        assert_eq!("Extra bytes at the end of the PREP element", err.debug_message());
-    }
-
-    #[test]
-    fn perr_ok() {
-        #[rustfmt::skip]
-        let data = [
-            11, // TTL
-            1, // number of destinations
-            // Destination 1
-            0, // flags
-            0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0, // dest addr
-            0x77, 0x88, 0x99, 0xaa, // HWMP seqno
-            0xbb, 0xcc, // reason code
-        ];
-        let r = parse_perr(&data[..]).expect("expected Ok");
-        assert_eq!(11, r.header.element_ttl);
-
-        let destinations = r.destinations.iter().collect::<Vec<_>>();
-        assert_eq!(1, destinations.len());
-        assert_eq!(0xaa998877, { destinations[0].header.hwmp_seqno });
-    }
-
-    #[test]
-    fn perr_too_short_for_header() {
-        let data = [11];
-        let err = parse_perr(&data[..]).err().expect("expected Err");
-        assert_eq!("Element body is too short to include a PERR header", err.debug_message());
     }
 
     #[test]

@@ -2,13 +2,23 @@
 
 GN templates and scripts for compiling device tree source files and validating against golden files.
 
-## Examples
+## Usage
 * Define a "devicetree_fragment" to process dtsi files.
   ```
   import("//build/devicetree/devicetree.gni")
 
   devicetree_fragment("chipset-x") {
     sources = [ "dts/chipset-x.dtsi" ]
+  }
+  ```
+
+* Define a "devicetree_visitor" to provide visitors for devicetree validation and parsing.
+See //src/devices/devicetree/example for detailed illustration.
+  ```
+  import("//build/devicetree/devicetree.gni")
+
+  devicetree_visitor("device-x") {
+    sources = [ "device-x-visitor.h", "device-x-visitor.cc" ]
   }
   ```
 
@@ -20,14 +30,18 @@ GN templates and scripts for compiling device tree source files and validating a
     sources = [ "dts/board-x.dts" ]
     # Dependencies for fragments referenced in board-x.dts
     deps = [ ":chipset-x" ]
+    visitors = [ ":device-x" ]
     golden = "dts/board-x.golden.dts"
   }
   ```
-  The output dtb is available by default at `get_target_outputs(":board-x_dtb")` which is equivalent
+  The output dtb is available by default at `get_target_outputs(":board-x.dtb")` which is equivalent
   to `$target_out_dir/board-x.dtb`. The output path can also be specified by defining `outputs`
   variable during invocation.
 
-* Use "dtb" to compile a `.dts` file into `.dtb`.
+  The collection of visitors listed in `visitors` is grouped under `$target_name.visitors` label. This
+  should be added as dependency to the board driver package to include the visitor libraries in it.
+
+* Use "dtb" to compile a `.dts/.dts.S` file into `.dtb`.
   ```
   dtb("test-dtb") {
     sources = [ "test.dts" ]
@@ -48,3 +62,18 @@ GN templates and scripts for compiling device tree source files and validating a
   during invocation.
 
 See  `devicetree.gni` file for more details.
+
+## Including C header files
+
+Including C header files strictly for substituting preprocessor directives in devicetree source file is supported.
+The devicetree source file should include `.S` extension in order to be preprocessed, i.e. `.dts.S` or `.dtsi.S`.
+
+Example `.dts.S` file -
+```
+/dts-v1/;
+#include "src/board/abc/board-properties.h"
+/ {
+   ...
+```
+If the included C header file contains other C constructs as well, it should use `#ifndef __ASSEMBLER__` around parts
+that are not preprocessor directives.

@@ -20,7 +20,7 @@ executable("camera_sensor_cli_bin") {
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
     "//sdk/lib/syslog/cpp:backend",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
   ]
@@ -32,6 +32,6 @@ executable("camera_sensor_cli_bin") {
   ]
 }
 
-fuchsia_shell_package("camera_sensor_cli") {
+fuchsia_package("camera_sensor_cli") {
   deps = [ ":camera_sensor_cli_bin" ]
 }

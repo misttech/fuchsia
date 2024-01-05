@@ -10,15 +10,19 @@
     program: {
         runner: "driver",
         bind: "meta/bind/aml-thermal-s905d2g-legacy.bindbc",
-        colocate: "true",
+        colocate: "false",
         compat: "driver/aml-thermal-s905d2g-legacy.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         fallback: "false",
     },
     use: [
-        { service: "fuchsia.hardware.clock.Service" },
-        { service: "fuchsia.hardware.platform.device.Service" },
-        { service: "fuchsia.hardware.pwm.Service" },
-        { protocol: "fuchsia.boot.RootResource" },
+        {
+            service: [
+                "fuchsia.hardware.clock.Service",
+                "fuchsia.hardware.platform.device.Service",
+                "fuchsia.hardware.pwm.Service",
+            ],
+        },
+        { protocol: "fuchsia.kernel.MmioResource" },
     ],
 }

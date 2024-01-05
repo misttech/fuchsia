@@ -12,7 +12,10 @@ if (internal_access) {
 }
 
 group("nelson") {
-  deps = [ ":nelson-module" ]
+  deps = [
+    ":nelson-module",
+    "post-init:post-init",
+  ]
 
   if (internal_access) {
     deps += [ ":config-tas5805" ]
@@ -32,8 +35,8 @@ driver_bind_rules("nelson-bind") {
   tests = "bind-tests.json"
   deps = [
     "//src/devices/bind/fuchsia.google.platform",
-    "//src/devices/bind/fuchsia.hardware.platform.bus",
-    "//src/devices/bind/fuchsia.hardware.power.sensor",
+    "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.power",
   ]
 }
 
@@ -45,33 +48,9 @@ driver_bind_rules("nelson_emmc_bind") {
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
-    "//src/devices/bind/fuchsia.hardware.gpio",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
   ]
-}
-
-driver_bind_rules("ti_ina231_mlb_bind") {
-  rules = "bind/ti_ina231_mlb.bind"
-  header_output = "ti_ina231_mlb_bind.h"
-  bind_output = "ti_ina231_mlb_bind.bc"
-  tests = "bind-tests/ti_ina231_mlb-test.json"
-  deps = [ "//src/devices/bind/fuchsia.i2c" ]
-}
-
-driver_bind_rules("ti_ina231_speakers_bind") {
-  rules = "bind/ti_ina231_speakers.bind"
-  header_output = "ti_ina231_speakers_bind.h"
-  bind_output = "ti_ina231_speakers_bind.bc"
-  tests = "bind-tests/ti_ina231_speakers-test.json"
-  deps = [ "//src/devices/bind/fuchsia.i2c" ]
-}
-
-driver_bind_rules("ti_ina231_mlb_proto_bind") {
-  rules = "bind/ti_ina231_mlb_proto.bind"
-  header_output = "ti_ina231_mlb_proto_bind.h"
-  bind_output = "ti_ina231_mlb_proto_bind.bc"
-  tests = "bind-tests/ti_ina231_mlb_proto-test.json"
-  deps = [ "//src/devices/bind/fuchsia.i2c" ]
 }
 
 driver_bind_rules("pwm_init_bind") {
@@ -81,8 +60,8 @@ driver_bind_rules("pwm_init_bind") {
   tests = "bind-tests/pwm_init-test.json"
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.hardware.pwm",
+    "//src/devices/bind/fuchsia.gpio",
+    "//src/devices/bind/fuchsia.pwm",
   ]
 }
 
@@ -94,9 +73,9 @@ driver_bind_rules("nelson_aml_sdio_bind") {
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.hardware.pwm",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.pwm",
   ]
 }
 
@@ -108,76 +87,10 @@ driver_bind_rules("nelson_wifi_bind") {
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
     "//src/devices/bind/fuchsia.broadcom.platform",
-    "//src/devices/bind/fuchsia.broadcom.sdio",
-    "//src/devices/bind/fuchsia.hardware.gpio",
+    "//src/devices/bind/fuchsia.broadcom.platform.sdio",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.sdmmc",
-  ]
-}
-
-driver_bind_rules("aml_secure_mem_bind") {
-  rules = "bind/aml_secure_mem.bind"
-  header_output = "aml_secure_mem_bind.h"
-  bind_output = "aml_secure_mem_bind.bc"
-  tests = "bind-tests/aml_secure_mem-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform",
-    "//src/devices/bind/fuchsia.hardware.tee",
-    "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.sysmem",
-  ]
-}
-
-driver_bind_rules("nelson_selina_bind") {
-  rules = "bind/nelson_selina.bind"
-  header_output = "nelson_selina_bind.h"
-  bind_output = "nelson_selina_bind.bc"
-  tests = "bind-tests/nelson_selina-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.infineon.platform",
-    "//src/devices/bind/fuchsia.spi",
-  ]
-}
-
-driver_bind_rules("spi_0_bind") {
-  rules = "bind/spi_0.bind"
-  header_output = "spi_0_bind.h"
-  bind_output = "spi_0_bind.bc"
-  tests = "bind-tests/spi_0-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform",
-    "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.hardware.registers",
-    "//src/devices/bind/fuchsia.platform",
-  ]
-}
-
-driver_bind_rules("spi_1_bind") {
-  rules = "bind/spi_1.bind"
-  header_output = "spi_1_bind.h"
-  bind_output = "spi_1_bind.bc"
-  tests = "bind-tests/spi_1-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform",
-    "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.hardware.registers",
-    "//src/devices/bind/fuchsia.platform",
-  ]
-}
-
-driver_bind_rules("nelson_tee_bind") {
-  rules = "bind/nelson_tee.bind"
-  header_output = "nelson_tee_bind.h"
-  bind_output = "nelson_tee_bind.bc"
-  tests = "bind-tests/nelson_tee-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.rpmb",
-    "//src/devices/bind/fuchsia.sysmem",
+    "//src/devices/bind/fuchsia.sdio",
   ]
 }
 
@@ -190,45 +103,10 @@ driver_bind_rules("aml_thermal_pll_bind") {
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.amlogic.platform.meson",
     "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
-    "//src/devices/bind/fuchsia.hardware.clock",
-    "//src/devices/bind/fuchsia.hardware.pwm",
+    "//src/devices/bind/fuchsia.clock",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
-  ]
-}
-
-driver_bind_rules("gt6853_touch_bind") {
-  rules = "bind/gt6853_touch.bind"
-  header_output = "gt6853_touch_bind.h"
-  bind_output = "gt6853_touch_bind.bc"
-  tests = "bind-tests/gt6853_touch-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
-    "//src/devices/bind/fuchsia.goodix.platform",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.i2c",
-    "//src/devices/bind/fuchsia.platform",
-  ]
-}
-
-driver_bind_rules("nelson_xhci_bind") {
-  rules = "bind/nelson_xhci.bind"
-  header_output = "nelson_xhci_bind.h"
-  bind_output = "nelson_xhci_bind.bc"
-  tests = "bind-tests/nelson_xhci-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.usb.phy",
-  ]
-}
-
-driver_bind_rules("nelson_dwc2_bind") {
-  rules = "bind/nelson_dwc2.bind"
-  header_output = "nelson_dwc2_bind.h"
-  bind_output = "nelson_dwc2_bind.bc"
-  tests = "bind-tests/dwc2-test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.usb.phy",
+    "//src/devices/bind/fuchsia.pwm",
   ]
 }
 
@@ -239,27 +117,12 @@ driver_bind_rules("nelson_aml_video_bind") {
   tests = "bind-tests/nelson_aml_video-test.json"
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
+    "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.amlogic.platform.meson",
-    "//src/devices/bind/fuchsia.hardware.amlogiccanvas",
-    "//src/devices/bind/fuchsia.hardware.clock",
-    "//src/devices/bind/fuchsia.hardware.tee",
+    "//src/devices/bind/fuchsia.clock",
     "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.sysmem",
-  ]
-}
-
-driver_bind_rules("nelson_ot_radio_bind") {
-  rules = "bind/nelson_ot_radio.bind"
-  header_output = "nelson_ot_radio_bind.h"
-  bind_output = "nelson_ot_radio_bind.bc"
-  tests = "bind-tests/nelson_ot_radio_test.json"
-  deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
-    "//src/devices/bind/fuchsia.google.platform",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.nordic.platform",
-    "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.spi",
+    "//src/devices/bind/fuchsia.tee",
   ]
 }
 
@@ -270,6 +133,7 @@ fuchsia_driver("nelson-module-driver") {
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
   sources = [
+    "nelson-adc.cc",
     "nelson-audio.cc",
     "nelson-backlight.cc",
     "nelson-bluetooth.cc",
@@ -277,7 +141,6 @@ fuchsia_driver("nelson-module-driver") {
     "nelson-canvas.cc",
     "nelson-clk.cc",
     "nelson-cpu.cc",
-    "nelson-display.cc",
     "nelson-dsi.cc",
     "nelson-emmc.cc",
     "nelson-gpio.cc",
@@ -292,7 +155,6 @@ fuchsia_driver("nelson-module-driver") {
     "nelson-registers.cc",
     "nelson-sdio.cc",
     "nelson-securemem.cc",
-    "nelson-selina.cc",
     "nelson-spi.cc",
     "nelson-sysmem.cc",
     "nelson-tee.cc",
@@ -304,55 +166,55 @@ fuchsia_driver("nelson-module-driver") {
     "nelson.cc",
   ]
   deps = [
-    ":aml_secure_mem_bind_header",
     ":aml_thermal_pll_bind_header",
-    ":gt6853_touch_bind_header",
     ":nelson-bind",
     ":nelson_aml_sdio_bind_header",
     ":nelson_aml_video_bind_header",
-    ":nelson_dwc2_bind_header",
     ":nelson_emmc_bind_header",
-    ":nelson_ot_radio_bind_header",
-    ":nelson_selina_bind_header",
-    ":nelson_tee_bind_header",
     ":nelson_wifi_bind_header",
-    ":nelson_xhci_bind_header",
     ":pwm_init_bind_header",
-    ":spi_0_bind_header",
-    ":spi_1_bind_header",
-    ":ti_ina231_mlb_bind_header",
-    ":ti_ina231_mlb_proto_bind_header",
-    ":ti_ina231_speakers_bind_header",
-    "//sdk/banjo/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.gpioimpl:fuchsia.hardware.gpioimpl_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.iommu:fuchsia.hardware.iommu_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.serial:fuchsia.hardware.serial_banjo_cpp",
     "//sdk/banjo/fuchsia.sysmem:fuchsia.sysmem_banjo_c",
+    "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib_cpp",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.gpt.metadata:fuchsia.hardware.gpt.metadata_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.gpu.amlogic:fuchsia.hardware.gpu.amlogic_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
-    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.thermal:fuchsia.hardware.thermal_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_cpp",
+    "//sdk/fidl/fuchsia.hardware.gpioimpl:fuchsia.hardware.gpioimpl_cpp",
+    "//sdk/fidl/fuchsia.hardware.gpt.metadata:fuchsia.hardware.gpt.metadata_cpp",
+    "//sdk/fidl/fuchsia.hardware.gpu.amlogic:fuchsia.hardware.gpu.amlogic_cpp",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib_cpp",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp",
+    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_cpp",
+    "//sdk/fidl/fuchsia.hardware.thermal:fuchsia.hardware.thermal_cpp",
     "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/outgoing/cpp",
     "//src/connectivity/openthread/lib/ot-radio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.adc:fuchsia.adc_cpp",
     "//src/devices/bind/fuchsia.amlogic.platform:fuchsia.amlogic.platform_cpp",
     "//src/devices/bind/fuchsia.amlogic.platform.s905d3:fuchsia.amlogic.platform.s905d3_cpp",
     "//src/devices/bind/fuchsia.ams.platform:fuchsia.ams.platform_cpp",
     "//src/devices/bind/fuchsia.arm.platform:fuchsia.arm.platform_cpp",
+    "//src/devices/bind/fuchsia.clock:fuchsia.clock_cpp",
     "//src/devices/bind/fuchsia.codec:fuchsia.codec_cpp",
-    "//src/devices/bind/fuchsia.hardware.dsi:fuchsia.hardware.dsi_cpp",
-    "//src/devices/bind/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
-    "//src/devices/bind/fuchsia.hardware.power.sensor:fuchsia.hardware.power.sensor_cpp",
-    "//src/devices/bind/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
-    "//src/devices/bind/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
+    "//src/devices/bind/fuchsia.display.dsi:fuchsia.display.dsi_cpp",
+    "//src/devices/bind/fuchsia.goodix.platform:fuchsia.goodix.platform_cpp",
+    "//src/devices/bind/fuchsia.google.platform:fuchsia.google.platform_cpp",
+    "//src/devices/bind/fuchsia.gpio:fuchsia.gpio_cpp",
     "//src/devices/bind/fuchsia.i2c:fuchsia.i2c_cpp",
+    "//src/devices/bind/fuchsia.nordic.platform:fuchsia.nordic.platform_cpp",
+    "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
+    "//src/devices/bind/fuchsia.power:fuchsia.power_cpp",
+    "//src/devices/bind/fuchsia.pwm:fuchsia.pwm_cpp",
+    "//src/devices/bind/fuchsia.register:fuchsia.register_cpp",
+    "//src/devices/bind/fuchsia.rpmb:fuchsia.rpmb_cpp",
+    "//src/devices/bind/fuchsia.spi:fuchsia.spi_cpp",
     "//src/devices/bind/fuchsia.sysmem:fuchsia.sysmem_cpp",
+    "//src/devices/bind/fuchsia.tee:fuchsia.tee_cpp",
     "//src/devices/bind/fuchsia.ti.platform:fuchsia.ti.platform_cpp",
+    "//src/devices/bind/fuchsia.usb.phy:fuchsia.usb.phy_cpp",
     "//src/devices/bus/lib/platform-bus-composites",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/broadcom",
@@ -378,7 +240,6 @@ fuchsia_driver("nelson-module-driver") {
     "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/hwreg",
-    "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
@@ -400,20 +261,19 @@ fuchsia_driver_component("nelson-module") {
   manifest = "meta/nelson-module.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "nelson-module"
+  driver_components = [ ":nelson-module" ]
+}
+
 group("tests") {
   testonly = true
   deps = [
-    ":aml_secure_mem_bind_test",
     ":aml_thermal_pll_bind_test",
-    ":gt6853_touch_bind_test",
+    ":nelson-bind_test",
     ":nelson_aml_sdio_bind_test",
     ":nelson_aml_video_bind_test",
     ":nelson_aml_video_bind_test",
-    ":nelson_dwc2_bind_test",
-    ":nelson_ot_radio_bind_test",
-    ":nelson_selina_bind_test",
     ":nelson_wifi_bind_test",
-    ":spi_0_bind_test",
-    ":spi_1_bind_test",
   ]
 }

@@ -10,34 +10,44 @@
 #include <fuchsia/hardware/display/clamprgb/cpp/banjo.h>
 #include <fuchsia/hardware/display/controller/cpp/banjo.h>
 #include <fuchsia/hardware/dsiimpl/cpp/banjo.h>
-#include <fuchsia/hardware/platform/device/cpp/banjo.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/device.h>
+#include <lib/ddk/driver.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/fit/defer.h>
+#include <lib/fit/function.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/image-format/image_format.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zircon-internal/align.h>
+#include <lib/zx/bti.h>
 #include <lib/zx/channel.h>
+#include <lib/zx/interrupt.h>
+#include <lib/zx/result.h>
 #include <threads.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
+#include <zircon/status.h>
 #include <zircon/threads.h>
 #include <zircon/types.h>
 
 #include <cstddef>
-#include <iterator>
 
 #include <ddk/metadata/display.h>
 #include <fbl/algorithm.h>
 #include <fbl/auto_lock.h>
 #include <fbl/vector.h>
 
+#include "src/graphics/display/drivers/amlogic-display/board-resources.h"
+#include "src/graphics/display/drivers/amlogic-display/capture.h"
 #include "src/graphics/display/drivers/amlogic-display/common.h"
+#include "src/graphics/display/drivers/amlogic-display/hot-plug-detection.h"
+#include "src/graphics/display/drivers/amlogic-display/pixel-grid-size2d.h"
+#include "src/graphics/display/drivers/amlogic-display/vout.h"
 #include "src/graphics/display/lib/api-types-cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
+#include "src/graphics/display/lib/api-types-cpp/display-timing.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -90,87 +100,121 @@ void SetDefaultImageFormatConstraints(fuchsia_sysmem::wire::PixelFormatType form
   constraints.start_offset_divisor = kBufferAlignment;
 }
 
+ColorSpaceConversionMode GetColorSpaceConversionMode(VoutType vout_type) {
+  switch (vout_type) {
+    case VoutType::kDsi:
+      return ColorSpaceConversionMode::kRgbInternalRgbOut;
+    case VoutType::kHdmi:
+      return ColorSpaceConversionMode::kRgbInternalYuvOut;
+  }
+  ZX_ASSERT_MSG(false, "Invalid VoutType: %u", static_cast<uint8_t>(vout_type));
+}
+
+bool GetFullHardwareResetFromKernelCommandLine(zx_device_t* device) {
+  std::array<char, 8> option;
+  std::fill(option.begin(), option.end(), 0);
+  size_t actual_option_size = 0;
+
+  static const char kKernelCommandOption[] = "driver.amlogic_display.full_hardware_reset";
+  constexpr bool kDefaultValue = false;
+
+  zx_status_t status = device_get_variable(device, kKernelCommandOption, option.data(),
+                                           option.size(), &actual_option_size);
+  switch (status) {
+    case ZX_OK: {
+      std::string_view option_str(option.data(), strnlen(option.data(), actual_option_size));
+      zxlogf(TRACE, "Found kernel command option %s: %s", kKernelCommandOption, option_str.data());
+      // It's specified in "Zircon Kernel Command Line Options" documentation
+      // (//docs/reference/kernel/kernel_cmdline.md) that for boolean options,
+      // "0", "false" and "off" will disable the option and any other form will
+      // enable it.
+      //
+      // TODO(fxbug.dev/132908): Use a common library to check boolean values
+      // of a kernel command argument.
+      return option_str != "0" && option_str != "false" && option_str != "off";
+    }
+    case ZX_ERR_BUFFER_TOO_SMALL:
+      // The argument string is longer than 8 bytes, so it must contain a value
+      // that maps to true.
+      return true;
+    case ZX_ERR_NOT_FOUND: {
+      zxlogf(INFO, "Kernel command option %s not found. Fallback to default value (%d).",
+             kKernelCommandOption, kDefaultValue);
+      return kDefaultValue;
+    }
+    default:
+      zxlogf(ERROR, "Failed to read kernel command option %s: %s. Fallback to default value (%d).",
+             kKernelCommandOption, zx_status_get_string(status), kDefaultValue);
+      return kDefaultValue;
+  }
+}
+
 }  // namespace
+
+bool AmlogicDisplay::IgnoreDisplayMode() const {
+  // The DSI specification doesn't support switching display modes. The display
+  // mode is provided by the peripheral supplier through side channels and
+  // should be fixed while the display device is available.
+  ZX_DEBUG_ASSERT(vout_ != nullptr);
+  return vout_->type() == VoutType::kDsi;
+}
+
+bool AmlogicDisplay::IsNewDisplayTiming(const display::DisplayTiming& timing) {
+  return current_display_timing_ != timing;
+}
 
 zx_status_t AmlogicDisplay::DisplayClampRgbImplSetMinimumRgb(uint8_t minimum_rgb) {
   if (fully_initialized()) {
-    osd_->SetMinimumRgb(minimum_rgb);
+    video_input_unit_->SetMinimumRgb(minimum_rgb);
     return ZX_OK;
   }
   return ZX_ERR_INTERNAL;
 }
 
-zx_status_t AmlogicDisplay::RestartDisplay() {
-  if (!fully_initialized()) {
-    return ZX_ERR_INTERNAL;
+zx::result<> AmlogicDisplay::ResetDisplayEngine() {
+  ZX_DEBUG_ASSERT(!fully_initialized());
+  zxlogf(TRACE, "Display engine reset started.");
+
+  zx::result<> result = vout_->PowerOff();
+  if (!result.is_ok()) {
+    zxlogf(ERROR, "Failed to power off Vout before VPU reset: %s", result.status_string());
   }
+
   vpu_->PowerOff();
   vpu_->PowerOn();
-  vpu_->VppInit();
-  // Need to call this function since VPU/VPP registers were reset
-  vpu_->SetFirstTimeDriverLoad();
 
-  return vout_->RestartDisplay();
+  // TODO(fxbug.dev/132904): Instead of enabling it ad-hoc here, make
+  // `Vpu::PowerOn()` idempotent and always enable the AFBC in `Vpu::PowerOn()`.
+  vpu_->AfbcPower(/*power_on=*/true);
+
+  const ColorSpaceConversionMode color_conversion_mode = GetColorSpaceConversionMode(vout_->type());
+  vpu_->SetupPostProcessorColorConversion(color_conversion_mode);
+  // All the VPU registers are now reset. We need to claim the hardware
+  // ownership again.
+  vpu_->CheckAndClaimHardwareOwnership();
+
+  result = vout_->PowerOn();
+  if (!result.is_ok()) {
+    zxlogf(ERROR, "Failed to power on Vout after VPU reset: %s", result.status_string());
+    return result.take_error();
+  }
+
+  zxlogf(TRACE, "Display engine reset finished successfully.");
+  return zx::ok();
 }
 
-zx_status_t AmlogicDisplay::DisplayInit() {
-  ZX_ASSERT(!fully_initialized());
-  zx_status_t status;
-  fbl::AllocChecker ac;
-
-  // Setup VPU and VPP units first
-  vpu_ = fbl::make_unique_checked<Vpu>(&ac);
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-  status = vpu_->Init(pdev_);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Could not initialize VPU object");
-    return status;
-  }
-
-  // Determine whether it's first time boot or not
-  const bool skip_disp_init = vpu_->SetFirstTimeDriverLoad();
-  if (skip_disp_init) {
-    zxlogf(INFO, "First time driver load. Skip display initialization");
-    // Make sure AFBC engine is on. Since bootloader does not use AFBC, it might not have powered
-    // on AFBC engine.
-    vpu_->AfbcPower(true);
-  } else {
-    zxlogf(INFO, "Display driver reloaded. Initialize display system");
-    RestartDisplay();
-  }
-
-  // The "osd" node must be created because these metric paths are load-bearing
-  // for some triage workflows.
-  osd_node_ = root_node_.CreateChild("osd");
-  auto osd_or_status = Osd::Create(&pdev_, vout_->fb_width(), vout_->fb_height(),
-                                   vout_->display_width(), vout_->display_height(), &osd_node_);
-  if (osd_or_status.is_error()) {
-    return osd_or_status.status_value();
-  }
-  osd_ = std::move(osd_or_status).value();
-
-  osd_->HwInit();
-  return ZX_OK;
-}
-
-// part of ZX_PROTOCOL_DISPLAY_CONTROLLER_IMPL ops
 void AmlogicDisplay::DisplayControllerImplSetDisplayControllerInterface(
     const display_controller_interface_protocol_t* intf) {
   fbl::AutoLock lock(&display_mutex_);
   dc_intf_ = ddk::DisplayControllerInterfaceProtocolClient(intf);
 
   if (display_attached_) {
-    added_display_info_t info{.is_standard_srgb_out = false};  // Random default
     added_display_args_t args;
     vout_->PopulateAddedDisplayArgs(&args, display_id_, kSupportedBanjoPixelFormats);
-    dc_intf_.OnDisplaysChanged(&args, 1, nullptr, 0, &info, 1, nullptr);
-    vout_->OnDisplaysChanged(info);
+    dc_intf_.OnDisplaysChanged(&args, 1, nullptr, 0);
   }
 }
 
-// part of ZX_PROTOCOL_DISPLAY_CONTROLLER_IMPL ops
 zx_status_t AmlogicDisplay::DisplayControllerImplImportBufferCollection(
     uint64_t banjo_driver_buffer_collection_id, zx::channel collection_token) {
   const display::DriverBufferCollectionId driver_buffer_collection_id =
@@ -180,20 +224,21 @@ zx_status_t AmlogicDisplay::DisplayControllerImplImportBufferCollection(
     return ZX_ERR_ALREADY_EXISTS;
   }
 
-  ZX_DEBUG_ASSERT_MSG(sysmem_allocator_client_.is_valid(), "sysmem allocator is not initialized");
+  ZX_DEBUG_ASSERT_MSG(sysmem_.is_valid(), "sysmem allocator is not initialized");
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem::BufferCollection>();
   if (!endpoints.is_ok()) {
-    zxlogf(ERROR, "Cannot create sysmem BufferCollection endpoints: %s", endpoints.status_string());
+    zxlogf(ERROR, "Failed to create sysmem BufferCollection endpoints: %s",
+           endpoints.status_string());
     return ZX_ERR_INTERNAL;
   }
   auto& [collection_client_endpoint, collection_server_endpoint] = endpoints.value();
 
-  auto bind_result = sysmem_allocator_client_->BindSharedCollection(
+  auto bind_result = sysmem_->BindSharedCollection(
       fidl::ClientEnd<fuchsia_sysmem::BufferCollectionToken>(std::move(collection_token)),
       std::move(collection_server_endpoint));
   if (!bind_result.ok()) {
-    zxlogf(ERROR, "Cannot complete FIDL call BindSharedCollection: %s",
+    zxlogf(ERROR, "Failed to complete FIDL call BindSharedCollection: %s",
            bind_result.status_string());
     return ZX_ERR_INTERNAL;
   }
@@ -203,13 +248,12 @@ zx_status_t AmlogicDisplay::DisplayControllerImplImportBufferCollection(
   return ZX_OK;
 }
 
-// part of ZX_PROTOCOL_DISPLAY_CONTROLLER_IMPL ops
 zx_status_t AmlogicDisplay::DisplayControllerImplReleaseBufferCollection(
     uint64_t banjo_driver_buffer_collection_id) {
   const display::DriverBufferCollectionId driver_buffer_collection_id =
       display::ToDriverBufferCollectionId(banjo_driver_buffer_collection_id);
   if (buffer_collections_.find(driver_buffer_collection_id) == buffer_collections_.end()) {
-    zxlogf(ERROR, "Cannot release buffer collection %lu: buffer collection doesn't exist",
+    zxlogf(ERROR, "Failed to release buffer collection %lu: buffer collection doesn't exist",
            driver_buffer_collection_id.value());
     return ZX_ERR_NOT_FOUND;
   }
@@ -217,13 +261,13 @@ zx_status_t AmlogicDisplay::DisplayControllerImplReleaseBufferCollection(
   return ZX_OK;
 }
 
-// part of ZX_PROTOCOL_DISPLAY_CONTROLLER_IMPL ops
 zx_status_t AmlogicDisplay::DisplayControllerImplImportImage(
-    image_t* image, uint64_t banjo_driver_buffer_collection_id, uint32_t index) {
+    const image_t* image, uint64_t banjo_driver_buffer_collection_id, uint32_t index,
+    uint64_t* out_image_handle) {
   const display::DriverBufferCollectionId driver_buffer_collection_id =
       display::ToDriverBufferCollectionId(banjo_driver_buffer_collection_id);
   if (buffer_collections_.find(driver_buffer_collection_id) == buffer_collections_.end()) {
-    zxlogf(ERROR, "Cannot import Image on collection %lu: buffer collection doesn't exist",
+    zxlogf(ERROR, "Failed to import Image on collection %lu: buffer collection doesn't exist",
            driver_buffer_collection_id.value());
     return ZX_ERR_NOT_FOUND;
   }
@@ -278,7 +322,7 @@ zx_status_t AmlogicDisplay::DisplayControllerImplImportImage(
   if (const auto v2_pixel_format = sysmem::V2CopyFromV1PixelFormatType(
           collection_info.settings.image_format_constraints.pixel_format.type);
       !format_support_check_(v2_pixel_format)) {
-    zxlogf(ERROR, "Cannot import image: pixel format %u not supported",
+    zxlogf(ERROR, "Failed to import image: pixel format %u not supported",
            static_cast<uint32_t>(v2_pixel_format));
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -308,7 +352,7 @@ zx_status_t AmlogicDisplay::DisplayControllerImplImportImage(
           bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_CONTIGUOUS, collection_info.buffers[index].vmo,
                    offset & ~(PAGE_SIZE - 1), size, &paddr, 1, &import_info->pmt);
       if (status != ZX_OK) {
-        zxlogf(ERROR, "Could not pin BTI: %s", zx_status_get_string(status));
+        zxlogf(ERROR, "Failed to pin BTI: %s", zx_status_get_string(status));
         return status;
       }
       import_info->paddr = paddr;
@@ -336,13 +380,13 @@ zx_status_t AmlogicDisplay::DisplayControllerImplImportImage(
           canvas_->Config(std::move(collection_info.buffers[index].vmo),
                           collection_info.buffers[index].vmo_usable_start, canvas_info);
       if (!result.ok()) {
-        zxlogf(ERROR, "Could not configure canvas: %s", result.error().FormatDescription().c_str());
+        zxlogf(ERROR, "Failed to configure canvas: %s", result.error().FormatDescription().c_str());
         return ZX_ERR_NO_RESOURCES;
       }
       fidl::WireResultUnwrapType<fuchsia_hardware_amlogiccanvas::Device::Config>& response =
           result.value();
       if (response.is_error()) {
-        zxlogf(ERROR, "Could not configure canvas: %s",
+        zxlogf(ERROR, "Failed to configure canvas: %s",
                zx_status_get_string(response.error_value()));
         return ZX_ERR_NO_RESOURCES;
       }
@@ -359,20 +403,18 @@ zx_status_t AmlogicDisplay::DisplayControllerImplImportImage(
   }
   // TODO(fxbug.dev/128653): Using pointers as handles impedes portability of
   // the driver. Do not use pointers as handles.
-  image->handle = reinterpret_cast<uint64_t>(import_info.get());
+  *out_image_handle = reinterpret_cast<uint64_t>(import_info.get());
   fbl::AutoLock lock(&image_mutex_);
   imported_images_.push_back(std::move(import_info));
   return status;
 }
 
-// part of ZX_PROTOCOL_DISPLAY_CONTROLLER_IMPL ops
-void AmlogicDisplay::DisplayControllerImplReleaseImage(image_t* image) {
+void AmlogicDisplay::DisplayControllerImplReleaseImage(uint64_t image_handle) {
   fbl::AutoLock lock(&image_mutex_);
-  auto info = reinterpret_cast<ImageInfo*>(image->handle);
+  auto info = reinterpret_cast<ImageInfo*>(image_handle);
   imported_images_.erase(*info);
 }
 
-// part of ZX_PROTOCOL_DISPLAY_CONTROLLER_IMPL ops
 config_check_result_t AmlogicDisplay::DisplayControllerImplCheckConfiguration(
     const display_config_t** display_configs, size_t display_count,
     client_composition_opcode_t* out_client_composition_opcodes_list,
@@ -392,8 +434,14 @@ config_check_result_t AmlogicDisplay::DisplayControllerImplCheckConfiguration(
     return CONFIG_CHECK_RESULT_OK;
   }
 
-  if (vout_->CheckMode(&display_configs[0]->mode)) {
-    return CONFIG_CHECK_RESULT_UNSUPPORTED_MODES;
+  display::DisplayTiming display_timing = display::ToDisplayTiming(display_configs[0]->mode);
+  if (!IgnoreDisplayMode()) {
+    // `current_display_timing_` is already applied to the display so it's
+    // guaranteed to be supported. We only perform the timing check if there
+    // is a new `display_timing`.
+    if (IsNewDisplayTiming(display_timing) && !vout_->IsDisplayTimingSupported(display_timing)) {
+      return CONFIG_CHECK_RESULT_UNSUPPORTED_MODES;
+    }
   }
 
   bool success = true;
@@ -430,8 +478,8 @@ config_check_result_t AmlogicDisplay::DisplayControllerImplCheckConfiguration(
   }
 
   if (success) {
-    const uint32_t width = display_configs[0]->mode.h_addressable;
-    const uint32_t height = display_configs[0]->mode.v_addressable;
+    const uint32_t width = display_timing.horizontal_active_px;
+    const uint32_t height = display_timing.vertical_active_lines;
     // Make sure ther layer configuration is supported
     const primary_layer_t& layer = display_configs[0]->layer_list[0]->cfg.primary;
     // TODO(fxbug.dev/130594) Instead of using memcmp() to compare the frame
@@ -463,7 +511,6 @@ config_check_result_t AmlogicDisplay::DisplayControllerImplCheckConfiguration(
   return CONFIG_CHECK_RESULT_OK;
 }
 
-// part of ZX_PROTOCOL_DISPLAY_CONTROLLER_IMPL ops
 void AmlogicDisplay::DisplayControllerImplApplyConfiguration(
     const display_config_t** display_configs, size_t display_count,
     const config_stamp_t* banjo_config_stamp) {
@@ -474,21 +521,21 @@ void AmlogicDisplay::DisplayControllerImplApplyConfiguration(
   fbl::AutoLock lock(&display_mutex_);
 
   if (display_count == 1 && display_configs[0]->layer_count) {
-    // Setting up OSD may require Vout framebuffer information, which may be
-    // changed on each ApplyConfiguration(), so we need to apply the
-    // configuration to Vout first before initializing the display and OSD.
-    if (zx_status_t status = vout_->ApplyConfiguration(&display_configs[0]->mode);
-        status != ZX_OK) {
-      zxlogf(ERROR, "Could not apply config to Vout: %s", zx_status_get_string(status));
-      return;
-    }
-
-    if (!fully_initialized()) {
-      if (zx_status_t status = DisplayInit(); status != ZX_OK) {
-        zxlogf(ERROR, "Display Hardware Initialization failed: %s", zx_status_get_string(status));
-        ZX_ASSERT(0);
+    if (!IgnoreDisplayMode()) {
+      // Perform Vout modeset iff there's a new display mode.
+      //
+      // Setting up OSD may require Vout framebuffer information, which may be
+      // changed on each ApplyConfiguration(), so we need to apply the
+      // configuration to Vout first before initializing the display and OSD.
+      display::DisplayTiming display_timing = display::ToDisplayTiming(display_configs[0]->mode);
+      if (IsNewDisplayTiming(display_timing)) {
+        zx::result<> apply_config_result = vout_->ApplyConfiguration(display_timing);
+        if (!apply_config_result.is_ok()) {
+          zxlogf(ERROR, "Failed to apply config to Vout: %s", apply_config_result.status_string());
+          return;
+        }
+        current_display_timing_ = display_timing;
       }
-      set_fully_initialized();
     }
 
     // The only way a checked configuration could now be invalid is if display was
@@ -502,7 +549,7 @@ void AmlogicDisplay::DisplayControllerImplApplyConfiguration(
     // a checked configuration could be invalid at this point.
     auto info =
         reinterpret_cast<ImageInfo*>(display_configs[0]->layer_list[0]->cfg.primary.image.handle);
-    osd_->FlipOnVsync(info->canvas_idx, display_configs[0], config_stamp);
+    video_input_unit_->FlipOnVsync(info->canvas_idx, display_configs[0], config_stamp);
   } else {
     if (fully_initialized()) {
       {
@@ -513,7 +560,7 @@ void AmlogicDisplay::DisplayControllerImplApplyConfiguration(
           current_capture_target_image_ = nullptr;
         }
       }
-      osd_->Disable(config_stamp);
+      video_input_unit_->DisableLayer(config_stamp);
     }
   }
 
@@ -536,7 +583,7 @@ void AmlogicDisplay::DdkSuspend(ddk::SuspendTxn txn) {
     return;
   }
   if (fully_initialized()) {
-    osd_->Disable();
+    video_input_unit_->DisableLayer();
   }
 
   fbl::AutoLock l(&image_mutex_);
@@ -553,23 +600,36 @@ void AmlogicDisplay::DdkSuspend(ddk::SuspendTxn txn) {
 
 void AmlogicDisplay::DdkResume(ddk::ResumeTxn txn) {
   if (fully_initialized()) {
-    osd_->Enable();
+    video_input_unit_->EnableLayer();
   }
   txn.Reply(ZX_OK, DEV_POWER_STATE_D0, txn.requested_state());
 }
 
 void AmlogicDisplay::DdkRelease() {
-  vsync_irq_.destroy();
-  thrd_join(vsync_thread_, nullptr);
+  if (vsync_irq_.is_valid()) {
+    zx_status_t status = vsync_irq_.destroy();
+    if (status != ZX_OK) {
+      zxlogf(ERROR, "Vsync IRQ destroy failed: %s", zx_status_get_string(status));
+    }
+  }
+  if (vsync_thread_) {
+    int status = thrd_join(*vsync_thread_, nullptr);
+    if (status != thrd_success) {
+      zxlogf(ERROR, "Vsync thread join failed: %s",
+             zx_status_get_string(thrd_status_to_zx_status(status)));
+    }
+  }
+
+  // TODO(fxbug.dev/132066): Power off should occur after all threads are
+  // destroyed. Otherwise other threads may still write to the VPU MMIO which
+  // can cause the system to hang.
   if (fully_initialized()) {
-    osd_->Release();
+    video_input_unit_->Release();
     vpu_->PowerOff();
   }
 
-  vd1_wr_irq_.destroy();
-  thrd_join(capture_thread_, nullptr);
-  hpd_irq_.destroy();
-  thrd_join(hpd_thread_, nullptr);
+  capture_.reset();
+  hot_plug_detection_.reset();
   delete this;
 }
 
@@ -589,13 +649,14 @@ zx_status_t AmlogicDisplay::DdkGetProtocol(uint32_t proto_id, void* out_protocol
 }
 
 zx_status_t AmlogicDisplay::DisplayControllerImplGetSysmemConnection(zx::channel connection) {
-  auto status =
-      sysmem_->ConnectServer(fidl::ServerEnd<fuchsia_sysmem::Allocator>(std::move(connection)));
-  if (!status.ok()) {
-    zxlogf(ERROR, "Failed to connect to sysmem: %s", status.status_string());
-    return status.status();
+  // We can't use DdkConnectFragmentFidlProtocol here because it wants to create the endpoints but
+  // we only have the server_end here.
+  using ServiceMember = fuchsia_hardware_sysmem::Service::AllocatorV1;
+  zx_status_t status = device_connect_fragment_fidl_protocol(
+      parent_, "sysmem", ServiceMember::ServiceName, ServiceMember::Name, connection.release());
+  if (status != ZX_OK) {
+    return status;
   }
-
   return ZX_OK;
 }
 
@@ -605,7 +666,7 @@ zx_status_t AmlogicDisplay::DisplayControllerImplSetBufferCollectionConstraints(
       display::ToDriverBufferCollectionId(banjo_driver_buffer_collection_id);
   if (buffer_collections_.find(driver_buffer_collection_id) == buffer_collections_.end()) {
     zxlogf(ERROR,
-           "Cannot set buffer collection constraints for %lu: buffer collection doesn't exist",
+           "Failed to set buffer collection constraints for %lu: buffer collection doesn't exist",
            driver_buffer_collection_id.value());
     return ZX_ERR_NOT_FOUND;
   }
@@ -687,16 +748,16 @@ zx_status_t AmlogicDisplay::DisplayControllerImplSetBufferCollectionConstraints(
   // Set priority to 10 to override the Vulkan driver name priority of 5, but be less than most
   // application priorities.
   constexpr uint32_t kNamePriority = 10;
-  fidl::OneWayStatus name_res =
+  fidl::OneWayStatus set_name_result =
       collection->SetName(kNamePriority, fidl::StringView::FromExternal(buffer_name));
-  if (!name_res.ok()) {
-    zxlogf(ERROR, "Failed to set name: %d", name_res.status());
-    return name_res.status();
+  if (!set_name_result.ok()) {
+    zxlogf(ERROR, "Failed to set name: %d", set_name_result.status());
+    return set_name_result.status();
   }
-  fidl::OneWayStatus res = collection->SetConstraints(true, constraints);
-  if (!res.ok()) {
-    zxlogf(ERROR, "Failed to set constraints: %d", res.status());
-    return res.status();
+  fidl::OneWayStatus set_constraints_result = collection->SetConstraints(true, constraints);
+  if (!set_constraints_result.ok()) {
+    zxlogf(ERROR, "Failed to set constraints: %d", set_constraints_result.status());
+    return set_constraints_result.status();
   }
 
   return ZX_OK;
@@ -709,7 +770,14 @@ zx_status_t AmlogicDisplay::DisplayControllerImplSetDisplayPower(uint64_t displa
     return ZX_ERR_NOT_FOUND;
   }
   if (power_on) {
-    return vout_->PowerOn().status_value();
+    zx::result<> power_on_result = vout_->PowerOn();
+    if (power_on_result.is_ok()) {
+      // Powering on the display panel also resets the display mode set on the
+      // display. This clears the display mode set previously to force a Vout
+      // modeset to be performed on the next ApplyConfiguration().
+      current_display_timing_ = {};
+    }
+    return power_on_result.status_value();
   }
   return vout_->PowerOff().status_value();
 }
@@ -727,7 +795,8 @@ zx_status_t AmlogicDisplay::DisplayControllerImplImportImageForCapture(
   const display::DriverBufferCollectionId driver_buffer_collection_id =
       display::ToDriverBufferCollectionId(banjo_driver_buffer_collection_id);
   if (buffer_collections_.find(driver_buffer_collection_id) == buffer_collections_.end()) {
-    zxlogf(ERROR, "Cannot import capture image on collection %lu: buffer collection doesn't exist",
+    zxlogf(ERROR,
+           "Failed to import capture image on collection %lu: buffer collection doesn't exist",
            driver_buffer_collection_id.value());
     return ZX_ERR_NOT_FOUND;
   }
@@ -822,18 +891,25 @@ zx_status_t AmlogicDisplay::DisplayControllerImplImportImageForCapture(
       canvas_->Config(std::move(collection_info.buffers[index].vmo),
                       collection_info.buffers[index].vmo_usable_start, canvas_info);
   if (!result.ok()) {
-    zxlogf(ERROR, "Could not configure canvas: %s", result.error().FormatDescription().c_str());
+    zxlogf(ERROR, "Failed to configure canvas: %s", result.error().FormatDescription().c_str());
     return ZX_ERR_NO_RESOURCES;
   }
   fidl::WireResultUnwrapType<fuchsia_hardware_amlogiccanvas::Device::Config>& response =
       result.value();
   if (response.is_error()) {
-    zxlogf(ERROR, "Could not configure canvas: %s", zx_status_get_string(response.error_value()));
+    zxlogf(ERROR, "Failed to configure canvas: %s", zx_status_get_string(response.error_value()));
     return ZX_ERR_NO_RESOURCES;
   }
 
   // At this point, we have setup a canvas with the BufferCollection-based VMO. Store the
   // capture information
+  //
+  // TODO(fxbug.dev/132064): Currently there's no guarantee in the canvas API
+  // for the uniqueness of `canvas_idx`, and this driver doesn't check if there
+  // is any image with the same canvas index either. We should either make this
+  // a formal guarantee in Canvas.Config() API, or perform a check against all
+  // imported images to make sure the canvas is unique so that the driver won't
+  // overwrite other images.
   import_capture->canvas_idx = result->value()->canvas_idx;
   import_capture->canvas = canvas_.client_end();
   import_capture->image_height = collection_info.settings.image_format_constraints.min_coded_height;
@@ -842,30 +918,37 @@ zx_status_t AmlogicDisplay::DisplayControllerImplImportImageForCapture(
   // the driver. Do not use pointers as handles.
   *out_capture_handle = reinterpret_cast<uint64_t>(import_capture.get());
   imported_captures_.push_back(std::move(import_capture));
+
   return ZX_OK;
 }
 
 zx_status_t AmlogicDisplay::DisplayControllerImplStartCapture(uint64_t capture_handle) {
   if (!fully_initialized()) {
-    zxlogf(ERROR, "Cannot start capture before initializing the display");
+    zxlogf(ERROR, "Failed to start capture before initializing the display");
     return ZX_ERR_SHOULD_WAIT;
   }
 
   fbl::AutoLock lock(&capture_mutex_);
   if (current_capture_target_image_ != INVALID_ID) {
-    zxlogf(ERROR, "Cannot start capture while another capture is in progress");
+    zxlogf(ERROR, "Failed to start capture while another capture is in progress");
     return ZX_ERR_SHOULD_WAIT;
   }
 
   // Confirm that the handle was previously imported (hence valid)
-  auto info = reinterpret_cast<ImageInfo*>(capture_handle);
-  if (imported_captures_.find_if([info](auto& i) { return i.canvas_idx == info->canvas_idx; }) ==
-      imported_captures_.end()) {
+  // TODO(fxbug.dev/128653): This requires an enumeration over all the imported
+  // capture images for each StartCapture(). We should use hash maps to map
+  // handles (which shouldn't be pointers) to ImageInfo instead.
+  ImageInfo* info = reinterpret_cast<ImageInfo*>(capture_handle);
+  uint8_t canvas_index = info->canvas_idx;
+  if (imported_captures_.find_if([canvas_index](const ImageInfo& info) {
+        return info.canvas_idx == canvas_index;
+      }) == imported_captures_.end()) {
     // invalid handle
-    zxlogf(ERROR, "Invalid capture_handle");
+    zxlogf(ERROR, "Invalid capture_handle: %" PRIu64, capture_handle);
     return ZX_ERR_NOT_FOUND;
   }
 
+  // TODO(fxbug.dev/132064): A valid canvas index can be zero.
   ZX_DEBUG_ASSERT(info->canvas_idx > 0);
   ZX_DEBUG_ASSERT(info->image_height > 0);
   ZX_DEBUG_ASSERT(info->image_width > 0);
@@ -892,9 +975,13 @@ zx_status_t AmlogicDisplay::DisplayControllerImplReleaseCapture(uint64_t capture
   }
 
   // Find and erase previously imported capture
-  auto idx = reinterpret_cast<ImageInfo*>(capture_handle)->canvas_idx;
-  if (imported_captures_.erase_if([idx](auto& i) { return i.canvas_idx == idx; }) == nullptr) {
-    zxlogf(ERROR, "Tried to release non-existent capture image %d", idx);
+  // TODO(fxbug.dev/128653): This requires an enumeration over all the imported
+  // capture images for each StartCapture(). We should use hash maps to map
+  // handles (which shouldn't be pointers) to ImageInfo instead.
+  uint8_t canvas_index = reinterpret_cast<ImageInfo*>(capture_handle)->canvas_idx;
+  if (imported_captures_.erase_if(
+          [canvas_index](const ImageInfo& i) { return i.canvas_idx == canvas_index; }) == nullptr) {
+    zxlogf(ERROR, "Tried to release non-existent capture image %d", canvas_index);
     return ZX_ERR_NOT_FOUND;
   }
 
@@ -906,41 +993,21 @@ bool AmlogicDisplay::DisplayControllerImplIsCaptureCompleted() {
   return (current_capture_target_image_ == nullptr);
 }
 
-int AmlogicDisplay::CaptureThread() {
-  zx_status_t status;
+void AmlogicDisplay::VSyncThreadEntryPoint() {
   while (true) {
     zx::time timestamp;
-    status = vd1_wr_irq_.wait(&timestamp);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "Vd1 Wr interrupt wait failed: %s", zx_status_get_string(status));
+    zx_status_t status = vsync_irq_.wait(&timestamp);
+    if (status == ZX_ERR_CANCELED) {
+      zxlogf(INFO, "Vsync interrupt wait is cancelled. Stopping Vsync thread.");
       break;
     }
-    if (!fully_initialized()) {
-      zxlogf(ERROR, "Capture interrupt fired before the display was initialized");
-      continue;
-    }
-    vpu_->CaptureDone();
-    fbl::AutoLock lock(&capture_mutex_);
-    if (capture_intf_.is_valid()) {
-      capture_intf_.OnCaptureComplete();
-    }
-    current_capture_target_image_ = nullptr;
-  }
-  return status;
-}
-
-int AmlogicDisplay::VSyncThread() {
-  zx_status_t status;
-  while (true) {
-    zx::time timestamp;
-    status = vsync_irq_.wait(&timestamp);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "VSync Interrupt Wait failed");
+      zxlogf(ERROR, "VSync interrupt wait failed: %s", zx_status_get_string(status));
       break;
     }
     display::ConfigStamp current_config_stamp = display::kInvalidConfigStamp;
     if (fully_initialized()) {
-      current_config_stamp = osd_->GetLastConfigStampApplied();
+      current_config_stamp = video_input_unit_->GetLastConfigStampApplied();
     }
     fbl::AutoLock lock(&display_mutex_);
     if (dc_intf_.is_valid() && display_attached_) {
@@ -949,314 +1016,330 @@ int AmlogicDisplay::VSyncThread() {
                               &banjo_config_stamp);
     }
   }
-
-  return status;
 }
 
-int AmlogicDisplay::HpdThread() {
-  zx_status_t status;
-  while (true) {
-    status = hpd_irq_.wait(nullptr);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "Waiting in Interrupt failed: %s", zx_status_get_string(status));
-      break;
-    }
-    usleep(500000);
-    fidl::WireResult hpd_result = hpd_gpio_->Read();
-    if (!hpd_result.ok()) {
-      zxlogf(ERROR, "Failed to send Read request to hpd gpio: %s", hpd_result.status_string());
-      continue;
-    }
-    fidl::WireResultUnwrapType<fuchsia_hardware_gpio::Gpio::Read>& hpd_response =
-        hpd_result.value();
-    if (hpd_response.is_error()) {
-      zxlogf(ERROR, "Failed to read hpd gpio: %s",
-             zx_status_get_string(hpd_response.error_value()));
-      continue;
-    }
-    uint8_t hpd = hpd_response.value()->value;
-
-    fbl::AutoLock lock(&display_mutex_);
-
-    bool display_added = false;
-    added_display_args_t added_display_args;
-    added_display_info_t added_display_info;
-
-    bool display_removed = false;
-    display::DisplayId removed_display_id;
-
-    if (hpd && !display_attached_) {
-      zxlogf(INFO, "Display is connected");
-
-      display_attached_ = true;
-      vout_->DisplayConnected();
-      vout_->PopulateAddedDisplayArgs(&added_display_args, display_id_,
-                                      kSupportedBanjoPixelFormats);
-      display_added = true;
-      fidl::WireResult result = hpd_gpio_->SetPolarity(fuchsia_hardware_gpio::GpioPolarity::kLow);
-      if (!result.ok()) {
-        zxlogf(ERROR, "Failed to send SetPolarity request to hpd gpio: %s", result.status_string());
-        return result.status();
-      }
-      fidl::WireResultUnwrapType<fuchsia_hardware_gpio::Gpio::SetPolarity>& response =
-          result.value();
-      if (response.is_error()) {
-        zxlogf(ERROR, "Failed to set polarity of hpd gpio: %s",
-               zx_status_get_string(response.error_value()));
-        return response.error_value();
-      }
-    } else if (!hpd && display_attached_) {
-      zxlogf(INFO, "Display Disconnected!");
-      vout_->DisplayDisconnected();
-
-      display_removed = true;
-      removed_display_id = display_id_;
-      display_id_++;
-      display_attached_ = false;
-
-      fidl::WireResult result = hpd_gpio_->SetPolarity(fuchsia_hardware_gpio::GpioPolarity::kHigh);
-      if (!result.ok()) {
-        zxlogf(ERROR, "Failed to send SetPolarity request to hpd gpio: %s", result.status_string());
-        return result.status();
-      }
-      fidl::WireResultUnwrapType<fuchsia_hardware_gpio::Gpio::SetPolarity>& response =
-          result.value();
-      if (response.is_error()) {
-        zxlogf(ERROR, "Failed to set polarity of hpd gpio: %s",
-               zx_status_get_string(response.error_value()));
-        return response.error_value();
-      }
-    }
-
-    if (dc_intf_.is_valid() && (display_removed || display_added)) {
-      const size_t added_display_count = display_added ? 1 : 0;
-      const uint64_t banjo_removed_display_id = display::ToBanjoDisplayId(removed_display_id);
-      const size_t removed_display_count = display_removed ? 1 : 0;
-
-      dc_intf_.OnDisplaysChanged(
-          /*added_display_list=*/&added_display_args, added_display_count,
-          /*removed_display_list=*/&banjo_removed_display_id, removed_display_count,
-          /*out_display_info_list=*/&added_display_info,
-          /*display_info_count=*/added_display_count, /*out_display_info_actual=*/nullptr);
-      if (display_added) {
-        // See if we need to change output color to RGB
-        status = vout_->OnDisplaysChanged(added_display_info);
-      }
-    }
+void AmlogicDisplay::OnCaptureComplete() {
+  if (!fully_initialized()) {
+    zxlogf(WARNING, "Capture interrupt fired before the display was initialized");
+    return;
   }
-  return status;
+
+  vpu_->CaptureDone();
+  fbl::AutoLock lock(&capture_mutex_);
+  if (capture_intf_.is_valid()) {
+    capture_intf_.OnCaptureComplete();
+  }
+  current_capture_target_image_ = nullptr;
+}
+
+void AmlogicDisplay::OnHotPlugStateChange(HotPlugDetectionState current_state) {
+  fbl::AutoLock lock(&display_mutex_);
+
+  bool display_added = false;
+  added_display_args_t added_display_args;
+
+  bool display_removed = false;
+  display::DisplayId removed_display_id;
+
+  if (current_state == HotPlugDetectionState::kDetected && !display_attached_) {
+    zxlogf(INFO, "Display is connected");
+
+    display_attached_ = true;
+
+    // When the new display is attached to the display engine, it's not set
+    // up with any DisplayMode. This clears the display mode set previously
+    // to force a Vout modeset to be performed on the next
+    // ApplyConfiguration().
+    current_display_timing_ = {};
+
+    vout_->DisplayConnected();
+    vout_->PopulateAddedDisplayArgs(&added_display_args, display_id_, kSupportedBanjoPixelFormats);
+    display_added = true;
+  } else if (current_state == HotPlugDetectionState::kNotDetected && display_attached_) {
+    zxlogf(INFO, "Display Disconnected!");
+    vout_->DisplayDisconnected();
+
+    display_removed = true;
+    removed_display_id = display_id_;
+    display_id_++;
+    display_attached_ = false;
+  }
+
+  if (dc_intf_.is_valid() && (display_removed || display_added)) {
+    const size_t added_display_count = display_added ? 1 : 0;
+    const uint64_t banjo_removed_display_id = display::ToBanjoDisplayId(removed_display_id);
+    const size_t removed_display_count = display_removed ? 1 : 0;
+
+    dc_intf_.OnDisplaysChanged(
+        /*added_display_list=*/&added_display_args, added_display_count,
+        /*removed_display_list=*/&banjo_removed_display_id, removed_display_count);
+  }
 }
 
 zx_status_t AmlogicDisplay::SetupHotplugDisplayDetection() {
-  const char* kHpdGpioFragmentName = "gpio-hdmi-hotplug-detect";
-  zx::result hpd_gpio = DdkConnectFragmentFidlProtocol<fuchsia_hardware_gpio::Service::Device>(
-      parent_, kHpdGpioFragmentName);
-  if (hpd_gpio.is_error()) {
-    zxlogf(ERROR, "Failed to get gpio protocol from fragment %s: %s", kHpdGpioFragmentName,
-           hpd_gpio.status_string());
-    return hpd_gpio.status_value();
-  }
-  hpd_gpio_.Bind(std::move(hpd_gpio.value()));
+  ZX_DEBUG_ASSERT_MSG(!hot_plug_detection_, "HPD already set up");
 
+  zx::result<std::unique_ptr<HotPlugDetection>> hot_plug_detection_result =
+      HotPlugDetection::Create(parent_,
+                               fit::bind_member<&AmlogicDisplay::OnHotPlugStateChange>(this));
+
+  if (hot_plug_detection_result.is_error()) {
+    // HotPlugDetection::Create() logged the error.
+    return hot_plug_detection_result.status_value();
+  }
+  hot_plug_detection_ = std::move(hot_plug_detection_result).value();
+  return ZX_OK;
+}
+
+zx_status_t AmlogicDisplay::InitializeHdmiVout() {
+  ZX_DEBUG_ASSERT(vout_ == nullptr);
+
+  zx::result<std::unique_ptr<Vout>> create_hdmi_vout_result =
+      Vout::CreateHdmiVout(parent_, root_node_.CreateChild("vout"));
+  if (!create_hdmi_vout_result.is_ok()) {
+    zxlogf(ERROR, "Failed to initialize HDMI Vout device: %s",
+           create_hdmi_vout_result.status_string());
+    return create_hdmi_vout_result.status_value();
+  }
+  vout_ = std::move(create_hdmi_vout_result).value();
+
+  return ZX_OK;
+}
+
+zx_status_t AmlogicDisplay::InitializeMipiDsiVout(display_panel_t panel_info) {
+  ZX_DEBUG_ASSERT(vout_ == nullptr);
+
+  zxlogf(INFO, "Provided Display Info: %" PRIu32 " x %" PRIu32 " with panel type %" PRIu32,
+         panel_info.width, panel_info.height, panel_info.panel_type);
   {
-    fidl::WireResult result = hpd_gpio_->ConfigIn(fuchsia_hardware_gpio::GpioFlags::kPullDown);
-    if (!result.ok()) {
-      zxlogf(ERROR, "Failed to send ConfigIn request to hpd gpio: %s", result.status_string());
-      return result.status();
+    fbl::AutoLock lock(&display_mutex_);
+    zx::result<std::unique_ptr<Vout>> create_dsi_vout_result =
+        Vout::CreateDsiVout(parent_, panel_info.panel_type, panel_info.width, panel_info.height,
+                            root_node_.CreateChild("vout"));
+    if (!create_dsi_vout_result.is_ok()) {
+      zxlogf(ERROR, "Failed to initialize DSI Vout device: %s",
+             create_dsi_vout_result.status_string());
+      return create_dsi_vout_result.status_value();
     }
-    fidl::WireResultUnwrapType<fuchsia_hardware_gpio::Gpio::ConfigIn>& response = result.value();
-    if (response.is_error()) {
-      zxlogf(ERROR, "Failed to configure hpd gpio to input: %s",
-             zx_status_get_string(response.error_value()));
-      return response.error_value();
-    }
-  }
+    vout_ = std::move(create_dsi_vout_result).value();
 
-  fidl::WireResult interrupt_result = hpd_gpio_->GetInterrupt(ZX_INTERRUPT_MODE_LEVEL_HIGH);
-  if (!interrupt_result.ok()) {
-    zxlogf(ERROR, "Failed to send GetInterrupt request to hpd gpio: %s",
-           interrupt_result.status_string());
-    return interrupt_result.status();
-  }
-  fidl::WireResultUnwrapType<fuchsia_hardware_gpio::Gpio::GetInterrupt>& interrupt_response =
-      interrupt_result.value();
-  if (interrupt_response.is_error()) {
-    zxlogf(ERROR, "Failed to get interrupt from hpd gpio: %s",
-           zx_status_get_string(interrupt_response.error_value()));
-    return interrupt_response.error_value();
-  }
-  hpd_irq_ = std::move(interrupt_result.value()->irq);
-
-  auto hotplug_detection_thread = [](void* arg) {
-    return static_cast<AmlogicDisplay*>(arg)->HpdThread();
-  };
-  if (int status =
-          thrd_create_with_name(&hpd_thread_, hotplug_detection_thread, this, "hpd_thread");
-      status != thrd_success) {
-    zx_status_t zx_status = thrd_status_to_zx_status(status);
-    zxlogf(ERROR, "Could not create hotplug detection thread: %s", zx_status_get_string(zx_status));
-    return zx_status;
+    display_attached_ = true;
   }
 
   return ZX_OK;
 }
 
+zx_status_t AmlogicDisplay::InitializeVout() {
+  ZX_ASSERT(vout_ == nullptr);
+
+  display_panel_t panel_info;
+  size_t actual_bytes;
+
+  // TODO(fxbug.dev/132065): `DEVICE_METADATA_DISPLAY_CONFIG` is defined to
+  // store metadata of `display_config_t` type rather than `display_panel_t`
+  // type, though currently all the board drivers use display_panel_t instead,
+  // which is defined on a side channel apart from the //src/lib/ddk library.
+  zx_status_t status = device_get_metadata(parent_, DEVICE_METADATA_DISPLAY_CONFIG, &panel_info,
+                                           sizeof(display_panel_t), &actual_bytes);
+  if (status == ZX_ERR_NOT_FOUND) {
+    return InitializeHdmiVout();
+  }
+
+  if (status == ZX_OK) {
+    if (actual_bytes != sizeof(display_panel_t)) {
+      zxlogf(ERROR, "Display panel metadata size mismatch: Got %zu bytes, expected %zu bytes",
+             actual_bytes, sizeof(display_panel_t));
+      return ZX_ERR_INTERNAL;
+    }
+    return InitializeMipiDsiVout(panel_info);
+  }
+
+  zxlogf(ERROR, "Failed to get display panel metadata: %s", zx_status_get_string(status));
+  return status;
+}
+
+zx_status_t AmlogicDisplay::GetCommonProtocolsAndResources() {
+  ZX_ASSERT(!pdev_.is_valid());
+  ZX_ASSERT(!sysmem_.is_valid());
+  ZX_ASSERT(!canvas_.is_valid());
+  ZX_ASSERT(!bti_.is_valid());
+  ZX_ASSERT(!vsync_irq_.is_valid());
+
+  zx_status_t status = ddk::PDevFidl::FromFragment(parent_, &pdev_);
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to get PDev protocol: %s", zx_status_get_string(status));
+    return status;
+  }
+
+  zx::result<fidl::ClientEnd<fuchsia_sysmem::Allocator>> sysmem_client_result =
+      ddk::Device<void>::DdkConnectFragmentFidlProtocol<
+          fuchsia_hardware_sysmem::Service::AllocatorV1>(parent_, "sysmem");
+  if (sysmem_client_result.is_error()) {
+    zxlogf(ERROR, "Failed to get sysmem protocol: %s", sysmem_client_result.status_string());
+    return sysmem_client_result.status_value();
+  }
+  sysmem_.Bind(std::move(sysmem_client_result.value()));
+
+  zx::result<fidl::ClientEnd<fuchsia_hardware_amlogiccanvas::Device>> canvas_client_result =
+      DdkConnectFragmentFidlProtocol<fuchsia_hardware_amlogiccanvas::Service::Device>(parent_,
+                                                                                      "canvas");
+  if (canvas_client_result.is_error()) {
+    zxlogf(ERROR, "Failed to get Amlogic canvas protocol: %s",
+           canvas_client_result.status_string());
+    return canvas_client_result.status_value();
+  }
+  canvas_.Bind(std::move(canvas_client_result.value()));
+
+  zx::result<zx::bti> bti_result = GetBti(BtiResourceIndex::kDma, pdev_);
+  if (status != ZX_OK) {
+    return bti_result.error_value();
+  }
+  bti_ = std::move(bti_result).value();
+
+  zx::result<zx::interrupt> vsync_interrupt_result =
+      GetInterrupt(InterruptResourceIndex::kViu1Vsync, pdev_);
+  if (vsync_interrupt_result.is_error()) {
+    return vsync_interrupt_result.error_value();
+  }
+  vsync_irq_ = std::move(vsync_interrupt_result).value();
+
+  return ZX_OK;
+}
+
+zx_status_t AmlogicDisplay::InitializeSysmemAllocator() {
+  ZX_ASSERT(sysmem_.is_valid());
+  const zx_koid_t current_process_koid = fsl::GetCurrentProcessKoid();
+  const std::string debug_name = fxl::StringPrintf("amlogic-display[%lu]", current_process_koid);
+  fidl::OneWayStatus set_debug_status =
+      sysmem_->SetDebugClientInfo(fidl::StringView::FromExternal(debug_name), current_process_koid);
+  if (!set_debug_status.ok()) {
+    zxlogf(ERROR, "Failed to set sysmem allocator debug info: %s",
+           set_debug_status.status_string());
+    return set_debug_status.status();
+  }
+  return ZX_OK;
+}
+
+zx_status_t AmlogicDisplay::StartVsyncInterruptHandlerThread() {
+  ZX_ASSERT(!vsync_thread_.has_value());
+  thrd_t vsync_thread;
+  int vsync_thread_create_status = thrd_create_with_name(
+      &vsync_thread,
+      [](void* arg) {
+        reinterpret_cast<AmlogicDisplay*>(arg)->VSyncThreadEntryPoint();
+        return 0;
+      },
+      /*arg=*/this, /*name=*/"vsync_thread");
+  if (vsync_thread_create_status != thrd_success) {
+    zx_status_t status = thrd_status_to_zx_status(vsync_thread_create_status);
+    zxlogf(ERROR, "Failed to create Vsync thread: %s", zx_status_get_string(status));
+    return status;
+  }
+  vsync_thread_.emplace(vsync_thread);
+  // Set scheduler role for vsync thread.
+  const char* kRoleName = "fuchsia.graphics.display.drivers.amlogic-display.vsync";
+  zx_status_t status = device_set_profile_by_role(parent(), thrd_get_zx_handle(*vsync_thread_),
+                                                  kRoleName, strlen(kRoleName));
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to apply role: %s", zx_status_get_string(status));
+  }
+  return ZX_OK;
+}
+
 // TODO(payamm): make sure unbind/release are called if we return error
 zx_status_t AmlogicDisplay::Bind() {
-  root_node_ = inspector_.GetRoot().CreateChild("amlogic-display");
-  fbl::AllocChecker ac;
-  vout_ = fbl::make_unique_checked<Vout>(&ac);
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
   SetFormatSupportCheck(
       [](fuchsia_images2::wire::PixelFormat format) { return IsFormatSupported(format); });
 
-  {
-    display_panel_t display_info;
-    size_t actual;
-    switch (zx_status_t status = device_get_metadata(parent_, DEVICE_METADATA_DISPLAY_CONFIG,
-                                                     &display_info, sizeof(display_info), &actual);
-            status) {
-      case ZX_ERR_NOT_FOUND: {
-        auto hdmi_client =
-            DdkConnectFragmentFidlProtocol<fuchsia_hardware_hdmi::Service::Device>("hdmi");
-        if (hdmi_client.is_error()) {
-          zxlogf(ERROR, "Failed to connect to hdmi FIDL protocol: %s", hdmi_client.status_string());
-          return hdmi_client.status_value();
-        }
+  // Set up inspect first, since other components may add inspect children
+  // during initialization.
+  root_node_ = inspector_.GetRoot().CreateChild("amlogic-display");
 
-        // If configuration is missing, init HDMI.
-        if (zx_status_t status = vout_->InitHdmi(parent_, std::move(*hdmi_client));
-            status != ZX_OK) {
-          zxlogf(ERROR, "Could not initialize HDMI Vout device: %s", zx_status_get_string(status));
-          return status;
-        }
-        break;
-      }
-      case ZX_OK:
-        if (actual != sizeof(display_info)) {
-          zxlogf(ERROR, "Could not get display panel metadata %zu/%zu", actual,
-                 sizeof(display_info));
-          return ZX_ERR_INTERNAL;
-        }
-        zxlogf(INFO, "Provided Display Info: %d x %d with panel type %d", display_info.width,
-               display_info.height, display_info.panel_type);
-        {
-          fbl::AutoLock lock(&display_mutex_);
-          if (zx_status_t status = vout_->InitDsi(parent_, display_info.panel_type,
-                                                  display_info.width, display_info.height);
-              status != ZX_OK) {
-            zxlogf(ERROR, "Could not initialize DSI Vout device: %s", zx_status_get_string(status));
-            return status;
-          }
-          display_attached_ = true;
-        }
+  zx_status_t status = GetCommonProtocolsAndResources();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to get common protocols resources from parent devices: %s",
+           zx_status_get_string(status));
+    return status;
+  }
 
-        root_node_.CreateUint("input_panel_type", display_info.panel_type, &inspector_);
-        break;
-      default:
-        zxlogf(ERROR, "Could not get display panel metadata: %s", zx_status_get_string(status));
-        return status;
+  status = InitializeVout();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to initalize Vout: %s", zx_status_get_string(status));
+    return status;
+  }
+
+  video_input_unit_node_ = root_node_.CreateChild("video_input_unit");
+  zx::result<std::unique_ptr<VideoInputUnit>> video_input_unit_create_result =
+      VideoInputUnit::Create(&pdev_, &video_input_unit_node_);
+  if (video_input_unit_create_result.is_error()) {
+    zxlogf(ERROR, "Failed to create VideoInputUnit instance: %s",
+           video_input_unit_create_result.status_string());
+    return video_input_unit_create_result.status_value();
+  }
+  video_input_unit_ = std::move(video_input_unit_create_result).value();
+
+  fbl::AllocChecker ac;
+  vpu_ = fbl::make_unique_checked<Vpu>(&ac);
+  if (!ac.check()) {
+    return ZX_ERR_NO_MEMORY;
+  }
+  status = vpu_->Init(pdev_);
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to initialize VPU object: %s", zx_status_get_string(status));
+    return status;
+  }
+
+  // If the display engine was previously owned by a different driver, we
+  // attempt to complete a seamless takeover. If we previously owned the
+  // hardware, our driver must have been unloaded and reloaded.
+  // We currently do a full hardware reset in that case.
+  const bool performs_full_hardware_reset = GetFullHardwareResetFromKernelCommandLine(parent()) ||
+                                            !vpu_->CheckAndClaimHardwareOwnership();
+  if (performs_full_hardware_reset) {
+    fbl::AutoLock lock(&display_mutex_);
+    zx::result<> reset_result = ResetDisplayEngine();
+    if (!reset_result.is_ok()) {
+      zxlogf(ERROR, "Failed to reset the display engine: %s", reset_result.status_string());
+      return reset_result.status_value();
     }
+  } else {
+    // It's possible that the AFBC engine is not yet turned on by the
+    // previous driver when the driver takes it over so we should ensure it's
+    // enabled.
+    //
+    // TODO(fxbug.dev/132904): Instead of enabling it ad-hoc here, make
+    // `Vpu::PowerOn()` idempotent and always call it when initializing the
+    // driver.
+    vpu_->AfbcPower(true);
   }
-  root_node_.CreateUint("panel_type", vout_->panel_type(), &inspector_);
-  root_node_.CreateUint("vout_type", vout_->type(), &inspector_);
 
-  if (zx_status_t status = ddk::PDevFidl::FromFragment(parent_, &pdev_); status != ZX_OK) {
-    zxlogf(ERROR, "Could not get PDEV protocol: %s", zx_status_get_string(status));
+  status = InitializeSysmemAllocator();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to initialize sysmem allocator: %s", zx_status_get_string(status));
     return status;
   }
 
-  zx::result sysmem_client =
-      ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_sysmem::Service::Sysmem>(
-          parent_, "sysmem");
-  if (sysmem_client.is_error()) {
-    zxlogf(ERROR, "Failed to get sysmem protocol: %s", sysmem_client.status_string());
-    return sysmem_client.status_value();
-  }
-  sysmem_.Bind(std::move(*sysmem_client));
-
-  zx::result result =
-      DdkConnectFragmentFidlProtocol<fuchsia_hardware_amlogiccanvas::Service::Device>(parent_,
-                                                                                      "canvas");
-  if (result.is_error()) {
-    zxlogf(ERROR, "Could not obtain CANVAS protocol: %s", result.status_string());
-    return result.status_value();
-  }
-
-  canvas_.Bind(std::move(result.value()));
-
-  if (zx_status_t status = pdev_.GetBti(0, &bti_); status != ZX_OK) {
-    zxlogf(ERROR, "Could not get BTI handle: %s", zx_status_get_string(status));
+  status = StartVsyncInterruptHandlerThread();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to start Vsync interrupt handler threads: %s",
+           zx_status_get_string(status));
     return status;
   }
 
-  // Map VSync Interrupt
-  if (zx_status_t status = pdev_.GetInterrupt(IRQ_VSYNC, 0, &vsync_irq_); status != ZX_OK) {
-    zxlogf(ERROR, "Could not map vsync interrupt: %s", zx_status_get_string(status));
-    return status;
-  }
-
-  auto start_thread = [](void* arg) { return static_cast<AmlogicDisplay*>(arg)->VSyncThread(); };
-  if (int status = thrd_create_with_name(&vsync_thread_, start_thread, this, "vsync_thread");
-      status != 0) {
-    zxlogf(ERROR, "Could not create vsync_thread: %s", zx_status_get_string(status));
-    return status;
-  }
-
-  // Map VD1_WR Interrupt (used for capture)
-  if (zx_status_t status = pdev_.GetInterrupt(IRQ_VD1_WR, 0, &vd1_wr_irq_); status != ZX_OK) {
-    zxlogf(ERROR, "Could not map vd1 wr interrupt: %s", zx_status_get_string(status));
-    return status;
-  }
-
-  auto vd_thread = [](void* arg) { return static_cast<AmlogicDisplay*>(arg)->CaptureThread(); };
-  if (int status = thrd_create_with_name(&capture_thread_, vd_thread, this, "capture_thread");
-      status != 0) {
-    zxlogf(ERROR, "Could not create capture_thread: %s", zx_status_get_string(status));
-    return status;
+  {
+    zx::result<std::unique_ptr<Capture>> capture_result =
+        Capture::Create(pdev_, fit::bind_member<&AmlogicDisplay::OnCaptureComplete>(this));
+    if (capture_result.is_error()) {
+      // Create() already logged the error.
+      return capture_result.error_value();
+    }
+    capture_ = std::move(capture_result).value();
   }
 
   if (vout_->supports_hpd()) {
     if (zx_status_t status = SetupHotplugDisplayDetection(); status != ZX_OK) {
-      zxlogf(ERROR, "Cannot set up hotplug display: %s", zx_status_get_string(status));
+      zxlogf(ERROR, "Failed to set up hotplug display: %s", zx_status_get_string(status));
       return status;
-    }
-  }
-
-  // Set scheduler role for vsync thread.
-  {
-    const char* role_name = "fuchsia.graphics.display.drivers.amlogic-display.vsync";
-    zx_status_t status = device_set_profile_by_role(parent(), thrd_get_zx_handle(vsync_thread_),
-                                                    role_name, strlen(role_name));
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to apply role: %s", zx_status_get_string(status));
-    }
-  }
-
-  // Set sysmem allocator client.
-  {
-    auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem::Allocator>();
-    if (!endpoints.is_ok()) {
-      zxlogf(ERROR, "Cannot create sysmem allocator endpoints: %s", endpoints.status_string());
-      return endpoints.status_value();
-    }
-    auto& [client, server] = endpoints.value();
-    auto status = sysmem_->ConnectServer(std::move(endpoints->server));
-    if (!status.ok()) {
-      zxlogf(ERROR, "Cannot connect to sysmem Allocator protocol: %s", status.status_string());
-      return status.status();
-    }
-    sysmem_allocator_client_ = fidl::WireSyncClient(std::move(client));
-
-    std::string debug_name =
-        fxl::StringPrintf("amlogic-display[%lu]", fsl::GetCurrentProcessKoid());
-    auto set_debug_status = sysmem_allocator_client_->SetDebugClientInfo(
-        fidl::StringView::FromExternal(debug_name), fsl::GetCurrentProcessKoid());
-    if (!set_debug_status.ok()) {
-      zxlogf(ERROR, "Cannot set sysmem allocator debug info: %s", set_debug_status.status_string());
-      return set_debug_status.status();
     }
   }
 
@@ -1266,12 +1349,13 @@ zx_status_t AmlogicDisplay::Bind() {
                                       .set_flags(DEVICE_ADD_ALLOW_MULTI_COMPOSITE)
                                       .set_inspect_vmo(inspector_.DuplicateVmo()));
       status != ZX_OK) {
-    zxlogf(ERROR, "Could not add device: %s", zx_status_get_string(status));
+    zxlogf(ERROR, "Failed to add device: %s", zx_status_get_string(status));
     return status;
   }
 
   cleanup.cancel();
 
+  set_fully_initialized();
   return ZX_OK;
 }
 

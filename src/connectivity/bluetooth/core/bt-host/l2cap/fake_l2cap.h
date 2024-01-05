@@ -16,7 +16,7 @@ namespace bt::l2cap::testing {
 // layers for unit testing.
 class FakeL2cap final : public ChannelManager {
  public:
-  FakeL2cap() = default;
+  explicit FakeL2cap(pw::async::Dispatcher& pw_dispatcher) : heap_dispatcher_(pw_dispatcher) {}
   ~FakeL2cap() override;
 
   void AttachInspect(inspect::Node& parent, std::string name) override {}
@@ -33,23 +33,23 @@ class FakeL2cap final : public ChannelManager {
   // created.  If a call to OpenL2capChannel is made without expectation, it
   // will assert.
   // Multiple expectations for the same PSM should be queued in FIFO order.
-  void ExpectOutboundL2capChannel(hci_spec::ConnectionHandle handle, PSM psm, ChannelId id,
+  void ExpectOutboundL2capChannel(hci_spec::ConnectionHandle handle, Psm psm, ChannelId id,
                                   ChannelId remote_id, ChannelParameters params);
 
   // Triggers the creation of an inbound dynamic channel on the given link. The
   // channels created will be provided to handlers passed to RegisterService.
   // Returns false if unable to create the channel.
-  bool TriggerInboundL2capChannel(hci_spec::ConnectionHandle handle, PSM psm, ChannelId id,
+  bool TriggerInboundL2capChannel(hci_spec::ConnectionHandle handle, Psm psm, ChannelId id,
                                   ChannelId remote_id, uint16_t tx_mtu = kDefaultMTU);
 
   // Triggers a link error callback on the given link.
   void TriggerLinkError(hci_spec::ConnectionHandle handle);
 
   // L2cap overrides:
-  void AddACLConnection(hci_spec::ConnectionHandle handle,
-                        pw::bluetooth::emboss::ConnectionRole role,
-                        LinkErrorCallback link_error_callback,
-                        SecurityUpgradeCallback security_callback) override;
+  BrEdrFixedChannels AddACLConnection(hci_spec::ConnectionHandle handle,
+                                      pw::bluetooth::emboss::ConnectionRole role,
+                                      LinkErrorCallback link_error_callback,
+                                      SecurityUpgradeCallback security_callback) override;
   LEFixedChannels AddLEConnection(hci_spec::ConnectionHandle handle,
                                   pw::bluetooth::emboss::ConnectionRole role,
                                   LinkErrorCallback link_error_callback,
@@ -68,11 +68,11 @@ class FakeL2cap final : public ChannelManager {
                                     ChannelId channel_id) override {
     return Channel::WeakPtr();
   }
-  void OpenL2capChannel(hci_spec::ConnectionHandle handle, PSM psm, ChannelParameters params,
+  void OpenL2capChannel(hci_spec::ConnectionHandle handle, Psm psm, ChannelParameters params,
                         ChannelCallback cb) override;
-  bool RegisterService(PSM psm, ChannelParameters params,
+  bool RegisterService(Psm psm, ChannelParameters params,
                        ChannelCallback channel_callback) override;
-  void UnregisterService(PSM psm) override;
+  void UnregisterService(Psm psm) override;
 
   WeakSelf<internal::LogicalLink>::WeakPtr LogicalLinkForTesting(
       hci_spec::ConnectionHandle handle) override {
@@ -112,11 +112,9 @@ class FakeL2cap final : public ChannelManager {
     bt::LinkType type;
     bool link_error_signaled = false;
 
-    async_dispatcher_t* dispatcher;
-
     // Dual-mode callbacks
     LinkErrorCallback link_error_cb;
-    std::unordered_map<PSM, std::queue<ChannelData>> expected_outbound_conns;
+    std::unordered_map<Psm, std::queue<ChannelData>> expected_outbound_conns;
 
     // LE-only callbacks
     LEConnectionParameterUpdateCallback le_conn_param_cb;
@@ -144,7 +142,9 @@ class FakeL2cap final : public ChannelManager {
 
   ConnectionParameterUpdateRequestResponder connection_parameter_update_request_responder_;
 
-  std::unordered_map<PSM, ServiceInfo> registered_services_;
+  std::unordered_map<Psm, ServiceInfo> registered_services_;
+
+  pw::async::HeapDispatcher heap_dispatcher_;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(FakeL2cap);
 };

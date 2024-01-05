@@ -6,8 +6,8 @@ composite aml_video_enc;
 
 using fuchsia.amlogic.platform;
 using fuchsia.amlogic.platform.meson;
-using fuchsia.hardware.clock;
-using fuchsia.hardware.amlogiccanvas;
+using fuchsia.clock;
+using fuchsia.amlogic.platform;
 using fuchsia.platform;
 using fuchsia.sysmem;
 
@@ -20,19 +20,19 @@ primary node "pdev" {
 }
 
 node "sysmem" {
-  fuchsia.BIND_PROTOCOL == fuchsia.sysmem.BIND_PROTOCOL.DEVICE;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.sysmem.BIND_FIDL_PROTOCOL.DEVICE;
 }
 
 node "canvas" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.amlogiccanvas.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.amlogic.platform.BIND_FIDL_PROTOCOL.CANVAS_SERVICE;
 }
 
 node "clock-dos-hcodec" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.clock.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE;
   fuchsia.BIND_CLOCK_ID == fuchsia.amlogic.platform.meson.G12B_CLK_ID.CLK_DOS_GCLK_HCODEC;
 }
 
 node "clock-dos" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.clock.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE;
   fuchsia.BIND_CLOCK_ID == fuchsia.amlogic.platform.meson.G12B_CLK_ID.CLK_DOS;
 }

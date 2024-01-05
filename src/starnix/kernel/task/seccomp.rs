@@ -2,26 +2,69 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{
+    mm::MemoryAccessorExt,
+    signals::{send_standard_signal, SignalDetail, SignalInfo},
+    task::{
+        CurrentTask, EventHandler, ExitStatus, Kernel, Task, TaskFlags, WaitCanceler, WaitQueue,
+        Waiter,
+    },
+    vfs::{
+        buffers::{InputBuffer, OutputBuffer},
+        fileops_impl_nonseekable, Anon, FdEvents, FdFlags, FdNumber, FileObject, FileOps,
+    },
+};
 use bstr::ByteSlice;
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::Arc;
+use starnix_lifecycle::AtomicU64Counter;
+use starnix_logging::log_warn;
+use starnix_sync::Mutex;
+use starnix_syscalls::{decls::Syscall, SyscallArg, SyscallResult};
+use starnix_uapi::{
+    __NR_exit, __NR_read, __NR_write, errno, errno_from_code, error,
+    errors::Errno,
+    open_flags::OpenFlags,
+    seccomp_data, seccomp_notif, seccomp_notif_resp,
+    signals::{SIGKILL, SIGSYS},
+    sock_filter,
+    user_address::{UserAddress, UserRef},
+    BPF_ABS, BPF_LD, BPF_ST, SECCOMP_IOCTL_NOTIF_ADDFD, SECCOMP_IOCTL_NOTIF_ID_VALID,
+    SECCOMP_IOCTL_NOTIF_RECV, SECCOMP_IOCTL_NOTIF_SEND, SECCOMP_RET_ACTION_FULL, SECCOMP_RET_ALLOW,
+    SECCOMP_RET_DATA, SECCOMP_USER_NOTIF_FLAG_CONTINUE, SYS_SECCOMP,
+};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc,
+    },
+};
 use ubpf::{
     converter::{bpf_addressing_mode, bpf_class},
     program::EbpfProgram,
 };
 
-use crate::{
-    fs::buffers::{InputBuffer, OutputBuffer},
-    fs::{fileops_impl_nonseekable, Anon, FdEvents, FdFlags, FdNumber, FileObject, FileOps},
-    lock::Mutex,
-    logging::log_warn,
-    mm::MemoryAccessorExt,
-    signals::{send_signal, SignalDetail, SignalInfo},
-    syscalls::{decls::Syscall, SyscallArg, SyscallResult},
-    task::{CurrentTask, EventHandler, ExitStatus, Kernel, Task, WaitCanceler, WaitQueue, Waiter},
-    types::*,
-};
+#[cfg(target_arch = "aarch64")]
+use starnix_uapi::__NR_clock_getres;
+#[cfg(target_arch = "aarch64")]
+use starnix_uapi::__NR_clock_gettime;
+#[cfg(target_arch = "aarch64")]
+use starnix_uapi::__NR_gettimeofday;
+#[cfg(target_arch = "aarch64")]
+use starnix_uapi::AUDIT_ARCH_AARCH64;
+
+#[cfg(target_arch = "x86_64")]
+use starnix_uapi::__NR_clock_gettime;
+#[cfg(target_arch = "x86_64")]
+use starnix_uapi::__NR_getcpu;
+#[cfg(target_arch = "x86_64")]
+use starnix_uapi::__NR_gettimeofday;
+#[cfg(target_arch = "x86_64")]
+use starnix_uapi::__NR_time;
+#[cfg(target_arch = "x86_64")]
+use starnix_uapi::AUDIT_ARCH_X86_64;
+
+#[cfg(target_arch = "riscv64")]
+use starnix_uapi::AUDIT_ARCH_RISCV64;
 
 pub struct SeccompFilter {
     /// The BPF program associated with this filter.
@@ -34,7 +77,7 @@ pub struct SeccompFilter {
     unique_id: u64,
 
     /// The next cookie (unique id for this syscall), as used by SECCOMP_RET_USER_NOTIF
-    cookie: AtomicU64,
+    cookie: AtomicU64Counter,
 
     // Whether to log the results of this filter
     log: bool,
@@ -73,7 +116,7 @@ impl SeccompFilter {
             Ok(program) => Ok(SeccompFilter {
                 program,
                 unique_id: maybe_unique_id,
-                cookie: AtomicU64::new(0),
+                cookie: AtomicU64Counter::new(0),
                 log: should_log,
             }),
             Err(errmsg) => {
@@ -212,8 +255,10 @@ impl SeccompFilterContainer {
 
         // Filters are executed in reverse order of addition
         for filter in self.filters.iter().rev() {
-            let mut data =
-                make_seccomp_data(syscall, current_task.registers.instruction_pointer_register());
+            let mut data = make_seccomp_data(
+                syscall,
+                current_task.thread_state.registers.instruction_pointer_register(),
+            );
 
             let new_result = filter.run(&mut data);
 
@@ -317,7 +362,7 @@ impl SeccompState {
             && syscall.decl.number as u32 != __NR_read
             && syscall.decl.number as u32 != __NR_write
         {
-            send_signal(task, SignalInfo::default(SIGKILL));
+            send_standard_signal(task, SignalInfo::default(SIGKILL));
             return Some(Err(errno_from_code!(0)));
         }
         None
@@ -340,14 +385,14 @@ impl SeccompState {
         } else {
             "unknown"
         };
-        crate::logging::log_info!(
+        starnix_logging::log_info!(
             "type=SECCOMP: uid={} gid={} pid={} comm={} syscall={} ip={} ARCH={} SYSCALL={}",
             uid,
             gid,
             task.thread_group.leader,
             comm,
             syscall.decl.number,
-            task.registers.instruction_pointer_register(),
+            task.thread_state.registers.instruction_pointer_register(),
             arch,
             syscall.decl.name
         );
@@ -381,10 +426,10 @@ impl SeccompState {
                 let mut task_state = current_task.write();
 
                 if is_last_thread {
-                    task_state.dump_on_exit = true;
-                    task_state.exit_status.get_or_insert(ExitStatus::CoreDump(siginfo));
+                    task_state.set_flags(TaskFlags::DUMP_ON_EXIT, true);
+                    task_state.set_exit_status_if_not_already(ExitStatus::CoreDump(siginfo));
                 } else {
-                    task_state.exit_status.get_or_insert(ExitStatus::Kill(siginfo));
+                    task_state.set_exit_status_if_not_already(ExitStatus::Kill(siginfo));
                 }
                 Some(Err(errno_from_code!(0)))
             }
@@ -412,28 +457,31 @@ impl SeccompState {
                     signal: SIGSYS,
                     errno: errno as i32,
                     code: SYS_SECCOMP as i32,
-                    detail: SignalDetail::SigSys {
-                        call_addr: current_task.registers.instruction_pointer_register().into(),
+                    detail: SignalDetail::SIGSYS {
+                        call_addr: current_task
+                            .thread_state
+                            .registers
+                            .instruction_pointer_register()
+                            .into(),
                         syscall: syscall.decl.number as i32,
                         arch: arch_val,
                     },
                     force: true,
                 };
 
-                send_signal(current_task, siginfo);
+                send_standard_signal(current_task, siginfo);
                 Some(Err(errno_from_code!(-(syscall.decl.number as i16))))
             }
             SeccompAction::UserNotif => {
                 if let Some(notifier) = current_task.get_seccomp_notifier() {
-                    let cookie =
-                        result.filter.as_ref().unwrap().cookie.fetch_add(1, Ordering::Relaxed);
+                    let cookie = result.filter.as_ref().unwrap().cookie.next();
                     let msg = seccomp_notif {
                         id: cookie,
                         pid: current_task.id as u32,
                         flags: 0,
                         data: make_seccomp_data(
                             syscall,
-                            current_task.registers.instruction_pointer_register(),
+                            current_task.thread_state.registers.instruction_pointer_register(),
                         ),
                     };
                     // First, add a pending notification, and wake up the supervisor waiting for it.
@@ -794,7 +842,7 @@ impl SeccompNotifier {
                 return Some(errno!(EINPROGRESS));
             }
             entry.resp = Some(resp);
-            self.waiters.notify_value_event(resp.id);
+            self.waiters.notify_value(resp.id);
             None
         } else {
             Some(errno!(EINVAL))
@@ -827,12 +875,12 @@ struct SeccompNotifierFileObject {
 impl FileOps for SeccompNotifierFileObject {
     fileops_impl_nonseekable!();
 
-    fn close(&self, _file: &FileObject) {
+    fn close(&self, _file: &FileObject, _current_task: &CurrentTask) {
         let mut state = self.notifier.lock();
 
         for (cookie, notification) in state.pending_notifications.iter() {
             if !notification.consumed {
-                state.waiters.notify_value_event(*cookie);
+                state.waiters.notify_value(*cookie);
                 state.waiters.notify_fd_events(FdEvents::POLLIN | FdEvents::POLLRDNORM);
             } else if notification.resp.is_none() {
                 state.waiters.notify_fd_events(FdEvents::POLLOUT | FdEvents::POLLWRNORM);
@@ -876,7 +924,7 @@ impl FileOps for SeccompNotifierFileObject {
         match request {
             SECCOMP_IOCTL_NOTIF_RECV => {
                 if let Ok(notif) = current_task
-                    .mm
+                    .mm()
                     .read_memory_to_vec(user_addr, std::mem::size_of::<seccomp_notif>())
                 {
                     for value in notif.iter() {
@@ -896,17 +944,17 @@ impl FileOps for SeccompNotifierFileObject {
                         if notif.is_some() {
                             break;
                         }
-                        notifier.waiters.wait_async_events(
+                        notifier.waiters.wait_async_fd_events(
                             &waiter,
                             FdEvents::POLLIN | FdEvents::POLLHUP,
-                            Box::new(|_: FdEvents| {}),
+                            EventHandler::None,
                         );
                     }
                     waiter.wait(current_task)?;
                 }
                 if let Some(notif) = notif {
                     if let Err(e) = current_task
-                        .mm
+                        .mm()
                         .write_object(UserRef::<seccomp_notif>::new(user_addr), &notif)
                     {
                         self.notifier.lock().unconsume(notif.id);
@@ -919,7 +967,7 @@ impl FileOps for SeccompNotifierFileObject {
             SECCOMP_IOCTL_NOTIF_SEND => {
                 // A SEND sends a response to a previously received notification.
                 let resp: seccomp_notif_resp =
-                    current_task.mm.read_object(UserRef::new(user_addr))?;
+                    current_task.mm().read_object(UserRef::new(user_addr))?;
                 if resp.flags & !SECCOMP_USER_NOTIF_FLAG_CONTINUE != 0 {
                     return error!(EINVAL);
                 }
@@ -938,7 +986,7 @@ impl FileOps for SeccompNotifierFileObject {
             }
             SECCOMP_IOCTL_NOTIF_ID_VALID => {
                 // An ID_VALID indicates that the notification is still in progress.
-                let cookie: u64 = current_task.mm.read_object(UserRef::new(user_addr))?;
+                let cookie: u64 = current_task.mm().read_object(UserRef::new(user_addr))?;
                 {
                     let notifier = self.notifier.lock();
                     if notifier.notification_pending(cookie) {
@@ -962,7 +1010,7 @@ impl FileOps for SeccompNotifierFileObject {
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
         let notifier = self.notifier.lock();
-        Some(notifier.waiters.wait_async_events(waiter, events, handler))
+        Some(notifier.waiters.wait_async_fd_events(waiter, events, handler))
     }
 
     fn query_events(
@@ -976,8 +1024,7 @@ impl FileOps for SeccompNotifierFileObject {
 
 #[cfg(test)]
 mod test {
-    use crate::task::SeccompAction;
-    use crate::testing::create_kernel_and_task;
+    use crate::{task::SeccompAction, testing::create_kernel_and_task};
 
     #[::fuchsia::test]
     async fn test_actions_logged_accepts_legal_string() {

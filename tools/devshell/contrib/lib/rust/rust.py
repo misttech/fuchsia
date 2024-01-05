@@ -19,7 +19,9 @@ PREBUILT_THIRD_PARTY_DIR = PREBUILT_DIR / "third_party"
 HOST_PLATFORM = (
     platform.system().lower().replace("darwin", "mac")
     + "-"
-    + {"x86_64": "x64", "aarch64": "arm64"}[platform.machine()]
+    + {"x86_64": "x64", "aarch64": "arm64", "arm64": "arm64"}[
+        platform.machine()
+    ]
 )
 
 
@@ -28,7 +30,8 @@ class GnTarget:
         # [\w-] is a valid GN name. We also accept '/' and '.' in paths.
         # For the toolchain suffix, we take the whole label name at once, so we allow ':'.
         match = re.match(
-            r"([\w/.-]*)" + r"(:([\w.-]+))?" + r"(\(([\w./:+-]+)\))?$", gn_target
+            r"([\w/.-]*)" + r"(:([\w.-]+))?" + r"(\(([\w./:+-]+)\))?$",
+            gn_target,
         )
         if match is None:
             print(f"Invalid GN label '{gn_target}'")
@@ -56,7 +59,9 @@ class GnTarget:
     @property
     def ninja_target(self):
         """The canonical GN label of this target, minus the leading '//'."""
-        return str(self.label_path) + ":" + self.label_name + self.toolchain_suffix
+        return (
+            str(self.label_path) + ":" + self.label_name + self.toolchain_suffix
+        )
 
     @property
     def gn_target(self):
@@ -66,7 +71,10 @@ class GnTarget:
     @property
     def toolchain_suffix(self):
         """The GN path suffix for this target's toolchain, if it is not the default."""
-        if self.explicit_toolchain is None or "fuchsia" in self.explicit_toolchain:
+        if (
+            self.explicit_toolchain is None
+            or "fuchsia" in self.explicit_toolchain
+        ):
             return ""
         return "({})".format(self.explicit_toolchain)
 
@@ -92,7 +100,9 @@ class GnTarget:
         if build_dir is None:
             build_dir = FUCHSIA_BUILD_DIR
 
-        hashed_gn_path = hashlib.sha1(self.ninja_target.encode("utf-8")).hexdigest()
+        hashed_gn_path = hashlib.sha1(
+            self.ninja_target.encode("utf-8")
+        ).hexdigest()
         return Path(build_dir) / "cargo" / hashed_gn_path / "Cargo.toml"
 
 

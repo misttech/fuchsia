@@ -20,13 +20,13 @@ executable("nonhardware_tests") {
   deps = [
     "//src/devices/testing/no_ddk",
     "//src/graphics/drivers/msd-vsi-vip/src",
-    "//src/graphics/lib/magma/src/magma_util:mapped_batch",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:thread_profile",
-    "//src/graphics/lib/magma/src/sys_driver",
-    "//src/graphics/lib/magma/tests/helper:logger_init_helper",
-    "//src/graphics/lib/magma/tests/helper:msd_stubs",
-    "//src/graphics/lib/magma/tests/mock:bus_mapper",
-    "//src/graphics/lib/magma/tests/mock:mmio",
+    "//src/graphics/magma/lib/magma/platform/zircon:thread_profile",
+    "//src/graphics/magma/lib/magma/test_util:logger_init_helper",
+    "//src/graphics/magma/lib/magma_service/mock:bus_mapper",
+    "//src/graphics/magma/lib/magma_service/mock:mmio",
+    "//src/graphics/magma/lib/magma_service/sys_driver",
+    "//src/graphics/magma/lib/magma_service/test_util:msd_stubs",
+    "//src/graphics/magma/lib/magma_service/util:mapped_batch",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/trace",
@@ -49,6 +49,7 @@ source_set("hardware_tests") {
     "test_events.cc",
     "test_exec.cc",
     "test_fault_recovery.cc",
+    "test_irq_queue.cc",
     "test_memory_write.cc",
     "test_sram.cc",
     "test_suspend.cc",
@@ -57,9 +58,9 @@ source_set("hardware_tests") {
 
   deps = [
     "../../src",
-    "//src/graphics/lib/magma/src/magma_util:mapped_batch",
-    "//src/graphics/lib/magma/tests/helper:platform_device_helper",
-    "//src/graphics/lib/magma/tests/helper:platform_msd_device_helper",
+    "//src/graphics/magma/lib/magma_service/test_util:platform_device_helper",
+    "//src/graphics/magma/lib/magma_service/test_util:platform_msd_device_helper",
+    "//src/graphics/magma/lib/magma_service/util:mapped_batch",
     "//third_party/googletest:gtest",
   ]
 }

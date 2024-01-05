@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zircon/errors.h>
 #include <zircon/syscalls/resource.h>
 
 #include <vector>
@@ -201,7 +202,7 @@ zx_status_t PlatformDevice::PDevGetMmio(uint32_t index, pdev_mmio_t* out_mmio) {
       ZX_ROUNDUP(mmio.base().value() + mmio.length().value() - vmo_base, ZX_PAGE_SIZE);
   zx::vmo vmo;
 
-  zx_status_t status = zx::vmo::create_physical(*bus_->GetResource(), vmo_base, vmo_size, &vmo);
+  zx_status_t status = zx::vmo::create_physical(*bus_->GetMmioResource(), vmo_base, vmo_size, &vmo);
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: creating vmo failed %d", __FUNCTION__, status);
     return status;
@@ -238,7 +239,7 @@ zx_status_t PlatformDevice::PDevGetInterrupt(uint32_t index, uint32_t flags,
     flags = irq.mode().value();
   }
   zx_status_t status =
-      zx::interrupt::create(*bus_->GetResource(), irq.irq().value(), flags, out_irq);
+      zx::interrupt::create(*bus_->GetIrqResource(), irq.irq().value(), flags, out_irq);
   if (status != ZX_OK) {
     zxlogf(ERROR, "platform_dev_map_interrupt: zx_interrupt_create failed %d", status);
     return status;
@@ -280,7 +281,7 @@ zx_status_t PlatformDevice::PDevGetSmc(uint32_t index, zx::resource* out_resourc
     options |= ZX_RSRC_FLAG_EXCLUSIVE;
   char rsrc_name[ZX_MAX_NAME_LEN];
   snprintf(rsrc_name, ZX_MAX_NAME_LEN - 1, "%s.pbus[%u]", name_, index);
-  return zx::resource::create(*bus_->GetResource(), options, smc.service_call_num_base().value(),
+  return zx::resource::create(*bus_->GetSmcResource(), options, smc.service_call_num_base().value(),
                               smc.count().value(), rsrc_name, sizeof(rsrc_name), out_resource);
 }
 
@@ -326,8 +327,8 @@ zx_status_t PlatformDevice::RpcGetMmio(uint32_t index, zx_paddr_t* out_paddr, si
   if (node_.mmio() == std::nullopt || index >= node_.mmio()->size()) {
     return ZX_ERR_OUT_OF_RANGE;
   }
-  const auto& root_rsrc = bus_->GetResource();
-  if (!root_rsrc->is_valid()) {
+  const auto& mmio_rsrc = bus_->GetMmioResource();
+  if (!mmio_rsrc->is_valid()) {
     return ZX_ERR_NO_RESOURCES;
   }
 
@@ -339,7 +340,7 @@ zx_status_t PlatformDevice::RpcGetMmio(uint32_t index, zx_paddr_t* out_paddr, si
   char rsrc_name[ZX_MAX_NAME_LEN];
   snprintf(rsrc_name, ZX_MAX_NAME_LEN - 1, "%s.pbus[%u]", name_, index);
   zx_status_t status =
-      zx::resource::create(*root_rsrc, ZX_RSRC_KIND_MMIO, mmio.base().value(),
+      zx::resource::create(*mmio_rsrc, ZX_RSRC_KIND_MMIO, mmio.base().value(),
                            mmio.length().value(), rsrc_name, sizeof(rsrc_name), &resource);
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: pdev_rpc_get_mmio: zx_resource_create failed: %d", name_, status);
@@ -361,8 +362,8 @@ zx_status_t PlatformDevice::RpcGetInterrupt(uint32_t index, uint32_t* out_irq, u
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  const auto& root_rsrc = bus_->GetResource();
-  if (!root_rsrc->is_valid()) {
+  const auto& irq_rsrc = bus_->GetIrqResource();
+  if (!irq_rsrc->is_valid()) {
     return ZX_ERR_NO_RESOURCES;
   }
 
@@ -374,7 +375,7 @@ zx_status_t PlatformDevice::RpcGetInterrupt(uint32_t index, uint32_t* out_irq, u
   uint32_t options = ZX_RSRC_KIND_IRQ | ZX_RSRC_FLAG_EXCLUSIVE;
   char rsrc_name[ZX_MAX_NAME_LEN];
   snprintf(rsrc_name, ZX_MAX_NAME_LEN - 1, "%s.pbus[%u]", name_, index);
-  zx_status_t status = zx::resource::create(*root_rsrc, options, irq.irq().value(), 1, rsrc_name,
+  zx_status_t status = zx::resource::create(*irq_rsrc, options, irq.irq().value(), 1, rsrc_name,
                                             sizeof(rsrc_name), &resource);
   if (status != ZX_OK) {
     return status;
@@ -415,8 +416,8 @@ zx_status_t PlatformDevice::RpcGetSmc(uint32_t index, zx_handle_t* out_handle,
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  const auto& root_rsrc = bus_->GetResource();
-  if (!root_rsrc->is_valid()) {
+  const auto& smc_rsrc = bus_->GetSmcResource();
+  if (!smc_rsrc->is_valid()) {
     return ZX_ERR_NO_RESOURCES;
   }
 
@@ -431,7 +432,7 @@ zx_status_t PlatformDevice::RpcGetSmc(uint32_t index, zx_handle_t* out_handle,
   char rsrc_name[ZX_MAX_NAME_LEN];
   snprintf(rsrc_name, ZX_MAX_NAME_LEN - 1, "%s.pbus[%u]", name_, index);
   zx_status_t status =
-      zx::resource::create(*root_rsrc, options, smc.service_call_num_base().value(),
+      zx::resource::create(*smc_rsrc, options, smc.service_call_num_base().value(),
                            smc.count().value(), rsrc_name, sizeof(rsrc_name), &resource);
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: pdev_rpc_get_smc: zx_resource_create failed: %d", name_, status);
@@ -609,6 +610,8 @@ zx_status_t PlatformDevice::Start() {
   char name[ZX_DEVICE_NAME_MAX];
   if (vid_ == PDEV_VID_GENERIC && pid_ == PDEV_PID_GENERIC && did_ == PDEV_DID_KPCI) {
     strlcpy(name, "pci", sizeof(name));
+  } else if (did_ == PDEV_DID_DEVICETREE_NODE) {
+    strlcpy(name, name_, sizeof(name));
   } else {
     if (instance_id_ == 0) {
       // For backwards compatability, we elide instance id when it is 0.
@@ -794,6 +797,10 @@ void PlatformDevice::GetSmc(GetSmcRequestView request, GetSmcCompleter::Sync& co
   } else {
     completer.ReplyError(status);
   }
+}
+
+void PlatformDevice::GetPowerConfiguration(GetPowerConfigurationCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void PlatformDevice::GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) {

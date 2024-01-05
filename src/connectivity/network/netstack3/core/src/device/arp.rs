@@ -6,11 +6,12 @@
 
 use core::time::Duration;
 
+use lock_order::{lock::UnlockedAccess, wrap::prelude::*};
 use net_types::{
     ip::{Ipv4, Ipv4Addr},
-    SpecifiedAddr, UnicastAddr, UnicastAddress, Witness as _,
+    SpecifiedAddr, UnicastAddr, Witness as _,
 };
-use packet::{BufferMut, EmptyBuf, InnerPacketBuilder, Serializer};
+use packet::{BufferMut, InnerPacketBuilder, Serializer};
 use packet_formats::{
     arp::{ArpOp, ArpPacket, ArpPacketBuilder, HType},
     utils::NonZeroDuration,
@@ -18,12 +19,21 @@ use packet_formats::{
 use tracing::{debug, trace, warn};
 
 use crate::{
-    context::{CounterContext, SendFrameContext, TimerContext},
-    device::{link::LinkDevice, DeviceIdContext, FrameDestination},
-    ip::device::nud::{
-        BufferNudContext, BufferNudSenderContext, ConfirmationFlags, DynamicNeighborUpdateSource,
-        NudConfigContext, NudContext, NudHandler, NudState, NudTimerId,
+    context::{
+        CounterContext, EventContext, InstantBindingsTypes, SendFrameContext, TimerContext,
+        TracingContext,
     },
+    counters::Counter,
+    device::{
+        link::{LinkDevice, LinkUnicastAddress},
+        DeviceIdContext, FrameDestination,
+    },
+    ip::device::nud::{
+        self, ConfirmationFlags, DynamicNeighborUpdateSource, LinkResolutionContext,
+        LinkResolutionNotifier, NudConfigContext, NudContext, NudHandler, NudSenderContext,
+        NudState, NudTimerId, NudUserConfig,
+    },
+    BindingsContext, CoreCtx, Instant, StackState,
 };
 
 // NOTE(joshlf): This may seem a bit odd. Why not just say that `ArpDevice` is a
@@ -43,12 +53,12 @@ use crate::{
 ///
 /// `ArpDevice` is implemented for all `L: LinkDevice where L::Address: HType`.
 pub(crate) trait ArpDevice: LinkDevice<Address = Self::HType> {
-    type HType: HType + UnicastAddress;
+    type HType: HType + LinkUnicastAddress + core::fmt::Debug;
 }
 
 impl<L: LinkDevice> ArpDevice for L
 where
-    L::Address: HType + UnicastAddress,
+    L::Address: HType + LinkUnicastAddress,
 {
     type HType = L::Address;
 }
@@ -65,21 +75,59 @@ pub(crate) struct ArpFrameMetadata<D: ArpDevice, DeviceId> {
     pub(super) dst_addr: D::HType,
 }
 
+/// Counters for the ARP layer.
+#[derive(Default)]
+pub struct ArpCounters {
+    /// Count of ARP packets received from the link layer.
+    pub rx_packets: Counter,
+    /// Count of received ARP packets that were dropped due to being unparsable.
+    pub rx_malformed_packets: Counter,
+    /// Count of ARP request packets received.
+    pub rx_requests: Counter,
+    /// Count of ARP response packets received.
+    pub rx_responses: Counter,
+    /// Count of non-gratuitous ARP packets received and dropped because the
+    /// destination address is non-local.
+    pub rx_dropped_non_local_target: Counter,
+    /// Count of ARP request packets sent.
+    pub tx_requests: Counter,
+    /// Count of ARP request packets not sent because the source address was
+    /// unknown or unassigned.
+    pub tx_requests_dropped_no_local_addr: Counter,
+    /// Count of ARP response packets sent.
+    pub tx_responses: Counter,
+}
+
+impl<BC: BindingsContext> UnlockedAccess<crate::lock_ordering::ArpCounters> for StackState<BC> {
+    type Data = ArpCounters;
+    type Guard<'l> = &'l ArpCounters where Self: 'l;
+
+    fn access(&self) -> Self::Guard<'_> {
+        self.arp_counters()
+    }
+}
+
+impl<BC: BindingsContext, L> CounterContext<ArpCounters> for CoreCtx<'_, BC, L> {
+    fn with_counters<O, F: FnOnce(&ArpCounters) -> O>(&self, cb: F) -> O {
+        cb(self.unlocked_access::<crate::lock_ordering::ArpCounters>())
+    }
+}
+
 /// An execution context for the ARP protocol that allows sending IP packets to
 /// specific neighbors.
-pub(crate) trait BufferArpSenderContext<
-    D: ArpDevice,
-    C: ArpNonSyncCtx<D, Self::DeviceId>,
-    B: BufferMut,
->: ArpConfigContext + DeviceIdContext<D>
+pub(crate) trait ArpSenderContext<D: ArpDevice, BC: ArpBindingsContext<D, Self::DeviceId>>:
+    ArpConfigContext + DeviceIdContext<D>
 {
     /// Send an IP packet to the neighbor with address `dst_link_address`.
-    fn send_ip_packet_to_neighbor_link_addr<S: Serializer<Buffer = B>>(
+    fn send_ip_packet_to_neighbor_link_addr<S>(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         dst_link_address: D::HType,
         body: S,
-    ) -> Result<(), S>;
+    ) -> Result<(), S>
+    where
+        S: Serializer,
+        S::Buffer: BufferMut;
 }
 
 // NOTE(joshlf): The `ArpDevice` parameter may seem unnecessary. We only ever
@@ -101,38 +149,70 @@ pub(crate) trait BufferArpSenderContext<
 // `StateContext`, `TimerContext`, and `FrameContext` impls would all conflict
 // for similar reasons).
 
-/// The non-synchronized execution context for the ARP protocol.
-pub(crate) trait ArpNonSyncCtx<D: ArpDevice, DeviceId>:
-    TimerContext<ArpTimerId<D, DeviceId>> + CounterContext
+/// The execution context for the ARP protocol provided by bindings.
+pub(crate) trait ArpBindingsContext<D: ArpDevice, DeviceId>:
+    TimerContext<ArpTimerId<D, DeviceId>>
+    + TracingContext
+    + LinkResolutionContext<D>
+    + EventContext<nud::Event<D::Address, DeviceId, Ipv4, <Self as InstantBindingsTypes>::Instant>>
 {
 }
-impl<DeviceId, D: ArpDevice, C: TimerContext<ArpTimerId<D, DeviceId>> + CounterContext>
-    ArpNonSyncCtx<D, DeviceId> for C
+
+impl<
+        DeviceId,
+        D: ArpDevice,
+        BC: TimerContext<ArpTimerId<D, DeviceId>>
+            + TracingContext
+            + LinkResolutionContext<D>
+            + EventContext<
+                nud::Event<D::Address, DeviceId, Ipv4, <Self as InstantBindingsTypes>::Instant>,
+            >,
+    > ArpBindingsContext<D, DeviceId> for BC
 {
 }
 
 /// An execution context for the ARP protocol.
-pub(crate) trait ArpContext<D: ArpDevice, C: ArpNonSyncCtx<D, Self::DeviceId>>:
-    DeviceIdContext<D> + SendFrameContext<C, EmptyBuf, ArpFrameMetadata<D, Self::DeviceId>>
+pub(crate) trait ArpContext<D: ArpDevice, BC: ArpBindingsContext<D, Self::DeviceId>>:
+    DeviceIdContext<D> + SendFrameContext<BC, ArpFrameMetadata<D, Self::DeviceId>>
 {
     type ConfigCtx<'a>: ArpConfigContext;
+
+    type ArpSenderCtx<'a>: ArpSenderContext<D, BC, DeviceId = Self::DeviceId>;
+
+    /// Calls the function with a mutable reference to ARP state and the
+    /// core sender context.
+    fn with_arp_state_mut_and_sender_ctx<
+        O,
+        F: FnOnce(&mut ArpState<D, BC::Instant, BC::Notifier>, &mut Self::ArpSenderCtx<'_>) -> O,
+    >(
+        &mut self,
+        device_id: &Self::DeviceId,
+        cb: F,
+    ) -> O;
 
     /// Get a protocol address of this interface.
     ///
     /// If `device_id` does not have any addresses associated with it, return
     /// `None`.
-    fn get_protocol_addr(&mut self, ctx: &mut C, device_id: &Self::DeviceId) -> Option<Ipv4Addr>;
+    fn get_protocol_addr(
+        &mut self,
+        bindings_ctx: &mut BC,
+        device_id: &Self::DeviceId,
+    ) -> Option<Ipv4Addr>;
 
     /// Get the hardware address of this interface.
     fn get_hardware_addr(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
     ) -> UnicastAddr<D::HType>;
 
     /// Calls the function with a mutable reference to ARP state and the ARP
     /// configuration context.
-    fn with_arp_state_mut<O, F: FnOnce(&mut ArpState<D>, &mut Self::ConfigCtx<'_>) -> O>(
+    fn with_arp_state_mut<
+        O,
+        F: FnOnce(&mut ArpState<D, BC::Instant, BC::Notifier>, &mut Self::ConfigCtx<'_>) -> O,
+    >(
         &mut self,
         device_id: &Self::DeviceId,
         cb: F,
@@ -145,105 +225,87 @@ pub(crate) trait ArpConfigContext {
     fn retransmit_timeout(&mut self) -> NonZeroDuration {
         NonZeroDuration::new(DEFAULT_ARP_REQUEST_PERIOD).unwrap()
     }
+
+    /// Calls the callback with an immutable reference to NUD configurations.
+    fn with_nud_user_config<O, F: FnOnce(&NudUserConfig) -> O>(&mut self, cb: F) -> O;
 }
 
-/// An execution context for the ARP protocol when a buffer is provided.
-///
-/// `BufferArpContext` is like [`ArpContext`], except that it also requires that
-/// the context be capable of sending frames in buffers of type `B`.
-pub(crate) trait BufferArpContext<B: BufferMut, D: ArpDevice, C: ArpNonSyncCtx<D, Self::DeviceId>>:
-    ArpContext<D, C>
+impl<
+        D: ArpDevice,
+        BC: ArpBindingsContext<D, CC::DeviceId>,
+        CC: ArpContext<D, BC> + CounterContext<ArpCounters>,
+    > NudContext<Ipv4, D, BC> for CC
 {
-    type BufferArpSenderCtx<'a>: BufferArpSenderContext<D, C, B, DeviceId = Self::DeviceId>;
+    type ConfigCtx<'a> = <CC as ArpContext<D, BC>>::ConfigCtx<'a>;
 
-    /// Calls the function with a mutable reference to ARP state and the
-    /// synchronized context.
-    fn with_arp_state_mut_and_buf_ctx<
+    type SenderCtx<'a> = <CC as ArpContext<D, BC>>::ArpSenderCtx<'a>;
+
+    fn with_nud_state_mut_and_sender_ctx<
         O,
-        F: FnOnce(&mut ArpState<D>, &mut Self::BufferArpSenderCtx<'_>) -> O,
+        F: FnOnce(&mut NudState<Ipv4, D, BC::Instant, BC::Notifier>, &mut Self::SenderCtx<'_>) -> O,
     >(
         &mut self,
-        device_id: &Self::DeviceId,
-        cb: F,
-    ) -> O;
-}
-
-impl<D: ArpDevice, C: ArpNonSyncCtx<D, SC::DeviceId>, SC: ArpContext<D, C>> NudContext<Ipv4, D, C>
-    for SC
-{
-    type ConfigCtx<'a> = <SC as ArpContext<D, C>>::ConfigCtx<'a>;
-
-    fn with_nud_state_mut<O, F: FnOnce(&mut NudState<Ipv4, D>, &mut Self::ConfigCtx<'_>) -> O>(
-        &mut self,
-        device_id: &SC::DeviceId,
+        device_id: &CC::DeviceId,
         cb: F,
     ) -> O {
-        self.with_arp_state_mut(device_id, |ArpState { nud }, sync_ctx| cb(nud, sync_ctx))
+        self.with_arp_state_mut_and_sender_ctx(device_id, |ArpState { nud }, core_ctx| {
+            cb(nud, core_ctx)
+        })
+    }
+
+    fn with_nud_state_mut<
+        O,
+        F: FnOnce(&mut NudState<Ipv4, D, BC::Instant, BC::Notifier>, &mut Self::ConfigCtx<'_>) -> O,
+    >(
+        &mut self,
+        device_id: &CC::DeviceId,
+        cb: F,
+    ) -> O {
+        self.with_arp_state_mut(device_id, |ArpState { nud }, core_ctx| cb(nud, core_ctx))
     }
 
     fn send_neighbor_solicitation(
         &mut self,
-        ctx: &mut C,
-        device_id: &SC::DeviceId,
+        bindings_ctx: &mut BC,
+        device_id: &CC::DeviceId,
         lookup_addr: SpecifiedAddr<Ipv4Addr>,
         remote_link_addr: Option<D::Address>,
     ) {
-        send_arp_request(self, ctx, device_id, lookup_addr.get(), remote_link_addr)
+        send_arp_request(self, bindings_ctx, device_id, lookup_addr.get(), remote_link_addr)
     }
 }
 
-impl<SC: ArpConfigContext> NudConfigContext<Ipv4> for SC {
+impl<CC: ArpConfigContext> NudConfigContext<Ipv4> for CC {
     fn retransmit_timeout(&mut self) -> NonZeroDuration {
         self.retransmit_timeout()
     }
-}
 
-impl<
-        B: BufferMut,
-        D: ArpDevice,
-        C: ArpNonSyncCtx<D, SC::DeviceId>,
-        SC: BufferArpContext<B, D, C>,
-    > BufferNudContext<B, Ipv4, D, C> for SC
-{
-    type BufferSenderCtx<'a> = <SC as BufferArpContext<B, D, C>>::BufferArpSenderCtx<'a>;
-
-    fn with_nud_state_mut_and_buf_ctx<
-        O,
-        F: FnOnce(&mut NudState<Ipv4, D>, &mut Self::BufferSenderCtx<'_>) -> O,
-    >(
-        &mut self,
-        device_id: &SC::DeviceId,
-        cb: F,
-    ) -> O {
-        self.with_arp_state_mut_and_buf_ctx(device_id, |ArpState { nud }, sync_ctx| {
-            cb(nud, sync_ctx)
-        })
+    fn with_nud_user_config<O, F: FnOnce(&NudUserConfig) -> O>(&mut self, cb: F) -> O {
+        ArpConfigContext::with_nud_user_config(self, cb)
     }
 }
 
-impl<
-        B: BufferMut,
-        D: ArpDevice,
-        C: ArpNonSyncCtx<D, SC::DeviceId>,
-        SC: BufferArpSenderContext<D, C, B>,
-    > BufferNudSenderContext<B, Ipv4, D, C> for SC
+impl<D: ArpDevice, BC: ArpBindingsContext<D, CC::DeviceId>, CC: ArpSenderContext<D, BC>>
+    NudSenderContext<Ipv4, D, BC> for CC
 {
-    fn send_ip_packet_to_neighbor_link_addr<S: Serializer<Buffer = B>>(
+    fn send_ip_packet_to_neighbor_link_addr<S>(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         dst_mac: D::HType,
         body: S,
-    ) -> Result<(), S> {
-        BufferArpSenderContext::send_ip_packet_to_neighbor_link_addr(self, ctx, dst_mac, body)
+    ) -> Result<(), S>
+    where
+        S: Serializer,
+        S::Buffer: BufferMut,
+    {
+        ArpSenderContext::send_ip_packet_to_neighbor_link_addr(self, bindings_ctx, dst_mac, body)
     }
 }
 
-pub(crate) trait ArpPacketHandler<B: BufferMut, D: ArpDevice, C>:
-    DeviceIdContext<D>
-{
-    fn handle_packet(
+pub(crate) trait ArpPacketHandler<D: ArpDevice, BC>: DeviceIdContext<D> {
+    fn handle_packet<B: BufferMut>(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         device_id: Self::DeviceId,
         frame_dst: FrameDestination,
         buffer: B,
@@ -251,40 +313,44 @@ pub(crate) trait ArpPacketHandler<B: BufferMut, D: ArpDevice, C>:
 }
 
 impl<
-        B: BufferMut,
         D: ArpDevice,
-        C: ArpNonSyncCtx<D, SC::DeviceId>,
-        SC: ArpContext<D, C>
-            + SendFrameContext<C, B, ArpFrameMetadata<D, Self::DeviceId>>
-            + NudHandler<Ipv4, D, C>,
-    > ArpPacketHandler<B, D, C> for SC
+        BC: ArpBindingsContext<D, CC::DeviceId>,
+        CC: ArpContext<D, BC>
+            + SendFrameContext<BC, ArpFrameMetadata<D, Self::DeviceId>>
+            + NudHandler<Ipv4, D, BC>
+            + CounterContext<ArpCounters>,
+    > ArpPacketHandler<D, BC> for CC
 {
     /// Handles an inbound ARP packet.
-    fn handle_packet(
+    fn handle_packet<B: BufferMut>(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         device_id: Self::DeviceId,
         frame_dst: FrameDestination,
         buffer: B,
     ) {
-        handle_packet(self, ctx, device_id, frame_dst, buffer)
+        handle_packet(self, bindings_ctx, device_id, frame_dst, buffer)
     }
 }
 
 fn handle_packet<
     D: ArpDevice,
-    C: ArpNonSyncCtx<D, SC::DeviceId>,
+    BC: ArpBindingsContext<D, CC::DeviceId>,
     B: BufferMut,
-    SC: ArpContext<D, C>
-        + SendFrameContext<C, B, ArpFrameMetadata<D, SC::DeviceId>>
-        + NudHandler<Ipv4, D, C>,
+    CC: ArpContext<D, BC>
+        + SendFrameContext<BC, ArpFrameMetadata<D, CC::DeviceId>>
+        + NudHandler<Ipv4, D, BC>
+        + CounterContext<ArpCounters>,
 >(
-    sync_ctx: &mut SC,
-    ctx: &mut C,
-    device_id: SC::DeviceId,
+    core_ctx: &mut CC,
+    bindings_ctx: &mut BC,
+    device_id: CC::DeviceId,
     frame_dst: FrameDestination,
     mut buffer: B,
 ) {
+    core_ctx.with_counters(|counters| {
+        counters.rx_packets.increment();
+    });
     // TODO(wesleyac) Add support for probe.
     let packet = match buffer.parse::<ArpPacket<_, D::HType, Ipv4Addr>>() {
         Ok(packet) => packet,
@@ -296,6 +362,9 @@ fn handle_packet<
             // conditionals indicate an end of processing and a discarding of
             // the packet."
             debug!("discarding malformed ARP packet: {}", err);
+            core_ctx.with_counters(|counters| {
+                counters.rx_malformed_packets.increment();
+            });
             return;
         }
     };
@@ -306,9 +375,22 @@ fn handle_packet<
     }
 
     let op = match packet.operation() {
-        ArpOp::Request => ValidArpOp::Request,
-        ArpOp::Response => ValidArpOp::Response,
+        ArpOp::Request => {
+            core_ctx.with_counters(|counters| {
+                counters.rx_requests.increment();
+            });
+            ValidArpOp::Request
+        }
+        ArpOp::Response => {
+            core_ctx.with_counters(|counters| {
+                counters.rx_responses.increment();
+            });
+            ValidArpOp::Response
+        }
         ArpOp::Other(o) => {
+            core_ctx.with_counters(|counters| {
+                counters.rx_malformed_packets.increment();
+            });
             debug!("dropping arp packet with op = {:?}", o);
             return;
         }
@@ -363,7 +445,7 @@ fn handle_packet<
     let target_addr = packet.target_protocol_address();
     let (source, kind) = match (
         sender_addr == target_addr,
-        Some(target_addr) == sync_ctx.get_protocol_addr(ctx, &device_id),
+        Some(target_addr) == core_ctx.get_protocol_addr(bindings_ctx, &device_id),
     ) {
         (true, false) => {
             // Treat all GARP messages as neighbor probes as GARPs are not
@@ -417,6 +499,9 @@ fn handle_packet<
             (source, PacketKind::AddressedToMe)
         }
         (false, false) => {
+            core_ctx.with_counters(|counters| {
+                counters.rx_dropped_non_local_target.increment();
+            });
             trace!(
                 "non-gratuitous ARP packet not targetting us; sender = {}, target={}",
                 sender_addr,
@@ -426,8 +511,8 @@ fn handle_packet<
         }
         (true, true) => {
             warn!(
-                "got gratuitous ARP packet with our address {} on device {}, dropping...",
-                target_addr, device_id
+                "got gratuitous ARP packet with our address {target_addr} on device {device_id:?}, \
+                dropping...",
             );
             return;
         }
@@ -436,8 +521,8 @@ fn handle_packet<
     let sender_hw_addr = packet.sender_hardware_address();
     if let Some(addr) = SpecifiedAddr::new(sender_addr) {
         NudHandler::<Ipv4, D, _>::handle_neighbor_update(
-            sync_ctx,
-            ctx,
+            core_ctx,
+            bindings_ctx,
             &device_id,
             addr,
             sender_hw_addr,
@@ -449,12 +534,17 @@ fn handle_packet<
         PacketKind::Gratuitous => return,
         PacketKind::AddressedToMe => match source {
             DynamicNeighborUpdateSource::Probe => {
-                let self_hw_addr = sync_ctx.get_hardware_addr(ctx, &device_id);
+                let self_hw_addr = core_ctx.get_hardware_addr(bindings_ctx, &device_id);
+
+                core_ctx.with_counters(|counters| {
+                    counters.tx_responses.increment();
+                });
+                debug!("sending ARP response for {target_addr} to {sender_addr}");
 
                 // TODO(joshlf): Do something if send_frame returns an error?
                 let _: Result<(), _> = SendFrameContext::send_frame(
-                    sync_ctx,
-                    ctx,
+                    core_ctx,
+                    bindings_ctx,
                     ArpFrameMetadata { device_id, dst_addr: sender_hw_addr },
                     ArpPacketBuilder::new(
                         ArpOp::Response,
@@ -471,23 +561,37 @@ fn handle_packet<
     }
 }
 
-// Currently at 20 seconds because that's what FreeBSD does.
-const DEFAULT_ARP_REQUEST_PERIOD: Duration = Duration::from_secs(20);
+// Use the same default retransmit timeout that is defined for NDP in
+// [RFC 4861 section 10], to align behavior between IPv4 and IPv6 and simplify
+// testing.
+//
+// TODO(https://fxbug.dev/124960): allow this default to be overridden.
+//
+// [RFC 4861 section 10]: https://tools.ietf.org/html/rfc4861#section-10
+const DEFAULT_ARP_REQUEST_PERIOD: Duration = crate::ip::device::state::RETRANS_TIMER_DEFAULT.get();
 
-fn send_arp_request<D: ArpDevice, C: ArpNonSyncCtx<D, SC::DeviceId>, SC: ArpContext<D, C>>(
-    sync_ctx: &mut SC,
-    ctx: &mut C,
-    device_id: &SC::DeviceId,
+fn send_arp_request<
+    D: ArpDevice,
+    BC: ArpBindingsContext<D, CC::DeviceId>,
+    CC: ArpContext<D, BC> + CounterContext<ArpCounters>,
+>(
+    core_ctx: &mut CC,
+    bindings_ctx: &mut BC,
+    device_id: &CC::DeviceId,
     lookup_addr: Ipv4Addr,
     remote_link_addr: Option<D::Address>,
 ) {
-    if let Some(sender_protocol_addr) = sync_ctx.get_protocol_addr(ctx, device_id) {
-        let self_hw_addr = sync_ctx.get_hardware_addr(ctx, device_id);
+    if let Some(sender_protocol_addr) = core_ctx.get_protocol_addr(bindings_ctx, device_id) {
+        let self_hw_addr = core_ctx.get_hardware_addr(bindings_ctx, device_id);
         // TODO(joshlf): Do something if send_frame returns an error?
         let dst_addr = remote_link_addr.unwrap_or(D::HType::BROADCAST);
+        core_ctx.with_counters(|counters| {
+            counters.tx_requests.increment();
+        });
+        debug!("sending ARP request for {lookup_addr} to {dst_addr:?}");
         let _ = SendFrameContext::send_frame(
-            sync_ctx,
-            ctx,
+            core_ctx,
+            bindings_ctx,
             ArpFrameMetadata { device_id: device_id.clone(), dst_addr },
             ArpPacketBuilder::new(
                 ArpOp::Request,
@@ -508,6 +612,9 @@ fn send_arp_request<D: ArpDevice, C: ArpNonSyncCtx<D, SC::DeviceId>, SC: ArpCont
         // So, if this is the case, we do not send an ARP request.
         // TODO(wesleyac): Should we cache these, and send packets once we have
         // an address?
+        core_ctx.with_counters(|counters| {
+            counters.tx_requests_dropped_no_local_addr.increment();
+        });
         debug!("Not sending ARP request, since we don't know our local protocol address");
     }
 }
@@ -517,11 +624,11 @@ fn send_arp_request<D: ArpDevice, C: ArpNonSyncCtx<D, SC::DeviceId>, SC: ArpCont
 ///
 /// Each device will contain an `ArpState` object for each of the network
 /// protocols that it supports.
-pub(crate) struct ArpState<D: ArpDevice> {
-    nud: NudState<Ipv4, D>,
+pub(crate) struct ArpState<D: ArpDevice, I: Instant, N: LinkResolutionNotifier<D>> {
+    pub(crate) nud: NudState<Ipv4, D, I, N>,
 }
 
-impl<D: ArpDevice> Default for ArpState<D> {
+impl<D: ArpDevice, I: Instant, N: LinkResolutionNotifier<D>> Default for ArpState<D, I, N> {
     fn default() -> Self {
         ArpState { nud: Default::default() }
     }
@@ -540,8 +647,11 @@ mod tests {
     use super::*;
     use crate::{
         context::{
-            testutil::{FakeCtx, FakeNetwork, FakeNonSyncCtx, FakeSyncCtx},
-            TimerHandler,
+            testutil::{
+                FakeBindingsCtx, FakeCoreCtx, FakeCtx, FakeInstant, FakeLinkResolutionNotifier,
+                FakeNetwork,
+            },
+            InstantContext as _, TimerHandler,
         },
         device::{
             ethernet::EthernetLinkDevice,
@@ -553,7 +663,7 @@ mod tests {
                 assert_dynamic_neighbor_state, assert_dynamic_neighbor_with_addr,
                 assert_neighbor_unknown,
             },
-            BufferNudHandler, DynamicNeighborState, Reachable, Stale,
+            DynamicNeighborState, NudHandler, Reachable, Stale,
         },
         testutil::assert_empty,
     };
@@ -570,12 +680,17 @@ mod tests {
     struct FakeArpCtx {
         proto_addr: Option<Ipv4Addr>,
         hw_addr: UnicastAddr<Mac>,
-        arp_state: ArpState<EthernetLinkDevice>,
+        arp_state: ArpState<
+            EthernetLinkDevice,
+            FakeInstant,
+            FakeLinkResolutionNotifier<EthernetLinkDevice>,
+        >,
         inner: FakeArpInnerCtx,
         config: FakeArpConfigCtx,
+        counters: ArpCounters,
     }
 
-    /// A fake `BufferArpSenderContext` that sends IP packets.
+    /// A fake `ArpSenderContext` that sends IP packets.
     struct FakeArpInnerCtx;
 
     /// A fake `ArpConfigContext`.
@@ -589,27 +704,28 @@ mod tests {
                 arp_state: ArpState::default(),
                 inner: FakeArpInnerCtx,
                 config: FakeArpConfigCtx,
+                counters: Default::default(),
             }
         }
     }
 
-    type FakeNonSyncCtxImpl =
-        FakeNonSyncCtx<ArpTimerId<EthernetLinkDevice, FakeLinkDeviceId>, (), ()>;
+    type FakeBindingsCtxImpl = FakeBindingsCtx<
+        ArpTimerId<EthernetLinkDevice, FakeLinkDeviceId>,
+        nud::Event<Mac, FakeLinkDeviceId, Ipv4, FakeInstant>,
+        (),
+    >;
 
-    type FakeCtxImpl = FakeSyncCtx<
+    type FakeCoreCtxImpl = FakeCoreCtx<
         FakeArpCtx,
         ArpFrameMetadata<EthernetLinkDevice, FakeLinkDeviceId>,
         FakeDeviceId,
     >;
 
-    impl DeviceIdContext<EthernetLinkDevice> for FakeCtxImpl {
+    impl DeviceIdContext<EthernetLinkDevice> for FakeCoreCtxImpl {
         type DeviceId = FakeLinkDeviceId;
         type WeakDeviceId = FakeWeakDeviceId<FakeLinkDeviceId>;
         fn downgrade_device_id(&self, device_id: &Self::DeviceId) -> Self::WeakDeviceId {
             self.get_ref().inner.downgrade_device_id(device_id)
-        }
-        fn is_device_installed(&self, device_id: &Self::DeviceId) -> bool {
-            self.get_ref().inner.is_device_installed(device_id)
         }
         fn upgrade_weak_device_id(
             &self,
@@ -625,9 +741,6 @@ mod tests {
         fn downgrade_device_id(&self, device_id: &Self::DeviceId) -> Self::WeakDeviceId {
             FakeWeakDeviceId(device_id.clone())
         }
-        fn is_device_installed(&self, _device_id: &Self::DeviceId) -> bool {
-            true
-        }
         fn upgrade_weak_device_id(
             &self,
             weak_device_id: &Self::WeakDeviceId,
@@ -637,48 +750,21 @@ mod tests {
         }
     }
 
-    impl ArpContext<EthernetLinkDevice, FakeNonSyncCtxImpl> for FakeCtxImpl {
+    impl ArpContext<EthernetLinkDevice, FakeBindingsCtxImpl> for FakeCoreCtxImpl {
         type ConfigCtx<'a> = FakeArpConfigCtx;
 
-        fn get_protocol_addr(
-            &mut self,
-            _ctx: &mut FakeNonSyncCtxImpl,
-            _device_id: &FakeLinkDeviceId,
-        ) -> Option<Ipv4Addr> {
-            self.get_ref().proto_addr
-        }
+        type ArpSenderCtx<'a> = FakeArpInnerCtx;
 
-        fn get_hardware_addr(
-            &mut self,
-            _ctx: &mut FakeNonSyncCtxImpl,
-            _device_id: &FakeLinkDeviceId,
-        ) -> UnicastAddr<Mac> {
-            self.get_ref().hw_addr
-        }
-
-        fn with_arp_state_mut<
+        fn with_arp_state_mut_and_sender_ctx<
             O,
-            F: FnOnce(&mut ArpState<EthernetLinkDevice>, &mut Self::ConfigCtx<'_>) -> O,
-        >(
-            &mut self,
-            FakeLinkDeviceId: &FakeLinkDeviceId,
-            cb: F,
-        ) -> O {
-            let FakeArpCtx { arp_state, config, proto_addr: _, hw_addr: _, inner: _ } =
-                self.get_mut();
-            cb(arp_state, config)
-        }
-    }
-
-    impl ArpConfigContext for FakeArpConfigCtx {}
-    impl ArpConfigContext for FakeArpInnerCtx {}
-
-    impl<B: BufferMut> BufferArpContext<B, EthernetLinkDevice, FakeNonSyncCtxImpl> for FakeCtxImpl {
-        type BufferArpSenderCtx<'a> = FakeArpInnerCtx;
-
-        fn with_arp_state_mut_and_buf_ctx<
-            O,
-            F: FnOnce(&mut ArpState<EthernetLinkDevice>, &mut Self::BufferArpSenderCtx<'_>) -> O,
+            F: FnOnce(
+                &mut ArpState<
+                    EthernetLinkDevice,
+                    FakeInstant,
+                    FakeLinkResolutionNotifier<EthernetLinkDevice>,
+                >,
+                &mut Self::ArpSenderCtx<'_>,
+            ) -> O,
         >(
             &mut self,
             FakeLinkDeviceId: &FakeLinkDeviceId,
@@ -687,14 +773,59 @@ mod tests {
             let state = self.get_mut();
             cb(&mut state.arp_state, &mut state.inner)
         }
+
+        fn get_protocol_addr(
+            &mut self,
+            _bindings_ctx: &mut FakeBindingsCtxImpl,
+            _device_id: &FakeLinkDeviceId,
+        ) -> Option<Ipv4Addr> {
+            self.get_ref().proto_addr
+        }
+
+        fn get_hardware_addr(
+            &mut self,
+            _bindings_ctx: &mut FakeBindingsCtxImpl,
+            _device_id: &FakeLinkDeviceId,
+        ) -> UnicastAddr<Mac> {
+            self.get_ref().hw_addr
+        }
+
+        fn with_arp_state_mut<
+            O,
+            F: FnOnce(
+                &mut ArpState<
+                    EthernetLinkDevice,
+                    FakeInstant,
+                    FakeLinkResolutionNotifier<EthernetLinkDevice>,
+                >,
+                &mut Self::ConfigCtx<'_>,
+            ) -> O,
+        >(
+            &mut self,
+            FakeLinkDeviceId: &FakeLinkDeviceId,
+            cb: F,
+        ) -> O {
+            let FakeArpCtx { arp_state, config, proto_addr: _, hw_addr: _, inner: _, counters: _ } =
+                self.get_mut();
+            cb(arp_state, config)
+        }
     }
 
-    impl<B: BufferMut> BufferArpSenderContext<EthernetLinkDevice, FakeNonSyncCtxImpl, B>
-        for FakeArpInnerCtx
-    {
-        fn send_ip_packet_to_neighbor_link_addr<S: Serializer<Buffer = B>>(
+    impl ArpConfigContext for FakeArpConfigCtx {
+        fn with_nud_user_config<O, F: FnOnce(&NudUserConfig) -> O>(&mut self, cb: F) -> O {
+            cb(&NudUserConfig::default())
+        }
+    }
+    impl ArpConfigContext for FakeArpInnerCtx {
+        fn with_nud_user_config<O, F: FnOnce(&NudUserConfig) -> O>(&mut self, cb: F) -> O {
+            cb(&NudUserConfig::default())
+        }
+    }
+
+    impl ArpSenderContext<EthernetLinkDevice, FakeBindingsCtxImpl> for FakeArpInnerCtx {
+        fn send_ip_packet_to_neighbor_link_addr<S>(
             &mut self,
-            _ctx: &mut FakeNonSyncCtxImpl,
+            _bindings_ctx: &mut FakeBindingsCtxImpl,
             _dst_link_address: Mac,
             _body: S,
         ) -> Result<(), S> {
@@ -702,9 +833,15 @@ mod tests {
         }
     }
 
+    impl CounterContext<ArpCounters> for FakeCoreCtxImpl {
+        fn with_counters<O, F: FnOnce(&ArpCounters) -> O>(&self, cb: F) -> O {
+            cb(&self.get_ref().counters)
+        }
+    }
+
     fn send_arp_packet(
-        sync_ctx: &mut FakeCtxImpl,
-        ctx: &mut FakeNonSyncCtxImpl,
+        core_ctx: &mut FakeCoreCtxImpl,
+        bindings_ctx: &mut FakeBindingsCtxImpl,
         op: ArpOp,
         sender_ipv4: Ipv4Addr,
         target_ipv4: Ipv4Addr,
@@ -720,7 +857,7 @@ mod tests {
         assert_eq!(hw, ArpHardwareType::Ethernet);
         assert_eq!(proto, ArpNetworkType::Ipv4);
 
-        handle_packet::<_, _, _, _>(sync_ctx, ctx, FakeLinkDeviceId, frame_dst, buf);
+        handle_packet::<_, _, _, _>(core_ctx, bindings_ctx, FakeLinkDeviceId, frame_dst, buf);
     }
 
     // Validate that buf is an ARP packet with the specific op, local_ipv4,
@@ -744,7 +881,7 @@ mod tests {
     // Validate that we've sent `total_frames` frames in total, and that the
     // most recent one was sent to `dst` with the given ARP packet contents.
     fn validate_last_arp_packet(
-        sync_ctx: &FakeCtxImpl,
+        core_ctx: &FakeCoreCtxImpl,
         total_frames: usize,
         dst: Mac,
         op: ArpOp,
@@ -753,8 +890,8 @@ mod tests {
         local_mac: Mac,
         remote_mac: Mac,
     ) {
-        assert_eq!(sync_ctx.frames().len(), total_frames);
-        let (meta, frame) = &sync_ctx.frames()[total_frames - 1];
+        assert_eq!(core_ctx.frames().len(), total_frames);
+        let (meta, frame) = &core_ctx.frames()[total_frames - 1];
         assert_eq!(meta.dst_addr, dst);
         validate_arp_packet(frame, op, local_ipv4, remote_ipv4, local_mac, remote_mac);
     }
@@ -764,11 +901,11 @@ mod tests {
         // Test that, when we receive a gratuitous ARP request, we cache the
         // sender's address information, and we do not send a response.
 
-        let FakeCtx { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtx::with_sync_ctx(FakeCtxImpl::default());
+        let FakeCtx { mut core_ctx, mut bindings_ctx } =
+            FakeCtx::with_core_ctx(FakeCoreCtxImpl::default());
         send_arp_packet(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             ArpOp::Request,
             TEST_REMOTE_IPV4,
             TEST_REMOTE_IPV4,
@@ -779,13 +916,13 @@ mod tests {
 
         // We should have cached the sender's address information.
         assert_dynamic_neighbor_with_addr(
-            &mut sync_ctx,
+            &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
             TEST_REMOTE_MAC,
         );
         // Gratuitous ARPs should not prompt a response.
-        assert_empty(sync_ctx.frames().iter());
+        assert_empty(core_ctx.frames().iter());
     }
 
     #[test]
@@ -793,11 +930,11 @@ mod tests {
         // Test that, when we receive a gratuitous ARP response, we cache the
         // sender's address information, and we do not send a response.
 
-        let FakeCtx { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtx::with_sync_ctx(FakeCtxImpl::default());
+        let FakeCtx { mut core_ctx, mut bindings_ctx } =
+            FakeCtx::with_core_ctx(FakeCoreCtxImpl::default());
         send_arp_packet(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             ArpOp::Response,
             TEST_REMOTE_IPV4,
             TEST_REMOTE_IPV4,
@@ -808,13 +945,13 @@ mod tests {
 
         // We should have cached the sender's address information.
         assert_dynamic_neighbor_with_addr(
-            &mut sync_ctx,
+            &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
             TEST_REMOTE_MAC,
         );
         // Gratuitous ARPs should not send a response.
-        assert_empty(sync_ctx.frames().iter());
+        assert_empty(core_ctx.frames().iter());
     }
 
     #[test]
@@ -823,19 +960,19 @@ mod tests {
         // a gratuitous ARP for the same host, we cancel the timer and notify
         // the device layer.
 
-        let FakeCtx { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtx::with_sync_ctx(FakeCtxImpl::default());
+        let FakeCtx { mut core_ctx, mut bindings_ctx } =
+            FakeCtx::with_core_ctx(FakeCoreCtxImpl::default());
 
         // Trigger link resolution.
         assert_neighbor_unknown(
-            &mut sync_ctx,
+            &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
         );
         assert_eq!(
-            BufferNudHandler::send_ip_packet_to_neighbor(
-                &mut sync_ctx,
-                &mut non_sync_ctx,
+            NudHandler::send_ip_packet_to_neighbor(
+                &mut core_ctx,
+                &mut bindings_ctx,
                 &FakeLinkDeviceId,
                 SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
                 Buf::new([1], ..),
@@ -844,8 +981,8 @@ mod tests {
         );
 
         send_arp_packet(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             ArpOp::Response,
             TEST_REMOTE_IPV4,
             TEST_REMOTE_IPV4,
@@ -856,7 +993,7 @@ mod tests {
 
         // The response should now be in our cache.
         assert_dynamic_neighbor_with_addr(
-            &mut sync_ctx,
+            &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
             TEST_REMOTE_MAC,
@@ -864,7 +1001,7 @@ mod tests {
 
         // Gratuitous ARPs should not send a response (the 1 frame is for the
         // original request).
-        assert_eq!(sync_ctx.frames().len(), 1);
+        assert_eq!(core_ctx.frames().len(), 1);
     }
 
     #[test]
@@ -872,12 +1009,12 @@ mod tests {
         // Test that, when we receive an ARP request, we cache the sender's
         // address information and send an ARP response.
 
-        let FakeCtx { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtx::with_sync_ctx(FakeCtxImpl::default());
+        let FakeCtx { mut core_ctx, mut bindings_ctx } =
+            FakeCtx::with_core_ctx(FakeCoreCtxImpl::default());
 
         send_arp_packet(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             ArpOp::Request,
             TEST_REMOTE_IPV4,
             TEST_LOCAL_IPV4,
@@ -888,7 +1025,7 @@ mod tests {
 
         // Make sure we cached the sender's address information.
         assert_dynamic_neighbor_with_addr(
-            &mut sync_ctx,
+            &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
             TEST_REMOTE_MAC,
@@ -896,7 +1033,7 @@ mod tests {
 
         // We should have sent an ARP response.
         validate_last_arp_packet(
-            &sync_ctx,
+            &core_ctx,
             1,
             TEST_REMOTE_MAC,
             ArpOp::Response,
@@ -959,10 +1096,10 @@ mod tests {
             {
                 host_iter.clone().map(|cfg| {
                     let ArpHostConfig { name, proto_addr, hw_addr } = cfg;
-                    let mut ctx = FakeCtx::with_sync_ctx(FakeCtxImpl::default());
-                    let FakeCtx { sync_ctx, non_sync_ctx: _ } = &mut ctx;
-                    sync_ctx.get_mut().hw_addr = UnicastAddr::new(*hw_addr).unwrap();
-                    sync_ctx.get_mut().proto_addr = Some(*proto_addr);
+                    let mut ctx = FakeCtx::with_core_ctx(FakeCoreCtxImpl::default());
+                    let FakeCtx { core_ctx, bindings_ctx: _ } = &mut ctx;
+                    core_ctx.get_mut().hw_addr = UnicastAddr::new(*hw_addr).unwrap();
+                    core_ctx.get_mut().proto_addr = Some(*proto_addr);
                     (*name, ctx)
                 })
             },
@@ -994,16 +1131,16 @@ mod tests {
         } = requested_remote_cfg;
 
         // Trigger link resolution.
-        network.with_context(local_name, |FakeCtx { sync_ctx, non_sync_ctx }| {
+        network.with_context(local_name, |FakeCtx { core_ctx, bindings_ctx }| {
             assert_neighbor_unknown(
-                sync_ctx,
+                core_ctx,
                 FakeLinkDeviceId,
                 SpecifiedAddr::new(requested_remote_proto_addr).unwrap(),
             );
             assert_eq!(
-                BufferNudHandler::send_ip_packet_to_neighbor(
-                    sync_ctx,
-                    non_sync_ctx,
+                NudHandler::send_ip_packet_to_neighbor(
+                    core_ctx,
+                    bindings_ctx,
                     &FakeLinkDeviceId,
                     SpecifiedAddr::new(requested_remote_proto_addr).unwrap(),
                     Buf::new([1], ..),
@@ -1013,7 +1150,7 @@ mod tests {
 
             // We should have sent an ARP request.
             validate_last_arp_packet(
-                sync_ctx,
+                core_ctx,
                 1,
                 Mac::BROADCAST,
                 ArpOp::Request,
@@ -1025,11 +1162,11 @@ mod tests {
         });
         // Step once to deliver the ARP request to the remotes.
         let res = network.step(
-            |FakeCtx { sync_ctx, non_sync_ctx }, device_id, buf| {
-                handle_packet(sync_ctx, non_sync_ctx, device_id, FrameDestination::Broadcast, buf)
+            |FakeCtx { core_ctx, bindings_ctx }, device_id, buf| {
+                handle_packet(core_ctx, bindings_ctx, device_id, FrameDestination::Broadcast, buf)
             },
-            |FakeCtx { sync_ctx, non_sync_ctx }, _ctx, id| {
-                TimerHandler::handle_timer(sync_ctx, non_sync_ctx, id)
+            |FakeCtx { core_ctx, bindings_ctx }, _ctx, id| {
+                TimerHandler::handle_timer(core_ctx, bindings_ctx, id)
             },
         );
         assert_eq!(res.timers_fired, 0);
@@ -1043,9 +1180,9 @@ mod tests {
 
         // The requested remote should have populated its ARP cache with the local's
         // information.
-        network.with_context(requested_remote_name, |FakeCtx { sync_ctx, non_sync_ctx: _ }| {
+        network.with_context(requested_remote_name, |FakeCtx { core_ctx, bindings_ctx: _ }| {
             assert_dynamic_neighbor_with_addr(
-                sync_ctx,
+                core_ctx,
                 FakeLinkDeviceId,
                 SpecifiedAddr::new(local_proto_addr).unwrap(),
                 LOCAL_HOST_CFG.hw_addr,
@@ -1053,7 +1190,7 @@ mod tests {
 
             // The requested remote should have sent an ARP response.
             validate_last_arp_packet(
-                sync_ctx,
+                core_ctx,
                 1,
                 local_hw_addr,
                 ArpOp::Response,
@@ -1066,17 +1203,17 @@ mod tests {
 
         // Step once to deliver the ARP response to the local.
         let res = network.step(
-            |FakeCtx { sync_ctx, non_sync_ctx }, device_id, buf| {
+            |FakeCtx { core_ctx, bindings_ctx }, device_id, buf| {
                 handle_packet(
-                    sync_ctx,
-                    non_sync_ctx,
+                    core_ctx,
+                    bindings_ctx,
                     device_id,
                     FrameDestination::Individual { local: true },
                     buf,
                 )
             },
-            |FakeCtx { sync_ctx, non_sync_ctx }, _ctx, id| {
-                TimerHandler::handle_timer(sync_ctx, non_sync_ctx, id)
+            |FakeCtx { core_ctx, bindings_ctx }, _ctx, id| {
+                TimerHandler::handle_timer(core_ctx, bindings_ctx, id)
             },
         );
         assert_eq!(res.timers_fired, 0);
@@ -1084,9 +1221,9 @@ mod tests {
 
         // The local should have populated its cache with the remote's
         // information.
-        network.with_context(local_name, |FakeCtx { sync_ctx, non_sync_ctx: _ }| {
+        network.with_context(local_name, |FakeCtx { core_ctx, bindings_ctx: _ }| {
             assert_dynamic_neighbor_with_addr(
-                sync_ctx,
+                core_ctx,
                 FakeLinkDeviceId,
                 SpecifiedAddr::new(requested_remote_proto_addr).unwrap(),
                 requested_remote_hw_addr,
@@ -1098,12 +1235,12 @@ mod tests {
                 // The non-requested_remote should not have populated its ARP cache.
                 network.with_context(
                     *unrequested_remote_name,
-                    |FakeCtx { sync_ctx, non_sync_ctx: _ }| {
+                    |FakeCtx { core_ctx, bindings_ctx: _ }| {
                         // The non-requested_remote should not have sent an ARP response.
-                        assert_empty(sync_ctx.frames().iter());
+                        assert_empty(core_ctx.frames().iter());
 
                         assert_neighbor_unknown(
-                            sync_ctx,
+                            core_ctx,
                             FakeLinkDeviceId,
                             SpecifiedAddr::new(local_proto_addr).unwrap(),
                         );
@@ -1125,19 +1262,19 @@ mod tests {
         frame_dst: FrameDestination,
         expect_solicited: bool,
     ) {
-        let FakeCtx { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtx::with_sync_ctx(FakeCtxImpl::default());
+        let FakeCtx { mut core_ctx, mut bindings_ctx } =
+            FakeCtx::with_core_ctx(FakeCoreCtxImpl::default());
 
         // Trigger link resolution.
         assert_neighbor_unknown(
-            &mut sync_ctx,
+            &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
         );
         assert_eq!(
-            BufferNudHandler::send_ip_packet_to_neighbor(
-                &mut sync_ctx,
-                &mut non_sync_ctx,
+            NudHandler::send_ip_packet_to_neighbor(
+                &mut core_ctx,
+                &mut bindings_ctx,
                 &FakeLinkDeviceId,
                 SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
                 Buf::new([1], ..),
@@ -1147,8 +1284,8 @@ mod tests {
 
         // Now send a confirmation with the specified frame destination.
         send_arp_packet(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             ArpOp::Response,
             TEST_REMOTE_IPV4,
             TEST_LOCAL_IPV4,
@@ -1160,12 +1297,15 @@ mod tests {
         // If the confirmation was interpreted as solicited, the entry should be
         // marked as REACHABLE; otherwise, it should have transitioned to STALE.
         let expected_state = if expect_solicited {
-            DynamicNeighborState::Reachable(Reachable { link_address: TEST_REMOTE_MAC })
+            DynamicNeighborState::Reachable(Reachable {
+                link_address: TEST_REMOTE_MAC,
+                last_confirmed_at: bindings_ctx.now(),
+            })
         } else {
             DynamicNeighborState::Stale(Stale { link_address: TEST_REMOTE_MAC })
         };
         assert_dynamic_neighbor_state(
-            &mut sync_ctx,
+            &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
             expected_state,

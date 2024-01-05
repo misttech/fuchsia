@@ -555,8 +555,9 @@ mod tests {
             model::testing::routing_test_helpers::RoutingTest,
         },
         cm_rust_testing::ComponentDeclBuilder,
+        diagnostics_assertions::{assert_data_tree, AnyProperty},
         diagnostics_hierarchy::DiagnosticsHierarchy,
-        fuchsia_inspect::testing::{assert_data_tree, AnyProperty, DiagnosticsHierarchyGetter},
+        fuchsia_inspect::DiagnosticsHierarchyGetter,
         fuchsia_zircon::{AsHandleRef, DurationNum},
         injectable_time::{FakeTime, IncrementingFakeTime},
         moniker::Moniker,
@@ -1188,7 +1189,7 @@ mod tests {
         let koid =
             fuchsia_runtime::job_default().basic_info().expect("got basic info").koid.raw_koid();
 
-        let hierarchy = test.builtin_environment.inspector.get_diagnostics_hierarchy();
+        let hierarchy = test.builtin_environment.inspector().get_diagnostics_hierarchy();
         let (timestamps, cpu_times, queue_times) =
             get_data(&hierarchy, "<component_manager>", Some(&koid.to_string()));
         assert_eq!(timestamps.len(), 1);
@@ -1373,11 +1374,7 @@ mod tests {
     }
 
     fn get_recent_property(hierarchy: &DiagnosticsHierarchy, name: &str) -> i64 {
-        *hierarchy
-            .get_property_by_path(&vec!["stats", "recent_usage", name])
-            .unwrap()
-            .int()
-            .unwrap()
+        hierarchy.get_property_by_path(&vec!["stats", "recent_usage", name]).unwrap().int().unwrap()
     }
 
     fn get_data(

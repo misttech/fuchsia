@@ -5,18 +5,22 @@
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_COMPONENTS_CPP_INCLUDE_WLAN_DRIVERS_COMPONENTS_NETWORK_DEVICE_H_
 
 #include <fuchsia/hardware/network/driver/cpp/banjo.h>
+#include <lib/driver/compat/cpp/compat.h>
+#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/stdcompat/span.h>
 #include <zircon/compiler.h>
 
 #include <mutex>
+#include <optional>
 #include <vector>
 
-#include <ddktl/device.h>
 #include <wlan/drivers/components/frame.h>
 #include <wlan/drivers/components/frame_container.h>
 #include <wlan/drivers/components/internal/async_txn.h>
 
 namespace wlan::drivers::components {
+
+using fuchsia_driver_framework::NodeController;
 
 // This class is intended to make it easier to construct and work with a
 // fuchsia.hardware.network.device device (called netdev here) and its interfaces. The user should
@@ -27,10 +31,13 @@ namespace wlan::drivers::components {
 // device Callbacks::NetDevInit will be called and is a suitable place to perform any setup that
 // could fail and prevent the creation of the device by returning an error code. When the device
 // is destroyed Callbacks::NetDevRelease will be called which should be used to perform any cleanup.
-class NetworkDevice final : public ::ddk::NetworkDeviceImplProtocol<NetworkDevice> {
+class NetworkDevice final : public ::ddk::NetworkDeviceImplProtocol<NetworkDevice>,
+                            public fidl::WireAsyncEventHandler<NodeController> {
  public:
   class Callbacks {
    public:
+    // Takes zx_status_t as parameter, call txn.Reply(status) to complete transaction.
+    using InitTxn = AsyncTxn<zx_status_t>;
     // Takes zx_status_t as parameter, call txn.Reply(status) to complete transaction.
     using StartTxn = AsyncTxn<zx_status_t>;
     // Does not take a parameter, call txn.Reply() to complete transaction.
@@ -41,9 +48,12 @@ class NetworkDevice final : public ::ddk::NetworkDeviceImplProtocol<NetworkDevic
     // Called when the underlying device is released.
     virtual void NetDevRelease() = 0;
 
-    // Called as part of the initialization of the device. Returning anything but ZX_OK from this
-    // will prevent the device from being created.
-    virtual zx_status_t NetDevInit() = 0;
+    // Called as part of the initialization of the device. The device is considered initialized
+    // after txn.Reply() has been called with a ZX_OK status as parameter. The device can call
+    // txn.Reply() at any time, either during the invocation of NetDevInit or at a later time from
+    // the same thread or another thread. Call txn.Reply() with anything but ZX_OK will prevent the
+    // device from being created.
+    virtual void NetDevInit(InitTxn txn) = 0;
 
     // Start the device's data path. The data path is considered started after txn.Reply() has been
     // called with a ZX_OK status as parameter. The device can call txn.Reply() at any time, either
@@ -64,19 +74,19 @@ class NetworkDevice final : public ::ddk::NetworkDeviceImplProtocol<NetworkDevic
     virtual void NetDevStop(StopTxn txn) = 0;
 
     // Get information from the device about the underlying device. This includes details such as RX
-    // depth, TX depths, features supported any many others. See the device_info_t struct for more
-    // information.
-    virtual void NetDevGetInfo(device_info_t* out_info) = 0;
+    // depth, TX depths, features supported any many others. See the device_impl_info_t struct for
+    // more information.
+    virtual void NetDevGetInfo(device_impl_info_t* out_info) = 0;
 
     // Enqueue frames for transmission. A span of frames is provided which represent all the frames
     // to be sent. These frames point to the payload to be transmitted and will have any additional
-    // headroom and tailspace specified in device_info_t available. So in order to populate headers
-    // for example the driver must first call GrowHead on a frame to place the data pointer at the
-    // location where the header should be, then populate the header. Note that the lifetime of the
-    // data pointed to by the span is limited to this method call. Once this method implementation
-    // returns, the frame objects (but not the underlying data) will be lost. The driver therefore
-    // needs to make a copy of these frame objects, for example by placing them in a queue or
-    // submitting them to hardware before the method returns.
+    // headroom and tailspace specified in device_impl_info_t available. So in order to populate
+    // headers for example the driver must first call GrowHead on a frame to place the data pointer
+    // at the location where the header should be, then populate the header. Note that the lifetime
+    // of the data pointed to by the span is limited to this method call. Once this method
+    // implementation returns, the frame objects (but not the underlying data) will be lost. The
+    // driver therefore needs to make a copy of these frame objects, for example by placing them in
+    // a queue or submitting them to hardware before the method returns.
     virtual void NetDevQueueTx(cpp20::span<Frame> frames) = 0;
 
     // Enqueue available space to the device, for receiving data into. The device will provide any
@@ -115,14 +125,27 @@ class NetworkDevice final : public ::ddk::NetworkDeviceImplProtocol<NetworkDevic
     virtual void NetDevSetSnoopEnabled(bool snoop) = 0;
   };
 
+  // Construct a NetworkDevice object with a DDK parent, used for DFv1 usage.
+  // TODO(b/317249253) Cleanup DFv1 code once it is deprecated (or all fullmac drivers have been
+  // ported over to DFv2).
   NetworkDevice(zx_device_t* parent, Callbacks* callbacks);
+  // Construct a NetworkDevice object without a DDK parent, used for DFv2 usage.
+  explicit NetworkDevice(Callbacks* callbacks);
+
   virtual ~NetworkDevice();
   NetworkDevice(const NetworkDevice&) = delete;
   NetworkDevice& operator=(const NetworkDevice&) = delete;
 
-  // Initialize the NetworkDevice, this should be called by the device driver when it's ready for
-  // the NetworkDevice to start. The device will show up as deviceName in the device tree.
+  // Initialize the NetworkDevice for use with DFv1, attempting to use this with the DFv2
+  // constructor will trigger an assert. This should be called by the device driver when it's ready
+  // for the NetworkDevice to start. The device will show up as deviceName in the device tree.
+  // TODO(b/317249253) Cleanup DFv1 code once it is deprecated (or all fullmac drivers have been
+  // ported over to DFv2).
   zx_status_t Init(const char* deviceName);
+  // Initialize the NetworkDevice for use with DFv2, attempting to use this with the DFv1
+  // constructor will trigger an assert. This should be called by the device driver when it's ready
+  // for the NetworkDevice to start. This will bind the client end to the dispatcher.
+  void Init(fidl::ClientEnd<NodeController> client_end, async_dispatcher_t* dispatcher);
 
   // Remove the NetworkDevice, this calls DdkRemove. The removal is not complete until NetDevRelease
   // is called on the Callbacks interface.
@@ -133,6 +156,15 @@ class NetworkDevice final : public ::ddk::NetworkDeviceImplProtocol<NetworkDevic
   void Release();
 
   network_device_ifc_protocol_t NetDevIfcProto() const;
+  network_device_impl_protocol_ops_t* NetDevImplProtoOps() {
+    return const_cast<network_device_impl_protocol_ops_t*>(netdev_proto_.ops);
+  }
+  // Get compatiblity banjo config when running with DFv2.
+  compat::DeviceServer::BanjoConfig GetBanjoConfig() {
+    compat::DeviceServer::BanjoConfig config{ZX_PROTOCOL_NETWORK_DEVICE_IMPL};
+    config.callbacks[ZX_PROTOCOL_NETWORK_DEVICE_IMPL] = banjo_server_.callback();
+    return config;
+  }
 
   // Notify NetworkDevice of a single incoming RX frame. This method exists for convenience but the
   // driver should prefer to complete as many frames as possible in one call instead of making
@@ -158,12 +190,13 @@ class NetworkDevice final : public ::ddk::NetworkDeviceImplProtocol<NetworkDevic
   void CompleteTx(cpp20::span<Frame> frames, zx_status_t status);
 
   // NetworkDeviceImpl implementation
-  zx_status_t NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface);
+  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                             network_device_impl_init_callback callback, void* cookie);
   void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie)
       __TA_EXCLUDES(started_mutex_);
   void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie)
       __TA_EXCLUDES(started_mutex_);
-  void NetworkDeviceImplGetInfo(device_info_t* out_info);
+  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info);
   void NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list, size_t buffers_count)
       __TA_EXCLUDES(started_mutex_);
   void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers_list, size_t buffers_count);
@@ -171,6 +204,10 @@ class NetworkDevice final : public ::ddk::NetworkDeviceImplProtocol<NetworkDevic
                                    network_device_impl_prepare_vmo_callback callback, void* cookie);
   void NetworkDeviceImplReleaseVmo(uint8_t id);
   void NetworkDeviceImplSetSnoop(bool snoop);
+
+  // fidl::WireAsyncEventHandler<NodeController> implementation
+  void handle_unknown_event(fidl::UnknownEventMetadata<NodeController> metadata) override {}
+  void on_fidl_error(::fidl::UnbindInfo error) override;
 
  private:
   zx_status_t AddNetworkDevice(const char* deviceName);
@@ -183,9 +220,12 @@ class NetworkDevice final : public ::ddk::NetworkDeviceImplProtocol<NetworkDevic
   std::mutex started_mutex_;
   network_device_impl_protocol_t netdev_proto_;
   ::ddk::NetworkDeviceIfcProtocolClient netdev_ifc_;
+  std::optional<fidl::WireClient<NodeController>> controller_node_;
   uint8_t* vmo_addrs_[MAX_VMOS] = {};
   uint64_t vmo_lengths_[MAX_VMOS] = {};
   std::vector<Frame> tx_frames_;
+  compat::BanjoServer banjo_server_{ZX_PROTOCOL_NETWORK_DEVICE_IMPL, this,
+                                    &network_device_impl_protocol_ops_};
 };
 
 }  // namespace wlan::drivers::components

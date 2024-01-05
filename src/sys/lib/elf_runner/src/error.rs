@@ -2,16 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use {
-    ::routing::policy::PolicyError,
-    clonable_error::ClonableError,
-    fuchsia_zircon as zx,
-    runner::component::{ComponentNamespaceError, LaunchError},
-    runner::StartInfoProgramError,
-    std::ffi::CString,
-    thiserror::Error,
-    tracing::error,
-};
+use clonable_error::ClonableError;
+use fuchsia_zircon as zx;
+use std::ffi::CString;
+use thiserror::Error;
+use tracing::error;
 
 /// Errors produced when starting a component.
 #[derive(Debug, Clone, Error)]
@@ -25,13 +20,13 @@ pub enum StartComponentError {
     #[error("failed to mark main process as critical: {_0}")]
     ProcessMarkCriticalFailed(#[source] zx::Status),
     #[error("could not create job: {_0}")]
-    JobError(#[source] JobError),
+    JobError(#[from] JobError),
     #[error("failed to duplicate job: {_0}")]
     JobDuplicateFailed(#[source] zx::Status),
     #[error("failed to get job koid: {_0}")]
     JobGetKoidFailed(#[source] zx::Status),
     #[error("failed to get vDSO: {_0}")]
-    VdsoError(#[source] VdsoError),
+    VdsoError(#[from] VdsoError),
     #[error("error connecting to fuchsia.process.Launcher protocol: {_0}")]
     ProcessLauncherConnectError(#[source] ClonableError),
     #[error("fidl error in fuchsia.process.Launcher protocol: {_0}")]
@@ -41,36 +36,25 @@ pub enum StartComponentError {
     #[error("failed to duplicate UTC clock: {_0}")]
     UtcClockDuplicateFailed(#[source] zx::Status),
     #[error("failed to process the component's config data: {_0}")]
-    ConfigDataError(#[source] ConfigDataError),
+    ConfigDataError(#[from] runner::ConfigDataError),
     #[error("could not create component namespace, {_0}")]
-    ComponentNamespaceError(#[source] ComponentNamespaceError),
+    NamespaceError(#[from] namespace::NamespaceError),
     #[error("error configuring process launcher: {_0}")]
-    ConfigureLauncherError(#[source] LaunchError),
+    LaunchError(#[from] runner::component::LaunchError),
     #[error("invalid start info: {_0}")]
-    StartInfoError(#[source] StartInfoError),
+    StartInfoError(#[from] StartInfoError),
 }
 
 impl StartComponentError {
     /// Convert this error into its approximate `zx::Status` equivalent.
     pub fn as_zx_status(&self) -> zx::Status {
         match self {
-            StartComponentError::ComponentNamespaceError(_) => zx::Status::INVALID_ARGS,
-            StartComponentError::ConfigureLauncherError(_) => zx::Status::UNAVAILABLE,
+            StartComponentError::NamespaceError(_) => zx::Status::INVALID_ARGS,
+            StartComponentError::LaunchError(_) => zx::Status::UNAVAILABLE,
             StartComponentError::StartInfoError(err) => err.as_zx_status(),
             _ => zx::Status::INTERNAL,
         }
     }
-}
-
-/// Errors from parsing a component's configuration data.
-#[derive(Debug, Clone, Error)]
-pub enum ConfigDataError {
-    #[error("failed to create a vmo: {_0}")]
-    VmoCreate(#[source] zx::Status),
-    #[error("failed to write to vmo: {_0}")]
-    VmoWrite(#[source] zx::Status),
-    #[error("encountered an unrecognized variant of fuchsia.mem.Data")]
-    UnrecognizedDataVariant,
 }
 
 /// Errors from creating and initializing a component's job.
@@ -85,25 +69,22 @@ pub enum JobError {
 /// Errors from parsing ComponentStartInfo.
 #[derive(Debug, Clone, Error)]
 pub enum StartInfoError {
-    #[error("missing program")]
-    MissingProgram,
+    #[error(transparent)]
+    StartInfoError(#[from] runner::StartInfoError),
     #[error("missing runtime dir")]
     MissingRuntimeDir,
-    #[error("missing resolved URL")]
-    MissingResolvedUrl,
     #[error("component resolved URL is malformed: {_0}")]
     BadResolvedUrl(String),
     #[error("program is invalid: {_0}")]
-    ProgramError(#[source] ProgramError),
+    ProgramError(#[from] ProgramError),
 }
 
 impl StartInfoError {
     /// Convert this error into its approximate `zx::Status` equivalent.
     pub fn as_zx_status(&self) -> zx::Status {
         match self {
-            StartInfoError::MissingProgram => zx::Status::INVALID_ARGS,
+            StartInfoError::StartInfoError(err) => err.as_zx_status(),
             StartInfoError::MissingRuntimeDir => zx::Status::INVALID_ARGS,
-            StartInfoError::MissingResolvedUrl => zx::Status::INVALID_ARGS,
             StartInfoError::BadResolvedUrl(_) => zx::Status::INVALID_ARGS,
             StartInfoError::ProgramError(err) => err.as_zx_status(),
         }
@@ -116,9 +97,9 @@ pub enum ProgramError {
     #[error("`is_shared_process` cannot be enabled without also enabling `job_policy_create_raw_processes`")]
     SharedProcessRequiresJobPolicy,
     #[error("failed to parse: {_0}")]
-    Parse(#[source] StartInfoProgramError),
+    Parse(#[source] runner::StartInfoProgramError),
     #[error("configuration violates policy: {_0}")]
-    Policy(#[source] PolicyError),
+    Policy(#[source] routing::policy::PolicyError),
 }
 
 impl ProgramError {

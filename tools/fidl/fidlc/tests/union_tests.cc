@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/flat_ast.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
@@ -27,8 +26,8 @@ type Foo = strict union {
 )FIDL");
   ASSERT_COMPILED(library);
   auto type_decl = library.LookupUnion("Foo");
-  ASSERT_NOT_NULL(type_decl);
-  EXPECT_EQ(type_decl->members.size(), 5);
+  ASSERT_NE(type_decl, nullptr);
+  EXPECT_EQ(type_decl->members.size(), 5u);
 }
 
 TEST(UnionTests, GoodRecursiveUnion) {
@@ -75,8 +74,9 @@ TEST(UnionTests, GoodStrictUnion) {
 TEST(UnionTests, BadMustHaveExplicitOrdinals) {
   TestLibrary library;
   library.AddFile("bad/fi-0016-b.test.fidl");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrMissingOrdinalBeforeMember,
-                                      fidl::ErrMissingOrdinalBeforeMember);
+  library.ExpectFail(fidl::ErrMissingOrdinalBeforeMember);
+  library.ExpectFail(fidl::ErrMissingOrdinalBeforeMember);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, GoodExplicitOrdinals) {
@@ -90,15 +90,15 @@ type Foo = strict union {
   ASSERT_COMPILED(library);
 
   auto fidl_union = library.LookupUnion("Foo");
-  ASSERT_NOT_NULL(fidl_union);
+  ASSERT_NE(fidl_union, nullptr);
 
-  ASSERT_EQ(fidl_union->members.size(), 2);
+  ASSERT_EQ(fidl_union->members.size(), 2u);
   auto& member0 = fidl_union->members[0];
-  EXPECT_NOT_NULL(member0.maybe_used);
-  EXPECT_EQ(member0.ordinal->value, 1);
+  EXPECT_NE(member0.maybe_used, nullptr);
+  EXPECT_EQ(member0.ordinal->value, 1u);
   auto& member1 = fidl_union->members[1];
-  EXPECT_NOT_NULL(member1.maybe_used);
-  EXPECT_EQ(member1.ordinal->value, 2);
+  EXPECT_NE(member1.maybe_used, nullptr);
+  EXPECT_EQ(member1.ordinal->value, 2u);
 }
 
 TEST(UnionTests, GoodOrdinalsWithReserved) {
@@ -115,24 +115,24 @@ type Foo = strict union {
   ASSERT_COMPILED(library);
 
   auto fidl_union = library.LookupUnion("Foo");
-  ASSERT_NOT_NULL(fidl_union);
+  ASSERT_NE(fidl_union, nullptr);
 
-  ASSERT_EQ(fidl_union->members.size(), 5);
+  ASSERT_EQ(fidl_union->members.size(), 5u);
   auto& member0 = fidl_union->members[0];
-  EXPECT_NULL(member0.maybe_used);
-  EXPECT_EQ(member0.ordinal->value, 1);
+  EXPECT_EQ(member0.maybe_used, nullptr);
+  EXPECT_EQ(member0.ordinal->value, 1u);
   auto& member1 = fidl_union->members[1];
-  EXPECT_NOT_NULL(member1.maybe_used);
-  EXPECT_EQ(member1.ordinal->value, 2);
+  EXPECT_NE(member1.maybe_used, nullptr);
+  EXPECT_EQ(member1.ordinal->value, 2u);
   auto& member2 = fidl_union->members[2];
-  EXPECT_NULL(member2.maybe_used);
-  EXPECT_EQ(member2.ordinal->value, 3);
+  EXPECT_EQ(member2.maybe_used, nullptr);
+  EXPECT_EQ(member2.ordinal->value, 3u);
   auto& member3 = fidl_union->members[3];
-  EXPECT_NOT_NULL(member3.maybe_used);
-  EXPECT_EQ(member3.ordinal->value, 4);
+  EXPECT_NE(member3.maybe_used, nullptr);
+  EXPECT_EQ(member3.ordinal->value, 4u);
   auto& member4 = fidl_union->members[4];
-  EXPECT_NULL(member4.maybe_used);
-  EXPECT_EQ(member4.ordinal->value, 5);
+  EXPECT_EQ(member4.maybe_used, nullptr);
+  EXPECT_EQ(member4.ordinal->value, 5u);
 }
 
 TEST(UnionTests, GoodOrdinalsOutOfOrder) {
@@ -149,30 +149,31 @@ type Foo = strict union {
   ASSERT_COMPILED(library);
 
   auto fidl_union = library.LookupUnion("Foo");
-  ASSERT_NOT_NULL(fidl_union);
+  ASSERT_NE(fidl_union, nullptr);
 
-  ASSERT_EQ(fidl_union->members.size(), 5);
+  ASSERT_EQ(fidl_union->members.size(), 5u);
   auto& member0 = fidl_union->members[0];
-  EXPECT_NULL(member0.maybe_used);
-  EXPECT_EQ(member0.ordinal->value, 1);
+  EXPECT_EQ(member0.maybe_used, nullptr);
+  EXPECT_EQ(member0.ordinal->value, 1u);
   auto& member1 = fidl_union->members[1];
-  EXPECT_NOT_NULL(member1.maybe_used);
-  EXPECT_EQ(member1.ordinal->value, 2);
+  EXPECT_NE(member1.maybe_used, nullptr);
+  EXPECT_EQ(member1.ordinal->value, 2u);
   auto& member2 = fidl_union->members[2];
-  EXPECT_NULL(member2.maybe_used);
-  EXPECT_EQ(member2.ordinal->value, 3);
+  EXPECT_EQ(member2.maybe_used, nullptr);
+  EXPECT_EQ(member2.ordinal->value, 3u);
   auto& member3 = fidl_union->members[3];
-  EXPECT_NOT_NULL(member3.maybe_used);
-  EXPECT_EQ(member3.ordinal->value, 4);
+  EXPECT_NE(member3.maybe_used, nullptr);
+  EXPECT_EQ(member3.ordinal->value, 4u);
   auto& member4 = fidl_union->members[4];
-  EXPECT_NOT_NULL(member4.maybe_used);
-  EXPECT_EQ(member4.ordinal->value, 5);
+  EXPECT_NE(member4.maybe_used, nullptr);
+  EXPECT_EQ(member4.ordinal->value, 5u);
 }
 
 TEST(UnionTests, BadOrdinalOutOfBoundsNegative) {
   TestLibrary library;
   library.AddFile("bad/fi-0017-b.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrOrdinalOutOfBound);
+  library.ExpectFail(fidl::ErrOrdinalOutOfBound);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, BadOrdinalOutOfBoundsLarge) {
@@ -183,13 +184,15 @@ type Foo = union {
   4294967296: foo string;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrOrdinalOutOfBound);
+  library.ExpectFail(fidl::ErrOrdinalOutOfBound);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, BadOrdinalsMustBeUnique) {
   TestLibrary library;
   library.AddFile("bad/fi-0097.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrDuplicateUnionMemberOrdinal);
+  library.ExpectFail(fidl::ErrDuplicateUnionMemberOrdinal, "bad/fi-0097.test.fidl:7:5");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, BadMemberNamesMustBeUnique) {
@@ -201,15 +204,16 @@ type MyUnion = strict union {
     2: my_variant int32;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrDuplicateElementName);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "union member");
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "my_variant");
+  library.ExpectFail(fidl::ErrNameCollision, fidl::flat::Element::Kind::kUnionMember, "my_variant",
+                     fidl::flat::Element::Kind::kUnionMember, "example.fidl:5:8");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, BadCannotStartAtZero) {
   TestLibrary library;
   library.AddFile("bad/fi-0018.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrOrdinalsMustStartAtOne);
+  library.ExpectFail(fidl::ErrOrdinalsMustStartAtOne);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, BadDefaultNotAllowed) {
@@ -221,8 +225,11 @@ type Foo = strict union {
 };
 
 )FIDL");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrUnexpectedTokenOfKind,
-                                      fidl::ErrMissingOrdinalBeforeMember);
+  library.ExpectFail(fidl::ErrUnexpectedTokenOfKind,
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kEqual),
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kSemicolon));
+  library.ExpectFail(fidl::ErrMissingOrdinalBeforeMember);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, BadMustBeDense) {
@@ -235,14 +242,15 @@ type Example = strict union {
 };
 
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrNonDenseOrdinal);
-  ASSERT_SUBSTR(library.errors().at(0)->msg.c_str(), "2");
+  library.ExpectFail(fidl::ErrNonDenseOrdinal, 2);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, BadNoNullableMembers) {
   TestLibrary library;
   library.AddFile("bad/fi-0049.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrOptionalUnionMember);
+  library.ExpectFail(fidl::ErrOptionalUnionMember);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, BadNoDirectlyRecursiveUnions) {
@@ -254,7 +262,8 @@ type Value = strict union {
 };
 
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrIncludeCycle);
+  library.ExpectFail(fidl::ErrIncludeCycle, "union 'Value' -> union 'Value'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, GoodEmptyFlexibleUnion) {
@@ -267,8 +276,8 @@ type Foo = flexible union {};
   ASSERT_COMPILED(library);
 
   auto fidl_union = library.LookupUnion("Foo");
-  ASSERT_NOT_NULL(fidl_union);
-  ASSERT_EQ(fidl_union->members.size(), 0);
+  ASSERT_NE(fidl_union, nullptr);
+  ASSERT_EQ(fidl_union->members.size(), 0u);
 }
 
 TEST(UnionTests, GoodOnlyReservedFlexibleUnion) {
@@ -283,37 +292,41 @@ type Foo = flexible union {
   ASSERT_COMPILED(library);
 
   auto fidl_union = library.LookupUnion("Foo");
-  ASSERT_NOT_NULL(fidl_union);
+  ASSERT_NE(fidl_union, nullptr);
 
-  ASSERT_EQ(fidl_union->members.size(), 1);
+  ASSERT_EQ(fidl_union->members.size(), 1u);
   auto& member0 = fidl_union->members[0];
-  EXPECT_EQ(member0.ordinal->value, 1);
-  EXPECT_NULL(member0.maybe_used);
+  EXPECT_EQ(member0.ordinal->value, 1u);
+  EXPECT_EQ(member0.maybe_used, nullptr);
 }
 
 TEST(UnionTests, BadEmptyStrictUnion) {
   TestLibrary library;
   library.AddFile("bad/fi-0086-a.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrStrictUnionMustHaveNonReservedMember);
+  library.ExpectFail(fidl::ErrStrictUnionMustHaveNonReservedMember);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, BadOnlyReservedStrictUnion) {
   TestLibrary library;
   library.AddFile("bad/fi-0086-b.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrStrictUnionMustHaveNonReservedMember);
+  library.ExpectFail(fidl::ErrStrictUnionMustHaveNonReservedMember);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(UnionTests, GoodErrorSyntaxExplicitOrdinals) {
   TestLibrary library(R"FIDL(library example;
-protocol Example {
-    Method() -> () error int32;
+open protocol Example {
+    flexible Method() -> () error int32;
 };
 )FIDL");
   ASSERT_COMPILED(library);
   const fidl::flat::Union* error_union = library.LookupUnion("Example_Method_Result");
-  ASSERT_NOT_NULL(error_union);
-  ASSERT_EQ(error_union->members.front().ordinal->value, 1);
-  ASSERT_EQ(error_union->members.back().ordinal->value, 2);
+  ASSERT_NE(error_union, nullptr);
+  ASSERT_EQ(3u, error_union->members.size());
+  ASSERT_EQ(1u, error_union->members[0].ordinal->value);
+  ASSERT_EQ(2u, error_union->members[1].ordinal->value);
+  ASSERT_EQ(3u, error_union->members[2].ordinal->value);
 }
 
 TEST(UnionTests, BadNoSelector) {
@@ -325,7 +338,8 @@ type Foo = strict union {
 };
 
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidAttributePlacement);
+  library.ExpectFail(fidl::ErrInvalidAttributePlacement, "selector");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 }  // namespace

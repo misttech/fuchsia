@@ -5,17 +5,22 @@
 """Abstract base class for Fuchsia device."""
 
 import abc
-from typing import Callable, Dict, Optional
+from typing import Callable
 
 from honeydew import custom_types
-from honeydew.interfaces.affordances import session
-from honeydew.interfaces.affordances import tracing
-from honeydew.interfaces.affordances.bluetooth import bluetooth_gap
-from honeydew.interfaces.auxiliary_devices import \
-    power_switch as power_switch_interface
+from honeydew.interfaces.affordances import session, tracing
+from honeydew.interfaces.affordances.bluetooth.profiles import (
+    bluetooth_avrcp,
+    bluetooth_gap,
+)
+from honeydew.interfaces.affordances.ui import screenshot, user_input
+from honeydew.interfaces.affordances.wlan import wlan, wlan_policy
+from honeydew.interfaces.auxiliary_devices import (
+    power_switch as power_switch_interface,
+)
 from honeydew.utils import properties
 
-TIMEOUTS: Dict[str, float] = {
+TIMEOUTS: dict[str, float] = {
     "OFFLINE": 60,
     "ONLINE": 120,
 }
@@ -96,11 +101,29 @@ class FuchsiaDevice(abc.ABC):
     # List all the affordances in alphabetical order
     @properties.Affordance
     @abc.abstractmethod
+    def bluetooth_avrcp(self) -> bluetooth_avrcp.BluetoothAvrcp:
+        """Returns a BluetoothAvrcp affordance object.
+
+        Returns:
+            bluetooth_avrcp.BluetoothAvrcp object
+        """
+
+    @properties.Affordance
+    @abc.abstractmethod
     def bluetooth_gap(self) -> bluetooth_gap.BluetoothGap:
         """Returns a BluetoothGap affordance object.
 
         Returns:
             bluetooth_gap.BluetoothGap object
+        """
+
+    @properties.Affordance
+    @abc.abstractmethod
+    def screenshot(self) -> screenshot.Screenshot:
+        """Returns a screenshot affordance object.
+
+        Returns:
+            screenshot.Screenshot object
         """
 
     @properties.Affordance
@@ -121,6 +144,33 @@ class FuchsiaDevice(abc.ABC):
             tracing.Tracing object
         """
 
+    @properties.Affordance
+    @abc.abstractmethod
+    def user_input(self) -> user_input.UserInput:
+        """Returns a user_input affordance object.
+
+        Returns:
+            user_input.UserInput object
+        """
+
+    @properties.Affordance
+    @abc.abstractmethod
+    def wlan_policy(self) -> wlan_policy.WlanPolicy:
+        """Returns a WlanPolicy affordance object.
+
+        Returns:
+            wlanPolicy.WlanPolicy object
+        """
+
+    @properties.Affordance
+    @abc.abstractmethod
+    def wlan(self) -> wlan.Wlan:
+        """Returns a Wlan affordance object.
+
+        Returns:
+            wlan.Wlan object
+        """
+
     # List all the public methods in alphabetical order
     @abc.abstractmethod
     def close(self) -> None:
@@ -132,7 +182,8 @@ class FuchsiaDevice(abc.ABC):
 
     @abc.abstractmethod
     def log_message_to_device(
-            self, message: str, level: custom_types.LEVEL) -> None:
+        self, message: str, level: custom_types.LEVEL
+    ) -> None:
         """Log message to fuchsia device at specified level.
 
         Args:
@@ -146,9 +197,10 @@ class FuchsiaDevice(abc.ABC):
 
     @abc.abstractmethod
     def power_cycle(
-            self,
-            power_switch: power_switch_interface.PowerSwitch,
-            outlet: Optional[int] = None) -> None:
+        self,
+        power_switch: power_switch_interface.PowerSwitch,
+        outlet: int | None = None,
+    ) -> None:
         """Power cycle (power off, wait for delay, power on) the device.
 
         Args:
@@ -166,8 +218,7 @@ class FuchsiaDevice(abc.ABC):
         """Register a function that will be called in on_device_boot."""
 
     @abc.abstractmethod
-    def snapshot(
-            self, directory: str, snapshot_file: Optional[str] = None) -> str:
+    def snapshot(self, directory: str, snapshot_file: str | None = None) -> str:
         """Captures the snapshot of the device.
 
         Args:

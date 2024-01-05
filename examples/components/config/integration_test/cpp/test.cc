@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include <fuchsia/diagnostics/cpp/fidl.h>
-#include <lib/inspect/contrib/cpp/archive_reader.h>
+#include <lib/diagnostics/reader/cpp/archive_reader.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/sys/cpp/service_directory.h>
 
@@ -17,7 +17,7 @@
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 
 using ContentVector = std::vector<fuchsia::diagnostics::FormattedContent>;
-using inspect::contrib::InspectData;
+using diagnostics::reader::InspectData;
 
 constexpr char kChildUrl[] = "#meta/config_example.cm";
 
@@ -30,7 +30,7 @@ class IntegrationTest : public gtest::RealLoopFixture {
 
     std::stringstream selector;
     selector << "*/" << name << ":root";
-    inspect::contrib::ArchiveReader reader(std::move(archive), {selector.str()});
+    diagnostics::reader::ArchiveReader reader(std::move(archive), {selector.str()});
     fpromise::result<std::vector<InspectData>, std::string> result;
     async::Executor executor(dispatcher());
     executor.schedule_task(reader.SnapshotInspectUntilPresent({moniker}).then(
@@ -58,7 +58,7 @@ TEST_F(IntegrationTest, ConfigCpp) {
       .source = component_testing::ParentRef(),
       .targets = {component_testing::ChildRef{child_name}}});
   auto realm = realm_builder.Build();
-  auto moniker = "realm_builder\\:" + realm.component().GetChildName() + "/" + child_name;
+  auto moniker = "realm_builder:" + realm.component().GetChildName() + "/" + child_name;
 
   auto data = GetInspect(child_name, moniker);
 
@@ -87,7 +87,7 @@ TEST_F(IntegrationTest, ConfigCppReplaceSome) {
       .source = component_testing::ParentRef(),
       .targets = {component_testing::ChildRef{child_name}}});
   auto realm = realm_builder.Build();
-  auto moniker = "realm_builder\\:" + realm.component().GetChildName() + "/" + child_name;
+  auto moniker = "realm_builder:" + realm.component().GetChildName() + "/" + child_name;
 
   auto data = GetInspect(child_name, moniker);
 
@@ -113,7 +113,7 @@ TEST_F(IntegrationTest, ConfigCppReplaceAllPackaged) {
       .source = component_testing::ParentRef(),
       .targets = {component_testing::ChildRef{child_name}}});
   auto realm = realm_builder.Build();
-  auto moniker = "realm_builder\\:" + realm.component().GetChildName() + "/" + child_name;
+  auto moniker = "realm_builder:" + realm.component().GetChildName() + "/" + child_name;
 
   auto data = GetInspect(child_name, moniker);
 
@@ -142,7 +142,7 @@ TEST_F(IntegrationTest, ConfigCppSetAllWhenEmpty) {
       .source = component_testing::ParentRef(),
       .targets = {component_testing::ChildRef{child_name}}});
   auto realm = realm_builder.Build();
-  auto moniker = "realm_builder\\:" + realm.component().GetChildName() + "/" + child_name;
+  auto moniker = "realm_builder:" + realm.component().GetChildName() + "/" + child_name;
 
   auto data = GetInspect(child_name, moniker);
 

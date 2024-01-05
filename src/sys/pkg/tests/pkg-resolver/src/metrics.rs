@@ -8,13 +8,12 @@ use {
     cobalt_client::traits::AsEventCodes,
     cobalt_sw_delivery_registry as metrics,
     fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload},
-    fuchsia_async as fasync,
     fuchsia_pkg_testing::{
         serve::{responder, HttpResponder},
         Package, PackageBuilder, RepositoryBuilder,
     },
     lib::{make_repo, make_repo_config, MountsBuilder, TestEnv, TestEnvBuilder, EMPTY_REPO_PATH},
-    std::{net::Ipv4Addr, sync::Arc},
+    std::sync::Arc,
 };
 
 async fn assert_integer_events(
@@ -52,7 +51,7 @@ async fn verify_resolve_emits_cobalt_events_with_metric_id(
     responder: Option<impl HttpResponder>,
     expected_resolve_result: Result<(), fidl_fuchsia_pkg::ResolveError>,
     metric_id: u32,
-    expected_events: Vec<impl AsEventCodes>,
+    expected_events: Vec<impl AsEventCodes + std::fmt::Debug>,
 ) {
     let env = TestEnvBuilder::new().build().await;
     let repo = Arc::new(
@@ -286,7 +285,7 @@ async fn pkg_resolver_fetch_blob_success() {
 async fn pkg_resolver_fetch_blob_failure() {
     let pkg = PackageBuilder::new("just_meta_far").build().await.expect("created pkg");
     let responder = responder::ForPath::new(
-        format!("/blobs/{}", pkg.hash()),
+        format!("/blobs/1/{}", pkg.hash()),
         responder::StaticResponseCode::server_error(),
     );
 
@@ -394,10 +393,13 @@ async fn update_tuf_client_error() {
 }
 
 // Test the HTTP status range space for metrics handling for a blob fetch.
+// TODO(b/308214783): Re-enable on risc-v when flakes fixed.
+#[cfg(not(target_arch = "riscv64"))]
 mod pkg_resolver_blob_fetch {
-    use super::*;
-    use metrics::FetchBlobMigratedMetricDimensionResult::*;
-    use test_case::test_case;
+    use {
+        super::*, metrics::FetchBlobMigratedMetricDimensionResult::*, std::net::Ipv4Addr,
+        test_case::test_case,
+    };
 
     struct StatusTest {
         min_code: u16,
@@ -411,8 +413,8 @@ mod pkg_resolver_blob_fetch {
             // turns them into a 500 and closes the connection. That results in flakiness when we can
             // request faster than the connection is removed from the pool.
             (101, 101, 2, Http1xx),
-            // We're not sending a body, so we expect a C-L issue rather than Success.
-            (200, 200, 1, ContentLengthMismatch),
+            // We're not sending a body, so we expect a Truncate issue rather than Success.
+            (200, 200, 1, Truncate),
             (201, 299, 2, Http2xx),
         ]; "status_ranges_101_2xx")]
     #[test_case(&[
@@ -447,7 +449,7 @@ mod pkg_resolver_blob_fetch {
     // 600-999 aren't real, but are sometimes used in e.g. CDN configurations to track state
     // machine transitions, and occasionally leak on bugs. Unfortunately, we don't get to test
     // these because StatusCode won't let us create new ones in this range.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia_async::run_singlethreaded(test)]
     async fn tests(tests: &[(u16, u16, usize, metrics::FetchBlobMigratedMetricDimensionResult)]) {
         let test_table: Vec<StatusTest> = tests
             .into_iter()
@@ -463,7 +465,7 @@ mod pkg_resolver_blob_fetch {
 
     async fn verify_status_ranges(test_table: &[StatusTest]) {
         let pkg = PackageBuilder::new("just_meta_far").build().await.expect("created pkg");
-        let env = TestEnvBuilder::new().build().await;
+        let env = TestEnvBuilder::new().delivery_blob_fallback(false).build().await;
         let repo = Arc::new(
             RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
                 .add_package(&pkg)
@@ -478,7 +480,7 @@ mod pkg_resolver_blob_fetch {
             .server()
             .bind_to_addr(Ipv4Addr::LOCALHOST)
             .response_overrider(responder::ForPath::new(
-                format!("/blobs/{}", pkg.hash()),
+                format!("/blobs/1/{}", pkg.hash()),
                 responder,
             ))
             .start()
@@ -487,7 +489,7 @@ mod pkg_resolver_blob_fetch {
 
         let mut statuses = Vec::new();
 
-        for ent in test_table.iter() {
+        for ent in test_table {
             for code in ent.min_code..=ent.max_code {
                 response_code.set(code);
                 let _ = env.resolve_package(&pkg_url).await;
@@ -508,10 +510,13 @@ mod pkg_resolver_blob_fetch {
 }
 
 // Test the HTTP status range space for metrics related to TUF client construction.
+// TODO(b/308214783): Re-enable on risc-v when flakes fixed.
+#[cfg(not(target_arch = "riscv64"))]
 mod pkg_resolver_create_tuf_client {
-    use super::*;
-    use metrics::CreateTufClientMigratedMetricDimensionResult::*;
-    use test_case::test_case;
+    use {
+        super::*, metrics::CreateTufClientMigratedMetricDimensionResult::*, std::net::Ipv4Addr,
+        test_case::test_case,
+    };
 
     struct StatusTest {
         min_code: u16,
@@ -557,7 +562,7 @@ mod pkg_resolver_create_tuf_client {
             (504, 504, HttpGatewayTimeout),
             (505, 599, Http5xx),
         ]; "status_ranges_5xx")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia_async::run_singlethreaded(test)]
     // 600-999 aren't real, but are sometimes used in e.g. CDN configurations to track state
     // machine transitions, and occasionally leak on bugs. Unfortunately, we don't get to test
     // these because StatusCode won't let us create new ones in this range.
@@ -607,10 +612,13 @@ mod pkg_resolver_create_tuf_client {
 }
 
 // Test the HTTP status range space for metrics related to TUF update clients.
+// TODO(b/308214783): Re-enable on risc-v when flakes fixed.
+#[cfg(not(target_arch = "riscv64"))]
 mod pkg_resolver_update_tuf_client {
-    use super::*;
-    use metrics::UpdateTufClientMigratedMetricDimensionResult::*;
-    use test_case::test_case;
+    use {
+        super::*, metrics::UpdateTufClientMigratedMetricDimensionResult::*, std::net::Ipv4Addr,
+        test_case::test_case,
+    };
 
     struct StatusTest {
         min_code: u16,
@@ -656,7 +664,7 @@ mod pkg_resolver_update_tuf_client {
             (504, 504, HttpGatewayTimeout),
             (505, 599, Http5xx),
         ]; "status_ranges_5xx")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia_async::run_singlethreaded(test)]
     // 600-999 aren't real, but are sometimes used in e.g. CDN configurations to track state
     // machine transitions, and occasionally leak on bugs. Unfortunately, we don't get to test
     // these because StatusCode won't let us create new ones in this range.

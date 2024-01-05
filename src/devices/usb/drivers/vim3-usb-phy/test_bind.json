@@ -22,8 +22,31 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.registers.BIND_FIDL_PROTOCOL.DEVICE",
-                    "fuchsia.BIND_REGISTER_ID": "fuchsia.amlogic.platform.BIND_REGISTER_ID.USB_PHY_V2_RESET"
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.register.BIND_FIDL_PROTOCOL.DEVICE"
+                }
+            }
+        ]
+    },
+    {
+        "node": "gpio-init",
+        "tests": [
+            {
+                "name": "Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.BIND_INIT_STEP": "fuchsia.gpio.BIND_INIT_STEP.GPIO"
+                }
+            }
+        ]
+    },
+    {
+        "node": "clock-init",
+        "tests": [
+            {
+                "name": "Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.BIND_INIT_STEP": "fuchsia.clock.BIND_INIT_STEP.CLOCK"
                 }
             }
         ]

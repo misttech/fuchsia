@@ -6,7 +6,7 @@
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_WLANIF_DEVICE_H_
 
 #include <fidl/fuchsia.wlan.fullmac/cpp/driver/wire.h>
-#include <fuchsia/hardware/wlan/fullmac/c/banjo.h>
+#include <fuchsia/wlan/fullmac/c/banjo.h>
 #include <fuchsia/wlan/mlme/cpp/fidl.h>
 #include <lib/ddk/driver.h>
 #include <lib/fidl/cpp/binding.h>
@@ -41,19 +41,19 @@ class Device : public ddk::Device<Device, ddk::Unbindable>,
 
   zx_status_t Start(const rust_wlan_fullmac_ifc_protocol_copy_t* ifc, zx::channel* out_sme_channel);
 
-  void StartScan(const wlan_fullmac_scan_req_t* req);
-  void ConnectReq(const wlan_fullmac_connect_req_t* req);
-  void ReconnectReq(const wlan_fullmac_reconnect_req_t* req);
-  void AuthenticateResp(const wlan_fullmac_auth_resp_t* resp);
-  void DeauthenticateReq(const wlan_fullmac_deauth_req_t* req);
-  void AssociateResp(const wlan_fullmac_assoc_resp_t* resp);
-  void DisassociateReq(const wlan_fullmac_disassoc_req_t* req);
-  void ResetReq(const wlan_fullmac_reset_req_t* req);
-  void StartReq(const wlan_fullmac_start_req_t* req);
-  void StopReq(const wlan_fullmac_stop_req_t* req);
+  void StartScan(const wlan_fullmac_impl_start_scan_request_t* req);
+  void Connect(const wlan_fullmac_impl_connect_request_t* req);
+  void Reconnect(const wlan_fullmac_impl_reconnect_request_t* req);
+  void AuthenticateResp(const wlan_fullmac_impl_auth_resp_request_t* resp);
+  void Deauthenticate(const wlan_fullmac_impl_deauth_request_t* req);
+  void AssociateResp(const wlan_fullmac_impl_assoc_resp_request_t* resp);
+  void Disassociate(const wlan_fullmac_impl_disassoc_request_t* req);
+  void Reset(const wlan_fullmac_impl_reset_request_t* req);
+  void StartBss(const wlan_fullmac_impl_start_bss_request_t* req);
+  void StopBss(const wlan_fullmac_impl_stop_bss_request_t* req);
   void SetKeysReq(const wlan_fullmac_set_keys_req_t* req, wlan_fullmac_set_keys_resp_t* out_resp);
   void DeleteKeysReq(const wlan_fullmac_del_keys_req_t* req);
-  void EapolReq(const wlan_fullmac_eapol_req_t* req);
+  void EapolTx(const wlan_fullmac_impl_eapol_tx_request_t* req);
   void QueryDeviceInfo(wlan_fullmac_query_info_t* out_resp);
   void QueryMacSublayerSupport(mac_sublayer_support_t* out_resp);
   void QuerySecuritySupport(security_support_t* out_resp);
@@ -99,8 +99,6 @@ class Device : public ddk::Device<Device, ddk::Unbindable>,
                     SignalReportCompleter::Sync& completer) override;
   void EapolInd(EapolIndRequestView request, fdf::Arena& arena,
                 EapolIndCompleter::Sync& completer) override;
-  void RelayCapturedFrame(RelayCapturedFrameRequestView request, fdf::Arena& arena,
-                          RelayCapturedFrameCompleter::Sync& completer) override;
   void OnPmkAvailable(OnPmkAvailableRequestView request, fdf::Arena& arena,
                       OnPmkAvailableCompleter::Sync& completer) override;
   void SaeHandshakeInd(SaeHandshakeIndRequestView request, fdf::Arena& arena,
@@ -134,7 +132,10 @@ class Device : public ddk::Device<Device, ddk::Unbindable>,
 
   bool device_online_ = false;
   // The FIDL Client to communicate with WlanIf device
-  fdf::WireSyncClient<fuchsia_wlan_fullmac::WlanFullmacImpl> client_;
+  fdf::WireSharedClient<fuchsia_wlan_fullmac::WlanFullmacImpl> client_;
+
+  // Dispatcher for making requests to the vendor driver over WlanFullmacImpl.
+  fdf::Dispatcher client_dispatcher_;
 
   // Dispatcher for being a FIDL server firing replies to WlanIf device
   fdf::Dispatcher server_dispatcher_;

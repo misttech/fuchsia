@@ -36,6 +36,24 @@
         "event_code": 5
     },
     {
+        "name": "Camera",
+        "process": "camera_device.*\\.cm|driver_host:pdev:05:04:15",
+        "vmo": "",
+        "event_code": 38
+    },
+    {
+        "name": "Thread",
+        "process": "lowpan.*|ot-stack.*",
+        "vmo": "",
+        "event_code": 56
+    },
+    {
+        "name": "Weave",
+        "process": "weave.*",
+        "vmo": "",
+        "event_code": 57
+    },
+    {
         "name": "Fxblob",
         "process": "fxfs\\.cm",
         "vmo": "blob-.*",
@@ -61,7 +79,7 @@
     },
     {
         "name": "Netstack",
-        "process": "dhcpd\\.cm|dhcpv6-client\\.cm|dns_resolver\\.cm|netstack\\.cm|network-tun\\.cm|mdns\\.cm|dhcpv4_server\\.cm",
+        "process": "dhcpd\\.cm|dhcpv6-client\\.cm|dns_resolver\\.cm|netstack\\.cm|netstack3\\.cm|network-tun\\.cm|mdns\\.cm|dhcpv4_server\\.cm|stack_migration\\.cm|netstack-proxy\\.cm|/pkg/bin/netstack|/pkg/bin/netstack3|dhcp-client\\.cm",
         "vmo": "",
         "event_code": 11
     },
@@ -79,7 +97,7 @@
     },
     {
         "name": "Archivist",
-        "process": "archivist\\.cm|sampler\\.cm",
+        "process": "archivist\\.cm|sampler\\.cm|diagnostics-persistence\\.cm",
         "vmo": "",
         "event_code": 22
     },
@@ -115,7 +133,7 @@
     },
     {
         "name": "Feedback",
-        "process": "exceptions\\.cm|feedback\\.cm|system_log_recorder",
+        "process": "exceptions\\.cm|feedback\\.cm|system_log_recorder|feedback_id\\.cm",
         "vmo": "",
         "event_code": 46
     },
@@ -127,7 +145,7 @@
     },
     {
         "name": "OtherDrivers",
-        "process": "driver_host:.*|pwrbtn-monitor\\.cm",
+        "process": "driver_host.*|pwrbtn-monitor\\.cm",
         "vmo": "",
         "event_code": 48
     },

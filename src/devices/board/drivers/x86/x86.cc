@@ -32,7 +32,11 @@
 using fuchsia_acpi_tables::wire::kMaxAcpiTableEntries;
 using fuchsia_acpi_tables::wire::TableInfo;
 
+zx_handle_t mmio_resource_handle;
 zx_handle_t root_resource_handle;
+zx_handle_t ioport_resource_handle;
+zx_handle_t irq_resource_handle;
+zx_handle_t power_resource_handle;
 
 namespace x86 {
 
@@ -103,6 +107,18 @@ zx_status_t X86::Create(void* ctx, zx_device_t* parent, std::unique_ptr<X86>* ou
   ZX_ASSERT(zx_handle_duplicate(get_root_resource(parent), ZX_RIGHT_SAME_RIGHTS,
                                 &root_resource_handle) == ZX_OK);
 
+  ZX_ASSERT(zx_handle_duplicate(get_ioport_resource(parent), ZX_RIGHT_SAME_RIGHTS,
+                                &ioport_resource_handle) == ZX_OK);
+
+  ZX_ASSERT(zx_handle_duplicate(get_mmio_resource(parent), ZX_RIGHT_SAME_RIGHTS,
+                                &mmio_resource_handle) == ZX_OK);
+
+  ZX_ASSERT(zx_handle_duplicate(get_irq_resource(parent), ZX_RIGHT_SAME_RIGHTS,
+                                &irq_resource_handle) == ZX_OK);
+
+  ZX_ASSERT(zx_handle_duplicate(get_power_resource(parent), ZX_RIGHT_SAME_RIGHTS,
+                                &power_resource_handle) == ZX_OK);
+
   fbl::AllocChecker ac;
   *out = fbl::make_unique_checked<X86>(&ac, parent, std::move(endpoints->client),
                                        std::make_unique<acpi::AcpiImpl>());
@@ -164,7 +180,7 @@ zx_status_t X86::Bind() {
 
   // Load SMBIOS information.
   smbios::SmbiosInfo smbios;
-  status = smbios.Load(zx::unowned_resource(get_root_resource(parent())));
+  status = smbios.Load(zx::unowned_resource(get_mmio_resource(parent())));
   if (status == ZX_OK) {
     SetField("board name", smbios.board_name(), board_info.board_name());
     SetField("vendor", smbios.vendor(), bootloader_info.vendor());

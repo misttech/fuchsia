@@ -344,7 +344,7 @@ type fakeDataSinkCopier struct {
 
 func (c *fakeDataSinkCopier) GetAllDataSinks(remoteDir string) ([]runtests.DataSink, error) {
 	c.remoteDirs[remoteDir] = struct{}{}
-	return []runtests.DataSink{{Name: "sink", File: "sink"}}, nil
+	return []runtests.DataSink{{Name: "sink", File: filepath.Join("sink_type", "sink")}}, nil
 }
 
 func (c *fakeDataSinkCopier) GetReferences(remoteDir string) (map[string]runtests.DataSinkReference, error) {
@@ -354,6 +354,10 @@ func (c *fakeDataSinkCopier) GetReferences(remoteDir string) (map[string]runtest
 
 func (*fakeDataSinkCopier) Copy(_ []runtests.DataSinkReference, _ string) (runtests.DataSinkMap, error) {
 	return runtests.DataSinkMap{}, nil
+}
+
+func (*fakeDataSinkCopier) RemoveAll(_ string) error {
+	return nil
 }
 
 func (c *fakeDataSinkCopier) Reconnect() error {
@@ -447,7 +451,7 @@ func TestFFXTester(t *testing.T) {
 				t.Errorf("tester.Test got result: %s, want result: %s", testResult.Result, c.expectedResult)
 			}
 
-			if tester.EnabledForTest(test) {
+			if tester.EnabledForTesting() {
 				testArgs := []string{}
 				if c.experimentLevel == 3 {
 					testArgs = append(testArgs, "--experimental-parallel-execution", "8")
@@ -484,7 +488,7 @@ func TestFFXTester(t *testing.T) {
 				t.Errorf("Run() called wrong number of times. Got: %d, Want: %d", client.runCalls, wantSSHRunCalls)
 			}
 
-			if tester.EnabledForTest(test) {
+			if tester.EnabledForTesting() {
 				// Call EnsureSinks() for v2 tests to set the copier.remoteDir to the data output dir for v2 tests.
 				// v1 tests will already have set the appropriate remoteDir value within Test().
 				outputs := &TestOutputs{OutDir: t.TempDir()}
@@ -640,8 +644,8 @@ func TestSSHTester(t *testing.T) {
 				for _, test := range outputs.Summary.Tests {
 					if test.Name == "early_boot_sinks" {
 						foundEarlyBootSinks = true
-						if len(test.DataSinks["llvm-profile"]) != 1 {
-							t.Errorf("got %d early boot sinks, want 1", len(test.DataSinks["llvm-profile"]))
+						if len(test.DataSinks["sink_type"]) != 1 {
+							t.Errorf("got %d early boot sinks, want 1", len(test.DataSinks["sink_type"]))
 						}
 						break
 					}
@@ -753,9 +757,7 @@ func (ctx *fakeContext) Deadline() (time.Time, bool) {
 }
 
 func (ctx *fakeContext) Done() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
+	return make(chan struct{})
 }
 
 func (ctx *fakeContext) Err() error {
@@ -1017,7 +1019,7 @@ func TestCommandForTest(t *testing.T) {
 			useRuntests: true,
 			test: testsharder.Test{
 				Test: build.Test{
-					PackageURL: "fuchsia-pkg://example.com/test.cmx",
+					PackageURL: "fuchsia-pkg://example.com/test.cm",
 				},
 			},
 			wantErr: true,
@@ -1049,17 +1051,6 @@ func TestCommandForTest(t *testing.T) {
 			test: testsharder.Test{
 				Test: build.Test{
 					Path: "/path/to/test",
-				},
-			},
-			wantErr: true,
-		},
-		{
-			name:        "components v1",
-			useRuntests: false,
-			test: testsharder.Test{
-				Test: build.Test{
-					Path:       "/path/to/test",
-					PackageURL: "fuchsia-pkg://example.com/test.cmx",
 				},
 			},
 			wantErr: true,

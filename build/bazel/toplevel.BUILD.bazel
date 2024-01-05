@@ -7,7 +7,7 @@ This is the top-level BUILD.bazel for the Fuchsia platform build.
 See //build/bazel/README.md for details about this file.
 """
 
-load("//:fuchsia_build_config.bzl", "build_config")
+load("@fuchsia_build_config//:defs.bzl", "build_config")
 load("//:build/bazel/toolchains/linux_sysroot.bzl", "linux_sysroot")
 
 # This exclude is needed as there are files in the folder that have space
@@ -42,7 +42,10 @@ exports_files(
     glob(["prebuilt/third_party/ospo/licenseclassifier/*/identify_license"]) +
 
     # vim3 bootloader
-    ["prebuilt/third_party/firmware/vim3/u-boot.bin.unsigned"],
+    ["prebuilt/third_party/firmware/vim3/u-boot.bin.unsigned"] +
+
+    # zoneinfo resources
+    glob(["prebuilt/third_party/zoneinfo/**"]),
 )
 
 linux_sysroot(

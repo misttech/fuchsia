@@ -6,23 +6,14 @@
         {
             protocol: [
                 "fuchsia.diagnostics.FeedbackArchiveAccessor",
-                "fuchsia.diagnostics.LegacyMetricsArchiveAccessor",
                 "fuchsia.diagnostics.LoWPANArchiveAccessor",
             ],
-        },
-    ],
-    use: [
-        {
-            directory: "config-data",
-            rights: [ "r*" ],
-            path: "/config/data",
         },
     ],
     expose: [
         {
             protocol: [
                 "fuchsia.diagnostics.FeedbackArchiveAccessor",
-                "fuchsia.diagnostics.LegacyMetricsArchiveAccessor",
                 "fuchsia.diagnostics.LoWPANArchiveAccessor",
             ],
             from: "self",

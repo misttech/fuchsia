@@ -26,10 +26,14 @@ namespace aml_g12 {
 
 AmlG12TdmStream::AmlG12TdmStream(
     zx_device_t* parent, bool is_input, ddk::PDevFidl pdev,
-    fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> gpio_enable_client)
+    fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> gpio_enable_client,
+    fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_gate_client,
+    fidl::WireSyncClient<fuchsia_hardware_clock::Clock> pll_client)
     : SimpleAudioStream(parent, is_input),
       pdev_(std::move(pdev)),
-      enable_gpio_(std::move(gpio_enable_client)) {
+      enable_gpio_(std::move(gpio_enable_client)),
+      clock_gate_(std::move(clock_gate_client)),
+      pll_(std::move(pll_client)) {
   status_time_ = inspect().GetRoot().CreateInt("status_time", 0);
   dma_status_ = inspect().GetRoot().CreateUint("dma_status", 0);
   tdm_status_ = inspect().GetRoot().CreateUint("tdm_status", 0);
@@ -188,7 +192,7 @@ zx_status_t AmlG12TdmStream::InitPDev() {
   for (size_t i = 0; i < metadata_.codecs.number_of_codecs; ++i) {
     auto info = codecs_[i]->GetInfo();
     if (info.is_error()) {
-      zxlogf(ERROR, "could get codec info %d", status);
+      zxlogf(ERROR, "Failed to get codec info: %s", info.status_string());
       return info.error_value();
     }
 
@@ -220,6 +224,11 @@ zx_status_t AmlG12TdmStream::InitPDev() {
   // Put codecs in stopped state before starting the AMLogic engine.
   // Codecs are started after format is set via ChangeFormat() or the stream is explicitly started.
   status = StopAllCodecs();
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  status = StartSocPower();
   if (status != ZX_OK) {
     return status;
   }
@@ -347,8 +356,8 @@ zx_status_t AmlG12TdmStream::Init() {
   }
   snprintf(device_name_, sizeof(device_name_), "%s-audio-%s-%s", prod_name_, tdm_type, in_out);
 
-  // TODO(mpuryear): change this to the domain of the clock received from the board driver
-  clock_domain_ = 0;
+  // This audio subdevice is in the MONOTONIC clock domain.
+  clock_domain_ = fuchsia_hardware_audio::wire::kClockDomainMonotonic;
 
   return ZX_OK;
 }
@@ -409,25 +418,102 @@ zx_status_t AmlG12TdmStream::UpdateHardwareSettings() {
   return ZX_OK;
 }
 
+zx_status_t AmlG12TdmStream::StartSocPower() {
+  // Only if needed (not done previously) so voting on relevant clock ids is not repeated.
+  // Each driver instance may vote independently.
+  if (soc_power_started_ == true) {
+    return ZX_OK;
+  }
+  if (clock_gate_.is_valid()) {
+    fidl::WireResult result = clock_gate_->Enable();
+    if (!result.ok()) {
+      zxlogf(ERROR, "Failed to send request to enable clock gate: %s", result.status_string());
+      return result.status();
+    }
+    if (result->is_error()) {
+      zxlogf(ERROR, "Send request to enable clock gate error: %s",
+             zx_status_get_string(result->error_value()));
+      return result->error_value();
+    }
+  }
+  if (pll_.is_valid()) {
+    fidl::WireResult result = pll_->Enable();
+    if (!result.ok()) {
+      zxlogf(ERROR, "Failed to send request to enable PLL: %s", result.status_string());
+      return result.status();
+    }
+    if (result->is_error()) {
+      zxlogf(ERROR, "Send request to enable PLL error: %s",
+             zx_status_get_string(result->error_value()));
+      return result->error_value();
+    }
+  }
+  soc_power_started_ = true;
+  return ZX_OK;
+}
+
+zx_status_t AmlG12TdmStream::StopSocPower() {
+  // Only if needed (not done previously) so voting on relevant clock ids is not repeated.
+  // Each driver instance may vote independently.
+  if (soc_power_started_ == false) {
+    return ZX_OK;
+  }
+  if (clock_gate_.is_valid()) {
+    fidl::WireResult result = clock_gate_->Disable();
+    if (!result.ok()) {
+      zxlogf(ERROR, "Failed to send request to disable clock gate: %s", result.status_string());
+      return result.status();
+    }
+    if (result->is_error()) {
+      zxlogf(ERROR, "Send request to disable clock gate error: %s",
+             zx_status_get_string(result->error_value()));
+      return result->error_value();
+    }
+  }
+  if (pll_.is_valid()) {
+    fidl::WireResult result = pll_->Disable();
+    if (!result.ok()) {
+      zxlogf(ERROR, "Failed to send request to disable PLL: %s", result.status_string());
+      return result.status();
+    }
+    if (result->is_error()) {
+      zxlogf(ERROR, "Send request to disable PLL error: %s",
+             zx_status_get_string(result->error_value()));
+      return result->error_value();
+    }
+  }
+  soc_power_started_ = false;
+  return ZX_OK;
+}
+
 zx_status_t AmlG12TdmStream::ChangeActiveChannels(uint64_t mask) {
+  zx_status_t status = ZX_OK;
   if (mask > active_channels_bitmask_max_) {
     return ZX_ERR_INVALID_ARGS;
   }
   uint64_t old_mask = active_channels_;
   active_channels_ = mask;
-  // Only stop the codecs for channels not active, not the AMLogic HW.
+
+  if (active_channels_ != 0) {
+    status = StartSocPower();  // Start SoC power before enabling codecs.
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+
+  // Stop the codecs for channels not active.
   for (size_t i = 0; i < metadata_.codecs.number_of_codecs; ++i) {
     uint64_t codec_mask = metadata_.codecs.ring_buffer_channels_to_use_bitmask[i];
     bool enabled = mask & codec_mask;
     bool old_enabled = old_mask & codec_mask;
     if (enabled != old_enabled) {
       if (enabled) {
-        zx_status_t status = StartCodecIfEnabled(i);
+        status = StartCodecIfEnabled(i);
         if (status != ZX_OK) {
           return status;
         }
       } else {
-        zx_status_t status = codecs_[i]->Stop();
+        status = codecs_[i]->Stop();
         if (status != ZX_OK) {
           zxlogf(ERROR, "Failed to stop the codec");
           return status;
@@ -440,6 +526,13 @@ zx_status_t AmlG12TdmStream::ChangeActiveChannels(uint64_t mask) {
       }
     }
   }
+  if (active_channels_ == 0) {
+    status = StopSocPower();  // Stop SoC power after disabling codecs.
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+
   return ZX_OK;
 }
 
@@ -492,6 +585,8 @@ void AmlG12TdmStream::ShutdownHook() {
   }
   aml_audio_->Shutdown();
   pinned_ring_buffer_.Unpin();
+
+  [[maybe_unused]] zx_status_t unused_status = StopSocPower();
 }
 
 zx_status_t AmlG12TdmStream::SetGain(const audio_proto::SetGainReq& req) {
@@ -739,9 +834,30 @@ static zx_status_t audio_bind(void* ctx, zx_device_t* device) {
   if (gpio_enable.is_ok()) {
     gpio_enable_client.Bind(std::move(gpio_enable.value()));
   }
+  zx::result clock_gate =
+      ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_clock::Service::Clock>(
+          device, "clock-gate");
+  fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_gate_client;
+  if (clock_gate.is_error()) {
+    zxlogf(ERROR, "Failed to get clock protocol from fragment clock-gate: %s",
+           clock_gate.status_string());
+    // Continue, driver configurations without clock-gate are also supported.
+  } else {
+    clock_gate_client.Bind(std::move(clock_gate.value()));
+  }
+  zx::result pll =
+      ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_clock::Service::Clock>(
+          device, "clock-pll");
+  fidl::WireSyncClient<fuchsia_hardware_clock::Clock> pll_client;
+  if (pll.is_error()) {
+    zxlogf(ERROR, "Failed to get clock protocol from fragment clock-pll: %s", pll.status_string());
+    // Continue, driver configurations without pll are also supported.
+  } else {
+    pll_client.Bind(std::move(pll.value()));
+  }
   auto stream = audio::SimpleAudioStream::Create<audio::aml_g12::AmlG12TdmStream>(
-      device, metadata.is_input, ddk::PDevFidl::FromFragment(device),
-      std::move(gpio_enable_client));
+      device, metadata.is_input, ddk::PDevFidl::FromFragment(device), std::move(gpio_enable_client),
+      std::move(clock_gate_client), std::move(pll_client));
   if (stream == nullptr) {
     zxlogf(ERROR, "Could not create aml-g12-tdm driver");
     return ZX_ERR_NO_MEMORY;

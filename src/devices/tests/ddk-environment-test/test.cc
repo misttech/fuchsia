@@ -39,20 +39,24 @@ class EnvironmentTest : public zxtest::Test {
   IsolatedDevmgr devmgr_;
 };
 
-TEST_F(EnvironmentTest, GetServiceList) {
+// TODO(b/316176095): Re-enable test after ensuring it works with DFv2.
+TEST_F(EnvironmentTest, DISABLED_GetServiceList) {
   const fidl::WireResult result = client_->GetServiceList();
   ASSERT_OK(result.status());
   const fidl::WireResponse response = result.value();
-  ASSERT_EQ(response.services.count(), 3);
+  ASSERT_EQ(response.services.count(), 11);
 
   std::unordered_set<std::string> actual;
   for (const auto& service : response.services) {
     actual.emplace(service.data(), service.size());
   }
   std::unordered_set<std::string> kExpectedServices = {
-      "/svc/fuchsia.logger.LogSink",
-      "/svc/fuchsia.scheduler.ProfileProvider",
-      "/svc/fuchsia.tracing.provider.Registry",
+      "/svc/fuchsia.kernel.InfoResource",       "/svc/fuchsia.kernel.IoportResource",
+      "/svc/fuchsia.kernel.IrqResource",        "/svc/fuchsia.kernel.MmioResource",
+      "/svc/fuchsia.kernel.SmcResource",        "/svc/fuchsia.logger.LogSink",
+      "/svc/fuchsia.scheduler.ProfileProvider", "/svc/fuchsia.tracing.provider.Registry",
+      "/svc/fuchsia.kernel.IommuResource",      "/svc/fuchsia.kernel.FramebufferResource",
+      "/svc/fuchsia.kernel.PowerResource",
   };
   ASSERT_EQ(actual, kExpectedServices);
 }

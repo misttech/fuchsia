@@ -136,7 +136,7 @@
 
 ## Storage
 
-* [storage](/src/lib/storage/)
+* [storage](/src/storage/)
 
     Bindings and protocol for serving filesystems on the Fuchsia platform
 
@@ -175,6 +175,3 @@
 * [mundane](https://fuchsia-docs.firebaseapp.com/rust/mundane/index.html)
 
     A Rust crypto library backed by BoringSSL
-
-
-[rustdocs]: https://fuchsia-docs.firebaseapp.com/rust/

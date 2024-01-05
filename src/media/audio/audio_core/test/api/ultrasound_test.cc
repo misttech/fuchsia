@@ -1,14 +1,8 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-#include <fuchsia/ultrasound/cpp/fidl.h>
-#include <fuchsia/virtualaudio/cpp/fidl.h>
 #include <zircon/device/audio.h>
-#include <zircon/status.h>
 #include <zircon/types.h>
-
-#include <memory>
-#include <vector>
 
 #include "src/media/audio/audio_core/testing/integration/hermetic_audio_test.h"
 #include "src/media/audio/audio_core/testing/integration/renderer_shim.h"
@@ -147,6 +141,7 @@ TEST_F(UltrasoundTest, CreateRenderer) {
   clock::testing::VerifyAdvances(renderer->reference_clock());
   clock::testing::VerifyCannotBeRateAdjusted(renderer->reference_clock());
   clock::testing::VerifyIsSystemMonotonic(renderer->reference_clock());
+  Unbind(renderer);
 }
 
 TEST_F(UltrasoundTest, CreateRendererWithoutOutputDevice) {
@@ -167,6 +162,7 @@ TEST_F(UltrasoundTest, CreateRendererWithoutOutputDevice) {
   CreateOutput();
   renderer->WaitForDevice();
   EXPECT_TRUE(renderer->created());
+  Unbind(renderer);
 }
 
 TEST_F(UltrasoundTest, RendererDoesNotSupportSetPcmStreamType) {
@@ -184,6 +180,7 @@ TEST_F(UltrasoundTest, RendererDoesNotSupportSetPcmStreamType) {
   RunLoopUntil([&renderer_error] { return renderer_error.has_value(); });
   ASSERT_TRUE(renderer_error);
   EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, *renderer_error);
+  Unbind(renderer);
 }
 
 TEST_F(UltrasoundTest, RendererDoesNotSupportSetUsage) {
@@ -199,6 +196,7 @@ TEST_F(UltrasoundTest, RendererDoesNotSupportSetUsage) {
   RunLoopUntil([&renderer_error] { return renderer_error.has_value(); });
   ASSERT_TRUE(renderer_error);
   EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, *renderer_error);
+  Unbind(renderer);
 }
 
 TEST_F(UltrasoundTest, RendererDoesNotSupportBindGainControl) {
@@ -215,6 +213,7 @@ TEST_F(UltrasoundTest, RendererDoesNotSupportBindGainControl) {
   RunLoopUntil([&renderer_error] { return renderer_error.has_value(); });
   ASSERT_TRUE(renderer_error);
   EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, *renderer_error);
+  Unbind(renderer);
 }
 
 TEST_F(UltrasoundTest, RendererDoesNotSupportSetReferenceClock) {
@@ -229,6 +228,7 @@ TEST_F(UltrasoundTest, RendererDoesNotSupportSetReferenceClock) {
   RunLoopUntil([&renderer_error] { return renderer_error.has_value(); });
   ASSERT_TRUE(renderer_error);
   EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, *renderer_error);
+  Unbind(renderer);
 }
 
 TEST_F(UltrasoundTest, CreateCapturer) {
@@ -239,6 +239,7 @@ TEST_F(UltrasoundTest, CreateCapturer) {
   clock::testing::VerifyAdvances(capturer->reference_clock());
   clock::testing::VerifyCannotBeRateAdjusted(capturer->reference_clock());
   clock::testing::VerifyIsSystemMonotonic(capturer->reference_clock());
+  Unbind(capturer);
 }
 
 TEST_F(UltrasoundTest, CreateCapturerWithoutInputDevice) {
@@ -259,6 +260,7 @@ TEST_F(UltrasoundTest, CreateCapturerWithoutInputDevice) {
   CreateInput();
   capturer->WaitForDevice();
   EXPECT_TRUE(capturer->created());
+  Unbind(capturer);
 }
 
 TEST_F(UltrasoundTest, CapturerDoesNotSupportSetPcmStreamType) {
@@ -276,6 +278,7 @@ TEST_F(UltrasoundTest, CapturerDoesNotSupportSetPcmStreamType) {
   RunLoopUntil([&capturer_error] { return capturer_error.has_value(); });
   ASSERT_TRUE(capturer_error);
   EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, *capturer_error);
+  Unbind(capturer);
 }
 
 TEST_F(UltrasoundTest, CapturerDoesNotSupportSetUsage) {
@@ -291,6 +294,7 @@ TEST_F(UltrasoundTest, CapturerDoesNotSupportSetUsage) {
   RunLoopUntil([&capturer_error] { return capturer_error.has_value(); });
   ASSERT_TRUE(capturer_error);
   EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, *capturer_error);
+  Unbind(capturer);
 }
 
 TEST_F(UltrasoundTest, CapturerDoesNotSupportBindGainControl) {
@@ -307,6 +311,7 @@ TEST_F(UltrasoundTest, CapturerDoesNotSupportBindGainControl) {
   RunLoopUntil([&capturer_error] { return capturer_error.has_value(); });
   ASSERT_TRUE(capturer_error);
   EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, *capturer_error);
+  Unbind(capturer);
 }
 
 TEST_F(UltrasoundTest, CapturerDoesNotSupportSetReferenceClock) {
@@ -321,6 +326,7 @@ TEST_F(UltrasoundTest, CapturerDoesNotSupportSetReferenceClock) {
   RunLoopUntil([&capturer_error] { return capturer_error.has_value(); });
   ASSERT_TRUE(capturer_error);
   EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, *capturer_error);
+  Unbind(capturer);
 }
 
 }  // namespace media::audio::test

@@ -6,22 +6,25 @@ use {
     anyhow::anyhow,
     assert_matches::assert_matches,
     async_trait::async_trait,
+    camino::Utf8PathBuf,
+    cm_config::{
+        AllowlistEntry, CapabilityAllowlistKey, DebugCapabilityAllowlistEntry, DebugCapabilityKey,
+        RuntimeConfig, SecurityPolicy,
+    },
     cm_fidl_analyzer::{
         component_instance::ComponentInstanceForAnalyzer,
         component_model::{AnalyzerModelError, ComponentModelForAnalyzer, ModelBuilderForAnalyzer},
         environment::{BOOT_RESOLVER_NAME, BOOT_SCHEME},
-        node_path::NodePath,
         route::VerifyRouteResult,
     },
     cm_rust::{
         Availability, CapabilityDecl, CapabilityTypeName, ChildRef, ComponentDecl, DependencyType,
         ExposeDecl, ExposeDeclCommon, ExposeDirectoryDecl, ExposeProtocolDecl, ExposeResolverDecl,
         ExposeServiceDecl, ExposeSource, ExposeTarget, OfferDecl, OfferDirectoryDecl,
-        OfferEventStreamDecl, OfferProtocolDecl, OfferServiceDecl, OfferSource, OfferStorageDecl,
-        OfferTarget, ProtocolDecl, RegistrationSource, ResolverDecl, ResolverRegistration,
-        RunnerDecl, RunnerRegistration, ServiceDecl, StorageDecl, StorageDirectorySource, UseDecl,
-        UseDirectoryDecl, UseEventStreamDecl, UseProtocolDecl, UseServiceDecl, UseSource,
-        UseStorageDecl,
+        OfferProtocolDecl, OfferServiceDecl, OfferSource, OfferStorageDecl, OfferTarget,
+        RegistrationSource, ResolverDecl, ResolverRegistration, RunnerDecl, RunnerRegistration,
+        ServiceDecl, StorageDecl, StorageDirectorySource, UseDecl, UseDirectoryDecl,
+        UseEventStreamDecl, UseProtocolDecl, UseServiceDecl, UseSource, UseStorageDecl,
     },
     cm_rust_testing::{
         ChildDeclBuilder, ComponentDeclBuilder, DirectoryDeclBuilder, EnvironmentDeclBuilder,
@@ -32,16 +35,8 @@ use {
     fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys, fuchsia_zircon_status as zx_status,
     moniker::{ChildNameBase, Moniker, MonikerBase},
     routing::{
-        component_id_index::ComponentIdIndex,
-        component_instance::ComponentInstanceInterface,
-        config::{
-            AllowlistEntry, CapabilityAllowlistKey, DebugCapabilityAllowlistEntry,
-            DebugCapabilityKey, RuntimeConfig, SecurityPolicy,
-        },
-        environment::RunnerRegistry,
-        error::RoutingError,
-        mapper::RouteSegment,
-        RegistrationDecl, RouteInfo,
+        component_instance::ComponentInstanceInterface, environment::RunnerRegistry,
+        error::RoutingError, mapper::RouteSegment, RegistrationDecl,
     },
     routing_test_helpers::{
         CheckUse, ComponentEventRoute, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder,
@@ -78,7 +73,7 @@ pub struct RoutingTestBuilderForAnalyzer {
     builtin_runner_registrations: Vec<RunnerRegistration>,
     capability_policy: HashMap<CapabilityAllowlistKey, HashSet<AllowlistEntry>>,
     debug_capability_policy: HashMap<DebugCapabilityKey, HashSet<DebugCapabilityAllowlistEntry>>,
-    component_id_index_path: Option<String>,
+    component_id_index_path: Option<Utf8PathBuf>,
     builtin_boot_resolver: component_internal::BuiltinBootResolver,
 }
 
@@ -169,7 +164,7 @@ impl RoutingTestModelBuilder for RoutingTestBuilderForAnalyzer {
         self.debug_capability_policy.insert(key, allowlist);
     }
 
-    fn set_component_id_index_path(&mut self, index_path: String) {
+    fn set_component_id_index_path(&mut self, index_path: Utf8PathBuf) {
         self.component_id_index_path = Some(index_path);
     }
 
@@ -187,10 +182,11 @@ impl RoutingTestModelBuilder for RoutingTestBuilderForAnalyzer {
 
         config.component_id_index_path = self.component_id_index_path;
         let component_id_index = match config.component_id_index_path {
-            Some(ref index_path) => ComponentIdIndex::new(index_path).unwrap_or_else(|e| {
-                panic!("failed to create component ID index with path {}: {:?}", index_path, e)
-            }),
-            None => ComponentIdIndex::default(),
+            Some(ref index_path) => component_id_index::Index::from_fidl_file(index_path)
+                .unwrap_or_else(|e| {
+                    panic!("failed to create component ID index with path {}: {:?}", index_path, e)
+                }),
+            None => Default::default(),
         };
         config.builtin_boot_resolver = self.builtin_boot_resolver;
 
@@ -230,9 +226,8 @@ impl RoutingTestForAnalyzer {
         target: &Arc<ComponentInstanceForAnalyzer>,
     ) {
         // Perform secondary routing to find scope
-        let mut map = vec![];
-        let (result, _) =
-            ComponentModelForAnalyzer::route_event_stream_sync(use_decl.clone(), &target, &mut map);
+        let (result, mut segments) =
+            ComponentModelForAnalyzer::route_event_stream_sync(use_decl.clone(), &target);
         result.expect("Expected event_stream routing to succeed.");
 
         let mut route = use_decl
@@ -256,9 +251,9 @@ impl RoutingTestForAnalyzer {
                 vec![route]
             })
             .unwrap_or_default();
-        map.reverse();
+        segments.reverse();
         // Generate a unified route from the component topology
-        generate_unified_route(map, &mut route);
+        generate_unified_route(&segments, &mut route);
         assert_eq!(scope, &route);
     }
 
@@ -365,44 +360,40 @@ impl RoutingTestForAnalyzer {
     }
 }
 
-/// Converts a component framework route to a strongly-typed stringified route
-/// which can be compared against a string of paths for testing purposes.
-fn generate_unified_route(
-    map: Vec<RouteInfo<ComponentInstanceForAnalyzer, OfferEventStreamDecl, ()>>,
-    route: &mut Vec<ComponentEventRoute>,
-) {
-    for component in &map {
-        add_component_to_route(&component, route);
-    }
+fn segment_to_component_event_route(segment: &RouteSegment) -> Option<ComponentEventRoute> {
+    let (moniker, offer) = match segment {
+        RouteSegment::OfferBy { moniker, capability } => (moniker, capability),
+        _ => return None,
+    };
+    let event_stream_offer = match offer {
+        OfferDecl::EventStream(o) => o,
+        _ => return None,
+    };
+    let scopes = match &event_stream_offer.scope {
+        Some(scope) => Some(
+            scope
+                .iter()
+                .map(|s| match s {
+                    cm_rust::EventScope::Child(child) => child.name.to_string(),
+                    cm_rust::EventScope::Collection(collection) => collection.to_string(),
+                })
+                .collect(),
+        ),
+        None => None,
+    };
+    let moniker_name = match moniker.leaf() {
+        Some(l) => l.name().to_string(),
+        None => "/".to_string(),
+    };
+    Some(ComponentEventRoute { component: moniker_name, scope: scopes })
 }
 
-/// Adds a specified component to the route
-fn add_component_to_route(
-    component: &RouteInfo<ComponentInstanceForAnalyzer, OfferEventStreamDecl, ()>,
-    route: &mut Vec<ComponentEventRoute>,
-) {
-    let mut component_route = ComponentEventRoute {
-        component: if let Some(moniker) = component.component.child_moniker() {
-            moniker.name().to_string()
-        } else {
-            "/".to_string()
-        },
-        scope: None,
-    };
-    if let Some(ref stream) = component.offer {
-        if let Some(scopes) = &stream.scope {
-            component_route.scope = Some(
-                scopes
-                    .iter()
-                    .map(|s| match s {
-                        cm_rust::EventScope::Child(child) => child.name.to_string(),
-                        cm_rust::EventScope::Collection(collection) => collection.to_string(),
-                    })
-                    .collect(),
-            );
+fn generate_unified_route(segments: &Vec<RouteSegment>, routes: &mut Vec<ComponentEventRoute>) {
+    for segment in segments {
+        if let Some(route) = segment_to_component_event_route(segment) {
+            routes.push(route)
         }
     }
-    route.push(component_route);
 }
 
 #[async_trait]
@@ -410,14 +401,14 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
     type C = ComponentInstanceForAnalyzer;
 
     async fn check_use(&self, moniker: Moniker, check: CheckUse) {
-        let target_id = NodePath::new(moniker.path().clone());
-        let target = self.model.get_instance(&target_id).expect("target instance not found");
+        let target = self.model.get_instance(&moniker).expect("target instance not found");
         let scope =
             if let CheckUse::EventStream { path: _, ref scope, name: _, expected_res: _ } = check {
                 Some(scope.clone())
             } else {
                 None
             };
+
         let (find_decl, expected) = self.find_matching_use(check, target.decl_for_testing());
 
         // If `find_decl` is not OK, check that `expected` has a matching error.
@@ -466,8 +457,7 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
     }
 
     async fn check_use_exposed_dir(&self, moniker: Moniker, check: CheckUse) {
-        let target =
-            self.model.get_instance(&NodePath::from(moniker)).expect("target instance not found");
+        let target = self.model.get_instance(&moniker).expect("target instance not found");
 
         let (find_decl, expected) = self.find_matching_expose(check, target.decl_for_testing());
 
@@ -511,7 +501,7 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
         &self,
         moniker: &Moniker,
     ) -> Result<Arc<ComponentInstanceForAnalyzer>, anyhow::Error> {
-        self.model.get_instance(&NodePath::from(moniker.clone())).map_err(|err| anyhow!(err))
+        self.model.get_instance(&moniker).map_err(|err| anyhow!(err))
     }
 
     // File and directory operations
@@ -573,6 +563,7 @@ mod tests {
             dependency_type: DependencyType::Strong,
             source: UseSource::Parent,
             source_name: "foo".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/foo".parse().unwrap(),
             availability: Availability::Required,
         };
@@ -583,6 +574,7 @@ mod tests {
                     .offer(OfferDecl::Service(OfferServiceDecl {
                         source: OfferSource::Self_,
                         source_name: "foo".parse().unwrap(),
+                        source_dictionary: None,
                         source_instance_filter: None,
                         renamed_instances: None,
                         target_name: "foo".parse().unwrap(),
@@ -624,6 +616,7 @@ mod tests {
             dependency_type: DependencyType::Strong,
             source: UseSource::Parent,
             source_name: "foo".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/foo".parse().unwrap(),
             availability: Availability::Required,
         };
@@ -634,6 +627,7 @@ mod tests {
                     .offer(OfferDecl::Service(OfferServiceDecl {
                         source: OfferSource::Self_,
                         source_name: "foo".parse().unwrap(),
+                        source_dictionary: None,
                         source_instance_filter: None,
                         renamed_instances: None,
                         target_name: "foo".parse().unwrap(),
@@ -657,7 +651,7 @@ mod tests {
                     path: "/foo".parse().unwrap(),
                     instance: ServiceInstance::Named("".into()),
                     member: "".into(),
-                    expected_res: ExpectedResult::Err(zx_status::Status::UNAVAILABLE),
+                    expected_res: ExpectedResult::Err(zx_status::Status::NOT_FOUND),
                 },
             )
             .await
@@ -675,6 +669,7 @@ mod tests {
             dependency_type: DependencyType::Strong,
             source: UseSource::Child("b".to_string()),
             source_name: "foo".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/foo".parse().unwrap(),
             availability: Availability::Required,
         };
@@ -696,6 +691,7 @@ mod tests {
                     .expose(ExposeDecl::Service(ExposeServiceDecl {
                         source: ExposeSource::Self_,
                         source_name: "foo".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "foo".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -730,6 +726,7 @@ mod tests {
             dependency_type: DependencyType::Strong,
             source: UseSource::Parent,
             source_name: "foo".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/foo".parse().unwrap(),
             availability: Availability::Required,
         };
@@ -740,6 +737,7 @@ mod tests {
                     .offer(OfferDecl::Service(OfferServiceDecl {
                         source: OfferSource::static_child("c".into()),
                         source_name: "foo".parse().unwrap(),
+                        source_dictionary: None,
                         source_instance_filter: None,
                         renamed_instances: None,
                         target_name: "foo".parse().unwrap(),
@@ -757,6 +755,7 @@ mod tests {
                     .expose(ExposeDecl::Service(ExposeServiceDecl {
                         source: ExposeSource::Self_,
                         source_name: "foo".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "foo".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -1140,7 +1139,7 @@ mod tests {
 
         let result = test.model.check_resolver(&b_component);
         assert!(result.error.is_none());
-        assert_eq!(result.using_node, NodePath::absolute_from_vec(vec!["b"]));
+        assert_eq!(result.using_node, Moniker::parse_str("b").unwrap());
         assert_eq!(result.capability, Some("base".parse().unwrap()));
     }
 
@@ -1265,6 +1264,7 @@ mod tests {
         let use_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Parent,
             source_name: "bar_svc".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/hippo".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1272,12 +1272,13 @@ mod tests {
         let offer_decl = OfferDecl::Protocol(OfferProtocolDecl {
             source: OfferSource::Self_,
             source_name: "foo_svc".parse().unwrap(),
+            source_dictionary: None,
             target_name: "bar_svc".parse().unwrap(),
             target: OfferTarget::Child(ChildRef { name: "b".into(), collection: None }),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
         });
-        let protocol_decl = ProtocolDeclBuilder::new("foo_svc").build();
+        let protocol_decl = ProtocolDeclBuilder::new("foo_svc").path("/svc/foo").build();
         let components = vec![
             (
                 "a",
@@ -1324,6 +1325,7 @@ mod tests {
         let use_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Child("b".to_string()),
             source_name: "bar_svc".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/hippo".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1331,11 +1333,12 @@ mod tests {
         let expose_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Self_,
             source_name: "foo_svc".parse().unwrap(),
+            source_dictionary: None,
             target_name: "bar_svc".parse().unwrap(),
             target: ExposeTarget::Parent,
             availability: cm_rust::Availability::Required,
         });
-        let protocol_decl = ProtocolDeclBuilder::new("foo_svc").build();
+        let protocol_decl = ProtocolDeclBuilder::new("foo_svc").path("/svc/foo").build();
         let components = vec![
             ("a", ComponentDeclBuilder::new().use_(use_decl.clone()).add_lazy_child("b").build()),
             (
@@ -1369,17 +1372,18 @@ mod tests {
         )
     }
 
-    /// a: uses protocol /svc/hippo from self
+    /// a: uses protocol /svc/foo from self under the path /svc/hippo
     #[fuchsia::test]
     async fn map_route_use_from_self() {
         let use_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Self_,
-            source_name: "hippo".parse().unwrap(),
+            source_name: "foo_svc".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/hippo".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
         });
-        let protocol_decl = ProtocolDeclBuilder::new("hippo").build();
+        let protocol_decl = ProtocolDeclBuilder::new("foo_svc").path("/svc/foo").build();
         let components = vec![(
             "a",
             ComponentDeclBuilder::new()
@@ -1422,6 +1426,7 @@ mod tests {
         let use_decl = UseDecl::Directory(UseDirectoryDecl {
             source: UseSource::Parent,
             source_name: "foobar_data".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/data/hippo".parse().unwrap(),
             rights: fio::R_STAR_DIR,
             subdir: None,
@@ -1431,6 +1436,7 @@ mod tests {
         let a_offer_decl = OfferDecl::Directory(OfferDirectoryDecl {
             source: OfferSource::static_child("b".to_string()),
             source_name: "baz_data".parse().unwrap(),
+            source_dictionary: None,
             target_name: "foobar_data".parse().unwrap(),
             target: OfferTarget::static_child("c".to_string()),
             rights: Some(fio::R_STAR_DIR),
@@ -1441,6 +1447,7 @@ mod tests {
         let b_expose_decl = ExposeDecl::Directory(ExposeDirectoryDecl {
             source: ExposeSource::Child("d".to_string()),
             source_name: "bar_data".parse().unwrap(),
+            source_dictionary: None,
             target_name: "baz_data".parse().unwrap(),
             target: ExposeTarget::Parent,
             rights: Some(fio::R_STAR_DIR),
@@ -1450,6 +1457,7 @@ mod tests {
         let d_expose_decl = ExposeDecl::Directory(ExposeDirectoryDecl {
             source: ExposeSource::Self_,
             source_name: "foo_data".parse().unwrap(),
+            source_dictionary: None,
             target_name: "bar_data".parse().unwrap(),
             target: ExposeTarget::Parent,
             rights: Some(fio::R_STAR_DIR),
@@ -1661,7 +1669,7 @@ mod tests {
             vec![
                 RouteSegment::RegisterBy {
                     moniker: Moniker::root(),
-                    capability: RegistrationDecl::Storage(storage_decl.into())
+                    capability: RegistrationDecl::Directory(storage_decl.into())
                 },
                 RouteSegment::DeclareBy {
                     moniker: Moniker::root(),
@@ -1676,14 +1684,13 @@ mod tests {
     ///     b
     ///
     /// a: offers framework protocol "fuchsia.component.Realm" to b
-    /// a: offers built-in protocol "fuchsia.sys2.EventSource" to b
     /// b: uses protocol "fuchsia.component.Realm"
-    /// b: uses protocol "fuchsia.sys2.EventSource"
     #[fuchsia::test]
     async fn route_map_use_from_framework_and_builtin() {
         let offer_realm_decl = OfferDecl::Protocol(OfferProtocolDecl {
             source: OfferSource::Framework,
             source_name: "fuchsia.component.Realm".parse().unwrap(),
+            source_dictionary: None,
             target_name: "fuchsia.component.Realm".parse().unwrap(),
             target: OfferTarget::static_child("b".to_string()),
             dependency_type: DependencyType::Strong,
@@ -1692,29 +1699,10 @@ mod tests {
         let use_realm_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Parent,
             source_name: "fuchsia.component.Realm".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
-        });
-
-        let offer_event_source_decl = OfferDecl::Protocol(OfferProtocolDecl {
-            source: OfferSource::Parent,
-            source_name: "fuchsia.sys2.EventSource".parse().unwrap(),
-            target_name: "fuchsia.sys2.EventSource".parse().unwrap(),
-            target: OfferTarget::static_child("b".to_string()),
-            dependency_type: DependencyType::Strong,
-            availability: Availability::Required,
-        });
-        let use_event_source_decl = UseDecl::Protocol(UseProtocolDecl {
-            source: UseSource::Parent,
-            source_name: "fuchsia.sys2.EventSource".parse().unwrap(),
-            target_path: "/svc/fuchsia.sys2.EventSource".parse().unwrap(),
-            dependency_type: DependencyType::Strong,
-            availability: Availability::Required,
-        });
-        let event_source_decl = CapabilityDecl::Protocol(ProtocolDecl {
-            name: "fuchsia.sys2.EventSource".parse().unwrap(),
-            source_path: None,
         });
 
         let components = vec![
@@ -1722,21 +1710,13 @@ mod tests {
                 "a",
                 ComponentDeclBuilder::new()
                     .offer(offer_realm_decl.clone())
-                    .offer(offer_event_source_decl.clone())
                     .add_lazy_child("b")
                     .build(),
             ),
-            (
-                "b",
-                ComponentDeclBuilder::new()
-                    .use_(use_realm_decl.clone())
-                    .use_(use_event_source_decl.clone())
-                    .build(),
-            ),
+            ("b", ComponentDeclBuilder::new().use_(use_realm_decl.clone()).build()),
         ];
 
-        let mut builder = RoutingTestBuilderForAnalyzer::new("a", components);
-        builder.set_builtin_capabilities(vec![event_source_decl.clone()]);
+        let builder = RoutingTestBuilderForAnalyzer::new("a", components);
         let test = builder.build().await;
 
         let b_component =
@@ -1759,27 +1739,6 @@ mod tests {
                 }
             ]
         );
-
-        let event_source_route_results =
-            test.model.check_use_capability(&use_event_source_decl, &b_component);
-        assert_eq!(event_source_route_results.len(), 1);
-        let event_source_route_result = &event_source_route_results[0];
-        assert_matches!(event_source_route_result.error, None);
-
-        assert_eq!(
-            event_source_route_result.route,
-            vec![
-                RouteSegment::UseBy {
-                    moniker: vec!["b"].try_into().unwrap(),
-                    capability: use_event_source_decl
-                },
-                RouteSegment::OfferBy {
-                    moniker: Moniker::root(),
-                    capability: offer_event_source_decl
-                },
-                RouteSegment::ProvideAsBuiltin { capability: event_source_decl }
-            ]
-        )
     }
 
     ///  component manager's namespace
@@ -1796,6 +1755,7 @@ mod tests {
         let offer_decl = OfferDecl::Protocol(OfferProtocolDecl {
             source: OfferSource::Parent,
             source_name: "foo_svc".parse().unwrap(),
+            source_dictionary: None,
             target_name: "bar_svc".parse().unwrap(),
             target: OfferTarget::static_child("b".to_string()),
             dependency_type: DependencyType::Strong,
@@ -1804,6 +1764,7 @@ mod tests {
         let use_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Parent,
             source_name: "bar_svc".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/hippo".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1865,6 +1826,7 @@ mod tests {
         let expose_decl = ExposeDecl::Resolver(ExposeResolverDecl {
             source: ExposeSource::Self_,
             source_name: "base".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "base".parse().unwrap(),
         });
@@ -1904,7 +1866,7 @@ mod tests {
 
         let route_map = test.model.check_resolver(&b_component);
 
-        assert_eq!(route_map.using_node, NodePath::absolute_from_vec(vec!["b"]));
+        assert_eq!(route_map.using_node, Moniker::parse_str("b").unwrap());
         assert_eq!(route_map.capability, Some("base".parse().unwrap()));
         assert!(route_map.error.is_none());
         assert_eq!(
@@ -1980,7 +1942,7 @@ mod tests {
 
         let route_map = test.model.check_resolver(&c_component);
 
-        assert_eq!(route_map.using_node, NodePath::absolute_from_vec(vec!["b", "c"]));
+        assert_eq!(route_map.using_node, Moniker::parse_str("b/c").unwrap());
         assert_eq!(route_map.capability, Some("base".parse().unwrap()));
         assert!(route_map.error.is_none());
         assert_eq!(
@@ -2033,7 +1995,7 @@ mod tests {
 
         let route_map = test.model.check_resolver(&b_component);
 
-        assert_eq!(route_map.using_node, NodePath::absolute_from_vec(vec!["b"]));
+        assert_eq!(route_map.using_node, Moniker::parse_str("b").unwrap());
         assert_eq!(route_map.capability, Some(BOOT_RESOLVER_NAME.parse().unwrap()));
         assert!(route_map.error.is_none());
         assert_eq!(
@@ -2087,7 +2049,7 @@ mod tests {
 
         let route_map = test.model.check_resolver(&b_component);
 
-        assert_eq!(route_map.using_node, NodePath::absolute_from_vec(vec!["b"]));
+        assert_eq!(route_map.using_node, Moniker::parse_str("b").unwrap());
         assert_eq!(route_map.capability, Some("test".parse().unwrap()));
         assert!(route_map.error.is_none());
         assert_eq!(
@@ -2182,6 +2144,7 @@ mod tests {
         let use_directory_decl = UseDecl::Directory(UseDirectoryDecl {
             source: UseSource::Parent,
             source_name: "bar_data".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/data/hippo".parse().unwrap(),
             rights: fio::R_STAR_DIR,
             subdir: None,
@@ -2191,6 +2154,7 @@ mod tests {
         let offer_directory_decl = OfferDecl::Directory(OfferDirectoryDecl {
             source: OfferSource::Self_,
             source_name: "foo_data".parse().unwrap(),
+            source_dictionary: None,
             target_name: "bar_data".parse().unwrap(),
             target: OfferTarget::static_child("b".to_string()),
             rights: Some(fio::R_STAR_DIR),
@@ -2202,6 +2166,7 @@ mod tests {
         let expose_protocol_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Child("c".to_string()),
             source_name: "bad_protocol".parse().unwrap(),
+            source_dictionary: None,
             target_name: "bad_protocol".parse().unwrap(),
             target: ExposeTarget::Parent,
             availability: cm_rust::Availability::Required,
@@ -2268,7 +2233,7 @@ mod tests {
         assert_eq!(
             directories,
             &vec![VerifyRouteResult {
-                using_node: NodePath::absolute_from_vec(vec!["b"]),
+                using_node: Moniker::parse_str("b").unwrap(),
                 capability: Some("bar_data".parse().unwrap()),
                 error: None,
                 route: vec![
@@ -2292,7 +2257,7 @@ mod tests {
         assert_eq!(
             runners,
             &vec![VerifyRouteResult {
-                using_node: NodePath::absolute_from_vec(vec!["b"]),
+                using_node: Moniker::parse_str("b").unwrap(),
                 capability: Some("dwarf".parse().unwrap()),
                 error: None,
                 route: vec![
@@ -2313,7 +2278,7 @@ mod tests {
         assert_eq!(
             resolvers,
             &vec![VerifyRouteResult {
-                using_node: NodePath::absolute_from_vec(vec!["b"]),
+                using_node: Moniker::parse_str("b").unwrap(),
                 capability: Some("base_resolver".parse().unwrap()),
                 error: None,
                 route: vec![
@@ -2334,7 +2299,7 @@ mod tests {
         assert_eq!(
             protocols,
             &vec![VerifyRouteResult {
-                using_node: NodePath::absolute_from_vec(vec!["b"]),
+                using_node: Moniker::parse_str("b").unwrap(),
                 capability: Some("bad_protocol".parse().unwrap()),
                 error: Some(AnalyzerModelError::RoutingError(
                     RoutingError::ExposeFromChildInstanceNotFound {
@@ -2365,6 +2330,7 @@ mod tests {
         let use_protocol_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Parent,
             source_name: "fuchsia.examples.Echo".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/fuchsia.examples.Echo".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Optional,
@@ -2372,6 +2338,7 @@ mod tests {
         let offer_protocol_decl = OfferDecl::Protocol(OfferProtocolDecl {
             source: OfferSource::Void,
             source_name: "fuchsia.examples.Echo".parse().unwrap(),
+            source_dictionary: None,
             target_name: "fuchsia.examples.Echo".parse().unwrap(),
             target: OfferTarget::static_child("b".to_string()),
             dependency_type: DependencyType::Strong,
@@ -2423,6 +2390,7 @@ mod tests {
         let offer_protocol_decl = OfferDecl::Protocol(OfferProtocolDecl {
             source: OfferSource::static_child("c".to_string()),
             source_name: "fuchsia.examples.Echo".parse().unwrap(),
+            source_dictionary: None,
             target_name: "fuchsia.examples.Echo".parse().unwrap(),
             target: OfferTarget::static_child("b".to_string()),
             dependency_type: DependencyType::Strong,
@@ -2454,7 +2422,7 @@ mod tests {
         assert_eq!(
             protocols,
             &vec![VerifyRouteResult {
-                using_node: NodePath::absolute_from_vec(vec![]),
+                using_node: Moniker::root(),
                 capability: Some("fuchsia.examples.Echo".parse().unwrap()),
                 error: Some(AnalyzerModelError::RoutingError(
                     RoutingError::OfferFromChildInstanceNotFound {

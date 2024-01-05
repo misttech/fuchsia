@@ -9,24 +9,26 @@ namespace {
 TEST_F(DeviceEnumerationTest, NelsonTest) {
   static const char* kDevicePaths[] = {
       "sys/platform/pt/nelson",
+      "sys/platform/pt/nelson/post-init/post-init",
       "sys/platform/05:05:1/aml-gpio",
+      "sys/platform/05:05:1/aml-gpio/gpio-init",
       "sys/platform/05:05:1:1/aml-gpio",
       "sys/platform/05:05:1/aml-gpio/gpio-2/nelson-buttons/hid-buttons",
       "sys/platform/05:00:3/bluetooth-composite-spec/aml-uart/bt-transport-uart",
       "sys/platform/05:00:3/bluetooth-composite-spec/aml-uart/bt-transport-uart/bt-hci-broadcom",
-      "sys/platform/05:00:2/aml-i2c",
-      "sys/platform/05:00:2:1/aml-i2c",
-      "sys/platform/05:00:2:2/aml-i2c",
+      "sys/platform/05:00:2/i2c-0/aml-i2c",
+      "sys/platform/05:00:2:1/i2c-1/aml-i2c",
+      "sys/platform/05:00:2:2/i2c-2/aml-i2c",
       "sys/platform/05:05:17/aml-gpu-composite/aml-gpu",
       "sys/platform/05:0a:21/nelson-usb-phy",
       "sys/platform/05:05:12/aml_tdm/nelson-audio-i2s-out",
-      "sys/platform/05:05:13/nelson-audio-pdm-in",
+      "sys/platform/05:05:13/aml_pdm/nelson-audio-pdm-in",
       "sys/platform/00:00:29",  // registers device
 
       // XHCI driver will not be loaded if we are in USB peripheral mode.
       // "xhci/xhci/usb-bus",
 
-      "sys/platform/05:00:2:2/aml-i2c/i2c/i2c-2-44/backlight/ti-lp8556",
+      "sys/platform/05:00:2:2/i2c-2/aml-i2c/i2c/i2c-2-44/backlight/ti-lp8556",
       "sys/platform/05:00:10/aml-canvas",
       "sys/platform/00:00:e/tee/optee",
       "sys/platform/05:00:8/nelson-emmc/aml-sd-emmc/sdmmc/sdmmc-mmc/boot1/block",
@@ -48,13 +50,14 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
       "sys/platform/05:00:8/nelson-emmc/aml-sd-emmc/sdmmc/sdmmc-mmc/user/block/part-013/block",
       "sys/platform/05:00:8/nelson-emmc/aml-sd-emmc/sdmmc/sdmmc-mmc/user/block/part-014/block",
       "sys/platform/05:00:8/nelson-emmc/aml-sd-emmc/sdmmc/sdmmc-mmc/user/block/part-015/block",
-      "sys/platform/05:00:2/aml-i2c/i2c/i2c-0-57/tcs3400_light/tcs-3400",
+      "sys/platform/05:00:2/i2c-0/aml-i2c/i2c/i2c-0-57/tcs3400_light/tcs-3400",
       "sys/platform/05:05:1c/aml_nna",
       "sys/platform/05:05:22/clocks",
+      "sys/platform/05:05:22/clocks/clock-init",
       "sys/platform/05:05:a/aml-thermal-pll/thermal",
       "class/thermal/000",
       // "sys/platform/05:03:1e/cpu",
-      "sys/platform/05:03:1a/aml-secure-mem/aml-securemem",
+      "sys/platform/05:03:1a/aml_securemem/aml-securemem",
       "sys/platform/05:05:1d/aml-pwm-device/pwm-0",
       "sys/platform/05:05:1d/aml-pwm-device/pwm-1",
       "sys/platform/05:05:1d/aml-pwm-device/pwm-2",
@@ -69,37 +72,55 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
       "sys/platform/05:00:6/aml-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio",
       "sys/platform/05:00:6/aml-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1",
       "sys/platform/05:00:6/aml-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-2",
-      "sys/platform/05:00:6/aml-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-wlanphy",
-      "sys/platform/05:00:6/aml-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-wlanphy/wlanphy",
+
       "sys/platform/00:00:1e/dw-dsi",
       "sys/platform/00:00:1e/dw-dsi/display/amlogic-display/display-coordinator",
-      "sys/platform/05:00:2:2/aml-i2c/i2c/i2c-2-73/ti-ina231-mlb/ti-ina231",
-      "sys/platform/05:00:2:2/aml-i2c/i2c/i2c-2-64/ti-ina231-speakers/ti-ina231",
-      "sys/platform/05:00:2/aml-i2c/i2c/i2c-0-112/shtv3",
-      "sys/platform/1c:00:1/gt6853-touch/gt6853",
+      "sys/platform/05:00:2:2/i2c-2/aml-i2c/i2c/i2c-2-73/ti_ina231_mlb/ti-ina231",
+      "sys/platform/05:00:2:2/i2c-2/aml-i2c/i2c/i2c-2-64/ti_ina231_speakers/ti-ina231",
+      "sys/platform/05:00:2/i2c-0/aml-i2c/i2c/i2c-0-112/shtv3",
+      "sys/platform/1c:00:1/gt6853_touch/gt6853",
 
       // Amber LED.
       "sys/platform/05:00:1c/aml_light",
 
-      "sys/platform/05:05:1:1/aml-gpio/gpio-82/spi-1/aml-spi-1/spi/spi-1-0/selina-composite/selina",
+      "sys/platform/05:05:1:1/aml-gpio/gpio-82/spi_1/aml-spi-1/spi/spi-1-0/selina-composite/selina",
 
       "sys/platform/05:05:24/ram",
 
-      "sys/platform/03:0a:27/thermistor-device/therm-thread",
-      "sys/platform/03:0a:27/thermistor-device/therm-audio",
+      // Thermistor/ADC
+      "sys/platform/03:0a:27/thermistor/thermistor-device/therm-thread",
+      "sys/platform/03:0a:27/thermistor/thermistor-device/therm-audio",
+      "class/adc/000",
+      "class/adc/001",
+      "class/adc/002",
+      "class/adc/003",
+      "class/temperature/000",
+      "class/temperature/001",
 
-      "sys/platform/05:00:2:2/aml-i2c/i2c/i2c-2-45/tas58xx/TAS5805m",
-      "sys/platform/05:00:2:2/aml-i2c/i2c/i2c-2-45/tas58xx/TAS5805m/brownout_protection",
+      "sys/platform/05:00:2:2/i2c-2/aml-i2c/i2c/i2c-2-45/tas58xx/TAS5805m",
+      "sys/platform/05:00:2:2/i2c-2/aml-i2c/i2c/i2c-2-45/tas58xx/TAS5805m/brownout_protection",
 
-      "sys/platform/05:05:1:2/aml-gpio/gpio-50/spi-0/aml-spi-0/spi/spi-0-0",
-      "sys/platform/05:05:1:2/aml-gpio/gpio-50/spi-0/aml-spi-0/spi/spi-0-0/nrf52811-radio/ot-radio",
+      "sys/platform/05:05:1:2/aml-gpio/gpio-50/spi_0/aml-spi-0/spi/spi-0-0",
+
+#ifdef include_packaged_drivers
+      // BT
+      "sys/platform/05:00:3/bluetooth-composite-spec/aml-uart/bt-transport-uart/bt-hci-broadcom/bt_host",
+
+      "sys/platform/05:05:1:2/aml-gpio/gpio-50/spi_0/aml-spi-0/spi/spi-0-0/nrf52811_radio/ot-radio",
+
+      // WLAN
+      "sys/platform/05:00:6/aml-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-wlanphy",
+      "sys/platform/05:00:6/aml-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-wlanphy/wlanphy",
+
+#endif
+
   };
 
   ASSERT_NO_FATAL_FAILURE(TestRunner(kDevicePaths, std::size(kDevicePaths)));
 
   static const char* kTouchscreenDevicePaths[] = {
       // One of these touch devices could be on P0/P1 boards.
-      "sys/platform/05:05:1/aml-gpio/gpio-2/nelson-buttons/hid-buttons/hidbus_function/hid-device/InputReport",
+      "sys/platform/05:05:1/aml-gpio/gpio-2/nelson-buttons/hid-buttons",
       // This is the only possible touch device for P2 and beyond.
       "sys/platform/1c:00:1/gt6853-touch/gt6853",
   };

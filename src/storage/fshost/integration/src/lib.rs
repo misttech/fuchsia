@@ -4,8 +4,10 @@
 
 use {
     fidl::endpoints::{create_proxy, ServerEnd},
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_feedback as ffeedback, fidl_fuchsia_io as fio,
-    fidl_fuchsia_logger as flogger, fidl_fuchsia_process as fprocess,
+    fidl_fuchsia_boot as fboot, fidl_fuchsia_feedback as ffeedback,
+    fidl_fuchsia_fxfs::BlobReaderMarker,
+    fidl_fuchsia_io as fio, fidl_fuchsia_logger as flogger, fidl_fuchsia_process as fprocess,
+    fuchsia_component::client::connect_to_protocol_at_dir_root,
     fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route},
     fuchsia_merkle::MerkleTreeBuilder,
     fuchsia_zircon as zx,
@@ -19,6 +21,8 @@ use {
 pub mod disk_builder;
 pub mod fshost_builder;
 mod mocks;
+
+pub use disk_builder::{write_test_blob, write_test_blob_fxblob};
 
 pub struct TestFixtureBuilder {
     netboot: bool,
@@ -153,6 +157,7 @@ impl TestFixtureBuilder {
             ramdisks: Vec::new(),
             ramdisk_vmo: None,
             crash_reports,
+            torn_down: TornDown(false),
         };
 
         tracing::info!(
@@ -173,17 +178,32 @@ impl TestFixtureBuilder {
     }
 }
 
+/// Create a separate struct that does the drop-assert because fixture.tear_down can't call
+/// realm.destroy if it has the drop impl itself.
+struct TornDown(bool);
+
+impl Drop for TornDown {
+    fn drop(&mut self) {
+        // Because tear_down is async, it needs to be called by the test in an async context. It
+        // checks some properties so for correctness it must be called.
+        assert!(self.0, "fixture.tear_down() must be called");
+    }
+}
+
 pub struct TestFixture {
     pub realm: RealmInstance,
     pub ramdisks: Vec<RamdiskClient>,
     pub ramdisk_vmo: Option<zx::Vmo>,
     pub crash_reports: mpsc::Receiver<ffeedback::CrashReport>,
+    torn_down: TornDown,
 }
 
 impl TestFixture {
     pub async fn tear_down(mut self) {
+        tracing::info!(realm_name = ?self.realm.root.child_name(), "tearing down");
         self.realm.destroy().await.unwrap();
         assert_eq!(self.crash_reports.next().await, None);
+        self.torn_down.0 = true;
     }
 
     pub async fn into_vmo(mut self) -> Option<zx::Vmo> {
@@ -218,36 +238,49 @@ impl TestFixture {
         assert_eq!(info_type, fs_type, "{:#08x} != {:#08x}", info_type, fs_type);
     }
 
-    pub async fn check_test_blob(&self) {
-        let mut builder = MerkleTreeBuilder::new();
-        builder.write(&disk_builder::BLOB_CONTENTS);
-        let expected_blob_hash = builder.finish().root();
+    pub async fn check_test_blob(&self, use_fxblob: bool) {
+        if use_fxblob {
+            let mut builder = MerkleTreeBuilder::new();
+            builder.write(&disk_builder::BLOB_CONTENTS);
+            let expected_blob_hash = builder.finish().root();
 
-        let (blob, server_end) = create_proxy::<fio::FileMarker>().expect("create_proxy failed");
-        let path = &format!("{}", expected_blob_hash);
-        self.dir("blob", fio::OpenFlags::RIGHT_READABLE)
-            .open(
-                fio::OpenFlags::RIGHT_READABLE,
-                fio::ModeType::empty(),
-                path,
-                ServerEnd::new(server_end.into_channel()),
+            let reader = connect_to_protocol_at_dir_root::<BlobReaderMarker>(
+                self.realm.root.get_exposed_dir(),
             )
-            .expect("open failed");
-        println!("About to query the blob file");
-        blob.query().await.expect("open file failed");
+            .expect("failed to connect to the BlobReader");
+            let _vmo = reader.get_vmo(&expected_blob_hash.into()).await.unwrap().unwrap();
+        } else {
+            let mut builder = MerkleTreeBuilder::new();
+            builder.write(&disk_builder::BLOB_CONTENTS);
+            let expected_blob_hash = builder.finish().root();
+
+            let (blob, server_end) =
+                create_proxy::<fio::FileMarker>().expect("create_proxy failed");
+            let path = &format!("{}", expected_blob_hash);
+            self.dir("blob", fio::OpenFlags::RIGHT_READABLE)
+                .open(
+                    fio::OpenFlags::RIGHT_READABLE,
+                    fio::ModeType::empty(),
+                    path,
+                    ServerEnd::new(server_end.into_channel()),
+                )
+                .expect("open failed");
+            println!("About to query the blob file");
+            blob.query().await.expect("open file failed");
+        }
     }
 
-    /// Check for the existence of a well-known test file in the data volume. This file is placed
-    /// by the disk builder if it formats the filesystem beforehand.
+    /// Check for the existence of a well-known set of test files in the data volume. These files
+    /// are placed by the disk builder if it formats the filesystem beforehand.
     pub async fn check_test_data_file(&self) {
         let (file, server) = create_proxy::<fio::NodeMarker>().unwrap();
         self.dir("data", fio::OpenFlags::RIGHT_READABLE)
-            .open(fio::OpenFlags::RIGHT_READABLE, fio::ModeType::empty(), "foo", server)
+            .open(fio::OpenFlags::RIGHT_READABLE, fio::ModeType::empty(), ".testdata", server)
             .expect("open failed");
         file.get_attr().await.expect("get_attr failed");
 
         let data = self.dir("data", fio::OpenFlags::RIGHT_READABLE);
-        fuchsia_fs::directory::open_file(&data, "foo", fio::OpenFlags::RIGHT_READABLE)
+        fuchsia_fs::directory::open_file(&data, ".testdata", fio::OpenFlags::RIGHT_READABLE)
             .await
             .unwrap();
 
@@ -272,6 +305,16 @@ impl TestFixture {
             &fuchsia_fs::file::read_to_string(&authorized_keys).await.unwrap(),
             "public key!"
         );
+    }
+
+    /// Checks for the absence of the .testdata marker file, indicating the data filesystem was
+    /// reformatted.
+    pub async fn check_test_data_file_absent(&self) {
+        let (file, server) = create_proxy::<fio::NodeMarker>().unwrap();
+        self.dir("data", fio::OpenFlags::RIGHT_READABLE)
+            .open(fio::OpenFlags::RIGHT_READABLE, fio::ModeType::empty(), ".testdata", server)
+            .expect("open failed");
+        file.get_attr().await.expect_err(".testdata should be absent");
     }
 
     pub fn ramdisk_vmo(&self) -> Option<&zx::Vmo> {

@@ -118,7 +118,7 @@ source_set("resources") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
   ]
@@ -175,6 +175,9 @@ executable("threads") {
     "//zircon/system/ulib/task-utils",
     "//zircon/system/ulib/zx",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 executable("signal") {

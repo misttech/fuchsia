@@ -2,23 +2,49 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{
+    device::{
+        kobject::DeviceMetadata,
+        terminal::{TTYState, Terminal},
+        DeviceMode, DeviceOps,
+    },
+    fs::devtmpfs::{devtmpfs_create_symlink, devtmpfs_mkdir, devtmpfs_remove_child},
+    mm::MemoryAccessorExt,
+    task::{CurrentTask, EventHandler, WaitCanceler, Waiter},
+    vfs::{
+        buffers::{InputBuffer, OutputBuffer},
+        fileops_impl_nonseekable, fs_node_impl_dir_readonly, CacheMode, DirEntryHandle,
+        DirectoryEntryType, FdEvents, FileHandle, FileObject, FileOps, FileSystem,
+        FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
+        FsNodeOps, FsStr, SpecialNode, VecDirectory, VecDirectoryEntry,
+    },
+};
+use starnix_logging::not_implemented;
+use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_uapi::{
+    auth::FsCred,
+    device_type::{DeviceType, TTY_ALT_MAJOR},
+    errno, error,
+    errors::Errno,
+    file_mode::mode,
+    ino_t,
+    open_flags::OpenFlags,
+    pid_t,
+    signals::SIGWINCH,
+    statfs, uapi,
+    user_address::{UserAddress, UserRef},
+    DEVPTS_SUPER_MAGIC, FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX, FIONREAD, FIOQSIZE, TCFLSH, TCGETA,
+    TCGETS, TCGETX, TCSBRK, TCSBRKP, TCSETA, TCSETAF, TCSETAW, TCSETS, TCSETSF, TCSETSW, TCSETX,
+    TCSETXF, TCSETXW, TCXONC, TIOCCBRK, TIOCCONS, TIOCEXCL, TIOCGETD, TIOCGICOUNT, TIOCGLCKTRMIOS,
+    TIOCGPGRP, TIOCGPTLCK, TIOCGPTN, TIOCGRS485, TIOCGSERIAL, TIOCGSID, TIOCGSOFTCAR, TIOCGWINSZ,
+    TIOCLINUX, TIOCMBIC, TIOCMBIS, TIOCMGET, TIOCMIWAIT, TIOCMSET, TIOCNOTTY, TIOCNXCL, TIOCOUTQ,
+    TIOCPKT, TIOCSBRK, TIOCSCTTY, TIOCSERCONFIG, TIOCSERGETLSR, TIOCSERGETMULTI, TIOCSERGSTRUCT,
+    TIOCSERGWILD, TIOCSERSETMULTI, TIOCSERSWILD, TIOCSETD, TIOCSLCKTRMIOS, TIOCSPGRP, TIOCSPTLCK,
+    TIOCSRS485, TIOCSSERIAL, TIOCSSOFTCAR, TIOCSTI, TIOCSWINSZ, TIOCVHANGUP,
+};
 use std::sync::{Arc, Weak};
 
-use crate::{
-    auth::FsCred,
-    device::{terminal::*, DeviceMode, DeviceOps},
-    fs::{
-        buffers::{InputBuffer, OutputBuffer},
-        devtmpfs::{devtmpfs_create_symlink, devtmpfs_mkdir, devtmpfs_remove_child},
-        kobject::{KObjectDeviceAttribute, KType},
-        sysfs::SysFsDirectory,
-        *,
-    },
-    mm::MemoryAccessorExt,
-    syscalls::*,
-    task::*,
-    types::*,
-};
+use super::sysfs::DeviceDirectory;
 
 // See https://www.kernel.org/doc/Documentation/admin-guide/devices.txt
 const DEVPTS_FIRST_MAJOR: u32 = 136;
@@ -35,8 +61,8 @@ const ROOT_NODE_ID: ino_t = 1;
 const PTMX_NODE_ID: ino_t = 2;
 const FIRST_PTS_NODE_ID: ino_t = 3;
 
-pub fn dev_pts_fs(kernel: &Arc<Kernel>, options: FileSystemOptions) -> &FileSystemHandle {
-    kernel.dev_pts_fs.get_or_init(|| init_devpts(kernel, options))
+pub fn dev_pts_fs(current_task: &CurrentTask, options: FileSystemOptions) -> &FileSystemHandle {
+    current_task.kernel().dev_pts_fs.get_or_init(|| init_devpts(current_task, options))
 }
 
 /// Creates a terminal and returns the main pty and an associated replica pts.
@@ -60,7 +86,8 @@ pub fn create_main_and_replica(
     Ok((pty_file, pts_file))
 }
 
-fn init_devpts(kernel: &Arc<Kernel>, options: FileSystemOptions) -> FileSystemHandle {
+fn init_devpts(current_task: &CurrentTask, options: FileSystemOptions) -> FileSystemHandle {
+    let kernel = current_task.kernel();
     let state = Arc::new(TTYState::new());
     let device = DevPtsDevice::new(state.clone());
 
@@ -68,11 +95,11 @@ fn init_devpts(kernel: &Arc<Kernel>, options: FileSystemOptions) -> FileSystemHa
     for n in 0..DEVPTS_MAJOR_COUNT {
         kernel
             .device_registry
-            .register_chrdev_major(DEVPTS_FIRST_MAJOR + n, device.clone())
+            .register_major(DEVPTS_FIRST_MAJOR + n, device.clone(), DeviceMode::Char)
             .expect("Registering pts device");
     }
     // Register tty and ptmx device types.
-    kernel.device_registry.register_chrdev_major(TTY_ALT_MAJOR, device).unwrap();
+    kernel.device_registry.register_major(TTY_ALT_MAJOR, device, DeviceMode::Char).unwrap();
 
     let fs = FileSystem::new(kernel, CacheMode::Uncached, DevPtsFs, options);
     let mut root = FsNode::new_root_with_properties(DevPtsRootDir { state }, |info| {
@@ -83,34 +110,30 @@ fn init_devpts(kernel: &Arc<Kernel>, options: FileSystemOptions) -> FileSystemHa
     fs
 }
 
-pub fn tty_device_init(kernel: &Arc<Kernel>) {
-    let tty_class = kernel.device_registry.virtual_bus().get_or_create_child(
+pub fn tty_device_init(current_task: &CurrentTask) {
+    let kernel = current_task.kernel();
+    let registry = &kernel.device_registry;
+    let tty_class = registry.get_or_create_class(b"tty", registry.virtual_bus());
+    registry.add_device(
+        current_task,
         b"tty",
-        KType::Class,
-        SysFsDirectory::new,
+        DeviceMetadata::new(b"tty", DeviceType::TTY, DeviceMode::Char),
+        tty_class.clone(),
+        DeviceDirectory::new,
     );
-    let tty = KObjectDeviceAttribute::new(
-        Some(tty_class.clone()),
-        b"tty",
-        b"tty",
-        DeviceType::TTY,
-        DeviceMode::Char,
-    );
-    let ptmx = KObjectDeviceAttribute::new(
-        Some(tty_class),
+    registry.add_device(
+        current_task,
         b"ptmx",
-        b"ptmx",
-        DeviceType::PTMX,
-        DeviceMode::Char,
+        DeviceMetadata::new(b"ptmx", DeviceType::PTMX, DeviceMode::Char),
+        tty_class,
+        DeviceDirectory::new,
     );
-    kernel.add_device(tty);
-    kernel.add_device(ptmx);
 
-    devtmpfs_mkdir(kernel, b"pts").unwrap();
+    devtmpfs_mkdir(current_task, b"pts").unwrap();
 
     // Create a symlink from /dev/ptmx to /dev/pts/ptmx for pseudo-tty subsystem.
-    devtmpfs_remove_child(kernel, b"ptmx");
-    devtmpfs_create_symlink(kernel, b"ptmx", b"pts/ptmx").unwrap();
+    devtmpfs_remove_child(current_task, b"ptmx");
+    devtmpfs_create_symlink(current_task, b"ptmx", b"pts/ptmx").unwrap();
 }
 
 struct DevPtsFs;
@@ -168,7 +191,7 @@ impl FsNodeOps for DevPtsRootDir {
     fn lookup(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         let name = std::str::from_utf8(name).map_err(|_| errno!(ENOENT))?;
@@ -176,7 +199,7 @@ impl FsNodeOps for DevPtsRootDir {
             let mut info = FsNodeInfo::new(PTMX_NODE_ID, mode!(IFCHR, 0o666), FsCred::root());
             info.rdev = DeviceType::PTMX;
             info.blksize = BLOCK_SIZE;
-            let node = node.fs().create_node_with_id(Box::new(SpecialNode), info.ino, info);
+            let node = node.fs().create_node_with_id(current_task, SpecialNode, info.ino, info);
             return Ok(node);
         }
         if let Ok(id) = name.parse::<u32>() {
@@ -192,7 +215,8 @@ impl FsNodeOps for DevPtsRootDir {
                     info.blksize = BLOCK_SIZE;
                     // TODO(qsr): set gid to the tty group
                     info.gid = 0;
-                    let node = node.fs().create_node_with_id(Box::new(SpecialNode), info.ino, info);
+                    let node =
+                        node.fs().create_node_with_id(current_task, SpecialNode, info.ino, info);
                     return Ok(node);
                 }
             }
@@ -223,8 +247,7 @@ impl DeviceOps for Arc<DevPtsDevice> {
             // /dev/ptmx
             DeviceType::PTMX => {
                 let terminal = self.state.get_next_terminal(current_task)?;
-                let dev_pts_root =
-                    dev_pts_fs(current_task.kernel(), Default::default()).root().clone();
+                let dev_pts_root = dev_pts_fs(current_task, Default::default()).root().clone();
 
                 Ok(Box::new(DevPtmxFile::new(dev_pts_root, terminal)))
             }
@@ -241,7 +264,7 @@ impl DeviceOps for Arc<DevPtsDevice> {
                 if let Some(controlling_terminal) = controlling_terminal {
                     if controlling_terminal.is_main {
                         let dev_pts_root =
-                            dev_pts_fs(current_task.kernel(), Default::default()).root().clone();
+                            dev_pts_fs(current_task, Default::default()).root().clone();
                         Ok(Box::new(DevPtmxFile::new(dev_pts_root, controlling_terminal.terminal)))
                     } else {
                         Ok(Box::new(DevPtsFile::new(controlling_terminal.terminal)))
@@ -300,7 +323,7 @@ impl DevPtmxFile {
 impl FileOps for DevPtmxFile {
     fileops_impl_nonseekable!();
 
-    fn close(&self, _file: &FileObject) {
+    fn close(&self, _file: &FileObject, _current_task: &CurrentTask) {
         self.terminal.main_close();
         self.dev_pts_root.remove_child(format!("{}", self.terminal.id).as_bytes());
     }
@@ -396,7 +419,7 @@ impl DevPtsFile {
 impl FileOps for DevPtsFile {
     fileops_impl_nonseekable!();
 
-    fn close(&self, _file: &FileObject) {
+    fn close(&self, _file: &FileObject, _current_task: &CurrentTask) {
         self.terminal.replica_close();
     }
 
@@ -454,6 +477,30 @@ impl FileOps for DevPtsFile {
     ) -> Result<SyscallResult, Errno> {
         shared_ioctl(&self.terminal, false, file, current_task, request, arg)
     }
+}
+
+macro_rules! not_implemented_ioctl_requests {
+    ($request:ident, $($($context:literal,)? $unsupported:ident)|*) => {{
+        match $request {
+            $(
+                $unsupported => {
+                    not_implemented!(concat!("ioctl ", $($context, " ",)? stringify!($unsupported)));
+                    error!(ENOSYS)
+                }
+            )+
+            _ => error!(ENOTTY),
+        }
+    }};
+}
+
+macro_rules! devpts_not_implemented_ioctl_requests  {
+    ($request:ident, $is_main:expr, $($unsupported:ident)|*) => {{
+        if $is_main {
+            not_implemented_ioctl_requests!($request, $("ptmx", $unsupported)|*)
+        } else {
+            not_implemented_ioctl_requests!($request, $("pts", $unsupported)|*)
+        }
+    }};
 }
 
 /// The ioctl behaviour common to main and replica terminal file descriptors.
@@ -535,6 +582,25 @@ fn shared_ioctl(
             }
             Ok(SUCCESS)
         }
+        TCGETA => {
+            let termio = {
+                let terminal_state = terminal.read();
+                let termios = terminal_state.termios();
+                let mut cc = [0; 8];
+                cc.copy_from_slice(&termios.c_cc[0..8]);
+                uapi::termio {
+                    c_iflag: termios.c_iflag as u16,
+                    c_oflag: termios.c_oflag as u16,
+                    c_cflag: termios.c_cflag as u16,
+                    c_lflag: termios.c_lflag as u16,
+                    c_line: termios.c_line,
+                    c_cc: cc,
+                    __bindgen_padding_0: 0,
+                }
+            };
+            current_task.write_object(UserRef::<uapi::termio>::new(user_addr), &termio)?;
+            Ok(SUCCESS)
+        }
         TCGETS => {
             // N.B. TCGETS on the main terminal actually returns the configuration of the replica
             // end.
@@ -563,32 +629,26 @@ fn shared_ioctl(
             terminal.set_termios(termios);
             Ok(SUCCESS)
         }
-
         TIOCSETD => {
-            not_implemented!(
-                "{}: setting line discipline not implemented",
-                if is_main { "ptmx" } else { "pts" }
-            );
+            if is_main {
+                not_implemented!("ptmx setting line discipline");
+            } else {
+                not_implemented!("pts setting line discipline");
+            }
             error!(EINVAL)
         }
-
-        TCGETA | TCSETA | TCSETAW | TCSETAF | TCSBRK | TCXONC | TCFLSH | TIOCEXCL | TIOCNXCL
-        | TIOCOUTQ | TIOCSTI | TIOCMGET | TIOCMBIS | TIOCMBIC | TIOCMSET | TIOCGSOFTCAR
-        | TIOCSSOFTCAR | TIOCLINUX | TIOCCONS | TIOCGSERIAL | TIOCSSERIAL | TIOCPKT | FIONBIO
-        | TIOCGETD | TCSBRKP | TIOCSBRK | TIOCCBRK | TIOCGSID | TIOCGRS485 | TIOCSRS485
-        | TCGETX | TCSETX | TCSETXF | TCSETXW | TIOCVHANGUP | FIONCLEX | FIOCLEX | FIOASYNC
-        | TIOCSERCONFIG | TIOCSERGWILD | TIOCSERSWILD | TIOCGLCKTRMIOS | TIOCSLCKTRMIOS
-        | TIOCSERGSTRUCT | TIOCSERGETLSR | TIOCSERGETMULTI | TIOCSERSETMULTI | TIOCMIWAIT
-        | TIOCGICOUNT | FIOQSIZE => {
-            not_implemented!(
-                "{}: ioctl request 0x{:08x} not implemented",
-                if is_main { "ptmx" } else { "pts" },
-                request
-            );
-            error!(ENOSYS)
-        }
-
-        _ => error!(EINVAL),
+        #[rustfmt::skip]
+        unsupported => devpts_not_implemented_ioctl_requests!(
+            unsupported, is_main,
+            TCSETA | TCSETAW | TCSETAF | TCSBRK | TCXONC | TCFLSH | TIOCEXCL
+            | TIOCNXCL | TIOCOUTQ | TIOCSTI | TIOCMGET | TIOCMBIS | TIOCMBIC | TIOCMSET
+            | TIOCGSOFTCAR | TIOCSSOFTCAR | TIOCLINUX | TIOCCONS | TIOCGSERIAL | TIOCSSERIAL
+            | TIOCPKT | FIONBIO | TIOCGETD | TCSBRKP | TIOCSBRK | TIOCCBRK | TIOCGSID | TIOCGRS485
+            | TIOCSRS485 | TCGETX | TCSETX | TCSETXF | TCSETXW | TIOCVHANGUP | FIONCLEX | FIOCLEX
+            | FIOASYNC | TIOCSERCONFIG | TIOCSERGWILD | TIOCSERSWILD | TIOCGLCKTRMIOS
+            | TIOCSLCKTRMIOS | TIOCSERGSTRUCT | TIOCSERGETLSR | TIOCSERGETMULTI | TIOCSERSETMULTI
+            | TIOCMIWAIT | TIOCGICOUNT | FIOQSIZE
+        ),
     }
 }
 
@@ -596,15 +656,20 @@ fn shared_ioctl(
 mod tests {
     use super::*;
     use crate::{
-        auth::{Credentials, FsCred},
-        fs::{
-            buffers::{VecInputBuffer, VecOutputBuffer},
-            tmpfs::TmpFs,
-        },
+        fs::tmpfs::TmpFs,
         testing::*,
+        vfs::{
+            buffers::{VecInputBuffer, VecOutputBuffer},
+            MountInfo, NamespaceNode,
+        },
+    };
+    use starnix_uapi::{
+        auth::{Credentials, FsCred},
+        file_mode::FileMode,
+        signals::{SIGCHLD, SIGTTOU},
     };
 
-    fn ioctl<T: zerocopy::AsBytes + zerocopy::FromBytes + Copy>(
+    fn ioctl<T: zerocopy::AsBytes + zerocopy::FromBytes + zerocopy::NoCell + Copy>(
         current_task: &CurrentTask,
         file: &FileHandle,
         command: u32,
@@ -668,8 +733,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn opening_ptmx_creates_pts() {
-        let (kernel, task) = create_kernel_and_task();
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let (_kernel, task) = create_kernel_and_task();
+        let fs = dev_pts_fs(&task, Default::default());
         lookup_node(&task, fs, b"0").unwrap_err();
         let _ptmx = open_ptmx_and_unlock(&task, fs).expect("ptmx");
         lookup_node(&task, fs, b"0").expect("pty");
@@ -677,19 +742,20 @@ mod tests {
 
     #[::fuchsia::test]
     async fn closing_ptmx_closes_pts() {
-        let (kernel, task) = create_kernel_and_task();
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let (_kernel, task) = create_kernel_and_task();
+        let fs = dev_pts_fs(&task, Default::default());
         lookup_node(&task, fs, b"0").unwrap_err();
         let ptmx = open_ptmx_and_unlock(&task, fs).expect("ptmx");
         let _pts = open_file(&task, fs, b"0").expect("open file");
         std::mem::drop(ptmx);
+        task.trigger_delayed_releaser();
         lookup_node(&task, fs, b"0").unwrap_err();
     }
 
     #[::fuchsia::test]
     async fn pts_are_reused() {
-        let (kernel, task) = create_kernel_and_task();
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let (_kernel, task) = create_kernel_and_task();
+        let fs = dev_pts_fs(&task, Default::default());
 
         let _ptmx0 = open_ptmx_and_unlock(&task, fs).expect("ptmx");
         let mut _ptmx1 = open_ptmx_and_unlock(&task, fs).expect("ptmx");
@@ -700,6 +766,8 @@ mod tests {
         lookup_node(&task, fs, b"2").expect("component_lookup");
 
         std::mem::drop(_ptmx1);
+        task.trigger_delayed_releaser();
+
         lookup_node(&task, fs, b"1").unwrap_err();
 
         _ptmx1 = open_ptmx_and_unlock(&task, fs).expect("ptmx");
@@ -710,17 +778,21 @@ mod tests {
     async fn opening_inexistant_replica_fails() {
         let (kernel, task) = create_kernel_and_task();
         // Initialize pts devices
-        dev_pts_fs(&kernel, Default::default());
+        dev_pts_fs(&task, Default::default());
         let fs = TmpFs::new_fs(&kernel);
+        let mount = MountInfo::detached();
         let pts = fs
             .root()
-            .create_node(
-                &task,
-                b"custom_pts",
-                mode!(IFCHR, 0o666),
-                DeviceType::new(DEVPTS_FIRST_MAJOR, 0),
-                FsCred::root(),
-            )
+            .create_entry(&task, &mount, b"custom_pts", |dir, mount, name| {
+                dir.mknod(
+                    &task,
+                    mount,
+                    name,
+                    mode!(IFCHR, 0o666),
+                    DeviceType::new(DEVPTS_FIRST_MAJOR, 0),
+                    FsCred::root(),
+                )
+            })
             .expect("custom_pts");
         let node = NamespaceNode::new_anonymous(pts.clone());
         assert!(node.open(&task, OpenFlags::RDONLY, true).is_err());
@@ -728,9 +800,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_open_tty() {
-        let (kernel, task) = create_kernel_and_task();
-        let fs = dev_pts_fs(&kernel, Default::default());
-        let devfs = crate::fs::devtmpfs::dev_tmp_fs(&kernel);
+        let (_kernel, task) = create_kernel_and_task();
+        let fs = dev_pts_fs(&task, Default::default());
+        let devfs = crate::fs::devtmpfs::dev_tmp_fs(&task);
 
         let ptmx = open_ptmx_and_unlock(&task, fs).expect("ptmx");
         set_controlling_terminal(&task, &ptmx, false).expect("set_controlling_terminal");
@@ -753,20 +825,20 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_unknown_ioctl() {
-        let (kernel, task) = create_kernel_and_task();
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let (_kernel, task) = create_kernel_and_task();
+        let fs = dev_pts_fs(&task, Default::default());
 
         let ptmx = open_ptmx_and_unlock(&task, fs).expect("ptmx");
-        assert_eq!(ptmx.ioctl(&task, 42, Default::default()), error!(EINVAL));
+        assert_eq!(ptmx.ioctl(&task, 42, Default::default()), error!(ENOTTY));
 
         let pts_file = open_file(&task, fs, b"0").expect("open file");
-        assert_eq!(pts_file.ioctl(&task, 42, Default::default()), error!(EINVAL));
+        assert_eq!(pts_file.ioctl(&task, 42, Default::default()), error!(ENOTTY));
     }
 
     #[::fuchsia::test]
     async fn test_tiocgptn_ioctl() {
-        let (kernel, task) = create_kernel_and_task();
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let (_kernel, task) = create_kernel_and_task();
+        let fs = dev_pts_fs(&task, Default::default());
         let ptmx0 = open_ptmx_and_unlock(&task, fs).expect("ptmx");
         let ptmx1 = open_ptmx_and_unlock(&task, fs).expect("ptmx");
 
@@ -779,8 +851,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_new_terminal_is_locked() {
-        let (kernel, task) = create_kernel_and_task();
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let (_kernel, task) = create_kernel_and_task();
+        let fs = dev_pts_fs(&task, Default::default());
         let _ptmx_file = open_file(&task, fs, b"ptmx").expect("open file");
 
         let pts = lookup_node(&task, fs, b"0").expect("component_lookup");
@@ -789,8 +861,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_lock_ioctls() {
-        let (kernel, task) = create_kernel_and_task();
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let (_kernel, task) = create_kernel_and_task();
+        let fs = dev_pts_fs(&task, Default::default());
         let ptmx = open_ptmx_and_unlock(&task, fs).expect("ptmx");
         let pts = lookup_node(&task, fs, b"0").expect("component_lookup");
 
@@ -809,9 +881,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_ptmx_stats() {
-        let (kernel, task) = create_kernel_and_task();
+        let (_kernel, task) = create_kernel_and_task();
         task.set_creds(Credentials::with_ids(22, 22));
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let fs = dev_pts_fs(&task, Default::default());
         let ptmx = open_ptmx_and_unlock(&task, fs).expect("ptmx");
         let ptmx_stat = ptmx.node().stat(&task).expect("stat");
         assert_eq!(ptmx_stat.st_blksize as usize, BLOCK_SIZE);
@@ -824,8 +896,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_attach_terminal_when_open() {
-        let (kernel, task) = create_kernel_and_task();
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let (_kernel, task) = create_kernel_and_task();
+        let fs = dev_pts_fs(&task, Default::default());
         let _opened_main = open_ptmx_and_unlock(&task, fs).expect("ptmx");
         // Opening the main terminal should not set the terminal of the session.
         assert!(task
@@ -864,11 +936,11 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_attach_terminal() {
-        let (kernel, task1) = create_kernel_and_task();
-        let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+        let (_kernel, task1, mut locked) = create_kernel_task_and_unlocked();
+        let task2 = task1.clone_task_for_test(&mut locked, 0, Some(SIGCHLD));
         task2.thread_group.setsid().expect("setsid");
 
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let fs = dev_pts_fs(&task1, Default::default());
         let opened_main = open_ptmx_and_unlock(&task1, fs).expect("ptmx");
         let opened_replica = open_file(&task2, fs, b"0").expect("open file");
 
@@ -891,12 +963,12 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_steal_terminal() {
-        let (kernel, task1) = create_kernel_and_task();
+        let (_kernel, task1, mut locked) = create_kernel_task_and_unlocked();
         task1.set_creds(Credentials::with_ids(1, 1));
 
-        let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+        let task2 = task1.clone_task_for_test(&mut locked, 0, Some(SIGCHLD));
 
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let fs = dev_pts_fs(&task1, Default::default());
         let _opened_main = open_ptmx_and_unlock(&task1, fs).expect("ptmx");
         let wo_opened_replica =
             open_file_with_flags(&task1, fs, b"0", OpenFlags::WRONLY | OpenFlags::NOCTTY)
@@ -944,16 +1016,16 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_foreground_process() {
-        let (kernel, init) = create_kernel_and_task();
-        let task1 = init.clone_task_for_test(0, Some(SIGCHLD));
+        let (_kernel, init, mut locked) = create_kernel_task_and_unlocked();
+        let task1 = init.clone_task_for_test(&mut locked, 0, Some(SIGCHLD));
         task1.thread_group.setsid().expect("setsid");
-        let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+        let task2 = task1.clone_task_for_test(&mut locked, 0, Some(SIGCHLD));
         task2.thread_group.setpgid(&task2, 0).expect("setpgid");
         let task2_pgid = task2.thread_group.read().process_group.leader;
 
         assert_ne!(task2_pgid, task1.thread_group.read().process_group.leader);
 
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let fs = dev_pts_fs(&task1, Default::default());
         let _opened_main = open_ptmx_and_unlock(&init, fs).expect("ptmx");
         let opened_replica = open_file(&task2, fs, b"0").expect("open file");
 
@@ -1012,11 +1084,11 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_detach_session() {
-        let (kernel, task1) = create_kernel_and_task();
-        let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+        let (_kernel, task1, mut locked) = create_kernel_task_and_unlocked();
+        let task2 = task1.clone_task_for_test(&mut locked, 0, Some(SIGCHLD));
         task2.thread_group.setsid().expect("setsid");
 
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let fs = dev_pts_fs(&task1, Default::default());
         let _opened_main = open_ptmx_and_unlock(&task1, fs).expect("ptmx");
         let opened_replica = open_file(&task1, fs, b"0").expect("open file");
 
@@ -1042,8 +1114,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_send_data_back_and_forth() {
-        let (kernel, task) = create_kernel_and_task();
-        let fs = dev_pts_fs(&kernel, Default::default());
+        let (_kernel, task) = create_kernel_and_task();
+        let fs = dev_pts_fs(&task, Default::default());
         let ptmx = open_ptmx_and_unlock(&task, fs).expect("ptmx");
         let pts = open_file(&task, fs, b"0").expect("open file");
 

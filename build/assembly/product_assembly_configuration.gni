@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/board.gni")
 import("//build/group_with_inputs.gni")
 
 # Create a product assembly config file from the lists of packages and config
@@ -71,24 +70,6 @@ import("//build/group_with_inputs.gni")
 #   testonly
 #   visibility
 template("product_assembly_configuration") {
-  # Board-provided drivers shouldn't be part of the product assembly config,
-  # but we don't yet have that mechanism in place, so we will insert them here
-  # as if they are product-provided.
-  #
-  # But only include them on "minimal" feature_set_level products.  This is
-  # the default if `platform` is omitted, or `platform.feature_set_level` is
-  # unspecified.  include_board_drivers = true
-  include_board_drivers = true
-  if (defined(invoker.platform)) {
-    _platform = invoker.platform
-    if (defined(_platform.feature_set_level) &&
-        _platform.feature_set_level != "minimal") {
-      include_board_drivers = false
-    } else {
-      not_needed([ "_platform" ])
-    }
-  }
-
   labels = {
     # So it can be reused.
     target_name = target_name
@@ -161,19 +142,6 @@ template("product_assembly_configuration") {
     if (defined(invoker.base_driver_packages)) {
       foreach(package, invoker.base_driver_packages) {
         base_driver_package_labels += [ package.package_target ]
-      }
-    }
-
-    # Board-provided drivers shouldn't be part of the product assembly config,
-    # but we don't yet have that mechanism in place, so we will insert them here
-    # as if they are product-provided.
-    #
-    # This is a GN arg defined in `//build/board.gni`, and is set in the _board_
-    # gni files that are imported into `args.gni`.
-    board_driver_package_labels = []
-    if (include_board_drivers) {
-      foreach(package, board_provided_drivers) {
-        board_driver_package_labels += [ package.package_target ]
       }
     }
   }
@@ -308,37 +276,6 @@ template("product_assembly_configuration") {
         ]
       }
     }
-
-    # The board drivers are added to a separate list from the base drivers, so
-    # that they can be distinguised better in the GN build graph.
-    #
-    # As a global GN build arg, it is always defined, so the if(defined()) check
-    # is not necessary here.
-    board_driver_packages = []
-    board_driver_package_manifests = []
-    if (include_board_drivers) {
-      foreach(driver_package, board_provided_drivers) {
-        assert(
-            defined(driver_package.package_target),
-            "board driver did not supply a package target: ${driver_package}")
-        _package_out_dir =
-            get_label_info(driver_package.package_target, "target_out_dir")
-        _package_name = get_label_info(driver_package.package_target, "name")
-        _manifest_path =
-            "${_package_out_dir}/${_package_name}/package_manifest.json"
-        _manifest_path_rebased = rebase_path(_manifest_path, root_build_dir)
-
-        board_driver_package_manifests += [ _manifest_path ]
-        board_driver_packages += [
-          # This scope needs to serialize to json and deserialize
-          # to a DriverDetails Assembly config struct
-          {
-            package = _manifest_path_rebased
-            components = driver_package.driver_components
-          },
-        ]
-      }
-    }
   }
 
   # Platform configuration schema fields that are paths to files.  These need to
@@ -411,97 +348,139 @@ template("product_assembly_configuration") {
   # of the newly-constructed ones, and then assigning the newly-constructed ones
   # to the appropriate variables in each of the nested scopes.
 
-  platform_config_file_potential_inputs = [
+  config_file_potential_inputs = [
     {
-      node_path = "ui"
+      node_path = "platform.ui"
       fields = [ "sensor_config" ]
     },
     {
-      node_path = "development_support"
+      node_path = "platform.development_support"
       fields = [
         "authorized_ssh_keys_path",
         "authorized_ssh_ca_certs_path",
       ]
     },
     {
+      node_path = "product.component_policy"
+      fields = [ "product_policies" ]
+      is_list = true
+    },
+    {
+      node_path = "platform.diagnostics.sampler"
+      fields = [
+        "fire_configs",
+        "metrics_configs",
+      ]
+      is_list = true
+    },
+    {
       node_path = "platform.forensics.cobalt"
       fields = [ "registry" ]
+    },
+    {
+      node_path = "platform.storage.component_id_index"
+      fields = [ "product_index" ]
+    },
+    {
+      node_path = "platform.connectivity.network"
+      fields = [ "netcfg_config_path" ]
+    },
+    {
+      node_path = "product.build_info"
+      fields = [
+        "version",
+        "jiri_snapshot",
+        "latest_commit_date",
+        "minimum_utc_stamp",
+      ]
     },
   ]
 
   # The assembly configuration
-  platform_config_inputs = []
+  config_inputs = []
 
-  if (defined(invoker.platform)) {
-    _p = invoker.platform
+  _config = {
+    if (defined(invoker.platform)) {
+      platform = invoker.platform
+    }
+    if (defined(invoker.product)) {
+      product = invoker.product
+    }
+  }
 
-    # Iterate over each item in the list above.
-    foreach(potential_input, platform_config_file_potential_inputs) {
-      _node = {
-      }
-      _node = _p
+  # Iterate over each item in the list above.
+  foreach(potential_input, config_file_potential_inputs) {
+    _node = {
+    }
+    _node = _config
 
-      # Since we can't use recursion, iteratively change `_node` to the next
-      # child in the path, e.g. 'foo', then 'bar'.  The `continue` var is used
-      # to signal that some node along the path has been omitted, and this will
-      # be a no-op for the rest of the iteration (since it can't exit early)
-      _continue = true
-      foreach(_node_name, string_split(potential_input.node_path, ".")) {
-        if (_continue && defined(_node[_node_name])) {
-          # because GN will not let you replace a non-empty scope, this does a
-          # little workaround to what would be the following, if it was allowed:
-          #
-          #  _node = _node[_node_name]
-          #
-          # Instead, we need to create a _next_node temporary to hold the next
-          # node, but even that temporary lives across iterations of the loop,
-          # and must be reset to an empty scope before re-assigning to it.
-          #
+    # Since we can't use recursion, iteratively change `_node` to the next
+    # child in the path, e.g. 'foo', then 'bar'.  The `continue` var is used
+    # to signal that some node along the path has been omitted, and this will
+    # be a no-op for the rest of the iteration (since it can't exit early)
+    _continue = true
+    foreach(_node_name, string_split(potential_input.node_path, ".")) {
+      if (_continue && defined(_node[_node_name])) {
+        # because GN will not let you replace a non-empty scope, this does a
+        # little workaround to what would be the following, if it was allowed:
+        #
+        #  _node = _node[_node_name]
+        #
+        # Instead, we need to create a _next_node temporary to hold the next
+        # node, but even that temporary lives across iterations of the loop,
+        # and must be reset to an empty scope before re-assigning to it.
+        #
 
-          # Clear the previous _next_node, and then cache the next node to look
-          # at in _next_node.
-          _next_node = {
-          }
-          _next_node = _node[_node_name]
-
-          # Clear the _node var, so that we can assign _next_node to it.
-          _node = {
-          }
-          _node = _next_node
-        } else {
-          # The node wasn't found, so do nothing for the rest of the iteration.
-          _continue = false
+        # Clear the previous _next_node, and then cache the next node to look
+        # at in _next_node.
+        _next_node = {
         }
+        _next_node = _node[_node_name]
+
+        # Clear the _node var, so that we can assign _next_node to it.
+        _node = {
+        }
+        _node = _next_node
+      } else {
+        # The node wasn't found, so do nothing for the rest of the iteration.
+        _continue = false
       }
+    }
 
-      # 'continue' will still be true if the all the nodes in the path were
-      # found.
-      if (_continue) {
-        foreach(_field_name, potential_input.fields) {
-          if (defined(_node[_field_name])) {
-            _file_path = _node[_field_name]
+    # 'continue' will still be true if the all the nodes in the path were
+    # found.
+    if (_continue) {
+      foreach(_field_name, potential_input.fields) {
+        if (defined(_node[_field_name])) {
+          _file_paths = []
+          if (defined(potential_input.is_list) && potential_input.is_list) {
+            _file_paths += _node[_field_name]
+          } else {
+            _file_paths += [ _node[_field_name] ]
+          }
 
-            # Here the rebased path is converted back in to an absolute GN
-            # file label, from the GN root dir `//`:
-            #
-            # ../../path/to/filename.json
-            #
-            # becomes:
-            #
-            # //path/to/filename.json
-            #
-            # and if a file in root_build_dir:
-            #
-            # path/to/filename.json
-            #
-            # it becomes (for `root_build_dir` == "//out/default"):
-            #
-            # //out/default/path/to/filename.json
-            #
-            # And the resultant (non-rebased) path can be used in the GN
-            # action's `inputs` list
+          # Here the rebased path is converted back in to an absolute GN
+          # file label, from the GN root dir `//`:
+          #
+          # ../../path/to/filename.json
+          #
+          # becomes:
+          #
+          # //path/to/filename.json
+          #
+          # and if a file in root_build_dir:
+          #
+          # path/to/filename.json
+          #
+          # it becomes (for `root_build_dir` == "//out/default"):
+          #
+          # //out/default/path/to/filename.json
+          #
+          # And the resultant (non-rebased) path can be used in the GN
+          # action's `inputs` list
+          foreach(_file_path, _file_paths) {
             _gn_path = "//" + rebase_path(_file_path, "//", root_build_dir)
-            platform_config_inputs += [ _gn_path ]
+            config_inputs += [ _gn_path ]
           }
         }
       }
@@ -527,10 +506,7 @@ template("product_assembly_configuration") {
         cache = files.cache_packages
       }
 
-      # Pass both the board-provided and the product-provided base drivers in the config
-      # until we have support for the board input to product assembly to provide
-      # drivers.
-      base_drivers = files.base_driver_packages + files.board_driver_packages
+      base_drivers = files.base_driver_packages
     }
   }
 
@@ -601,17 +577,6 @@ template("product_assembly_configuration") {
     deps = labels.cache_package_config_data_deps
   }
 
-  # Create a target for the board-provided driver packages, so they appear in
-  # the dep graph as distinct from the product-provided driver packages, and
-  # validate that they produce all of the manifests whose paths were computed
-  # from the labels.
-  group_with_inputs(labels.board_driver_package_set) {
-    forward_variables_from(invoker, [ "testonly" ])
-    visibility = [ ":${labels.target_name}" ]
-    inputs = files.board_driver_package_manifests
-    deps = labels.board_driver_package_labels
-  }
-
   group_with_inputs(labels.target_name) {
     forward_variables_from(invoker,
                            [
@@ -630,10 +595,10 @@ template("product_assembly_configuration") {
       inputs = []
     }
 
-    # Add any inputs found by looking at the known platform config schema items
+    # Add any inputs found by looking at the known config schema items
     # that contain paths to files, so that they are guaranteed to be added to
     # the ninja deps for the product assembly configuration.
-    inputs += platform_config_inputs
+    inputs += config_inputs
 
     if (!defined(deps)) {
       deps = []
@@ -642,7 +607,6 @@ template("product_assembly_configuration") {
       ":${labels.base_driver_package_set}",
       ":${labels.base_package_config_data}",
       ":${labels.base_package_set}",
-      ":${labels.board_driver_package_set}",
       ":${labels.cache_package_config_data}",
       ":${labels.cache_package_set}",
     ]

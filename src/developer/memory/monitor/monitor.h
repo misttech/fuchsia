@@ -45,21 +45,6 @@ class Monitor : public fuchsia::memory::Monitor, public fuchsia::memory::inspect
   // For memory bandwidth measurement, SetRamDevice should be called once
   void SetRamDevice(fuchsia::hardware::ram::metrics::DevicePtr ptr);
 
-  void Watch(fidl::InterfaceHandle<fuchsia::memory::Watcher> watcher) override;
-
-  // Deprecated. Use `CollectJsonStats` instead.
-  // Writes a memory capture to |socket| in JSON, in UTF-8.
-  // See //src//developer/memory/metrics/printer.h for a
-  // description of the format of the JSON.
-  void WriteJsonCapture(zx::socket socket) override;
-
-  // Deprecated. Use `CollectJsonStats` instead.
-  // Writes a memory capture and the bucket definition to |socket| in JSON,
-  // in UTF-8.
-  // See //src//developer/memory/metrics/printer.h for a
-  // description of the format of the memory capture JSON.
-  void WriteJsonCaptureAndBuckets(zx::socket socket) override;
-
   // Writes a memory capture and the bucket definition to |socket| in JSON,
   // in UTF-8.
   // See the fuchsia.memory.inspection FIDL library for a
@@ -72,7 +57,7 @@ class Monitor : public fuchsia::memory::Monitor, public fuchsia::memory::inspect
   static const char kTraceName[];
 
  private:
-  void CollectJsonStatsWithOptions(zx::socket socket, bool include_starnix_processes);
+  void CollectJsonStatsWithOptions(zx::socket socket);
 
   void PublishBucketConfiguration();
 
@@ -89,12 +74,7 @@ class Monitor : public fuchsia::memory::Monitor, public fuchsia::memory::inspect
   void PrintHelp();
   inspect::Inspector Inspect(const std::vector<memory::BucketMatch>& bucket_matches);
 
-  // Destroys a watcher proxy (called upon a connection error).
-  void ReleaseWatcher(fuchsia::memory::Watcher* watcher);
-  // Alerts all watchers when an update has occurred.
-  void NotifyWatchers(const zx_info_kmem_stats_t& stats);
-
-  zx_status_t GetCapture(memory::Capture* capture, memory::CaptureFilter* filter);
+  zx_status_t GetCapture(memory::Capture* capture, std::unique_ptr<memory::CaptureStrategy> filter);
   void GetDigest(const memory::Capture& capture, memory::Digest* digest);
   void PressureLevelChanged(Level level);
 
@@ -111,7 +91,6 @@ class Monitor : public fuchsia::memory::Monitor, public fuchsia::memory::inspect
   fuchsia::metrics::MetricEventLoggerSyncPtr metric_event_logger_;
   fidl::BindingSet<fuchsia::memory::inspection::Collector> bindings_;
   fidl::BindingSet<fuchsia::memory::Monitor> deprecated_bindings_;
-  std::vector<fuchsia::memory::WatcherPtr> watchers_;
   trace::TraceObserver trace_observer_;
   sys::ComponentInspector inspector_;
   Logger logger_;

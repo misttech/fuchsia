@@ -21,7 +21,7 @@ use crate::keyboard_binding::{KeyboardDeviceDescriptor, KeyboardEvent};
 use async_trait::async_trait;
 use fidl_fuchsia_input::Key;
 use fidl_fuchsia_ui_input3::KeyEventType;
-use fuchsia_inspect;
+use fuchsia_inspect::{self, health::Reporter};
 use fuchsia_trace as ftrace;
 use fuchsia_zircon as zx;
 use keymaps::KeyState;
@@ -131,6 +131,14 @@ impl UnhandledInputHandler for ChromebookKeyboardHandler {
             // Pass other events unchanged.
             _ => vec![InputEvent::from(input_event)],
         }
+    }
+
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
     }
 }
 
@@ -935,7 +943,7 @@ mod tests {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
         let _handler = ChromebookKeyboardHandler::new(&fake_handlers_node);
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 chromebook_keyboard_handler: {
                     events_received_count: 0u64,
@@ -945,7 +953,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 }
             }
@@ -969,7 +977,7 @@ mod tests {
             ],
         );
         let _ = run_all_events(&handler, events).await;
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 chromebook_keyboard_handler: {
                     events_received_count: 4u64,
@@ -979,7 +987,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 }
             }

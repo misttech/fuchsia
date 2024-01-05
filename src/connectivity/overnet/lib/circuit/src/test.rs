@@ -4,7 +4,7 @@
 
 use crate::*;
 use fuchsia_async as fasync;
-use futures::channel::mpsc::unbounded;
+use futures::channel::mpsc::channel;
 use futures::channel::oneshot::channel as oneshot;
 use futures::stream::StreamExt;
 
@@ -17,10 +17,10 @@ async fn connect_nodes(a: &Node, b: &Node) -> impl std::future::Future<Output = 
     let (read_a_control_writer, a_control_writer) = stream::stream();
     let (b_control_reader, write_b_control_reader) = stream::stream();
     let (read_b_control_writer, b_control_writer) = stream::stream();
-    let (a_new_stream_sender, mut a_new_streams) = unbounded();
-    let (b_new_stream_sender, mut b_new_streams) = unbounded();
-    let (a_new_stream_requests, a_new_stream_receiver) = unbounded();
-    let (b_new_stream_requests, b_new_stream_receiver) = unbounded();
+    let (a_new_stream_sender, mut a_new_streams) = channel(1);
+    let (b_new_stream_sender, mut b_new_streams) = channel(1);
+    let (mut a_new_stream_requests, a_new_stream_receiver) = channel(1);
+    let (mut b_new_stream_requests, b_new_stream_receiver) = channel(1);
     let a_runner = a.link_node(
         Some((read_a_control_writer, write_a_control_reader)),
         a_new_stream_sender,
@@ -93,7 +93,7 @@ async fn connect_nodes(a: &Node, b: &Node) -> impl std::future::Future<Output = 
         let a_to_b = async move {
             while let Some((reader, writer)) = a_new_streams.next().await {
                 let (err_sender, err) = oneshot();
-                b_new_stream_requests.unbounded_send((reader, writer, err_sender)).unwrap();
+                b_new_stream_requests.send((reader, writer, err_sender)).await.unwrap();
                 err.await.unwrap().unwrap();
             }
         };
@@ -101,7 +101,7 @@ async fn connect_nodes(a: &Node, b: &Node) -> impl std::future::Future<Output = 
         let b_to_a = async move {
             while let Some((reader, writer)) = b_new_streams.next().await {
                 let (err_sender, err) = oneshot();
-                a_new_stream_requests.unbounded_send((reader, writer, err_sender)).unwrap();
+                a_new_stream_requests.send((reader, writer, err_sender)).await.unwrap();
                 err.await.unwrap().unwrap();
             }
         };
@@ -116,11 +116,25 @@ async fn connect_nodes(a: &Node, b: &Node) -> impl std::future::Future<Output = 
 }
 
 #[fuchsia::test]
+async fn connect_to_nonexistent_peer() {
+    let (new_peer_sender_a, _new_peers) = channel(100);
+    let (incoming_streams_sender_a, _streams_a) = channel(100);
+    let a = Node::new("a", "test", new_peer_sender_a, incoming_streams_sender_a).unwrap();
+
+    let (_reader, peer_writer) = stream::stream();
+    let (peer_reader, _writer) = stream::stream();
+    match a.connect_to_peer(peer_reader, peer_writer, "b").await {
+        Err(Error::NoSuchPeer(peer)) => assert_eq!("b", &peer),
+        other => panic!("Unexpected result {other:?}!"),
+    }
+}
+
+#[fuchsia::test]
 async fn connection_test() {
-    let (new_peer_sender_a, mut new_peers) = unbounded();
-    let (new_peer_sender_b, _new_peers_b) = unbounded();
-    let (incoming_streams_sender_a, _streams_a) = unbounded();
-    let (incoming_streams_sender_b, mut streams) = unbounded();
+    let (new_peer_sender_a, mut new_peers) = channel(1);
+    let (new_peer_sender_b, _new_peers_b) = channel(100);
+    let (incoming_streams_sender_a, _streams_a) = channel(100);
+    let (incoming_streams_sender_b, mut streams) = channel(1);
     let a = Node::new("a", "test", new_peer_sender_a, incoming_streams_sender_a).unwrap();
     let b = Node::new("b", "test", new_peer_sender_b, incoming_streams_sender_b).unwrap();
 
@@ -154,10 +168,10 @@ async fn connection_test() {
 
 #[fuchsia::test]
 async fn connection_test_duplex() {
-    let (new_peer_sender_a, new_peers_a) = unbounded();
-    let (new_peer_sender_b, new_peers_b) = unbounded();
-    let (incoming_streams_sender_a, streams_a) = unbounded();
-    let (incoming_streams_sender_b, streams_b) = unbounded();
+    let (new_peer_sender_a, new_peers_a) = channel(1);
+    let (new_peer_sender_b, new_peers_b) = channel(1);
+    let (incoming_streams_sender_a, streams_a) = channel(1);
+    let (incoming_streams_sender_b, streams_b) = channel(1);
     let a = Node::new("a", "test", new_peer_sender_a, incoming_streams_sender_a).unwrap();
     let b = Node::new("b", "test", new_peer_sender_b, incoming_streams_sender_b).unwrap();
 
@@ -229,14 +243,14 @@ async fn connection_test_duplex() {
 
 #[fuchsia::test]
 async fn connection_test_with_router() {
-    let (new_peer_sender_a, new_peers_a) = unbounded();
-    let (new_peer_sender_b, new_peers_b) = unbounded();
-    let (incoming_streams_sender_a, streams_a) = unbounded();
-    let (incoming_streams_sender_b, streams_b) = unbounded();
+    let (new_peer_sender_a, new_peers_a) = channel(1);
+    let (new_peer_sender_b, new_peers_b) = channel(1);
+    let (incoming_streams_sender_a, streams_a) = channel(1);
+    let (incoming_streams_sender_b, streams_b) = channel(1);
     let a = Node::new("a", "test", new_peer_sender_a, incoming_streams_sender_a).unwrap();
     let b = Node::new("b", "test", new_peer_sender_b, incoming_streams_sender_b).unwrap();
-    let (new_peer_sender_router, _new_peers_router) = unbounded();
-    let (incoming_streams_sender_router, _streams_router) = unbounded();
+    let (new_peer_sender_router, _new_peers_router) = channel(100);
+    let (incoming_streams_sender_router, _streams_router) = channel(100);
     let (router, router_task) = Node::new_with_router(
         "router",
         "test",
@@ -318,14 +332,14 @@ async fn connection_test_with_router() {
 
 #[fuchsia::test]
 async fn connection_test_with_injected_route() {
-    let (new_peer_sender_a, new_peers_a) = unbounded();
-    let (new_peer_sender_b, new_peers_b) = unbounded();
-    let (incoming_streams_sender_a, streams_a) = unbounded();
-    let (incoming_streams_sender_b, streams_b) = unbounded();
+    let (new_peer_sender_a, new_peers_a) = channel(1);
+    let (new_peer_sender_b, new_peers_b) = channel(1);
+    let (incoming_streams_sender_a, streams_a) = channel(1);
+    let (incoming_streams_sender_b, streams_b) = channel(1);
     let a = Node::new("a", "test", new_peer_sender_a, incoming_streams_sender_a).unwrap();
     let b = Node::new("b", "test", new_peer_sender_b, incoming_streams_sender_b).unwrap();
-    let (new_peer_sender_router, mut new_peers_router) = unbounded();
-    let (incoming_streams_sender_router, _streams_router) = unbounded();
+    let (new_peer_sender_router, mut new_peers_router) = channel(1);
+    let (incoming_streams_sender_router, _streams_router) = channel(100);
     let router =
         Node::new("router", "test", new_peer_sender_router, incoming_streams_sender_router)
             .unwrap();
@@ -343,7 +357,7 @@ async fn connection_test_with_injected_route() {
         let new_peer = new_peers.next().await.unwrap();
         assert_eq!("router", &new_peer);
 
-        a.route_via("b", "router").await;
+        a.route_via("b", "router");
 
         let (_reader, peer_writer) = stream::stream();
         let (peer_reader, writer) = stream::stream();
@@ -406,8 +420,8 @@ async fn connection_test_with_injected_route() {
 
 #[fuchsia::test]
 async fn connection_node_test() {
-    let (new_peer_sender_a, mut new_peers) = unbounded();
-    let (new_peer_sender_b, _new_peers_b) = unbounded();
+    let (new_peer_sender_a, mut new_peers) = channel(1);
+    let (new_peer_sender_b, _new_peers_b) = channel(100);
     let (a, a_incoming_conns) =
         connection::ConnectionNode::new("a", "test", new_peer_sender_a).unwrap();
     let (b, b_incoming_conns) =
@@ -452,8 +466,8 @@ async fn connection_node_test() {
 
 #[fuchsia::test]
 async fn connection_node_test_duplex() {
-    let (new_peer_sender_a, mut new_peers) = unbounded();
-    let (new_peer_sender_b, _new_peers_b) = unbounded();
+    let (new_peer_sender_a, mut new_peers) = channel(1);
+    let (new_peer_sender_b, _new_peers_b) = channel(100);
     let (a, a_incoming_conns) =
         connection::ConnectionNode::new("a", "test", new_peer_sender_a).unwrap();
     let (b, b_incoming_conns) =
@@ -519,9 +533,9 @@ async fn connection_node_test_duplex() {
 
 #[fuchsia::test]
 async fn connection_node_test_with_router() {
-    let (new_peer_sender_a, mut new_peers) = unbounded();
-    let (new_peer_sender_b, _new_peers_b) = unbounded();
-    let (new_peer_sender_router, _new_peers_router) = unbounded();
+    let (new_peer_sender_a, mut new_peers) = channel(1);
+    let (new_peer_sender_b, _new_peers_b) = channel(1);
+    let (new_peer_sender_router, _new_peers_router) = channel(1);
     let (a, a_incoming_conns) =
         connection::ConnectionNode::new("a", "test", new_peer_sender_a).unwrap();
     let (b, b_incoming_conns) =

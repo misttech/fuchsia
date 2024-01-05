@@ -81,45 +81,47 @@ static const std::vector<fpbus::BootMetadata> emmc_boot_metadata{
 }  // namespace
 
 zx_status_t Sherlock::EmmcInit() {
+  using fuchsia_hardware_gpio::GpioFlags;
+
   // set alternate functions to enable EMMC
-  gpio_impl_.SetAltFunction(T931_EMMC_D0, T931_EMMC_D0_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_D1, T931_EMMC_D1_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_D2, T931_EMMC_D2_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_D3, T931_EMMC_D3_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_D4, T931_EMMC_D4_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_D5, T931_EMMC_D5_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_D6, T931_EMMC_D6_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_D7, T931_EMMC_D7_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_CLK, T931_EMMC_CLK_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_RST, T931_EMMC_RST_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_CMD, T931_EMMC_CMD_FN);
-  gpio_impl_.SetAltFunction(T931_EMMC_DS, T931_EMMC_DS_FN);
+  gpio_init_steps_.push_back({T931_EMMC_D0, GpioSetAltFunction(T931_EMMC_D0_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_D1, GpioSetAltFunction(T931_EMMC_D1_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_D2, GpioSetAltFunction(T931_EMMC_D2_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_D3, GpioSetAltFunction(T931_EMMC_D3_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_D4, GpioSetAltFunction(T931_EMMC_D4_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_D5, GpioSetAltFunction(T931_EMMC_D5_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_D6, GpioSetAltFunction(T931_EMMC_D6_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_D7, GpioSetAltFunction(T931_EMMC_D7_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_CLK, GpioSetAltFunction(T931_EMMC_CLK_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_RST, GpioSetAltFunction(T931_EMMC_RST_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_CMD, GpioSetAltFunction(T931_EMMC_CMD_FN)});
+  gpio_init_steps_.push_back({T931_EMMC_DS, GpioSetAltFunction(T931_EMMC_DS_FN)});
 
-  gpio_impl_.SetDriveStrength(T931_EMMC_D0, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_D1, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_D2, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_D3, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_D4, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_D5, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_D6, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_D7, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_CLK, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_RST, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_CMD, 4000, nullptr);
-  gpio_impl_.SetDriveStrength(T931_EMMC_DS, 4000, nullptr);
+  gpio_init_steps_.push_back({T931_EMMC_D0, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_D1, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_D2, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_D3, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_D4, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_D5, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_D6, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_D7, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_CLK, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_RST, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_CMD, GpioSetDriveStrength(4000)});
+  gpio_init_steps_.push_back({T931_EMMC_DS, GpioSetDriveStrength(4000)});
 
-  gpio_impl_.ConfigIn(T931_EMMC_D0, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_D1, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_D2, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_D3, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_D4, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_D5, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_D6, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_D7, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_CLK, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_RST, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_CMD, GPIO_PULL_UP);
-  gpio_impl_.ConfigIn(T931_EMMC_DS, GPIO_PULL_DOWN);
+  gpio_init_steps_.push_back({T931_EMMC_D0, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_D1, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_D2, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_D3, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_D4, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_D5, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_D6, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_D7, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_CLK, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_RST, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_CMD, GpioConfigIn(GpioFlags::kPullUp)});
+  gpio_init_steps_.push_back({T931_EMMC_DS, GpioConfigIn(GpioFlags::kPullDown)});
 
   fidl::Arena<> fidl_arena;
 
@@ -146,10 +148,14 @@ zx_status_t Sherlock::EmmcInit() {
 
   fit::result sdmmc_metadata = fidl::Persist(
       fuchsia_hardware_sdmmc::wire::SdmmcMetadata::Builder(fidl_arena)
-          // Maintain the current Sherlock behavior until we determine that trim is needed.
-          .enable_trim(false)
+          .enable_trim(true)
           // Maintain the current Sherlock behavior until we determine that cache is needed.
           .enable_cache(false)
+          // Maintain the current Sherlock behavior until we determine that eMMC Packed Commands are
+          // needed.
+          .max_command_packing(0)
+          // TODO(fxbug.dev/134787): Use the FIDL SDMMC protocol.
+          .use_fidl(false)
           .Build());
   if (!sdmmc_metadata.is_ok()) {
     zxlogf(ERROR, "Failed to encode SDMMC metadata: %s",

@@ -24,24 +24,6 @@ declare_args() {
   # by the board definition rather than the product definition.
   board_driver_package_labels = []
 
-  # A list of scopes that describe drivers provided by the board, which are
-  # added to the product assembly configuration as "product-provided" drivers.
-  # These will later be migrated to a "board-provided" driver input to assembly,
-  # but that mechanism is still under development.
-  #
-  # Each scope added to this list needs to be in the following form:
-  #   {
-  #     # This is the label that creates the package, this can not be a group
-  #     package_target = "//gn/label/that/to/the/driver:package"
-  #
-  #     # These are paths to the driver components within the above package.
-  #     driver_components = [
-  #       "meta/driver_1.cm",
-  #       "meta/driver_2.cm",
-  #     ]
-  #   }
-  board_provided_drivers = []
-
   # A list of package labels to include in the 'base' package set. Used by the
   # board definition rather than the product definition.
   board_package_labels = []
@@ -97,8 +79,8 @@ declare_args() {
   # any kind of stable contract for users of the archive.
   board_tools = []
 
-  # BoardInformation file for use with Product Assembly
-  board_information_for_assembly = false
+  # The label for the board configuration target to use with Product Assembly
+  board_configuration_label = false
 
   # Whether or not the board supports emulator/physical devices.
   # This is used to determine if product bundle metadata should generate a
@@ -110,4 +92,17 @@ declare_args() {
   # product bundle.
   partitions_config_label = false
   partitions_config_contents = []
+}
+
+# Ensure that partitions_config_label is default_toolchain-qualified.
+if (partitions_config_label != false) {
+  if (partitions_config_label ==
+      get_label_info(partitions_config_label, "label_no_toolchain")) {
+    partitions_config_label = "$partitions_config_label($default_toolchain)"
+  } else {
+    assert(
+        get_label_info(partitions_config_label, "toolchain") ==
+            default_toolchain,
+        "partitions_config_label (\"$partitions_config_label\") should be a target in the default_toolchain")
+  }
 }

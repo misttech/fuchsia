@@ -13,9 +13,8 @@ use {
         pipeline::Pipeline,
         ImmutableString,
     },
-    async_lock::Mutex,
     async_trait::async_trait,
-    diagnostics_data::{Data, DiagnosticsData},
+    diagnostics_data::{Data, DiagnosticsData, Metadata},
     fidl::endpoints::{ControlHandle, RequestStream},
     fidl_fuchsia_diagnostics::{
         self, ArchiveAccessorRequest, ArchiveAccessorRequestStream, BatchIteratorControlHandle,
@@ -27,6 +26,7 @@ use {
     fidl_fuchsia_mem::Buffer,
     fuchsia_async::{self as fasync, Task},
     fuchsia_inspect::NumericProperty,
+    fuchsia_sync::Mutex,
     fuchsia_trace as ftrace, fuchsia_zircon as zx,
     futures::{
         channel::mpsc,
@@ -37,11 +37,7 @@ use {
     },
     selectors::{self, FastError},
     serde::Serialize,
-    std::{
-        collections::HashMap,
-        pin::Pin,
-        sync::{Arc, Mutex as SyncMutex},
-    },
+    std::{collections::HashMap, pin::Pin, sync::Arc},
     thiserror::Error,
     tracing::warn,
 };
@@ -53,7 +49,7 @@ pub struct ArchiveAccessorServer {
     inspect_repository: Arc<InspectRepository>,
     logs_repository: Arc<LogsRepository>,
     maximum_concurrent_snapshots_per_reader: u64,
-    server_task_sender: Arc<SyncMutex<mpsc::UnboundedSender<fasync::Task<()>>>>,
+    server_task_sender: Arc<Mutex<mpsc::UnboundedSender<fasync::Task<()>>>>,
     server_task_drainer: Mutex<Option<fasync::Task<()>>>,
 }
 
@@ -125,7 +121,7 @@ impl ArchiveAccessorServer {
             inspect_repository,
             logs_repository,
             maximum_concurrent_snapshots_per_reader,
-            server_task_sender: Arc::new(SyncMutex::new(snd)),
+            server_task_sender: Arc::new(Mutex::new(snd)),
             server_task_drainer: Mutex::new(Some(fasync::Task::spawn(async move {
                 rcv.for_each_concurrent(None, |rx| rx).await
             }))),
@@ -133,16 +129,16 @@ impl ArchiveAccessorServer {
     }
 
     pub async fn wait_for_servers_to_complete(&self) {
-        match self.server_task_drainer.lock().await.take() {
-            Some(task) => task.await,
-            None => unreachable!("The accessor server task is only awaited for once"),
-        }
+        let task = self
+            .server_task_drainer
+            .lock()
+            .take()
+            .expect("The accessor server task is only awaited for once");
+        task.await;
     }
 
-    pub async fn stop(&self) {
-        if let Ok(mut guard) = self.server_task_sender.lock() {
-            guard.disconnect();
-        }
+    pub fn stop(&self) {
+        self.server_task_sender.lock().disconnect();
     }
 
     async fn spawn(
@@ -188,16 +184,9 @@ impl ArchiveAccessorServer {
                     _ => return Err(AccessorError::InvalidSelectors("unrecognized selectors")),
                 };
 
-                let (selectors, output_rewriter) =
-                    match (selectors, pipeline.moniker_rewriter().as_ref()) {
-                        (Some(selectors), Some(rewriter)) => rewriter.rewrite_selectors(selectors),
-                        // behaves correctly whether selectors is Some(_) or None
-                        (selectors, _) => (selectors, None),
-                    };
-
-                let static_selectors_matchers = pipeline.read().await.static_selectors_matchers();
+                let static_selectors_matchers = pipeline.read().static_selectors_matchers();
                 let unpopulated_container_vec =
-                    inspect_repo.fetch_inspect_data(&selectors, static_selectors_matchers).await;
+                    inspect_repo.fetch_inspect_data(&selectors, static_selectors_matchers);
 
                 let per_component_budget_opt = if unpopulated_container_vec.is_empty() {
                     None
@@ -215,7 +204,6 @@ impl ArchiveAccessorServer {
                         unpopulated_container_vec,
                         performance_config,
                         selectors,
-                        output_rewriter,
                         Arc::clone(&stats),
                         trace_id,
                     ),
@@ -249,7 +237,6 @@ impl ArchiveAccessorServer {
                 };
                 let logs = log_repo
                     .logs_cursor(mode, selectors, trace_id)
-                    .await
                     .map(move |inner: _| (*inner).clone());
                 BatchIterator::new_serving_arrays(logs, requests, mode, stats, trace_id)?
                     .run()
@@ -270,13 +257,13 @@ impl ArchiveAccessorServer {
         let log_repo = Arc::clone(&self.logs_repository);
         let inspect_repo = Arc::clone(&self.inspect_repository);
         let maximum_concurrent_snapshots_per_reader = self.maximum_concurrent_snapshots_per_reader;
-        let Ok(guard) = self.server_task_sender.lock() else { return };
-        guard
+        self.server_task_sender
+            .lock()
             .unbounded_send(fasync::Task::spawn(async move {
                 let stats = pipeline.accessor_stats();
                 stats.global_stats.connections_opened.add(1);
-                while let Some(mut request) = stream.next().await {
-                    let control_handle = request.iterator.take_control_handle();
+                while let Some(request) = stream.next().await {
+                    let control_handle = request.iterator.get_control_handle();
                     stats.global_stats.stream_diagnostics_requests.add(1);
                     let pipeline = Arc::clone(&pipeline);
 
@@ -285,8 +272,8 @@ impl ArchiveAccessorServer {
                     // this allows tests to fetch all isolated logs before finishing.
                     let inspect_repo_for_task = Arc::clone(&inspect_repo);
                     let log_repo_for_task = Arc::clone(&log_repo);
-                    let Ok(guard) = batch_iterator_task_sender.lock() else { continue };
-                    guard
+                    batch_iterator_task_sender
+                        .lock()
                         .unbounded_send(Task::spawn(async move {
                             if let Err(e) = Self::spawn(
                                 pipeline,
@@ -323,8 +310,13 @@ pub trait ArchiveAccessorWriter {
 
     /// Takes the control handle from the FIDL stream (or returns None
     /// if the handle has already been taken, or if this is a socket.
-    fn take_control_handle(&mut self) -> Option<BatchIteratorControlHandle> {
+    fn get_control_handle(&self) -> Option<BatchIteratorControlHandle> {
         None
+    }
+
+    /// Sends an on ready event.
+    async fn maybe_respond_ready(&mut self) -> Result<(), AccessorError> {
+        Ok(())
     }
 
     /// Waits for ZX_ERR_PEER_CLOSED
@@ -387,13 +379,40 @@ pub enum IteratorError {
 #[async_trait]
 impl ArchiveAccessorWriter for Peekable<BatchIteratorRequestStream> {
     async fn write(&mut self, data: Vec<FormattedContent>) -> Result<(), IteratorError> {
-        // TODO(https://fxbug.dev/126547): Fix compiler bug.
-        let Some(Ok(BatchIteratorRequest::GetNext { responder })) = __self.next().await else {
-            return Err(IteratorError::PeerClosed);
-        };
-        responder.send(Ok(data))?;
+        loop {
+            // TODO(https://fxbug.dev/126547): Fix compiler bug.
+            match __self.next().await {
+                Some(Ok(BatchIteratorRequest::GetNext { responder })) => {
+                    responder.send(Ok(data))?;
+                    return Ok(());
+                }
+                Some(Ok(BatchIteratorRequest::WaitForReady { responder })) => {
+                    responder.send()?;
+                }
+                Some(Ok(BatchIteratorRequest::_UnknownMethod { .. })) => {
+                    return Err(IteratorError::PeerClosed);
+                }
+                Some(Err(err)) => return Err(err.into()),
+                None => {
+                    return Err(IteratorError::PeerClosed);
+                }
+            }
+        }
+    }
+
+    async fn maybe_respond_ready(&mut self) -> Result<(), AccessorError> {
+        let mut this = Pin::new(self);
+        if matches!(this.as_mut().peek().await, Some(Ok(BatchIteratorRequest::WaitForReady { .. })))
+        {
+            let Some(Ok(BatchIteratorRequest::WaitForReady { responder })) = this.next().await
+            else {
+                unreachable!("We already checked the next request was WaitForReady");
+            };
+            responder.send()?;
+        }
         Ok(())
     }
+
     async fn wait_for_buffer(&mut self) -> anyhow::Result<()> {
         if let Some(Ok(_)) = Pin::new(self).peek().await {
             Ok(())
@@ -401,7 +420,8 @@ impl ArchiveAccessorWriter for Peekable<BatchIteratorRequestStream> {
             Err(IteratorError::PeerClosed.into())
         }
     }
-    fn take_control_handle(&mut self) -> Option<BatchIteratorControlHandle> {
+
+    fn get_control_handle(&self) -> Option<BatchIteratorControlHandle> {
         Some(self.get_ref().control_handle())
     }
 
@@ -429,8 +449,8 @@ impl ArchiveAccessorTranslator for fhost::ArchiveAccessorRequestStream {
             parameters,
             responder,
             stream,
-        })) = StreamExt::next(&mut __self).await else
-        {
+        })) = StreamExt::next(&mut __self).await
+        else {
             return None;
         };
         // It's fine for the client to send us a socket
@@ -452,8 +472,8 @@ impl ArchiveAccessorTranslator for ArchiveAccessorRequestStream {
             control_handle: _,
             result_stream,
             stream_parameters,
-        })) = StreamExt::next(&mut __self).await else
-        {
+        })) = StreamExt::next(&mut __self).await
+        else {
             return None;
         };
         Some(ArchiveIteratorRequest {
@@ -526,7 +546,7 @@ impl BatchIterator {
         let truncation_counter = SchemaTruncationCounter::new();
         let stream_owned_counter_for_fut = Arc::clone(&truncation_counter);
 
-        let data = data.then(move |d| {
+        let data = data.then(move |mut d| {
             let stream_owned_counter = Arc::clone(&stream_owned_counter_for_fut);
             let result_stats = Arc::clone(&result_stats_for_fut);
             let budget_tracker = Arc::clone(&budget_tracker_shared);
@@ -542,10 +562,10 @@ impl BatchIterator {
                     "trace_id" => u64::from(trace_id),
                     "moniker" => d.moniker.as_ref()
                 );
-                let mut unlocked_counter = stream_owned_counter.lock().await;
-                let mut tracker_guard = budget_tracker.lock().await;
+                let mut unlocked_counter = stream_owned_counter.lock();
+                let mut tracker_guard = budget_tracker.lock();
                 unlocked_counter.total_schemas += 1;
-                if D::has_errors(&d.metadata) {
+                if d.metadata.has_errors() {
                     result_stats.add_result_error();
                 }
 
@@ -568,15 +588,11 @@ impl BatchIterator {
                                 } else {
                                     result_stats.add_schema_truncated();
                                     unlocked_counter.truncated_schemas += 1;
-
-                                    let new_data = d.dropped_payload_schema(
-                                        "Schema failed to fit component budget.".to_string(),
-                                    );
-
+                                    d.drop_payload();
                                     // TODO(66085): If a payload is truncated, cache the
                                     // new schema so that we can reuse if other schemas from
                                     // the same component get dropped.
-                                    SerializedVmo::serialize(&new_data, D::DATA_TYPE, format)
+                                    SerializedVmo::serialize(&d, D::DATA_TYPE, format)
                                 }
                             }
                             None => Ok(contents),
@@ -632,6 +648,7 @@ impl BatchIterator {
     }
 
     pub async fn run(mut self) -> Result<(), AccessorError> {
+        self.requests.maybe_respond_ready().await?;
         while self.requests.wait_for_buffer().await.is_ok() {
             self.stats.add_request();
             let start_time = zx::Time::get_monotonic();
@@ -659,7 +676,7 @@ impl BatchIterator {
             self.stats.add_response();
             if batch.is_empty() {
                 if let Some(truncation_count) = &self.truncation_counter {
-                    let unlocked_count = truncation_count.lock().await;
+                    let unlocked_count = truncation_count.lock();
                     if unlocked_count.total_schemas > 0 {
                         self.stats.global_stats().record_percent_truncated_schemas(
                             ((unlocked_count.truncated_schemas as f32
@@ -758,7 +775,7 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<ArchiveAccessorMarker>().unwrap();
         let pipeline = Arc::new(Pipeline::for_test(None));
         let inspector = Inspector::default();
-        let log_repo = LogsRepository::new(1_000_000, inspector.root()).await;
+        let log_repo = LogsRepository::new(1_000_000, inspector.root());
         let inspect_repo = Arc::new(InspectRepository::new(vec![Arc::downgrade(&pipeline)]));
         let server = ArchiveAccessorServer::new(inspect_repo, log_repo, 4);
         server.spawn_server(pipeline, stream);
@@ -812,7 +829,7 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<ArchiveAccessorMarker>().unwrap();
         let pipeline = Arc::new(Pipeline::for_test(None));
         let inspector = Inspector::default();
-        let log_repo = LogsRepository::new(1_000_000, inspector.root()).await;
+        let log_repo = LogsRepository::new(1_000_000, inspector.root());
         let inspect_repo = Arc::new(InspectRepository::new(vec![Arc::downgrade(&pipeline)]));
         let server = Arc::new(ArchiveAccessorServer::new(inspect_repo, log_repo, 4));
         server.spawn_server(pipeline, stream);
@@ -943,5 +960,38 @@ mod tests {
         drop(iterator_request_fut);
         drop(batch_iterator_proxy);
         assert_matches!(executor.run_singlethreaded(&mut batch_iterator_fut), Ok(()));
+    }
+
+    #[fuchsia::test]
+    async fn batch_iterator_on_ready_is_called() {
+        let (accessor, stream) =
+            fidl::endpoints::create_proxy_and_stream::<ArchiveAccessorMarker>().unwrap();
+        let pipeline = Arc::new(Pipeline::for_test(None));
+        let inspector = Inspector::default();
+        let log_repo = LogsRepository::new(1_000_000, inspector.root());
+        let inspect_repo = Arc::new(InspectRepository::new(vec![Arc::downgrade(&pipeline)]));
+        let server = ArchiveAccessorServer::new(inspect_repo, log_repo, 4);
+        server.spawn_server(pipeline, stream);
+
+        // A selector of the form `component:node/path:property` is rejected.
+        let (batch_iterator, server_end) =
+            fidl::endpoints::create_proxy::<BatchIteratorMarker>().unwrap();
+        assert!(accessor
+            .r#stream_diagnostics(
+                &StreamParameters {
+                    data_type: Some(DataType::Logs),
+                    stream_mode: Some(StreamMode::Subscribe),
+                    format: Some(Format::Json),
+                    client_selector_configuration: Some(ClientSelectorConfiguration::SelectAll(
+                        true
+                    )),
+                    ..Default::default()
+                },
+                server_end
+            )
+            .is_ok());
+
+        // We receive a response for WaitForReady
+        assert!(batch_iterator.wait_for_ready().await.is_ok());
     }
 }

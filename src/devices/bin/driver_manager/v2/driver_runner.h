@@ -20,7 +20,6 @@
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/result.h>
 
-#include <list>
 #include <unordered_set>
 
 #include <fbl/intrusive_double_list.h>
@@ -29,12 +28,12 @@
 #include "src/devices/bin/driver_manager/composite_node_spec/composite_node_spec_manager.h"
 #include "src/devices/bin/driver_manager/inspect.h"
 #include "src/devices/bin/driver_manager/v2/bind_manager.h"
-#include "src/devices/bin/driver_manager/v2/composite_node_spec_v2.h"
 #include "src/devices/bin/driver_manager/v2/driver_host.h"
 #include "src/devices/bin/driver_manager/v2/node.h"
 #include "src/devices/bin/driver_manager/v2/node_removal_tracker.h"
 #include "src/devices/bin/driver_manager/v2/node_remover.h"
 #include "src/devices/bin/driver_manager/v2/runner.h"
+#include "src/devices/lib/log/log.h"
 
 // Note, all of the logic here assumes we are operating on a single-threaded
 // dispatcher. It is not safe to use a multi-threaded dispatcher with this code.
@@ -52,10 +51,14 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   DriverRunner(fidl::ClientEnd<fuchsia_component::Realm> realm,
                fidl::ClientEnd<fuchsia_driver_index::DriverIndex> driver_index,
                InspectManager& inspect, LoaderServiceFactory loader_service_factory,
-               async_dispatcher_t* dispatcher);
+               async_dispatcher_t* dispatcher, bool enable_test_shutdown_delays);
 
   // fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager> interface
   void AddSpec(AddSpecRequestView request, AddSpecCompleter::Sync& completer) override;
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_driver_framework::CompositeNodeManager> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
   // CompositeManagerBridge interface
   void BindNodesForCompositeNodeSpec() override;
@@ -65,7 +68,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   // NodeManager interface
   // Create a driver component with `url` against a given `node`.
   zx::result<> StartDriver(Node& node, std::string_view url,
-                           fuchsia_driver_index::DriverPackageType package_type) override;
+                           fuchsia_driver_framework::DriverPackageType package_type) override;
 
   // NodeManager interface
   // Shutdown hooks called by the shutdown manager
@@ -82,13 +85,20 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
     removal_tracker_.FinishEnumeration();
   }
 
+  void RebindComposite(std::string spec, std::optional<std::string> driver_url,
+                       fit::callback<void(zx::result<>)> callback) override;
+
+  bool IsTestShutdownDelayEnabled() const override { return enable_test_shutdown_delays_; }
+  std::weak_ptr<std::mt19937> GetShutdownTestRng() const override {
+    return shutdown_test_delay_rng_;
+  }
+
   void PublishComponentRunner(component::OutgoingDirectory& outgoing);
   void PublishCompositeNodeManager(component::OutgoingDirectory& outgoing);
   zx::result<> StartRootDriver(std::string_view url);
 
-  // This function schedules a callback to attempt to bind all orphaned nodes against
-  // the base drivers.
-  void ScheduleBaseDriversBinding();
+  // Schedules a hanging get call that watches for a new boot/base driver in the Driver Index.
+  void ScheduleWatchForDriverLoad();
 
   // Goes through the orphan list and attempts the bind them again. Sends nodes that are still
   // orphaned back to the orphan list. Tracks the result of the bindings and then when finished
@@ -105,7 +115,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   fpromise::promise<inspect::Inspector> Inspect() const;
 
-  std::vector<fuchsia_driver_development::wire::CompositeInfo> GetCompositeListInfo(
+  std::vector<fuchsia_driver_development::wire::CompositeNodeInfo> GetCompositeListInfo(
       fidl::AnyArena& arena) const;
 
   fidl::WireClient<fuchsia_driver_index::DriverIndex>& driver_index() { return driver_index_; }
@@ -126,20 +136,25 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                  std::shared_ptr<BindResultTracker> result_tracker) override;
   void DestroyDriverComponent(Node& node, DestroyDriverComponentCallback callback) override;
   zx::result<DriverHost*> CreateDriverHost() override;
+  bool IsDriverHostValid(DriverHost* driver_host) const override;
 
   // BindManagerBridge interface.
   zx::result<std::string> StartDriver(
-      Node& node, fuchsia_driver_index::wire::MatchedDriverInfo driver_info) override;
-  zx::result<BindSpecResult> BindToParentSpec(
-      fuchsia_driver_index::wire::MatchedCompositeNodeParentInfo match_info,
-      std::weak_ptr<Node> node, bool enable_multibind) override;
+      Node& node, fuchsia_driver_framework::wire::DriverInfo driver_info) override;
+  zx::result<BindSpecResult> BindToParentSpec(fidl::AnyArena& arena,
+                                              CompositeParents composite_parents,
+                                              std::weak_ptr<Node> node,
+                                              bool enable_multibind) override;
   void RequestMatchFromDriverIndex(
       fuchsia_driver_index::wire::MatchDriverArgs args,
       fit::callback<void(fidl::WireUnownedResult<fuchsia_driver_index::DriverIndex::MatchDriver>&)>
           match_callback) override;
+  void RequestRebindFromDriverIndex(std::string spec, std::optional<std::string> driver_url_suffix,
+                                    fit::callback<void(zx::result<>)> callback) override;
 
   zx::result<> CreateDriverHostComponent(std::string moniker,
-                                         fidl::ServerEnd<fuchsia_io::Directory> exposed_dir);
+                                         fidl::ServerEnd<fuchsia_io::Directory> exposed_dir,
+                                         std::shared_ptr<bool> exposed_dir_connected);
 
   uint64_t next_driver_host_id_ = 0;
   fidl::WireClient<fuchsia_driver_index::DriverIndex> driver_index_;
@@ -160,9 +175,17 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   NodeRemovalTracker removal_tracker_;
 
   fbl::DoublyLinkedList<std::unique_ptr<DriverHostComponent>> driver_hosts_;
+
+  // True if the driver manager should inject test delays in the shutdown process. Set by the
+  // structured config.
+  bool enable_test_shutdown_delays_;
+
+  // RNG engine for the shutdown test delays. For reproducibility reasons, only one engine should
+  // be used.
+  std::shared_ptr<std::mt19937> shutdown_test_delay_rng_;
 };
 
-Collection ToCollection(const Node& node, fuchsia_driver_index::DriverPackageType package_type);
+Collection ToCollection(const Node& node, fuchsia_driver_framework::DriverPackageType package_type);
 
 }  // namespace dfv2
 

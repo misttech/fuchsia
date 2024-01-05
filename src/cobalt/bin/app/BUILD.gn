@@ -4,7 +4,6 @@
 
 import("//build/components.gni")
 import("//build/config.gni")
-import("//build/type/config.gni")
 import("//third_party/cobalt/metrics_registry.gni")
 
 declare_args() {
@@ -12,7 +11,13 @@ declare_args() {
   #   "LOCAL" - record log data locally to a file
   #   "DEVEL" - the non-prod environment for use in testing
   #   "PROD" - the production environment
-  cobalt_environment = "PROD"
+  #   false - use the default environment supplied by assembly
+  cobalt_environment = false
+}
+
+if (cobalt_environment != false && cobalt_environment != "PROD" &&
+    cobalt_environment != "DEVEL" && cobalt_environment != "LOCAL") {
+  assert(false, "Unknown cobalt_environment: $cobalt_environment")
 }
 
 # Generates the global_metrics_registry.pb file.
@@ -33,11 +38,6 @@ config_data("cobalt_registry") {
   deps = [ ":global_metrics_registry" ]
   sources = [ "$target_gen_dir/global_metrics_registry.pb" ]
   outputs = [ "global_metrics_registry.pb" ]
-}
-
-# Create build_type_* packages to include in different products.
-build_type_config_data("build_type") {
-  for_pkg = "cobalt"
 }
 
 source_set("lib") {
@@ -75,11 +75,10 @@ source_set("lib") {
     "//sdk/lib/syslog/cpp",
     "//src/cobalt/bin/utils:clock",
     "//src/cobalt/bin/utils:fuchsia_http_client",
-    "//src/connectivity/wlan/lib/mlme/cpp:mlme",
     "//src/lib/backoff",
     "//src/lib/fostr/fidl/fuchsia.settings",
     "//src/lib/fsl",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//src/lib/json_parser",
     "//third_party/cobalt/src/lib/util:file_util",
     "//third_party/cobalt/src/lib/util:pem_util",
@@ -109,6 +108,7 @@ executable("app") {
     ":lib",
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_hlcpp",
     "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_hlcpp",
+    "//sdk/fidl/fuchsia.time:fuchsia.time_hlcpp",
     "//sdk/lib/zbi-format",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/trace-provider",
@@ -131,7 +131,7 @@ fuchsia_component("component-v2") {
 
 resource("cobalt_environment") {
   # Environment selection for cobalt.
-  if (cobalt_environment == "PROD") {
+  if (cobalt_environment == false || cobalt_environment == "PROD") {
     sources = [ "configs/prod_environment" ]
   } else if (cobalt_environment == "DEVEL") {
     sources = [ "configs/devel_environment" ]
@@ -181,11 +181,14 @@ fuchsia_package("cobalt") {
   deps = [
     ":analyzer_devel_public",
     ":analyzer_prod_public",
-    ":cobalt_environment",
     ":component-v2",
     ":shuffler_devel_public",
     ":shuffler_prod_public",
   ]
+
+  if (cobalt_environment != false) {
+    deps += [ ":cobalt_environment" ]
+  }
 }
 
 metrics_registry("testapp_metrics_registry") {

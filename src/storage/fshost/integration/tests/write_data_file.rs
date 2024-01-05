@@ -8,7 +8,7 @@
 use {
     super::{
         blob_fs_type, data_fs_name, data_fs_spec, data_fs_type, new_builder, volumes_spec,
-        VolumesSpec,
+        VolumesSpec, DATA_FILESYSTEM_VARIANT,
     },
     fidl_fuchsia_fshost as fshost, fidl_fuchsia_io as fio,
     fshost::{AdminProxy, AdminWriteDataFileResult},
@@ -86,7 +86,7 @@ async fn no_existing_data_partition() {
 
     // Ensure the blob volume is present and unmodified.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob().await;
+    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
 
     fixture.check_fs_type("data", data_fs_type()).await;
 
@@ -119,7 +119,7 @@ async fn unformatted_netboot() {
 
     // Ensure the blob volume is present and unmodified.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob().await;
+    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
 
     fixture.check_fs_type("data", data_fs_type()).await;
 
@@ -136,6 +136,9 @@ async fn unformatted_netboot() {
 }
 
 #[fuchsia::test]
+// TODO(http://fxbug.dev/42182707): this test is flaking, disabling it temporarily to help with
+// tree health.
+#[cfg_attr(feature = "minfs", ignore)]
 async fn unformatted_small_disk() {
     let mut builder = new_builder();
     builder.fshost().set_config_value("ramdisk_image", true);
@@ -155,6 +158,7 @@ async fn unformatted_small_disk() {
         fixture.realm.root.connect_to_protocol_at_exposed_dir::<fshost::AdminMarker>().unwrap();
     if data_fs_name() == "f2fs" {
         call_write_data_file(&admin).await.expect_err("write_data_file succeeded");
+        fixture.tear_down().await;
         return;
     }
     call_write_data_file(&admin).await.expect("write_data_file failed");
@@ -165,7 +169,7 @@ async fn unformatted_small_disk() {
 
     // Ensure the blob volume is present and unmodified.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob().await;
+    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
 
     fixture.check_fs_type("data", data_fs_type()).await;
 
@@ -202,7 +206,7 @@ async fn formatted() {
 
     // Ensure the blob volume is present and unmodified.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob().await;
+    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
 
     fixture.check_fs_type("data", data_fs_type()).await;
 
@@ -251,7 +255,7 @@ async fn formatted_file_in_root() {
 
     // Ensure the blob volume is present and unmodified.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob().await;
+    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
 
     fixture.check_fs_type("data", data_fs_type()).await;
 
@@ -287,7 +291,7 @@ async fn formatted_netboot() {
 
     // Ensure the blob volume is present and unmodified.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob().await;
+    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
 
     fixture.check_fs_type("data", data_fs_type()).await;
 

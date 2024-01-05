@@ -12,7 +12,6 @@
 #error Fuchsia-only Header
 #endif
 
-#include <fidl/fuchsia.blobfs/cpp/wire.h>
 #include <fidl/fuchsia.fs/cpp/wire.h>
 #include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
@@ -33,10 +32,6 @@
 #include <fbl/ref_ptr.h>
 #include <storage/operation/unbuffered_operations_builder.h>
 
-#include "src/lib/storage/block_client/cpp/block_device.h"
-#include "src/lib/storage/vfs/cpp/journal/journal.h"
-#include "src/lib/storage/vfs/cpp/paged_vfs.h"
-#include "src/lib/storage/vfs/cpp/vnode.h"
 #include "src/storage/blobfs/allocator/allocator.h"
 #include "src/storage/blobfs/allocator/extent_reserver.h"
 #include "src/storage/blobfs/blob_cache.h"
@@ -53,6 +48,10 @@
 #include "src/storage/blobfs/page_loader.h"
 #include "src/storage/blobfs/transaction.h"
 #include "src/storage/blobfs/transaction_manager.h"
+#include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/vfs/cpp/journal/journal.h"
+#include "src/storage/lib/vfs/cpp/paged_vfs.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {
 
@@ -187,12 +186,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
 
   zx_status_t RunRequests(const std::vector<storage::BufferedOperation>& operations) override;
 
-  // Corruption notifier related.
-  const BlobCorruptionNotifier& blob_corruption_notifier() { return blob_corruption_notifier_; }
-  void SetCorruptBlobHandler(fidl::ClientEnd<fuchsia_blobfs::CorruptBlobHandler> blobfs_handler) {
-    blob_corruption_notifier_.set_corruption_handler(std::move(blobfs_handler));
-  }
-
   // Returns an optional overriden cache policy to apply for pager-backed blobs. If unset, the
   // default cache policy should be used.
   std::optional<CachePolicy> pager_backed_cache_policy() const {
@@ -216,8 +209,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
 
   DecompressorCreatorConnector* decompression_connector() { return decompression_connector_; }
 
-  bool allow_delivery_blobs() const { return allow_delivery_blobs_; }
-
  protected:
   // Reloads metadata from disk. Useful when metadata on disk
   // may have changed due to journal playback.
@@ -225,13 +216,12 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
 
  private:
   friend class BlobfsChecker;
-  FidlBlobCorruptionNotifier blob_corruption_notifier_;
 
   Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> device, fs::PagedVfs* vfs,
          const Superblock* info, Writability writable,
          CompressionSettings write_compression_settings, zx::resource vmex_resource,
          std::optional<CachePolicy> pager_backed_cache_policy,
-         DecompressorCreatorConnector* decompression_connector, bool allow_delivery_blobs);
+         DecompressorCreatorConnector* decompression_connector);
 
   static zx::result<std::unique_ptr<fs::Journal>> InitializeJournal(
       fs::TransactionHandler* transaction_handler, VmoidRegistry* registry, uint64_t journal_start,
@@ -334,8 +324,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   std::shared_mutex fsck_at_end_of_transaction_mutex_;
 
   DecompressorCreatorConnector* decompression_connector_;
-
-  const bool allow_delivery_blobs_;
 };
 
 }  // namespace blobfs

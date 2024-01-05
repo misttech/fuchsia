@@ -333,16 +333,15 @@ The FIDL toolchain generates a `struct` `User` with optional members:
 pub struct User {
   pub age: Option<u8>,
   pub name: Option<String>,
-  #[deprecated = "Use `..Default::default()` to construct and `..` to match."]
   #[doc(hidden)]
-  pub __non_exhaustive: (),
+  pub __source_breaking: fidl::marker::SourceBreaking,
 }
 ```
 
 If any unknown fields are encountered during decoding, they are discarded. There
 is no way to access them or determine if they occurred.
 
-The `__non_exhaustive` member prevents intializing the table exhaustively, which
+The `__source_breaking` member signals that initializing the table exhaustively
 causes API breakage when new fields are added. Instead, you should use the
 struct update syntax to fill in unspecified fields with `Default::default()`.
 For example:
@@ -818,12 +817,12 @@ The calculation of traits derivation rules is visible in
 <!-- link labels -->
 [`HandleDisposition`]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_zircon/struct.HandleDisposition.html
 [`HandleInfo`]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_zircon/struct.HandleInfo.html
-[`persist`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/encoding/fn.persist.html
-[`standalone_encode_value`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/encoding/fn.standalone_encode_value.html
-[`standalone_encode_resource`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/encoding/fn.standalone_encode_resource.html
-[`standalone_decode_value`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/encoding/fn.standalone_decode_value.html
-[`standalone_decode_resource`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/encoding/fn.standalone_decode_resource.html
-[`unpersist`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/encoding/fn.unpersist.html
+[`persist`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/fn.persist.html
+[`standalone_encode_value`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/fn.standalone_encode_value.html
+[`standalone_encode_resource`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/fn.standalone_encode_resource.html
+[`standalone_decode_value`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/fn.standalone_decode_value.html
+[`standalone_decode_resource`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/fn.standalone_decode_resource.html
+[`unpersist`]: https://fuchsia-docs.firebaseapp.com/rust/fidl/fn.unpersist.html
 [anon-names]: /docs/reference/fidl/language/language.md#inline-layouts
 [lang-bits]: /docs/reference/fidl/language/language.md#bits
 [lang-constants]: /docs/reference/fidl/language/language.md#constants

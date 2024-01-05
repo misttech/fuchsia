@@ -4,29 +4,163 @@
 
 #![allow(non_upper_case_globals)]
 
+use super::{
+    ffi::{
+        create_connection, create_image, device_import, device_release, execute_command,
+        execute_immediate_commands, export_buffer, flush, get_buffer_handle, import_semaphore2,
+        query, read_notification_channel, release_connection,
+    },
+    magma::{read_control_and_response, read_magma_command_and_type, StarnixPollItem},
+};
+use crate::{
+    device::{
+        magma::image_file::{ImageFile, ImageInfo},
+        sync_file::{SyncFence, SyncFile, SyncPoint, Timeline},
+    },
+    fs::fuchsia::RemoteFileObject,
+    mm::{MemoryAccessorExt, ProtectionFlags},
+    task::CurrentTask,
+    vfs::{
+        buffers::{InputBuffer, OutputBuffer},
+        fileops_impl_nonseekable, Anon, FdFlags, FdNumber, FileObject, FileOps, FsNode,
+        VmoFileObject,
+    },
+};
 use fidl_fuchsia_logger;
 use fuchsia_zircon as zx;
 use fuchsia_zircon::HandleBased;
-use magma::*;
+use magma::{
+    magma_buffer_clean_cache, magma_buffer_get_cache_policy, magma_buffer_get_info,
+    magma_buffer_id_t, magma_buffer_info_t, magma_buffer_set_cache_policy, magma_buffer_set_name,
+    magma_buffer_t, magma_cache_operation_t, magma_cache_policy_t, magma_connection_create_buffer,
+    magma_connection_create_context, magma_connection_get_error,
+    magma_connection_get_notification_channel_handle, magma_connection_import_buffer,
+    magma_connection_map_buffer, magma_connection_perform_buffer_op, magma_connection_release,
+    magma_connection_release_buffer, magma_connection_release_context,
+    magma_connection_release_semaphore, magma_connection_t, magma_connection_unmap_buffer,
+    magma_device_release, magma_device_t, magma_initialize_logging, magma_poll, magma_poll_item,
+    magma_poll_item_t, magma_semaphore_export, magma_semaphore_id_t, magma_semaphore_reset,
+    magma_semaphore_signal, magma_semaphore_t, virtio_magma_buffer_clean_cache_ctrl_t,
+    virtio_magma_buffer_clean_cache_resp_t, virtio_magma_buffer_export_ctrl_t,
+    virtio_magma_buffer_export_resp_t, virtio_magma_buffer_get_cache_policy_ctrl_t,
+    virtio_magma_buffer_get_cache_policy_resp_t, virtio_magma_buffer_get_handle_ctrl_t,
+    virtio_magma_buffer_get_handle_resp_t, virtio_magma_buffer_get_info_ctrl_t,
+    virtio_magma_buffer_get_info_resp_t, virtio_magma_buffer_set_cache_policy_ctrl_t,
+    virtio_magma_buffer_set_cache_policy_resp_t, virtio_magma_buffer_set_name_ctrl_t,
+    virtio_magma_buffer_set_name_resp_t, virtio_magma_connection_create_buffer_ctrl_t,
+    virtio_magma_connection_create_buffer_resp_t, virtio_magma_connection_create_context_ctrl_t,
+    virtio_magma_connection_create_context_resp_t, virtio_magma_connection_create_semaphore_ctrl_t,
+    virtio_magma_connection_create_semaphore_resp_t,
+    virtio_magma_connection_execute_command_ctrl_t, virtio_magma_connection_execute_command_resp_t,
+    virtio_magma_connection_execute_immediate_commands_ctrl_t,
+    virtio_magma_connection_execute_immediate_commands_resp_t,
+    virtio_magma_connection_flush_ctrl_t, virtio_magma_connection_flush_resp_t,
+    virtio_magma_connection_get_error_ctrl_t, virtio_magma_connection_get_error_resp_t,
+    virtio_magma_connection_get_notification_channel_handle_ctrl_t,
+    virtio_magma_connection_get_notification_channel_handle_resp_t,
+    virtio_magma_connection_import_buffer_ctrl_t, virtio_magma_connection_import_buffer_resp_t,
+    virtio_magma_connection_import_semaphore2_ctrl_t,
+    virtio_magma_connection_import_semaphore2_resp_t, virtio_magma_connection_map_buffer_ctrl_t,
+    virtio_magma_connection_map_buffer_resp_t, virtio_magma_connection_perform_buffer_op_ctrl_t,
+    virtio_magma_connection_perform_buffer_op_resp_t,
+    virtio_magma_connection_read_notification_channel_ctrl_t,
+    virtio_magma_connection_read_notification_channel_resp_t,
+    virtio_magma_connection_release_buffer_ctrl_t, virtio_magma_connection_release_buffer_resp_t,
+    virtio_magma_connection_release_context_ctrl_t, virtio_magma_connection_release_context_resp_t,
+    virtio_magma_connection_release_ctrl_t, virtio_magma_connection_release_resp_t,
+    virtio_magma_connection_release_semaphore_ctrl_t,
+    virtio_magma_connection_release_semaphore_resp_t, virtio_magma_connection_unmap_buffer_ctrl_t,
+    virtio_magma_connection_unmap_buffer_resp_t,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_BUFFER_CLEAN_CACHE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_BUFFER_EXPORT,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_BUFFER_GET_CACHE_POLICY,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_BUFFER_GET_HANDLE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_BUFFER_GET_INFO,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_BUFFER_SET_CACHE_POLICY,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_BUFFER_SET_NAME,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_CREATE_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_CREATE_CONTEXT,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_CREATE_SEMAPHORE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_EXECUTE_COMMAND,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_EXECUTE_IMMEDIATE_COMMANDS,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_FLUSH,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_GET_ERROR,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_GET_NOTIFICATION_CHANNEL_HANDLE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_IMPORT_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_IMPORT_SEMAPHORE2,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_MAP_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_PERFORM_BUFFER_OP,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_READ_NOTIFICATION_CHANNEL,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_RELEASE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_RELEASE_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_RELEASE_CONTEXT,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_RELEASE_SEMAPHORE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_UNMAP_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_DEVICE_CREATE_CONNECTION,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_DEVICE_IMPORT,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_DEVICE_QUERY,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_DEVICE_RELEASE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_POLL,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_SEMAPHORE_EXPORT,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_SEMAPHORE_RESET,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_SEMAPHORE_SIGNAL,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_VIRT_CONNECTION_CREATE_IMAGE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_VIRT_CONNECTION_GET_IMAGE_INFO,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_BUFFER_CLEAN_CACHE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_BUFFER_GET_CACHE_POLICY,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_BUFFER_GET_INFO,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_BUFFER_SET_CACHE_POLICY,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_BUFFER_SET_NAME,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CREATE_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CREATE_CONTEXT,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CREATE_SEMAPHORE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_COMMAND,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_IMMEDIATE_COMMANDS,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_GET_ERROR,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_GET_NOTIFICATION_CHANNEL_HANDLE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_IMPORT_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_IMPORT_SEMAPHORE2,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_MAP_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_PERFORM_BUFFER_OP,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE_CONTEXT,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE_SEMAPHORE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_UNMAP_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_QUERY,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_POLL,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_SEMAPHORE_EXPORT,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_SEMAPHORE_RESET,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_SEMAPHORE_SIGNAL,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_VIRT_CONNECTION_GET_IMAGE_INFO,
+    virtio_magma_device_create_connection_ctrl, virtio_magma_device_create_connection_resp_t,
+    virtio_magma_device_query_ctrl_t, virtio_magma_device_query_resp_t,
+    virtio_magma_device_release_ctrl_t, virtio_magma_device_release_resp_t,
+    virtio_magma_poll_ctrl_t, virtio_magma_poll_resp_t, virtio_magma_semaphore_export_ctrl_t,
+    virtio_magma_semaphore_export_resp_t, virtio_magma_semaphore_reset_ctrl_t,
+    virtio_magma_semaphore_reset_resp_t, virtio_magma_semaphore_signal_ctrl_t,
+    virtio_magma_semaphore_signal_resp_t, virtio_magma_virt_connection_create_image_ctrl_t,
+    virtio_magma_virt_connection_create_image_resp_t,
+    virtio_magma_virt_connection_get_image_info_ctrl_t,
+    virtio_magma_virt_connection_get_image_info_resp_t, virtmagma_buffer_set_name_wrapper,
+    MAGMA_CACHE_POLICY_CACHED, MAGMA_IMPORT_SEMAPHORE_ONE_SHOT, MAGMA_POLL_CONDITION_SIGNALED,
+    MAGMA_POLL_TYPE_SEMAPHORE, MAGMA_STATUS_INVALID_ARGS, MAGMA_STATUS_MEMORY_ERROR,
+    MAGMA_STATUS_OK,
+};
+use starnix_lifecycle::AtomicU64Counter;
+use starnix_logging::{impossible_error, log_error, log_warn, set_zx_name};
+use starnix_sync::Mutex;
+use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_uapi::{
+    device_type::DeviceType,
+    errno, error,
+    errors::Errno,
+    open_flags::OpenFlags,
+    user_address::{UserAddress, UserRef},
+    user_buffer::UserBuffer,
+};
 use std::{
     collections::HashMap,
     sync::{Arc, Once},
-};
-
-use super::{ffi::*, magma::*};
-use crate::{
-    device::wayland::image_file::*,
-    fs::{
-        buffers::{InputBuffer, OutputBuffer},
-        fuchsia::RemoteFileObject,
-        *,
-    },
-    lock::Mutex,
-    logging::{impossible_error, log_error, log_warn},
-    mm::{MemoryAccessorExt, ProtectionFlags},
-    syscalls::*,
-    task::CurrentTask,
-    types::*,
 };
 
 #[derive(Clone)]
@@ -73,18 +207,22 @@ impl Drop for MagmaBuffer {
     }
 }
 
-/// A `MagmaSemaphore` is an RAII wrapper around a `magma_semaphore_t`.
+/// A `MagmaSemaphore` is an RAII wrapper around one or more `magma_semaphore_t`.  Multiple are
+/// supported because a sync file may be imported.
 pub struct MagmaSemaphore {
-    // This reference is needed to release the semaphore.
+    // This reference is needed to release the semaphores.
     pub connection: Arc<MagmaConnection>,
-    pub handle: magma_semaphore_t,
+    pub handles: Vec<magma_semaphore_t>,
+    pub ids: Vec<magma_semaphore_id_t>,
 }
 
 impl Drop for MagmaSemaphore {
-    /// SAFETY: Makes an FFI call to release a a `magma_semaphore_t` handle. `connection.handle` must
+    /// SAFETY: Makes an FFI call to release the `magma_semaphore_t` handles. `connection.handle` must
     /// be valid because `connection` is refcounted.
     fn drop(&mut self) {
-        unsafe { magma_connection_release_semaphore(self.connection.handle, self.handle) }
+        for handle in &self.handles {
+            unsafe { magma_connection_release_semaphore(self.connection.handle, *handle) }
+        }
     }
 }
 
@@ -112,6 +250,7 @@ pub struct MagmaFile {
     connections: Arc<Mutex<ConnectionMap>>,
     buffers: Arc<Mutex<HashMap<magma_buffer_t, Arc<MagmaBuffer>>>>,
     semaphores: Arc<Mutex<HashMap<magma_semaphore_t, Arc<MagmaSemaphore>>>>,
+    semaphore_id_generator: AtomicU64Counter,
 }
 
 impl MagmaFile {
@@ -146,6 +285,7 @@ impl MagmaFile {
             connections: Arc::new(Mutex::new(HashMap::new())),
             buffers: Arc::new(Mutex::new(HashMap::new())),
             semaphores: Arc::new(Mutex::new(HashMap::new())),
+            semaphore_id_generator: AtomicU64Counter::new(1),
         }))
     }
 
@@ -239,8 +379,74 @@ impl MagmaFile {
         Ok(self.buffers.lock().get(&buffer).ok_or_else(|| errno!(EINVAL))?.clone())
     }
 
-    fn get_semaphore(&self, semaphore: magma_semaphore_t) -> Result<Arc<MagmaSemaphore>, Errno> {
-        Ok(self.semaphores.lock().get(&semaphore).ok_or_else(|| errno!(EINVAL))?.clone())
+    fn get_semaphore(&self, semaphore: magma_semaphore_t) -> Result<Arc<MagmaSemaphore>, i32> {
+        Ok(self.semaphores.lock().get(&semaphore).ok_or_else(|| MAGMA_STATUS_INVALID_ARGS)?.clone())
+    }
+
+    fn import_semaphore2(
+        &self,
+        current_task: &CurrentTask,
+        control: &virtio_magma_connection_import_semaphore2_ctrl_t,
+        response: &mut virtio_magma_connection_import_semaphore2_resp_t,
+    ) {
+        let mut status: i32 = MAGMA_STATUS_OK;
+
+        let fd = FdNumber::from_raw(control.semaphore_handle as i32);
+        let mut result_semaphore_id = 0;
+
+        if let (Ok(connection), Ok(file)) =
+            (self.get_connection(control.connection), current_task.files.get(fd))
+        {
+            let mut handles: Vec<magma_semaphore_t> = vec![];
+            let mut ids: Vec<magma_semaphore_id_t> = vec![];
+
+            if let Some(sync_file) = file.downcast_file::<SyncFile>() {
+                for sync_point in &sync_file.fence.sync_points {
+                    if let Ok(vmo) = sync_point.handle.duplicate_handle(zx::Rights::SAME_RIGHTS) {
+                        if control.flags & MAGMA_IMPORT_SEMAPHORE_ONE_SHOT == 0 {
+                            // For most non-test cases, one shot should be specified.
+                            log_warn!(
+                                "Importing magma semaphore without MAGMA_IMPORT_SEMAPHORE_ONE_SHOT"
+                            );
+                        }
+                        let semaphore;
+                        let semaphore_id;
+                        (status, semaphore, semaphore_id) =
+                            import_semaphore2(&connection, vmo, control.flags);
+                        if status != MAGMA_STATUS_OK {
+                            break;
+                        }
+                        handles.push(semaphore as magma_semaphore_t);
+                        ids.push(semaphore_id as magma_semaphore_id_t);
+                    } else {
+                        status = MAGMA_STATUS_MEMORY_ERROR;
+                        break;
+                    }
+                }
+            } else {
+                status = MAGMA_STATUS_INVALID_ARGS;
+            }
+
+            if status == MAGMA_STATUS_OK {
+                result_semaphore_id = self.semaphore_id_generator.next();
+
+                self.semaphores.lock().insert(
+                    result_semaphore_id,
+                    Arc::new(MagmaSemaphore { connection, handles, ids }),
+                );
+            }
+        } else {
+            status = MAGMA_STATUS_INVALID_ARGS;
+        }
+
+        // Import is expected to close the file that was imported.
+        let _ = current_task.files.close(fd);
+
+        response.result_return = status as u64;
+        response.semaphore_out = result_semaphore_id;
+        response.id_out = result_semaphore_id;
+        response.hdr.type_ =
+            virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_IMPORT_SEMAPHORE2 as u32;
     }
 }
 
@@ -525,26 +731,34 @@ impl FileOps for MagmaFile {
                     virtio_magma_connection_create_semaphore_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
                 let connection = self.get_connection(control.connection)?;
+                let status: i32;
+                let mut result_semaphore_id = 0;
 
-                let mut semaphore_out = 0;
-                let mut semaphore_id = 0;
-                let status = unsafe {
-                    magma_connection_create_semaphore(
-                        connection.handle,
-                        &mut semaphore_out,
-                        &mut semaphore_id,
-                    )
-                };
-                if status == MAGMA_STATUS_OK {
-                    self.semaphores.lock().insert(
-                        semaphore_out,
-                        Arc::new(MagmaSemaphore { connection, handle: semaphore_out }),
-                    );
+                // Use VMO semaphores for compatibility with sync files, which need timestamps.
+                if let Ok(vmo) = zx::Vmo::create(/*size=*/ 1) {
+                    let flags: u64 = 0;
+                    set_zx_name(&vmo, b"magma semaphore");
+                    let semaphore;
+                    let semaphore_id;
+                    (status, semaphore, semaphore_id) = import_semaphore2(&connection, vmo, flags);
+                    if status == MAGMA_STATUS_OK {
+                        result_semaphore_id = self.semaphore_id_generator.next();
+
+                        self.semaphores.lock().insert(
+                            result_semaphore_id,
+                            Arc::new(MagmaSemaphore {
+                                connection,
+                                handles: vec![semaphore; 1],
+                                ids: vec![semaphore_id; 1],
+                            }),
+                        );
+                    }
+                } else {
+                    status = MAGMA_STATUS_MEMORY_ERROR;
                 }
-
                 response.result_return = status as u64;
-                response.semaphore_out = semaphore_out;
-                response.id_out = semaphore_id;
+                response.semaphore_out = result_semaphore_id;
+                response.id_out = result_semaphore_id;
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CREATE_SEMAPHORE as u32;
                 current_task.write_object(UserRef::new(response_address), &response)
@@ -563,67 +777,14 @@ impl FileOps for MagmaFile {
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_GET_ERROR as u32;
                 current_task.write_object(UserRef::new(response_address), &response)
             }
-            virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_IMPORT_SEMAPHORE => {
-                let (control, mut response): (
-                    virtio_magma_connection_import_semaphore_ctrl_t,
-                    virtio_magma_connection_import_semaphore_resp_t,
-                ) = read_control_and_response(current_task, &command)?;
-                let connection = self.get_connection(control.connection)?;
-
-                let mut semaphore_out = 0;
-                let mut semaphore_id = 0;
-                let status = unsafe {
-                    magma_connection_import_semaphore(
-                        connection.handle,
-                        control.semaphore_handle,
-                        &mut semaphore_out,
-                        &mut semaphore_id,
-                    )
-                };
-                if status == MAGMA_STATUS_OK {
-                    self.semaphores.lock().insert(
-                        semaphore_out,
-                        Arc::new(MagmaSemaphore { connection, handle: semaphore_out }),
-                    );
-                }
-                response.result_return = status as u64;
-                response.semaphore_out = semaphore_out;
-                response.id_out = semaphore_id;
-
-                response.hdr.type_ =
-                    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_IMPORT_SEMAPHORE as u32;
-                current_task.write_object(UserRef::new(response_address), &response)
-            }
             virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_IMPORT_SEMAPHORE2 => {
                 let (control, mut response): (
                     virtio_magma_connection_import_semaphore2_ctrl_t,
                     virtio_magma_connection_import_semaphore2_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
-                let connection = self.get_connection(control.connection)?;
 
-                let mut semaphore_out = 0;
-                let mut semaphore_id = 0;
-                let status = unsafe {
-                    magma_connection_import_semaphore2(
-                        connection.handle,
-                        control.semaphore_handle,
-                        control.flags,
-                        &mut semaphore_out,
-                        &mut semaphore_id,
-                    )
-                };
-                if status == MAGMA_STATUS_OK {
-                    self.semaphores.lock().insert(
-                        semaphore_out,
-                        Arc::new(MagmaSemaphore { connection, handle: semaphore_out }),
-                    );
-                }
-                response.result_return = status as u64;
-                response.semaphore_out = semaphore_out;
-                response.id_out = semaphore_id;
+                self.import_semaphore2(current_task, &control, &mut response);
 
-                response.hdr.type_ =
-                    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_IMPORT_SEMAPHORE2 as u32;
                 current_task.write_object(UserRef::new(response_address), &response)
             }
             virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_RELEASE_SEMAPHORE => {
@@ -643,15 +804,44 @@ impl FileOps for MagmaFile {
                     virtio_magma_semaphore_export_ctrl_t,
                     virtio_magma_semaphore_export_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
+                let mut status: i32 = MAGMA_STATUS_OK;
 
-                let semaphore = self.get_semaphore(control.semaphore)?;
+                let mut sync_points: Vec<SyncPoint> = vec![];
+                let mut sync_file_fd: i32 = -1;
 
-                let mut semaphore_handle_out = 0;
-                response.result_return = unsafe {
-                    magma_semaphore_export(semaphore.handle, &mut semaphore_handle_out) as u64
-                };
-                response.semaphore_handle_out = semaphore_handle_out as u64;
+                match self.get_semaphore(control.semaphore) {
+                    Ok(semaphore) => {
+                        for handle in &semaphore.handles {
+                            let mut vmo_handle = 0;
+                            status = unsafe { magma_semaphore_export(*handle, &mut vmo_handle) };
+                            if status != MAGMA_STATUS_OK {
+                                break;
+                            }
 
+                            let vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(vmo_handle)) };
+
+                            sync_points.push(SyncPoint {
+                                timeline: Timeline::Magma,
+                                handle: Arc::new(vmo),
+                            });
+                        }
+                    }
+                    Err(s) => status = s,
+                }
+
+                if status == MAGMA_STATUS_OK {
+                    let sync_file_name: &[u8; 32] =
+                        b"magma semaphore\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+                    let sync_file = SyncFile::new(*sync_file_name, SyncFence { sync_points });
+
+                    let file = Anon::new_file(current_task, Box::new(sync_file), OpenFlags::RDWR);
+
+                    let fd = current_task.add_file(file, FdFlags::empty())?;
+                    sync_file_fd = fd.raw();
+                }
+
+                response.result_return = status as u64;
+                response.semaphore_handle_out = sync_file_fd as u64;
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_SEMAPHORE_EXPORT as u32;
                 current_task.write_object(UserRef::new(response_address), &response)
@@ -661,12 +851,14 @@ impl FileOps for MagmaFile {
                     virtio_magma_semaphore_reset_ctrl_t,
                     virtio_magma_semaphore_reset_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
-                let semaphore = self.get_semaphore(control.semaphore)?;
 
-                unsafe {
-                    magma_semaphore_reset(semaphore.handle);
-                };
-
+                if let Ok(semaphore) = self.get_semaphore(control.semaphore) {
+                    for handle in &semaphore.handles {
+                        unsafe {
+                            magma_semaphore_reset(*handle);
+                        }
+                    }
+                }
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_SEMAPHORE_RESET as u32;
                 current_task.write_object(UserRef::new(response_address), &response)
@@ -676,12 +868,14 @@ impl FileOps for MagmaFile {
                     virtio_magma_semaphore_signal_ctrl_t,
                     virtio_magma_semaphore_signal_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
-                let semaphore = self.get_semaphore(control.semaphore)?;
 
-                unsafe {
-                    magma_semaphore_signal(semaphore.handle);
-                };
-
+                if let Ok(semaphore) = self.get_semaphore(control.semaphore) {
+                    for handle in &semaphore.handles {
+                        unsafe {
+                            magma_semaphore_signal(*handle);
+                        }
+                    }
+                }
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_SEMAPHORE_SIGNAL as u32;
                 current_task.write_object(UserRef::new(response_address), &response)
@@ -724,13 +918,103 @@ impl FileOps for MagmaFile {
                 let mut magma_items: Vec<magma_poll_item_t> =
                     starnix_items.iter().map(|item| item.as_poll_item()).collect();
 
-                response.result_return = unsafe {
-                    magma_poll(
-                        &mut magma_items[0] as *mut magma_poll_item,
-                        num_items as u32,
-                        control.timeout_ns,
-                    ) as u64
-                };
+                // Expand semaphores.
+                let mut status: i32 = MAGMA_STATUS_OK;
+                let mut child_semaphore_items: Vec<magma_poll_item_t> = vec![];
+
+                for i in 0..magma_items.len() {
+                    magma_items[i].result = 0;
+
+                    if magma_items[i].type_ == MAGMA_POLL_TYPE_SEMAPHORE
+                        && magma_items[i].condition == MAGMA_POLL_CONDITION_SIGNALED
+                    {
+                        match self.get_semaphore(starnix_items[i].semaphore_or_handle) {
+                            Ok(semaphore) => {
+                                magma_items[i].condition = 0; // magma_poll must ignore this item
+
+                                // Store the number of expanded semaphores to be signaled
+                                let handles_ref = &semaphore.handles;
+                                let child_count = handles_ref.len() as u32;
+                                magma_items[i].unused = child_count;
+
+                                for handle in handles_ref {
+                                    child_semaphore_items.push(
+                                        StarnixPollItem {
+                                            semaphore_or_handle: *handle,
+                                            type_: MAGMA_POLL_TYPE_SEMAPHORE,
+                                            condition: MAGMA_POLL_CONDITION_SIGNALED,
+                                            result: 0,
+                                            // Points back to the parent item
+                                            unused: i as u32,
+                                        }
+                                        .as_poll_item(),
+                                    );
+                                }
+                            }
+                            Err(s) => status = s,
+                        }
+                    }
+                }
+
+                if status == MAGMA_STATUS_OK {
+                    magma_items.append(&mut child_semaphore_items);
+
+                    let abs_timeout_ns = if control.timeout_ns == std::u64::MAX {
+                        0
+                    } else {
+                        zx::Time::get_monotonic().into_nanos() as u64 + control.timeout_ns
+                    };
+
+                    'outer: while status == MAGMA_STATUS_OK {
+                        // Iterate from the end to process child semaphores first
+                        for i in (0..magma_items.len()).rev() {
+                            if i < num_items && magma_items[i].result > 0 {
+                                // A handle or parent semaphore is signaled, we're done
+                                break 'outer;
+                            } else if magma_items[i].result > 0 {
+                                // A child semaphore is signaled
+                                assert_eq!(magma_items[i].condition, MAGMA_POLL_CONDITION_SIGNALED);
+                                let parent_index = magma_items[i].unused as usize;
+                                assert_ne!(magma_items[parent_index].unused, 0);
+                                magma_items[parent_index].unused -= 1;
+                                if magma_items[parent_index].unused == 0 {
+                                    // All children signaled, signal the parent
+                                    magma_items[parent_index].result = magma_items[i].result;
+                                }
+                                // Don't poll on this child again
+                                magma_items[i].condition = 0;
+                            }
+                        }
+
+                        let current_time_ns = zx::Time::get_monotonic().into_nanos() as u64;
+                        let rel_timeout_ns = if abs_timeout_ns == 0 {
+                            std::u64::MAX
+                        } else if abs_timeout_ns > current_time_ns {
+                            abs_timeout_ns - current_time_ns
+                        } else {
+                            0
+                        };
+
+                        status = unsafe {
+                            magma_poll(
+                                &mut magma_items[0] as *mut magma_poll_item,
+                                magma_items.len() as u32,
+                                rel_timeout_ns,
+                            )
+                        };
+                    }
+                }
+
+                // Walk child items to restore modified parent items
+                for i in num_items..magma_items.len() {
+                    assert_eq!(magma_items[i].type_, MAGMA_POLL_TYPE_SEMAPHORE);
+                    let parent_index = magma_items[i].unused as usize;
+                    magma_items[parent_index].condition = MAGMA_POLL_CONDITION_SIGNALED;
+                    magma_items[parent_index].unused = 0;
+                }
+
+                // Remove any child semaphores
+                magma_items.truncate(num_items);
 
                 // Convert the poll items back to a serializable version after the `magma_poll`
                 // call.
@@ -738,6 +1022,7 @@ impl FileOps for MagmaFile {
                     magma_items.iter().map(StarnixPollItem::new).collect();
                 current_task.write_objects(items_ref, &starnix_items)?;
 
+                response.result_return = status as u64;
                 response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_POLL as u32;
                 current_task.write_object(UserRef::new(response_address), &response)
             }
@@ -748,8 +1033,11 @@ impl FileOps for MagmaFile {
                 ) = read_control_and_response(current_task, &command)?;
                 let connection = self.get_connection(control.connection)?;
 
-                execute_command(current_task, control, &mut response, &connection)?;
+                let status = execute_command(current_task, control, &connection, |semaphore_id| {
+                    self.get_semaphore(semaphore_id)
+                })?;
 
+                response.result_return = status as u64;
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_COMMAND as u32;
                 current_task.write_object(UserRef::new(response_address), &response)
@@ -761,7 +1049,12 @@ impl FileOps for MagmaFile {
                 ) = read_control_and_response(current_task, &command)?;
                 let connection = self.get_connection(control.connection)?;
 
-                let status = execute_immediate_commands(current_task, control, &connection)?;
+                let status = execute_immediate_commands(
+                    current_task,
+                    control,
+                    &connection,
+                    |semaphore_id| self.get_semaphore(semaphore_id),
+                )?;
 
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_IMMEDIATE_COMMANDS

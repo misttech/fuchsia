@@ -4,8 +4,8 @@
 {
     children: [
         {
-            name: "debug_agent",
-            url: "fuchsia-pkg://fuchsia.com/debug_agent#meta/debug_agent.cm",
+            name: "debugger",
+            url: "fuchsia-pkg://fuchsia.com/debug_agent#meta/debug_agent_launcher.cm",
             environment: "#core-env",
         },
     ],
@@ -19,7 +19,7 @@
                 "fuchsia.sys2.RealmQuery.root",
             ],
             from: "parent",
-            to: "#debug_agent",
+            to: "#debugger",
         },
         {
             event_stream: [
@@ -27,7 +27,7 @@
                 "stopped",
             ],
             from: "parent",
-            to: "#debug_agent",
+            to: "#debugger",
         },
         {
             protocol: [
@@ -35,18 +35,18 @@
                 "fuchsia.test.manager.RunBuilder",
             ],
             from: "#test_manager",
-            to: "#debug_agent",
+            to: "#debugger",
             source_availability: "unknown",
         },
         {
             protocol: [ "fuchsia.exception.ProcessLimbo" ],
             from: "#exceptions",
-            to: "#debug_agent",
+            to: "#debugger",
         },
         {
             directory: "boot",
             from: "parent",
-            to: "#debug_agent",
+            to: "#debugger",
         },
     ],
 }

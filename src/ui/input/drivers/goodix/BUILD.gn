@@ -18,7 +18,8 @@ driver_bind_rules("gt92xx_bind") {
 
   tests = "bind_tests.json"
   deps = [
-    "//src/devices/bind/fuchsia.hardware.gpio",
+    "//src/devices/bind/fuchsia.goodix.platform",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.i2c",
   ]
 }
@@ -39,16 +40,17 @@ fuchsia_driver("goodix-module-driver") {
   defines = [ "GT9293_ASTRO_FIRMWARE_PATH=\"$astro_firmware_path\"" ]
   deps = [
     ":gt92xx_bind",
-    "//sdk/banjo/fuchsia.hardware.hidbus:fuchsia.hardware.hidbus_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//src/devices/i2c/lib/device-protocol-i2c-channel",
     "//src/devices/lib/driver",
+    "//src/devices/lib/driver:driver_runtime",
     "//src/devices/lib/mmio",
     "//src/lib/ddk",
     "//src/lib/ddktl",
+    "//src/ui/input/lib/hid",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/hid",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/trace",
@@ -99,24 +101,25 @@ test("gt92xx-test") {
   defines = [ "GT9293_ASTRO_FIRMWARE_PATH=\"$astro_firmware_path\"" ]
   deps = [
     ":gt92xx_bind",
-    "//sdk/banjo/fuchsia.hardware.hidbus:fuchsia.hardware.hidbus_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
+    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/lib/async_patterns/testing/cpp",
     "//src/devices/gpio/testing/fake-gpio",
     "//src/devices/i2c/lib/device-protocol-i2c-channel",
     "//src/devices/i2c/testing/fake-i2c",
     "//src/devices/i2c/testing/mock-i2c",
+    "//src/devices/lib/driver:driver_runtime",
     "//src/devices/testing/mock-ddk",
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
     "//src/lib/ddktl",
+    "//src/ui/input/lib/hid",
     "//src/ui/input/testing/mock-hidbus-ifc",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/hid",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/mock-function",
     "//zircon/system/ulib/sync",

@@ -4,6 +4,7 @@
 
 #include "src/graphics/display/drivers/coordinator/tests/fidl_client.h"
 
+#include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/ddk/debug.h>
@@ -20,6 +21,7 @@
 #include "src/lib/testing/predicates/status.h"
 
 namespace fhd = fuchsia_hardware_display;
+namespace fhdt = fuchsia_hardware_display_types;
 namespace sysmem = fuchsia_sysmem;
 
 namespace display {
@@ -41,7 +43,7 @@ TestFidlClient::Display::Display(const fhd::wire::Info& info) {
   monitor_serial_ = fbl::String(info.monitor_serial.data());
   image_config_.height = modes_[0].vertical_resolution;
   image_config_.width = modes_[0].horizontal_resolution;
-  image_config_.type = fhd::wire::kTypeSimple;
+  image_config_.type = fhdt::wire::kTypeSimple;
 }
 
 DisplayId TestFidlClient::display_id() const { return displays_[0].id_; }
@@ -262,19 +264,19 @@ TestFidlClient::~TestFidlClient() {
 zx_status_t TestFidlClient::PresentLayers(std::vector<PresentLayerInfo> present_layers) {
   fbl::AutoLock l(mtx());
 
-  std::vector<fhd::wire::LayerId> fidl_layers;
+  std::vector<fhdt::wire::LayerId> fidl_layers;
   for (const auto& info : present_layers) {
     fidl_layers.push_back(ToFidlLayerId(info.layer_id));
   }
   if (auto reply =
           dc_->SetDisplayLayers(ToFidlDisplayId(display_id()),
-                                fidl::VectorView<fhd::wire::LayerId>::FromExternal(fidl_layers));
+                                fidl::VectorView<fhdt::wire::LayerId>::FromExternal(fidl_layers));
       !reply.ok()) {
     return reply.status();
   }
 
   for (const auto& info : present_layers) {
-    const fhd::wire::LayerId fidl_layer_id = ToFidlLayerId(info.layer_id);
+    const fhdt::wire::LayerId fidl_layer_id = ToFidlLayerId(info.layer_id);
     const EventId wait_event_id = info.image_ready_wait_event_id.value_or(kInvalidEventId);
     if (auto reply = dc_->SetLayerImage(fidl_layer_id, ToFidlImageId(info.image_id),
                                         /*wait_event_id=*/ToFidlEventId(wait_event_id),
@@ -285,13 +287,13 @@ zx_status_t TestFidlClient::PresentLayers(std::vector<PresentLayerInfo> present_
   }
 
   if (auto reply = dc_->CheckConfig(false);
-      !reply.ok() || reply.value().res != fhd::wire::ConfigResult::kOk) {
+      !reply.ok() || reply.value().res != fhdt::wire::ConfigResult::kOk) {
     return reply.ok() ? ZX_ERR_INVALID_ARGS : reply.status();
   }
   return dc_->ApplyConfig().status();
 }
 
-fuchsia_hardware_display::wire::ConfigStamp TestFidlClient::GetRecentAppliedConfigStamp() {
+fhdt::wire::ConfigStamp TestFidlClient::GetRecentAppliedConfigStamp() {
   fbl::AutoLock lock(mtx());
   EXPECT_TRUE(dc_);
   auto result = dc_->GetLatestAppliedConfigStamp();
@@ -300,7 +302,7 @@ fuchsia_hardware_display::wire::ConfigStamp TestFidlClient::GetRecentAppliedConf
 }
 
 zx::result<ImageId> TestFidlClient::ImportImageWithSysmem(
-    const fhd::wire::ImageConfig& image_config) {
+    const fhdt::wire::ImageConfig& image_config) {
   fbl::AutoLock lock(mtx());
   return ImportImageWithSysmemLocked(image_config);
 }
@@ -320,7 +322,7 @@ std::vector<TestFidlClient::PresentLayerInfo> TestFidlClient::CreateDefaultPrese
 }
 
 zx::result<ImageId> TestFidlClient::ImportImageWithSysmemLocked(
-    const fhd::wire::ImageConfig& image_config) {
+    const fhdt::wire::ImageConfig& image_config) {
   // Create all the tokens.
   fidl::WireSyncClient<sysmem::BufferCollectionToken> local_token;
   {
@@ -430,7 +432,7 @@ zx::result<ImageId> TestFidlClient::ImportImageWithSysmemLocked(
   }
 
   const ImageId image_id = next_image_id_++;
-  const fhd::wire::ImageId fidl_image_id = ToFidlImageId(image_id);
+  const fhdt::wire::ImageId fidl_image_id = ToFidlImageId(image_id);
   auto import_result = dc_->ImportImage(image_config,
                                         fhd::wire::BufferId{
                                             .buffer_collection_id = fidl_display_collection_id,

@@ -54,7 +54,7 @@ class LowEnergyConnection final : public sm::Delegate {
       LowEnergyConnectionOptions connection_options, PeerDisconnectCallback peer_disconnect_cb,
       ErrorCallback error_cb, WeakSelf<LowEnergyConnectionManager>::WeakPtr conn_mgr,
       l2cap::ChannelManager* l2cap, gatt::GATT::WeakPtr gatt,
-      hci::CommandChannel::WeakPtr cmd_channel);
+      hci::CommandChannel::WeakPtr cmd_channel, pw::async::Dispatcher& dispatcher);
 
   // Notifies request callbacks and connection refs of the disconnection.
   ~LowEnergyConnection() override;
@@ -136,7 +136,7 @@ class LowEnergyConnection final : public sm::Delegate {
                       PeerDisconnectCallback peer_disconnect_cb, ErrorCallback error_cb,
                       WeakSelf<LowEnergyConnectionManager>::WeakPtr conn_mgr,
                       l2cap::ChannelManager* l2cap, gatt::GATT::WeakPtr gatt,
-                      hci::CommandChannel::WeakPtr cmd_channel);
+                      hci::CommandChannel::WeakPtr cmd_channel, pw::async::Dispatcher& dispatcher);
 
   // Registers this connection with L2CAP and initializes the fixed channel
   // protocols. Return true on success, false on failure.
@@ -263,6 +263,8 @@ class LowEnergyConnection final : public sm::Delegate {
                       ConfirmCallback confirm) override;
   void RequestPasskey(PasskeyResponseCallback respond) override;
 
+  pw::async::Dispatcher& dispatcher_;
+
   // Notifies Peer of connection destruction. This should be ordered first so that it is
   // destroyed last.
   std::optional<Peer::ConnectionToken> peer_conn_token_;
@@ -312,10 +314,10 @@ class LowEnergyConnection final : public sm::Delegate {
   fit::callback<void(pw::bluetooth::emboss::StatusCode)> le_conn_update_complete_command_callback_;
 
   // Called after kLEConnectionPausePeripheral.
-  std::optional<async::TaskClosure> conn_pause_peripheral_timeout_;
+  std::optional<SmartTask> conn_pause_peripheral_timeout_;
 
   // Called after kLEConnectionPauseCentral.
-  std::optional<async::TaskClosure> conn_pause_central_timeout_;
+  std::optional<SmartTask> conn_pause_central_timeout_;
 
   // Set to true when a request to update the connection parameters has been sent.
   bool connection_parameters_update_requested_ = false;

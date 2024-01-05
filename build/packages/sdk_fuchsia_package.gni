@@ -4,7 +4,8 @@
 
 import("//build/config/fuchsia/platform_version.gni")
 import("//build/sdk/sdk_atom.gni")
-import("//tools/check-licenses/build/license_data.gni")
+import("//build/sdk/sdk_noop_atom.gni")
+import("//tools/cmc/build/expect_includes.gni")
 
 # Defines an in-tree package for distribution in the SDK, landing
 # the end package manifest at
@@ -45,10 +46,16 @@ import("//tools/check-licenses/build/license_data.gni")
 #     See //build/sdk/sdk_atom.gni for more.
 #     Type: string.
 #
-#   api_level (optional)
+#   api_level_added
 #     API level at which the package was added to the SDK. API level defined at:
 #     https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0002_platform_versioning#sdk
-#     Default is current development API level.
+#     Type: unsigned integer.
+#
+#   api_level_removed (optional)
+#     API level at which the package was removed from the SDK. If unspecified,
+#     we assume the package is available at all API levels after
+#     `api_level_added`. API level defined at:
+#     https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0002_platform_versioning#sdk
 #     Type: unsigned integer.
 #
 #   expected_files_exact (optional)
@@ -72,9 +79,28 @@ import("//tools/check-licenses/build/license_data.gni")
 #     manifest will cause an error during checklist file generation.
 #     Type: list of relative package paths.
 #
-
 template("sdk_fuchsia_package") {
-  if (current_toolchain == target_toolchain) {
+  assert(defined(invoker.api_level_added),
+         "Must specify the API level at which the package was added")
+
+  # Build the package for supported API levels.
+  package_in_target_api_level =
+      invoker.api_level_added <= override_target_api_level
+
+  if (defined(invoker.api_level_removed)) {
+    package_in_target_api_level =
+        package_in_target_api_level &&
+        override_target_api_level < invoker.api_level_removed
+  }
+
+  # Also build it in non-per-API-level contexts, for now.
+  #
+  # TODO(fxbug.dev/310006516): Delete API-level-agnostic packages from the IDK.
+  if (override_target_api_level == -1) {
+    package_in_target_api_level = true
+  }
+
+  if (package_in_target_api_level && current_toolchain == target_toolchain) {
     assert(defined(invoker.package_label),
            "Must define a package to distribute.")
     assert(defined(invoker.distribution_name),
@@ -95,13 +121,6 @@ template("sdk_fuchsia_package") {
             valid_categories,
         "Invalid SDK category ${invoker.category}, must be one of ${valid_categories}")
 
-    if (defined(invoker.api_level)) {
-      assert(invoker.api_level == platform_version.in_development_api_level,
-             "Only the current development API level is supported.")
-      api_level = invoker.api_level
-    } else {
-      api_level = platform_version.in_development_api_level
-    }
     if (defined(invoker.expected_files_exact)) {
       expected_files_exact = invoker.expected_files_exact
     } else {
@@ -121,7 +140,13 @@ template("sdk_fuchsia_package") {
         get_label_info(_full_package_label, "name") + "/package_manifest.json"
 
     # End output directory, different for each arch and API level.
-    _sdk_package_dir = "${target_out_dir}/sdk_packages/${target_cpu}/release"
+    if (override_target_api_level == -1) {
+      base = "$target_cpu"
+    } else {
+      base = "${target_cpu}-api-${override_target_api_level}"
+    }
+
+    _sdk_package_dir = "${target_out_dir}/sdk_packages/${base}/release"
     _distribution_name = invoker.distribution_name
 
     # Note: Golden file does not support multiple API level currently.
@@ -133,9 +158,22 @@ template("sdk_fuchsia_package") {
     _content_checklist_depfile =
         "${target_gen_dir}/${_content_checklist_target}.d"
 
+    _tool_deps = []
     _ffx_package_bin = "${host_out_dir}/ffx-package_unversioned"
-    _ffx_package_dep =
-        "//src/developer/ffx/plugins/package:ffx_package_tool($host_toolchain)"
+    _far_tool_bin = "${host_out_dir}/far"
+
+    if (host_tools_base_path_override == "") {
+      _tool_deps += [
+        "//src/developer/ffx/plugins/package:ffx_package_tool($host_toolchain)",
+        "//src/sys/pkg/bin/far:bin($host_toolchain)",
+      ]
+    } else {
+      _host_tool_dir = "${root_build_dir}/${host_tools_base_path_override}"
+      _ffx_package_bin =
+          _host_tool_dir + "/" + rebase_path(_ffx_package_bin, root_build_dir)
+      _far_tool_bin =
+          _host_tool_dir + "/" + rebase_path(_far_tool_bin, root_build_dir)
+    }
 
     # Generates content checklist file using input package manifest, and runs checks
     # against golden. See
@@ -148,14 +186,10 @@ template("sdk_fuchsia_package") {
       inputs = [
         package_manifest_file,
         _ffx_package_bin,
-        "${host_out_dir}/far",
+        _far_tool_bin,
       ]
       outputs = [ computed_content_checklist_file ]
-      deps = [
-        "//src/sys/pkg/bin/far:bin($host_toolchain)",
-        _ffx_package_dep,
-        _full_package_label,
-      ]
+      deps = [ _full_package_label ] + _tool_deps
       depfile = _content_checklist_depfile
 
       args = [
@@ -168,10 +202,15 @@ template("sdk_fuchsia_package") {
         "--ffx-bin",
         rebase_path(_ffx_package_bin, root_build_dir),
         "--far-bin",
-        rebase_path("${host_out_dir}/far", root_build_dir),
+        rebase_path(_far_tool_bin, root_build_dir),
         "--depfile",
         rebase_path(depfile, root_build_dir),
       ]
+
+      # FIXME(https://fxbug.dev/132644)
+      if (is_coverage) {
+        args += [ "--is-coverage" ]
+      }
 
       foreach(exact_file, expected_files_exact) {
         args += [
@@ -185,21 +224,6 @@ template("sdk_fuchsia_package") {
           present_file,
         ]
       }
-    }
-
-    _license_target = "${target_name}.license"
-    _license_output = "${_sdk_package_dir}/license_data"
-    _license_output_spdx_file = "${_license_output}/results.spdx.json"
-    _license_target_spdx = "${_license_target}_spdx_copy"
-
-    # Collects the license data for all GN inputs and makes it available for the SDK
-    license_data(_license_target) {
-      target = _full_package_label
-      out_dir = _license_output
-
-      produce_spdx = true
-      emit_metadata = false
-      run_analysis = false
     }
 
     _sdk_package_file_list = "${_sdk_package_dir}/file_list.fini"
@@ -219,7 +243,6 @@ template("sdk_fuchsia_package") {
       inputs = [
         package_manifest_file,
         computed_content_checklist_file,
-        _license_output_spdx_file,
       ]
       outputs = [
         _sdk_package_file_list,
@@ -227,7 +250,6 @@ template("sdk_fuchsia_package") {
       ]
       deps = [
         ":${_content_checklist_target}",
-        ":${_license_target_spdx}",
         _full_package_label,
       ]
       depfile = _sdk_package_depfile
@@ -239,8 +261,27 @@ template("sdk_fuchsia_package") {
         rebase_path(computed_content_checklist_file, root_build_dir),
         "--output",
         rebase_path(_sdk_package_dir, root_build_dir),
+
+        # In the API-level-agnostic builds, the value of this flag is a bit
+        # strange, and means we say in `meta.json` that the API level is -1.
+        # This is... neither correct nor incorrect.
+        #
+        # It's honestly rather moot, because none of the SDKs actually allow
+        # users to use these packages, yet. Hopefully we'll be able to add
+        # support for API-level-aware package prebuilts right off the bat,
+        # rather than first building support for including an API-level-agnostic
+        # subpackage, and then going back and fixing it.
+        #
+        # Arguably the right thing to do would be to _not_ build the packages in
+        # the API-level-agnostic builds, but then we wouldn't be building them
+        # anywhere, and we'd be in more danger of bitrot on the "packages in the
+        # IDK" work. So for now, we'll continue building them with this strange
+        # metadata quirk.
+        #
+        # TODO(fxbug.dev/310006516): Delete this comment once API-level-agnostic
+        # packages are no longer in the IDK.
         "--api-level",
-        "${api_level}",
+        "${override_target_api_level}",
         "--target-cpu",
         "${target_cpu}",
         "--depfile",
@@ -253,12 +294,12 @@ template("sdk_fuchsia_package") {
     sdk_atom(target_name) {
       forward_variables_from(invoker, [ "testonly" ])
 
-      id = "sdk://fuchsia_packages/${_distribution_name}"
+      id = "sdk://packages/${_distribution_name}"
       category = invoker.category
 
       meta = {
         schema = "package"
-        dest = "fuchsia_packages/${_distribution_name}/meta.json"
+        dest = "packages/${_distribution_name}/meta.json"
         source = "${_sdk_package_metadata}"
       }
 
@@ -272,6 +313,18 @@ template("sdk_fuchsia_package") {
         package_barrier = []
       }
     }
+  } else if (!package_in_target_api_level) {
+    # Current API level is not supported, so create an empty atom.
+    sdk_noop_atom(target_name) {
+      forward_variables_from(invoker, [ "testonly" ])
+
+      id = "sdk://packages/${invoker.distribution_name}"
+      category = invoker.category
+      type = "fuchsia_package"
+    }
+
+    # Suppress unused variable warnings.
+    not_needed(invoker, "*")
   } else {
     # Fuchsia SDK packages should only be built with target_toolchain. However, it
     # is possible for package targets to be expanded in other toolchains (host,

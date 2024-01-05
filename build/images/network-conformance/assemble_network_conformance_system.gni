@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/assembly/assembled_system.gni")
+import("//build/assembly/board_configuration.gni")
 import("//build/assembly/product_assembly_configuration.gni")
 import("//build/images/zedboot/zedboot_args.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
@@ -23,26 +24,25 @@ template("assemble_network_conformance_system") {
     product_config_fxfs = "${target_name}.product_assembly_config_fxfs"
     board_config = "${target_name}.board_config"
   }
-  files = {
-    board_config = "${target_out_dir}/${target_name}.board_config.json"
-  }
 
   core_realm_definition("core") {
     testonly = true
   }
 
-  generated_file(labels.board_config) {
-    outputs = [ files.board_config ]
-    output_conversion = "json"
-    contents = {
-      name = "network-conformance"
-      filesystems = {
-        fvm = {
-          slice_size = 1048576
-          sparse_output = {
-          }
+  board_configuration(labels.board_config) {
+    name = "network-conformance"
+    filesystems = {
+      fvm = {
+        slice_size = 1048576
+        sparse_output = {
         }
       }
+    }
+    if (target_cpu == "x64") {
+      input_bundles = [
+        "//boards/x64:x64_common",
+        "//boards/emulation/virtio",
+      ]
     }
   }
 
@@ -54,7 +54,6 @@ template("assemble_network_conformance_system") {
         configure_fshost = true
         filesystems = {
           image_name = _image_name
-          image_mode = "ramdisk"
           volume = {
             fvm = {
               data = {
@@ -76,8 +75,6 @@ template("assemble_network_conformance_system") {
         configure_fshost = true
         filesystems = {
           image_name = _image_name
-          image_mode = "ramdisk"
-          volume = "fxfs"
         }
       }
     }
@@ -95,19 +92,13 @@ template("assemble_network_conformance_system") {
     }
     ramdisk_in_zbi = true
 
-    board_config = files.board_config
-    deps = [ ":${labels.board_config}" ]
+    board_config_label = ":${labels.board_config}"
     allow_eng_platform_bundle_use = true
-    use_assembly_fshost = true
-
-    # This test uses an explicit board, therefore the arguments should not be
-    # compared with the arguments from the global GN args.
-    skip_fshost_validator = true
     base_packages = [
       "//src/connectivity/network/mdns/bundles:services",
-      "//src/connectivity/network/netcfg:config-default",
       "//src/connectivity/network/net-cli",
       "//src/connectivity/network/testing/network-test-realm/service:network-test-realm",
+      "//src/connectivity/policy/netcfg:config-default",
       "//src/security/bin/root_ssl_certificates",
       "//src/sys/full-resolver:full-resolver-pkg",
     ]
@@ -115,14 +106,10 @@ template("assemble_network_conformance_system") {
 
     core_realm_definition = ":core"
 
-    include_component_id_index = true
     additional_boot_args =
         [ "virtcon.disable=true" ] + zedboot_additional_boot_args
     cmdline = [ "kernel.halt-on-panic=true" ]
 
-    bootfs_labels = [
-      "//build/input:recovery_bootfs",
-      "//src/sys/component_manager:component_manager_bootfs_config",
-    ]
+    bootfs_labels = [ "//build/input:recovery_bootfs" ]
   }
 }

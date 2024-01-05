@@ -6,6 +6,8 @@
 #define SRC_STORAGE_F2FS_FILE_H_
 
 namespace f2fs {
+
+class FileTester;
 class File : public VnodeF2fs, public fbl::Recyclable<File> {
  public:
   explicit File(F2fs* fs, ino_t ino, umode_t mode);
@@ -24,30 +26,25 @@ class File : public VnodeF2fs, public fbl::Recyclable<File> {
   // long F2fsIoctl(/*file *filp,*/ unsigned int cmd, uint64_t arg);
 #endif
 
-  zx_status_t Read(void* data, size_t len, size_t off, size_t* out_actual) final
-      __TA_EXCLUDES(mutex_);
-  zx_status_t DoWrite(const void* data, size_t len, size_t offset, size_t* out_actual)
-      __TA_EXCLUDES(mutex_);
-  zx_status_t Write(const void* data, size_t len, size_t offset, size_t* out_actual) final
-      __TA_EXCLUDES(mutex_);
-  zx_status_t Append(const void* data, size_t len, size_t* out_end, size_t* out_actual) final
-      __TA_EXCLUDES(mutex_);
   zx_status_t Truncate(size_t len) final __TA_EXCLUDES(mutex_);
   zx_status_t RecoverInlineData(NodePage& node_page) final;
   zx_status_t GetVmo(fuchsia_io::wire::VmoFlags flags, zx::vmo* out_vmo) final
       __TA_EXCLUDES(mutex_);
-  void VmoDirty(uint64_t offset, uint64_t length) final __TA_EXCLUDES(mutex_);
+  void VmoDirty(uint64_t offset, uint64_t length) final
+      __TA_EXCLUDES(mutex_, f2fs::GetGlobalLock());
   void VmoRead(uint64_t offset, uint64_t length) final __TA_EXCLUDES(mutex_);
   zx_status_t CreateStream(uint32_t stream_options, zx::stream* out_stream) final;
   bool SupportsClientSideStreams() final;
+  block_t GetBlockAddr(LockedPage& page) final;
 
  private:
+  friend FileTester;
   zx_status_t ReadInline(void* data, size_t len, size_t off, size_t* out_actual);
   zx_status_t WriteInline(const void* data, size_t len, size_t offset, size_t* out_actual);
   zx_status_t TruncateInline(size_t len, bool is_recover);
   zx_status_t ConvertInlineData();
 
-  loff_t MaxFileSize(unsigned bits);
+  size_t MaxFileSize();
 };
 
 }  // namespace f2fs

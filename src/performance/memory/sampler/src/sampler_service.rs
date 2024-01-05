@@ -2,99 +2,173 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! This modules contains most of the top-level logic of the
+//! This modules contains most of the top-level logic of the sampler
 //! service. It defines functions to process a stream of profiling
 //! requests and produce a complete profile, as well as utilities to
 //! persist it.
-
-use std::fs::File;
-use std::io::Write;
-use std::path::Path;
+use crate::{crash_reporter::ProfileReport, profile_builder::ProfileBuilder};
 
 use anyhow::{Context, Error};
 use fidl_fuchsia_memory_sampler::{
     SamplerRequest, SamplerRequestStream, SamplerSetProcessInfoRequest,
 };
-use futures::prelude::*;
-use prost::Message;
+use fuchsia_async::Task;
+use fuchsia_component::server::ServiceFs;
+use futures::{channel::mpsc, prelude::*};
+use std::time::{Duration, Instant};
 
-use crate::pprof::pproto;
-use crate::profile_builder::ProfileBuilder;
+/// The threshold of recorded stack traces to trigger a partial
+/// report. The overhead for each stack trace is of the order of 1
+/// KiB; keeping this below 1000 should keep the residual memory
+/// *for a single profiled process* roughly under ~1 MiB.
+const RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD: usize = 1000;
 
-/// Store the given profile on the filesystem. The name of the file is
-/// derived from the name of the process being profiled.
-///
-/// TODO(fxbug.dev/122384): Implement proper profile storage
-/// management. The current implementation simply serializes a profile
-/// to a file named like the process. In particular, this scheme does
-/// not handle name collisions nor support collecting several profiles
-/// of a given process.
-fn store_profile(profile: &pproto::Profile, process_name: &str) -> Result<(), Error> {
-    let mut file = File::create(Path::join(Path::new("/cache/"), process_name))?;
-    file.write_all(&profile.encode_to_vec()[..])?;
-    Ok(())
-}
+/// Upper bound on the number of concurrent connections served.
+const MAX_CONCURRENT_REQUESTS: usize = 10;
 
-/// Accumulate profiling information in the builder.
-async fn process_sampler_request(
-    builder: &mut ProfileBuilder,
+/// Upper bound on the elapsed time between producing two partial
+/// profiles.
+const MAX_DURATION_BETWEEN_PARTIAL_PROFILES: Duration = Duration::from_secs(12 * 60 * 60);
+
+/// Accumulate profiling information in the builder. May send a
+/// partial profile depending on the amount of recorded data, at least
+/// once every `MAX_DURATION_BETWEEN_PARTIAL_PROFILES`.
+async fn process_sampler_request<'a>(
+    builder: &'a mut ProfileBuilder,
+    tx: &'a mut mpsc::Sender<ProfileReport>,
     request: SamplerRequest,
-) -> Result<&mut ProfileBuilder, Error> {
+    index: usize,
+    mut time_of_last_profile: Instant,
+) -> Result<(&'a mut ProfileBuilder, &'a mut mpsc::Sender<ProfileReport>, Instant), Error> {
     match request {
         SamplerRequest::RecordAllocation { address, stack_trace, size, .. } => {
-            builder.allocate(address, stack_trace, size);
+            builder.allocate(address, stack_trace.stack_frames.unwrap_or_default(), size);
         }
         SamplerRequest::RecordDeallocation { address, stack_trace, .. } => {
-            builder.deallocate(address, stack_trace);
+            builder.deallocate(address, stack_trace.stack_frames.unwrap_or_default());
         }
         SamplerRequest::SetProcessInfo { payload, .. } => {
             let SamplerSetProcessInfoRequest { process_name, module_map, .. } = payload;
             builder.set_process_info(process_name, module_map.into_iter().flatten());
         }
     };
-    Ok(builder)
+
+    // File a partial profile under one of two conditions:
+    //
+    // * The recorded data reached a size threshold, and it's time to
+    //   file a profile to reclaim some memory.
+    //
+    // * MAX_DURATION_BETWEEN_PARTIAL_PROFILES has elapsed since the
+    //   last time we filed a partial profile for this process.
+    let now = Instant::now();
+    if (now - time_of_last_profile >= MAX_DURATION_BETWEEN_PARTIAL_PROFILES)
+        || (builder.get_approximate_reclaimable_stack_traces_count()
+            >= RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD)
+    {
+        let profile = builder.build_partial_profile(index)?;
+        tx.send(profile).await?;
+        time_of_last_profile = now;
+    }
+    Ok((builder, tx, time_of_last_profile))
 }
 
 /// Build a profile from a stream of profiling requests. Requests are
 /// processed sequentially, in order.
 async fn process_sampler_requests(
     stream: impl Stream<Item = Result<SamplerRequest, fidl::Error>>,
-) -> Result<(String, pproto::Profile), Error> {
+    tx: &mut mpsc::Sender<ProfileReport>,
+) -> Result<ProfileReport, Error> {
     let mut profile_builder = ProfileBuilder::default();
     stream
-        .map(|request| request.context("failed request"))
-        .try_fold(&mut profile_builder, process_sampler_request)
+        .enumerate()
+        .map(|(i, request)| request.context("failed request").map(|r| (i, r)))
+        .try_fold(
+            (&mut profile_builder, tx, Instant::now()),
+            |(builder, tx, time_of_last_profile), (index, request)| {
+                process_sampler_request(builder, tx, request, index, time_of_last_profile)
+            },
+        )
         .await?;
-    Ok(profile_builder.build())
+    profile_builder.build()
 }
 
 /// Serves the `Sampler` protocol for a given process. Once a client
-/// closes their connection, writes a `pprof`-compatible profile to a
-/// file.
-pub async fn run_sampler_service(stream: SamplerRequestStream) -> Result<(), Error> {
-    let (process_name, profile) = process_sampler_requests(stream).await?;
-    store_profile(&profile, &process_name)?;
+/// closes their connection, enqueues a `pprof`-compatible profile to
+/// the provided channel, for further processing. May also regularly
+/// enqueue partial profiles, to offload the profiler's memory usage.
+///
+/// Note: this function does not retry pushing profiles through the
+/// channel. Failure to handle profile reports in a timely manner will
+/// cause this component to shut down.
+async fn run_sampler_service(
+    stream: SamplerRequestStream,
+    mut tx: mpsc::Sender<ProfileReport>,
+) -> Result<(), Error> {
+    let profile = process_sampler_requests(stream, &mut tx).await?;
+    tracing::debug!("Profiling for {} done, queuing final report", profile.get_process_name());
+    tx.send(profile).await?;
     Ok(())
+}
+
+enum IncomingServiceRequest {
+    Sampler(SamplerRequestStream),
+}
+
+/// Returns a task that serves the `fuchsia.memory.sampler/Sampler`
+/// protocol.
+///
+/// Note: any error will cause the sampler service to shutdown.
+pub fn setup_sampler_service(
+    tx: mpsc::Sender<ProfileReport>,
+) -> Result<Task<Result<(), Error>>, Error> {
+    let mut service_fs = ServiceFs::new();
+    service_fs.dir("svc").add_fidl_service(IncomingServiceRequest::Sampler);
+    service_fs.take_and_serve_directory_handle()?;
+    Ok(Task::local(
+        service_fs
+            .map(Ok)
+            .try_for_each_concurrent(
+                MAX_CONCURRENT_REQUESTS,
+                move |IncomingServiceRequest::Sampler(stream)| {
+                    run_sampler_service(stream, tx.clone())
+                },
+            )
+            .inspect_err(|e| tracing::error!("fuchsia.memory.sampler/Sampler protocol: {}", e)),
+    ))
 }
 
 #[cfg(test)]
 mod test {
     use anyhow::Error;
-    use fidl::endpoints::create_proxy_and_stream;
-    use fidl_fuchsia_memory_sampler::SamplerSetProcessInfoRequest;
-    use fidl_fuchsia_memory_sampler::{ExecutableSegment, ModuleMap, SamplerMarker, StackTrace};
-    use itertools::assert_equal;
-    use itertools::sorted;
-
-    use crate::sampler_service::{
-        pproto::{Location, Mapping},
-        process_sampler_requests,
+    use fidl::endpoints::{create_proxy_and_stream, RequestStream};
+    use fidl_fuchsia_memory_sampler::{
+        ExecutableSegment, ModuleMap, SamplerMarker, SamplerRequest, SamplerSetProcessInfoRequest,
+        StackTrace,
     };
+    use fuchsia_zircon::Vmo;
+    use futures::{channel::mpsc, join, StreamExt};
+    use itertools::{assert_equal, sorted};
+    use prost::Message;
+    use std::time::Instant;
+
+    use crate::{
+        crash_reporter::ProfileReport,
+        pprof::pproto::{Location, Mapping, Profile},
+        sampler_service::{
+            process_sampler_request, process_sampler_requests, ProfileBuilder,
+            MAX_DURATION_BETWEEN_PARTIAL_PROFILES, RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD,
+        },
+    };
+
+    fn deserialize_profile(profile: Vmo, size: u64) -> Profile {
+        Profile::decode(&profile.read_to_vec(0, size).unwrap()[..]).unwrap()
+    }
 
     #[fuchsia::test]
     async fn test_process_sampler_requests_full_profile() -> Result<(), Error> {
         let (client, request_stream) = create_proxy_and_stream::<SamplerMarker>()?;
-        let profile_future = process_sampler_requests(request_stream);
+        let (mut tx, _rx) = mpsc::channel(1);
+        let profile_future = process_sampler_requests(request_stream, &mut tx);
 
         let module_map = vec![
             ModuleMap {
@@ -141,20 +215,110 @@ mod test {
         client.record_deallocation(0x100, &deallocation_stack_trace)?;
         drop(client);
 
-        let (process_name, profile) = profile_future.await?;
+        if let ProfileReport::Final { process_name, size, profile } = profile_future.await? {
+            assert_eq!("test process", process_name);
+            let profile = deserialize_profile(profile, size);
+            assert_eq!(3, profile.mapping.len());
+            assert_eq!(4, profile.location.len());
+            assert_eq!(3, profile.sample.len());
+        } else {
+            panic!("Expected complete report, got partial report instead.");
+        };
 
-        assert_eq!("test process", process_name);
-        assert_eq!(3, profile.mapping.len());
-        assert_eq!(4, profile.location.len());
-        assert_eq!(3, profile.sample.len());
+        Ok(())
+    }
 
+    #[fuchsia::test]
+    async fn test_process_sampler_request_partial_profile_on_size() -> Result<(), Error> {
+        let (_client, request_stream) = create_proxy_and_stream::<SamplerMarker>()?;
+        let (mut tx, mut rx) = mpsc::channel(1);
+        const TEST_NAME: &str = "test process";
+        let mut builder = ProfileBuilder::default();
+
+        // Pre-fill `builder` with a large number of unique dead
+        // allocations, to trigger a partial profile on the next
+        // request.
+        builder.set_process_info(Some(TEST_NAME.to_string()), vec![].into_iter());
+        {
+            (0..RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD as u64).for_each(|i| {
+                builder.allocate(i, (i..i + 4).collect(), 10);
+                builder.deallocate(i, (i..i + 4).collect());
+            });
+        }
+
+        let stack_trace = StackTrace { stack_frames: Some(vec![1000, 1500]), ..Default::default() };
+        const TEST_INDEX: usize = 42;
+        let profile_future = process_sampler_request(
+            &mut builder,
+            &mut tx,
+            SamplerRequest::RecordAllocation {
+                address: RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD as u64,
+                stack_trace,
+                size: 10,
+                control_handle: request_stream.control_handle(),
+            },
+            TEST_INDEX,
+            Instant::now(),
+        );
+        let (_, report) = join!(profile_future, rx.next());
+        let report = report.unwrap();
+        match report {
+            ProfileReport::Partial { process_name, iteration, profile, size } => {
+                assert_eq!(process_name, TEST_NAME.to_string());
+                assert_eq!(iteration, TEST_INDEX);
+                // This test assumes that every single allocation ends
+                // up as a sample in the produced profile.
+                let profile = deserialize_profile(profile, size);
+                assert!(profile.sample.len() > RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD);
+            }
+            _ => assert!(false),
+        };
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_process_sampler_request_partial_profile_on_time() -> Result<(), Error> {
+        let (_client, request_stream) = create_proxy_and_stream::<SamplerMarker>()?;
+        let (mut tx, mut rx) = mpsc::channel(1);
+        const TEST_NAME: &str = "test process";
+        let mut builder = ProfileBuilder::default();
+        builder.set_process_info(Some(TEST_NAME.to_string()), vec![].into_iter());
+
+        let stack_trace = StackTrace { stack_frames: Some(vec![1000, 1500]), ..Default::default() };
+        const TEST_INDEX: usize = 42;
+        let profile_future = process_sampler_request(
+            &mut builder,
+            &mut tx,
+            SamplerRequest::RecordAllocation {
+                address: 1,
+                stack_trace,
+                size: 10,
+                control_handle: request_stream.control_handle(),
+            },
+            TEST_INDEX,
+            Instant::now() - MAX_DURATION_BETWEEN_PARTIAL_PROFILES,
+        );
+        let (_, report) = join!(profile_future, rx.next());
+        let report = report.unwrap();
+        match report {
+            ProfileReport::Partial { process_name, iteration, profile, size } => {
+                assert_eq!(process_name, TEST_NAME.to_string());
+                assert_eq!(iteration, TEST_INDEX);
+                // This test assumes that every single allocation ends
+                // up as a sample in the produced profile.
+                let profile = deserialize_profile(profile, size);
+                assert_eq!(1, profile.sample.len());
+            }
+            _ => assert!(false),
+        };
         Ok(())
     }
 
     #[fuchsia::test]
     async fn test_process_sampler_requests_set_process_info() -> Result<(), Error> {
         let (client, request_stream) = create_proxy_and_stream::<SamplerMarker>()?;
-        let profile_future = process_sampler_requests(request_stream);
+        let (mut tx, _rx) = mpsc::channel(1);
+        let profile_future = process_sampler_requests(request_stream, &mut tx);
 
         let module_map = vec![
             ModuleMap {
@@ -194,18 +358,22 @@ mod test {
         })?;
         drop(client);
 
-        let (process_name, profile) = profile_future.await?;
-        assert_eq!("test process", process_name);
-        assert_eq!(3, profile.mapping.len());
-        assert_eq!(Vec::<Location>::new(), profile.location);
-
+        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+            assert_eq!("test process", process_name);
+            let profile = deserialize_profile(profile, size);
+            assert_eq!(3, profile.mapping.len());
+            assert_eq!(Vec::<Location>::new(), profile.location);
+        } else {
+            panic!("Expected complete report, got partial report instead.");
+        };
         Ok(())
     }
 
     #[fuchsia::test]
     async fn test_process_sampler_requests_multiple_set_process_info() -> Result<(), Error> {
         let (client, request_stream) = create_proxy_and_stream::<SamplerMarker>()?;
-        let profile_future = process_sampler_requests(request_stream);
+        let (mut tx, _rx) = mpsc::channel(1);
+        let profile_future = process_sampler_requests(request_stream, &mut tx);
 
         let module_map = vec![
             ModuleMap {
@@ -250,10 +418,14 @@ mod test {
         })?;
         drop(client);
 
-        let (process_name, profile) = profile_future.await?;
-        assert_eq!("other test process", process_name);
-        assert_eq!(6, profile.mapping.len());
-        assert_eq!(Vec::<Location>::new(), profile.location);
+        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+            assert_eq!("other test process", process_name);
+            let profile = deserialize_profile(profile, size);
+            assert_eq!(6, profile.mapping.len());
+            assert_eq!(Vec::<Location>::new(), profile.location);
+        } else {
+            panic!("Expected complete report, got partial report instead.");
+        };
 
         Ok(())
     }
@@ -261,7 +433,8 @@ mod test {
     #[fuchsia::test]
     async fn test_process_sampler_requests_allocate() -> Result<(), Error> {
         let (client, request_stream) = create_proxy_and_stream::<SamplerMarker>()?;
-        let profile_future = process_sampler_requests(request_stream);
+        let (mut tx, _rx) = mpsc::channel(1);
+        let profile_future = process_sampler_requests(request_stream, &mut tx);
 
         let allocation_stack_trace =
             StackTrace { stack_frames: Some(vec![1000, 1500]), ..Default::default() };
@@ -269,29 +442,36 @@ mod test {
         client.record_allocation(0x100, &allocation_stack_trace, 100)?;
         drop(client);
 
-        let (process_name, profile) = profile_future.await?;
-        assert_eq!(String::default(), process_name);
-        let locations = profile.location.into_iter().map(|Location { address, .. }| address);
-        assert_equal(vec![1000, 1500].into_iter(), sorted(locations));
-
+        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+            assert_eq!(String::default(), process_name);
+            let profile = deserialize_profile(profile, size);
+            let locations = profile.location.into_iter().map(|Location { address, .. }| address);
+            assert_equal(vec![1000, 1500].into_iter(), sorted(locations));
+        } else {
+            panic!("Expected complete report, got partial report instead.");
+        };
         Ok(())
     }
 
     #[fuchsia::test]
     async fn test_process_sampler_requests_deallocate() -> Result<(), Error> {
         let (client, request_stream) = create_proxy_and_stream::<SamplerMarker>()?;
-        let profile_future = process_sampler_requests(request_stream);
+        let (mut tx, _rx) = mpsc::channel(1);
+        let profile_future = process_sampler_requests(request_stream, &mut tx);
 
         let stack_trace = StackTrace { stack_frames: Some(vec![3000, 3001]), ..Default::default() };
 
         client.record_deallocation(0x100, &stack_trace)?;
         drop(client);
 
-        let (process_name, profile) = profile_future.await?;
-
-        assert_eq!(String::default(), process_name);
-        assert_eq!(Vec::<Mapping>::new(), profile.mapping);
-        assert_eq!(Vec::<Location>::new(), profile.location);
+        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+            assert_eq!(String::default(), process_name);
+            let profile = deserialize_profile(profile, size);
+            assert_eq!(Vec::<Mapping>::new(), profile.mapping);
+            assert_eq!(Vec::<Location>::new(), profile.location);
+        } else {
+            panic!("Expected complete report, got partial report instead.");
+        };
 
         Ok(())
     }

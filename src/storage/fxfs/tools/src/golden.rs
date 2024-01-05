@@ -7,7 +7,7 @@ use {
     anyhow::{bail, ensure, Context, Error},
     chrono::Local,
     fxfs::{
-        filesystem::{mkfs_with_default, Filesystem, FxFilesystem, SyncOptions},
+        filesystem::{mkfs_with_default, FxFilesystem, SyncOptions},
         serialized_types::LATEST_VERSION,
     },
     fxfs_crypto::Crypt,
@@ -55,7 +55,7 @@ fn load_device(path: &Path) -> Result<FakeDevice, Error> {
 async fn save_device(device: Arc<dyn Device>, path: &Path) -> Result<(), Error> {
     device.reopen(false);
     let mut writer = zstd::Encoder::new(std::fs::File::create(path)?, 6)?;
-    let mut buf = device.allocate_buffer(device.block_size() as usize);
+    let mut buf = device.allocate_buffer(device.block_size() as usize).await;
     let mut offset: u64 = 0;
     while offset < IMAGE_BLOCKS * IMAGE_BLOCK_SIZE as u64 {
         device.read(offset, buf.as_mut()).await?;

@@ -23,11 +23,11 @@
 #include <fbl/unique_fd.h>
 #include <ramdevice-client/ramnand.h>
 
-#include "src/lib/storage/fs_management/cpp/admin.h"
-#include "src/lib/storage/fs_management/cpp/format.h"
-#include "src/lib/storage/fs_management/cpp/mount.h"
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/compression_settings.h"
+#include "src/storage/lib/fs_management/cpp/admin.h"
+#include "src/storage/lib/fs_management/cpp/format.h"
+#include "src/storage/lib/fs_management/cpp/mount.h"
 #include "src/storage/testing/ram_disk.h"
 
 namespace fs_test {
@@ -73,8 +73,6 @@ struct TestFilesystemOptions {
   blobfs::BlobLayoutFormat blob_layout_format = blobfs::BlobLayoutFormat::kCompactMerkleTreeAtEnd;
   // The compression algorithm blobfs should use for new files.
   std::optional<blobfs::CompressionAlgorithm> blob_compression_algorithm = std::nullopt;
-  // Allow RFC 0207 support for writing pre-compressed delivery blobs (offline compression).
-  bool allow_delivery_blobs = false;
 
   // If using ram_nand, the number of writes after which writes should fail.
   uint32_t fail_after;
@@ -122,6 +120,7 @@ class FilesystemInstance {
     return fidl::ClientEnd<fuchsia_io::Directory>();
   }
   virtual void Reset() {}
+  virtual std::string GetMoniker() const = 0;
 };
 
 // Base class for all supported file systems. It is a factory class that generates

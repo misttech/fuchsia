@@ -8,9 +8,13 @@
 #include <lib/ddk/debug.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/zx/result.h>
+#include <zircon/errors.h>
+
+#include <optional>
 
 #include <ddktl/fidl.h>
 
+#include "src/media/audio/drivers/virtual_audio/virtual_audio_codec.h"
 #include "src/media/audio/drivers/virtual_audio/virtual_audio_composite.h"
 #include "src/media/audio/drivers/virtual_audio/virtual_audio_dai.h"
 #include "src/media/audio/drivers/virtual_audio/virtual_audio_device_impl.h"
@@ -108,16 +112,23 @@ void VirtualAudioControlImpl::GetDefaultConfiguration(
     GetDefaultConfigurationRequestView request, GetDefaultConfigurationCompleter::Sync& completer) {
   fidl::Arena arena;
   switch (request->type) {
-    case fuchsia_virtualaudio::wire::DeviceType::kStreamConfig:
-      completer.ReplySuccess(
-          fidl::ToWire(arena, VirtualAudioStream::GetDefaultConfig(request->direction.is_input())));
+    case fuchsia_virtualaudio::wire::DeviceType::kComposite:
+      completer.ReplySuccess(fidl::ToWire(arena, VirtualAudioComposite::GetDefaultConfig()));
       break;
     case fuchsia_virtualaudio::wire::DeviceType::kDai:
       completer.ReplySuccess(
           fidl::ToWire(arena, VirtualAudioDai::GetDefaultConfig(request->direction.is_input())));
       break;
-    case fuchsia_virtualaudio::wire::DeviceType::kComposite:
-      completer.ReplySuccess(fidl::ToWire(arena, VirtualAudioComposite::GetDefaultConfig()));
+    case fuchsia_virtualaudio::wire::DeviceType::kStreamConfig:
+      completer.ReplySuccess(
+          fidl::ToWire(arena, VirtualAudioStream::GetDefaultConfig(request->direction.is_input())));
+      break;
+    case fuchsia_virtualaudio::wire::DeviceType::kCodec:
+      completer.ReplySuccess(fidl::ToWire(
+          arena, VirtualAudioCodec::GetDefaultConfig(
+                     (request->direction.has_is_input()
+                          ? static_cast<std::optional<bool>>(request->direction.is_input())
+                          : std::nullopt))));
       break;
     default:
       ZX_ASSERT_MSG(0, "Unknown device type");

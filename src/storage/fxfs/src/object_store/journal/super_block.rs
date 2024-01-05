@@ -26,10 +26,11 @@
 use {
     crate::{
         errors::FxfsError,
-        filesystem::{ApplyContext, ApplyMode, Filesystem, JournalingObject},
+        filesystem::{ApplyContext, ApplyMode, FxFilesystem, JournalingObject},
         log::*,
         lsm_tree::{types::MutableLayer, LSMTree, LayerSet},
         metrics,
+        object_handle::ObjectHandle as _,
         object_store::{
             allocator::Reservation,
             journal::{
@@ -39,7 +40,8 @@ use {
                 JournalCheckpoint, JournalHandle as _, BLOCK_SIZE,
             },
             object_record::{
-                ObjectItem, ObjectItemV25, ObjectItemV29, ObjectItemV30, ObjectItemV5,
+                ObjectItem, ObjectItemV25, ObjectItemV29, ObjectItemV30, ObjectItemV31,
+                ObjectItemV5,
             },
             transaction::{AssocObj, Options},
             tree::MajorCompactable,
@@ -55,9 +57,9 @@ use {
     anyhow::{bail, ensure, Context, Error},
     fprint::TypeFingerprint,
     fuchsia_inspect::{Property as _, UintProperty},
+    rustc_hash::FxHashMap as HashMap,
     serde::{Deserialize, Serialize},
     std::{
-        collections::HashMap,
         convert::TryInto,
         fmt,
         io::{Read, Write},
@@ -216,6 +218,14 @@ pub enum SuperBlockRecord {
 }
 
 #[derive(Debug, Deserialize, Migrate, Serialize, Versioned, TypeFingerprint)]
+pub enum SuperBlockRecordV31 {
+    Extent(Range<u64>),
+    ObjectItem(ObjectItemV31),
+    End,
+}
+
+#[derive(Debug, Deserialize, Migrate, Serialize, Versioned, TypeFingerprint)]
+#[migrate_to_version(SuperBlockRecordV31)]
 pub enum SuperBlockRecordV30 {
     Extent(Range<u64>),
     ObjectItem(ObjectItemV30),
@@ -423,7 +433,7 @@ impl SuperBlockManager {
     pub async fn save(
         &self,
         super_block_header: SuperBlockHeader,
-        filesystem: Arc<dyn Filesystem>,
+        filesystem: Arc<FxFilesystem>,
         root_parent: LayerSet<ObjectKey, ObjectValue>,
     ) -> Result<(), Error> {
         let root_store = filesystem.root_store();
@@ -486,8 +496,11 @@ impl SuperBlockHeader {
     /// This isn't a secure shred in any way, it just ensures the super-block is not recognized as a
     /// super-block.
     pub async fn shred<S: HandleOwner>(handle: DataObjectHandle<S>) -> Result<(), Error> {
-        let mut buf =
-            handle.store().device().allocate_buffer(handle.store().device().block_size() as usize);
+        let mut buf = handle
+            .store()
+            .device()
+            .allocate_buffer(handle.store().device().block_size() as usize)
+            .await;
         buf.as_mut_slice().fill(0u8);
         handle.overwrite(0, buf.as_mut(), false).await
     }
@@ -518,30 +531,30 @@ impl SuperBlockHeader {
             let mut magic_bytes: [u8; 8] = [0; 8];
             cursor.read_exact(&mut magic_bytes)?;
             if magic_bytes.as_slice() != SUPER_BLOCK_MAGIC.as_slice() {
-                bail!(format!("Invalid magic: {:?}", magic_bytes));
+                bail!("Invalid magic: {:?}", magic_bytes);
             }
             (super_block_header, super_block_version) =
                 SuperBlockHeader::deserialize_with_version(&mut cursor)?;
 
             if super_block_version < EARLIEST_SUPPORTED_VERSION {
-                bail!(format!("Unsupported SuperBlock version: {:?}", super_block_version));
+                bail!("Unsupported SuperBlock version: {:?}", super_block_version);
             }
 
             // NOTE: It is possible that data was written to the journal with an old version
             // but no compaction ever happened, so the journal version could potentially be older
             // than the layer file versions.
             if super_block_header.journal_checkpoint.version < EARLIEST_SUPPORTED_VERSION {
-                bail!(format!(
+                bail!(
                     "Unsupported JournalCheckpoint version: {:?}",
                     super_block_header.journal_checkpoint.version
-                ));
+                );
             }
 
             if super_block_header.earliest_version < EARLIEST_SUPPORTED_VERSION {
-                bail!(format!(
+                bail!(
                     "Filesystem contains struct with unsupported version: {:?}",
                     super_block_header.earliest_version
-                ));
+                );
             }
 
             cursor.position() as usize
@@ -587,13 +600,12 @@ impl<'a, S: HandleOwner> SuperBlockWriter<'a, S> {
                 ..Default::default()
             })
             .await?;
-        let allocated = self
-            .handle
-            .preallocate_range(
-                &mut transaction,
-                self.next_extent_offset..self.next_extent_offset + SUPER_BLOCK_CHUNK_SIZE,
-            )
-            .await?;
+        let mut file_range =
+            self.next_extent_offset..self.next_extent_offset + SUPER_BLOCK_CHUNK_SIZE;
+        let allocated = self.handle.preallocate_range(&mut transaction, &mut file_range).await?;
+        if file_range.start < file_range.end {
+            bail!("preallocate_range returned too little space");
+        }
         transaction.commit().await?;
         for device_range in allocated {
             self.next_extent_offset += device_range.end - device_range.start;
@@ -603,7 +615,8 @@ impl<'a, S: HandleOwner> SuperBlockWriter<'a, S> {
     }
 
     async fn flush_buffer(&mut self) -> Result<(), Error> {
-        let (offset, mut buf) = self.writer.take_buffer(&self.handle).unwrap();
+        let mut buf = self.handle.allocate_buffer(self.writer.flushable_bytes()).await;
+        let offset = self.writer.take_flushable(buf.as_mut());
         self.handle.overwrite(offset, buf.as_mut(), false).await
     }
 }
@@ -636,12 +649,11 @@ mod tests {
             MIN_SUPER_BLOCK_SIZE,
         },
         crate::{
-            filesystem::{Filesystem, FxFilesystem, OpenFxFilesystem},
+            filesystem::{FxFilesystem, OpenFxFilesystem},
             object_handle::ReadObjectHandle,
             object_store::{
-                allocator::Allocator,
                 journal::JournalCheckpoint,
-                transaction::{Options, TransactionHandler},
+                transaction::{lock_keys, Options},
                 DataObjectHandle, HandleOptions, ObjectHandle, ObjectKey, ObjectStore,
             },
             serialized_types::LATEST_VERSION,
@@ -707,11 +719,11 @@ mod tests {
         // Create a large number of objects in the root parent store so that we test growing
         // of the super-block file, requiring us to add extents.
         let mut created_object_ids = vec![];
-        const NUM_ENTRIES: u64 = MIN_SUPER_BLOCK_SIZE / 16;
+        const NUM_ENTRIES: u64 = MIN_SUPER_BLOCK_SIZE / 32;
         for _ in 0..NUM_ENTRIES {
             let mut transaction = fs
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             created_object_ids.push(
@@ -807,7 +819,7 @@ mod tests {
         for object_id in created_object_ids {
             let mut transaction = fs
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             fs.object_manager()
@@ -827,7 +839,7 @@ mod tests {
         for _ in 0..NUM_ENTRIES {
             let mut transaction = fs
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             ObjectStore::create_object(
@@ -897,10 +909,10 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_store = fs.root_store();
         // Generate enough work to induce a journal flush and thus a new superblock being written.
-        for _ in 0..8000 {
+        for _ in 0..6000 {
             let mut transaction = fs
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             ObjectStore::create_object(
@@ -960,10 +972,10 @@ mod tests {
         let fs = FxFilesystem::open(device).await.expect("open failed");
         let root_store = fs.root_store();
         // Generate enough work to induce a journal flush.
-        for _ in 0..8000 {
+        for _ in 0..6000 {
             let mut transaction = fs
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             ObjectStore::create_object(
@@ -1020,7 +1032,7 @@ mod tests {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         let store = fs.root_parent_store();
@@ -1039,10 +1051,10 @@ mod tests {
 
         // Generate enough work to induce a journal flush.
         let root_store = fs.root_store();
-        for _ in 0..8000 {
+        for _ in 0..6000 {
             let mut transaction = fs
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             ObjectStore::create_object(

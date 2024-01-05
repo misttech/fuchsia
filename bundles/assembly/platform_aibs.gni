@@ -12,15 +12,18 @@ platform_aibs_dir = get_label_info("//bundles/assembly", "target_out_dir")
 # feature-set-level assemblies.  This is a subset of the overall platform AIBs
 # so that these systems (e.g. bringup) don't need to build the entire platform.
 bootstrap_user_platform_aib_names = [
+  # The kernel itself
+  "zircon",
+
   # The bootstrap feature-set-level
   "bootstrap",
 
   # Driver Framework
-  "driver_framework_v1",
   "driver_framework_v2",
 
   # Graphics
   "virtcon",
+  "virtcon_disable",
 
   # Kernel args
   "kernel_args_user",
@@ -29,8 +32,12 @@ bootstrap_user_platform_aib_names = [
   "empty_live_usb",
   "live_usb",
 
+  # Static resource files.
+  "resources",
+
   # Emulator Support
   "emulator_support",
+  "paravirtualization_support",
 
   # Storage
   "fshost_common",
@@ -53,11 +60,11 @@ bootstrap_userdebug_platform_aib_names = [
   # The bootstrap feature-set-level
   "bootstrap_userdebug",
 
-  # Kernel args
-  "kernel_args_userdebug",
+  "clock_development_tools",
 
-  # SWD (Software Delivery)
-  "no_update_checker",
+  # Kernel args
+  "kernel_args_eng",
+  "kernel_args_userdebug",
 ]
 
 # These are the eng-buildtype-safe platform AIBs that are used by bootstrap
@@ -68,10 +75,7 @@ bootstrap_eng_platform_aib_names = [
   "bootstrap_eng",
 
   # Kernel args
-  "kernel_args_eng",
-
-  # SWD (Software Delivery)
-  "no_update_checker",
+  "kernel_pmm_checker_enabled",
 ]
 
 # The names of all of the platform's 'testonly=false' Assembly Input Bundles
@@ -92,8 +96,14 @@ user_platform_aib_names =
       # The additional children of core we add when we have networking enabled
       "core_realm_networking",
       "network_realm",
+      "network_realm_packages",
+      "network_realm_packages_gub",
+      "network_tun",
+      "thread_lowpan",
       "networking_with_virtualization",
       "networking_basic",
+      "networking_basic_packages",
+      "networking_basic_packages_gub",
 
       # The minimal feature-set-level
       "common_minimal",
@@ -103,8 +113,20 @@ user_platform_aib_names =
       # Feature-level / Subsystem-level bundles
       # Keep sorted alphabetically.
 
+      # Bluetooth
+      "bluetooth_core",
+      "bluetooth_snoop_eager",
+      "bluetooth_snoop_lazy",
+
       # Media
+      "audio_core",
+      "audio_core_routing",
+      "audio_core_use_adc_device",
       "audio_device_registry",
+      "camera",
+
+      # Diagnostics
+      "diagnostics_triage_detect_mali",
 
       # Fonts
       "fonts",
@@ -116,6 +138,8 @@ user_platform_aib_names =
 
       # Netstack
       "netstack3",
+      "netstack3_packages",
+      "netstack3_packages_gub",
 
       # WLAN
       "wlan_base",
@@ -125,7 +149,11 @@ user_platform_aib_names =
       "wlan_softmac_support",
       "wlan_wlanix",
 
+      # Sensors
+      "sensors_framework",
+
       # Session
+      "element_manager",
       "session_manager",
 
       # SetUI
@@ -138,7 +166,15 @@ user_platform_aib_names =
       "setui_with_camera.icu_latest_${icu_git_info.latest}",
       "setui_with_camera.icu_stable_${icu_git_info.stable}",
 
+      # Storage
+      "factory_data",
+
+      # Opaque input groups.
+      "input_group_one",
+      "input_group_two",
+
       # ICU-specific version of intl_services
+
       "intl_services.icu_default_${icu_git_info.default}",
       "intl_services.icu_latest_${icu_git_info.latest}",
       "intl_services.icu_stable_${icu_git_info.stable}",
@@ -147,10 +183,19 @@ user_platform_aib_names =
       "intl_services_small.icu_latest_${icu_git_info.latest}",
       "intl_services_small.icu_stable_${icu_git_info.stable}",
 
+      "intl_services_small_with_timezone.icu_default_${icu_git_info.default}",
+      "intl_services_small_with_timezone.icu_latest_${icu_git_info.latest}",
+      "intl_services_small_with_timezone.icu_stable_${icu_git_info.stable}",
+
       # UI
       "ui",
       "ui_user_and_userdebug",
+      "ui_user_and_userdebug.icu_default_${icu_git_info.default}",
+      "ui_user_and_userdebug.icu_latest_${icu_git_info.latest}",
+      "ui_user_and_userdebug.icu_stable_${icu_git_info.stable}",
       "ui_package_user_and_userdebug",
+      "ui_package_eng_userdebug_with_synthetic_device_support",
+      "brightness_manager",
 
       # Drivers
       "radar_proxy_without_injector",
@@ -162,16 +207,31 @@ user_platform_aib_names =
       "battery_manager",
 
       # Forensics
-      "cobalt_default_registry",
+      "feedback_large_disk",
+      "feedback_low_memory_product_config",
+      "feedback_remote_device_id_provider",
+      "feedback_user_config",
+      "feedback_userdebug_config",
+
+      # Kernel Compression
+      "kernel_anonymous_memory_compression",
+      "kernel_anonymous_memory_compression_eager_lru",
+
+      # Recovery
+      "factory_reset_trigger",
+
+      # Starnix
+      "starnix_support",
     ]
 
 if (current_cpu != "riscv64") {
   user_platform_aib_names += [
     # The Go toolchain used for netstack2 does not support RISC-V.
+    # netstack-migration contains netstack2, so equally no support on RISC-V.
     "netstack2",
-
-    # TODO(fxbug.dev/128554):: Move to the list above once build errors are resolved.
-    "starnix_support",
+    "netstack_migration",
+    "netstack_migration_packages",
+    "netstack_migration_packages_gub",
 
     # TODO(fxbug.dev/128551): Move to the list above once build errors are resolved.
     "virtualization_support",
@@ -190,8 +250,11 @@ _userdebug_aib_names = bootstrap_userdebug_platform_aib_names + [
                          "core_realm_development_access_rcs_usb",
                          "minimal_userdebug",
                          "minimal_userdebug_and_eng",
-                         "mdns_fuchsia_dev_wired_service",
+                         "mdns_fuchsia_device_wired_service",
+                         "omaha_client_empty_eager_config",
                          "radar_proxy_with_injector",
+                         "sl4f",
+                         "wlan_development",
                        ]
 
 # LINT.ThenChange(platform_aib_names.bzl)
@@ -209,6 +272,7 @@ eng_only_platform_aib_names =
 
       # SWD (Software Delivery)
       "system_update_checker",
+      "pkgfs_disable_executability_restrictions",
 
       # Testing Support
       "testing_support",
@@ -218,13 +282,18 @@ eng_only_platform_aib_names =
 
       # UI
       "ui_eng",
+      "ui_eng.icu_default_${icu_git_info.default}",
+      "ui_eng.icu_latest_${icu_git_info.latest}",
+      "ui_eng.icu_stable_${icu_git_info.stable}",
       "ui_package_eng",
+      "ui_package_eng_userdebug_with_synthetic_device_support",
 
       # Example AIB
       "example_assembly_bundle",
 
       # Audio development/debugging
-      "audio_dev_support",
+      "audio_development_support",
+      "video_development_support",
     ]
 eng_platform_aib_names =
     userdebug_platform_aib_names + eng_only_platform_aib_names

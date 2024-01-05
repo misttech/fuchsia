@@ -1,0 +1,251 @@
+// Copyright 2023 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+// Draft Prototype of Protocols to be used by Power Broker.
+// None of these protocols should be considered fully baked at this time
+// and should be expected to change in the future as we gain information
+// through this prototype testbed about coverage and usability.
+@available(added=HEAD)
+library fuchsia.power.broker;
+
+using zx;
+
+/// Used to describe the power level of an element.
+/// Could extend this further to support additional types of power
+/// levels, such as ACPI.
+type PowerLevel = strict union {
+    1: binary BinaryPowerLevel;
+    2: user_defined UserDefinedPowerLevel;
+};
+
+type BinaryPowerLevel = strict enum : uint32 {
+    OFF = 0;
+    ON = 1;
+};
+
+type UserDefinedPowerLevel = struct {
+    level uint8;
+};
+
+/// A token that represents the right to add a dependency upon another
+/// element. Should first be registered with Power Broker via
+/// ElementControl.RegisterDependencyToken of the required element.
+alias DependencyToken = zx.Handle:EVENT;
+
+/// Power dependency from an already specified element's PowerLevel to another.
+/// The dependent Element should already be known from context.
+type LevelDependency = resource struct {
+    dependent_level PowerLevel;
+    /// Must supply a token registered via the RegisterDependencyToken call of
+    /// the required element's ElementControl protocol.
+    requires_token DependencyToken;
+    requires_level PowerLevel;
+};
+
+/// This is the primary initial protocol used by Power Element Owners to
+/// communicate with Power Broker. Power Element Owners should add the
+/// elements they own to the Power Topology through AddElement. All further
+/// interactions with Power Broker are done through channels opened by the
+/// AddElement call, which are scoped to the added element.
+@discoverable
+open protocol Topology {
+    /// Called by a Power Element owner to register a new Power Element and
+    /// open control channels for that element.
+    flexible AddElement(resource struct {
+        /// Human-readable name for logging and debug purposes.
+        element_name string:1024;
+        /// The initial current power level of the element.
+        initial_current_level PowerLevel;
+        /// Minimum level (i.e. OFF or the lowest possible power level) for
+        /// this element.
+        /// TODO(b/311905380): Specify all allowed power levels here.
+        minimum_level PowerLevel;
+        /// List of dependencies for this element's power levels.
+        /// Note: dependencies UPON this element's levels cannot be added here.
+        dependencies vector<LevelDependency>:MAX_DEPENDENCIES_IN_ADD_ELEMENT;
+        /// List of initial dependency tokens to register for this element.
+        /// These tokens will allow other element owners to create dependencies
+        /// upon this element by passing them as the requires_token of a
+        /// LevelDependency.
+        dependency_tokens_to_register vector<DependencyToken>:MAX_TOKENS_IN_ADD_ELEMENT;
+    }) -> (resource struct {
+        /// ElementControl channel for this element.
+        element_control_channel client_end:ElementControl;
+        /// Lessor channel for this element.
+        lessor_channel client_end:Lessor;
+        /// LevelControl channel for this element.
+        level_control_channel client_end:LevelControl;
+    }) error AddElementError;
+};
+
+// Limitations on vector length for the sake of bounding request size.
+const MAX_DEPENDENCIES_IN_ADD_ELEMENT uint16 = 128;
+const MAX_TOKENS_IN_ADD_ELEMENT uint16 = 128;
+
+type AddElementError = flexible enum {
+    INTERNAL = 1;
+    INVALID = 2;
+    NOT_AUTHORIZED = 3;
+};
+
+/// Provides element-scoped access to an element previously added via
+/// Topology.AddElement.
+open protocol ElementControl {
+    /// Register a new Status channel on which Power Broker will send
+    /// read-only updates of the element's current power level. This method
+    /// is intended to allow element owners to give read-only access to the
+    /// element's current power level to clients by opening and transferring
+    /// this channel.
+    flexible OpenStatusChannel(resource struct {
+        status_channel server_end:Status;
+    });
+
+    /// Called by a Power Element owner to remove their Power Element.
+    /// Removing a Power Element also removes dependencies on other elements,
+    /// but dependencies on this element will remain permanently unsatisfied.
+    /// The level control channel and open status channels will be closed and
+    /// all tokens registered to this element will be unregistered.
+    /// TODO(b/314814975): Make the above actually true.
+    flexible RemoveElement() -> ();
+
+    /// Add a dependency of this element upon another Power Element.
+    flexible AddDependency(LevelDependency) -> () error AddDependencyError;
+
+    /// Remove a dependency of this element upon another Power Element.
+    flexible RemoveDependency(LevelDependency) -> () error RemoveDependencyError;
+
+    /// Register a token which will permit the bearer to add a dependency upon
+    /// this element.
+    flexible RegisterDependencyToken(resource struct {
+        token DependencyToken;
+    }) -> () error RegisterDependencyTokenError;
+
+    /// Unregister a token previously registered via RegisterDependencyToken.
+    flexible UnregisterDependencyToken(resource struct {
+        token DependencyToken;
+    }) -> () error UnregisterDependencyTokenError;
+};
+
+type AddDependencyError = flexible enum {
+    ALREADY_EXISTS = 1;
+    ELEMENT_NOT_FOUND = 2;
+    NOT_AUTHORIZED = 3;
+    REQUIRED_ELEMENT_NOT_FOUND = 4;
+};
+
+type RemoveDependencyError = flexible enum {
+    NOT_AUTHORIZED = 1;
+    NOT_FOUND = 2;
+};
+
+type RegisterDependencyTokenError = flexible enum {
+    ALREADY_IN_USE = 1;
+    INTERNAL = 2;
+};
+
+type UnregisterDependencyTokenError = flexible enum {
+    NOT_AUTHORIZED = 1;
+    NOT_FOUND = 2;
+};
+
+/// Element Permissions
+type Permissions = strict bits : uint32 {
+    MODIFY_DEPENDENT = 0b00000001;
+    MODIFY_DEPENDENCY = 0b00000010;
+};
+
+/// Provides element-scoped access to receive current power level status
+/// and initiate power level changes of an element previously added via
+/// Topology.AddElement.
+open protocol LevelControl {
+    /// Request made by element owners on behalf of a single power element to
+    /// the Power Broker as a hanging GET:
+    /// If last_required_level does not match the current required power level
+    /// this will return immediately with the new required power level.
+    /// If last_required_level matches the current level, the call will
+    /// hang until the required level changes.
+    flexible WatchRequiredLevel(resource struct {
+        /// Provided by the client with the last level received, or None if
+        /// this is the first call.
+        last_required_level PowerLevel:optional;
+    }) -> (resource struct {
+        required_level PowerLevel;
+    }) error WatchRequiredLevelError;
+
+    /// Sent by the element on initial startup and whenever there is a change
+    /// in power level.
+    flexible UpdateCurrentPowerLevel(resource struct {
+        current_level PowerLevel;
+    }) -> () error UpdateCurrentPowerLevelError;
+};
+
+type WatchRequiredLevelError = flexible enum {
+    INTERNAL = 1;
+    NOT_AUTHORIZED = 2;
+};
+
+type UpdateCurrentPowerLevelError = flexible enum {
+    NOT_AUTHORIZED = 1;
+};
+
+// Unique ID provided by Power Broker (currently a UUID but subject to change).
+alias LeaseId = string:64;
+
+/// Provides element-scoped access to request leases to raise the levels of an
+/// element previously added via Topology.AddElement.
+open protocol Lessor {
+    /// Request made to indicate client intends to raise the given element
+    /// to the given power level and wants to have its direct and transitive
+    /// power dependencies satisfied.
+    flexible Lease(resource struct {
+        /// Power level of this element to be raised to.
+        level PowerLevel;
+    }) -> (resource struct {
+        /// Channel for actions to be taken on the lease.
+        /// When this channel is closed, the lease will be dropped.
+        lease_control client_end:LeaseControl;
+    }) error LeaseError;
+};
+
+type LeaseError = flexible enum {
+    INTERNAL = 1;
+    NOT_AUTHORIZED = 2;
+};
+
+type LeaseStatus = flexible enum {
+    UNKNOWN = 0;
+    PENDING = 1;
+    SATISFIED = 2;
+};
+
+/// Provides lease-scoped access to actions that can be taken on a lease
+/// previously acquired via Lessor.Lease. Closing this control channel drops
+/// the lease.
+open protocol LeaseControl {
+    /// Get the current status of the lease.
+    /// If last_status is UNKNOWN, the call will return immediately
+    /// with the current status. Otherwise, the call will block
+    /// until the current status differs from last_status.
+    flexible WatchStatus(struct {
+        last_status LeaseStatus;
+    }) -> (struct {
+        status LeaseStatus;
+    });
+};
+
+/// Provides read-only access to the current PowerLevel of an element and the
+/// ability to watch changes to an element's power level. A new channel to
+/// this protocol can be obtained by calling OpenStatus on the element's
+/// ElementControl channel (and passed to other clients who need access
+/// to the element's current power level).
+open protocol Status {
+    /// Listen for changes to the element's current power level.
+    /// If last_level is passed, it will block until the current level is
+    /// different than last_level. Otherwise, it will return immediately
+    /// with the current level.
+    flexible WatchPowerLevel(resource struct {
+        last_level PowerLevel:optional;
+    }) -> (resource struct {
+        current_level PowerLevel;
+    });
+};

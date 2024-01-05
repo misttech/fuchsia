@@ -15,6 +15,7 @@ use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
 use fidl_fuchsia_net_dhcpv6_ext as fnet_dhcpv6_ext;
 use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_test_realm as fntr;
+use fidl_fuchsia_sys2 as fsys;
 use tracing::error;
 
 async fn connect_to_protocol<S: fidl::endpoints::DiscoverableProtocolMarker>(
@@ -24,8 +25,9 @@ async fn connect_to_protocol<S: fidl::endpoints::DiscoverableProtocolMarker>(
     let (proxy, server_end) = fidl::endpoints::create_proxy::<S>()
         .with_context(|| format!("failed to create proxy to {}", S::PROTOCOL_NAME))?;
     remote_control
-        .connect_capability(
+        .open_capability(
             moniker,
+            fsys::OpenDirType::ExposedDir,
             S::PROTOCOL_NAME,
             server_end.into_channel(),
             fio::OpenFlags::empty(),
@@ -93,14 +95,40 @@ async fn handle_command(
             address,
             interface_id,
         }) => (
-            controller.join_multicast_group(&address.into(), interface_id).await,
+            {
+                let now = std::time::Instant::now();
+                println!(
+                    "starting join_multicast_group op at {now:?}: {address:?} {interface_id:?}"
+                );
+                let result = controller.join_multicast_group(&address.into(), interface_id).await;
+
+                let elapsed = std::time::Instant::now() - now;
+                println!(
+                    "finishing join_multicast_group op from {now:?}: \
+                     {address:?} {interface_id:?}: {result:?} (after {elapsed:?})"
+                );
+                result
+            },
             "join_multicast_group",
         ),
         ntr_args::Subcommand::LeaveMulticastGroup(ntr_args::LeaveMulticastGroup {
             address,
             interface_id,
         }) => (
-            controller.leave_multicast_group(&address.into(), interface_id).await,
+            {
+                let now = std::time::Instant::now();
+                println!(
+                    "starting leave_multicast_group op at {now:?}: {address:?} {interface_id:?}"
+                );
+                let result = controller.leave_multicast_group(&address.into(), interface_id).await;
+
+                let elapsed = std::time::Instant::now() - now;
+                println!(
+                    "finishing leave_multicast_group op from {now:?}: \
+                    {address:?} {interface_id:?}: {result:?} (after {elapsed:?})"
+                );
+                result
+            },
             "leave_multicast_group",
         ),
         ntr_args::Subcommand::Ping(ntr_args::Ping {

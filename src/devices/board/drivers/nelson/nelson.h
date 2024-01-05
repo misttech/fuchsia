@@ -5,12 +5,11 @@
 #ifndef SRC_DEVICES_BOARD_DRIVERS_NELSON_NELSON_H_
 #define SRC_DEVICES_BOARD_DRIVERS_NELSON_NELSON_H_
 
+#include <fidl/fuchsia.hardware.clockimpl/cpp/wire.h>
+#include <fidl/fuchsia.hardware.gpioimpl/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
-#include <fuchsia/hardware/clockimpl/cpp/banjo.h>
-#include <fuchsia/hardware/gpioimpl/cpp/banjo.h>
 #include <fuchsia/hardware/iommu/cpp/banjo.h>
 #include <lib/ddk/device.h>
-#include <lib/inspect/cpp/inspect.h>
 #include <threads.h>
 
 #include <optional>
@@ -19,28 +18,10 @@
 #include <fbl/macros.h>
 #include <soc/aml-s905d2/s905d2-gpio.h>
 
-namespace nelson {
+#include "nelson-btis.h"
+#include "sdk/lib/driver/outgoing/cpp/outgoing_directory.h"
 
-// BTI IDs for our devices
-enum {
-  BTI_BOARD,
-  BTI_USB,
-  BTI_DISPLAY,
-  BTI_EMMC,
-  BTI_MALI,
-  BTI_VIDEO,
-  BTI_SDIO,
-  BTI_CANVAS,
-  BTI_AUDIO_IN,
-  BTI_AUDIO_OUT,
-  BTI_TEE,
-  BTI_SYSMEM,
-  BTI_AML_SECURE_MEM,
-  BTI_NNA,
-  BTI_AUDIO_BT_IN,
-  BTI_AUDIO_BT_OUT,
-  BTI_SPI1,
-};
+namespace nelson {
 
 // MAC address metadata indices
 enum {
@@ -101,7 +82,10 @@ class Nelson : public NelsonType {
   explicit Nelson(zx_device_t* parent,
                   fdf::ClientEnd<fuchsia_hardware_platform_bus::PlatformBus> pbus,
                   iommu_protocol_t* iommu)
-      : NelsonType(parent), pbus_(std::move(pbus)), iommu_(iommu) {}
+      : NelsonType(parent),
+        pbus_(std::move(pbus)),
+        iommu_(iommu),
+        outgoing_(fdf::Dispatcher::GetCurrent()->get()) {}
 
   static zx_status_t Create(void* ctx, zx_device_t* parent);
 
@@ -111,12 +95,18 @@ class Nelson : public NelsonType {
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(Nelson);
 
+  void Serve(fdf::ServerEnd<fuchsia_hardware_platform_bus::PlatformBus> request) {
+    device_connect_runtime_protocol(
+        parent(), fuchsia_hardware_platform_bus::Service::PlatformBus::ServiceName,
+        fuchsia_hardware_platform_bus::Service::PlatformBus::Name, request.TakeChannel().release());
+  }
+
+  zx::result<> AdcInit();
   zx_status_t AudioInit();
   zx_status_t BluetoothInit();
   zx_status_t ButtonsInit();
   zx_status_t CanvasInit();
   zx_status_t ClkInit();
-  zx_status_t DisplayInit(uint32_t bootloader_display_id);
   zx_status_t DsiInit();
   zx_status_t EmmcInit();
   zx_status_t GpioInit();
@@ -130,7 +120,6 @@ class Nelson : public NelsonType {
   zx_status_t SdioInit();
   zx_status_t Start();
   zx_status_t SecureMemInit();
-  zx_status_t SelinaInit();
   zx_status_t SpiInit();
   zx_status_t Spi0Init();
   zx_status_t Spi1Init();
@@ -146,30 +135,39 @@ class Nelson : public NelsonType {
   zx_status_t NnaInit();
   zx_status_t RamCtlInit();
   zx_status_t ThermistorInit();
+  zx_status_t AddPostInitDevice();
   int Thread();
 
-  uint32_t GetBoardRev(void);
-  uint32_t GetBoardOption(void);
-  uint32_t GetDisplayId(void);
   zx_status_t EnableWifi32K(void);
   zx_status_t SdEmmcConfigurePortB(void);
+
+  static fuchsia_hardware_gpioimpl::wire::InitCall GpioConfigIn(
+      fuchsia_hardware_gpio::GpioFlags flags) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithInputFlags(flags);
+  }
+
+  static fuchsia_hardware_gpioimpl::wire::InitCall GpioConfigOut(uint8_t initial_value) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithOutputValue(initial_value);
+  }
+
+  fuchsia_hardware_gpioimpl::wire::InitCall GpioSetAltFunction(uint64_t function) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithAltFunction(init_arena_, function);
+  }
+
+  fuchsia_hardware_gpioimpl::wire::InitCall GpioSetDriveStrength(uint64_t ds_ua) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithDriveStrengthUa(init_arena_, ds_ua);
+  }
 
   // TODO(fxbug.dev/108070): Switch to fdf::SyncClient when it is available.
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> pbus_;
   ddk::IommuProtocolClient iommu_;
-  ddk::GpioImplProtocolClient gpio_impl_;
-  ddk::ClockImplProtocolClient clk_impl_;
+  fidl::Arena<> init_arena_;
+  std::vector<fuchsia_hardware_gpioimpl::wire::InitStep> gpio_init_steps_;
+  std::vector<fuchsia_hardware_clockimpl::wire::InitStep> clock_init_steps_;
 
   thrd_t thread_;
-  std::optional<uint32_t> board_rev_;
-  std::optional<uint32_t> board_option_;
-  std::optional<uint32_t> display_id_;
 
-  inspect::Inspector inspector_;
-  inspect::Node root_;
-  inspect::UintProperty board_rev_property_;
-  inspect::UintProperty board_option_property_;
-  inspect::UintProperty display_id_property_;
+  fdf::OutgoingDirectory outgoing_;
 };
 
 }  // namespace nelson

@@ -10,6 +10,11 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 
 assert(is_host)
 
+group("tests") {
+  testonly = true
+  deps = [ ":ffx_assembly_test" ]
+}
+
 ffx_plugin("ffx_assembly") {
   version = "0.1.0"
   edition = "2021"
@@ -27,6 +32,7 @@ ffx_plugin("ffx_assembly") {
     "src/fxfs.rs",
     "src/lib.rs",
     "src/operations.rs",
+    "src/operations/board.rs",
     "src/operations/create_system.rs",
     "src/operations/create_update.rs",
     "src/operations/product.rs",
@@ -57,15 +63,18 @@ ffx_plugin("ffx_assembly") {
     "//src/lib/assembly/assembly_manifest",
     "//src/lib/assembly/base_package",
     "//src/lib/assembly/blobfs",
-    "//src/lib/assembly/bootfs_file_map",
     "//src/lib/assembly/components",
+    "//src/lib/assembly/config_capabilities",
     "//src/lib/assembly/config_data",
     "//src/lib/assembly/config_schema",
     "//src/lib/assembly/domain_config",
     "//src/lib/assembly/driver_manifest",
+    "//src/lib/assembly/file_relative_path",
     "//src/lib/assembly/fvm",
     "//src/lib/assembly/fxfs",
     "//src/lib/assembly/images_config",
+    "//src/lib/assembly/named_file_map",
+    "//src/lib/assembly/package_copy",
     "//src/lib/assembly/package_list",
     "//src/lib/assembly/package_set",
     "//src/lib/assembly/package_utils",
@@ -92,6 +101,7 @@ ffx_plugin("ffx_assembly") {
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:camino",
     "//third_party/rust_crates:hex",
+    "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:num",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
@@ -109,7 +119,6 @@ ffx_plugin("ffx_assembly") {
     "//src/sys/pkg/lib/far/rust:fuchsia-archive",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:camino",
-    "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:regex",
   ]

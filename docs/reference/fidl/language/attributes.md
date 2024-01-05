@@ -44,18 +44,20 @@ Illustrates both aspects:
 ## `@available` {#available}
 
 **USAGE**: `@available(platform="`_string_`", added=`_version_`,
-deprecated=`_version_`, removed=`_version_`, note="`_string_`", legacy=`_legacy_`)`
+deprecated=`_version_`, removed=`_version_`, removed=`_version_`,
+note="`_string_`", legacy=`_legacy_`)`
 
 **MEANING**:
 All arguments are optional, but at least one must be provided.
 
 * `platform`: Only allowed when the attribute is on the `library` declaration.
-  Must be a valid [platform identifier][versioning-formalism]. If omitted,
-  defaults to the first component of the library name.
-* `added`, `deprecated`, `removed`: Must be a valid [version
-  identifier][versioning-formalism], i.e. an integer from 1 to 2^63-1 or the
-  special constant `HEAD`. Cannot be `LEGACY`. Must respect `added <= deprecated
-  < removed`.
+  Must be a valid [library name element][identifiers]. If omitted, defaults to
+  the first element of the library name.
+* `added`, `deprecated`, `removed`, `replaced`: Must be an integer from 1 to
+  2^63-1 or the special constant `HEAD`. Cannot be `LEGACY`.
+    * `removed` and `replaced` are mutually exclusive.
+    * Must respect `added <= deprecated < removed` or
+      `added <= deprecated < replaced`.
 * `note`: Only allowed if `deprecated` is provided. Should contain a brief
   explanation indicating what to use instead, suitable to be included in
   compiler error messages.
@@ -79,7 +81,7 @@ Note: Not implemented.
 
 **MEANING**:
 Assigns a name to use for service discovery. That is to say, a `@discoverable`
-protocol can be served under the given name, and and clients that connect to
+protocol can be served under the given name, and clients that connect to
 that protocol can search for it under the same name. This makes it possible to
 have a client search for the correct name without manually ensuring that the
 lookup name matches the one passed on the server side.
@@ -247,5 +249,5 @@ no longer necessary.
 [RFC-0020]: /docs/contribute/governance/rfcs/0020_interface_ordinal_hashing.md
 [RFC-0021]: /docs/contribute/governance/rfcs/0021_soft_transitions_methods_add_remove.md
 [RFC-0058]: /docs/contribute/governance/rfcs/0058_deprecated_attribute.md
-[versioning-formalism]: /docs/contribute/governance/rfcs/0083_fidl_versioning.md#formalism
+[identifiers]: /docs/reference/fidl/language/language.md#identifiers
 [fully qualified name]: /docs/contribute/governance/rfcs/0043_documentation_comment_format.md#fully-qualified-names

@@ -37,11 +37,11 @@ test("minfs_unit") {
   ]
   deps = [
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/storage/block_client/cpp",
-    "//src/lib/storage/block_client/cpp:fake_device",
-    "//src/lib/storage/fs_management",
     "//src/storage/fvm",
+    "//src/storage/lib/block_client/cpp",
+    "//src/storage/lib/block_client/cpp:fake_device",
     "//src/storage/lib/disk_inspector",
+    "//src/storage/lib/fs_management",
     "//src/storage/minfs",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
@@ -54,6 +54,9 @@ test("minfs_unit") {
     "//zircon/third_party/ulib/cksum",
     "//zircon/third_party/ulib/safemath",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 test("minfs-integration") {
@@ -63,12 +66,12 @@ test("minfs-integration") {
     "integration/power_test.cc",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/storage/fs_management",
     "//src/storage/fs_test",
     "//src/storage/fvm",
+    "//src/storage/lib/fs_management",
     "//src/storage/minfs",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
@@ -88,7 +91,7 @@ test("minfs_dirty_cache_integration") {
   sources = [ "integration/dirty_cache_test.cc" ]
   deps = [
     "//sdk/fidl/fuchsia.fs:fuchsia.fs_hlcpp",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/fs_test",
     "//src/storage/minfs",
@@ -104,7 +107,7 @@ test("minfs_dirty_cache_integration") {
 test("minfs-power") {
   sources = [ "integration/power_test.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/fs_test",
     "//src/storage/minfs",
@@ -123,8 +126,8 @@ test("minfs-power") {
 test("fs_tests") {
   sources = [ "integration/fs_tests.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp_wire",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/fdio",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/fs_test",
@@ -133,19 +136,22 @@ test("fs_tests") {
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/fdio-caller",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 test("minfs_component_runner_test") {
   output_name = "minfs_component_runner_test"
   sources = [ "integration/minfs_component_runner_test.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp_wire",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/storage/block_client/cpp:fake_device",
-    "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp_wire",
+    "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp",
+    "//src/storage/lib/block_client/cpp:fake_device",
     "//src/storage/minfs",
     "//zircon/system/ulib/async-loop",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
@@ -162,7 +168,7 @@ storage_driver_test_realm_v2_component("minfs-integration-fs-tests") {
 fuchsia_library_fuzzer("minfs-fuzzer") {
   sources = [ "unit/fuzz.cc" ]
   deps = [
-    "//src/lib/storage/block_client/cpp:fake_device",
+    "//src/storage/lib/block_client/cpp:fake_device",
     "//src/storage/minfs",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -186,6 +192,7 @@ storage_driver_test_realm_v2_component("minfs-integration-test") {
 }
 
 storage_driver_test_realm_v2_component("minfs-dirty-cache-integration-test") {
+  manifest = "meta/minfs-dirty-cache-integration-test.cml"
   deps = [ ":minfs_dirty_cache_integration" ]
 }
 
@@ -227,7 +234,7 @@ fs_test_suite("minfs") {
   deps = [
     ":minfs_fs_test_config",
     ":minfs_validate_fs_test_config",
-    "//src/storage/bin/minfs:minfs-test-component",
+    "//src/storage/minfs/bin:minfs-test-component",
   ]
   extra_components = [
     ":minfs-component-runner-test",
@@ -247,12 +254,30 @@ fs_test_suite("minfs") {
   if (!is_coverage) {
     deps += [ ":minfs-power-test" ]
   }
+
+  # TODO(b/297201368): These tests timeout only on the RISC-V builders currently.
+  if (current_cpu == "riscv64") {
+    omit_components = [
+      ":minfs-full-tests",
+      ":minfs-resize-tests",
+    ]
+    extra_components -= [ ":minfs-integration-fs-tests" ]
+  }
 }
 
 slow_fs_test_suite("minfs") {
   deps = [
     ":minfs_fs_test_config",
     ":minfs_validate_fs_test_config",
-    "//src/storage/bin/minfs:minfs-test-component",
+    "//src/storage/minfs/bin:minfs-test-component",
   ]
+
+  # TODO(b/297201368): These tests are disabled in the regular test suite above due to timeouts.
+  if (current_cpu == "riscv64") {
+    extra_components = [
+      ":minfs-full-tests",
+      ":minfs-resize-tests",
+      ":minfs-integration-fs-tests",
+    ]
+  }
 }

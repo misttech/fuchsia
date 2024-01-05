@@ -18,7 +18,6 @@
 #include <fbl/ref_counted.h>
 
 #include "src/devices/bin/driver_host2/driver.h"
-#include "src/lib/storage/vfs/cpp/pseudo_dir.h"
 
 namespace dfv2 {
 

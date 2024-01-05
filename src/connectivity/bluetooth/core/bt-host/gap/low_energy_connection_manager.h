@@ -5,7 +5,6 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_GAP_LOW_ENERGY_CONNECTION_MANAGER_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_GAP_LOW_ENERGY_CONNECTION_MANAGER_H_
 
-#include <lib/async/dispatcher.h>
 #include <lib/fit/function.h>
 
 #include <list>
@@ -65,7 +64,8 @@ enum class LowEnergyDisconnectReason : uint8_t {
 class LowEnergyConnectionManager final {
  public:
   // Duration after which connection failures are removed from Inspect.
-  static constexpr zx::duration kInspectRecentConnectionFailuresExpiryDuration = zx::min(10);
+  static constexpr pw::chrono::SystemClock::duration
+      kInspectRecentConnectionFailuresExpiryDuration = std::chrono::minutes(10);
 
   // |hci|: The HCI transport used to track link layer connection events from
   //        the controller.
@@ -84,7 +84,8 @@ class LowEnergyConnectionManager final {
                              hci::LowEnergyConnector* connector, PeerCache* peer_cache,
                              l2cap::ChannelManager* l2cap, gatt::GATT::WeakPtr gatt,
                              LowEnergyDiscoveryManager::WeakPtr discovery_manager,
-                             sm::SecurityManagerFactory sm_creator);
+                             sm::SecurityManagerFactory sm_creator,
+                             pw::async::Dispatcher& dispatcher);
   ~LowEnergyConnectionManager();
 
   // Allows a caller to claim shared ownership over a connection to the requested remote LE peer
@@ -157,7 +158,9 @@ class LowEnergyConnectionManager final {
 
   // Sets the timeout interval to be used on future connect requests. The
   // default value is kLECreateConnectionTimeout.
-  void set_request_timeout_for_testing(zx::duration value) { request_timeout_ = value; }
+  void set_request_timeout_for_testing(pw::chrono::SystemClock::duration value) {
+    request_timeout_ = value;
+  }
 
   // Callback for hci::Connection, called when the peer disconnects.
   // |reason| is used to control retry logic.
@@ -254,6 +257,8 @@ class LowEnergyConnectionManager final {
   // the returned value.
   ConnectionMap::iterator FindConnection(hci_spec::ConnectionHandle handle);
 
+  pw::async::Dispatcher& dispatcher_;
+
   hci::CommandChannel::WeakPtr cmd_;
 
   // The pairing delegate used for authentication challenges. If nullptr, all
@@ -268,13 +273,7 @@ class LowEnergyConnectionManager final {
 
   // Time after which a connection attempt is considered to have timed out. This
   // is configurable to allow unit tests to set a shorter value.
-  zx::duration request_timeout_;
-
-  // Task called after a peer scan attempt is times out.
-  std::optional<async::TaskClosure> scan_timeout_task_;
-
-  // The dispatcher for all asynchronous tasks.
-  async_dispatcher_t* dispatcher_;
+  pw::chrono::SystemClock::duration request_timeout_;
 
   // The peer cache is used to look up and persist remote peer data that is
   // relevant during connection establishment (such as the address, preferred
@@ -327,8 +326,10 @@ class LowEnergyConnectionManager final {
 
   struct InspectProperties {
     // Count of connection failures in the past 10 minutes.
-    WindowedInspectIntProperty recent_connection_failures{
-        kInspectRecentConnectionFailuresExpiryDuration};
+    explicit InspectProperties(pw::async::Dispatcher& pw_dispatcher)
+        : recent_connection_failures(pw_dispatcher,
+                                     kInspectRecentConnectionFailuresExpiryDuration) {}
+    WindowedInspectIntProperty recent_connection_failures;
 
     UintMetricCounter outgoing_connection_success_count_;
     UintMetricCounter outgoing_connection_failure_count_;
@@ -340,7 +341,7 @@ class LowEnergyConnectionManager final {
     UintMetricCounter disconnect_zero_ref_count_;
     UintMetricCounter disconnect_remote_disconnection_count_;
   };
-  InspectProperties inspect_properties_;
+  InspectProperties inspect_properties_{dispatcher_};
   inspect::Node inspect_node_;
   // Container node for pending request nodes.
   inspect::Node inspect_pending_requests_node_;

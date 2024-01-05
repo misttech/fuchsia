@@ -198,8 +198,7 @@ void Tas58xx::ScheduleFaultPolling() {
   if (!BackgroundFaultPollingIsEnabled())
     return;
 
-  async::PostDelayedTask(
-      dispatcher(), [this]() { PeriodicPollFaults(); }, poll_interval_);
+  async::PostDelayedTask(dispatcher(), [this]() { PeriodicPollFaults(); }, poll_interval_);
 }
 
 void Tas58xx::PeriodicPollFaults() {
@@ -597,6 +596,8 @@ void Tas58xx::WatchElementState(uint64_t processing_element_id,
           zxlogf(WARNING,
                  "Watch request for process element id (%lu) when watch is still in progress",
                  processing_element_id);
+          agl_callback_.reset();
+          // TODO(b/304664289): close all of signal_processing_bindings_ with ZX_ERR_BAD_STATE ?
         } else {
           agl_callback_.emplace(std::move(callback));
         }
@@ -611,6 +612,8 @@ void Tas58xx::WatchElementState(uint64_t processing_element_id,
           zxlogf(WARNING,
                  "Watch request for process element id (%lu) when watch is still in progress",
                  processing_element_id);
+          equalizer_callback_.reset();
+          // TODO(b/304664289): close all of signal_processing_bindings_ with ZX_ERR_BAD_STATE ?
         } else {
           equalizer_callback_.emplace(std::move(callback));
         }
@@ -625,6 +628,8 @@ void Tas58xx::WatchElementState(uint64_t processing_element_id,
           zxlogf(WARNING,
                  "Watch request for process element id (%lu) when watch is still in progress",
                  processing_element_id);
+          gain_callback_.reset();
+          // TODO(b/304664289): close all of signal_processing_bindings_ with ZX_ERR_BAD_STATE ?
         } else {
           gain_callback_.emplace(std::move(callback));
         }
@@ -639,6 +644,8 @@ void Tas58xx::WatchElementState(uint64_t processing_element_id,
           zxlogf(WARNING,
                  "Watch request for process element id (%lu) when watch is still in progress",
                  processing_element_id);
+          mute_callback_.reset();
+          // TODO(b/304664289): close all of signal_processing_bindings_ with ZX_ERR_BAD_STATE ?
         } else {
           mute_callback_.emplace(std::move(callback));
         }
@@ -722,6 +729,20 @@ void Tas58xx::GetTopologies(signal_fidl::SignalProcessing::GetTopologiesCallback
   signal_fidl::Reader_GetTopologies_Result result;
   result.set_response(std::move(response));
   callback(std::move(result));
+}
+
+void Tas58xx::WatchTopology(
+    fuchsia::hardware::audio::signalprocessing::SignalProcessing::WatchTopologyCallback callback) {
+  if (!responded_to_watch_topology_) {
+    responded_to_watch_topology_ = true;
+    callback(kTopologyId);
+  } else if (topology_callback_) {
+    // The client called WatchTopology when another hanging get was pending.
+    // This is an error condition and hence we unbind the channel.
+    zxlogf(ERROR, "WatchTopology was re-called while the previous call was still pending");
+  } else {
+    topology_callback_ = std::move(callback);
+  }
 }
 
 void Tas58xx::SetTopology(uint64_t topology_id,

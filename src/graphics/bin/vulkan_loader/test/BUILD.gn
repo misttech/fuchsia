@@ -14,10 +14,10 @@ executable("test_bin") {
   output_name = "vulkan_loader_test"
   sources = [ "test.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_hlcpp",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_hlcpp",
-    "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_hlcpp",
+    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp",
+    "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/sys/component/cpp/testing:cpp",
     "//src/lib/fxl",
@@ -25,6 +25,7 @@ executable("test_bin") {
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
+    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
   ]
 }
@@ -35,17 +36,13 @@ executable("unittest_bin") {
   sources = [ "unittest.cc" ]
   deps = [
     "..:app",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
-    "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_hlcpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_cpp",
     "//sdk/lib/fdio",
-    "//sdk/lib/fidl/cpp",
-    "//sdk/lib/sys/cpp",
-    "//sdk/lib/sys/cpp/testing:unit",
-    "//sdk/lib/vfs/cpp",
     "//src/lib/fxl",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/storage/vfs/cpp",
-    "//src/lib/testing/loop_fixture",
+    "//src/lib/json_parser",
+    "//src/storage/lib/vfs/cpp",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -59,13 +56,12 @@ executable("pkg-server-bin") {
   sources = [ "pkg-server-main.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_hlcpp",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
-    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_hlcpp",
-    "//sdk/lib/fidl/cpp",
-    "//sdk/lib/sys/cpp",
+    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/fxl",
-    "//src/lib/storage/vfs/cpp",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
   ]

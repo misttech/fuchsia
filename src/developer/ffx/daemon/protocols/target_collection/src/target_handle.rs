@@ -4,15 +4,15 @@
 
 use crate::reboot;
 use anyhow::{anyhow, Context as _, Result};
-use diagnostics::{get_streaming_min_timestamp, run_diagnostics_streaming};
 use ffx_daemon_events::{HostPipeErr, TargetEvent};
-use ffx_daemon_target::{logger::streamer::GenericDiagnosticsStreamer, target::Target};
+use ffx_daemon_target::fastboot::Fastboot as FastbootDaemon;
+use ffx_daemon_target::target::Target;
 use ffx_stream_util::TryStreamUtilExt;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_developer_ffx::{self as ffx};
-use fuchsia_async::TimeoutExt;
-use futures::{FutureExt, TryStreamExt};
+use futures::TryStreamExt;
 use protocols::Context;
+use std::sync::Arc;
 use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, time::Duration};
 use tasks::TaskManager;
 
@@ -28,28 +28,54 @@ impl TargetHandle {
         cx: Context,
         handle: ServerEnd<ffx::TargetMarker>,
     ) -> Result<Pin<Box<dyn Future<Output = ()>>>> {
-        let reboot_controller = reboot::RebootController::new(target.clone());
-        let inner = TargetHandleInner { target, reboot_controller, tasks: TaskManager::default() };
+        let reboot_controller = reboot::RebootController::new(target.clone(), cx.overnet_node()?);
+        let keep_alive = target.keep_alive();
+        let inner = TargetHandleInner {
+            target,
+            reboot_controller,
+            tasks: Default::default(),
+            overnet_node: cx.overnet_node()?,
+        };
         let stream = handle.into_stream()?;
         let fut = Box::pin(async move {
             let _ = stream
                 .map_err(|err| anyhow!("{}", err))
                 .try_for_each_concurrent_while_connected(None, |req| inner.handle(&cx, req))
                 .await;
+            drop(keep_alive);
         });
         Ok(fut)
     }
 }
 
 struct TargetHandleInner {
-    tasks: TaskManager,
     target: Rc<Target>,
+    overnet_node: Arc<overnet_core::Router>,
     reboot_controller: reboot::RebootController,
+    tasks: TaskManager,
 }
 
 impl TargetHandleInner {
-    #[tracing::instrument(skip(self, _cx))]
-    async fn handle(&self, _cx: &Context, req: ffx::TargetRequest) -> Result<()> {
+    #[tracing::instrument(skip(self))]
+    pub(crate) async fn spawn_fastboot(
+        &self,
+        fastboot: ServerEnd<ffx::FastbootMarker>,
+    ) -> Result<()> {
+        let mut fastboot_manager = FastbootDaemon::new(self.target.clone());
+        let stream = fastboot.into_stream()?;
+        let overnet_node = Arc::clone(&self.overnet_node);
+        self.tasks.spawn(async move {
+            match fastboot_manager.handle_fastboot_requests_from_stream(stream, &overnet_node).await
+            {
+                Ok(_) => tracing::trace!("Fastboot proxy finished - client disconnected"),
+                Err(e) => tracing::error!("Handling fastboot requests: {:?}", e),
+            }
+        });
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, cx))]
+    async fn handle(&self, cx: &Context, req: ffx::TargetRequest) -> Result<()> {
         tracing::debug!("handling request {req:?}");
         match req {
             ffx::TargetRequest::GetSshLogs { responder } => {
@@ -106,7 +132,7 @@ impl TargetHandleInner {
                 responder.send().map_err(Into::into)
             }
             ffx::TargetRequest::OpenRemoteControl { remote_control, responder } => {
-                self.target.run_host_pipe();
+                self.target.run_host_pipe(&cx.overnet_node()?);
                 let rcs = wait_for_rcs(&self.target).await?;
                 match rcs {
                     Ok(mut c) => {
@@ -116,12 +142,14 @@ impl TargetHandleInner {
                         responder.send(Ok(())).map_err(Into::into)
                     }
                     Err(e) => {
+                        // close connection on error so the next call re-establishes the Overnet connection
+                        self.target.disconnect();
                         responder.send(Err(e)).context("sending error response").map_err(Into::into)
                     }
                 }
             }
             ffx::TargetRequest::OpenFastboot { fastboot, .. } => {
-                self.reboot_controller.spawn_fastboot(fastboot).await.map_err(Into::into)
+                self.spawn_fastboot(fastboot).await.map_err(Into::into)
             }
             ffx::TargetRequest::Reboot { state, responder } => {
                 self.reboot_controller.reboot(state, responder).await
@@ -129,47 +157,6 @@ impl TargetHandleInner {
             ffx::TargetRequest::Identity { responder } => {
                 let target_info = ffx::TargetInfo::from(&*self.target);
                 responder.send(&target_info).map_err(Into::into)
-            }
-            ffx::TargetRequest::StreamActiveDiagnostics { parameters, iterator, responder } => {
-                let target_identifier = self.target.nodename();
-                let stream = self.target.stream_info();
-                match stream
-                    .wait_for_setup()
-                    .map(|_| Ok(()))
-                    .on_timeout(Duration::from_secs(3), || {
-                        Err(ffx::DiagnosticsStreamError::NoStreamForTarget)
-                    })
-                    .await
-                {
-                    Ok(_) => {}
-                    Err(e) => {
-                        return responder.send(Err(e)).context("sending error response");
-                    }
-                }
-                let min_timestamp = match get_streaming_min_timestamp(&parameters, &stream).await {
-                    Ok(n) => n,
-                    Err(e) => {
-                        responder.send(Err(e))?;
-                        return Ok(());
-                    }
-                };
-                let log_iterator =
-                    stream.stream_entries(parameters.stream_mode.unwrap(), min_timestamp).await?;
-                self.tasks.spawn(async move {
-                    let _ = run_diagnostics_streaming(log_iterator, iterator).await.map_err(|e| {
-                        tracing::warn!("failure running diagnostics streaming: {:?}", e);
-                    });
-                });
-                responder
-                    .send(Ok(&ffx::LogSession {
-                        target_identifier,
-                        session_timestamp_nanos: stream
-                            .session_timestamp_nanos()
-                            .await
-                            .map(|t| t as u64),
-                        ..Default::default()
-                    }))
-                    .map_err(Into::into)
             }
         }
     }
@@ -233,17 +220,19 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use ffx_daemon_events::TargetConnectionState;
-    use ffx_daemon_target::target::{TargetAddrEntry, TargetAddrType};
+    use ffx_daemon_target::target::{TargetAddrEntry, TargetAddrStatus, TargetUpdateBuilder};
     use fidl::prelude::*;
     use fidl_fuchsia_developer_remotecontrol as fidl_rcs;
     use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_sys2 as fsys;
     use fuchsia_async::Task;
-    use hoist::{Hoist, OvernetInstance};
+    use futures::StreamExt;
     use protocols::testing::FakeDaemonBuilder;
     use rcs::RcsConnection;
     use std::{
         net::{IpAddr, SocketAddr},
         str::FromStr,
+        sync::Arc,
     };
 
     #[test]
@@ -300,7 +289,7 @@ mod tests {
             vec![TargetAddrEntry::new(
                 SocketAddr::from_str(TEST_SOCKETADDR).unwrap().into(),
                 Utc::now(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh().manually_added(),
             )]
             .into_iter(),
         );
@@ -321,64 +310,57 @@ mod tests {
 
     fn spawn_protocol_provider(
         nodename: String,
-        server: fidl::endpoints::ServerEnd<fidl_fuchsia_overnet::ServiceProviderMarker>,
+        mut receiver: futures::channel::mpsc::UnboundedReceiver<fidl::Channel>,
     ) -> Task<()> {
         Task::local(async move {
-            let mut stream = server.into_stream().unwrap();
-            while let Ok(Some(req)) = stream.try_next().await {
-                match req {
-                    fidl_fuchsia_overnet::ServiceProviderRequest::ConnectToService {
-                        chan, ..
-                    } => {
-                        let server_end =
-                            fidl::endpoints::ServerEnd::<fidl_rcs::RemoteControlMarker>::new(chan);
-                        let mut stream = server_end.into_stream().unwrap();
-                        let nodename = nodename.clone();
-                        Task::local(async move {
-                            let mut knock_channels = Vec::new();
-                            while let Ok(Some(req)) = stream.try_next().await {
-                                match req {
-                                    fidl_rcs::RemoteControlRequest::IdentifyHost { responder } => {
-                                        let addrs = vec![fidl_fuchsia_net::Subnet {
-                                            addr: fidl_fuchsia_net::IpAddress::Ipv4(
-                                                fidl_fuchsia_net::Ipv4Address {
-                                                    addr: [192, 168, 1, 2],
-                                                },
-                                            ),
-                                            prefix_len: 24,
-                                        }];
-                                        let nodename = Some(nodename.clone());
-                                        responder
-                                            .send(Ok(&fidl_rcs::IdentifyHostResponse {
-                                                nodename,
-                                                addresses: Some(addrs),
-                                                ..Default::default()
-                                            }))
-                                            .unwrap();
-                                    }
-                                    fidl_rcs::RemoteControlRequest::ConnectCapability {
-                                        moniker,
-                                        capability_name,
-                                        server_chan,
-                                        flags,
-                                        responder,
-                                    } => {
-                                        assert_eq!(flags, fio::OpenFlags::empty());
-                                        assert_eq!(moniker, "/core/remote-control");
-                                        assert_eq!(
-                                            capability_name,
-                                            "fuchsia.developer.remotecontrol.RemoteControl"
-                                        );
-                                        knock_channels.push(server_chan);
-                                        responder.send(Ok(())).unwrap();
-                                    }
-                                    _ => panic!("unsupported for this test"),
-                                }
+            while let Some(chan) = receiver.next().await {
+                let server_end =
+                    fidl::endpoints::ServerEnd::<fidl_rcs::RemoteControlMarker>::new(chan);
+                let mut stream = server_end.into_stream().unwrap();
+                let nodename = nodename.clone();
+                Task::local(async move {
+                    let mut knock_channels = Vec::new();
+                    while let Ok(Some(req)) = stream.try_next().await {
+                        match req {
+                            fidl_rcs::RemoteControlRequest::IdentifyHost { responder } => {
+                                let addrs = vec![fidl_fuchsia_net::Subnet {
+                                    addr: fidl_fuchsia_net::IpAddress::Ipv4(
+                                        fidl_fuchsia_net::Ipv4Address { addr: [192, 168, 1, 2] },
+                                    ),
+                                    prefix_len: 24,
+                                }];
+                                let nodename = Some(nodename.clone());
+                                responder
+                                    .send(Ok(&fidl_rcs::IdentifyHostResponse {
+                                        nodename,
+                                        addresses: Some(addrs),
+                                        ..Default::default()
+                                    }))
+                                    .unwrap();
                             }
-                        })
-                        .detach();
+                            fidl_rcs::RemoteControlRequest::OpenCapability {
+                                moniker,
+                                capability_set,
+                                capability_name,
+                                server_channel,
+                                flags,
+                                responder,
+                            } => {
+                                assert_eq!(capability_set, fsys::OpenDirType::ExposedDir);
+                                assert_eq!(flags, fio::OpenFlags::empty());
+                                assert_eq!(moniker, "/core/remote-control");
+                                assert_eq!(
+                                    capability_name,
+                                    "fuchsia.developer.remotecontrol.RemoteControl"
+                                );
+                                knock_channels.push(server_channel);
+                                responder.send(Ok(())).unwrap();
+                            }
+                            _ => panic!("unsupported for this test"),
+                        }
                     }
-                }
+                })
+                .detach();
             }
         })
     }
@@ -386,8 +368,8 @@ mod tests {
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_open_rcs_valid() {
         const TEST_NODE_NAME: &'static str = "villete";
-        let local_hoist = Hoist::new().unwrap();
-        let hoist2 = Hoist::new().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
+        let node2 = overnet_core::Router::new(None).unwrap();
         let (rx2, tx2) = fidl::Socket::create_stream();
         let (mut rx2, mut tx2) = (
             fidl::AsyncSocket::from_socket(rx2).unwrap(),
@@ -398,69 +380,69 @@ mod tests {
             fidl::AsyncSocket::from_socket(rx1).unwrap(),
             fidl::AsyncSocket::from_socket(tx1).unwrap(),
         );
-        let h1_hoist = local_hoist.clone();
+        let (error_sink, _) = futures::channel::mpsc::unbounded();
+        let error_sink_clone = error_sink.clone();
+        let local_node_clone = Arc::clone(&local_node);
         let _h1_task = Task::local(async move {
-            let config = Box::new(move || {
-                Some(fidl_fuchsia_overnet_protocol::LinkConfig::Socket(
-                    fidl_fuchsia_overnet_protocol::Empty {},
-                ))
-            });
-            stream_link::run_stream_link(
-                h1_hoist.node(),
-                None,
+            circuit::multi_stream::multi_stream_node_connection_to_async(
+                local_node_clone.circuit_node(),
                 &mut rx1,
                 &mut tx2,
-                Default::default(),
-                config,
+                true,
+                circuit::Quality::IN_PROCESS,
+                error_sink_clone,
+                "h2".to_owned(),
             )
             .await
         });
-        let hoist2_node = hoist2.node();
+        let node2_clone = Arc::clone(&node2);
         let _h2_task = Task::local(async move {
-            let config = Box::new(move || {
-                Some(fidl_fuchsia_overnet_protocol::LinkConfig::Socket(
-                    fidl_fuchsia_overnet_protocol::Empty {},
-                ))
-            });
-            stream_link::run_stream_link(
-                hoist2_node,
-                None,
+            circuit::multi_stream::multi_stream_node_connection_to_async(
+                node2_clone.circuit_node(),
                 &mut rx2,
                 &mut tx1,
-                Default::default(),
-                config,
+                false,
+                circuit::Quality::IN_PROCESS,
+                error_sink,
+                "h1".to_owned(),
             )
             .await
         });
-        let (client, server) =
-            fidl::endpoints::create_endpoints::<fidl_fuchsia_overnet::ServiceProviderMarker>();
-        let _svc_task = spawn_protocol_provider(TEST_NODE_NAME.to_owned(), server);
-        hoist2
-            .connect_as_service_publisher()
-            .unwrap()
-            .publish_service(fidl_rcs::RemoteControlMarker::PROTOCOL_NAME, client)
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
+        let _svc_task = spawn_protocol_provider(TEST_NODE_NAME.to_owned(), receiver);
+        node2
+            .register_service(
+                fidl_rcs::RemoteControlMarker::PROTOCOL_NAME.to_owned(),
+                move |chan| {
+                    let _ = sender.unbounded_send(chan);
+                    Ok(())
+                },
+            )
+            .await
             .unwrap();
         let daemon = FakeDaemonBuilder::new().build();
         let cx = Context::new(daemon);
+        let lpc = local_node.new_list_peers_context().await;
+        while lpc.list_peers().await.unwrap().iter().all(|x| x.is_self) {}
         let (client, server) = fidl::Channel::create();
-        local_hoist
-            .connect_as_service_consumer()
-            .unwrap()
+        local_node
             .connect_to_service(
-                &hoist2.node().node_id().into(),
+                node2.node_id(),
                 fidl_rcs::RemoteControlMarker::PROTOCOL_NAME,
                 server,
             )
+            .await
             .unwrap();
         let rcs_proxy =
             fidl_rcs::RemoteControlProxy::new(fidl::AsyncChannel::from_channel(client).unwrap());
-        let target = Target::from_rcs_connection(RcsConnection::new_with_proxy(
-            &local_hoist,
-            rcs_proxy.clone(),
-            &hoist2.node().node_id().into(),
-        ))
-        .await
-        .unwrap();
+        let rcs =
+            RcsConnection::new_with_proxy(local_node, rcs_proxy.clone(), &node2.node_id().into());
+
+        let identify = rcs.identify_host().await.unwrap();
+        let (update, _) = TargetUpdateBuilder::from_rcs_identify(rcs.clone(), &identify);
+        let target = Target::new();
+        target.apply_update(update.build());
+
         let (target_proxy, server) = fidl::endpoints::create_proxy::<ffx::TargetMarker>().unwrap();
         let _handle = Task::local(TargetHandle::new(target, cx, server).unwrap());
         let (rcs, rcs_server) =

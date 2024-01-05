@@ -19,6 +19,7 @@ use {
     },
     gtest_runner_lib::parser::*,
     lazy_static::lazy_static,
+    namespace::NamespaceError,
     std::{
         num::NonZeroUsize,
         str::from_utf8,
@@ -561,6 +562,7 @@ where
         loader_proxy_chan: Some(client.into_channel()),
         executable_vmo,
         options: component.options,
+        config_vmo: component.config_vmo()?,
     })
     .await?)
 }
@@ -590,6 +592,7 @@ where
         loader_proxy_chan: Some(client.into_channel()),
         executable_vmo,
         options: component.options,
+        config_vmo: component.config_vmo()?,
     })
     .await?)
 }

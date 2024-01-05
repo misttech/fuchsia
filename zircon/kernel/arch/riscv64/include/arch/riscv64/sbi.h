@@ -25,18 +25,17 @@ inline arch::RiscvSbiRet sbi_set_timer(uint64_t stime_value) {
 }
 
 arch::RiscvSbiRet sbi_send_ipi(arch::HartMask mask, arch::HartMaskBase mask_base);
-arch::RiscvSbiRet sbi_hart_start(arch::HartId hart_id, paddr_t start_addr, uint64_t priv);
-arch::RiscvSbiRet sbi_hart_stop();
+zx_status_t sbi_hart_start(uint64_t hart_id, paddr_t start_addr, uint64_t priv);
+zx_status_t sbi_hart_stop();
+arch::RiscvSbiRet sbi_remote_fencei(cpu_mask_t cpu_mask);
 arch::RiscvSbiRet sbi_remote_sfence_vma(cpu_mask_t cpu_mask, uintptr_t start, uintptr_t size);
 arch::RiscvSbiRet sbi_remote_sfence_vma_asid(cpu_mask_t cpu_mask, uintptr_t start, uintptr_t size,
                                              uint64_t asid);
 
-// Attempt to shut down the system via the system reset extension. If it fails,
-// will panic instead of returning.
-[[noreturn]] void sbi_shutdown();
+// Attempt to shut down the system via the system reset extension.
+zx_status_t sbi_shutdown();
 
-// Attempt to reset down the system via the system reset extension. If it fails,
-// will panic instead of returning.
-[[noreturn]] void sbi_reset();
+// Attempt to reset down the system via the system reset extension.
+zx_status_t sbi_reset();
 
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_SBI_H_

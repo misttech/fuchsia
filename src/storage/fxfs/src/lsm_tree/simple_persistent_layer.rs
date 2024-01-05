@@ -44,7 +44,8 @@ use {
         lsm_tree::types::{
             BoxedLayerIterator, Item, ItemRef, Key, Layer, LayerIterator, LayerWriter, Value,
         },
-        object_handle::{ReadObjectHandle, WriteBytes},
+        object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes},
+        object_store::CachingObjectHandle,
         round::{how_many, round_down, round_up},
         serialized_types::{
             Version, Versioned, VersionedLatest, INTERBLOCK_SEEK_VERSION, LATEST_VERSION,
@@ -84,7 +85,7 @@ pub struct LayerInfo {
 /// Implements a very primitive persistent layer where items are packed into blocks and searching
 /// for items is done via a simple binary search.
 pub struct SimplePersistentLayer {
-    object_handle: Arc<dyn ReadObjectHandle>,
+    object_handle: CachingObjectHandle<Box<dyn ReadObjectHandle>>,
     layer_info: LayerInfo,
     size: u64,
     seek_table: Option<Vec<u64>>,
@@ -92,16 +93,15 @@ pub struct SimplePersistentLayer {
 }
 
 struct BufferCursor<'a> {
-    buffer: Buffer<'a>,
+    buffer: &'a [u8],
     pos: usize,
-    len: usize,
 }
 
 impl std::io::Read for BufferCursor<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let to_read = std::cmp::min(buf.len(), self.len.saturating_sub(self.pos));
+        let to_read = std::cmp::min(buf.len(), self.buffer.len().saturating_sub(self.pos));
         if to_read > 0 {
-            buf[..to_read].copy_from_slice(&self.buffer.as_slice()[self.pos..self.pos + to_read]);
+            buf[..to_read].copy_from_slice(&self.buffer[self.pos..self.pos + to_read]);
             self.pos += to_read;
         }
         Ok(to_read)
@@ -134,11 +134,7 @@ impl<K: Key, V: Value> Iterator<'_, K, V> {
     fn new<'iter>(layer: &'iter SimplePersistentLayer, pos: u64) -> Iterator<'iter, K, V> {
         Iterator {
             layer,
-            buffer: BufferCursor {
-                buffer: layer.object_handle.allocate_buffer(layer.layer_info.block_size as usize),
-                pos: 0,
-                len: 0,
-            },
+            buffer: BufferCursor { buffer: &[], pos: 0 },
             pos,
             item_index: 0,
             item_count: 0,
@@ -179,14 +175,13 @@ impl<'iter, K: Key, V: Value> LayerIterator<K, V> for Iterator<'iter, K, V> {
                 self.item = None;
                 return Ok(());
             }
-            let len = self
+            self.buffer.buffer = self
                 .layer
                 .object_handle
-                .read(self.pos, self.buffer.buffer.as_mut())
+                .read(self.pos as usize, self.layer.layer_info.block_size as usize)
                 .await
                 .context("Reading during advance")?;
             self.buffer.pos = 0;
-            self.buffer.len = len;
             debug!(
                 pos = self.pos,
                 object_size = self.layer.size,
@@ -313,7 +308,7 @@ impl SimplePersistentLayer {
         let physical_block_size = object_handle.block_size();
 
         // The first block contains layer file information instead of key/value data.
-        let mut buffer = object_handle.allocate_buffer(physical_block_size as usize);
+        let mut buffer = object_handle.allocate_buffer(physical_block_size as usize).await;
         let (layer_info, _version) = {
             object_handle.read(0, buffer.as_mut()).await?;
             let mut cursor = std::io::Cursor::new(buffer.as_slice());
@@ -333,7 +328,7 @@ impl SimplePersistentLayer {
         let (seek_table, data_size) = parse_seek_table(&object_handle, &layer_info, buffer).await?;
 
         Ok(Arc::new(SimplePersistentLayer {
-            object_handle: Arc::new(object_handle),
+            object_handle: CachingObjectHandle::new(Box::new(object_handle)),
             layer_info,
             size: data_size,
             seek_table,
@@ -345,7 +340,7 @@ impl SimplePersistentLayer {
 #[async_trait]
 impl<K: Key, V: Value> Layer<K, V> for SimplePersistentLayer {
     fn handle(&self) -> Option<&dyn ReadObjectHandle> {
-        Some(self.object_handle.as_ref())
+        Some(&self.object_handle)
     }
 
     async fn seek<'a>(&'a self, bound: Bound<&K>) -> Result<BoxedLayerIterator<'a, K, V>, Error> {
@@ -552,7 +547,7 @@ pub struct SimplePersistentLayerWriter<W: WriteBytes, K: Key, V: Value> {
 
 impl<W: WriteBytes, K: Key, V: Value> SimplePersistentLayerWriter<W, K, V> {
     /// Creates a new writer that will serialize items to the object accessible via |object_handle|
-    /// (which provdes a write interface to the object).
+    /// (which provides a write interface to the object).
     pub async fn new(mut writer: W, block_size: u64) -> Result<Self, Error> {
         ensure!(block_size <= MAX_BLOCK_SIZE, FxfsError::NotSupported);
         let layer_info = LayerInfo { block_size, key_value_version: LATEST_VERSION };
@@ -736,7 +731,7 @@ mod tests {
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
         {
             let mut writer = SimplePersistentLayerWriter::<Writer<'_>, i32, i32>::new(
-                Writer::new(&handle),
+                Writer::new(&handle).await,
                 BLOCK_SIZE,
             )
             .await
@@ -764,7 +759,7 @@ mod tests {
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
         {
             let mut writer = SimplePersistentLayerWriter::<Writer<'_>, i32, i32>::new(
-                Writer::new(&handle),
+                Writer::new(&handle).await,
                 BLOCK_SIZE,
             )
             .await
@@ -814,7 +809,7 @@ mod tests {
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
         {
             let mut writer = SimplePersistentLayerWriter::<Writer<'_>, i32, i32>::new(
-                Writer::new(&handle),
+                Writer::new(&handle).await,
                 BLOCK_SIZE,
             )
             .await
@@ -842,7 +837,7 @@ mod tests {
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
         {
             let mut writer = SimplePersistentLayerWriter::<Writer<'_>, i32, i32>::new(
-                Writer::new(&handle),
+                Writer::new(&handle).await,
                 BLOCK_SIZE,
             )
             .await
@@ -869,7 +864,7 @@ mod tests {
             FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
         {
             let mut writer = SimplePersistentLayerWriter::<Writer<'_>, i32, i32>::new(
-                Writer::new(&handle),
+                Writer::new(&handle).await,
                 BLOCK_SIZE,
             )
             .await
@@ -898,9 +893,12 @@ mod tests {
 
         let handle =
             FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
-        SimplePersistentLayerWriter::<Writer<'_>, i32, i32>::new(Writer::new(&handle), BLOCK_SIZE)
-            .await
-            .expect_err("Creating writer with overlarge block size.");
+        SimplePersistentLayerWriter::<Writer<'_>, i32, i32>::new(
+            Writer::new(&handle).await,
+            BLOCK_SIZE,
+        )
+        .await
+        .expect_err("Creating writer with overlarge block size.");
     }
 
     #[fuchsia::test]
@@ -911,7 +909,7 @@ mod tests {
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
         {
             let mut writer = SimplePersistentLayerWriter::<Writer<'_>, i32, i32>::new(
-                Writer::new(&handle),
+                Writer::new(&handle).await,
                 BLOCK_SIZE,
             )
             .await
@@ -1002,7 +1000,7 @@ mod tests {
             FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
         {
             let mut writer = SimplePersistentLayerWriter::<Writer<'_>, TestKey, u64>::new(
-                Writer::new(&handle),
+                Writer::new(&handle).await,
                 BLOCK_SIZE,
             )
             .await
@@ -1128,7 +1126,7 @@ mod tests {
             FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
         {
             let mut writer = SimplePersistentLayerWriter::<Writer<'_>, TestKey, u64>::new(
-                Writer::new(&handle),
+                Writer::new(&handle).await,
                 BLOCK_SIZE,
             )
             .await
@@ -1201,7 +1199,7 @@ mod tests {
             );
             {
                 let mut writer = SimplePersistentLayerWriter::<Writer<'_>, TestKey, u64>::new(
-                    Writer::new(&handle),
+                    Writer::new(&handle).await,
                     BLOCK_SIZE,
                 )
                 .await

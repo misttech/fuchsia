@@ -9,12 +9,10 @@
 
 namespace fidl::flat {
 
-// The AvailabilityStep sets element->availability for every element in the
-// library based on @available attributes and inheritance rules. If the library
-// is versioned, it sets library->platform. Otherwise, it leaves it null, and
-// all element availabilities will be unbounded. This step also checks for name
-// collisions on overlapping availabilities for top level declarations (but not
-// their members; they are checked in the CompileStep).
+// The AvailabilityStep sets library->platform and element->availability for
+// every element based on @available attributes. If there are none, the platform
+// with be Platform::Anonymous() and all availabilities will be added=HEAD. This
+// step also checks for name collisions on overlapping availabilities.
 class AvailabilityStep : public Compiler::Step {
  public:
   using Step::Step;
@@ -43,8 +41,8 @@ class AvailabilityStep : public Compiler::Step {
   // if it should not attempt inheriting.
   std::optional<Availability> AvailabilityToInheritFrom(const Element* element);
 
-  // Given an argument name, returns the nearest ancestor argument that
-  // `element` inherited its value from. Requires that such an argument exists.
+  // Finds the nearest ancestor of `element` that defines one of the arguments
+  // in the given list, and returns the argument. Panics if it cannot find any.
   // For example, consider this FIDL:
   //
   //     1 | @available(added=2)     // <-- ancestor
@@ -57,7 +55,8 @@ class AvailabilityStep : public Compiler::Step {
   // The `added=2` flows from `library test` to `type Foo` to `bar uint32`. But
   // we want the error ("can't add bar at version 1 when its parent isn't added
   // until version 2") to point to line 1, not to line 3.
-  const AttributeArg* AncestorArgument(const Element* element, std::string_view arg_name);
+  const AttributeArg* AncestorArgument(const Element* element,
+                                       const std::vector<std::string_view>& arg_names);
 
   // Returns the lexical parent of `element`, or null for the root.
   //
@@ -80,8 +79,9 @@ class AvailabilityStep : public Compiler::Step {
   // lexical parent, the member `bar` (added at version 3).
   Element* LexicalParent(const Element* element);
 
-  // Reports errors for all decl name collisions on overlapping availabilities.
-  void VerifyNoDeclOverlaps();
+  // Validates that overlapping availabilities do not have name collisions,
+  // and that `removed` and `replaced` arguments are used correctly.
+  void ValidateAvailabilities();
 
   // Maps members to the Decl they occur in, and anonymous layouts to the
   // struct/table/union member whose type constructor they occur in.

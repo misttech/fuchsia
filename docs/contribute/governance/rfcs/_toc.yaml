@@ -462,3 +462,27 @@ toc:
     path: /docs/contribute/governance/rfcs/0222_fuchsia_controller.md
   - title: "RFC-0223: zx_vmo_transfer_data"
     path: /docs/contribute/governance/rfcs/0223_zx_vmo_transfer_data.md
+  - title: "RFC-0224: Userspace J-Extension Pointer Masking"
+    path: /docs/contribute/governance/rfcs/0224_userspace_pointer_masking.md
+  - title: "RFC-0225: Fxblob: Storing blobs in Fxfs"
+    path: /docs/contribute/governance/rfcs/0225_fxblob.md
+  - title: "RFC-0226: Zircon Pager Writeback"
+    path: /docs/contribute/governance/rfcs/0226_zircon_pager_writeback.md
+  - title: "RFC-0227: Fuchsia Release Process"
+    path: /docs/contribute/governance/rfcs/0227_fuchsia_release_process.md
+  - title: "RFC-0228: FDomain: Remote control of Fuchsia targets"
+    path: /docs/contribute/governance/rfcs/0228_fdomain.md
+  - title: "RFC-0229: FIDL 2023"
+    path: /docs/contribute/governance/rfcs/0229_fidl_2023.md
+  - title: "RFC-0230: Suspend-To-Idle in Fuchsia"
+    path: /docs/contribute/governance/rfcs/0230_suspend_to_idle.md
+  - title: "RFC-0231: FIDL versioning replacement syntax"
+    path: /docs/contribute/governance/rfcs/0231_fidl_versioning_replacement_syntax.md
+  - title: "RFC-0232: FIDL bindings for multiple API levels"
+    path: /docs/contribute/governance/rfcs/0232_fidl_bindings_for_multiple_api_levels.md
+  - title: "RFC-0233: FIDL legacy by default"
+    path: /docs/contribute/governance/rfcs/0233_fidl_legacy_by_default.md
+  - title: "RFC-0234: Updating the RISC-V ABI: RVA22 + V"
+    path: /docs/contribute/governance/rfcs/0234_riscv_abi_rva22+v.md
+  - title: "RFC-0235: Component dictionaries"
+    path: /docs/contribute/governance/rfcs/0235_component_dictionaries.md

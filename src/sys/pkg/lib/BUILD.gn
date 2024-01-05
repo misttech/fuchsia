@@ -8,6 +8,7 @@ group("lib") {
     "async-generator",
     "blobfs",
     "bounded-node",
+    "caching-package-server",
     "channel-config",
     "eager-package-config",
     "epoch",
@@ -41,6 +42,7 @@ group("tests") {
     "async-generator:tests",
     "blobfs:tests",
     "bounded-node:tests",
+    "caching-package-server:tests",
     "channel-config:tests",
     "eager-package-config:tests",
     "epoch:tests",
@@ -68,4 +70,11 @@ group("tests") {
     "version:tests",
     "work-queue:tests",
   ]
+
+  if (current_cpu == "riscv64") {
+    deps -= [
+      # TODO(fxbug.dev/300170314): Remove after removing Go dependencies on RISC-V.
+      "merkle:tests",
+    ]
+  }
 }

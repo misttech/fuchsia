@@ -171,9 +171,9 @@ CodecFactoryApp::CodecFactoryApp(async_dispatcher_t* dispatcher, ProdOrTest prod
               [this](fidl::InterfaceRequest<fuchsia::metrics::MetricEventLoggerFactory> request) {
                 ZX_DEBUG_ASSERT(startup_context_);
                 FX_SLOG(INFO, kLogTag,
-                        "codec_factory handling request for MetricEventLoggerFactory" KV("tag",
-                                                                                         kLogTag),
-                        KV("handle value", request.channel().get()));
+                        "codec_factory handling request for MetricEventLoggerFactory" FX_KV(
+                            "tag", kLogTag),
+                        FX_KV("handle value", request.channel().get()));
                 startup_context_->svc()->Connect(std::move(request));
               });
   outgoing_codec_aux_service_directory_ =
@@ -758,21 +758,8 @@ std::string CodecFactoryApp::GetBoardName() {
   zx_status_t fidl_status = sysinfo->GetBoardName(&status, &board_name);
   if (fidl_status != ZX_OK || status != ZX_OK) {
     // This path is only taken if CodecFactory can't contact fuchsia.sysinfo.SysInfo.  Most often
-    // this happens in tests that don't grant access to fuchsia.sysinfo.SysInfo (yet).  Tests which
-    // print this out should be updated to include these in their .cmx file:
-    //
-    // "facets": {
-    //     "fuchsia.test": {
-    //         "system-services": [
-    //             "fuchsia.sysinfo.SysInfo"
-    //         ]
-    //     }
-    // },
-    // "sandbox": {
-    //     "services": [
-    //         "fuchsia.sysinfo.SysInfo"
-    //     ]
-    // }
+    // this happens in tests that don't correctly route the capability for protocol
+    // fuchsia.sysinfo.SysInfo.
     FX_LOGS(WARNING) << "#############################";
     FX_LOGS(WARNING) << "sysinfo->GetBoardName() failed.  "
                         "CodecFactoryApp needs access to fuchsia.sysinfo.SysInfo.  fidl_status: "

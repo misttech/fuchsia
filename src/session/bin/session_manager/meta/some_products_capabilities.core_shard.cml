@@ -27,6 +27,7 @@
                 "fuchsia.media.AudioCore",
                 "fuchsia.media.AudioDeviceEnumerator",
                 "fuchsia.media.ProfileProvider",
+                "fuchsia.media.tuning.AudioTuner",
                 "fuchsia.media.UsageGainReporter",
                 "fuchsia.media.UsageReporter",
             ],
@@ -48,6 +49,18 @@
             protocol: "fuchsia.power.battery.BatteryManager",
             from: "#battery_manager",
             to: "#session-manager",
+            source_availability: "unknown",
+        },
+
+        // Used by Bluetooth in Starnix.
+        // TODO(b/296933425): Ideally, we wouldn't need to route this directory to Starnix for BT.
+        // This route should eventually be removed when we can depend solely on Bluetooth FIDL APIs.
+        {
+            directory: "dev-class",
+            from: "parent",
+            as: "dev-bt-hci",
+            to: "#session-manager",
+            subdir: "bt-hci",
             source_availability: "unknown",
         },
         {
@@ -141,6 +154,15 @@
             source_availability: "unknown",
         },
         {
+            protocol: [
+                "fuchsia.net.stackmigrationdeprecated.Control",
+                "fuchsia.net.stackmigrationdeprecated.State",
+            ],
+            from: "#network",
+            to: "#session-manager",
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.opencl.loader.Loader",
             from: "#opencl_loader",
             to: "#session-manager",
@@ -190,16 +212,12 @@
             source_availability: "unknown",
         },
         {
-            protocol: [
-                "fuchsia.update.config.OptOut",
-                "fuchsia.update.config.OptOutAdmin",
+            directory: [
+                // `tzdata-icu` offers /config/tzdata/icu.
+                // `tzdata-icu-44-le` offers /config/tzdata/icu/44/le only.
+                "tzdata-icu",
+                "tzdata-icu-44-le",
             ],
-            from: "#system-update-configurator",
-            to: "#session-manager",
-            source_availability: "unknown",
-        },
-        {
-            directory: "tzdata-icu-44-le",
             from: "#tzdata-provider",
             to: "#session-manager",
             source_availability: "unknown",
@@ -211,10 +229,12 @@
                 "fuchsia.accessibility.tts.EngineRegistry",
                 "fuchsia.accessibility.tts.TtsManager",
                 "fuchsia.accessibility.virtualkeyboard.Registry",
+                "fuchsia.element.GraphicalPresenter",
                 "fuchsia.input.virtualkeyboard.ControllerCreator",
                 "fuchsia.input.virtualkeyboard.Manager",
                 "fuchsia.recovery.policy.Device",
                 "fuchsia.recovery.ui.FactoryResetCountdown",
+                "fuchsia.session.scene.Manager",
                 "fuchsia.ui.brightness.ColorAdjustmentHandler",
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
@@ -281,20 +301,25 @@
             source_availability: "unknown",
         },
         {
-            protocol: "fuchsia.update.installer.Installer",
+            protocol: [
+                "fuchsia.update.CommitStatusProvider",
+                "fuchsia.update.config.OptOut",
+                "fuchsia.update.config.OptOutAdmin",
+                "fuchsia.update.installer.Installer",
+            ],
             from: "#system-update",
             to: "#session-manager",
-            source_availability: "unknown",
-        },
-        {
-            protocol: "fuchsia.update.CommitStatusProvider",
-            from: "#system-update",
-            to: "#session-manager",
-            source_availability: "unknown",
+            availability: "same_as_target",
         },
         {
             protocol: "fuchsia.wlan.wlanix.Wlanix",
             from: "#wlanix",
+            to: "#session-manager",
+            source_availability: "unknown",
+        },
+        {
+            protocol: "fuchsia.sensors.Manager",
+            from: "#sensors",
             to: "#session-manager",
             source_availability: "unknown",
         },

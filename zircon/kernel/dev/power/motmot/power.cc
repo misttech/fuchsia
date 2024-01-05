@@ -45,35 +45,36 @@ inline uint64_t modify_register_via_smc(uintptr_t phys_addr, uint32_t mask, uint
   return res.x0;
 }
 
-void motmot_reboot(enum reboot_flags flags) {
+zx_status_t motmot_reboot(power_reboot_flags flags) {
   uint64_t result;
 
   switch (flags) {
-    case REBOOT_BOOTLOADER:
-    case REBOOT_RECOVERY:
+    case power_reboot_flags::REBOOT_BOOTLOADER:
+    case power_reboot_flags::REBOOT_RECOVERY:
       dprintf(INFO, "Motmot does not support rebooting into recover or bootloader yet.\n");
       __FALLTHROUGH;
 
-    case REBOOT_NORMAL:
+    case power_reboot_flags::REBOOT_NORMAL:
       dprintf(INFO, "Sending reboot command via SMC\n");
       result = modify_register_via_smc(SYSTEM_CONFIGURATION_REG, SWRESET_SYSTEM, SWRESET_SYSTEM);
       modify_register_via_smc(SYSTEM_CONFIGURATION_REG, SWRESET_SYSTEM, SWRESET_SYSTEM);
       dprintf(INFO, "Reboot command failed, result was %" PRIx64 ".\n", result);
-      break;
+      return ZX_ERR_BAD_STATE;
 
     default:
       dprintf(INFO, "Bad reboot flag 0x%08x\n", static_cast<uint32_t>(flags));
-      break;
+      return ZX_ERR_INVALID_ARGS;
   }
 }
 
-void motmot_shutdown() {
+zx_status_t motmot_shutdown() {
   dprintf(INFO, "Sending shutdown command via SMC\n");
   const uint64_t result = modify_register_via_smc(PAD_CTRL_PWR_HOLD_REG, PS_HOLD_CTRL_DATA, 0);
   dprintf(INFO, "Shutdown command failed, result was %" PRIx64 ".\n", result);
+  return ZX_ERR_BAD_STATE;
 }
 
-uint32_t motmot_cpu_off() {
+zx_status_t motmot_cpu_off() {
   // TODO(johngro):  Figure out how to properly power down our CPU on motmot.
   // It does not current respond to the PSCI command to turn off the current
   // CPU, and I have not found the proper bits in the HW to twiddle in order to
@@ -87,7 +88,7 @@ uint32_t motmot_cpu_off() {
   while (true) {
     __wfi();
   }
-  return 0;
+  return ZX_OK;
 }
 
 const struct pdev_power_ops motmot_power_ops = {

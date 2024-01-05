@@ -4,7 +4,6 @@
 
 #include "src/developer/debug/debug_agent/debug_agent.h"
 
-#include <inttypes.h>
 #include <lib/fit/defer.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/features.h>
@@ -14,7 +13,6 @@
 #include <zircon/types.h>
 
 #include <algorithm>
-#include <iterator>
 #include <memory>
 
 #include "src/developer/debug/debug_agent/arch.h"
@@ -26,15 +24,12 @@
 #include "src/developer/debug/debug_agent/process_breakpoint.h"
 #include "src/developer/debug/debug_agent/system_interface.h"
 #include "src/developer/debug/debug_agent/time.h"
-#include "src/developer/debug/ipc/message_reader.h"
-#include "src/developer/debug/ipc/message_writer.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/shared/logging/logging.h"
-#include "src/developer/debug/shared/platform_message_loop.h"
-#include "src/developer/debug/shared/stream_buffer.h"
-#include "src/developer/debug/shared/zx_status.h"
-#include "src/lib/fxl/strings/concatenate.h"
-#include "src/lib/fxl/strings/string_printf.h"
+
+#if defined(__linux__)
+#include <unistd.h>
+#endif
 
 namespace debug_agent {
 
@@ -67,7 +62,9 @@ std::string LogResumeRequest(const debug_ipc::ResumeRequest& request) {
 }  // namespace
 
 DebugAgent::DebugAgent(std::unique_ptr<SystemInterface> system_interface)
-    : system_interface_(std::move(system_interface)), weak_factory_(this) {
+    : adapter_(std::make_unique<RemoteAPIAdapter>(this, nullptr)),
+      system_interface_(std::move(system_interface)),
+      weak_factory_(this) {
   // Register ourselves to receive component events and limbo events.
   //
   // It's safe to pass |this| here because |this| owns |system_interface|, which owns
@@ -79,10 +76,35 @@ DebugAgent::DebugAgent(std::unique_ptr<SystemInterface> system_interface)
 
 fxl::WeakPtr<DebugAgent> DebugAgent::GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
-void DebugAgent::Connect(debug::StreamBuffer* stream) {
-  FX_DCHECK(!stream_) << "A debug agent should not be connected twice!";
-  stream_ = stream;
+void DebugAgent::TakeAndConnectRemoteAPIStream(std::unique_ptr<debug::BufferedStream> stream) {
+  // Now we can create a BufferedZxSocket to pass to the RemoteAPIAdapter. The data path is:
+  //
+  // BufferedZxSocket -> RemoteAPIAdapter -> DebugAgent
+  //
+  // DebugAgent owns both the BufferedZxSocket and RemoteAPIAdapter, since the DebugAgent can be
+  // started without a socket connection to a host tool, so it is safe to capture |this|. When the
+  // socket is closed, we exit.
+  adapter_->set_stream(&stream->stream());
+  stream->set_data_available_callback([this]() { adapter_->OnStreamReadable(); });
+  stream->set_error_callback([this]() {
+    // Unconditionally quit when the debug_ipc socket is closed.
+    Disconnect();
+    ClearState();
+    debug::MessageLoop::Current()->QuitNow();
+  });
 
+  // Start listening.
+  Connect(std::move(stream));
+}
+
+void DebugAgent::Connect(std::unique_ptr<debug::BufferedStream> stream) {
+  FX_DCHECK(stream) << "Cannot connect to an invalid stream!";
+
+  buffered_stream_ = std::move(stream);
+
+  FX_CHECK(buffered_stream_->Start()) << "Failed to connect to the FIDL socket";
+
+#ifdef __Fuchsia__
   // Watch the root job.
   root_job_ = system_interface_->GetRootJob();
   auto status = root_job_->WatchJobExceptions(
@@ -90,17 +112,25 @@ void DebugAgent::Connect(debug::StreamBuffer* stream) {
   if (status.has_error()) {
     LOGS(Error) << "Failed to watch the root job: " << status.message();
   }
+#endif  // __Fuchsia__
 }
 
 void DebugAgent::Disconnect() {
-  FX_DCHECK(stream_);
-  stream_ = nullptr;
+  // Can only disconnect from a connected state.
+  FX_DCHECK(buffered_stream_);
+
+  // Release all resources associated with the previous connection.
+  buffered_stream_->Reset();
+}
+
+void DebugAgent::ClearState() {
+  // Reset debugging State
   debug::LogBackend::Unset();
 
   // Stop watching for process starting.
   root_job_.reset();
-  // Removes breakpoints before we detach from the processes, although it should also be safe to
-  // reverse the order.
+  // Removes breakpoints before we detach from the processes, although it should also be safe
+  // to reverse the order.
   breakpoints_.clear();
   // Detach us from the processes.
   procs_.clear();
@@ -139,7 +169,15 @@ void DebugAgent::OnHello(const debug_ipc::HelloRequest& request, debug_ipc::Hell
   // Signature is default-initialized.
   reply->version = ipc_version_;
   reply->arch = arch::GetCurrentArch();
+  reply->platform = debug::CurrentSystemPlatform();
+
+#if defined(__Fuchsia__)
   reply->page_size = zx_system_get_page_size();
+#elif defined(__linux__)
+  reply->page_size = getpagesize();
+#else
+#error Need platform page size.
+#endif
 
   // Only enable log backend after the handshake is finished.
   debug::LogBackend::Set(this, true);
@@ -152,7 +190,8 @@ void DebugAgent::OnStatus(const debug_ipc::StatusRequest& request, debug_ipc::St
     debug_ipc::ProcessRecord process_record = {};
     process_record.process_koid = process_koid;
     process_record.process_name = proc->process_handle().GetName();
-    process_record.component =
+
+    process_record.components =
         system_interface_->GetComponentManager().FindComponentInfo(proc->process_handle());
 
     auto threads = proc->GetThreads();
@@ -165,6 +204,16 @@ void DebugAgent::OnStatus(const debug_ipc::StatusRequest& request, debug_ipc::St
     reply->processes.emplace_back(std::move(process_record));
   }
 
+  reply->breakpoints.reserve(breakpoints_.size());
+  for (auto& [_, bp] : breakpoints_) {
+    reply->breakpoints.push_back(bp.settings());
+  }
+
+  reply->filters.reserve(filters_.size());
+  for (auto& filter : filters_) {
+    reply->filters.push_back(filter.filter());
+  }
+
   // Get the limbo processes.
   if (system_interface_->GetLimboProvider().Valid()) {
     for (const auto& [process_koid, record] :
@@ -172,7 +221,8 @@ void DebugAgent::OnStatus(const debug_ipc::StatusRequest& request, debug_ipc::St
       debug_ipc::ProcessRecord process_record = {};
       process_record.process_koid = process_koid;
       process_record.process_name = record.process->GetName();
-      process_record.component =
+
+      process_record.components =
           system_interface_->GetComponentManager().FindComponentInfo(*record.process);
 
       // For now, only fill the thread blocked on exception.
@@ -190,35 +240,8 @@ void DebugAgent::OnRunBinary(const debug_ipc::RunBinaryRequest& request,
     reply->status = debug::Status("No launch arguments provided");
     return;
   }
-  switch (request.inferior_type) {
-    case debug_ipc::InferiorType::kBinary:
-      LaunchProcess(request, reply);
-      return;
-    case debug_ipc::InferiorType::kComponent: {
-      // For compatibility
-      if (request.argv.size() != 1) {
-        reply->status = debug::Status("run-component cannot accept command line arguments");
-        return;
-      }
-      debug_ipc::RunComponentReply run_component_reply;
-      OnRunComponent({.url = request.argv[0]}, &run_component_reply);
-      reply->status = run_component_reply.status;
-      return;
-    }
-    case debug_ipc::InferiorType::kTest: {
-      // For compatibility
-      debug_ipc::RunTestReply run_test_reply;
-      // argv.empty() is checked above.
-      OnRunTest(
-          {.url = request.argv[0], .case_filters = {request.argv.begin() + 1, request.argv.end()}},
-          &run_test_reply);
-      reply->status = run_test_reply.status;
-      return;
-    }
-    case debug_ipc::InferiorType::kLast:
-      reply->status = debug::Status("Invalid inferior type to launch.");
-      return;
-  }
+
+  LaunchProcess(request, reply);
 }
 
 void DebugAgent::OnRunComponent(const debug_ipc::RunComponentRequest& request,
@@ -283,6 +306,7 @@ void DebugAgent::OnDetach(const debug_ipc::DetachRequest& request, debug_ipc::De
 
 void DebugAgent::OnPause(const debug_ipc::PauseRequest& request, debug_ipc::PauseReply* reply) {
   std::vector<debug_ipc::ProcessThreadId> paused;
+  DEBUG_LOG(Agent) << "Got Pause request";
 
   if (request.ids.empty()) {
     // Pause everything.
@@ -594,12 +618,19 @@ debug::Status DebugAgent::AddDebuggedProcess(DebuggedProcessCreateInfo&& create_
   *new_process = nullptr;
 
   auto proc = std::make_unique<DebuggedProcess>(this);
-  if (auto status = proc->Init(std::move(create_info)); status.has_error())
-    return status;
 
-  auto process_id = proc->koid();
+  // Need to register the process before calling DebuggedProcess::Init() because Init() can
+  // do things like make breakpoints that call back into this class.
+  auto process_id = create_info.handle->GetKoid();
   *new_process = proc.get();
   procs_[process_id] = std::move(proc);
+
+  if (auto status = (*new_process)->Init(std::move(create_info)); status.has_error()) {
+    // Undo registration.
+    procs_.erase(process_id);
+    *new_process = nullptr;
+    return status;
+  }
   return debug::Status();
 }
 
@@ -670,7 +701,7 @@ debug::Status DebugAgent::AttachToLimboProcess(zx_koid_t process_koid,
 
   reply->koid = process->koid();
   reply->name = process->process_handle().GetName();
-  reply->component =
+  reply->components =
       system_interface_->GetComponentManager().FindComponentInfo(process->process_handle());
 
   // Send the reply first, then the notifications about the process and threads.
@@ -715,7 +746,7 @@ debug::Status DebugAgent::AttachToExistingProcess(zx_koid_t process_koid,
 
   reply->koid = process->koid();
   reply->name = process->process_handle().GetName();
-  reply->component =
+  reply->components =
       system_interface_->GetComponentManager().FindComponentInfo(process->process_handle());
 
   // Send the reply first, then the notifications about the process and threads.
@@ -780,7 +811,13 @@ void DebugAgent::OnProcessStart(std::unique_ptr<ProcessHandle> process_handle) {
              })) {
     type = debug_ipc::NotifyProcessStarting::Type::kAttach;
   } else {
+#ifdef __linux__
+    // For now, unconditionally attach to all forked processes on Linux.
+    // TODO(brettw) This should be revisited when we get better frontend UI for dealing with forks.
+    type = debug_ipc::NotifyProcessStarting::Type::kAttach;
+#else
     return;
+#endif
   }
 
   DEBUG_LOG(Process) << "Process starting, koid: " << process_handle->GetKoid();
@@ -792,7 +829,7 @@ void DebugAgent::OnProcessStart(std::unique_ptr<ProcessHandle> process_handle) {
   notify.koid = process_handle->GetKoid();
   notify.name = process_name_override.empty() ? process_handle->GetName() : process_name_override;
   notify.timestamp = GetNowTimestamp();
-  notify.component = system_interface_->GetComponentManager().FindComponentInfo(*process_handle);
+  notify.components = system_interface_->GetComponentManager().FindComponentInfo(*process_handle);
 
   DebuggedProcessCreateInfo create_info(std::move(process_handle));
   create_info.stdio = std::move(stdio);

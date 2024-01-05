@@ -7,16 +7,20 @@
 import abc
 from typing import Callable
 
-from honeydew.interfaces.affordances import session
-from honeydew.interfaces.affordances import tracing
-from honeydew.interfaces.affordances.bluetooth import bluetooth_gap
+from honeydew.interfaces.affordances import session, tracing
+from honeydew.interfaces.affordances.bluetooth.profiles import (
+    bluetooth_avrcp,
+    bluetooth_gap,
+)
+from honeydew.interfaces.affordances.ui import screenshot, user_input
+from honeydew.interfaces.affordances.wlan import wlan, wlan_policy
 from honeydew.interfaces.device_classes import fuchsia_device
 from honeydew.utils import properties
 
 
 class BluetoothGapCapableDevice(abc.ABC):
     """Abstract base class to be implemented by a device which supports the
-    Bluetooth affordance."""
+    Bluetooth Gap affordance."""
 
     @properties.Affordance
     @abc.abstractmethod
@@ -25,6 +29,20 @@ class BluetoothGapCapableDevice(abc.ABC):
 
         Returns:
             bluetooth_gap.BluetoothGap object
+        """
+
+
+class BluetoothAvrcpCapableDevice(abc.ABC):
+    """Abstract base class to be implemented by a device which supports the
+    Bluetooth Avrcp affordance."""
+
+    @properties.Affordance
+    @abc.abstractmethod
+    def bluetooth_avrcp(self) -> bluetooth_avrcp.BluetoothAvrcp:
+        """Returns a BluetoothAvrcp affordance object.
+
+        Returns:
+            bluetooth_avrcp.BluetoothAvrcp
         """
 
 
@@ -46,7 +64,8 @@ class RebootCapableDevice(abc.ABC):
 
     @abc.abstractmethod
     def wait_for_offline(
-            self, timeout: float = fuchsia_device.TIMEOUTS["OFFLINE"]) -> None:
+        self, timeout: float = fuchsia_device.TIMEOUTS["OFFLINE"]
+    ) -> None:
         """Wait for Fuchsia device to go offline.
 
         Args:
@@ -55,11 +74,26 @@ class RebootCapableDevice(abc.ABC):
 
     @abc.abstractmethod
     def wait_for_online(
-            self, timeout: float = fuchsia_device.TIMEOUTS["ONLINE"]) -> None:
+        self, timeout: float = fuchsia_device.TIMEOUTS["ONLINE"]
+    ) -> None:
         """Wait for Fuchsia device to go online.
 
         Args:
             timeout: How long in sec to wait for device to go offline.
+        """
+
+
+class ScreenshotCapableDevice(abc.ABC):
+    """Abstract base class to be implemented by a device which supports the
+    screenshot affordance."""
+
+    @properties.Affordance
+    @abc.abstractmethod
+    def screenshot(self) -> screenshot.Screenshot:
+        """Returns a screenshot affordance object.
+
+        Returns:
+            screenshot.Screenshot object
         """
 
 
@@ -88,4 +122,46 @@ class TracingCapableDevice(abc.ABC):
 
         Returns:
             tracing.Tracing object
+        """
+
+
+class UserInputCapableDevice(abc.ABC):
+    """Abstract base class to be implemented by a device which supports the
+    user input affordance."""
+
+    @properties.Affordance
+    @abc.abstractmethod
+    def user_input(self) -> user_input.UserInput:
+        """Returns a user_input affordance object.
+
+        Returns:
+            user_input.UserInput object
+        """
+
+
+class WlanPolicyCapableDevice(abc.ABC):
+    """Abstract base class to be implemented by a device which supports the
+    Wlan affordance."""
+
+    @properties.Affordance
+    @abc.abstractmethod
+    def wlan_policy(self) -> wlan_policy.WlanPolicy:
+        """Returns a WlanPolicy affordance object.
+
+        Returns:
+            wlan_policy.WlanPolicy object
+        """
+
+
+class WlanCapableDevice(abc.ABC):
+    """Abstract base class to be implemented by a device which supports the
+    wlan affordance."""
+
+    @properties.Affordance
+    @abc.abstractmethod
+    def wlan(self) -> wlan.Wlan:
+        """Returns a Wlan affordance object.
+
+        Returns:
+            wlan.Wlan object
         """

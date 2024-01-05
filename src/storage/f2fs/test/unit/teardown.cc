@@ -8,9 +8,9 @@
 
 #include <gtest/gtest.h>
 
-#include "src/lib/storage/block_client/cpp/fake_block_device.h"
 #include "src/storage/f2fs/f2fs.h"
 #include "src/storage/f2fs/vnode.h"
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "unit_lib.h"
 
 namespace f2fs {
@@ -54,7 +54,7 @@ class AsyncTearDownVnode : public Dir {
 };
 
 TEST(Teardown, ShutdownOnNoConnections) {
-  std::unique_ptr<f2fs::Bcache> bc;
+  std::unique_ptr<f2fs::BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
@@ -74,7 +74,9 @@ TEST(Teardown, ShutdownOnNoConnections) {
 
   // Create root directory connection.
   nid_t root_nid;
-  ASSERT_TRUE(fs->GetNodeManager().AllocNid(root_nid).is_ok());
+  auto nid_or = fs->GetNodeManager().AllocNid();
+  ASSERT_TRUE(nid_or.is_ok());
+  root_nid = *nid_or;
   auto root_dir = fbl::AdoptRef(new AsyncTearDownVnode(fs, root_nid, root_completions));
   root_dir->SetMode(S_IFDIR);
 
@@ -92,7 +94,9 @@ TEST(Teardown, ShutdownOnNoConnections) {
 
   // Create child vnode connection.
   nid_t child_nid;
-  ASSERT_TRUE(fs->GetNodeManager().AllocNid(child_nid).is_ok());
+  nid_or = fs->GetNodeManager().AllocNid();
+  ASSERT_TRUE(nid_or.is_ok());
+  child_nid = *nid_or;
   auto child_dir = fbl::AdoptRef(new AsyncTearDownVnode(fs, child_nid, child_completions));
   child_dir->SetMode(S_IFDIR);
 
@@ -139,6 +143,7 @@ TEST(Teardown, ShutdownOnNoConnections) {
   // Sleep for a while until filesystem shutdown completes.
   zx::nanosleep(zx::deadline_after(zx::sec(1)));
   ASSERT_TRUE(vfs_or->IsTerminating());
+  fs->Sync();
   fs->PutSuper();
 }
 

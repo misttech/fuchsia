@@ -1,17 +1,16 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-import unittest
-import fidl.fuchsia_developer_ffx as ffx_fidl
-import os
-import tempfile
-import os.path
 import asyncio
+import unittest
+from unittest.mock import Mock
+
 from fidl._ipc import _QueueWrapper
 import fidl.fuchsia_developer_ffx as ffx
-from fuchsia_controller_py import Context, IsolateDir, Channel, ZxStatus
-from fidl_codec import encode_fidl_message, method_ordinal
-from unittest.mock import Mock, patch
+from fidl_codec import encode_fidl_message
+from fidl_codec import method_ordinal
+from fuchsia_controller_py import Channel
+from fuchsia_controller_py import ZxStatus
 
 
 class FidlClientTests(unittest.IsolatedAsyncioTestCase):
@@ -121,8 +120,10 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
                 type_name="fuchsia.developer.ffx/EchoEchoStringRequest",
                 txid=1,
                 ordinal=method_ordinal(
-                    protocol="fuchsia.developer.ffx/Echo",
-                    method="EchoString")))
+                    protocol="fuchsia.developer.ffx/Echo", method="EchoString"
+                ),
+            ),
+        )
         # Verifies state is cleaned up.
         self.assertEqual(len(proxy.staged_messages), 0)
         self.assertEqual(len(proxy.pending_txids), 0)
@@ -185,7 +186,7 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         queue = loop.run_until_complete(return_queue())
         loop.close()
         self.assertTrue(queue.loop.is_closed())
-        inner = queue.queue
+        queue.queue
         inner_loop = queue.loop
         new_loop = asyncio.new_event_loop()
 

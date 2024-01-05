@@ -47,7 +47,10 @@ rustc_library("lib") {
     "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/lib/diagnostics/inspect/derive",
     "//src/lib/diagnostics/inspect/format/rust",
-    "//src/lib/diagnostics/inspect/runtime/rust",
+
+    # Archivist needs to use InspectSink from itself, so it does not
+    # include the normal inspect/client.shard.cml.
+    "//src/lib/diagnostics/inspect/runtime/rust:unchecked_includes",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/diagnostics/log/message/rust",
     "//src/lib/diagnostics/selectors",
@@ -59,12 +62,12 @@ rustc_library("lib") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/lib/zircon/rust:fuchsia-zircon-status",
     "//src/sys/lib/moniker",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-lock",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:futures",
@@ -81,6 +84,7 @@ rustc_library("lib") {
   test_deps = [
     "//src/diagnostics/lib/validating-log-listener",
     "//src/lib/diagnostics/log/encoding/rust",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//src/lib/syslog/rust:syslog-listener",
     "//third_party/rust_crates:assert_matches",
@@ -130,7 +134,6 @@ rustc_library("lib") {
     "src/logs/stats.rs",
     "src/logs/stored_message.rs",
     "src/logs/testing.rs",
-    "src/moniker_rewriter.rs",
     "src/pipeline.rs",
     "src/testing.rs",
     "src/utils.rs",
@@ -223,6 +226,7 @@ group("archivist-for-embedding-bundle") {
 
 fuchsia_package("package") {
   package_name = "archivist"
+  validate_structured_config = false
   deps = [ ":component" ]
 }
 

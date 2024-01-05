@@ -14,13 +14,12 @@
 #include <zircon/types.h>
 
 #include <random>
-#include <unordered_set>
+#include <string>
 #include <vector>
 
 #include "network_context.h"
 #include "src/lib/fostr/hex_dump.h"
 #include "src/lib/fxl/strings/join_strings.h"
-#include "src/lib/fxl/strings/string_printf.h"
 
 namespace netemul {
 
@@ -185,6 +184,8 @@ class NetworkDeviceImpl : public EndpointImpl,
     });
   }
 
+  std::string GetName(uint32_t idx) override { return device_name_; }
+
   /* fuchsia.hardware.network/DeviceInstance */
 
   void GetDevice(::fidl::InterfaceRequest<fuchsia::hardware::network::Device> device) override {
@@ -238,15 +239,6 @@ class NetworkDeviceImpl : public EndpointImpl,
   void SetMinDriverLogSeverity(fuchsia::logger::LogLevelFilter severity,
                                SetMinDriverLogSeverityCallback callback) override {
     callback(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void GetCurrentPerformanceState(GetCurrentPerformanceStateCallback callback) override {
-    callback(0);
-  }
-
-  void SetPerformanceState(uint32_t requested_state,
-                           SetPerformanceStateCallback callback) override {
-    callback(ZX_ERR_NOT_SUPPORTED, 0);
   }
 
  private:

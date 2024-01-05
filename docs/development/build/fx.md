@@ -54,6 +54,7 @@ with this:
 * `fx build` [execute a build](#execute-a-build)
 * `fx flash ; fx mkzedboot` [flash a target; or prepare a zedboot USB key](#flash-a-board-and-prepare-zedboot)
 * `fx serve` [serve a build](#serve-a-build)
+* `fx publish cache` [iterate on cache packages](#iterate-cache-packages)
 * `fx ota` [update a target](#update-a-target-device)
 * `fx test` [execute tests](#execute-tests)
 * `fx shell` [connect to a target shell](#connect-to-a-target-shell)
@@ -245,6 +246,36 @@ to your `~/.bashrc` or equivalent. This change results in the following:
 
 Note that the behavior of `fx build` remains unchanged.
 
+### Iterating on cache packages {#iterate-cache-packages}
+
+Running `fx build` triggers a full system assembly in addition to compiling and
+publishing [cache packages](#package_deployment_options). If your workflow requires
+only iterating over rebuilding cache packages, running `fx build` can be excessive
+and cause slowdowns.
+
+For rebuilding cache packages, you can achieve faster build speed by replacing
+`fx build` with `fx publish cache`. Below is what it might look like in a typical
+development workflow:
+
+```none {:.devsite-disable-click-to-copy}
+# Set up your workspace here.
+$ fx serve
+
+# Make changes to cache packages here.
+
+# Rebuild and publish cache packages:
+$ fx publish cache
+
+# Restart your component, for example:
+$ ffx component stop /core/your_component
+$ ffx session restart
+```
+
+A known issue: Rebooting the Fuchsia emulator does not cause components to run
+from the updated packages. The components needs to be restarted manually.
+
+To view a list of all cache packages, you can run `fx list-packages --cache`.
+
 ### Building a specific target {#building-a-specific-target}
 
 `fx build` can be given the name of a specific target or file to build. For
@@ -285,6 +316,19 @@ Once the build is finished, this command creates the build archive file
 (`build-archive.zip` in the example above) in your Fuchsia build directory, which is
 `out/default` by default. (To view the exact location of your build directory,
 run `fx get-build-dir`.)
+
+### Creating a product bundle ZIP file {#creating-a-product-bundle-zip-file}
+
+If you've already built a Fuchsia product (by running `fx build`), you can
+run the following command to [create a ZIP file][fx-create-pb-zip] that
+contains the product bundle:
+
+```posix-terminal
+fx create-pb-zip -o <path-to-pb-zip>
+```
+
+This command creates a zip file containing the product bundle in the
+path you specified.
 
 ## Flash a board and prepare Zedboot {#flash-a-board-and-prepare-zedboot}
 
@@ -640,3 +684,4 @@ To suppress the inclusion of `local/args.gn`, run `fx set ... --skip-local-args`
 [fxb94507]: https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=94507
 [fuchsia-gi-repo]: https://fuchsia.googlesource.com/integration/
 [fx-sync-to-ref]: https://fuchsia.dev/reference/tools/fx/cmd/sync-to
+[fx-create-pb-zip]: https://fuchsia.dev/reference/tools/fx/cmd/create-pb-zip

@@ -16,12 +16,13 @@ import("//tools/cmc/build/cmc.gni")
 fxfs_deps = [
   ":fxfs_macros",
   "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-  "//src/lib/async-utils",
   "//src/lib/diagnostics/inspect/rust",
   "//src/lib/fuchsia-async",
-  "//src/lib/storage/storage_device",
+  "//src/lib/mundane",
   "//src/storage/fxfs/crypto",
-  "//src/storage/lib/interval_tree",
+  "//src/storage/fxfs/trace",
+  "//src/storage/lib/fsverity-merkle",
+  "//src/storage/lib/storage_device",
   "//src/storage/type-fprint:fprint",
   "//third_party/rust_crates:anyhow",
   "//third_party/rust_crates:assert_matches",
@@ -34,11 +35,10 @@ fxfs_deps = [
   "//third_party/rust_crates:linked-hash-map",
   "//third_party/rust_crates:num-traits",
   "//third_party/rust_crates:once_cell",
-  "//third_party/rust_crates:pin-project",
   "//third_party/rust_crates:rand",
+  "//third_party/rust_crates:rustc-hash",
   "//third_party/rust_crates:scopeguard",
   "//third_party/rust_crates:serde",
-  "//third_party/rust_crates:slab",
   "//third_party/rust_crates:static_assertions",
   "//third_party/rust_crates:thiserror",
   "//third_party/rust_crates:tracing",
@@ -52,7 +52,6 @@ fxfs_test_deps = [
 
 fxfs_sources = [
   "src/checksum.rs",
-  "src/data_buffer.rs",
   "src/debug_assert_not_too_long.rs",
   "src/drop_event.rs",
   "src/errors.rs",
@@ -92,13 +91,10 @@ fxfs_sources = [
   "src/object_store/object_record.rs",
   "src/object_store/project_id.rs",
   "src/object_store/store_object_handle.rs",
-  "src/object_store/testing.rs",
-  "src/object_store/testing/fake_filesystem.rs",
   "src/object_store/transaction.rs",
   "src/object_store/tree.rs",
   "src/object_store/tree_cache.rs",
   "src/object_store/volume.rs",
-  "src/object_store/writeback_cache.rs",
   "src/range.rs",
   "src/round.rs",
   "src/serialized_types.rs",
@@ -109,12 +105,10 @@ fxfs_sources = [
   "src/testing.rs",
   "src/testing/fake_object.rs",
   "src/testing/writer.rs",
-  "src/trace.rs",
 ]
 
 if (is_fuchsia) {
   fxfs_deps += [
-    "//src/lib/trace/rust:trace",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//third_party/rust_crates:scopeguard",
   ]
@@ -122,7 +116,7 @@ if (is_fuchsia) {
     fxfs_deps += [ "//src/lib/debug/rust" ]
   }
   fxfs_test_deps += [
-    "//src/storage/bin/blobfs:blobfs-component",
+    "//src/storage/blobfs/bin:blobfs-component",
     "//third_party/zstd",
   ]
 }
@@ -147,11 +141,6 @@ rustc_library("lib") {
   deps = fxfs_deps
   sources = fxfs_sources
   test_deps = fxfs_test_deps
-
-  features = []
-  if (is_fuchsia) {
-    features += [ "tracing" ]
-  }
 }
 
 fuchsia_unittest_component("fxfs-test") {
@@ -193,6 +182,8 @@ rustc_binary("fxfs") {
   edition = "2021"
   deps = [
     ":lib",
+    "//src/lib/diagnostics/inspect/runtime/rust",
+    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/diagnostics/log/rust",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
@@ -210,40 +201,12 @@ rustc_binary("fxfs") {
     # Optimize for speed (Fxfs is split into several crates; apply optimizations across them).
     "//build/config/rust:lto_thin",
   ]
-  features = [ "tracing" ]
-}
-
-cmc_merge("fxfs_with_vmex.cml") {
-  sources = [
-    "meta/fxfs.cml",
-    "meta/use_vmex.shard.cml",
-  ]
-  visibility = [ ":*" ]
-}
-
-fuchsia_component_manifest("fxfs_with_vmex_manifest") {
-  component_name = "fxfs"
-  deps = [ ":fxfs_with_vmex.cml" ]
-  _target_outputs = get_target_outputs(":fxfs_with_vmex.cml")
-  manifest = _target_outputs[0]
-  visibility = [ ":*" ]
 }
 
 fuchsia_component("fxfs_component") {
   component_name = "fxfs"
   deps = [ ":fxfs" ]
   manifest = "meta/fxfs.cml"
-}
-
-# TODO(fxbug.dev/122055): Don't give vmex to Fxfs.
-fuchsia_component("fxfs_with_vmex_component") {
-  component_name = "fxfs"
-
-  cm_label = ":fxfs_with_vmex_manifest"
-  deps = [
-    ":fxfs",
-    ":fxfs_with_vmex_manifest",
-  ]
 }
 
 fuchsia_shell_package("fxfs-bin") {
@@ -266,7 +229,7 @@ fs_test_config("fxfs") {
   supports_mmap_shared_write = true
   supports_shutdown_on_no_connections = true
   timestamp_granularity = 1
-  disk_format = 12  # See //src/storage/fs_management/cpp/format.h
+  disk_format = 12  # See //src/storage/lib/fs_management/cpp/format.h
   uses_crypt = true
 
   options = [
@@ -277,7 +240,6 @@ fs_test_config("fxfs") {
 
       device_block_count = 24576
       device_block_size = 512
-      allow_delivery_blobs = true
     },
   ]
 }
@@ -288,13 +250,16 @@ test("fxfs-interop-fs") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/storage/block_client/cpp",
     "//src/storage/fs_test",
     "//src/storage/fs_test:test_crypt_service",
     "//src/storage/fxfs",
+    "//src/storage/lib/block_client/cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 storage_driver_test_realm_v2_component("fxfs-interop-fs-tests") {
@@ -346,6 +311,7 @@ group("tests") {
     ":fxfs_component",
     ":lib_test($host_toolchain)",
     "//src/storage/fxfs/tools:tests",
+    "//src/storage/fxfs/trace:tests",
   ]
 }
 
@@ -368,9 +334,6 @@ foreach(fuzzer, _fuzzers) {
              "//third_party/rust_crates:futures",
            ]
     sources = fxfs_sources
-    if (is_fuchsia) {
-      features = [ "tracing" ]
-    }
   }
 
   fuchsia_fuzzer_component("${fuzzer}_component") {

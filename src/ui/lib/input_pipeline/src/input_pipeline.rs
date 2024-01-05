@@ -81,6 +81,7 @@ impl InputPipelineAssembly {
         let (next_sender, next_receiver) = mpsc::unbounded();
         let handler_name = handler.get_name();
         tasks.push(fasync::Task::local(async move {
+            handler.clone().set_handler_healthy();
             while let Some(event) = receiver.next().await {
                 // Note: the `handler_name` _should not_ be used as ABI (e.g. referenced from
                 // data processing scripts), as `handler_name` is not guaranteed to be consistent
@@ -107,6 +108,7 @@ impl InputPipelineAssembly {
                     }
                 }
             }
+            handler.clone().set_handler_unhealthy(std::format!("Receive loop terminated for handler: {:?}", handler_name).as_str());
             panic!("receive loop is not supposed to terminate for handler: {:?}", handler_name);
         }));
         receiver = next_receiver;
@@ -133,7 +135,8 @@ impl InputPipelineAssembly {
         let h = DisplayOwnership::new(display_ownership_event, input_handlers_node);
         let metrics_logger_clone = metrics_logger.clone();
         tasks.push(fasync::Task::local(async move {
-            h.handle_input_events(autorepeat_receiver, autorepeat_sender)
+            h.clone().set_handler_healthy();
+            h.clone().handle_input_events(autorepeat_receiver, autorepeat_sender)
                 .await
                 .map_err(|e| {
                     metrics_logger_clone.log_error(
@@ -141,6 +144,7 @@ impl InputPipelineAssembly {
                         std::format!(
                             "display ownership is not supposed to terminate - this is likely a problem: {:?}", e));
                 }).unwrap();
+            h.set_handler_unhealthy("Receive loop terminated for handler: DisplayOwnership");
         }));
         InputPipelineAssembly { sender, receiver, tasks, metrics_logger }
     }
@@ -154,7 +158,9 @@ impl InputPipelineAssembly {
         let metrics_logger_clone = metrics_logger.clone();
         let a = Autorepeater::new(autorepeat_receiver, input_handlers_node, metrics_logger.clone());
         tasks.push(fasync::Task::local(async move {
-            a.run(autorepeat_sender)
+            a.clone().set_handler_healthy();
+            a.clone()
+                .run(autorepeat_sender)
                 .await
                 .map_err(|e| {
                     metrics_logger_clone.log_error(
@@ -163,6 +169,7 @@ impl InputPipelineAssembly {
                     );
                 })
                 .expect("autorepeater should never error out");
+            a.set_handler_unhealthy("Receive loop terminated for handler: Autorepeater");
         }));
         InputPipelineAssembly { sender, receiver, tasks, metrics_logger }
     }
@@ -380,7 +387,7 @@ impl InputPipeline {
                     // This error is usually benign in tests: it means that the setup does not
                     // support dynamic device discovery. Almost no tests support dynamic
                     // device discovery, and they also do not need those.
-                    metrics_logger.log_error(
+                    metrics_logger.log_warn(
                         InputPipelineErrorMetricDimensionEvent::InputPipelineUnableToWatchForNewInputDevices,
                         std::format!(
                             "Input pipeline is unable to watch for new input devices: {:?}",
@@ -713,10 +720,9 @@ mod tests {
         crate::mouse_model_database,
         crate::observe_fake_events_input_handler,
         crate::utils::Position,
+        diagnostics_assertions::AnyProperty,
         fidl::endpoints::{create_proxy, create_proxy_and_stream, create_request_stream},
-        fuchsia_async as fasync,
-        fuchsia_inspect::AnyProperty,
-        fuchsia_zircon as zx,
+        fuchsia_async as fasync, fuchsia_zircon as zx,
         futures::channel::mpsc::UnboundedSender,
         futures::FutureExt,
         pretty_assertions::assert_eq,
@@ -982,7 +988,7 @@ mod tests {
         );
         let input_devices = test_node.create_child("input_devices");
         // Assert that inspect tree is initialized with no devices.
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_pipeline: {
                 supported_input_devices: "Mouse",
                 input_devices: {}
@@ -1023,7 +1029,7 @@ mod tests {
         );
 
         // Assert that inspect tree reflects new device discovered and connected.
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_pipeline: {
                 supported_input_devices: "Mouse",
                 input_devices: {
@@ -1105,7 +1111,7 @@ mod tests {
         );
         let input_devices = test_node.create_child("input_devices");
         // Assert that inspect tree is initialized with no devices.
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_pipeline: {
                 supported_input_devices: "Keyboard",
                 input_devices: {}
@@ -1129,7 +1135,7 @@ mod tests {
         assert_eq!(bindings.len(), 0);
 
         // Assert that inspect tree reflects new device discovered, but not connected.
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_pipeline: {
                 supported_input_devices: "Keyboard",
                 input_devices: {
@@ -1228,7 +1234,7 @@ mod tests {
             test_node,
             metrics::MetricsLogger::default(),
         );
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_pipeline: {
                 supported_input_devices: "Touch, ConsumerControls",
                 handlers_registered: 1u64,

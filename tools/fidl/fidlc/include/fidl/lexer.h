@@ -20,12 +20,12 @@ namespace fidl {
 // partway through.
 // See https://fuchsia.dev/fuchsia-src/development/languages/fidl/reference/compiler#_lexing
 // for additional context
-class Lexer : private ReporterMixin {
+class Lexer {
  public:
   // The Lexer assumes the final character is 0. This substantially
   // simplifies advancing to the next character.
   Lexer(const SourceFile& source_file, Reporter* reporter)
-      : ReporterMixin(reporter), source_file_(source_file) {
+      : reporter_(reporter), source_file_(source_file) {
     token_subkinds = {
 #define TOKEN_SUBKIND(Name, Spelling) {Spelling, Token::Subkind::k##Name},
 #include "tools/fidl/fidlc/include/fidl/token_definitions.inc"
@@ -61,14 +61,15 @@ class Lexer : private ReporterMixin {
   Token LexStringLiteral();
   Token LexCommentOrDocComment();
 
+  Reporter* reporter_;
   const SourceFile& source_file_;
   std::map<std::string_view, Token::Subkind> token_subkinds;
 
   const char* current_ = nullptr;
   const char* end_of_file_ = nullptr;
   const char* token_start_ = nullptr;
+  bool start_of_file_ = true;
   size_t token_size_ = 0u;
-  uint32_t next_ordinal_ = 0;
   uint16_t leading_newlines_ = 0;
 };
 

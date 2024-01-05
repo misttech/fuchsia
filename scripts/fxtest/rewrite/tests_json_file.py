@@ -31,6 +31,9 @@ class TestSection:
     # The build label for the test.
     label: str
 
+    # The os configured for the test.
+    os: str
+
     # The build label for the component being tested in this test.
     component_label: str | None = None
 
@@ -42,6 +45,29 @@ class TestSection:
 
     # If the test runs on the host, this is the path of the binary to execute.
     path: str | None = None
+
+    # If the test is a device tests, this is the argument to pass to
+    # ffx test run --parallel
+    parallel: int | None = None
+
+
+@dataparse
+@dataclass
+class DimensionsEntry:
+    """A single entry for an environment's test dimensions."""
+
+    # The type of device this test is intended to run on.
+    # Missing if the test is not for devices.
+    device_type: str | None = None
+
+
+@dataparse
+@dataclass
+class EnvironmentEntry:
+    """Provides details for a test environment in tests.json."""
+
+    # The dimensions for this environment.
+    dimensions: DimensionsEntry
 
 
 class TestFileError(Exception):
@@ -56,8 +82,13 @@ class TestEntry:
     # The "test" field for a specific entry in the file.
     test: TestSection
 
+    # The "environments" field for a specific entry in the file.
+    environments: typing.List[EnvironmentEntry] | None = None
+
     @classmethod
-    def from_file(cls: typing.Type[typing.Self], file: str) -> typing.List[typing.Self]:
+    def from_file(
+        cls: typing.Type[typing.Self], file: str
+    ) -> typing.List[typing.Self]:
         """Parse the file at the given path into a list of TestEntry.
 
         This returns a list of entries because the ordering of the

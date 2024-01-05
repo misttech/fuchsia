@@ -2,17 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
-use errors::FfxError;
-use ffx_config::EnvironmentContext;
+use anyhow::{Context as _, Result};
+use errors::{ffx_bail, FfxError};
+use ffx_config::{keys::TARGET_DEFAULT_KEY, EnvironmentContext};
 use fidl::{endpoints::create_proxy, prelude::*};
 use fidl_fuchsia_developer_ffx::{
-    DaemonError, DaemonProxy, TargetCollectionMarker, TargetMarker, TargetProxy, TargetQuery,
+    self as ffx, DaemonError, DaemonProxy, TargetCollectionMarker, TargetCollectionProxy,
+    TargetInfo, TargetMarker, TargetQuery,
 };
 use fidl_fuchsia_developer_remotecontrol::{RemoteControlMarker, RemoteControlProxy};
-use futures::{select, Future, FutureExt};
+use fidl_fuchsia_net as net;
+use futures::{select, Future, FutureExt, TryStreamExt};
+use std::net::IpAddr;
 use std::time::Duration;
+use thiserror::Error;
 use timeout::timeout;
+use tracing::info;
+
+/// Re-export of [`fidl_fuchsia_developer_ffx::TargetProxy`] for ease of use
+pub use fidl_fuchsia_developer_ffx::TargetProxy;
 
 const FASTBOOT_INLINE_TARGET: &str = "ffx.fastboot.inline_target";
 
@@ -41,6 +49,7 @@ pub async fn get_remote_proxy(
     is_default_target: bool,
     daemon_proxy: DaemonProxy,
     proxy_timeout: Duration,
+    mut target_info: Option<&mut Option<TargetInfo>>,
 ) -> Result<RemoteControlProxy> {
     let (target_proxy, target_proxy_fut) =
         open_target_with_fut(target.clone(), is_default_target, daemon_proxy, proxy_timeout)?;
@@ -65,7 +74,10 @@ pub async fn get_remote_proxy(
                 }
             }
             res = target_proxy_fut => {
-                res?
+                res?;
+                if let Some(ref mut info_out) = target_info {
+                    **info_out = Some(target_proxy.identity().await?);
+                }
             }
         }
     };
@@ -146,7 +158,8 @@ pub fn open_target_with_fut<'a>(
 pub async fn resolve_default_target(
     env_context: &EnvironmentContext,
 ) -> Result<Option<TargetKind>> {
-    Ok(maybe_inline_target(env_context.get("target.default").await?, &env_context).await)
+    let t = get_default_target(&env_context).await?;
+    Ok(maybe_inline_target(t, &env_context).await)
 }
 
 /// In the event that a default target is supplied and there needs to be additional Fastboot
@@ -155,14 +168,183 @@ pub async fn maybe_inline_target(
     target: Option<String>,
     env_context: &EnvironmentContext,
 ) -> Option<TargetKind> {
-    match target {
-        Some(t) => {
-            if env_context.get(FASTBOOT_INLINE_TARGET).await.unwrap_or(false) {
-                Some(TargetKind::FastbootInline(t))
-            } else {
-                Some(TargetKind::Normal(t))
-            }
+    let target = target?;
+    if env_context.get(FASTBOOT_INLINE_TARGET).await.unwrap_or(false) {
+        Some(TargetKind::FastbootInline(target))
+    } else {
+        Some(TargetKind::Normal(target))
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum KnockError {
+    #[error("critical error encountered: {0:?}")]
+    CriticalError(anyhow::Error),
+    #[error("non-critical error encountered: {0:?}")]
+    NonCriticalError(#[from] anyhow::Error),
+}
+
+const RCS_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Attempts to "knock" a target to determine if it is up and connectable via RCS.
+///
+/// This is intended to be run in a loop, with a non-critical error implying the caller
+/// should call again, and a critical error implying the caller should raise the error
+/// and no longer loop.
+pub async fn knock_target(target: &TargetProxy) -> Result<(), KnockError> {
+    knock_target_with_timeout(target, RCS_TIMEOUT).await
+}
+
+/// Attempts to "knock" a target to determine if it is up and connectable via RCS, within
+/// a specified timeout.
+///
+/// This is intended to be run in a loop, with a non-critical error implying the caller
+/// should call again, and a critical error implying the caller should raise the error
+/// and no longer loop.
+pub async fn knock_target_with_timeout(
+    target: &TargetProxy,
+    rcs_timeout: Duration,
+) -> Result<(), KnockError> {
+    let (rcs_proxy, remote_server_end) = create_proxy::<RemoteControlMarker>()
+        .map_err(|e| KnockError::NonCriticalError(e.into()))?;
+    timeout(rcs_timeout, target.open_remote_control(remote_server_end))
+        .await
+        .context("timing out")?
+        .context("opening remote_control")?
+        .map_err(|e| anyhow::anyhow!("open remote control err: {:?}", e))?;
+    rcs::knock_rcs(&rcs_proxy)
+        .await
+        .map_err(|e| KnockError::NonCriticalError(anyhow::anyhow!("{e:?}")))
+}
+
+/// Get the default target.  This uses the normal config mechanism which
+/// supports flexible config values: it can be a string naming the target, or
+/// a list of strings, in which case the first valid entry is used. (The most
+/// common use of this functionality would be to specify an array of environment
+/// variables, e.g. ["$FUCHSIA_TARGET_ADDR", "FUCHSIA_NODENAME"])
+pub async fn get_default_target(context: &EnvironmentContext) -> Result<Option<String>> {
+    let target = context.get(TARGET_DEFAULT_KEY).await?;
+    info!("Default target resolved to {target:?}");
+    Ok(target)
+}
+
+pub async fn add_manual_target(
+    target_collection_proxy: &TargetCollectionProxy,
+    addr: IpAddr,
+    scope_id: u32,
+    port: u16,
+    wait: bool,
+) -> Result<()> {
+    let ip = match addr {
+        IpAddr::V6(i) => net::IpAddress::Ipv6(net::Ipv6Address { addr: i.octets().into() }),
+        IpAddr::V4(i) => net::IpAddress::Ipv4(net::Ipv4Address { addr: i.octets().into() }),
+    };
+    let addr = if port > 0 {
+        ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort { ip, port, scope_id })
+    } else {
+        ffx::TargetAddrInfo::Ip(ffx::TargetIp { ip, scope_id })
+    };
+
+    let (client, mut stream) =
+        fidl::endpoints::create_request_stream::<ffx::AddTargetResponder_Marker>()
+            .context("create endpoints")?;
+    target_collection_proxy
+        .add_target(
+            &addr,
+            &ffx::AddTargetConfig { verify_connection: Some(wait), ..Default::default() },
+            client,
+        )
+        .context("calling AddTarget")?;
+    let res = if let Ok(Some(req)) = stream.try_next().await {
+        match req {
+            ffx::AddTargetResponder_Request::Success { .. } => Ok(()),
+            ffx::AddTargetResponder_Request::Error { err, .. } => Err(err),
         }
-        None => None,
+    } else {
+        ffx_bail!("ffx lost connection to the daemon before receiving a response.");
+    };
+    res.map_err(|e| {
+        let err = e.connection_error.unwrap();
+        let logs = e.connection_error_logs.map(|v| v.join("\n"));
+        let is_default_target = false;
+        let target = Some(format!("{addr:?}"));
+        FfxError::TargetConnectionError { err, target, is_default_target, logs }.into()
+    })
+}
+
+#[cfg(test)]
+mod test {
+    use ffx_config::{macro_deps::serde_json::Value, test_init, ConfigLevel};
+
+    use super::*;
+
+    #[fuchsia::test]
+    async fn test_get_empty_default_target() {
+        let env = test_init().await.unwrap();
+        let target = get_default_target(&env.context).await.unwrap();
+        assert_eq!(target, None);
+    }
+
+    #[fuchsia::test]
+    async fn test_set_default_target() {
+        let env = test_init().await.unwrap();
+        env.context
+            .query(TARGET_DEFAULT_KEY)
+            .level(Some(ConfigLevel::User))
+            .set(Value::String("some_target".to_owned()))
+            .await
+            .unwrap();
+
+        let target = get_default_target(&env.context).await.unwrap();
+        assert_eq!(target, Some("some_target".to_owned()));
+    }
+
+    #[fuchsia::test]
+    async fn test_default_first_target_in_array() {
+        let env = test_init().await.unwrap();
+        let ts: Vec<Value> = ["t1", "t2"].iter().map(|s| Value::String(s.to_string())).collect();
+        env.context
+            .query(TARGET_DEFAULT_KEY)
+            .level(Some(ConfigLevel::User))
+            .set(Value::Array(ts))
+            .await
+            .unwrap();
+
+        let target = get_default_target(&env.context).await.unwrap();
+        assert_eq!(target, Some("t1".to_owned()));
+    }
+
+    #[fuchsia::test]
+    async fn test_default_missing_env_ignored() {
+        let env = test_init().await.unwrap();
+        let ts: Vec<Value> =
+            ["$THIS_BETTER_NOT_EXIST", "t2"].iter().map(|s| Value::String(s.to_string())).collect();
+        env.context
+            .query(TARGET_DEFAULT_KEY)
+            .level(Some(ConfigLevel::User))
+            .set(Value::Array(ts))
+            .await
+            .unwrap();
+
+        let target = get_default_target(&env.context).await.unwrap();
+        assert_eq!(target, Some("t2".to_owned()));
+    }
+
+    #[fuchsia::test]
+    async fn test_default_env_present() {
+        std::env::set_var("MY_LITTLE_TMPKEY", "t1");
+        let env = test_init().await.unwrap();
+        let ts: Vec<Value> =
+            ["$MY_LITTLE_TMPKEY", "t2"].iter().map(|s| Value::String(s.to_string())).collect();
+        env.context
+            .query(TARGET_DEFAULT_KEY)
+            .level(Some(ConfigLevel::User))
+            .set(Value::Array(ts))
+            .await
+            .unwrap();
+
+        let target = get_default_target(&env.context).await.unwrap();
+        assert_eq!(target, Some("t1".to_owned()));
+        std::env::remove_var("MY_LITTLE_TMPKEY");
     }
 }

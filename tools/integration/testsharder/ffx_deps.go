@@ -6,20 +6,23 @@ package testsharder
 
 import (
 	"fmt"
+	"runtime"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
+	"go.fuchsia.dev/fuchsia/tools/lib/hostplatform"
 )
 
 // AddFFXDeps selects and adds the files needed by ffx to provision a device
 // or launch an emulator to the shard's list of dependencies.
-func AddFFXDeps(s *Shard, buildDir string, images []build.Image, flash bool) error {
+func AddFFXDeps(s *Shard, buildDir string, images []build.Image, tools build.Tools, flash bool) error {
 	if len(s.Tests) == 0 {
 		return fmt.Errorf("shard %s has no tests", s.Name)
 	}
+	subtools := []string{"test"}
 	if s.Env.TargetsEmulator() {
-		targetCPU := s.Tests[0].CPU
-		deps, err := ffxutil.GetEmuDeps(buildDir, targetCPU, []string{})
+		subtools = append(subtools, "emu", "product")
+		deps, err := ffxutil.GetEmuDeps(buildDir, s.TargetCPU(), []string{})
 		if err != nil {
 			return err
 		}
@@ -41,5 +44,18 @@ func AddFFXDeps(s *Shard, buildDir string, images []build.Image, flash bool) err
 		}
 		s.AddDeps(deps)
 	}
+	s.AddDeps(getSubtoolDeps(s, tools, buildDir, subtools))
 	return nil
+}
+
+func getSubtoolDeps(s *Shard, tools build.Tools, buildDir string, subtools []string) []string {
+	platform := hostplatform.MakeName(runtime.GOOS, s.HostCPU())
+	var deps []string
+	for _, s := range subtools {
+		if subtool, err := tools.LookupTool(platform, fmt.Sprintf("ffx-%s", s)); err == nil {
+			deps = append(deps, subtool.Path)
+			deps = append(deps, subtool.RuntimeFiles...)
+		}
+	}
+	return deps
 }

@@ -33,10 +33,6 @@ const (
 	// The maximum total runs across all automatically multiplied tests.
 	MaxMultipliedRunsPerShard = 1000
 
-	// The maximum number of tests that a multiplier can match. testsharder will
-	// fail if this is exceeded.
-	maxMatchesPerMultiplier = 50
-
 	// The maximum number of multiplied shards allowed per environment.
 	maxMultipliedShardsPerEnv = 3
 
@@ -204,13 +200,10 @@ func SplitOutMultipliers(
 			}
 			numNewShards := min(len(multipliedTests), maxMultipliedShards)
 
-			multShard := &Shard{
-				Name:           prefix + shard.Name,
-				Tests:          multipliedTests,
-				Env:            shard.Env,
-				ImageOverrides: shard.ImageOverrides,
-			}
-			newShards := shardByTime(multShard, testDurations, numNewShards)
+			multShard := *shard
+			multShard.Name = prefix + shard.Name
+			multShard.Tests = multipliedTests
+			newShards := shardByTime(&multShard, testDurations, numNewShards)
 
 			for _, newShard := range newShards {
 				// Give priority to the tests that had a total_runs specified and
@@ -271,7 +264,7 @@ func SplitOutMultipliers(
 					newShard.Tests[idx] = test
 					fillUpTestIdxs = fillUpTestIdxs[:i]
 				}
-				newShard.TimeoutSecs = int(computeShardTimeout(subshard{targetDuration, newShard.Tests}).Seconds())
+				newShard.TimeoutSecs = max(newShard.TimeoutSecs, int(computeShardTimeout(subshard{targetDuration, newShard.Tests}).Seconds()))
 			}
 			shards = append(shards, newShards...)
 		}
@@ -354,12 +347,10 @@ func PartitionShards(shards []*Shard, partitionFunc func(Test) bool, prefix stri
 			}
 		}
 		if len(matching) > 0 {
-			matchingShards = append(matchingShards, &Shard{
-				Name:           prefix + shard.Name,
-				Tests:          matching,
-				Env:            shard.Env,
-				ImageOverrides: shard.ImageOverrides,
-			})
+			newShard := *shard
+			newShard.Name = prefix + shard.Name
+			newShard.Tests = matching
+			matchingShards = append(matchingShards, &newShard)
 		}
 		if len(nonmatching) > 0 {
 			shard.Tests = nonmatching
@@ -385,13 +376,9 @@ func MarkShardsSkipped(shards []*Shard) ([]*Shard, error) {
 				Tags:    test.Tags,
 			})
 		}
-		newShards = append(newShards, &Shard{
-			Name:           shard.Name,
-			Tests:          shard.Tests,
-			Env:            shard.Env,
-			ImageOverrides: shard.ImageOverrides,
-			Summary:        summary,
-		})
+		newShard := *shard
+		newShard.Summary = summary
+		newShards = append(newShards, &newShard)
 	}
 	return newShards, nil
 }
@@ -429,10 +416,11 @@ func WithTargetDuration(
 	shards []*Shard,
 	targetDuration time.Duration,
 	targetTestCount,
+	maxShardSize,
 	maxShardsPerEnvironment int,
 	testDurations TestDurationsMap,
 ) ([]*Shard, time.Duration) {
-	if targetDuration <= 0 && targetTestCount <= 0 {
+	if targetDuration <= 0 && targetTestCount <= 0 && maxShardSize <= 0 {
 		return shards, targetDuration
 	}
 	if maxShardsPerEnvironment <= 0 {
@@ -440,13 +428,19 @@ func WithTargetDuration(
 	}
 
 	shardsPerEnv := make(map[string][]*Shard)
+	targetDurationPerEnv := make(map[string]time.Duration)
 	for _, shard := range shards {
 		envName := environmentName(shard.Env)
 		shardsPerEnv[envName] = append(shardsPerEnv[envName], shard)
+		targetDurationPerEnv[envName] = targetDuration
 	}
 
+	largestTargetDuration := time.Duration(0)
 	if targetDuration > 0 {
-		for _, shards := range shardsPerEnv {
+		for env, shards := range shardsPerEnv {
+			totalTestsPerEnv := 0
+			minTargetDurationForEnv := time.Duration(0)
+			targetDurationForEnv := targetDuration
 			var shardDuration time.Duration
 			for _, shard := range shards {
 				// If any single test is expected to take longer than `targetDuration`,
@@ -455,20 +449,49 @@ func WithTargetDuration(
 				// expected duration as the target duration.
 				for _, t := range shard.Tests {
 					duration := testDurations.Get(t).MedianDuration
-					if duration > targetDuration {
-						targetDuration = duration
+					if duration > targetDurationForEnv {
+						minTargetDurationForEnv = duration
+						targetDurationForEnv = duration
 					}
 					shardDuration += duration * time.Duration(t.minRequiredRuns())
 				}
+				totalTestsPerEnv += len(shard.Tests)
 			}
-			// If any environment would exceed the maximum shard count, then its
+
+			// If any environment would exceed the maximum shard count (either because the total
+			// shard duration is too long or the total test count is too big), then its
 			// shard durations will exceed the specified target duration. So
-			// increase the target duration accordingly for the other
-			// environments.
-			subShardCount := divRoundUp(int(shardDuration), int(targetDuration))
+			// increase the target duration accordingly.
+			subShardCount := divRoundUp(int(shardDuration), int(targetDurationForEnv))
 			if subShardCount > maxShardsPerEnvironment {
-				targetDuration = time.Duration(divRoundUp(int(shardDuration), maxShardsPerEnvironment))
+				subShardCount = maxShardsPerEnvironment
+			} else if subShardCount > 0 {
+				// If the number of shards does not exceed the max shards per env,
+				// then check that the average tests per shards wouldn't exceed
+				// the max shard size. If it does, increase the expected number
+				// of shards to try to respect the maxShardSize as long as it fits
+				// within the max shards per env.
+				avgTestsPerShard := divRoundUp(totalTestsPerEnv, subShardCount)
+				if maxShardSize > 0 && avgTestsPerShard > maxShardSize {
+					subShardCount = divRoundUp(totalTestsPerEnv, maxShardSize)
+					if subShardCount > maxShardsPerEnvironment {
+						subShardCount = maxShardsPerEnvironment
+					}
+				}
 			}
+			if subShardCount > 0 {
+				newTargetDurationForEnv := time.Duration(divRoundUp(int(shardDuration), subShardCount))
+				// In the case where maxShardSize > 0 and we try to increase the number of shards,
+				// the new target duration would be decreased. However, we still need to make sure
+				// it's greater than the minimum reuired target duration.
+				if newTargetDurationForEnv > minTargetDurationForEnv {
+					targetDurationForEnv = newTargetDurationForEnv
+				}
+			}
+			if targetDurationForEnv > largestTargetDuration {
+				largestTargetDuration = targetDurationForEnv
+			}
+			targetDurationPerEnv[env] = targetDurationForEnv
 		}
 	}
 
@@ -476,11 +499,19 @@ func WithTargetDuration(
 	for _, shard := range shards {
 		numNewShards := 0
 		if targetDuration > 0 {
+			var targetDurationForShard time.Duration
+			if maxShardSize > 0 {
+				// If we're limiting by max shard size, then the target duration per env might be different.
+				targetDurationForShard = targetDurationPerEnv[environmentName(shard.Env)]
+			} else {
+				// Otherwise use the largest duration size.
+				targetDurationForShard = largestTargetDuration
+			}
 			var total time.Duration
 			for _, t := range shard.Tests {
 				total += testDurations.Get(t).MedianDuration * time.Duration(t.minRequiredRuns())
 			}
-			numNewShards = divRoundUp(int(total), int(targetDuration))
+			numNewShards = divRoundUp(int(total), int(targetDurationForShard))
 		} else {
 			var total int
 			for _, t := range shard.Tests {
@@ -640,13 +671,11 @@ func shardByTime(shard *Shard, testDurations TestDurationsMap, numNewShards int)
 		if numNewShards > 1 {
 			name = fmt.Sprintf("%s-(%d)", shard.Name, i+1)
 		}
-		newShards = append(newShards, &Shard{
-			Name:           name,
-			Tests:          subshard.tests,
-			Env:            shard.Env,
-			ImageOverrides: shard.ImageOverrides,
-			TimeoutSecs:    int(computeShardTimeout(subshard).Seconds()),
-		})
+		newShard := *shard
+		newShard.Name = name
+		newShard.Tests = subshard.tests
+		newShard.TimeoutSecs = int(computeShardTimeout(subshard).Seconds())
+		newShards = append(newShards, &newShard)
 	}
 	return newShards
 }

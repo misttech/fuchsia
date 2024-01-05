@@ -4,11 +4,11 @@
 
 #include <fidl/fuchsia.fs.startup/cpp/wire.h>
 
-#include "src/lib/storage/vfs/cpp/remote_dir.h"
 #include "src/storage/f2fs/f2fs.h"
 #include "src/storage/f2fs/service/admin.h"
 #include "src/storage/f2fs/service/lifecycle.h"
 #include "src/storage/f2fs/service/startup.h"
+#include "src/storage/lib/vfs/cpp/remote_dir.h"
 
 namespace f2fs {
 
@@ -30,7 +30,7 @@ ComponentRunner::ComponentRunner(async_dispatcher_t* dispatcher)
 
   FX_LOGS(INFO) << "setting up startup service";
   auto startup_svc = fbl::MakeRefCounted<StartupService>(
-      dispatcher_, [this](std::unique_ptr<Bcache> device, const MountOptions& options) {
+      dispatcher_, [this](std::unique_ptr<BcacheMapper> device, const MountOptions& options) {
         return Configure(std::move(device), options);
       });
   startup->AddEntry(fidl::DiscoverableProtocolName<fuchsia_fs_startup::Startup>, startup_svc);
@@ -76,7 +76,7 @@ zx::result<> ComponentRunner::ServeRoot(
   return zx::ok();
 }
 
-zx::result<> ComponentRunner::Configure(std::unique_ptr<Bcache> bcache,
+zx::result<> ComponentRunner::Configure(std::unique_ptr<BcacheMapper> bcache,
                                         const MountOptions& options) {
   // Create Pager and PagerPool
   if (auto status = Init(); status.is_error()) {
@@ -110,21 +110,13 @@ zx::result<> ComponentRunner::Configure(std::unique_ptr<Bcache> bcache,
   // This helps prevent any issues with querying the inspect tree while the filesystem is under
   // load, since snapshots at the receiving end must be consistent. See fxbug.dev/57330 for
   // details.
-  inspect::TreeHandlerSettings settings{.snapshot_behavior =
-                                            inspect::TreeServerSendPreference::Frozen(
-                                                inspect::TreeServerSendPreference::Type::DeepCopy)};
-
-  auto inspect_tree = fbl::MakeRefCounted<fs::Service>(
-      [connector = inspect::MakeTreeHandler(&f2fs_->GetInspectTree().GetInspector(), dispatcher_,
-                                            settings)](zx::channel chan) mutable {
-        connector(fidl::InterfaceRequest<fuchsia::inspect::Tree>(std::move(chan)));
-        return ZX_OK;
-      });
-  // Add the diagnostics directory straight to the outgoing directory. Nothing should be relying on
-  // the diagnostics directory queuing incoming requests.
-  auto diagnostics_dir = fbl::MakeRefCounted<fs::PseudoDir>();
-  outgoing_->AddEntry("diagnostics", diagnostics_dir);
-  diagnostics_dir->AddEntry(fuchsia::inspect::Tree::Name_, inspect_tree);
+  exposed_inspector_.emplace(inspect::ComponentInspector{
+      dispatcher_,
+      {
+          .inspector = f2fs_->GetInspectTree().GetInspector(),
+          .tree_handler_settings = {.snapshot_behavior = inspect::TreeServerSendPreference::Frozen(
+                                        inspect::TreeServerSendPreference::Type::DeepCopy)},
+      }});
 
   auto svc_dir = fbl::MakeRefCounted<fs::PseudoDir>();
   svc_dir->AddEntry(

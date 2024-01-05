@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 mod component;
+mod component_set;
 mod config;
 mod crash_handler;
 pub mod crash_info;
 mod error;
+mod memory;
 pub mod process_launcher;
 mod runtime_dir;
 mod stdout;
@@ -14,30 +16,33 @@ pub mod vdso_vmo;
 
 use {
     self::{
-        component::ElfComponent,
+        component::{ElfComponent, ElfComponentInfo},
         config::ElfProgramConfig,
-        error::{ConfigDataError, JobError, StartComponentError, StartInfoError},
+        error::{JobError, StartComponentError, StartInfoError},
         runtime_dir::RuntimeDirBuilder,
         stdout::bind_streams_to_syslog,
     },
-    crate::{crash_info::CrashRecords, vdso_vmo::get_next_vdso_vmo},
+    crate::{
+        component_set::ComponentSet, crash_info::CrashRecords, memory::reporter::MemoryReporter,
+        vdso_vmo::get_next_vdso_vmo,
+    },
     ::routing::policy::ScopedPolicyChecker,
-    async_trait::async_trait,
     chrono::{DateTime, NaiveDateTime, Utc},
-    cm_runner::Runner,
     fidl::endpoints::ServerEnd,
     fidl_fuchsia_component as fcomp, fidl_fuchsia_component_runner as fcrunner,
     fidl_fuchsia_diagnostics_types::{
         ComponentDiagnostics, ComponentTasks, Task as DiagnosticsTask,
     },
-    fidl_fuchsia_mem as fmem, fidl_fuchsia_process as fproc,
+    fidl_fuchsia_memory_report as freport, fidl_fuchsia_process as fproc,
     fidl_fuchsia_process_lifecycle::LifecycleMarker,
     fuchsia_async::{self as fasync, TimeoutExt},
     fuchsia_runtime::{duplicate_utc_clock_handle, job_default, HandleInfo, HandleType},
     fuchsia_zircon::{self as zx, AsHandleRef, HandleBased},
     futures::channel::oneshot,
+    futures::TryStreamExt,
     moniker::Moniker,
     runner::component::ChannelEpitaph,
+    runner::StartInfo,
     std::convert::TryFrom,
     std::{convert::TryInto, path::Path, sync::Arc},
     tracing::warn,
@@ -69,6 +74,10 @@ const DUPLICATE_CLOCK_RIGHTS: zx::Rights = zx::Rights::from_bits_truncate(
 // Builds and serves the runtime directory
 /// Runs components with ELF binaries.
 pub struct ElfRunner {
+    /// Each ELF component run by this runner will live inside a job that is a
+    /// child of this job.
+    job: zx::Job,
+
     launcher_connector: process_launcher::Connector,
 
     /// If `utc_clock` is populated then that Clock's handle will
@@ -79,15 +88,45 @@ pub struct ElfRunner {
     utc_clock: Option<Arc<zx::Clock>>,
 
     crash_records: CrashRecords,
+
+    /// Tracks the ELF components that are currently running under this runner.
+    components: Arc<ComponentSet>,
+
+    memory_reporter: Arc<MemoryReporter>,
+}
+
+/// The job for a component.
+pub enum Job {
+    Single(zx::Job),
+    Multiple { parent: zx::Job, child: zx::Job },
+}
+
+impl Job {
+    fn top(&self) -> &zx::Job {
+        match self {
+            Job::Single(job) => job,
+            Job::Multiple { parent, child: _ } => parent,
+        }
+    }
+
+    fn proc(&self) -> &zx::Job {
+        match self {
+            Job::Single(job) => job,
+            Job::Multiple { parent: _, child } => child,
+        }
+    }
 }
 
 impl ElfRunner {
     pub fn new(
+        job: zx::Job,
         launcher_connector: process_launcher::Connector,
         utc_clock: Option<Arc<zx::Clock>>,
         crash_records: CrashRecords,
     ) -> ElfRunner {
-        ElfRunner { launcher_connector, utc_clock, crash_records }
+        let components = ComponentSet::new();
+        let memory_reporter = Arc::new(MemoryReporter::new(components.clone()));
+        ElfRunner { job, launcher_connector, utc_clock, crash_records, components, memory_reporter }
     }
 
     /// Returns a UTC clock handle.
@@ -102,8 +141,8 @@ impl ElfRunner {
     }
 
     /// Creates a job for a component.
-    fn create_job(program_config: &ElfProgramConfig) -> Result<zx::Job, JobError> {
-        let job = job_default().create_child_job().map_err(JobError::CreateChild)?;
+    fn create_job(&self, program_config: &ElfProgramConfig) -> Result<Job, JobError> {
+        let job = self.job.create_child_job().map_err(JobError::CreateChild)?;
 
         // Set timer slack.
         //
@@ -139,23 +178,17 @@ impl ElfRunner {
             .map_err(JobError::SetPolicy)?;
         }
 
-        Ok(job)
-    }
-
-    fn encoded_config_into_vmo(encoded_config: fmem::Data) -> Result<zx::Vmo, ConfigDataError> {
-        match encoded_config {
-            fmem::Data::Buffer(fmem::Buffer {
-                vmo,
-                size: _, // we get this vmo from component manager which sets the content size
-            }) => Ok(vmo),
-            fmem::Data::Bytes(bytes) => {
-                let size = bytes.len() as u64;
-                let vmo = zx::Vmo::create(size).map_err(ConfigDataError::VmoCreate)?;
-                vmo.write(&bytes, 0).map_err(ConfigDataError::VmoWrite)?;
-                Ok(vmo)
-            }
-            _ => Err(ConfigDataError::UnrecognizedDataVariant.into()),
-        }
+        Ok(if program_config.job_with_available_exception_channel {
+            // Create a new job to hold the process because the component wants
+            // the process to be a direct child of a job that has its exception
+            // channel available for taking. Note that we (the ELF runner) uses
+            // a job's exception channel for crash recording so we create a new
+            // job underneath the original job to hold the process.
+            let child = job.create_child_job().map_err(JobError::CreateChild)?;
+            Job::Multiple { parent: job, child }
+        } else {
+            Job::Single(job)
+        })
     }
 
     fn create_handle_infos(
@@ -205,9 +238,14 @@ impl ElfRunner {
 
     pub async fn start_component(
         &self,
-        start_info: cm_runner::StartInfo,
+        start_info: fcrunner::ComponentStartInfo,
         checker: &ScopedPolicyChecker,
     ) -> Result<ElfComponent, StartComponentError> {
+        let start_info: StartInfo =
+            start_info.try_into().map_err(StartInfoError::StartInfoError)?;
+
+        let resolved_url = start_info.resolved_url.clone();
+
         // This also checks relevant security policy for config that it wraps using the provided
         // PolicyChecker.
         let program_config = ElfProgramConfig::parse_and_check(&start_info.program, &checker)
@@ -215,13 +253,15 @@ impl ElfRunner {
                 StartComponentError::StartInfoError(StartInfoError::ProgramError(err))
             })?;
 
-        let url = start_info.resolved_url.clone();
         let main_process_critical = program_config.main_process_critical;
         let res: Result<ElfComponent, StartComponentError> =
             self.start_component_helper(start_info, checker.scope.clone(), program_config).await;
         match res {
             Err(e) if main_process_critical => {
-                panic!("failed to launch component with a critical process ({:?}): {:?}", url, e)
+                panic!(
+                    "failed to launch component with a critical process ({:?}): {:?}",
+                    &resolved_url, e
+                )
             }
             x => x,
         }
@@ -229,10 +269,12 @@ impl ElfRunner {
 
     async fn start_component_helper(
         &self,
-        mut start_info: cm_runner::StartInfo,
+        mut start_info: StartInfo,
         moniker: Moniker,
         program_config: ElfProgramConfig,
     ) -> Result<ElfComponent, StartComponentError> {
+        let resolved_url = &start_info.resolved_url;
+
         // Connect to `fuchsia.process.Launcher`.
         let launcher = self
             .launcher_connector
@@ -240,34 +282,24 @@ impl ElfRunner {
             .map_err(|err| StartComponentError::ProcessLauncherConnectError(err.into()))?;
 
         // Create a job for this component that will contain its process.
-        let job = ElfRunner::create_job(&program_config).map_err(StartComponentError::JobError)?;
+        let job = self.create_job(&program_config)?;
 
         crash_handler::run_exceptions_server(
-            &job,
+            job.top(),
             moniker.clone(),
-            start_info.resolved_url.clone(),
+            resolved_url.clone(),
             self.crash_records.clone(),
         )
         .map_err(StartComponentError::ExceptionRegistrationFailed)?;
 
         // Convert the directories into proxies, so we can find "/pkg" and open "lib" and bin_path
-        // TODO(fxbug.dev/131717): Runner lib should accept cm_runner::Namespace directly
-        let entries: Vec<fcrunner::ComponentNamespaceEntry> = start_info.namespace.into();
-        let namespace = runner::component::ComponentNamespace::try_from(entries)
-            .map_err(StartComponentError::ComponentNamespaceError)?;
+        let ns = namespace::Namespace::try_from(start_info.namespace)
+            .map_err(StartComponentError::NamespaceError)?;
 
-        let config_vmo = start_info
-            .encoded_config
-            .take()
-            .map(ElfRunner::encoded_config_into_vmo)
-            .transpose()
-            .map_err(StartComponentError::ConfigDataError)?;
+        let config_vmo =
+            start_info.encoded_config.take().map(runner::get_config_vmo).transpose()?;
 
-        let next_vdso = program_config
-            .use_next_vdso
-            .then(get_next_vdso_vmo)
-            .transpose()
-            .map_err(StartComponentError::VdsoError)?;
+        let next_vdso = program_config.use_next_vdso.then(get_next_vdso_vmo).transpose()?;
 
         let (lifecycle_client, lifecycle_server) = if program_config.notify_lifecycle_stop {
             // Creating a channel is not expected to fail.
@@ -278,12 +310,11 @@ impl ElfRunner {
         };
 
         // Take the UTC clock handle out of `start_info.numbered_handles`, if available.
-        let utc_handle = {
-            let position = start_info.numbered_handles.iter().position(|handles| {
-                handles.id == HandleInfo::new(HandleType::ClockUtc, 0).as_raw()
-            });
-            position.map(|position| start_info.numbered_handles.swap_remove(position).handle)
-        };
+        let utc_handle = start_info
+            .numbered_handles
+            .iter()
+            .position(|handles| handles.id == HandleInfo::new(HandleType::ClockUtc, 0).as_raw())
+            .map(|position| start_info.numbered_handles.swap_remove(position).handle);
 
         let utc_clock = if let Some(handle) = utc_handle {
             zx::Clock::from(handle)
@@ -303,7 +334,8 @@ impl ElfRunner {
         let runtime_dir_server_end = start_info
             .runtime_dir
             .ok_or(StartComponentError::StartInfoError(StartInfoError::MissingRuntimeDir))?;
-        let job_koid = job.get_koid().map_err(StartComponentError::JobGetKoidFailed)?.raw_koid();
+        let job_koid =
+            job.proc().get_koid().map_err(StartComponentError::JobGetKoidFailed)?.raw_koid();
 
         let runtime_dir = RuntimeDirBuilder::new(runtime_dir_server_end)
             .args(program_config.args.clone())
@@ -320,27 +352,25 @@ impl ElfRunner {
         );
 
         // Add stdout and stderr handles that forward to syslog.
-        let (stdout_and_stderr_tasks, stdout_and_stderr_handles) = bind_streams_to_syslog(
-            &namespace,
-            program_config.stdout_sink,
-            program_config.stderr_sink,
-        );
+        let (stdout_and_stderr_tasks, stdout_and_stderr_handles) =
+            bind_streams_to_syslog(&ns, program_config.stdout_sink, program_config.stderr_sink);
         handle_infos.extend(stdout_and_stderr_handles);
 
         // Add any external numbered handles.
         handle_infos.extend(start_info.numbered_handles);
 
         // Configure the process launcher.
-        let job_dup = job
+        let proc_job_dup = job
+            .proc()
             .duplicate_handle(zx::Rights::SAME_RIGHTS)
             .map_err(StartComponentError::JobDuplicateFailed)?;
 
-        let name = Path::new(&start_info.resolved_url)
+        let name = Path::new(resolved_url)
             .file_name()
             .and_then(|filename| filename.to_str())
             .ok_or_else(|| {
                 StartComponentError::StartInfoError(StartInfoError::BadResolvedUrl(
-                    start_info.resolved_url.clone(),
+                    resolved_url.clone(),
                 ))
             })?;
 
@@ -349,18 +379,17 @@ impl ElfRunner {
                 bin_path: &program_config.binary,
                 name,
                 options: program_config.process_options(),
-                args: Some(program_config.args),
-                ns: namespace,
-                job: Some(job_dup),
+                args: Some(program_config.args.clone()),
+                ns,
+                job: Some(proc_job_dup),
                 handle_infos: Some(handle_infos),
                 name_infos: None,
-                environs: program_config.environ,
+                environs: program_config.environ.clone(),
                 launcher: &launcher,
                 loader_proxy_chan: None,
                 executable_vmo: None,
             })
-            .await
-            .map_err(StartComponentError::ConfigureLauncherError)?;
+            .await?;
 
         // Wait on break_on_start with a timeout and don't fail.
         if let Some(break_on_start) = start_info.break_on_start {
@@ -414,141 +443,186 @@ impl ElfRunner {
 
         Ok(ElfComponent::new(
             runtime_dir,
+            moniker,
             job,
             process,
             lifecycle_client,
             program_config.main_process_critical,
             stdout_and_stderr_tasks,
-            start_info.resolved_url,
+            resolved_url.clone(),
         ))
     }
 
-    pub fn get_scoped_runner(self: Arc<Self>, checker: ScopedPolicyChecker) -> Arc<dyn Runner> {
+    pub fn get_scoped_runner(
+        self: Arc<Self>,
+        checker: ScopedPolicyChecker,
+    ) -> Arc<ScopedElfRunner> {
         Arc::new(ScopedElfRunner { runner: self, checker })
+    }
+
+    pub fn serve_memory_reporter(&self, stream: freport::SnapshotProviderRequestStream) {
+        let memory_reporter = self.memory_reporter.clone();
+        fasync::Task::spawn(async move {
+            match memory_reporter.serve(stream).await {
+                Err(err) => {
+                    tracing::error!("Error serving SnapshotProvider: {err}");
+                }
+                Ok(()) => {}
+            }
+        })
+        .detach();
     }
 }
 
-struct ScopedElfRunner {
+pub struct ScopedElfRunner {
     runner: Arc<ElfRunner>,
     checker: ScopedPolicyChecker,
 }
 
-#[async_trait]
-impl Runner for ScopedElfRunner {
-    /// Starts a component by creating a new Job and Process for the component.
-    /// The Runner also creates and hosts a namespace for the component. The
-    /// namespace and other runtime state of the component will live until the
-    /// Future returned is dropped or the `server_end` is sent either
-    /// `ComponentController.Stop` or `ComponentController.Kill`. Sending
-    /// `ComponentController.Stop` or `ComponentController.Kill` causes the
-    /// Future to complete.
-    async fn start(
+impl ScopedElfRunner {
+    pub fn serve(&self, mut stream: fcrunner::ComponentRunnerRequestStream) {
+        let runner = self.runner.clone();
+        let checker = self.checker.clone();
+        fasync::Task::spawn(async move {
+            while let Ok(Some(request)) = stream.try_next().await {
+                let fcrunner::ComponentRunnerRequest::Start { start_info, controller, .. } =
+                    request;
+                start(&runner, checker.clone(), start_info, controller).await;
+            }
+        })
+        .detach();
+    }
+
+    pub async fn start(
         &self,
-        start_info: cm_runner::StartInfo,
+        start_info: fcrunner::ComponentStartInfo,
         server_end: ServerEnd<fcrunner::ComponentControllerMarker>,
     ) {
-        let resolved_url = start_info.resolved_url.clone();
+        start(&self.runner, self.checker.clone(), start_info, server_end).await
+    }
+}
 
-        let elf_component = match self.runner.start_component(start_info, &self.checker).await {
-            Ok(elf_component) => elf_component,
-            Err(err) => {
-                runner::component::report_start_error(
-                    err.as_zx_status(),
-                    format!("{}", err),
-                    &resolved_url,
-                    server_end,
-                );
-                return;
-            }
-        };
+/// Starts a component by creating a new Job and Process for the component.
+async fn start(
+    runner: &ElfRunner,
+    checker: ScopedPolicyChecker,
+    start_info: fcrunner::ComponentStartInfo,
+    server_end: ServerEnd<fcrunner::ComponentControllerMarker>,
+) {
+    let resolved_url = start_info.resolved_url.clone().unwrap_or_else(|| "<unknown>".to_string());
 
-        let (epitaph_tx, epitaph_rx) = oneshot::channel::<ChannelEpitaph>();
-        // This function waits for something from the channel and
-        // returns it or Error::Internal if the channel is closed
-        let epitaph_fn = Box::pin(async move {
-            epitaph_rx
-                .await
-                .unwrap_or_else(|_| {
-                    warn!("epitaph oneshot channel closed unexpectedly");
-                    fcomp::Error::Internal.into()
-                })
-                .into()
-        });
-
-        let Some(proc_copy) = elf_component.copy_process() else {
+    let elf_component = match runner.start_component(start_info, &checker).await {
+        Ok(elf_component) => elf_component,
+        Err(err) => {
             runner::component::report_start_error(
-                zx::Status::from_raw(
-                    i32::try_from(fcomp::Error::InstanceCannotStart.into_primitive()).unwrap(),
-                ),
-                "Component unexpectedly had no process".to_string(),
+                err.as_zx_status(),
+                format!("{}", err),
                 &resolved_url,
                 server_end,
             );
             return;
-        };
+        }
+    };
 
-        let component_diagnostics = elf_component
-            .copy_job_for_diagnostics()
-            .map(|job| ComponentDiagnostics {
-                tasks: Some(ComponentTasks {
-                    component_task: Some(DiagnosticsTask::Job(job.into())),
-                    ..Default::default()
-                }),
+    let (epitaph_tx, epitaph_rx) = oneshot::channel::<ChannelEpitaph>();
+    // This function waits for something from the channel and
+    // returns it or Error::Internal if the channel is closed
+    let epitaph_fn = Box::pin(async move {
+        epitaph_rx
+            .await
+            .unwrap_or_else(|_| {
+                warn!("epitaph oneshot channel closed unexpectedly");
+                fcomp::Error::Internal.into()
+            })
+            .into()
+    });
+
+    let Some(proc_copy) = elf_component.copy_process() else {
+        runner::component::report_start_error(
+            zx::Status::from_raw(
+                i32::try_from(fcomp::Error::InstanceCannotStart.into_primitive()).unwrap(),
+            ),
+            "Component unexpectedly had no process".to_string(),
+            &resolved_url,
+            server_end,
+        );
+        return;
+    };
+
+    let component_diagnostics = elf_component
+        .info()
+        .copy_job_for_diagnostics()
+        .map(|job| ComponentDiagnostics {
+            tasks: Some(ComponentTasks {
+                component_task: Some(DiagnosticsTask::Job(job.into())),
                 ..Default::default()
-            })
-            .map_err(|error| {
-                warn!(%error, "Failed to copy job for diagnostics");
-                ()
-            })
-            .ok();
+            }),
+            ..Default::default()
+        })
+        .map_err(|error| {
+            warn!(%error, "Failed to copy job for diagnostics");
+            ()
+        })
+        .ok();
 
-        // Spawn a future that watches for the process to exit
-        fasync::Task::spawn(async move {
+    // Spawn a future that watches for the process to exit
+    fasync::Task::spawn({
+        let resolved_url = resolved_url.clone();
+        async move {
             fasync::OnSignals::new(&proc_copy.as_handle_ref(), zx::Signals::PROCESS_TERMINATED)
                 .await
                 .map(|_: fidl::Signals| ()) // Discard.
                 .unwrap_or_else(|error| warn!(%error, "error creating signal handler"));
             // Process exit code '0' is considered a clean return.
-            // TODO (fxbug.dev/57024) If we create an epitaph that indicates
+            // TODO(fxbug.dev/57024) If we create an epitaph that indicates
             // intentional, non-zero exit, use that for all non-0 exit
             // codes.
             let exit_status: ChannelEpitaph = match proc_copy.info() {
-                Ok(zx::ProcessInfo { return_code: 0, .. }) => zx::Status::OK.try_into().unwrap(),
-                Ok(_) => fcomp::Error::InstanceDied.into(),
+                Ok(zx::ProcessInfo { return_code: 0, .. }) => ChannelEpitaph::ok(),
+                Ok(zx::ProcessInfo { return_code, .. }) => {
+                    // Don't log SYSCALL_KILL codes because they are expected in the course
+                    // of normal operation. When elf_runner process a `kill` signal for
+                    // a component it makes a zx_task_kill syscall which sets this return code.
+                    if return_code != zx::sys::ZX_TASK_RETCODE_SYSCALL_KILL {
+                        warn!(url=%resolved_url, %return_code,
+                        "process terminated with abnormal return code");
+                    }
+                    fcomp::Error::InstanceDied.into()
+                }
                 Err(error) => {
                     warn!(%error, "Unable to query process info");
                     fcomp::Error::Internal.into()
                 }
             };
             epitaph_tx.send(exit_status).unwrap_or_else(|_| warn!("error sending epitaph"));
-        })
-        .detach();
+        }
+    })
+    .detach();
 
-        // Create a future which owns and serves the controller
-        // channel. The `epitaph_fn` future completes when the
-        // component's main process exits. The controller then sets the
-        // epitaph on the controller channel, closes it, and stops
-        // serving the protocol.
-        fasync::Task::spawn(async move {
-            let (server_stream, control) = match server_end.into_stream_and_control_handle() {
-                Ok(s) => s,
-                Err(error) => {
-                    warn!(%error, "Converting Controller channel to stream failed");
-                    return;
-                }
-            };
-            if let Some(component_diagnostics) = component_diagnostics {
-                control.send_on_publish_diagnostics(component_diagnostics).unwrap_or_else(
-                    |error| warn!(url=%resolved_url, %error, "sending diagnostics failed"),
-                );
+    let mut elf_component = elf_component;
+    runner.components.clone().add(&mut elf_component).await;
+
+    // Create a future which owns and serves the controller
+    // channel. The `epitaph_fn` future completes when the
+    // component's main process exits. The controller then sets the
+    // epitaph on the controller channel, closes it, and stops
+    // serving the protocol.
+    fasync::Task::spawn(async move {
+        let (server_stream, control) = match server_end.into_stream_and_control_handle() {
+            Ok(s) => s,
+            Err(error) => {
+                warn!(%error, "Converting Controller channel to stream failed");
+                return;
             }
-            runner::component::Controller::new(elf_component, server_stream)
-                .serve(epitaph_fn)
-                .await
-                .unwrap_or_else(|error| warn!(%error, "serving ComponentController"));
-        })
-        .detach();
-    }
+        };
+        if let Some(component_diagnostics) = component_diagnostics {
+            control.send_on_publish_diagnostics(component_diagnostics).unwrap_or_else(
+                |error| warn!(url=%resolved_url, %error, "sending diagnostics failed"),
+            );
+        }
+        runner::component::Controller::new(elf_component, server_stream).serve(epitaph_fn).await;
+    })
+    .detach();
 }
 
 #[cfg(test)]
@@ -556,13 +630,10 @@ mod tests {
     use {
         super::runtime_dir::RuntimeDirectory,
         super::*,
-        ::routing::{
-            config::{AllowlistEntryBuilder, JobPolicyAllowlists, SecurityPolicy},
-            policy::ScopedPolicyChecker,
-        },
+        ::routing::policy::ScopedPolicyChecker,
         anyhow::{Context, Error},
         assert_matches::assert_matches,
-        cm_runner::{Namespace, NamespaceEntry},
+        cm_config::{AllowlistEntryBuilder, JobPolicyAllowlists, SecurityPolicy},
         fidl::endpoints::{
             create_endpoints, create_proxy, spawn_stream_handler, ClientEnd,
             DiscoverableProtocolMarker, Proxy, ServerEnd,
@@ -595,30 +666,33 @@ mod tests {
 
     /// Create a new local fs and install a mock LogSink service into.
     /// Returns the created directory and corresponding namespace entries.
-    pub fn create_fs_with_mock_logsink() -> Result<(MockServiceFs<'static>, Namespace), Error> {
+    pub fn create_fs_with_mock_logsink(
+    ) -> Result<(MockServiceFs<'static>, Vec<fcrunner::ComponentNamespaceEntry>), Error> {
         let (dir_client, dir_server) = create_endpoints::<fio::DirectoryMarker>();
 
         let mut dir = ServiceFs::new_local();
         dir.add_fidl_service_at(LogSinkMarker::PROTOCOL_NAME, MockServiceRequest::LogSink);
         dir.serve_connection(dir_server).context("Failed to add serving channel.")?;
 
-        let namespace = Namespace::from(vec![NamespaceEntry {
-            path: "/svc".to_string(),
-            directory: dir_client,
-        }]);
+        let namespace = vec![fcrunner::ComponentNamespaceEntry {
+            path: Some("/svc".to_string()),
+            directory: Some(dir_client),
+            ..Default::default()
+        }];
 
         Ok((dir, namespace))
     }
 
-    fn new_elf_runner_for_test() -> Arc<ElfRunner> {
+    pub fn new_elf_runner_for_test() -> Arc<ElfRunner> {
         Arc::new(ElfRunner::new(
+            job_default().duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
             Box::new(process_launcher::BuiltInConnector {}),
             None,
             CrashRecords::new(),
         ))
     }
 
-    fn pkg_dir_namespace_entry() -> NamespaceEntry {
+    fn pkg_dir_namespace_entry() -> fcrunner::ComponentNamespaceEntry {
         // Get a handle to /pkg
         let pkg_path = "/pkg".to_string();
         let pkg_dir = fuchsia_fs::directory::open_in_namespace(
@@ -630,16 +704,23 @@ mod tests {
         let pkg_client_end = ClientEnd::new(
             pkg_dir.into_channel().expect("could not convert proxy to channel").into_zx_channel(),
         );
-        NamespaceEntry { path: pkg_path, directory: pkg_client_end }
+        fcrunner::ComponentNamespaceEntry {
+            path: Some(pkg_path),
+            directory: Some(pkg_client_end),
+            ..Default::default()
+        }
     }
 
-    fn hello_world_startinfo(runtime_dir: ServerEnd<fio::DirectoryMarker>) -> cm_runner::StartInfo {
-        let namespace = Namespace::from(vec![pkg_dir_namespace_entry()]);
+    fn hello_world_startinfo(
+        runtime_dir: ServerEnd<fio::DirectoryMarker>,
+    ) -> fcrunner::ComponentStartInfo {
+        let ns = vec![pkg_dir_namespace_entry()];
 
-        cm_runner::StartInfo {
-            resolved_url: "fuchsia-pkg://fuchsia.com/elf_runner_tests#meta/hello-world-rust.cm"
-                .to_string(),
-            program: fdata::Dictionary {
+        fcrunner::ComponentStartInfo {
+            resolved_url: Some(
+                "fuchsia-pkg://fuchsia.com/elf_runner_tests#meta/hello-world-rust.cm".to_string(),
+            ),
+            program: Some(fdata::Dictionary {
                 entries: Some(vec![
                     fdata::DictionaryEntry {
                         key: "args".to_string(),
@@ -656,26 +737,25 @@ mod tests {
                     },
                 ]),
                 ..Default::default()
-            },
-            namespace,
+            }),
+            ns: Some(ns),
             outgoing_dir: None,
             runtime_dir: Some(runtime_dir),
-            numbered_handles: vec![],
-            encoded_config: None,
-            break_on_start: None,
+            ..Default::default()
         }
     }
 
-    /// StartInfo that points to a non-existent binary.
+    /// ComponentStartInfo that points to a non-existent binary.
     fn invalid_binary_startinfo(
         runtime_dir: ServerEnd<fio::DirectoryMarker>,
-    ) -> cm_runner::StartInfo {
-        let namespace = Namespace::from(vec![pkg_dir_namespace_entry()]);
+    ) -> fcrunner::ComponentStartInfo {
+        let ns = vec![pkg_dir_namespace_entry()];
 
-        cm_runner::StartInfo {
-            resolved_url: "fuchsia-pkg://fuchsia.com/elf_runner_tests#meta/does-not-exist.cm"
-                .to_string(),
-            program: fdata::Dictionary {
+        fcrunner::ComponentStartInfo {
+            resolved_url: Some(
+                "fuchsia-pkg://fuchsia.com/elf_runner_tests#meta/does-not-exist.cm".to_string(),
+            ),
+            program: Some(fdata::Dictionary {
                 entries: Some(vec![fdata::DictionaryEntry {
                     key: "binary".to_string(),
                     value: Some(Box::new(fdata::DictionaryValue::Str(
@@ -683,26 +763,27 @@ mod tests {
                     ))),
                 }]),
                 ..Default::default()
-            },
-            namespace,
+            }),
+            ns: Some(ns),
             outgoing_dir: None,
             runtime_dir: Some(runtime_dir),
-            numbered_handles: vec![],
-            encoded_config: None,
-            break_on_start: None,
+            ..Default::default()
         }
     }
 
     /// Creates start info for a component which runs until told to exit. The
     /// ComponentController protocol can be used to stop the component when the
     /// test is done inspecting the launched component.
-    fn lifecycle_startinfo(runtime_dir: ServerEnd<fio::DirectoryMarker>) -> cm_runner::StartInfo {
-        let namespace = Namespace::from(vec![pkg_dir_namespace_entry()]);
+    pub fn lifecycle_startinfo(
+        runtime_dir: ServerEnd<fio::DirectoryMarker>,
+    ) -> fcrunner::ComponentStartInfo {
+        let ns = vec![pkg_dir_namespace_entry()];
 
-        cm_runner::StartInfo {
-            resolved_url: "fuchsia-pkg://fuchsia.com/lifecycle-example#meta/lifecycle.cm"
-                .to_string(),
-            program: fdata::Dictionary {
+        fcrunner::ComponentStartInfo {
+            resolved_url: Some(
+                "fuchsia-pkg://fuchsia.com/lifecycle-example#meta/lifecycle.cm".to_string(),
+            ),
+            program: Some(fdata::Dictionary {
                 entries: Some(vec![
                     fdata::DictionaryEntry {
                         key: "args".to_string(),
@@ -723,13 +804,11 @@ mod tests {
                     },
                 ]),
                 ..Default::default()
-            },
-            namespace,
+            }),
+            ns: Some(ns),
             outgoing_dir: None,
             runtime_dir: Some(runtime_dir),
-            numbered_handles: vec![],
-            encoded_config: None,
-            break_on_start: None,
+            ..Default::default()
         }
     }
 
@@ -750,7 +829,8 @@ mod tests {
             job.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("job handle duplication failed");
         let component = ElfComponent::new(
             RuntimeDirectory::empty(),
-            job_copy,
+            Moniker::default(),
+            Job::Single(job_copy),
             process,
             lifecycle_client,
             critical,
@@ -817,7 +897,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_kill_component() -> Result<(), Error> {
-        let (job, component) = make_default_elf_component(None, false);
+        let (job, mut component) = make_default_elf_component(None, false);
 
         let job_info = job.info()?;
         assert!(!job_info.exited);
@@ -1014,24 +1094,32 @@ mod tests {
         Ok(())
     }
 
-    fn with_mark_vmo_exec(mut start_info: cm_runner::StartInfo) -> cm_runner::StartInfo {
-        start_info.program.entries.as_mut().map(|entry| {
-            entry.push(fdata::DictionaryEntry {
-                key: "job_policy_ambient_mark_vmo_exec".to_string(),
-                value: Some(Box::new(fdata::DictionaryValue::Str("true".to_string()))),
-            });
-            entry
+    fn with_mark_vmo_exec(
+        mut start_info: fcrunner::ComponentStartInfo,
+    ) -> fcrunner::ComponentStartInfo {
+        start_info.program.as_mut().map(|dict| {
+            dict.entries.as_mut().map(|entry| {
+                entry.push(fdata::DictionaryEntry {
+                    key: "job_policy_ambient_mark_vmo_exec".to_string(),
+                    value: Some(Box::new(fdata::DictionaryValue::Str("true".to_string()))),
+                });
+                entry
+            })
         });
         start_info
     }
 
-    fn with_main_process_critical(mut start_info: cm_runner::StartInfo) -> cm_runner::StartInfo {
-        start_info.program.entries.as_mut().map(|entry| {
-            entry.push(fdata::DictionaryEntry {
-                key: "main_process_critical".to_string(),
-                value: Some(Box::new(fdata::DictionaryValue::Str("true".to_string()))),
-            });
-            entry
+    fn with_main_process_critical(
+        mut start_info: fcrunner::ComponentStartInfo,
+    ) -> fcrunner::ComponentStartInfo {
+        start_info.program.as_mut().map(|dict| {
+            dict.entries.as_mut().map(|entry| {
+                entry.push(fdata::DictionaryEntry {
+                    key: "main_process_critical".to_string(),
+                    value: Some(Box::new(fdata::DictionaryValue::Str("true".to_string()))),
+                });
+                entry
+            })
         });
         start_info
     }
@@ -1164,15 +1252,15 @@ mod tests {
 
     fn hello_world_startinfo_forward_stdout_to_log(
         runtime_dir: ServerEnd<fio::DirectoryMarker>,
-        mut namespace: Namespace,
-    ) -> cm_runner::StartInfo {
-        let pkg_dir_entry = pkg_dir_namespace_entry();
-        namespace.add(pkg_dir_entry.path, pkg_dir_entry.directory);
+        mut ns: Vec<fcrunner::ComponentNamespaceEntry>,
+    ) -> fcrunner::ComponentStartInfo {
+        ns.push(pkg_dir_namespace_entry());
 
-        cm_runner::StartInfo {
-            resolved_url: "fuchsia-pkg://fuchsia.com/hello-world-rust#meta/hello-world-rust.cm"
-                .to_string(),
-            program: fdata::Dictionary {
+        fcrunner::ComponentStartInfo {
+            resolved_url: Some(
+                "fuchsia-pkg://fuchsia.com/hello-world-rust#meta/hello-world-rust.cm".to_string(),
+            ),
+            program: Some(fdata::Dictionary {
                 entries: Some(vec![
                     fdata::DictionaryEntry {
                         key: "binary".to_string(),
@@ -1190,13 +1278,11 @@ mod tests {
                     },
                 ]),
                 ..Default::default()
-            },
-            namespace,
+            }),
+            ns: Some(ns),
             outgoing_dir: None,
             runtime_dir: Some(runtime_dir),
-            numbered_handles: vec![],
-            encoded_config: None,
-            break_on_start: None,
+            ..Default::default()
         }
     }
 
@@ -1403,7 +1489,12 @@ mod tests {
         let (payload_tx, mut payload_rx) = mpsc::unbounded();
 
         let connector = LauncherConnectorForTest { sender: payload_tx };
-        let runner = ElfRunner::new(Box::new(connector), None, CrashRecords::new());
+        let runner = ElfRunner::new(
+            job_default().duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
+            Box::new(connector),
+            None,
+            CrashRecords::new(),
+        );
         let policy_checker = ScopedPolicyChecker::new(
             Arc::new(SecurityPolicy::default()),
             Moniker::try_from(vec!["foo"]).unwrap(),
@@ -1415,10 +1506,10 @@ mod tests {
 
         let (_runtime_dir, runtime_dir_server) = create_proxy::<fio::DirectoryMarker>()?;
         let mut start_info = hello_world_startinfo(runtime_dir_server);
-        start_info.numbered_handles = vec![fproc::HandleInfo {
+        start_info.numbered_handles = Some(vec![fproc::HandleInfo {
             handle: clock.into_handle(),
             id: HandleInfo::new(HandleType::ClockUtc, 0).as_raw(),
-        }];
+        }]);
 
         // Start the component.
         let _ = runner
@@ -1433,5 +1524,88 @@ mod tests {
             .any(|handle_info| handle_info.handle.get_koid().unwrap() == clock_koid));
 
         Ok(())
+    }
+
+    /// Test visiting running components using [`ComponentSet`].
+    #[fuchsia::test]
+    async fn test_enumerate_components() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let (_runtime_dir, runtime_dir_server) = create_proxy::<fio::DirectoryMarker>().unwrap();
+        let start_info = lifecycle_startinfo(runtime_dir_server);
+
+        let runner = new_elf_runner_for_test();
+        let components = runner.components.clone();
+
+        // Initially there are zero components.
+        let count = Arc::new(AtomicUsize::new(0));
+        components
+            .clone()
+            .visit(|_, _| {
+                count.fetch_add(1, Ordering::SeqCst);
+            })
+            .await;
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+
+        // Run a component.
+        let runner = runner.get_scoped_runner(ScopedPolicyChecker::new(
+            Arc::new(SecurityPolicy::default()),
+            Moniker::root(),
+        ));
+        let (controller, server_controller) = create_proxy::<fcrunner::ComponentControllerMarker>()
+            .expect("could not create component controller endpoints");
+        runner.start(start_info, server_controller).await;
+
+        // There should now be one component in the set.
+        let count = Arc::new(AtomicUsize::new(0));
+        components
+            .clone()
+            .visit(|elf_component: &ElfComponentInfo, _| {
+                assert_eq!(
+                    elf_component.get_url().as_str(),
+                    "fuchsia-pkg://fuchsia.com/lifecycle-example#meta/lifecycle.cm"
+                );
+                count.fetch_add(1, Ordering::SeqCst);
+            })
+            .await;
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+
+        // Stop the component.
+        controller.stop().unwrap();
+        controller.on_closed().await.unwrap();
+
+        // There should now be zero components in the set.
+        // Keep retrying until the component is asynchronously deregistered.
+        loop {
+            let count = Arc::new(AtomicUsize::new(0));
+            components
+                .clone()
+                .visit(|_, _| {
+                    count.fetch_add(1, Ordering::SeqCst);
+                })
+                .await;
+            let count = count.load(Ordering::SeqCst);
+            assert!(count == 0 || count == 1);
+            if count == 0 {
+                break;
+            }
+            // Yield to the executor once so that we are not starving the
+            // asynchronous deregistration task from running.
+            yield_to_executor().await;
+        }
+    }
+
+    async fn yield_to_executor() {
+        let mut done = false;
+        futures::future::poll_fn(|cx| {
+            if done {
+                Poll::Ready(())
+            } else {
+                done = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        })
+        .await;
     }
 }

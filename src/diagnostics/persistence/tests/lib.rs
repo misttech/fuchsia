@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use diagnostics_reader::{ArchiveReader, Inspect};
+use diagnostics_reader::{ArchiveReader, Inspect, RetryConfig};
 use fidl_fuchsia_component::BinderMarker;
 use fidl_fuchsia_diagnostics_persist::{
     DataPersistenceMarker, DataPersistenceProxy, PersistResult,
@@ -71,7 +71,7 @@ struct TestRealm {
     inspect: SamplerTestControllerProxy,
 }
 
-/// Runs Persistene and a test component that can have its inspect properties
+/// Runs Persistence and a test component that can have its inspect properties
 /// manipulated by the test via fidl.
 #[fuchsia::test]
 async fn diagnostics_persistence_integration() {
@@ -252,7 +252,7 @@ async fn diagnostics_persistence_integration() {
 /// the Inspect source is actually publishing data to avoid a race condition.
 async fn wait_for_inspect_source() {
     let mut inspect_fetcher = ArchiveReader::new();
-    inspect_fetcher.retry_if_empty(false);
+    inspect_fetcher.retry(RetryConfig::never());
     inspect_fetcher.add_selector("realm_builder*/single_counter:root");
     let start_time = Time::get_monotonic();
 
@@ -309,7 +309,7 @@ impl TestRealm {
     }
 
     /// Ask for a tag's associated data to be persisted.
-    async fn request_persist_tags(&self, tags: &Vec<&str>) -> Vec<PersistResult> {
+    async fn request_persist_tags(&self, tags: &[&str]) -> Vec<PersistResult> {
         self.persistence
             .persist_tags(&tags.iter().map(|t| t.to_string()).collect::<Vec<String>>())
             .await
@@ -349,7 +349,7 @@ fn clean_and_test_timestamps(map: &mut serde_json::Map<String, Value>) {
             (
                 test_topology::REALM_NAME_PATTERN
                     .replace(&key, "realm-name")
-                    .replace(r"realm_builder\:realm-name", "realm_builder"),
+                    .replace(r"realm_builder:realm-name", "realm_builder"),
                 value,
             )
         })
@@ -542,7 +542,7 @@ fn collapse_realm_builder_strings(data: &str) -> String {
 /// Verify that the expected data is published by Persistence in its Inspect hierarchy.
 async fn verify_diagnostics_persistence_publication(published: Published) {
     let mut inspect_fetcher = ArchiveReader::new();
-    inspect_fetcher.retry_if_empty(false);
+    inspect_fetcher.retry(RetryConfig::never());
     inspect_fetcher.add_selector("realm_builder*/persistence:root");
     loop {
         let published_inspect =
@@ -563,7 +563,7 @@ async fn verify_diagnostics_persistence_publication(published: Published) {
 }
 
 fn expected_stored_data(number: Option<i32>) -> String {
-    const BASE_SIZE: usize = 86;
+    const BASE_SIZE: usize = 84;
     let (persist_size, variant) = match number {
         None => (BASE_SIZE, "".to_string()),
         Some(number) => {
@@ -614,7 +614,7 @@ fn expected_diagnostics_persistence_inspect(published: Published) -> String {
                             "before_monotonic":0,
                             "after_monotonic":0
                         },
-                        "@persist_size": 100,
+                        "@persist_size": 98,
                         "realm_builder/single_counter": {
                             "samples": {
                                 "optional": %NUMBER%,
@@ -632,7 +632,6 @@ fn expected_diagnostics_persistence_inspect(published: Published) -> String {
     "data_source": "Inspect",
     "metadata": {
       "component_url": "realm-builder/persistence",
-      "filename": "fuchsia.inspect.Tree",
       "timestamp": 0
     },
     "moniker": "realm_builder/persistence",

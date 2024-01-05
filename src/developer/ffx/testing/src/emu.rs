@@ -10,6 +10,7 @@ use std::{
     process::{Child, Command},
 };
 
+use anyhow::anyhow;
 use async_io::Async;
 use once_cell::sync::Lazy;
 use tempfile::TempDir;
@@ -24,6 +25,14 @@ impl Emu {
         static PRODUCT_BUNDLE_DIR: Lazy<PathBuf> =
             Lazy::new(|| crate::ROOT_BUILD_DIR.join(env!("PRODUCT_BUNDLE")));
         &*PRODUCT_BUNDLE_DIR
+    }
+
+    pub fn check_is_running(&mut self) -> anyhow::Result<()> {
+        match self.child.try_wait() {
+            Ok(Some(status)) => Err(anyhow!("Emulator exited with status: {}", status)),
+            Ok(None) => Ok(()),
+            Err(e) => Err(anyhow!("Error getting emulator running satus: {}", e)),
+        }
     }
 
     // Partially inlined from `make-fuchsia-vol`.
@@ -138,11 +147,20 @@ impl Emu {
         Ok(())
     }
 
+    /// Starts an emulator. Panics if the TestContext disallows emulator usage.
     pub fn start(ctx: &crate::TestContext) -> Emu {
+        if !ctx.emulator_allowed() {
+            panic!(
+                "Attempted to start an emulator, but the passed Test Context disallows emulators"
+            );
+        }
+
         let emu_dir = TempDir::new_in(&*crate::TEMP_DIR).expect("could not create emu temp dir");
 
-        let esp_blk = std::fs::read(crate::ROOT_BUILD_DIR.join(env!("BOOTLOADER")))
-            .expect("failed to read bootloader");
+        let esp_blk_path = crate::ROOT_BUILD_DIR.join(env!("BOOTLOADER"));
+        let esp_blk = std::fs::read(esp_blk_path.clone()).unwrap_or_else(|_| {
+            panic!("failed to read bootloader from: {}", esp_blk_path.display())
+        });
         let disk_path = emu_dir.path().join("disk.img");
         Emu::make_empty_disk(&disk_path, &esp_blk).expect("failed to make empty disk");
 
@@ -178,28 +196,67 @@ impl Emu {
             // https://gitlab.com/qemu-project/qemu/-/issues/1626
             .env("TMPDIR", emu_dir.path());
 
-        Emu { dir: emu_dir, child: command.spawn().unwrap() }
+        let mut emu = Emu { dir: emu_dir, child: command.spawn().unwrap() };
+
+        emu.wait_for_spawn();
+
+        emu
     }
 
     pub fn nodename(&self) -> &str {
         "fuchsia-5254-0063-5e7a"
     }
 
-    pub async fn serial(&self) -> Async<UnixStream> {
-        let mut tries = 1000 / 50;
+    fn serial_path(&self) -> PathBuf {
+        self.dir.path().join("serial")
+    }
 
+    // Wait for the emulator serial socket to appear, while making sure the emulator process hasn't
+    // exited abruptly.
+    fn wait_for_spawn(&mut self) {
+        use std::time::{Duration, Instant};
+
+        const LOG_INTERVAL: Duration = Duration::from_secs(5);
+        const TIMEOUT: Duration = Duration::from_secs(30);
+        const BACKOFF: Duration = Duration::from_millis(500);
+
+        let begun_at = Instant::now();
+        let mut last_logged_at = begun_at;
         loop {
-            let res = Async::<UnixStream>::connect(self.dir.path().join("serial")).await;
+            let exists = self
+                .serial_path()
+                .try_exists()
+                .expect("could not check existence of emulator serial");
 
-            return match res {
-                Err(e) if e.kind() == ErrorKind::NotFound && tries > 0 => {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                    tries -= 1;
-                    continue;
+            // Check if the emulator is still running
+            let status = self.child.try_wait().expect("could not check emulator process status");
+            assert!(
+                status.is_none(),
+                "emulator process exited while waiting for it to spawn, exit code {status:?}"
+            );
+
+            if !exists {
+                if begun_at.elapsed() > TIMEOUT {
+                    panic!("timed out waiting for emulator to spawn")
                 }
-                res @ _ => res.expect("failed to connect to emulator socket"),
-            };
+
+                if last_logged_at.elapsed() > LOG_INTERVAL {
+                    eprintln!("still waiting for emulator to spawn...");
+                    last_logged_at = last_logged_at + LOG_INTERVAL;
+                }
+
+                std::thread::sleep(BACKOFF);
+                continue;
+            }
+
+            return;
         }
+    }
+
+    pub async fn serial(&self) -> Async<UnixStream> {
+        Async::<UnixStream>::connect(self.serial_path())
+            .await
+            .expect("failed to connect to emulator socket")
     }
 }
 

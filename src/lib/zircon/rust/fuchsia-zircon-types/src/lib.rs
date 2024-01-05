@@ -8,7 +8,7 @@ use static_assertions::const_assert_eq;
 use std::fmt::{self, Debug};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicI32;
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
+use zerocopy::{AsBytes, FromBytes, FromZeros, NoCell};
 
 pub type zx_addr_t = usize;
 pub type zx_stream_seek_origin_t = u32;
@@ -148,6 +148,7 @@ multiconst!(u32, [
     ZX_VMO_OP_ZERO = 10;
     ZX_VMO_OP_TRY_LOCK = 11;
     ZX_VMO_OP_DONT_NEED = 12;
+    ZX_VMO_OP_ALWAYS_NEED = 13;
 ]);
 
 // TODO: add an alias for this type in the C headers.
@@ -359,6 +360,7 @@ multiconst!(zx_obj_type_t, [
     ZX_OBJ_TYPE_CLOCK               = 30;
     ZX_OBJ_TYPE_STREAM              = 31;
     ZX_OBJ_TYPE_MSI                 = 32;
+    ZX_OBJ_TYPE_IOB                 = 33;
 ]);
 
 // System ABI commits to having no more than 64 object types.
@@ -452,6 +454,9 @@ multiconst!(zx_rsrc_system_base_t, [
     ZX_RSRC_SYSTEM_POWER_BASE       = 5;
     ZX_RSRC_SYSTEM_MEXEC_BASE       = 6;
     ZX_RSRC_SYSTEM_ENERGY_INFO_BASE = 7;
+    ZX_RSRC_SYSTEM_IOMMU_BASE       = 8;
+    ZX_RSRC_SYSTEM_FRAMEBUFFER_BASE = 9;
+    ZX_RSRC_SYSTEM_PROFILE_BASE     = 10;
 ]);
 
 // clock ids
@@ -491,7 +496,7 @@ multiconst!(u32, [
 /// safely initialized. These explicit padding fields are mirrored in the Rust struct definitions
 /// to minimize the opportunities for mistakes and inconsistencies.
 #[repr(C)]
-#[derive(Copy, Clone, Eq, Default, FromZeroes, FromBytes, AsBytes)]
+#[derive(Copy, Clone, Eq, Default, FromZeros, FromBytes, NoCell, AsBytes)]
 pub struct PadByte(u8);
 
 impl PartialEq for PadByte {
@@ -586,6 +591,8 @@ pub const ZX_CPRNG_DRAW_MAX_LEN: usize = 256;
 pub const ZX_CPRNG_ADD_ENTROPY_MAX_LEN: usize = 256;
 
 // Socket flags and limits.
+pub const ZX_SOCKET_STREAM: u32 = 0;
+pub const ZX_SOCKET_DATAGRAM: u32 = 1 << 0;
 pub const ZX_SOCKET_DISPOSITION_WRITE_DISABLED: u32 = 1 << 0;
 pub const ZX_SOCKET_DISPOSITION_WRITE_ENABLED: u32 = 1 << 1;
 
@@ -634,14 +641,11 @@ pub const ZX_RSRC_FLAG_EXCLUSIVE: zx_rsrc_flags_t = 0x00010000;
 pub const ZX_CPU_PERF_SCALE: u32 = 1;
 pub const ZX_CPU_DEFAULT_PERF_SCALE: u32 = 2;
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum zx_cache_policy_t {
-    ZX_CACHE_POLICY_CACHED = 0,
-    ZX_CACHE_POLICY_UNCACHED = 1,
-    ZX_CACHE_POLICY_UNCACHED_DEVICE = 2,
-    ZX_CACHE_POLICY_WRITE_COMBINING = 3,
-}
+// Cache policy flags.
+pub const ZX_CACHE_POLICY_CACHED: u32 = 0;
+pub const ZX_CACHE_POLICY_UNCACHED: u32 = 1;
+pub const ZX_CACHE_POLICY_UNCACHED_DEVICE: u32 = 2;
+pub const ZX_CACHE_POLICY_WRITE_COMBINING: u32 = 3;
 
 // Flag bits for zx_cache_flush.
 multiconst!(u32, [
@@ -970,7 +974,7 @@ multiconst!(zx_obj_type_t, [
 ]);
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, FromZeroes, FromBytes, AsBytes)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, FromZeros, FromBytes, NoCell, AsBytes)]
 pub struct zx_exception_info_t {
     pub pid: zx_koid_t,
     pub tid: zx_koid_t,
@@ -1489,8 +1493,8 @@ multiconst!(zx_object_info_topic_t, [
     ZX_INFO_THREAD                     = 10; // zx_info_thread_t[1]
     ZX_INFO_THREAD_EXCEPTION_REPORT    = info_topic(11, 1); // zx_exception_report_t[1]
     ZX_INFO_TASK_STATS                 = 12; // zx_info_task_stats_t[1]
-    ZX_INFO_PROCESS_MAPS               = 13; // zx_info_maps_t[n]
-    ZX_INFO_PROCESS_VMOS               = info_topic(14, 1); // zx_info_vmo_t[n]
+    ZX_INFO_PROCESS_MAPS               = info_topic(13, 1); // zx_info_maps_t[n]
+    ZX_INFO_PROCESS_VMOS               = info_topic(14, 2); // zx_info_vmo_t[n]
     ZX_INFO_THREAD_STATS               = 15; // zx_info_thread_stats_t[1]
     ZX_INFO_CPU_STATS                  = 16; // zx_info_cpu_stats_t[n]
     ZX_INFO_KMEM_STATS                 = 17; // zx_info_kmem_stats_t[1]
@@ -1499,7 +1503,7 @@ multiconst!(zx_object_info_topic_t, [
     ZX_INFO_BTI                        = 20; // zx_info_bti_t[1]
     ZX_INFO_PROCESS_HANDLE_STATS       = 21; // zx_info_process_handle_stats_t[1]
     ZX_INFO_SOCKET                     = 22; // zx_info_socket_t[1]
-    ZX_INFO_VMO                        = info_topic(23, 1); // zx_info_vmo_t[1]
+    ZX_INFO_VMO                        = info_topic(23, 2); // zx_info_vmo_t[1]
     ZX_INFO_JOB                        = 24; // zx_info_job_t[1]
     ZX_INFO_TIMER                      = 25; // zx_info_timer_t[1]
     ZX_INFO_STREAM                     = 26; // zx_info_stream_t[1]
@@ -1508,6 +1512,8 @@ multiconst!(zx_object_info_topic_t, [
     ZX_INFO_GUEST_STATS                = 29; // zx_info_guest_stats_t[1]
     ZX_INFO_TASK_RUNTIME               = info_topic(30, 1); // zx_info_task_runtime_t[1]
     ZX_INFO_KMEM_STATS_EXTENDED        = 31; // zx_info_kmem_stats_extended_t[1]
+    ZX_INFO_VCPU                       = 32; // zx_info_vcpu_t[1]
+    ZX_INFO_KMEM_STATS_COMPRESSION     = 33; // zx_info_kmem_stats_compression_t[1]
 ]);
 
 // This macro takes struct-like syntax and creates another macro that can be used to create
@@ -1666,6 +1672,7 @@ pub struct zx_info_vmo_t {
     pub cache_policy: u32,
     pub metadata_bytes: u64,
     pub committed_change_events: u64,
+    pub populated_bytes: u64,
 }
 
 struct_decl_macro! {
@@ -1738,6 +1745,29 @@ zx_info_kmem_stats_extended_t!(zx_info_kmem_stats_extended_t);
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+    pub struct <zx_info_kmem_stats_compression_t> {
+        pub uncompressed_storage_bytes: u64,
+        pub compressed_storage_bytes: u64,
+        pub compressed_fragmentation_bytes: u64,
+        pub compression_time: zx_duration_t,
+        pub decompression_time: zx_duration_t,
+        pub total_page_compression_attempts: u64,
+        pub failed_page_compression_attempts: u64,
+        pub total_page_decompressions: u64,
+        pub compressed_page_evictions: u64,
+        pub eager_page_compressions: u64,
+        pub memory_pressure_page_compressions: u64,
+        pub critical_memory_page_compressions: u64,
+        pub pages_decompressed_unit_ns: u64,
+        pub pages_decompressed_within_log_time: [u64; 8],
+    }
+}
+
+zx_info_kmem_stats_compression_t!(zx_info_kmem_stats_compression_t);
+
+struct_decl_macro! {
+    #[repr(C)]
+    #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
     pub struct <zx_info_resource_t> {
         pub kind: u32,
         pub flags: u32,
@@ -1802,6 +1832,7 @@ struct_decl_macro! {
         pub vmo_koid: zx_koid_t,
         pub vmo_offset: u64,
         pub committed_pages: usize,
+        pub populated_pages: usize,
     }
 }
 
@@ -1847,7 +1878,6 @@ zx_info_process_handle_stats_t!(zx_info_process_handle_stats_t);
 // from //zircon/system/public/zircon/syscalls/hypervisor.h
 multiconst!(zx_guest_option_t, [
     ZX_GUEST_OPT_NORMAL = 0;
-    ZX_GUEST_OPT_DIRECT = 1;
 ]);
 
 multiconst!(zx_guest_trap_t, [

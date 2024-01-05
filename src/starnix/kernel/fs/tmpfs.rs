@@ -2,17 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::sync::Arc;
-
-use super::{directory_file::MemoryDirectoryFile, *};
 use crate::{
-    auth::FsCred,
-    lock::{Mutex, MutexGuard},
-    logging::not_implemented,
     mm::PAGE_SIZE,
     task::{CurrentTask, Kernel},
-    types::*,
+    vfs::{
+        directory_file::MemoryDirectoryFile, fs_args, fs_node_impl_not_dir,
+        fs_node_impl_xattr_delegate, CacheMode, FileOps, FileSystem, FileSystemHandle,
+        FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr,
+        MemoryXattrStorage, SymlinkNode, VmoFileNode,
+    },
 };
+use starnix_logging::{log_warn, not_implemented};
+use starnix_sync::{Mutex, MutexGuard};
+use starnix_uapi::{
+    auth::FsCred,
+    device_type::DeviceType,
+    error,
+    errors::Errno,
+    file_mode::{mode, FileMode},
+    gid_t,
+    open_flags::OpenFlags,
+    seal_flags::SealFlags,
+    statfs, uid_t, TMPFS_MAGIC,
+};
+use std::sync::Arc;
 
 pub struct TmpFs(());
 
@@ -50,9 +63,6 @@ impl FileSystemOps for Arc<TmpFs> {
         }
         if let Some(replaced) = replaced {
             if replaced.is_dir() {
-                if !renamed.is_dir() {
-                    return error!(EISDIR);
-                }
                 // Ensures that replaces is empty.
                 if *child_count(replaced) != 0 {
                     return error!(ENOTEMPTY);
@@ -149,8 +159,9 @@ impl TmpFs {
         fs.set_root_node(root_node);
 
         if !mount_options.is_empty() {
-            not_implemented!(
-                "Unknown tmpfs option: {:?}",
+            not_implemented!("unknown tmpfs options, see logs for strings");
+            log_warn!(
+                "Unknown tmpfs options: {}",
                 itertools::join(
                     mount_options.iter().map(|(k, v)| format!(
                         "{}={}",
@@ -178,6 +189,7 @@ impl TmpfsDirectory {
 }
 
 fn create_child_node(
+    current_task: &CurrentTask,
     parent: &FsNode,
     mode: FileMode,
     dev: DeviceType,
@@ -190,7 +202,7 @@ fn create_child_node(
         }
         _ => return error!(EACCES),
     };
-    let child = parent.fs().create_node_box(ops, move |id| {
+    let child = parent.fs().create_node(current_task, ops, move |id| {
         let mut info = FsNodeInfo::new(id, mode, owner);
         info.rdev = dev;
         // blksize is PAGE_SIZE for in memory node.
@@ -219,7 +231,7 @@ impl FsNodeOps for TmpfsDirectory {
     fn mkdir(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _name: &FsStr,
         mode: FileMode,
         owner: FsCred,
@@ -228,19 +240,23 @@ impl FsNodeOps for TmpfsDirectory {
             info.link_count += 1;
         });
         *self.child_count.lock() += 1;
-        Ok(node.fs().create_node(TmpfsDirectory::new(), FsNodeInfo::new_factory(mode, owner)))
+        Ok(node.fs().create_node(
+            current_task,
+            TmpfsDirectory::new(),
+            FsNodeInfo::new_factory(mode, owner),
+        ))
     }
 
     fn mknod(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _name: &FsStr,
         mode: FileMode,
         dev: DeviceType,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        let child = create_child_node(node, mode, dev, owner)?;
+        let child = create_child_node(current_task, node, mode, dev, owner)?;
         *self.child_count.lock() += 1;
         Ok(child)
     }
@@ -248,13 +264,14 @@ impl FsNodeOps for TmpfsDirectory {
     fn create_symlink(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _name: &FsStr,
         target: &FsStr,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         *self.child_count.lock() += 1;
         Ok(node.fs().create_node(
+            current_task,
             SymlinkNode::new(target),
             FsNodeInfo::new_factory(mode!(IFLNK, 0o777), owner),
         ))
@@ -263,12 +280,12 @@ impl FsNodeOps for TmpfsDirectory {
     fn create_tmpfile(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         mode: FileMode,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         assert!(mode.is_reg());
-        create_child_node(node, mode, DeviceType::NONE, owner)
+        create_child_node(current_task, node, mode, DeviceType::NONE, owner)
     }
 
     fn link(
@@ -333,9 +350,13 @@ impl FsNodeOps for TmpfsSpecialNode {
 mod test {
     use super::*;
     use crate::{
-        fs::buffers::{VecInputBuffer, VecOutputBuffer},
         testing::*,
+        vfs::{
+            buffers::{VecInputBuffer, VecOutputBuffer},
+            FdNumber, UnlinkKind,
+        },
     };
+    use starnix_uapi::{errno, mount_flags::MountFlags};
     use zerocopy::AsBytes;
 
     #[::fuchsia::test]

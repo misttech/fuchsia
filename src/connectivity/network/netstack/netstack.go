@@ -19,6 +19,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/dhcp"
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/dns"
+	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/filter"
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/link"
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/link/bridge"
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/routes"
@@ -29,6 +30,7 @@ import (
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/util"
 	syslog "go.fuchsia.dev/fuchsia/src/lib/syslog/go"
 
+	"fidl/fuchsia/hardware/network"
 	"fidl/fuchsia/net/interfaces/admin"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -426,21 +428,47 @@ func (ifs *ifState) addRoutesWithPreferenceLocked(rs []tcpip.Route, prf routetyp
 	var v4DefaultRouteAdded, v6DefaultRouteAdded bool
 	var aggregateAddResult routes.AddResult
 
+	// We avoid computing the set of NICs with default routes unless necessary,
+	// and then cache the result to avoid computing it more than once.
+	var nicsWithDefaultV4Route map[tcpip.NICID]struct{}
+	var nicsWithDefaultV6Route map[tcpip.NICID]struct{}
+
+	hasDefaultRouteV4 := func(nic tcpip.NICID) bool {
+		if nicsWithDefaultV4Route == nil {
+			nicsWithDefaultV4Route = ifs.ns.routeTable.GetNICsWithDefaultV4RoutesLocked()
+		}
+		_, ok := nicsWithDefaultV4Route[nic]
+		return ok
+	}
+
+	hasDefaultRouteV6 := func(nic tcpip.NICID) bool {
+		if nicsWithDefaultV6Route == nil {
+			nicsWithDefaultV6Route = ifs.ns.routeTable.GetNICsWithDefaultV6RoutesLocked()
+		}
+		_, ok := nicsWithDefaultV6Route[nic]
+		return ok
+	}
+
 	for _, r := range rs {
 		r.NIC = ifs.nicid
+
+		if enabled {
+			// It's possible that a default route with a different metric has
+			// previously been added, so we should check that there wasn't already
+			// a default route before deciding to send an event indicating that we
+			// have newly acquired a default route.
+			if r.Destination.Equal(header.IPv4EmptySubnet) && !hasDefaultRouteV4(r.NIC) {
+				v4DefaultRouteAdded = true
+			} else if r.Destination.Equal(header.IPv6EmptySubnet) && !hasDefaultRouteV6(r.NIC) {
+				v6DefaultRouteAdded = true
+			}
+		}
 
 		addResult := ifs.ns.routeTable.AddRouteLocked(r, prf, *metric, metricTracksInterface, dynamic, enabled, overwriteIfAlreadyExist, addingSet)
 		aggregateAddResult.NewlyAddedToSet = aggregateAddResult.NewlyAddedToSet || addResult.NewlyAddedToSet
 		aggregateAddResult.NewlyAddedToTable = aggregateAddResult.NewlyAddedToTable || addResult.NewlyAddedToTable
 		_ = syslog.Infof("adding route [%s] prf=%d metric=%d dynamic=%t", r, prf, metric, dynamic)
 
-		if enabled {
-			if r.Destination.Equal(header.IPv4EmptySubnet) {
-				v4DefaultRouteAdded = true
-			} else if r.Destination.Equal(header.IPv6EmptySubnet) {
-				v6DefaultRouteAdded = true
-			}
-		}
 	}
 
 	ifs.ns.routeTable.UpdateStackLocked(ifs.ns.stack, ifs.ns.resetDestinationCache)
@@ -489,17 +517,28 @@ func (ns *Netstack) DelRouteExactMatch(r tcpip.Route, metric *routetypes.Metric,
 		ns.routeTable.UpdateStackLocked(ns.stack, ns.resetDestinationCache)
 
 		if r.Destination.Equal(header.IPv4EmptySubnet) {
-			ns.onDefaultIPv4RouteChangeLocked(r.NIC, false /* hasDefaultRoute */)
+			if _, ok := ns.routeTable.GetNICsWithDefaultV4RoutesLocked()[r.NIC]; !ok {
+				ns.onDefaultIPv4RouteChangeLocked(r.NIC, false /* hasDefaultRoute */)
+			}
 		} else if r.Destination.Equal(header.IPv6EmptySubnet) {
-			ns.onDefaultIPv6RouteChangeLocked(r.NIC, false /* hasDefaultRoute */)
+			if _, ok := ns.routeTable.GetNICsWithDefaultV6RoutesLocked()[r.NIC]; !ok {
+				ns.onDefaultIPv6RouteChangeLocked(r.NIC, false /* hasDefaultRoute */)
+			}
 		}
 	}
 	return delResult, nil
 }
 
 // DelRouteSet deletes a route set, decrementing the reference count for every
-// route in the set.
+// route in the set.  If the route set is global, then no changes are made.
 func (ns *Netstack) DelRouteSet(set *routetypes.RouteSetId) {
+	// There is a check for IsGlobal in (*RouteTable.DelRouteSetLocked) to
+	// prevent accidentally deleting all routes.  This is just to prevent
+	// useless work from being done.
+	if set.IsGlobal() {
+		return
+	}
+
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
 
@@ -529,12 +568,32 @@ func (ns *Netstack) DelRouteSet(set *routetypes.RouteSetId) {
 		ns.routeTable.UpdateStackLocked(ns.stack, ns.resetDestinationCache)
 	}
 
+	nicsWithDeletedV4DefaultRoutes := make(map[tcpip.NICID]struct{})
+	nicsWithDeletedV6DefaultRoutes := make(map[tcpip.NICID]struct{})
+
 	for _, route := range routesDeleted {
 		if route.Route.Destination.Equal(header.IPv4EmptySubnet) {
-			ns.onDefaultIPv4RouteChangeLocked(route.Route.NIC, false /* hasDefaultRoute */)
+			nicsWithDeletedV4DefaultRoutes[route.Route.NIC] = struct{}{}
 		}
 		if route.Route.Destination.Equal(header.IPv6EmptySubnet) {
-			ns.onDefaultIPv6RouteChangeLocked(route.Route.NIC, false /* hasDefaultRoute */)
+			nicsWithDeletedV6DefaultRoutes[route.Route.NIC] = struct{}{}
+		}
+	}
+
+	// It's possible that there were multiple copies of the default route with different
+	// metrics, so we need to check whether there are any default routes still present
+	// after these routes were removed.
+	nicsWithV4DefaultRoutes := ns.routeTable.GetNICsWithDefaultV4RoutesLocked()
+	nicsWithV6DefaultRoutes := ns.routeTable.GetNICsWithDefaultV6RoutesLocked()
+
+	for nic := range nicsWithDeletedV4DefaultRoutes {
+		if _, ok := nicsWithV4DefaultRoutes[nic]; !ok {
+			ns.onDefaultIPv4RouteChangeLocked(nic, false /* hasDefaultRoute */)
+		}
+	}
+	for nic := range nicsWithDeletedV6DefaultRoutes {
+		if _, ok := nicsWithV6DefaultRoutes[nic]; !ok {
+			ns.onDefaultIPv6RouteChangeLocked(nic, false /* hasDefaultRoute */)
 		}
 	}
 }
@@ -917,6 +976,18 @@ func (ifs *ifState) setDNSServers(servers []tcpip.Address) bool {
 	return !sameDNS
 }
 
+// setDHCPStatusLocked updates the DHCP status on an interface and runs the DHCP
+// client if it should be enabled.
+//
+// Precondition: ifs.mu and ifs.dhcpLock is held.
+func (ifs *ifState) setDHCPStatusLocked(name string, enabled bool) {
+	ifs.mu.dhcp.enabled = enabled
+	ifs.mu.dhcp.cancelLocked()
+	if ifs.mu.dhcp.enabled && ifs.IsUpLocked() {
+		ifs.runDHCPLocked(name)
+	}
+}
+
 // setDHCPStatus updates the DHCP status on an interface and runs the DHCP
 // client if it should be enabled.
 //
@@ -929,11 +1000,7 @@ func (ifs *ifState) setDHCPStatus(name string, enabled bool) {
 		ifs.mu.Unlock()
 		<-ifs.dhcpLock
 	}()
-	ifs.mu.dhcp.enabled = enabled
-	ifs.mu.dhcp.cancelLocked()
-	if ifs.mu.dhcp.enabled && ifs.IsUpLocked() {
-		ifs.runDHCPLocked(name)
-	}
+	ifs.setDHCPStatusLocked(name, enabled)
 }
 
 // Runs the DHCP client with a fresh context and initializes ifs.mu.dhcp.cancel.
@@ -1556,4 +1623,24 @@ func networkProtocolToString(proto tcpip.NetworkProtocolNumber) string {
 	default:
 		return fmt.Sprintf("0x%x", proto)
 	}
+}
+
+type filterNicInfoProvider struct {
+	stack *stack.Stack
+}
+
+var _ filter.NicInfoProvider = (*filterNicInfoProvider)(nil)
+
+// GetNicInfo implements filter.NicInfoProvider.
+func (p *filterNicInfoProvider) GetNicInfo(nicid tcpip.NICID) (string, *network.DeviceClass) {
+	nicInfo, ok := p.stack.NICInfo()[nicid]
+	if !ok {
+		return "", nil
+	}
+	ifs := nicInfo.Context.(*ifState)
+	if ifs.controller == nil {
+		return nicInfo.Name, nil
+	}
+	deviceClass := ifs.controller.DeviceClass()
+	return nicInfo.Name, &deviceClass
 }

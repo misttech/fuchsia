@@ -5,6 +5,7 @@
 import("//build/bazel/bazel_inputs.gni")
 import("//build/bazel/bazel_workspace.gni")
 import("//build/bazel/legacy_ninja_build_outputs.gni")
+import("//build/bazel/remote_services.gni")
 import("//build/config/compiler.gni")
 
 declare_args() {
@@ -123,6 +124,20 @@ declare_args() {
 #   extra_bazel_args: (optional)
 #     A list extra command line arguments to pass to Bazel.
 #     Type: list of string.
+#
+#   filter_bazel_info_logs: (optional)
+#     When true (the default value), INFO level logs are filtered from Bazel.
+#     INFO level logs from Bazel are usually not interesting during Ninja
+#     invocations.
+#     Type: boolean
+#     Default: true
+#
+#   remote_build: (optional)
+#     Set this to true to override the global default `enable_bazel_remote_rbe`
+#     setting which controls whether the underlying bazel invocation
+#     will build remotely using RBE.
+#     Type: boolean
+#     Default: `enable_bazel_remote_rbe` (global)
 #
 #   deps:
 #   metadata:
@@ -375,16 +390,33 @@ template("bazel_action") {
           [ "--platforms=//build/bazel/platforms:${current_os}_${current_cpu}" ]
     }
 
+    _filter_bazel_info_logs = true
+    if (defined(invoker.filter_bazel_info_logs)) {
+      _filter_bazel_info_logs = invoker.filter_bazel_info_logs
+    }
+
     if (bazel_quiet) {
       args += [ "--config=quiet" ]
+      not_needed([ "_filter_bazel_info_logs" ])
     } else {
-      # Disable INFO lines and printing results, this makes Bazel output much
-      # less chatty when invoked from Ninja. https://fxbug.dev/126548
+      if (_filter_bazel_info_logs) {
+        # Disable INFO lines and printing results, this makes Bazel output much
+        # less chatty when invoked from Ninja. https://fxbug.dev/126548
+        args += [ "--ui_event_filters=-info" ]
+      }
+
       # Note that --show_result=0 is not supported by `bazel query`.
-      args += [ "--ui_event_filters=-info" ]
       if (invoker.command != "query") {
         args += [ "--show_result=0" ]
       }
+    }
+
+    _remote_build = enable_bazel_remote_rbe
+    if (defined(invoker.remote_build)) {
+      _remote_build = invoker.remote_build
+    }
+    if (_remote_build) {
+      args += [ "--config=remote" ]
     }
 
     if (defined(invoker.extra_bazel_args)) {

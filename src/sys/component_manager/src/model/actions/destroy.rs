@@ -6,7 +6,7 @@ use {
     crate::model::{
         actions::{
             Action, ActionKey, ActionSet, DestroyChildAction, DiscoverAction, ResolveAction,
-            ShutdownAction, StartAction,
+            ShutdownAction, ShutdownType, StartAction,
         },
         component::{ComponentInstance, InstanceState, StartReason},
         error::DestroyActionError,
@@ -16,6 +16,7 @@ use {
         future::{join_all, BoxFuture},
         Future,
     },
+    sandbox::Dict,
     std::sync::Arc,
 };
 
@@ -49,13 +50,14 @@ async fn do_destroy(component: &Arc<ComponentInstance>) -> Result<(), DestroyAct
 
     // Require the component to be discovered before deleting it so a Destroyed event is
     // always preceded by a Discovered.
-    ActionSet::register(component.clone(), DiscoverAction::new()).await?;
+    // TODO: wait for a discover, don't register a new one
+    ActionSet::register(component.clone(), DiscoverAction::new(Dict::new())).await?;
 
     // For destruction to behave correctly, the component has to be shut down first.
     // NOTE: This will recursively shut down the whole subtree. If this component has children,
     // we'll call DestroyChild on them which in turn will call Shutdown on the child. Because
     // the parent's subtree was shutdown, this shutdown is a no-op.
-    ActionSet::register(component.clone(), ShutdownAction::new())
+    ActionSet::register(component.clone(), ShutdownAction::new(ShutdownType::Instance))
         .await
         .map_err(|e| DestroyActionError::ShutdownFailed { err: Box::new(e) })?;
 
@@ -75,7 +77,7 @@ async fn do_destroy(component: &Arc<ComponentInstance>) -> Result<(), DestroyAct
                 }
                 nfs
             }
-            InstanceState::New | InstanceState::Unresolved | InstanceState::Destroyed => {
+            InstanceState::New | InstanceState::Unresolved(_) | InstanceState::Destroyed => {
                 // Component was never resolved. No explicit cleanup is required for children.
                 vec![]
             }
@@ -95,7 +97,7 @@ async fn do_destroy(component: &Arc<ComponentInstance>) -> Result<(), DestroyAct
             }
         })
     }
-    let task_shutdown = Box::pin(component.blocking_task_scope().shutdown());
+    let task_shutdown = Box::pin(component.blocking_task_group().join());
     let nfs = {
         let actions = component.lock_actions().await;
         vec![
@@ -125,7 +127,7 @@ pub mod tests {
         super::*,
         crate::model::{
             actions::{
-                test_utils::{is_child_deleted, is_destroyed, is_executing},
+                test_utils::{is_child_deleted, is_destroyed},
                 ActionNotifier, ShutdownAction,
             },
             component::{Component, StartReason},
@@ -165,10 +167,10 @@ pub mod tests {
             .start_instance(&component_a.moniker, &StartReason::Eager)
             .await
             .expect("could not start a");
-        assert!(is_executing(&component_a).await);
+        assert!(component_a.is_started().await);
 
         // Register shutdown first because DestroyChild requires the component to be shut down.
-        ActionSet::register(component_a.clone(), ShutdownAction::new())
+        ActionSet::register(component_a.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
         // Register destroy child action, and wait for it. Component should be destroyed.
@@ -246,9 +248,9 @@ pub mod tests {
             .start_instance(&component_b.moniker, &StartReason::Eager)
             .await
             .expect("could not start coll:b");
-        assert!(is_executing(&component_container).await);
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
+        assert!(component_container.is_started().await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
 
         // Register destroy child action, and wait for it. Components should be destroyed.
         let component_container = test.look_up(vec!["container"].try_into().unwrap()).await;
@@ -278,7 +280,7 @@ pub mod tests {
 
         // Register shutdown action on "a", and wait for it. This should cause all components
         // to shut down, in bottom-up order.
-        ActionSet::register(component_a.clone(), ShutdownAction::new())
+        ActionSet::register(component_a.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
         assert!(execution_is_shut_down(&component_a.clone()).await);
@@ -359,14 +361,8 @@ pub mod tests {
                 availability: Availability::Required,
             })
             .collect();
-        let mut event_source = test
-            .builtin_environment
-            .lock()
-            .await
-            .event_source_factory
-            .create_for_above_root()
-            .await
-            .unwrap();
+        let mut event_source =
+            test.builtin_environment.lock().await.event_source_factory.create_for_above_root();
         let event_stream = event_source
             .subscribe(
                 events.into_iter().map(|event| EventSubscription { event_name: event }).collect(),
@@ -374,7 +370,7 @@ pub mod tests {
             .await
             .expect("subscribe to event stream");
         let model = test.model.clone();
-        fasync::Task::spawn(async move { model.start().await }).detach();
+        fasync::Task::spawn(async move { model.start(Dict::new()).await }).detach();
         event_stream
     }
 
@@ -387,7 +383,7 @@ pub mod tests {
             ("a", component_decl_with_test_runner()),
         ];
         let test = ActionsTest::new("root", components, None).await;
-        test.model.start().await;
+        test.model.start(Dict::new()).await;
 
         let component_root = test.model.root().clone();
         let component_a = match *component_root.lock_state().await {
@@ -495,7 +491,7 @@ pub mod tests {
             ("a", component_decl_with_test_runner()),
         ];
         let test = ActionsTest::new("root", components, None).await;
-        test.model.start().await;
+        test.model.start(Dict::new()).await;
 
         let component_root = test.model.root().clone();
         let component_a = test.look_up(vec!["a"].try_into().unwrap()).await;
@@ -512,7 +508,7 @@ pub mod tests {
             }
             task_done_tx.try_send(()).unwrap();
         };
-        component_a.blocking_task_scope().add_task(fut).await;
+        component_a.blocking_task_group().spawn(fut);
 
         let mock_action_key = ActionKey::Start;
         let (mock_action, mut mock_action_unblocker) = MockAction::new(
@@ -611,7 +607,7 @@ pub mod tests {
             }
             _ => panic!("not resolved"),
         };
-        ActionSet::register(component_a.clone(), ShutdownAction::new())
+        ActionSet::register(component_a.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
 
@@ -656,7 +652,7 @@ pub mod tests {
             .start_instance(&component_a.moniker, &StartReason::Eager)
             .await
             .expect("could not start a");
-        assert!(is_executing(&component_a).await);
+        assert!(component_a.is_started().await);
         // Get component_b without resolving it.
         let component_b = match *component_a.lock_state().await {
             InstanceState::Resolved(ref s) => {
@@ -666,7 +662,7 @@ pub mod tests {
         };
 
         // Register destroy action on "a", and wait for it.
-        ActionSet::register(component_a.clone(), ShutdownAction::new())
+        ActionSet::register(component_a.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
         ActionSet::register(
@@ -735,16 +731,16 @@ pub mod tests {
             .start_instance(&component_x.moniker, &StartReason::Eager)
             .await
             .expect("could not start x");
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_c).await);
-        assert!(is_executing(&component_d).await);
-        assert!(is_executing(&component_x).await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_c.is_started().await);
+        assert!(component_d.is_started().await);
+        assert!(component_x.is_started().await);
 
         // Register destroy action on "a", and wait for it. This should cause all components
         // in "a"'s component to be shut down and destroyed, in bottom-up order, but "x" is still
         // running.
-        ActionSet::register(component_a.clone(), ShutdownAction::new())
+        ActionSet::register(component_a.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
         ActionSet::register(
@@ -758,7 +754,7 @@ pub mod tests {
         assert!(is_destroyed(&component_b).await);
         assert!(is_destroyed(&component_c).await);
         assert!(is_destroyed(&component_d).await);
-        assert!(is_executing(&component_x).await);
+        assert!(component_x.is_started().await);
         {
             // Expect only "x" as child of root.
             let state = component_root.lock_state().await;
@@ -856,13 +852,13 @@ pub mod tests {
             .start_instance(&component_b2.moniker, &StartReason::Eager)
             .await
             .expect("could not start b2");
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_b2).await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_b2.is_started().await);
 
         // Register destroy action on "a", and wait for it. This should cause all components
         // that were started to be destroyed, in bottom-up order.
-        ActionSet::register(component_a.clone(), ShutdownAction::new())
+        ActionSet::register(component_a.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
         ActionSet::register(
@@ -940,10 +936,10 @@ pub mod tests {
             .start_instance(&component_a.moniker, &StartReason::Eager)
             .await
             .expect("could not start a");
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_c).await);
-        assert!(is_executing(&component_d).await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_c.is_started().await);
+        assert!(component_d.is_started().await);
 
         // Mock a failure to delete "d".
         {

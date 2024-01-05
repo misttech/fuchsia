@@ -1,29 +1,27 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/experimental_flags.h"
 #include "tools/fidl/fidlc/include/fidl/formatter.h"
 #include "tools/fidl/fidlc/include/fidl/utils.h"
-#include "tools/fidl/fidlc/tests/test_library.h"
 
-#define ASSERT_FORMATTED(SOURCE, EXPECTED)                         \
-  std::string actual = Format(SOURCE);                             \
-  ASSERT_TRUE(fidl::utils::OnlyWhitespaceChanged(SOURCE, actual)); \
-  ASSERT_STREQ(EXPECTED, actual);
+#define ASSERT_FORMATTED(source, expected)                         \
+  std::string actual = Format(source);                             \
+  ASSERT_TRUE(fidl::utils::OnlyWhitespaceChanged(source, actual)); \
+  ASSERT_EQ(expected, actual);
 
 namespace {
 std::string Format(const std::string& source, bool reformat_and_compare = true) {
-  auto lib = TestLibrary(source);
+  fidl::SourceFile source_file("example.fidl", source);
 
   // We use a column width of 40, rather than the "real world" 100, to make tests easier to read
   // and write.
-  auto formatter = fidl::fmt::NewFormatter(40, lib.reporter());
+  fidl::Reporter reporter;
+  auto formatter = fidl::fmt::NewFormatter(40, &reporter);
   fidl::ExperimentalFlags experimental_flags;
-  experimental_flags.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  experimental_flags.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  auto result = formatter.Format(lib.source_file(), experimental_flags);
+  auto result = formatter.Format(source_file, experimental_flags);
 
   // If we're still going to reformat, then this is the first pass.  Otherwise, we're on the second
   // pass.
@@ -54,7 +52,7 @@ type MyStruct = struct {
 };
 )FIDL";
 
-  ASSERT_STREQ("PARSE_FAILED", Format(unformatted));
+  ASSERT_EQ("PARSE_FAILED", Format(unformatted));
 }
 
 // Ensure that an already properly formatted alias declaration is not modified by another run

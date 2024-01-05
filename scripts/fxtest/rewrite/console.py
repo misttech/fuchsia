@@ -39,6 +39,9 @@ class DurationInfo:
     # The number of expected children. If set, we can show a progress bar.
     expected_child_tasks: int = 0
 
+    # If True, hide children of this duration from the display.
+    hide_children: bool = False
+
 
 class ConsoleState:
     """Holder for all console output state.
@@ -96,10 +99,6 @@ async def console_printer(
     state = ConsoleState()
     print_queue: asyncio.Queue[typing.List[str]] = asyncio.Queue()
 
-    # TODO(b/294112583): Get these parameters from args.
-    MAX_STATUS_LINES: int = 8
-    PRINT_DELAY_SECONDS: float = 0.05
-
     # Spawn an asynchronous task to actually process incoming events.
     # The rest of this method simply displays the status output and prints
     # lines that are requested by the other task.
@@ -114,7 +113,7 @@ async def console_printer(
         # and refresh the output.
         try:
             lines_to_print = await asyncio.wait_for(
-                print_queue.get(), PRINT_DELAY_SECONDS
+                print_queue.get(), flags.status_delay
             )
         except asyncio.TimeoutError:
             lines_to_print = []
@@ -122,7 +121,9 @@ async def console_printer(
         if do_status_output_event.is_set():
             status_lines = _create_status_lines_from_state(flags, state)
 
-            termout.write_lines(status_lines[:MAX_STATUS_LINES], lines_to_print)
+            termout.write_lines(
+                status_lines[: flags.status_lines], lines_to_print
+            )
         elif lines_to_print:
             print("\n".join(lines_to_print))
 
@@ -134,7 +135,9 @@ async def console_printer(
 
     if state.test_results:
         passed = len(state.test_results[event.TestSuiteStatus.PASSED])
-        failed = len(state.test_results[event.TestSuiteStatus.FAILED])
+        failed = len(state.test_results[event.TestSuiteStatus.FAILED]) + len(
+            state.test_results[event.TestSuiteStatus.TIMEOUT]
+        )
         skipped = len(state.test_results[event.TestSuiteStatus.SKIPPED])
         passed_text = pass_format(passed, flags.style)
         failed_text = fail_format(failed, flags.style)
@@ -144,7 +147,7 @@ async def console_printer(
 
     print(
         statusinfo.dim(
-            f"Completed in {state.end_duration:.3f}s [{len(state.complete_durations)}/{len(state.complete_durations)} complete]",
+            f"\nCompleted in {state.end_duration:.3f}s [{len(state.complete_durations)}/{len(state.complete_durations)} complete]",
             style=flags.style,
         )
     )
@@ -193,7 +196,9 @@ class TaskStatus:
 
     def total_tasks(self) -> int:
         return (
-            self.tasks_running + self.tasks_complete + self.tasks_queued_but_not_running
+            self.tasks_running
+            + self.tasks_complete
+            + self.tasks_queued_but_not_running
         )
 
 
@@ -221,7 +226,7 @@ def _create_status_lines_from_state(
 
     # Show an overall duration timer if the global run is started.
     if event.GLOBAL_RUN_ID in state.active_durations:
-        run_duration = f"[duration: {datetime.timedelta(seconds=monotonic - state.active_durations[event.GLOBAL_RUN_ID].start_monotonic)}]"
+        run_duration = f"[duration: {statusinfo.format_duration(datetime.timedelta(seconds=monotonic - state.active_durations[event.GLOBAL_RUN_ID].start_monotonic).total_seconds())}]"
     else:
         run_duration = ""
 
@@ -229,7 +234,9 @@ def _create_status_lines_from_state(
     pass_fail = ""
     if state.test_results:
         passed = len(state.test_results[event.TestSuiteStatus.PASSED])
-        failed = len(state.test_results[event.TestSuiteStatus.FAILED])
+        failed = len(state.test_results[event.TestSuiteStatus.FAILED]) + len(
+            state.test_results[event.TestSuiteStatus.TIMEOUT]
+        )
         skipped = len(state.test_results[event.TestSuiteStatus.SKIPPED])
         passed_text = pass_format(passed, flags.style)
         failed_text = fail_format(failed, flags.style)
@@ -259,7 +266,9 @@ def _create_status_lines_from_state(
 
 def _produce_task_status_from_state(state: ConsoleState) -> TaskStatus:
     # Generate a mapping of each duration to its children.
-    duration_children: typing.Dict[event.Id, typing.List[event.Id]] = defaultdict(list)
+    duration_children: typing.Dict[
+        event.Id, typing.List[event.Id]
+    ] = defaultdict(list)
     all_durations: typing.Dict[event.Id, DurationInfo] = dict()
 
     for id, duration in chain(
@@ -289,9 +298,12 @@ def _produce_task_status_from_state(state: ConsoleState) -> TaskStatus:
 
     # Stack of duration event.Ids to process. Second
     # element of the tuple tracks indent level.
-    work_stack: typing.List[typing.Tuple[event.Id, int]] = [(event.GLOBAL_RUN_ID, 0)]
+    work_stack: typing.List[typing.Tuple[event.Id, int]] = [
+        (event.GLOBAL_RUN_ID, 0)
+    ]
     while work_stack:
         id, indent = work_stack.pop()
+        info: DurationInfo | None = None
 
         if id == event.GLOBAL_RUN_ID:
             pass
@@ -311,7 +323,14 @@ def _produce_task_status_from_state(state: ConsoleState) -> TaskStatus:
                     )
                     / info.expected_child_tasks,
                 )
-            duration_print_infos.append(DurationPrintInfo(info, indent, progress))
+            duration_print_infos.append(
+                DurationPrintInfo(info, indent, progress)
+            )
+
+        if info is not None and info.hide_children:
+            # Skip processing children of this duration for display.
+            continue
+
         for child_id in duration_children.get(id, []):
             children = []
             if child_id in state.active_durations:
@@ -330,7 +349,9 @@ def _produce_task_status_from_state(state: ConsoleState) -> TaskStatus:
     )
 
 
-def _format_duration_lines(flags: args.Flags, status: TaskStatus) -> typing.List[str]:
+def _format_duration_lines(
+    flags: args.Flags, status: TaskStatus
+) -> typing.List[str]:
     """Given the processed status for all tasks, format output based
     on the flags.
 
@@ -406,7 +427,9 @@ async def _console_event_loop(
             old_duration = state.active_durations.pop(next_event.id)
             state.complete_durations[next_event.id] = old_duration
             elapsed_time = next_event.timestamp - old_duration.start_monotonic
-            verbose_suffix = f" [duration={datetime.timedelta(seconds=elapsed_time)}]"
+            verbose_suffix = (
+                f" [duration={datetime.timedelta(seconds=elapsed_time)}]"
+            )
             if next_event.id == event.GLOBAL_RUN_ID:
                 state.end_duration = elapsed_time
 
@@ -428,17 +451,23 @@ async def _console_event_loop(
 
                 if next_event.id == event.GLOBAL_RUN_ID:
                     state.active_durations[next_event.id] = DurationInfo(
-                        "fx test", next_event.timestamp, parent=next_event.parent
+                        "fx test",
+                        next_event.timestamp,
+                        parent=next_event.parent,
                     )
                 elif next_event.payload.parsing_file is not None:
-                    styled_name = statusinfo.highlight("parsing", style=flags.style)
+                    styled_name = statusinfo.highlight(
+                        "parsing", style=flags.style
+                    )
                     state.active_durations[next_event.id] = DurationInfo(
                         f"{styled_name} {next_event.payload.parsing_file.name}",
                         next_event.timestamp,
                         parent=next_event.parent,
                     )
                 elif next_event.payload.program_execution is not None:
-                    styled_name = statusinfo.highlight("running", style=flags.style)
+                    styled_name = statusinfo.highlight(
+                        "running", style=flags.style
+                    )
                     state.active_durations[next_event.id] = DurationInfo(
                         f"{styled_name} {next_event.payload.program_execution.to_formatted_command_line()}",
                         next_event.timestamp,
@@ -448,13 +477,16 @@ async def _console_event_loop(
                     next_event.payload.event_group is not None
                     or next_event.payload.test_group is not None
                 ):
-                    group: eventGroupPayload = next_event.payload.event_group or next_event.payload.test_group  # type: ignore
-                    styled_name = statusinfo.highlight(group.name, style=flags.style)
+                    group: event.EventGroupPayload = next_event.payload.event_group or next_event.payload.test_group  # type: ignore
+                    styled_name = statusinfo.highlight(
+                        group.name, style=flags.style
+                    )
                     state.active_durations[next_event.id] = DurationInfo(
                         styled_name,
                         next_event.timestamp,
                         parent=next_event.parent,
                         expected_child_tasks=group.queued_events or 0,
+                        hide_children=group.hide_children,
                     )
                 elif next_event.payload.build_targets:
                     styled_name = statusinfo.highlight(
@@ -483,7 +515,9 @@ async def _console_event_loop(
                         style=flags.style,
                     )
                     state.active_durations[next_event.id] = DurationInfo(
-                        styled_name, next_event.timestamp, parent=next_event.parent
+                        styled_name,
+                        next_event.timestamp,
+                        parent=next_event.parent,
                     )
 
             if next_event.payload.process_env is not None:
@@ -528,9 +562,14 @@ async def _console_event_loop(
                 # Print a result to the user when tests are selected.
                 count = len(next_event.payload.test_selections.selected)
                 label = statusinfo.highlight(
-                    f"{count} test{'s' if count > 1 else ''}", style=flags.style
+                    f"{count} test{'s' if count != 1 else ''}",
+                    style=flags.style,
                 )
-                lines_to_print.append(f"\nPlan to run {label}")
+                suffix = statusinfo.highlight(
+                    f" {flags.count} times" if flags.count > 1 else "",
+                    style=flags.style,
+                )
+                lines_to_print.append(f"\nPlan to run {label}{suffix}")
             elif next_event.payload.build_targets is not None:
                 # Print the number of targets we are refreshing.
                 label = statusinfo.highlight(
@@ -539,6 +578,17 @@ async def _console_event_loop(
                 )
                 lines_to_print.append(
                     f"\n{statusinfo.green('Refreshing', style=flags.style)} {label}"
+                )
+                # Also output the command line used for fx build up to a limit,
+                # to avoid scrolling multiple pages.
+                lines_to_print.append(
+                    statusinfo.ellipsize(
+                        statusinfo.green_highlight(
+                            f"> fx build {' '.join(next_event.payload.build_targets)}",
+                            style=flags.style,
+                        ),
+                        width=80 * 5,  # Approximately 5 lines
+                    ),
                 )
             elif next_event.payload.test_group is not None:
                 # Let the user know we intend to run a number of tests.
@@ -556,7 +606,8 @@ async def _console_event_loop(
                 ] = next_event.payload.test_suite_started.name
                 label = "Starting:"
                 val = statusinfo.green_highlight(
-                    next_event.payload.test_suite_started.name, style=flags.style
+                    next_event.payload.test_suite_started.name,
+                    style=flags.style,
                 )
                 # Explicitly mark if the suite is hermetic or not.
                 hermeticity = (
@@ -571,17 +622,29 @@ async def _console_event_loop(
                 assert next_event.id
                 payload = next_event.payload.test_suite_ended
                 if payload.status == event.TestSuiteStatus.PASSED:
-                    label = statusinfo.green_highlight("PASSED", style=flags.style)
+                    label = statusinfo.green_highlight(
+                        "PASSED", style=flags.style
+                    )
                 elif payload.status == event.TestSuiteStatus.FAILED:
-                    label = statusinfo.error_highlight("FAILED", style=flags.style)
+                    label = statusinfo.error_highlight(
+                        "FAILED", style=flags.style
+                    )
                 elif payload.status == event.TestSuiteStatus.SKIPPED:
                     label = statusinfo.highlight("SKIPPED", style=flags.style)
+                elif payload.status == event.TestSuiteStatus.ABORTED:
+                    label = statusinfo.highlight("ABORTED", style=flags.style)
+                elif payload.status == event.TestSuiteStatus.TIMEOUT:
+                    label = statusinfo.error_highlight(
+                        "TIMEOUT", style=flags.style
+                    )
                 else:
                     label = statusinfo.error_highlight(
                         "BUG: UNKNOWN", style=flags.style
                     )
 
-                state.test_results[payload.status].add(test_suite_names[next_event.id])
+                state.test_results[payload.status].add(
+                    test_suite_names[next_event.id]
+                )
 
                 suffix = ""
                 if payload.message:
@@ -590,6 +653,20 @@ async def _console_event_loop(
                 lines_to_print.append(
                     f"\n{label}: {test_suite_names[next_event.id]}{suffix}"
                 )
+            elif next_event.payload.enumerate_test_cases is not None:
+                cases_payload = next_event.payload.enumerate_test_cases
+                styled_name = statusinfo.green_highlight(
+                    cases_payload.test_name, style=flags.style
+                )
+                lines_to_print.append(f"\nTest cases in {styled_name}:")
+                for line in cases_payload.test_case_names:
+                    lines_to_print.append(
+                        f" {statusinfo.highlight(line, style=flags.style)}"
+                    )
+                    command = f'fx test {cases_payload.test_name} --test-filter "{line}"'
+                    lines_to_print.append(
+                        f" {statusinfo.dim(command, style=flags.style)}"
+                    )
 
         if next_event.error:
             # Highlight all errors.

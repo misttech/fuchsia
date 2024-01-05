@@ -4,8 +4,6 @@
 
 //! A Netstack3 worker to serve fuchsia.net.debug.Interfaces API requests.
 
-use core::ops::Deref as _;
-
 use fidl::endpoints::{ProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_hardware_network as fhardware_network;
 use fidl_fuchsia_net_debug as fnet_debug;
@@ -13,19 +11,19 @@ use fuchsia_zircon as zx;
 use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _};
 use tracing::{debug, error, warn};
 
-use crate::bindings::{devices::BindingId, DeviceIdExt as _, DeviceSpecificInfo, Netstack};
+use crate::bindings::{devices::BindingId, DeviceIdExt as _, DeviceSpecificInfo};
 
 // Serve a stream of fuchsia.net.debug.Interfaces API requests for a single
 // channel (e.g. a single client connection).
 pub(crate) async fn serve_interfaces(
-    ns: Netstack,
+    bindings_ctx: &crate::bindings::BindingsCtx,
     rs: fnet_debug::InterfacesRequestStream,
 ) -> Result<(), fidl::Error> {
     debug!(protocol = fnet_debug::InterfacesMarker::DEBUG_NAME, "serving");
     rs.try_for_each(|req| async {
         match req {
             fnet_debug::InterfacesRequest::GetPort { id, port, control_handle: _ } => {
-                handle_get_port(&ns, id, port);
+                handle_get_port(bindings_ctx, id, port);
             }
         }
         Ok(())
@@ -34,20 +32,17 @@ pub(crate) async fn serve_interfaces(
 }
 
 fn handle_get_port(
-    ns: &Netstack,
+    bindings_ctx: &crate::bindings::BindingsCtx,
     interface_id: u64,
     port: ServerEnd<fhardware_network::PortMarker>,
 ) {
-    let ctx = ns.ctx.clone();
-    let core_id =
-        BindingId::new(interface_id).and_then(|id| ctx.non_sync_ctx.devices.get_core_id(id));
+    let core_id = BindingId::new(interface_id).and_then(|id| bindings_ctx.devices.get_core_id(id));
     let port_handler =
         core_id.as_ref().ok_or(zx::Status::NOT_FOUND).map(|core_id| core_id.external_state());
-    let port_handler =
-        port_handler.as_ref().map_err(Clone::clone).and_then(|state| match state.deref() {
-            DeviceSpecificInfo::Loopback(_) => Err(zx::Status::NOT_SUPPORTED),
-            DeviceSpecificInfo::Netdevice(info) => Ok(&info.handler),
-        });
+    let port_handler = port_handler.as_ref().map_err(Clone::clone).and_then(|state| match state {
+        DeviceSpecificInfo::Loopback(_) => Err(zx::Status::NOT_SUPPORTED),
+        DeviceSpecificInfo::Netdevice(info) => Ok(&info.handler),
+    });
     match port_handler {
         Ok(port_handler) => port_handler.connect_port(port).unwrap_or_else(
             |e: netdevice_client::Error| warn!(err = ?e, "failed to connect to port"),

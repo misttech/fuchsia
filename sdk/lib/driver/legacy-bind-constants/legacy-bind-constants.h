@@ -75,6 +75,7 @@
 
 // GPIO binding variables at 0x0A1X
 #define BIND_GPIO_PIN 0x0A10
+#define BIND_GPIO_CONTROLLER 0x0A11
 
 // POWER binding variables at 0x0A2X
 #define BIND_POWER_DOMAIN 0x0A20
@@ -96,14 +97,8 @@
 // Codec binding variables at 0x0A7X
 #define BIND_CODEC_INSTANCE 0x0A70
 
-// Regsiters binding variables at 0x0A8X
-#define BIND_REGISTER_ID 0x0A80
-
 // Power sensor binding variables at 0x0A9X
 #define BIND_POWER_SENSOR_DOMAIN 0x0A90
 // LINT.ThenChange(/src/lib/ddk/include/lib/ddk/binding_priv.h)
-
-// Mailbox binding variables at 0x0AAX
-#define BIND_MAILBOX_ID 0x0AA0
 
 #endif  // LIB_DRIVER_LEGACY_BIND_CONSTANTS_LEGACY_BIND_CONSTANTS_H_

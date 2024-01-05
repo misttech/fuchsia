@@ -160,14 +160,14 @@ static void DiskOpCompletionCb(void* cookie, zx_status_t status) {
 }
 
 void ScsiDevice::ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
-                                     uint32_t block_size_bytes, scsi::DiskOp* disk_op) {
+                                     uint32_t block_size_bytes, scsi::DiskOp* disk_op, iovec data) {
   const block_read_write_t& rw = disk_op->op.rw;
   const zx_handle_t data_vmo = rw.vmo;
   const zx_off_t vmo_offset_bytes = rw.offset_vmo * block_size_bytes;
   const size_t transfer_bytes = rw.length * block_size_bytes;
 
   // Map IO data into process memory.
-  void* data = nullptr;
+  void* rw_data = nullptr;
   bool vmar_mapped = false;
   if (data_vmo != ZX_HANDLE_INVALID) {
     // To use zx_vmar_map, offset, length must be page aligned. If it isn't (uncommon),
@@ -184,14 +184,14 @@ void ScsiDevice::ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bo
         disk_op->Complete(status);
         return;
       }
-      data = reinterpret_cast<void*>(mapped_addr);
+      rw_data = reinterpret_cast<void*>(mapped_addr);
     } else {
       // This is later freed in IrqRingUpdate().
-      data = calloc(1, transfer_bytes);
+      rw_data = calloc(1, transfer_bytes);
       if (is_write) {
-        status = zx_vmo_read(data_vmo, data, vmo_offset_bytes, transfer_bytes);
+        status = zx_vmo_read(data_vmo, rw_data, vmo_offset_bytes, transfer_bytes);
         if (status != ZX_OK) {
-          free(data);
+          free(rw_data);
           disk_op->Complete(status);
           return;
         }
@@ -200,7 +200,7 @@ void ScsiDevice::ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bo
   }
 
   return QueueCommand(target, lun, cdb, is_write, zx::unowned_vmo(data_vmo), vmo_offset_bytes,
-                      transfer_bytes, DiskOpCompletionCb, static_cast<void*>(disk_op), data,
+                      transfer_bytes, DiskOpCompletionCb, static_cast<void*>(disk_op), rw_data,
                       vmar_mapped);
 }
 
@@ -379,10 +379,11 @@ zx_status_t ScsiDevice::WorkerThread() {
         if (max_xfer_size_sectors == 0) {
           // If we haven't queried the VPD pages for the target's xfer size
           // yet, do it now. We only query this once per target.
-          zx::result target_max_xfer_sectors = InquiryMaxTransferBlocks(target, lun);
-          if (target_max_xfer_sectors.is_ok()) {
+          zx::result<scsi::VPDBlockLimits> block_limits = InquiryBlockLimits(target, lun);
+          if (block_limits.is_ok()) {
             // Smaller of |max_sectors| and target's max transfer sectors.
-            max_xfer_size_sectors = std::min(max_sectors, target_max_xfer_sectors.value());
+            max_xfer_size_sectors =
+                std::min(max_sectors, betoh32(block_limits->maximum_transfer_blocks));
           } else {
             max_xfer_size_sectors = max_sectors;
           }
@@ -390,7 +391,8 @@ zx_status_t ScsiDevice::WorkerThread() {
         zxlogf(INFO, "Virtio SCSI %u:%u Max Xfer Size %u bytes", target, lun,
                max_xfer_size_sectors * SCSI_SECTOR_SIZE);
         zx::result result =
-            scsi::Disk::Bind(device_, this, target, lun, max_xfer_size_sectors * SCSI_SECTOR_SIZE);
+            scsi::Disk::Bind(device_, this, target, lun, max_xfer_size_sectors * SCSI_SECTOR_SIZE,
+                             scsi::DiskOptions::Default());
         if (result.is_error()) {
           return result.status_value();
         }
@@ -411,27 +413,18 @@ zx_status_t ScsiDevice::WorkerThread() {
 zx_status_t ScsiDevice::Init() {
   LTRACE_ENTRY;
 
-  virtio::Device::DeviceReset();
-  virtio::Device::ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, num_queues),
-                                             &config_.num_queues);
-  virtio::Device::ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, seg_max),
-                                             &config_.seg_max);
-  virtio::Device::ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, max_sectors),
-                                             &config_.max_sectors);
-  virtio::Device::ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, cmd_per_lun),
-                                             &config_.cmd_per_lun);
-  virtio::Device::ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, event_info_size),
-                                             &config_.event_info_size);
-  virtio::Device::ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, sense_size),
-                                             &config_.sense_size);
-  virtio::Device::ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, cdb_size),
-                                             &config_.cdb_size);
-  virtio::Device::ReadDeviceConfig<uint16_t>(offsetof(virtio_scsi_config, max_channel),
-                                             &config_.max_channel);
-  virtio::Device::ReadDeviceConfig<uint16_t>(offsetof(virtio_scsi_config, max_target),
-                                             &config_.max_target);
-  virtio::Device::ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, max_lun),
-                                             &config_.max_lun);
+  DeviceReset();
+  ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, num_queues), &config_.num_queues);
+  ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, seg_max), &config_.seg_max);
+  ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, max_sectors), &config_.max_sectors);
+  ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, cmd_per_lun), &config_.cmd_per_lun);
+  ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, event_info_size),
+                             &config_.event_info_size);
+  ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, sense_size), &config_.sense_size);
+  ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, cdb_size), &config_.cdb_size);
+  ReadDeviceConfig<uint16_t>(offsetof(virtio_scsi_config, max_channel), &config_.max_channel);
+  ReadDeviceConfig<uint16_t>(offsetof(virtio_scsi_config, max_target), &config_.max_target);
+  ReadDeviceConfig<uint32_t>(offsetof(virtio_scsi_config, max_lun), &config_.max_lun);
 
   // Validate config.
   {
@@ -441,17 +434,14 @@ zx_status_t ScsiDevice::Init() {
     }
   }
 
-  virtio::Device::DriverStatusAck();
+  DriverStatusAck();
 
-  if (!(virtio::Device::DeviceFeaturesSupported() & VIRTIO_F_VERSION_1)) {
-    // Declaring non-support until there is a need in the future.
-    zxlogf(ERROR, "Legacy virtio interface is not supported by this driver");
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-  virtio::Device::DriverFeaturesAck(VIRTIO_F_VERSION_1);
-  if (zx_status_t status = virtio::Device::DeviceStatusFeaturesOk(); status != ZX_OK) {
-    zxlogf(ERROR, "Feature negotiation failed: %s", zx_status_get_string(status));
-    return status;
+  if (DeviceFeaturesSupported() & VIRTIO_F_VERSION_1) {
+    DriverFeaturesAck(VIRTIO_F_VERSION_1);
+    if (zx_status_t status = DeviceStatusFeaturesOk(); status != ZX_OK) {
+      zxlogf(ERROR, "Feature negotiation failed: %s", zx_status_get_string(status));
+      return status;
+    }
   }
 
   if (!bti().is_valid()) {
@@ -486,12 +476,12 @@ zx_status_t ScsiDevice::Init() {
     active_ios_ = 0;
     scsi_transport_tag_ = 0;
   }
-  virtio::Device::StartIrqThread();
-  virtio::Device::DriverStatusOk();
+  StartIrqThread();
+  DriverStatusOk();
 
   // Synchronize against Unbind()/Release() before the worker thread is running.
   fbl::AutoLock lock(&lock_);
-  auto status = DdkAdd("virtio-scsi");
+  auto status = DdkAdd(ddk::DeviceAddArgs("virtio-scsi").set_flags(DEVICE_ADD_NON_BINDABLE));
   device_ = zxdev();
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to run DdkAdd");
@@ -520,7 +510,7 @@ void ScsiDevice::DdkRelease() {
     }
   }
   thrd_join(worker_thread_, nullptr);
-  virtio::Device::Release();
+  Release();
 }
 
 }  // namespace virtio

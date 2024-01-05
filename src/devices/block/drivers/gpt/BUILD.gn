@@ -19,7 +19,7 @@ driver_bind_rules("gpt_bind") {
   rules = "gpt.bind"
   bind_output = "gpt.bindbc"
   tests = "bind_tests.json"
-  deps = [ "//src/devices/bind/fuchsia.hardware.block" ]
+  deps = [ "//src/devices/bind/fuchsia.block" ]
 }
 
 fuchsia_driver("gpt-driver") {
@@ -34,18 +34,18 @@ fuchsia_driver("gpt-driver") {
     "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.gpt.metadata:fuchsia.hardware.gpt.metadata_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.hardware.gpt.metadata:fuchsia.hardware.gpt.metadata_cpp",
     "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp:backend",
     "//src/devices/bind/fuchsia.block:fuchsia.block_cpp",
     "//src/devices/bind/fuchsia.block.gpt:fuchsia.block.gpt_cpp",
-    "//src/devices/block/lib/common",
+    "//src/devices/block/lib/common:common-dfv1",
     "//src/devices/lib/driver",
     "//src/lib/ddk",
     "//src/lib/fidl/cpp",
-    "//src/lib/storage/block_client/cpp",
     "//src/storage/gpt",
+    "//src/storage/lib/block_client/cpp:interface",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/sync",
     "//zircon/third_party/ulib/cksum",
@@ -80,7 +80,7 @@ test("gpt-device-test-bin") {
     "//sdk/lib/fit",
     "//src/devices/bind/fuchsia.block:fuchsia.block_cpp",
     "//src/devices/bind/fuchsia.block.gpt:fuchsia.block.gpt_cpp",
-    "//src/devices/block/lib/common",
+    "//src/devices/block/lib/common:common-dfv1",
     "//src/devices/testing/mock-ddk",
     "//src/lib/ddk",
     "//src/lib/ddktl",

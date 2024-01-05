@@ -4,10 +4,6 @@
 
 #include "low_energy_connection.h"
 
-#include <lib/async/cpp/task.h>
-#include <lib/async/default.h>
-#include <lib/async/time.h>
-
 #include "src/connectivity/bluetooth/core/bt-host/gap/low_energy_connection_manager.h"
 
 namespace bt::gap::internal {
@@ -30,17 +26,17 @@ std::unique_ptr<LowEnergyConnection> LowEnergyConnection::Create(
     LowEnergyConnectionOptions connection_options, PeerDisconnectCallback peer_disconnect_cb,
     ErrorCallback error_cb, WeakSelf<LowEnergyConnectionManager>::WeakPtr conn_mgr,
     l2cap::ChannelManager* l2cap, gatt::GATT::WeakPtr gatt,
-    hci::CommandChannel::WeakPtr cmd_channel) {
+    hci::CommandChannel::WeakPtr cmd_channel, pw::async::Dispatcher& dispatcher) {
   // Catch any errors/disconnects during connection initialization so that they are reported by
   // returning a nullptr. This is less error-prone than calling the user's callbacks during
   // initialization.
   bool error = false;
   auto peer_disconnect_cb_temp = [&error](auto) { error = true; };
   auto error_cb_temp = [&error] { error = true; };
-  std::unique_ptr<LowEnergyConnection> connection(
-      new LowEnergyConnection(std::move(peer), std::move(link), connection_options,
-                              std::move(peer_disconnect_cb_temp), std::move(error_cb_temp),
-                              std::move(conn_mgr), l2cap, std::move(gatt), std::move(cmd_channel)));
+  std::unique_ptr<LowEnergyConnection> connection(new LowEnergyConnection(
+      std::move(peer), std::move(link), connection_options, std::move(peer_disconnect_cb_temp),
+      std::move(error_cb_temp), std::move(conn_mgr), l2cap, std::move(gatt), std::move(cmd_channel),
+      dispatcher));
 
   // This looks strange, but it is possible for InitializeFixedChannels() to trigger an error and
   // still return true, so |error| can change between the first and last check.
@@ -55,15 +51,14 @@ std::unique_ptr<LowEnergyConnection> LowEnergyConnection::Create(
   return connection;
 }
 
-LowEnergyConnection::LowEnergyConnection(Peer::WeakPtr peer,
-                                         std::unique_ptr<hci::LowEnergyConnection> link,
-                                         LowEnergyConnectionOptions connection_options,
-                                         PeerDisconnectCallback peer_disconnect_cb,
-                                         ErrorCallback error_cb,
-                                         WeakSelf<LowEnergyConnectionManager>::WeakPtr conn_mgr,
-                                         l2cap::ChannelManager* l2cap, gatt::GATT::WeakPtr gatt,
-                                         hci::CommandChannel::WeakPtr cmd_channel)
-    : peer_(std::move(peer)),
+LowEnergyConnection::LowEnergyConnection(
+    Peer::WeakPtr peer, std::unique_ptr<hci::LowEnergyConnection> link,
+    LowEnergyConnectionOptions connection_options, PeerDisconnectCallback peer_disconnect_cb,
+    ErrorCallback error_cb, WeakSelf<LowEnergyConnectionManager>::WeakPtr conn_mgr,
+    l2cap::ChannelManager* l2cap, gatt::GATT::WeakPtr gatt,
+    hci::CommandChannel::WeakPtr cmd_channel, pw::async::Dispatcher& dispatcher)
+    : dispatcher_(dispatcher),
+      peer_(std::move(peer)),
       link_(std::move(link)),
       connection_options_(connection_options),
       conn_mgr_(std::move(conn_mgr)),
@@ -242,14 +237,18 @@ void LowEnergyConnection::RegisterEventHandlers() {
 // procedures have completed.
 void LowEnergyConnection::StartConnectionPausePeripheralTimeout() {
   BT_ASSERT(!conn_pause_peripheral_timeout_.has_value());
-  conn_pause_peripheral_timeout_.emplace([this]() {
-    // Destroying this task will invalidate the capture list, so we need to save a self pointer.
-    auto self = this;
-    conn_pause_peripheral_timeout_.reset();
-    self->MaybeUpdateConnectionParameters();
-  });
-  conn_pause_peripheral_timeout_->PostDelayed(async_get_default_dispatcher(),
-                                              kLEConnectionPausePeripheral);
+  conn_pause_peripheral_timeout_.emplace(dispatcher_,
+                                         [this](pw::async::Context /*ctx*/, pw::Status status) {
+                                           if (!status.ok()) {
+                                             return;
+                                           }
+                                           // Destroying this task will invalidate the capture list,
+                                           // so we need to save a self pointer.
+                                           auto self = this;
+                                           conn_pause_peripheral_timeout_.reset();
+                                           self->MaybeUpdateConnectionParameters();
+                                         });
+  conn_pause_peripheral_timeout_->PostAfter(kLEConnectionPausePeripheral);
 }
 
 // Connection parameter updates by the central are not allowed until the central is idle and the
@@ -259,14 +258,18 @@ void LowEnergyConnection::StartConnectionPausePeripheralTimeout() {
 // procedures have completed.
 void LowEnergyConnection::StartConnectionPauseCentralTimeout() {
   BT_ASSERT(!conn_pause_central_timeout_.has_value());
-  conn_pause_central_timeout_.emplace([this]() {
-    // Destroying this task will invalidate the capture list, so we need to save a self pointer.
-    auto self = this;
-    conn_pause_central_timeout_.reset();
-    self->MaybeUpdateConnectionParameters();
-  });
-  conn_pause_central_timeout_->PostDelayed(async_get_default_dispatcher(),
-                                           kLEConnectionPauseCentral);
+  conn_pause_central_timeout_.emplace(dispatcher_,
+                                      [this](pw::async::Context /*ctx*/, pw::Status status) {
+                                        if (!status.ok()) {
+                                          return;
+                                        }
+                                        // Destroying this task will invalidate the capture list, so
+                                        // we need to save a self pointer.
+                                        auto self = this;
+                                        conn_pause_central_timeout_.reset();
+                                        self->MaybeUpdateConnectionParameters();
+                                      });
+  conn_pause_central_timeout_->PostAfter(kLEConnectionPauseCentral);
 }
 
 bool LowEnergyConnection::OnL2capFixedChannelsOpened(
@@ -296,7 +299,7 @@ bool LowEnergyConnection::OnL2capFixedChannelsOpened(
   LESecurityMode security_mode = conn_mgr_->security_mode();
   sm_ = conn_mgr_->sm_factory_func()(link_->GetWeakPtr(), std::move(smp), io_cap,
                                      weak_delegate_.GetWeakPtr(), connection_options.bondable_mode,
-                                     security_mode);
+                                     security_mode, dispatcher_);
 
   // Provide SMP with the correct LTK from a previous pairing with the peer, if it exists. This
   // will start encryption if the local device is the link-layer central.
@@ -504,7 +507,7 @@ void LowEnergyConnection::MaybeUpdateConnectionParameters() {
 
 bool LowEnergyConnection::InitializeGatt(l2cap::Channel::WeakPtr att_channel,
                                          std::optional<UUID> service_uuid) {
-  att_bearer_ = att::Bearer::Create(std::move(att_channel));
+  att_bearer_ = att::Bearer::Create(std::move(att_channel), dispatcher_);
   if (!att_bearer_) {
     // This can happen if the link closes before the Bearer activates the
     // channel.

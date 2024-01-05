@@ -40,10 +40,10 @@ bt::l2cap::ChannelParameters FidlToChannelParameters(const fidlbredr::ChannelPar
   if (fidl.has_channel_mode()) {
     switch (fidl.channel_mode()) {
       case fidlbredr::ChannelMode::BASIC:
-        params.mode = bt::l2cap::ChannelMode::kBasic;
+        params.mode = bt::l2cap::RetransmissionAndFlowControlMode::kBasic;
         break;
       case fidlbredr::ChannelMode::ENHANCED_RETRANSMISSION:
-        params.mode = bt::l2cap::ChannelMode::kEnhancedRetransmission;
+        params.mode = bt::l2cap::RetransmissionAndFlowControlMode::kEnhancedRetransmission;
         break;
       default:
         BT_PANIC("FIDL channel parameter contains invalid mode");
@@ -53,22 +53,26 @@ bt::l2cap::ChannelParameters FidlToChannelParameters(const fidlbredr::ChannelPar
     params.max_rx_sdu_size = fidl.max_rx_sdu_size();
   }
   if (fidl.has_flush_timeout()) {
-    params.flush_timeout = zx::duration(fidl.flush_timeout());
+    params.flush_timeout = std::chrono::nanoseconds(fidl.flush_timeout());
   }
   return params;
 }
 
-fidlbredr::ChannelMode ChannelModeToFidl(bt::l2cap::ChannelMode mode) {
-  switch (mode) {
-    case bt::l2cap::ChannelMode::kBasic:
-      return fidlbredr::ChannelMode::BASIC;
-      break;
-    case bt::l2cap::ChannelMode::kEnhancedRetransmission:
-      return fidlbredr::ChannelMode::ENHANCED_RETRANSMISSION;
-      break;
-    default:
-      BT_PANIC("Could not convert channel parameter mode to unsupported FIDL mode");
+fidlbredr::ChannelMode ChannelModeToFidl(const bt::l2cap::AnyChannelMode& mode) {
+  if (auto* flow_control_mode = std::get_if<bt::l2cap::RetransmissionAndFlowControlMode>(&mode)) {
+    switch (*flow_control_mode) {
+      case bt::l2cap::RetransmissionAndFlowControlMode::kBasic:
+        return fidlbredr::ChannelMode::BASIC;
+        break;
+      case bt::l2cap::RetransmissionAndFlowControlMode::kEnhancedRetransmission:
+        return fidlbredr::ChannelMode::ENHANCED_RETRANSMISSION;
+        break;
+      default:
+        // Intentionally unhandled, fall through to PANIC.
+        break;
+    }
   }
+  BT_PANIC("Could not convert channel parameter mode to unsupported FIDL mode");
 }
 
 fidlbredr::ChannelParameters ChannelInfoToFidlChannelParameters(
@@ -77,7 +81,7 @@ fidlbredr::ChannelParameters ChannelInfoToFidlChannelParameters(
   params.set_channel_mode(ChannelModeToFidl(info.mode));
   params.set_max_rx_sdu_size(info.max_rx_sdu_size);
   if (info.flush_timeout) {
-    params.set_flush_timeout(info.flush_timeout.value().get());
+    params.set_flush_timeout(info.flush_timeout->count());
   }
   return params;
 }
@@ -232,7 +236,7 @@ void ProfileServer::L2capParametersExt::RequestParameters(
     fuchsia::bluetooth::bredr::ChannelParameters requested, RequestParametersCallback callback) {
   if (requested.has_flush_timeout()) {
     channel_->SetBrEdrAutomaticFlushTimeout(
-        zx::duration(requested.flush_timeout()),
+        std::chrono::nanoseconds(requested.flush_timeout()),
         [chan = channel_, cb = std::move(callback)](auto result) {
           if (result.is_ok()) {
             bt_log(DEBUG, "fidl",
@@ -907,7 +911,7 @@ fuchsia::bluetooth::bredr::Channel ProfileServer::ChannelToFidl(
   fidl_chan.set_channel_mode(ChannelModeToFidl(channel->mode()));
   fidl_chan.set_max_tx_sdu_size(channel->max_tx_sdu_size());
   if (channel->info().flush_timeout) {
-    fidl_chan.set_flush_timeout(channel->info().flush_timeout->get());
+    fidl_chan.set_flush_timeout(channel->info().flush_timeout->count());
   }
 
   if (adapter()->state().IsControllerFeatureSupported(FeaturesBits::kSetAclPriorityCommand)) {

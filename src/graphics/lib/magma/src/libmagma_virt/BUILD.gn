@@ -11,19 +11,19 @@ source_set("virtmagma_headers") {
     "virtmagma_util.h",
   ]
   public_deps = [
-    "$magma_build_root/src/magma_util:macros",
-    "$magma_build_root/src/magma_util:short_macros",
+    "//src/graphics/magma/lib/magma/util:macros",
+    "//src/graphics/magma/lib/magma/util:short_macros",
   ]
 }
 
 static_library("libmagma_virt") {
-  public_deps = [ "$magma_build_root/include:magma" ]
+  public_deps = [ "//sdk/lib/magma_client:magma_headers" ]
 
   deps = [
     ":magma_generic($shlib_toolchain)",
     ":virtmagma_headers",
-    "$magma_build_root/src/magma_util/platform:logger_impl",
     "//src/graphics/lib/magma/include/virtio",
+    "//src/graphics/magma/lib/magma/platform:logger_impl",
   ]
 
   # Only generate a copy in the shlib toolchain, to avoid redundant work.
@@ -36,6 +36,9 @@ static_library("libmagma_virt") {
 
   # All functions should be declared in magma.h, so warn about unnecessary functions.
   cflags = [ "-Wmissing-prototypes" ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 
   if (virtmagma_debug) {
     defines = [ "VIRTMAGMA_DEBUG=1" ]

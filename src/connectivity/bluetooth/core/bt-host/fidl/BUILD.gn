@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/fuzz.gni")
+import("//build_overrides/pigweed.gni")
 import("//src/connectivity/bluetooth/core/bt-host/build/bt_gtest_package.gni")
 
 static_library("fidl") {
@@ -51,6 +52,9 @@ static_library("fidl") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 # Conversions between host FIDL and internal library types.
@@ -86,9 +90,48 @@ source_set("adapter_test_fixture") {
     "//src/connectivity/bluetooth/core/bt-host/l2cap:testing",
     "//src/connectivity/bluetooth/core/bt-host/testing",
     "//src/connectivity/bluetooth/core/bt-host/testing:fake_controller",
-    "//zircon/system/ulib/async:async-cpp",
+    "//src/lib/testing/loop_fixture:gtest",
+    "//third_party/pigweed/backends/pw_async_fuchsia:dispatcher",
     "//zircon/system/ulib/fbl",
   ]
+}
+
+source_set("fake_adapter_test_fixture") {
+  testonly = true
+
+  sources = [ "fake_adapter_test_fixture.h" ]
+
+  public_deps = [
+    "//src/connectivity/bluetooth/core/bt-host/gap",
+    "//src/connectivity/bluetooth/core/bt-host/gap:testing",
+    "//src/lib/testing/loop_fixture",
+    "//third_party/googletest:gtest",
+  ]
+}
+
+source_set("fake_gatt_test_fixture") {
+  testonly = true
+
+  sources = [
+    "fake_gatt_fixture.cc",
+    "fake_gatt_fixture.h",
+  ]
+
+  public_deps = [
+    "//src/connectivity/bluetooth/core/bt-host/common",
+    "//src/connectivity/bluetooth/core/bt-host/gatt",
+    "//src/connectivity/bluetooth/core/bt-host/gatt:testing",
+    "//src/lib/testing/loop_fixture",
+    "//third_party/pigweed/backends/pw_async_fuchsia:dispatcher",
+  ]
+}
+
+source_set("fake_hci_test_fixture") {
+  testonly = true
+
+  sources = [ "fake_hci_server.h" ]
+
+  deps = [ "//src/connectivity/bluetooth/core/bt-host/transport:transport" ]
 }
 
 source_set("tests") {
@@ -110,6 +153,8 @@ source_set("tests") {
 
   deps = [
     ":adapter_test_fixture",
+    ":fake_adapter_test_fixture",
+    ":fake_gatt_test_fixture",
     ":fidl",
     "//sdk/fidl/fuchsia.bluetooth.le:hlcpp_measure_tape_for_peer",
     "//src/connectivity/bluetooth/core/bt-host/gap:testing",
@@ -118,8 +163,6 @@ source_set("tests") {
     "//src/connectivity/bluetooth/core/bt-host/testing:fake_controller",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
-    "//zircon/system/ulib/async:async-cpp",
-    "//zircon/system/ulib/fbl",
   ]
 }
 
@@ -132,9 +175,9 @@ fuchsia_library_fuzzer("host_server_watch_peers_fuzzer") {
   sources = [ "host_server_watch_peers_fuzztest.cc" ]
   deps = [
     ":adapter_test_fixture",
+    "$dir_pw_random:fuzzer_generator",
     "//src/connectivity/bluetooth/core/bt-host:sources",
     "//src/connectivity/bluetooth/core/bt-host/testing:fuzzing",
     "//src/connectivity/bluetooth/core/bt-host/testing:fuzztest_driver",
-    "//third_party/pigweed:pw_random_fuzzer_generator",
   ]
 }

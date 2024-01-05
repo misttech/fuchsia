@@ -16,27 +16,27 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/console.h>
 #include <platform.h>
-#include <stdlib.h>
 #include <string.h>
 #include <trace.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include <arch/arm64.h>
 #include <arch/arm64/feature.h>
 #include <arch/arm64/mmu.h>
 #include <arch/arm64/registers.h>
 #include <arch/arm64/uarch.h>
+#include <arch/interrupt.h>
 #include <arch/mp.h>
 #include <arch/ops.h>
 #include <arch/regs.h>
 #include <arch/vm.h>
 #include <kernel/cpu.h>
+#include <kernel/mp.h>
 #include <kernel/thread.h>
 #include <ktl/atomic.h>
 #include <lk/init.h>
 #include <lk/main.h>
-
-#include "arch/arm64.h"
 
 #include <ktl/enforce.h>
 
@@ -44,11 +44,6 @@
 
 // Counter-timer Kernel Control Register, EL1.
 static constexpr uint64_t CNTKCTL_EL1_ENABLE_VIRTUAL_COUNTER = 1 << 1;
-
-// Initial value for MSDCR_EL1 when starting userspace, which disables all debug exceptions.
-// Instruction Breakpoint Exceptions (software breakpoints) cannot be disabled and MDSCR does not
-// affect single-step behaviour.
-static constexpr uint32_t MSDCR_EL1_INITIAL_VALUE = 0;
 
 // Performance Monitors Count Enable Set, EL0.
 static constexpr uint64_t PMCNTENSET_EL0_ENABLE = 1UL << 31;  // Enable cycle count register.
@@ -232,11 +227,7 @@ void arch_late_init_percpu(void) {
       !gBootOptions->arm64_disable_spec_mitigations && arm64_uarch_needs_spectre_v2_mitigation();
 }
 
-__NO_RETURN int arch_idle_thread_routine(void*) {
-  for (;;) {
-    __asm__ volatile("wfi");
-  }
-}
+void arch_idle_enter(zx_duration_t max_latency) { __asm__ volatile("wfi"); }
 
 void arch_setup_uspace_iframe(iframe_t* iframe, uintptr_t pc, uintptr_t sp, uintptr_t arg1,
                               uintptr_t arg2) {
@@ -252,8 +243,6 @@ void arch_setup_uspace_iframe(iframe_t* iframe, uintptr_t pc, uintptr_t sp, uint
   iframe->usp = sp;
   iframe->elr = pc;
   iframe->spsr = spsr;
-
-  iframe->mdscr = MSDCR_EL1_INITIAL_VALUE;
 }
 
 // Switch to user mode, set the user stack pointer to user_stack_top, put the svc stack pointer to

@@ -24,16 +24,28 @@ class FakeDeviceImpl : public ddk::NetworkPortProtocol<FakeDeviceImpl>,
   static constexpr uint8_t kRxFrameTypes[] = {
       static_cast<uint8_t>(netdev::wire::FrameType::kEthernet),
   };
-  static constexpr tx_support_t kTxFrameTypes[] = {
+  static constexpr frame_type_support_t kTxFrameTypes[] = {
       {.type = static_cast<uint8_t>(netdev::wire::FrameType::kEthernet)},
   };
 
   FakeDeviceImpl(perftest::RepeatState* state) : perftest_state_(state) {}
 
-  zx_status_t NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface) {
+  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                             network_device_impl_init_callback callback, void* cookie) {
     iface_ = ddk::NetworkDeviceIfcProtocolClient(iface);
-    iface_.AddPort(kPortId, this, &network_port_protocol_ops_);
-    return ZX_OK;
+
+    using Context = std::tuple<network_device_impl_init_callback, void*>;
+    std::unique_ptr context = std::make_unique<Context>(callback, cookie);
+
+    iface_.AddPort(
+        kPortId, this, &network_port_protocol_ops_,
+        [](void* ctx, zx_status_t status) {
+          std::unique_ptr<Context> context(static_cast<Context*>(ctx));
+          auto [callback, cookie] = *context;
+          ZX_ASSERT_OK(status, "AddPort failed");
+          callback(cookie, status);
+        },
+        context.release());
   }
   void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie) {
     callback(cookie, ZX_OK);
@@ -41,7 +53,7 @@ class FakeDeviceImpl : public ddk::NetworkPortProtocol<FakeDeviceImpl>,
   void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie) {
     callback(cookie);
   }
-  void NetworkDeviceImplGetInfo(device_info_t* out_info) {
+  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
     *out_info = {
         .tx_depth = kDepth,
         .rx_depth = kDepth,
@@ -113,7 +125,7 @@ class FakeDeviceImpl : public ddk::NetworkPortProtocol<FakeDeviceImpl>,
   }
   void NetworkDeviceImplReleaseVmo(uint8_t vmo_id) {}
   void NetworkDeviceImplSetSnoop(bool snoop) { ZX_PANIC("unexpected call to SetSnoop(%d)", snoop); }
-  void NetworkPortGetInfo(port_info_t* out_info) {
+  void NetworkPortGetInfo(port_base_info_t* out_info) {
     *out_info = {
         .port_class = static_cast<uint8_t>(netdev::wire::DeviceClass::kEthernet),
         .rx_types_list = kRxFrameTypes,
@@ -124,16 +136,17 @@ class FakeDeviceImpl : public ddk::NetworkPortProtocol<FakeDeviceImpl>,
   }
   void NetworkPortGetStatus(port_status_t* out_status) {
     *out_status = {
-        .mtu = kMtu,
         .flags = static_cast<uint32_t>(netdev::wire::StatusFlags::kOnline),
+        .mtu = kMtu,
     };
   }
   void NetworkPortSetActive(bool active) {}
-  void NetworkPortGetMac(mac_addr_protocol_t* out_mac_ifc) { *out_mac_ifc = {}; }
+  void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) { *out_mac_ifc = &mac_addr_proto_; }
   void NetworkPortRemoved() {}
 
  private:
   ddk::NetworkDeviceIfcProtocolClient iface_;
+  mac_addr_protocol_t mac_addr_proto_{};
   perftest::RepeatState* const perftest_state_;
 };
 

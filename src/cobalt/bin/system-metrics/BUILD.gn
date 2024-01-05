@@ -28,11 +28,11 @@ source_set("system_metrics_daemon_lib") {
 
   public_deps = [
     ":metrics_registry_cc",
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp_wire",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_hlcpp",
     "//sdk/fidl/fuchsia.ui.activity:fuchsia.ui.activity_hlcpp",
     "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/inspect/contrib/cpp:archive_reader",
+    "//sdk/lib/diagnostics/reader/cpp:archive_reader",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/sys/inspect/cpp",
     "//sdk/lib/syslog/cpp",
@@ -40,7 +40,7 @@ source_set("system_metrics_daemon_lib") {
     "//src/cobalt/bin/utils:error_utils",
     "//src/lib/cobalt/cpp:metric_event_builder",
     "//src/lib/fsl",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//third_party/cobalt/src/lib/client/cpp:buckets_config",
     "//zircon/system/ulib/abs_clock",
     "//zircon/system/ulib/async-loop:async-loop-cpp",

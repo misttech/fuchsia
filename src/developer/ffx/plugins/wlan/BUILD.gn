@@ -13,7 +13,6 @@ ffx_plugin("ffx_wlan") {
     "access_point:ffx_wlan_ap",
     "client:ffx_wlan_client",
     "deprecated:ffx_wlan_deprecated",
-    "dev:ffx_wlan_dev",
   ]
   args_sources = [ "src/args.rs" ]
   test_deps = [ "common:ffx-wlan-common_test" ]
@@ -27,4 +26,23 @@ ffx_tool("ffx_wlan_tool") {
     "//src/lib/fuchsia-async",
   ]
   sources = [ "src/main.rs" ]
+
+  sdk_target_name = "sdk"
+  sdk_category = "partner"
+}
+
+group("wlan") {
+  public_deps = [
+    ":ffx_wlan_tool",
+    ":ffx_wlan_tool_host_tool",
+  ]
+}
+
+group("bin") {
+  public_deps = [ ":ffx_wlan_tool_versioned" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":ffx_wlan_tests($host_toolchain)" ]
 }

@@ -44,8 +44,9 @@ const DISALLOWED_ALT_IMAGE_TEXT: [&str; 1] = [""];
 // TODO(fxbug.dev/113039): disallow "drawing, "image" for alt text";
 
 /// List of active repos under fuchsia.googlesource.com which can be linked to.
-const VALID_PROJECTS: [&str; 19] = [
+const VALID_PROJECTS: [&str; 21] = [
     "", // root page of all projects
+    "antlion",
     "cobalt",
     "drivers", // This is a family of projects.
     "experiences",
@@ -63,6 +64,7 @@ const VALID_PROJECTS: [&str; 19] = [
     "vscode-language-fidl",
     "workstation",
     "samples",
+    "shac-project",
     "sdk-samples", // This is a family of projects, there are sub-repos below this path.
 ];
 
@@ -90,6 +92,7 @@ struct LinkChecker {
     pub project: String,
     pub docs_folder: PathBuf,
     pub check_remote_links: bool,
+    pub allow_fuchsia_src_links: bool,
     links: Vec<LinkReference>,
 }
 
@@ -187,36 +190,9 @@ impl DocCheck for LinkChecker {
                             LinkType::Inline => link_url,
                             LinkType::Reference => link_url,
                             LinkType::ReferenceUnknown => {
-                                let text = elements
-                                    .iter()
-                                    .map(|e| e.get_contents())
-                                    .collect::<Vec<String>>()
-                                    .join("");
-                                if link_url.starts_with("\"") && link_url.ends_with("\"") {
-                                    // This is not a link but an array of quoted strings.
-                                    continue;
-                                }
-                                if text == link_url.to_string() && link_url == link_title {
-                                    errors.push(DocCheckError::new_info_helpful(
-                                            ele.doc_line().line_num,
-                                            ele.doc_line().file_name.clone(),
-                                            &format!(
-                                                "unescaped [{}] not treating this as a reference link. this is brackets ",
-                                                link_url),
-                                            &format!("escaped \\[{}\\] or make a link [{}](/docs/{}", link_title, link_url,link_url)
-                                        ));
-                                } else {
-                                    errors.push(DocCheckError::new_error_helpful(
-                                            ele.doc_line().line_num,
-                                            ele.doc_line().file_name.clone(),
-                                            &format!(
-                                                "Unknown reference link to [{}][{}]",
-                                                text ,link_url
-                                            ),
-                                        &format!(
-                                            "making sure you added a matching [{}]: YOUR_LINK_HERE below this reference",
-                                        link_url)));
-                                }
+                                errors.extend(handle_shortcut_unknown(
+                                    ele, link_url, link_title, elements,
+                                ));
                                 continue;
                             }
                             LinkType::Collapsed => link_url,
@@ -233,42 +209,9 @@ impl DocCheck for LinkChecker {
                             }
                             LinkType::Shortcut => link_url,
                             LinkType::ShortcutUnknown => {
-                                // Check if this is a case where the text is in [].
-                                let text = elements
-                                    .iter()
-                                    .map(|e| e.get_contents())
-                                    .collect::<Vec<String>>()
-                                    .join("");
-                                if link_url.starts_with("\"") && link_url.ends_with("\"") {
-                                    // This is not a link but an array of quoted strings.
-                                    continue;
-                                }
-                                if text == link_url.to_string() && link_url == link_title {
-                                    errors.push(DocCheckError::new_info_helpful(
-                                        ele.doc_line().line_num,
-                                        ele.doc_line().file_name.clone(),
-                                        &format!(
-                                            "unescaped [{}] not treating this as a shortcut link.",
-                                            link_url
-                                        ),
-                                        &format!(
-                                            "escaped \\[{}\\] or make a link [{}](/docs/{}",
-                                            link_title, link_url, link_url
-                                        ),
-                                    ));
-                                } else {
-                                    errors.push(DocCheckError::new_error_helpful(
-                                            ele.doc_line().line_num,
-                                            ele.doc_line().file_name.clone(),
-                                            &format!(
-                                                "Unknown reference link to [{}][{}]",
-                                                text ,link_url
-                                            ),
-                                        &format!(
-                                            "making sure you added a matching [{}]: YOUR_LINK_HERE below this reference",
-                                        link_url)));
-                                }
-
+                                errors.extend(handle_shortcut_unknown(
+                                    ele, link_url, link_title, elements,
+                                ));
                                 continue;
                             }
                             LinkType::Autolink => link_url,
@@ -373,9 +316,14 @@ impl DocCheck for LinkChecker {
                     continue;
                 }
 
-                let saw_error = do_check_link(&element.doc_line(), &link_to_check, &self.project)?
-                    .map(|err| errors.push(err))
-                    .is_some();
+                let saw_error = do_check_link(
+                    &element.doc_line(),
+                    &link_to_check,
+                    &self.project,
+                    self.allow_fuchsia_src_links,
+                )?
+                .map(|err| errors.push(err))
+                .is_some();
 
                 let root_dir = self.root_dir.display().to_string();
                 match is_intree_link(&self.project, &root_dir, &self.docs_folder, &link_to_check) {
@@ -441,6 +389,22 @@ pub(crate) fn do_in_tree_check(
     let filepath = root_dir.join(in_tree_path.strip_prefix("/").unwrap_or(in_tree_path));
 
     if !path_helper::exists(&filepath) {
+        // Look for missing the file extension.
+        if filepath.extension().is_none() {
+            let mut md_path = filepath.clone();
+            md_path.set_extension("md");
+            if path_helper::exists(&md_path) {
+                return Some(DocCheckError::new_error_helpful(
+                    doc_line.line_num,
+                    doc_line.file_name.clone(),
+                    &format!(
+                        "in-tree link to {} could not be found at {:?}",
+                        link_to_check, filepath
+                    ),
+                    &format!("{:#?}", md_path.file_name()?),
+                ));
+            }
+        }
         return Some(DocCheckError::new_error(
             doc_line.line_num,
             doc_line.file_name.clone(),
@@ -498,6 +462,7 @@ pub(crate) fn do_check_link(
     doc_line: &DocLine,
     link: &str,
     project_being_checked: &str,
+    allow_fuchsia_src_links: bool,
 ) -> Result<Option<DocCheckError>> {
     match link.parse::<Uri>() {
         Ok(uri) => {
@@ -508,7 +473,9 @@ pub(crate) fn do_check_link(
                 },
                 None => return Ok(None),
             }
-            if let Some(errors) = check_link_authority(doc_line, &uri, project_being_checked) {
+            if let Some(errors) =
+                check_link_authority(doc_line, &uri, project_being_checked, allow_fuchsia_src_links)
+            {
                 return Ok(Some(errors));
             }
 
@@ -592,6 +559,7 @@ fn check_link_authority(
     doc_line: &DocLine,
     uri: &Uri,
     project_being_checked: &str,
+    allow_fuchsia_src_links: bool,
 ) -> Option<DocCheckError> {
     let link_to_fuchsia_gerrit_host = match uri.authority() {
         Some(a) => *a == GERRIT_HOST,
@@ -659,7 +627,7 @@ fn check_link_authority(
         if !FILES_ALLOWED_TO_LINK_TO_PUBLISHED_DOCS.contains(&base_name.as_str()) {
             // If the link is to the published docs directory (fuchsia-src), then
             // a path should be used instead.
-            if parts.contains(&"fuchsia-src") {
+            if parts.contains(&"fuchsia-src") && !allow_fuchsia_src_links {
                 return Some(DocCheckError::new_error(
                     doc_line.line_num,
                     doc_line.file_name.clone(),
@@ -673,6 +641,50 @@ fn check_link_authority(
         }
     }
     None
+}
+
+fn handle_shortcut_unknown(
+    ele: &Element<'_>,
+    link_url: &CowStr<'_>,
+    link_title: &CowStr<'_>,
+    elements: &Vec<Element<'_>>,
+) -> Vec<DocCheckError> {
+    let mut errors: Vec<DocCheckError> = vec![];
+    // Check if this is a case where the text is in [].
+    // Skip gen/build_arguments.md - since it is mostly code and generates a lot of noise.
+    if ele.doc_line().file_name.ends_with("gen/build_arguments.md") {
+        return errors;
+    }
+    let text = elements.iter().map(|e| e.get_contents()).collect::<Vec<String>>().join("");
+    let trimmed_link_url = link_url.trim();
+    if trimmed_link_url.starts_with("\"")
+        && (trimmed_link_url.ends_with("\"") || trimmed_link_url.ends_with(","))
+    {
+        // This is not a link but an array of quoted strings.
+        return errors;
+    }
+    if text == link_url.to_string() && link_url == link_title {
+        errors.push(DocCheckError::new_info_helpful(
+            ele.doc_line().line_num,
+            ele.doc_line().file_name.clone(),
+            &format!("unescaped [{}] not treating this as a shortcut link.", link_url),
+            &format!(
+                "escaped \\[{}\\] or make a link [{}](/docs/{}",
+                link_title, link_url, link_url
+            ),
+        ));
+    } else {
+        errors.push(DocCheckError::new_error_helpful(
+            ele.doc_line().line_num,
+            ele.doc_line().file_name.clone(),
+            &format!("Unknown reference link to [{}][{}]", text, link_url),
+            &format!(
+                "making sure you added a matching [{}]: YOUR_LINK_HERE below this reference",
+                link_url
+            ),
+        ));
+    }
+    errors
 }
 
 /// Checks whether the URI points to the master branch of a Gerrit (i.e.,
@@ -773,7 +785,7 @@ pub async fn check_external_links(links: &Vec<LinkReference>) -> Option<Vec<DocC
     let client: HttpsClient = new_https_client_from_tcp_options(tcp_options());
     for (authority, links) in domain_sorted_links {
         let mut pending_requests = vec![];
-        println!("checking {authority} {link_count} links", link_count = links.len());
+        eprintln!("checking {authority} {link_count} links", link_count = links.len());
         for link in links {
             let p = check_url_link(client.clone(), link);
             pending_requests.push(p);
@@ -840,6 +852,7 @@ pub(crate) fn register_markdown_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<d
         docs_folder: opt.docs_folder.clone(),
         check_remote_links: !opt.local_links_only,
         links: vec![],
+        allow_fuchsia_src_links: opt.allow_fuchsia_src_links,
     };
     Ok(vec![Box::new(checker)])
 }
@@ -857,6 +870,7 @@ mod tests {
             docs_folder: PathBuf::from("docs"),
             check_remote_links: false,
             links: vec![],
+            allow_fuchsia_src_links: false,
         };
         let filename = PathBuf::from("/my/root/fuchsia/docs/index.md");
 
@@ -909,7 +923,8 @@ mod tests {
             project: "fuchsia".to_string(),
             docs_folder: PathBuf::from("docs"),
             local_links_only: true,
-            check_reference_links: false,
+            json: false,
+            allow_fuchsia_src_links: false,
         };
 
         let mut checks = register_markdown_checks(&opt)?;
@@ -917,7 +932,7 @@ mod tests {
 
         let ctx = DocContext::new(
             PathBuf::from("/docs/README.md"),
-            "This is a line to [something](/docs/something.md",
+            "This is a line to [something](/docs/something.md)",
         );
 
         if let Some(check) = checks.first_mut() {
@@ -966,7 +981,8 @@ mod tests {
             project: "fuchsia".to_string(),
             docs_folder: PathBuf::from("docs"),
             local_links_only: true,
-            check_reference_links: false,
+            json: false,
+            allow_fuchsia_src_links: false,
         };
 
         let mut checks = register_markdown_checks(&opt)?;
@@ -1116,7 +1132,8 @@ mod tests {
             project: "fuchsia".to_string(),
             docs_folder: PathBuf::from("docs"),
             local_links_only: true,
-            check_reference_links: true,
+            json: false,
+            allow_fuchsia_src_links: false,
         };
 
         let mut checks = register_markdown_checks(&opt)?;
@@ -1126,16 +1143,14 @@ mod tests {
             (
             DocContext::new_with_checks(
                 PathBuf::from("/docs/README.md"),
-                "This is a line to [something](/docs/something.md)",
-                true
+                "This is a line to [something](/docs/something.md)"
             ),
             None,
         ),
         (
             DocContext::new_with_checks(
                 PathBuf::from("/docs/README.md"),
-                "invalid url [oops](https:///nowhere/something.md?xx)",
-                true
+                "invalid url [oops](https:///nowhere/something.md?xx)"
             ),
             Some([DocCheckError::new_error(1, PathBuf::from("/docs/README.md"),
              "Invalid link https:///nowhere/something.md?xx : invalid format")].to_vec())
@@ -1144,8 +1159,7 @@ mod tests {
             DocContext::new_with_checks(
                 PathBuf::from("/docs/README.md"),
                 "A reference link to [`topaz`][flutter-gni]\n\n\
-                [flutter-gni]: https://fuchsia.googlesource.com/topaz/+/HEAD/runtime/flutter_runner/flutter_app.gni \"Flutter GN build template\"",
-                true
+                [flutter-gni]: https://fuchsia.googlesource.com/topaz/+/HEAD/runtime/flutter_runner/flutter_app.gni \"Flutter GN build template\""
             ),
             Some([DocCheckError::new_error(1, PathBuf::from("/docs/README.md"),
             "Obsolete or invalid project topaz: https://fuchsia.googlesource.com/topaz/+/HEAD/runtime/flutter_runner/flutter_app.gni")].to_vec())
@@ -1153,8 +1167,7 @@ mod tests {
         (
         DocContext::new_with_checks(
             PathBuf::from("/docs/README.md"),
-            "brackets which are not a link [your name here]",
-            true
+            "brackets which are not a link [your name here]"
         ),
         Some([DocCheckError::new_info_helpful(1, PathBuf::from("/docs/README.md"),
             "unescaped [your name here] not treating this as a shortcut link.",
@@ -1164,7 +1177,7 @@ mod tests {
         (
             DocContext::new_with_checks(
                 PathBuf::from("/docs/README.md"),
-                "missing [text][link-to-text]", true),
+                "missing [text][link-to-text]"),
                 Some([DocCheckError::new_error_helpful(1, PathBuf::from("/docs/README.md"),
                 "Unknown reference link to [text][link-to-text]",
                 "making sure you added a matching [link-to-text]: YOUR_LINK_HERE below this reference"
@@ -1174,12 +1187,62 @@ mod tests {
             DocContext::new_with_checks(
                 PathBuf::from("/docs/README.md"),
                 r#"pw_toolchain_STATIC_ANALYSIS_SKIP_INCLUDE_PATHS = [".*/third_party/.*"]"#,
-                true
             ),
             None
         ),
         ];
 
+        for (ctx, expected_errors) in test_data {
+            for ele in ctx {
+                let errors = checks[0].check(&ele)?;
+                if let Some(ref expected_list) = expected_errors {
+                    let mut expected_iter = expected_list.iter();
+                    if let Some(actual_errors) = errors {
+                        for actual in actual_errors {
+                            if let Some(expected) = expected_iter.next() {
+                                assert_eq!(&actual, expected);
+                            } else {
+                                panic!("Got unexpected error returned: {:?}", actual);
+                            }
+                        }
+                        let unused_errors: Vec<&DocCheckError> = expected_iter.collect();
+                        if !unused_errors.is_empty() {
+                            panic!("Expected more errors: {:?}", unused_errors);
+                        }
+                    } else if expected_errors.is_some() {
+                        panic!("No errors, but expected {:?}", expected_errors);
+                    }
+                } else if errors.is_some() {
+                    panic!("Got unexpected errors {:?}", errors.unwrap());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_allowing_fuchsia_src_links() -> Result<()> {
+        let opt = DocCheckerArgs {
+            root: PathBuf::from("/path/to/fuchsia/somewhere/else"),
+            project: "fuchsia".to_string(),
+            docs_folder: PathBuf::from("docs"),
+            local_links_only: true,
+            json: false,
+            allow_fuchsia_src_links: true,
+        };
+
+        let mut checks = register_markdown_checks(&opt)?;
+        assert_eq!(checks.len(), 1);
+
+        let test_data: Vec<(DocContext<'_>, Option<Vec<DocCheckError>>)> = vec![
+            (
+            DocContext::new_with_checks(
+                PathBuf::from("/docs/README.md"),
+                "This is a link to fuchsia docs as external url [something](https://fuchsia.dev/fuchsia-src/README.md)"
+            ),
+            None,
+        )];
         for (ctx, expected_errors) in test_data {
             for ele in ctx {
                 let errors = checks[0].check(&ele)?;

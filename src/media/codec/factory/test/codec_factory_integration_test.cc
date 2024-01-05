@@ -16,10 +16,10 @@
 #include <gtest/gtest.h>
 
 #include "sdk/lib/fidl/cpp/binding_set.h"
-#include "src/lib/storage/vfs/cpp/pseudo_dir.h"
-#include "src/lib/storage/vfs/cpp/service.h"
-#include "src/lib/storage/vfs/cpp/synchronous_vfs.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
+#include "src/storage/lib/vfs/cpp/service.h"
+#include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
 
 // NOLINTNEXTLINE
 using namespace component_testing;
@@ -38,12 +38,9 @@ class FakeSysInfoDevice : public fuchsia::sysinfo::testing::SysInfo_TestBase {
   fidl::BindingSet<fuchsia::sysinfo::SysInfo> bindings_;
 };
 
-class MockSysInfoComponent : public LocalComponent {
+class MockSysInfoComponent : public LocalComponentImpl {
  public:
-  void Start(std::unique_ptr<LocalComponentHandles> mock_handles) override {
-    handles_ = std::move(mock_handles);
-    handles_->outgoing()->AddPublicService(sysinfo_device_.GetHandler());
-  }
+  void OnStart() override { outgoing()->AddPublicService(sysinfo_device_.GetHandler()); }
 
  private:
   FakeSysInfoDevice sysinfo_device_;
@@ -80,13 +77,12 @@ class FakeMagmaDevice : public fuchsia::gpu::magma::testing::CombinedDevice_Test
   bool has_icds_ = true;
 };
 
-class MockGpuComponent : public LocalComponent {
+class MockGpuComponent : public LocalComponentImpl {
  public:
   explicit MockGpuComponent(async_dispatcher_t* dispatcher, FakeMagmaDevice& magma_device)
       : magma_device_(magma_device), gpu_vfs_(dispatcher), mediacodec_vfs_(dispatcher) {}
 
-  void Start(std::unique_ptr<LocalComponentHandles> mock_handles) override {
-    mock_handles_ = std::move(mock_handles);
+  void OnStart() override {
     // Use fs:: versions because they support device watcher.
     {
       fidl::InterfaceHandle<fuchsia::io::Directory> io_dir;
@@ -100,7 +96,7 @@ class MockGpuComponent : public LocalComponent {
             return ZX_OK;
           }));
 
-      EXPECT_EQ(ZX_OK, mock_handles_->outgoing()->root_dir()->AddEntry(
+      EXPECT_EQ(ZX_OK, outgoing()->root_dir()->AddEntry(
                            "dev-gpu", std::make_unique<vfs::RemoteDir>(io_dir.TakeChannel())));
     }
 
@@ -112,14 +108,13 @@ class MockGpuComponent : public LocalComponent {
                                                              io_dir.NewRequest().TakeChannel())));
 
       EXPECT_EQ(ZX_OK,
-                mock_handles_->outgoing()->root_dir()->AddEntry(
+                outgoing()->root_dir()->AddEntry(
                     "dev-mediacodec", std::make_unique<vfs::RemoteDir>(io_dir.TakeChannel())));
     }
   }
 
  private:
   FakeMagmaDevice& magma_device_;
-  std::unique_ptr<LocalComponentHandles> mock_handles_;
   fs::SynchronousVfs gpu_vfs_;
   fs::SynchronousVfs mediacodec_vfs_;
 };
@@ -144,8 +139,10 @@ class Integration : public gtest::RealLoopFixture {
         .source = ChildRef{kCodecFactoryName},
         .targets = {ParentRef()},
     });
-    builder.AddLocalChild(kMockGpuName, &mock_gpu_);
-    builder.AddLocalChild(kSysInfoName, &mock_sys_info_);
+    builder.AddLocalChild(kMockGpuName, [d = dispatcher(), &m = magma_device_] {
+      return std::make_unique<MockGpuComponent>(d, m);
+    });
+    builder.AddLocalChild(kSysInfoName, [] { return std::make_unique<MockSysInfoComponent>(); });
     builder.AddRoute(Route{
         .capabilities = {Protocol{"fuchsia.sysinfo.SysInfo"}},
         .source = ChildRef{kSysInfoName},
@@ -172,8 +169,6 @@ class Integration : public gtest::RealLoopFixture {
   }
 
   FakeMagmaDevice magma_device_;
-  MockGpuComponent mock_gpu_{dispatcher(), magma_device_};
-  MockSysInfoComponent mock_sys_info_;
 };
 
 TEST_F(Integration, MagmaDevice) {

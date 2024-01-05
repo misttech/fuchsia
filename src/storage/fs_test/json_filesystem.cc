@@ -7,9 +7,9 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <zircon/errors.h>
 
-#include "src/lib/storage/fs_management/cpp/mount.h"
 #include "src/storage/fs_test/crypt_service.h"
 #include "src/storage/fs_test/fs_test.h"
+#include "src/storage/lib/fs_management/cpp/mount.h"
 #include "zircon/third_party/ulib/musl/include/stdlib.h"
 
 namespace fs_test {
@@ -27,7 +27,8 @@ zx::result<std::unique_ptr<JsonFilesystem>> JsonFilesystem::NewFilesystem(
         std::make_unique<fs_management::CustomDiskFormat>(name, config["binary_path"].GetString()));
   }
   iter = config.FindMember("sectors_per_cluster");
-  const int sectors_per_cluster = iter == config.MemberEnd() ? 0 : iter->value.GetInt();
+  const uint16_t sectors_per_cluster =
+      iter == config.MemberEnd() ? 0 : static_cast<uint16_t>(iter->value.GetInt());
   return zx::ok(std::make_unique<JsonFilesystem>(
       Traits{
           .has_directory_size_limit =
@@ -119,7 +120,7 @@ class JsonInstance : public FilesystemInstance {
       return zx::ok();
     }
     // Also check the volume, which requires re-mounting.
-    fs_management::MountOptions mount_options{.readonly = true, .allow_delivery_blobs = true};
+    fs_management::MountOptions mount_options{.readonly = true};
     if (filesystem_.GetTraits().uses_crypt) {
       mount_options.crypt_client = []() { return *GetCryptService(); };
     }
@@ -151,6 +152,12 @@ class JsonInstance : public FilesystemInstance {
   void Reset() override {
     binding_.Reset();
     fs_.reset();
+  }
+
+  std::string GetMoniker() const override {
+    return component_.collection_name().has_value()
+               ? *component_.collection_name() + ":" + component_.child_name()
+               : component_.child_name();
   }
 
  private:

@@ -10,10 +10,11 @@ project('fuchsia', 'cpp', 'c',
          default_options: 'cpp_std=c++17')
 
 inc_top=include_directories('.')
-inc_magma=include_directories('sdk/lib/magma_client/include')
+inc_magma=include_directories('sdk/lib/magma_client/include', 'sdk/lib/magma_common/include')
 
 subdir('src/graphics/lib/magma')
 
 if get_option('with_tests')
     subdir('src/graphics/tests/vkreadback')
+    subdir('src/graphics/magma/tests')
 endif

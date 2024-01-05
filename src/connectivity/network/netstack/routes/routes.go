@@ -129,7 +129,7 @@ type AddResult struct {
 }
 
 func (rt *RouteTable) AddRouteLocked(route tcpip.Route, prf routetypes.Preference, metric routetypes.Metric, tracksInterface, dynamic, enabled, replaceMatchingGvisorRoutes bool, addingSet *routetypes.RouteSetId) AddResult {
-	syslog.VLogTf(syslog.DebugVerbosity, tag, "RouteTable:Adding route %s with prf=%d metric=%d, trackIf=%t, dynamic=%t, enabled=%t, replaceMatchingGvisorRoutes=%t", route, prf, metric, tracksInterface, dynamic, enabled, replaceMatchingGvisorRoutes)
+	syslog.VLogTf(syslog.DebugVerbosity, tag, "RouteTable:Adding route %s with prf=%d metric=%d, tracksInterface=%t, dynamic=%t, enabled=%t, replaceMatchingGvisorRoutes=%t", route, prf, metric, tracksInterface, dynamic, enabled, replaceMatchingGvisorRoutes)
 
 	type foldResult int
 	const (
@@ -368,21 +368,27 @@ func (rt *RouteTable) DelRouteExactMatchLocked(route tcpip.Route, prf routetypes
 				panic(fmt.Sprintf("existing route in table %#v is invalid and thus cannot be converted to a comparison key: %s", *er, err))
 			}
 
-			if existingKey == incomingKey && er.IsMemberOfRouteSet(set) {
-				delete(er.OwningSets, set)
-				if len(er.OwningSets) == 0 {
-					return false, DelResult{
-						NewlyRemovedFromTable: true,
-						NewlyRemovedFromSet:   true,
+			keepInTable := true
+			removedFromSet := false
+			if existingKey == incomingKey {
+				if er.IsMemberOfRouteSet(set) || set.IsGlobal() {
+					// The global route set is intentionally never in the owning
+					// sets for a route.
+					if !set.IsGlobal() {
+						delete(er.OwningSets, set)
 					}
-				} else {
-					return true, DelResult{
-						NewlyRemovedFromTable: false,
-						NewlyRemovedFromSet:   true,
+					removedFromSet = true
+
+					if len(er.OwningSets) == 0 || set.IsGlobal() {
+						keepInTable = false
 					}
 				}
 			}
-			return true, DelResult{}
+
+			return keepInTable, DelResult{
+				NewlyRemovedFromTable: !keepInTable,
+				NewlyRemovedFromSet:   removedFromSet,
+			}
 		},
 		func(a, b DelResult) DelResult {
 			return DelResult{
@@ -407,19 +413,11 @@ func (rt *RouteTable) DelRoute(route tcpip.Route, deletingSet *routetypes.RouteS
 	return rt.DelRouteLocked(route, deletingSet)
 }
 
-// DelRouteSet closes a routeSet and returns any routes deleted from the route table as a result.
-func (rt *RouteTable) DelRouteSet(routeSet *routetypes.RouteSetId) []routetypes.ExtendedRoute {
-	rt.Lock()
-	defer rt.Unlock()
-
-	return rt.DelRouteSetLocked(routeSet)
-}
-
-// DelRouteSetLocked closes a routeSet and returns any routes deleted from the route table as a
-// result.
+// DelRouteSetLocked closes a user routeSet and returns any routes deleted from the route table as a
+// result.  If the routeSet is global, no changes are made.
 func (rt *RouteTable) DelRouteSetLocked(routeSet *routetypes.RouteSetId) []routetypes.ExtendedRoute {
 	if routeSet.IsGlobal() {
-		panic("DelRouteSetLocked should only be called for non-global route sets")
+		return nil
 	}
 
 	routesDeleted := foldMapRoutesLocked[[]routetypes.ExtendedRoute](
@@ -555,6 +553,30 @@ func (rt *RouteTable) FindNIC(addr tcpip.Address) (tcpip.NICID, error) {
 		}
 	}
 	return 0, ErrNoSuchNIC
+}
+
+// GetNICsWithDefaultRoutesLocked returns the set of NICs that have default
+// IPv4 routes.
+func (rt *RouteTable) GetNICsWithDefaultV4RoutesLocked() map[tcpip.NICID]struct{} {
+	set := make(map[tcpip.NICID]struct{})
+	for _, er := range rt.routes {
+		if er.Route.Destination.Equal(header.IPv4EmptySubnet) {
+			set[er.Route.NIC] = struct{}{}
+		}
+	}
+	return set
+}
+
+// GetNICsWithDefaultRoutesLocked returns the set of NICs that have default
+// IPv6 routes.
+func (rt *RouteTable) GetNICsWithDefaultV6RoutesLocked() map[tcpip.NICID]struct{} {
+	set := make(map[tcpip.NICID]struct{})
+	for _, er := range rt.routes {
+		if er.Route.Destination.Equal(header.IPv6EmptySubnet) {
+			set[er.Route.NIC] = struct{}{}
+		}
+	}
+	return set
 }
 
 func (rt *RouteTable) sortRouteTableLocked() {

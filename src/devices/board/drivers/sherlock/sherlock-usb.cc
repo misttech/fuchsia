@@ -9,11 +9,18 @@
 #include <lib/ddk/device.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/driver/component/cpp/composite_node_spec.h>
+#include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/fit/defer.h>
 #include <lib/zircon-internal/align.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <bind/fuchsia/amlogic/platform/cpp/bind.h>
+#include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/platform/cpp/bind.h>
+#include <bind/fuchsia/register/cpp/bind.h>
+#include <bind/fuchsia/usb/phy/cpp/bind.h>
 #include <ddk/usb-peripheral-config.h>
 #include <soc/aml-common/aml-registers.h>
 #include <usb/cdc.h>
@@ -23,10 +30,11 @@
 #include <usb/usb.h>
 
 #include "sherlock.h"
-#include "src/devices/board/drivers/sherlock/sherlock-aml-usb-phy-v2-bind.h"
-#include "src/devices/board/drivers/sherlock/sherlock-dwc2-phy-bind.h"
-#include "src/devices/board/drivers/sherlock/sherlock-xhci-bind.h"
 #include "src/devices/bus/lib/platform-bus-composites/platform-bus-composite.h"
+
+namespace fdf {
+using namespace fuchsia_driver_framework;
+}  // namespace fdf
 
 namespace sherlock {
 namespace fpbus = fuchsia_hardware_platform_bus;
@@ -53,7 +61,6 @@ static const std::vector<fpbus::Bti> dwc2_btis{
         .bti_id = BTI_USB,
     }},
 };
-
 
 // Metadata for DWC2 driver.
 constexpr dwc2_metadata_t dwc2_metadata = {
@@ -170,8 +177,8 @@ static const std::vector<fpbus::Metadata> usb_phy_metadata{
 static const fpbus::Node usb_phy_dev = []() {
   fpbus::Node dev = {};
   dev.name() = "aml-usb-phy-v2";
-  dev.vid() = PDEV_VID_AMLOGIC;
-  dev.did() = PDEV_DID_AML_USB_PHY_V2;
+  dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
+  dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_USB_PHY_V2;
   dev.mmio() = usb_phy_mmios;
   dev.irq() = usb_phy_irqs;
   dev.bti() = usb_btis;
@@ -179,42 +186,140 @@ static const fpbus::Node usb_phy_dev = []() {
   return dev;
 }();
 
+zx_status_t AddUsbPhyComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
+                               fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
+  const std::vector<fdf::BindRule> kResetRegisterRules = std::vector{
+      fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
+                              bind_fuchsia_register::BIND_FIDL_PROTOCOL_DEVICE),
+      fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
+                              aml_registers::REGISTER_USB_PHY_V2_RESET),
+  };
+
+  const std::vector<fdf::NodeProperty> kResetRegisterProperties = std::vector{
+      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
+                        bind_fuchsia_register::BIND_FIDL_PROTOCOL_DEVICE),
+      fdf::MakeProperty(bind_fuchsia_register::NAME, aml_registers::REGISTER_USB_PHY_V2_RESET),
+  };
+
+  std::vector<fdf::ParentSpec> parents{{kResetRegisterRules, kResetRegisterProperties}};
+  auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
+      fidl::ToWire(fidl_arena, usb_phy_dev),
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "aml_usb_phy_v2", .parents = parents}}));
+  if (!result.ok()) {
+    zxlogf(ERROR, "AddCompositeNodeSpec Usb(usb_phy_dev) request failed: %s",
+           result.FormatDescription().data());
+    return result.status();
+  }
+  if (result->is_error()) {
+    zxlogf(ERROR, "AddCompositeNodeSpec Usb(usb_phy_dev) failed: %s",
+           zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t AddDwc2Composite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
+                             fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
+  fpbus::Node dwc2_dev = {};
+  dwc2_dev.name() = "dwc2";
+  dwc2_dev.vid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC;
+  dwc2_dev.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
+  dwc2_dev.did() = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2;
+  dwc2_dev.mmio() = dwc2_mmios;
+  dwc2_dev.irq() = dwc2_irqs;
+  dwc2_dev.bti() = dwc2_btis;
+  dwc2_dev.metadata() = usb_metadata;
+  dwc2_dev.boot_metadata() = usb_boot_metadata;
+
+  const std::vector<fdf::BindRule> kDwc2PhyRules = std::vector{
+      fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL, bind_fuchsia_usb_phy::BIND_PROTOCOL_DEVICE),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2),
+  };
+
+  const std::vector<fdf::NodeProperty> kDwc2PhyProperties = std::vector{
+      fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_usb_phy::BIND_PROTOCOL_DEVICE),
+  };
+
+  std::vector<fdf::ParentSpec> parents{{kDwc2PhyRules, kDwc2PhyProperties}};
+  auto spec_result = pbus.buffer(arena)->AddCompositeNodeSpec(
+      fidl::ToWire(fidl_arena, dwc2_dev),
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "dwc2_phy", .parents = parents}}));
+  if (!spec_result.ok()) {
+    zxlogf(ERROR, "AddCompositeNodeSpec Usb(dwc2_phy) request failed: %s",
+           spec_result.FormatDescription().data());
+    return spec_result.status();
+  }
+  if (spec_result->is_error()) {
+    zxlogf(ERROR, "AddCompositeNodeSpec Usb(dwc2_phy) failed: %s",
+           zx_status_get_string(spec_result->error_value()));
+    return spec_result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t AddXhciComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
+                             fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
+  const std::vector<fuchsia_driver_framework::BindRule> kXhciCompositeRules = {
+      fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL, bind_fuchsia_usb_phy::BIND_PROTOCOL_DEVICE),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI),
+  };
+  const std::vector<fuchsia_driver_framework::NodeProperty> kXhciCompositeProperties = {
+      fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_usb_phy::BIND_PROTOCOL_DEVICE),
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
+                        bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
+                        bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
+                        bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI),
+  };
+
+  const std::vector<fuchsia_driver_framework::ParentSpec> kXhciParents = {
+      fuchsia_driver_framework::ParentSpec{
+          {.bind_rules = kXhciCompositeRules, .properties = kXhciCompositeProperties}}};
+  auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
+      fidl::ToWire(fidl_arena, xhci_dev),
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "xhci-phy", .parents = kXhciParents}}));
+  if (!result.ok()) {
+    zxlogf(ERROR, "AddCompositeNodeSpec Usb(xhci-phy) request failed: %s",
+           result.FormatDescription().data());
+    return result.status();
+  }
+  if (result->is_error()) {
+    zxlogf(ERROR, "AddCompositeNodeSpec Usb(xhci-phy) failed: %s",
+           zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
 }  // namespace
 
 zx_status_t Sherlock::UsbInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('USB_');
-  auto result = pbus_.buffer(arena)->AddComposite(
-      fidl::ToWire(fidl_arena, usb_phy_dev),
-      platform_bus_composite::MakeFidlFragment(fidl_arena, aml_usb_phy_v2_fragments,
-                                               std::size(aml_usb_phy_v2_fragments)),
-      "pdev");
-  if (!result.ok()) {
-    zxlogf(ERROR, "%s: AddComposite Usb(usb_phy_dev) request failed: %s", __func__,
-           result.FormatDescription().data());
-    return result.status();
-  }
-  if (result->is_error()) {
-    zxlogf(ERROR, "%s: AddComposite Usb(usb_phy_dev) failed: %s", __func__,
-           zx_status_get_string(result->error_value()));
-    return result->error_value();
+
+  auto status = AddUsbPhyComposite(pbus_, fidl_arena, arena);
+  if (status != ZX_OK) {
+    return status;
   }
 
   // Add XHCI and DWC2 to the same driver_host as the aml-usb-phy.
-  result =
-      pbus_.buffer(arena)->AddComposite(fidl::ToWire(fidl_arena, xhci_dev),
-                                        platform_bus_composite::MakeFidlFragment(
-                                            fidl_arena, xhci_fragments, std::size(xhci_fragments)),
-                                        "xhci-phy");
-  if (!result.ok()) {
-    zxlogf(ERROR, "%s: AddComposite Usb(xhci_dev) request failed: %s", __func__,
-           result.FormatDescription().data());
-    return result.status();
-  }
-  if (result->is_error()) {
-    zxlogf(ERROR, "%s: AddComposite Usb(xhci_dev) failed: %s", __func__,
-           zx_status_get_string(result->error_value()));
-    return result->error_value();
+  status = AddXhciComposite(pbus_, fidl_arena, arena);
+  if (status != ZX_OK) {
+    return status;
   }
 
   {
@@ -225,31 +330,10 @@ zx_status_t Sherlock::UsbInit() {
       return status;
     }
     usb_metadata[0].data() = peripheral_config->config_data();
-    fpbus::Node dwc2_dev = {};
-    dwc2_dev.name() = "dwc2";
-    dwc2_dev.vid() = PDEV_VID_GENERIC;
-    dwc2_dev.pid() = PDEV_PID_GENERIC;
-    dwc2_dev.did() = PDEV_DID_USB_DWC2;
-    dwc2_dev.mmio() = dwc2_mmios;
-    dwc2_dev.irq() = dwc2_irqs;
-    dwc2_dev.bti() = dwc2_btis;
-    dwc2_dev.metadata() = usb_metadata;
-    dwc2_dev.boot_metadata() = usb_boot_metadata;
 
-    result = pbus_.buffer(arena)->AddComposite(
-        fidl::ToWire(fidl_arena, dwc2_dev),
-        platform_bus_composite::MakeFidlFragment(fidl_arena, dwc2_phy_fragments,
-                                                 std::size(dwc2_phy_fragments)),
-        "dwc2-phy");
-    if (!result.ok()) {
-      zxlogf(ERROR, "%s: AddComposite Usb(dwc2_dev) request failed: %s", __func__,
-             result.FormatDescription().data());
-      return result.status();
-    }
-    if (result->is_error()) {
-      zxlogf(ERROR, "%s: AddComposite Usb(dwc2_dev) failed: %s", __func__,
-             zx_status_get_string(result->error_value()));
-      return result->error_value();
+    status = AddDwc2Composite(pbus_, fidl_arena, arena);
+    if (status != ZX_OK) {
+      return status;
     }
   }
 

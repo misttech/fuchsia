@@ -17,8 +17,8 @@
 #include <fbl/ref_ptr.h>
 #include <fbl/string.h>
 
-#include "src/lib/storage/vfs/cpp/pseudo_dir.h"
-#include "src/lib/storage/vfs/cpp/vnode.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
 
 class Devfs;
 class PseudoDir;
@@ -31,27 +31,20 @@ class Devnode {
   // This class represents a device in devfs. It is called "passthrough" because it sends
   // the channel and the connection type to a callback function.
   struct PassThrough {
-    struct ConnectionType {
-      // If true, the connection should serve `fuchsia.io/Node`.
-      bool include_node = false;
-      // If true, the connection should serve `fuchsia.device/Controller`.
-      bool include_controller = false;
-      // If true, the connection should serve the device's FIDL.
-      bool include_device = false;
-    };
-    using ConnectCallback = fit::function<zx_status_t(zx::channel, ConnectionType)>;
+    using ConnectCallback =
+        fit::function<zx_status_t(zx::channel, fuchsia_device_fs::ConnectionType)>;
 
     // Create a Passthrough class. The client must make sure that any captures in the callback
     // live as long as the passthrough class (for this reason it's strongly recommended to use
     // owned captures).
-    explicit PassThrough(ConnectCallback callback)
-        : connect(std::make_shared<ConnectCallback>(std::move(callback))) {}
+    explicit PassThrough(fuchsia_device_fs::ConnectionType default_connection_type,
+                         ConnectCallback callback)
+        : default_connection_type(default_connection_type),
+          connect(std::make_shared<ConnectCallback>(std::move(callback))) {}
 
     PassThrough Clone() { return *this; }
 
-    ConnectionType default_connection_type = ConnectionType{
-        .include_device = true,
-    };
+    fuchsia_device_fs::ConnectionType default_connection_type;
     std::shared_ptr<ConnectCallback> connect;
   };
 

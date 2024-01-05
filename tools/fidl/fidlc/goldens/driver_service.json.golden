@@ -1,11 +1,12 @@
 {
   "name": "test.driverservice",
   "experiments": [
-    "no_optional_structs",
     "output_index_json",
-    "unknown_interactions",
-    "unknown_interactions_mandate"
+    "transitional_allow_list"
   ],
+  "available": {
+    "fuchsia": "LEGACY"
+  },
   "library_dependencies": [],
   "bits_declarations": [],
   "const_declarations": [],
@@ -74,16 +75,6 @@
             "identifier": "test.driverservice/SomeDriverProtocol",
             "nullable": false,
             "protocol_transport": "Driver",
-            "type_shape_v1": {
-              "inline_size": 4,
-              "alignment": 4,
-              "depth": 0,
-              "max_handles": 1,
-              "max_out_of_line": 0,
-              "has_padding": false,
-              "has_envelope": false,
-              "has_flexible_envelope": false
-            },
             "type_shape_v2": {
               "inline_size": 4,
               "alignment": 4,
@@ -91,7 +82,6 @@
               "max_handles": 1,
               "max_out_of_line": 0,
               "has_padding": false,
-              "has_envelope": false,
               "has_flexible_envelope": false
             }
           },

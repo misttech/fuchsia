@@ -572,7 +572,7 @@ void UsbXhci::DdkUnbind(ddk::UnbindTxn txn) {
       }
       // Ensure that we've actually invoked the completions above
       // before moving to the next step.
-      // TODO (fxbug.dev/44375): Migrate to joins
+      // TODO(fxbug.dev/44375): Migrate to joins
       RunUntilIdle();
       for (size_t i = 0; i < max_slots_; i++) {
         auto state = device_state_[i];
@@ -601,7 +601,7 @@ void UsbXhci::DdkUnbind(ddk::UnbindTxn txn) {
         }
       }
       // Flush any outstanding async I/O
-      // TODO (fxbug.dev/44375): Migrate to joins
+      // TODO(fxbug.dev/44375): Migrate to joins
       RunUntilIdle();
     } while (pending);
 
@@ -792,7 +792,7 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciEnableEndpoint(
         .set_Type(Control::ConfigureEndpointCommand)
         .ToTrb(&trb);
   }
-  // TODO (fxbug.dev/34140): Implement async support
+  // TODO(fxbug.dev/34140): Implement async support
   hw_mb();
   return SubmitCommand(trb, std::move(context))
       .then(
@@ -855,7 +855,7 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciDisableEndpoint(uint32_t dev
         .set_Type(Control::ConfigureEndpointCommand)
         .ToTrb(&trb);
   }
-  // TODO (fxbug.dev/34140): Implement async support
+  // TODO(fxbug.dev/34140): Implement async support
   hw_mb();
   return SubmitCommand(trb, std::move(context))
       .then(
@@ -1088,7 +1088,7 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciResetEndpointAsync(uint32_t 
       .box();
 }
 
-// TODO (fxbug.dev/34637): Either decide what these reset methods should do,
+// TODO(fxbug.dev/34637): Either decide what these reset methods should do,
 // or get rid of them.
 zx_status_t UsbXhci::UsbHciResetDevice(uint32_t hub_address, uint32_t device_id) {
   return ZX_ERR_NOT_SUPPORTED;
@@ -1217,14 +1217,21 @@ void UsbXhci::Shutdown(zx_status_t status) {
   }
 }
 
-void UsbXhci::InitQuirks() {
+zx_status_t UsbXhci::InitQuirks() {
   fuchsia_hardware_pci::wire::DeviceInfo info;
-  pci_.GetDeviceInfo(&info);
+  auto status = pci_.GetDeviceInfo(&info);
+  if (status == ZX_ERR_PEER_CLOSED) {
+    // Reset.
+    pci_ = {};
+  }
+  if (status != ZX_OK) {
+    return status;
+  }
   if ((info.vendor_id == 0x1033) && (info.device_id == 0x194)) {
     qemu_quirk_ = true;
   }
   if ((info.vendor_id) == 0x8086 && (info.device_id == 0x8C31)) {
-    // TODO (bbosak): Implement stub EHCI driver so we can properly
+    // TODO(bbosak): Implement stub EHCI driver so we can properly
     // do the handoff in case the BIOS is managing a device on EHCI.
     // Quirk for some older Intel chipsets
     // Switch ports from EHCI to XHCI.
@@ -1242,16 +1249,21 @@ void UsbXhci::InitQuirks() {
     // (have to wait for enumeration to time out)
     sleep(5);
   }
+
+  return ZX_OK;
 }
 
 zx_status_t UsbXhci::InitPci() {
   // Perform vendor-specific workarounds.
-  InitQuirks();
+  auto status = InitQuirks();
+  if (status != ZX_OK) {
+    return status;
+  }
   // PCIe interface supports cache snooping
   has_coherent_cache_ = true;
   // Initialize MMIO
   std::optional<fdf::MmioBuffer> buffer;
-  zx_status_t status = pci_.MapMmio(0, ZX_CACHE_POLICY_UNCACHED_DEVICE, &buffer);
+  status = pci_.MapMmio(0, ZX_CACHE_POLICY_UNCACHED_DEVICE, &buffer);
   if (status != ZX_OK) {
     return status;
   }
@@ -1387,11 +1399,13 @@ int UsbXhci::InitThread() {
   zx_status_t status;
   if (pci_.is_valid()) {
     status = InitPci();
-    if (status != ZX_OK) {
+    if (status != ZX_ERR_PEER_CLOSED && status != ZX_OK) {
       zxlogf(ERROR, "PCI initialization failed with: %s", zx_status_get_string(status));
       return thrd_error;
     }
-  } else {
+  }
+  // Because pci_.is_valid() may have changed in InitQuirks().
+  if (!pci_.is_valid()) {
     status = InitMmio();
     if (status != ZX_OK) {
       zxlogf(ERROR, "MMIO initialization failed with: %s", zx_status_get_string(status));
@@ -1477,7 +1491,7 @@ zx_status_t UsbXhci::HciFinalize() {
   }
   uint32_t page_size = USB_PAGESIZE::Get(cap_length_).ReadFrom(&mmio_.value()).PageSize() << 12;
   page_size_ = page_size;
-  // TODO (bbosak): Correct this to use variable alignment when we get kernel
+  // TODO(bbosak): Correct this to use variable alignment when we get kernel
   // support for this.
   if (page_size != zx_system_get_page_size()) {
     zxlogf(ERROR, "xHC page size differs from platform page size");
@@ -1717,7 +1731,10 @@ zx_status_t UsbXhci::Create(void* ctx, zx_device_t* parent) {
     dev->pdev_ = std::move(pdev_result.value());
     // We need at least a PDEV, but the PHY is optional
     // for devices not implementing OTG.
-    dev->phy_ = ddk::UsbPhyProtocolClient(parent, "xhci-phy");
+    auto phy = usb_phy::UsbPhyClient::Create(parent, "xhci-phy");
+    if (phy.is_ok()) {
+      dev->phy_.emplace(std::move(phy.value()));
+    }
   } else {
     // A device doesn't have to have a PDEV. It might use PCI instead.
     if (pdev_result.error_value() != ZX_ERR_NOT_FOUND) {

@@ -419,9 +419,6 @@ zx_status_t Dispatcher::CreateUnmanagedDispatcher(
       []() {
         // We want the Test dispatchers to have the allow_sync option on them which leads to this
         // adder being called. So we return success even though this is a no-op.
-        LOGF(
-            INFO,
-            "ALLOW_SYNC_CALLS enabled on unmanaged dispatcher, ensure sync calls are handled on a managed dispatcher.");
         return ZX_OK;
       },
       shutdown_observer, out_dispatcher);
@@ -482,7 +479,12 @@ void Dispatcher::ShutdownAsync() {
     // ever happen on a thread at once. If the irq gets triggered in the meanwhile,
     // |QueueIrq| will return early.
 
-    timer_.Cancel();
+    zx_status_t status = timer_.Cancel();
+    // If we could not cancel the timer, it is going to run / is already running in another
+    // thread, and we don't want |CompleteShutdown| to run until after that completes.
+    if (status != ZX_OK) {
+      shutdown_waiting_for_timer_ = true;
+    }
     shutdown_queue_.splice(shutdown_queue_.end(), delayed_tasks_);
 
     // To avoid race conditions with attempting to cancel a wait that might be scheduled to
@@ -703,7 +705,7 @@ void Dispatcher::ResetTimerLocked() {
   // without risking the need to cancel the task.
 
   if (timer_.current_deadline() > deadline && timer_.Cancel() == ZX_OK) {
-    timer_.BeginWait(process_shared_dispatcher_, deadline);
+    timer_.BeginWait(deadline);
   }
 }
 
@@ -740,15 +742,21 @@ void Dispatcher::CheckDelayedTasksLocked() {
   }
 }
 
-void Dispatcher::CheckDelayedTasks() {
-  fbl::AutoLock al(&callback_lock_);
-  CheckDelayedTasksLocked();
-}
-
 void Dispatcher::Timer::Handler() {
-  current_deadline_ = zx::time::infinite();
-  dispatcher_->CheckDelayedTasks();
+  {
+    fbl::AutoLock al(&dispatcher_->callback_lock_);
+    current_deadline_ = zx::time::infinite();
+    dispatcher_->CheckDelayedTasksLocked();
+  }
   dispatcher_->thread_pool()->OnThreadWakeup();
+  {
+    fbl::AutoLock lock(&dispatcher_->callback_lock_);
+    // Check if the dispatcher is shutting down and waiting for the handler to complete.
+    if (!dispatcher_->IsRunningLocked()) {
+      dispatcher_->shutdown_waiting_for_timer_ = false;
+      dispatcher_->IdleCheckLocked();
+    }
+  }
 }
 
 zx_status_t Dispatcher::PostTask(async_task_t* task) {
@@ -764,7 +772,6 @@ zx_status_t Dispatcher::PostTask(async_task_t* task) {
         std::make_unique<driver_runtime::CallbackRequest>(CallbackRequest::RequestType::kTask);
     callback_request->SetCallback(static_cast<fdf_dispatcher_t*>(this), std::move(callback), task);
     CallbackRequest* callback_ptr = callback_request.get();
-    // TODO(92878): handle task deadlines.
     callback_request = RegisterCallbackWithoutQueueing(std::move(callback_request));
     // Dispatcher returned callback request as queueing failed.
     if (callback_request) {
@@ -983,6 +990,7 @@ void Dispatcher::QueueRegisteredCallback(driver_runtime::CallbackRequest* reques
         dispatching_sync_ = true;
       }
     }
+    num_total_requests_++;
     if (!direct_call) {
       callback_queue_.push_back(std::move(callback_request));
       if (event_waiter_ && !event_waiter_->signaled()) {
@@ -990,6 +998,7 @@ void Dispatcher::QueueRegisteredCallback(driver_runtime::CallbackRequest* reques
       }
       return;
     }
+    num_inlined_requests_++;
   }
   DispatchCallback(std::move(callback_request));
 
@@ -1279,7 +1288,9 @@ bool Dispatcher::IsIdleLocked() {
          (!event_waiter_ || !event_waiter_->signaled());
 }
 
-bool Dispatcher::HasFutureOpsScheduledLocked() { return !waits_.is_empty() || timer_.is_armed(); }
+bool Dispatcher::HasFutureOpsScheduledLocked() {
+  return !waits_.is_empty() || timer_.is_armed() || shutdown_waiting_for_timer_;
+}
 
 void Dispatcher::IdleCheckLocked() {
   if (IsIdleLocked()) {
@@ -1571,6 +1582,33 @@ zx_status_t DispatcherCoordinator::AddDispatcher(fbl::RefPtr<Dispatcher> dispatc
   return ZX_OK;
 }
 
+// static
+uint32_t DispatcherCoordinator::GetThreadLimit(std::string_view scheduler_role) {
+  auto thread_pool = GetDispatcherCoordinator().default_thread_pool();
+  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
+    auto result = GetDispatcherCoordinator().GetOrCreateThreadPool(scheduler_role);
+    if (result.is_error()) {
+      return 0;
+    }
+    thread_pool = *result;
+  }
+  return thread_pool->max_threads();
+}
+
+// static
+zx_status_t DispatcherCoordinator::SetThreadLimit(std::string_view scheduler_role,
+                                                  uint32_t max_threads) {
+  auto thread_pool = GetDispatcherCoordinator().default_thread_pool();
+  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
+    auto result = GetDispatcherCoordinator().GetOrCreateThreadPool(scheduler_role);
+    if (result.is_error()) {
+      return 0;
+    }
+    thread_pool = *result;
+  }
+  return thread_pool->set_max_threads(max_threads);
+}
+
 void DispatcherCoordinator::NotifyDispatcherShutdown(
     Dispatcher& dispatcher, fdf_dispatcher_shutdown_observer_t* dispatcher_shutdown_observer) {
   DriverState::DriverShutdownCallback shutdown_callback = nullptr;
@@ -1746,7 +1784,7 @@ void Dispatcher::ThreadPool::ThreadWakeupPrologue() {
   zx_status_t status = SetRoleProfile();
   if (status != ZX_OK) {
     // Failing to set the role profile is not a fatal error.
-    LOGF(ERROR, "Failed to set scheduler role: %d\n", status);
+    LOGF(WARNING, "Failed to set scheduler role: %d\n", status);
   }
   driver_context::SetRoleProfileStatus(status);
 }
@@ -1792,10 +1830,7 @@ zx_status_t Dispatcher::ThreadPool::AddThread() {
     return ZX_OK;
   }
 
-  // TODO(surajmalhotra): We are clamping number_threads_ to 10 to avoid spawning too many threads.
-  // Technically this can result in a deadlock scenario in a very complex driver host. We need
-  // better support for dynamically starting threads as necessary.
-  if (num_threads_ >= dispatcher_threads_needed_ || num_threads_ == 10) {
+  if (num_threads_ >= dispatcher_threads_needed_ || num_threads_ == max_threads_) {
     return ZX_OK;
   }
   auto name = "fdf-dispatcher-thread-" + std::to_string(num_threads_);
@@ -1843,6 +1878,7 @@ void Dispatcher::ThreadPool::Reset() {
 
   {
     fbl::AutoLock al(&lock_);
+    max_threads_ = 10;
     num_threads_ = 0;
     dispatcher_threads_needed_ = 0;
     num_dispatchers_ = 0;

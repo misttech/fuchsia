@@ -4,18 +4,17 @@
 
 use anyhow::{Context, Result};
 use async_channel::{Receiver, Sender};
-use async_io::Async;
 use async_lock::Mutex;
 use async_trait::async_trait;
 use ffx_config::global_env_context;
 use fuchsia_async::Task;
-use futures::{AsyncBufReadExt, AsyncWriteExt, FutureExt, StreamExt};
-use futures_lite::io::BufReader;
-use std::{
-    cell::Cell,
-    process::{Child, Command, Stdio},
-};
+use futures::{FutureExt, StreamExt};
+use std::{cell::Cell, process::Stdio};
 use symbol_index::ensure_symbol_index_registered;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::Command,
+};
 
 // TODO(https://fxbug.dev/121413): Remove this.
 /// No-op symbolizer used for testing
@@ -57,7 +56,10 @@ const BARRIER: &str = "<ffx symbolizer>\n";
 
 /// Returns true if the given string is a context marker.
 pub fn is_symbolizer_context_marker(s: &str) -> bool {
-    return s.starts_with("{{{reset")
+    // In some cases, log producers add additional text at the beginning
+    // of a stacktrace log, so we use contains instead of starts_with
+    // to check for the beginning of a stacktrace.
+    return s.contains("{{{reset")
         || s.starts_with("{{{bt")
         || s.starts_with("{{{mmap")
         || s.starts_with("{{{dumpfile")
@@ -77,7 +79,6 @@ pub trait Symbolizer {
 }
 
 struct LogSymbolizerInner {
-    child: Child,
     _task: Task<Result<()>>,
 }
 
@@ -122,12 +123,10 @@ impl<'a> Symbolizer for LogSymbolizer {
             .stderr(Stdio::inherit())
             .spawn()
             .context("Spawning symbolizer")?;
-        let stdout = Async::new(c.stdout.take().context("missing stdout")?)?;
-        let mut stdin = Async::new(c.stdin.take().context("missing stdin")?)?;
-
+        let stdout = c.stdout.take().context("missing stdout")?;
+        let mut stdin = c.stdin.take().context("missing stdin")?;
         let mut inner = self.inner.borrow_mut();
         inner.replace(LogSymbolizerInner {
-            child: c,
             _task: Task::local(async move {
                 let mut stdout_reader = BufReader::new(stdout);
                 loop {
@@ -186,21 +185,6 @@ impl<'a> Symbolizer for LogSymbolizer {
             })
         });
         Ok(())
-    }
-}
-
-impl Drop for LogSymbolizer {
-    fn drop(&mut self) {
-        let mut inner = self.inner.borrow_mut();
-        tracing::info!("LogSymbolizer dropped. Killing `symbolizer` process.");
-        if let Some(mut inner) = inner.take() {
-            if let Err(_) = inner.child.kill() {
-                tracing::warn!("symbolizer process already stopped.");
-            }
-            // Wait on the child so it doesn't hang around as a zombie process.
-            let r = inner.child.wait();
-            tracing::info!("Symbolizer exited with result status: {:?}", r);
-        }
     }
 }
 
@@ -267,6 +251,10 @@ mod test {
         in_tx.send("{{{reset}}}\n".to_string()).await.unwrap();
         let out = out_rx.next().await.unwrap();
         assert_eq!(out, "prefix{{{reset}}}\n");
+
+        in_tx.send("something{{{reset}}}\n".to_string()).await.unwrap();
+        let out = out_rx.next().await.unwrap();
+        assert_eq!(out, "prefixsomething{{{reset}}}\n");
 
         in_tx.send("{{{mmap:something}}\n".to_string()).await.unwrap();
         let out = out_rx.next().await.unwrap();

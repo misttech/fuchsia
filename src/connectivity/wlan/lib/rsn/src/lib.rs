@@ -33,7 +33,7 @@ use {
     },
     eapol,
     fidl_fuchsia_wlan_mlme::{EapolResultCode, SaeFrame},
-    ieee80211::Ssid,
+    ieee80211::{MacAddr, Ssid},
     std::sync::{Arc, Mutex},
     tracing::warn,
     wlan_common::ie::{
@@ -81,9 +81,9 @@ impl Supplicant {
     pub fn new_wpa_personal(
         nonce_rdr: Arc<nonce::NonceReader>,
         auth_cfg: auth::Config,
-        s_addr: [u8; 6],
+        s_addr: MacAddr,
         s_protection: ProtectionInfo,
-        a_addr: [u8; 6],
+        a_addr: MacAddr,
         a_protection: ProtectionInfo,
     ) -> Result<Supplicant, anyhow::Error> {
         let negotiated_protection = NegotiatedProtection::from_protection(&s_protection)?;
@@ -117,28 +117,16 @@ impl Supplicant {
         Ok(Supplicant { auth_method, esssa, auth_cfg })
     }
 
-    /// Starts the Supplicant. A Supplicant must be started after its creation and everytime it was
-    /// reset.
-    pub fn start(&mut self) -> Result<(), Error> {
-        // The Supplicant always waits for Authenticator to initiate and does not yet support EAPOL
-        // request frames. Thus, all updates can be ignored.
-        let mut dead_update_sink = vec![];
-        self.esssa.initiate(&mut dead_update_sink)
+    pub fn start(&mut self, update_sink: &mut UpdateSink) -> Result<(), Error> {
+        self.esssa.initiate(update_sink)
     }
 
-    /// Resets all established Security Associations and invalidates all derived keys in this ESSSA.
-    /// The Supplicant must be reset or destroyed when the underlying 802.11 association terminates.
-    /// The replay counter is also reset.
     pub fn reset(&mut self) {
         // The replay counter must be reset so subsequent associations are not ignored.
         self.esssa.reset_replay_counter();
         self.esssa.reset_security_associations();
     }
 
-    /// Entry point for all incoming EAPOL frames. Incoming frames can be corrupted, invalid or of
-    /// unsupported types; the Supplicant will filter and drop all unexpected frames.
-    /// Outbound EAPOL frames, status and key updates will be pushed into the `update_sink`.
-    /// The method will return an `Error` if the frame was invalid.
     pub fn on_eapol_frame<B: ByteSlice>(
         &mut self,
         update_sink: &mut UpdateSink,
@@ -224,9 +212,9 @@ impl Authenticator {
         nonce_rdr: Arc<nonce::NonceReader>,
         gtk_provider: Arc<Mutex<gtk::GtkProvider>>,
         psk: psk::Psk,
-        s_addr: [u8; 6],
+        s_addr: MacAddr,
         s_protection: ProtectionInfo,
-        a_addr: [u8; 6],
+        a_addr: MacAddr,
         a_protection: ProtectionInfo,
     ) -> Result<Authenticator, anyhow::Error> {
         let negotiated_protection = NegotiatedProtection::from_protection(&s_protection)?;
@@ -261,9 +249,9 @@ impl Authenticator {
         igtk_provider: Arc<Mutex<igtk::IgtkProvider>>,
         ssid: Ssid,
         password: Vec<u8>,
-        s_addr: [u8; 6],
+        s_addr: MacAddr,
         s_protection: ProtectionInfo,
-        a_addr: [u8; 6],
+        a_addr: MacAddr,
         a_protection: ProtectionInfo,
     ) -> Result<Authenticator, anyhow::Error> {
         let negotiated_protection = NegotiatedProtection::from_protection(&s_protection)?;
@@ -471,7 +459,7 @@ pub enum Error {
     #[error("encrypted_key_data bit requires MIC bit to be set")]
     InvalidMicBitForEncryptedKeyData,
     #[error("invalid key length {:?}; expected {:?}", _0, _1)]
-    InvalidKeyLength(u16, u16),
+    InvalidKeyLength(usize, usize),
     #[error("unsupported cipher suite")]
     UnsupportedCipherSuite,
     #[error("unsupported AKM suite")]

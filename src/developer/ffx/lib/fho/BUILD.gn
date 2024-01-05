@@ -12,15 +12,15 @@ rustc_library("lib") {
 
   deps = [
     "macro:lib",
-    "//sdk/fidl/fuchsia.developer.ffx:fuchsia.developer.ffx_rust",
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
     "//src/developer/ffx/command:lib",
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/core:lib",
     "//src/developer/ffx/daemon/proxy:lib",
+    "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
+    "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho/metadata:lib",
     "//src/developer/ffx/lib/rcs:lib",
-    "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
@@ -30,14 +30,18 @@ rustc_library("lib") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:tempfile",
   ]
 
-  test_deps = [ "//src/lib/fuchsia-async" ]
+  test_deps = [
+    "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:tempfile",
+  ]
 
   sources = [
     "src/adapters.rs",
     "src/from_env.rs",
+    "src/from_env/from_toolbox.rs",
+    "src/from_env/helpers.rs",
     "src/lib.rs",
     "src/subtool.rs",
     "src/testing.rs",

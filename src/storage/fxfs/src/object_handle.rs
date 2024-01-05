@@ -4,9 +4,10 @@
 
 use {
     crate::object_store::{PosixAttributes, Timestamp},
-    anyhow::{bail, Error},
+    anyhow::Error,
     async_trait::async_trait,
-    storage_device::buffer::{Buffer, BufferRef, MutableBufferRef},
+    std::{future::Future, pin::Pin},
+    storage_device::buffer::{BufferFuture, BufferRef, MutableBufferRef},
 };
 
 // Some places use Default and assume that zero is an invalid object ID, so this cannot be changed
@@ -25,7 +26,7 @@ pub trait ObjectHandle: Send + Sync + 'static {
     fn block_size(&self) -> u64;
 
     /// Allocates a buffer for doing I/O (read and write) for the object.
-    fn allocate_buffer(&self, size: usize) -> Buffer<'_>;
+    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_>;
 
     /// Sets tracing for this object.
     fn set_trace(&self, _v: bool) {}
@@ -44,16 +45,14 @@ pub struct ObjectProperties {
     pub creation_time: Timestamp,
     /// The timestamp at which the objects's data was last modified (i.e. mtime).
     pub modification_time: Timestamp,
+    /// The timestamp at which the object was last read (i.e. atime).
+    pub access_time: Timestamp,
+    /// The timestamp at which the object's status was last modified (i.e. ctime).
+    pub change_time: Timestamp,
     /// The number of sub-directories.
     pub sub_dirs: u64,
     // The POSIX attributes: mode, uid, gid, rdev
     pub posix_attributes: Option<PosixAttributes>,
-}
-
-#[async_trait]
-pub trait GetProperties {
-    /// Gets the object's properties.
-    async fn get_properties(&self) -> Result<ObjectProperties, Error>;
 }
 
 #[async_trait]
@@ -79,37 +78,9 @@ pub trait WriteObjectHandle: ObjectHandle {
     /// the truncate.
     async fn truncate(&self, size: u64) -> Result<(), Error>;
 
-    /// Updates the timestamps for the object.
-    /// The truncate may be cached, in which case a later call to |flush| is necessary to persist
-    /// the truncate.
-    async fn write_timestamps<'a>(
-        &'a self,
-        crtime: Option<Timestamp>,
-        mtime: Option<Timestamp>,
-    ) -> Result<(), Error>;
-
     /// Flushes all pending data and metadata updates for the object.
     async fn flush(&self) -> Result<(), Error>;
 }
-
-#[async_trait]
-pub trait ObjectHandleExt: ReadObjectHandle {
-    // Returns the contents of the object. The object must be < |limit| bytes in size.
-    async fn contents(&self, limit: usize) -> Result<Box<[u8]>, Error> {
-        let size = self.get_size();
-        if size > limit as u64 {
-            bail!("Object too big ({} > {})", size, limit);
-        }
-        let mut buf = self.allocate_buffer(size as usize);
-        self.read(0u64, buf.as_mut()).await?;
-        let mut vec = vec![0; size as usize];
-        vec.copy_from_slice(&buf.as_slice());
-        Ok(vec.into())
-    }
-}
-
-#[async_trait]
-impl<T: ReadObjectHandle + ?Sized> ObjectHandleExt for T {}
 
 #[async_trait]
 /// This trait is an asynchronous streaming writer.
@@ -120,10 +91,48 @@ pub trait WriteBytes {
     /// or when buffers are full.
     async fn write_bytes(&mut self, buf: &[u8]) -> Result<(), Error>;
 
-    /// Called to flush to the handle.  Named to avoid confluct with the flush method above.
+    /// Called to flush to the handle.  Named to avoid conflict with the flush method above.
     async fn complete(&mut self) -> Result<(), Error>;
 
     /// Moves the offset forward by `amount`, which will result in zeroes in the output stream, even
     /// if no other data is appended to it.
     async fn skip(&mut self, amount: u64) -> Result<(), Error>;
+}
+
+impl ReadObjectHandle for Box<dyn ReadObjectHandle> {
+    // Manual expansion of `async_trait` to avoid double boxing the `Future`.
+    fn read<'a, 'b, 'c>(
+        &'a self,
+        offset: u64,
+        buf: MutableBufferRef<'b>,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, Error>> + Send + 'c>>
+    where
+        'a: 'c,
+        'b: 'c,
+        Self: 'c,
+    {
+        (**self).read(offset, buf)
+    }
+
+    fn get_size(&self) -> u64 {
+        (**self).get_size()
+    }
+}
+
+impl ObjectHandle for Box<dyn ReadObjectHandle> {
+    fn object_id(&self) -> u64 {
+        (**self).object_id()
+    }
+
+    fn block_size(&self) -> u64 {
+        (**self).block_size()
+    }
+
+    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
+        (**self).allocate_buffer(size)
+    }
+
+    fn set_trace(&self, v: bool) {
+        (**self).set_trace(v)
+    }
 }

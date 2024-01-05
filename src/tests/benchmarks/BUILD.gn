@@ -3,11 +3,12 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/testing/perf/test.gni")
 
 group("benchmarks") {
   testonly = true
   deps = [
-    ":kernel-boot-benchmarks",
+    ":kernel_boot_benchmarks",
     "//src/tests/benchmarks/fidl:benchmarks",
   ]
 }
@@ -18,7 +19,7 @@ executable("kernel-boot-stats") {
   deps = [
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_hlcpp",
     "//sdk/lib/sys/cpp",
-    "//sdk/lib/sys/inspect/cpp",
+    "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/perftest",
   ]
 }
@@ -27,4 +28,11 @@ fuchsia_package_with_single_component("kernel-boot-benchmarks") {
   testonly = true
   deps = [ ":kernel-boot-stats" ]
   manifest = "meta/kernel-boot-benchmarks.cml"
+}
+
+fuchsia_component_perf_test("kernel_boot_benchmarks") {
+  package = ":kernel-boot-benchmarks"
+  component_name = "kernel-boot-benchmarks"
+  test_type = "system"
+  expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.kernel.boot.txt"
 }

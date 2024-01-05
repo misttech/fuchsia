@@ -28,13 +28,14 @@ class RegisterMmioProcessor {
   RegisterMmioProcessor& operator=(const RegisterMmioProcessor&&) = delete;
   explicit RegisterMmioProcessor(UfsMockDevice& mock_device) : mock_device_(mock_device) {}
 
-  static const fdf::internal::MmioBufferOps& GetMmioOps() { return kMmioOps; }
+  static const fdf::MmioBufferOps& GetMmioOps() { return kMmioOps; }
 
   static void NoOpHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultISHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultHCEHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultUTRLDBRHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultUTRLRSRHandler(UfsMockDevice& mock_device, uint32_t value);
+  static void DefaultUTRLCNRHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultUICCMDHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultUICCMDARG1Handler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultUICCMDARG2Handler(UfsMockDevice& mock_device, uint32_t value);
@@ -54,6 +55,7 @@ class RegisterMmioProcessor {
   // RegisterMap::kUTRLBAU does not require a handler.
   DEF_DEFAULT_HANDLER(RegisterMap::kUTRLDBR, DefaultUTRLDBRHandler)
   DEF_DEFAULT_HANDLER(RegisterMap::kUTRLRSR, DefaultUTRLRSRHandler)
+  DEF_DEFAULT_HANDLER(RegisterMap::kUTRLCNR, DefaultUTRLCNRHandler)
   // UTP Task Management
   // RegisterMap::kUTMRLBA does not require a handler.
   // RegisterMap::kUTMRLBAU does not require a handler.
@@ -87,7 +89,7 @@ class RegisterMmioProcessor {
   static void Write32(const void* ctx, const mmio_buffer_t& mmio, uint32_t value, zx_off_t offset);
   static uint32_t Read32(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs);
 
-  static constexpr fdf::internal::MmioBufferOps kMmioOps = {
+  static constexpr fdf::MmioBufferOps kMmioOps = {
       .Read8 = Read8,
       .Read16 = Read16,
       .Read32 = Read32,

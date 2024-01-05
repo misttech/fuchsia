@@ -10,7 +10,8 @@ mod remote_client;
 use {
     crate::{
         buffer::{BufferProvider, InBuf},
-        device::DeviceOps,
+        ddk_converter,
+        device::{self, DeviceOps},
         error::Error,
         logger,
     },
@@ -136,8 +137,11 @@ impl<D: DeviceOps> crate::MlmeImpl for Ap<D> {
         device: D,
         buf_provider: BufferProvider,
         timer: Timer<TimedEvent>,
-    ) -> Self {
-        Self::new(device, buf_provider, timer, config)
+    ) -> Result<Self, anyhow::Error>
+    where
+        Self: Sized,
+    {
+        Ok(Self::new(device, buf_provider, timer, config))
     }
     fn handle_mlme_request(&mut self, req: wlan_sme::MlmeRequest) -> Result<(), anyhow::Error> {
         Self::handle_mlme_req(self, req).map_err(|e| e.into())
@@ -191,7 +195,7 @@ impl<D> Ap<D> {
     fn handle_sme_get_minstrel_stats(
         &self,
         responder: wlan_sme::responder::Responder<fidl_mlme::MinstrelStatsResponse>,
-        _addr: &[u8; 6],
+        _addr: &MacAddr,
     ) -> Result<(), Error> {
         // TODO(fxbug.dev/79543): Implement once Minstrel is in Rust.
         error!("GetMinstrelStats is not supported.");
@@ -284,7 +288,8 @@ impl<D: DeviceOps> Ap<D> {
         &mut self,
         responder: wlan_sme::responder::Responder<fidl_mlme::DeviceInfo>,
     ) -> Result<(), Error> {
-        let info = self.ctx.device.wlan_softmac_query_response().try_into()?;
+        let info =
+            ddk_converter::mlme_device_info_from_softmac(device::try_query(&mut self.ctx.device)?)?;
         responder.respond(info);
         Ok(())
     }
@@ -293,8 +298,7 @@ impl<D: DeviceOps> Ap<D> {
         &mut self,
         responder: wlan_sme::responder::Responder<fidl_common::DiscoverySupport>,
     ) -> Result<(), Error> {
-        let ddk_support = self.ctx.device.discovery_support();
-        let support = crate::ddk_converter::convert_ddk_discovery_support(ddk_support)?;
+        let support = device::try_query_discovery_support(&mut self.ctx.device)?;
         responder.respond(support);
         Ok(())
     }
@@ -303,8 +307,7 @@ impl<D: DeviceOps> Ap<D> {
         &mut self,
         responder: wlan_sme::responder::Responder<fidl_common::MacSublayerSupport>,
     ) -> Result<(), Error> {
-        let ddk_support = self.ctx.device.mac_sublayer_support();
-        let support = crate::ddk_converter::convert_ddk_mac_sublayer_support(ddk_support)?;
+        let support = device::try_query_mac_sublayer_support(&mut self.ctx.device)?;
         responder.respond(support);
         Ok(())
     }
@@ -313,8 +316,7 @@ impl<D: DeviceOps> Ap<D> {
         &mut self,
         responder: wlan_sme::responder::Responder<fidl_common::SecuritySupport>,
     ) -> Result<(), Error> {
-        let ddk_support = self.ctx.device.security_support();
-        let support = crate::ddk_converter::convert_ddk_security_support(ddk_support)?;
+        let support = device::try_query_security_support(&mut self.ctx.device)?;
         responder.respond(support);
         Ok(())
     }
@@ -323,8 +325,7 @@ impl<D: DeviceOps> Ap<D> {
         &mut self,
         responder: wlan_sme::responder::Responder<fidl_common::SpectrumManagementSupport>,
     ) -> Result<(), Error> {
-        let ddk_support = self.ctx.device.spectrum_management_support();
-        let support = crate::ddk_converter::convert_ddk_spectrum_management_support(ddk_support)?;
+        let support = device::try_query_spectrum_management_support(&mut self.ctx.device)?;
         responder.respond(support);
         Ok(())
     }
@@ -350,7 +351,7 @@ impl<D: DeviceOps> Ap<D> {
             }
             Req::ListMinstrelPeers(responder) => self.handle_sme_list_minstrel_peers(responder),
             Req::GetMinstrelStats(req, responder) => {
-                self.handle_sme_get_minstrel_stats(responder, &req.peer_addr)
+                self.handle_sme_get_minstrel_stats(responder, &req.peer_addr.into())
             }
             Req::AuthResponse(resp) => {
                 // TODO(fxbug.dev/91118) - Added to help investigate hw-sim test. Remove later
@@ -464,14 +465,14 @@ mod tests {
         super::*,
         crate::{
             buffer::FakeBufferProvider,
-            device::{
-                test_utils::fake_fidl_band_caps, FakeDevice, FakeDeviceConfig, FakeDeviceState,
-            },
+            device::{test_utils, FakeDevice, FakeDeviceConfig, FakeDeviceState},
             test_utils::MockWlanRxInfo,
         },
         banjo_fuchsia_wlan_common as banjo_common, fidl_fuchsia_wlan_common as fidl_common,
         fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fuchsia_async as fasync,
         futures::task::Poll,
+        ieee80211::MacAddrBytes,
+        lazy_static::lazy_static,
         std::{
             convert::TryFrom,
             sync::{Arc, Mutex},
@@ -483,9 +484,12 @@ mod tests {
         wlan_frame_writer::write_frame_with_dynamic_buf,
         wlan_sme::responder::Responder,
     };
-    const CLIENT_ADDR: MacAddr = [4u8; 6];
-    const BSSID: Bssid = Bssid([2u8; 6]);
-    const CLIENT_ADDR2: MacAddr = [6u8; 6];
+
+    lazy_static! {
+        static ref CLIENT_ADDR: MacAddr = [4u8; 6].into();
+        static ref BSSID: Bssid = [2u8; 6].into();
+        static ref CLIENT_ADDR2: MacAddr = [6u8; 6].into();
+    }
 
     fn make_eth_frame(
         dst_addr: MacAddr,
@@ -510,18 +514,18 @@ mod tests {
 
     fn make_ap(
         exec: &fasync::TestExecutor,
-    ) -> (Ap<FakeDevice>, Arc<Mutex<FakeDeviceState>>, timer::TimeStream<TimedEvent>) {
+    ) -> (Ap<FakeDevice>, Arc<Mutex<FakeDeviceState>>, timer::EventStream<TimedEvent>) {
         let (timer, time_stream) = timer::create_timer();
         let (fake_device, fake_device_state) = FakeDevice::new_with_config(
             &exec,
             FakeDeviceConfig {
-                mac_role: banjo_common::WlanMacRole::AP,
-                sta_addr: BSSID.0,
+                mac_role: fidl_common::WlanMacRole::Ap,
+                sta_addr: *BSSID,
                 ..Default::default()
             },
         );
         (
-            Ap::new(fake_device, FakeBufferProvider::new(), timer, BSSID),
+            Ap::new(fake_device, FakeBufferProvider::new(), timer, *BSSID),
             fake_device_state,
             time_stream,
         )
@@ -544,7 +548,7 @@ mod tests {
             )
             .expect("expected InfraBss::new ok"),
         );
-        ap.bss.as_mut().unwrap().clients.insert(CLIENT_ADDR, RemoteClient::new(CLIENT_ADDR));
+        ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         let client = ap.bss.as_mut().unwrap().clients.get_mut(&CLIENT_ADDR).unwrap();
         client
@@ -564,8 +568,8 @@ mod tests {
         fake_device_state.lock().unwrap().wlan_queue.clear();
 
         ap.handle_eth_frame_tx(&make_eth_frame(
-            CLIENT_ADDR,
-            CLIENT_ADDR2,
+            *CLIENT_ADDR,
+            *CLIENT_ADDR2,
             0x1234,
             &[1, 2, 3, 4, 5][..],
         ));
@@ -608,17 +612,17 @@ mod tests {
             .expect("expected InfraBss::new ok"),
         );
         ap.handle_eth_frame_tx(&make_eth_frame(
-            CLIENT_ADDR2,
-            CLIENT_ADDR,
+            *CLIENT_ADDR2,
+            *CLIENT_ADDR,
             0x1234,
             &[1, 2, 3, 4, 5][..],
         ));
     }
 
     fn mock_rx_info(ap: &Ap<FakeDevice>) -> banjo_wlan_softmac::WlanRxInfo {
-        let channel = banjo_common::WlanChannel {
+        let channel = fidl_common::WlanChannel {
             primary: ap.bss.as_ref().unwrap().channel,
-            cbw: banjo_common::ChannelBandwidth::CBW20,
+            cbw: fidl_common::ChannelBandwidth::Cbw20,
             secondary80: 0,
         };
         MockWlanRxInfo::with_channel(channel).into()
@@ -668,7 +672,7 @@ mod tests {
         assert_eq!(
             msg,
             fidl_mlme::AuthenticateIndication {
-                peer_sta_address: CLIENT_ADDR,
+                peer_sta_address: CLIENT_ADDR.to_array(),
                 auth_type: fidl_mlme::AuthenticationTypes::OpenSystem,
             },
         );
@@ -691,7 +695,7 @@ mod tests {
             )
             .expect("expected InfraBss::new ok"),
         );
-        ap.bss.as_mut().unwrap().clients.insert(CLIENT_ADDR, RemoteClient::new(CLIENT_ADDR));
+        ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         let client = ap.bss.as_mut().unwrap().clients.get_mut(&CLIENT_ADDR).unwrap();
         client
@@ -724,8 +728,8 @@ mod tests {
         );
 
         ap.handle_eth_frame_tx(&make_eth_frame(
-            CLIENT_ADDR,
-            CLIENT_ADDR2,
+            *CLIENT_ADDR,
+            *CLIENT_ADDR2,
             0x1234,
             &[1, 2, 3, 4, 5][..],
         ));
@@ -918,10 +922,10 @@ mod tests {
         assert!(ap.bss.is_some());
         assert_eq!(
             fake_device_state.lock().unwrap().wlan_channel,
-            banjo_common::WlanChannel {
+            fidl_common::WlanChannel {
                 primary: 2,
                 // TODO(fxbug.dev/40917): Correctly support this.
-                cbw: banjo_common::ChannelBandwidth::CBW20,
+                cbw: fidl_common::ChannelBandwidth::Cbw20,
                 secondary80: 0,
             }
         );
@@ -1059,7 +1063,7 @@ mod tests {
         ap.handle_mlme_setkeys_req(fidl_mlme::SetKeysRequest {
             keylist: vec![fidl_mlme::SetKeyDescriptor {
                 cipher_suite_oui: [1, 2, 3],
-                cipher_suite_type: 4,
+                cipher_suite_type: fidl_ieee80211::CipherSuiteType::from_primitive_allow_unknown(4),
                 key_type: fidl_mlme::KeyType::Pairwise,
                 address: [5; 6],
                 key_id: 6,
@@ -1074,7 +1078,7 @@ mod tests {
         assert_eq!(key.cipher_oui, [1, 2, 3]);
         assert_eq!(key.cipher_type, 4);
         assert_eq!(key.key_type, crate::key::KeyType::PAIRWISE);
-        assert_eq!(key.peer_addr, [5; 6]);
+        assert_eq!(key.peer_addr, [5; 6].into());
         assert_eq!(key.key_idx, 6);
         assert_eq!(key.key[0..key.key_len as usize], [1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(key.rsc, 8);
@@ -1088,7 +1092,8 @@ mod tests {
             ap.handle_mlme_setkeys_req(fidl_mlme::SetKeysRequest {
                 keylist: vec![fidl_mlme::SetKeyDescriptor {
                     cipher_suite_oui: [1, 2, 3],
-                    cipher_suite_type: 4,
+                    cipher_suite_type:
+                        fidl_ieee80211::CipherSuiteType::from_primitive_allow_unknown(4),
                     key_type: fidl_mlme::KeyType::Pairwise,
                     address: [5; 6],
                     key_id: 6,
@@ -1123,7 +1128,8 @@ mod tests {
             ap.handle_mlme_setkeys_req(fidl_mlme::SetKeysRequest {
                 keylist: vec![fidl_mlme::SetKeyDescriptor {
                     cipher_suite_oui: [1, 2, 3],
-                    cipher_suite_type: 4,
+                    cipher_suite_type:
+                        fidl_ieee80211::CipherSuiteType::from_primitive_allow_unknown(4),
                     key_type: fidl_mlme::KeyType::Pairwise,
                     address: [5; 6],
                     key_id: 6,
@@ -1153,10 +1159,10 @@ mod tests {
             )
             .expect("expected InfraBss::new ok"),
         );
-        ap.bss.as_mut().unwrap().clients.insert(CLIENT_ADDR, RemoteClient::new(CLIENT_ADDR));
+        ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::AuthResponse(fidl_mlme::AuthenticateResponse {
-            peer_sta_address: CLIENT_ADDR,
+            peer_sta_address: CLIENT_ADDR.to_array(),
             result_code: fidl_mlme::AuthenticateResultCode::AntiCloggingTokenRequired,
         }))
         .expect("expected Ap::handle_mlme_msg(fidl_mlme::MlmeRequest::AuthenticateResp) ok");
@@ -1188,7 +1194,7 @@ mod tests {
             zx::Status::from(
                 ap.handle_mlme_req(wlan_sme::MlmeRequest::AuthResponse(
                     fidl_mlme::AuthenticateResponse {
-                        peer_sta_address: CLIENT_ADDR,
+                        peer_sta_address: CLIENT_ADDR.to_array(),
                         result_code: fidl_mlme::AuthenticateResultCode::AntiCloggingTokenRequired,
                     }
                 ))
@@ -1222,7 +1228,7 @@ mod tests {
             zx::Status::from(
                 ap.handle_mlme_req(wlan_sme::MlmeRequest::AuthResponse(
                     fidl_mlme::AuthenticateResponse {
-                        peer_sta_address: CLIENT_ADDR,
+                        peer_sta_address: CLIENT_ADDR.to_array(),
                         result_code: fidl_mlme::AuthenticateResultCode::AntiCloggingTokenRequired,
                     }
                 ))
@@ -1251,11 +1257,11 @@ mod tests {
             )
             .expect("expected InfraBss::new ok"),
         );
-        ap.bss.as_mut().unwrap().clients.insert(CLIENT_ADDR, RemoteClient::new(CLIENT_ADDR));
+        ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::Deauthenticate(
             fidl_mlme::DeauthenticateRequest {
-                peer_sta_address: CLIENT_ADDR,
+                peer_sta_address: CLIENT_ADDR.to_array(),
                 reason_code: fidl_ieee80211::ReasonCode::LeavingNetworkDeauth,
             },
         ))
@@ -1294,10 +1300,10 @@ mod tests {
             )
             .expect("expected InfraBss::new ok"),
         );
-        ap.bss.as_mut().unwrap().clients.insert(CLIENT_ADDR, RemoteClient::new(CLIENT_ADDR));
+        ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::AssocResponse(fidl_mlme::AssociateResponse {
-            peer_sta_address: CLIENT_ADDR,
+            peer_sta_address: CLIENT_ADDR.to_array(),
             result_code: fidl_mlme::AssociateResultCode::Success,
             association_id: 1,
             capability_info: CapabilityInfo(0).raw(),
@@ -1344,10 +1350,10 @@ mod tests {
             )
             .expect("expected InfraBss::new ok"),
         );
-        ap.bss.as_mut().unwrap().clients.insert(CLIENT_ADDR, RemoteClient::new(CLIENT_ADDR));
+        ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::Disassociate(fidl_mlme::DisassociateRequest {
-            peer_sta_address: CLIENT_ADDR,
+            peer_sta_address: CLIENT_ADDR.to_array(),
             reason_code: fidl_ieee80211::ReasonCode::LeavingNetworkDisassoc,
         }))
         .expect("expected Ap::handle_mlme_msg(fidl_mlme::MlmeRequest::DisassociateReq) ok");
@@ -1385,10 +1391,10 @@ mod tests {
             )
             .expect("expected InfraBss::new ok"),
         );
-        ap.bss.as_mut().unwrap().clients.insert(CLIENT_ADDR, RemoteClient::new(CLIENT_ADDR));
+        ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::AssocResponse(fidl_mlme::AssociateResponse {
-            peer_sta_address: CLIENT_ADDR,
+            peer_sta_address: CLIENT_ADDR.to_array(),
             result_code: fidl_mlme::AssociateResultCode::Success,
             association_id: 1,
             capability_info: CapabilityInfo(0).raw(),
@@ -1398,7 +1404,7 @@ mod tests {
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::SetCtrlPort(
             fidl_mlme::SetControlledPortRequest {
-                peer_sta_address: CLIENT_ADDR,
+                peer_sta_address: CLIENT_ADDR.to_array(),
                 state: fidl_mlme::ControlledPortState::Open,
             },
         ))
@@ -1422,11 +1428,11 @@ mod tests {
             )
             .expect("expected InfraBss::new ok"),
         );
-        ap.bss.as_mut().unwrap().clients.insert(CLIENT_ADDR, RemoteClient::new(CLIENT_ADDR));
+        ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::Eapol(fidl_mlme::EapolRequest {
-            dst_addr: CLIENT_ADDR,
-            src_addr: BSSID.0,
+            dst_addr: CLIENT_ADDR.to_array(),
+            src_addr: BSSID.to_array(),
             data: vec![1, 2, 3],
         }))
         .expect("expected Ap::handle_mlme_msg(fidl_mlme::MlmeRequest::EapolReq) ok");
@@ -1464,9 +1470,9 @@ mod tests {
         assert_eq!(
             info,
             fidl_mlme::DeviceInfo {
-                sta_addr: BSSID.0,
+                sta_addr: BSSID.to_array(),
                 role: fidl_common::WlanMacRole::Ap,
-                bands: fake_fidl_band_caps(),
+                bands: test_utils::fake_mlme_band_caps(),
                 softmac_hardware_capability: 0,
                 qos_capable: false,
             }

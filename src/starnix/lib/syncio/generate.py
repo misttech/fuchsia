@@ -1,4 +1,6 @@
 #!/usr/bin/env -S python3 -B
+# allow-non-vendored-python
+#
 # TODO(b/295039695): We intentionally use the host python3 here instead of
 # fuchsia-vendored-python. This script calls out to cbindgen that is not part
 # of the Fuchsia repo and must be installed on the local host.
@@ -8,36 +10,52 @@
 # found in the LICENSE file.
 
 import os, sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/..')
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 from bindgen import Bindgen
 
 bindgen = Bindgen()
 
 bindgen.raw_lines = """
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
+use zerocopy::{AsBytes, FromBytes, FromZeros};
 """
 
 bindgen.include_dirs = [
-    'sdk/lib/zxio/include',
-    'zircon/third_party/ulib/musl/include',
-    'zircon/system/public',
+    "sdk/lib/zxio/include",
+    "zircon/third_party/ulib/musl/include",
+    "zircon/system/public",
 ]
 
-bindgen.function_allowlist = ['zxio_.*']
+bindgen.function_allowlist = ["zxio_.*"]
 bindgen.var_allowlist = [
-    'ZXIO_SHUTDOWN.*', 'ZXIO_NODE_PROTOCOL.*', 'ZXIO_SEEK_ORIGIN.*', 'E[A-Z]*',
-    'AF_.*', 'SO.*', 'IP.*', 'MSG_.*'
+    "ZXIO_SHUTDOWN.*",
+    "ZXIO_NODE_PROTOCOL.*",
+    "ZXIO_SEEK_ORIGIN.*",
+    "ZXIO_ALLOCATE.*",
+    "E[A-Z]*",
+    "AF_.*",
+    "SO.*",
+    "IP.*",
+    "MSG_.*",
 ]
-bindgen.type_allowlist = ['cmsghdr.*', 'in6_.*', 'sockaddr.*', 'timespec', 'timeval']
+bindgen.type_allowlist = [
+    "cmsghdr.*",
+    "in6_.*",
+    "sockaddr.*",
+    "timespec",
+    "timeval",
+]
 
 bindgen.set_auto_derive_traits(
     [
-        (r'cmsghdr', ['AsBytes, FromBytes', 'FromZeroes']),
-        (r'in6_pktinfo', ['AsBytes, FromBytes', 'FromZeroes']),
-        (r'in6_addr*', ['AsBytes, FromBytes', 'FromZeroes']),
-        (r'timespec', ['AsBytes, FromBytes', 'FromZeroes']),
-        (r'timeval', ['AsBytes, FromBytes', 'FromZeroes']),
-    ])
+        (r"cmsghdr", ["AsBytes, FromBytes", "FromZeros"]),
+        (r"in6_pktinfo", ["AsBytes, FromBytes", "FromZeros"]),
+        (r"in6_addr*", ["AsBytes, FromBytes", "FromZeros"]),
+        (r"timespec", ["AsBytes, FromBytes", "FromZeros"]),
+        (r"timeval", ["AsBytes, FromBytes", "FromZeros"]),
+    ]
+)
 
 bindgen.run(
-    'src/starnix/lib/syncio/wrapper.h', 'src/starnix/lib/syncio/src/zxio.rs')
+    "src/starnix/lib/syncio/wrapper.h", "src/starnix/lib/syncio/src/zxio.rs"
+)

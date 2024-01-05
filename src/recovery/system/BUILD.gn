@@ -36,8 +36,10 @@ group("system") {
 group("fdr") {
   testonly = true
   deps = [
+    ":fdr_lib_unittests",
     ":system_recovery_fdr",
-    # TODO (fxbug.dev/103089): Handle FDR via integration tests.
+
+    # TODO(fxbug.dev/103089): Handle FDR via integration tests.
     # ":system_recovery_fdr_test",
   ]
 }
@@ -46,7 +48,7 @@ group("installer") {
   testonly = true
   deps = [
     ":system_recovery_installer",
-    # TODO (fxbug.dev/102239): This directive does not pick up any tests.
+    # TODO(fxbug.dev/102239): This directive does not pick up any tests.
     #":system_recovery_installer_tests",
   ]
 }
@@ -63,12 +65,10 @@ group("ota") {
 group("tests") {
   testonly = true
   deps = [
+    ":fdr",
     ":installer",
     ":ota",
     ":system",
-
-    # TODO (fxbug.dev/103089): Handle FDR via integration tests.
-    # ":fdr",
   ]
 }
 
@@ -114,13 +114,25 @@ rustc_library("fdr_lib") {
   with_unit_tests = true
   deps = [
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
+    "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
     "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_rust",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",
     "//src/lib/ui/carnelian",
     "//third_party/rust_crates:anyhow",
   ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/zircon/rust:fuchsia-zircon",
+    "//third_party/rust_crates:futures",
+  ]
   source_root = "src/fdr.rs"
   sources = [ "src/fdr.rs" ]
+}
+
+fuchsia_unittest_package("fdr_lib_unittests") {
+  deps = [ ":fdr_lib_test" ]
 }
 
 rustc_library("ota_lib") {
@@ -140,9 +152,9 @@ rustc_library("ota_lib") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-hyper",
-    "//src/lib/storage/vfs/rust:vfs",
     "//src/lib/syslog/rust:syslog-listener",
     "//src/lib/zircon/rust:fuchsia-zircon",
+    "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/pkg/lib/isolated-ota",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
@@ -240,8 +252,8 @@ rustc_binary("bin_ota") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
-    "//src/lib/storage/vfs/rust:vfs",
     "//src/lib/zircon/rust:fuchsia-zircon",
+    "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/lib/stdout-to-debuglog/rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
@@ -264,7 +276,7 @@ fuchsia_component("component_ota") {
   cm_label = ":manifest_ota"
   deps = [
     ":bin_ota",
-    "//src/storage/bin/blobfs:blobfs-component",
+    "//src/storage/blobfs/bin:blobfs-component",
     "//src/sys/pkg/lib/isolated-swd:pkg-component",
   ]
 }
@@ -375,7 +387,6 @@ fuchsia_test_package("system_recovery_tests") {
     ":instructions",
     ":recovery_logo",
     ":roboto_regular",
-    "//src/sys/pkg/bin/pm:pm_bin",
     "//src/sys/pkg/lib/fuchsia-pkg-testing/certs",
     "//src/sys/pkg/tests/pkg-resolver:empty-repo",
   ]
@@ -404,7 +415,7 @@ rustc_binary("bin_installer") {
     "//src/lib/ui/carnelian",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/recovery/lib/installer",
-    "//src/recovery/lib/recovery-util",
+    "//src/recovery/lib/recovery-util-block",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:euclid",
     "//third_party/rust_crates:futures",
@@ -461,7 +472,6 @@ fuchsia_test_package("system_recovery_installer_tests") {
     ":instructions",
     ":recovery_logo",
     ":roboto_regular",
-    "//src/sys/pkg/bin/pm:pm_bin",
     "//src/sys/pkg/lib/fuchsia-pkg-testing/certs",
     "//src/sys/pkg/tests/pkg-resolver:empty-repo",
   ]

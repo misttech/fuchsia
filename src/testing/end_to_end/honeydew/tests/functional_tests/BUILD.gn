@@ -2,40 +2,192 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# Target-side packages needed by functional tests.
+group("packages") {
+  testonly = true
+  public_deps = [
+    "../../..:sl4f_packages",
+    "affordance_tests:packages",
+    "transport_tests:packages",
+  ]
+}
+
+# All of the HoneyDew functional tests and their dependencies.
+group("functional_tests") {
+  testonly = true
+  public_deps = [
+    ":packages",
+    ":tests($host_toolchain)",
+  ]
+}
+
 if (is_host) {
-  group("emulator_tests") {
-    testonly = true
-    public_deps = [
-      "affordance_tests:emulator_tests",
-      "device_class_tests:emulator_tests",
-    ]
-  }
-
-  group("emulator_tests_fyi") {
-    testonly = true
-    public_deps = [
-      "affordance_tests:emulator_tests_fyi",
-      "device_class_tests:emulator_tests_fyi",
-      "transport_tests:emulator_tests_fyi",
-    ]
-  }
-
-  group("nuc_tests_fyi") {
-    testonly = true
-    public_deps = [ "device_class_tests:nuc_tests_fyi" ]
-  }
-
-  group("vim3_tests_fyi") {
-    testonly = true
-    public_deps = [ "device_class_tests:vim3_tests_fyi" ]
-  }
-
+  # All of the HoneyDew functional tests
   group("tests") {
     testonly = true
     public_deps = [
       "affordance_tests:tests",
-      "device_class_tests:tests",
+      "fuchsia_device_tests:tests",
       "transport_tests:tests",
     ]
   }
+
+  # Infra test groups:
+  #     Stable (Tests that passed for at least 200+ consecutive runs)
+  #         Emulator
+  #             That require SL4F transport
+  #             That does not require SL4F transport
+  #         VIM3
+  #             That require SL4F transport
+  #             That does not require SL4F transport
+  #         NUC
+  #             That require SL4F transport
+  #             That does not require SL4F transport
+  #     Unstable (Tests that are yet to pass 200 consecutive runs)
+  #         Emulator
+  #             That require SL4F transport
+  #             That does not require SL4F transport
+  #         VIM3
+  #             That require SL4F transport
+  #             That does not require SL4F transport
+  #         NUC
+  #             That require SL4F transport
+  #             That does not require SL4F transport
+  group("stable_emulator_sl4f_tests") {
+    testonly = true
+    public_deps = [
+      "affordance_tests/test_tracing:tracing_test_sl4f($host_toolchain)",
+      "fuchsia_device_tests/test_fuchsia_device:x64_emu_test_sl4f($host_toolchain)",
+    ]
+  }
+
+  group("stable_emulator_tests") {
+    testonly = true
+    public_deps = [
+      "affordance_tests/test_session:session_test_fc($host_toolchain)",
+      "affordance_tests/test_tracing:tracing_test_fc($host_toolchain)",
+      "fuchsia_device_tests/test_fuchsia_device:x64_emu_test_fc($host_toolchain)",
+      "transport_tests/test_ffx:ffx_test_fc($host_toolchain)",
+      "transport_tests/test_ffx:ffx_wait_for_rcs_disconnection_test_fc($host_toolchain)",
+    ]
+  }
+
+  group("stable_vim3_sl4f_tests") {
+    testonly = true
+    public_deps = [
+      "affordance_tests/test_wlan:wlan_policy_test_sl4f($host_toolchain)",
+      "affordance_tests/test_wlan:wlan_test_sl4f($host_toolchain)",
+      "fuchsia_device_tests/test_fuchsia_device:vim3_test_sl4f($host_toolchain)",
+    ]
+  }
+
+  group("stable_vim3_tests") {
+    testonly = true
+    public_deps = [
+      "fuchsia_device_tests/test_fuchsia_device:vim3_test_fc($host_toolchain)",
+    ]
+  }
+
+  group("stable_nuc_sl4f_tests") {
+    testonly = true
+    public_deps = [ "fuchsia_device_tests/test_fuchsia_device:x64_nuc_test_sl4f($host_toolchain)" ]
+  }
+
+  group("stable_nuc_tests") {
+    testonly = true
+    public_deps = [ "fuchsia_device_tests/test_fuchsia_device:x64_nuc_test_fc($host_toolchain)" ]
+  }
+
+  group("unstable_emulator_sl4f_tests") {
+    testonly = true
+    public_deps = []
+  }
+
+  group("unstable_emulator_tests") {
+    testonly = true
+    public_deps = []
+  }
+
+  group("unstable_vim3_sl4f_tests") {
+    testonly = true
+    public_deps = []
+  }
+
+  group("unstable_vim3_tests") {
+    testonly = true
+    public_deps = [ "auxiliary_device_tests/test_power_switch_dmc:power_switch_dmc_test_fc($host_toolchain)" ]
+  }
+
+  group("unstable_nuc_sl4f_tests") {
+    testonly = true
+    public_deps = []
+  }
+
+  group("unstable_nuc_tests") {
+    testonly = true
+    public_deps = []
+  }
+}
+
+group("stable_emulator_sl4f_packages") {
+  testonly = true
+  public_deps = [ "../../..:sl4f_packages" ]
+}
+
+group("stable_emulator_packages") {
+  testonly = true
+  public_deps = [
+    "affordance_tests/test_session:packages",
+    "transport_tests/test_ffx:packages",
+  ]
+}
+
+group("stable_vim3_sl4f_packages") {
+  testonly = true
+  public_deps = [ "../../..:sl4f_packages" ]
+}
+
+group("stable_vim3_packages") {
+  testonly = true
+  public_deps = []
+}
+
+group("stable_nuc_sl4f_packages") {
+  testonly = true
+  public_deps = [ "../../..:sl4f_packages" ]
+}
+
+group("stable_nuc_packages") {
+  testonly = true
+  public_deps = []
+}
+
+group("unstable_emulator_sl4f_packages") {
+  testonly = true
+  public_deps = [ "../../..:sl4f_packages" ]
+}
+
+group("unstable_emulator_packages") {
+  testonly = true
+  public_deps = []
+}
+
+group("unstable_vim3_sl4f_packages") {
+  testonly = true
+  public_deps = [ "../../..:sl4f_packages" ]
+}
+
+group("unstable_vim3_packages") {
+  testonly = true
+  public_deps = []
+}
+
+group("unstable_nuc_sl4f_packages") {
+  testonly = true
+  public_deps = [ "../../..:sl4f_packages" ]
+}
+
+group("unstable_nuc_packages") {
+  testonly = true
+  public_deps = []
 }

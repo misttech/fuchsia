@@ -9,7 +9,7 @@ use {
         object_handle::ReadObjectHandle,
         object_store::{
             ObjectKey, ObjectKeyV25, ObjectKeyV5, ObjectValue, ObjectValueV25, ObjectValueV29,
-            ObjectValueV30, ObjectValueV5,
+            ObjectValueV30, ObjectValueV31, ObjectValueV5,
         },
         serialized_types::{Version, Versioned, VersionedLatest},
     },
@@ -17,7 +17,7 @@ use {
     async_trait::async_trait,
     fprint::TypeFingerprint,
     serde::{Deserialize, Serialize},
-    std::{fmt::Debug, hash::Hash, sync::Arc},
+    std::{fmt::Debug, future::Future, hash::Hash, marker::PhantomData, pin::Pin, sync::Arc},
 };
 
 // Force keys to be sorted first by a u64, so that they can be located approximately based on only
@@ -140,8 +140,14 @@ impl From<Item<ObjectKeyV25, ObjectValueV29>> for Item<ObjectKey, ObjectValueV30
     }
 }
 
-impl From<Item<ObjectKey, ObjectValueV30>> for Item<ObjectKey, ObjectValue> {
+impl From<Item<ObjectKey, ObjectValueV30>> for Item<ObjectKey, ObjectValueV31> {
     fn from(item: Item<ObjectKey, ObjectValueV30>) -> Self {
+        Self { key: item.key, value: item.value.into(), sequence: item.sequence }
+    }
+}
+
+impl From<Item<ObjectKey, ObjectValueV31>> for Item<ObjectKey, ObjectValue> {
+    fn from(item: Item<ObjectKey, ObjectValueV31>) -> Self {
         Self { key: item.key, value: item.value.into(), sequence: item.sequence }
     }
 }
@@ -312,33 +318,30 @@ pub trait LayerIterator<K, V>: Send + Sync {
     /// before either seek or advance has been called, and None if the iterator has reached the end
     /// of the layer.
     fn get(&self) -> Option<ItemRef<'_, K, V>>;
+
+    /// Creates an iterator that only yields items from the underlying iterator for which
+    /// `predicate` returns `true`.
+    async fn filter<P>(self, predicate: P) -> Result<FilterLayerIterator<Self, P, K, V>, Error>
+    where
+        P: for<'b> Fn(ItemRef<'b, K, V>) -> bool + Send + Sync,
+        Self: Sized,
+        K: Send + Sync,
+        V: Send + Sync,
+    {
+        FilterLayerIterator::new(self, predicate).await
+    }
 }
 
 pub type BoxedLayerIterator<'iter, K, V> = Box<dyn LayerIterator<K, V> + 'iter>;
 
-#[async_trait]
-pub trait LayerIteratorFilter<'a, K, V> {
-    /// Mirrors std::iter::Iterator::filter.
-    async fn filter<P: for<'b> Fn(ItemRef<'b, K, V>) -> bool + Send + Sync>(
-        self,
-        predicate: P,
-    ) -> Result<Filter<'a, K, V, P>, Error>;
-}
-
-#[async_trait]
-impl<'a, K, V> LayerIteratorFilter<'a, K, V> for BoxedLayerIterator<'a, K, V> {
-    async fn filter<P: for<'b> Fn(ItemRef<'b, K, V>) -> bool + Send + Sync>(
-        self,
-        predicate: P,
-    ) -> Result<Filter<'a, K, V, P>, Error> {
-        Filter::new(self, predicate).await
-    }
-}
-
-#[async_trait]
 impl<'iter, K, V> LayerIterator<K, V> for BoxedLayerIterator<'iter, K, V> {
-    async fn advance(&mut self) -> Result<(), Error> {
-        (**self).advance().await
+    // Manual expansion of `async_trait` to avoid double boxing the `Future`.
+    fn advance<'a, 'b>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'b>>
+    where
+        'a: 'b,
+        Self: 'b,
+    {
+        (**self).advance()
     }
     fn get(&self) -> Option<ItemRef<'_, K, V>> {
         (**self).get()
@@ -377,43 +380,21 @@ where
     async fn flush(&mut self) -> Result<(), Error>;
 }
 
-/// A helper trait that converts arrays of layers into arrays of references to layers.
-pub trait IntoLayerRefs<'a, K, V, T: AsRef<U> + 'a, U: ?Sized>
-where
-    Self: IntoIterator<Item = &'a T>,
-{
-    fn into_layer_refs(self) -> Box<[&'a dyn Layer<K, V>]>;
-}
-
-// Generic implementation where we need the cast to &dyn Layer.
-impl<'a, K, V, T: AsRef<U>, U: Layer<K, V> + 'a> IntoLayerRefs<'a, K, V, T, U> for &'a [T] {
-    fn into_layer_refs(self) -> Box<[&'a dyn Layer<K, V>]> {
-        let refs: Vec<_> = self.iter().map(|x| x.as_ref() as &dyn Layer<K, V>).collect();
-        refs.into_boxed_slice()
-    }
-}
-
-// Generic implementation where we already have &dyn Layer.
-impl<'a, K, V, T: AsRef<dyn Layer<K, V>>> IntoLayerRefs<'a, K, V, T, dyn Layer<K, V>>
-    for &'a [T]
-{
-    fn into_layer_refs(self) -> Box<[&'a dyn Layer<K, V>]> {
-        let refs: Vec<_> = self.iter().map(|x| x.as_ref()).collect();
-        refs.into_boxed_slice()
-    }
-}
-
-pub struct Filter<'a, K, V, P> {
-    iter: BoxedLayerIterator<'a, K, V>,
+/// A `LayerIterator`` that filters the items of another `LayerIterator`.
+pub struct FilterLayerIterator<I, P, K, V> {
+    iter: I,
     predicate: P,
+    _key: PhantomData<K>,
+    _value: PhantomData<V>,
 }
 
-impl<'a, K, V, P: for<'b> Fn(ItemRef<'b, K, V>) -> bool + Send + Sync> Filter<'a, K, V, P> {
-    async fn new(
-        iter: BoxedLayerIterator<'a, K, V>,
-        predicate: P,
-    ) -> Result<Filter<'a, K, V, P>, Error> {
-        let mut filter = Filter { iter, predicate };
+impl<I, P, K, V> FilterLayerIterator<I, P, K, V>
+where
+    I: LayerIterator<K, V>,
+    P: for<'b> Fn(ItemRef<'b, K, V>) -> bool + Send + Sync,
+{
+    async fn new(iter: I, predicate: P) -> Result<Self, Error> {
+        let mut filter = Self { iter, predicate, _key: PhantomData, _value: PhantomData };
         filter.skip_filtered().await?;
         Ok(filter)
     }
@@ -430,8 +411,12 @@ impl<'a, K, V, P: for<'b> Fn(ItemRef<'b, K, V>) -> bool + Send + Sync> Filter<'a
 }
 
 #[async_trait]
-impl<K: Send + Sync, V: Send + Sync, P: for<'b> Fn(ItemRef<'b, K, V>) -> bool + Send + Sync>
-    LayerIterator<K, V> for Filter<'_, K, V, P>
+impl<I, P, K, V> LayerIterator<K, V> for FilterLayerIterator<I, P, K, V>
+where
+    I: LayerIterator<K, V>,
+    P: for<'b> Fn(ItemRef<'b, K, V>) -> bool + Send + Sync,
+    K: Send + Sync,
+    V: Send + Sync,
 {
     async fn advance(&mut self) -> Result<(), Error> {
         self.iter.advance().await?;

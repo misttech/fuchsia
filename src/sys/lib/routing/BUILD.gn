@@ -12,8 +12,9 @@ rustc_library("routing") {
   edition = "2021"
 
   visibility = [
+    "//src/lib/assembly/component_id_index/*",
     "//src/security/lib/scrutiny/plugins/*",
-    "//src/sys/base-resolver:*",
+    "//src/security/lib/scrutiny/x/*",
     "//src/sys/component_manager/*",
     "//src/sys/full-resolver:*",
     "//src/sys/lib/cm_rust/testing:*",
@@ -27,7 +28,6 @@ rustc_library("routing") {
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
-    "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
     "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/error/clonable_error",
@@ -35,7 +35,7 @@ rustc_library("routing") {
     "//src/lib/from-enum",
     "//src/lib/versioning/version-history/rust:version-history",
     "//src/lib/zircon/rust:fuchsia-zircon-status",
-    "//src/sys/lib/cm_fidl_validator",
+    "//src/sys/lib/cm_config",
     "//src/sys/lib/cm_moniker",
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/cm_types",
@@ -56,29 +56,38 @@ rustc_library("routing") {
     "src/availability.rs",
     "src/capability_source.rs",
     "src/collection.rs",
-    "src/component_id_index.rs",
     "src/component_instance.rs",
-    "src/config.rs",
     "src/environment.rs",
     "src/error.rs",
     "src/event.rs",
+    "src/legacy_router.rs",
     "src/lib.rs",
     "src/mapper.rs",
     "src/path.rs",
     "src/policy.rs",
     "src/resolving.rs",
     "src/rights.rs",
-    "src/router.rs",
     "src/walk_state.rs",
   ]
 
+  if (is_fuchsia) {
+    sources += [ "src/router.rs" ]
+    deps += [
+      "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+      "//src/lib/zircon/rust:fuchsia-zircon",
+      "//src/storage/lib/vfs/rust:vfs",
+      "//src/sys/component_manager/lib/sandbox",
+    ]
+  }
+
   test_deps = [
-    "testing:routing_test_helpers",
-    "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:tempfile",
     "//third_party/rust_crates:test-case",
   ]
+
+  if (is_fuchsia) {
+    test_deps += [ "//src/lib/fuchsia" ]
+  }
 
   # Some host tools use serde to serialize/deserialize types defined in
   # this crate. This dependency is guarded in code via #[cfg(feature = "serde")]

@@ -8,6 +8,10 @@
 #include <lib/fit/function.h>
 #include <lib/fit/thread_safety.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/magma/util/short_macros.h>
+#include <lib/magma_service/msd.h>
+#include <lib/magma_service/msd_defs.h>
+#include <lib/magma_service/util/address_space_allocator.h>
 #include <zircon/compiler.h>
 
 #include <deque>
@@ -19,10 +23,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "magma_util/address_space_allocator.h"
-#include "magma_util/short_macros.h"
-#include "msd.h"
-#include "msd_defs.h"
 #include "src/graphics/drivers/msd-arm-mali/include/magma_arm_mali_types.h"
 #include "src/graphics/drivers/msd-arm-mali/src/address_space.h"
 #include "src/graphics/drivers/msd-arm-mali/src/device_request.h"
@@ -80,10 +80,9 @@ class MsdArmConnection : public std::enable_shared_from_this<MsdArmConnection>,
   bool UpdateCommittedMemory(GpuMapping* mapping) override;
 
   bool AddMapping(std::unique_ptr<GpuMapping> mapping);
-  // If |atom| is a soft atom, then the first element from
-  // |signal_semaphores| will be removed and used for it.
   bool ExecuteAtom(size_t* remaining_data_size, magma_arm_mali_atom* atom,
-                   std::deque<std::shared_ptr<magma::PlatformSemaphore>>* signal_semaphores);
+                   std::vector<std::shared_ptr<magma::PlatformSemaphore>>& semaphores,
+                   std::deque<std::shared_ptr<magma::PlatformSemaphore>>* deprecated_semaphores);
 
   void SetNotificationCallback(msd::NotificationHandler* handler);
   void SendNotificationData(MsdArmAtom* atom);

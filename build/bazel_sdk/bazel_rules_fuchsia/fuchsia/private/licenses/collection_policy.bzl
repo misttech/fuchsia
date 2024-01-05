@@ -12,28 +12,28 @@ ignore_policy = struct(
     rule_attributes = {
         "fuchsia_component_manifest": ["_sdk_coverage_shard"],
         "_build_fuchsia_package": ["_fuchsia_sdk_debug_symbols"],
-        "fuchsia_product_bundle": ["update_version_file", "_sdk_manifest"],
+        "_build_fuchsia_product_bundle": ["update_version_file", "_sdk_manifest"],
     },
 
     # These rules will be ignored:
     rules = bool_dict([
-        "package_repo_path_flag",  # Config flag
         "fuchsia_scrutiny_config",  # Build time verification data.
         "fuchsia_debug_symbols",  # Debug symbols have no separate licenses.
     ]),
 
     # These targets will be ignored:
     targets = bool_dict([
-        "@fuchsia_sdk//:meta/manifest.json", # SDK metadata, not shipping to clients.
-        "@platforms//os:os", # Constraint
-        "@platforms//os:fuchsia", # Constraint
+        "@fuchsia_sdk//:meta/manifest.json",  # SDK metadata, not shipping to clients.
+        "@platforms//os:os",  # Constraint
+        "@platforms//os:fuchsia",  # Constraint
     ]),
 
     # Anything withing these workspaces will be ignored:
     workspaces = bool_dict([
         "bazel_tools",
-        "fuchsia_clang", # TODO(95670): clang bazel defs should provide licenses.
-        "fuchsia_sdk", # TODO(130784): sdk atoms should provide licenses.
+        "fuchsia_clang",  # TODO(95670): clang bazel defs should provide licenses.
+        "fuchsia_sdk",  # TODO(130784): sdk atoms should provide licenses.
+        "internal_sdk",  # TODO(130784): sdk atoms should provide licenses.
     ]),
 
     # Anything withing these package will be ignored:

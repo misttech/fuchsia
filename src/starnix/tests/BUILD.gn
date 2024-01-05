@@ -17,8 +17,18 @@ group("tests") {
     "diagnostics:tests",
     "gvisor:tests",
     "reboot:tests",
+    "scheduler:tests",
     "syscalls:tests",
+    "vdso:tests",
   ]
+
+  if (target_cpu == "riscv64") {
+    # TODO(b/297312145): Enable all tests on RISC-V.
+    deps -= [
+      "android:tests",
+      "gvisor:tests",
+    ]
+  }
 
   # TODO(https://fxbug.dev/116773): Remove !is_asan check when Starnix can run binaries built for
   # ASAN.
@@ -29,6 +39,11 @@ group("tests") {
 
     deps += [ ":starnix_magma_tests" ]
   }
+}
+
+group("benchmarks") {
+  testonly = true
+  deps = [ "gvisor:benchmarks" ]
 }
 
 # Tests that use starnix_test_runner should depend on one of these.
@@ -56,19 +71,25 @@ if (host_os == "linux" && host_cpu == "x64") {
 
 starnix_linux_test_component("virtmagma_conformance_tests") {
   test_label =
-      "//src/graphics/lib/magma/tests/integration:virtmagma_conformance_tests"
+      "//src/graphics/magma/tests/integration:virtmagma_conformance_tests"
+  test_type = "starnix"
+}
+
+starnix_linux_test_component("virtmagma_sync_file_tests") {
+  test_label =
+      "//src/graphics/magma/tests/integration:virtmagma_sync_file_tests"
   test_type = "starnix"
 }
 
 starnix_linux_test_component("virtmagma_image_tests") {
   test_label =
-      "//src/graphics/lib/magma/tests_linux/unit_tests:virtmagma_image_tests"
+      "//src/graphics/magma/tests_linux/unit_tests:virtmagma_image_tests"
   test_type = "starnix"
 }
 
 starnix_linux_test_component("virtmagma_unit_tests") {
   test_label =
-      "//src/graphics/lib/magma/tests_linux/unit_tests:virtmagma_unit_tests"
+      "//src/graphics/magma/tests_linux/unit_tests:virtmagma_unit_tests"
   test_type = "starnix"
 }
 
@@ -77,6 +98,7 @@ fuchsia_test_package("starnix_magma_tests") {
     ":virtmagma_conformance_tests",
     ":virtmagma_image_tests",
     ":virtmagma_unit_tests",
+    ":virtmagma_sync_file_tests",
   ]
 
   subpackages = starnix_test_subpackages + [
@@ -101,5 +123,5 @@ fuchsia_test_package("starnix_magma_tests") {
 # child once every test includes this package.
 fuchsia_package("netstack_package") {
   package_name = "netstack"
-  deps = [ "//src/connectivity/network/netstack:component" ]
+  deps = [ "//src/connectivity/network:netstack-for-tests" ]
 }

@@ -11,7 +11,7 @@ use fidl::{
     Channel,
 };
 use fidl_fuchsia_developer_remotecontrol::{
-    RemoteControlConnectCapabilityResponder, RemoteControlMarker, RemoteControlProxy,
+    RemoteControlMarker, RemoteControlOpenCapabilityResponder, RemoteControlProxy,
     RemoteControlRequest,
 };
 use fidl_fuchsia_diagnostics::{
@@ -20,6 +20,7 @@ use fidl_fuchsia_diagnostics::{
 use fidl_fuchsia_diagnostics_host::{
     ArchiveAccessorMarker, ArchiveAccessorProxy, ArchiveAccessorRequest,
 };
+use fidl_fuchsia_sys2 as fsys;
 use futures::{AsyncWriteExt, StreamExt, TryStreamExt};
 use iquery_test_support;
 use std::sync::{Arc, Mutex};
@@ -83,6 +84,9 @@ pub fn setup_fake_archive_accessor(expected_data: Vec<FakeAccessorData>) -> Arch
                     }
                     assert!(false, "{:?} did not match any expected parameters", parameters);
                 }
+                ArchiveAccessorRequest::_UnknownMethod { .. } => {
+                    unreachable!("We don't expect any other call");
+                }
             }
         }
     })
@@ -101,14 +105,26 @@ pub fn make_inspects_for_lifecycle() -> Vec<InspectData> {
 
 pub fn setup_fake_rcs() -> RemoteControlProxy {
     let mock_realm_query = iquery_test_support::MockRealmQuery::default();
-    let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<<fidl_fuchsia_developer_remotecontrol::RemoteControlProxy as fidl::endpoints::Proxy>::Protocol>().unwrap();
+    let (proxy, mut stream) =
+        fidl::endpoints::create_proxy_and_stream::<RemoteControlMarker>().unwrap();
     fuchsia_async::Task::local(async move {
         let querier = Arc::new(mock_realm_query);
         while let Ok(Some(req)) = stream.try_next().await {
             match req {
-                RemoteControlRequest::RootRealmQuery { server, responder } => {
+                RemoteControlRequest::OpenCapability {
+                    moniker,
+                    capability_set,
+                    capability_name,
+                    server_channel,
+                    flags: _,
+                    responder,
+                } => {
+                    assert_eq!(moniker, "core/remote-control");
+                    assert_eq!(capability_set, rcs::OpenDirType::NamespaceDir);
+                    assert_eq!(capability_name, "svc/fuchsia.sys2.RealmQuery.root");
                     let querier = Arc::clone(&querier);
-                    fuchsia_async::Task::local(querier.serve(server)).detach();
+                    fuchsia_async::Task::local(querier.serve(ServerEnd::new(server_channel)))
+                        .detach();
                     responder.send(Ok(())).unwrap();
                 }
                 _ => unreachable!("Not implemented"),
@@ -133,24 +149,37 @@ pub fn setup_fake_rcs_with_embedded_archive_accessor(
         let querier = Arc::new(mock_realm_query);
         if let Ok(Some(req)) = stream.try_next().await {
             match req {
-                RemoteControlRequest::RootRealmQuery { server, responder } => {
-                    let querier = Arc::clone(&querier);
-                    fuchsia_async::Task::local(async move { querier.serve(server).await }).detach();
-                    responder.send(Ok(())).unwrap();
-                }
-                RemoteControlRequest::ConnectCapability {
+                RemoteControlRequest::OpenCapability {
                     moniker,
+                    capability_set,
                     capability_name,
-                    server_chan,
+                    server_channel,
                     flags: _,
                     responder,
                 } => {
-                    assert_eq!(moniker, expected_moniker);
-                    assert_eq!(capability_name, expected_protocol);
-                    let task =
-                        handle_remote_control_connect(responder, server_chan, accessor_proxy);
-                    let mut tasks = running_tasks_clone.lock().unwrap();
-                    tasks.push(task);
+                    if moniker == "core/remote-control" {
+                        assert_eq!(capability_set, rcs::OpenDirType::NamespaceDir);
+                        assert_eq!(capability_name, "svc/fuchsia.sys2.RealmQuery.root");
+                        let querier = Arc::clone(&querier);
+                        let mut tasks = running_tasks_clone.lock().unwrap();
+                        tasks.push(fuchsia_async::Task::spawn(async move {
+                            querier.serve(ServerEnd::new(server_channel)).await
+                        }));
+                        responder.send(Ok(())).unwrap();
+                    } else if moniker == expected_moniker {
+                        assert_eq!(capability_set, fsys::OpenDirType::ExposedDir);
+                        assert_eq!(moniker, expected_moniker);
+                        assert_eq!(capability_name, expected_protocol);
+                        let task = handle_remote_control_connect(
+                            responder,
+                            server_channel,
+                            accessor_proxy,
+                        );
+                        let mut tasks = running_tasks_clone.lock().unwrap();
+                        tasks.push(task);
+                    } else {
+                        panic!("Got unexpected moniker: {moniker}");
+                    }
                 }
                 _ => unreachable!("Not implemented"),
             }
@@ -164,7 +193,7 @@ pub fn setup_fake_rcs_with_embedded_archive_accessor(
 }
 
 fn handle_remote_control_connect(
-    responder: RemoteControlConnectCapabilityResponder,
+    responder: RemoteControlOpenCapabilityResponder,
     service_chan: Channel,
     accessor_proxy: ArchiveAccessorProxy,
 ) -> fuchsia_async::Task<()> {
@@ -242,10 +271,10 @@ pub fn get_v1_json_dump() -> serde_json::Value {
                 "data_source":"Inspect",
                 "metadata":{
                     "filename":"fuchsia.inspect.Tree",
-                    "component_url": "fuchsia-pkg://fuchsia.com/account#meta/account_manager.cmx",
+                    "component_url": "fuchsia-pkg://fuchsia.com/account#meta/account_manager",
                     "timestamp":0
                 },
-                "moniker":"realm1/realm2/session5/account_manager.cmx",
+                "moniker":"realm1/realm2/session5/account_manager",
                 "payload":{
                     "root": {
                         "accounts": {
@@ -275,10 +304,10 @@ pub fn get_v1_single_value_json() -> serde_json::Value {
                 "data_source":"Inspect",
                 "metadata":{
                     "filename":"fuchsia.inspect.Tree",
-                    "component_url": "fuchsia-pkg://fuchsia.com/account#meta/account_manager.cmx",
+                    "component_url": "fuchsia-pkg://fuchsia.com/account#meta/account_manager",
                     "timestamp":0
                 },
-                "moniker":"realm1/realm2/session5/account_manager.cmx",
+                "moniker":"realm1/realm2/session5/account_manager",
                 "payload":{
                     "root": {
                         "accounts": {

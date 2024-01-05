@@ -153,12 +153,17 @@ zx_status_t platform_start_cpu(cpu_num_t cpu_id, uint64_t mpid) {
   // Issue memory barrier before starting to ensure previous stores will be visible to new CPU.
   arch::ThreadMemoryBarrier();
 
-  uint32_t ret = power_cpu_on(mpid, kernel_entry_paddr);
+  uint32_t ret = power_cpu_on(mpid, kernel_entry_paddr, 0);
   dprintf(INFO, "Trying to start cpu %u, mpid %#" PRIx64 " returned: %d\n", cpu_id, mpid, (int)ret);
   if (ret != 0) {
     return ZX_ERR_INTERNAL;
   }
   return ZX_OK;
+}
+
+zx::result<power_cpu_state> platform_get_cpu_state(cpu_num_t cpu_id) {
+  DEBUG_ASSERT(cpu_id < SMP_MAX_CPUS);
+  return power_get_cpu_state(arch_cpu_num_to_mpidr(cpu_id));
 }
 
 static void topology_cpu_init(void) {
@@ -516,13 +521,13 @@ zx_status_t display_get_info(display_info* info) { return ZX_ERR_NOT_FOUND; }
 void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_reason_t reason,
                             bool halt_on_panic) {
   if (suggested_action == HALT_ACTION_REBOOT) {
-    power_reboot(REBOOT_NORMAL);
+    power_reboot(power_reboot_flags::REBOOT_NORMAL);
     printf("reboot failed\n");
   } else if (suggested_action == HALT_ACTION_REBOOT_BOOTLOADER) {
-    power_reboot(REBOOT_BOOTLOADER);
+    power_reboot(power_reboot_flags::REBOOT_BOOTLOADER);
     printf("reboot-bootloader failed\n");
   } else if (suggested_action == HALT_ACTION_REBOOT_RECOVERY) {
-    power_reboot(REBOOT_RECOVERY);
+    power_reboot(power_reboot_flags::REBOOT_RECOVERY);
     printf("reboot-recovery failed\n");
   } else if (suggested_action == HALT_ACTION_SHUTDOWN) {
     power_shutdown();
@@ -533,7 +538,7 @@ void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_
     Thread::Current::GetBacktrace(bt);
     bt.Print();
     if (!halt_on_panic) {
-      power_reboot(REBOOT_NORMAL);
+      power_reboot(power_reboot_flags::REBOOT_NORMAL);
       printf("reboot failed\n");
     }
 #if ENABLE_PANIC_SHELL

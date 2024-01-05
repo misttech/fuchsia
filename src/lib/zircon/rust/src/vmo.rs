@@ -33,6 +33,10 @@ pub struct VmoInfo {
     pub flags: VmoInfoFlags,
     pub committed_bytes: u64,
     pub handle_rights: Rights,
+    pub cache_policy: CachePolicy,
+    pub metadata_bytes: u64,
+    pub committed_change_events: u64,
+    pub populated_bytes: u64,
 }
 
 impl Default for VmoInfo {
@@ -53,6 +57,10 @@ impl From<sys::zx_info_vmo_t> for VmoInfo {
             flags: VmoInfoFlags::from_bits_truncate(info.flags),
             committed_bytes: info.committed_bytes,
             handle_rights: Rights::from_bits_truncate(info.handle_rights),
+            cache_policy: CachePolicy::from(info.cache_policy),
+            metadata_bytes: info.metadata_bytes,
+            committed_change_events: info.committed_change_events,
+            populated_bytes: info.populated_bytes,
         }
     }
 }
@@ -168,6 +176,28 @@ impl Vmo {
         }
     }
 
+    /// Efficiently transfers data from one VMO to another.
+    pub fn transfer_data(
+        &self,
+        options: TransferDataOptions,
+        offset: u64,
+        length: u64,
+        src_vmo: &Vmo,
+        src_offset: u64,
+    ) -> Result<(), Status> {
+        let status = unsafe {
+            sys::zx_vmo_transfer_data(
+                self.raw_handle(),
+                options.bits(),
+                offset,
+                length,
+                src_vmo.raw_handle(),
+                src_offset,
+            )
+        };
+        ok(status)
+    }
+
     /// Get the size of a virtual memory object.
     ///
     /// Wraps the `zx_vmo_get_size` syscall.
@@ -188,7 +218,7 @@ impl Vmo {
     /// Attempt to change the cache policy of a virtual memory object.
     ///
     /// Wraps the `zx_vmo_set_cache_policy` syscall.
-    pub fn set_cache_policy(&self, cache_policy: sys::zx_cache_policy_t) -> Result<(), Status> {
+    pub fn set_cache_policy(&self, cache_policy: CachePolicy) -> Result<(), Status> {
         let status =
             unsafe { sys::zx_vmo_set_cache_policy(self.raw_handle(), cache_policy as u32) };
         ok(status)
@@ -281,6 +311,13 @@ bitflags! {
     }
 }
 
+bitflags! {
+    /// Options that may be used when transferring data between VMOs.
+    #[repr(transparent)]
+    pub struct TransferDataOptions: u32 {
+    }
+}
+
 /// VM Object opcodes
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
@@ -291,6 +328,29 @@ impl VmoOp {
     }
     pub fn into_raw(self) -> u32 {
         self.0
+    }
+}
+
+// VM Object Cache Policies.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u32)]
+pub enum CachePolicy {
+    Cached = sys::ZX_CACHE_POLICY_CACHED,
+    UnCached = sys::ZX_CACHE_POLICY_UNCACHED,
+    UnCachedDevice = sys::ZX_CACHE_POLICY_UNCACHED_DEVICE,
+    WriteCombining = sys::ZX_CACHE_POLICY_WRITE_COMBINING,
+    Unknown = u32::MAX,
+}
+
+impl From<u32> for CachePolicy {
+    fn from(v: u32) -> Self {
+        match v {
+            sys::ZX_CACHE_POLICY_CACHED => CachePolicy::Cached,
+            sys::ZX_CACHE_POLICY_UNCACHED => CachePolicy::UnCached,
+            sys::ZX_CACHE_POLICY_UNCACHED_DEVICE => CachePolicy::UnCachedDevice,
+            sys::ZX_CACHE_POLICY_WRITE_COMBINING => CachePolicy::WriteCombining,
+            _ => CachePolicy::Unknown,
+        }
     }
 }
 
@@ -306,6 +366,7 @@ assoc_values!(VmoOp, [
     ZERO =             sys::ZX_VMO_OP_ZERO;
     TRY_LOCK =         sys::ZX_VMO_OP_TRY_LOCK;
     DONT_NEED =        sys::ZX_VMO_OP_DONT_NEED;
+    ALWAYS_NEED =      sys::ZX_VMO_OP_ALWAYS_NEED;
 ]);
 
 unsafe_handle_properties!(object: Vmo,

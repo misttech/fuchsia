@@ -61,7 +61,25 @@ type Shard struct {
 	// images.json used to boot a target. The key should be an ImageOverrideType
 	// and the value should be the label of the image to override with as defined
 	// in images.json.
+	// TODO(b/313662173): Remove once it is no longer used.
 	ImageOverrides build.ImageOverrides `json:"image_overrides,omitempty"`
+
+	// ProductBundle is the name of the product bundle describing the system
+	// against which the test should be run.
+	ProductBundle string `json:"product_bundle,omitempty"`
+}
+
+// TargetCPU returns the CPU architecture of the target this shard will run against.
+func (s *Shard) TargetCPU() string {
+	return s.Tests[0].CPU
+}
+
+// HostCPU returns the host CPU architecture this shard will run on.
+func (s *Shard) HostCPU() string {
+	if s.Env.TargetsEmulator() && s.TargetCPU() == "arm64" {
+		return "arm64"
+	}
+	return "x64"
 }
 
 // CreatePackageRepo creates a package repository for the given shard.
@@ -115,27 +133,55 @@ func (s *Shard) CreatePackageRepo(buildDir string, globalRepoMetadata string, ca
 			return err
 		}
 		for _, p := range pkgManifests {
-			manifest, err := pm_build.LoadPackageManifest(filepath.Join(buildDir, p))
-			if err != nil {
+			if err := prepareBlobsForPackage(p, addedBlobs, buildDir, globalRepoMetadata, blobsDirRel, blobsDir); err != nil {
 				return err
-			}
-			for _, blob := range manifest.Blobs {
-				if _, exists := addedBlobs[blob.Merkle.String()]; !exists {
-					// Use the blobs from the blobs dir instead of blob.SourcePath
-					// since SourcePath only points to uncompressed blobs.
-					src := filepath.Join(globalRepoMetadata, blobsDirRel, blob.Merkle.String())
-					dst := filepath.Join(blobsDir, blob.Merkle.String())
-					if err := linkOrCopy(src, dst); err != nil {
-						return err
-					}
-					addedBlobs[blob.Merkle.String()] = struct{}{}
-				}
 			}
 		}
 	}
 
 	s.PkgRepo = localRepoRel
 	s.AddDeps([]string{localRepoRel})
+	return nil
+}
+
+// prepareBlobsForPackage loads the given manifest path and ensures that all
+// blobs it references, either directly or via subpackages, are copied or
+// linked from globalRepoMetadata/blobsDirRel into blobsDir and enumerated in
+// addedBlobs.
+func prepareBlobsForPackage(
+	manifestPath string,
+	addedBlobs map[string]struct{},
+	buildDir string,
+	globalRepoMetadata string,
+	blobsDirRel string,
+	blobsDir string,
+) error {
+	manifest, err := pm_build.LoadPackageManifest(filepath.Join(buildDir, manifestPath))
+	if err != nil {
+		return err
+	}
+
+	// Ensure all blobs directly referenced are added
+	for _, blob := range manifest.Blobs {
+		if _, exists := addedBlobs[blob.Merkle.String()]; !exists {
+			// Use the blobs from the blobs dir instead of blob.SourcePath
+			// since SourcePath only points to uncompressed blobs.
+			src := filepath.Join(globalRepoMetadata, blobsDirRel, blob.Merkle.String())
+			dst := filepath.Join(blobsDir, blob.Merkle.String())
+			if err := linkOrCopy(src, dst); err != nil {
+				return err
+			}
+			addedBlobs[blob.Merkle.String()] = struct{}{}
+		}
+	}
+
+	// Walk all subpackages and ensure their blobs are added too.
+	for _, subpackage := range manifest.Subpackages {
+		if err := prepareBlobsForPackage(subpackage.ManifestPath, addedBlobs, buildDir, globalRepoMetadata, blobsDirRel, blobsDir); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -213,6 +259,7 @@ func MakeShards(specs []build.TestSpec, testListEntries map[string]build.TestLis
 					Name:           name,
 					Tests:          []Test{test},
 					ImageOverrides: spec.ImageOverrides,
+					ProductBundle:  spec.ProductBundle,
 					Env:            e,
 				})
 			} else {

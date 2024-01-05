@@ -9,7 +9,7 @@ use fidl_fuchsia_net_mdns::*;
 use fuchsia_async::Task;
 use fuchsia_component::client::connect_to_protocol;
 use parking_lot::Mutex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, CString};
 use std::sync::Arc;
 
@@ -43,24 +43,39 @@ pub struct AdvertisingProxyHost {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AdvertisingProxyServiceInfo {
+    name: CString,
     txt: Vec<Vec<u8>>,
     port: u16,
     priority: u16,
     weight: u16,
+    subtypes: HashSet<String>,
 }
 
 impl AdvertisingProxyServiceInfo {
     fn new(srp_service: &ot::SrpServerService) -> Self {
         AdvertisingProxyServiceInfo {
+            name: srp_service.instance_name_cstr().to_owned(),
             txt: srp_service.txt_entries().map(|x| x.unwrap().to_vec()).collect::<Vec<_>>(),
             port: srp_service.port(),
             priority: srp_service.priority(),
             weight: srp_service.weight(),
+            subtypes: HashSet::new(),
         }
     }
 
     fn is_up_to_date(&self, srp_service: &ot::SrpServerService) -> bool {
         !srp_service.is_deleted() && self == &AdvertisingProxyServiceInfo::new(srp_service)
+    }
+
+    fn has_subtype(&self, subtype: &str) -> bool {
+        self.subtypes.contains(subtype)
+    }
+
+    fn set_subtypes(&mut self, subtypes: Vec<String>) {
+        self.subtypes.clear();
+        for subtype in subtypes {
+            self.subtypes.insert(subtype);
+        }
     }
 
     fn into_service_instance_publication(self) -> ServiceInstancePublication {
@@ -91,6 +106,18 @@ impl AdvertisingProxyService {
 
     fn update(&self, info: AdvertisingProxyServiceInfo) -> Result<(), anyhow::Error> {
         *self.info.lock() = info;
+        self.reannounce()
+    }
+
+    fn set_subtypes(&self, subtypes: Vec<String>) -> Result<(), anyhow::Error> {
+        {
+            let mut info = self.info.lock();
+            info.set_subtypes(subtypes.clone());
+        }
+        self.control_handle.send_set_subtypes(&subtypes).map_err(Into::into)
+    }
+
+    fn reannounce(&self) -> Result<(), anyhow::Error> {
         Ok(self.control_handle.send_reannounce()?)
     }
 }
@@ -153,6 +180,21 @@ impl AdvertisingProxyInner {
                     err
                 );
             }
+        }
+
+        Ok(())
+    }
+
+    /// Makes sure that the proxy host publisher is working.
+    pub fn verify_mdns_connection(&mut self) -> Result<(), anyhow::Error> {
+        if self.mdns_proxy_host_publisher.is_closed() {
+            warn!(
+                tag = "srp_advertising_proxy",
+                "self.mdns_proxy_host_publisher has closed unexpectedly."
+            );
+
+            self.mdns_proxy_host_publisher = connect_to_protocol::<ProxyHostPublisherMarker>()
+                .context("mdns_proxy_host_publisher")?;
         }
 
         Ok(())
@@ -248,9 +290,9 @@ impl AdvertisingProxyInner {
                     .trim_end_matches(&self.srp_domain)
                     .trim_end_matches('.');
 
-                debug!(
+                info!(
                     tag = "srp_advertising_proxy",
-                    "Advertising host {:?} on {:?} as {:?}",
+                    "Advertising host [PII]({:?}) on {:?} as [PII]({:?})",
                     srp_host.full_name_cstr(),
                     LOCAL_DOMAIN,
                     local_name
@@ -258,6 +300,18 @@ impl AdvertisingProxyInner {
 
                 if local_name.len() > MAX_DNSSD_HOST_LEN {
                     bail!("Host {:?} is too long (max {} chars)", local_name, MAX_DNSSD_HOST_LEN);
+                }
+
+                // Warn if the hostname only contains legal characters.
+                if local_name.starts_with('-')
+                    || local_name.contains(|ch: char| {
+                        !(ch.is_ascii_alphanumeric() || ch == '-' || !ch.is_ascii())
+                    })
+                {
+                    warn!(
+                        tag = "srp_advertising_proxy",
+                        "Host [PII]({local_name:?}) contains forbidden characters"
+                    );
                 }
 
                 let (client, server) = create_endpoints::<ServiceInstancePublisherMarker>();
@@ -274,6 +328,9 @@ impl AdvertisingProxyInner {
                         })
                     })
                     .collect::<Vec<_>>();
+
+                // Make sure that the connection to the mDNS component is solid.
+                self.verify_mdns_connection()?;
 
                 let publish_proxy_host_future = self
                     .mdns_proxy_host_publisher
@@ -340,11 +397,8 @@ impl AdvertisingProxyInner {
 
         let services = &mut host.services;
 
-        for srp_service in srp_host.find_services::<&CStr, &CStr>(
-            ot::SrpServerServiceFlags::BASE_TYPE_SERVICE_ONLY,
-            None,
-            None,
-        ) {
+        // Handle adding/removing whole services
+        for srp_service in srp_host.services() {
             // The service name as a Rust string slice from the SRP service.
             let service_name = srp_service.service_name_cstr().as_ref().to_str()?;
 
@@ -354,7 +408,7 @@ impl AdvertisingProxyInner {
             // The instance name without the service name or domain,
             // without any trailing period, like "My-Service".
             let local_instance_name = srp_service
-                .full_name_cstr()
+                .instance_name_cstr()
                 .as_ref()
                 .to_str()?
                 .trim_end_matches(service_name)
@@ -362,18 +416,18 @@ impl AdvertisingProxyInner {
 
             if srp_service.is_deleted() {
                 // Delete the service.
-                if services.remove(srp_service.full_name_cstr()).is_some() {
+                if services.remove(srp_service.instance_name_cstr()).is_some() {
                     debug!(
                         tag = "srp_advertising_proxy",
                         "No longer advertising service {:?} on {:?}",
-                        srp_service.full_name_cstr(),
+                        srp_service.instance_name_cstr(),
                         LOCAL_DOMAIN
                     );
                 }
                 continue;
             }
 
-            let service_name = srp_service.full_name_cstr().to_owned();
+            let service_name = srp_service.instance_name_cstr().to_owned();
 
             if let Some(service) = services.get(&service_name) {
                 let service_info = AdvertisingProxyServiceInfo::new(srp_service);
@@ -481,20 +535,48 @@ impl AdvertisingProxyInner {
             let publish_responder_future = pub_responder_stream.map_err(Into::into).try_for_each(
                 move |ServiceInstancePublicationResponder_Request::OnPublication {
                           responder,
+                          subtype,
                           publication_cause,
                           ..
                       }| {
                     let service_info = service_info_clone.lock().clone();
+                    let service_name = service_info.name.clone();
 
-                    debug!(
-                        tag = "srp_advertising_proxy",
-                        "publish_responder_future: {:?} publication {:?}",
-                        publication_cause,
-                        service_info
-                    );
+                    let should_skip = if let Some(subtype) = subtype.as_ref() {
+                        if !service_info.has_subtype(subtype) {
+                            // We don't have this subtype, we are going to skip.
+                            true
+                        } else {
+                            // We have the subtype, so we don't skip.
+                            false
+                        }
+                    } else {
+                        // No specific subtype is being requested, so we don't skip.
+                        false
+                    };
 
                     let info = service_info.into_service_instance_publication();
-                    async move { responder.send(Ok(&info)).map_err(Into::into) }
+
+                    let result =
+                        if should_skip {
+                            debug!(
+                                tag = "srp_advertising_proxy",
+                                "publish_responder_future: {:?}, {service_name:?}, returning DO_NOT_RESPOND, does not have subtype {subtype:?}",
+                                publication_cause
+                            );
+
+                            Err(OnPublicationError::DoNotRespond)
+                        } else {
+                            debug!(
+                                tag = "srp_advertising_proxy",
+                                "publish_responder_future: {:?}, {service_name:?}, subtype {subtype:?}",
+                                publication_cause
+                            );
+
+                            Ok(&info)
+                        };
+
+                    futures::future::ready(responder.send(result).map_err(Into::into))
                 },
             );
 
@@ -502,13 +584,54 @@ impl AdvertisingProxyInner {
                 .map_ok(|_| ());
 
             services.insert(
-                srp_service.full_name_cstr().to_owned(),
+                srp_service.instance_name_cstr().to_owned(),
                 AdvertisingProxyService {
                     info: service_info,
                     control_handle: pub_responder_control,
                     task: fuchsia_async::Task::spawn(future),
                 },
             );
+        }
+
+        // Handle subtypes
+        for srp_service in srp_host.services() {
+            let service_name = srp_service.instance_name_cstr().to_owned();
+
+            if let Some(service) = services.get(&service_name) {
+                if srp_service.is_deleted() {
+                    match service.set_subtypes(vec![]) {
+                        Ok(()) => {}
+                        Err(_) => {
+                            // Just ignore any errors here.
+                            continue;
+                        }
+                    }
+                } else {
+                    let subtypes = srp_service
+                        .subtypes()
+                        .filter_map(|x: &CStr| match x.to_str() {
+                            Ok(x) => Some(x[0..x.find('.').unwrap_or(x.len())].to_string()),
+                            Err(err) => {
+                                warn!(
+                                    tag = "srp_advertising_proxy",
+                                    "Unacceptable subtype {x:?}: {err:?}"
+                                );
+                                None
+                            }
+                        })
+                        .collect();
+                    match service.set_subtypes(subtypes) {
+                        Ok(()) => {}
+                        Err(err) => {
+                            warn!(
+                                tag = "srp_advertising_proxy",
+                                "Can't set subtypes on {service_name:?}: {err:?}"
+                            );
+                            continue;
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())

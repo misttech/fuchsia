@@ -12,8 +12,8 @@ fuchsia_driver("msd_intel-driver") {
 
   deps = [
     ":msd_intel_entry",
-    "$magma_build_root/src/magma_util/platform:logger_for_system_drivers",
     "src",
+    "//src/graphics/magma/lib/magma/platform:logger_for_system_drivers",
   ]
 
   assert_no_deps = [ "//zircon/system/ulib/trace-engine:trace-engine-static" ]
@@ -34,8 +34,8 @@ fuchsia_driver("msd_intel_test-driver") {
 
   deps = [
     ":msd_intel_test_entry",
-    "$magma_build_root/src/magma_util/platform:logger_for_system_drivers",
     "src",
+    "//src/graphics/magma/lib/magma/platform:logger_for_system_drivers",
   ]
 
   assert_no_deps = [ "//zircon/system/ulib/trace-engine:trace-engine-static" ]
@@ -52,13 +52,13 @@ fuchsia_driver_component("msd_intel_test") {
 driver_bind_rules("msd_intel_bind") {
   rules = "msd_intel.bind"
   tests = "tests/bind_tests.json"
-  deps = [ "//src/devices/bind/fuchsia.intel.gpucore" ]
+  deps = [ "//src/devices/bind/fuchsia.intel.platform.gpucore" ]
 }
 
 driver_bind_rules("msd_intel_test_bind") {
   rules = "msd_intel_test.bind"
   disable_autobind = true
-  deps = [ "//src/devices/bind/fuchsia.intel.gpucore" ]
+  deps = [ "//src/devices/bind/fuchsia.intel.platform.gpucore" ]
 }
 
 source_set("msd_intel_entry") {
@@ -68,13 +68,13 @@ source_set("msd_intel_entry") {
   deps = [
     ":msd_intel_bind",
     "src",
-    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp_wire",
+    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp",
     "//src/devices/lib/driver",
-    "//src/graphics/lib/magma/src/magma_util:macros",
-    "//src/graphics/lib/magma/src/magma_util/platform:trace",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:status",
-    "//src/graphics/lib/magma/src/sys_driver",
-    "//src/graphics/lib/magma/src/sys_driver/dfv1:device_impl",
+    "//src/graphics/magma/lib/magma/platform:trace",
+    "//src/graphics/magma/lib/magma/platform/zircon:status",
+    "//src/graphics/magma/lib/magma/util:macros",
+    "//src/graphics/magma/lib/magma_service/sys_driver",
+    "//src/graphics/magma/lib/magma_service/sys_driver/dfv1:device_impl",
     "//src/lib/ddk",
     "//src/zircon/lib/zircon",
     "//zircon/system/ulib/trace",
@@ -93,13 +93,13 @@ source_set("msd_intel_test_entry") {
   deps = [
     ":msd_intel_test_bind",
     "src",
-    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp_wire",
+    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp",
     "//src/devices/lib/driver",
-    "//src/graphics/lib/magma/src/magma_util:macros",
-    "//src/graphics/lib/magma/src/magma_util/platform:trace",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:status",
-    "//src/graphics/lib/magma/src/sys_driver",
-    "//src/graphics/lib/magma/src/sys_driver/dfv1:device_impl",
+    "//src/graphics/magma/lib/magma/platform:trace",
+    "//src/graphics/magma/lib/magma/platform/zircon:status",
+    "//src/graphics/magma/lib/magma/util:macros",
+    "//src/graphics/magma/lib/magma_service/sys_driver",
+    "//src/graphics/magma/lib/magma_service/sys_driver/dfv1:device_impl",
     "//src/lib/ddk",
     "//src/zircon/lib/zircon",
     "//zircon/system/ulib/trace",
@@ -108,9 +108,9 @@ source_set("msd_intel_test_entry") {
   ]
   deps += [
     "tests/unit_tests:hardware_tests",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:pci_driver_gtest",
-    "//src/graphics/lib/magma/tests/unit_tests:magma_platform_pci_device_tests",
-    "//src/graphics/lib/magma/tests/unit_tests:msd_conformance_tests_cc",
+    "//src/graphics/magma/lib/magma_service/test_util:pci_driver_gtest",
+    "//src/graphics/magma/tests/msd_conformance_tests",
+    "//src/graphics/magma/tests/unit_tests:magma_platform_pci_device_tests",
   ]
 }
 
@@ -139,7 +139,7 @@ fuchsia_driver_package("msd-intel-gen") {
 fuchsia_driver_package("msd-intel-gen-test") {
   testonly = true
   driver_components = [ ":msd_intel_test" ]
-  deps = [ "//src/graphics/lib/magma/tests/unit_tests:test_firmware" ]
+  deps = [ "//src/graphics/magma/tests/unit_tests:test_firmware" ]
 }
 
 group("test-driver") {

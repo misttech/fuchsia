@@ -21,6 +21,8 @@
 #include <queue>
 #include <unordered_map>
 
+#include <pw_async_fuchsia/dispatcher.h>
+
 #include "src/connectivity/bluetooth/core/bt-host/testing/fake_controller.h"
 #include "src/connectivity/bluetooth/hci/virtual/emulated_peer.h"
 #include "src/connectivity/bluetooth/lib/fidl/hanging_getter.h"
@@ -50,6 +52,8 @@ class EmulatorDevice : public fuchsia::bluetooth::test::HciEmulator,
   void OpenSnoopChannel(OpenSnoopChannelRequestView request,
                         OpenSnoopChannelCompleter::Sync& completer) override;
   void Open(OpenRequestView request, OpenCompleter::Sync& completer) override;
+
+  void ClearHciDev() { hci_dev_ = nullptr; }
 
  private:
   void StartEmulatorInterface(zx::channel chan);
@@ -106,6 +110,8 @@ class EmulatorDevice : public fuchsia::bluetooth::test::HciEmulator,
   // children are released, i.e. loop_ and members responsible for servicing bt-host live past
   // Unbind, and are shut down upon Release.
   async::Loop loop_;
+
+  pw::async::fuchsia::FuchsiaDispatcher pw_dispatcher_;
 
   zx_device_t* const parent_;
 

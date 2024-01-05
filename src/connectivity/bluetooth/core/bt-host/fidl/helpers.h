@@ -119,6 +119,8 @@ fuchsia::bluetooth::Uuid UuidToFidl(const bt::UUID& uuid);
 // Functions that convert FIDL types to library objects.
 bt::sm::IOCapability IoCapabilityFromFidl(const fuchsia::bluetooth::sys::InputCapability,
                                           const fuchsia::bluetooth::sys::OutputCapability);
+std::optional<bt::gap::BrEdrSecurityMode> BrEdrSecurityModeFromFidl(
+    const fuchsia::bluetooth::sys::BrEdrSecurityMode mode);
 bt::gap::LESecurityMode LeSecurityModeFromFidl(const fuchsia::bluetooth::sys::LeSecurityMode mode);
 std::optional<bt::sm::SecurityLevel> SecurityLevelFromFidl(
     const fuchsia::bluetooth::sys::PairingSecurityLevel level);
@@ -163,8 +165,8 @@ std::optional<bt::AdvertisingData> AdvertisingDataFromFidl(
 fuchsia::bluetooth::le::AdvertisingData AdvertisingDataToFidl(const bt::AdvertisingData& input);
 fuchsia::bluetooth::le::AdvertisingDataDeprecated AdvertisingDataToFidlDeprecated(
     const bt::AdvertisingData& input);
-fuchsia::bluetooth::le::ScanData AdvertisingDataToFidlScanData(const bt::AdvertisingData& input,
-                                                               zx::time timestamp);
+fuchsia::bluetooth::le::ScanData AdvertisingDataToFidlScanData(
+    const bt::AdvertisingData& input, pw::chrono::SystemClock::time_point timestamp);
 
 // Constructs a fuchsia.bluetooth.le Peer type from the stack representation.
 fuchsia::bluetooth::le::Peer PeerToFidlLe(const bt::gap::Peer& peer);

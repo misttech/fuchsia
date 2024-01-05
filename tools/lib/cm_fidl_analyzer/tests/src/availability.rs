@@ -68,7 +68,7 @@ mod tests {
         for test_case in &[
             TestCase {
                 expose_availability: Availability::Required,
-                expected_res: ExpectedResult::Err(fuchsia_zircon_status::Status::UNAVAILABLE),
+                expected_res: ExpectedResult::Err(fuchsia_zircon_status::Status::NOT_FOUND),
             },
             TestCase {
                 expose_availability: Availability::Optional,
@@ -82,25 +82,28 @@ mod tests {
                         .expose(ExposeDecl::Service(ExposeServiceDecl {
                             source: ExposeSource::Child("b".to_owned()),
                             source_name: "fuchsia.examples.EchoService".parse().unwrap(),
+                            source_dictionary: None,
                             target_name: "fuchsia.examples.EchoService".parse().unwrap(),
                             target: ExposeTarget::Parent,
-                            availability: test_case.expose_availability.clone(),
+                            availability: test_case.expose_availability,
                         }))
                         .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                             source: ExposeSource::Child("b".to_owned()),
                             source_name: "fuchsia.examples.Echo".parse().unwrap(),
+                            source_dictionary: None,
                             target_name: "fuchsia.examples.Echo".parse().unwrap(),
                             target: ExposeTarget::Parent,
-                            availability: test_case.expose_availability.clone(),
+                            availability: test_case.expose_availability,
                         }))
                         .expose(ExposeDecl::Directory(ExposeDirectoryDecl {
                             source: ExposeSource::Child("b".to_owned()),
                             source_name: "dir".parse().unwrap(),
+                            source_dictionary: None,
                             target_name: "dir".parse().unwrap(),
                             target: ExposeTarget::Parent,
                             rights: None,
                             subdir: None,
-                            availability: test_case.expose_availability.clone(),
+                            availability: test_case.expose_availability,
                         }))
                         .add_lazy_child("b")
                         .build(),
@@ -111,6 +114,7 @@ mod tests {
                         .expose(ExposeDecl::Service(ExposeServiceDecl {
                             source: ExposeSource::Void,
                             source_name: "fuchsia.examples.EchoService".parse().unwrap(),
+                            source_dictionary: None,
                             target_name: "fuchsia.examples.EchoService".parse().unwrap(),
                             target: ExposeTarget::Parent,
                             availability: Availability::Optional,
@@ -118,6 +122,7 @@ mod tests {
                         .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                             source: ExposeSource::Void,
                             source_name: "fuchsia.examples.Echo".parse().unwrap(),
+                            source_dictionary: None,
                             target_name: "fuchsia.examples.Echo".parse().unwrap(),
                             target: ExposeTarget::Parent,
                             availability: Availability::Optional,
@@ -125,6 +130,7 @@ mod tests {
                         .expose(ExposeDecl::Directory(ExposeDirectoryDecl {
                             source: ExposeSource::Void,
                             source_name: "dir".parse().unwrap(),
+                            source_dictionary: None,
                             target_name: "dir".parse().unwrap(),
                             target: ExposeTarget::Parent,
                             rights: None,

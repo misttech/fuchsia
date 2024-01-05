@@ -23,12 +23,12 @@
 #include <lib/zx/debuglog.h>
 #include <lib/zx/process.h>
 #include <lib/zx/time.h>
+#include <zircon/processargs.h>
 #include <zircon/status.h>
 #include <zircon/types.h>
 
 #include <algorithm>
 #include <future>
-#include <ios>
 #include <latch>
 #include <utility>
 
@@ -37,11 +37,11 @@
 #include "src/bringup/bin/console-launcher/console_launcher.h"
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/loader_service/loader_service.h"
-#include "src/lib/storage/vfs/cpp/managed_vfs.h"
-#include "src/lib/storage/vfs/cpp/pseudo_dir.h"
-#include "src/lib/storage/vfs/cpp/remote_dir.h"
-#include "src/lib/storage/vfs/cpp/vfs_types.h"
-#include "src/lib/storage/vfs/cpp/vnode.h"
+#include "src/storage/lib/vfs/cpp/managed_vfs.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
+#include "src/storage/lib/vfs/cpp/remote_dir.h"
+#include "src/storage/lib/vfs/cpp/vfs_types.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
 #include "src/sys/lib/stdout-to-debuglog/cpp/stdout-to-debuglog.h"
 
 namespace {
@@ -377,9 +377,8 @@ int main(int argv, char** argc) {
                   if (fragment_len < 0) {
                     const void* path_ptr = path.data();
                     const void* component_ptr = component.data();
-                    FX_LOGS(FATAL) << "expected overlapping memory:"
-                                   << " path@" << path_ptr << "=" << path << " component@"
-                                   << component_ptr << "=" << component;
+                    FX_LOGS(FATAL) << "expected overlapping memory:" << " path@" << path_ptr << "="
+                                   << path << " component@" << component_ptr << "=" << component;
                   }
                   return std::string_view{path.data(), static_cast<size_t>(fragment_len)};
                 }();

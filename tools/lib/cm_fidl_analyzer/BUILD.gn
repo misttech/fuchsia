@@ -13,9 +13,11 @@ rustc_library("cm_fidl_analyzer") {
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-url",
+    "//src/sys/lib/cm_config",
     "//src/sys/lib/cm_moniker",
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/cm_types",
+    "//src/sys/lib/component_id_index",
     "//src/sys/lib/config_encoder",
     "//src/sys/lib/moniker",
     "//src/sys/lib/routing",
@@ -43,9 +45,7 @@ rustc_library("cm_fidl_analyzer") {
     "src/component_model.rs",
     "src/environment.rs",
     "src/lib.rs",
-    "src/node_path.rs",
     "src/route.rs",
-    "src/serde_ext.rs",
   ]
 }
 

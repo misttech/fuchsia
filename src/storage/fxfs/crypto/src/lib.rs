@@ -4,8 +4,12 @@
 
 use {
     aes::{
-        cipher::{generic_array::GenericArray, NewCipher, StreamCipher as _, StreamCipherSeek},
-        Aes256, NewBlockCipher,
+        cipher::{
+            generic_array::GenericArray, inout::InOut, typenum::consts::U16, BlockBackend,
+            BlockClosure, BlockDecrypt, BlockEncrypt, BlockSizeUser, KeyInit, KeyIvInit,
+            StreamCipher as _, StreamCipherSeek,
+        },
+        Aes256,
     },
     anyhow::{anyhow, Error},
     async_trait::async_trait,
@@ -15,28 +19,18 @@ use {
         de::{Error as SerdeError, Visitor},
         Deserialize, Deserializer, Serialize, Serializer,
     },
+    static_assertions::assert_cfg,
     std::convert::TryInto,
-    xts_mode::{get_tweak_default, Xts128},
+    zerocopy::{AsBytes, FromBytes, FromZeros, NoCell},
 };
 
 pub mod ff1;
 
-// Copied from //src/storage/fxfs/src/trace.rs.
-// TODO(fxbug.dev/117467): Consider refactoring to a common shared crate.
-#[macro_export]
-macro_rules! trace_duration {
-    ($name:expr $(, $key:expr => $val:expr)*) => {
-        #[cfg(feature = "tracing")]
-        ::fuchsia_trace::duration!("fxfs", $name $(,$key => $val)*);
-    }
-}
-
 pub const KEY_SIZE: usize = 256 / 8;
 pub const WRAPPED_KEY_SIZE: usize = KEY_SIZE + 16;
 
-// The xts-mode crate expects a sector size. Fxfs will always use a block size >= 512 bytes, so we
-// just assume a sector size of 512 bytes, which will work fine even if a different block size is
-// used by Fxfs or the underlying device.
+// Fxfs will always use a block size >= 512 bytes, so we just assume a sector size of 512 bytes,
+// which will work fine even if a different block size is used by Fxfs or the underlying device.
 const SECTOR_SIZE: u64 = 512;
 
 pub type KeyBytes = [u8; KEY_SIZE];
@@ -159,7 +153,7 @@ impl std::ops::Deref for WrappedKeys {
 
 struct XtsCipher {
     id: u64,
-    xts: Xts128<Aes256>,
+    cipher: Aes256,
 }
 
 pub struct XtsCipherSet(Vec<XtsCipher>);
@@ -170,14 +164,7 @@ impl XtsCipherSet {
             keys.iter()
                 .map(|(id, k)| XtsCipher {
                     id: *id,
-                    // Note: The "128" in `Xts128` refers to the cipher block size, not the key size
-                    // (and not the device sector size). AES-256, like all forms of AES, have a
-                    // 128-bit block size, and so will work with `Xts128`.  The same key is used for
-                    // for encrypting the data and computing the tweak.
-                    xts: Xts128::<Aes256>::new(
-                        Aes256::new(GenericArray::from_slice(k.key())),
-                        Aes256::new(GenericArray::from_slice(k.key())),
-                    ),
+                    cipher: Aes256::new(GenericArray::from_slice(k.key())),
                 })
                 .collect(),
         )
@@ -188,20 +175,25 @@ impl XtsCipherSet {
     /// * `offset` is the byte offset within the file.
     /// * `key_id` specifies which of the unwrapped keys to use.
     /// * `buffer` is mutated in place.
+    ///
+    /// `buffer` *must* be 16 byte aligned.
     pub fn decrypt(&self, offset: u64, key_id: u64, buffer: &mut [u8]) -> Result<(), Error> {
-        trace_duration!("decrypt");
+        fxfs_trace::duration!("decrypt", "len" => buffer.len());
         assert_eq!(offset % SECTOR_SIZE, 0);
-        self.0
+        let cipher = &self
+            .0
             .iter()
             .find(|cipher| cipher.id == key_id)
             .ok_or(anyhow!("Key not found"))?
-            .xts
-            .decrypt_area(
-                buffer,
-                SECTOR_SIZE as usize,
-                (offset / SECTOR_SIZE).into(),
-                get_tweak_default,
-            );
+            .cipher;
+        let mut sector_offset = offset / SECTOR_SIZE;
+        for sector in buffer.chunks_exact_mut(SECTOR_SIZE as usize) {
+            let mut tweak = Tweak(sector_offset as u128);
+            // The same key is used for encrypting the data and computing the tweak.
+            cipher.encrypt_block(GenericArray::from_mut_slice(tweak.as_bytes_mut()));
+            cipher.decrypt_with_backend(XtsProcessor::new(tweak, sector));
+            sector_offset += 1;
+        }
         Ok(())
     }
 
@@ -210,20 +202,25 @@ impl XtsCipherSet {
     /// * `offset` is the byte offset within the file.
     /// * `key_id` specifies which of the unwrapped keys to use.
     /// * `buffer` is mutated in place.
+    ///
+    /// `buffer` *must* be 16 byte aligned.
     pub fn encrypt(&self, offset: u64, key_id: u64, buffer: &mut [u8]) -> Result<(), Error> {
-        trace_duration!("encrypt");
+        fxfs_trace::duration!("encrypt", "len" => buffer.len());
         assert_eq!(offset % SECTOR_SIZE, 0);
-        self.0
+        let cipher = &self
+            .0
             .iter()
             .find(|cipher| cipher.id == key_id)
             .ok_or(anyhow!("Key not found"))?
-            .xts
-            .encrypt_area(
-                buffer,
-                SECTOR_SIZE as usize,
-                (offset / SECTOR_SIZE).into(),
-                get_tweak_default,
-            );
+            .cipher;
+        let mut sector_offset = offset / SECTOR_SIZE;
+        for sector in buffer.chunks_exact_mut(SECTOR_SIZE as usize) {
+            let mut tweak = Tweak(sector_offset as u128);
+            // The same key is used for encrypting the data and computing the tweak.
+            cipher.encrypt_block(GenericArray::from_mut_slice(tweak.as_bytes_mut()));
+            cipher.encrypt_with_backend(XtsProcessor::new(tweak, sector));
+            sector_offset += 1;
+        }
         Ok(())
     }
 }
@@ -242,12 +239,12 @@ impl StreamCipher {
     }
 
     pub fn encrypt(&mut self, buffer: &mut [u8]) {
-        trace_duration!("StreamCipher::encrypt");
+        fxfs_trace::duration!("StreamCipher::encrypt", "len" => buffer.len());
         self.0.apply_keystream(buffer);
     }
 
     pub fn decrypt(&mut self, buffer: &mut [u8]) {
-        trace_duration!("StreamCipher::decrypt");
+        fxfs_trace::duration!("StreamCipher::decrypt", "len" => buffer.len());
         self.0.apply_keystream(buffer);
     }
 
@@ -292,6 +289,52 @@ pub trait Crypt: Send + Sync {
             futures.push(async move { Ok((*key_id, self.unwrap_key(key, owner).await?)) });
         }
         futures::future::try_join_all(futures).await
+    }
+}
+
+// This assumes little-endianness which is likely to always be the case.
+assert_cfg!(target_endian = "little");
+#[derive(AsBytes, FromBytes, FromZeros, NoCell)]
+#[repr(C)]
+struct Tweak(u128);
+
+// To be used with encrypt|decrypt_with_backend.
+struct XtsProcessor<'a> {
+    tweak: Tweak,
+    data: &'a mut [u8],
+}
+
+impl<'a> XtsProcessor<'a> {
+    // `tweak` should be encrypted.  `data` should be a single sector and *must* be 16 byte aligned.
+    fn new(tweak: Tweak, data: &'a mut [u8]) -> Self {
+        assert_eq!(data.as_ptr() as usize & 15, 0, "data must be 16 byte aligned");
+        Self { tweak, data }
+    }
+}
+
+impl BlockSizeUser for XtsProcessor<'_> {
+    type BlockSize = U16;
+}
+
+impl BlockClosure for XtsProcessor<'_> {
+    fn call<B: BlockBackend<BlockSize = Self::BlockSize>>(self, backend: &mut B) {
+        let Self { mut tweak, data } = self;
+        for chunk in data.chunks_exact_mut(16) {
+            let ptr = chunk.as_mut_ptr() as *mut u128;
+            // SAFETY: We know each chunk is exactly 16 bytes and it should be safe to transmute to
+            // u128 and GenericArray<u8, U16>.  There are safe ways of doing the following, but this
+            // is extremely performance sensitive, and even seemingly innocuous changes here can
+            // have an order-of-magnitude impact on what the compiler produces and that can be seen
+            // in our benchmarks.  This assumes little-endianness which is likely to always be the
+            // case.
+            unsafe {
+                *ptr ^= tweak.0;
+                let chunk = ptr as *mut GenericArray<u8, U16>;
+                backend.proc_block(InOut::from_raw(chunk, chunk));
+                *ptr ^= tweak.0;
+            }
+            tweak.0 = (tweak.0 << 1) ^ ((tweak.0 as i128 >> 127) as u128 & 0x87);
+        }
     }
 }
 

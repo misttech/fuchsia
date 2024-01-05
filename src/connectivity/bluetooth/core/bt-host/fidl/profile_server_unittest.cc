@@ -15,8 +15,8 @@
 #include "lib/zx/socket.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/host_error.h"
 #include "src/connectivity/bluetooth/core/bt-host/fidl/adapter_test_fixture.h"
+#include "src/connectivity/bluetooth/core/bt-host/fidl/fake_adapter_test_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/fidl/helpers.h"
-#include "src/connectivity/bluetooth/core/bt-host/gap/fake_adapter_test_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/fake_pairing_delegate.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/fake_channel.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/fake_l2cap.h"
@@ -41,7 +41,7 @@ using FakeChannel = bt::l2cap::testing::FakeChannel;
 void NopAdvertiseCallback(fidlbredr::Profile_Advertise_Result) {}
 
 const bt::DeviceAddress kTestDevAddr(bt::DeviceAddress::Type::kBREDR, {1});
-constexpr bt::l2cap::PSM kPSM = bt::l2cap::kAVDTP;
+constexpr bt::l2cap::Psm kPsm = bt::l2cap::kAVDTP;
 
 constexpr uint16_t kSynchronousDataPacketLength = 64;
 constexpr uint8_t kTotalNumSynchronousDataPackets = 1;
@@ -352,7 +352,7 @@ TEST_F(ProfileServerTest, ErrorOnMultipleAdvertiseRequests) {
   EXPECT_EQ(cb1_count, 1u);
 }
 
-TEST_F(ProfileServerTest, ErrorOnInvalidConnectParametersNoPSM) {
+TEST_F(ProfileServerTest, ErrorOnInvalidConnectParametersNoPsm) {
   // Random peer, since we don't expect the connection.
   fuchsia::bluetooth::PeerId peer_id{123};
 
@@ -431,7 +431,7 @@ class ProfileServerTestConnectedPeer : public ProfileServerTest {
   void SetUp(FeaturesBits features) {
     ProfileServerTest::SetUp(features);
     peer_ = peer_cache()->NewPeer(kTestDevAddr, /*connectable=*/true);
-    auto fake_peer = std::make_unique<bt::testing::FakePeer>(kTestDevAddr);
+    auto fake_peer = std::make_unique<bt::testing::FakePeer>(kTestDevAddr, pw_dispatcher());
     test_device()->AddPeer(std::move(fake_peer));
 
     std::optional<bt::hci::Result<>> status;
@@ -549,9 +549,9 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectL2capChannelParameters) {
       [&](bt::PeerId, bt::sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
 
   bt::l2cap::ChannelParameters expected_params;
-  expected_params.mode = bt::l2cap::ChannelMode::kEnhancedRetransmission;
+  expected_params.mode = bt::l2cap::RetransmissionAndFlowControlMode::kEnhancedRetransmission;
   expected_params.max_rx_sdu_size = bt::l2cap::kMinACLMTU;
-  l2cap()->ExpectOutboundL2capChannel(connection()->link().handle(), kPSM, 0x40, 0x41,
+  l2cap()->ExpectOutboundL2capChannel(connection()->link().handle(), kPsm, 0x40, 0x41,
                                       expected_params);
 
   fidlbredr::ChannelParameters fidl_params;
@@ -569,7 +569,7 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectL2capChannelParameters) {
   fuchsia::bluetooth::PeerId peer_id{peer()->identifier().value()};
 
   fidlbredr::L2capParameters l2cap_params;
-  l2cap_params.set_psm(kPSM);
+  l2cap_params.set_psm(kPsm);
   l2cap_params.set_parameters(std::move(fidl_params));
 
   fidlbredr::ConnectParameters connection;
@@ -601,7 +601,7 @@ TEST_F(ProfileServerTestConnectedPeer,
   fidlbredr::ChannelParameters chan_params;
   chan_params.set_security_requirements(std::move(security));
   fidlbredr::L2capParameters l2cap_params;
-  l2cap_params.set_psm(kPSM);
+  l2cap_params.set_psm(kPsm);
   l2cap_params.set_parameters(std::move(chan_params));
   fidlbredr::ConnectParameters conn_params;
   conn_params.set_l2cap(std::move(l2cap_params));
@@ -638,9 +638,9 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectEmptyChannelResponse) {
   l2cap()->set_simulate_open_channel_failure(true);
 
   bt::l2cap::ChannelParameters expected_params;
-  expected_params.mode = bt::l2cap::ChannelMode::kEnhancedRetransmission;
+  expected_params.mode = bt::l2cap::RetransmissionAndFlowControlMode::kEnhancedRetransmission;
   expected_params.max_rx_sdu_size = bt::l2cap::kMinACLMTU;
-  l2cap()->ExpectOutboundL2capChannel(connection()->link().handle(), kPSM, 0x40, 0x41,
+  l2cap()->ExpectOutboundL2capChannel(connection()->link().handle(), kPsm, 0x40, 0x41,
                                       expected_params);
 
   fidlbredr::ChannelParameters fidl_params;
@@ -655,7 +655,7 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectEmptyChannelResponse) {
   fuchsia::bluetooth::PeerId peer_id{peer()->identifier().value()};
 
   fidlbredr::L2capParameters l2cap_params;
-  l2cap_params.set_psm(kPSM);
+  l2cap_params.set_psm(kPsm);
   l2cap_params.set_parameters(std::move(fidl_params));
 
   fidlbredr::ConnectParameters connection;
@@ -688,7 +688,7 @@ TEST_F(ProfileServerTestConnectedPeer,
 
   ASSERT_EQ(connect_receiver.connected_count(), 0u);
   EXPECT_TRUE(
-      l2cap()->TriggerInboundL2capChannel(connection()->link().handle(), kPSM, 0x40, 0x41, kTxMtu));
+      l2cap()->TriggerInboundL2capChannel(connection()->link().handle(), kPsm, 0x40, 0x41, kTxMtu));
   RunLoopUntilIdle();
 
   ASSERT_EQ(connect_receiver.connected_count(), 1u);
@@ -725,7 +725,7 @@ TEST_P(PriorityTest, OutboundConnectAndSetPriority) {
   pairing_delegate->SetCompletePairingCallback(
       [&](bt::PeerId, bt::sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
 
-  l2cap()->ExpectOutboundL2capChannel(connection()->link().handle(), kPSM, 0x40, 0x41,
+  l2cap()->ExpectOutboundL2capChannel(connection()->link().handle(), kPsm, 0x40, 0x41,
                                       bt::l2cap::ChannelParameters());
 
   bt::l2cap::testing::FakeChannel::WeakPtr fake_channel;
@@ -740,7 +740,7 @@ TEST_P(PriorityTest, OutboundConnectAndSetPriority) {
 
   fuchsia::bluetooth::PeerId peer_id{peer()->identifier().value()};
   fidlbredr::L2capParameters l2cap_params;
-  l2cap_params.set_psm(kPSM);
+  l2cap_params.set_psm(kPsm);
   fidlbredr::ConnectParameters conn_params;
   conn_params.set_l2cap(std::move(l2cap_params));
 
@@ -812,7 +812,7 @@ TEST_F(AclPrioritySupportedTest, InboundConnectAndSetPriority) {
 
   ASSERT_EQ(connect_receiver.connected_count(), 0u);
   EXPECT_TRUE(
-      l2cap()->TriggerInboundL2capChannel(connection()->link().handle(), kPSM, 0x40, 0x41, kTxMtu));
+      l2cap()->TriggerInboundL2capChannel(connection()->link().handle(), kPsm, 0x40, 0x41, kTxMtu));
 
   RunLoopUntilIdle();
   ASSERT_EQ(connect_receiver.connected_count(), 1u);
@@ -846,7 +846,7 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectReturnsValidSocket) {
       [&](bt::PeerId, bt::sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
 
   bt::l2cap::ChannelParameters expected_params;
-  l2cap()->ExpectOutboundL2capChannel(connection()->link().handle(), kPSM, 0x40, 0x41,
+  l2cap()->ExpectOutboundL2capChannel(connection()->link().handle(), kPsm, 0x40, 0x41,
                                       expected_params);
 
   fidlbredr::ChannelParameters fidl_params;
@@ -864,7 +864,7 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectReturnsValidSocket) {
   fuchsia::bluetooth::PeerId peer_id{peer()->identifier().value()};
 
   fidlbredr::L2capParameters l2cap_params;
-  l2cap_params.set_psm(kPSM);
+  l2cap_params.set_psm(kPsm);
   l2cap_params.set_parameters(std::move(fidl_params));
 
   fidlbredr::ConnectParameters connection;
@@ -881,8 +881,7 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectReturnsValidSocket) {
   ASSERT_TRUE(fake_chan.has_value());
   auto fake_chan_ptr = fake_chan.value();
   size_t send_count = 0;
-  fake_chan_ptr->SetSendCallback([&send_count](auto buffer) { send_count++; },
-                                 async_get_default_dispatcher());
+  fake_chan_ptr->SetSendCallback([&send_count](auto buffer) { send_count++; }, pw_dispatcher());
 
   const char write_data[2] = "a";
   size_t bytes_written = 0;
@@ -916,7 +915,7 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectionReceiverReturnsValidSocket) {
   RunLoopUntilIdle();
 
   ASSERT_EQ(connect_receiver.connected_count(), 0u);
-  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(connection()->link().handle(), kPSM, 0x40, 0x41));
+  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(connection()->link().handle(), kPsm, 0x40, 0x41));
   RunLoopUntilIdle();
 
   ASSERT_EQ(connect_receiver.connected_count(), 1u);
@@ -929,8 +928,7 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectionReceiverReturnsValidSocket) {
   ASSERT_TRUE(fake_chan.has_value());
   auto fake_chan_ptr = fake_chan.value();
   size_t send_count = 0;
-  fake_chan_ptr->SetSendCallback([&send_count](auto buffer) { send_count++; },
-                                 async_get_default_dispatcher());
+  fake_chan_ptr->SetSendCallback([&send_count](auto buffer) { send_count++; }, pw_dispatcher());
 
   const char write_data[2] = "a";
   size_t bytes_written = 0;
@@ -1097,7 +1095,7 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectScoInitiatorAndCloseReceiverBefore
   EXPECT_FALSE(receiver.connection().is_bound());
 }
 
-class ProfileServerTestFakeAdapter : public bt::gap::testing::FakeAdapterTestFixture {
+class ProfileServerTestFakeAdapter : public bt::fidl::testing::FakeAdapterTestFixture {
  public:
   ProfileServerTestFakeAdapter() = default;
   ~ProfileServerTestFakeAdapter() override = default;
@@ -1124,14 +1122,14 @@ class ProfileServerTestFakeAdapter : public bt::gap::testing::FakeAdapterTestFix
 TEST_F(ProfileServerTestFakeAdapter, ConnectChannelParametersContainsFlushTimeout) {
   const bt::PeerId kPeerId;
   const fuchsia::bluetooth::PeerId kFidlPeerId{kPeerId.value()};
-  const zx::duration kFlushTimeout(zx::msec(100));
+  const pw::chrono::SystemClock::duration kFlushTimeout(std::chrono::milliseconds(100));
 
   FakeChannel::WeakPtr last_channel;
   adapter()->fake_bredr()->set_l2cap_channel_callback(
       [&](auto chan) { last_channel = std::move(chan); });
 
   fidlbredr::ChannelParameters chan_params;
-  chan_params.set_flush_timeout(kFlushTimeout.get());
+  chan_params.set_flush_timeout(kFlushTimeout.count());
   fidlbredr::L2capParameters l2cap_params;
   l2cap_params.set_psm(fidlbredr::PSM_AVDTP);
   l2cap_params.set_parameters(std::move(chan_params));
@@ -1149,17 +1147,17 @@ TEST_F(ProfileServerTestFakeAdapter, ConnectChannelParametersContainsFlushTimeou
   EXPECT_EQ(last_channel->info().flush_timeout, std::optional(kFlushTimeout));
   ASSERT_TRUE(response_channel.has_value());
   ASSERT_TRUE(response_channel->has_flush_timeout());
-  ASSERT_EQ(response_channel->flush_timeout(), kFlushTimeout.get());
+  ASSERT_EQ(response_channel->flush_timeout(), kFlushTimeout.count());
 }
 
 TEST_F(ProfileServerTestFakeAdapter, AdvertiseChannelParametersContainsFlushTimeout) {
-  const zx::duration kFlushTimeout(zx::msec(100));
+  const pw::chrono::SystemClock::duration kFlushTimeout(std::chrono::milliseconds(100));
   const bt::hci_spec::ConnectionHandle kHandle(1);
 
   std::vector<fidlbredr::ServiceDefinition> services;
   services.emplace_back(MakeFIDLServiceDefinition());
   fidlbredr::ChannelParameters chan_params;
-  chan_params.set_flush_timeout(kFlushTimeout.get());
+  chan_params.set_flush_timeout(kFlushTimeout.count());
 
   fidl::InterfaceHandle<fidlbredr::ConnectionReceiver> connect_receiver_handle;
   FakeConnectionReceiver connect_receiver(connect_receiver_handle.NewRequest(), dispatcher());
@@ -1182,7 +1180,7 @@ TEST_F(ProfileServerTestFakeAdapter, AdvertiseChannelParametersContainsFlushTime
   ASSERT_TRUE(connect_receiver.channel().has_value());
   fidlbredr::Channel fidl_channel = connect_receiver.take_channel();
   ASSERT_TRUE(fidl_channel.has_flush_timeout());
-  EXPECT_EQ(fidl_channel.flush_timeout(), kFlushTimeout.get());
+  EXPECT_EQ(fidl_channel.flush_timeout(), kFlushTimeout.count());
 
   channel->Close();
   RunLoopUntilIdle();

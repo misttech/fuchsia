@@ -4,7 +4,7 @@
 
 use crate::writer::types::InspectType;
 use derivative::Derivative;
-use parking_lot::Mutex;
+use fuchsia_sync::Mutex;
 
 type InspectTypeList = Vec<Box<dyn InspectType>>;
 
@@ -51,9 +51,8 @@ impl ValueList {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assert_json_diff;
-    use crate::hierarchy::DiagnosticsHierarchy;
     use crate::writer::types::Inspector;
+    use diagnostics_assertions::assert_json_diff;
 
     #[fuchsia::test]
     fn value_list_record() {

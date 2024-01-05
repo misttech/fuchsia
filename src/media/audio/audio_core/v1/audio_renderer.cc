@@ -11,12 +11,9 @@
 
 #include <string>
 
-#include "src/media/audio/audio_core/shared/audio_admin.h"
 #include "src/media/audio/audio_core/shared/logging_flags.h"
-#include "src/media/audio/audio_core/shared/reporter.h"
 #include "src/media/audio/audio_core/shared/stream_usage.h"
 #include "src/media/audio/audio_core/shared/stream_volume_manager.h"
-#include "src/media/audio/lib/clock/utils.h"
 
 namespace media::audio {
 
@@ -150,9 +147,9 @@ void AudioRenderer::SetReferenceClock(zx::clock ref_clock) {
 
 void AudioRenderer::SetPcmStreamType(fuchsia::media::AudioStreamType stream_type) {
   TRACE_DURATION("audio", "AudioRenderer::SetPcmStreamType");
-  std::lock_guard<std::mutex> lock(mutex_);
-
   auto cleanup = fit::defer([this]() { context().route_graph().RemoveRenderer(*this); });
+
+  std::lock_guard<std::mutex> lock(mutex_);
 
   // We cannot change the format while we are currently operational
   if (IsOperating()) {
@@ -165,6 +162,12 @@ void AudioRenderer::SetPcmStreamType(fuchsia::media::AudioStreamType stream_type
     FX_LOGS(WARNING) << "AudioRenderer: PcmStreamType is invalid";
     return;
   }
+  if (stream_type.channels > 4) {
+    FX_LOGS(WARNING) << "AudioRenderer::PcmStreamType specified channels (" << stream_type.channels
+                     << ") is too large";
+    return;
+  }
+
   format_ = {format_result.take_value()};
 
   // Only create a PowerChecker if enabled, and if the renderer fits our specifications
@@ -451,7 +454,7 @@ void AudioRenderer::RealizeVolume(VolumeCommand volume_command) {
             gain.SetDestGain(gain_db);
           }
 
-          reporter->SetFinalGain(link.mixer->gain.GetUnadjustedGainDb());
+          reporter->SetCompleteGain(link.mixer->gain.GetUnadjustedGainDb());
         });
       });
 }
@@ -511,9 +514,11 @@ void AudioRenderer::PostStreamGainMute(StreamGainCommand gain_command) {
           break;
       }
 
+      // "Complete" gain is the composition of stream gain with the volume for this stream's usage.
+      // It is "unadjusted" because it omits temporary factors such as in-progress ramping.
+      auto complete_unadjusted_gain_db = gain.GetUnadjustedGainDb();
       // Potentially post this as a delayed task instead, if there is a ramp.
-      auto final_unadjusted_gain_db = gain.GetUnadjustedGainDb();
-      reporter->SetFinalGain(final_unadjusted_gain_db);
+      reporter->SetCompleteGain(complete_unadjusted_gain_db);
     });
   });
 }

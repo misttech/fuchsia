@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/url"
@@ -21,14 +22,18 @@ import (
 	"sync"
 	"time"
 
+	resultpb "go.chromium.org/luci/resultdb/proto/v1"
+	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
+	botanist "go.fuchsia.dev/fuchsia/tools/botanist"
 	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
+	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder"
 	"go.fuchsia.dev/fuchsia/tools/lib/clock"
 	"go.fuchsia.dev/fuchsia/tools/lib/environment"
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
-	"go.fuchsia.dev/fuchsia/tools/lib/streams"
+	"go.fuchsia.dev/fuchsia/tools/testing/resultdb"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 	"go.fuchsia.dev/fuchsia/tools/testing/tap"
 	"go.fuchsia.dev/fuchsia/tools/testing/testparser"
@@ -67,6 +72,10 @@ type Options struct {
 	//
 	// See //tools/botanist/cmd/run.go for the mapping of features to levels.
 	FFXExperimentLevel int
+
+	// Whether to upload to upload test results to ResultDB from testrunner
+	// Bool enables soft transition from tefmocheck running in the recipe vs the processing happening in botanist.
+	UploadToResultDB bool
 }
 
 func SetupAndExecute(ctx context.Context, opts Options, testsPath string) error {
@@ -196,6 +205,36 @@ func execute(
 	)
 
 	if !opts.UseSerial && sshKeyFile != "" {
+		ffx, err := ffxInstance(ctx, opts.FFX, opts.FFXExperimentLevel)
+		if err != nil {
+			return err
+		}
+		if ffx != nil {
+			t, err := sshTester(
+				ctx, addr, sshKeyFile, outputs.OutDir, serialSocketPath)
+			if err != nil {
+				return fmt.Errorf("failed to initialize fuchsia tester: %w", err)
+			}
+			ffxTester, err := NewFFXTester(ctx, ffx, t, outputs.OutDir, opts.FFXExperimentLevel)
+			if err != nil {
+				return fmt.Errorf("failed to initialize ffx tester: %w", err)
+			}
+			defer func() {
+				// TODO(fxbug.dev/124611): Once profiles are being merged on the host, this
+				// will leave empty artifact directories within each test's output directories
+				// from where the profiles originated from. Clean up empty directories.
+				if err := ffxTester.RemoveAllEmptyOutputDirs(); err != nil {
+					logger.Debugf(ctx, "%s", err)
+				}
+			}()
+			// Prefetching packages may possibly interfere with test execution and cause tests
+			// to time out or fail, so disable when using `ffx test`.
+			if ffxTester.EnabledForTesting() {
+				opts.PrefetchPackages = false
+			}
+			fuchsiaTester = ffxTester
+		}
+
 		if opts.PrefetchPackages {
 			// TODO(rudymathu): Remove this prefetching of packages once package
 			// delivery is fast enough.
@@ -215,35 +254,6 @@ func execute(
 			defer cancel()
 		}
 
-		ffx, err := ffxInstance(ctx, opts.FFX, opts.FFXExperimentLevel)
-		if err != nil {
-			return err
-		}
-		if ffx != nil {
-			t, err := sshTester(
-				ctx, addr, sshKeyFile, outputs.OutDir, serialSocketPath)
-			if err != nil {
-				return fmt.Errorf("failed to initialize fuchsia tester: %w", err)
-			}
-			ffxTester, err := NewFFXTester(ctx, ffx, t, outputs.OutDir, opts.FFXExperimentLevel)
-			if err != nil {
-				return fmt.Errorf("failed to initialize ffx tester: %w", err)
-			}
-			defer func() {
-				// outputs.Record() moves output files to paths within the output directory
-				// specified by test name.
-				// Remove the ffx test out dirs which would now only contain empty directories
-				// and summary.jsons that don't point to real paths anymore.
-				if opts.FFXExperimentLevel >= 2 {
-					// Leave the summary.jsons for debugging.
-					err = ffxTester.RemoveAllEmptyOutputDirs()
-				} else {
-					err = ffxTester.RemoveAllOutputDirs()
-				}
-				logger.Debugf(ctx, "%s", err)
-			}()
-			fuchsiaTester = ffxTester
-		}
 	}
 
 	// Function to select the tester to use for a test, along with destination
@@ -300,8 +310,16 @@ func execute(
 		}
 	}
 
+	var client *resultdb.Client
+	var err error
+	if opts.UploadToResultDB {
+		client, err = resultdb.NewClient()
+		if err != nil {
+			return err
+		}
+	}
 	var finalError error
-	if err := runAndOutputTests(ctx, tests, testerForTest, outputs, outDir); err != nil {
+	if err := runAndOutputTests(ctx, tests, testerForTest, outputs, outDir, client); err != nil {
 		finalError = err
 	}
 
@@ -409,12 +427,14 @@ type testToRun struct {
 
 // runAndOutputTests runs all the tests, possibly with retries, and records the
 // results to `outputs`.
+// TODO(danikay): Make this testable by extracting an interface for resultdb
 func runAndOutputTests(
 	ctx context.Context,
 	tests []testsharder.Test,
 	testerForTest func(testsharder.Test) (Tester, *[]runtests.DataSinkReference, error),
 	outputs *TestOutputs,
 	globalOutDir string,
+	resultdbClient *resultdb.Client,
 ) error {
 	// Since only a single goroutine writes to and reads from the queue it would
 	// be more appropriate to use a true Queue data structure, but we'd need to
@@ -426,6 +446,8 @@ func runAndOutputTests(
 	for _, test := range tests {
 		testQueue <- testToRun{Test: test}
 	}
+
+	var resultdbResults []*sinkpb.TestResult
 
 	// `for test := range testQueue` might seem simpler, but it would block
 	// instead of exiting once the queue becomes empty. To exit the loop we
@@ -455,6 +477,16 @@ func runAndOutputTests(
 		test.previousRuns++
 		test.totalDuration += result.Duration()
 
+		// TODO(danikay): Temporarily using the existence of the resultdb client to
+		// enable the soft transition from uploading to resultdb from the fuchsia.py
+		// recipe to uploading the test results here, as they complete
+		if resultdbClient != nil {
+			testTags := testTagsToStringPairs(result.Tags)
+			testDetails := testDetailsFromTestResult(result.Name, result.StartTime, result)
+			testResults, _ := resultdb.TestCaseToResultSink(result.Cases, testTags, &testDetails, outDir)
+			resultdbResults = append(resultdbResults, testResults...)
+		}
+
 		if shouldKeepGoing(test.Test, result, test.totalDuration) {
 			// Schedule the test to be run again.
 			testQueue <- test
@@ -462,6 +494,13 @@ func runAndOutputTests(
 		// TODO(olivernewman): Add a unit test to make sure data sinks are
 		// recorded correctly.
 		*sinks = append(*sinks, result.DataSinks)
+	}
+	// TODO @danikay upload test results immediately as they happen, in a background
+	// go routine
+	if resultdbClient != nil {
+		if err := resultdbClient.ReportTestResults(resultdb.CreateTestResultsRequests(resultdbResults, 500)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -509,11 +548,13 @@ func runTestOnce(
 ) (*TestResult, error) {
 	// The test case parser specifically uses stdout, so we need to have a
 	// dedicated stdout buffer.
-	stdout := new(bytes.Buffer)
+	stdoutForParsing := new(bytes.Buffer)
 	stdio := new(stdioBuffer)
 
-	multistdout := io.MultiWriter(streams.Stdout(ctx), stdio, stdout)
-	multistderr := io.MultiWriter(streams.Stderr(ctx), stdio)
+	stdout, stderr, flush := botanist.NewStdioWritersWithTimestamp(ctx)
+	defer flush()
+	multistdout := io.MultiWriter(stdout, stdio, stdoutForParsing)
+	multistderr := io.MultiWriter(stderr, stdio)
 
 	// In the case of running tests on QEMU over serial, we do not wish to
 	// forward test output to stdout, as QEMU is already redirecting serial
@@ -523,7 +564,7 @@ func runTestOnce(
 	// testrunner CLI just to sidecar the information of 'is QEMU'.
 	againstQEMU := os.Getenv(botanistconstants.NodenameEnvKey) == targets.DefaultQEMUNodename
 	if _, ok := t.(*FuchsiaSerialTester); ok && againstQEMU {
-		multistdout = io.MultiWriter(stdio, stdout)
+		multistdout = io.MultiWriter(stdio, stdoutForParsing)
 	}
 
 	startTime := clock.Now(ctx)
@@ -603,8 +644,50 @@ func runTestOnce(
 
 	// Record the test details in the summary.
 	result.Stdio = stdio.buf.Bytes()
-	if len(result.Cases) == 0 {
-		result.Cases = testparser.Parse(stdout.Bytes())
+	// Only the FFXTester handles cases and output files on its own. Otherwise,
+	// parse the stdout for test cases and check the outdir for output files.
+	if len(result.Cases) == 0 && len(result.OutputFiles) == 0 {
+		result.Cases = testparser.Parse(stdoutForParsing.Bytes())
+		caseOutputFiles := []string{}
+		for _, tc := range result.Cases {
+			for _, of := range tc.OutputFiles {
+				caseOutputFiles = append(caseOutputFiles, filepath.Join(tc.OutputDir, of))
+			}
+		}
+
+		if err := filepath.WalkDir(outDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			relPath, err := filepath.Rel(outDir, path)
+			if err != nil {
+				return err
+			}
+			// Don't include the file if it's already recorded as a test case output file.
+			if !strings.Contains(strings.Join(caseOutputFiles, " "), path) {
+				result.OutputFiles = append(result.OutputFiles, relPath)
+			}
+			return nil
+		}); err != nil {
+			logger.Errorf(ctx, "unable to record output files: %s", err)
+		}
+		if len(result.OutputFiles) > 0 {
+			result.OutputDir = outDir
+		}
+	} else {
+		// TODO(b/311443213): Some tests rely on testparser to add tags to test case results.
+		// Remove this hack once tags are properly handled by `ffx test`.
+		cases := testparser.Parse(stdoutForParsing.Bytes())
+		caseToTags := make(map[string][]build.TestTag)
+		for _, tc := range cases {
+			caseToTags[tc.DisplayName] = tc.Tags
+		}
+		for i, tc := range result.Cases {
+			result.Cases[i].Tags = caseToTags[tc.DisplayName]
+		}
 	}
 	if result.StartTime.IsZero() {
 		result.StartTime = startTime
@@ -614,4 +697,27 @@ func runTestOnce(
 	}
 	result.Affected = test.Affected
 	return result, nil
+}
+
+// Helper function to convert []build.TestTag to []resultpb.StringPair
+func testTagsToStringPairs(tags []build.TestTag) []*resultpb.StringPair {
+	stringPairs := make([]*resultpb.StringPair, 0, len(tags))
+
+	for _, tag := range tags {
+		stringPairs = append(stringPairs, &resultpb.StringPair{
+			Key:   tag.Key,
+			Value: tag.Value,
+		})
+	}
+
+	return stringPairs
+}
+
+// Helper function to create runtests.TestDetails from result.TestResult
+func testDetailsFromTestResult(name string, startTime time.Time, result *TestResult) runtests.TestDetails {
+	return runtests.TestDetails{
+		Name:      name,
+		StartTime: startTime,
+		Result:    result.Result,
+	}
 }

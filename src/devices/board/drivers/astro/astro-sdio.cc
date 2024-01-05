@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.sdmmc/cpp/wire.h>
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/metadata.h>
@@ -98,14 +99,6 @@ static const wifi_config_t wifi_config = {
         },
 };
 
-static const std::vector<fpbus::Metadata> sd_emmc_metadata{
-    {{
-        .type = DEVICE_METADATA_PRIVATE,
-        .data = std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(&config),
-                                     reinterpret_cast<const uint8_t*>(&config) + sizeof(config)),
-    }},
-};
-
 static const std::vector<fpbus::Metadata> wifi_metadata{
     {{
         .type = DEVICE_METADATA_WIFI_CONFIG,
@@ -115,24 +108,9 @@ static const std::vector<fpbus::Metadata> wifi_metadata{
     }},
 };
 
-static const fpbus::Node sd_emmc_dev = []() {
-  fpbus::Node dev = {};
-  dev.name() = "aml-sdio";
-  dev.vid() = PDEV_VID_AMLOGIC;
-  dev.pid() = PDEV_PID_GENERIC;
-  dev.did() = PDEV_DID_AMLOGIC_SDMMC_B;
-  dev.mmio() = sd_emmc_mmios;
-  dev.irq() = sd_emmc_irqs;
-  dev.bti() = sd_emmc_btis;
-  dev.metadata() = sd_emmc_metadata;
-  dev.boot_metadata() = wifi_boot_metadata;
-  return dev;
-}();
-
 zx_status_t Astro::SdEmmcConfigurePortB() {
   size_t aligned_size = ZX_ROUNDUP((S905D2_GPIO_BASE - kGpioBase) + S905D2_GPIO_LENGTH, PAGE_SIZE);
-  // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
-  zx::unowned_resource resource(get_root_resource(parent()));
+  zx::unowned_resource resource(get_mmio_resource(parent()));
   zx::vmo vmo;
   zx_status_t status = zx::vmo::create_physical(*resource, kGpioBase, aligned_size, &vmo);
   if (status != ZX_OK) {
@@ -164,30 +142,31 @@ zx_status_t Astro::SdEmmcConfigurePortB() {
                        kGpioBaseOffset + (S905D2_PERIPHS_PIN_MUX_2 << 2));
 
   // Clear GPIO_X
-  gpio_impl_.SetAltFunction(S905D2_WIFI_SDIO_D0, 0);
-  gpio_impl_.SetAltFunction(S905D2_WIFI_SDIO_D1, 0);
-  gpio_impl_.SetAltFunction(S905D2_WIFI_SDIO_D2, 0);
-  gpio_impl_.SetAltFunction(S905D2_WIFI_SDIO_D3, 0);
-  gpio_impl_.SetAltFunction(S905D2_WIFI_SDIO_CLK, 0);
-  gpio_impl_.SetAltFunction(S905D2_WIFI_SDIO_CMD, 0);
-  gpio_impl_.SetAltFunction(S905D2_WIFI_SDIO_WAKE_HOST, 0);
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_D0, GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_D1, GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_D2, GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_D3, GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_CLK, GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_CMD, GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_WAKE_HOST, GpioSetAltFunction(0)});
+
   // Clear GPIO_C
-  gpio_impl_.SetAltFunction(S905D2_GPIOC(0), 0);
-  gpio_impl_.SetAltFunction(S905D2_GPIOC(1), 0);
-  gpio_impl_.SetAltFunction(S905D2_GPIOC(2), 0);
-  gpio_impl_.SetAltFunction(S905D2_GPIOC(3), 0);
-  gpio_impl_.SetAltFunction(S905D2_GPIOC(4), 0);
-  gpio_impl_.SetAltFunction(S905D2_GPIOC(5), 0);
+  gpio_init_steps_.push_back({S905D2_GPIOC(0), GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_GPIOC(1), GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_GPIOC(2), GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_GPIOC(3), GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_GPIOC(4), GpioSetAltFunction(0)});
+  gpio_init_steps_.push_back({S905D2_GPIOC(5), GpioSetAltFunction(0)});
 
   // Enable output from SDMMC port B on GPIOX_4.
-  gpio_impl_.ConfigOut(S905D2_WIFI_SDIO_CLK, 1);
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_CLK, GpioConfigOut(1)});
 
-  gpio_impl_.SetDriveStrength(S905D2_WIFI_SDIO_D0, 4'000, nullptr);
-  gpio_impl_.SetDriveStrength(S905D2_WIFI_SDIO_D1, 4'000, nullptr);
-  gpio_impl_.SetDriveStrength(S905D2_WIFI_SDIO_D2, 4'000, nullptr);
-  gpio_impl_.SetDriveStrength(S905D2_WIFI_SDIO_D3, 4'000, nullptr);
-  gpio_impl_.SetDriveStrength(S905D2_WIFI_SDIO_CLK, 4'000, nullptr);
-  gpio_impl_.SetDriveStrength(S905D2_WIFI_SDIO_CMD, 4'000, nullptr);
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_D0, GpioSetDriveStrength(4'000)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_D1, GpioSetDriveStrength(4'000)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_D2, GpioSetDriveStrength(4'000)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_D3, GpioSetDriveStrength(4'000)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_CLK, GpioSetDriveStrength(4'000)});
+  gpio_init_steps_.push_back({S905D2_WIFI_SDIO_CMD, GpioSetDriveStrength(4'000)});
 
   // Configure clock settings
   status = zx::vmo::create_physical(*resource, S905D2_HIU_BASE, S905D2_HIU_LENGTH, &vmo);
@@ -213,9 +192,43 @@ zx_status_t Astro::SdEmmcConfigurePortB() {
 }
 
 zx_status_t Astro::SdioInit() {
+  fidl::Arena<> fidl_arena;
+
+  fit::result sdmmc_metadata =
+      fidl::Persist(fuchsia_hardware_sdmmc::wire::SdmmcMetadata::Builder(fidl_arena)
+                        // TODO(fxbug.dev/134787): Use the FIDL SDMMC protocol.
+                        .use_fidl(false)
+                        .Build());
+  if (!sdmmc_metadata.is_ok()) {
+    zxlogf(ERROR, "Failed to encode SDMMC metadata: %s",
+           sdmmc_metadata.error_value().FormatDescription().c_str());
+    return sdmmc_metadata.error_value().status();
+  }
+
+  const std::vector<fpbus::Metadata> sd_emmc_metadata{
+      {{
+          .type = DEVICE_METADATA_PRIVATE,
+          .data = std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(&config),
+                                       reinterpret_cast<const uint8_t*>(&config) + sizeof(config)),
+      }},
+      {{
+          .type = DEVICE_METADATA_SDMMC,
+          .data = std::move(sdmmc_metadata.value()),
+      }},
+  };
+
+  fpbus::Node sd_emmc_dev;
+  sd_emmc_dev.name() = "aml-sdio";
+  sd_emmc_dev.vid() = PDEV_VID_AMLOGIC;
+  sd_emmc_dev.pid() = PDEV_PID_GENERIC;
+  sd_emmc_dev.did() = PDEV_DID_AMLOGIC_SDMMC_B;
+  sd_emmc_dev.mmio() = sd_emmc_mmios;
+  sd_emmc_dev.irq() = sd_emmc_irqs;
+  sd_emmc_dev.bti() = sd_emmc_btis;
+  sd_emmc_dev.metadata() = sd_emmc_metadata;
+
   SdEmmcConfigurePortB();
 
-  fidl::Arena<> fidl_arena;
   fdf::Arena sdio_arena('SDIO');
   auto result =
       pbus_.buffer(sdio_arena)
@@ -241,6 +254,7 @@ zx_status_t Astro::SdioInit() {
   wifi_dev.pid() = PDEV_PID_BCM43458;
   wifi_dev.did() = PDEV_DID_BCM_WIFI;
   wifi_dev.metadata() = wifi_metadata;
+  wifi_dev.boot_metadata() = wifi_boot_metadata;
 
   fdf::Arena wifi_arena('WIFI');
   fdf::WireUnownedResult wifi_result =

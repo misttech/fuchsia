@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use argh::FromArgs;
+use argh::{ArgsInfo, FromArgs};
 use emulator_instance::AccelerationMode;
 use ffx_config::FfxConfigBacked;
 use ffx_core::ffx_command;
@@ -10,13 +10,12 @@ use ffx_emulator_common::host_is_mac;
 use std::path::PathBuf;
 
 #[ffx_command()]
-#[derive(Clone, FromArgs, FfxConfigBacked, Debug, Default, PartialEq)]
+#[derive(Clone, ArgsInfo, FromArgs, FfxConfigBacked, Debug, Default, PartialEq)]
 #[argh(
     subcommand,
     name = "start",
     description = "Start the Fuchsia emulator.",
-    example = "ffx emu start
-ffx emu start workstation_eng.qemu-x64 --name my-emulator --engine femu",
+    example = "ffx emu start",
     note = "The `start` subcommand is the starting point for all emulator interactions.
 The name provided here will be used for all later interactions to indicate
 which emulator to target. Emulator names must be unique.

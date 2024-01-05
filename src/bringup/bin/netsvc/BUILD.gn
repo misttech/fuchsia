@@ -33,8 +33,8 @@ executable("netsvc") {
     ":args",
     ":inet6",
     ":netsvc_common",
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp_wire",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
     "//src/sys/lib/stdout-to-debuglog/cpp",
@@ -54,8 +54,8 @@ executable("netsvc") {
 source_set("args") {
   sources = [ "args.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp_wire",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/incoming/cpp",
   ]
 }
@@ -73,12 +73,12 @@ source_set("netsvc_common") {
     "zbi.cc",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp_wire",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.device.manager:fuchsia.device.manager_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp_wire",
-    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp_wire",
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.device.manager:fuchsia.device.manager_cpp",
+    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp",
+    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/zbi-format",
@@ -92,9 +92,9 @@ source_set("netsvc_common") {
   ]
   public_deps = [
     ":inet6",
-    "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp_wire",
-    "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp_wire",
-    "//sdk/fidl/fuchsia.paver:fuchsia.paver_cpp_wire",
+    "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
+    "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+    "//sdk/fidl/fuchsia.paver:fuchsia.paver_cpp",
     "//src/bringup/lib/netboot",
     "//src/storage/testing:fake-paver",
     "//zircon/system/ulib/fbl",
@@ -117,14 +117,14 @@ test("netsvc-test") {
     ":args",
     ":netsvc",
     ":netsvc_common",
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp_wire",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp_wire",
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
     "//src/devices/testing/devmgr-integration-test-shim",
-    "//src/lib/storage/ramdevice_client/cpp",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/mock-boot-arguments",
@@ -138,12 +138,12 @@ test("netsvc-stress-test") {
   sources = [ "test/paver-stress-test.cc" ]
   deps = [
     ":netsvc_common",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
     "//src/devices/testing/devmgr-integration-test-shim",
-    "//src/lib/storage/ramdevice_client/cpp",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
@@ -197,6 +197,22 @@ fuchsia_test_package("netsvc-tests-package") {
     ":netsvc-stress-test-component",
     ":netsvc-test-component",
   ]
+  if (is_coverage) {
+    test_specs = {
+      log_settings = {
+        # We get a test flake only on coverage builders that is not reproducible
+        # locally, owed purely to an error log from driver test realm in an
+        # otherwise-passing test.
+        # See https://fxbug.dev/131630.
+        max_severity = "ERROR"
+      }
+    }
+  }
+  if (current_cpu == "riscv64") {
+    # TODO(b/310244232): This test runs extremely slowly on RISC-V QEMU and
+    # times out in CI/CQ. Reenable once it can be run on real RISC-V hardware.
+    test_components -= [ ":netsvc-stress-test-component" ]
+  }
 }
 
 # NB: These sources were historically part of a zircon library called inet6.
@@ -210,7 +226,7 @@ source_set("inet6") {
   ]
   deps = [
     ":netifc-discover",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/fit",
     "//zircon/system/ulib/fbl",
@@ -229,7 +245,7 @@ source_set("netifc-discover") {
     "netifc-discover.h",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//src/lib/fsl",
@@ -238,7 +254,7 @@ source_set("netifc-discover") {
     "//zircon/system/ulib/fdio-caller",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
     "//zircon/system/ulib/zx",
   ]
 

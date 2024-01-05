@@ -3,37 +3,63 @@
 // found in the LICENSE file.
 
 use crate::{
-    device::{framebuffer::Framebuffer, DeviceMode},
-    fs::{
-        buffers::{InputBuffer, OutputBuffer},
-        kobject::{KObjectDeviceAttribute, KType},
-        sysfs::SysFsDirectory,
-        *,
+    device::{
+        framebuffer::Framebuffer,
+        input_event_conversion::parse_fidl_keyboard_event_to_linux_input_event,
+        kobject::DeviceMetadata, registry::DeviceOps, DeviceMode,
     },
-    lock::Mutex,
-    logging::*,
+    fs::sysfs::DeviceDirectory,
     mm::MemoryAccessorExt,
-    syscalls::*,
-    task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter},
-    types::*,
+    task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter},
+    vfs::{
+        buffers::{InputBuffer, OutputBuffer},
+        fileops_impl_nonseekable, FdEvents, FileObject, FileOps, FsNode,
+    },
+};
+use starnix_logging::{log_info, log_warn, not_implemented};
+use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_uapi::{
+    device_type::{DeviceType, INPUT_MAJOR},
+    error,
+    errors::Errno,
+    open_flags::OpenFlags,
+    time::timeval_from_time,
+    timeval, uapi,
+    user_address::{UserAddress, UserRef},
+    ABS_CNT, ABS_X, ABS_Y, BTN_MISC, BTN_TOOL_FINGER, BTN_TOUCH, BUS_VIRTUAL, FF_CNT,
+    INPUT_PROP_CNT, INPUT_PROP_DIRECT, KEY_CNT, KEY_POWER, LED_CNT, MSC_CNT, REL_CNT, SW_CNT,
 };
 
 use fidl::endpoints::Proxy as _; // for `on_closed()`
 use fidl::handle::fuchsia_handles::Signals;
+use fidl_fuchsia_ui_input::MediaButtonsEvent;
 use fidl_fuchsia_ui_input3 as fuiinput;
 use fidl_fuchsia_ui_pointer::{
-    self as fuipointer, EventPhase as FidlEventPhase, TouchEvent as FidlTouchEvent,
-    TouchResponse as FidlTouchResponse, TouchResponseType,
+    EventPhase as FidlEventPhase, TouchEvent as FidlTouchEvent, TouchResponse as FidlTouchResponse,
+    TouchResponseType, {self as fuipointer},
 };
+use fidl_fuchsia_ui_policy as fuipolicy;
 use fidl_fuchsia_ui_views as fuiviews;
 use fuchsia_async as fasync;
-use fuchsia_inspect::{self, health::Reporter};
+use fuchsia_inspect::{
+    health::Reporter,
+    NumericProperty, {self},
+};
 use fuchsia_zircon as zx;
 use futures::{
-    future::{self, Either},
+    future::{
+        Either, {self},
+    },
     StreamExt as _,
 };
-use std::{collections::VecDeque, sync::Arc};
+use starnix_sync::Mutex;
+use std::{
+    collections::VecDeque,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
+};
 use zerocopy::AsBytes as _; // for `as_bytes()`
 
 pub struct InputDevice {
@@ -42,6 +68,9 @@ pub struct InputDevice {
     pub touch_input_file: Arc<InputFile>,
 
     pub keyboard_input_file: Arc<InputFile>,
+
+    /// Stores the input_files_node to share with uinput.
+    pub input_files_node: fuchsia_inspect::Node,
 }
 
 impl InputDevice {
@@ -49,23 +78,26 @@ impl InputDevice {
         let fb_state = framebuffer.info.read();
         let input_files_node = kernel_node.create_child("input_files");
         let touch_input_file = InputFile::new_touch(
+            INPUT_ID,
             fb_state.xres.try_into().expect("Failed to convert framebuffer width to i32."),
             fb_state.yres.try_into().expect("Failed to convert framebuffer height to i32."),
             input_files_node.create_child("touch_input_file"),
         );
-        let keyboard_input_file = InputFile::new_keyboard();
+        let keyboard_input_file = InputFile::new_keyboard(INPUT_ID);
         std::mem::drop(fb_state);
-        Arc::new(InputDevice { touch_input_file, keyboard_input_file })
+        Arc::new(InputDevice { touch_input_file, keyboard_input_file, input_files_node })
     }
 
     pub fn start_relay(
         &self,
         touch_source_proxy: fuipointer::TouchSourceProxy,
         keyboard: fuiinput::KeyboardProxy,
+        registry_proxy: fuipolicy::DeviceListenerRegistryProxy,
         view_ref: fuiviews::ViewRef,
     ) {
         self.touch_input_file.start_touch_relay(touch_source_proxy);
-        self.keyboard_input_file.start_keyboard_relay(keyboard, view_ref);
+        self.keyboard_input_file.clone().start_keyboard_relay(keyboard, view_ref);
+        self.keyboard_input_file.clone().start_buttons_relay(registry_proxy);
     }
 }
 
@@ -92,19 +124,16 @@ pub struct InspectStatus {
     _inspect_node: fuchsia_inspect::Node,
 
     /// The number of FIDL events received from Fuchsia input system.
-    _fidl_events_received_count: fuchsia_inspect::UintProperty,
+    fidl_events_received_count: fuchsia_inspect::UintProperty,
 
     /// The number of FIDL events converted to this module’s representation of TouchEvent.
-    _fidl_events_converted_count: fuchsia_inspect::UintProperty,
-
-    /// The number of invalid incoming FIDL events discarded by this InputFile.
-    _fidl_events_discarded_count: fuchsia_inspect::UintProperty,
+    fidl_events_converted_count: fuchsia_inspect::UintProperty,
 
     /// The number of uapi::input_events generated from TouchEvents.
-    _uapi_events_generated_count: fuchsia_inspect::UintProperty,
+    uapi_events_generated_count: fuchsia_inspect::UintProperty,
 
     /// The number of uapi::input_events read from this touch file by external process.
-    _uapi_events_read_count: fuchsia_inspect::UintProperty,
+    uapi_events_read_count: fuchsia_inspect::UintProperty,
 
     // Health status of this InputFile. UNHEALTHY if InputFile loses connection to TouchSource protocol
     pub health_node: fuchsia_inspect::health::Node,
@@ -116,18 +145,32 @@ impl InspectStatus {
         health_node.set_starting_up();
         let fidl_events_received_count = node.create_uint("fidl_events_received_count", 0);
         let fidl_events_converted_count = node.create_uint("fidl_events_converted_count", 0);
-        let fidl_events_discarded_count = node.create_uint("fidl_events_discarded_count", 0);
         let uapi_events_generated_count = node.create_uint("uapi_events_generated_count", 0);
         let uapi_events_read_count = node.create_uint("uapi_events_read_count", 0);
         Self {
             _inspect_node: node,
-            _fidl_events_received_count: fidl_events_received_count,
-            _fidl_events_converted_count: fidl_events_converted_count,
-            _fidl_events_discarded_count: fidl_events_discarded_count,
-            _uapi_events_generated_count: uapi_events_generated_count,
-            _uapi_events_read_count: uapi_events_read_count,
+            fidl_events_received_count,
+            fidl_events_converted_count,
+            uapi_events_generated_count,
+            uapi_events_read_count,
             health_node,
         }
+    }
+
+    fn count_received_events(&self, count: u64) {
+        self.fidl_events_received_count.add(count);
+    }
+
+    fn count_converted_events(&self, count: u64) {
+        self.fidl_events_converted_count.add(count);
+    }
+
+    fn count_generated_events(&self, count: u64) {
+        self.uapi_events_generated_count.add(count);
+    }
+
+    fn count_read_events(&self, count: u64) {
+        self.uapi_events_read_count.add(count);
     }
 }
 
@@ -154,7 +197,7 @@ struct InputFileMutableState {
     // TODO: fxb/131759 - remove `Optional` when implementing Inspect for Keyboard InputFiles
     // Touch InputFile will be initialized with a InspectStatus that holds Inspect data
     // `None` for Keyboard InputFile
-    _inspect_status: Option<InspectStatus>,
+    inspect_status: Option<InspectStatus>,
 }
 
 #[derive(Copy, Clone)]
@@ -174,6 +217,11 @@ struct TouchEvent {
     pos_y: f32,
 }
 
+// Per https://www.linuxjournal.com/article/6429, the bus type should be populated with a
+// sensible value, but other fields may not be.
+const INPUT_ID: uapi::input_id =
+    uapi::input_id { bustype: BUS_VIRTUAL as u16, product: 0, vendor: 0, version: 0 };
+
 impl InputFile {
     // Per https://www.linuxjournal.com/article/6429, the driver version is 32-bits wide,
     // and interpreted as:
@@ -182,19 +230,25 @@ impl InputFile {
     // * [07-00]: patch level
     const DRIVER_VERSION: u32 = 0;
 
-    // Per https://www.linuxjournal.com/article/6429, the bus type should be populated with a
-    // sensible value, but other fields may not be.
-    const INPUT_ID: uapi::input_id =
-        uapi::input_id { bustype: BUS_VIRTUAL as u16, product: 0, vendor: 0, version: 0 };
-
     /// Creates an `InputFile` instance suitable for emulating a touchscreen.
-    fn new_touch(width: i32, height: i32, inspect_node: fuchsia_inspect::Node) -> Arc<Self> {
+    ///
+    /// # Parameters
+    /// - `input_id`: device's bustype, vendor id, product id, and version.
+    /// - `width`: width of screen.
+    /// - `height`: height of screen.
+    /// - `inspect_node`: The root node for "touch_input_file" inspect tree.
+    pub fn new_touch(
+        input_id: uapi::input_id,
+        width: i32,
+        height: i32,
+        inspect_node: fuchsia_inspect::Node,
+    ) -> Arc<Self> {
         // Fuchsia scales the position reported by the touch sensor to fit view coordinates.
         // Hence, the range of touch positions is exactly the same as the range of view
         // coordinates.
         Arc::new(Self {
             driver_version: Self::DRIVER_VERSION,
-            input_id: Self::INPUT_ID,
+            input_id,
             supported_keys: touch_key_attributes(),
             supported_position_attributes: touch_position_attributes(),
             supported_motion_attributes: BitSet::new(), // None supported, not a mouse.
@@ -220,15 +274,19 @@ impl InputFile {
             inner: Mutex::new(InputFileMutableState {
                 events: VecDeque::new(),
                 waiters: WaitQueue::default(),
-                _inspect_status: Some(InspectStatus::new(inspect_node)),
+                inspect_status: Some(InspectStatus::new(inspect_node)),
             }),
         })
     }
 
-    fn new_keyboard() -> Arc<Self> {
+    /// Creates an `InputFile` instance suitable for emulating a keyboard.
+    ///
+    /// # Parameters
+    /// - `input_id`: device's bustype, vendor id, product id, and version.
+    pub fn new_keyboard(input_id: uapi::input_id) -> Arc<Self> {
         Arc::new(Self {
             driver_version: Self::DRIVER_VERSION,
-            input_id: Self::INPUT_ID,
+            input_id,
             supported_keys: keyboard_key_attributes(),
             supported_position_attributes: keyboard_position_attributes(),
             supported_motion_attributes: BitSet::new(), // None supported, not a mouse.
@@ -242,7 +300,7 @@ impl InputFile {
             inner: Mutex::new(InputFileMutableState {
                 events: VecDeque::new(),
                 waiters: WaitQueue::default(),
-                _inspect_status: None,
+                inspect_status: None,
             }),
         })
     }
@@ -266,6 +324,11 @@ impl InputFile {
             .name("kthread-touch-relay".to_string())
             .spawn(move || {
                 fasync::LocalExecutor::new().run_singlethreaded(async {
+                    slf.inner
+                        .lock()
+                        .inspect_status
+                        .as_mut()
+                        .map(|status| status.health_node.set_ok());
                     let mut previous_event_disposition = vec![];
                     // TODO(https://fxbug.dev/123718): Remove `close_fut`.
                     let mut close_fut = touch_source_proxy.on_closed();
@@ -302,16 +365,29 @@ impl InputFile {
                         };
                         match query_res {
                             Ok(touch_events) => {
+                                let num_received_events: u64 =
+                                    touch_events.len().try_into().unwrap();
                                 previous_event_disposition =
                                     touch_events.iter().map(make_response_for_fidl_event).collect();
-                                let new_events = touch_events
-                                    .iter()
-                                    .filter_map(parse_fidl_touch_event)
-                                    // `flat`: each FIDL event yields a `Vec<uapi::input_event>`,
-                                    // but the end result should be a single vector of UAPI events,
-                                    // not a `Vec<Vec<uapi::input_event>>`.
-                                    .flat_map(make_uapi_events);
+                                let converted_events =
+                                    touch_events.iter().filter_map(parse_fidl_touch_event);
+                                let num_converted_events: u64 =
+                                    converted_events.clone().count().try_into().unwrap();
+                                // `flat`: each FIDL event yields a `Vec<uapi::input_event>`,
+                                // but the end result should be a single vector of UAPI events,
+                                // not a `Vec<Vec<uapi::input_event>>`.
+                                let new_events = converted_events.flat_map(make_uapi_events);
+                                let num_generated_events: u64 =
+                                    new_events.clone().count().try_into().unwrap();
                                 let mut inner = slf.inner.lock();
+                                match &inner.inspect_status {
+                                    Some(inspect_status) => {
+                                        inspect_status.count_received_events(num_received_events);
+                                        inspect_status.count_converted_events(num_converted_events);
+                                        inspect_status.count_generated_events(num_generated_events);
+                                    }
+                                    None => (),
+                                }
                                 // TODO(https://fxbug.dev/124597): Reading from an `InputFile` should
                                 // not provide access to events that occurred before the file was
                                 // opened.
@@ -329,6 +405,10 @@ impl InputFile {
                             }
                         };
                     }
+                    // If we exit the loop this indicates relay is no longer active.
+                    slf.inner.lock().inspect_status.as_mut().map(|status| {
+                        status.health_node.set_unhealthy("Touch relay terminated unexpectedly")
+                    });
                 })
             })
             .expect("able to create threads")
@@ -354,7 +434,8 @@ impl InputFile {
                     while let Some(Ok(request)) = event_stream.next().await {
                         match request {
                             fuiinput::KeyboardListenerRequest::OnKeyEvent { event, responder } => {
-                                let new_events = parse_fidl_keyboard_event(&event);
+                                let new_events =
+                                    parse_fidl_keyboard_event_to_linux_input_event(&event);
                                 let mut inner = slf.inner.lock();
 
                                 inner.events.extend(new_events);
@@ -362,6 +443,47 @@ impl InputFile {
 
                                 responder.send(fuiinput::KeyEventStatus::Handled).expect("");
                             }
+                        }
+                    }
+                })
+            })
+            .expect("Failed to create thread")
+    }
+
+    fn start_buttons_relay(
+        self: &Arc<Self>,
+        registry_proxy: fuipolicy::DeviceListenerRegistryProxy,
+    ) -> std::thread::JoinHandle<()> {
+        let slf = self.clone();
+        std::thread::Builder::new()
+            .name("kthread-button-relay".to_string())
+            .spawn(move || {
+                fasync::LocalExecutor::new().run_singlethreaded(async {
+                    // Create and register a listener to listen for MediaButtonsEvents from Input Pipeline.
+                    let (listener, mut listener_stream) = fidl::endpoints::create_request_stream::<
+                        fuipolicy::MediaButtonsListenerMarker,
+                    >()
+                    .unwrap();
+                    if let Err(e) = registry_proxy.register_listener(listener).await {
+                        log_warn!("Failed to register media buttons listener: {:?}", e);
+                    }
+                    while let Some(Ok(request)) = listener_stream.next().await {
+                        match request {
+                            fuipolicy::MediaButtonsListenerRequest::OnEvent {
+                                event,
+                                responder,
+                            } => {
+                                let new_events = parse_fidl_button_event(&event);
+
+                                let mut inner = slf.inner.lock();
+                                inner.events.extend(new_events);
+                                inner.waiters.notify_fd_events(FdEvents::POLLIN);
+
+                                responder
+                                    .send()
+                                    .expect("media buttons responder failed to respond");
+                            }
+                            _ => {}
                         }
                     }
                 })
@@ -392,7 +514,7 @@ impl FileOps for Arc<InputFile> {
             }
             uapi::EVIOCGBIT_EV_KEY => {
                 current_task
-                    .mm
+                    .mm()
                     .write_object(UserRef::new(user_addr), &self.supported_keys.bytes)?;
                 Ok(SUCCESS)
             }
@@ -412,25 +534,25 @@ impl FileOps for Arc<InputFile> {
             }
             uapi::EVIOCGBIT_EV_SW => {
                 current_task
-                    .mm
+                    .mm()
                     .write_object(UserRef::new(user_addr), &self.supported_switches.bytes)?;
                 Ok(SUCCESS)
             }
             uapi::EVIOCGBIT_EV_LED => {
                 current_task
-                    .mm
+                    .mm()
                     .write_object(UserRef::new(user_addr), &self.supported_leds.bytes)?;
                 Ok(SUCCESS)
             }
             uapi::EVIOCGBIT_EV_FF => {
                 current_task
-                    .mm
+                    .mm()
                     .write_object(UserRef::new(user_addr), &self.supported_haptics.bytes)?;
                 Ok(SUCCESS)
             }
             uapi::EVIOCGBIT_EV_MSC => {
                 current_task
-                    .mm
+                    .mm()
                     .write_object(UserRef::new(user_addr), &self.supported_misc_features.bytes)?;
                 Ok(SUCCESS)
             }
@@ -447,7 +569,7 @@ impl FileOps for Arc<InputFile> {
                 Ok(SUCCESS)
             }
             _ => {
-                not_implemented!("ioctl() {} on input device", request);
+                not_implemented!("ioctl() on input device", request);
                 error!(EOPNOTSUPP)
             }
         }
@@ -461,9 +583,12 @@ impl FileOps for Arc<InputFile> {
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
-        let event = self.inner.lock().events.pop_front();
+        let mut inner = self.inner.lock();
+        let event = inner.events.pop_front();
         match event {
             Some(event) => {
+                inner.inspect_status.as_ref().map(|status| status.count_read_events(1));
+                drop(inner);
                 // TODO(https://fxbug.dev/124600): Consider sending as many events as will fit
                 // in `data`, instead of sending them one at a time.
                 data.write_all(event.as_bytes())
@@ -497,7 +622,7 @@ impl FileOps for Arc<InputFile> {
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        Some(self.inner.lock().waiters.wait_async_events(waiter, events, handler))
+        Some(self.inner.lock().waiters.wait_async_fd_events(waiter, events, handler))
     }
 
     fn query_events(
@@ -558,6 +683,7 @@ fn touch_properties() -> BitSet<{ min_bytes(INPUT_PROP_CNT) }> {
 fn keyboard_key_attributes() -> BitSet<{ min_bytes(KEY_CNT) }> {
     let mut attrs = BitSet::new();
     attrs.set(BTN_MISC);
+    attrs.set(KEY_POWER);
     attrs
 }
 
@@ -571,44 +697,6 @@ fn keyboard_properties() -> BitSet<{ min_bytes(INPUT_PROP_CNT) }> {
     let mut attrs = BitSet::new();
     attrs.set(INPUT_PROP_DIRECT);
     attrs
-}
-
-/// Returns a vector of `uapi::input_events` representing the provided `fidl_event`.
-///
-/// A single `KeyEvent` may translate into multiple `uapi::input_events`.
-///
-/// If translation fails an empty vector is returned.
-fn parse_fidl_keyboard_event(fidl_event: &fuiinput::KeyEvent) -> Vec<uapi::input_event> {
-    match fidl_event {
-        &fuiinput::KeyEvent {
-            timestamp: Some(time_nanos),
-            type_: Some(event_type),
-            key: Some(fidl_fuchsia_input::Key::Escape),
-            ..
-        } => {
-            let time = timeval_from_time(zx::Time::from_nanos(time_nanos));
-            let key_event = uapi::input_event {
-                time,
-                type_: uapi::EV_KEY as u16,
-                code: uapi::KEY_POWER as u16,
-                value: if event_type == fuiinput::KeyEventType::Pressed { 1 } else { 0 },
-            };
-
-            let sync_event = uapi::input_event {
-                // See https://www.kernel.org/doc/Documentation/input/event-codes.rst.
-                time,
-                type_: uapi::EV_SYN as u16,
-                code: uapi::SYN_REPORT as u16,
-                value: 0,
-            };
-
-            let mut events = vec![];
-            events.push(key_event);
-            events.push(sync_event);
-            events
-        }
-        _ => vec![],
-    }
 }
 
 /// Returns `Some` if the FIDL event included a `timestamp`, and a `pointer_sample` which includes
@@ -632,6 +720,44 @@ fn parse_fidl_touch_event(fidl_event: &FidlTouchEvent) -> Option<TouchEvent> {
         }),
         _ => None, // TODO(https://fxbug.dev/124603): Add some inspect counters of ignored events.
     }
+}
+
+fn parse_fidl_button_event(fidl_event: &MediaButtonsEvent) -> Vec<uapi::input_event> {
+    let time = timeval_from_time(zx::Time::get_monotonic());
+    let mut events = vec![];
+    let sync_event = uapi::input_event {
+        // See https://www.kernel.org/doc/Documentation/input/event-codes.rst.
+        time,
+        type_: uapi::EV_SYN as u16,
+        code: uapi::SYN_REPORT as u16,
+        value: 0,
+    };
+    match fidl_event {
+        &MediaButtonsEvent { power: Some(true), .. } => {
+            let key_event = uapi::input_event {
+                time,
+                type_: uapi::EV_KEY as u16,
+                code: uapi::KEY_POWER as u16,
+                value: 1,
+            };
+            events.push(key_event);
+            events.push(sync_event);
+        }
+        // Power button is released
+        &MediaButtonsEvent { power: Some(false), .. } => {
+            let key_event = uapi::input_event {
+                time,
+                type_: uapi::EV_KEY as u16,
+                code: uapi::KEY_POWER as u16,
+                value: 0,
+            };
+            events.push(key_event);
+            events.push(sync_event);
+        }
+        _ => {}
+    }
+
+    events
 }
 
 /// Returns a FIDL response for `fidl_event`.
@@ -723,29 +849,46 @@ fn phase_change_from_fidl_phase(fidl_phase: &FidlEventPhase) -> Option<PhaseChan
     }
 }
 
-pub fn init_input_devices(kernel: &Arc<Kernel>) {
-    let input_class = kernel.device_registry.virtual_bus().get_or_create_child(
-        b"input",
-        KType::Class,
-        SysFsDirectory::new,
-    );
-    let touch_attr = KObjectDeviceAttribute::new(
-        Some(input_class.clone()),
-        b"event0",
-        b"input/event0",
-        DeviceType::new(INPUT_MAJOR, TOUCH_INPUT_MINOR),
-        DeviceMode::Char,
-    );
-    kernel.add_and_register_device(touch_attr, create_touch_device);
+// Maintain an atomic increment number as device_id, used as X in
+// /dev/input/eventX.
+static NEXT_DEVICE_ID: AtomicU32 = AtomicU32::new(0);
 
-    let keyboard_attr = KObjectDeviceAttribute::new(
-        Some(input_class.clone()),
-        b"event1",
-        b"input/event1",
-        DeviceType::new(INPUT_MAJOR, KEYBOARD_INPUT_MINOR),
-        DeviceMode::Char,
+/// get_next_device_id() returns the current value of NEXT_DEVICE_ID for next
+/// available device id, and increase the NEXT_DEVICE_ID for next call.
+fn get_next_device_id() -> u32 {
+    NEXT_DEVICE_ID.fetch_add(1, Ordering::SeqCst)
+}
+
+/// add_and_register_input_device to kernel.
+///
+/// # Parameters:
+/// - `system_task`: current task.
+/// - `dev_ops`: the open op handler of the device.
+pub fn add_and_register_input_device(system_task: &CurrentTask, dev_ops: impl DeviceOps) {
+    let kernel = system_task.kernel();
+    let registry = &kernel.device_registry;
+
+    let input_class = registry.get_or_create_class(b"input", registry.virtual_bus());
+
+    let device_id = get_next_device_id();
+    registry.add_and_register_device(
+        system_task,
+        format!("event{}", device_id).as_bytes(),
+        DeviceMetadata::new(
+            format!("input/event{}", device_id).as_bytes(),
+            DeviceType::new(INPUT_MAJOR, device_id),
+            DeviceMode::Char,
+        ),
+        input_class,
+        DeviceDirectory::new,
+        dev_ops,
     );
-    kernel.add_and_register_device(keyboard_attr, create_keyboard_device);
+}
+
+/// add and register 1 touch device and 1 keyboard device to kernel.
+pub fn init_input_devices(system_task: &CurrentTask) {
+    add_and_register_input_device(system_task, create_touch_device);
+    add_and_register_input_device(system_task, create_keyboard_device);
 }
 
 #[cfg(test)]
@@ -754,17 +897,19 @@ mod test {
 
     use super::*;
     use crate::{
-        fs::buffers::VecOutputBuffer,
         task::Kernel,
         testing::{create_kernel_and_task, map_memory, AutoReleasableTask},
+        vfs::{buffers::VecOutputBuffer, FileHandle},
     };
     use anyhow::anyhow;
     use assert_matches::assert_matches;
+    use diagnostics_assertions::{assert_data_tree, AnyProperty};
     use fuchsia_zircon as zx;
     use fuipointer::{
         EventPhase, TouchEvent, TouchPointerSample, TouchResponse, TouchSourceMarker,
         TouchSourceRequest,
     };
+    use starnix_uapi::errors::EAGAIN;
     use test_case::test_case;
     use test_util::assert_near;
     use zerocopy::FromBytes as _; // for `read_from()`
@@ -813,8 +958,12 @@ mod test {
     fn start_touch_input(
     ) -> (Arc<InputFile>, fuipointer::TouchSourceRequestStream, std::thread::JoinHandle<()>) {
         let inspector = fuchsia_inspect::Inspector::default();
-        let input_file =
-            InputFile::new_touch(720, 1200, inspector.root().create_child("touch_input_file"));
+        let input_file = InputFile::new_touch(
+            INPUT_ID,
+            720,  /* screen height */
+            1200, /* screen width */
+            inspector.root().create_child("touch_input_file"),
+        );
         let (touch_source_proxy, touch_source_stream) =
             fidl::endpoints::create_proxy_and_stream::<TouchSourceMarker>()
                 .expect("failed to create TouchSource channel");
@@ -824,7 +973,7 @@ mod test {
 
     fn start_keyboard_input(
     ) -> (Arc<InputFile>, fuiinput::KeyboardRequestStream, std::thread::JoinHandle<()>) {
-        let input_file = InputFile::new_keyboard();
+        let input_file = InputFile::new_keyboard(INPUT_ID);
         let (keyboard_proxy, keyboard_stream) =
             fidl::endpoints::create_proxy_and_stream::<fuiinput::KeyboardMarker>()
                 .expect("failed to create Keyboard channel");
@@ -834,9 +983,18 @@ mod test {
         (input_file, keyboard_stream, relay_thread)
     }
 
-    fn make_kernel_objects(
-        file: Arc<InputFile>,
-    ) -> (Arc<Kernel>, AutoReleasableTask, Arc<FileObject>) {
+    fn start_button_input(
+    ) -> (Arc<InputFile>, fuipolicy::DeviceListenerRegistryRequestStream, std::thread::JoinHandle<()>)
+    {
+        let input_file = InputFile::new_keyboard(INPUT_ID);
+        let (device_registry_proxy, device_listener_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fuipolicy::DeviceListenerRegistryMarker>()
+                .expect("Failed to create DeviceListenerRegistry proxy and stream.");
+        let relay_thread = input_file.start_buttons_relay(device_registry_proxy);
+        (input_file, device_listener_stream, relay_thread)
+    }
+
+    fn make_kernel_objects(file: Arc<InputFile>) -> (Arc<Kernel>, AutoReleasableTask, FileHandle) {
         let (kernel, current_task) = create_kernel_and_task();
         let file_object = FileObject::new(
             Box::new(file),
@@ -963,7 +1121,7 @@ mod test {
                 &current_task,
                 waiter,
                 FdEvents::POLLIN,
-                Box::new(|_| ()),
+                EventHandler::None,
             );
         });
         assert_matches!(waiter1.wait_until(&current_task, zx::Time::ZERO), Err(_));
@@ -992,7 +1150,7 @@ mod test {
         // Set up resources.
         let (input_file, mut touch_source_stream, relay_thread) = start_touch_input();
         let waiter = Waiter::new();
-        let (_kernel, current_task, file_object) = make_kernel_objects(input_file.clone());
+        let (kernel, current_task, file_object) = make_kernel_objects(input_file.clone());
 
         // Ask `input_file` to notify `waiter` when data is available to read.
         input_file.wait_async(
@@ -1000,11 +1158,12 @@ mod test {
             &current_task,
             &waiter,
             FdEvents::POLLIN,
-            Box::new(|_| ()),
+            EventHandler::None,
         );
 
-        let waiter_thread = std::thread::spawn(move || waiter.wait(&current_task));
-        assert!(!waiter_thread.is_finished());
+        let mut waiter_thread =
+            kernel.kthreads.spawner().spawn_and_get_result(move |_, task| waiter.wait(&task));
+        assert!(futures::poll!(&mut waiter_thread).is_pending());
 
         // Reply to first `Watch` request.
         answer_next_watch_request(&mut touch_source_stream, make_touch_event()).await;
@@ -1018,7 +1177,7 @@ mod test {
         answer_next_watch_request(&mut touch_source_stream, make_touch_event()).await;
 
         // Block until `waiter_thread` completes.
-        waiter_thread.join().expect("join() failed").expect("wait() failed");
+        waiter_thread.await.expect("join() failed").expect("wait() failed");
 
         // Cleanly tear down the `TouchSource` client.
         std::mem::drop(touch_source_stream); // Close Zircon channel.
@@ -1055,7 +1214,7 @@ mod test {
                         &current_task,
                         waiter,
                         FdEvents::POLLIN,
-                        Box::new(|_| ()),
+                        EventHandler::None,
                     )
                     .expect("wait_async")
             })
@@ -1120,8 +1279,12 @@ mod test {
     async fn provides_correct_axis_ranges((x_max, y_max): (i32, i32), ioctl_op: u32) -> (i32, i32) {
         // Set up resources.
         let inspector = fuchsia_inspect::Inspector::default();
-        let input_file =
-            InputFile::new_touch(x_max, y_max, inspector.root().create_child("touch_input_file"));
+        let input_file = InputFile::new_touch(
+            INPUT_ID,
+            x_max,
+            y_max,
+            inspector.root().create_child("touch_input_file"),
+        );
         let (_kernel, current_task, file_object) = make_kernel_objects(input_file.clone());
         let address = map_memory(
             &current_task,
@@ -1136,7 +1299,7 @@ mod test {
 
         // Extract minimum and maximum fields for validation.
         let axis_info = current_task
-            .mm
+            .mm()
             .read_object::<uapi::input_absinfo>(UserRef::new(address))
             .expect("failed to read user memory");
         (axis_info.minimum, axis_info.maximum)
@@ -1319,8 +1482,10 @@ mod test {
         responses.get(0).cloned()
     }
 
+    #[test_case(fidl_fuchsia_input::Key::Escape, uapi::KEY_POWER; "Esc maps to Power")]
+    #[test_case(fidl_fuchsia_input::Key::A, uapi::KEY_A; "A maps to A")]
     #[::fuchsia::test]
-    async fn sends_keyboard_events() {
+    async fn sends_keyboard_events(fkey: fidl_fuchsia_input::Key, lkey: u32) {
         let (keyboard_file, mut keyboard_stream, relay_thread) = start_keyboard_input();
         let (_kernel, current_task, file_object) = make_kernel_objects(keyboard_file.clone());
 
@@ -1341,7 +1506,7 @@ mod test {
         let key_event = fuiinput::KeyEvent {
             timestamp: Some(0),
             type_: Some(fuiinput::KeyEventType::Pressed),
-            key: Some(fidl_fuchsia_input::Key::Escape),
+            key: Some(fkey),
             ..Default::default()
         };
 
@@ -1351,11 +1516,11 @@ mod test {
         relay_thread.join().expect("relay thread failed"); // Wait for relay thread to finish.
         let events = read_uapi_events(keyboard_file, &file_object, &current_task);
         assert_eq!(events.len(), 2);
-        assert_eq!(events[0].code, uapi::KEY_POWER as u16);
+        assert_eq!(events[0].code, lkey as u16);
     }
 
     #[::fuchsia::test]
-    async fn skips_non_esc_keyboard_events() {
+    async fn skips_unknown_keyboard_events() {
         let (keyboard_file, mut keyboard_stream, relay_thread) = start_keyboard_input();
         let (_kernel, current_task, file_object) = make_kernel_objects(keyboard_file.clone());
 
@@ -1376,7 +1541,7 @@ mod test {
         let key_event = fuiinput::KeyEvent {
             timestamp: Some(0),
             type_: Some(fuiinput::KeyEventType::Pressed),
-            key: Some(fidl_fuchsia_input::Key::A),
+            key: Some(fidl_fuchsia_input::Key::AcRefresh),
             ..Default::default()
         };
 
@@ -1389,23 +1554,153 @@ mod test {
     }
 
     #[::fuchsia::test]
+    async fn sends_button_events() {
+        let (input_file, mut device_listener_stream, relay_thread) = start_button_input();
+        let (_kernel, current_task, file_object) = make_kernel_objects(input_file.clone());
+
+        let buttons_listener = match device_listener_stream.next().await {
+            Some(Ok(fuipolicy::DeviceListenerRegistryRequest::RegisterListener {
+                listener,
+                responder,
+            })) => {
+                let _ = responder.send();
+                listener.into_proxy().expect("Failed to create proxy")
+            }
+            _ => {
+                panic!("Failed to get event");
+            }
+        };
+
+        let power_event = MediaButtonsEvent {
+            volume: Some(0),
+            mic_mute: Some(false),
+            pause: Some(false),
+            camera_disable: Some(false),
+            power: Some(true),
+            ..Default::default()
+        };
+
+        let _ = buttons_listener.on_event(&power_event).await;
+        std::mem::drop(device_listener_stream); // Close Zircon channel.
+        std::mem::drop(buttons_listener); // Close Zircon channel.
+        relay_thread.join().expect("relay thread failed"); // Wait for relay thread to finish.
+        let events = read_uapi_events(input_file, &file_object, &current_task);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].code, uapi::KEY_POWER as u16);
+        assert_eq!(events[0].value, 1);
+    }
+
+    #[::fuchsia::test]
     fn touch_input_file_initialized_with_inspect_node() {
         let inspector = fuchsia_inspect::Inspector::default();
-        let _touch_file =
-            InputFile::new_touch(720, 1200, inspector.root().create_child("touch_input_file"));
+        let _touch_file = InputFile::new_touch(
+            INPUT_ID,
+            720,  /* screen height */
+            1200, /* screen width */
+            inspector.root().create_child("touch_input_file"),
+        );
 
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        assert_data_tree!(inspector, root: {
             touch_input_file: {
                 fidl_events_received_count: 0u64,
                 fidl_events_converted_count: 0u64,
-                fidl_events_discarded_count: 0u64,
                 uapi_events_generated_count: 0u64,
                 uapi_events_read_count: 0u64,
                 "fuchsia.inspect.Health": {
                     status: "STARTING_UP",
                     // Timestamp value is unpredictable and not relevant in this context,
                     // so we only assert that the property is present.
-                    start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                    start_timestamp_nanos: AnyProperty
+                },
+            }
+        });
+    }
+
+    #[::fuchsia::test]
+    async fn touch_relay_updates_touch_inspect_status() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let input_file = InputFile::new_touch(
+            INPUT_ID,
+            720,  /* screen height */
+            1200, /* screen width */
+            inspector.root().create_child("touch_input_file"),
+        );
+        let (touch_source_proxy, mut touch_source_stream) =
+            fidl::endpoints::create_proxy_and_stream::<TouchSourceMarker>()
+                .expect("failed to create TouchSource channel");
+        let relay_thread = input_file.start_touch_relay(touch_source_proxy);
+        let (_kernel, current_task, file_object) = make_kernel_objects(input_file.clone());
+
+        // Send 2 TouchEvents to proxy that should be counted as `received` by InputFile
+        // A TouchEvent::default() has no pointer sample so these events should be discarded.
+        match touch_source_stream.next().await {
+            Some(Ok(TouchSourceRequest::Watch { responder, .. })) => responder
+                .send(&vec![TouchEvent::default(); 2])
+                .expect("failure sending Watch reply"),
+            unexpected_request => panic!("unexpected request {:?}", unexpected_request),
+        }
+
+        // Send 5 TouchEvents with pointer sample to proxy, these should be received and converted
+        // Add/Remove events generate 5 uapi events each. Change events generate 3 uapi events each.
+        match touch_source_stream.next().await {
+            Some(Ok(TouchSourceRequest::Watch { responses, responder })) => {
+                assert_matches!(responses.as_slice(), [_, _]);
+                responder
+                    .send(&vec![
+                        make_touch_event_with_phase(EventPhase::Add),
+                        make_touch_event(),
+                        make_touch_event(),
+                        make_touch_event(),
+                        make_touch_event_with_phase(EventPhase::Remove),
+                    ])
+                    .expect("failure sending Watch reply");
+            }
+            unexpected_request => panic!("unexpected request {:?}", unexpected_request),
+        }
+
+        // Wait for next `Watch` call and verify it has five elements in `responses`.
+        match touch_source_stream.next().await {
+            Some(Ok(TouchSourceRequest::Watch { responses, .. })) => {
+                assert_matches!(responses.as_slice(), [_, _, _, _, _])
+            }
+            unexpected_request => panic!("unexpected request {:?}", unexpected_request),
+        }
+
+        let _events = read_uapi_events(input_file, &file_object, &current_task);
+
+        assert_data_tree!(inspector, root: {
+            touch_input_file: {
+                fidl_events_received_count: 7u64,
+                fidl_events_converted_count: 5u64,
+                uapi_events_generated_count: 19u64,
+                uapi_events_read_count: 19u64,
+                "fuchsia.inspect.Health": {
+                    status: "OK",
+                    // Timestamp value is unpredictable and not relevant in this context,
+                    // so we only assert that the property is present.
+                    start_timestamp_nanos: AnyProperty
+                },
+            }
+        });
+
+        // Cleanly tear down the client.
+        std::mem::drop(touch_source_stream); // Close Zircon channel.
+        relay_thread.join().expect("client thread failed"); // Wait for client thread to finish.
+
+        // Inspect should reflect InputFile is in UNHEALTHY state after touch stream connection is
+        // closed and touch relay terminates.
+        assert_data_tree!(inspector, root: {
+            touch_input_file: {
+                fidl_events_received_count: 7u64,
+                fidl_events_converted_count: 5u64,
+                uapi_events_generated_count: 19u64,
+                uapi_events_read_count: 19u64,
+                "fuchsia.inspect.Health": {
+                    status: "UNHEALTHY",
+                    message: "Touch relay terminated unexpectedly",
+                    // Timestamp value is unpredictable and not relevant in this context,
+                    // so we only assert that the property is present.
+                    start_timestamp_nanos: AnyProperty
                 },
             }
         });

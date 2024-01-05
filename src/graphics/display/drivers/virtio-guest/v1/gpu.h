@@ -10,6 +10,7 @@
 #include <fuchsia/hardware/display/controller/cpp/banjo.h>
 #include <lib/virtio/device.h>
 #include <lib/virtio/ring.h>
+#include <lib/zx/result.h>
 #include <semaphore.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
@@ -22,19 +23,20 @@
 #include "src/graphics/display/drivers/virtio-guest/v1/virtio-abi.h"
 #include "src/graphics/display/lib/api-types-cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-buffer-collection-id.h"
+#include "src/graphics/display/lib/api-types-cpp/driver-image-id.h"
 
-namespace virtio {
+namespace virtio_display {
 
 class Ring;
 
 class GpuDevice;
 using DeviceType = ddk::Device<GpuDevice, ddk::GetProtocolable, ddk::Initializable>;
-class GpuDevice : public Device,
+class GpuDevice : public virtio::Device,
                   public DeviceType,
                   public ddk::DisplayControllerImplProtocol<GpuDevice, ddk::base_protocol> {
  public:
   // Constructor called by virtio::CreateAndBind().
-  GpuDevice(zx_device_t* device, zx::bti bti, std::unique_ptr<Backend> backend);
+  GpuDevice(zx_device_t* device, zx::bti bti, std::unique_ptr<virtio::Backend> backend);
   ~GpuDevice() override;
 
   zx_status_t Init() override;
@@ -74,9 +76,9 @@ class GpuDevice : public Device,
   zx_status_t DisplayControllerImplReleaseBufferCollection(
       uint64_t banjo_driver_buffer_collection_id);
 
-  zx_status_t DisplayControllerImplImportImage(image_t* image,
+  zx_status_t DisplayControllerImplImportImage(const image_t* image,
                                                uint64_t banjo_driver_buffer_collection_id,
-                                               uint32_t index);
+                                               uint32_t index, uint64_t* out_image_handle);
 
   zx_status_t DisplayControllerImplImportImageForCapture(uint64_t banjo_driver_buffer_collection_id,
                                                          uint32_t index,
@@ -84,7 +86,7 @@ class GpuDevice : public Device,
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  void DisplayControllerImplReleaseImage(image_t* image);
+  void DisplayControllerImplReleaseImage(uint64_t image_handle);
 
   config_check_result_t DisplayControllerImplCheckConfiguration(
       const display_config_t** display_configs, size_t display_count,
@@ -113,18 +115,18 @@ class GpuDevice : public Device,
 
   bool DisplayControllerImplIsCaptureCompleted() { return false; }
 
-  zx_status_t SetAndInitSysmemForTesting(
-      fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem) {
+  zx_status_t SetAndInitSysmemForTesting(fidl::WireSyncClient<fuchsia_sysmem::Allocator> sysmem) {
     sysmem_ = std::move(sysmem);
-    return InitSysmemAllocatorClient();
+    return ZX_OK;
   }
 
  private:
   // Internal routines
   template <typename RequestType, typename ResponseType>
   void send_command_response(const RequestType* cmd, ResponseType** res);
-  zx_status_t Import(zx::vmo vmo, image_t* image, size_t offset, uint32_t pixel_size,
-                     uint32_t row_bytes, fuchsia_images2::wire::PixelFormat pixel_format);
+  zx::result<display::DriverImageId> Import(zx::vmo vmo, const image_t* image, size_t offset,
+                                            uint32_t pixel_size, uint32_t row_bytes,
+                                            fuchsia_images2::wire::PixelFormat pixel_format);
 
   zx_status_t get_display_info();
   zx_status_t allocate_2d_resource(uint32_t* resource_id, uint32_t width, uint32_t height,
@@ -147,7 +149,7 @@ class GpuDevice : public Device,
   std::thread start_thread_ = {};
 
   // the main virtio ring
-  Ring vring_ = {this};
+  virtio::Ring vring_ = {this};
 
   // gpu op
   io_buffer_t gpu_req_ = {};
@@ -168,10 +170,8 @@ class GpuDevice : public Device,
   fbl::Mutex flush_lock_;
 
   display_controller_interface_protocol_t dc_intf_ = {};
-  fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem_;
-
   // The sysmem allocator client used to bind incoming buffer collection tokens.
-  fidl::WireSyncClient<fuchsia_sysmem::Allocator> sysmem_allocator_client_;
+  fidl::WireSyncClient<fuchsia_sysmem::Allocator> sysmem_;
 
   // Imported sysmem buffer collections.
   std::unordered_map<display::DriverBufferCollectionId,
@@ -190,6 +190,6 @@ class GpuDevice : public Device,
   };
 };
 
-}  // namespace virtio
+}  // namespace virtio_display
 
 #endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GUEST_V1_GPU_H_

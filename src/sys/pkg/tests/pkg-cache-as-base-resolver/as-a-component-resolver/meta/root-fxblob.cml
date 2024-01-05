@@ -1,0 +1,32 @@
+// Copyright 2023 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    include: [
+        "//src/sys/pkg/tests/pkg-cache-as-base-resolver/as-a-component-resolver/meta/root-base.cml",
+        "inspect/offer.shard.cml",
+    ],
+    children: [
+        {
+            name: "fake_dependencies",
+            url: "#meta/fake-dependencies-fxblob.cm",
+        },
+    ],
+    offer: [
+        {
+            protocol: "fuchsia.fxfs.BlobCreator",
+            from: "#fake_dependencies",
+            to: "#pkg-cache",
+        },
+        {
+            protocol: "fuchsia.fxfs.BlobReader",
+            from: "#fake_dependencies",
+            to: "#pkg-cache",
+        },
+        {
+            protocol: "fuchsia.kernel.VmexResource",
+            from: "parent",
+            to: "#pkg-cache",
+        },
+    ],
+}

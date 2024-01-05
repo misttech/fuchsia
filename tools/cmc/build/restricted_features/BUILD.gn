@@ -7,15 +7,24 @@ group("structured_config") {
   # Available to all components in fuchsia.git
 }
 
-# The allowlist of components that can use the "hub" feature in CML.
-group("hub") {
-  # Available to all components in fuchsia.git
+# The allowlist of components that can use dictionaries in CML.
+group("dictionaries") {
+  visibility = []
+}
+
+# The allowlist of components that can use config capabilities in CML.
+group("config_capabilities") {
+  visibility = [
+    "//sdk/lib/driver_test_realm/*",
+    "//src/sys/component_manager/tests/*",
+  ]
 }
 
 # The allowlist of components that can use the "allow_long_names" feature in CML.
 group("allow_long_names") {
   visibility = [
     # driver collections
+    "//sdk/lib/driver_test_realm/*",
     "//src/devices/bin/driver_manager/*",
     "//src/sys/bootstrap/*",
     "//tools/cmc:*",

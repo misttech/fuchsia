@@ -9,15 +9,18 @@
 
 import("//build/bazel/bazel_inputs.gni")
 import("//build/bazel/legacy_ninja_build_outputs.gni")
+import("//build/licenses/generated_licenses_spdx.gni")
 import("//build/security.gni")
 import("//tools/check-licenses/build/license_data.gni")
 
 declare_args() {
-  # Whether to generate real licenses for
-  # `//build/bazel/licenses:legacy_ninja_build_outputs_licenses_spdx`.
-  # License collection + generation for ninja targets is slow and expensive,
-  # so it is turned off by default, and a placeholder is produced instead.
+  # Deprecated. No-op.
+  # TODO(fxb/132725): Remove once unused downstream.
   generate_legacy_ninja_build_outputs_licenses_spdx = false
+
+  # Deprecated. No-op.
+  # TODO(fxb/132725): Remove once unused downstream.
+  generate_legacy_ninja_build_outputs_licenses_spdx_from_metadata = true
 }
 
 # TODO(fxb/117740): We only need to cover bazel inputs that end up in the product,
@@ -29,18 +32,21 @@ _excluded_bazel_inputs = [
   # Remove a potential circular dependency on the spdx bazel_input_resource itself.
   "//build/bazel/licenses:legacy_ninja_build_outputs_licenses_spdx",
 
-  # TODO(fxb/130784): Remove once not used downstream.
-  "//build/bazel/licenses:all_bazel_inputs_licenses_spdx",
-
   # See fxb/126949#c15. Zedboot is only used in eng builds and is testonly, so can't
   # be used in license calculations.
   "//build/images/zedboot:zedboot.bazel_legacy_aib",
 
   # Bringup is testonly too.
   "//build/images/bringup:bringup.bazel_legacy_aib",
+
+  # This is only used for `//tools/devshell:fx_publish_test`.
+  "//build/images/updates/tests:fx_publish_test.gn_assembly.bazel_legacy_aib",
 ]
 
-_excluded_bazel_inputs += eng_only_platform_aib_labels
+# Remove all non-user platform aibs
+_excluded_bazel_inputs += eng_platform_aib_labels
+_excluded_bazel_inputs += user_platform_aib_labels
+_excluded_bazel_inputs -= user_platform_aib_labels
 
 if (fuchsia_zbi_testonly) {
   # Remove fuchsia_zbi_testonly=true targets. See fxb/126949#c18 for why that is ok.
@@ -53,67 +59,33 @@ group("all_bazel_inputs") {
 
   deps += _excluded_bazel_inputs
   deps -= _excluded_bazel_inputs
-}
 
-# Collects the license data for all GN inputs and makes it available for Bazel
-license_data("licenses_data") {
-  target = "//build/bazel/licenses:all_bazel_inputs"
-  out_dir = "$target_out_dir/licenses_data"
-  produce_spdx = true
-
-  # This is an intermediate input to the licenses pipeline, no need to upload to GCS.
-  emit_metadata = false
-
-  # Analysis is not needed - it is assumed it is done elsewhere.
-  run_analysis = false
-
-  # These targets are not being distributed.
-  prune_targets = [
-    "//prebuilt/third_party/android/aemu/release/linux-x64",
-    "//src/developer/ffx/plugins/emulator",
-    "//vendor/third_party/eigen3",
-    "//vendor/third_party/eigen3/",
-  ]
-}
-
-# Note: To make this target on the Bazel side, this target needs be added:
-# (1) To `extra_deps` in the relevant `bazel_build_action` rule.
-# (2) To the `extra_gn_labels_for_bazel_inputs` GN arg.
-#
-# Warnings:
-# (1) license_data dependency above is VERY SLOW.
-# (2) When developing locally, since license_data may produce inaccurate
-#     results if you didn't 'fx clean'. If you want to avoid 'fx clean' do:
-#     * fxbug.dev/84924 workaround: Manually delete the SPDX output :
-#       `rm -rf out/default/obj/build/bazel/licenses/licenses_data/`
-#     * fxbug.dev/117694 workaround: Manually delete cached depenedncy calculation:
-#       `rm out/default/project.json`
-#
-# Deprecated: Use `:legacy_ninja_build_outputs_licenses` instead.
-# TODO(fxb/130784): Remove once not used downstream.
-bazel_input_resource("all_bazel_inputs_licenses_spdx") {
-  deps = [ ":licenses_data" ]
-  sources = get_target_outputs(":licenses_data_spdx_copy")
-  outputs = [ "licenses_data/results.spdx.json" ]
-}
-
-if (generate_legacy_ninja_build_outputs_licenses_spdx) {
-  # (1) license_data dependency above is VERY SLOW.
-  # (2) When developing locally, since license_data may produce inaccurate
-  #     results if you didn't 'fx clean'. If you want to avoid 'fx clean' do:
-  #     * fxbug.dev/84924 workaround: Manually delete the SPDX output :
-  #       `rm -rf out/default/obj/build/bazel/licenses/licenses_data/`
-  #     * fxbug.dev/117694 workaround: Manually delete cached depenedency calculation:
-  #       `rm out/default/project.json`
-  bazel_input_resource("legacy_ninja_build_outputs_licenses_spdx") {
-    deps = [ ":licenses_data" ]
-    sources = get_target_outputs(":licenses_data_spdx_copy")
-    outputs = [ "legacy_ninja_build_outputs_licenses.spdx.json" ]
+  metadata = {
+    # Prevent packages from leaking into the universe packages list in
+    # //build/images/updates:universe_packages.list which uses
+    # generate_package_metadata()
+    package_names_barrier = []
   }
-} else {
-  # Use a placeholder instead.
-  bazel_input_resource("legacy_ninja_build_outputs_licenses_spdx") {
-    sources = [ "licenses_placeholder.spdx.json" ]
-    outputs = [ "legacy_ninja_build_outputs_licenses.spdx.json" ]
-  }
+}
+
+generated_licenses_spdx("all_bazel_inputs_licenses_spdx") {
+  target = ":all_bazel_inputs"
+  spdx_root_package_name = "Fuchsia"
+  output = "${target_out_dir}/all_bazel_inputs_licenses.spdx.json"
+
+  debug_hints = true
+
+  # Current Bazel inputs customers don't need host tool licenses.
+  # TODO(132725): Revisit once each individual input has its own SPDX.
+  # We can then derive value based on the input target's toolchain.
+  include_host_tools = false
+
+  # TODO(132725): Remove once all remaining errors are sorted out.
+  ignore_collection_errors = false
+}
+
+bazel_input_resource("legacy_ninja_build_outputs_licenses_spdx") {
+  deps = [ ":all_bazel_inputs_licenses_spdx" ]
+  sources = get_target_outputs(":all_bazel_inputs_licenses_spdx")
+  outputs = [ "legacy_ninja_build_outputs_licenses.spdx.json" ]
 }

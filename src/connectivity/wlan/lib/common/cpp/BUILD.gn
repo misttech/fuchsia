@@ -12,7 +12,6 @@ source_set("common") {
   sources = [
     "band.cc",
     "channel.cc",
-    "element.cc",
     "energy.cc",
     "ieee80211_codes.cc",
     "include/wlan/common/action_frame.h",
@@ -41,10 +40,10 @@ source_set("common") {
   ]
 
   public_deps = [
-    "//sdk/banjo/fuchsia.hardware.wlanphyimpl:fuchsia.hardware.wlanphyimpl_banjo_cpp",
-    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp_wire",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp",
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_hlcpp",
     "//sdk/fidl/fuchsia.wlan.mlme:fuchsia.wlan.mlme_hlcpp",
+    "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp",
     "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_banjo_cpp",
     "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_hlcpp",
     "//zircon/system/ulib/async:async-cpp",
@@ -59,22 +58,6 @@ source_set("common") {
 
   # TODO(https://fxbug.dev/58162): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
-}
-
-executable("ieee80211_codes_test") {
-  output_name = "ieee80211_codes_test"
-  testonly = true
-  sources = [ "ieee80211_codes_test.cc" ]
-  deps = [
-    ":common",
-    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_hlcpp",
-    "//src/lib/fxl/test:gtest_main",
-  ]
-}
-
-fuchsia_unittest_package("ieee80211_codes_tests") {
-  package_name = "ieee80211-codes-tests"
-  deps = [ ":ieee80211_codes_test" ]
 }
 
 executable("mcs_rate_lookup_test") {

@@ -8,6 +8,7 @@
 #include <fuchsia/hardware/display/controller/cpp/banjo.h>
 #include <lib/device-protocol/pdev-fidl.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/mmio/mmio-buffer.h>
 #include <lib/mmio/mmio.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/bti.h>
@@ -153,12 +154,29 @@ struct RdmaChannelContainer {
  */
 class RdmaEngine {
  public:
+  // Factory method intended for production use.
+  //
+  // `video_input_unit_node` must outlive the RdmaEngine instance.
   static zx::result<std::unique_ptr<RdmaEngine>> Create(ddk::PDevFidl* pdev,
-                                                        inspect::Node* osd_node);
-  // This must be called before any other methods. Not included in the ctor
-  // because ddk::PDevFidl provides std::optional<fdf::MmioBuffer> which means that
-  // move semantics will invalidate pointers.
-  zx_status_t SetupRdma(fdf::MmioBuffer* vpu_mmio);
+                                                        inspect::Node* video_input_unit_node);
+
+  // Production code should prefer the `Create()` factory method.
+  //
+  // `vpu_mmio` is the region documented as "VPU" in Section 8.1 "Memory Map"
+  // of the AMLogic A311D datasheet. It must be valid.
+  //
+  // `dma_bti` maps to the DMA BTI board resource. It must be valid.
+  //
+  // `rdma_done_interrupt` is the interrupt documented as "rdma_done_int" in
+  // Section 8.10.2 "Interrupt Source" of the AMLogic A311D datasheet. It must
+  // be valid.
+  //
+  // `node` must outlive the RdmaEngine.
+  RdmaEngine(fdf::MmioBuffer vpu_mmio, zx::bti dma_bti, zx::interrupt rdma_done_interrupt,
+             inspect::Node* node);
+
+  // This must be called before any other methods.
+  zx_status_t SetupRdma();
 
   // Drop all hardware resources prior to destruction.
   void Release();
@@ -193,14 +211,12 @@ class RdmaEngine {
   void DumpRdmaState() __TA_REQUIRES(rdma_lock_);
 
  private:
-  // All arguments must outlive the RdmaEngine.
-  RdmaEngine(inspect::Node* node);
-
-  fdf::MmioBuffer* vpu_mmio_;
+  fdf::MmioBuffer vpu_mmio_;
   zx::bti bti_;
 
   // RDMA IRQ handle and thread used for diagnostic purposes.
   zx::interrupt rdma_irq_;
+  thrd_t rdma_irq_thread_;
 
   fbl::Mutex rdma_lock_;
 
@@ -211,20 +227,16 @@ class RdmaEngine {
   bool rdma_active_ TA_GUARDED(rdma_lock_) = false;
   display::ConfigStamp latest_applied_config_ TA_GUARDED(rdma_lock_) = display::kInvalidConfigStamp;
 
-  RdmaChannelContainer rdma_chnl_container_[kNumberOfTables];
+  RdmaChannelContainer rdma_channels_[kNumberOfTables];
 
   // use a single vmo for all channels
   zx::vmo rdma_vmo_;
   zx::pmt rdma_pmt_;
-  zx_paddr_t rdma_phys_;
-  uint8_t* rdma_vbuf_;
 
   // Container that holds AFBC specific trigger register
-  RdmaChannelContainer afbc_rdma_chnl_container_;
+  RdmaChannelContainer afbc_rdma_channel_;
   zx::vmo afbc_rdma_vmo_;
-  zx_handle_t afbc_rdma_pmt_;
-  zx_paddr_t afbc_rdma_phys_;
-  uint8_t* afbc_rdma_vbuf_;
+  zx::pmt afbc_rdma_pmt_;
 
   inspect::UintProperty rdma_allocation_failures_;
   inspect::UintProperty rdma_irq_count_;
@@ -232,10 +244,6 @@ class RdmaEngine {
   inspect::UintProperty rdma_pending_in_vsync_count_;
   inspect::UintProperty last_rdma_pending_in_vsync_interval_ns_;
   inspect::UintProperty last_rdma_pending_in_vsync_timestamp_ns_prop_;
-
-  // Unused inspect properties (but still queried by lapis/detect for metrics and triage reporting).
-  inspect::UintProperty rdma_stall_count_;
-  inspect::UintProperty last_rdma_stall_timestamp_ns_;
 
   zx::time last_rdma_pending_in_vsync_timestamp_;
 };

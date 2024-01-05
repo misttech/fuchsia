@@ -7,6 +7,7 @@ package testsharder
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"testing"
 
@@ -31,25 +32,25 @@ func TestAddFFXDeps(t *testing.T) {
 			name:       "QEMU x64 deps",
 			targetCPU:  "x64",
 			deviceType: "QEMU",
-			want:       baseDeps,
+			want:       append(baseDeps, "host_x64/ffx-test", "host_x64/ffx-test.json", "host_x64/ffx-emu", "host_x64/ffx-emu.json"),
 		},
 		{
 			name:       "NUC bootloader boot deps",
 			targetCPU:  "x64",
 			deviceType: "NUC",
-			want:       []string{"zircon-a.zbi", "zircon-a.vbmeta"},
+			want:       []string{"zircon-a.zbi", "zircon-a.vbmeta", "host_x64/ffx-test", "host_x64/ffx-test.json"},
 		},
 		{
 			name:       "AEMU x64 deps",
 			targetCPU:  "x64",
 			deviceType: "AEMU",
-			want:       baseDeps,
+			want:       append(baseDeps, "host_x64/ffx-test", "host_x64/ffx-test.json", "host_x64/ffx-emu", "host_x64/ffx-emu.json"),
 		},
 		{
 			name:       "QEMU arm64 deps",
 			targetCPU:  "arm64",
 			deviceType: "QEMU",
-			want:       baseDeps,
+			want:       append(baseDeps, "host_arm64/ffx-emu", "host_arm64/ffx-emu.json"),
 		},
 	}
 	for _, tc := range testCases {
@@ -70,10 +71,18 @@ func TestAddFFXDeps(t *testing.T) {
 				},
 				Tests: []Test{{Test: build.Test{CPU: tc.targetCPU}}},
 			}
+			hostOS := runtime.GOOS
 			if err := AddFFXDeps(s, buildDir, []build.Image{
 				{Name: "zircon-a", Path: "zircon-a.zbi", Type: "zbi"},
 				{Name: "zircon-a", Path: "zircon-a.vbmeta", Type: "vbmeta"},
 				{Name: "fuchsia", Path: "fuchsia.zbi", Type: "zbi"},
+			}, build.Tools{
+				{Name: "ffx-test", OS: hostOS, CPU: "x64", Path: "host_x64/ffx-test",
+					RuntimeFiles: []string{"host_x64/ffx-test.json"}},
+				{Name: "ffx-emu", OS: hostOS, CPU: "x64", Path: "host_x64/ffx-emu",
+					RuntimeFiles: []string{"host_x64/ffx-emu.json"}},
+				{Name: "ffx-emu", OS: hostOS, CPU: "arm64", Path: "host_arm64/ffx-emu",
+					RuntimeFiles: []string{"host_arm64/ffx-emu.json"}},
 			}, false); err != nil {
 				t.Errorf("failed to add ffx deps: %s", err)
 			}

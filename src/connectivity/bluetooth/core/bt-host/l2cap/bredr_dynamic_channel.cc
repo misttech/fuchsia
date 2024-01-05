@@ -16,8 +16,8 @@ namespace {
 
 ChannelConfiguration::RetransmissionAndFlowControlOption WriteRfcOutboundTimeouts(
     ChannelConfiguration::RetransmissionAndFlowControlOption rfc_option) {
-  rfc_option.set_rtx_timeout(kErtmReceiverReadyPollTimerDuration.to_msecs());
-  rfc_option.set_monitor_timeout(kErtmMonitorTimerDuration.to_msecs());
+  rfc_option.set_rtx_timeout(kErtmReceiverReadyPollTimerMsecs);
+  rfc_option.set_monitor_timeout(kErtmMonitorTimerMsecs);
   return rfc_option;
 }
 
@@ -48,19 +48,19 @@ BrEdrDynamicChannelRegistry::BrEdrDynamicChannelRegistry(SignalingChannelInterfa
   SendInformationRequests();
 }
 
-DynamicChannelPtr BrEdrDynamicChannelRegistry::MakeOutbound(PSM psm, ChannelId local_cid,
+DynamicChannelPtr BrEdrDynamicChannelRegistry::MakeOutbound(Psm psm, ChannelId local_cid,
                                                             ChannelParameters params) {
   return BrEdrDynamicChannel::MakeOutbound(this, sig_, psm, local_cid, params, PeerSupportsERTM());
 }
 
-DynamicChannelPtr BrEdrDynamicChannelRegistry::MakeInbound(PSM psm, ChannelId local_cid,
+DynamicChannelPtr BrEdrDynamicChannelRegistry::MakeInbound(Psm psm, ChannelId local_cid,
                                                            ChannelId remote_cid,
                                                            ChannelParameters params) {
   return BrEdrDynamicChannel::MakeInbound(this, sig_, psm, local_cid, remote_cid, params,
                                           PeerSupportsERTM());
 }
 
-void BrEdrDynamicChannelRegistry::OnRxConnReq(PSM psm, ChannelId remote_cid,
+void BrEdrDynamicChannelRegistry::OnRxConnReq(Psm psm, ChannelId remote_cid,
                                               BrEdrCommandHandler::ConnectionResponder* responder) {
   bt_log(TRACE, "l2cap-bredr", "Got Connection Request for PSM %#.4x from channel %#.4x", psm,
          remote_cid);
@@ -96,7 +96,7 @@ void BrEdrDynamicChannelRegistry::OnRxConnReq(PSM psm, ChannelId remote_cid,
   if (!dyn_chan) {
     bt_log(DEBUG, "l2cap-bredr",
            "Rejecting connection for unsupported PSM %#.4x from channel %#.4x", psm, remote_cid);
-    responder->Send(kInvalidChannelId, ConnectionResult::kPSMNotSupported,
+    responder->Send(kInvalidChannelId, ConnectionResult::kPsmNotSupported,
                     ConnectionStatus::kNoInfoAvailable);
     return;
   }
@@ -246,14 +246,14 @@ std::optional<bool> BrEdrDynamicChannelRegistry::PeerSupportsERTM() const {
 }
 
 BrEdrDynamicChannelPtr BrEdrDynamicChannel::MakeOutbound(
-    DynamicChannelRegistry* registry, SignalingChannelInterface* signaling_channel, PSM psm,
+    DynamicChannelRegistry* registry, SignalingChannelInterface* signaling_channel, Psm psm,
     ChannelId local_cid, ChannelParameters params, std::optional<bool> peer_supports_ertm) {
   return std::unique_ptr<BrEdrDynamicChannel>(new BrEdrDynamicChannel(
       registry, signaling_channel, psm, local_cid, kInvalidChannelId, params, peer_supports_ertm));
 }
 
 BrEdrDynamicChannelPtr BrEdrDynamicChannel::MakeInbound(
-    DynamicChannelRegistry* registry, SignalingChannelInterface* signaling_channel, PSM psm,
+    DynamicChannelRegistry* registry, SignalingChannelInterface* signaling_channel, Psm psm,
     ChannelId local_cid, ChannelId remote_cid, ChannelParameters params,
     std::optional<bool> peer_supports_ertm) {
   auto channel = std::unique_ptr<BrEdrDynamicChannel>(new BrEdrDynamicChannel(
@@ -367,7 +367,8 @@ ChannelInfo BrEdrDynamicChannel::info() const {
   const auto max_rx_sdu_size = local_config().mtu_option()->mtu();
   const auto peer_mtu = remote_config().mtu_option()->mtu();
   const auto flush_timeout = parameters_.flush_timeout;
-  if (local_config().retransmission_flow_control_option()->mode() == ChannelMode::kBasic) {
+  if (local_config().retransmission_flow_control_option()->mode() ==
+      RetransmissionAndFlowControlMode::kBasic) {
     const auto max_tx_sdu_size = peer_mtu;
     return ChannelInfo::MakeBasicMode(max_rx_sdu_size, max_tx_sdu_size, psm(), flush_timeout);
   }
@@ -421,10 +422,10 @@ void BrEdrDynamicChannel::OnRxConfigReq(uint16_t flags, ChannelConfiguration con
 
   const auto req_mode = req_config.retransmission_flow_control_option()
                             ? req_config.retransmission_flow_control_option()->mode()
-                            : ChannelMode::kBasic;
+                            : RetransmissionAndFlowControlMode::kBasic;
 
   // Record peer support for ERTM even if they haven't sent a Extended Features Mask.
-  if (req_mode == ChannelMode::kEnhancedRetransmission) {
+  if (req_mode == RetransmissionAndFlowControlMode::kEnhancedRetransmission) {
     SetEnhancedRetransmissionSupport(true);
   }
 
@@ -498,7 +499,7 @@ void BrEdrDynamicChannel::OnRxConfigReq(uint16_t flags, ChannelConfiguration con
   response_config.set_mtu_option(ChannelConfiguration::MtuOption(actual_mtu));
   req_config.set_mtu_option(response_config.mtu_option());
 
-  if (req_mode == ChannelMode::kEnhancedRetransmission) {
+  if (req_mode == RetransmissionAndFlowControlMode::kEnhancedRetransmission) {
     auto outbound_rfc_option =
         WriteRfcOutboundTimeouts(req_config.retransmission_flow_control_option().value());
     response_config.set_retransmission_flow_control_option(std::move(outbound_rfc_option));
@@ -588,7 +589,7 @@ void BrEdrDynamicChannel::CompleteInboundConnection(
 }
 
 BrEdrDynamicChannel::BrEdrDynamicChannel(DynamicChannelRegistry* registry,
-                                         SignalingChannelInterface* signaling_channel, PSM psm,
+                                         SignalingChannelInterface* signaling_channel, Psm psm,
                                          ChannelId local_cid, ChannelId remote_cid,
                                          ChannelParameters params,
                                          std::optional<bool> peer_supports_ertm)
@@ -663,13 +664,15 @@ uint16_t BrEdrDynamicChannel::CalculateLocalMtu() const {
 }
 
 bool BrEdrDynamicChannel::ShouldRequestEnhancedRetransmission() const {
-  return parameters_.mode && *parameters_.mode == ChannelMode::kEnhancedRetransmission &&
+  return parameters_.mode &&
+         *parameters_.mode == RetransmissionAndFlowControlMode::kEnhancedRetransmission &&
          peer_supports_ertm_.value_or(false);
 }
 
 bool BrEdrDynamicChannel::IsWaitingForPeerErtmSupport() {
-  const auto local_mode = parameters_.mode.value_or(ChannelMode::kBasic);
-  return !peer_supports_ertm_.has_value() && (local_mode != ChannelMode::kBasic);
+  const auto local_mode = parameters_.mode.value_or(RetransmissionAndFlowControlMode::kBasic);
+  return !peer_supports_ertm_.has_value() &&
+         (local_mode != RetransmissionAndFlowControlMode::kBasic);
 }
 
 void BrEdrDynamicChannel::TrySendLocalConfig() {
@@ -696,7 +699,8 @@ void BrEdrDynamicChannel::SendLocalConfig() {
   auto request_config = local_config_;
 
   // Don't send Retransmission & Flow Control option for basic mode
-  if (request_config.retransmission_flow_control_option()->mode() == ChannelMode::kBasic) {
+  if (request_config.retransmission_flow_control_option()->mode() ==
+      RetransmissionAndFlowControlMode::kBasic) {
     request_config.set_retransmission_flow_control_option(std::nullopt);
   }
 
@@ -753,22 +757,22 @@ ChannelConfiguration BrEdrDynamicChannel::CheckForUnacceptableConfigReqOptions(
 
   const auto req_mode = config.retransmission_flow_control_option()
                             ? config.retransmission_flow_control_option()->mode()
-                            : ChannelMode::kBasic;
+                            : RetransmissionAndFlowControlMode::kBasic;
   const auto local_mode = local_config().retransmission_flow_control_option()->mode();
   switch (req_mode) {
-    case ChannelMode::kBasic:
+    case RetransmissionAndFlowControlMode::kBasic:
       // Local device must accept, as basic mode has highest precedence.
-      if (local_mode == ChannelMode::kEnhancedRetransmission) {
+      if (local_mode == RetransmissionAndFlowControlMode::kEnhancedRetransmission) {
         bt_log(DEBUG, "l2cap-bredr",
                "Channel %#.4x: accepting peer basic mode configuration option when preferred mode "
                "was ERTM",
                local_cid());
       }
       break;
-    case ChannelMode::kEnhancedRetransmission:
+    case RetransmissionAndFlowControlMode::kEnhancedRetransmission:
       // Basic mode has highest precedence, so if local mode is basic, reject ERTM and send local
       // mode.
-      if (local_mode == ChannelMode::kBasic) {
+      if (local_mode == RetransmissionAndFlowControlMode::kBasic) {
         bt_log(DEBUG, "l2cap-bredr",
                "Channel %#.4x: rejecting peer ERTM mode configuration option because preferred "
                "mode is basic",
@@ -786,7 +790,7 @@ ChannelConfiguration BrEdrDynamicChannel::CheckForUnacceptableConfigReqOptions(
              local_cid(), static_cast<uint8_t>(req_mode));
 
       // All other modes are lower precedence than what local device supports, so send local mode.
-      if (local_mode == ChannelMode::kEnhancedRetransmission) {
+      if (local_mode == RetransmissionAndFlowControlMode::kEnhancedRetransmission) {
         // Retransmission & Flow Control fields for ERTM are not negotiable, so do not propose
         // acceptable values per Core Spec v5.0, Vol 3, Part A, Sec 7.1.4.
         unacceptable.set_retransmission_flow_control_option(
@@ -808,9 +812,9 @@ ChannelConfiguration BrEdrDynamicChannel::CheckForUnacceptableConfigReqOptions(
 std::optional<ChannelConfiguration::RetransmissionAndFlowControlOption>
 BrEdrDynamicChannel::CheckForUnacceptableErtmOptions(const ChannelConfiguration& config) const {
   BT_ASSERT(config.retransmission_flow_control_option()->mode() ==
-            ChannelMode::kEnhancedRetransmission);
+            RetransmissionAndFlowControlMode::kEnhancedRetransmission);
   BT_ASSERT(local_config().retransmission_flow_control_option()->mode() ==
-            ChannelMode::kEnhancedRetransmission);
+            RetransmissionAndFlowControlMode::kEnhancedRetransmission);
 
   std::optional<ChannelConfiguration::RetransmissionAndFlowControlOption> unacceptable_rfc_option;
   const auto& peer_rfc_option = config.retransmission_flow_control_option().value();
@@ -846,7 +850,8 @@ bool BrEdrDynamicChannel::TryRecoverFromUnacceptableParametersConfigRsp(
   if (rsp_config.retransmission_flow_control_option()) {
     // Check if peer rejected basic mode. Do not disconnect, in case peer will accept resending
     // basic mode (as is the case with PTS test L2CAP/COS/CFD/BV-02-C).
-    if (local_config().retransmission_flow_control_option()->mode() == ChannelMode::kBasic) {
+    if (local_config().retransmission_flow_control_option()->mode() ==
+        RetransmissionAndFlowControlMode::kBasic) {
       bt_log(WARN, "l2cap-bredr",
              "Channel %#.4x: Peer rejected basic mode with unacceptable "
              "parameters result (rsp mode: %#.2x)",

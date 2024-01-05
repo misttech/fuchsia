@@ -43,7 +43,9 @@ constexpr static uint8_t kIgcRxHthresh = 8;
 constexpr static uint8_t kIgcRxWthresh = 4;
 
 IgcDriver::IgcDriver(zx_device_t* parent)
-    : parent_(parent), netdev_impl_proto_{&this->network_device_impl_protocol_ops_, this} {
+    : parent_(parent),
+      netdev_impl_proto_{&this->network_device_impl_protocol_ops_, this},
+      mac_addr_proto_{&this->mac_addr_protocol_ops_, this} {
   zx_status_t status = ZX_OK;
   adapter_ = std::make_shared<struct adapter>();
 
@@ -114,6 +116,10 @@ IgcDriver::IgcDriver(zx_device_t* parent)
 }
 
 IgcDriver::~IgcDriver() {
+  // The driver release the control to firmware.
+  uint32_t ctrl_ext = IGC_READ_REG(&adapter_->hw, IGC_CTRL_EXT);
+  IGC_WRITE_REG(&adapter_->hw, IGC_CTRL_EXT, ctrl_ext & ~IGC_CTRL_EXT_DRV_LOAD);
+
   igc_reset_hw(&adapter_->hw);
   adapter_->osdep.pci.SetBusMastering(false);
   io_buffer_release(&adapter_->desc_buffer);
@@ -488,10 +494,24 @@ bool IgcDriver::OnlineStatusUpdate() {
 }
 
 // NetworkDevice::Callbacks implementations
-zx_status_t IgcDriver::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface) {
+void IgcDriver::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                                      network_device_impl_init_callback callback, void* cookie) {
   adapter_->netdev_ifc = ::ddk::NetworkDeviceIfcProtocolClient(iface);
-  adapter_->netdev_ifc.AddPort(kPortId, this, &network_port_protocol_ops_);
-  return ZX_OK;
+
+  using Context = std::tuple<network_device_impl_init_callback, void*>;
+  std::unique_ptr context = std::make_unique<Context>(callback, cookie);
+
+  adapter_->netdev_ifc.AddPort(
+      kPortId, this, &network_port_protocol_ops_,
+      [](void* ctx, zx_status_t status) {
+        std::unique_ptr<Context> context(static_cast<Context*>(ctx));
+        auto [callback, cookie] = *context;
+        if (status != ZX_OK) {
+          zxlogf(ERROR, "Failed to add port: %s", zx_status_get_string(status));
+        }
+        callback(cookie, status);
+      },
+      context.release());
 }
 
 void IgcDriver::NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie) {
@@ -551,7 +571,7 @@ void IgcDriver::NetworkDeviceImplStop(network_device_impl_stop_callback callback
   callback(cookie);
 }
 
-void IgcDriver::NetworkDeviceImplGetInfo(device_info_t* out_info) {
+void IgcDriver::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
   memset(out_info, 0, sizeof(*out_info));
   out_info->tx_depth = kEthTxBufCount;
   out_info->rx_depth = kEthRxBufCount;
@@ -690,14 +710,14 @@ void IgcDriver::NetworkDeviceImplSetSnoop(bool snoop) {}
 
 constexpr uint8_t kRxTypesList[] = {
     static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet)};
-constexpr tx_support_t kTxTypesList[] = {{
+constexpr frame_type_support_t kTxTypesList[] = {{
     .type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
     .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw,
     .supported_flags = 0,
 }};
 
 // NetworkPort protocol implementations.
-void IgcDriver::NetworkPortGetInfo(port_info_t* out_info) {
+void IgcDriver::NetworkPortGetInfo(port_base_info_t* out_info) {
   *out_info = {
       .port_class = static_cast<uint32_t>(fuchsia_hardware_network::wire::DeviceClass::kEthernet),
       .rx_types_list = kRxTypesList,
@@ -710,27 +730,26 @@ void IgcDriver::NetworkPortGetInfo(port_info_t* out_info) {
 void IgcDriver::NetworkPortGetStatus(port_status_t* out_status) {
   OnlineStatusUpdate();
   *out_status = {
-      .mtu = kEtherMtu,
       .flags =
           online_ ? static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline) : 0,
+      .mtu = kEtherMtu,
   };
 }
 
 void IgcDriver::NetworkPortSetActive(bool active) { /* Do nothing here.*/
 }
 
-void IgcDriver::NetworkPortGetMac(mac_addr_protocol_t* out_mac_ifc) {
-  *out_mac_ifc = {
-      .ops = &mac_addr_protocol_ops_,
-      .ctx = this,
-  };
+void IgcDriver::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
+  if (out_mac_ifc) {
+    *out_mac_ifc = &mac_addr_proto_;
+  }
 }
 
 void IgcDriver::NetworkPortRemoved() { /* Do nothing here, we don't remove port in this driver.*/
 }
 
-void IgcDriver::MacAddrGetAddress(uint8_t* out_mac) {
-  memcpy(out_mac, adapter_->hw.mac.addr, kEtherAddrLen);
+void IgcDriver::MacAddrGetAddress(mac_address_t* out_mac) {
+  memcpy(out_mac->octets, adapter_->hw.mac.addr, kEtherAddrLen);
 }
 
 void IgcDriver::MacAddrGetFeatures(features_t* out_features) {
@@ -740,7 +759,7 @@ void IgcDriver::MacAddrGetFeatures(features_t* out_features) {
   };
 }
 
-void IgcDriver::MacAddrSetMode(mode_t mode, const uint8_t* multicast_macs_list,
+void IgcDriver::MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
                                size_t multicast_macs_count) {
   /* Do nothing here.*/
 }
@@ -830,10 +849,10 @@ int IgcDriver::IgcIrqThreadFunc(void* arg) {
     if (irq & IGC_ICR_LSC) {
       if (drv->OnlineStatusUpdate()) {
         port_status_t status = {
-            .mtu = kEtherMtu,
             .flags = drv->online_ ? static_cast<uint32_t>(
                                         fuchsia_hardware_network::wire::StatusFlags::kOnline)
                                   : 0,
+            .mtu = kEtherMtu,
         };
         adapter->netdev_ifc.PortStatusChanged(kPortId, &status);
       }

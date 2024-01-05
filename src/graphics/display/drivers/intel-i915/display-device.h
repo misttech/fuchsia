@@ -22,6 +22,7 @@
 #include "src/graphics/display/drivers/intel-i915/power.h"
 #include "src/graphics/display/lib/api-types-cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
+#include "src/graphics/display/lib/api-types-cpp/display-timing.h"
 
 namespace i915 {
 
@@ -112,7 +113,7 @@ class DisplayDevice : public fidl::WireServer<FidlBacklight::Device> {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  virtual bool CheckPixelRate(uint64_t pixel_rate) = 0;
+  virtual bool CheckPixelRate(int64_t pixel_rate_hz) = 0;
 
   // FIDL calls
   void GetStateNormalized(GetStateNormalizedCompleter::Sync& completer) override;
@@ -134,28 +135,31 @@ class DisplayDevice : public fidl::WireServer<FidlBacklight::Device> {
   virtual bool InitBacklightHw() { return false; }
 
   // Configures the hardware to display content at the given resolution.
-  virtual bool DdiModeset(const display_mode_t& mode) = 0;
+  virtual bool DdiModeset(const display::DisplayTiming& mode) = 0;
 
   // Returns an empty configuration if the desired pixel clock is unattainable.
   // Otherwise, the returned configuration is guaranteed to be valid.
-  virtual DdiPllConfig ComputeDdiPllConfig(int32_t pixel_clock_10khz) = 0;
+  virtual DdiPllConfig ComputeDdiPllConfig(int32_t pixel_clock_khz) = 0;
 
-  // Load the clock rate from hardware if it's necessary when changing the transcoder.
-  virtual uint32_t LoadClockRateForTranscoder(TranscoderId transcoder_id) = 0;
+  // Load the pixel rate from hardware if it's necessary when changing the
+  // transcoder.
+  //
+  // The return value is in kHz.
+  virtual int32_t LoadPixelRateForTranscoderKhz(TranscoderId transcoder_id) = 0;
 
   // Attaching a pipe to a display or configuring a pipe after display mode change has
   // 3 steps. The second step is generic pipe configuration, whereas PipeConfigPreamble
   // and PipeConfigEpilogue are responsible for display-type-specific configuration that
   // must be done before and after the generic configuration.
-  virtual bool PipeConfigPreamble(const display_mode_t& mode, PipeId pipe_id,
+  virtual bool PipeConfigPreamble(const display::DisplayTiming& mode, PipeId pipe_id,
                                   TranscoderId transcoder_id) = 0;
-  virtual bool PipeConfigEpilogue(const display_mode_t& mode, PipeId pipe_id,
+  virtual bool PipeConfigEpilogue(const display::DisplayTiming& mode, PipeId pipe_id,
                                   TranscoderId transcoder_id) = 0;
 
   fdf::MmioBuffer* mmio_space() const;
 
  private:
-  bool CheckNeedsModeset(const display_mode_t* mode);
+  bool CheckNeedsModeset(const display::DisplayTiming& mode);
 
   // Borrowed reference to Controller instance
   Controller* controller_;
@@ -171,7 +175,7 @@ class DisplayDevice : public fidl::WireServer<FidlBacklight::Device> {
   PowerWellRef ddi_io_power_;
 
   bool inited_ = false;
-  display_mode_t info_ = {};
+  display::DisplayTiming info_ = {};
 
   Type type_;
 

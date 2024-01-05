@@ -7,6 +7,8 @@
 
 #include <fidl/fuchsia.hardware.sdmmc/cpp/wire.h>
 #include <fuchsia/hardware/sdio/c/banjo.h>
+#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/sync/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -16,7 +18,6 @@
 #include <atomic>
 #include <memory>
 
-#include <ddktl/device.h>
 #include <fbl/algorithm.h>
 #include <fbl/array.h>
 #include <fbl/auto_lock.h>
@@ -27,24 +28,33 @@
 
 namespace sdmmc {
 
-class SdioControllerDevice;
-using SdioControllerDeviceType = ddk::Device<SdioControllerDevice, ddk::Unbindable>;
+class SdmmcRootDevice;
 
-class SdioControllerDevice : public SdioControllerDeviceType,
-                             public ddk::InBandInterruptProtocol<SdioControllerDevice> {
+class SdioControllerDevice : public ddk::InBandInterruptProtocol<SdioControllerDevice> {
  public:
-  SdioControllerDevice(zx_device_t* parent, const SdmmcDevice& sdmmc)
-      : SdioControllerDeviceType(parent), sdmmc_(sdmmc) {
+  static constexpr char kDeviceName[] = "sdmmc-sdio";
+
+  template <typename T>
+  struct SdioRwTxn {
+    uint32_t addr;
+    bool incr;
+    bool write;
+    cpp20::span<const T> buffers;
+  };
+
+  SdioControllerDevice(SdmmcRootDevice* parent, std::unique_ptr<SdmmcDevice> sdmmc)
+      : parent_(parent), sdmmc_(std::move(sdmmc)) {
     for (size_t i = 0; i < funcs_.size(); i++) {
       funcs_[i] = {};
     }
   }
+  ~SdioControllerDevice() { StopSdioIrqThread(); }
 
-  static zx_status_t Create(zx_device_t* parent, const SdmmcDevice& sdmmc,
+  static zx_status_t Create(SdmmcRootDevice* parent, std::unique_ptr<SdmmcDevice> sdmmc,
                             std::unique_ptr<SdioControllerDevice>* out_dev);
-
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkRelease();
+  // Returns the SdmmcDevice. Used if this SdioControllerDevice fails to probe (i.e., no eligible
+  // device present).
+  std::unique_ptr<SdmmcDevice> TakeSdmmcDevice() { return std::move(sdmmc_); }
 
   zx_status_t Probe(const fuchsia_hardware_sdmmc::wire::SdmmcMetadata& metadata);
   zx_status_t AddDevice();
@@ -67,20 +77,34 @@ class SdioControllerDevice : public SdioControllerDeviceType,
   zx_status_t SdioRegisterVmo(uint8_t fn_idx, uint32_t vmo_id, zx::vmo vmo, uint64_t offset,
                               uint64_t size, uint32_t vmo_rights);
   zx_status_t SdioUnregisterVmo(uint8_t fn_idx, uint32_t vmo_id, zx::vmo* out_vmo);
-  zx_status_t SdioDoRwTxn(uint8_t fn_idx, const sdio_rw_txn_t* txn);
-  void SdioRequestCardReset(sdio_request_card_reset_callback callback, void* cookie) TA_EXCL(lock_);
-  void SdioPerformTuning(sdio_perform_tuning_callback callback, void* cookie);
+  // TODO(b/309864701): Remove templating when Banjo support has been dropped.
+  template <typename T>
+  zx_status_t SdioDoRwTxn(uint8_t fn_idx, const SdioRwTxn<T>& txn);
+
+  zx_status_t SdioRequestCardReset() TA_EXCL(lock_);
+  zx_status_t SdioPerformTuning();
 
   void InBandInterruptCallback();
 
-  // Visible for testing.
-  zx_status_t Init() TA_EXCL(lock_) {
-    fbl::AutoLock _(&lock_);
-    return sdmmc_.Init();
+  zx_status_t SdioDoRwTxn(uint8_t fn_idx, const sdio_rw_txn_t* txn) {
+    return SdioDoRwTxn(fn_idx, SdioRwTxn<sdmmc_buffer_region_t>{
+                                   .addr = txn->addr,
+                                   .incr = txn->incr,
+                                   .write = txn->write,
+                                   .buffers = {txn->buffers_list, txn->buffers_count},
+                               });
   }
+
+  // Called by children of this device.
+  fidl::WireSyncClient<fuchsia_driver_framework::Node>& sdio_controller_node() {
+    return sdio_controller_node_;
+  }
+  SdmmcRootDevice* parent() { return parent_; }
 
   zx_status_t StartSdioIrqThreadIfNeeded() TA_EXCL(irq_thread_lock_);
   void StopSdioIrqThread() TA_EXCL(irq_thread_lock_);
+
+  fdf::Logger& logger();
 
  private:
   struct SdioFuncTuple {
@@ -134,15 +158,18 @@ class SdioControllerDevice : public SdioControllerDeviceType,
 
   zx::result<uint8_t> ReadCccrByte(uint32_t addr) TA_REQ(lock_);
 
+  template <typename T>
   struct SdioTxnPosition {
-    cpp20::span<const sdmmc_buffer_region_t> buffers;  // The buffers remaining to be processed.
-    uint64_t first_buffer_offset;                      // The offset into the first buffer.
-    uint32_t address;  // The current SDIO address, fixed if txn.incr is false.
+    cpp20::span<const T> buffers;  // The buffers remaining to be processed.
+    uint64_t first_buffer_offset;  // The offset into the first buffer.
+    uint32_t address;              // The current SDIO address, fixed if txn.incr is false.
   };
 
   // Returns an SdioTxnPosition representing the new position in the buffers list.
-  zx::result<SdioTxnPosition> DoOneRwTxnRequest(uint8_t fn_idx, const sdio_rw_txn_t& txn,
-                                                SdioTxnPosition current_position) TA_REQ(lock_);
+  template <typename T>
+  zx::result<SdioTxnPosition<T>> DoOneRwTxnRequest(uint8_t fn_idx, const SdioRwTxn<T>&,
+                                                   SdioTxnPosition<T> current_position)
+      TA_REQ(lock_);
 
   int SdioIrqThread();
   uint8_t interrupt_enabled_mask_ TA_GUARDED(lock_) = UINT8_MAX;
@@ -152,20 +179,27 @@ class SdioControllerDevice : public SdioControllerDeviceType,
   sync_completion_t irq_signal_;
 
   fbl::Mutex lock_;
-  SdmmcDevice sdmmc_;
+  SdmmcRootDevice* const parent_;
+  std::unique_ptr<SdmmcDevice> sdmmc_;
   std::atomic<bool> dead_ = false;
   std::array<zx::interrupt, SDIO_MAX_FUNCS> sdio_irqs_;
   std::array<SdioFunction, SDIO_MAX_FUNCS> funcs_ TA_GUARDED(lock_);
   sdio_device_hw_info_t hw_info_ TA_GUARDED(lock_);
   bool tuned_ = false;
   std::atomic<bool> tuning_in_progress_ = false;
-
   inspect::Inspector inspector_;
   inspect::Node root_;
   inspect::UintProperty tx_errors_;
   inspect::UintProperty rx_errors_;
 
   async_dispatcher_t* dispatcher_ = nullptr;
+
+  std::optional<inspect::ComponentInspector> exposed_inspector_;
+
+  fidl::WireSyncClient<fuchsia_driver_framework::Node> sdio_controller_node_;
+  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
+
+  std::array<std::unique_ptr<SdioFunctionDevice>, SDIO_MAX_FUNCS> child_sdio_function_devices_ = {};
 };
 
 }  // namespace sdmmc

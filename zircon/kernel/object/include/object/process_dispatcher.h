@@ -36,6 +36,7 @@
 #include <vm/vm_aspace.h>
 
 class JobDispatcher;
+class ProcessMapsInfoWriter;
 class VmoInfoWriter;
 
 // To allow this function to be friended by ProcessDispatcher.
@@ -138,7 +139,7 @@ class ProcessDispatcher final
 
   // Returns a pointer to the process's VmAspace containing |va| if such an aspace exists, otherwise
   // it returns the normal aspace of the process.
-  fbl::RefPtr<VmAspace> aspace_at(vaddr_t va);
+  VmAspace* aspace_at(vaddr_t va);
 
 #if ARCH_X86
   // Returns an identifier that can be used to associate hardware trace
@@ -207,9 +208,7 @@ class ProcessDispatcher final
   // process.
   zx_status_t AccumulateRuntimeTo(zx_info_task_runtime_t* info) const;
 
-  // NOTE: Code outside of the syscall layer should not typically know about
-  // user_ptrs; do not use this pattern as an example.
-  zx_status_t GetAspaceMaps(user_out_ptr<zx_info_maps_t> maps, size_t max, size_t* actual,
+  zx_status_t GetAspaceMaps(ProcessMapsInfoWriter& maps, size_t max, size_t* actual,
                             size_t* available) const;
   zx_status_t GetVmos(VmoInfoWriter& vmos, size_t max, size_t* actual, size_t* available);
   zx_status_t GetThreads(fbl::Array<zx_koid_t>* threads) const;
@@ -286,30 +285,6 @@ class ProcessDispatcher final
   zx_status_t MakeAndAddHandle(KernelHandle<Dispatcher> kernel_handle, zx_rights_t rights,
                                zx_handle_t* out);
 
- private:
-  // Returns the "normal" address space for a process.
-  //
-  // Most processes only contain a normal address space. Processes that support running threads in
-  // "restricted mode" also contain a |restricted_aspace|. For such processes the normal aspace
-  // spans the top half of the process' address space, and the restricted aspace spans the bottom
-  // half.
-  //
-  // In the future, the goal is to have the normal address space conceptually span the entire
-  // address space of the process. This is what threads would use when executing in normal mode.
-  // Then the restricted aspace would only ever be used by threads currently executing in restricted
-  // mode.
-  fbl::RefPtr<VmAspace> normal_aspace() { return shareable_state_->aspace(); }
-
-  // This is used by the restricted mode code where it's important to avoid refcount manipulation.
-  VmAspace* normal_aspace_ptr() { return shareable_state_->aspace_ptr(); }
-
-  // Restricted mode is allowed to know about the internals of the aspaces.
-  friend zx_status_t RestrictedEnter(uint32_t options, uintptr_t vector_table_ptr,
-                                     uintptr_t context);
-  friend void RedirectRestrictedExceptionToNormalMode(RestrictedState* rs);
-  template <typename T>
-  friend void RestrictedLeave(const T* restricted_state_source, zx_restricted_reason_t reason);
-
   // Returns the "restricted" address space for a process, or nullptr if it does not have a
   // restricted address space.
   //
@@ -317,6 +292,38 @@ class ProcessDispatcher final
   // private to the process. Threads executing in restricted mode are restricted to this address
   // space.
   VmAspace* restricted_aspace() { return restricted_aspace_.get(); }
+
+ private:
+  // Returns the normal address space for this process.
+  //
+  // All processes have a normal address space.  The normal aspace is the
+  // address space that's active when a thread is in normal mode.
+  //
+  // For "shared processes", on architectures that support unified aspaces, the normal aspace
+  // is a unified aspace. A unified aspace is an aspace that spans both the shared and restricted
+  // aspace, and is used by threads in normal mode to avoid having to switch between the shared and
+  // restricted aspaces.
+  //
+  // On architectures that don't yet support unified aspaces, the normal
+  // aspace is a shared aspace (`ShareableProcessState::aspace()`).
+  //
+  // For non-shared processes (regular ones), the normal aspace is the one and only aspace
+  // belonging to the process (`ShareableProcessState::aspace()`).
+  //
+  // TODO(fxbug.dev/132980): Update this comment once all architectures support unified aspaces.
+  VmAspace* normal_aspace() {
+    if (unified_aspace_) {
+      return unified_aspace_.get();
+    }
+    return shareable_state_->aspace();
+  }
+
+  // Restricted mode is allowed to know about the internals of the aspaces.
+  friend zx_status_t RestrictedEnter(uint32_t options, uintptr_t vector_table_ptr,
+                                     uintptr_t context);
+  friend void RedirectRestrictedExceptionToNormalMode(RestrictedState* rs);
+  template <typename T>
+  friend void RestrictedLeave(const T* restricted_state_source, zx_restricted_reason_t reason);
 
   // Exit the current Process. It is an error to call this on anything other than the current
   // process. Please use ExitCurrent() instead of calling this directly.
@@ -381,9 +388,17 @@ class ProcessDispatcher final
   // list of threads in this process
   fbl::DoublyLinkedList<ThreadDispatcher*> thread_list_ TA_GUARDED(get_lock());
 
-  // the address space used when a thread is executing in restricted mode, can be null if the
-  // process was not initialized with a restricted aspace
+  // The address space used when a thread of this process is executing in restricted mode.  This
+  // field is only non-null if this process is a "shared process".
+  //
+  // This field is logically const and may not be changed after initialization.  Resetting or
+  // assigning to this field post-initialization is a programming error.
   fbl::RefPtr<VmAspace> restricted_aspace_;
+
+  // The address space used when a thread is in normal mode but has a restricted address space.
+  // This can be null if the process was not initialized with a restricted aspace, or the
+  // architecture does not support unified aspaces.
+  fbl::RefPtr<VmAspace> unified_aspace_;
 
   // our state
   State state_ TA_GUARDED(get_lock()) = State::INITIAL;

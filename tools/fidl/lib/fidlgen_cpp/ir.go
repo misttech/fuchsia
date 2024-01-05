@@ -42,6 +42,7 @@ func (ts TypeShape) HasPointer() bool {
 type declKind namespacedEnumMember
 
 type declKinds struct {
+	Alias    declKind
 	Bits     declKind
 	Const    declKind
 	Enum     declKind
@@ -231,6 +232,10 @@ func (r *Root) declsOfKind(kind declKind) []Kinded {
 	return ds
 }
 
+func (r *Root) Aliases() []Kinded {
+	return r.declsOfKind(Kinds.Alias)
+}
+
 func (r *Root) Bits() []Kinded {
 	return r.declsOfKind(Kinds.Bits)
 }
@@ -335,10 +340,10 @@ func (r *Root) Namespace() namespace {
 	panic("not reached")
 }
 
-var transportErr nameVariants = nameVariants{
-	HLCPP:   makeName("fidl::TransportErr"),
-	Unified: makeName("fidl::internal::TransportErr"),
-	Wire:    makeName("fidl::internal::TransportErr"),
+var frameworkErr nameVariants = nameVariants{
+	HLCPP:   makeName("fidl::FrameworkErr"),
+	Unified: makeName("fidl::internal::FrameworkErr"),
+	Wire:    makeName("fidl::internal::FrameworkErr"),
 }
 
 // Result holds information about error results on methods.
@@ -389,23 +394,17 @@ func (r Result) BuildPayload(varName string) string {
 	return out
 }
 
-// FpromiseResult returns a string representing this result as an
-// fpromise::result for use in HLCPP.
-func (r Result) FpromiseResult() string {
-	return fmt.Sprintf("fpromise::result<%s, %s>", r.ValueDecl, r.FpromiseErrDecl())
-}
-
-// FpromiseErrDecl returns a string representing the error type arg to the
-// fpromise::result used for this Result in HLCPP.
-func (r Result) FpromiseErrDecl() string {
+// CombinedErrorDecl returns either the result's domain error, its framework
+// error, or both combined in std::variant if it has both.
+func (r Result) CombinedErrorDecl() string {
 	if r.HasError && r.HasFrameworkError {
-		return fmt.Sprintf("std::variant<%s, %s>", r.ErrorDecl, transportErr)
+		return fmt.Sprintf("std::variant<%s, %s>", r.ErrorDecl, frameworkErr)
 	}
 	if r.HasError {
 		return r.ErrorDecl.String()
 	}
 	if r.HasFrameworkError {
-		return transportErr.String()
+		return frameworkErr.String()
 	}
 	panic("Result had neither application error nor transport error")
 }
@@ -506,7 +505,14 @@ func (c *compiler) isInExternalLibrary(ci fidlgen.CompoundIdentifier) bool {
 func (c *compiler) compileNameVariants(eci fidlgen.EncodedCompoundIdentifier) nameVariants {
 	ci := eci.Parse()
 
-	if isZirconIdentifier(ci) {
+	// TODO(fxbug.dev/136041): We special case zx, e.g. if ci is "zx/Rights" we
+	// emit "zx_rights_t" instead of "fidl_zx::Rights". But don't do that when
+	// compiling library zx itself, since it would apply to the left-hand side
+	// of its own definitions. Really we shouldn't be generating bindings for
+	// library zx at all, but it's difficult to avoid in the Bazel build.
+	referencingZx := isZirconLibrary(ci.Library)
+	currentlyCompilingZx := isZirconLibrary(c.library)
+	if referencingZx && !currentlyCompilingZx {
 		return commonNameVariants(zirconName(ci))
 	}
 
@@ -638,8 +644,8 @@ func (c *compiler) compileType(val fidlgen.Type) Type {
 		r.WireFieldConstraint = "fidl::internal::WireCodingConstraintEmpty"
 	case fidlgen.InternalType:
 		switch val.InternalSubtype {
-		case fidlgen.TransportErr:
-			r.nameVariants = transportErr
+		case fidlgen.FrameworkErr:
+			r.nameVariants = frameworkErr
 			r.Kind = TypeKinds.Enum
 			r.WireFamily = FamilyKinds.TrivialCopy
 			r.NaturalFieldConstraint = "fidl::internal::NaturalCodingConstraintEmpty"
@@ -744,7 +750,7 @@ type Payloader interface {
 	AsParameters(*Type, *HandleInformation) []Parameter
 }
 
-func compile(r fidlgen.Root) *Root {
+func Compile(r fidlgen.Root) *Root {
 	root := Root{
 		Experiments: r.Experiments,
 		Library:     r.Name.Parse(),
@@ -795,6 +801,10 @@ func compile(r fidlgen.Root) *Root {
 
 	decls := make(map[fidlgen.EncodedCompoundIdentifier]Kinded)
 	extDecls := make(map[fidlgen.EncodedCompoundIdentifier]Kinded)
+
+	for _, v := range r.Aliases {
+		decls[v.Name] = c.compileAlias(v)
+	}
 
 	for _, v := range r.Bits {
 		decls[v.Name] = c.compileBits(v)
@@ -878,6 +888,10 @@ func compile(r fidlgen.Root) *Root {
 
 	for _, v := range r.Protocols {
 		if p := c.compileProtocol(v); p != nil {
+			_, isDriver := v.Transports()["Driver"]
+			if isDriver {
+				c.containsDriverReferences = true
+			}
 			decls[v.Name] = p
 		}
 	}
@@ -923,8 +937,4 @@ func compile(r fidlgen.Root) *Root {
 	root.ContainsDriverReferences = c.containsDriverReferences
 
 	return &root
-}
-
-func compileFor(r fidlgen.Root, n string) *Root {
-	return compile(r.ForBindings(n))
 }

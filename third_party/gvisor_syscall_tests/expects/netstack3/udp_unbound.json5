@@ -44,13 +44,11 @@
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastLoopbackIfNicSelfConnect/*",
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastLoopbackIfNicSelfNoLoop/*",
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastLoopbackNicNoDefaultSendIf/*",
-                "IPv4UDPSockets/IPv4UDPUnboundSocketTest.TestTwoSocketsJoinSameMulticastGroup/*",
 
                 // Uncategorized
                 "IPv4UDPSockets/IPv4UDPUnboundSocketNogotsanTest.UDPBindPortExhaustion/*",
                 "IPv4UDPSockets/IPv4UDPUnboundSocketNogotsanTest.UDPConnectPortExhaustion/*",
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.SetAndReceiveIPPKTINFO/*",
-                "IPv4UDPSockets/IPv4UDPUnboundSocketTest.SetAndReceiveIPReceiveOrigDstAddr/*",
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.SetSocketRecvBuf/*",
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.SetSocketSendBuf/*",
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.SetSocketSendBufAboveMax/*",

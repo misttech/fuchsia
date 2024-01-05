@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_CONTROLLER_LISTENER_H_
 
 #include <fuchsia/hardware/display/cpp/fidl.h>
+#include <fuchsia/hardware/display/types/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/fit/function.h>
 #include <lib/zx/channel.h>
@@ -22,11 +23,11 @@ class DisplayCoordinatorListener {
  public:
   using OnDisplaysChangedCallback =
       std::function<void(std::vector<fuchsia::hardware::display::Info> added,
-                         std::vector<fuchsia::hardware::display::DisplayId> removed)>;
+                         std::vector<fuchsia::hardware::display::types::DisplayId> removed)>;
   using OnClientOwnershipChangeCallback = std::function<void(bool has_ownership)>;
   using OnVsyncCallback = std::function<void(
-      fuchsia::hardware::display::DisplayId display_id, uint64_t timestamp,
-      fuchsia::hardware::display::ConfigStamp applied_config_stamp, uint64_t cookie)>;
+      fuchsia::hardware::display::types::DisplayId display_id, uint64_t timestamp,
+      fuchsia::hardware::display::types::ConfigStamp applied_config_stamp, uint64_t cookie)>;
 
   // Binds to a Display fuchsia::hardware::display::Coordinator with channels |device| and
   // with display coordinator |coordinator|. |coordinator_handle| is the raw handle wrapped by

@@ -4,14 +4,18 @@
 
 use {
     crate::{
-        error::Error, features::FeatureSet, offer_to_all_would_duplicate, validate,
-        validate::ProtocolRequirements, AnyRef, AsClause, Availability, Capability,
-        CapabilityClause, Child, Collection, ConfigKey, ConfigNestedValueType, ConfigRuntimeSource,
-        ConfigValueType, DebugRegistration, Document, Environment, EnvironmentExtends,
-        EnvironmentRef, EventScope, Expose, ExposeFromRef, ExposeToRef, FromClause, Offer,
-        OfferFromRef, OfferToRef, OneOrMany, Path, PathClause, Program, ResolverRegistration,
-        RightsClause, RunnerRegistration, SourceAvailability, Use, UseFromRef,
+        error::Error,
+        features::{Feature, FeatureSet},
+        offer_to_all_would_duplicate, validate,
+        validate::ProtocolRequirements,
+        AnyRef, AsClause, Availability, Capability, CapabilityClause, Child, Collection, ConfigKey,
+        ConfigNestedValueType, ConfigRuntimeSource, ConfigType, ConfigValueType, DebugRegistration,
+        DictionaryRef, Document, Environment, EnvironmentExtends, EnvironmentRef, EventScope,
+        Expose, ExposeFromRef, ExposeToRef, FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany,
+        Path, PathClause, Program, ResolverRegistration, RightsClause, RootDictionaryRef,
+        RunnerRegistration, SourceAvailability, Use, UseFromRef,
     },
+    cm_rust::NativeIntoFidl,
     cm_types::{self as cm, Name},
     fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio,
     indexmap::IndexMap,
@@ -83,40 +87,56 @@ pub fn compile(
         &options.protocol_requirements,
     )?;
 
-    let all_capability_names: BTreeSet<Name> =
+    let all_capability_names: BTreeSet<&Name> =
         document.all_capability_names().into_iter().collect();
     let all_children = document.all_children_names().into_iter().collect();
     let all_collections = document.all_collection_names().into_iter().collect();
     let component = fdecl::Component {
-        program: document.program.as_ref().map(|p| translate_program(p)).transpose()?,
+        program: document.program.as_ref().map(translate_program).transpose()?,
         uses: document
             .r#use
             .as_ref()
-            .map(|u| translate_use(u, &all_capability_names, &all_children, &all_collections))
+            .map(|u| {
+                translate_use(&options, u, &all_capability_names, &all_children, &all_collections)
+            })
             .transpose()?,
         exposes: document
             .expose
             .as_ref()
-            .map(|e| translate_expose(e, &all_capability_names, &all_collections, &all_children))
+            .map(|e| {
+                translate_expose(
+                    &options,
+                    e,
+                    &all_capability_names,
+                    &all_collections,
+                    &all_children,
+                )
+            })
             .transpose()?,
         offers: document
             .offer
             .as_ref()
             .map(|offer| {
-                translate_offer(offer, &all_capability_names, &all_children, &all_collections)
+                translate_offer(
+                    &options,
+                    offer,
+                    &all_capability_names,
+                    &all_children,
+                    &all_collections,
+                )
             })
             .transpose()?,
         capabilities: document
             .capabilities
             .as_ref()
-            .map(|c| translate_capabilities(c, false))
+            .map(|c| translate_capabilities(&options, c, false))
             .transpose()?,
         children: document.children.as_ref().map(translate_children).transpose()?,
         collections: document.collections.as_ref().map(translate_collections).transpose()?,
         environments: document
             .environments
             .as_ref()
-            .map(|env| translate_environments(env, &all_capability_names))
+            .map(|env| translate_environments(&options, env, &all_capability_names))
             .transpose()?,
         facets: document.facets.clone().map(dictionary_from_nested_map).transpose()?,
         config: document
@@ -255,24 +275,27 @@ fn translate_program(program: &Program) -> Result<fdecl::Program, Error> {
 
 /// `use` rules consume a single capability from one source (parent|framework).
 fn translate_use(
+    options: &CompileOptions<'_>,
     use_in: &Vec<Use>,
-    all_capability_names: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&Name>,
     all_children: &BTreeSet<&Name>,
     all_collections: &BTreeSet<&Name>,
 ) -> Result<Vec<fdecl::Use>, Error> {
     let mut out_uses = vec![];
     for use_ in use_in {
-        if let Some(n) = &use_.service {
-            let source = extract_use_source(use_, all_capability_names, all_children)?;
+        if let Some(n) = use_.service() {
+            let (source, source_dictionary) =
+                extract_use_source(options, use_, all_capability_names, all_children)?;
             let target_paths =
                 all_target_use_paths(use_, use_).ok_or_else(|| Error::internal("no capability"))?;
-            let source_names = n.to_vec();
+            let source_names = n.into_iter();
             let availability = extract_use_availability(use_)?;
             for (source_name, target_path) in source_names.into_iter().zip(target_paths.into_iter())
             {
                 out_uses.push(fdecl::Use::Service(fdecl::UseService {
-                    source: Some(clone_ref(&source)?),
+                    source: Some(source.clone()),
                     source_name: Some(source_name.clone().into()),
+                    source_dictionary: source_dictionary.clone(),
                     target_path: Some(target_path.into()),
                     dependency_type: Some(
                         use_.dependency.clone().unwrap_or(cm::DependencyType::Strong).into(),
@@ -281,17 +304,19 @@ fn translate_use(
                     ..Default::default()
                 }));
             }
-        } else if let Some(n) = &use_.protocol {
-            let source = extract_use_source(use_, all_capability_names, all_children)?;
+        } else if let Some(n) = use_.protocol() {
+            let (source, source_dictionary) =
+                extract_use_source(options, use_, all_capability_names, all_children)?;
             let target_paths =
                 all_target_use_paths(use_, use_).ok_or_else(|| Error::internal("no capability"))?;
-            let source_names = n.to_vec();
+            let source_names = n.into_iter();
             let availability = extract_use_availability(use_)?;
             for (source_name, target_path) in source_names.into_iter().zip(target_paths.into_iter())
             {
                 out_uses.push(fdecl::Use::Protocol(fdecl::UseProtocol {
-                    source: Some(clone_ref(&source)?),
+                    source: Some(source.clone()),
                     source_name: Some(source_name.clone().into()),
+                    source_dictionary: source_dictionary.clone(),
                     target_path: Some(target_path.into()),
                     dependency_type: Some(
                         use_.dependency.clone().unwrap_or(cm::DependencyType::Strong).into(),
@@ -301,7 +326,8 @@ fn translate_use(
                 }));
             }
         } else if let Some(n) = &use_.directory {
-            let source = extract_use_source(use_, all_capability_names, all_children)?;
+            let (source, source_dictionary) =
+                extract_use_source(options, use_, all_capability_names, all_children)?;
             let target_path = one_target_use_path(use_, use_)?;
             let rights = extract_required_rights(use_, "use")?;
             let subdir = extract_use_subdir(use_);
@@ -309,6 +335,7 @@ fn translate_use(
             out_uses.push(fdecl::Use::Directory(fdecl::UseDirectory {
                 source: Some(source),
                 source_name: Some(n.clone().into()),
+                source_dictionary,
                 target_path: Some(target_path.into()),
                 rights: Some(rights),
                 subdir: subdir.map(|s| s.into()),
@@ -340,23 +367,28 @@ fn translate_use(
                     None => None,
                 };
                 let internal_error = format!("Internal error in all_target_use_paths when translating an EventStream. Please file a bug.");
+                let (source, _source_dictionary) =
+                    extract_use_source(options, use_, all_capability_names, all_children)?;
                 out_uses.push(fdecl::Use::EventStream(fdecl::UseEventStream {
                     source_name: Some(name),
                     scope: match scopes {
                         Some(values) => {
                             let mut output = vec![];
                             for value in &values {
-                                output.push(translate_child_or_collection_ref(
+                                static EMPTY_SET: BTreeSet<&Name> = BTreeSet::new();
+                                output.push(translate_target_ref(
+                                    options,
                                     value.into(),
                                     &all_children,
                                     &all_collections,
+                                    &EMPTY_SET,
                                 )?);
                             }
                             Some(output)
                         }
                         None => None,
                     },
-                    source: Some(extract_use_source(use_, all_capability_names, all_children)?),
+                    source: Some(source),
                     target_path: Some(
                         annotate_type::<Vec<cm_types::Path>>(
                             all_target_use_paths(use_, use_)
@@ -377,6 +409,34 @@ fn translate_use(
                     ..Default::default()
                 }));
             }
+        } else if let Some(n) = &use_.runner {
+            let (source, source_dictionary) =
+                extract_use_source(&options, use_, all_capability_names, all_children)?;
+            out_uses.push(fdecl::Use::Runner(fdecl::UseRunner {
+                source: Some(source),
+                source_name: Some(n.clone().into()),
+                source_dictionary,
+                ..Default::default()
+            }));
+        } else if let Some(n) = &use_.config {
+            let (source, source_dictionary) =
+                extract_use_source(&options, use_, all_capability_names, all_children)?;
+            let target = match &use_.config_key {
+                None => {
+                    return Err(Error::validate(
+                        "\"use config\" must have \"config_key\" field set.",
+                    ))
+                }
+                Some(t) => t.clone(),
+            };
+            let availability = extract_use_availability(use_)?;
+            out_uses.push(fdecl::Use::Config(fdecl::UseConfiguration {
+                source: Some(source),
+                source_name: Some(n.clone().into()),
+                target_name: Some(target.into()),
+                availability: Some(availability),
+                ..Default::default()
+            }));
         } else {
             return Err(Error::internal(format!("no capability in use declaration")));
         };
@@ -387,8 +447,9 @@ fn translate_use(
 /// `expose` rules route a single capability from one or more sources (self|framework|#<child>) to
 /// one or more targets (parent|framework).
 fn translate_expose(
+    options: &CompileOptions<'_>,
     expose_in: &Vec<Expose>,
-    all_capability_names: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&Name>,
     all_collections: &BTreeSet<&Name>,
     all_children: &BTreeSet<&Name>,
 ) -> Result<Vec<fdecl::Expose>, Error> {
@@ -398,15 +459,15 @@ fn translate_expose(
         if let Some(source_names) = expose.service() {
             // When there are many `sources` exposed under the same `target_name`, aggregation
             // will happen during routing.
-            let sources = extract_all_expose_sources(expose, Some(all_collections))?;
+            let sources = extract_all_expose_sources(options, expose, Some(all_collections))?;
             let target_names = all_target_capability_names(expose, expose)
                 .ok_or_else(|| Error::internal("no capability"))?;
             for (source_name, target_name) in source_names.into_iter().zip(target_names.into_iter())
             {
-                for source in &sources {
+                for (source, source_dictionary) in &sources {
                     let (source, availability) = derive_source_and_availability(
                         expose.availability.as_ref(),
-                        clone_ref(source)?,
+                        source.clone(),
                         expose.source_availability.as_ref(),
                         all_capability_names,
                         all_children,
@@ -415,16 +476,18 @@ fn translate_expose(
                     out_exposes.push(fdecl::Expose::Service(fdecl::ExposeService {
                         source: Some(source),
                         source_name: Some(source_name.clone().into()),
+                        source_dictionary: source_dictionary.clone(),
                         target_name: Some(target_name.clone().into()),
-                        target: Some(clone_ref(&target)?),
+                        target: Some(target.clone()),
                         availability: Some(availability),
                         ..Default::default()
                     }))
                 }
             }
         } else if let Some(n) = expose.protocol() {
-            let source = extract_single_expose_source(expose, Some(all_capability_names))?;
-            let source_names = n.to_vec();
+            let (source, source_dictionary) =
+                extract_single_expose_source(options, expose, Some(all_capability_names))?;
+            let source_names = n.into_iter();
             let target_names = all_target_capability_names(expose, expose)
                 .ok_or_else(|| Error::internal("no capability"))?;
             for (source_name, target_name) in source_names.into_iter().zip(target_names.into_iter())
@@ -440,15 +503,16 @@ fn translate_expose(
                 out_exposes.push(fdecl::Expose::Protocol(fdecl::ExposeProtocol {
                     source: Some(source),
                     source_name: Some(source_name.clone().into()),
-                    target_name: Some(target_name.into()),
-                    target: Some(clone_ref(&target)?),
+                    source_dictionary: source_dictionary.clone(),
+                    target_name: Some(target_name.clone().into()),
+                    target: Some(target.clone()),
                     availability: Some(availability),
                     ..Default::default()
                 }))
             }
         } else if let Some(n) = expose.directory() {
-            let source = extract_single_expose_source(expose, None)?;
-            let source_names = n.to_vec();
+            let (source, source_dictionary) = extract_single_expose_source(options, expose, None)?;
+            let source_names = n.into_iter();
             let target_names = all_target_capability_names(expose, expose)
                 .ok_or_else(|| Error::internal("no capability"))?;
             let rights = extract_expose_rights(expose)?;
@@ -466,8 +530,9 @@ fn translate_expose(
                 out_exposes.push(fdecl::Expose::Directory(fdecl::ExposeDirectory {
                     source: Some(source),
                     source_name: Some(source_name.clone().into()),
-                    target_name: Some(target_name.into()),
-                    target: Some(clone_ref(&target)?),
+                    source_dictionary: source_dictionary.clone(),
+                    target_name: Some(target_name.clone().into()),
+                    target: Some(target.clone()),
                     rights,
                     subdir: subdir.as_ref().map(|s| s.clone().into()),
                     availability: Some(availability),
@@ -475,32 +540,83 @@ fn translate_expose(
                 }))
             }
         } else if let Some(n) = expose.runner() {
-            let source = extract_single_expose_source(expose, None)?;
-            let source_names = n.to_vec();
+            let (source, source_dictionary) = extract_single_expose_source(options, expose, None)?;
+            let source_names = n.into_iter();
             let target_names = all_target_capability_names(expose, expose)
                 .ok_or_else(|| Error::internal("no capability"))?;
             for (source_name, target_name) in source_names.into_iter().zip(target_names.into_iter())
             {
                 out_exposes.push(fdecl::Expose::Runner(fdecl::ExposeRunner {
-                    source: Some(clone_ref(&source)?),
+                    source: Some(source.clone()),
                     source_name: Some(source_name.clone().into()),
-                    target: Some(clone_ref(&target)?),
-                    target_name: Some(target_name.into()),
+                    source_dictionary: source_dictionary.clone(),
+                    target: Some(target.clone()),
+                    target_name: Some(target_name.clone().into()),
                     ..Default::default()
                 }))
             }
         } else if let Some(n) = expose.resolver() {
-            let source = extract_single_expose_source(expose, None)?;
-            let source_names = n.to_vec();
+            let (source, source_dictionary) = extract_single_expose_source(options, expose, None)?;
+            let source_names = n.into_iter();
             let target_names = all_target_capability_names(expose, expose)
                 .ok_or_else(|| Error::internal("no capability"))?;
             for (source_name, target_name) in source_names.into_iter().zip(target_names.into_iter())
             {
                 out_exposes.push(fdecl::Expose::Resolver(fdecl::ExposeResolver {
-                    source: Some(clone_ref(&source)?),
+                    source: Some(source.clone()),
                     source_name: Some(source_name.clone().into()),
-                    target: Some(clone_ref(&target)?),
-                    target_name: Some(target_name.into()),
+                    source_dictionary: source_dictionary.clone(),
+                    target: Some(target.clone()),
+                    target_name: Some(target_name.clone().into()),
+                    ..Default::default()
+                }))
+            }
+        } else if let Some(n) = expose.dictionary() {
+            let (source, source_dictionary) = extract_single_expose_source(options, expose, None)?;
+            let source_names = n.into_iter();
+            let target_names = all_target_capability_names(expose, expose)
+                .ok_or_else(|| Error::internal("no capability"))?;
+            for (source_name, target_name) in source_names.into_iter().zip(target_names.into_iter())
+            {
+                let (source, availability) = derive_source_and_availability(
+                    expose.availability.as_ref(),
+                    source.clone(),
+                    expose.source_availability.as_ref(),
+                    all_capability_names,
+                    all_children,
+                    all_collections,
+                );
+                out_exposes.push(fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                    source: Some(source),
+                    source_name: Some(source_name.clone().into()),
+                    source_dictionary: source_dictionary.clone(),
+                    target_name: Some(target_name.clone().into()),
+                    target: Some(target.clone()),
+                    availability: Some(availability),
+                    ..Default::default()
+                }))
+            }
+        } else if let Some(n) = expose.config() {
+            let (source, source_dictionary) = extract_single_expose_source(options, expose, None)?;
+            let source_names = n.into_iter();
+            let target_names = all_target_capability_names(expose, expose)
+                .ok_or_else(|| Error::internal("no capability"))?;
+            for (source_name, target_name) in source_names.into_iter().zip(target_names.into_iter())
+            {
+                let (source, availability) = derive_source_and_availability(
+                    expose.availability.as_ref(),
+                    source.clone(),
+                    expose.source_availability.as_ref(),
+                    all_capability_names,
+                    all_children,
+                    all_collections,
+                );
+                out_exposes.push(fdecl::Expose::Config(fdecl::ExposeConfiguration {
+                    source: Some(source.clone()),
+                    source_name: Some(source_name.clone().into()),
+                    target: Some(target.clone()),
+                    target_name: Some(target_name.clone().into()),
+                    availability: Some(availability),
                     ..Default::default()
                 }))
             }
@@ -531,7 +647,7 @@ fn derive_source_and_availability(
     availability: Option<&Availability>,
     source: fdecl::Ref,
     source_availability: Option<&SourceAvailability>,
-    all_capability_names: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&Name>,
     all_children: &BTreeSet<&Name>,
     all_collections: &BTreeSet<&Name>,
 ) -> (fdecl::Ref, fdecl::Availability) {
@@ -629,8 +745,9 @@ fn expand_offer_to_all(
 
 /// `offer` rules route multiple capabilities from multiple sources to multiple targets.
 fn translate_offer(
+    options: &CompileOptions<'_>,
     offer_in: &Vec<Offer>,
-    all_capability_names: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&Name>,
     all_children: &BTreeSet<&Name>,
     all_collections: &BTreeSet<&Name>,
 ) -> Result<Vec<fdecl::Offer>, Error> {
@@ -639,13 +756,14 @@ fn translate_offer(
     for offer in &expanded_offers {
         if let Some(n) = offer.service() {
             let entries = extract_offer_sources_and_targets(
+                options,
                 offer,
                 n,
                 all_capability_names,
                 all_children,
                 all_collections,
             )?;
-            for (source, source_name, target, target_name) in entries {
+            for (source, source_dictionary, source_name, target, target_name) in entries {
                 let (source, availability) = derive_source_and_availability(
                     offer.availability.as_ref(),
                     source,
@@ -657,6 +775,7 @@ fn translate_offer(
                 out_offers.push(fdecl::Offer::Service(fdecl::OfferService {
                     source: Some(source),
                     source_name: Some(source_name.into()),
+                    source_dictionary,
                     target: Some(target),
                     target_name: Some(target_name.into()),
                     availability: Some(availability),
@@ -665,13 +784,14 @@ fn translate_offer(
             }
         } else if let Some(n) = offer.protocol() {
             let entries = extract_offer_sources_and_targets(
+                options,
                 offer,
                 n,
                 all_capability_names,
                 all_children,
                 all_collections,
             )?;
-            for (source, source_name, target, target_name) in entries {
+            for (source, source_dictionary, source_name, target, target_name) in entries {
                 let (source, availability) = derive_source_and_availability(
                     offer.availability.as_ref(),
                     source,
@@ -683,6 +803,7 @@ fn translate_offer(
                 out_offers.push(fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     source: Some(source),
                     source_name: Some(source_name.into()),
+                    source_dictionary,
                     target: Some(target),
                     target_name: Some(target_name.into()),
                     dependency_type: Some(
@@ -694,13 +815,14 @@ fn translate_offer(
             }
         } else if let Some(n) = offer.directory() {
             let entries = extract_offer_sources_and_targets(
+                options,
                 offer,
                 n,
                 all_capability_names,
                 all_children,
                 all_collections,
             )?;
-            for (source, source_name, target, target_name) in entries {
+            for (source, source_dictionary, source_name, target, target_name) in entries {
                 let (source, availability) = derive_source_and_availability(
                     offer.availability.as_ref(),
                     source,
@@ -712,6 +834,7 @@ fn translate_offer(
                 out_offers.push(fdecl::Offer::Directory(fdecl::OfferDirectory {
                     source: Some(source),
                     source_name: Some(source_name.into()),
+                    source_dictionary,
                     target: Some(target),
                     target_name: Some(target_name.into()),
                     rights: extract_offer_rights(offer)?,
@@ -725,13 +848,14 @@ fn translate_offer(
             }
         } else if let Some(n) = offer.storage() {
             let entries = extract_offer_sources_and_targets(
+                options,
                 offer,
                 n,
                 all_capability_names,
                 all_children,
                 all_collections,
             )?;
-            for (source, source_name, target, target_name) in entries {
+            for (source, _source_dictionary, source_name, target, target_name) in entries {
                 let (source, availability) = derive_source_and_availability(
                     offer.availability.as_ref(),
                     source,
@@ -751,16 +875,18 @@ fn translate_offer(
             }
         } else if let Some(n) = offer.runner() {
             let entries = extract_offer_sources_and_targets(
+                options,
                 offer,
                 n,
                 all_capability_names,
                 all_children,
                 all_collections,
             )?;
-            for (source, source_name, target, target_name) in entries {
+            for (source, source_dictionary, source_name, target, target_name) in entries {
                 out_offers.push(fdecl::Offer::Runner(fdecl::OfferRunner {
                     source: Some(source),
                     source_name: Some(source_name.into()),
+                    source_dictionary,
                     target: Some(target),
                     target_name: Some(target_name.into()),
                     ..Default::default()
@@ -768,16 +894,18 @@ fn translate_offer(
             }
         } else if let Some(n) = offer.resolver() {
             let entries = extract_offer_sources_and_targets(
+                options,
                 offer,
                 n,
                 all_capability_names,
                 all_children,
                 all_collections,
             )?;
-            for (source, source_name, target, target_name) in entries {
+            for (source, source_dictionary, source_name, target, target_name) in entries {
                 out_offers.push(fdecl::Offer::Resolver(fdecl::OfferResolver {
                     source: Some(source),
                     source_name: Some(source_name.into()),
+                    source_dictionary,
                     target: Some(target),
                     target_name: Some(target_name.into()),
                     ..Default::default()
@@ -785,13 +913,14 @@ fn translate_offer(
             }
         } else if let Some(n) = offer.event_stream() {
             let entries = extract_offer_sources_and_targets(
+                options,
                 offer,
                 n,
                 all_capability_names,
                 all_children,
                 all_collections,
             )?;
-            for (source, source_name, target, target_name) in entries {
+            for (source, _source_dictionary, source_name, target, target_name) in entries {
                 let (source, availability) = derive_source_and_availability(
                     offer.availability.as_ref(),
                     source,
@@ -813,16 +942,77 @@ fn translate_offer(
                         Some(values) => {
                             let mut output = vec![];
                             for value in &values {
-                                output.push(translate_child_or_collection_ref(
+                                static EMPTY_SET: BTreeSet<&Name> = BTreeSet::new();
+                                output.push(translate_target_ref(
+                                    options,
                                     value.into(),
                                     &all_children,
                                     &all_collections,
+                                    &EMPTY_SET,
                                 )?);
                             }
                             Some(output)
                         }
                         None => None,
                     },
+                    availability: Some(availability),
+                    ..Default::default()
+                }));
+            }
+        } else if let Some(n) = offer.dictionary() {
+            let entries = extract_offer_sources_and_targets(
+                options,
+                offer,
+                n,
+                all_capability_names,
+                all_children,
+                all_collections,
+            )?;
+            for (source, source_dictionary, source_name, target, target_name) in entries {
+                let (source, availability) = derive_source_and_availability(
+                    offer.availability.as_ref(),
+                    source,
+                    offer.source_availability.as_ref(),
+                    all_capability_names,
+                    all_children,
+                    all_collections,
+                );
+                out_offers.push(fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                    source: Some(source),
+                    source_name: Some(source_name.into()),
+                    source_dictionary,
+                    target: Some(target),
+                    target_name: Some(target_name.into()),
+                    dependency_type: Some(
+                        offer.dependency.clone().unwrap_or(cm::DependencyType::Strong).into(),
+                    ),
+                    availability: Some(availability),
+                    ..Default::default()
+                }));
+            }
+        } else if let Some(n) = offer.config() {
+            let entries = extract_offer_sources_and_targets(
+                options,
+                offer,
+                n,
+                all_capability_names,
+                all_children,
+                all_collections,
+            )?;
+            for (source, source_dictionary, source_name, target, target_name) in entries {
+                let (source, availability) = derive_source_and_availability(
+                    offer.availability.as_ref(),
+                    source,
+                    offer.source_availability.as_ref(),
+                    all_capability_names,
+                    all_children,
+                    all_collections,
+                );
+                out_offers.push(fdecl::Offer::Config(fdecl::OfferConfiguration {
+                    source: Some(source),
+                    source_name: Some(source_name.into()),
+                    target: Some(target),
+                    target_name: Some(target_name.into()),
                     availability: Some(availability),
                     ..Default::default()
                 }));
@@ -986,8 +1176,9 @@ fn translate_config(
 }
 
 fn translate_environments(
+    options: &CompileOptions<'_>,
     envs_in: &Vec<Environment>,
-    all_capability_names: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&Name>,
 ) -> Result<Vec<fdecl::Environment>, Error> {
     envs_in
         .iter()
@@ -1005,7 +1196,7 @@ fn translate_environments(
                     .map(|runners| {
                         runners
                             .iter()
-                            .map(translate_runner_registration)
+                            .map(|r| translate_runner_registration(options, r))
                             .collect::<Result<Vec<_>, Error>>()
                     })
                     .transpose()?,
@@ -1015,7 +1206,7 @@ fn translate_environments(
                     .map(|resolvers| {
                         resolvers
                             .iter()
-                            .map(translate_resolver_registration)
+                            .map(|r| translate_resolver_registration(options, r))
                             .collect::<Result<Vec<_>, Error>>()
                     })
                     .transpose()?,
@@ -1023,7 +1214,11 @@ fn translate_environments(
                     .debug
                     .as_ref()
                     .map(|debug_capabiltities| {
-                        translate_debug_capabilities(debug_capabiltities, all_capability_names)
+                        translate_debug_capabilities(
+                            options,
+                            debug_capabiltities,
+                            all_capability_names,
+                        )
                     })
                     .transpose()?,
                 stop_timeout_ms: env.stop_timeout_ms.map(|s| s.0),
@@ -1034,22 +1229,26 @@ fn translate_environments(
 }
 
 fn translate_runner_registration(
+    options: &CompileOptions<'_>,
     reg: &RunnerRegistration,
 ) -> Result<fdecl::RunnerRegistration, Error> {
+    let (source, _source_dictionary) = extract_single_offer_source(options, reg, None)?;
     Ok(fdecl::RunnerRegistration {
         source_name: Some(reg.runner.clone().into()),
-        source: Some(extract_single_offer_source(reg, None)?),
+        source: Some(source),
         target_name: Some(reg.r#as.as_ref().unwrap_or(&reg.runner).clone().into()),
         ..Default::default()
     })
 }
 
 fn translate_resolver_registration(
+    options: &CompileOptions<'_>,
     reg: &ResolverRegistration,
 ) -> Result<fdecl::ResolverRegistration, Error> {
+    let (source, _source_dictionary) = extract_single_offer_source(options, reg, None)?;
     Ok(fdecl::ResolverRegistration {
         resolver: Some(reg.resolver.clone().into()),
-        source: Some(extract_single_offer_source(reg, None)?),
+        source: Some(source),
         scheme: Some(
             reg.scheme
                 .as_str()
@@ -1062,16 +1261,18 @@ fn translate_resolver_registration(
 }
 
 fn translate_debug_capabilities(
+    options: &CompileOptions<'_>,
     capabilities: &Vec<DebugRegistration>,
-    all_capability_names: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&Name>,
 ) -> Result<Vec<fdecl::DebugRegistration>, Error> {
     let mut out_capabilities = vec![];
     for capability in capabilities {
         if let Some(n) = capability.protocol() {
-            let source = extract_single_offer_source(capability, Some(all_capability_names))?;
+            let (source, _source_dictionary) =
+                extract_single_offer_source(options, capability, Some(all_capability_names))?;
             let targets = all_target_capability_names(capability, capability)
                 .ok_or_else(|| Error::internal("no capability"))?;
-            let source_names = n.to_vec();
+            let source_names = n;
             for target_name in targets {
                 // When multiple source names are provided, there is no way to alias each one, so
                 // source_name == target_name.
@@ -1082,15 +1283,15 @@ fn translate_debug_capabilities(
                 // extract_all_targets_for_each_child returned separate vectors for targets and
                 // target_names instead of the cross product of them.
                 let source_name = if source_names.len() == 1 {
-                    source_names[0].clone()
+                    (*source_names.iter().next().unwrap()).clone()
                 } else {
                     target_name.clone()
                 };
                 out_capabilities.push(fdecl::DebugRegistration::Protocol(
                     fdecl::DebugProtocolRegistration {
-                        source: Some(clone_ref(&source)?),
+                        source: Some(source.clone()),
                         source_name: Some(source_name.into()),
-                        target_name: Some(target_name.into()),
+                        target_name: Some(target_name.clone().into()),
                         ..Default::default()
                     },
                 ));
@@ -1101,32 +1302,37 @@ fn translate_debug_capabilities(
 }
 
 fn extract_use_source(
+    options: &CompileOptions<'_>,
     in_obj: &Use,
-    all_capability_names: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&Name>,
     all_children_names: &BTreeSet<&Name>,
-) -> Result<fdecl::Ref, Error> {
-    match in_obj.from.as_ref() {
-        Some(UseFromRef::Parent) => Ok(fdecl::Ref::Parent(fdecl::ParentRef {})),
-        Some(UseFromRef::Framework) => Ok(fdecl::Ref::Framework(fdecl::FrameworkRef {})),
-        Some(UseFromRef::Debug) => Ok(fdecl::Ref::Debug(fdecl::DebugRef {})),
-        Some(UseFromRef::Self_) => Ok(fdecl::Ref::Self_(fdecl::SelfRef {})),
+) -> Result<(fdecl::Ref, Option<String>), Error> {
+    let ref_ = match in_obj.from.as_ref() {
+        Some(UseFromRef::Parent) => fdecl::Ref::Parent(fdecl::ParentRef {}),
+        Some(UseFromRef::Framework) => fdecl::Ref::Framework(fdecl::FrameworkRef {}),
+        Some(UseFromRef::Debug) => fdecl::Ref::Debug(fdecl::DebugRef {}),
+        Some(UseFromRef::Self_) => fdecl::Ref::Self_(fdecl::SelfRef {}),
         Some(UseFromRef::Named(name)) => {
             if all_capability_names.contains(&name) {
-                Ok(fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.clone().into() }))
+                fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.clone().into() })
             } else if all_children_names.contains(&name) {
-                Ok(fdecl::Ref::Child(fdecl::ChildRef {
-                    name: name.clone().into(),
-                    collection: None,
-                }))
+                fdecl::Ref::Child(fdecl::ChildRef { name: name.clone().into(), collection: None })
             } else {
-                Err(Error::internal(format!(
+                return Err(Error::internal(format!(
                     "use source \"{:?}\" not supported for \"use from\"",
                     name
-                )))
+                )));
             }
         }
-        None => Ok(fdecl::Ref::Parent(fdecl::ParentRef {})), // Default value.
-    }
+        Some(UseFromRef::Dictionary(d)) => {
+            if !options.features.unwrap_or(&FeatureSet::empty()).has(&Feature::Dictionaries) {
+                return Err(Error::validate("dictionaries are not enabled"));
+            }
+            return Ok(dictionary_ref_to_source(&d));
+        }
+        None => fdecl::Ref::Parent(fdecl::ParentRef {}), // Default value.
+    };
+    Ok((ref_, None))
 }
 
 fn extract_use_availability(in_obj: &Use) -> Result<fdecl::Availability, Error> {
@@ -1137,24 +1343,6 @@ fn extract_use_availability(in_obj: &Use) -> Result<fdecl::Availability, Error> 
         Some(Availability::SameAsTarget) => Err(Error::internal(
             "availability \"same_as_target\" not supported for use declarations",
         )),
-    }
-}
-
-// Since fdecl::Ref is not cloneable, write our own clone function.
-fn clone_ref(ref_: &fdecl::Ref) -> Result<fdecl::Ref, Error> {
-    match ref_ {
-        fdecl::Ref::Parent(parent_ref) => Ok(fdecl::Ref::Parent(parent_ref.clone())),
-        fdecl::Ref::Self_(self_ref) => Ok(fdecl::Ref::Self_(self_ref.clone())),
-        fdecl::Ref::Child(child_ref) => Ok(fdecl::Ref::Child(child_ref.clone())),
-        fdecl::Ref::Collection(collection_ref) => {
-            Ok(fdecl::Ref::Collection(collection_ref.clone()))
-        }
-        fdecl::Ref::Framework(framework_ref) => Ok(fdecl::Ref::Framework(framework_ref.clone())),
-        fdecl::Ref::Capability(capability_ref) => {
-            Ok(fdecl::Ref::Capability(capability_ref.clone()))
-        }
-        fdecl::Ref::Debug(debug_ref) => Ok(fdecl::Ref::Debug(debug_ref.clone())),
-        _ => Err(Error::internal("Unknown fdecl::Ref found.")),
     }
 }
 
@@ -1202,35 +1390,43 @@ fn extract_expose_rights(in_obj: &Expose) -> Result<Option<fio::Operations>, Err
 }
 
 fn expose_source_from_ref(
+    options: &CompileOptions<'_>,
     reference: &ExposeFromRef,
-    all_capability_names: Option<&BTreeSet<Name>>,
+    all_capability_names: Option<&BTreeSet<&Name>>,
     all_collections: Option<&BTreeSet<&Name>>,
-) -> Result<fdecl::Ref, Error> {
-    match reference {
+) -> Result<(fdecl::Ref, Option<String>), Error> {
+    let ref_ = match reference {
         ExposeFromRef::Named(name) => {
             if all_capability_names.is_some() && all_capability_names.unwrap().contains(&name) {
-                Ok(fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.clone().into() }))
+                fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.clone().into() })
             } else if all_collections.is_some() && all_collections.unwrap().contains(&name) {
-                Ok(fdecl::Ref::Collection(fdecl::CollectionRef { name: name.clone().into() }))
+                fdecl::Ref::Collection(fdecl::CollectionRef { name: name.clone().into() })
             } else {
-                Ok(fdecl::Ref::Child(fdecl::ChildRef {
-                    name: name.clone().into(),
-                    collection: None,
-                }))
+                fdecl::Ref::Child(fdecl::ChildRef { name: name.clone().into(), collection: None })
             }
         }
-        ExposeFromRef::Framework => Ok(fdecl::Ref::Framework(fdecl::FrameworkRef {})),
-        ExposeFromRef::Self_ => Ok(fdecl::Ref::Self_(fdecl::SelfRef {})),
-        ExposeFromRef::Void => Ok(fdecl::Ref::VoidType(fdecl::VoidRef {})),
-    }
+        ExposeFromRef::Framework => fdecl::Ref::Framework(fdecl::FrameworkRef {}),
+        ExposeFromRef::Self_ => fdecl::Ref::Self_(fdecl::SelfRef {}),
+        ExposeFromRef::Void => fdecl::Ref::VoidType(fdecl::VoidRef {}),
+        ExposeFromRef::Dictionary(d) => {
+            if !options.features.unwrap_or(&FeatureSet::empty()).has(&Feature::Dictionaries) {
+                return Err(Error::validate("dictionaries are not enabled"));
+            }
+            return Ok(dictionary_ref_to_source(&d));
+        }
+    };
+    Ok((ref_, None))
 }
 
 fn extract_single_expose_source(
+    options: &CompileOptions<'_>,
     in_obj: &Expose,
-    all_capability_names: Option<&BTreeSet<Name>>,
-) -> Result<fdecl::Ref, Error> {
+    all_capability_names: Option<&BTreeSet<&Name>>,
+) -> Result<(fdecl::Ref, Option<String>), Error> {
     match &in_obj.from {
-        OneOrMany::One(reference) => expose_source_from_ref(&reference, all_capability_names, None),
+        OneOrMany::One(reference) => {
+            expose_source_from_ref(options, &reference, all_capability_names, None)
+        }
         OneOrMany::Many(many) => {
             return Err(Error::internal(format!(
                 "multiple unexpected \"from\" clauses for \"expose\": {:?}",
@@ -1241,15 +1437,11 @@ fn extract_single_expose_source(
 }
 
 fn extract_all_expose_sources(
+    options: &CompileOptions<'_>,
     in_obj: &Expose,
     all_collections: Option<&BTreeSet<&Name>>,
-) -> Result<Vec<fdecl::Ref>, Error> {
-    in_obj
-        .from
-        .to_vec()
-        .into_iter()
-        .map(|e| expose_source_from_ref(e, None, all_collections))
-        .collect()
+) -> Result<Vec<(fdecl::Ref, Option<String>)>, Error> {
+    in_obj.from.iter().map(|e| expose_source_from_ref(options, e, None, all_collections)).collect()
 }
 
 fn extract_offer_rights(in_obj: &Offer) -> Result<Option<fio::Operations>, Error> {
@@ -1282,14 +1474,17 @@ fn extract_offer_rights(in_obj: &Offer) -> Result<Option<fio::Operations>, Error
 }
 
 fn extract_single_offer_source<T>(
+    options: &CompileOptions<'_>,
     in_obj: &T,
-    all_capability_names: Option<&BTreeSet<Name>>,
-) -> Result<fdecl::Ref, Error>
+    all_capability_names: Option<&BTreeSet<&Name>>,
+) -> Result<(fdecl::Ref, Option<String>), Error>
 where
     T: FromClause,
 {
     match in_obj.from_() {
-        OneOrMany::One(reference) => offer_source_from_ref(reference, all_capability_names, None),
+        OneOrMany::One(reference) => {
+            any_ref_to_decl(options, reference, all_capability_names, None)
+        }
         many => {
             return Err(Error::internal(format!(
                 "multiple unexpected \"from\" clauses for \"offer\": {}",
@@ -1300,24 +1495,26 @@ where
 }
 
 fn extract_all_offer_sources<T: FromClause>(
+    options: &CompileOptions<'_>,
     in_obj: &T,
-    all_capability_names: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&Name>,
     all_collections: &BTreeSet<&Name>,
-) -> Result<Vec<fdecl::Ref>, Error> {
+) -> Result<Vec<(fdecl::Ref, Option<String>)>, Error> {
     in_obj
         .from_()
-        .to_vec()
         .into_iter()
         .map(|r| {
-            offer_source_from_ref(r.clone(), Some(all_capability_names), Some(all_collections))
+            any_ref_to_decl(options, r.clone(), Some(all_capability_names), Some(all_collections))
         })
         .collect()
 }
 
-fn translate_child_or_collection_ref(
+fn translate_target_ref(
+    options: &CompileOptions<'_>,
     reference: AnyRef<'_>,
     all_children: &BTreeSet<&Name>,
     all_collections: &BTreeSet<&Name>,
+    all_capabilities: &BTreeSet<&Name>,
 ) -> Result<fdecl::Ref, Error> {
     match reference {
         AnyRef::Named(name) if all_children.contains(name) => {
@@ -1326,28 +1523,37 @@ fn translate_child_or_collection_ref(
         AnyRef::Named(name) if all_collections.contains(name) => {
             Ok(fdecl::Ref::Collection(fdecl::CollectionRef { name: name.clone().into() }))
         }
+        AnyRef::Named(name) if all_capabilities.contains(name) => {
+            Ok(fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.clone().into() }))
+        }
+        AnyRef::OwnDictionary(name) if all_capabilities.contains(name) => {
+            if !options.features.unwrap_or(&FeatureSet::empty()).has(&Feature::Dictionaries) {
+                return Err(Error::validate("dictionaries are not enabled"));
+            }
+            Ok(fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.clone().into() }))
+        }
         AnyRef::Named(_) => Err(Error::internal(format!("dangling reference: \"{}\"", reference))),
         _ => Err(Error::internal(format!("invalid child reference: \"{}\"", reference))),
     }
 }
 
-// Return a list of (source, source capability id, target, target capability id) expressed in the
-// `offer`.
+// Return a list of (source, source capability id, source dictionary, target,
+// target capability id) expressed in the `offer`.
 fn extract_offer_sources_and_targets(
+    options: &CompileOptions<'_>,
     offer: &Offer,
-    source_names: OneOrMany<Name>,
-    all_capability_names: &BTreeSet<Name>,
+    source_names: OneOrMany<&Name>,
+    all_capability_names: &BTreeSet<&Name>,
     all_children: &BTreeSet<&Name>,
     all_collections: &BTreeSet<&Name>,
-) -> Result<Vec<(fdecl::Ref, Name, fdecl::Ref, Name)>, Error> {
+) -> Result<Vec<(fdecl::Ref, Option<String>, Name, fdecl::Ref, Name)>, Error> {
     let mut out = vec![];
 
-    let source_names = source_names.to_vec();
-    let sources = extract_all_offer_sources(offer, all_capability_names, all_collections)?;
+    let sources = extract_all_offer_sources(options, offer, all_capability_names, all_collections)?;
     let target_names = all_target_capability_names(offer, offer)
         .ok_or_else(|| Error::internal("no capability".to_string()))?;
 
-    for source in &sources {
+    for (source, source_dictionary) in sources {
         for to in &offer.to {
             for target_name in &target_names {
                 // When multiple source names are provided, there is no way to alias each one,
@@ -1355,13 +1561,24 @@ fn extract_offer_sources_and_targets(
                 // source_name may be aliased to a different target_name, so we use
                 // source_names[0] to obtain the source_name.
                 let source_name = if source_names.len() == 1 {
-                    source_names[0].clone()
+                    (*source_names.iter().next().unwrap()).clone()
                 } else {
-                    target_name.clone()
+                    (*target_name).clone()
                 };
-                let target =
-                    translate_child_or_collection_ref(to.into(), all_children, all_collections)?;
-                out.push((source.clone(), source_name, target, target_name.clone()))
+                let target = translate_target_ref(
+                    options,
+                    to.into(),
+                    all_children,
+                    all_collections,
+                    all_capability_names,
+                )?;
+                out.push((
+                    source.clone(),
+                    source_dictionary.clone(),
+                    source_name,
+                    target,
+                    (*target_name).clone(),
+                ))
             }
         }
     }
@@ -1395,7 +1612,7 @@ where
 
 /// Returns the list of paths derived from a `use` declaration with `names` and `to_obj`. `to_obj`
 /// must be a declaration that has a `path` clause.
-fn svc_paths_from_names<T>(names: OneOrMany<Name>, to_obj: &T) -> OneOrMany<Path>
+fn svc_paths_from_names<T>(names: OneOrMany<&Name>, to_obj: &T) -> OneOrMany<Path>
 where
     T: PathClause,
 {
@@ -1430,29 +1647,36 @@ where
 }
 
 /// Return the target names or paths specified in the given capability.
-fn all_target_capability_names<T, U>(in_obj: &T, to_obj: &U) -> Option<OneOrMany<Name>>
+fn all_target_capability_names<'a, T, U>(
+    in_obj: &'a T,
+    to_obj: &'a U,
+) -> Option<OneOrMany<&'a Name>>
 where
     T: CapabilityClause,
     U: AsClause + PathClause,
 {
     if let Some(as_) = to_obj.r#as() {
         // We've already validated that when `as` is specified, only 1 source id exists.
-        Some(OneOrMany::One(as_.clone()))
+        Some(OneOrMany::One(as_))
     } else {
         if let Some(n) = in_obj.service() {
-            Some(n.clone())
+            Some(n)
         } else if let Some(n) = in_obj.protocol() {
-            Some(n.clone())
+            Some(n)
         } else if let Some(n) = in_obj.directory() {
-            Some(n.clone())
+            Some(n)
         } else if let Some(n) = in_obj.storage() {
-            Some(n.clone())
+            Some(n)
         } else if let Some(n) = in_obj.runner() {
-            Some(n.clone())
+            Some(n)
         } else if let Some(n) = in_obj.resolver() {
-            Some(n.clone())
+            Some(n)
         } else if let Some(n) = in_obj.event_stream() {
-            Some(n.clone())
+            Some(n)
+        } else if let Some(n) = in_obj.dictionary() {
+            Some(n)
+        } else if let Some(n) = in_obj.config() {
+            Some(n)
         } else {
             None
         }
@@ -1475,13 +1699,14 @@ fn extract_environment_ref(r: Option<&EnvironmentRef>) -> Option<cm::Name> {
 }
 
 pub fn translate_capabilities(
+    options: &CompileOptions<'_>,
     capabilities_in: &Vec<Capability>,
     as_builtin: bool,
 ) -> Result<Vec<fdecl::Capability>, Error> {
     let mut out_capabilities = vec![];
     for capability in capabilities_in {
         if let Some(service) = &capability.service {
-            for n in service.to_vec() {
+            for n in service.iter() {
                 let source_path = match as_builtin {
                     true => None,
                     false => Some(
@@ -1499,7 +1724,7 @@ pub fn translate_capabilities(
                 }));
             }
         } else if let Some(protocol) = &capability.protocol {
-            for n in protocol.to_vec() {
+            for n in protocol.iter() {
                 let source_path = match as_builtin {
                     true => None,
                     false => Some(
@@ -1542,15 +1767,14 @@ pub fn translate_capabilities(
                 .expect("storage has no path or backing_dir")
                 .clone()
                 .into();
+
+            let (source, _source_dictionary) =
+                any_ref_to_decl(options, capability.from.as_ref().unwrap().into(), None, None)?;
             out_capabilities.push(fdecl::Capability::Storage(fdecl::Storage {
                 name: Some(n.clone().into()),
                 backing_dir: Some(backing_dir),
-                source: Some(offer_source_from_ref(
-                    capability.from.as_ref().unwrap().into(),
-                    None,
-                    None,
-                )?),
                 subdir: capability.subdir.clone().map(Into::into),
+                source: Some(source),
                 storage_id: Some(
                     capability.storage_id.clone().expect("storage is missing storage_id").into(),
                 ),
@@ -1592,6 +1816,28 @@ pub fn translate_capabilities(
                     ..Default::default()
                 }));
             }
+        } else if let Some(n) = &capability.dictionary {
+            let (source, source_dictionary) = match capability.extends.as_ref() {
+                Some(extends) => {
+                    let (s, d) = any_ref_to_decl(options, extends.into(), None, None)?;
+                    (Some(s), d)
+                }
+                None => (None, None),
+            };
+            out_capabilities.push(fdecl::Capability::Dictionary(fdecl::Dictionary {
+                name: Some(n.clone().into()),
+                source,
+                source_dictionary,
+                ..Default::default()
+            }));
+        } else if let Some(c) = &capability.config {
+            let value =
+                configuration_to_value(c, &capability, &capability.config_type, &capability.value)?;
+            out_capabilities.push(fdecl::Capability::Config(fdecl::Configuration {
+                name: Some(c.clone().into()),
+                value: Some(value),
+                ..Default::default()
+            }));
         } else {
             return Err(Error::internal(format!("no capability declaration recognized")));
         }
@@ -1637,32 +1883,127 @@ where
     }
 }
 
-pub fn offer_source_from_ref(
+/// Takes an `AnyRef` and returns the `fdecl::Ref` equivalent and the dictionary path, if
+/// the ref was a dictionary ref.
+pub fn any_ref_to_decl(
+    options: &CompileOptions<'_>,
     reference: AnyRef<'_>,
-    all_capability_names: Option<&BTreeSet<Name>>,
+    all_capability_names: Option<&BTreeSet<&Name>>,
     all_collection_names: Option<&BTreeSet<&Name>>,
-) -> Result<fdecl::Ref, Error> {
-    match reference {
+) -> Result<(fdecl::Ref, Option<String>), Error> {
+    let ref_ = match reference {
         AnyRef::Named(name) => {
             if all_capability_names.is_some() && all_capability_names.unwrap().contains(&name) {
-                Ok(fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.clone().into() }))
+                fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.clone().into() })
             } else if all_collection_names.is_some()
                 && all_collection_names.unwrap().contains(&name)
             {
-                Ok(fdecl::Ref::Collection(fdecl::CollectionRef { name: name.clone().into() }))
+                fdecl::Ref::Collection(fdecl::CollectionRef { name: name.clone().into() })
             } else {
-                Ok(fdecl::Ref::Child(fdecl::ChildRef {
-                    name: name.clone().into(),
-                    collection: None,
-                }))
+                fdecl::Ref::Child(fdecl::ChildRef { name: name.clone().into(), collection: None })
             }
         }
-        AnyRef::Framework => Ok(fdecl::Ref::Framework(fdecl::FrameworkRef {})),
-        AnyRef::Debug => Ok(fdecl::Ref::Debug(fdecl::DebugRef {})),
-        AnyRef::Parent => Ok(fdecl::Ref::Parent(fdecl::ParentRef {})),
-        AnyRef::Self_ => Ok(fdecl::Ref::Self_(fdecl::SelfRef {})),
-        AnyRef::Void => Ok(fdecl::Ref::VoidType(fdecl::VoidRef {})),
-    }
+        AnyRef::Framework => fdecl::Ref::Framework(fdecl::FrameworkRef {}),
+        AnyRef::Debug => fdecl::Ref::Debug(fdecl::DebugRef {}),
+        AnyRef::Parent => fdecl::Ref::Parent(fdecl::ParentRef {}),
+        AnyRef::Self_ => fdecl::Ref::Self_(fdecl::SelfRef {}),
+        AnyRef::Void => fdecl::Ref::VoidType(fdecl::VoidRef {}),
+        AnyRef::Dictionary(d) => {
+            if !options.features.unwrap_or(&FeatureSet::empty()).has(&Feature::Dictionaries) {
+                return Err(Error::validate("dictionaries are not enabled"));
+            }
+            return Ok(dictionary_ref_to_source(&d));
+        }
+        AnyRef::OwnDictionary(name) => {
+            fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.clone().into() })
+        }
+    };
+    Ok((ref_, None))
+}
+
+/// Takes a `DictionaryRef` and returns the `fdecl::Ref` equivalent and the dictionary path.
+fn dictionary_ref_to_source(d: &DictionaryRef) -> (fdecl::Ref, Option<String>) {
+    let root = match &d.root {
+        RootDictionaryRef::Named(name) => {
+            fdecl::Ref::Child(fdecl::ChildRef { name: name.clone().into(), collection: None })
+        }
+        RootDictionaryRef::Parent => fdecl::Ref::Parent(fdecl::ParentRef {}),
+        RootDictionaryRef::Self_ => fdecl::Ref::Self_(fdecl::SelfRef {}),
+    };
+    (root, Some(d.path.to_string()))
+}
+
+fn configuration_to_value(
+    name: &Name,
+    capability: &Capability,
+    config_type: &Option<ConfigType>,
+    value: &Option<serde_json::Value>,
+) -> Result<fdecl::ConfigValue, Error> {
+    let Some(config_type) = config_type.as_ref() else {
+        return Err(Error::InvalidArgs(format!(
+            "Configuration field '{}' must have 'type' set",
+            name
+        )));
+    };
+    let Some(value) = value.as_ref() else {
+        return Err(Error::InvalidArgs(format!(
+            "Configuration field '{}' must have 'value' set",
+            name
+        )));
+    };
+
+    let config_type = match config_type {
+        ConfigType::Bool => cm_rust::ConfigValueType::Bool,
+        ConfigType::Uint8 => cm_rust::ConfigValueType::Uint8,
+        ConfigType::Uint16 => cm_rust::ConfigValueType::Uint16,
+        ConfigType::Uint32 => cm_rust::ConfigValueType::Uint32,
+        ConfigType::Uint64 => cm_rust::ConfigValueType::Uint64,
+        ConfigType::Int8 => cm_rust::ConfigValueType::Int8,
+        ConfigType::Int16 => cm_rust::ConfigValueType::Int16,
+        ConfigType::Int32 => cm_rust::ConfigValueType::Int32,
+        ConfigType::Int64 => cm_rust::ConfigValueType::Int64,
+        ConfigType::String => {
+            let Some(max_size) = capability.config_max_size else {
+                return Err(Error::InvalidArgs(format!(
+                    "Configuration field '{}' must have 'max_size' set",
+                    name
+                )));
+            };
+            cm_rust::ConfigValueType::String { max_size: max_size.into() }
+        }
+        ConfigType::Vector => {
+            let Some(ref element) = capability.config_element_type else {
+                return Err(Error::InvalidArgs(format!(
+                    "Configuration field '{}' must have 'element_type' set",
+                    name
+                )));
+            };
+            let Some(max_count) = capability.config_max_count else {
+                return Err(Error::InvalidArgs(format!(
+                    "Configuration field '{}' must have 'max_count' set",
+                    name
+                )));
+            };
+            let nested_type = match element {
+                ConfigNestedValueType::Bool { .. } => cm_rust::ConfigNestedValueType::Bool,
+                ConfigNestedValueType::Uint8 { .. } => cm_rust::ConfigNestedValueType::Uint8,
+                ConfigNestedValueType::Uint16 { .. } => cm_rust::ConfigNestedValueType::Uint16,
+                ConfigNestedValueType::Uint32 { .. } => cm_rust::ConfigNestedValueType::Uint32,
+                ConfigNestedValueType::Uint64 { .. } => cm_rust::ConfigNestedValueType::Uint64,
+                ConfigNestedValueType::Int8 { .. } => cm_rust::ConfigNestedValueType::Int8,
+                ConfigNestedValueType::Int16 { .. } => cm_rust::ConfigNestedValueType::Int16,
+                ConfigNestedValueType::Int32 { .. } => cm_rust::ConfigNestedValueType::Int32,
+                ConfigNestedValueType::Int64 { .. } => cm_rust::ConfigNestedValueType::Int64,
+                ConfigNestedValueType::String { max_size } => {
+                    cm_rust::ConfigNestedValueType::String { max_size: (*max_size).into() }
+                }
+            };
+            cm_rust::ConfigValueType::Vector { max_count: max_count.into(), nested_type }
+        }
+    };
+    let value = config_value_file::field::config_value_from_json_value(value, &config_type)
+        .map_err(|e| Error::InvalidArgs(format!("Error parsing config '{}': {}", name, e)))?;
+    Ok(value.native_into_fidl())
 }
 
 #[cfg(test)]
@@ -2353,6 +2694,40 @@ mod tests {
             },
         },
 
+        test_compile_program_with_use_runner => {
+            input = json!({
+                "program": {
+                    "binary": "bin/app",
+                },
+                "use": [
+                    { "runner": "elf", "from": "parent", },
+                ],
+            }),
+            output = fdecl::Component {
+                program: Some(fdecl::Program {
+                    runner: None,
+                    info: Some(fdata::Dictionary {
+                        entries: Some(vec![fdata::DictionaryEntry {
+                            key: "binary".to_string(),
+                            value: Some(Box::new(fdata::DictionaryValue::Str("bin/app".to_string()))),
+                        }]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                uses: Some(vec![
+                    fdecl::Use::Runner (
+                        fdecl::UseRunner {
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            source_name: Some("elf".to_string()),
+                            ..Default::default()
+                        }
+                    ),
+                ]),
+                ..default_component_decl()
+            },
+        },
+
         test_compile_program_with_nested_objects => {
             input = json!({
                 "program": {
@@ -2475,6 +2850,7 @@ mod tests {
         },
 
         test_compile_use => {
+            features = FeatureSet::from(vec![Feature::Dictionaries, Feature::ConfigCapabilities]),
             input = json!({
                 "use": [
                     {
@@ -2485,6 +2861,7 @@ mod tests {
                     { "protocol": "fuchsia.sys2.LegacyRealm", "from": "framework" },
                     { "protocol": "fuchsia.sys2.StorageAdmin", "from": "#data-storage" },
                     { "protocol": "fuchsia.sys2.DebugProto", "from": "debug" },
+                    { "protocol": "fuchsia.sys2.DictionaryProto", "from": "#logger/in/dict" },
                     { "protocol": "fuchsia.sys2.Echo", "from": "self", "availability": "transitional" },
                     { "directory": "assets", "rights" : ["read_bytes"], "path": "/data/assets" },
                     {
@@ -2503,9 +2880,16 @@ mod tests {
                         "event_stream": ["foobar", "stream"],
                         "scope": ["#logger", "#modular"],
                         "path": "/event_stream/another",
-                    }
+                    },
+                    { "runner": "usain", "from": "parent", },
+                    { "config": "fuchsia.config.Config",  "config_key" : "my_config", "from" : "self" }
                 ],
                 "capabilities": [
+                    {
+                        "config": "fuchsia.config.Config",
+                        "type": "bool",
+                        "value": true,
+                    },
                     {
                         "storage": "data-storage",
                         "from": "parent",
@@ -2571,6 +2955,20 @@ mod tests {
                             source: Some(fdecl::Ref::Debug(fdecl::DebugRef {})),
                             source_name: Some("fuchsia.sys2.DebugProto".to_string()),
                             target_path: Some("/svc/fuchsia.sys2.DebugProto".to_string()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Use::Protocol (
+                        fdecl::UseProtocol {
+                            dependency_type: Some(fdecl::DependencyType::Strong),
+                            source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "logger".into(),
+                                collection: None,
+                            })),
+                            source_dictionary: Some("in/dict".into()),
+                            source_name: Some("fuchsia.sys2.DictionaryProto".to_string()),
+                            target_path: Some("/svc/fuchsia.sys2.DictionaryProto".to_string()),
                             availability: Some(fdecl::Availability::Required),
                             ..Default::default()
                         }
@@ -2647,6 +3045,18 @@ mod tests {
                         target_path: Some("/event_stream/another".to_string()),
                         availability: Some(fdecl::Availability::Required),
                         ..Default::default()
+                    }),
+                    fdecl::Use::Runner(fdecl::UseRunner {
+                        source_name: Some("usain".to_string()),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
+                        ..Default::default()
+                    }),
+                    fdecl::Use::Config(fdecl::UseConfiguration {
+                        source_name: Some("fuchsia.config.Config".to_string()),
+                        source: Some(fdecl::Ref::Self_(fdecl::SelfRef{})),
+                        target_name: Some("my_config".to_string()),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
                     })
                 ]),
                 collections:Some(vec![
@@ -2657,6 +3067,11 @@ mod tests {
                     },
                 ]),
                 capabilities: Some(vec![
+                    fdecl::Capability::Config(fdecl::Configuration {
+                        name: Some("fuchsia.config.Config".to_string()),
+                        value: Some(fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Bool(true))),
+                        ..Default::default()
+                    }),
                     fdecl::Capability::Storage(fdecl::Storage {
                         name: Some("data-storage".to_string()),
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
@@ -2687,7 +3102,7 @@ mod tests {
         },
 
         test_compile_expose => {
-            features = FeatureSet::from(vec![Feature::Hub]),
+            features = FeatureSet::from(vec![Feature::Dictionaries]),
             input = json!({
                 "expose": [
                     {
@@ -2706,6 +3121,15 @@ mod tests {
                         "from": "#data-storage",
                     },
                     {
+                        "protocol": "D",
+                        "from": "#logger/in/dict",
+                        "as": "E",
+                    },
+                    {
+                        "service": "svc",
+                        "from": [ "#logger", "#coll", "self" ],
+                    },
+                    {
                         "directory": "blob",
                         "from": "self",
                         "to": "framework",
@@ -2721,10 +3145,12 @@ mod tests {
                     { "runner": [ "runner_a", "runner_b" ], "from": "#logger" },
                     { "resolver": "my_resolver", "from": "#logger", "to": "parent", "as": "pkg_resolver" },
                     { "resolver": [ "resolver_a", "resolver_b" ], "from": "#logger" },
+                    { "dictionary": [ "dictionary_a", "dictionary_b" ], "from": "#logger" },
                 ],
                 "capabilities": [
                     { "protocol": "A" },
                     { "protocol": "B" },
+                    { "service": "svc" },
                     {
                         "directory": "blob",
                         "path": "/volumes/blobfs/blob",
@@ -2745,6 +3171,12 @@ mod tests {
                     {
                         "name": "logger",
                         "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
+                    },
+                ],
+                "collections": [
+                    {
+                        "name": "coll",
+                        "durability": "transient",
                     },
                 ],
             }),
@@ -2791,6 +3223,55 @@ mod tests {
                             source_name: Some("C".to_string()),
                             target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                             target_name: Some("C".to_string()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Expose::Protocol (
+                        fdecl::ExposeProtocol {
+                            source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "logger".to_string(),
+                                collection: None,
+                            })),
+                            source_dictionary: Some("in/dict".into()),
+                            source_name: Some("D".to_string()),
+                            target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            target_name: Some("E".to_string()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Expose::Service (
+                        fdecl::ExposeService {
+                            source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "logger".into(),
+                                collection: None,
+                            })),
+                            source_name: Some("svc".into()),
+                            target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            target_name: Some("svc".into()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Expose::Service (
+                        fdecl::ExposeService {
+                            source: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
+                                name: "coll".into(),
+                            })),
+                            source_name: Some("svc".into()),
+                            target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            target_name: Some("svc".into()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Expose::Service (
+                        fdecl::ExposeService {
+                            source: Some(fdecl::Ref::Self_(fdecl::SelfRef {})),
+                            source_name: Some("svc".into()),
+                            target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            target_name: Some("svc".into()),
                             availability: Some(fdecl::Availability::Required),
                             ..Default::default()
                         }
@@ -2925,6 +3406,32 @@ mod tests {
                             ..Default::default()
                         }
                     ),
+                   fdecl::Expose::Dictionary (
+                        fdecl::ExposeDictionary {
+                            source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "logger".to_string(),
+                                collection: None,
+                            })),
+                            source_name: Some("dictionary_a".to_string()),
+                            target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            target_name: Some("dictionary_a".to_string()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Expose::Dictionary (
+                        fdecl::ExposeDictionary {
+                            source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "logger".to_string(),
+                                collection: None,
+                            })),
+                            source_name: Some("dictionary_b".to_string()),
+                            target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            target_name: Some("dictionary_b".to_string()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
                 ]),
                 offers: None,
                 capabilities: Some(vec![
@@ -2939,6 +3446,13 @@ mod tests {
                         fdecl::Protocol {
                             name: Some("B".to_string()),
                             source_path: Some("/svc/B".to_string()),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Capability::Service (
+                        fdecl::Service {
+                            name: Some("svc".to_string()),
+                            source_path: Some("/svc/svc".to_string()),
                             ..Default::default()
                         }
                     ),
@@ -2974,8 +3488,13 @@ mod tests {
                         name: Some("logger".to_string()),
                         url: Some("fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm".to_string()),
                         startup: Some(fdecl::StartupMode::Lazy),
-                        environment: None,
-                        on_terminate: None,
+                        ..Default::default()
+                    }
+                ]),
+                collections: Some(vec![
+                    fdecl::Collection {
+                        name: Some("coll".to_string()),
+                        durability: Some(fdecl::Durability::Transient),
                         ..Default::default()
                     }
                 ]),
@@ -3182,7 +3701,7 @@ mod tests {
         },
 
         test_compile_offer => {
-            features = FeatureSet::from(vec![Feature::Hub]),
+            features = FeatureSet::from(vec![Feature::Dictionaries]),
             input = json!({
                 "offer": [
                     {
@@ -3220,6 +3739,16 @@ mod tests {
                         "protocol": "fuchsia.sys2.StorageAdmin",
                         "from": "#data",
                         "to": [ "#modular" ],
+                    },
+                    {
+                        "protocol": "fuchsia.sys2.FromDict",
+                        "from": "parent/in/dict",
+                        "to": [ "#modular" ],
+                    },
+                    {
+                        "service": "svc",
+                        "from": [ "parent", "self", "#logger", "#modular" ],
+                        "to": "#netstack",
                     },
                     {
                         "directory": "assets",
@@ -3283,6 +3812,11 @@ mod tests {
                         "to": "#netstack",
                     },
                     {
+                        "dictionary": [ "dictionary_a", "dictionary_b" ],
+                        "from": "parent",
+                        "to": "#netstack",
+                    },
+                    {
                         "event_stream": [
                             "running",
                             "started",
@@ -3314,6 +3848,9 @@ mod tests {
                     },
                 ],
                 "capabilities": [
+                    {
+                        "service": "svc",
+                    },
                     {
                         "storage": "data",
                         "backing_dir": "minfs",
@@ -3407,6 +3944,77 @@ mod tests {
                             })),
                             target_name: Some("fuchsia.sys2.StorageAdmin".to_string()),
                             dependency_type: Some(fdecl::DependencyType::Strong),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Offer::Protocol (
+                        fdecl::OfferProtocol {
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            source_dictionary: Some("in/dict".into()),
+                            source_name: Some("fuchsia.sys2.FromDict".to_string()),
+                            target: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
+                                name: "modular".to_string(),
+                            })),
+                            target_name: Some("fuchsia.sys2.FromDict".to_string()),
+                            dependency_type: Some(fdecl::DependencyType::Strong),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Offer::Service (
+                        fdecl::OfferService {
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            source_name: Some("svc".into()),
+                            target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "netstack".into(),
+                                collection: None,
+                            })),
+                            target_name: Some("svc".into()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Offer::Service (
+                        fdecl::OfferService {
+                            source: Some(fdecl::Ref::Self_(fdecl::SelfRef {})),
+                            source_name: Some("svc".into()),
+                            target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "netstack".into(),
+                                collection: None,
+                            })),
+                            target_name: Some("svc".into()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Offer::Service (
+                        fdecl::OfferService {
+                            source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "logger".into(),
+                                collection: None,
+                            })),
+                            source_name: Some("svc".into()),
+                            target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "netstack".into(),
+                                collection: None,
+                            })),
+                            target_name: Some("svc".into()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Offer::Service (
+                        fdecl::OfferService {
+                            source: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
+                                name: "modular".into(),
+                            })),
+                            source_name: Some("svc".into()),
+                            target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "netstack".into(),
+                                collection: None,
+                            })),
+                            target_name: Some("svc".into()),
                             availability: Some(fdecl::Availability::Required),
                             ..Default::default()
                         }
@@ -3640,6 +4248,34 @@ mod tests {
                             ..Default::default()
                         }
                     ),
+                    fdecl::Offer::Dictionary (
+                        fdecl::OfferDictionary {
+                            source_name: Some("dictionary_a".to_string()),
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "netstack".to_string(),
+                                collection: None,
+                            })),
+                            target_name: Some("dictionary_a".to_string()),
+                            dependency_type: Some(fdecl::DependencyType::Strong),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Offer::Dictionary (
+                        fdecl::OfferDictionary {
+                            source_name: Some("dictionary_b".to_string()),
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "netstack".to_string(),
+                                collection: None,
+                            })),
+                            target_name: Some("dictionary_b".to_string()),
+                            dependency_type: Some(fdecl::DependencyType::Strong),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
                     fdecl::Offer::EventStream (
                         fdecl::OfferEventStream {
                             source_name: Some("running".to_string()),
@@ -3681,6 +4317,13 @@ mod tests {
                     ),
                 ]),
                 capabilities: Some(vec![
+                    fdecl::Capability::Service (
+                        fdecl::Service {
+                            name: Some("svc".into()),
+                            source_path: Some("/svc/svc".into()),
+                            ..Default::default()
+                        },
+                    ),
                     fdecl::Capability::Storage (
                         fdecl::Storage {
                             name: Some("data".to_string()),
@@ -3725,6 +4368,109 @@ mod tests {
                 ..default_component_decl()
             },
         },
+
+        test_compile_offer_route_to_dictionary => {
+            features = FeatureSet::from(vec![Feature::Dictionaries]),
+            input = json!({
+                "offer": [
+                    {
+                        "protocol": "A",
+                        "from": "parent/dict/1",
+                        "to": "self/dict",
+                    },
+                    {
+                        "directory": "B",
+                        "from": "#child",
+                        "to": "self/dict",
+                    },
+                    {
+                        "service": "B",
+                        "from": "parent/dict/2",
+                        "to": "self/dict",
+                        "as": "C",
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "child",
+                        "url": "fuchsia-pkg://child"
+                    },
+                ],
+                "capabilities": [
+                    {
+                        "dictionary": "dict",
+                        "extends": "parent/dict/3",
+                    },
+                ],
+            }),
+            output = fdecl::Component {
+                offers: Some(vec![
+                    fdecl::Offer::Protocol (
+                        fdecl::OfferProtocol {
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            source_dictionary: Some("dict/1".into()),
+                            source_name: Some("A".into()),
+                            target: Some(fdecl::Ref::Capability(fdecl::CapabilityRef {
+                                name: "dict".to_string(),
+                            })),
+                            target_name: Some("A".into()),
+                            dependency_type: Some(fdecl::DependencyType::Strong),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Offer::Directory (
+                        fdecl::OfferDirectory {
+                            source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "child".into(),
+                                collection: None,
+                            })),
+                            source_name: Some("B".into()),
+                            target: Some(fdecl::Ref::Capability(fdecl::CapabilityRef {
+                                name: "dict".to_string(),
+                            })),
+                            target_name: Some("B".into()),
+                            dependency_type: Some(fdecl::DependencyType::Strong),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Offer::Service (
+                        fdecl::OfferService {
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            source_dictionary: Some("dict/2".into()),
+                            source_name: Some("B".into()),
+                            target: Some(fdecl::Ref::Capability(fdecl::CapabilityRef {
+                                name: "dict".to_string(),
+                            })),
+                            target_name: Some("C".into()),
+                            availability: Some(fdecl::Availability::Required),
+                            ..Default::default()
+                        }
+                    ),
+                ]),
+                capabilities: Some(vec![
+                    fdecl::Capability::Dictionary (
+                        fdecl::Dictionary {
+                            name: Some("dict".into()),
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            source_dictionary: Some("dict/3".into()),
+                            ..Default::default()
+                        }
+                    )
+                ]),
+                children: Some(vec![
+                    fdecl::Child {
+                        name: Some("child".to_string()),
+                        url: Some("fuchsia-pkg://child".to_string()),
+                        startup: Some(fdecl::StartupMode::Lazy),
+                        ..Default::default()
+                    },
+                ]),
+                ..default_component_decl()
+            },
+        },
+
 
         test_compile_children => {
             input = json!({
@@ -3846,6 +4592,7 @@ mod tests {
         },
 
         test_compile_capabilities => {
+            features = FeatureSet::from(vec![Feature::Dictionaries]),
             input = json!({
                 "capabilities": [
                     {
@@ -3882,6 +4629,17 @@ mod tests {
                     {
                         "resolver": "myresolver",
                         "path": "/resolver"
+                    },
+                    {
+                        "dictionary": "dict1",
+                    },
+                    {
+                        "dictionary": "dict2",
+                        "extends": "parent/in/a",
+                    },
+                    {
+                        "dictionary": "dict3",
+                        "extends": "#minfs/b",
                     },
                 ],
                 "children": [
@@ -3968,7 +4726,32 @@ mod tests {
                             source_path: Some("/resolver".to_string()),
                             ..Default::default()
                         }
-                    )
+                    ),
+                    fdecl::Capability::Dictionary (
+                        fdecl::Dictionary {
+                            name: Some("dict1".into()),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Capability::Dictionary (
+                        fdecl::Dictionary {
+                            name: Some("dict2".into()),
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            source_dictionary: Some("in/a".into()),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Capability::Dictionary (
+                        fdecl::Dictionary {
+                            name: Some("dict3".into()),
+                            source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                                name: "minfs".into(),
+                                collection: None,
+                            })),
+                            source_dictionary: Some("b".into()),
+                            ..Default::default()
+                        }
+                    ),
                 ]),
                 children: Some(vec![
                     fdecl::Child {
@@ -4208,6 +4991,42 @@ mod tests {
                         stop_timeout_ms: None,
                         ..Default::default()
                     },
+                ]),
+                ..default_component_decl()
+            },
+        },
+
+
+        test_compile_configuration_capability => {
+            features = FeatureSet::from(vec![Feature::ConfigCapabilities]),
+            input = json!({
+                "capabilities": [
+                    {
+                        "config": "fuchsia.config.true",
+                        "type": "bool",
+                        "value": true,
+                    },
+                    {
+                        "config": "fuchsia.config.false",
+                        "type": "bool",
+                        "value": false,
+                    },
+                ],
+            }),
+            output = fdecl::Component {
+                capabilities: Some(vec![
+                    fdecl::Capability::Config (
+                        fdecl::Configuration {
+                            name: Some("fuchsia.config.true".to_string()),
+                            value: Some(fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Bool(true))),
+                            ..Default::default()
+                        }),
+                    fdecl::Capability::Config (
+                        fdecl::Configuration {
+                            name: Some("fuchsia.config.false".to_string()),
+                            value: Some(fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Bool(false))),
+                            ..Default::default()
+                        }),
                 ]),
                 ..default_component_decl()
             },
@@ -4628,10 +5447,6 @@ mod tests {
                 &errs[..],
                 [
                     CmFidlError::DifferentAvailabilityInAggregation(AvailabilityList(availabilities)),
-                    // There is an additional error because `#non_existent` is translated to
-                    // `void`, and aggregating from `void` is not allowed. But we do not care about
-                    // the specifics.
-                    CmFidlError::ServiceAggregateNotCollection(_, _),
                 ]
                 if matches!(
                     &availabilities[..],
@@ -4704,10 +5519,6 @@ mod tests {
                 &errs[..],
                 [
                     CmFidlError::DifferentAvailabilityInAggregation(AvailabilityList(availabilities)),
-                    // There is an additional error because `#non_existent` is translated to
-                    // `void`, and aggregating from `void` is not allowed. But we do not care about
-                    // the specifics.
-                    CmFidlError::ServiceAggregateNotCollection(_, _),
                 ]
                 if matches!(
                     &availabilities[..],

@@ -19,6 +19,11 @@ pub enum Type {
     /// Some small footprint deployments need to be extra conscious of the
     /// storage space used.
     Small,
+
+    /// Some products seem to have been misconfigured to use the small intl
+    /// service, but full size timezone service. This is likely wrong, but we
+    /// must be able to express that too.
+    SmallWithTimezone,
 }
 
 /// Platform configuration options for the input area.
@@ -26,5 +31,6 @@ pub enum Type {
 #[serde(deny_unknown_fields)]
 pub struct IntlConfig {
     /// The intl configuration type in use.
+    #[serde(default)]
     pub config_type: Type,
 }

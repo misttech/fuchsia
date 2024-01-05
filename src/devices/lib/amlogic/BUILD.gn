@@ -71,7 +71,6 @@ zx_library("amlogic") {
     "a5-hiu.cc",
     "a5-pll-rates.cc",
     "aml-audio.cc",
-    "aml-g12-saradc.cc",
     "aml-loopback-audio.cc",
     "aml-meson-pll.cc",
     "aml-pdm-audio.cc",
@@ -83,8 +82,7 @@ zx_library("amlogic") {
     "s905d2-pll-rates.cc",
   ]
   deps = [
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//src/lib/ddktl",  # Used for metadata.
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/hwreg",
@@ -92,7 +90,7 @@ zx_library("amlogic") {
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.thermal:fuchsia.hardware.thermal_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.thermal:fuchsia.hardware.thermal_cpp",
     "//src/devices/lib/mmio",
   ]
 

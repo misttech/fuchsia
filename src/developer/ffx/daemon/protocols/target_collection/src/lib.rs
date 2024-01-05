@@ -3,25 +3,29 @@
 // found in the LICENSE file.
 
 use crate::target_handle::TargetHandle;
+use addr::TargetAddr;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use chrono::Utc;
 use emulator_targets::EmulatorTargetAction;
-use ffx_daemon_events::{FastbootInterface, TargetConnectionState, TargetInfo};
+use ffx_daemon_events::{FastbootInterface, TargetConnectionState};
 use ffx_daemon_target::{
-    manual_targets,
-    target::{target_addr_info_to_socketaddr, Target, TargetAddrEntry, TargetAddrType},
-    target_collection::TargetCollection,
+    target::{
+        self, target_addr_info_to_socketaddr, Target, TargetProtocol, TargetTransport,
+        TargetUpdateBuilder,
+    },
+    target_collection::{TargetCollection, TargetQuery, TargetUpdateFilter},
 };
 use ffx_stream_util::TryStreamUtilExt;
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_developer_remotecontrol::RemoteControlMarker;
 use futures::TryStreamExt;
+use manual_targets;
 use protocols::prelude::*;
 use std::{
     net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6},
     rc::Rc,
+    sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tasks::TaskManager;
@@ -87,8 +91,10 @@ async fn add_manual_target(
     tc: &TargetCollection,
     addr: SocketAddr,
     lifetime: Option<Duration>,
+    overnet_node: &Arc<overnet_core::Router>,
 ) -> Rc<Target> {
     tracing::debug!("Adding manual targets, addr: {addr:?}");
+
     // Expiry is the SystemTime (represented as seconds after the UNIX_EPOCH) at which a manual
     // target is allowed to expire and enter the Disconnected state. If no lifetime is given,
     // the target is allowed to persist indefinitely. This is persisted in FFX config.
@@ -101,31 +107,55 @@ async fn add_manual_target(
         (Some(timeout), Some(expiry), Some(Instant::now()))
     };
 
-    let tae = TargetAddrEntry::new(addr.into(), Utc::now(), TargetAddrType::Manual(timeout));
-    let _ = manual_targets.add(format!("{}", addr), expiry).await.map_err(|e| {
-        tracing::error!("Unable to persist manual target: {:?}", e);
-    });
-    let target = Target::new_with_addr_entries(Option::<String>::None, Some(tae).into_iter());
-
     // When adding a manual target we need to test if the target behind the
     // address is running in fastboot over tcp or not
     let is_fastboot_tcp = target_is_fastboot_tcp(addr).await;
 
     if is_fastboot_tcp {
-        // If the target is in fastboot mode we need to do these:
-        tracing::debug!("Target is fastboot... change target from manual to tcp_fastboot");
-        target.from_manual_to_tcp_fastboot();
-    } else {
-        if addr.port() != 0 {
-            target.set_ssh_port(Some(addr.port()));
-        }
-        target.update_connection_state(|_| TargetConnectionState::Manual(last_seen));
+        tracing::debug!("Manual target is fastboot");
     }
 
-    let target = tc.merge_insert(target);
+    let mut update = TargetUpdateBuilder::new()
+        .manual_target(timeout)
+        .net_addresses(std::slice::from_ref(&addr))
+        .discovered(
+            match is_fastboot_tcp {
+                true => TargetProtocol::Fastboot,
+                false => TargetProtocol::Ssh,
+            },
+            TargetTransport::Network,
+        );
+
+    if addr.port() != 0 {
+        update = update.ssh_port(Some(addr.port()));
+    }
+
+    if let Some(last_seen) = last_seen {
+        update = update.last_seen(last_seen);
+    }
+
+    tc.update_target(
+        &[TargetUpdateFilter::NetAddrs(std::slice::from_ref(&addr))],
+        update.build(),
+        true,
+    );
+
+    let _ = manual_targets.add(format!("{}", addr), expiry).await.map_err(|e| {
+        tracing::error!("Unable to persist manual target: {:?}", e);
+    });
+
+    let target = tc
+        .query_single_enabled_target(&if addr.port() == 0 {
+            TargetQuery::Addr(addr.into())
+        } else {
+            TargetQuery::AddrPort((addr.into(), addr.port()))
+        })
+        .expect("Query by address cannot be ambiguous")
+        .expect("Could not find inserted manual target");
+
     if !is_fastboot_tcp {
         tracing::info!("Running host pipe");
-        target.run_host_pipe();
+        target.run_host_pipe(overnet_node);
     }
     target
 }
@@ -136,7 +166,11 @@ async fn remove_manual_target(
     tc: &TargetCollection,
     target_id: String,
 ) -> bool {
-    if let Some(target) = tc.get(target_id.clone()) {
+    // TODO(dwayneslater): Move into TargetCollection, return false if multiple targets.
+    if let Ok(Some(target)) = tc.query_single_enabled_target(&target_id.clone().into()) {
+        // TODO(b/299141238): This code won't work if the socket address format in the config does
+        // not match the format Rust outputs. Which means a manual target cannot be removed without
+        // editing the config.
         let ssh_port = target.ssh_port();
         for addr in target.manual_addrs() {
             let mut sockaddr = SocketAddr::from(addr);
@@ -151,7 +185,11 @@ async fn remove_manual_target(
 
 impl TargetCollectionProtocol {
     #[tracing::instrument(skip(self, tc))]
-    async fn load_manual_targets(&self, tc: &TargetCollection) {
+    async fn load_manual_targets(
+        &self,
+        tc: &TargetCollection,
+        overnet_node: &Arc<overnet_core::Router>,
+    ) {
         // The FFX config value for a manual target contains a target ID (typically the IP:PORT
         // combo) and a timeout (which is None, if the target is indefinitely persistent).
         for (unparsed_addr, val) in self.manual_targets.get_or_default().await {
@@ -190,12 +228,19 @@ impl TargetCollectionProtocol {
                     } else {
                         lifetime_from_epoch - elapsed
                     };
-                    add_manual_target(self.manual_targets.clone(), tc, sa, Some(remaining)).await;
+                    add_manual_target(
+                        self.manual_targets.clone(),
+                        tc,
+                        sa,
+                        Some(remaining),
+                        overnet_node,
+                    )
+                    .await;
                 }
             } else {
                 // Manual targets without a lifetime are always reloaded.
                 tracing::debug!("Loading manual target: {:?}", sa);
-                add_manual_target(self.manual_targets.clone(), tc, sa, None).await;
+                add_manual_target(self.manual_targets.clone(), tc, sa, None, overnet_node).await;
             }
         }
     }
@@ -213,24 +258,17 @@ impl FidlProtocol for TargetCollectionProtocol {
         match req {
             ffx::TargetCollectionRequest::ListTargets { reader, query, .. } => {
                 let reader = reader.into_proxy()?;
-                let targets =
-                    match query.string_matcher.as_deref() {
-                        None | Some("") => target_collection
-                            .targets()
-                            .into_iter()
-                            .filter_map(|t| {
-                                if t.is_connected() {
-                                    Some(t.as_ref().into())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<ffx::TargetInfo>>(),
-                        q => match target_collection.get_connected(q) {
-                            Some(t) => vec![t.as_ref().into()],
-                            None => vec![],
-                        },
-                    };
+                let query = match query.string_matcher.clone() {
+                    Some(query) if !query.is_empty() => Some(TargetQuery::from(query)),
+                    _ => None,
+                };
+
+                // TODO(b/297896647): Use `discover_targets` to run discovery & stream discovered
+                // targets. Wait for `reader.as_channel().on_closed()` to cancel discovery when no
+                // longer reading. Add FIDL parameter to control discovery streaming.
+
+                let targets = target_collection.targets(query.as_ref());
+
                 // This was chosen arbitrarily. It's possible to determine a
                 // better chunk size using some FIDL constant math.
                 const TARGET_CHUNK_SIZE: usize = 20;
@@ -245,33 +283,31 @@ impl FidlProtocol for TargetCollectionProtocol {
                 Ok(())
             }
             ffx::TargetCollectionRequest::OpenTarget { query, responder, target_handle } => {
-                tracing::trace!("handling request to open target");
-                let target = match target_collection.wait_for_match(query.string_matcher).await {
-                    Ok(t) => {
-                        tracing::trace!("Found target: {t:?}");
-                        t
+                tracing::trace!("Open Target {query:?}");
+
+                let query = TargetQuery::from(query.string_matcher.clone());
+
+                // Get a previously used target first, otherwise fall back to discovery + use.
+                let result = match target_collection.query_single_enabled_target(&query) {
+                    Ok(Some(target)) => Ok(target),
+                    Ok(None) => {
+                        target_collection
+                            // OpenTarget is called on behalf of the user.
+                            .discover_target(&query)
+                            .await
+                            .map_err(|_| ffx::OpenTargetError::QueryAmbiguous)
+                            .map(|t| target_collection.use_target(t, "OpenTarget request"))
                     }
-                    Err(e) => {
-                        return responder
-                            .send(match e {
-                                ffx::DaemonError::TargetAmbiguous => {
-                                    tracing::warn!("Ambiguous Query");
-                                    Err(ffx::OpenTargetError::QueryAmbiguous)
-                                }
-                                ffx::DaemonError::TargetNotFound => {
-                                    tracing::warn!("Target Not Found.");
-                                    Err(ffx::OpenTargetError::TargetNotFound)
-                                }
-                                e => {
-                                    // This, so far, will only happen if encountering
-                                    // TargetCacheError, which is highly unlikely.
-                                    tracing::warn!("encountered unhandled error: {:?}", e);
-                                    Err(ffx::OpenTargetError::TargetNotFound)
-                                }
-                            })
-                            .map_err(Into::into);
-                    }
+                    Err(()) => Err(ffx::OpenTargetError::QueryAmbiguous),
                 };
+
+                let target = match result {
+                    Ok(target) => target,
+                    Err(e) => return responder.send(Err(e)).map_err(Into::into),
+                };
+
+                tracing::trace!("Found target: {target:?}");
+
                 self.tasks.spawn(TargetHandle::new(target, cx.clone(), target_handle)?);
                 responder.send(Ok(())).map_err(Into::into)
             }
@@ -280,16 +316,20 @@ impl FidlProtocol for TargetCollectionProtocol {
             } => {
                 let add_target_responder = add_target_responder.into_proxy()?;
                 let addr = target_addr_info_to_socketaddr(ip);
+                let node = cx.overnet_node()?;
+                let do_add_target = || {
+                    add_manual_target(
+                        self.manual_targets.clone(),
+                        &target_collection,
+                        addr,
+                        None,
+                        &node,
+                    )
+                };
                 match config.verify_connection {
                     Some(true) => {}
                     _ => {
-                        let _ = add_manual_target(
-                            self.manual_targets.clone(),
-                            &target_collection,
-                            addr,
-                            None,
-                        )
-                        .await;
+                        let _ = do_add_target().await;
                         return add_target_responder.success().map_err(Into::into);
                     }
                 };
@@ -308,7 +348,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                     fn drop(&mut self) {
                         match self.0.take() {
                             Some((mt, tc, addr)) => fuchsia_async::Task::local(async move {
-                                remove_manual_target(mt, &tc, addr.to_string()).await
+                                remove_manual_target(mt, &tc, addr.to_string()).await;
                             })
                             .detach(),
                             None => {}
@@ -320,9 +360,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                     target_collection.clone(),
                     addr.clone(),
                 )));
-                let target =
-                    add_manual_target(self.manual_targets.clone(), &target_collection, addr, None)
-                        .await;
+                let target = do_add_target().await;
                 // If the target is in fastboot then skip rcs
                 match target.get_connection_state() {
                     TargetConnectionState::Fastboot(_) => {
@@ -391,6 +429,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                     &target_collection,
                     addr,
                     Some(Duration::from_secs(connect_timeout_seconds)),
+                    &cx.overnet_node()?,
                 )
                 .await;
                 responder.send().map_err(Into::into)
@@ -405,26 +444,16 @@ impl FidlProtocol for TargetCollectionProtocol {
                 responder.send(result).map_err(Into::into)
             }
             ffx::TargetCollectionRequest::AddInlineFastbootTarget { serial_number, responder } => {
-                let t = TargetInfo {
-                    serial: Some(serial_number),
-                    fastboot_interface: Some(FastbootInterface::Usb),
-                    ..Default::default()
-                };
-                let target =
-                    target_collection.merge_insert(match Target::from_fastboot_target_info(t) {
-                        Ok(ret) => ret,
-                        Err(e) => {
-                            tracing::warn!("encountered unhandled error: {:?}", e);
-                            return responder.send().map_err(Into::into);
-                        }
-                    });
-                target.update_connection_state(|s| match s {
-                    TargetConnectionState::Disconnected | TargetConnectionState::Fastboot(_) => {
-                        TargetConnectionState::Fastboot(Instant::now())
-                    }
-                    _ => s,
-                });
-                tracing::info!("added inline target: {:?}", target);
+                let update = TargetUpdateBuilder::new()
+                    .identity(target::Identity::from_serial(&serial_number))
+                    .discovered(TargetProtocol::Fastboot, TargetTransport::Usb)
+                    .transient_target();
+                target_collection.update_target(
+                    &[TargetUpdateFilter::Serial(&serial_number)],
+                    update.build(),
+                    true,
+                );
+                tracing::info!("Added inline target: {}", serial_number);
                 responder.send().map_err(Into::into)
             }
         }
@@ -450,17 +479,26 @@ impl FidlProtocol for TargetCollectionProtocol {
 
     async fn start(&mut self, cx: &Context) -> Result<()> {
         let target_collection = cx.get_target_collection().await?;
-        self.load_manual_targets(&target_collection).await;
+        let node = cx.overnet_node()?;
+        self.load_manual_targets(&target_collection, &node).await;
         let mdns = self.open_mdns_proxy(cx).await?;
         let fastboot = self.open_fastboot_target_stream_proxy(cx).await?;
         let tc = cx.get_target_collection().await?;
         let tc_clone = tc.clone();
+        let node_clone = Arc::clone(&node);
         self.tasks.spawn(async move {
             while let Ok(Some(e)) = mdns.get_next_event().await {
                 match *e {
                     ffx::MdnsEventType::TargetFound(t)
                     | ffx::MdnsEventType::TargetRediscovered(t) => {
-                        handle_discovered_target(&tc_clone, t);
+                        // For backwards compatibility.
+                        // Immediately mark the target as used then run the host pipe.
+                        let autoconnect = if let Some(ctx) = ffx_config::global_env_context() {
+                            !ffx_config::is_mdns_autoconnect_disabled(&ctx).await
+                        } else {
+                            true
+                        };
+                        handle_discovered_target(&tc_clone, t, &node_clone, autoconnect);
                     }
                     _ => {}
                 }
@@ -491,14 +529,8 @@ impl FidlProtocol for TargetCollectionProtocol {
                 if let Some(emu_target_action) = watcher.emulator_target_detected().await {
                     match emu_target_action {
                         EmulatorTargetAction::Add(emu_target) => {
-                            let target = handle_discovered_target(&tc2, emu_target);
-                            if let Some(t) = target {
-                                tracing::info!(
-                                    "Emulator target added. {:?} state: {:?}",
-                                    t.ssh_address(),
-                                    t.state()
-                                );
-                            }
+                            // Let's always connect to emulators -- otherwise, why would someone start an emulator?
+                            handle_discovered_target(&tc2, emu_target, &node, true);
                         }
                         EmulatorTargetAction::Remove(emu_target) => {
                             if let Some(id) = emu_target.nodename {
@@ -519,86 +551,92 @@ impl FidlProtocol for TargetCollectionProtocol {
     }
 }
 
+// USB fastboot
 #[tracing::instrument(skip(tc))]
 fn handle_fastboot_target(tc: &Rc<TargetCollection>, target: ffx::FastbootTarget) {
-    if let Some(ref serial) = target.serial {
-        tracing::debug!("Found new target via fastboot: {}", serial);
-    } else {
+    let Some(serial) = target.serial else {
         tracing::debug!("Fastboot target has no serial number. Not able to merge.");
         return;
-    }
-    let t = TargetInfo { serial: target.serial, ..Default::default() };
-    let target = tc.merge_insert(Target::from_target_info(t.into()));
-    target.update_connection_state(|s| match s {
-        TargetConnectionState::Disconnected | TargetConnectionState::Fastboot(_) => {
-            TargetConnectionState::Fastboot(Instant::now())
-        }
-        _ => s,
-    });
-}
-
-#[tracing::instrument(skip(tc))]
-fn handle_discovered_target(tc: &Rc<TargetCollection>, t: ffx::TargetInfo) -> Option<Rc<Target>> {
-    tracing::debug!("Discovered target {t:?}");
-    let ssh_address = t.ssh_address;
-    let mut t = TargetInfo {
-        nodename: t.nodename,
-        addresses: t
-            .addresses
-            .map(|a| a.into_iter().map(Into::into).collect())
-            .unwrap_or(Vec::new()),
-        fastboot_interface: if t.target_state == Some(ffx::TargetState::Fastboot) {
-            t.fastboot_interface.map(|v| match v {
-                ffx::FastbootInterface::Usb => FastbootInterface::Usb,
-                ffx::FastbootInterface::Udp => FastbootInterface::Udp,
-                ffx::FastbootInterface::Tcp => FastbootInterface::Tcp,
-            })
-        } else {
-            None
-        },
-        ..Default::default()
     };
 
-    if let Some(ffx::TargetAddrInfo::IpPort(ssh_address)) = ssh_address {
-        t.ssh_port = Some(ssh_address.port);
-    }
+    tracing::debug!("Found new target via fastboot: {}", serial);
+
+    let update = TargetUpdateBuilder::new()
+        .discovered(TargetProtocol::Fastboot, TargetTransport::Usb)
+        .identity(target::Identity::from_serial(serial.clone()))
+        .build();
+    tc.update_target(&[TargetUpdateFilter::Serial(&serial)], update, true);
+}
+
+// mDNS Fastboot & RCS
+#[tracing::instrument(skip(tc))]
+fn handle_discovered_target(
+    tc: &Rc<TargetCollection>,
+    t: ffx::TargetInfo,
+    overnet_node: &Arc<overnet_core::Router>,
+    autoconnect: bool,
+) {
+    tracing::debug!("Discovered target {t:?}");
 
     if t.fastboot_interface.is_some() {
-        tracing::trace!(
+        tracing::debug!(
             "Found new fastboot target via mdns: {}. Address: {:?}",
-            t.nodename.clone().unwrap_or("<unknown>".to_string()),
+            t.nodename.as_deref().unwrap_or("<unknown>"),
             t.addresses
         );
-        let target = tc.merge_insert(match Target::from_fastboot_target_info(t) {
-            Ok(ret) => ret,
-            Err(e) => {
-                tracing::debug!("Error while making target: {:?}", e);
-                return None;
-            }
-        });
-        target.update_connection_state(|s| match s {
-            TargetConnectionState::Disconnected | TargetConnectionState::Fastboot(_) => {
-                TargetConnectionState::Fastboot(Instant::now())
-            }
-            _ => s,
-        });
-        return Some(target);
     } else {
         tracing::debug!(
             "Found new target via mdns or file watcher: {}",
-            t.nodename.clone().unwrap_or("<unknown>".to_string())
+            t.nodename.as_deref().unwrap_or("<unknown>")
         );
-        let new_target = Target::from_target_info(t);
-        new_target.update_connection_state(|_| TargetConnectionState::Mdns(Instant::now()));
-        let target = tc.merge_insert(new_target);
-        if !target.is_host_pipe_running() {
-            tracing::debug!("Starting host_pipe for {:?}", &target.addrs());
-            target.run_host_pipe();
-        } else {
-            tracing::debug!("host pipe already running for {:?}", &target.addrs());
-        }
-        return Some(target);
     }
+
+    let identity = t.nodename.as_deref().map(target::Identity::from_name);
+
+    let addrs =
+        t.addresses.iter().flatten().map(|a| TargetAddr::from(a).into()).collect::<Vec<_>>();
+
+    let mut update = TargetUpdateBuilder::new().net_addresses(&addrs);
+
+    if autoconnect {
+        update = update.enable();
+    }
+
+    if let Some(identity) = identity {
+        update = update.identity(identity);
+    }
+
+    update = match t.fastboot_interface {
+        Some(interface) => update.discovered(
+            TargetProtocol::Fastboot,
+            match interface {
+                ffx::FastbootInterface::Tcp => TargetTransport::Network,
+                ffx::FastbootInterface::Udp => TargetTransport::NetworkUdp,
+                _ => panic!("Discovered non-network fastboot interface over mDNS, {interface:?}"),
+            },
+        ),
+        None => update.discovered(TargetProtocol::Ssh, TargetTransport::Network),
+    };
+
+    if let Some(ffx::TargetAddrInfo::IpPort(ssh_address)) = t.ssh_address {
+        update = update.ssh_port(Some(ssh_address.port));
+    }
+
+    let mut single_filter = None;
+    let mut both_filter = None;
+
+    let filter = if let Some(ref name) = t.nodename {
+        &both_filter.insert([
+            TargetUpdateFilter::NetAddrs(&addrs),
+            TargetUpdateFilter::LegacyNodeName(name),
+        ])[..]
+    } else {
+        &single_filter.insert([TargetUpdateFilter::NetAddrs(&addrs)])[..]
+    };
+
+    tc.update_target(filter, update.build(), true);
+
+    tc.try_to_reconnect_target(filter, overnet_node);
 }
 
 #[cfg(test)]
@@ -617,6 +655,7 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_handle_mdns_non_fastboot() {
+        let local_node = overnet_core::Router::new(None).unwrap();
         let t = Target::new_named("this-is-a-thing");
         let tc = Rc::new(TargetCollection::new());
         tc.merge_insert(t.clone());
@@ -625,13 +664,16 @@ mod tests {
         handle_discovered_target(
             &tc,
             ffx::TargetInfo { nodename: Some(t.nodename().unwrap()), ..Default::default() },
+            &local_node,
+            false,
         );
-        assert!(t.is_host_pipe_running());
+        assert!(!t.is_host_pipe_running());
         assert_matches!(t.get_connection_state(), TargetConnectionState::Mdns(t) if t > before_update);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_handle_mdns_fastboot() {
+        let local_node = overnet_core::Router::new(None).unwrap();
         let t = Target::new_named("this-is-a-thing");
         let tc = Rc::new(TargetCollection::new());
         tc.merge_insert(t.clone());
@@ -645,6 +687,8 @@ mod tests {
                 fastboot_interface: Some(ffx::FastbootInterface::Tcp),
                 ..Default::default()
             },
+            &local_node,
+            false,
         );
         assert!(!t.is_host_pipe_running());
         assert_matches!(t.get_connection_state(), TargetConnectionState::Fastboot(t) if t > before_update);
@@ -730,9 +774,6 @@ mod tests {
             .set(json!(temp_dir.display().to_string()))
             .await
             .unwrap();
-        // Work around to make the host pipe connection not be able to
-        // built. Without this, we get a panic "'Tried to get overnet hoist before it was initialized'"
-        query("ssh.priv").level(Some(ConfigLevel::User)).set(json!("")).await.unwrap();
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -740,6 +781,14 @@ mod tests {
         let env = ffx_config::test_init().await.unwrap();
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;
+
+        // Disable mDNS autoconnect to prevent RCS connection attempts in this test.
+        env.context
+            .query("discovery.mdns.autoconnect")
+            .level(Some(ConfigLevel::User))
+            .set(json!(false))
+            .await
+            .unwrap();
 
         const NAME: &'static str = "foo";
         const NAME2: &'static str = "bar";
@@ -803,21 +852,53 @@ mod tests {
         assert_eq!(res[0].nodename.as_ref().unwrap(), NAME3);
 
         let res = list_targets(Some(PARTIAL_NAME_MATCH), &tc).await;
-        assert_eq!(res.len(), 1, "received: {:?}", res);
-        assert!(res.iter().any(|t| {
+        assert_eq!(res.len(), 2, "received: {:?}", res);
+        assert!(res.iter().all(|t| {
             let name = t.nodename.as_ref().unwrap();
             // Check either partial match just in case the backing impl
             // changes ordering. Possible todo here would be to return multiple
             // targets when there is a partial match.
             name == NAME3 || name == NAME2
         }));
+
+        // Regression test for b/308490757:
+        // Targets with a long compatibility message fail to send across FIDL boundary.
+        let compatibility = ffx::CompatibilityInfo {
+            state: ffx::CompatibilityState::Unsupported,
+            platform_abi: 1234,
+            message: r"Somehow, some way, this target is incompatible.
+                To convey this information, this exceptionally long message contains information,
+                some of which is unrelated to the problem.
+
+                Did you know: They did surgery on a grape."
+                .into(),
+        };
+
+        {
+            let tc = fake_daemon.get_target_collection().await.unwrap();
+
+            tc.update_target(
+                &[TargetUpdateFilter::LegacyNodeName(NAME)],
+                TargetUpdateBuilder::new()
+                    .rcs_compatibility(Some(compatibility.clone().into()))
+                    .build(),
+                false,
+            );
+        }
+
+        match &*list_targets(Some(NAME), &tc).await {
+            [target] if target.nodename.as_deref() == Some(NAME) => {
+                assert_eq!(target.compatibility, Some(compatibility));
+            }
+            list => panic!("Expected single target '{NAME}', got {list:?}"),
+        }
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_handle_fastboot_target_no_serial() {
         let tc = Rc::new(TargetCollection::new());
         handle_fastboot_target(&tc, ffx::FastbootTarget::default());
-        assert_eq!(tc.targets().len(), 0, "target collection should remain empty");
+        assert_eq!(tc.targets(None).len(), 0, "target collection should remain empty");
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -827,7 +908,7 @@ mod tests {
             &tc,
             ffx::FastbootTarget { serial: Some("12345".to_string()), ..Default::default() },
         );
-        assert_eq!(tc.targets()[0].serial().as_deref(), Some("12345"));
+        assert_eq!(tc.targets(None)[0].serial_number.as_deref(), Some("12345"));
     }
 
     fn make_target_add_fut(
@@ -890,7 +971,10 @@ mod tests {
             .unwrap();
         let target_collection =
             Context::new(fake_daemon.clone()).get_target_collection().await.unwrap();
-        tc_impl.borrow().load_manual_targets(&target_collection).await;
+        tc_impl
+            .borrow()
+            .load_manual_targets(&target_collection, &overnet_core::Router::new(None).unwrap())
+            .await;
         let proxy = fake_daemon.open_proxy::<ffx::TargetCollectionMarker>().await;
         let res = list_targets(None, &proxy).await;
         assert_eq!(2, res.len());
@@ -922,7 +1006,10 @@ mod tests {
         proxy.add_target(&target_addr.into(), &ffx::AddTargetConfig::default(), client).unwrap();
         target_add_fut.await.unwrap();
         let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
-        let target = target_collection.get(target_addr.to_string()).unwrap();
+        let target = target_collection
+            .query_single_enabled_target(&TargetQuery::Addr(target_addr))
+            .unwrap()
+            .expect("Target not found");
         assert_eq!(target.addrs().len(), 1);
         assert_eq!(target.addrs().into_iter().next(), Some(target_addr));
     }
@@ -942,7 +1029,10 @@ mod tests {
         let proxy = fake_daemon.open_proxy::<ffx::TargetCollectionMarker>().await;
         proxy.add_ephemeral_target(&target_addr.into(), 3600).await.unwrap();
         let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
-        let target = target_collection.get(target_addr.to_string()).unwrap();
+        let target = target_collection
+            .query_single_enabled_target(&TargetQuery::Addr(target_addr))
+            .unwrap()
+            .expect("Target not found");
         assert_eq!(target.addrs().len(), 1);
         assert_eq!(target.addrs().into_iter().next(), Some(target_addr));
     }
@@ -966,7 +1056,10 @@ mod tests {
         proxy.add_target(&target_addr.into(), &ffx::AddTargetConfig::default(), client).unwrap();
         target_add_fut.await.unwrap();
         let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
-        let target = target_collection.get(target_addr.to_string()).unwrap();
+        let target = target_collection
+            .query_single_enabled_target(&TargetQuery::Addr(target_addr))
+            .unwrap()
+            .expect("Target not found");
         assert_eq!(target.addrs().len(), 1);
         assert_eq!(target.addrs().into_iter().next(), Some(target_addr));
     }
@@ -986,7 +1079,10 @@ mod tests {
         let proxy = fake_daemon.open_proxy::<ffx::TargetCollectionMarker>().await;
         proxy.add_ephemeral_target(&target_addr.into(), 3600).await.unwrap();
         let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
-        let target = target_collection.get(target_addr.to_string()).unwrap();
+        let target = target_collection
+            .query_single_enabled_target(&TargetQuery::Addr(target_addr))
+            .unwrap()
+            .expect("Target not found");
         assert_eq!(target.addrs().len(), 1);
         assert_eq!(target.addrs().into_iter().next(), Some(target_addr));
     }
@@ -1022,7 +1118,7 @@ mod tests {
             .unwrap();
         target_add_fut.await.unwrap();
         let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
-        assert_eq!(1, target_collection.targets().len());
+        assert_eq!(1, target_collection.targets(None).len());
         let mut map = Map::<String, Value>::new();
         map.insert("[fe80::1%1]:8022".to_string(), Value::Null);
         assert_eq!(tc_impl.borrow().manual_targets.get().await.unwrap(), json!(map));
@@ -1055,7 +1151,7 @@ mod tests {
             .await
             .unwrap();
         let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
-        assert_eq!(1, target_collection.targets().len());
+        assert_eq!(1, target_collection.targets(None).len());
         assert!(tc_impl.borrow().manual_targets.get().await.unwrap().is_object());
         let value = tc_impl.borrow().manual_targets.get().await.unwrap();
         assert!(value.is_object());
@@ -1109,13 +1205,27 @@ mod tests {
         let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
         // This happens in FidlProtocol::start(), but we want to avoid binding the
         // network sockets in unit tests, thus not calling start.
-        tc_impl.borrow().load_manual_targets(&target_collection).await;
+        tc_impl
+            .borrow()
+            .load_manual_targets(&target_collection, &overnet_core::Router::new(None).unwrap())
+            .await;
 
-        let target = target_collection.get("127.0.0.1:8022".to_string()).unwrap();
+        let target = target_collection
+            .query_single_enabled_target(&"127.0.0.1:8022".into())
+            .unwrap()
+            .expect("Could not find target");
         assert_eq!(target.ssh_address(), Some("127.0.0.1:8022".parse::<SocketAddr>().unwrap()));
-        let target = target_collection.get("127.0.0.1:8023".to_string()).unwrap();
+
+        let target = target_collection
+            .query_single_enabled_target(&"127.0.0.1:8023".into())
+            .unwrap()
+            .expect("Could not find target");
         assert_eq!(target.ssh_address(), Some("127.0.0.1:8023".parse::<SocketAddr>().unwrap()));
-        let target = target_collection.get("127.0.0.1:8024".to_string()).unwrap();
+
+        let target = target_collection
+            .query_single_enabled_target(&"127.0.0.1:8024".into())
+            .unwrap()
+            .expect("Could not find target");
         assert_eq!(target.ssh_address(), Some("127.0.0.1:8024".parse::<SocketAddr>().unwrap()));
     }
 }

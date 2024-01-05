@@ -69,6 +69,7 @@ pub async fn cache_package<'a>(
     repo: Arc<AsyncMutex<Repository>>,
     config: &'a RepositoryConfig,
     url: &'a AbsolutePackageUrl,
+    gc_protection: fpkg::GcProtection,
     cache: &'a pkg::cache::Client,
     blob_fetcher: &'a BlobFetcher,
     cobalt_sender: ProtocolSender<MetricEvent>,
@@ -93,25 +94,30 @@ pub async fn cache_package<'a>(
 
     let meta_far_blob = BlobInfo { blob_id: merkle, length: 0 };
 
-    let mut get = cache.get(meta_far_blob)?;
+    let mut get = cache.get(meta_far_blob, gc_protection)?;
 
     let blob_fetch_res = async {
         let mirrors = config.mirrors().to_vec().into();
 
-        // Fetch the meta.far.
-        let () = blob_fetcher
-            .push(
-                merkle,
-                FetchBlobContext {
-                    opener: get.make_open_meta_blob(),
-                    mirrors: Arc::clone(&mirrors),
-                    expected_len: size,
-                    parent_trace_id: trace_id,
-                },
-            )
-            .await
-            .expect("processor exists")
-            .map_err(|e| CacheError::FetchMetaFar(e, merkle))?;
+        // Only add the meta.far fetch to the queue if the meta.far is not already cached to avoid
+        // blocking resolves of fully cached packages behind in-progress resolves.
+        let meta_opener = get.make_open_meta_blob();
+        if let Some(needed_meta) = meta_opener.open(blob_fetcher.blob_type).await? {
+            let () = meta_opener.register_opened_blob(needed_meta);
+            let () = blob_fetcher
+                .push(
+                    merkle,
+                    FetchBlobContext {
+                        opener: meta_opener,
+                        mirrors: Arc::clone(&mirrors),
+                        expected_len: size,
+                        parent_trace_id: trace_id,
+                    },
+                )
+                .await
+                .expect("processor exists")
+                .map_err(|e| CacheError::FetchMetaFar(e, merkle))?;
+        }
 
         let mut fetches = FuturesUnordered::new();
         let mut missing_blobs = get.get_missing_blobs().fuse();
@@ -141,6 +147,8 @@ pub async fn cache_package<'a>(
                             (
                                 need.blob_id,
                                 FetchBlobContext {
+                                    // TODO(b/303737132) Consider checking if the blob is cached
+                                    // before adding to the queue, like is done for meta.fars.
                                     opener: get.make_open_blob(need.blob_id),
                                     mirrors: Arc::clone(&mirrors),
                                     expected_len: None,
@@ -190,6 +198,9 @@ pub enum CacheError {
 
     #[error("Get() request failed")]
     Get(#[from] pkg::cache::GetError),
+
+    #[error("opening a blob from the blobstore")]
+    Open(#[from] pkg::cache::OpenBlobError),
 }
 
 pub(crate) trait ToResolveError {
@@ -243,6 +254,7 @@ impl ToResolveError for CacheError {
             CacheError::FetchMetaFar(err, ..) => err.to_resolve_error(),
             CacheError::FetchContentBlob(err, _) => err.to_resolve_error(),
             CacheError::Get(err) => err.to_resolve_error(),
+            CacheError::Open(err) => err.to_resolve_error(),
         }
     }
 }
@@ -629,7 +641,7 @@ async fn fetch_blob(
                 .as_occurrence(1),
         );
     }
-    guard.end(&[ftrace::ArgValue::of("result", format!("{res:?}").as_str())]);
+    guard.map(|o| o.end(&[ftrace::ArgValue::of("result", format!("{res:?}").as_str())]));
     res
 }
 
@@ -703,10 +715,12 @@ async fn fetch_blob_http(
                         Ok(size) => (size.to_string(), "success".to_string()),
                         Err(e) => ("no size because download failed".to_string(), e.to_string()),
                     };
-                    guard.end(&[
-                        ftrace::ArgValue::of("size", size_str.as_str()),
-                        ftrace::ArgValue::of("status", status_str.as_str()),
-                    ]);
+                    guard.map(|o| {
+                        o.end(&[
+                            ftrace::ArgValue::of("size", size_str.as_str()),
+                            ftrace::ArgValue::of("status", status_str.as_str()),
+                        ])
+                    });
                     inspect.state(inspect::Http::CloseBlob);
                     blob_closer.close().await;
                     res?;

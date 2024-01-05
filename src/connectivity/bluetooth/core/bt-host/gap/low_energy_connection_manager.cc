@@ -4,10 +4,6 @@
 
 #include "low_energy_connection_manager.h"
 
-#include <lib/async/cpp/task.h>
-#include <lib/async/default.h>
-#include <lib/async/time.h>
-
 #include <optional>
 #include <vector>
 
@@ -90,12 +86,12 @@ LowEnergyConnectionManager::LowEnergyConnectionManager(
     hci::CommandChannel::WeakPtr cmd_channel, hci::LocalAddressDelegate* addr_delegate,
     hci::LowEnergyConnector* connector, PeerCache* peer_cache, l2cap::ChannelManager* l2cap,
     gatt::GATT::WeakPtr gatt, LowEnergyDiscoveryManager::WeakPtr discovery_manager,
-    sm::SecurityManagerFactory sm_creator)
-    : cmd_(std::move(cmd_channel)),
+    sm::SecurityManagerFactory sm_creator, pw::async::Dispatcher& dispatcher)
+    : dispatcher_(dispatcher),
+      cmd_(std::move(cmd_channel)),
       security_mode_(LESecurityMode::Mode1),
       sm_factory_func_(std::move(sm_creator)),
       request_timeout_(kLECreateConnectionTimeout),
-      dispatcher_(async_get_default_dispatcher()),
       peer_cache_(peer_cache),
       l2cap_(l2cap),
       gatt_(gatt),
@@ -103,7 +99,6 @@ LowEnergyConnectionManager::LowEnergyConnectionManager(
       hci_connector_(connector),
       local_address_delegate_(addr_delegate),
       weak_self_(this) {
-  BT_DEBUG_ASSERT(dispatcher_);
   BT_DEBUG_ASSERT(peer_cache_);
   BT_DEBUG_ASSERT(l2cap_);
   BT_DEBUG_ASSERT(gatt_.is_alive());
@@ -353,7 +348,8 @@ void LowEnergyConnectionManager::RegisterRemoteInitiatedLink(
 
   std::unique_ptr<internal::LowEnergyConnector> connector =
       std::make_unique<internal::LowEnergyConnector>(peer_id, connection_options, cmd_, peer_cache_,
-                                                     weak_self_.GetWeakPtr(), l2cap_, gatt_);
+                                                     weak_self_.GetWeakPtr(), l2cap_, gatt_,
+                                                     dispatcher_);
   auto [conn_iter, _] = remote_connectors_.emplace(
       peer_id, RequestAndConnector{std::move(request), std::move(connector)});
   // Wait until the connector is in the map to start in case the result callback is called
@@ -421,7 +417,7 @@ void LowEnergyConnectionManager::TryCreateNextConnection() {
       std::unique_ptr<internal::LowEnergyConnector> connector =
           std::make_unique<internal::LowEnergyConnector>(peer_id, request.connection_options(),
                                                          cmd_, peer_cache_, weak_self_.GetWeakPtr(),
-                                                         l2cap_, gatt_);
+                                                         l2cap_, gatt_, dispatcher_);
       connector->AttachInspect(inspect_node_, kInspectOutboundConnectorNodeName);
 
       current_request_ = RequestAndConnector{std::move(request), std::move(connector)};

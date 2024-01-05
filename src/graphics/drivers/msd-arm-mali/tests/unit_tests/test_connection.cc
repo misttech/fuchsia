@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/magma_service/mock/mock_bus_mapper.h>
+#include <lib/magma_service/msd.h>
+#include <lib/magma_service/msd_defs.h>
+#include <lib/magma_service/test_util/msd_stubs.h>
+
 #include <limits>
 
 #include <gtest/gtest.h>
 
-#include "mock/mock_bus_mapper.h"
-#include "msd.h"
-#include "msd_defs.h"
+#include "driver_logger_harness.h"
 #include "src/graphics/drivers/msd-arm-mali/include/magma_arm_mali_types.h"
 #include "src/graphics/drivers/msd-arm-mali/src/address_manager.h"
 #include "src/graphics/drivers/msd-arm-mali/src/gpu_mapping.h"
@@ -16,7 +19,6 @@
 #include "src/graphics/drivers/msd-arm-mali/src/msd_arm_connection.h"
 #include "src/graphics/drivers/msd-arm-mali/src/msd_arm_context.h"
 #include "src/graphics/drivers/msd-arm-mali/tests/unit_tests/fake_connection_owner_base.h"
-#include "src/graphics/lib/magma/tests/helper/msd_stubs.h"
 
 namespace {
 
@@ -560,21 +562,25 @@ class TestConnection {
 
     magma_arm_mali_atom client_atom = {};
     client_atom.flags = kAtomFlagSemaphoreWait;
-    std::deque<std::shared_ptr<magma::PlatformSemaphore>> semaphores;
+    std::deque<std::shared_ptr<magma::PlatformSemaphore>> deprecated_semaphores;
+    std::vector<std::shared_ptr<magma::PlatformSemaphore>> semaphores;
     size_t remaining_size = sizeof(magma_arm_mali_atom);
-    EXPECT_FALSE(connection->ExecuteAtom(&remaining_size, &client_atom, &semaphores));
+    EXPECT_FALSE(
+        connection->ExecuteAtom(&remaining_size, &client_atom, semaphores, &deprecated_semaphores));
 
     std::shared_ptr<magma::PlatformSemaphore> semaphore(magma::PlatformSemaphore::Create());
-    semaphores.push_back(semaphore);
+    deprecated_semaphores.push_back(semaphore);
     remaining_size = sizeof(magma_arm_mali_atom);
-    EXPECT_TRUE(connection->ExecuteAtom(&remaining_size, &client_atom, &semaphores));
+    EXPECT_TRUE(
+        connection->ExecuteAtom(&remaining_size, &client_atom, semaphores, &deprecated_semaphores));
 
     EXPECT_EQ(1u, owner.atoms_list().size());
     std::shared_ptr<MsdArmAtom> atom = owner.atoms_list()[0];
     std::shared_ptr<MsdArmSoftAtom> soft_atom = MsdArmSoftAtom::cast(atom);
     EXPECT_TRUE(!!soft_atom);
     EXPECT_EQ(kAtomFlagSemaphoreWait, soft_atom->soft_flags());
-    EXPECT_EQ(semaphore, soft_atom->platform_semaphore());
+    EXPECT_EQ(1u, soft_atom->platform_semaphores().size());
+    EXPECT_EQ(semaphore, soft_atom->platform_semaphores()[0]);
   }
 
   void FlushRegion() {
@@ -714,7 +720,8 @@ class TestConnection {
     good_atom.atom.atom_number = 1;
     good_atom.atom.size = sizeof(good_atom.atom);
     good_atom.atom.flags = kAtomFlagJitAddressSpaceAllocate;
-    std::deque<std::shared_ptr<magma::PlatformSemaphore>> semaphores;
+    std::deque<std::shared_ptr<magma::PlatformSemaphore>> deprecated_semaphores;
+    std::vector<std::shared_ptr<magma::PlatformSemaphore>> semaphores;
 
     FakeConnectionOwner owner;
     {
@@ -722,7 +729,8 @@ class TestConnection {
       EXPECT_TRUE(connection);
 
       size_t size = sizeof(good_atom);
-      EXPECT_TRUE(connection->ExecuteAtom(&size, &good_atom.atom, &semaphores));
+      EXPECT_TRUE(
+          connection->ExecuteAtom(&size, &good_atom.atom, semaphores, &deprecated_semaphores));
       EXPECT_EQ(0u, size);
       EXPECT_EQ(0u, owner.atoms_list().size());
       {
@@ -734,7 +742,8 @@ class TestConnection {
                   good_atom.alloc_info.va_page_count * magma::page_size());
       }
       size = sizeof(good_atom);
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &good_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &good_atom.atom, semaphores, &deprecated_semaphores));
     }
     // Invalid version
     {
@@ -744,7 +753,8 @@ class TestConnection {
 
       bad_atom.alloc_info.version_number = static_cast<uint8_t>(1000);
       size_t size = sizeof(good_atom);
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &bad_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &bad_atom.atom, semaphores, &deprecated_semaphores));
     }
     // Invalid trim level
     {
@@ -754,7 +764,8 @@ class TestConnection {
 
       bad_atom.alloc_info.trim_level = 101;
       size_t size = sizeof(good_atom);
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &bad_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &bad_atom.atom, semaphores, &deprecated_semaphores));
     }
 
     // Invalid size
@@ -764,7 +775,8 @@ class TestConnection {
       EXPECT_TRUE(connection);
 
       size_t size = sizeof(good_atom) - 1;
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &bad_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &bad_atom.atom, semaphores, &deprecated_semaphores));
     }
 
     // Invalid va_pages
@@ -775,7 +787,8 @@ class TestConnection {
 
       bad_atom.alloc_info.va_page_count = (1ul << 48);
       size_t size = sizeof(good_atom);
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &bad_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &bad_atom.atom, semaphores, &deprecated_semaphores));
     }
   }
 
@@ -798,7 +811,8 @@ class TestConnection {
     good_atom.atom.atom_number = 1;
     good_atom.atom.size = sizeof(good_atom.atom);
     good_atom.atom.flags = kAtomFlagJitMemoryAllocate;
-    std::deque<std::shared_ptr<magma::PlatformSemaphore>> semaphores;
+    std::vector<std::shared_ptr<magma::PlatformSemaphore>> semaphores;
+    std::deque<std::shared_ptr<magma::PlatformSemaphore>> deprecated_semaphores;
 
     {
       FakeConnectionOwner owner;
@@ -806,7 +820,8 @@ class TestConnection {
       EXPECT_TRUE(connection);
 
       size_t size = sizeof(good_atom);
-      EXPECT_TRUE(connection->ExecuteAtom(&size, &good_atom.atom, &semaphores));
+      EXPECT_TRUE(
+          connection->ExecuteAtom(&size, &good_atom.atom, semaphores, &deprecated_semaphores));
       EXPECT_EQ(0u, size);
       EXPECT_EQ(1u, owner.atoms_list().size());
       auto atom = owner.atoms_list()[0];
@@ -826,7 +841,8 @@ class TestConnection {
       EXPECT_TRUE(connection);
 
       size_t size = sizeof(good_atom) - 1;
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &good_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &good_atom.atom, semaphores, &deprecated_semaphores));
     }
 
     // Too many trailing infos.
@@ -839,7 +855,8 @@ class TestConnection {
       bad_atom.trailer.jit_memory_info_count = 3;
 
       size_t size = sizeof(bad_atom);
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &bad_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &bad_atom.atom, semaphores, &deprecated_semaphores));
     }
 
     // Bad version
@@ -852,7 +869,8 @@ class TestConnection {
       bad_atom.info[1].version_number = 100;
 
       size_t size = sizeof(bad_atom);
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &bad_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &bad_atom.atom, semaphores, &deprecated_semaphores));
     }
 
     // Too few trailing infos.
@@ -865,7 +883,8 @@ class TestConnection {
       bad_atom.trailer.jit_memory_info_count = 0;
 
       size_t size = sizeof(bad_atom);
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &bad_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &bad_atom.atom, semaphores, &deprecated_semaphores));
     }
   }
 
@@ -885,7 +904,8 @@ class TestConnection {
     good_atom.atom.atom_number = 1;
     good_atom.atom.size = sizeof(good_atom.atom);
     good_atom.atom.flags = kAtomFlagJitMemoryFree;
-    std::deque<std::shared_ptr<magma::PlatformSemaphore>> semaphores;
+    std::deque<std::shared_ptr<magma::PlatformSemaphore>> deprecated_semaphores;
+    std::vector<std::shared_ptr<magma::PlatformSemaphore>> semaphores;
 
     {
       FakeConnectionOwner owner;
@@ -893,7 +913,8 @@ class TestConnection {
       EXPECT_TRUE(connection);
 
       size_t size = sizeof(good_atom);
-      EXPECT_TRUE(connection->ExecuteAtom(&size, &good_atom.atom, &semaphores));
+      EXPECT_TRUE(
+          connection->ExecuteAtom(&size, &good_atom.atom, semaphores, &deprecated_semaphores));
       EXPECT_EQ(0u, size);
       EXPECT_EQ(1u, owner.atoms_list().size());
       auto atom = owner.atoms_list()[0];
@@ -913,7 +934,8 @@ class TestConnection {
       EXPECT_TRUE(connection);
 
       size_t size = sizeof(good_atom) - 1;
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &good_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &good_atom.atom, semaphores, &deprecated_semaphores));
     }
 
     // Too many trailing infos.
@@ -926,7 +948,8 @@ class TestConnection {
       bad_atom.trailer.jit_memory_info_count = 3;
 
       size_t size = sizeof(bad_atom);
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &bad_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &bad_atom.atom, semaphores, &deprecated_semaphores));
     }
 
     // Bad version
@@ -939,7 +962,8 @@ class TestConnection {
       bad_atom.info[1].version_number = 100;
 
       size_t size = sizeof(bad_atom);
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &bad_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &bad_atom.atom, semaphores, &deprecated_semaphores));
     }
 
     // Too few trailing infos.
@@ -952,7 +976,8 @@ class TestConnection {
       bad_atom.trailer.jit_memory_info_count = 0;
 
       size_t size = sizeof(bad_atom);
-      EXPECT_FALSE(connection->ExecuteAtom(&size, &bad_atom.atom, &semaphores));
+      EXPECT_FALSE(
+          connection->ExecuteAtom(&size, &bad_atom.atom, semaphores, &deprecated_semaphores));
     }
   }
 
@@ -972,10 +997,12 @@ class TestConnection {
     address_space_atom.atom.atom_number = 1;
     address_space_atom.atom.size = sizeof(address_space_atom.atom);
     address_space_atom.atom.flags = kAtomFlagJitAddressSpaceAllocate;
-    std::deque<std::shared_ptr<magma::PlatformSemaphore>> semaphores;
+    std::deque<std::shared_ptr<magma::PlatformSemaphore>> deprecated_semaphores;
+    std::vector<std::shared_ptr<magma::PlatformSemaphore>> semaphores;
 
     size_t size = sizeof(address_space_atom);
-    EXPECT_TRUE(connection->ExecuteAtom(&size, &address_space_atom.atom, &semaphores));
+    EXPECT_TRUE(connection->ExecuteAtom(&size, &address_space_atom.atom, semaphores,
+                                        &deprecated_semaphores));
 
     *start_region_out = address_space_atom.alloc_info.address;
   }
@@ -1318,122 +1345,127 @@ class TestConnection {
   }
 };
 
-TEST(TestConnection, MapUnmap) {
+class ConnectionTest : public testing::Test {
+  void SetUp() override { logger_harness_ = DriverLoggerHarness::Create(); }
+  std::unique_ptr<DriverLoggerHarness> logger_harness_;
+};
+
+TEST_F(ConnectionTest, MapUnmap) {
   TestConnection test;
   test.MapUnmap();
 }
 
-TEST(TestConnection, CommitMemory) {
+TEST_F(ConnectionTest, CommitMemory) {
   TestConnection test;
   test.CommitMemory();
 }
 
-TEST(TestConnection, CommitDecommitMemory) {
+TEST_F(ConnectionTest, CommitDecommitMemory) {
   TestConnection test;
   test.CommitDecommitMemory();
 }
 
-TEST(TestConnection, CommitLargeBuffer) {
+TEST_F(ConnectionTest, CommitLargeBuffer) {
   TestConnection test;
   test.CommitLargeBuffer();
 }
 
-TEST(TestConnection, Notification) {
+TEST_F(ConnectionTest, Notification) {
   TestConnection test;
   test.Notification();
 }
 
-TEST(TestConnection, CoalescedNotification) {
+TEST_F(ConnectionTest, CoalescedNotification) {
   TestConnection test;
   test.DestructionNotification();
 }
 
-TEST(TestConnection, DestructionNotification) {
+TEST_F(ConnectionTest, DestructionNotification) {
   TestConnection test;
   test.DestructionNotification();
 }
 
-TEST(TestConnection, SoftwareAtom) {
+TEST_F(ConnectionTest, SoftwareAtom) {
   TestConnection test;
   test.SoftwareAtom();
 }
 
-TEST(TestConnection, GrowableMemory) {
+TEST_F(ConnectionTest, GrowableMemory) {
   TestConnection test;
   test.GrowableMemory();
 }
 
-TEST(TestConnection, FlushRegion) {
+TEST_F(ConnectionTest, FlushRegion) {
   TestConnection test;
   test.FlushRegion();
 }
 
-TEST(TestConnection, FlushUncachedRegion) {
+TEST_F(ConnectionTest, FlushUncachedRegion) {
   TestConnection test;
   test.FlushUncachedRegion();
 }
 
-TEST(TestConnection, PhysicalToVirtual) {
+TEST_F(ConnectionTest, PhysicalToVirtual) {
   TestConnection test;
   test.PhysicalToVirtual();
 }
 
-TEST(TestConnection, DeregisterConnection) {
+TEST_F(ConnectionTest, DeregisterConnection) {
   TestConnection test;
   test.DeregisterConnection();
 }
 
-TEST(TestConnection, ContextCount) {
+TEST_F(ConnectionTest, ContextCount) {
   TestConnection test;
   test.ContextCount();
 }
 
-TEST(TestConnection, JitAddressSpaceAllocate) {
+TEST_F(ConnectionTest, JitAddressSpaceAllocate) {
   TestConnection test;
   test.JitAddressSpaceAllocate();
 }
 
-TEST(TestConnection, JitParseAllocate) {
+TEST_F(ConnectionTest, JitParseAllocate) {
   TestConnection test;
   test.JitParseAllocate();
 }
 
-TEST(TestConnection, JitParseFree) {
+TEST_F(ConnectionTest, JitParseFree) {
   TestConnection test;
   test.JitParseFree();
 }
 
-TEST(TestConnection, JitAllocateNormal) {
+TEST_F(ConnectionTest, JitAllocateNormal) {
   TestConnection test;
   test.JitAllocateNormal();
 }
 
-TEST(TestConnection, JitAllocateWriteCombining) {
+TEST_F(ConnectionTest, JitAllocateWriteCombining) {
   TestConnection test;
   test.JitAllocateWriteCombining();
 }
 
-TEST(TestConnection, JitAllocateReuseChoice) {
+TEST_F(ConnectionTest, JitAllocateReuseChoice) {
   TestConnection test;
   test.JitAllocateWriteCombining();
 }
 
-TEST(TestConnection, JitAllocateInvalidCommitSize) {
+TEST_F(ConnectionTest, JitAllocateInvalidCommitSize) {
   TestConnection test;
   test.JitAllocateInvalidCommitSize();
 }
 
-TEST(TestConnection, JitAllocateInvalidWriteAddress) {
+TEST_F(ConnectionTest, JitAllocateInvalidWriteAddress) {
   TestConnection test;
   test.JitAllocateInvalidWriteAddress();
 }
 
-TEST(TestConnection, MemoryPressure) {
+TEST_F(ConnectionTest, MemoryPressure) {
   TestConnection test;
   test.MemoryPressure();
 }
 
-TEST(TestConnection, FailAllAllocation) {
+TEST_F(ConnectionTest, FailAllAllocation) {
   TestConnection test;
   test.FailAllAllocation();
 }

@@ -8,7 +8,6 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
 import("//build/testing/test_spec.gni")
-import("//src/sys/core/build/core_shard.gni")
 
 group("remote-control") {
   testonly = true
@@ -17,11 +16,6 @@ group("remote-control") {
     ":remote-control-package",
     ":tests",
   ]
-}
-
-resource("selector-maps") {
-  sources = [ "data/selector-maps.json" ]
-  outputs = [ "data/selector-maps.json" ]
 }
 
 resource("moniker-map") {
@@ -34,7 +28,6 @@ group("tests") {
 
   deps = [
     ":remote-control-lib-tests",
-    "//src/developer/remote-control/diagnostics-bridge:tests",
     "//src/developer/remote-control/runner:tests",
   ]
 }
@@ -45,25 +38,20 @@ rustc_library("lib") {
   with_unit_tests = true
 
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
     "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_rust",
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
     "//sdk/fidl/fuchsia.device:fuchsia.device_rust",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
-    "//src/developer/ffx/lib/selector-maps",
-    "//src/lib/diagnostics/selectors",
-    "//src/lib/fdio/rust:fdio",
+    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_rust",
+    "//src/developer/remote-control/fidl:fuchsia.developer.remotecontrol.connector_rust",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
-    "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/sys/lib/component_debug",
@@ -77,7 +65,7 @@ rustc_library("lib") {
   test_deps = [
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/lib/fuchsia",
-    "//third_party/rust_crates:assert_matches",
+    "//src/lib/fuchsia-async",
   ]
 
   sources = [
@@ -95,10 +83,8 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
     "//sdk/fidl/fuchsia.hardware.overnet:fuchsia.hardware.overnet_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/fidl/fuchsia.overnet:fuchsia.overnet_rust",
     "//src/connectivity/overnet/lib/circuit",
     "//src/connectivity/overnet/lib/core",
-    "//src/developer/remote-control/diagnostics-bridge",
     "//src/lib/diagnostics/log/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
@@ -141,24 +127,10 @@ fuchsia_test_package("remote-control-lib-tests") {
   }
 }
 
-fuchsia_package_with_single_component("pkg-diagnostics-bridge") {
-  package_name = "remote-diagnostics-bridge"
-  deps = [
-    ":bin",
-    "//build/validate:non_production_tag",
-    "//src/developer/remote-control/diagnostics-bridge",
-  ]
-  manifest = "diagnostics-bridge/meta/remote-diagnostics-bridge.cml"
-}
-
 fuchsia_component("remote-control-component") {
   component_name = "remote-control"
   manifest = "meta/remote-control.cml"
-  deps = [
-    ":bin",
-    "//src/connectivity/overnet:certificates",
-    "//src/developer/remote-control/diagnostics-bridge",
-  ]
+  deps = [ ":bin" ]
 }
 
 fuchsia_package("remote-control-package") {
@@ -166,19 +138,10 @@ fuchsia_package("remote-control-package") {
   deps = [
     ":moniker-map",
     ":remote-control-component",
-    ":selector-maps",
     "//src/developer/remote-control/runner:bin",
   ]
 }
 
 fuchsia_package_archive("remote-control-archive") {
   package = ":remote-control-package"
-}
-
-# This shard enables ffx component laboratory functionality.
-# Note that the laboratory core shard requires the `laboratory-env`, so when
-# the laboratory shard is included in a product, a core shard must also be
-# included that defines this environment.
-core_shard("laboratory-core-shard") {
-  shard_file = "meta/laboratory.core_shard.cml"
 }

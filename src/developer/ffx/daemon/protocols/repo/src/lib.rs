@@ -6,7 +6,7 @@ use {
     async_lock::RwLock,
     async_trait::async_trait,
     ffx_daemon_core::events::{EventHandler, Status as EventStatus},
-    ffx_daemon_events::{DaemonEvent, TargetEvent, TargetInfo},
+    ffx_daemon_events::{DaemonEvent, TargetEvent, TargetEventInfo},
     ffx_daemon_target::target::Target,
     ffx_ssh::ssh::build_ssh_command,
     fidl::endpoints::ServerEnd,
@@ -223,31 +223,38 @@ impl<S: SshProvider> Registrar for RealRegistrar<S> {
             }
         };
 
-        register_target_with_fidl_proxies(
-            proxy,
-            rewrite_engine_proxy,
-            &repo_target_info,
-            &target,
-            &target_nodename,
-            &inner,
-            alias_conflict_mode,
-        )
-        .await?;
+        let repo = &inner
+            .read()
+            .await
+            .manager
+            .get(&repo_target_info.repo_name)
+            .ok_or_else(|| ffx::RepositoryError::NoMatchingRepository)?;
 
-        let listen_addr = match inner.read().await.server.listen_addr() {
-            Some(listen_addr) => listen_addr,
+        let repo_server_listen_addr = match inner.read().await.server.listen_addr() {
+            Some(repo_server_listen_addr) => repo_server_listen_addr,
             None => {
                 tracing::error!("repository server is not running");
                 return Err(ffx::RepositoryError::ServerNotRunning);
             }
         };
 
+        register_target_with_fidl_proxies(
+            proxy,
+            rewrite_engine_proxy,
+            &repo_target_info,
+            &target,
+            repo_server_listen_addr,
+            repo,
+            alias_conflict_mode,
+        )
+        .await?;
+
         // Before we register the repository, we need to decide which address the
         // target device should use to reach the repository. If the server is
         // running on a loopback device, then we need to create a tunnel for the
         // device to access the server.
         let (should_make_tunnel, _) = create_repo_host(
-            listen_addr,
+            repo_server_listen_addr,
             target.ssh_host_address.ok_or_else(|| {
                 tracing::error!(
                     "target {:?} does not have a host address",
@@ -312,10 +319,18 @@ impl<S: SshProvider> Registrar for RealRegistrar<S> {
 
         let target = match cx.get_target_collection().await {
             Ok(target_collection) => {
-                match target_collection.get(target_info.target_identifier.clone()) {
-                    Some(target) => target,
-                    None => {
+                match target_collection
+                    .query_single_enabled_target(&target_info.target_identifier.clone().into())
+                {
+                    Ok(Some(target)) => target,
+                    Ok(None) => {
                         tracing::error!("failed to get target from target collection");
+                        return Err(ffx::RepositoryError::TargetCommunicationFailure);
+                    }
+                    Err(()) => {
+                        tracing::error!(
+                            "failed to get target from target collection: ambiguous identifier"
+                        );
                         return Err(ffx::RepositoryError::TargetCommunicationFailure);
                     }
                 }
@@ -1160,7 +1175,7 @@ struct DaemonEventHandler<R: Registrar> {
 
 impl<R: Registrar> DaemonEventHandler<R> {
     /// pub(crate) so that this is visible to tests.
-    pub(crate) fn build_matcher(t: TargetInfo) -> Option<String> {
+    pub(crate) fn build_matcher(t: TargetEventInfo) -> Option<String> {
         if let Some(nodename) = t.nodename {
             Some(nodename)
         } else {
@@ -1333,6 +1348,7 @@ mod tests {
             EngineRequest as RewriteEngineRequest, RuleIteratorRequest,
         },
         fidl_fuchsia_pkg_rewrite_ext::Rule,
+        fidl_fuchsia_posix_socket as fsock,
         fuchsia_repo::{manager::RepositoryManager, server::RepositoryServer},
         futures::TryStreamExt,
         pretty_assertions::assert_eq,
@@ -1355,7 +1371,8 @@ mod tests {
     const HOST_ADDR: &str = "1.2.3.4";
     const DEVICE_ADDR: &str = "127.0.0.1:5";
     const DEVICE_PORT: u16 = 5;
-    const EMPTY_REPO_PATH: &str = "host_x64/test_data/ffx_daemon_protocol_repo/empty-repo";
+    const EMPTY_REPO_PATH: &str =
+        concat!(env!("ROOT_OUT_DIR"), "/test_data/ffx_daemon_protocol_repo/empty-repo");
 
     macro_rules! rule {
         ($host_match:expr => $host_replacement:expr,
@@ -1681,6 +1698,58 @@ mod tests {
         EditTransactionCommit,
     }
 
+    async fn test_stream_socket(mut stream: fsock::StreamSocketRequestStream) {
+        let mut bound = false;
+        let mut listening = false;
+        let mut describe_endpoint = None;
+        while let Some(Ok(request)) = stream.next().await {
+            match request {
+                fsock::StreamSocketRequest::Bind { addr: _, responder } => {
+                    assert!(!bound, "bound socket twice");
+                    bound = true;
+                    responder.send(Ok(())).unwrap();
+                }
+                fsock::StreamSocketRequest::Describe { responder } => {
+                    assert!(describe_endpoint.is_none());
+                    let (socket, endpoint) = fidl::Socket::create_stream();
+                    describe_endpoint = Some(endpoint);
+                    responder
+                        .send(fsock::StreamSocketDescribeResponse {
+                            socket: Some(socket),
+                            ..Default::default()
+                        })
+                        .unwrap()
+                }
+                fsock::StreamSocketRequest::Listen { backlog: _, responder } => {
+                    assert!(bound, "listened to unbound socket");
+                    assert!(!listening, "listened to socket twice");
+                    listening = true;
+                    responder.send(Ok(())).unwrap();
+                }
+                other => panic!("Unexpected request: {other:?}"),
+            }
+        }
+    }
+
+    async fn test_socket_provider(channel: fidl::Channel) {
+        let channel = fidl::endpoints::ServerEnd::<fsock::ProviderMarker>::from(channel);
+        let mut stream = channel.into_stream().unwrap();
+
+        while let Some(Ok(request)) = stream.next().await {
+            match request {
+                fsock::ProviderRequest::StreamSocket { domain: _, proto, responder } => {
+                    assert_eq!(fsock::StreamSocketProtocol::Tcp, proto);
+                    let (client, stream) =
+                        fidl::endpoints::create_request_stream::<fsock::StreamSocketMarker>()
+                            .unwrap();
+                    fuchsia_async::Task::spawn(test_stream_socket(stream)).detach();
+                    responder.send(Ok(client)).unwrap();
+                }
+                other => panic!("Unexpected request: {other:?}"),
+            }
+        }
+    }
+
     struct FakeRcs {
         events: Arc<Mutex<Vec<RcsEvent>>>,
     }
@@ -1695,10 +1764,19 @@ mod tests {
 
                 match (req, target.as_deref()) {
                     (
-                        rcs::RemoteControlRequest::ReverseTcp { responder, .. },
+                        rcs::RemoteControlRequest::OpenCapability {
+                            moniker: _,
+                            capability_set: _,
+                            server_channel,
+                            flags: _,
+                            capability_name,
+                            responder,
+                        },
                         Some(TARGET_NODENAME),
                     ) => {
+                        assert_eq!("svc/fuchsia.posix.socket.Provider", capability_name);
                         events_closure.lock().unwrap().push(RcsEvent::ReverseTcp);
+                        fasync::Task::spawn(test_socket_provider(server_channel)).detach();
                         responder.send(Ok(())).unwrap()
                     }
                     (req, target) => {
@@ -1973,8 +2051,11 @@ mod tests {
     // * clear out the config keys before we run each test to make sure state isn't leaked across
     //   tests.
     fn run_test<F: Future>(mode: TestRunMode, fut: F) -> F::Output {
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|_| {
-            panic!("the test lock is poisoned, which probably means another test failed")
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|err| {
+            // Ignore poison, the config is cleaned up below.
+            // Using a plain unwrap would cause all subsequent tests to fail, instead of a single
+            // test.
+            err.into_inner()
         });
 
         let _ = simplelog::SimpleLogger::init(
@@ -3375,10 +3456,7 @@ mod tests {
                 );
 
                 // Registering a repository should create a tunnel.
-                assert_eq!(
-                    fake_rcs.take_events(),
-                    vec![RcsEvent::ReverseTcp, RcsEvent::ReverseTcp]
-                );
+                assert_eq!(fake_rcs.take_events(), vec![RcsEvent::ReverseTcp]);
 
                 // Expect SSH flow untouched.
                 assert_vec_empty!(repo.borrow().take_events(PkgctlCommandType::RepoAdd));
@@ -4586,18 +4664,18 @@ mod tests {
     #[test]
     fn test_build_matcher_nodename() {
         assert_eq!(
-            DaemonEventHandler::<RealRegistrar>::build_matcher(TargetInfo {
+            DaemonEventHandler::<RealRegistrar>::build_matcher(TargetEventInfo {
                 nodename: Some(TARGET_NODENAME.to_string()),
-                ..TargetInfo::default()
+                ..TargetEventInfo::default()
             }),
             Some(TARGET_NODENAME.to_string())
         );
 
         assert_eq!(
-            DaemonEventHandler::<RealRegistrar>::build_matcher(TargetInfo {
+            DaemonEventHandler::<RealRegistrar>::build_matcher(TargetEventInfo {
                 nodename: Some(TARGET_NODENAME.to_string()),
                 addresses: vec![TargetAddr::from_str("[fe80::1%1000]:0").unwrap()],
-                ..TargetInfo::default()
+                ..TargetEventInfo::default()
             }),
             Some(TARGET_NODENAME.to_string())
         )
@@ -4606,9 +4684,9 @@ mod tests {
     #[test]
     fn test_build_matcher_missing_nodename_no_port() {
         assert_eq!(
-            DaemonEventHandler::<RealRegistrar>::build_matcher(TargetInfo {
+            DaemonEventHandler::<RealRegistrar>::build_matcher(TargetEventInfo {
                 addresses: vec![TargetAddr::from_str("[fe80::1%1000]:0").unwrap()],
-                ..TargetInfo::default()
+                ..TargetEventInfo::default()
             }),
             Some("fe80::1%1000".to_string())
         )
@@ -4617,10 +4695,10 @@ mod tests {
     #[test]
     fn test_build_matcher_missing_nodename_with_port() {
         assert_eq!(
-            DaemonEventHandler::<RealRegistrar>::build_matcher(TargetInfo {
+            DaemonEventHandler::<RealRegistrar>::build_matcher(TargetEventInfo {
                 addresses: vec![TargetAddr::from_str("[fe80::1%1000]:0").unwrap()],
                 ssh_port: Some(9182),
-                ..TargetInfo::default()
+                ..TargetEventInfo::default()
             }),
             Some("[fe80::1%1000]:9182".to_string())
         )

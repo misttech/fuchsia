@@ -14,7 +14,6 @@ import("//tools/cmc/build/cmc.gni")
 #             data_filesystem_format is mandatory.  The following options are also supported:
 #
 #     bootfs_only - if set, the blob and data partitions will not get mounted.
-#     fxfs_vmex - if set, Fxfs will be given the vmex resource (iff fxfs_blob is enabled).
 #
 #   testonly - the component will only be used for testing
 template("fshost_cml") {
@@ -26,9 +25,9 @@ template("fshost_cml") {
                              "testonly",
                            ])
     sources = [
-      "//src/lib/storage/fs_management/client.shard.cml",
       "//src/storage/fshost/meta/base_fshost.cml",
       "//src/storage/fshost/meta/config.cml",
+      "//src/storage/lib/fs_management/client.shard.cml",
     ]
     options = invoker.options
     if (!defined(options.bootfs_only) || !options.bootfs_only) {
@@ -46,13 +45,13 @@ template("fshost_cml") {
           "//src/storage/fshost/meta/non_fxfs_fshost.cml",
         ]
       } else if (options.data_filesystem_format == "fxfs") {
-        if (defined(options.fxfs_blob) && options.fxfs_blob) {
-          sources += [ "//src/storage/fshost/meta/fxfs_blob_fshost.cml" ]
-        } else {
+        if (defined(options.fxfs_blob) && !options.fxfs_blob) {
           sources += [
             "//src/storage/fshost/meta/blobfs_fshost.cml",
             "//src/storage/fshost/meta/fxfs_fshost.cml",
           ]
+        } else {
+          sources += [ "//src/storage/fshost/meta/fxfs_blob_fshost.cml" ]
         }
       } else if (options.data_filesystem_format == "f2fs") {
         sources += [
@@ -71,22 +70,20 @@ template("fshost_cml") {
       # TODO(fxbug.dev/112753):  Remove these dep when adding fshost to the common platform AIB,
       # and add these component to the AIB at the same time.
       deps = [
-        "//src/storage/bin/blobfs:component",
+        "//src/storage/blobfs/bin:component",
         "//src/storage/memfs:memfs_component",
 
         # For now, we always need minfs to support migration
-        "//src/storage/bin/minfs:minfs-component",
+        "//src/storage/minfs/bin:minfs-component",
       ]
 
       if (options.data_filesystem_format == "fxfs") {
-        if (defined(options.fxfs_vmex) && options.fxfs_vmex) {
-          deps += [ "//src/storage/fxfs:fxfs_with_vmex_component" ]
-        } else {
-          deps += [ "//src/storage/fxfs:fxfs_component" ]
-        }
-        deps += [ "//src/storage/fxfs-crypt" ]
+        deps += [
+          "//src/storage/fxfs:fxfs_component",
+          "//src/storage/fxfs-crypt",
+        ]
       } else if (options.data_filesystem_format == "f2fs") {
-        deps += [ "//src/storage/bin/f2fs:f2fs-component" ]
+        deps += [ "//src/storage/f2fs/bin:f2fs-component" ]
       }
     }
   }
@@ -149,12 +146,7 @@ template("fshost_component_and_config") {
   # The config
   generated_fshost_config(_config_target) {
     options = {
-      forward_variables_from(invoker.options,
-                             "*",
-                             [
-                               "bootfs_only",
-                               "fxfs_vmex",
-                             ])
+      forward_variables_from(invoker.options, "*", [ "bootfs_only" ])
     }
   }
 
@@ -175,7 +167,7 @@ template("fshost_component_and_config") {
     # If testonly, use a null key source.  This will affect all components
     # in the same package.
     if (invoker.testonly) {
-      deps += [ "//src/security/policy/zxcrypt:null" ]
+      deps += [ "//src/storage/fshost/testing:test_zxcrypt_config" ]
     }
   }
 }

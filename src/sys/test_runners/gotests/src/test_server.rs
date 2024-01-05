@@ -17,6 +17,7 @@ use {
         stream, AsyncReadExt as _, FutureExt as _, StreamExt as _, TryStreamExt as _,
     },
     lazy_static::lazy_static,
+    namespace::NamespaceError,
     regex::bytes::Regex,
     std::{
         collections::HashSet,
@@ -435,6 +436,7 @@ where
             loader_proxy_chan: Some(client_end.into_channel()),
             executable_vmo,
             options: component.options,
+            config_vmo: component.config_vmo()?,
         })
         .await?;
     Ok((p, j, out_l, err_l, client))

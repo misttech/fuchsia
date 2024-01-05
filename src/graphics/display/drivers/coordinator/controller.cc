@@ -4,8 +4,6 @@
 
 #include "src/graphics/display/drivers/coordinator/controller.h"
 
-#include <fuchsia/hardware/display/clamprgb/cpp/banjo.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <lib/async/cpp/task.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
@@ -45,6 +43,7 @@
 #include "src/graphics/display/drivers/coordinator/migration-util.h"
 #include "src/graphics/display/lib/api-types-cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
+#include "src/graphics/display/lib/api-types-cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-capture-image-id.h"
 
 namespace fidl_display = fuchsia_hardware_display;
@@ -65,23 +64,8 @@ constexpr zx::duration kVsyncMonitorInterval = kVsyncStallThreshold / 2;
 
 namespace display {
 
-void Controller::PopulateDisplayMode(const edid::timing_params_t& params, display_mode_t* mode) {
-  mode->pixel_clock_10khz = params.pixel_freq_10khz;
-  mode->h_addressable = params.horizontal_addressable;
-  mode->h_front_porch = params.horizontal_front_porch;
-  mode->h_sync_pulse = params.horizontal_sync_pulse;
-  mode->h_blanking = params.horizontal_blanking;
-  mode->v_addressable = params.vertical_addressable;
-  mode->v_front_porch = params.vertical_front_porch;
-  mode->v_sync_pulse = params.vertical_sync_pulse;
-  mode->v_blanking = params.vertical_blanking;
-  mode->flags = params.flags;
-
-  static_assert(MODE_FLAG_VSYNC_POSITIVE == edid::timing_params::kPositiveVsync, "");
-  static_assert(MODE_FLAG_HSYNC_POSITIVE == edid::timing_params::kPositiveHsync, "");
-  static_assert(MODE_FLAG_INTERLACED == edid::timing_params::kInterlaced, "");
-  static_assert(MODE_FLAG_ALTERNATING_VBLANK == edid::timing_params::kAlternatingVblank, "");
-  static_assert(MODE_FLAG_DOUBLE_CLOCKED == edid::timing_params::kDoubleClocked, "");
+void Controller::PopulateDisplayMode(const display::DisplayTiming& timing, display_mode_t* mode) {
+  *mode = display::ToBanjoDisplayMode(timing);
 }
 
 void Controller::PopulateDisplayTimings(const fbl::RefPtr<DisplayInfo>& info) {
@@ -100,14 +84,17 @@ void Controller::PopulateDisplayTimings(const fbl::RefPtr<DisplayInfo>& info) {
   test_config.layer_count = 1;
   test_config.layer_list = test_layers;
 
-  for (auto timing = edid::timing_iterator(&info->edid->base); timing.is_valid(); ++timing) {
-    uint32_t width = timing->horizontal_addressable;
-    uint32_t height = timing->vertical_addressable;
+  for (auto edid_timing = edid::timing_iterator(&info->edid->base); edid_timing.is_valid();
+       ++edid_timing) {
+    display::DisplayTiming timing = ToDisplayTiming(*edid_timing);
+    int32_t width = timing.horizontal_active_px;
+    int32_t height = timing.vertical_active_lines;
     bool duplicate = false;
-    for (auto& existing_timing : info->edid->timings) {
-      if (existing_timing.vertical_refresh_e2 == timing->vertical_refresh_e2 &&
-          existing_timing.horizontal_addressable == width &&
-          existing_timing.vertical_addressable == height) {
+    for (const display::DisplayTiming& existing_timing : info->edid->timings) {
+      if (existing_timing.vertical_field_refresh_rate_millihertz() ==
+              timing.vertical_field_refresh_rate_millihertz() &&
+          existing_timing.horizontal_active_px == width &&
+          existing_timing.vertical_active_lines == height) {
         duplicate = true;
         break;
       }
@@ -121,17 +108,17 @@ void Controller::PopulateDisplayTimings(const fbl::RefPtr<DisplayInfo>& info) {
     test_layer.cfg.primary.src_frame.height = height;
     test_layer.cfg.primary.dest_frame.width = width;
     test_layer.cfg.primary.dest_frame.height = height;
-    PopulateDisplayMode(*timing, &test_config.mode);
+    test_config.mode = display::ToBanjoDisplayMode(timing);
 
     uint32_t display_cfg_result;
     client_composition_opcode_t layer_result = 0;
     size_t display_layer_results_count;
-    display_cfg_result = dc_.CheckConfiguration(test_configs, 1, &layer_result,
-                                                /*client_composition_opcodes_count=*/1,
-                                                &display_layer_results_count);
+    display_cfg_result = driver_.CheckConfiguration(test_configs, 1, &layer_result,
+                                                    /*client_composition_opcodes_count=*/1,
+                                                    &display_layer_results_count);
     if (display_cfg_result == CONFIG_CHECK_RESULT_OK) {
       fbl::AllocChecker ac;
-      info->edid->timings.push_back(*timing, &ac);
+      info->edid->timings.push_back(timing, &ac);
       if (!ac.check()) {
         zxlogf(WARNING, "Edid skip allocation failed");
         break;
@@ -142,15 +129,10 @@ void Controller::PopulateDisplayTimings(const fbl::RefPtr<DisplayInfo>& info) {
 
 void Controller::DisplayControllerInterfaceOnDisplaysChanged(
     const added_display_args_t* displays_added, size_t added_count,
-    const uint64_t* displays_removed, size_t removed_count,
-    added_display_info_t* out_display_info_list, size_t display_info_count,
-    size_t* display_info_actual) {
-  ZX_DEBUG_ASSERT(!out_display_info_list || added_count == display_info_count);
-
+    const uint64_t* displays_removed, size_t removed_count) {
   fbl::Vector<fbl::RefPtr<DisplayInfo>> added_display_infos;
   fbl::Vector<DisplayId> removed_display_ids;
   std::unique_ptr<async::Task> task;
-  uint32_t added_success_count = 0;
 
   fbl::AllocChecker alloc_checker;
   if (added_count) {
@@ -204,27 +186,7 @@ void Controller::DisplayControllerInterfaceOnDisplaysChanged(
     if (info->edid.has_value()) {
       fbl::Array<uint8_t> eld;
       ComputeEld(info->edid->base, eld);
-      dc_.SetEld(ToBanjoDisplayId(info->id), eld.get(), eld.size());
-    }
-    auto* display_info = out_display_info_list ? &out_display_info_list[i] : nullptr;
-    if (display_info && info->edid.has_value()) {
-      const edid::Edid& edid = info->edid->base;
-      display_info->is_hdmi_out = edid.is_hdmi();
-      display_info->is_standard_srgb_out = edid.is_standard_rgb();
-      display_info->audio_format_count = static_cast<uint32_t>(info->edid->audio.size());
-
-      static_assert(
-          sizeof(display_info->monitor_name) == sizeof(edid::Descriptor::Monitor::data) + 1,
-          "Possible overflow");
-      static_assert(
-          sizeof(display_info->monitor_name) == sizeof(edid::Descriptor::Monitor::data) + 1,
-          "Possible overflow");
-      strcpy(display_info->manufacturer_id, edid.manufacturer_id());
-      strcpy(display_info->monitor_name, edid.monitor_name());
-      strcpy(display_info->monitor_serial, edid.monitor_serial());
-      display_info->manufacturer_name = edid.manufacturer_name();
-      display_info->horizontal_size_mm = edid.horizontal_size_mm();
-      display_info->vertical_size_mm = edid.vertical_size_mm();
+      driver_.SetEld(info->id, eld.get(), eld.size());
     }
 
     if (displays_.insert_or_find(info)) {
@@ -233,8 +195,6 @@ void Controller::DisplayControllerInterfaceOnDisplaysChanged(
       zxlogf(INFO, "Ignoring duplicate display");
     }
   }
-  if (display_info_actual)
-    *display_info_actual = added_success_count;
 
   task->set_handler([this, added_display_infos = std::move(added_display_infos),
                      removed_display_ids = std::move(removed_display_ids)](
@@ -245,6 +205,9 @@ void Controller::DisplayControllerInterfaceOnDisplaysChanged(
           PopulateDisplayTimings(added_display_info);
         }
       }
+
+      // TODO(b/317914671): Pass parsed display metadata to driver.
+
       fbl::AutoLock lock(mtx());
 
       fbl::Vector<DisplayId> added_ids;
@@ -269,7 +232,6 @@ void Controller::DisplayControllerInterfaceOnDisplaysChanged(
         ZX_DEBUG_ASSERT(primary_client_ != nullptr);
         primary_client_->OnDisplaysChanged(added_ids, removed_display_ids);
       }
-
     } else {
       zxlogf(ERROR, "Failed to dispatch display change task %d", status);
     }
@@ -477,28 +439,6 @@ void Controller::DisplayControllerInterfaceOnDisplayVsync(uint64_t banjo_display
   }
 }
 
-zx_status_t Controller::DisplayControllerInterfaceGetAudioFormat(
-    uint64_t banjo_display_id, uint32_t fmt_idx, audio_types_audio_stream_format_range_t* fmt_out) {
-  const DisplayId display_id = ToDisplayId(banjo_display_id);
-
-  fbl::AutoLock lock(mtx());
-  auto display = displays_.find(display_id);
-  if (!display.IsValid()) {
-    return ZX_ERR_NOT_FOUND;
-  }
-
-  if (!display->edid.has_value()) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  if (fmt_idx > display->edid->audio.size()) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  *fmt_out = display->edid->audio[fmt_idx];
-  return ZX_OK;
-}
-
 void Controller::ApplyConfig(DisplayConfig* configs[], int32_t count, ConfigStamp config_stamp,
                              uint32_t layer_stamp, ClientId client_id) {
   zx_time_t timestamp = zx_clock_get_monotonic();
@@ -511,8 +451,8 @@ void Controller::ApplyConfig(DisplayConfig* configs[], int32_t count, ConfigStam
   // Release the bootloader framebuffer referenced by the kernel. This only
   // needs to be done once on the first ApplyConfig().
   if (!kernel_framebuffer_released_) {
-    // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
-    zx_framebuffer_set_range(get_root_resource(parent()), /*vmo=*/ZX_HANDLE_INVALID, /*len=*/0,
+    zx_framebuffer_set_range(get_framebuffer_resource(parent()), /*vmo=*/ZX_HANDLE_INVALID,
+                             /*len=*/0,
                              /*format=*/ZBI_PIXEL_FORMAT_NONE, /*width=*/0, /*height=*/0,
                              /*stride=*/0);
     kernel_framebuffer_released_ = true;
@@ -640,10 +580,10 @@ void Controller::ApplyConfig(DisplayConfig* configs[], int32_t count, ConfigStam
   }
 
   const config_stamp_t banjo_config_stamp = ToBanjoConfigStamp(applied_config_stamp);
-  dc_.ApplyConfiguration(display_configs, display_count, &banjo_config_stamp);
+  driver_.ApplyConfiguration(display_configs, display_count, &banjo_config_stamp);
 }
 
-void Controller::ReleaseImage(Image* image) { dc_.ReleaseImage(&image->info()); }
+void Controller::ReleaseImage(image_t* image) { driver_.ReleaseImage(image); }
 
 void Controller::ReleaseCaptureImage(DriverCaptureImageId driver_capture_image_id) {
   if (!supports_capture_) {
@@ -653,8 +593,7 @@ void Controller::ReleaseCaptureImage(DriverCaptureImageId driver_capture_image_i
     return;
   }
 
-  const zx_status_t release_status =
-      dc_.ReleaseCapture(ToBanjoDriverCaptureImageId(driver_capture_image_id));
+  const zx_status_t release_status = driver_.ReleaseCapture(driver_capture_image_id);
   if (release_status == ZX_ERR_SHOULD_WAIT) {
     ZX_DEBUG_ASSERT_MSG(pending_release_capture_image_id_ == kInvalidDriverCaptureImageId,
                         "multiple pending releases for capture images");
@@ -712,7 +651,7 @@ void Controller::OnClientDead(ClientProxy* client) {
 }
 
 bool Controller::GetPanelConfig(DisplayId display_id,
-                                const fbl::Vector<edid::timing_params_t>** timings,
+                                const fbl::Vector<display::DisplayTiming>** timings,
                                 const display_params_t** params) {
   ZX_DEBUG_ASSERT(mtx_trylock(&mtx_) == thrd_busy);
   if (unbinding_) {
@@ -945,15 +884,11 @@ ConfigStamp Controller::TEST_controller_stamp() const {
 zx_status_t Controller::Bind(std::unique_ptr<display::Controller>* device_ptr) {
   ZX_DEBUG_ASSERT_MSG(device_ptr && device_ptr->get() == this, "Wrong controller passed to Bind()");
 
-  zx_status_t status;
-  dc_ = ddk::DisplayControllerImplProtocolClient(parent_);
-  if (!dc_.is_valid()) {
-    ZX_DEBUG_ASSERT_MSG(false, "Display controller bind mismatch");
-    return ZX_ERR_NOT_SUPPORTED;
+  zx_status_t status = driver_.Bind();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to bind driver %d", status);
+    return status;
   }
-
-  // optional display controller clamp rgb protocol client
-  dc_clamp_rgb_ = ddk::DisplayClampRgbImplProtocolClient(parent_);
 
   status = loop_.StartThread("display-client-loop", &loop_thread_);
   if (status != ZX_OK) {
@@ -961,9 +896,10 @@ zx_status_t Controller::Bind(std::unique_ptr<display::Controller>* device_ptr) {
     return status;
   }
 
-  if ((status = DdkAdd(ddk::DeviceAddArgs("display-coordinator")
-                           .set_flags(DEVICE_ADD_NON_BINDABLE)
-                           .set_inspect_vmo(inspector_.DuplicateVmo()))) != ZX_OK) {
+  status = DdkAdd(ddk::DeviceAddArgs("display-coordinator")
+                      .set_flags(DEVICE_ADD_NON_BINDABLE)
+                      .set_inspect_vmo(inspector_.DuplicateVmo()));
+  if (status != ZX_OK) {
     zxlogf(ERROR, "Failed to add display core device %d", status);
     return status;
   }
@@ -980,9 +916,9 @@ zx_status_t Controller::Bind(std::unique_ptr<display::Controller>* device_ptr) {
 
   [[maybe_unused]] auto ptr = device_ptr->release();
 
-  dc_.SetDisplayControllerInterface(this, &display_controller_interface_protocol_ops_);
+  driver_.SetDisplayControllerInterface(&display_controller_interface_protocol_ops_);
 
-  status = dc_.SetDisplayCaptureInterface(this, &display_capture_interface_protocol_ops_);
+  status = driver_.SetDisplayCaptureInterface(&display_capture_interface_protocol_ops_);
   supports_capture_ = (status == ZX_OK);
   zxlogf(INFO, "Display capture is%s supported: %s", supports_capture_ ? "" : " not",
          zx_status_get_string(status));
@@ -1021,7 +957,7 @@ void Controller::DdkRelease() {
     fbl::AutoLock lock(mtx());
     ++controller_stamp_;
     const config_stamp_t banjo_config_stamp = ToBanjoConfigStamp(controller_stamp_);
-    dc_.ApplyConfiguration(&configs, 0, &banjo_config_stamp);
+    driver_.ApplyConfiguration(&configs, 0, &banjo_config_stamp);
   }
   delete this;
 }
@@ -1033,7 +969,8 @@ Controller::Controller(zx_device_t* parent, inspect::Inspector inspector)
       inspector_(std::move(inspector)),
       loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
       watchdog_("display-client-loop", kWatchdogWarningIntervalMs, kWatchdogTimeoutMs,
-                loop_.dispatcher()) {
+                loop_.dispatcher()),
+      driver_(Driver(this, parent)) {
   mtx_init(&mtx_, mtx_plain);
   root_ = inspector_.GetRoot().CreateChild("display");
   last_vsync_ns_property_ = root_.CreateUint("last_vsync_timestamp_ns", 0);

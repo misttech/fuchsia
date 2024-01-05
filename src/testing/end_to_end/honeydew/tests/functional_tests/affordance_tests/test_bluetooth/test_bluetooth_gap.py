@@ -7,12 +7,16 @@
 import logging
 
 from fuchsia_base_test import fuchsia_base_test
-from mobly import asserts
-from mobly import test_runner
+from mobly import asserts, test_runner
 
+from honeydew.errors import Sl4fError
 from honeydew.interfaces.device_classes import fuchsia_device
+from honeydew.typing import bluetooth
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+BluetoothAcceptPairing = bluetooth.BluetoothAcceptPairing
+BluetoothConnectionType = bluetooth.BluetoothConnectionType
 
 
 class BluetoothGapAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
@@ -27,23 +31,61 @@ class BluetoothGapAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         super().setup_class()
         self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
 
+    def test_accept_pairing(self) -> None:
+        """Test case for bluetooth.accept_pairing()"""
+
+        input_mode = BluetoothAcceptPairing.DEFAULT_INPUT_MODE
+        output_mode = BluetoothAcceptPairing.DEFAULT_OUTPUT_MODE
+
+        self.device.bluetooth_gap.accept_pairing(input_mode, output_mode)
+
+    def test_connect_device(self) -> None:
+        """Test case for bluetooth.connect_device()"""
+
+        identifier = "000000000"
+        transport = BluetoothConnectionType.CLASSIC
+
+        with asserts.assert_raises(Sl4fError):
+            self.device.bluetooth_gap.connect_device(identifier, transport)
+
+    def test_forget_device(self) -> None:
+        """Test case for bluetooth.forget_device()"""
+
+        identifier = "000000000"
+
+        self.device.bluetooth_gap.forget_device(identifier)
+
+    def test_get_active_adapter_address(self) -> None:
+        """Test case for bluetooth.get_active_adapter_address()"""
+
+        self.device.bluetooth_gap.get_active_adapter_address()
+
+    def test_get_connected_devices(self) -> None:
+        """Test case for bluetooth.get_connected_devices()"""
+
+        res = self.device.bluetooth_gap.get_connected_devices()
+        asserts.assert_equal(res, [])
+
+    def test_get_known_remote_devices(self) -> None:
+        """Test case for bluetooth.get_known_remote_devices()"""
+
+        self.device.bluetooth_gap.get_known_remote_devices()
+
+    def test_pair_device(self) -> None:
+        """Test case for bluetooth.pair_device()"""
+
+        identifier = "000000000"
+        transport = BluetoothConnectionType.CLASSIC
+
+        self.device.bluetooth_gap.pair_device(identifier, transport)
+
     def test_request_discovery(self) -> None:
         """Test case for bluetooth.request_discovery()"""
-
-        if self._is_fuchsia_controller_based_device(self.device):
-            with asserts.assert_raises(NotImplementedError):
-                self.device.bluetooth_gap.request_discovery(True)
-            return
 
         self.device.bluetooth_gap.request_discovery(True)
 
     def test_bluetooth_set_discoverable(self) -> None:
         """Test case for bluetooth_gap.set_discoverable()"""
-
-        if self._is_fuchsia_controller_based_device(self.device):
-            with asserts.assert_raises(NotImplementedError):
-                self.device.bluetooth_gap.set_discoverable(True)
-            return
 
         self.device.bluetooth_gap.set_discoverable(True)
 

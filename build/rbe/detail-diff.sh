@@ -4,10 +4,14 @@
 # found in the LICENSE file.
 
 # A diff wrapper that analyzes differences with a variety of tools.
-# Exit status of this script is not meaningful.
+# Exit status reflects whether or not any differences were found
+# including those from text dumps of binaries.
 
-script="$0"
-script_dir="$(dirname "$script")"
+set -o pipefail
+
+readonly script="$0"
+# assume script is always with path prefix, e.g. "./$script"
+readonly script_dir="${script%/*}"
 
 source "$script_dir"/common-setup.sh
 
@@ -64,24 +68,30 @@ function diff_with() {
 
 function binary_diff() {
   # Intended for binaries (rlibs, executables).
+  # needs -o pipefail to propagate exit statuses
+  local diff_status=0
   echo "objdump-diff (first $diff_limit lines):"
-  diff_with "$objdump" --full-contents -- "$1" "$2" | head -n "$diff_limit"
+  diff_with "$objdump" --full-contents -- "$1" "$2" | head -n "$diff_limit" || { diff_status=$? ;}
   echo
 
   echo "readelf-diff (first $diff_limit lines):"
-  diff_with "$readelf" -a -- "$1" "$2" | head -n "$diff_limit"
+  diff_with "$readelf" -a -- "$1" "$2" | head -n "$diff_limit" || { diff_status=$? ;}
   echo
 
   echo "dwarfdump-diff (first $diff_limit lines):"
-  diff_with "$dwarfdump" -a -- "$1" "$2" | head -n "$diff_limit"
+  diff_with "$dwarfdump" -a -- "$1" "$2" | head -n "$diff_limit" || { diff_status=$? ;}
   echo
 
   echo "nm-diff (first $diff_limit lines):"
-  diff_with "$nm" -- "$1" "$2" | head -n "$diff_limit"
+  diff_with "$nm" -- "$1" "$2" | head -n "$diff_limit" || { diff_status=$? ;}
   echo
 
-  echo "strings-diff (first $diff_limit lines):"
-  diff_with strings -- "$1" "$2" | head -n "$diff_limit"
+  if which strings
+  then
+    echo "strings-diff (first $diff_limit lines):"
+    diff_with strings -- "$1" "$2" | head -n "$diff_limit" || { diff_status=$? ;}
+  fi
+  return "$diff_status"
 }
 
 case "$1" in
@@ -106,4 +116,4 @@ case "$1" in
     ;;
 esac
 
-exit 0
+exit "$?"

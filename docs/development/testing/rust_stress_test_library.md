@@ -25,7 +25,7 @@ rustc_binary("filesystem-stressor-bin") {
 
 fuchsia_component("filesystem-stressor") {
     deps = [ ":filesystem-stressor-bin" ]
-    manifest = "meta/filesystem-stressor.cmx"
+    manifest = "meta/filesystem-stressor.cml"
     testonly = true
 }
 
@@ -216,7 +216,7 @@ Note: The stress test runs with the command line arguments defined in the compon
 To run the test with custom command line arguments, use `fx shell run`:
 
 ```
-fx shell run fuchsia-pkg://fuchsia.com/filesystem-stress-tests#meta/filesystem-stressor.cmx <args>
+fx shell run fuchsia-pkg://fuchsia.com/filesystem-stress-tests#meta/filesystem-stressor.cm <args>
 ```
 
 #### Running stress tests on infrastructure
@@ -242,8 +242,8 @@ fuchsia_test_package("filesystem-stress-tests") {
 }
 ```
 
-A dedicated `core.qemu-x64-stress` builder identifies these tests and runs each test component in
-the package for a maximum of 22 hours.
+A dedicated `core.x64-stress` builder identifies these tests and runs each test component in the
+package for a maximum of 22 hours.
 
 Note: On infra bots, a stress test is required to show "signs of life" which is usually some form of
 output to show that the test is still running and has not hung.

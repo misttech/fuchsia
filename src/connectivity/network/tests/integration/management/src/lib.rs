@@ -22,6 +22,7 @@ use fuchsia_async::{DurationExt as _, TimeoutExt as _};
 use fuchsia_zircon as zx;
 
 use anyhow::Context as _;
+use assert_matches::assert_matches;
 use const_unwrap::const_unwrap_option;
 use fidl::endpoints::Proxy as _;
 use futures::{
@@ -166,7 +167,7 @@ async fn test_install_only_no_provisioning<M: Manager, N: Netstack>(name: &str) 
 
     let _if_name: String = with_netcfg_owned_device::<M, N, _>(
         name,
-        ManagerConfig::InstallOnly,
+        ManagerConfig::AllDelegated,
         true, /* with_dhcpv6_client */
         |_if_id: u64,
          network: &netemul::TestNetwork<'_>,
@@ -268,9 +269,18 @@ async fn test_install_only_no_provisioning<M: Manager, N: Netstack>(name: &str) 
     .await;
 }
 
-/// Tests that stable interface name conflicts are handled gracefully.
+// A simplified version of an `fnet_interfaces_ext::Event` for
+// tracking only added and removed events.
+#[derive(Debug)]
+enum InterfaceWatcherEvent {
+    Added { id: u64, name: String },
+    Removed { id: u64 },
+}
+
+/// Tests that when two interfaces are added with the same PersistentIdentifier,
+/// that the first interface is removed prior to adding the second interface.
 #[netstack_test]
-async fn test_oir_interface_name_conflict<M: Manager, N: Netstack>(name: &str) {
+async fn test_oir_interface_name_conflict_uninstall_existing<M: Manager, N: Netstack>(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox
         .create_netstack_realm_with::<N, _, _>(
@@ -306,10 +316,12 @@ async fn test_oir_interface_name_conflict<M: Manager, N: Netstack>(name: &str) {
             )
             | fidl_fuchsia_net_interfaces::Event::Existing(
                 fidl_fuchsia_net_interfaces::Properties { id, name, .. },
-            ) => Some((id.expect("missing interface ID"), name.expect("missing interface name"))),
+            ) => Some(InterfaceWatcherEvent::Added {
+                id: id.expect("missing interface ID"),
+                name: name.expect("missing interface name"),
+            }),
             fidl_fuchsia_net_interfaces::Event::Removed(id) => {
-                let _: u64 = id;
-                None
+                Some(InterfaceWatcherEvent::Removed { id })
             }
             fidl_fuchsia_net_interfaces::Event::Idle(fidl_fuchsia_net_interfaces::Empty {})
             | fidl_fuchsia_net_interfaces::Event::Changed(
@@ -324,65 +336,210 @@ async fn test_oir_interface_name_conflict<M: Manager, N: Netstack>(name: &str) {
     .fuse();
     futures::pin_mut!(interfaces_stream);
     // Observe the initially existing loopback interface.
-    let _: (u64, String) = interfaces_stream.select_next_some().await;
+    assert_matches!(
+        interfaces_stream.select_next_some().await,
+        InterfaceWatcherEvent::Added { id: _, name: _ }
+    );
 
     // Add a device to the realm and wait for it to be added to the netstack.
     //
-    // Non PCI and USB devices get their interface names from their MAC addresses.
-    // Using the same MAC address for different devices will result in the same
-    // interface name.
+    // Devices get their interface names from their MAC addresses. Using the
+    // same MAC address for different devices will result in the first
+    // interface being removed prior to installing the new one.
     let mac = || Some(fnet::MacAddress { octets: [2, 3, 4, 5, 6, 7] });
-    let ethx7 = sandbox
-        .create_endpoint_with("ep1", netemul::new_endpoint_config(1500, mac()))
+    let if1 = sandbox
+        .create_endpoint_with("ep1", netemul::new_endpoint_config(netemul::DEFAULT_MTU, mac()))
         .await
         .expect("create ethx7");
     let endpoint_mount_path = netemul::devfs_device_path("ep1");
     let endpoint_mount_path = endpoint_mount_path.as_path();
-    let () = realm.add_virtual_device(&ethx7, endpoint_mount_path).await.unwrap_or_else(|e| {
+    let () = realm.add_virtual_device(&if1, endpoint_mount_path).await.unwrap_or_else(|e| {
         panic!("add virtual device1 {}: {:?}", endpoint_mount_path.display(), e)
     });
 
-    let (id_ethx7, name_ethx7) = interfaces_stream.select_next_some().await;
+    let (id1, name1) = assert_matches!(
+        interfaces_stream.select_next_some().await,
+        InterfaceWatcherEvent::Added { id, name } => (id, name)
+    );
     assert_eq!(
-        &name_ethx7, "ethx7",
+        &name1, "ethx7",
         "first interface should use a stable name based on its MAC address"
     );
 
-    // Create an interface that the network manager does not know about that will cause a
-    // name conflict with the first temporary name.
-    let name = "etht0";
-    let etht0 = sandbox.create_endpoint(name).await.expect("create eth0");
-    let etht0 = etht0
-        .into_interface_in_realm_with_name(
-            &realm,
-            netemul::InterfaceConfig { name: Some(name.into()), ..Default::default() },
-        )
-        .await
-        .expect("install interface");
-    let netstack_id_etht0 = etht0.id();
-
-    let (id_etht0, name_etht0) = interfaces_stream.select_next_some().await;
-    assert_eq!(id_etht0, u64::from(netstack_id_etht0));
-    assert_eq!(&name_etht0, "etht0");
-
     // Add another device from the network manager with the same MAC address and wait for it
-    // to be added to the netstack. Its first two attempts at adding a name should conflict
-    // with the above two devices.
-    let etht1 = sandbox
-        .create_endpoint_with("ep2", netemul::new_endpoint_config(1500, mac()))
+    // to be added to the netstack. Since the device has the same naming identifier, the
+    // first interface should be removed prior to adding the second interface. The second
+    // interface should have the same name as the first.
+    let if2 = sandbox
+        .create_endpoint_with("ep2", netemul::new_endpoint_config(netemul::DEFAULT_MTU, mac()))
         .await
-        .expect("create etht1");
+        .expect("create ethx7");
     let endpoint_mount_path = netemul::devfs_device_path("ep2");
     let endpoint_mount_path = endpoint_mount_path.as_path();
-    let () = realm.add_virtual_device(&etht1, endpoint_mount_path).await.unwrap_or_else(|e| {
+    let () = realm.add_virtual_device(&if2, endpoint_mount_path).await.unwrap_or_else(|e| {
         panic!("add virtual device2 {}: {:?}", endpoint_mount_path.display(), e)
     });
-    let (id_etht1, name_etht1) = interfaces_stream.select_next_some().await;
-    assert_ne!(id_ethx7, id_etht1, "interface IDs should be different");
-    assert_ne!(id_etht0, id_etht1, "interface IDs should be different");
+
+    let id_removed = assert_matches!(
+        interfaces_stream.select_next_some().await,
+        InterfaceWatcherEvent::Removed { id } => id
+    );
     assert_eq!(
-        &name_etht1, "etht1",
-        "second interface from network manager should use a temporary name"
+        id_removed, id1,
+        "the initial interface should be removed prior to adding the second interface"
+    );
+
+    let (_id2, name2) = assert_matches!(
+        interfaces_stream.select_next_some().await,
+        InterfaceWatcherEvent::Added { id, name } => (id, name)
+    );
+    assert_eq!(
+        &name1, &name2,
+        "second interface should use the same name as the initial interface"
+    );
+
+    // Wait for orderly shutdown of the test realm to complete before allowing
+    // test interfaces to be cleaned up.
+    //
+    // This is necessary to prevent test interfaces from being removed while
+    // NetCfg is still in the process of configuring them after adding them to
+    // the Netstack, which causes spurious errors.
+    let () = realm.shutdown().await.expect("failed to shutdown realm");
+}
+
+/// Tests that when a conflicting interface already exists with the same name,
+/// that the new interface is rejected by Netcfg and not installed.
+/// The conflicting interface is either an interface installed through Netstack
+/// directly and not managed by Netcfg, or managed by Netcfg with a
+/// different naming identifier and the same name.
+#[netstack_test]
+#[test_case(true; "netcfg_managed")]
+#[test_case(false; "not_netcfg_managed")]
+async fn test_oir_interface_name_conflict_reject<M: Manager, N: Netstack>(
+    name: &str,
+    is_conflicting_iface_netcfg_managed: bool,
+) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox
+        .create_netstack_realm_with::<N, _, _>(
+            name,
+            &[
+                KnownServiceProvider::Manager {
+                    agent: M::MANAGEMENT_AGENT,
+                    use_dhcp_server: false,
+                    config: ManagerConfig::DuplicateNames,
+                },
+                KnownServiceProvider::DnsResolver,
+                KnownServiceProvider::FakeClock,
+            ],
+        )
+        .expect("create netstack realm");
+
+    let wait_for_netmgr =
+        wait_for_component_stopped(&realm, M::MANAGEMENT_AGENT.get_component_name(), None);
+
+    let interface_state = realm
+        .connect_to_protocol::<fnet_interfaces::StateMarker>()
+        .expect("connect to fuchsia.net.interfaces/State service");
+    let interfaces_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state(
+        &interface_state,
+        fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+    )
+    .expect("get interface event stream")
+    .map(|r| r.expect("watcher error"))
+    .filter_map(|event| {
+        futures::future::ready(match event {
+            fidl_fuchsia_net_interfaces::Event::Added(
+                fidl_fuchsia_net_interfaces::Properties { id, name, .. },
+            )
+            | fidl_fuchsia_net_interfaces::Event::Existing(
+                fidl_fuchsia_net_interfaces::Properties { id, name, .. },
+            ) => Some(InterfaceWatcherEvent::Added {
+                id: id.expect("missing interface ID"),
+                name: name.expect("missing interface name"),
+            }),
+            fidl_fuchsia_net_interfaces::Event::Removed(id) => {
+                Some(InterfaceWatcherEvent::Removed { id })
+            }
+            fidl_fuchsia_net_interfaces::Event::Idle(fidl_fuchsia_net_interfaces::Empty {})
+            | fidl_fuchsia_net_interfaces::Event::Changed(
+                fidl_fuchsia_net_interfaces::Properties { .. },
+            ) => None,
+        })
+    });
+    let interfaces_stream = futures::stream::select(
+        interfaces_stream,
+        futures::stream::once(wait_for_netmgr.map(|r| panic!("network manager exited {:?}", r))),
+    )
+    .fuse();
+    futures::pin_mut!(interfaces_stream);
+    // Observe the initially existing loopback interface.
+    assert_matches!(
+        interfaces_stream.select_next_some().await,
+        InterfaceWatcherEvent::Added { id: _, name: _ }
+    );
+
+    // All interfaces installed through the Netcfg should have a name of "x".
+    const INTERFACE_NAME: &str = "x";
+    let _if1 = if is_conflicting_iface_netcfg_managed {
+        // Add a device to the realm for it to be discovered by Netcfg
+        // then added to the netstack.
+        const MAC1: Option<fnet::MacAddress> =
+            Some(fnet::MacAddress { octets: [2, 3, 4, 5, 6, 8] });
+        let if1 = sandbox
+            .create_endpoint_with("ep1", netemul::new_endpoint_config(netemul::DEFAULT_MTU, MAC1))
+            .await
+            .expect("create x");
+        let endpoint_mount_path = netemul::devfs_device_path("ep1");
+        let endpoint_mount_path = endpoint_mount_path.as_path();
+        let () = realm.add_virtual_device(&if1, endpoint_mount_path).await.unwrap_or_else(|e| {
+            panic!("add virtual device1 {}: {:?}", endpoint_mount_path.display(), e)
+        });
+        either::Either::Left(if1)
+    } else {
+        // Create an interface that the network manager does not know about that will conflict
+        // with the name generated for the second device.
+        let if1 = sandbox.create_endpoint(INTERFACE_NAME).await.expect("create x");
+        let if1 = if1
+            .into_interface_in_realm_with_name(
+                &realm,
+                netemul::InterfaceConfig {
+                    name: Some(INTERFACE_NAME.into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("install interface");
+        either::Either::Right(if1)
+    };
+
+    // The device should have been installed into the Netstack.
+    assert_matches!(
+        interfaces_stream.select_next_some().await,
+        InterfaceWatcherEvent::Added { name, .. } if name == INTERFACE_NAME,
+        "first interface should use the configuration based static name"
+    );
+
+    // The following device should attempt to use the same name as the previous interface.
+    const MAC2: Option<fnet::MacAddress> = Some(fnet::MacAddress { octets: [2, 3, 4, 5, 6, 7] });
+    let if2 = sandbox
+        .create_endpoint_with("ep2", netemul::new_endpoint_config(netemul::DEFAULT_MTU, MAC2))
+        .await
+        .expect("create x");
+    let endpoint_mount_path = netemul::devfs_device_path("ep2");
+    let endpoint_mount_path = endpoint_mount_path.as_path();
+    let () = realm.add_virtual_device(&if2, endpoint_mount_path).await.unwrap_or_else(|e| {
+        panic!("add virtual device2 {}: {:?}", endpoint_mount_path.display(), e)
+    });
+
+    // No interfaces should be added or removed as a result of this new device.
+    // The existing interface that is not managed by Netcfg will not be removed
+    // since it is not Netcfg-managed. The interface that is managed by
+    // Netcfg will not be removed due to having a different MAC address, which
+    // produces a different naming identifier.
+    assert_matches::assert_matches!(
+        interfaces_stream.next().on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, || None).await,
+        None
     );
 
     // Wait for orderly shutdown of the test realm to complete before allowing
@@ -778,34 +935,22 @@ async fn test_forwarding<M: Manager, N: Netstack>(name: &str) {
                     .interface_control(if_id)
                     .expect("connect to fuchsia.net.interfaces.admin/Control for new interface");
 
-                // The configuration installs forwarding on v4 on Virtual interfaces
-                // and v6 on Ethernet. We should only observe the configuration to be
-                // installed on v4 because the device installed by this test doesn't
-                // match the Ethernet device class.
-                assert_eq!(
-                    control.get_configuration().await.expect("get_configuration FIDL error"),
-                    Ok(fnet_interfaces_admin::Configuration {
-                        ipv4: Some(fnet_interfaces_admin::Ipv4Configuration {
-                            forwarding: Some(true),
-                            multicast_forwarding: Some(true),
-                            igmp: Some(fnet_interfaces_admin::IgmpConfiguration {
-                                version: Some(fnet_interfaces_admin::IgmpVersion::V3),
-                                ..Default::default()
-                            }),
-                            ..Default::default()
-                        }),
-                        ipv6: Some(fnet_interfaces_admin::Ipv6Configuration {
-                            forwarding: Some(false),
-                            multicast_forwarding: Some(false),
-                            mld: Some(fnet_interfaces_admin::MldConfiguration {
-                                version: Some(fnet_interfaces_admin::MldVersion::V2),
-                                ..Default::default()
-                            }),
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    })
-                );
+                let fnet_interfaces_admin::Configuration { ipv4, ipv6, .. } = control
+                    .get_configuration()
+                    .await
+                    .expect("get_configuration FIDL error")
+                    .expect("get_configuration error");
+                let ipv4 = ipv4.expect("missing ipv4");
+                let ipv6 = ipv6.expect("missing ipv6");
+                // The configuration installs forwarding on v4 on Virtual
+                // interfaces and v6 on Ethernet. We should only observe the
+                // configuration to be installed on v4 because the device
+                // installed by this test doesn't match the Ethernet device
+                // class.
+                assert_eq!(ipv4.forwarding, Some(true));
+                assert_eq!(ipv4.multicast_forwarding, Some(true));
+                assert_eq!(ipv6.forwarding, Some(false));
+                assert_eq!(ipv6.multicast_forwarding, Some(false));
             }
             .boxed_local()
         },
@@ -1451,6 +1596,7 @@ async fn test_masquerade<N: Netstack, M: Manager>(name: &str, setup: MasqueradeT
         realm: &netemul::TestRealm<'_>,
         interface: &netemul::TestInterface<'_>,
         gateway: fnet::IpAddress,
+        gateway_interface: &netemul::TestInterface<'_>,
     ) {
         let unspecified_address = fnet_ext::IpAddress(match gateway {
             fnet::IpAddress::Ipv4(_) => std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
@@ -1469,9 +1615,26 @@ async fn test_masquerade<N: Netstack, M: Manager>(name: &str, setup: MasqueradeT
             .await
             .expect("call add forwarding entry")
             .expect("add forwarding entry");
+
+        // Make sure that the caller passed the right interface for the gateway
+        // (otherwise the static neighbor entry we're adding is wrong) by
+        // checking that the gateway IP address is installed on the interface.
+        let gateway_iface_addrs = gateway_interface
+            .get_addrs(fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+            .await
+            .expect("get_addrs");
+        assert!(gateway_iface_addrs.iter().any(
+            |fnet_interfaces_ext::Address { addr: fnet::Subnet { addr, .. }, .. }| {
+                addr == &gateway
+            }
+        ));
+        realm
+            .add_neighbor_entry(interface.id(), gateway, gateway_interface.mac().await)
+            .await
+            .expect("add neighbor entry");
     }
-    add_default_gateway(&client, &client_iface, client_gateway).await;
-    add_default_gateway(&server, &server_iface, server_gateway).await;
+    add_default_gateway(&client, &client_iface, client_gateway, &router_client_iface).await;
+    add_default_gateway(&server, &server_iface, server_gateway, &router_server_iface).await;
 
     async fn enable_forwarding(
         interface: &fnet_interfaces_ext::admin::Control,

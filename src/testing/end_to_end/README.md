@@ -28,34 +28,36 @@ Host tests development with the Lacewing framework is simple and fast.
 
 * Leverages widely used Mobly test framework for standardized testbed definition
 and multi-device support.
-* Fuchsia device interaction logic is built in.
+* Fuchsia device interaction logic is built into the Honeydew library.
 * Fast edit-compile-test local development workflow via `fx test`.
-* Fuchsia infra integration is provided out-of-the-box given testbed exists in
-lab.
+* Fuchsia infra integration works out-of-the-box (provided a testbed exists in
+lab and Swarming).
 
 The following sections walk through the local development process for a basic
 single-device Lacewing test case.
-
-### Test directory
-
-Start by creating a test directory:
-
-```sh
-$ mkdir my_test_dir
-$ cd my_test_dir
-$ touch my_test.py
-$ touch BUILD.gn
-````
 
 ### Confirm device connection
 
 Ensure that there's a Fuchsia device that's accessible from the host via
 
 ```sh
+$ cd $FUCHSIA_DIR
 $ ffx target list
 ```
 
-If you do not have a physical device handy, refer to [Fuchsia-Emulator](./honeydew/tests/functional_tests/README.md#Fuchsia-Emulator) to get started.
+If you do not have a physical device handy, refer to the [Fuchsia-Emulator](./honeydew/tests/functional_tests/README.md#Fuchsia-Emulator) section to start an emulator.
+
+### Test directory
+
+Start by creating a test directory:
+
+```sh
+$ cd $FUCHSIA_DIR/src/testing/end_to_end/examples
+$ mkdir my_test_dir
+$ cd my_test_dir
+$ touch my_test.py
+$ touch BUILD.gn
+````
 
 ### Mobly Config YAML File
 
@@ -64,68 +66,29 @@ generic E2E test framework features such as testbed specification, device
 initialization abstraction, assertions, and logging.
 
 Every Mobly test requires a testbed configuration file to be provided to specify
-the device(s) under test that the E2E test will need to interact with.
+the device(s) under test (DUTs) that the E2E test will need to interact with.
 
+For local testing, Lacewing generates a default Mobly config based on the host
+environment. This is a best-effort algorithm that assumes that all detected
+Fuchsia device can be accessed using the `~/.ssh/fuchsia_ed25519` SSH private
+key. This generated config file should serve the majority of in-tree use cases
+where devices and emulators are paved/flashed/built directly from Fuchsia.git).
+
+If the default config generation does not fit your use-case, see the
+[Local Manual Mobly Config section](#local-manual-mobly-config) to create a YAML
+file from scratch and override the default behavior.
+
+NOTE: For infra execution, Mobly config generation is entirely automated by
+Lacewing so nothing is required from test authors (besides picking the correct
+|environments| in the `BUILD.gn` for test targets to run against).
 ```sh
 $ touch my_config.yaml
 ````
 
 For simplicity, this is an example of a single Fuchsia device testbed.
 
-NOTE: Multi-device testbeds follows a similar configuration but is out-of-scope
-of this guide - stay tuned for the "Multi-device testing" guide.
-TODO(fxbug.dev/124459)
-
-```yaml
-TestBeds:
-  - Name: My_Simple_Testbed
-    Controllers:
-      FuchsiaDevice:
-        - name: $FUCHSIA_NODENAME
-          ssh_private_key: $PKEY
-```
-
-Where `$FUCHSIA_NODENAME` and `$PKEY` need to be manually substituted to fit
-your local development environment.
-
-#### `name` attribute of FuchsiaDevice
-`name: $FUCHSIA_NODENAME` is the device-under-test that's accessible from the
-host. A quick way to determine what this is in your local environment is to use
-`ffx`:
-
-```sh
-$ ffx target list
-NAME                SERIAL       TYPE             STATE      ADDRS/IP                           RCS
-fuchsia-emulator*   <unknown>    core.qemu-x64    Product    [fe80::1a1c:ebd2:2db:6104%qemu]    Y
-```
-
-The `$FUCSHIA_NODENAME` in the above example would be `fuchsia-emulator`.
-
-NOTE: This may be an emulator or a physical device. If there are multiple
-accessible devices, choose only the one that you'd like to target in the host
-test.
-
-#### `ssh_private_key` attribute of FuchsiaDevice
-The `ssh_private_key: $PKEY` value should match the path of the SSH private key
-that can be used to connect to the DUT. This is the key that pairs with the
-`authorized_keys` used in paving workflows or exists in the emulator image. For
-most users, this is ` ~/.ssh/fuchsia_ed25519` as it's the key used by Fuchsia's
-`fx` workflows. If the DUT is provisioned by other means, you'd have to provide
-the path to the corresponding SSH private key.
-
-A quick way to confirm that Fuchsia's default SSH key works is the following:
-
-```sh
-$ fx set-device $FUCHSIA_NODENAME
-$ fx shell ls
-```
-
-If the above succeeds, then the following command returns the working SSH key
-path:
-
-```sh
-$ head -1 $FUCHSIA_DIR/.fx-ssh-path
-```
+Multi-device testbeds follows a similar configuration but is out-of-scope of this guide - Please direct to
+[Multi-device setup and execution](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/test_multi_device/README.md)
 
 ### Lacewing test module
 
@@ -156,17 +119,23 @@ device interactions. Fore more information see the
 
 ### Build definition
 
-Now that you have a Lacewing test module, integrate it with the build system.
+Now that you have a Lacewing test module you can integrate it with the build
+system.
 
 
 ```gn
 import("//build/python/python_mobly_test.gni")
 
-python_mobly_test("my_test") {
+python_mobly_test("my_test_target") {
     main_source = "my_test.py"
-    # The library below provides device interaction APIs.
-    libraries = [ "//src/testing/end_to_end/honeydew" ]
-    local_config_source = "my_config.yaml"
+    libraries = [
+      # Honeydew provides device interaction APIs.
+      "//src/testing/end_to_end/honeydew",
+      # Base class provides common Fuchsia testing setup and teardown logic.
+      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+    ]
+    # Transport can also be "sl4f" if SL4F is required by your test.
+    transport = "fuchsia-controller"
 }
 ```
 ### Test execution
@@ -174,23 +143,36 @@ python_mobly_test("my_test") {
 Once the Lacewing target has been defined, you can trigger the test to run
 locally via `fx test`.
 
-Currently, there's a framework dependency on `SL4F` to be present on the Fuchsia
-DUT which prevents Lacewing to work with `core` products. This constraint will
-be lifted upon Lacewing's integration with [Fuchsia Controller](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/developer/ffx/lib/fuchsia-controller/).
-But for now you'll have to ensure that the DUT will have the `SL4F` server
-present.
-
-
 ```sh
-$ fx set core.qemu-x64 \
+# Step 1 - Configure build
+
+# 1.a - If Fuchsia-Controller transport.
+$ fx set workbench_eng.qemu-x64 \
+    --with-host //src/testing/end_to_end/examples/my_test_dir:my_test_target
+
+# 1.b - If SL4F transport.
+$ fx set workbench_eng.qemu-x64 \
+    --with-host //src/testing/end_to_end/examples/my_test_dir:my_test_target \
     --with //src/testing/sl4f \
     --with //src/sys/bin/start_sl4f \
-    --args 'core_realm_shards += [ "//src/testing/sl4f:sl4f_core_shard" ]' \
-    --with-host //path/to:my_test
-$ fx test //path/to:my_test --e2e --output
+    --args 'core_realm_shards += [ "//src/testing/sl4f:sl4f_core_shard" ]'
+
+# Step 2- Start the emulator and package server (in separate terminals)
+$ fx serve
+$ ffx emu stop ; ffx emu start -H --net tap
+
+# Step 3 - Run the test
+$ fx test //src/testing/end_to_end/examples/my_test_dir:my_test_target --e2e \
+    --output
 ```
 
+By default, test logs are stored under `${FUCHSIA_OUT_DIR}/test_out/`. Users may
+override this by supplying `$FUCHSIA_TEST_OUTDIR=<custom_path>` before their
+`fx test` invocation.
+
 Congrats! You've just written and run your first Lacewing test!
+
+## Further Reading
 
 ### Test parameters
 
@@ -269,3 +251,79 @@ See the [Honeydew README.md](https://cs.opensource.google/fuchsia/fuchsia/+/main
 ### Existing test examples
 
 See [examples](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/) for working examples of existing Lacewing tests.
+
+### Local Manual Mobly Config
+NOTE: Read on if the default generated Mobly config is insufficient.
+
+```sh
+$ touch my_config.yaml
+````
+
+For simplicity, this is an example of a single Fuchsia device testbed.
+
+NOTE: Multi-device testbeds follows a similar configuration but is out-of-scope
+of this guide - stay tuned for the "Multi-device testing" guide.
+TODO(fxbug.dev/124459)
+
+```yaml
+TestBeds:
+  - Name: My_Simple_Testbed
+    Controllers:
+      FuchsiaDevice:
+        - name: $FUCHSIA_NODENAME
+          ssh_private_key: $PKEY
+```
+
+Where `$FUCHSIA_NODENAME` and `$PKEY` need to be manually substituted to fit
+your local development environment (More info on each of these fields in
+the sections below).
+
+After updating the content of this file, update BUILD.gn to include it in the
+`python_mobly_test()` target.
+
+```gn
+python_mobly_test("my_test") {
+    ...
+    local_config_source = "my_config.yaml"
+    ...
+}
+```
+
+#### $FUCHSIA_NODENAME
+`name: $FUCHSIA_NODENAME` is the device-under-test that's accessible from the
+host. A quick way to determine what this is in your local environment is to use
+`ffx`:
+
+```sh
+$ ffx target list
+NAME                SERIAL       TYPE             STATE      ADDRS/IP                           RCS
+fuchsia-emulator*   <unknown>    core.qemu-x64    Product    [fe80::1a1c:ebd2:2db:6104%qemu]    Y
+```
+
+The `$FUCSHIA_NODENAME` in the above example would be `fuchsia-emulator`.
+
+NOTE: This may be an emulator or a physical device. If there are multiple
+accessible devices, choose only the one that you'd like to target in the host
+test.
+
+#### $PKEY
+The `ssh_private_key: $PKEY` value should match the path of the SSH private key
+that can be used to connect to the DUT. This is the key that pairs with the
+`authorized_keys` used in paving workflows or exists in the emulator image. For
+most users, this is ` ~/.ssh/fuchsia_ed25519` as it's the key used by Fuchsia's
+`fx` workflows. If the DUT is provisioned by other means, you'd have to provide
+the path to the corresponding SSH private key.
+
+A quick way to confirm that Fuchsia's default SSH key works is the following:
+
+```sh
+$ fx set-device $FUCHSIA_NODENAME
+$ fx shell ls
+```
+
+If the above succeeds, then the following command returns the working SSH key
+path:
+
+```sh
+$ head -1 $FUCHSIA_DIR/.fx-ssh-path
+```

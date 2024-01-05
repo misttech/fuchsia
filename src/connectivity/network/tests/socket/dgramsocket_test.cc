@@ -14,6 +14,7 @@
 #include <future>
 #include <latch>
 
+#include <fbl/unaligned.h>
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
@@ -1903,6 +1904,53 @@ INSTANTIATE_TEST_SUITE_P(IOSendingZeroBytesMethodTests, IOSendingZeroBytesMethod
                                                           SendZeroBytesTestCase::ZeroBufferLen)),
                          DomainAndIOMethodAndSendZeroBytesTestCaseToString);
 
+using SendIOMethodTestCase = std::tuple<SocketDomain, IOMethod>;
+
+std::string SendIOMethodTestCaseToString(const testing::TestParamInfo<SendIOMethodTestCase>& info) {
+  auto const& [domain, io_method] = info.param;
+  std::ostringstream oss;
+  oss << socketDomainToString(domain) << '_' << io_method.IOMethodToString();
+  return oss.str();
+}
+
+class SendIOMethodTest : public NetDatagramSocketsTestBase,
+                         public testing::TestWithParam<SendIOMethodTestCase> {
+  void SetUp() override {
+    auto const& [domain, io_method] = GetParam();
+    ASSERT_NO_FATAL_FAILURE(SetUpDatagramSockets(domain));
+  }
+
+  void TearDown() override {
+    if (!IsSkipped()) {
+      EXPECT_NO_FATAL_FAILURE(TearDownDatagramSockets());
+    }
+  }
+};
+
+TEST_P(SendIOMethodTest, SendDatagramTooLarge) {
+  auto [domain, io_method] = GetParam();
+
+  std::vector<char> buf(1024, 'a');
+  EXPECT_EQ(io_method.ExecuteIO(connected().get(), buf.data(), buf.size()), ssize_t(buf.size()))
+      << strerror(errno);
+
+  // The maximum IP packet size is 65535, so even ignoring the overhead of the
+  // IP and UDP headers, this payload is guaranteed to be too large.
+  buf.resize(65536, 'a');
+  EXPECT_EQ(io_method.ExecuteIO(connected().get(), buf.data(), buf.size()), -1);
+  EXPECT_EQ(errno, EMSGSIZE);
+
+  buf.resize(128 * 1024, 'a');
+  EXPECT_EQ(io_method.ExecuteIO(connected().get(), buf.data(), buf.size()), -1);
+  EXPECT_EQ(errno, EMSGSIZE);
+}
+
+INSTANTIATE_TEST_SUITE_P(SendIOMethodTests, SendIOMethodTest,
+                         testing::Combine(testing::Values(SocketDomain::IPv4(),
+                                                          SocketDomain::IPv6()),
+                                          testing::ValuesIn(kSendIOMethods)),
+                         SendIOMethodTestCaseToString);
+
 enum class SendZeroBytesVectorizedTestCase {
   NullIovecPointer,
   ZeroIovCnt,
@@ -2090,7 +2138,7 @@ class NetDatagramSocketsCmsgRecvTestBase : public NetDatagramSocketsCmsgTestBase
           .fd = bound().get(),
           .events = POLLIN,
       };
-      int n = poll(&pfd, 1, std::chrono::milliseconds(kTimeout).count());
+      int n = poll(&pfd, 1, -1);
       ASSERT_GE(n, 0) << strerror(errno);
       ASSERT_EQ(n, 1);
       ASSERT_EQ(pfd.revents, POLLIN);
@@ -2621,15 +2669,12 @@ TEST_P(NetDatagramSocketsCmsgTimestampTest, RecvCmsgUnalignedControlBuffer) {
 
         // Do not access the unaligned control header directly as that would be an undefined
         // behavior. Copy the content to a properly aligned variable first.
-        char aligned_cmsg[CMSG_SPACE(sizeof(timeval))];
-        memcpy(&aligned_cmsg, unaligned_cmsg, sizeof(aligned_cmsg));
-        cmsghdr* cmsg = reinterpret_cast<cmsghdr*>(aligned_cmsg);
-        EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(timeval)));
-        EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
-        EXPECT_EQ(cmsg->cmsg_type, SO_TIMESTAMP);
+        cmsghdr header = fbl::UnalignedLoad<cmsghdr>(unaligned_cmsg);
+        EXPECT_EQ(header.cmsg_len, CMSG_LEN(sizeof(timeval)));
+        EXPECT_EQ(header.cmsg_level, SOL_SOCKET);
+        EXPECT_EQ(header.cmsg_type, SO_TIMESTAMP);
 
-        timeval received_tv;
-        memcpy(&received_tv, CMSG_DATA(cmsg), sizeof(received_tv));
+        timeval received_tv = fbl::UnalignedLoad<timeval>(CMSG_DATA(unaligned_cmsg));
         const std::chrono::duration received = std::chrono::seconds(received_tv.tv_sec) +
                                                std::chrono::microseconds(received_tv.tv_usec);
         const std::chrono::duration after = std::chrono::system_clock::now().time_since_epoch();
@@ -2731,7 +2776,7 @@ TEST_P(NetDatagramSocketsCmsgTimestampNsTest, RecvCmsgUnalignedControlBuffer) {
         // Do not access the unaligned control header directly as that would be an undefined
         // behavior. Copy the content to a properly aligned variable first.
         char aligned_cmsg[CMSG_SPACE(sizeof(timespec))];
-        memcpy(&aligned_cmsg, unaligned_cmsg, sizeof(aligned_cmsg));
+        memcpy(&aligned_cmsg, reinterpret_cast<std::byte*>(unaligned_cmsg), sizeof(aligned_cmsg));
         cmsghdr* cmsg = reinterpret_cast<cmsghdr*>(aligned_cmsg);
         EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(timespec)));
         EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
@@ -2918,7 +2963,7 @@ TEST_P(NetDatagramSocketsCmsgIpTtlTest, RecvCmsgUnalignedControlBuffer) {
 
         // Copy the content to a properly aligned variable.
         char aligned_cmsg[CMSG_SPACE(sizeof(kDefaultTTL))];
-        memcpy(&aligned_cmsg, unaligned_cmsg, sizeof(aligned_cmsg));
+        memcpy(&aligned_cmsg, reinterpret_cast<std::byte*>(unaligned_cmsg), sizeof(aligned_cmsg));
         cmsghdr* cmsg = reinterpret_cast<cmsghdr*>(aligned_cmsg);
         EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(kDefaultTTL)));
         EXPECT_EQ(cmsg->cmsg_level, SOL_IP);
@@ -2945,7 +2990,7 @@ TEST_P(NetDatagramSocketsCmsgIpTtlTest, SendCmsg) {
         EXPECT_EQ(cmsg->cmsg_level, SOL_IP);
         EXPECT_EQ(cmsg->cmsg_type, IP_TTL);
         int recv_ttl;
-        memcpy(&recv_ttl, CMSG_DATA(cmsg), sizeof(recv_ttl));
+        memcpy(&recv_ttl, reinterpret_cast<std::byte*>(CMSG_DATA(cmsg)), sizeof(recv_ttl));
         EXPECT_EQ(recv_ttl, kTtl);
         EXPECT_EQ(CMSG_NXTHDR(&recv_msghdr, cmsg), nullptr);
       }));
@@ -3049,7 +3094,7 @@ TEST_P(NetDatagramSocketsCmsgIpv6TClassTest, RecvCmsgUnalignedControlBuffer) {
 
         // Copy the content to a properly aligned variable.
         char aligned_cmsg[CMSG_SPACE(sizeof(kTClass))];
-        memcpy(&aligned_cmsg, unaligned_cmsg, sizeof(aligned_cmsg));
+        memcpy(&aligned_cmsg, reinterpret_cast<std::byte*>(unaligned_cmsg), sizeof(aligned_cmsg));
         cmsghdr* cmsg = reinterpret_cast<cmsghdr*>(aligned_cmsg);
         EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(kTClass)));
         EXPECT_EQ(cmsg->cmsg_level, SOL_IPV6);
@@ -3126,7 +3171,7 @@ TEST_P(NetDatagramSocketsCmsgIpv6HopLimitTest, RecvCmsgUnalignedControlBuffer) {
 
         // Copy the content to a properly aligned variable.
         char aligned_cmsg[CMSG_SPACE(sizeof(kDefaultHopLimit))];
-        memcpy(&aligned_cmsg, unaligned_cmsg, sizeof(aligned_cmsg));
+        memcpy(&aligned_cmsg, reinterpret_cast<std::byte*>(unaligned_cmsg), sizeof(aligned_cmsg));
         cmsghdr* cmsg = reinterpret_cast<cmsghdr*>(aligned_cmsg);
         EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(kDefaultHopLimit)));
         EXPECT_EQ(cmsg->cmsg_level, SOL_IPV6);
@@ -3183,7 +3228,8 @@ TEST_P(NetDatagramSocketsCmsgIpv6HopLimitTest, SendCmsgDefaultValue) {
         EXPECT_EQ(cmsg->cmsg_level, SOL_IPV6);
         EXPECT_EQ(cmsg->cmsg_type, IPV6_HOPLIMIT);
         int recv_hoplimit;
-        memcpy(&recv_hoplimit, CMSG_DATA(cmsg), sizeof(recv_hoplimit));
+        memcpy(&recv_hoplimit, reinterpret_cast<std::byte*>(CMSG_DATA(cmsg)),
+               sizeof(recv_hoplimit));
         EXPECT_EQ(recv_hoplimit, kConfiguredHopLimit);
         EXPECT_EQ(CMSG_NXTHDR(&recv_msghdr, cmsg), nullptr);
       }));
@@ -3282,7 +3328,7 @@ TEST_P(NetDatagramSocketsCmsgIpv6PktInfoTest, RecvCmsgUnalignedControlBuffer) {
 
         // Copy the content to a properly aligned variable.
         char aligned_cmsg[CMSG_SPACE(sizeof(in6_pktinfo))];
-        memcpy(&aligned_cmsg, unaligned_cmsg, sizeof(aligned_cmsg));
+        memcpy(&aligned_cmsg, reinterpret_cast<std::byte*>(unaligned_cmsg), sizeof(aligned_cmsg));
         cmsghdr* cmsg = reinterpret_cast<cmsghdr*>(aligned_cmsg);
         EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(in6_pktinfo)));
         EXPECT_EQ(cmsg->cmsg_level, SOL_IPV6);

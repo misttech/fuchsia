@@ -5,26 +5,56 @@
 use crate::subsystems::prelude::*;
 use anyhow::{Context, Result};
 use assembly_config_schema::platform_config::setui_config::{ICUType, SetUiConfig};
+use assembly_config_schema::FileEntry;
 
 pub(crate) struct SetUiSubsystem;
-impl DefineSubsystemConfiguration<SetUiConfig> for SetUiSubsystem {
+impl DefineSubsystemConfiguration<Option<SetUiConfig>> for SetUiSubsystem {
     fn define_configuration(
         _: &ConfigurationContext<'_>,
-        config: &SetUiConfig,
+        config: &Option<SetUiConfig>,
         builder: &mut dyn ConfigurationBuilder,
     ) -> Result<()> {
-        let bundle_name = if config.with_camera { "setui_with_camera" } else { "setui" };
-        match config.use_icu {
-            ICUType::Flavored => {
-                builder
-                    .icu_platform_bundle(bundle_name)
-                    .context("while configuring the 'Intl' subsystem with ICU")?;
+        if let Some(ref config) = config {
+            let bundle_name = if config.with_camera { "setui_with_camera" } else { "setui" };
+            match config.use_icu {
+                ICUType::Flavored => {
+                    builder
+                        .icu_platform_bundle(bundle_name)
+                        .context("while configuring the 'Intl' subsystem with ICU")?;
+                }
+                ICUType::Unflavored => {
+                    builder.platform_bundle(bundle_name);
+                }
+            };
+
+            if let Some(display) = &config.display {
+                builder.package("setui_service").config_data(FileEntry {
+                    source: display.clone(),
+                    destination: "display_configuration.json".into(),
+                })?;
             }
-            ICUType::Unflavored => {
-                builder.platform_bundle(bundle_name);
+
+            if let Some(interface) = &config.interface {
+                builder.package("setui_service").config_data(FileEntry {
+                    source: interface.clone(),
+                    destination: "interface_configuration.json".into(),
+                })?;
             }
-            ICUType::None => { /* Skip the bundle altogether. */ }
-        };
+
+            if let Some(light_sensor) = &config.light_sensor {
+                builder.package("setui_service").config_data(FileEntry {
+                    source: light_sensor.clone(),
+                    destination: "light_sensor_configuration.json".into(),
+                })?;
+            }
+
+            if let Some(agent) = &config.agent {
+                builder.package("setui_service").config_data(FileEntry {
+                    source: agent.clone(),
+                    destination: "agent_configuration.json".into(),
+                })?;
+            }
+        }
         Ok(())
     }
 }

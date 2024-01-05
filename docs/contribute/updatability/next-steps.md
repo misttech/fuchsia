@@ -6,9 +6,7 @@ that will promote Fuchsia’s ability to change and update.
 
 ## Versioning and compatibility metadata throughout the surface
 
-- [FIDL availability annotations][rfc-0083] are
-  [not yet implemented][fxb-67858]. Once this is implemented, the next step is
-  to apply these annotations to FIDL files.
+- FIDL supports [availability annotations][fidl-versioning].
 - Availability annotations are
   [not yet implemented for C/C++ headers][fxb-60532] in the Fuchsia IDK. Once
   this is implemented, the next step is to apply these annotations to SDK header
@@ -143,7 +141,7 @@ importantly [`ffx`][ffx] and its many
 FIDL, which affords for updatability. However some legacy tools are still offered
 to out-of-tree developers that don’t have the same updatability affordances.
 
-- SSH is supported (such as with the [`fssh` tool][fssh] and provides the host
+- SSH is supported (such as with the [`funnel` tool][funnel] and provides the host
   with a developer experience similar to a remote root shell on a target Fuchsia
   device. The client may circumvent the intended platform surface such as by
   directly observing, starting, and killing system processes.
@@ -188,7 +186,8 @@ even if CTS coverage never reaches 100% of the platform surface.
 [ffx]: /docs/development/tools/ffx/overview.md
 [ffx-reference]: https://fuchsia.dev/reference/tools/sdk/ffx.md
 [ffx-component]: https://fuchsia.dev/reference/tools/sdk/ffx.md#component
-[fssh]: https://fuchsia.dev/reference/tools/sdk/fssh.md
+[fidl-versioning]: /docs/reference/fidl/language/versioning.md
+[funnel]: https://fuchsia.dev/reference/tools/sdk/funnel
 [fx-mem]: https://fuchsia.dev/reference/tools/fx/cmd/mem
 [fx-snapshot]: https://fuchsia.dev/reference/tools/fx/cmd/snapshot
 [fxb-34556]: https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=34556
@@ -205,11 +204,10 @@ even if CTS coverage never reaches 100% of the platform surface.
 [oot-system-testing]: /docs/contribute/roadmap/2021/oot_system_testing.md
 [package-url]: /docs/concepts/packages/package_url.md
 [procargs]: /docs/concepts/process/program_loading.md#the_processargs_protocol
-[rfc-0083]: /docs/contribute/governance/rfcs/0083_fidl_versioning.md
-[sdk-tools]: https://fuchsia.dev/reference/tools/sdk/README.md
+[sdk-tools]: https://fuchsia.dev/reference/tools/sdk/ffx
 [selectors]: /docs/reference/diagnostics/selectors.md
 [sl4a]: https://android.googlesource.com/platform/external/sl4a/
-[sl4f]: /docs/development/drivers/concepts/driver_development/sl4f.md
+[sl4f]: /docs/development/testing/sl4f.md
 [stable-driver-runtime]: /docs/contribute/roadmap/2021/stable_driver_runtime.md
 [structured-config]: /docs/contribute/roadmap/2021/structured_configuration.md
 [test-double]: /docs/contribute/testing/principles.md#test_doubles_stubs_mocks_fakes
@@ -217,4 +215,4 @@ even if CTS coverage never reaches 100% of the platform surface.
 [tracing]: /docs/concepts/kernel/tracing-system.md
 [trf]: /docs/development/testing/components/test_runner_framework.md
 [workstation-oot]: /docs/contribute/roadmap/2021/workstation_out_of_tree.md
-[zx-object-get-info]: /docs/reference/syscalls/object_get_info.md
+[zx-object-get-info]: /reference/syscalls/object_get_info.md

@@ -13,6 +13,7 @@
 #include <lib/fit/function.h>
 #include <zircon/errors.h>
 #include <zircon/process.h>
+#include <zircon/processargs.h>
 #include <zircon/status.h>
 
 #include <chrono>
@@ -22,9 +23,9 @@
 #include <fbl/mutex.h>
 #include <fbl/string_printf.h>
 
-#include "src/lib/storage/vfs/cpp/managed_vfs.h"
-#include "src/lib/storage/vfs/cpp/pseudo_dir.h"
-#include "src/lib/storage/vfs/cpp/service.h"
+#include "src/storage/lib/vfs/cpp/managed_vfs.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
+#include "src/storage/lib/vfs/cpp/service.h"
 #include "src/sys/lib/stdout-to-debuglog/cpp/stdout-to-debuglog.h"
 
 namespace fio = fuchsia_io;
@@ -188,7 +189,7 @@ void shutdown_timer() {
 // shutdown of components. If the orderly shutdown takes too long the shim will
 // exit with a non-zero exit code, killing the root job.
 void drive_shutdown_manually(fuchsia_device_manager::SystemPowerState state) {
-  printf("[shutdown-shim]: driving shutdown manually\n");
+  fprintf(stderr, "[shutdown-shim]: driving shutdown manually\n");
 
   // Start a new thread that makes us exit uncleanly after a timeout. This will
   // guarantee that shutdown doesn't take longer than
@@ -311,11 +312,10 @@ zx_status_t send_command(fidl::WireSyncClient<statecontrol_fidl::Admin> statecon
 // driver_manager and component_manager to drive shutdown manually.
 zx_status_t forward_command(fuchsia_device_manager::SystemPowerState fallback_state,
                             const statecontrol_fidl::wire::RebootReason* reboot_reason = nullptr) {
-  printf("[shutdown-shim]: checking power_manager liveness\n");
-
   zx::result local = connect_to_protocol_with_timeout<statecontrol_fidl::Admin>();
   if (local.is_ok()) {
-    printf("[shutdown-shim]: trying to forward command\n");
+    fprintf(stderr, "[shutdown-shim]: forwarding command %d\n",
+            static_cast<uint8_t>(fallback_state));
     zx_status_t status =
         send_command(fidl::WireSyncClient(std::move(local.value())), fallback_state, reboot_reason);
     if (status != ZX_ERR_UNAVAILABLE && status != ZX_ERR_NOT_SUPPORTED) {
@@ -328,8 +328,8 @@ zx_status_t forward_command(fuchsia_device_manager::SystemPowerState fallback_st
     }
   }
 
-  printf("[shutdown-shim]: failed to forward command to power_manager: %s\n",
-         local.status_string());
+  fprintf(stderr, "[shutdown-shim]: failed to forward command to power_manager: %s\n",
+          local.status_string());
 
   drive_shutdown_manually(fallback_state);
 
@@ -411,10 +411,9 @@ void StateControlAdminServer::Mexec(MexecRequestView request, MexecCompleter::Sy
   system_state_transition_server_.set_mexec_kernel_zbi(std::move(kernel_zbi));
   system_state_transition_server_.set_mexec_data_zbi(std::move(data_zbi));
 
-  printf("[shutdown-shim]: checking power_manager liveness\n");
   zx::result local = connect_to_protocol_with_timeout<statecontrol_fidl::Admin>();
   if (local.is_ok()) {
-    printf("[shutdown-shim]: trying to forward command\n");
+    fprintf(stderr, "[shutdown-shim]: trying to forward Mexec command\n");
     zx_status_t status =
         send_command(fidl::WireSyncClient(std::move(local.value())),
                      fuchsia_device_manager::SystemPowerState::kMexec, nullptr, &request);
@@ -429,8 +428,8 @@ void StateControlAdminServer::Mexec(MexecRequestView request, MexecCompleter::Sy
     // Else, fallback logic.
   }
 
-  printf("[shutdown-shim]: failed to forward command to power_manager: %s\n",
-         local.status_string());
+  fprintf(stderr, "[shutdown-shim]: failed to forward command to power_manager: %s\n",
+          local.status_string());
 
   drive_shutdown_manually(fuchsia_device_manager::SystemPowerState::kMexec);
 

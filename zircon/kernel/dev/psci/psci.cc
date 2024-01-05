@@ -11,6 +11,7 @@
 
 #include <arch/arm64/smccc.h>
 #include <dev/psci.h>
+#include <pdev/power.h>
 
 #define LOCAL_TRACE 0
 
@@ -22,6 +23,38 @@ static uint64_t reboot_args[3] = {0, 0, 0};
 static uint64_t reboot_bootloader_args[3] = {0, 0, 0};
 static uint64_t reboot_recovery_args[3] = {0, 0, 0};
 static uint32_t reset_command = PSCI64_SYSTEM_RESET;
+
+zx_status_t psci_status_to_zx_status(uint64_t psci_result);
+zx_status_t psci_status_to_zx_status(uint64_t psci_result) {
+  int64_t status = static_cast<int64_t>(psci_result);
+  switch (status) {
+    case PSCI_SUCCESS:
+      return ZX_OK;
+    case PSCI_NOT_SUPPORTED:
+    case PSCI_DISABLED:
+      return ZX_ERR_NOT_SUPPORTED;
+    case PSCI_INVALID_PARAMETERS:
+    case PSCI_INVALID_ADDRESS:
+      return ZX_ERR_INVALID_ARGS;
+    case PSCI_DENIED:
+      return ZX_ERR_ACCESS_DENIED;
+    case PSCI_ALREADY_ON:
+      return ZX_ERR_BAD_STATE;
+    case PSCI_ON_PENDING:
+      return ZX_ERR_SHOULD_WAIT;
+    case PSCI_INTERNAL_FAILURE:
+      return ZX_ERR_INTERNAL;
+    case PSCI_NOT_PRESENT:
+      return ZX_ERR_NOT_FOUND;
+    case PSCI_TIMEOUT:
+      return ZX_ERR_TIMED_OUT;
+    case PSCI_RATE_LIMITED:
+    case PSCI_BUSY:
+      return ZX_ERR_UNAVAILABLE;
+    default:
+      return ZX_ERR_BAD_STATE;
+  }
+}
 
 static uint64_t psci_smc_call(uint32_t function, uint64_t arg0, uint64_t arg1, uint64_t arg2) {
   return arm_smccc_smc(function, arg0, arg1, arg2, 0, 0, 0, 0).x0;
@@ -35,40 +68,57 @@ typedef uint64_t (*psci_call_proc)(uint32_t function, uint64_t arg0, uint64_t ar
 
 static psci_call_proc do_psci_call = psci_smc_call;
 
-void psci_system_off() {
-  do_psci_call(PSCI64_SYSTEM_OFF, shutdown_args[0], shutdown_args[1], shutdown_args[2]);
+zx_status_t psci_system_off() {
+  return psci_status_to_zx_status(
+      do_psci_call(PSCI64_SYSTEM_OFF, shutdown_args[0], shutdown_args[1], shutdown_args[2]));
 }
 
 uint32_t psci_get_version() { return (uint32_t)do_psci_call(PSCI64_PSCI_VERSION, 0, 0, 0); }
 
 /* powers down the calling cpu - only returns if call fails */
-uint32_t psci_cpu_off() { return (uint32_t)do_psci_call(PSCI64_CPU_OFF, 0, 0, 0); }
-
-uint32_t psci_cpu_on(uint64_t mpid, paddr_t entry) {
-  LTRACEF("CPU_ON mpid %#" PRIx64 ", entry %#" PRIx64 "\n", mpid, entry);
-  return (uint32_t)do_psci_call(PSCI64_CPU_ON, mpid, entry, 0);
+zx_status_t psci_cpu_off() {
+  return psci_status_to_zx_status(do_psci_call(PSCI64_CPU_OFF, 0, 0, 0));
 }
 
-uint32_t psci_get_affinity_info(uint64_t cluster, uint64_t cpuid) {
-  return (uint32_t)do_psci_call(PSCI64_AFFINITY_INFO, ARM64_MPID(cluster, cpuid), 0, 0);
+zx_status_t psci_cpu_on(uint64_t mpid, paddr_t entry, uint64_t context) {
+  LTRACEF("CPU_ON mpid %#" PRIx64 ", entry %#" PRIx64 "\n", mpid, entry);
+  return psci_status_to_zx_status(do_psci_call(PSCI64_CPU_ON, mpid, entry, context));
+}
+
+int64_t psci_get_affinity_info(uint64_t mpid) {
+  return (int64_t)do_psci_call(PSCI64_AFFINITY_INFO, mpid, 0, 0);
+}
+
+zx::result<power_cpu_state> psci_get_cpu_state(uint64_t mpid) {
+  int64_t aff_info = psci_get_affinity_info(mpid);
+  switch (aff_info) {
+    case 0:
+      return zx::success(power_cpu_state::ON);
+    case 1:
+      return zx::success(power_cpu_state::OFF);
+    case 2:
+      return zx::success(power_cpu_state::ON_PENDING);
+    default:
+      return zx::error(psci_status_to_zx_status(aff_info));
+  }
 }
 
 uint32_t psci_get_feature(uint32_t psci_call) {
   return (uint32_t)do_psci_call(PSCI64_PSCI_FEATURES, psci_call, 0, 0);
 }
 
-void psci_system_reset(enum reboot_flags flags) {
+zx_status_t psci_system_reset(power_reboot_flags flags) {
   uint64_t* args = reboot_args;
 
-  if (flags == REBOOT_BOOTLOADER) {
+  if (flags == power_reboot_flags::REBOOT_BOOTLOADER) {
     args = reboot_bootloader_args;
-  } else if (flags == REBOOT_RECOVERY) {
+  } else if (flags == power_reboot_flags::REBOOT_RECOVERY) {
     args = reboot_recovery_args;
   }
 
   dprintf(INFO, "PSCI reboot: %#" PRIx32 " %#" PRIx64 " %#" PRIx64 " %#" PRIx64 "\n", reset_command,
           args[0], args[1], args[2]);
-  do_psci_call(reset_command, args[0], args[1], args[2]);
+  return psci_status_to_zx_status(do_psci_call(reset_command, args[0], args[1], args[2]));
 }
 
 void PsciInit(const zbi_dcfg_arm_psci_driver_t& config) {
@@ -87,22 +137,55 @@ void PsciInit(const zbi_dcfg_arm_psci_driver_t& config) {
   if (major >= 1 && major != 0xffff) {
     // query features
     dprintf(INFO, "PSCI supported features:\n");
-    result = psci_get_feature(PSCI64_SYSTEM_OFF);
-    dprintf(INFO, "\tPSCI64_SYSTEM_OFF %#x\n", result);
-    result = psci_get_feature(PSCI64_SYSTEM_RESET);
-    dprintf(INFO, "\tPSCI64_SYSTEM_RESET %#x\n", result);
-    result = psci_get_feature(PSCI64_SYSTEM_RESET2);
-    dprintf(INFO, "\tPSCI64_SYSTEM_RESET2 %#x\n", result);
-    if (result == 0) {
+
+    auto probe_feature = [](uint32_t feature, const char* feature_name) -> bool {
+      uint32_t result = psci_get_feature(feature);
+      if (static_cast<int32_t>(result) < 0) {
+        // Not supported
+        return false;
+      }
+      dprintf(INFO, "\t%s\n", feature_name);
+      return true;
+    };
+
+    probe_feature(PSCI64_CPU_SUSPEND, "CPU_SUSPEND");
+    probe_feature(PSCI64_CPU_OFF, "CPU_OFF");
+    probe_feature(PSCI64_CPU_ON, "CPU_ON");
+    probe_feature(PSCI64_AFFINITY_INFO, "CPU_AFFINITY_INFO");
+    probe_feature(PSCI64_MIGRATE, "CPU_MIGRATE");
+    probe_feature(PSCI64_MIGRATE_INFO_TYPE, "CPU_MIGRATE_INFO_TYPE");
+    probe_feature(PSCI64_MIGRATE_INFO_UP_CPU, "CPU_MIGRATE_INFO_UP_CPU");
+    probe_feature(PSCI64_SYSTEM_OFF, "SYSTEM_OFF");
+    probe_feature(PSCI64_SYSTEM_RESET, "SYSTEM_RESET");
+    bool supported = probe_feature(PSCI64_SYSTEM_RESET2, "SYSTEM_RESET2");
+    if (supported) {
       // Prefer RESET2 if present. It explicitly supports arguments, but some vendors have
       // extended RESET to behave the same way.
       reset_command = PSCI64_SYSTEM_RESET2;
     }
-    result = psci_get_feature(PSCI64_CPU_ON);
-    dprintf(INFO, "\tPSCI64_CPU_ON %#x\n", result);
-    result = psci_get_feature(PSCI64_CPU_OFF);
-    dprintf(INFO, "\tPSCI64_CPU_OFF %#x\n", result);
+    probe_feature(PSCI64_CPU_FREEZE, "CPU_FREEZE");
+    probe_feature(PSCI64_CPU_DEFAULT_SUSPEND, "CPU_DEFAULT_SUSPEND");
+    probe_feature(PSCI64_NODE_HW_STATE, "CPU_NODE_HW_STATE");
+    probe_feature(PSCI64_SYSTEM_SUSPEND, "CPU_SYSTEM_SUSPEND");
+    probe_feature(PSCI64_PSCI_SET_SUSPEND_MODE, "CPU_PSCI_SET_SUSPEND_MODE");
+    probe_feature(PSCI64_PSCI_STAT_RESIDENCY, "CPU_PSCI_STAT_RESIDENCY");
+    probe_feature(PSCI64_PSCI_STAT_COUNT, "CPU_PSCI_STAT_COUNT");
+    probe_feature(PSCI64_MEM_PROTECT, "CPU_MEM_PROTECT");
+    probe_feature(PSCI64_MEM_PROTECT_RANGE, "CPU_MEM_PROTECT_RANGE");
+
+    probe_feature(PSCI64_SMCCC_VERSION, "PSCI64_SMCCC_VERSION");
   }
+
+  // Register with the pdev power driver.
+  static const pdev_power_ops psci_ops = {
+      .reboot = psci_system_reset,
+      .shutdown = psci_system_off,
+      .cpu_off = psci_cpu_off,
+      .cpu_on = psci_cpu_on,
+      .get_cpu_state = psci_get_cpu_state,
+  };
+
+  pdev_register_power(&psci_ops);
 }
 
 #include <lib/console.h>
@@ -120,21 +203,22 @@ static int cmd_psci(int argc, const cmd_args* argv, uint32_t flags) {
   }
 
   if (!strcmp(argv[1].str, "system_reset")) {
-    psci_system_reset(REBOOT_NORMAL);
+    psci_system_reset(power_reboot_flags::REBOOT_NORMAL);
   } else if (!strcmp(argv[1].str, "system_off")) {
     psci_system_off();
   } else if (!strcmp(argv[1].str, "cpu_on")) {
     if (argc < 3) {
       goto notenoughargs;
     }
-    uint32_t ret = psci_cpu_on(argv[2].u, kernel_entry_paddr);
+    uint32_t ret = psci_cpu_on(argv[2].u, kernel_entry_paddr, 0);
     printf("psci_cpu_on returns %u\n", ret);
   } else if (!strcmp(argv[1].str, "affinity_info")) {
     if (argc < 4) {
       goto notenoughargs;
     }
-    uint32_t ret = psci_get_affinity_info(argv[2].u, argv[3].u);
-    printf("affinity info returns %u\n", ret);
+
+    int64_t ret = psci_get_affinity_info(ARM64_MPID(argv[2].u, argv[3].u));
+    printf("affinity info returns %ld\n", ret);
   } else {
     uint32_t function = static_cast<uint32_t>(argv[1].u);
     uint64_t arg0 = (argc >= 3) ? argv[2].u : 0;

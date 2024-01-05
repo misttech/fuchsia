@@ -15,10 +15,10 @@ executable("vkloop_bin") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp_wire",
-    "//src/graphics/lib/magma/include:magma",
+    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp",
+    "//sdk/lib/magma_client:magma_headers",
     "//src/graphics/lib/magma/src/libmagma",
-    "//src/graphics/lib/magma/tests/helper:test_device_helper",
+    "//src/graphics/magma/lib/magma_client/test_util:test_device_helper",
     "//src/graphics/tests/common",
   ]
   public_deps = [
@@ -36,7 +36,7 @@ resource("shaders") {
 
 fuchsia_test_component("vkloop_cmp") {
   manifest = "meta/vkloop.cml"
-  component_name = "vkloop"
+  component_name = "vkloop_test"
   deps = [
     ":shaders",
     ":vkloop_bin",
@@ -46,7 +46,7 @@ fuchsia_test_component("vkloop_cmp") {
 }
 
 fuchsia_test_package("vkloop-pkg") {
-  package_name = "vkloop"
+  package_name = "vkloop_test"
   test_components = [ ":vkloop_cmp" ]
   test_specs = {
     environments = magma_libvulkan_hardware_envs

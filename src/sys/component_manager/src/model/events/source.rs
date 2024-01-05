@@ -15,21 +15,16 @@ use {
                 stream::EventStream,
                 stream_provider::EventStreamProvider,
             },
-            model::Model,
         },
     },
     async_trait::async_trait,
-    cm_task_scope::TaskScope,
     cm_util::channel,
+    cm_util::TaskGroup,
     fidl::endpoints::ServerEnd,
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fuchsia_zircon as zx,
     futures::{SinkExt, StreamExt},
     moniker::ExtendedMoniker,
-    routing::component_instance::ComponentInstanceInterface,
-    std::{
-        path::PathBuf,
-        sync::{Arc, Weak},
-    },
+    std::{path::PathBuf, sync::Weak},
 };
 
 // Event source (supporting event streams)
@@ -47,24 +42,12 @@ pub struct EventSource {
 }
 
 impl EventSource {
-    pub async fn new(
-        subscriber: ExtendedMoniker,
-        model: Weak<Model>,
+    pub fn new(
+        subscriber: WeakExtendedInstance,
         registry: Weak<EventRegistry>,
         stream_provider: Weak<EventStreamProvider>,
-    ) -> Result<Self, ModelError> {
-        let subscriber = {
-            let model = model.upgrade().ok_or(EventsError::ModelNotAvailable)?;
-            match &subscriber {
-                ExtendedMoniker::ComponentInstance(m) => {
-                    WeakExtendedInstance::Component(model.look_up(&m).await?.as_weak())
-                }
-                ExtendedMoniker::ComponentManager => {
-                    WeakExtendedInstance::AboveRoot(Arc::downgrade(model.top_instance()))
-                }
-            }
-        };
-        Ok(Self { subscriber, registry, stream_provider })
+    ) -> Self {
+        Self { subscriber, registry, stream_provider }
     }
 
     /// Subscribes to events provided in the `events` vector.
@@ -141,7 +124,7 @@ impl EventSource {
 impl CapabilityProvider for EventSource {
     async fn open(
         mut self: Box<Self>,
-        _task_scope: TaskScope,
+        _task_group: TaskGroup,
         _flags: fio::OpenFlags,
         relative_path: PathBuf,
         server_end: &mut zx::Channel,
@@ -149,27 +132,25 @@ impl CapabilityProvider for EventSource {
         // Spawn the task in the component's task scope so that when the component is destroyed,
         // the task is cancelled and does not leak (similar to how framework capabilities are
         // scoped).
-        let task_scope = match self
+        let task_group = match self
             .subscriber
             .upgrade()
             .map_err(|err| CapabilityProviderError::EventSourceError { err })?
         {
-            ExtendedInstance::Component(target) => target.nonblocking_task_scope(),
-            ExtendedInstance::AboveRoot(target) => target.task_scope(),
+            ExtendedInstance::Component(target) => target.nonblocking_task_group(),
+            ExtendedInstance::AboveRoot(target) => target.task_group(),
         };
         let server_end = channel::take_channel(server_end);
         let stream = ServerEnd::<fcomponent::EventStreamMarker>::new(server_end);
-        task_scope
-            .add_task(async move {
-                let moniker = self.subscriber.extended_moniker();
-                if let Ok(Some(event_stream)) = self
-                    .subscribe_all(moniker, relative_path.into_os_string().into_string().unwrap())
-                    .await
-                {
-                    serve_event_stream(event_stream, stream).await;
-                }
-            })
-            .await;
+        task_group.spawn(async move {
+            let moniker = self.subscriber.extended_moniker();
+            if let Ok(Some(event_stream)) = self
+                .subscribe_all(moniker, relative_path.into_os_string().into_string().unwrap())
+                .await
+            {
+                serve_event_stream(event_stream, stream).await;
+            }
+        });
         Ok(())
     }
 }

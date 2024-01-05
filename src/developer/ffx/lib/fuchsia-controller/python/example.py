@@ -1,13 +1,12 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-from fuchsia_controller_py import Context, IsolateDir
-import fidl.fuchsia_developer_ffx as fd_ffx
-import fidl.fuchsia_developer_remotecontrol as fd_remotecontrol
-import fidl.fuchsia_diagnostics as f_diagnostics
-import os
-import logging
 import asyncio
+import logging
+
+import fidl.fuchsia_developer_ffx as fd_ffx
+from fuchsia_controller_py import Context
+from fuchsia_controller_py import IsolateDir
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -15,7 +14,8 @@ logging.basicConfig(level=logging.DEBUG)
 async def echo():
     ctx = Context()
     echo_proxy = fd_ffx.Echo.Client(
-        ctx.connect_daemon_protocol(fd_ffx.Echo.MARKER))
+        ctx.connect_daemon_protocol(fd_ffx.Echo.MARKER)
+    )
     result = await echo_proxy.echo_string(value="foobar")
     print(f"Echo Result: {result}")
 
@@ -23,11 +23,11 @@ async def echo():
 async def target_info_multi_target_isolated():
     isolate = IsolateDir()  # Will create a random tmpdir
     ctx = Context(
-        config={"sdk.root": "."},
-        isolate_dir=isolate,
-        target="fuchsia-emulator")
+        config={"sdk.root": "."}, isolate_dir=isolate, target="fuchsia-emulator"
+    )
     ctx2 = Context(
-        config={"sdk.root": "."}, isolate_dir=isolate, target="emu-two")
+        config={"sdk.root": "."}, isolate_dir=isolate, target="emu-two"
+    )
     ch = ctx.connect_target_proxy()
     proxy = fd_ffx.Target.Client(ch)
     proxy2 = fd_ffx.Target.Client(ctx2.connect_target_proxy())
@@ -40,7 +40,8 @@ async def target_info_multi_target_isolated():
 async def multi_echo():
     ctx = Context()
     echo_proxy = fd_ffx.Echo.Client(
-        ctx.connect_daemon_protocol(fd_ffx.Echo.MARKER))
+        ctx.connect_daemon_protocol(fd_ffx.Echo.MARKER)
+    )
     result1 = echo_proxy.echo_string(value="1foobington")
     result2 = echo_proxy.echo_string(value="2frobination")
     result3 = echo_proxy.echo_string(value="3frobinationator")

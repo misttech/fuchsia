@@ -3,16 +3,17 @@
 # found in the LICENSE file.
 
 if (is_host) {
-  group("emulator_tests_fyi") {
-    testonly = true
-    public_deps = [ "test_ffx:ffx_test($host_toolchain)" ]
-  }
-
+  # Group containing all of the transports functional test cases.
   group("tests") {
     testonly = true
     public_deps = [
-      ":emulator_tests_fyi",
-      "test_fastboot:fastboot_test($host_toolchain)",
+      "test_fastboot:tests",
+      "test_ffx:tests",
     ]
   }
+}
+
+group("packages") {
+  testonly = true
+  public_deps = [ "test_ffx:packages" ]
 }

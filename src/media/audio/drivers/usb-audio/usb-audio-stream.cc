@@ -30,8 +30,7 @@
 #include "usb-audio-stream-interface.h"
 #include "usb-audio.h"
 
-namespace audio {
-namespace usb {
+namespace audio::usb {
 
 namespace audio_fidl = fuchsia_hardware_audio;
 
@@ -90,7 +89,7 @@ UsbAudioStream::UsbAudioStream(UsbAudioDevice* parent, std::unique_ptr<UsbAudioS
     // Each UsbAudioStreamInterface formats() entry only reports one format.
     ZX_ASSERT(formats.size() == 1);
     utils::Format format = formats[0];
-    supported_bits_per_slot_.Set(count, format.bytes_per_sample * 8);
+    supported_bits_per_slot_.Set(count, format.bytes_per_sample * 8ul);
     supported_bits_per_sample_.Set(count, format.valid_bits_per_sample);
     switch (format.format) {
       case audio_fidl::wire::SampleFormat::kPcmSigned:
@@ -208,7 +207,7 @@ void UsbAudioStream::ComputePersistentUniqueId() {
   const fbl::Array<uint8_t>* desc_strings[] = {&parent_.mfr_name(), &parent_.prod_name(),
                                                &parent_.serial_num()};
   for (const auto str : desc_strings) {
-    if (str->size()) {
+    if (!str->empty()) {
       sha.Update(str->data(), str->size());
     }
   }
@@ -317,7 +316,7 @@ void UsbAudioStream::GetSupportedFormats(
   fbl::Vector<FidlCompatibleFormats> fidl_compatible_formats;
   for (const UsbAudioStreamInterface::FormatMapEntry& i : formats) {
     std::vector<utils::Format> formats = audio::utils::GetAllFormats(i.range_.sample_formats);
-    ZX_ASSERT(formats.size() >= 1);
+    ZX_ASSERT(!formats.empty());
     for (utils::Format& j : formats) {
       fbl::Vector<uint32_t> rates;
       audio::utils::FrameRateEnumerator enumerator(i.range_);
@@ -557,7 +556,7 @@ void UsbAudioStream::CreateRingBuffer(StreamChannel* channel, audio_fidl::wire::
 
   number_of_channels_.Set(req.number_of_channels);
   frame_rate_.Set(req.frame_rate);
-  bits_per_slot_.Set(req.bytes_per_sample * 8);
+  bits_per_slot_.Set(req.bytes_per_sample * 8ul);
   bits_per_sample_.Set(req.valid_bits_per_sample);
   // clang-format off
   switch (req.sample_format) {
@@ -580,7 +579,13 @@ void UsbAudioStream::CreateRingBuffer(StreamChannel* channel, audio_fidl::wire::
 
 void UsbAudioStream::WatchGainState(StreamChannel* channel,
                                     StreamChannel::WatchGainStateCompleter::Sync& completer) {
-  ZX_DEBUG_ASSERT(!channel->gain_completer_);
+  if (channel->gain_completer_) {
+    completer.Close(ZX_ERR_BAD_STATE);
+    channel->gain_completer_.reset();
+    channel->last_reported_gain_state_ = {};
+    return;
+  }
+
   channel->gain_completer_ = completer.ToAsync();
 
   ZX_DEBUG_ASSERT(ifc_->path() != nullptr);
@@ -615,18 +620,33 @@ void UsbAudioStream::WatchGainState(StreamChannel* channel,
 void UsbAudioStream::WatchClockRecoveryPositionInfo(
     WatchClockRecoveryPositionInfoCompleter::Sync& completer) {
   fbl::AutoLock req_lock(&req_lock_);
+
+  if (position_completer_) {
+    completer.Close(ZX_ERR_BAD_STATE);
+    position_completer_.reset();
+    return;
+  }
+
   position_completer_ = completer.ToAsync();
   position_request_time_.Set(zx::clock::get_monotonic().get());
 }
 
 void UsbAudioStream::WatchDelayInfo(WatchDelayInfoCompleter::Sync& completer) {
+  if (delay_completer_) {
+    completer.Close(ZX_ERR_BAD_STATE);
+    delay_completer_.reset();
+    return;
+  }
+
   if (!delay_info_updated_) {
     delay_info_updated_ = true;
     fidl::Arena allocator;
     auto delay_info = audio_fidl::wire::DelayInfo::Builder(allocator);
     // No external delay information is provided by this driver.
+    // TODO(johngro): Report the actual external delay.
     delay_info.internal_delay(internal_delay_nsec_);
     completer.Reply(delay_info.Build());
+    return;
   }
   // All completers must either Reply, Close, or ToAsync(+persist until Unbind).
   delay_completer_ = completer.ToAsync();
@@ -668,7 +688,13 @@ void UsbAudioStream::SetGain(audio_fidl::wire::GainState state,
 
 void UsbAudioStream::WatchPlugState(StreamChannel* channel,
                                     StreamChannel::WatchPlugStateCompleter::Sync& completer) {
-  ZX_DEBUG_ASSERT(!channel->plug_completer_);
+  if (channel->plug_completer_) {
+    completer.Close(ZX_ERR_BAD_STATE);
+    channel->plug_completer_.reset();
+    channel->last_reported_plugged_state_ = StreamChannel::Plugged::kNotReported;
+    return;
+  }
+
   channel->plug_completer_ = completer.ToAsync();
 
   // As long as the usb device is present, we are plugged. A second reply is delayed indefinitely
@@ -716,10 +742,8 @@ void UsbAudioStream::GetProperties(StreamChannel::GetPropertiesCompleter::Sync& 
 void UsbAudioStream::GetProperties(GetPropertiesCompleter::Sync& completer) {
   fidl::Arena allocator;
   audio_fidl::wire::RingBufferProperties ring_buffer_properties(allocator);
-  ring_buffer_properties.set_driver_transfer_bytes(fifo_bytes_);
-  // TODO(johngro): Report the actual external delay.
-  ring_buffer_properties.set_external_delay(allocator, 0);
-  ring_buffer_properties.set_needs_cache_flush_or_invalidate(true);
+  ring_buffer_properties.set_driver_transfer_bytes(fifo_bytes_)
+      .set_needs_cache_flush_or_invalidate(true);
   completer.Reply(std::move(ring_buffer_properties));
 }
 
@@ -902,7 +926,7 @@ void UsbAudioStream::RequestComplete(fuchsia_hardware_usb_endpoint::Completion c
 
   usb_requests_outstanding_.Subtract(1);
 
-  uint64_t complete_time = zx::clock::get_monotonic().get();
+  zx_time_t complete_time = zx::clock::get_monotonic().get();
   Action when_finished = Action::NONE;
 
   {
@@ -988,6 +1012,7 @@ void UsbAudioStream::RequestComplete(fuchsia_hardware_usb_endpoint::Completion c
           // the tick on which we scheduled the first transaction.
           fbl::AutoLock req_lock(&req_lock_);
           start_completer_->Reply(zx_time_sub_duration(complete_time, ZX_MSEC(1)));
+          start_completer_.reset();
         }
         {
           fbl::AutoLock req_lock(&req_lock_);
@@ -1017,6 +1042,7 @@ void UsbAudioStream::RequestComplete(fuchsia_hardware_usb_endpoint::Completion c
         if (rb_channel_ != nullptr) {
           fbl::AutoLock req_lock(&req_lock_);
           stop_completer_->Reply();
+          stop_completer_.reset();
         }
         {
           fbl::AutoLock req_lock(&req_lock_);
@@ -1194,6 +1220,10 @@ size_t UsbAudioStream::CompleteRequestLocked(fuchsia_hardware_usb_endpoint::Comp
 
 void UsbAudioStream::DeactivateStreamChannelLocked(StreamChannel* channel) {
   if (stream_channel_.get() == channel) {
+    //  Any pending completers MUST be released, for the StreamConfig channel to cleanly unwind.
+    stream_channel_->gain_completer_.reset();
+    stream_channel_->plug_completer_.reset();
+
     stream_channel_ = nullptr;
   }
   stream_channels_.erase(*channel);
@@ -1212,6 +1242,12 @@ void UsbAudioStream::DeactivateRingBufferChannelLocked(const Channel* channel) {
     }
     rb_vmo_fetched_ = false;
     delay_info_updated_ = false;
+
+    //  Any pending completers MUST be released, for the RingBuffer channel to cleanly unwind.
+    start_completer_.reset();
+    stop_completer_.reset();
+    position_completer_.reset();
+    delay_completer_.reset();
   }
 
   rb_channel_.reset();
@@ -1256,5 +1292,4 @@ void UsbAudioStream::RingBufferCopy(::usb::FidlRequest& req, bool copy_to, uint3
   }
 }
 
-}  // namespace usb
-}  // namespace audio
+}  // namespace audio::usb

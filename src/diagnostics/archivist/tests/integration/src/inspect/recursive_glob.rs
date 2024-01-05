@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{constants::*, test_topology};
-use diagnostics_hierarchy::{assert_data_tree, testing::AnyProperty};
+use diagnostics_assertions::{assert_data_tree, AnyProperty};
 use diagnostics_reader::{ArchiveReader, Inspect};
 use fidl_fuchsia_diagnostics::ArchiveAccessorMarker;
 use std::{collections::HashSet, iter::FromIterator};
@@ -32,7 +32,6 @@ async fn read_components_recursive_glob() {
     let data_vec = ArchiveReader::new()
         .add_selector("child_a/**:root")
         .with_archive(accessor)
-        .retry_if_empty(true)
         .with_minimum_schema_count(expected_monikers.len())
         .snapshot::<Inspect>()
         .await
@@ -78,7 +77,6 @@ async fn read_components_subtree_with_recursive_glob() {
         .add_selector("child_a/**:root")
         .add_selector("child_a:root")
         .with_archive(accessor)
-        .retry_if_empty(true)
         .with_minimum_schema_count(expected_monikers.len())
         .snapshot::<Inspect>()
         .await
@@ -87,6 +85,9 @@ async fn read_components_subtree_with_recursive_glob() {
     assert_eq!(data_vec.len(), expected_monikers.len());
     let mut found_monikers = HashSet::new();
     for data in data_vec {
+        if data.payload.is_none() {
+            tracing::error!("UNEXPECTED EMPTY PAYLOAD: {data:?}");
+        }
         assert_data_tree!(data.payload.as_ref().unwrap(), root: {
             "fuchsia.inspect.Health": {
                 status: "OK",

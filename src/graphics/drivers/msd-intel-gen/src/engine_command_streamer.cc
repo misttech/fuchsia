@@ -4,15 +4,16 @@
 
 #include "engine_command_streamer.h"
 
+#include <lib/magma/platform/platform_logger.h>
+#include <lib/magma/platform/platform_trace.h>
+#include <lib/magma/util/short_macros.h>
+
 #include <thread>
 
 #include "cache_config.h"
 #include "instructions.h"
-#include "magma_util/short_macros.h"
 #include "msd_intel_buffer.h"
 #include "msd_intel_connection.h"
-#include "platform_logger.h"
-#include "platform_trace.h"
 #include "register_state_helper.h"
 #include "registers.h"
 #include "render_init_batch.h"

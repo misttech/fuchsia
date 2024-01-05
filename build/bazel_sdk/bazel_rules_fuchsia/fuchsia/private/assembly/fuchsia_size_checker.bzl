@@ -5,29 +5,29 @@
 """Rule for running size checker on product and package."""
 
 load(
-    "@fuchsia_sdk//fuchsia/private/assembly:fuchsia_product_size_check.bzl",
-    "fuchsia_product_size_check",
-)
-load(
     "@fuchsia_sdk//fuchsia/private/assembly:fuchsia_package_size_check.bzl",
     "fuchsia_package_size_check",
 )
 load(
-    "@fuchsia_sdk//fuchsia/private/assembly:fuchsia_update_package_size_check.bzl",
-    "fuchsia_update_package_size_check",
+    "@fuchsia_sdk//fuchsia/private/assembly:fuchsia_product_size_check.bzl",
+    "fuchsia_product_size_check",
 )
 load(
     "@fuchsia_sdk//fuchsia/private/assembly:fuchsia_size_report_aggregator.bzl",
     "fuchsia_size_report_aggregator",
 )
+load(
+    "@fuchsia_sdk//fuchsia/private/assembly:fuchsia_update_package_size_check.bzl",
+    "fuchsia_update_package_size_check",
+)
 
 def fuchsia_size_checker(
         name,
-        product_image,
-        update_package,
-        size_checker_file,
-        blobfs_capacity,
-        max_blob_contents_size,
+        product_image = None,
+        update_package = None,
+        size_checker_file = None,
+        blobfs_capacity = None,
+        max_blob_contents_size = None,
         update_package_size_creep_limit = 90112,
         blobfs_creep_limit = 102400):
     """An implementation of size checker that run product size checker, blobfs package size checker and non-blobfs size chekcer. It will also aggregate all the reports and create a merged report.

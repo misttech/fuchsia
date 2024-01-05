@@ -98,12 +98,12 @@ class UntypedEnvelope {
   uint64_t header_ = 0;
 };
 
-static_assert(sizeof(Envelope<uint8_t>) == sizeof(fidl_envelope_v2_t),
-              "Envelope<T> must have the same size as fidl_envelope_v2_t");
-static_assert(sizeof(Envelope<uint64_t>) == sizeof(fidl_envelope_v2_t),
-              "Envelope<T> must have the same size as fidl_envelope_v2_t");
-static_assert(sizeof(UntypedEnvelope) == sizeof(fidl_envelope_v2_t),
-              "UntypedEnvelope must have the same size as fidl_envelope_v2_t");
+static_assert(sizeof(Envelope<uint8_t>) == sizeof(fidl_envelope_t),
+              "Envelope<T> must have the same size as fidl_envelope_t");
+static_assert(sizeof(Envelope<uint64_t>) == sizeof(fidl_envelope_t),
+              "Envelope<T> must have the same size as fidl_envelope_t");
+static_assert(sizeof(UntypedEnvelope) == sizeof(fidl_envelope_t),
+              "UntypedEnvelope must have the same size as fidl_envelope_t");
 
 }  // namespace fidl
 

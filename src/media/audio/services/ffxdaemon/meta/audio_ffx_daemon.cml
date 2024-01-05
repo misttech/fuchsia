@@ -12,7 +12,13 @@
     },
     capabilities: [
         {
-            protocol: [ "fuchsia.audio.ffxdaemon.AudioDaemon" ],
+            protocol: [ "fuchsia.audio.controller.DeviceControl" ],
+        },
+        {
+            protocol: [ "fuchsia.audio.controller.Player" ],
+        },
+        {
+            protocol: [ "fuchsia.audio.controller.Recorder" ],
         },
     ],
     use: [
@@ -34,10 +40,23 @@
             rights: [ "r*" ],
             path: "/dev/class/audio-output",
         },
+        {
+            directory: "dev-audio-composite",
+            rights: [ "r*" ],
+            path: "/dev/class/audio-composite",
+        },
     ],
     expose: [
         {
-            protocol: [ "fuchsia.audio.ffxdaemon.AudioDaemon" ],
+            protocol: [ "fuchsia.audio.controller.DeviceControl" ],
+            from: "self",
+        },
+        {
+            protocol: [ "fuchsia.audio.controller.Player" ],
+            from: "self",
+        },
+        {
+            protocol: [ "fuchsia.audio.controller.Recorder" ],
             from: "self",
         },
     ],

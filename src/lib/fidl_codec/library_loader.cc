@@ -9,7 +9,6 @@
 
 #include <fstream>
 #include <ios>
-#include <set>
 #include <sstream>
 
 #include <rapidjson/error/en.h>
@@ -17,7 +16,6 @@
 #include "src/lib/fidl_codec/builtin_semantic.h"
 #include "src/lib/fidl_codec/logger.h"
 #include "src/lib/fidl_codec/semantic_parser.h"
-#include "src/lib/fidl_codec/wire_object.h"
 #include "src/lib/fidl_codec/wire_types.h"
 
 // See library_loader.h for details.
@@ -27,7 +25,25 @@ namespace fidl_codec {
 EnumOrBits::EnumOrBits(const rapidjson::Value* json_definition)
     : json_definition_(json_definition) {}
 
+EnumOrBits::EnumOrBits(std::string name, uint64_t size, std::unique_ptr<Type> type,
+                       std::vector<EnumOrBitsMember> members)
+    : json_definition_(nullptr),
+      name_(std::move(name)),
+      size_(size),
+      type_(std::move(type)),
+      members_(std::move(members)) {}
+
 EnumOrBits::~EnumOrBits() = default;
+
+Enum::Enum(std::string name, uint64_t size, std::unique_ptr<Type> type,
+           std::vector<EnumOrBitsMember> members)
+    : EnumOrBits(std::move(name), size, std::move(type), std::move(members)) {}
+
+const Enum& Enum::FrameworkErrorEnum() {
+  static Enum result("FrameworkError", 4, std::make_unique<Int32Type>(),
+                     {EnumOrBitsMember("UNKNOWN_METHOD", 2, true)});
+  return result;
+}
 
 void EnumOrBits::DecodeTypes(bool is_scalar, const std::string& supertype_name,
                              Library* enclosing_library) {
@@ -70,7 +86,7 @@ void EnumOrBits::DecodeTypes(bool is_scalar, const std::string& supertype_name,
     }
   }
 
-  size_v2_ = type_->InlineSize(WireVersion::kWireV2);
+  size_ = type_->InlineSize(WireVersion::kWireV2);
 }
 
 std::string Enum::GetName(uint64_t absolute_value, bool negative) const {
@@ -178,10 +194,8 @@ std::string Union::ToString(bool expand) const {
 StructMember::StructMember(Library* enclosing_library, const rapidjson::Value* json_definition)
     : name_(
           enclosing_library->ExtractString(json_definition, "struct member", "<unknown>", "name")),
-      offset_v1_(enclosing_library->ExtractFieldOffset(json_definition, "struct member", name_,
-                                                       "field_shape_v1")),
-      offset_v2_(enclosing_library->ExtractFieldOffset(json_definition, "struct member", name_,
-                                                       "field_shape_v2")),
+      offset_(enclosing_library->ExtractFieldOffset(json_definition, "struct member", name_,
+                                                    "field_shape_v2")),
       type_(enclosing_library->ExtractType(json_definition, "struct member", name_, "type")) {}
 
 StructMember::StructMember(std::string_view name, std::unique_ptr<Type> type)
@@ -214,9 +228,9 @@ void Struct::DecodeTypes() {
   if (!json_definition->HasMember("type_shape_v2")) {
     enclosing_library_->FieldNotFound("struct", name_, "type_shape_v2");
   } else {
-    const rapidjson::Value& v2 = (*json_definition)["type_shape_v2"];
-    size_v2_ = static_cast<uint32_t>(
-        enclosing_library_->ExtractUint64(&v2, "struct", name_, "inline_size"));
+    const rapidjson::Value& type_shape = (*json_definition)["type_shape_v2"];
+    size_ = static_cast<uint32_t>(
+        enclosing_library_->ExtractUint64(&type_shape, "struct", name_, "inline_size"));
   }
 
   if (!json_definition->HasMember("members")) {
@@ -239,7 +253,7 @@ StructMember* Struct::SearchMember(std::string_view name, uint32_t id) const {
   return nullptr;
 }
 
-uint32_t Struct::Size(WireVersion version) const { return size_v2_; }
+uint32_t Struct::Size(WireVersion version) const { return size_; }
 
 std::string Struct::ToString(bool expand) const {
   StructType type(*this, false);

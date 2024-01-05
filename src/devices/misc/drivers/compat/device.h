@@ -29,7 +29,7 @@
 #include <fbl/intrusive_double_list.h>
 
 #include "src/devices/lib/fidl/device_server.h"
-#include "src/lib/storage/vfs/cpp/vmo_file.h"
+#include "src/storage/lib/vfs/cpp/vmo_file.h"
 
 namespace compat {
 
@@ -42,6 +42,9 @@ class Driver;
 
 // Device is an implementation of a DFv1 device.
 class Device : public std::enable_shared_from_this<Device>, public devfs_fidl::DeviceInterface {
+  // Forward declaration.
+  struct DelayedReleaseOp;
+
  public:
   Device(device_t device, const zx_protocol_device_t* ops, Driver* driver,
          std::optional<Device*> parent, std::shared_ptr<fdf::Logger> logger,
@@ -87,7 +90,6 @@ class Device : public std::enable_shared_from_this<Device>, public devfs_fidl::D
   zx_status_t AddMetadata(uint32_t type, const void* data, size_t size);
   zx_status_t GetMetadata(uint32_t type, void* buf, size_t buflen, size_t* actual);
   zx_status_t GetMetadataSize(uint32_t type, size_t* out_size);
-  zx::result<uint32_t> SetPerformanceStateOp(uint32_t state);
 
   void InitReply(zx_status_t status);
   zx_status_t ConnectFragmentFidl(const char* fragment_name, const char* service_name,
@@ -108,6 +110,9 @@ class Device : public std::enable_shared_from_this<Device>, public devfs_fidl::D
   // Serves the |inspect_vmo| from the driver's diagnostics directory.
   zx_status_t ServeInspectVmo(zx::vmo inspect_vmo);
 
+  // Stores the child's release op, to be called after dispatcher shutdown.
+  void AddDelayedChildReleaseOp(std::unique_ptr<DelayedReleaseOp> op);
+
   std::string_view topological_path() const { return topological_path_; }
   void set_topological_path(std::string path) { topological_path_ = std::move(path); }
   void set_fragments(std::vector<std::string> names) { fragments_ = std::move(names); }
@@ -124,7 +129,19 @@ class Device : public std::enable_shared_from_this<Device>, public devfs_fidl::D
 
   const std::vector<std::string>& fragments() { return fragments_; }
 
+  // Public for testing.
+  std::optional<Device*>& parent() { return parent_; }
+
  private:
+  // Holds the device's release op to call later.
+  struct DelayedReleaseOp {
+    device_t compat_symbol;
+    const zx_protocol_device_t* ops;
+
+    explicit DelayedReleaseOp(std::shared_ptr<Device> device);
+    ~DelayedReleaseOp();
+  };
+
   Device(Device&&) = delete;
   Device& operator=(Device&&) = delete;
 
@@ -149,11 +166,8 @@ class Device : public std::enable_shared_from_this<Device>, public devfs_fidl::D
   void ScheduleUnbind(ScheduleUnbindCompleter::Sync& completer) override;
   void GetTopologicalPath(GetTopologicalPathCompleter::Sync& completer) override;
   void GetMinDriverLogSeverity(GetMinDriverLogSeverityCompleter::Sync& completer) override;
-  void GetCurrentPerformanceState(GetCurrentPerformanceStateCompleter::Sync& completer) override;
   void SetMinDriverLogSeverity(SetMinDriverLogSeverityRequestView request,
                                SetMinDriverLogSeverityCompleter::Sync& completer) override;
-  void SetPerformanceState(SetPerformanceStateRequestView request,
-                           SetPerformanceStateCompleter::Sync& completer) override;
 
   // This calls Unbind on the device and then frees it.
   void UnbindAndRelease();
@@ -234,13 +248,21 @@ class Device : public std::enable_shared_from_this<Device>, public devfs_fidl::D
   // This is used by a Device to free itself, by calling parent_.RemoveChild(this).
   //
   // parent_ will be std::nullopt when the Device is the fake device created
-  // by the Driver class in the DFv1 shim. When parent_ is std::nullopt, the
-  // Device will be freed when the Driver is freed.
+  // by the Driver class in the DFv1 shim. It is also std::nullopt when it is the last child of
+  // the root device. When parent_ is std::nullopt, the Device will be freed when the Driver is
+  // freed.
 
   fidl::WireSharedClient<fuchsia_driver_framework::Node> node_;
   fidl::WireSharedClient<fuchsia_driver_framework::NodeController> controller_;
 
-  const std::optional<Device*> parent_;
+  std::optional<Device*> parent_;
+  // If true, the release op will be called after the dispatcher has been shutdown.
+  // This is to keep with DFv1 behavior which only applies to the last remaining
+  // device of a driver.
+  bool release_after_dispatcher_shutdown_ = false;
+  // These will automatically destruct when this device
+  // (the fake compat device created by the Driver class in the DFv1 shim) destructs.
+  std::vector<std::unique_ptr<DelayedReleaseOp>> delayed_child_release_ops_;
 
   // The Device's children. The Device has full ownership of the children,
   // but these are shared pointers so that the NodeController can get a weak

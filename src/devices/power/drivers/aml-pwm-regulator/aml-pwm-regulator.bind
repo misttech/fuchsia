@@ -4,17 +4,18 @@
 
 composite aml_pwm_regulator;
 
+using fuchsia.gpio;
 using fuchsia.platform;
-using fuchsia.hardware.pwm;
+using fuchsia.pwm;
 
 primary node "pwm-9" {
-    fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.pwm.BIND_FIDL_PROTOCOL.DEVICE;
-    fuchsia.hardware.pwm.PWM_ID_FUNCTION == fuchsia.hardware.pwm.PWM_ID_FUNCTION.CORE_POWER_LITTLE_CLUSTER;
+    fuchsia.BIND_FIDL_PROTOCOL == fuchsia.pwm.BIND_FIDL_PROTOCOL.DEVICE;
+    fuchsia.pwm.PWM_ID_FUNCTION == fuchsia.pwm.PWM_ID_FUNCTION.CORE_POWER_LITTLE_CLUSTER;
 }
 
 node "pwm-0" {
-    fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.pwm.BIND_FIDL_PROTOCOL.DEVICE;
-    fuchsia.hardware.pwm.PWM_ID_FUNCTION == fuchsia.hardware.pwm.PWM_ID_FUNCTION.CORE_POWER_BIG_CLUSTER;
+    fuchsia.BIND_FIDL_PROTOCOL == fuchsia.pwm.BIND_FIDL_PROTOCOL.DEVICE;
+    fuchsia.pwm.PWM_ID_FUNCTION == fuchsia.pwm.PWM_ID_FUNCTION.CORE_POWER_BIG_CLUSTER;
 }
 
 node "pdev" {
@@ -22,4 +23,8 @@ node "pdev" {
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
     fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.platform.BIND_PLATFORM_DEV_PID.GENERIC;
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.PWM_VREG;
+}
+
+node "gpio-init" {
+  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

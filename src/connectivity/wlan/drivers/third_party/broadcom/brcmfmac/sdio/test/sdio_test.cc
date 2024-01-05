@@ -16,10 +16,13 @@
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sdio/sdio.h"
 
-#include <fuchsia/hardware/gpio/c/banjo.h>
-#include <fuchsia/hardware/gpio/cpp/banjo-mock.h>
+#include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fuchsia/hardware/sdio/c/banjo.h>
 #include <fuchsia/hardware/sdio/cpp/banjo-mock.h>
+#include <lib/async-loop/cpp/loop.h>
+#include <lib/async-loop/default.h>
+#include <lib/async/default.h>
+#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/ddk/device.h>
 #include <lib/ddk/metadata.h>
 #include <zircon/errors.h>
@@ -32,11 +35,13 @@
 #include <wifi/wifi-config.h>
 #include <zxtest/zxtest.h>
 
+#include "sdk/lib/driver/testing/cpp/driver_runtime.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/bus.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/common.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/device.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sdio/sdio_device.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/test/stub_device.h"
+#include "src/devices/gpio/testing/fake-gpio/fake-gpio.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
 
 // These numbers come from real bugs.
@@ -177,13 +182,18 @@ class FakeSdioBus {
   std::optional<zx_vaddr_t> mapped_vmo_addr_;
 };
 
-TEST(Sdio, IntrRegisterStartup) {
+class SdioTest : public zxtest::Test {
+ protected:
+  fdf_testing::DriverRuntime* runtime() { return fdf_testing::DriverRuntime::GetInstance(); }
+  std::shared_ptr<MockDevice> root_{MockDevice::FakeRootParent()};
+};
+
+TEST_F(SdioTest, IntrRegisterStartup) {
   FakeSdioDevice device;
   brcmf_sdio_dev sdio_dev = {};
   sdio_func func1 = {};
   MockSdio sdio1;
   MockSdio sdio2;
-  ddk::MockGpio gpio;
   brcmf_bus bus_if = {};
   brcmf_mp_device settings = {};
   brcmf_sdio_pd sdio_settings = {};
@@ -191,8 +201,14 @@ TEST(Sdio, IntrRegisterStartup) {
       .get_wifi_metadata = get_wifi_metadata,
   };
 
+  async::Loop fidl_loop{&kAsyncLoopConfigNoAttachToCurrentThread};
+  async_patterns::TestDispatcherBound<fake_gpio::FakeGpio> wifi_gpio{fidl_loop.dispatcher(),
+                                                                     std::in_place};
+  EXPECT_OK(fidl_loop.StartThread("fidl-servers"));
+
   sdio_dev.func1 = &func1;
-  sdio_dev.gpios[WIFI_OOB_IRQ_GPIO_INDEX] = *gpio.GetProto();
+  auto wifi_gpio_client = wifi_gpio.SyncCall(&fake_gpio::FakeGpio::Connect);
+  sdio_dev.fidl_gpios[WIFI_OOB_IRQ_GPIO_INDEX].Bind(std::move(wifi_gpio_client));
   sdio_dev.sdio_proto_fn1 = *sdio1.GetProto();
   sdio_dev.sdio_proto_fn2 = *sdio2.GetProto();
   sdio_dev.drvr = device.drvr();
@@ -202,31 +218,26 @@ TEST(Sdio, IntrRegisterStartup) {
   sdio_dev.settings = &settings;
   sdio_dev.settings->bus.sdio = &sdio_settings;
 
-  gpio.ExpectConfigIn(ZX_OK, GPIO_NO_PULL)
-      .ExpectGetInterrupt(ZX_OK, ZX_INTERRUPT_MODE_LEVEL_LOW, zx::interrupt(ZX_HANDLE_INVALID));
   sdio1.ExpectEnableFnIntr(ZX_OK).ExpectDoVendorControlRwByte(
       ZX_OK, true, SDIO_CCCR_BRCM_SEPINT, SDIO_CCCR_BRCM_SEPINT_MASK | SDIO_CCCR_BRCM_SEPINT_OE, 0);
   sdio2.ExpectEnableFnIntr(ZX_OK);
 
   EXPECT_OK(brcmf_sdiod_intr_register(&sdio_dev, false));
 
-  gpio.VerifyAndClear();
+  EXPECT_EQ(wifi_gpio.SyncCall(&fake_gpio::FakeGpio::GetReadFlags),
+            fuchsia_hardware_gpio::GpioFlags::kNoPull);
   sdio1.VerifyAndClear();
   sdio2.VerifyAndClear();
 
-  // Manually join the ISR thread created when the interrupt is registered.
-  int retval = 0;
   zx_handle_close(sdio_dev.irq_handle);
-  thrd_join(sdio_dev.isr_thread, &retval);
 }
 
-TEST(Sdio, IntrRegisterFwReload) {
+TEST_F(SdioTest, IntrRegisterFwReload) {
   FakeSdioDevice device;
   brcmf_sdio_dev sdio_dev = {};
   sdio_func func1 = {};
   MockSdio sdio1;
   MockSdio sdio2;
-  ddk::MockGpio gpio;
   brcmf_bus bus_if = {};
   brcmf_mp_device settings = {};
   brcmf_sdio_pd sdio_settings = {};
@@ -234,8 +245,13 @@ TEST(Sdio, IntrRegisterFwReload) {
       .get_wifi_metadata = get_wifi_metadata,
   };
 
+  async::Loop fidl_loop{&kAsyncLoopConfigNoAttachToCurrentThread};
+  async_patterns::TestDispatcherBound<fake_gpio::FakeGpio> wifi_gpio{fidl_loop.dispatcher(),
+                                                                     std::in_place};
+  EXPECT_OK(fidl_loop.StartThread("fidl-servers"));
   sdio_dev.func1 = &func1;
-  sdio_dev.gpios[WIFI_OOB_IRQ_GPIO_INDEX] = *gpio.GetProto();
+  auto wifi_gpio_client = wifi_gpio.SyncCall(&fake_gpio::FakeGpio::Connect);
+  sdio_dev.fidl_gpios[WIFI_OOB_IRQ_GPIO_INDEX].Bind(std::move(wifi_gpio_client));
   sdio_dev.sdio_proto_fn1 = *sdio1.GetProto();
   sdio_dev.sdio_proto_fn2 = *sdio2.GetProto();
   sdio_dev.drvr = device.drvr();
@@ -251,14 +267,12 @@ TEST(Sdio, IntrRegisterFwReload) {
 
   EXPECT_OK(brcmf_sdiod_intr_register(&sdio_dev, true));
 
-  gpio.VerifyAndClear();
   sdio1.VerifyAndClear();
   sdio2.VerifyAndClear();
-
   zx_handle_close(sdio_dev.irq_handle);
 }
 
-TEST(Sdio, IntrDeregister) {
+TEST_F(SdioTest, IntrDeregister) {
   FakeSdioDevice device;
   brcmf_sdio_dev sdio_dev = {};
   sdio_func func1 = {};
@@ -302,7 +316,7 @@ TEST(Sdio, IntrDeregister) {
   sdio2.VerifyAndClear();
 }
 
-TEST(Sdio, VendorControl) {
+TEST_F(SdioTest, VendorControl) {
   brcmf_sdio_dev sdio_dev = {};
 
   MockSdio sdio1;
@@ -326,7 +340,7 @@ TEST(Sdio, VendorControl) {
   sdio1.VerifyAndClear();
 }
 
-TEST(Sdio, Transfer) {
+TEST_F(SdioTest, Transfer) {
   FakeSdioDevice device;
   std::unique_ptr<FakeSdioBus> sdio_bus;
   ASSERT_OK(FakeSdioBus::Create(&sdio_bus));
@@ -351,7 +365,7 @@ TEST(Sdio, Transfer) {
   sdio2.VerifyAndClear();
 }
 
-TEST(Sdio, IoAbort) {
+TEST_F(SdioTest, IoAbort) {
   brcmf_sdio_dev sdio_dev = {};
 
   MockSdio sdio1;
@@ -371,7 +385,7 @@ TEST(Sdio, IoAbort) {
   sdio2.VerifyAndClear();
 }
 
-TEST(Sdio, RamRw) {
+TEST_F(SdioTest, RamRw) {
   FakeSdioDevice device;
   std::unique_ptr<FakeSdioBus> sdio_bus;
   ASSERT_OK(FakeSdioBus::Create(&sdio_bus));
@@ -405,7 +419,7 @@ TEST(Sdio, RamRw) {
 
 // This test case verifies that whether an error will returned when transfer size is
 // not divisible by 4.
-TEST(Sdio, AlignSize) {
+TEST_F(SdioTest, AlignSize) {
   FakeSdioDevice device;
   std::unique_ptr<FakeSdioBus> sdio_bus;
   ASSERT_OK(FakeSdioBus::Create(&sdio_bus));
@@ -432,6 +446,192 @@ TEST(Sdio, AlignSize) {
   sdio1.VerifyAndClear();
 }
 
+zx_status_t fake_brcmf_schedule_recovery_worker(struct brcmf_pub* drvr) {
+  drvr->drvr_resetting.store(true);
+  return ZX_OK;
+}
+
+// Verify sdio_timeout recovery trigger logic in brcmf_sdiod_transfer_vmos().
+TEST_F(SdioTest, SdioTimeoutRecoveryVmos) {
+  FakeSdioDevice device;
+  std::unique_ptr<FakeSdioBus> sdio_bus;
+  ASSERT_OK(FakeSdioBus::Create(&sdio_bus));
+  brcmf_sdio_dev sdio_dev = {.drvr = device.drvr(), .bus = sdio_bus->get()};
+  sdio_func func1 = {};
+  bool recovery_triggered = false;
+  // Create RecoveryTrigger with the fake recovery worker.
+  auto recovery_start_callback = std::make_shared<std::function<zx_status_t()>>();
+  *recovery_start_callback = std::bind(&fake_brcmf_schedule_recovery_worker, device.drvr());
+  device.drvr()->recovery_trigger =
+      std::make_unique<wlan::brcmfmac::RecoveryTrigger>(recovery_start_callback);
+
+  pthread_mutex_init(&func1.lock, nullptr);
+
+  MockSdio sdio1;
+
+  sdio_dev.sdio_proto_fn1 = *sdio1.GetProto();
+  sdio_dev.func1 = &func1;
+
+  // The expected frame sequence: 4 frames with ZX_ERR_TIMED_OUT, 1 frame with ZX_OK, 5 frames with
+  // ZX_ERR_TIMED_OUT.
+  for (size_t i = 0; i < 4; i++) {
+    sdio_bus->ExpectDoRwTxn(sdio1, ZX_ERR_TIMED_OUT, i * 0x00001000, FakeSdioBus::kFrameSize, true,
+                            true);
+  }
+
+  sdio_bus->ExpectDoRwTxn(sdio1, ZX_OK, 0x00000000, FakeSdioBus::kFrameSize, true, true);
+
+  for (size_t i = 0; i < 5; i++) {
+    sdio_bus->ExpectDoRwTxn(sdio1, ZX_ERR_TIMED_OUT, i * 0x00001000, FakeSdioBus::kFrameSize, true,
+                            true);
+  }
+
+  uint8_t some_data[FakeSdioBus::kFrameSize] = {};
+
+  // Make sure the drvr_setting bit is false before any of the frames sent.
+  recovery_triggered = device.drvr()->drvr_resetting.load();
+  EXPECT_FALSE(recovery_triggered);
+
+  // Write four frames and with ZX_ERR_TIMED_OUT returned.
+  EXPECT_EQ(brcmf_sdiod_write(&sdio_dev, &sdio_dev.sdio_proto_fn1, 0x00000000, some_data,
+                              FakeSdioBus::kFrameSize, false),
+            ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(brcmf_sdiod_write(&sdio_dev, &sdio_dev.sdio_proto_fn1, 0x00001000, some_data,
+                              FakeSdioBus::kFrameSize, false),
+            ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(brcmf_sdiod_write(&sdio_dev, &sdio_dev.sdio_proto_fn1, 0x00002000, some_data,
+                              FakeSdioBus::kFrameSize, false),
+            ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(brcmf_sdiod_write(&sdio_dev, &sdio_dev.sdio_proto_fn1, 0x00003000, some_data,
+                              FakeSdioBus::kFrameSize, false),
+            ZX_ERR_TIMED_OUT);
+
+  // Write one frame with ZX_OK returned. This frame resets the sdio_timeout recovery trigger
+  // counter.
+  EXPECT_EQ(brcmf_sdiod_write(&sdio_dev, &sdio_dev.sdio_proto_fn1, 0x00000000, some_data,
+                              FakeSdioBus::kFrameSize, false),
+            ZX_OK);
+
+  // Write one more frame with ZX_ERR_TIMED_OUT returned.
+  EXPECT_EQ(brcmf_sdiod_write(&sdio_dev, &sdio_dev.sdio_proto_fn1, 0x00000000, some_data,
+                              FakeSdioBus::kFrameSize, false),
+            ZX_ERR_TIMED_OUT);
+
+  // Although there are already 5 ZX_ERR_TIMED_OUTs returned, the last frame resets the counter, so
+  // no recovery should be triggered here.
+  recovery_triggered = device.drvr()->drvr_resetting.load();
+  EXPECT_FALSE(recovery_triggered);
+
+  // Write four more frames with ZX_ERR_TIMED_OUT returned.
+  EXPECT_EQ(brcmf_sdiod_write(&sdio_dev, &sdio_dev.sdio_proto_fn1, 0x00001000, some_data,
+                              FakeSdioBus::kFrameSize, false),
+            ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(brcmf_sdiod_write(&sdio_dev, &sdio_dev.sdio_proto_fn1, 0x00002000, some_data,
+                              FakeSdioBus::kFrameSize, false),
+            ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(brcmf_sdiod_write(&sdio_dev, &sdio_dev.sdio_proto_fn1, 0x00003000, some_data,
+                              FakeSdioBus::kFrameSize, false),
+            ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(brcmf_sdiod_write(&sdio_dev, &sdio_dev.sdio_proto_fn1, 0x00004000, some_data,
+                              FakeSdioBus::kFrameSize, false),
+            ZX_ERR_TIMED_OUT);
+
+  // sdio_timeout recovery should be triggered here since there are five contiguous ZX_ERR_TIMED_OUT
+  // returned.
+  recovery_triggered = device.drvr()->drvr_resetting.load();
+  EXPECT_TRUE(recovery_triggered);
+
+  sdio1.VerifyAndClear();
+}
+
+// Verify sdio_timeout recovery trigger logic in brcmf_sdiod_transfer_vmo().
+TEST_F(SdioTest, SdioTimeoutRecoveryVmo) {
+  FakeSdioDevice device;
+  std::unique_ptr<FakeSdioBus> sdio_bus;
+  ASSERT_OK(FakeSdioBus::Create(&sdio_bus));
+  brcmf_sdio_dev sdio_dev = {.drvr = device.drvr(), .bus = sdio_bus->get()};
+
+  {
+    std::lock_guard lock(sdio_dev.bus->rx_tx_data.tx_space);
+    sdio_dev.bus->rx_tx_data.tx_frame = std::move(*sdio_dev.bus->rx_tx_data.tx_space.Acquire());
+  }
+  sdio_func func1 = {};
+  bool recovery_triggered = false;
+  // Create RecoveryTrigger with the fake recovery worker.
+  auto recovery_start_callback = std::make_shared<std::function<zx_status_t()>>();
+  *recovery_start_callback = std::bind(&fake_brcmf_schedule_recovery_worker, device.drvr());
+  device.drvr()->recovery_trigger =
+      std::make_unique<wlan::brcmfmac::RecoveryTrigger>(recovery_start_callback);
+
+  pthread_mutex_init(&func1.lock, nullptr);
+
+  MockSdio sdio1;
+
+  sdio_dev.sdio_proto_fn1 = *sdio1.GetProto();
+  sdio_dev.func1 = &func1;
+  uint32_t some_data = 0x1234;
+  uint32_t addr = 0x0000000;
+  SBSDIO_FORMAT_ADDR(addr);
+
+  // The expected frame sequence: 4 frames with ZX_ERR_TIMED_OUT, 1 frame with ZX_OK, 5 frames with
+  // ZX_ERR_TIMED_OUT.
+  for (size_t i = 0; i < 4; i++) {
+    sdio_bus->ExpectDoRwTxn(sdio1, ZX_ERR_TIMED_OUT, addr, sizeof(some_data), true, true);
+  }
+
+  sdio_bus->ExpectDoRwTxn(sdio1, ZX_OK, addr, sizeof(some_data), true, true);
+
+  for (size_t i = 0; i < 5; i++) {
+    sdio_bus->ExpectDoRwTxn(sdio1, ZX_ERR_TIMED_OUT, addr, sizeof(some_data), true, true);
+  }
+
+  zx_status_t result = ZX_OK;
+  // Make sure the drvr_setting bit is false before any of the frames sent.
+  recovery_triggered = device.drvr()->drvr_resetting.load();
+  EXPECT_FALSE(recovery_triggered);
+
+  // Write four frames and with ZX_ERR_TIMED_OUT returned.
+  brcmf_sdiod_func1_wl(&sdio_dev, 0x00000000, some_data, &result);
+  EXPECT_EQ(result, ZX_ERR_TIMED_OUT);
+  brcmf_sdiod_func1_wl(&sdio_dev, 0x00000000, some_data, &result);
+  EXPECT_EQ(result, ZX_ERR_TIMED_OUT);
+  brcmf_sdiod_func1_wl(&sdio_dev, 0x00000000, some_data, &result);
+  EXPECT_EQ(result, ZX_ERR_TIMED_OUT);
+  brcmf_sdiod_func1_wl(&sdio_dev, 0x00000000, some_data, &result);
+  EXPECT_EQ(result, ZX_ERR_TIMED_OUT);
+
+  // Write one frame with ZX_OK returned. This frame resets the sdio_timeout recovery trigger
+  // counter.
+  brcmf_sdiod_func1_wl(&sdio_dev, 0x00000000, some_data, &result);
+  EXPECT_EQ(result, ZX_OK);
+
+  // Write one more frame with ZX_ERR_TIMED_OUT returned.
+  brcmf_sdiod_func1_wl(&sdio_dev, 0x00000000, some_data, &result);
+  EXPECT_EQ(result, ZX_ERR_TIMED_OUT);
+
+  // Although there are already 5 ZX_ERR_TIMED_OUTs returned, the last frame resets the counter, so
+  // no recovery should be triggered here.
+  recovery_triggered = device.drvr()->drvr_resetting.load();
+  EXPECT_FALSE(recovery_triggered);
+
+  // Write four more frames with ZX_ERR_TIMED_OUT returned.
+  brcmf_sdiod_func1_wl(&sdio_dev, 0x00000000, some_data, &result);
+  EXPECT_EQ(result, ZX_ERR_TIMED_OUT);
+  brcmf_sdiod_func1_wl(&sdio_dev, 0x00000000, some_data, &result);
+  EXPECT_EQ(result, ZX_ERR_TIMED_OUT);
+  brcmf_sdiod_func1_wl(&sdio_dev, 0x00000000, some_data, &result);
+  EXPECT_EQ(result, ZX_ERR_TIMED_OUT);
+  brcmf_sdiod_func1_wl(&sdio_dev, 0x00000000, some_data, &result);
+  EXPECT_EQ(result, ZX_ERR_TIMED_OUT);
+
+  // sdio_timeout recovery should be triggered here since there are five contiguous ZX_ERR_TIMED_OUT
+  // returned.
+  recovery_triggered = device.drvr()->drvr_resetting.load();
+  EXPECT_TRUE(recovery_triggered);
+
+  sdio1.VerifyAndClear();
+}
+
 /*
  * A minimially initialized `struct brcmf_sdio` instance.
  *
@@ -443,9 +643,10 @@ struct MinimalBrcmfSdio {
                    const char* workqueue_name, void (*work_item_handler)(WorkItem* work))
       : wq(workqueue_name),
         loop(std::make_unique<::async::Loop>(&kAsyncLoopConfigNeverAttachToThread)),
-        timer(std::make_unique<Timer>(
-            loop->dispatcher(), []() {}, false)) {
-    sdio_dev = {.ctl_done_timeout = ctl_done_timeout, .state = sdiod_state};
+        timer(std::make_unique<Timer>(loop->dispatcher(), []() {}, false)) {
+    sdio_dev = {.ctl_done_timeout = ctl_done_timeout, .drvr = &drvr, .state = sdiod_state};
+
+    drvr.recovery_trigger = std::make_unique<wlan::brcmfmac::RecoveryTrigger>(nullptr);
 
     pthread_mutex_init(&func1.lock, nullptr);
     sdio_dev.func1 = &func1;
@@ -464,6 +665,7 @@ struct MinimalBrcmfSdio {
     bus.dpc_triggered.store(false);
   }
 
+  struct brcmf_pub drvr {};
   brcmf_sdio_dev sdio_dev{};
   sdio_func func1{};
   sdio_func func2{};
@@ -507,14 +709,14 @@ static zx_status_t sdio_bus_txctl_test(enum brcmf_sdiod_state sdiod_state,
   return status;
 }
 
-TEST(Sdio, TxCtlSdioDown) {
+TEST_F(SdioTest, TxCtlSdioDown) {
   zx_status_t status = sdio_bus_txctl_test(
       BRCMF_SDIOD_DOWN, ZX_MSEC(CTL_DONE_TIMEOUT_MSEC), "brcmf_wq/txctl_sdio_down",
       [](WorkItem* work_item) {}, 0, 0);
   EXPECT_EQ(status, ZX_ERR_IO);
 }
 
-TEST(Sdio, TxCtlOk) {
+TEST_F(SdioTest, TxCtlOk) {
   zx_status_t status = sdio_bus_txctl_test(
       BRCMF_SDIOD_DATA, ZX_MSEC(CTL_DONE_TIMEOUT_MSEC), "brcmf_wq/txctl_ok",
       [](WorkItem* work) {
@@ -529,13 +731,13 @@ TEST(Sdio, TxCtlOk) {
   EXPECT_EQ(status, ZX_OK);
 }
 
-TEST(Sdio, TxCtlTimeout) {
+TEST_F(SdioTest, TxCtlTimeout) {
   zx_status_t status = sdio_bus_txctl_test(
       BRCMF_SDIOD_DATA, ZX_MSEC(1), "brcmf_wq/txctl_timeout", [](WorkItem* work) {}, 0, 1);
   EXPECT_EQ(status, ZX_ERR_TIMED_OUT);
 }
 
-TEST(Sdio, TxCtlTimeoutUnexpectedCtrlFrameStatClear) {
+TEST_F(SdioTest, TxCtlTimeoutUnexpectedCtrlFrameStatClear) {
   zx_status_t status = sdio_bus_txctl_test(
       BRCMF_SDIOD_DATA, ZX_MSEC(1), "brcmf_wq/txctl_timeout_unexpected_ctrl_frame_stat_clear",
       [](WorkItem* work) {
@@ -546,7 +748,7 @@ TEST(Sdio, TxCtlTimeoutUnexpectedCtrlFrameStatClear) {
   EXPECT_EQ(status, ZX_ERR_TIMED_OUT);
 }
 
-TEST(Sdio, TxCtlCtrlFrameStateNotCleared) {
+TEST_F(SdioTest, TxCtlCtrlFrameStateNotCleared) {
   zx_status_t status = sdio_bus_txctl_test(
       BRCMF_SDIOD_DATA, ZX_MSEC(CTL_DONE_TIMEOUT_MSEC),
       "brcmf_wq/txctl_ctrl_frame_stat_not_cleared",
@@ -559,7 +761,7 @@ TEST(Sdio, TxCtlCtrlFrameStateNotCleared) {
   EXPECT_EQ(status, ZX_ERR_SHOULD_WAIT);
 }
 
-TEST(Sdio, TxCtlCtrlFrameStateClearedWithError) {
+TEST_F(SdioTest, TxCtlCtrlFrameStateClearedWithError) {
   zx_status_t status = sdio_bus_txctl_test(
       BRCMF_SDIOD_DATA, ZX_MSEC(CTL_DONE_TIMEOUT_MSEC),
       "brcmf_wq/txctl_ctrl_frame_stat_cleared_with_error",
@@ -575,12 +777,10 @@ TEST(Sdio, TxCtlCtrlFrameStateClearedWithError) {
   EXPECT_EQ(status, ZX_ERR_NO_MEMORY);
 }
 
-TEST(Sdio, SdioDeviceMultipleShutdowns) {
-  // TODO(fxb/124464): Migrate test to use dispatcher integration.
-  auto parent = MockDevice::FakeRootParentNoDispatcherIntegrationDEPRECATED();
-  wlan::brcmfmac::SdioDevice::Create(parent.get());
+TEST_F(SdioTest, SdioDeviceMultipleShutdowns) {
+  wlan::brcmfmac::SdioDevice::Create(root_.get());
 
-  zx_device_t* child = parent->GetLatestChild();
+  zx_device_t* child = root_->GetLatestChild();
 
   // Suspend the device twice, it should not crash. Parameters shouldn't matter as the device
   // doesn't care.
@@ -591,7 +791,7 @@ TEST(Sdio, SdioDeviceMultipleShutdowns) {
   child->ReleaseOp();
 }
 
-TEST(Sdio, ResetClearsTxGlom) {
+TEST_F(SdioTest, ResetClearsTxGlom) {
   MinimalBrcmfSdio b(BRCMF_SDIOD_DATA, ZX_MSEC(1), "brcmf_wq/reset_clears_txglom",
                      [](WorkItem*) {});
   b.bus.txglom = true;

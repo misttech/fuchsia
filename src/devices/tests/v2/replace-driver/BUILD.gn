@@ -23,6 +23,7 @@ group("drivers") {
   testonly = true
   deps = [
     ":component",
+    "composite-replacement:component",
     "target-1-replacement:component",
     "target-2-replacement:component",
     "//src/devices/tests/v2/reload-driver:drivers",
@@ -39,7 +40,6 @@ rustc_test("bin") {
     "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_rust",
     "//sdk/fidl/fuchsia.driver.registrar:fuchsia.driver.registrar_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
-    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
     "//sdk/lib/driver_test_realm/realm_builder/rust",
     "//src/devices/tests/v2/reload-driver:reloadtest_tools",
     "//src/devices/tests/v2/reload-driver/fidl:fuchsia.reloaddriver.test_rust",
@@ -62,6 +62,7 @@ fuchsia_unittest_package("replacedriver_test") {
   deps = [
     ":bin",
     ":component",  # target 1 with colocate = false
+    "composite-replacement:component",
     "target-1-replacement:component",
     "target-2-replacement:component",
     "//sdk/lib/driver_test_realm:driver_test_realm_component",

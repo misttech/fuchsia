@@ -11,7 +11,7 @@ driver_bind_rules("bootpart_bind") {
   disable_autobind = true
   rules = "bootpart.bind"
   tests = "bind_tests.json"
-  deps = [ "//src/devices/bind/fuchsia.hardware.block" ]
+  deps = [ "//src/devices/bind/fuchsia.block" ]
 }
 
 fuchsia_driver("bootpart-driver") {
@@ -26,7 +26,7 @@ fuchsia_driver("bootpart-driver") {
     "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
     "//sdk/lib/zbi-format",
-    "//src/devices/block/lib/common",
+    "//src/devices/block/lib/common:common-dfv1",
     "//src/devices/lib/driver",
     "//src/lib/ddk",
     "//zircon/system/ulib/fbl",
@@ -40,6 +40,11 @@ fuchsia_driver_component("bootpart") {
   manifest = "meta/bootpart.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "bootpart"
+  driver_components = [ ":bootpart" ]
+}
+
 test("bootpart-test-bin") {
   output_name = "bootpart-test"
   sources = [
@@ -51,7 +56,7 @@ test("bootpart-test-bin") {
     "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
     "//sdk/lib/zbi-format",
-    "//src/devices/block/lib/common",
+    "//src/devices/block/lib/common:common-dfv1",
     "//src/devices/lib/driver",
     "//src/devices/testing/mock-ddk",
     "//src/lib/ddk",

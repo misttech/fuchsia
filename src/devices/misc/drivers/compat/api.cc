@@ -53,6 +53,38 @@ __EXPORT zx_handle_t get_root_resource(zx_device_t* device) {
   return device->driver()->GetRootResource();
 }
 
+__EXPORT zx_handle_t get_mmio_resource(zx_device_t* device) {
+  return device->driver()->GetMmioResource();
+}
+
+__EXPORT zx_handle_t get_power_resource(zx_device_t* device) {
+  return device->driver()->GetPowerResource();
+}
+
+__EXPORT zx_handle_t get_iommu_resource(zx_device_t* device) {
+  return device->driver()->GetIommuResource();
+}
+
+__EXPORT zx_handle_t get_framebuffer_resource(zx_device_t* device) {
+  return device->driver()->GetFramebufferResource();
+}
+
+__EXPORT zx_handle_t get_ioport_resource(zx_device_t* device) {
+  return device->driver()->GetIoportResource();
+}
+
+__EXPORT zx_handle_t get_irq_resource(zx_device_t* device) {
+  return device->driver()->GetIrqResource();
+}
+
+__EXPORT zx_handle_t get_smc_resource(zx_device_t* device) {
+  return device->driver()->GetSmcResource();
+}
+
+__EXPORT zx_handle_t get_info_resource(zx_device_t* device) {
+  return device->driver()->GetInfoResource();
+}
+
 __EXPORT zx_status_t load_firmware_from_driver(zx_driver_t* drv, zx_device_t* dev, const char* path,
                                                zx_handle_t* fw, size_t* size) {
   auto result = dev->driver()->LoadFirmware(dev, path, size);

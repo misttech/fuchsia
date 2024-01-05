@@ -5,13 +5,13 @@
 """Contains all Fuchsia Infra APIs used in Mobly Driver."""
 
 # Defined in https://osscs.corp.google.com/fuchsia/fuchsia/+/main:tools/botanist/constants/constants.go.
-BOT_ENV_TESTBED_CONFIG = 'FUCHSIA_TESTBED_CONFIG'
-
-# Defined in infra recipes.
-BOT_ENV_TEST_OUTDIR = 'FUCHSIA_TEST_OUTDIR'
+BOT_ENV_TESTBED_CONFIG = "FUCHSIA_TESTBED_CONFIG"
 
 # Defined in https://osscs.corp.google.com/fuchsia/fuchsia/+/main:tools/botanist/targets/target.go
 FUCHSIA_DEVICE = "FuchsiaDevice"
 
-# Defined in https://osscs.corp.google.com/fuchsia/fuchsia/+/main:tools/testing/testparser/moblytest.go.
-TESTPARSER_PREAMBLE = '[=====MOBLY RESULTS=====]'
+# LINT.IfChange
+TESTPARSER_PREAMBLE = "======== Mobly config content ========"
+
+TESTPARSER_RESULT_HEADER = "[=====MOBLY RESULTS=====]"
+# LINT.ThenChange(//tools/testing/testparser/moblytest.go)

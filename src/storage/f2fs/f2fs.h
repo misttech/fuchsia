@@ -40,25 +40,22 @@
 #include <mutex>
 #include <semaphore>
 
-#include "src/lib/storage/vfs/cpp/vfs.h"
-#include "src/lib/storage/vfs/cpp/vnode.h"
-#include "src/lib/storage/vfs/cpp/transaction/buffered_operations_builder.h"
+#include "src/storage/lib/vfs/cpp/vfs.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
+#include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 
-#include "src/lib/storage/vfs/cpp/paged_vfs.h"
-#include "src/lib/storage/vfs/cpp/paged_vnode.h"
-#include "src/lib/storage/vfs/cpp/watcher.h"
-#include "src/lib/storage/vfs/cpp/shared_mutex.h"
-#include "src/lib/storage/vfs/cpp/service.h"
-#include "src/lib/storage/vfs/cpp/trace.h"
+#include "src/storage/lib/vfs/cpp/paged_vfs.h"
+#include "src/storage/lib/vfs/cpp/paged_vnode.h"
+#include "src/storage/lib/vfs/cpp/watcher.h"
+#include "src/storage/lib/vfs/cpp/shared_mutex.h"
+#include "src/storage/lib/vfs/cpp/service.h"
 
 #include "lib/inspect/cpp/inspect.h"
-#include "lib/inspect/service/cpp/service.h"
 
-#include "src/lib/storage/vfs/cpp/fuchsia_vfs.h"
-#include "src/lib/storage/vfs/cpp/inspect/inspect_tree.h"
+#include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
+#include "src/storage/lib/vfs/cpp/inspect/inspect_tree.h"
 
-#include "src/storage/f2fs/f2fs_types.h"
-#include "src/storage/f2fs/f2fs_lib.h"
+#include "src/storage/f2fs/common.h"
 #include "src/storage/f2fs/f2fs_layout.h"
 #include "src/storage/f2fs/bcache.h"
 #include "src/storage/f2fs/mount.h"
@@ -67,6 +64,7 @@
 #include "src/storage/f2fs/storage_buffer.h"
 #include "src/storage/f2fs/writeback.h"
 #include "src/storage/f2fs/reader.h"
+#include "src/storage/f2fs/extent_cache.h"
 #include "src/storage/f2fs/vnode.h"
 #include "src/storage/f2fs/vnode_cache.h"
 #include "src/storage/f2fs/dir.h"
@@ -87,6 +85,8 @@
 
 namespace f2fs {
 
+zx::result<std::unique_ptr<Superblock>> LoadSuperblock(BcacheMapper &bc);
+
 class F2fs final {
  public:
   // Not copyable or moveable
@@ -95,42 +95,34 @@ class F2fs final {
   F2fs(F2fs &&) = delete;
   F2fs &operator=(F2fs &&) = delete;
 
-  explicit F2fs(FuchsiaDispatcher dispatcher, std::unique_ptr<f2fs::Bcache> bc,
-                std::unique_ptr<Superblock> sb, const MountOptions &mount_options,
-                PlatformVfs *vfs);
+  explicit F2fs(FuchsiaDispatcher dispatcher, std::unique_ptr<f2fs::BcacheMapper> bc,
+                const MountOptions &mount_options, PlatformVfs *vfs);
 
   static zx::result<std::unique_ptr<F2fs>> Create(FuchsiaDispatcher dispatcher,
-                                                  std::unique_ptr<f2fs::Bcache> bc,
+                                                  std::unique_ptr<f2fs::BcacheMapper> bc,
                                                   const MountOptions &options, PlatformVfs *vfs);
-
-  static zx::result<std::unique_ptr<Superblock>> LoadSuperblock(f2fs::Bcache &bc);
 
   zx::result<fs::FilesystemInfo> GetFilesystemInfo();
   DirEntryCache &GetDirEntryCache() { return dir_entry_cache_; }
   InspectTree &GetInspectTree() { return *inspect_tree_; }
-  void Sync(SyncCallback closure);
 
   VnodeCache &GetVCache() { return vnode_cache_; }
   zx_status_t InsertVnode(VnodeF2fs *vn) { return vnode_cache_.Add(vn); }
-  void EvictVnode(VnodeF2fs *vn) { vnode_cache_.Evict(vn); }
+  zx_status_t EvictVnode(VnodeF2fs *vn) { return vnode_cache_.Evict(vn); }
   zx_status_t LookupVnode(ino_t ino, fbl::RefPtr<VnodeF2fs> *out) {
     return vnode_cache_.Lookup(ino, out);
   }
 
-  zx::result<std::unique_ptr<f2fs::Bcache>> TakeBc() {
+  zx::result<std::unique_ptr<f2fs::BcacheMapper>> TakeBc() {
     if (!bc_) {
       return zx::error(ZX_ERR_UNAVAILABLE);
     }
     return zx::ok(std::move(bc_));
   }
 
-  Bcache &GetBc() const {
+  BcacheMapper &GetBc() const {
     ZX_DEBUG_ASSERT(bc_ != nullptr);
     return *bc_;
-  }
-  Superblock &RawSb() const {
-    ZX_DEBUG_ASSERT(raw_sb_ != nullptr);
-    return *raw_sb_;
   }
   SuperblockInfo &GetSuperblockInfo() const {
     ZX_DEBUG_ASSERT(superblock_info_ != nullptr);
@@ -152,52 +144,27 @@ class F2fs final {
 
   // For testing Reset() and TakeBc()
   bool IsValid() const;
-  void ResetPsuedoVnodes() {
-    root_vnode_.reset();
-    meta_vnode_.reset();
-    node_vnode_.reset();
-  }
-  void ResetSuperblockInfo() { superblock_info_.reset(); }
-  void ResetSegmentManager() {
-    segment_manager_->DestroySegmentManager();
-    segment_manager_.reset();
-  }
-  void ResetNodeManager() {
-    node_manager_->DestroyNodeManager();
-    node_manager_.reset();
-  }
-  void ResetGcManager() { gc_manager_.reset(); }
-
-  // super.cc
-  void PutSuper();
-  void SyncFs(bool bShutdown = false);
-  zx_status_t SanityCheckRawSuper();
-  zx_status_t SanityCheckCkpt();
-  void InitSuperblockInfo();
-  zx_status_t FillSuper();
-  void ParseOptions();
+  zx_status_t LoadSuper(std::unique_ptr<Superblock> sb);
   void Reset();
-
-  // checkpoint.cc
   zx_status_t GrabMetaPage(pgoff_t index, LockedPage *out);
   zx_status_t GetMetaPage(pgoff_t index, LockedPage *out);
-
   bool CanReclaim() const;
   bool IsTearDown() const;
   void SetTearDown();
+
   zx_status_t CheckOrphanSpace();
-  void AddOrphanInode(VnodeF2fs *vnode);
   void PurgeOrphanInode(nid_t ino);
   int PurgeOrphanInodes();
   void WriteOrphanInodes(block_t start_blk);
   zx_status_t GetValidCheckpoint();
   zx_status_t ValidateCheckpoint(block_t cp_addr, uint64_t *version, LockedPage *out);
-  void BlockOperations();
-  void UnblockOperations() const;
-  zx_status_t DoCheckpoint(bool is_umount);
-  zx_status_t WriteCheckpoint(bool blocked, bool is_umount);
   uint32_t GetFreeSectionsForDirtyPages();
-  bool IsCheckpointAvailable();
+
+  void PutSuper();
+  void Sync(SyncCallback closure = nullptr) __TA_EXCLUDES(f2fs::GetGlobalLock());
+  zx_status_t SyncFs(bool bShutdown = false) __TA_EXCLUDES(f2fs::GetGlobalLock());
+  zx_status_t DoCheckpoint(bool is_umount) __TA_REQUIRES(f2fs::GetGlobalLock());
+  zx_status_t WriteCheckpoint(bool blocked, bool is_umount) __TA_REQUIRES(f2fs::GetGlobalLock());
 
   // recovery.cc
   // For the list of fsync inodes, used only during recovery
@@ -222,7 +189,6 @@ class F2fs final {
   };
   using FsyncInodeList = fbl::DoublyLinkedList<std::unique_ptr<FsyncInodeEntry>>;
 
-  bool SpaceForRollForward() const;
   FsyncInodeEntry *GetFsyncInode(FsyncInodeList &inode_list, nid_t ino);
   zx_status_t RecoverDentry(NodePage &ipage, VnodeF2fs &vnode);
   zx_status_t RecoverInode(VnodeF2fs &vnode, NodePage &node_page);
@@ -232,15 +198,6 @@ class F2fs final {
   void DoRecoverData(VnodeF2fs &vnode, NodePage &page);
   void RecoverData(FsyncInodeList &inode_list, CursegType type);
   void RecoverFsyncData();
-
-  // block count
-  void DecValidBlockCount(VnodeF2fs *vnode, block_t count);
-  zx_status_t IncValidBlockCount(VnodeF2fs *vnode, block_t count);
-  block_t ValidUserBlocks();
-  uint32_t ValidNodeCount();
-  void IncValidInodeCount();
-  void DecValidInodeCount();
-  uint32_t ValidInodeCount();
 
   VnodeF2fs &GetNodeVnode() { return *node_vnode_; }
   VnodeF2fs &GetMetaVnode() { return *meta_vnode_; }
@@ -276,7 +233,7 @@ class F2fs final {
 
   void ScheduleWriteback(size_t num_pages = kDefaultBlocksPerSegment);
   zx::result<> WaitForWriteback() {
-    if (!writeback_flag_.try_acquire_for(kWriteTimeOut)) {
+    if (!writeback_flag_.try_acquire_for(std::chrono::seconds(kWriteTimeOut))) {
       return zx::error(ZX_ERR_TIMED_OUT);
     }
     writeback_flag_.release();
@@ -309,27 +266,40 @@ class F2fs final {
     }
   }
 
+  bool IsOnRecovery() const { return on_recovery_; }
+  void SetOnRecovery() { on_recovery_ = true; }
+  void ClearOnRecovery() { on_recovery_ = false; }
+
+  void AddToVnodeSet(VnodeSet type, nid_t ino) __TA_EXCLUDES(vnode_set_mutex_);
+  void RemoveFromVnodeSet(VnodeSet type, nid_t ino) __TA_EXCLUDES(vnode_set_mutex_);
+  bool FindVnodeSet(VnodeSet type, nid_t ino) __TA_EXCLUDES(vnode_set_mutex_);
+  size_t GetVnodeSetSize(VnodeSet type) __TA_EXCLUDES(vnode_set_mutex_);
+  void ForAllVnodeSet(VnodeSet type, fit::function<void(nid_t)> callback)
+      __TA_EXCLUDES(vnode_set_mutex_);
+  void ClearVnodeSet() __TA_EXCLUDES(vnode_set_mutex_);
+
  private:
   void StartMemoryPressureWatcher();
-  // Flush all dirty meta Pages that meet |operation|.if_page.
-  pgoff_t FlushDirtyMetaPages(WritebackOperation &operation);
-  // Flush all dirty data Pages that meet |operation|.if_vnode and if_page.
-  pgoff_t FlushDirtyDataPages(WritebackOperation &operation);
 
-  std::mutex checkpoint_mutex_;
+  void FlushDirsAndNodes() __TA_REQUIRES(f2fs::GetGlobalLock());
+  pgoff_t FlushDirtyMetaPages(bool is_commit) __TA_REQUIRES(f2fs::GetGlobalLock());
+  pgoff_t FlushDirtyDataPages(WritebackOperation &operation, bool wait_writer = false)
+      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+  zx::result<pgoff_t> FlushDirtyNodePages(WritebackOperation &operation)
+      __TA_REQUIRES(f2fs::GetGlobalLock());
+
   std::atomic_flag teardown_flag_ = ATOMIC_FLAG_INIT;
   std::atomic_flag stop_reclaim_flag_ = ATOMIC_FLAG_INIT;
   std::binary_semaphore writeback_flag_{1};
 
   FuchsiaDispatcher dispatcher_;
   PlatformVfs *const vfs_ = nullptr;
-  std::unique_ptr<f2fs::Bcache> bc_;
+  std::unique_ptr<f2fs::BcacheMapper> bc_;
   // for unittest
   std::unique_ptr<PlatformVfs> vfs_for_tests_;
 
   MountOptions mount_options_;
 
-  std::unique_ptr<Superblock> raw_sb_;
   std::unique_ptr<SuperblockInfo> superblock_info_;
   std::unique_ptr<SegmentManager> segment_manager_;
   std::unique_ptr<NodeManager> node_manager_;
@@ -345,13 +315,19 @@ class F2fs final {
   VnodeCache vnode_cache_;
   DirEntryCache dir_entry_cache_;
 
+  bool on_recovery_ = false;  // recovery is doing or not
+  // for inode number management
+  fs::SharedMutex vnode_set_mutex_;
+  std::map<ino_t, uint32_t> vnode_set_ __TA_GUARDED(vnode_set_mutex_);
+  size_t vnode_set_size_[static_cast<size_t>(VnodeSet::kMax)] __TA_GUARDED(vnode_set_mutex_) = {
+      0,
+  };
+
   zx::event fs_id_;
   std::unique_ptr<InspectTree> inspect_tree_;
   std::atomic<MemoryPressure> current_memory_pressure_level_ = MemoryPressure::kUnknown;
   std::unique_ptr<MemoryPressureWatcher> memory_pressure_watcher_;
 };
-
-f2fs_hash_t DentryHash(std::string_view name);
 
 }  // namespace f2fs
 

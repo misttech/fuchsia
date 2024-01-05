@@ -320,15 +320,15 @@ Peer* PeerCache::InsertPeerRecord(PeerId identifier, const DeviceAddress& addres
                                       fit::bind_member<&PeerCache::UpdateExpiry>(this),
                                       fit::bind_member<&PeerCache::MakeDualMode>(this),
                                       std::move(store_le_bond_cb), identifier, address, connectable,
-                                      &peer_metrics_));
+                                      &peer_metrics_, dispatcher_));
   if (node_) {
     peer->AttachInspect(node_, node_.UniqueName("peer_"));
   }
 
   // Note: we must construct the PeerRecord in-place, because it doesn't
   // support copy or move.
-  auto [iter, inserted] = peers_.try_emplace(peer->identifier(), std::move(peer),
-                                             [this, p = peer.get()] { RemovePeer(p); });
+  auto [iter, inserted] = peers_.try_emplace(
+      peer->identifier(), std::move(peer), [this, p = peer.get()] { RemovePeer(p); }, dispatcher_);
   if (!inserted) {
     bt_log(WARN, "gap", "tried to insert peer with existing ID: %s", bt_str(identifier));
     return nullptr;
@@ -373,15 +373,12 @@ void PeerCache::UpdateExpiry(const Peer& peer) {
   auto& peer_record = peer_record_iter->second;
   BT_DEBUG_ASSERT(peer_record.peer() == &peer);
 
-  const auto cancel_res = peer_record.removal_task()->Cancel();
-  BT_DEBUG_ASSERT(cancel_res == ZX_OK || cancel_res == ZX_ERR_NOT_FOUND);
+  peer_record.removal_task()->Cancel();
 
   // Previous expiry task has been canceled. Re-schedule only if the peer is
   // temporary.
   if (peer.temporary()) {
-    const auto schedule_res =
-        peer_record.removal_task()->PostDelayed(async_get_default_dispatcher(), kCacheTimeout);
-    BT_DEBUG_ASSERT(schedule_res == ZX_OK || schedule_res == ZX_ERR_BAD_STATE);
+    peer_record.removal_task()->PostAfter(kCacheTimeout);
   }
 }
 
