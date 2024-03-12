@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use super::*;
-use lowpan_driver_common::spinel::*;
 use std::net::Ipv6Addr;
 use std::num::NonZeroU16;
 
@@ -126,9 +125,12 @@ where
 
         let should_skip = {
             let driver_state = self.driver_state.lock();
-            let addr_entry =
-                AddressTableEntry { subnet: subnet.clone(), ..AddressTableEntry::default() };
-            !driver_state.is_active_and_ready() || driver_state.address_table.contains(&addr_entry)
+            !driver_state.is_active_and_ready()
+                || driver_state
+                    .ot_instance
+                    .ip6_get_unicast_addresses()
+                    .find(|entry| *entry.addr() == subnet.addr)
+                    .is_some()
         };
 
         if !should_skip {
@@ -171,7 +173,8 @@ where
             .ot_instance
             .ip6_remove_unicast_address(&subnet.addr)
             .ignore_not_found()
-            .context("on_netstack_added_address")
+            .ignore_rejected()
+            .context("on_netstack_removed_address")
     }
 
     pub(crate) async fn on_netstack_added_route(&self, subnet: Subnet) -> Result<(), Error> {
