@@ -16,6 +16,7 @@ rustc_library("test-realm-helpers") {
     "//src/lib/fuchsia-sync",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/testing/realm_proxy/client",
+    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:tracing",
   ]
