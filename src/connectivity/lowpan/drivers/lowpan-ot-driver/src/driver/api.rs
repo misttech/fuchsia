@@ -1097,6 +1097,7 @@ where
 
         if let Some(nat64_enabled) = config.nat64_enabled {
             driver_state.ot_instance.nat64_set_enabled(nat64_enabled);
+            driver_state.ot_instance.dnssd_upstream_query_set_enabled(nat64_enabled);
         }
 
         if let Some(dhcpv6_pd_enabled) = config.dhcpv6_pd_enabled {
