@@ -27,7 +27,7 @@ use {
         sync::Arc,
         task::{Context, Poll},
     },
-    tracing::{debug, info},
+    tracing::{debug, error, info, warn},
     wlan_common::test_utils::ExpectWithin,
     wlantap_client::Wlantap,
 };
@@ -135,8 +135,9 @@ impl TestRealmContext {
 type EventStream = wlantap::WlantapPhyEventStream;
 pub struct TestHelper {
     ctx: Arc<TestRealmContext>,
-    tracing_controller: Arc<Mutex<fidl_fuchsia_tracing_controller::ControllerSynchronousProxy>>,
-    tracing_collector: Arc<Mutex<Option<std::thread::JoinHandle<Vec<u8>>>>>,
+    tracing_controller:
+        Option<Arc<Mutex<fidl_fuchsia_tracing_controller::ControllerSynchronousProxy>>>,
+    tracing_collector: Option<Arc<Mutex<Option<std::thread::JoinHandle<Vec<u8>>>>>>,
     netdevice_task_handles: Vec<fuchsia_async::Task<()>>,
     _wlantap: Wlantap,
     proxy: Arc<wlantap::WlantapPhyProxy>,
@@ -371,71 +372,100 @@ impl TestHelper {
     async fn initialize_and_start_tracing(
         ctx: &TestRealmContext,
     ) -> (
-        Arc<Mutex<fidl_fuchsia_tracing_controller::ControllerSynchronousProxy>>,
-        Arc<Mutex<Option<std::thread::JoinHandle<Vec<u8>>>>>,
+        Option<Arc<Mutex<fidl_fuchsia_tracing_controller::ControllerSynchronousProxy>>>,
+        Option<Arc<Mutex<Option<std::thread::JoinHandle<Vec<u8>>>>>>,
     ) {
         let tracing_controller = ctx
             .test_realm_proxy
             .connect_to_protocol::<fidl_fuchsia_tracing_controller::ControllerMarker>()
             .await
-            .expect("Failed to get tracing controller.");
-        let tracing_controller = fidl_fuchsia_tracing_controller::ControllerSynchronousProxy::new(
-            fidl::Channel::from_handle(
-                tracing_controller
-                    .into_channel()
-                    .expect("Failed to get fidl::AsyncChannel from proxy.")
-                    .into_zx_channel()
-                    .into_handle(),
-            ),
-        );
-        let (tracing_socket, tracing_socket_write) = fidl::Socket::create_stream();
-        tracing_controller
-            .initialize_tracing(
-                &fidl_fuchsia_tracing_controller::TraceConfig {
-                    categories: Some(vec!["wlan".to_string()]),
-                    buffer_size_megabytes_hint: Some(64),
-                    ..Default::default()
-                },
-                tracing_socket_write,
-            )
-            .expect("Failed to initialize tracing.");
-
-        let tracing_collector = std::thread::spawn(move || {
-            let mut executor = fuchsia_async::LocalExecutor::new();
-            executor.run_singlethreaded(async move {
-                let mut tracing_socket = fuchsia_async::Socket::from_socket(tracing_socket);
-                info!("draining trace record socket...");
-                let mut buf = Vec::new();
-                tracing_socket.read_to_end(&mut buf).await.unwrap();
-                info!("trace record socket drained.");
-                buf
+            .inspect_err(|e| {
+                warn!("Failed to connect tracing controller: {:?}", e);
             })
+            .ok();
+        let tracing_controller = tracing_controller.map(|tracing_controller| {
+            fidl_fuchsia_tracing_controller::ControllerSynchronousProxy::new(
+                fidl::Channel::from_handle(
+                    tracing_controller
+                        .into_channel()
+                        .expect("Failed to get fidl::AsyncChannel from proxy.")
+                        .into_zx_channel()
+                        .into_handle(),
+                ),
+            )
         });
 
-        tracing_controller
-            .start_tracing(
-                &fidl_fuchsia_tracing_controller::StartOptions::default(),
-                zx::Time::INFINITE,
-            )
-            .expect("Encountered FIDL error when starting trace.")
-            .expect("Failed to start tracing.");
+        let tracing_collector = match &tracing_controller {
+            None => None,
+            Some(ref tracing_controller) => 'controller_value: {
+                let (tracing_socket, tracing_socket_write) = fidl::Socket::create_stream();
+                if let Err(e) = tracing_controller.initialize_tracing(
+                    &fidl_fuchsia_tracing_controller::TraceConfig {
+                        categories: Some(vec!["wlan".to_string()]),
+                        buffer_size_megabytes_hint: Some(64),
+                        ..Default::default()
+                    },
+                    tracing_socket_write,
+                ) {
+                    warn!("Failed to initialize tracing: {:?}", e);
+                    break 'controller_value None;
+                }
 
-        let tracing_controller = Arc::new(Mutex::new(tracing_controller));
-        let tracing_collector = Arc::new(Mutex::new(Some(tracing_collector)));
+                let tracing_collector = std::thread::spawn(move || {
+                    let mut executor = fuchsia_async::LocalExecutor::new();
+                    executor.run_singlethreaded(async move {
+                        let mut tracing_socket = fuchsia_async::Socket::from_socket(tracing_socket);
+                        info!("draining trace record socket...");
+                        let mut buf = Vec::new();
+                        tracing_socket.read_to_end(&mut buf).await.unwrap();
+                        info!("trace record socket drained.");
+                        buf
+                    })
+                });
+
+                match tracing_controller.start_tracing(
+                    &fidl_fuchsia_tracing_controller::StartOptions::default(),
+                    zx::Time::INFINITE,
+                ) {
+                    Ok(Ok(_)) => Some(tracing_collector),
+                    Err(_) => {
+                        warn!("Encountered FIDL error when starting trace.");
+                        None
+                    }
+                    Ok(Err(_)) => {
+                        warn!("Failed to start tracing");
+                        None
+                    }
+                }
+            }
+        };
+
+        let (tracing_controller, tracing_collector) = match (tracing_controller, tracing_collector)
+        {
+            (Some(tracing_controller), Some(tracing_collector)) => (
+                Some(Arc::new(Mutex::new(tracing_controller))),
+                Some(Arc::new(Mutex::new(Some(tracing_collector)))),
+            ),
+            _ => (None, None),
+        };
 
         let panic_hook = std::panic::take_hook();
-        let tracing_controller_clone = Arc::clone(&tracing_controller);
-        let tracing_collector_clone = Arc::clone(&tracing_collector);
+        let tracing_controller_clone = tracing_controller.clone();
+        let tracing_collector_clone = tracing_collector.clone();
 
         // Set a panic hook so a trace will be written upon panic. Even though we write a trace in the
         // destructor of TestHelper, we still must set this hook because Fuchsia uses the abort panic
         // strategy. If the unwind strategy were used, then all destructors would run and this hook would
         // not be necessary.
         std::panic::set_hook(Box::new(move |panic_info| {
-            let tracing_controller = &mut tracing_controller_clone.lock();
-            tracing_collector_clone.lock().take().map(move |tracing_collector| {
-                TestHelper::terminate_and_write_trace_(tracing_controller, tracing_collector);
-            });
+            if let (Some(tracing_controller), Some(tracing_collector)) =
+                (&tracing_controller_clone, &tracing_collector_clone)
+            {
+                let tracing_controller = &mut tracing_controller.lock();
+                tracing_collector.lock().take().map(move |tracing_collector| {
+                    TestHelper::terminate_and_write_trace_(tracing_controller, tracing_collector);
+                });
+            }
             panic_hook(panic_info);
         }));
 
@@ -456,7 +486,8 @@ impl TestHelper {
                 },
                 zx::Time::INFINITE,
             )
-            .expect("Failed to stop tracing.");
+            .inspect_err(|e| error!("Failed to stop tracing: {:?}", e))
+            .ok();
 
         info!("Waiting for trace collection from socket to complete...");
         let trace = tracing_collector.join().expect("Failed to join tracing collector thread.");
@@ -469,13 +500,17 @@ impl TestHelper {
     }
 
     fn terminate_and_write_trace(&mut self) {
-        TestHelper::terminate_and_write_trace_(
-            &mut self.tracing_controller.lock(),
-            self.tracing_collector
-                .lock()
-                .take()
-                .expect("Failed to acquire join handle for tracing collector."),
-        );
+        if let (Some(tracing_controller), Some(tracing_collector)) =
+            (&mut self.tracing_controller, &self.tracing_collector)
+        {
+            TestHelper::terminate_and_write_trace_(
+                &mut tracing_controller.lock(),
+                tracing_collector
+                    .lock()
+                    .take()
+                    .expect("Failed to acquire join handle for tracing collector."),
+            );
+        }
     }
 }
 impl Drop for TestHelper {
