@@ -174,6 +174,8 @@ std::string SortJsonFile(std::string input) {
 
 // Tests that reading inspect data returns expected data from the archive accessor.
 TEST_F(AccessorTest, StreamDiagnosticsInspect) {
+  ZXTEST_SKIP(
+      "Compatibility with F16 has been explicitly broken by the removal of DirectoryReady.");
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   ASSERT_EQ(loop.StartThread(), ZX_OK);
 
