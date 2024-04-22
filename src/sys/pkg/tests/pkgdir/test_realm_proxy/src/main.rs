@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use {
-    anyhow::{Error, Result},
+    anyhow::{bail, format_err, Error, Result},
     blobfs_ramdisk::BlobfsRamdisk,
+    fidl::endpoints::{create_endpoints, ServerEnd},
     fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
     fidl_fuchsia_pkg_test::*,
     fidl_fuchsia_testing_harness::{OperationError, RealmProxy_RequestStream},
@@ -86,25 +87,30 @@ async fn serve_factory(
     let factory = connect_to_protocol::<fsandbox::FactoryMarker>().unwrap();
     while let Ok(Some(request)) = stream.try_next().await {
         match request {
-            RealmFactoryRequest::CreateRealm { options: _, dictionary, responder } => {
-                let (client_end, server_end) = fidl::endpoints::create_endpoints();
-                if let Err(e) = directory.clone(fio::OpenFlags::CLONE_SAME_RIGHTS, server_end) {
-                    error!("{:?}", e);
-                    let _ = responder.send(Err(OperationError::Failed));
+            RealmFactoryRequest::CreateRealm { options, responder } => {
+                let pkg_directory_server_end = match options.pkg_directory_server {
+                    Some(v) => ServerEnd::<fio::NodeMarker>::from(v.into_channel()),
+                    None => {
+                        responder.send(Err(OperationError::Failed)).ok();
+                        bail!("pkg directory required");
+                    }
+                };
+                if let Err(e) =
+                    directory.clone(fio::OpenFlags::CLONE_SAME_RIGHTS, pkg_directory_server_end)
+                {
+                    error!("failed to clone: {:?}", e);
+                    responder.send(Err(OperationError::Failed)).ok();
                     continue;
                 }
-                // TODO(https://fxbug.dev/329496030): We have to use this factory method instead
-                // of creating a Capability::Directory directly - see the bug for details.
-                let client_end = client_end.into_channel();
-                let value = factory.create_directory(client_end.into()).await.unwrap();
-                let output_dict_entries =
-                    vec![fsandbox::DictionaryItem { key: "pkg".into(), value }];
-                let () = factory
-                    .create_dictionary(output_dict_entries, dictionary)
-                    .await
-                    .unwrap()
-                    .unwrap();
-                responder.send(Ok(()))?;
+
+                let (client, server_end) = create_endpoints();
+
+                factory
+                    .create_dictionary(vec![], server_end)
+                    .await?
+                    .map_err(|e| format_err!("{:?}", e))?;
+
+                responder.send(Ok(client))?;
             }
             RealmFactoryRequest::_UnknownMethod { .. } => unreachable!(),
         }

@@ -13,7 +13,6 @@ rustc_test("driver") {
   deps = [
     "test_realm_proxy/fidl:fuchsia.pkg.test_rust",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
-    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
@@ -60,6 +59,7 @@ fuchsia_test_package("pkgdir-integration-tests") {
     log_settings = {
       max_severity = "ERROR"
     }
+    parallel = 1
   }
   test_components = [ ":test-root" ]
   subpackages = [
