@@ -611,3 +611,13 @@
 	url = https://pigweed.googlesource.com/pigweed/pigweed
 	name = third_party/pigweed
 	ignore = all
+[submodule "third_party/gfxstream/aemu/src"]
+	path = third_party/gfxstream/aemu/src
+	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/hardware/google/aemu
+	name = third_party/android/platform/hardware/google/aemu
+	ignore = all
+[submodule "third_party/gfxstream/src"]
+	path = third_party/gfxstream/src
+	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/hardware/google/gfxstream
+	name = third_party/android/platform/hardware/google/gfxstream
+	ignore = all
