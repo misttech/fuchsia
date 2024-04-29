@@ -598,121 +598,16 @@
 	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/chre
 	name = third_party/chre
 	ignore = all
-[submodule "third_party/gfxstream/aemu/src"]
-	path = third_party/gfxstream/aemu/src
-	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/hardware/google/aemu
-	name = third_party/android/platform/hardware/google/aemu
-	ignore = all
-[submodule "third_party/gfxstream/src"]
-	path = third_party/gfxstream/src
-	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/hardware/google/gfxstream
-	name = third_party/android/platform/hardware/google/gfxstream
-	ignore = all
-[submodule "third_party/pigweed/src"]
-	path = third_party/pigweed/src
-	url = https://fuchsia.googlesource.com/third_party/pigweed.googlesource.com/pigweed/pigweed
-	name = third_party/pigweed
-	ignore = all
-[submodule "third_party/bazel_rules_proto"]
-	path = third_party/bazel_rules_proto
-	url = https://fuchsia.googlesource.com/third_party/github.com/bazelbuild/rules_proto
-	name = third_party/bazel_rules_proto
-	ignore = all
-[submodule "third_party/Vulkan-Utility-Libraries/src"]
-	path = third_party/Vulkan-Utility-Libraries/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/KhronosGroup/Vulkan-Utility-Libraries
-	name = third_party/Vulkan-Utility-Libraries
-	ignore = all
-[submodule "third_party/pylibs/astroid/src"]
-	path = third_party/pylibs/astroid/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/pylint-dev/astroid
-	name = third_party/pylibs/astroid
-	ignore = all
-[submodule "third_party/pylibs/dill/src"]
-	path = third_party/pylibs/dill/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/uqfoundation/dill
-	name = third_party/pylibs/dill
-	ignore = all
-[submodule "third_party/pylibs/isort/src"]
-	path = third_party/pylibs/isort/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/PyCQA/isort
-	name = third_party/pylibs/isort
-	ignore = all
-[submodule "third_party/pylibs/mccabe/src"]
-	path = third_party/pylibs/mccabe/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/PyCQA/mccabe
-	name = third_party/pylibs/mccabe
-	ignore = all
-[submodule "third_party/pylibs/mypy/src"]
-	path = third_party/pylibs/mypy/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/python/mypy
-	name = third_party/pylibs/mypy
-	ignore = all
-[submodule "third_party/pylibs/mypy_extensions/src"]
-	path = third_party/pylibs/mypy_extensions/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/python/mypy_extensions
-	name = third_party/pylibs/mypy_extensions
-	ignore = all
-[submodule "third_party/pylibs/platformdirs/src"]
-	path = third_party/pylibs/platformdirs/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/platformdirs/platformdirs
-	name = third_party/pylibs/platformdirs
-	ignore = all
-[submodule "third_party/pylibs/pylint/src"]
-	path = third_party/pylibs/pylint/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/pylint-dev/pylint
-	name = third_party/pylibs/pylint
-	ignore = all
-[submodule "third_party/pylibs/tomlkit/src"]
-	path = third_party/pylibs/tomlkit/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/sdispater/tomlkit
-	name = third_party/pylibs/tomlkit
-	ignore = all
-[submodule "third_party/pylibs/typing_extensions/src"]
-	path = third_party/pylibs/typing_extensions/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/python/typing_extensions
-	name = third_party/pylibs/typing_extensions
-	ignore = all
-[submodule "third_party/github.com/google/bt-test-interfaces/src"]
-	path = third_party/github.com/google/bt-test-interfaces/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/google/bt-test-interfaces
-	name = third_party/github.com/google/bt-test-interfaces
-	ignore = all
-[submodule "third_party/pypng/src"]
-	path = third_party/pypng/src
-	url = https://fuchsia.googlesource.com/third_party/gitlab.com/drj11/pypng
-	name = third_party/pypng
-	ignore = all
 [submodule "infra/testproject"]
 	path = infra/testproject
 	url = https://fuchsia.googlesource.com/infra/testproject
-[submodule "third_party/fuchsia-infra-bazel-rules/src"]
-	path = third_party/fuchsia-infra-bazel-rules/src
-	url = https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules
-	name = third_party/fuchsia-infra-bazel-rules
+[submodule "third_party/icu/stable"]
+	path = third_party/icu/stable
+	url = https://chromium.googlesource.com/chromium/deps/icu
+	name = chromium/deps/icu@stable
 	ignore = all
-[submodule "third_party/shac-project/checks-cpp/src"]
-	path = third_party/shac-project/checks-cpp/src
-	url = https://fuchsia.googlesource.com/shac-project/checks-cpp
-	name = third_party/shac-project/checks-cpp
-	ignore = all
-[submodule "third_party/shac-project/checks-go/src"]
-	path = third_party/shac-project/checks-go/src
-	url = https://fuchsia.googlesource.com/shac-project/checks-go
-	name = third_party/shac-project/checks-go
-	ignore = all
-[submodule "third_party/shac-project/checks-starlark/src"]
-	path = third_party/shac-project/checks-starlark/src
-	url = https://fuchsia.googlesource.com/shac-project/checks-starlark
-	name = third_party/shac-project/checks-starlark
-	ignore = all
-[submodule "third_party/shac-project/fuchsia-checks/src"]
-	path = third_party/shac-project/fuchsia-checks/src
-	url = https://fuchsia.googlesource.com/shac-project/fuchsia-checks
-	name = third_party/shac-project/fuchsia-checks
-	ignore = all
-[submodule "third_party/shac-project/generic-checks/src"]
-	path = third_party/shac-project/generic-checks/src
-	url = https://fuchsia.googlesource.com/shac-project/generic-checks
-	name = third_party/shac-project/generic-checks
+[submodule "third_party/pigweed/src"]
+	path = third_party/pigweed/src
+	url = https://pigweed.googlesource.com/pigweed/pigweed
+	name = third_party/pigweed
 	ignore = all
