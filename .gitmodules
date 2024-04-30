@@ -601,11 +601,6 @@
 [submodule "infra/testproject"]
 	path = infra/testproject
 	url = https://fuchsia.googlesource.com/infra/testproject
-[submodule "third_party/icu/stable"]
-	path = third_party/icu/stable
-	url = https://chromium.googlesource.com/chromium/deps/icu
-	name = chromium/deps/icu@stable
-	ignore = all
 [submodule "third_party/gfxstream/aemu/src"]
 	path = third_party/gfxstream/aemu/src
 	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/hardware/google/aemu
