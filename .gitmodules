@@ -686,3 +686,8 @@
 	url = https://fuchsia.googlesource.com/third_party/github.com/google/bt-test-interfaces
 	name = third_party/github.com/google/bt-test-interfaces
 	ignore = all
+[submodule "third_party/fuchsia-infra-bazel-rules/src"]
+	path = third_party/fuchsia-infra-bazel-rules/src
+	url = https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules
+	name = third_party/fuchsia-infra-bazel-rules
+	ignore = all
