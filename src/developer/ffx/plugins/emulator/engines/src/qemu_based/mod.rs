@@ -660,7 +660,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             let mut connection_errors = Vec::new();
             while start.elapsed().as_secs() <= startup_timeout {
                 let compat_res = ffx_target::knock_target_daemonless(
-                    &Some(name.clone()),
+                    &name.clone().into(),
                     &context,
                     Some(KNOCK_TARGET_TIMEOUT),
                 )

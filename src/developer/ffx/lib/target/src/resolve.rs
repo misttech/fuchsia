@@ -40,12 +40,12 @@ use {mockall::mock, mockall::predicate::*};
 
 /// Check if daemon discovery is disabled, resolving locally if so.
 pub async fn maybe_locally_resolve_target_spec(
-    target_spec: Option<String>,
+    target_spec: &TargetInfoQuery,
     env_context: &EnvironmentContext,
-) -> Result<Option<String>> {
+) -> Result<TargetInfoQuery> {
     // This should be read as "is discovery enabled on the daemon".
     if crate::is_discovery_enabled(env_context).await {
-        Ok(target_spec)
+        Ok(target_spec.clone())
     } else {
         log::warn!("crate::is_discovery_enabled is false - using local target resolution. is_usb_discovery_disabled is {}, is_mdns_discovery_disabled is {}",
         ffx_config::is_usb_discovery_disabled(env_context),
@@ -69,10 +69,10 @@ fn replace_default_port(sa: SocketAddr) -> SocketAddr {
 /// it. Otherwise, perform discovery to find the address or serial #. Returns
 /// Some(_) if a target has been found, None otherwise.
 async fn locally_resolve_target_spec<T: TargetResolver>(
-    target_spec: Option<String>,
+    target_spec: &TargetInfoQuery,
     resolver: &T,
     env_context: &EnvironmentContext,
-) -> Result<Option<String>> {
+) -> Result<TargetInfoQuery> {
     let query = TargetInfoQuery::from(target_spec.clone());
     let explicit_spec = match query {
         // If an address is passed in, make sure that the default port is filled in if it hadn't
@@ -86,7 +86,7 @@ async fn locally_resolve_target_spec<T: TargetResolver>(
         }
     };
 
-    Ok(Some(explicit_spec))
+    Ok(Some(explicit_spec).into())
 }
 
 /// A trait for resolving target queries into concrete target information.
@@ -132,7 +132,7 @@ pub trait TargetResolver {
     #[allow(async_fn_in_trait)]
     async fn resolve_target_address(
         &self,
-        target_spec: &Option<String>,
+        target_spec: &TargetInfoQuery,
         ctx: &EnvironmentContext,
     ) -> Result<Resolution, FfxTargetError> {
         let query = TargetInfoQuery::from(target_spec.clone());
@@ -140,8 +140,7 @@ pub trait TargetResolver {
             return Ok(Resolution::from_addr(a));
         }
         let res = self.resolve_single_target(&target_spec, ctx).await?;
-        let target_spec_info =
-            target_spec.clone().unwrap_or_else(|| crate::UNSPECIFIED_TARGET_NAME.to_owned());
+        let target_spec_info: String = target_spec.into();
         log::debug!("resolved target spec {target_spec_info} to address {:?}", res.addr());
         Ok(res)
     }
@@ -154,15 +153,17 @@ pub trait TargetResolver {
     #[allow(async_fn_in_trait)]
     async fn resolve_single_target(
         &self,
-        target_spec: &Option<String>,
+        target_spec: &TargetInfoQuery,
         env_context: &EnvironmentContext,
     ) -> Result<Resolution, FfxTargetError> {
-        let query = TargetInfoQuery::from(target_spec.clone());
+        if let TargetInfoQuery::Addr(a) = target_spec {
+            return Ok(Resolution::from_addr(*a));
+        }
         let mut handles;
 
-        let handles_fut = self.resolve_target_query(query.clone(), env_context).fuse();
+        let handles_fut = self.resolve_target_query(target_spec.clone(), env_context).fuse();
         // We want to query both the manual targets and the discoverable handles concurrently.
-        if let TargetInfoQuery::NodenameOrSerial(ref s) = query {
+        if let TargetInfoQuery::NodenameOrSerial(ref s) = target_spec {
             let manual_target_fut = self.try_resolve_manual_target(s, env_context).fuse();
             pin_mut!(manual_target_fut);
             pin_mut!(handles_fut);
@@ -178,7 +179,7 @@ pub trait TargetResolver {
                     },
                     handles_res = handles_fut => {
                         // We got a response from discovery
-                        handles = handles_res.map_err(|_| FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::FailedDiscovery, target: target_spec.clone()})?;
+                        handles = handles_res.map_err(|_| FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::FailedDiscovery, target: Some(target_spec.into())})?;
                         break;
                     },
                 }
@@ -188,19 +189,19 @@ pub trait TargetResolver {
             // target.
             handles = handles_fut.await.map_err(|_| FfxTargetError::OpenTargetError {
                 err: ffx::OpenTargetError::FailedDiscovery,
-                target: target_spec.clone(),
+                target: Some(target_spec.into()),
             })?;
         };
         if handles.len() == 0 {
             return Err(FfxTargetError::OpenTargetError {
                 err: ffx::OpenTargetError::TargetNotFound,
-                target: target_spec.clone(),
+                target: Some(target_spec.into()),
             });
         }
         if handles.len() > 1 {
             return Err(FfxTargetError::OpenTargetError {
                 err: ffx::OpenTargetError::QueryAmbiguous,
-                target: target_spec.clone(),
+                target: Some(target_spec.into()),
             });
         }
         // Unwrap() is okay because we validate that we have at least one entry
@@ -419,7 +420,7 @@ pub async fn resolve_target_query_with_sources(
 // Perhaps refactor as connect_to_target() -> Result<Connection>, since that seems
 // to be the only way this function is used?
 pub async fn resolve_target_address(
-    target_spec: &Option<String>,
+    target_spec: &TargetInfoQuery,
     ctx: &EnvironmentContext,
 ) -> Result<Resolution, FfxTargetError> {
     DefaultTargetResolver::default().resolve_target_address(target_spec, ctx).await
@@ -835,7 +836,8 @@ impl TryFromEnvContext for Resolution {
                 target_spec.as_ref().unwrap_or(&unspecified_target)
             };
             log::trace!("resolving target spec address from {}", target_spec_unwrapped);
-            let resolution = resolve_target_address(&target_spec, env)
+            let spec: TargetInfoQuery = target_spec.into();
+            let resolution = resolve_target_address(&spec, env)
                 .await
                 .map_err(|e| ffx_command_error::Error::User(NonFatalError(e.into()).into()))?;
             Ok(resolution)
@@ -846,7 +848,7 @@ impl TryFromEnvContext for Resolution {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::net::{Ipv6Addr, SocketAddrV6};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
 
     #[fuchsia::test]
     async fn test_sort_socket_addrs() {
@@ -924,37 +926,38 @@ mod test {
         let mut resolver = MockTargetResolver::new();
         // A network address will resolve to itself
         let addr = "127.0.0.1:123".to_string();
-        let addr_spec = Some(addr.clone());
+        let addr_spec =
+            TargetInfoQuery::Addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 123));
         // Note that this will fail if we try to call resolve_target_spec()
         // since we haven't mocked a return value. So it's also checking that no
         // resolution is done.
         let target_spec =
-            locally_resolve_target_spec(addr_spec.clone(), &resolver, &test_env.context)
+            locally_resolve_target_spec(&addr_spec.clone(), &resolver, &test_env.context)
                 .await
                 .unwrap();
-        assert_eq!(target_spec, addr_spec.clone());
+        assert_eq!(target_spec, addr_spec.clone().into());
 
         // A serial spec will resolve to itself
         let sn = "abcdef".to_string();
-        let sn_spec = format!("serial:{sn}");
+        let sn_spec = TargetInfoQuery::Serial(sn.clone());
         // Note that this will fail if we try to call resolve_target_spec()
         // since we still haven't mocked a return value. So it's also checking that no
         // resolution is done.
         let target_spec =
-            locally_resolve_target_spec(Some(sn_spec.clone()), &resolver, &test_env.context)
+            locally_resolve_target_spec(&sn_spec.clone(), &resolver, &test_env.context)
                 .await
                 .unwrap();
-        assert_eq!(target_spec, Some(sn_spec.clone()));
+        assert_eq!(target_spec, sn_spec.clone());
 
         // A DNS name will satisfy the resolution request
-        let name_spec = Some("foobar".to_string());
+        let name_spec = TargetInfoQuery::NodenameOrSerial("foobar".to_string());
         let sa = addr.parse::<SocketAddr>().unwrap();
         let state = TargetState::Product { addrs: vec![sa.into()], serial: None };
-        let th = TargetHandle { node_name: name_spec.clone(), state, manual: false };
+        let th = TargetHandle { node_name: name_spec.clone().into(), state, manual: false };
         resolver.expect_resolve_target_query().return_once(move |_, _| Ok(vec![th]));
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         let target_spec =
-            locally_resolve_target_spec(name_spec.clone(), &resolver, &test_env.context)
+            locally_resolve_target_spec(&name_spec.clone(), &resolver, &test_env.context)
                 .await
                 .unwrap();
         assert_eq!(target_spec, addr_spec);
@@ -973,10 +976,10 @@ mod test {
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         // Test with "<serial>", _not_ "serial:<serial>"
         let target_spec =
-            locally_resolve_target_spec(Some(sn.clone()), &resolver, &test_env.context)
+            locally_resolve_target_spec(&(sn.clone().into()), &resolver, &test_env.context)
                 .await
                 .unwrap();
-        assert_eq!(target_spec, Some(sn_spec));
+        assert_eq!(target_spec, sn_spec);
 
         // An ambiguous name will result in an error
         let mut resolver = MockTargetResolver::new();
@@ -989,7 +992,7 @@ mod test {
         resolver.expect_resolve_target_query().return_once(move |_, _| Ok(vec![th1, th2]));
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         let target_spec_res =
-            locally_resolve_target_spec(Some("foo".to_string()), &resolver, &test_env.context)
+            locally_resolve_target_spec(&("foo".to_string().into()), &resolver, &test_env.context)
                 .await;
         assert!(target_spec_res.is_err());
         assert!(dbg!(target_spec_res.unwrap_err().to_string()).contains("multiple targets"));

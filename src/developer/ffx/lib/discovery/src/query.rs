@@ -9,7 +9,7 @@ use fidl_fuchsia_developer_ffx::{
 };
 use std::net::SocketAddr;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TargetInfoQuery {
     /// Attempts to match the nodename, falling back to serial (in that order).
     NodenameOrSerial(String),

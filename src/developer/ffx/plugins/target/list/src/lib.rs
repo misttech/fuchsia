@@ -128,10 +128,10 @@ async fn show_targets(
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
 
 async fn try_get_target_info(
-    spec: String,
+    spec: TargetInfoQuery,
     context: &EnvironmentContext,
 ) -> Result<(ffx::RemoteControlState, Option<String>, Option<String>), KnockError> {
-    let mut resolution = ffx_target::resolve_target_address(&Some(spec), context)
+    let mut resolution = ffx_target::resolve_target_address(&spec, context)
         .await
         .map_err(|e| KnockError::CriticalError(e.into()))?;
     let (rcs_state, pc, bc) = match resolution.identify(context).await {
@@ -161,7 +161,7 @@ async fn get_target_info(
         };
         log::debug!("Trying to make a connection to spec {spec:?}");
 
-        match try_get_target_info(spec, context)
+        match try_get_target_info(spec.into(), context)
             .on_timeout(ssh_timeout, || {
                 Err(KnockError::NonCriticalError(anyhow::anyhow!("knock_rcs() timed out")))
             })

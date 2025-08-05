@@ -6,6 +6,7 @@ use crate::{logging, LibContext};
 use anyhow::Result;
 use async_lock::Mutex;
 use camino::Utf8PathBuf;
+use discovery::query::TargetInfoQuery;
 use errors::ffx_error;
 use ffx_config::environment::ExecutableKind;
 use ffx_config::EnvironmentContext;
@@ -38,14 +39,14 @@ pub struct FfxConfigEntry {
 
 pub struct EnvContext {
     lib_ctx: Weak<LibContext>,
-    target_spec: Option<String>,
+    target_spec: TargetInfoQuery,
     device_connection: Mutex<Option<Connection>>,
     pub(crate) context: EnvironmentContext,
 }
 
 async fn new_device_connection(
     ctx: &EnvironmentContext,
-    target_spec: &Option<String>,
+    target_spec: &TargetInfoQuery,
 ) -> Result<Connection> {
     let resolution = ffx_target::resolve_target_address(target_spec, ctx).await?;
     let addr = resolution.addr()?;
@@ -102,7 +103,7 @@ impl EnvContext {
             )
             .map_err(fxe)?,
         };
-        let target_spec = ffx_target::get_target_specifier(&context).await?;
+        let target_spec: TargetInfoQuery = ffx_target::get_target_specifier(&context).await?.into();
         logging::init_logging(&context);
         logging::LOG_SINK.add_log_output(&context)?;
         log::info!("Logging setup for EnvContext instance: {}", logging::log_id(&context));
@@ -117,7 +118,7 @@ impl EnvContext {
             "Checking connectivity invariant for EnvContext: {}",
             logging::log_id(&self.context)
         );
-        if self.target_spec.is_none() {
+        if matches!(self.target_spec, TargetInfoQuery::First) {
             return Err(unspecified_target());
         }
         let mut device_connection = self.device_connection.lock().await;

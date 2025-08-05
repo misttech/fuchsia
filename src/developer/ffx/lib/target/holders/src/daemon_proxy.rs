@@ -5,6 +5,7 @@
 use crate::init_daemon_connection_behavior;
 use anyhow::Context;
 use async_trait::async_trait;
+use discovery::query::TargetInfoQuery;
 use errors::{ffx_bail, ffx_error};
 use fdomain_client::fidl::DiscoverableProtocolMarker;
 use fdomain_fuchsia_developer_remotecontrol::{
@@ -231,10 +232,10 @@ impl Injection {
         target_info: &mut Option<TargetInfo>,
     ) -> anyhow::Result<RemoteControlProxy> {
         let daemon_proxy = self.daemon_factory().await?;
-        let target_spec = self.target_spec.clone();
+        let target_spec: TargetInfoQuery = self.target_spec.clone().into();
         let proxy_timeout = self.env_context.get_proxy_timeout().await?;
         get_remote_proxy(
-            target_spec,
+            &target_spec,
             daemon_proxy,
             proxy_timeout,
             Some(target_info),
@@ -247,13 +248,13 @@ impl Injection {
         // See if we need to do local resolution. (Do it here not in
         // open_target_with_fut because o_t_w_f is not async)
         let target_spec = ffx_target::maybe_locally_resolve_target_spec(
-            self.target_spec.clone(),
+            &self.target_spec.clone().into(),
             &self.env_context,
         )
         .await?;
         let daemon_proxy = self.daemon_factory().await?;
         let (target_proxy, target_proxy_fut) = open_target_with_fut(
-            target_spec,
+            &target_spec,
             daemon_proxy.clone(),
             self.env_context.get_proxy_timeout().await?,
         )?;

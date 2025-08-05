@@ -60,7 +60,7 @@ pub use target_errors::{UNKNOWN_TARGET_NAME, UNSPECIFIED_TARGET_NAME};
 /// The optional |target| is a string matcher as defined in fuchsia.developer.ffx.TargetQuery
 /// fidl table.
 pub async fn get_remote_proxy(
-    target_spec: Option<String>,
+    target_spec: &TargetInfoQuery,
     daemon_proxy: DaemonProxy,
     proxy_timeout: Duration,
     mut target_info: Option<&mut Option<TargetInfo>>,
@@ -108,7 +108,7 @@ pub async fn get_remote_proxy(
 }
 
 async fn get_remote_proxy_impl(
-    target_spec: &Option<String>,
+    target_spec: &TargetInfoQuery,
     daemon_proxy: &DaemonProxy,
     proxy_timeout: &Duration,
     target_info: &mut Option<TargetInfo>,
@@ -116,10 +116,10 @@ async fn get_remote_proxy_impl(
 ) -> Result<RemoteControlProxy> {
     // See if we need to do local resolution. (Do it here not in
     // open_target_with_fut because o_t_w_f is not async)
-    let mut target_spec =
-        resolve::maybe_locally_resolve_target_spec(target_spec.clone(), context).await?;
+    let target_spec = resolve::maybe_locally_resolve_target_spec(target_spec, context).await?;
+    let tsc = target_spec.clone();
     let (target_proxy, target_proxy_fut) =
-        open_target_with_fut(target_spec.clone(), daemon_proxy.clone(), *proxy_timeout)?;
+        open_target_with_fut(&tsc, daemon_proxy.clone(), *proxy_timeout)?;
     let mut target_proxy_fut = target_proxy_fut.boxed_local().fuse();
     let (remote_proxy, remote_server_end) = create_proxy::<RemoteControlMarker>();
     let mut open_remote_control_fut =
@@ -145,22 +145,11 @@ async fn get_remote_proxy_impl(
     };
     let info = target_proxy.identity().await?;
     *target_info = Some(info.clone());
-    // Only replace the target spec info if we're going from less info to more info.
-    // Don't want to overwrite it otherwise.
-    match (target_spec.as_ref(), info.nodename, info.ssh_address) {
-        (None, Some(n), Some(s)) => {
-            target_spec.replace(format!("{n} at {}", TargetIpAddr::from(s)))
-        }
-        (None, None, Some(s)) => target_spec.replace(TargetIpAddr::from(s).to_string()),
-        (None, Some(n), None) => target_spec.replace(format!("{n}")),
-        (_, _, _) => None,
-    };
-    let target_spec = target_spec.as_ref().map(ToString::to_string);
     match res {
         Ok(_) => Ok(remote_proxy),
         Err(err) => Err(anyhow::Error::new(FfxTargetError::TargetConnectionError {
             err,
-            target: target_spec,
+            target: target_spec.into(),
             logs: Some(target_proxy.get_ssh_logs().await?),
         })),
     }
@@ -175,13 +164,12 @@ async fn get_remote_proxy_impl(
 /// The optional |target| is a string matcher as defined in fuchsia.developer.ffx.TargetQuery
 /// fidl table.
 pub fn open_target_with_fut<'a, 'b: 'a>(
-    target: Option<String>,
+    target: &'a TargetInfoQuery,
     daemon_proxy: DaemonProxy,
     target_timeout: Duration,
 ) -> Result<(TargetProxy, impl Future<Output = Result<()>> + 'a)> {
     let (tc_proxy, tc_server_end) = create_proxy::<TargetCollectionMarker>();
     let (target_proxy, target_server_end) = create_proxy::<TargetMarker>();
-    let t_clone = target.clone();
     let target_collection_fut = async move {
         daemon_proxy
             .connect_to_protocol(
@@ -189,21 +177,26 @@ pub fn open_target_with_fut<'a, 'b: 'a>(
                 tc_server_end.into_channel(),
             )
             .await?
-            .map_err(|err| FfxTargetError::DaemonError { err: err.into(), target: t_clone })?;
+            .map_err(|err| FfxTargetError::DaemonError {
+                err: err.into(),
+                target: target.clone().into(),
+            })?;
         Result::<()>::Ok(())
     };
-    let t_clone = target.clone();
     let target_handle_fut = async move {
         timeout(
             target_timeout,
             tc_proxy.open_target(
-                &TargetQuery { string_matcher: t_clone.clone(), ..Default::default() },
+                &TargetQuery { string_matcher: target.clone().into(), ..Default::default() },
                 target_server_end,
             ),
         )
         .await
-        .map_err(|_| FfxTargetError::DaemonError { err: DaemonError::Timeout, target: t_clone })??
-        .map_err(|err| FfxTargetError::OpenTargetError { err, target })?;
+        .map_err(|_| FfxTargetError::DaemonError {
+            err: DaemonError::Timeout,
+            target: target.clone().into(),
+        })??
+        .map_err(|err| FfxTargetError::OpenTargetError { err, target: target.clone().into() })?;
         Result::<()>::Ok(())
     };
     let fut = async move {
@@ -361,7 +354,8 @@ impl RcsKnocker for LocalRcsKnockerImpl {
         target_spec: Option<String>,
         env: &EnvironmentContext,
     ) -> Result<(), KnockError> {
-        knock_target_daemonless(&target_spec, env, None).await.map(|compat| {
+        let spec: TargetInfoQuery = target_spec.into();
+        knock_target_daemonless(&spec, env, None).await.map(|compat| {
             let msg = match compat {
                 Some(c) => format!("Received compat info: {c:?}"),
                 None => format!("No compat info received"),
@@ -442,7 +436,7 @@ pub async fn knock_target_by_name(
 /// `knock_timeout` is set to `None`, the default timeout will be set to 2 times
 /// `DEFAULT_RCS_KNOCK_TIMEOUT`.
 pub async fn knock_target_daemonless(
-    target_spec: &Option<String>,
+    target_spec: &TargetInfoQuery,
     context: &EnvironmentContext,
     knock_timeout: Option<Duration>,
 ) -> Result<Option<CompatibilityInfo>, KnockError> {
@@ -772,7 +766,7 @@ mod test {
     async fn test_bad_timeout() {
         let env = test_init().await.unwrap();
         assert!(knock_target_daemonless(
-            &Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             &env.context,
             Some(rcs::RCS_KNOCK_TIMEOUT)
         )
