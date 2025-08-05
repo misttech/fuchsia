@@ -131,12 +131,14 @@ func (f *FFXTool) TargetGetSshAddress(ctx context.Context, target string) (strin
 		"--target",
 		target,
 		"target",
-		"get-ssh-address",
+		"list",
+		"--format",
+		"addresses",
 	}
 
 	stdout, err := f.runFFXCmd(ctx, args...)
 	if err != nil {
-		return "", fmt.Errorf("ffx target get-ssh-address failed: %w", err)
+		return "", fmt.Errorf("ffx target list --format addresses failed: %w", err)
 	}
 
 	return strings.TrimSpace(string(stdout)), nil
@@ -189,12 +191,12 @@ func (f *FFXTool) TargetGetSshTime(ctx context.Context, target string) (time.Dur
 	t1 := time.Now()
 
 	if err != nil {
-		return 0, fmt.Errorf("ffx target get-ssh-address failed: %w", err)
+		return 0, fmt.Errorf("ffx target get-time failed: %w", err)
 	}
 
 	t, err := strconv.Atoi(strings.TrimSpace(string(stdout)))
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse ffx target-get-ssh-address output: %w", err)
+		return 0, fmt.Errorf("failed to parse ffx target-get-time output: %w", err)
 	}
 
 	// Estimate the latency as half the time to execute the command.

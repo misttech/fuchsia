@@ -72,7 +72,7 @@ NOTE: Depending on your environment, this and the following ssh / scp commands
 may require `sudo` to correctly obtain access to resources. On gLinux machines,
 you may receive permission errors if you do not execute as root.
 ```
-ssh -f -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $(ffx config get ssh.priv | tr -d '"')  -NT -L 12345:127.0.0.1:7000 ssh://$(ffx target get-ssh-address)
+ssh -f -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $(ffx config get ssh.priv | tr -d '"')  -NT -L 12345:127.0.0.1:7000 ssh://$(ffx target list --format a)
 ```
 Next, you can copy the file to the container:
 ```
