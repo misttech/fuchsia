@@ -17,14 +17,14 @@ namespace {
 // until told to stop via a shared variable.
 void DoHandleValid(std::atomic<bool>* stop, zx::event* event) {
   while (!stop->load(std::memory_order_relaxed)) {
-    ASSERT_OK(event->get_info(ZX_INFO_HANDLE_VALID, nullptr, 0, nullptr, nullptr));
+    ASSERT_OK(zx_handle_check_valid(event->get()));
   }
 }
 
-// Measure how long a simple 'get_info' call takes whilst other cores are doing
-// the same. This is measuring the scalability of
-// get_info(ZX_INFO_HANDLE_INVALID), particularly the synchronization in the
-// kernel on this syscall path.
+// Measure how long a simple 'handle_check_valid' call takes whilst other cores are doing
+// the same. This is measuring the scalability of zx_handle_check_valid's
+// success path, particularly the synchronization in the kernel on this syscall
+// path.
 //
 // Should not be invoked with more threads than there are cpus otherwise there
 // is a chance with the current scheduler that the main test thread does not get
@@ -45,7 +45,7 @@ bool HandleValid(perftest::RepeatState* state, uint32_t num_threads) {
   }
 
   while (state->KeepRunning()) {
-    ASSERT_OK(event.get_info(ZX_INFO_HANDLE_VALID, nullptr, 0, nullptr, nullptr));
+    ASSERT_OK(zx_handle_check_valid(event.get()));
   }
 
   // Inform our worker threads to stop so we can nicely join them.
