@@ -683,6 +683,10 @@ class VmObject : public VmHierarchyBase,
   // Detaches the underlying page source, if present. Can be called multiple times.
   virtual void DetachSource() {}
 
+  // If this VMO has a backing page source, and that page source has a koid, then it is returned.
+  // Otherwise returns a nullopt.
+  virtual ktl::optional<zx_koid_t> GetPageSourceKoid() const { return ktl::nullopt; }
+
   // Different operations that RangeChangeUpdate* can perform against any VmMappings that are found.
   enum class RangeChangeOp {
     Unmap,

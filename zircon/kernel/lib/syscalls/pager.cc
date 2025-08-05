@@ -115,8 +115,7 @@ zx_status_t sys_pager_create_vmo(zx_handle_t pager, uint32_t options, zx_handle_
 
   KernelHandle<VmObjectDispatcher> kernel_handle;
   zx_rights_t rights;
-  status = VmObjectDispatcher::Create(vmo, size, pager_dispatcher->get_koid(),
-                                      VmObjectDispatcher::InitialMutability::kMutable,
+  status = VmObjectDispatcher::Create(vmo, size, VmObjectDispatcher::InitialMutability::kMutable,
                                       &kernel_handle, &rights);
   if (status != ZX_OK) {
     return status;

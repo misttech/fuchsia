@@ -363,6 +363,13 @@ class VmCowPages final : public VmHierarchyBase,
 
   void DetachSource();
 
+  ktl::optional<zx_koid_t> GetPageSourceKoid() const {
+    if (!page_source_) {
+      return ktl::nullopt;
+    }
+    return page_source_->GetProviderKoid();
+  }
+
   // Resizes the range of this cow pages. |size| must be a multiple of the page size.
   zx_status_t Resize(uint64_t size);
 

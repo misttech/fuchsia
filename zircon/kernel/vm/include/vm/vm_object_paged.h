@@ -312,6 +312,13 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
 
   void DetachSource() override { cow_pages_->DetachSource(); }
 
+  ktl::optional<zx_koid_t> GetPageSourceKoid() const override {
+    if (is_reference()) {
+      return ktl::nullopt;
+    }
+    return cow_pages_->GetPageSourceKoid();
+  }
+
   zx_status_t CreateChildSlice(uint64_t offset, uint64_t size, bool copy_name,
                                fbl::RefPtr<VmObject>* child_vmo) override;
 

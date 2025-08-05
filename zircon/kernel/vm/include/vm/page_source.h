@@ -178,6 +178,9 @@ class PageProvider : public fbl::RefCounted<PageProvider> {
   // the number of elements printed from any kind of variable sized list to prevent spam.
   virtual void Dump(uint depth, uint max_items) = 0;
 
+  // Retrieves the koid for this page provider, if it has one.
+  virtual ktl::optional<uint64_t> GetKoid() const { return ktl::nullopt; }
+
   friend PageSource;
 };
 
@@ -357,6 +360,9 @@ class PageSource final : public PageRequestInterface {
   // Method for the VmCowPages to retrieve the lock for paged VMOs.
   // See VmCowPages::DeferredOps.
   Lock<Mutex>* paged_vmo_lock() { return &paged_vmo_mutex_; }
+
+  // Retrieves any koid for the linked page provider.
+  ktl::optional<zx_koid_t> GetProviderKoid() const { return page_provider_->GetKoid(); }
 
  protected:
   // destructor should only be invoked from RefPtr

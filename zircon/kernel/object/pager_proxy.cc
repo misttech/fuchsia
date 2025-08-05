@@ -51,6 +51,8 @@ PageSourceProperties PagerProxy::properties() const {
   };
 }
 
+ktl::optional<uint64_t> PagerProxy::GetKoid() const { return pager_->get_koid(); }
+
 void PagerProxy::SendAsyncRequest(PageRequest* request) {
   Guard<Mutex> guard{&mtx_};
   ASSERT(!page_source_closed_);

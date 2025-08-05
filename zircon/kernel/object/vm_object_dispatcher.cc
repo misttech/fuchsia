@@ -63,13 +63,12 @@ zx::result<VmObjectDispatcher::CreateStats> VmObjectDispatcher::parse_create_sys
 
 zx_status_t VmObjectDispatcher::CreateWithCsm(fbl::RefPtr<VmObject> vmo,
                                               fbl::RefPtr<ContentSizeManager> content_size_manager,
-                                              zx_koid_t pager_koid,
                                               InitialMutability initial_mutability,
                                               KernelHandle<VmObjectDispatcher>* handle,
                                               zx_rights_t* rights) {
   fbl::AllocChecker ac;
-  KernelHandle new_handle(fbl::AdoptRef(new (&ac) VmObjectDispatcher(
-      ktl::move(vmo), content_size_manager, pager_koid, initial_mutability)));
+  KernelHandle new_handle(fbl::AdoptRef(
+      new (&ac) VmObjectDispatcher(ktl::move(vmo), content_size_manager, initial_mutability)));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -84,7 +83,7 @@ zx_status_t VmObjectDispatcher::CreateWithCsm(fbl::RefPtr<VmObject> vmo,
 }
 
 zx_status_t VmObjectDispatcher::Create(fbl::RefPtr<VmObject> vmo, uint64_t content_size,
-                                       zx_koid_t pager_koid, InitialMutability initial_mutability,
+                                       InitialMutability initial_mutability,
                                        KernelHandle<VmObjectDispatcher>* handle,
                                        zx_rights_t* rights) {
   fbl::RefPtr<ContentSizeManager> csm;
@@ -109,17 +108,15 @@ zx_status_t VmObjectDispatcher::Create(fbl::RefPtr<VmObject> vmo, uint64_t conte
       }
     }
   }
-  return CreateWithCsm(ktl::move(vmo), ktl::move(csm), pager_koid, initial_mutability, handle,
-                       rights);
+  return CreateWithCsm(ktl::move(vmo), ktl::move(csm), initial_mutability, handle, rights);
 }
 
 VmObjectDispatcher::VmObjectDispatcher(fbl::RefPtr<VmObject> vmo,
                                        fbl::RefPtr<ContentSizeManager> content_size_manager,
-                                       zx_koid_t pager_koid, InitialMutability initial_mutability)
+                                       InitialMutability initial_mutability)
     : SoloDispatcher(ZX_VMO_ZERO_CHILDREN),
       vmo_(ktl::move(vmo)),
       content_size_mgr_(ktl::move(content_size_manager)),
-      pager_koid_(pager_koid),
       initial_mutability_(initial_mutability) {
   kcounter_add(dispatcher_vmo_create_count, 1);
   vmo_->SetChildObserver(this);

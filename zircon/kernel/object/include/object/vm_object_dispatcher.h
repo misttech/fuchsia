@@ -39,24 +39,9 @@ class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DE
   static zx_status_t CreateWithCsm(fbl::RefPtr<VmObject> vmo,
                                    fbl::RefPtr<ContentSizeManager> content_size_manager,
                                    InitialMutability initial_mutability,
-                                   KernelHandle<VmObjectDispatcher>* handle, zx_rights_t* rights) {
-    return CreateWithCsm(ktl::move(vmo), ktl::move(content_size_manager), ZX_KOID_INVALID,
-                         initial_mutability, handle, rights);
-  }
-
-  static zx_status_t CreateWithCsm(fbl::RefPtr<VmObject> vmo,
-                                   fbl::RefPtr<ContentSizeManager> content_size_manager,
-                                   zx_koid_t pager_koid, InitialMutability initial_mutability,
                                    KernelHandle<VmObjectDispatcher>* handle, zx_rights_t* rights);
 
   static zx_status_t Create(fbl::RefPtr<VmObject> vmo, uint64_t content_size,
-                            InitialMutability initial_mutability,
-                            KernelHandle<VmObjectDispatcher>* handle, zx_rights_t* rights) {
-    return Create(ktl::move(vmo), content_size, ZX_KOID_INVALID, initial_mutability, handle,
-                  rights);
-  }
-
-  static zx_status_t Create(fbl::RefPtr<VmObject> vmo, uint64_t content_size, zx_koid_t pager_koid,
                             InitialMutability initial_mutability,
                             KernelHandle<VmObjectDispatcher>* handle, zx_rights_t* rights);
   ~VmObjectDispatcher() final;
@@ -95,12 +80,12 @@ class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DE
   uint64_t GetContentSize() const;
 
   const fbl::RefPtr<VmObject>& vmo() const { return vmo_; }
-  zx_koid_t pager_koid() const { return pager_koid_; }
+  zx_koid_t pager_koid() const { return vmo_->GetPageSourceKoid().value_or(ZX_KOID_INVALID); }
 
  private:
   explicit VmObjectDispatcher(fbl::RefPtr<VmObject> vmo,
                               fbl::RefPtr<ContentSizeManager> content_size_manager,
-                              zx_koid_t pager_koid, InitialMutability initial_mutability);
+                              InitialMutability initial_mutability);
 
   zx_status_t CreateChildInternal(uint32_t options, uint64_t offset, uint64_t size, bool copy_name,
                                   fbl::RefPtr<VmObject>* child_vmo) TA_REQ(get_lock());
@@ -117,10 +102,6 @@ class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DE
   // size, and there are no streams or other operations that implicitly require a content size
   // manager to exist.
   fbl::RefPtr<ContentSizeManager> content_size_mgr_ TA_GUARDED(get_lock());
-
-  // The koid of the related pager object, or ZX_KOID_INVALID if
-  // there is no related pager.
-  const zx_koid_t pager_koid_;
 
   // Indicates whether the VMO was immutable at creation time.
   const InitialMutability initial_mutability_;
