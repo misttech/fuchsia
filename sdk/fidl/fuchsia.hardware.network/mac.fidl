@@ -74,6 +74,8 @@ closed protocol MacAddressing {
     /// + request `address` multicast address to add to the list.
     /// - response `status` `ZX_ERR_INVALID_ARGS` if `address` is not a
     /// multicast address.
+    /// - response `status` `ZX_ERR_NO_RESOURCES` if there are more than
+    /// `MAX_MAC_FILTER` addresses installed.
     strict AddMulticastAddress(struct {
         address fuchsia.net.MacAddress;
     }) -> (struct {

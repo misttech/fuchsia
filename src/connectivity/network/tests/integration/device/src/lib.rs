@@ -9,18 +9,25 @@ use std::num::NonZeroU64;
 use std::pin::pin;
 
 use {
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin, fidl_fuchsia_net_tun as fnet_tun,
-    fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
+    fidl_fuchsia_hardware_network as fhardware_network,
+    fidl_fuchsia_hardware_network_driver as fhardware_network_driver, fidl_fuchsia_net as fnet,
+    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_tun as fnet_tun,
+    fidl_fuchsia_posix_socket_packet as fposix_socket_packet, fuchsia_async as fasync,
 };
 
 use fidl_fuchsia_net_ext::IntoExt as _;
 use fuchsia_async::TimeoutExt as _;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _, TryStreamExt as _};
-use net_declare::{fidl_mac, fidl_subnet, std_socket_addr_v4};
-use net_types::ip::Ipv4;
-use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
-use netstack_testing_common::ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT;
+use net_declare::{fidl_mac, fidl_subnet, net_ip_v4, std_socket_addr_v4};
+use net_types::ethernet::Mac;
+use net_types::ip::{Ip as _, IpAddress as _, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
+use net_types::MulticastAddr;
+use netemul::RealmUdpSocket as _;
+use netstack_testing_common::realms::{Netstack, Netstack3, TestSandboxExt as _};
+use netstack_testing_common::{
+    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
+};
 use netstack_testing_macros::netstack_test;
 use packet::{Buf, PacketBuilder as _, ParsablePacket as _, Serializer as _};
 use packet_formats::error::ParseError;
@@ -34,6 +41,7 @@ use sockaddr::{EthernetSockaddr, IntoSockAddr as _};
 use static_assertions::const_assert_eq;
 use test_case::test_case;
 
+const INTERFACE_ADDR: Ipv4Addr = net_ip_v4!("192.168.2.1");
 const SOURCE_SUBNET: fnet::Subnet = fidl_subnet!("192.168.255.1/16");
 const TARGET_SUBNET: fnet::Subnet = fidl_subnet!("192.168.254.1/16");
 const SOURCE_MAC_ADDRESS: fnet::MacAddress = fidl_mac!("02:00:00:00:00:01");
@@ -307,10 +315,12 @@ async fn ping_succeeds_with_expected_payload<N: Netstack>(
 }
 
 #[netstack_test]
-#[variant(N, Netstack)]
-async fn starts_device_in_multicast_promiscuous<N: Netstack>(name: &str) {
+#[cfg(not(target_arch = "riscv64"))]
+async fn starts_device_in_multicast_promiscuous_ns2(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
-    let realm = sandbox.create_netstack_realm::<N, _>(name).expect("failed to create source realm");
+    let realm = sandbox
+        .create_netstack_realm::<netstack_testing_common::realms::Netstack2, _>(name)
+        .expect("failed to create source realm");
 
     let (tun, netdevice) = netstack_testing_common::devices::create_tun_device();
     let (tun_port, dev_port) = netstack_testing_common::devices::create_eth_tun_port(
@@ -327,7 +337,7 @@ async fn starts_device_in_multicast_promiscuous<N: Netstack>(name: &str) {
                 let fnet_tun::InternalState { mac, .. } =
                     tun_port.watch_state().await.expect("watch_state");
                 let mac = mac.expect("missing mac state");
-                if last_observed.as_ref().map(|l| l != &mac).unwrap_or(true) {
+                if last_observed.as_ref().is_none_or(|l| l != &mac) {
                     let last_observed = Some(mac.clone());
                     break Some((mac, (tun_port, last_observed)));
                 }
@@ -586,4 +596,379 @@ async fn tx_queue_drops<N: Netstack>(name: &str) {
             }
         }
     }
+}
+
+fn get_mac_state_stream(
+    tun_port: fnet_tun::PortProxy,
+) -> impl futures::Stream<Item = fnet_tun::MacState> {
+    futures::stream::unfold(
+        (tun_port, Option::<fnet_tun::MacState>::None),
+        |(tun_port, last_observed)| async move {
+            loop {
+                let fnet_tun::InternalState { mac, .. } =
+                    tun_port.watch_state().await.expect("watch_state");
+                let mac = mac.expect("missing mac state");
+                if last_observed.as_ref().is_none_or(|l| l != &mac) {
+                    let last_observed = Some(mac.clone());
+                    break Some((mac, (tun_port, last_observed)));
+                }
+            }
+        },
+    )
+}
+
+async fn wait_for_mac_state_eq(
+    mac_state_stream: &mut (impl futures::Stream<Item = fnet_tun::MacState> + Unpin),
+    expected_mode: fhardware_network::MacFilterMode,
+    mut expected_filters: Vec<fidl_fuchsia_net::MacAddress>,
+) -> Option<()> {
+    expected_filters.sort();
+    let expected_state = fnet_tun::MacState {
+        mode: Some(expected_mode),
+        multicast_filters: Some(expected_filters),
+        ..Default::default()
+    };
+
+    pin!(mac_state_stream.filter_map(|mut state| {
+        let expected_state = &expected_state;
+        async move {
+            if let Some(filters) = state.multicast_filters.as_mut() {
+                filters.sort();
+            }
+
+            println!("state is: {:?}; waiting for: {:?}", state, expected_state);
+
+            (state == *expected_state).then_some(())
+        }
+    }))
+    .next()
+    .await
+}
+
+enum MulticastCleanup {
+    LeaveGroup,
+    DisableInterface,
+    RemoveDevice,
+    PhyOffline,
+}
+
+#[netstack_test]
+#[test_case(MulticastCleanup::LeaveGroup)]
+#[test_case(MulticastCleanup::DisableInterface)]
+#[test_case(MulticastCleanup::RemoveDevice)]
+#[test_case(MulticastCleanup::PhyOffline)] // This also results in the interface getting disabled.
+async fn emits_multicast_groups_to_mac_addressing_service(
+    name: &str,
+    cleanup_strategy: MulticastCleanup,
+) {
+    const MULTICAST_ADDR: Ipv4Addr = net_ip_v4!("224.1.2.3");
+
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let realm =
+        sandbox.create_netstack_realm::<Netstack3, _>(name).expect("failed to create source realm");
+
+    let (tun, netdevice) = netstack_testing_common::devices::create_tun_device();
+    let (tun_port, dev_port) = netstack_testing_common::devices::create_eth_tun_port(
+        &tun,
+        /* port_id */ 1,
+        TARGET_MAC_ADDRESS,
+    )
+    .await;
+
+    let mut mac_state_stream = pin!(get_mac_state_stream(tun_port.clone()));
+
+    let mcast_filters = assert_matches::assert_matches!(
+        mac_state_stream.next().await,
+        Some(fnet_tun::MacState {
+            mode: Some(fhardware_network::MacFilterMode::MulticastFilter),
+            multicast_filters: Some(mcast_filters),
+            ..
+        }) => mcast_filters
+    );
+    assert_eq!(mcast_filters, vec![]);
+
+    let device_control = netstack_testing_common::devices::install_device(&realm, netdevice);
+    let port_id = dev_port.get_info().await.expect("get info").id.expect("missing port id");
+    let (control_proxy, server_end) =
+        fidl::endpoints::create_proxy::<fnet_interfaces_admin::ControlMarker>();
+    device_control
+        .create_interface(&port_id, server_end, fnet_interfaces_admin::Options::default())
+        .expect("create interface");
+    let control = fnet_interfaces_ext::admin::Control::new(control_proxy);
+
+    // Read the interface ID to make sure device install succeeded.
+    let id: u64 = control.get_id().await.expect("get id");
+
+    assert_eq!(control.enable().await.expect("can enabled"), Ok(true));
+    tun_port.set_online(true).await.expect("can set online");
+    let state = realm
+        .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
+        .expect("connect to protocol");
+    netstack_testing_common::interfaces::wait_for_online(&state, id, true)
+        .await
+        .expect("waiting interface online");
+
+    let _address_state_provider = netstack_testing_common::interfaces::add_address_wait_assigned(
+        &control,
+        fnet::Subnet { addr: to_fidl_address(INTERFACE_ADDR), prefix_len: 24 },
+        fidl_fuchsia_net_interfaces_admin::AddressParameters {
+            perform_dad: Some(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("add subnet address");
+
+    let ipv6_ll = netstack_testing_common::interfaces::wait_for_v6_ll(&state, id)
+        .await
+        .expect("wait LL address");
+
+    let default_mcast_filters = [
+        Ipv4::ALL_SYSTEMS_MULTICAST_ADDRESS.into(),
+        Ipv6::ALL_NODES_LINK_LOCAL_MULTICAST_ADDRESS.into(),
+        ipv6_ll.to_solicited_node_address().into(),
+    ]
+    .map(|addr: MulticastAddr<Mac>| fidl_fuchsia_net::MacAddress { octets: addr.bytes() });
+
+    // Watch until all the default groups are joined.
+    wait_for_mac_state_eq(
+        &mut mac_state_stream,
+        fhardware_network::MacFilterMode::MulticastFilter,
+        default_mcast_filters.to_vec(),
+    )
+    .await
+    .expect("installing default filters");
+
+    let sock = fasync::net::UdpSocket::bind_in_realm(
+        &realm,
+        std::net::SocketAddrV4::new(std::net::Ipv4Addr::UNSPECIFIED, 0).into(),
+    )
+    .await
+    .expect("error creating socket");
+
+    sock.as_ref()
+        .join_multicast_v4(&MULTICAST_ADDR.into(), &INTERFACE_ADDR.into())
+        .expect("error joining multicast group");
+
+    let multicast_mac = fidl_fuchsia_net::MacAddress {
+        octets: MulticastAddr::<Mac>::from(MulticastAddr::new(MULTICAST_ADDR).unwrap()).bytes(),
+    };
+
+    let mut mcast_filters = assert_matches::assert_matches!(
+        mac_state_stream.next().await,
+        Some(fnet_tun::MacState {
+            mode: Some(fhardware_network::MacFilterMode::MulticastFilter),
+            multicast_filters: Some(mcast_filters),
+            ..
+        }) => mcast_filters
+    );
+    mcast_filters.sort();
+
+    let mut expected_mcast_filters = [default_mcast_filters.as_slice(), &[multicast_mac]].concat();
+    expected_mcast_filters.sort();
+    assert_eq!(mcast_filters, expected_mcast_filters);
+
+    let expected_mcast_filters = match cleanup_strategy {
+        MulticastCleanup::LeaveGroup => {
+            sock.as_ref()
+                .leave_multicast_v4(&MULTICAST_ADDR.into(), &INTERFACE_ADDR.into())
+                .expect("error leaving multicast group");
+
+            default_mcast_filters.to_vec()
+        }
+        MulticastCleanup::DisableInterface => {
+            let did_disable = control
+                .disable()
+                .await
+                .expect("send disable interface request")
+                .expect("disable interface");
+            assert!(did_disable);
+
+            // TODO(https://fxbug.dev/435009352): All groups should be left on interface disable.
+            vec![multicast_mac]
+        }
+        MulticastCleanup::PhyOffline => {
+            tun_port.set_online(false).await.expect("can set offline");
+
+            // TODO(https://fxbug.dev/435009352): All groups should be left on interface disable.
+            vec![multicast_mac]
+        }
+        MulticastCleanup::RemoveDevice => {
+            control
+                .remove()
+                .await
+                .expect("send remove interface request")
+                .expect("remove interface");
+            assert_matches::assert_matches!(
+                control.wait_termination().await,
+                fidl_fuchsia_net_interfaces_ext::admin::TerminalError::Terminal(
+                    fidl_fuchsia_net_interfaces_admin::InterfaceRemovedReason::User
+                )
+            );
+
+            vec![]
+        }
+    };
+
+    wait_for_mac_state_eq(
+        &mut mac_state_stream,
+        fhardware_network::MacFilterMode::MulticastFilter,
+        expected_mcast_filters,
+    )
+    .await
+    .expect("cleanup multicast group");
+}
+
+#[netstack_test]
+async fn fallback_to_multicast_promiscuous(name: &str) {
+    fn get_multicast_addr(last: u64) -> MulticastAddr<Ipv6Addr> {
+        assert!((Ipv6Addr::BYTES * 8 - Ipv6::MULTICAST_SUBNET.prefix()) as u32 > u8::BITS);
+        let mut bytes = Ipv6::MULTICAST_SUBNET.network().ipv6_bytes();
+        // Don't use the reserved (0) scope for these addresses.
+        bytes[1] = net_types::ip::Ipv6Scope::MULTICAST_SCOPE_ID_GLOBAL;
+        bytes[8..].copy_from_slice(&last.to_be_bytes());
+        MulticastAddr::new(Ipv6Addr::from_bytes(bytes)).unwrap()
+    }
+
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let realm =
+        sandbox.create_netstack_realm::<Netstack3, _>(name).expect("failed to create source realm");
+
+    let (tun, netdevice) = netstack_testing_common::devices::create_tun_device();
+    let (tun_port, dev_port) = netstack_testing_common::devices::create_eth_tun_port(
+        &tun,
+        /* port_id */ 1,
+        TARGET_MAC_ADDRESS,
+    )
+    .await;
+
+    let mut mac_state_stream = pin!(get_mac_state_stream(tun_port.clone()));
+
+    let mcast_filters = assert_matches::assert_matches!(
+        mac_state_stream.next().await,
+        Some(fnet_tun::MacState {
+            mode: Some(fhardware_network::MacFilterMode::MulticastFilter),
+            multicast_filters: Some(mcast_filters),
+            ..
+        }) => mcast_filters
+    );
+    assert_eq!(mcast_filters, vec![]);
+
+    let device_control = netstack_testing_common::devices::install_device(&realm, netdevice);
+    let port_id = dev_port.get_info().await.expect("get info").id.expect("missing port id");
+    let (control_proxy, server_end) =
+        fidl::endpoints::create_proxy::<fnet_interfaces_admin::ControlMarker>();
+    device_control
+        .create_interface(&port_id, server_end, fnet_interfaces_admin::Options::default())
+        .expect("create interface");
+    let control = fnet_interfaces_ext::admin::Control::new(control_proxy);
+
+    // Read the interface ID to make sure device install succeeded.
+    let id: u64 = control.get_id().await.expect("get id");
+
+    assert_eq!(control.enable().await.expect("can enabled"), Ok(true));
+    tun_port.set_online(true).await.expect("can set online");
+    let state = realm
+        .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
+        .expect("connect to protocol");
+    netstack_testing_common::interfaces::wait_for_online(&state, id, true)
+        .await
+        .expect("waiting interface online");
+
+    let ipv6_ll = netstack_testing_common::interfaces::wait_for_v6_ll(&state, id)
+        .await
+        .expect("wait LL address");
+
+    let default_mcast_filters = [
+        Ipv4::ALL_SYSTEMS_MULTICAST_ADDRESS.into(),
+        Ipv6::ALL_NODES_LINK_LOCAL_MULTICAST_ADDRESS.into(),
+        ipv6_ll.to_solicited_node_address().into(),
+    ]
+    .map(|addr: MulticastAddr<Mac>| fidl_fuchsia_net::MacAddress { octets: addr.bytes() });
+
+    // Watch until all the default groups are joined.
+    println!("Waiting for default filters");
+    wait_for_mac_state_eq(
+        &mut mac_state_stream,
+        fhardware_network::MacFilterMode::MulticastFilter,
+        default_mcast_filters.to_vec(),
+    )
+    .await
+    .expect("installing default filters");
+
+    let sock = fasync::net::UdpSocket::bind_in_realm(
+        &realm,
+        std::net::SocketAddrV6::new(std::net::Ipv6Addr::UNSPECIFIED, 0, 0, 0).into(),
+    )
+    .await
+    .expect("error creating socket");
+
+    let mut multicast_groups = (default_mcast_filters.len().try_into().unwrap()
+        ..fhardware_network_driver::MAX_MAC_FILTER)
+        .map(|num| {
+            // Shift everything over to avoid colliding with the all
+            // nodes address (ff02::1) or any other well known addresses
+            // when we narrow to 32 significant bits in the MAC addresses.
+            num + 0xff
+        })
+        .map(|num| get_multicast_addr(num))
+        .collect::<Vec<MulticastAddr<Ipv6Addr>>>();
+
+    let mut expected_filters = default_mcast_filters.to_vec();
+
+    for multicast_addr in multicast_groups.iter() {
+        let multicast_mac = fidl_fuchsia_net::MacAddress {
+            octets: MulticastAddr::<Mac>::from(multicast_addr).bytes(),
+        };
+        expected_filters.push(multicast_mac);
+        println!("Joining {}", **multicast_addr);
+
+        sock.as_ref()
+            .join_multicast_v6(&(**multicast_addr).into(), id.try_into().unwrap())
+            .expect("error joining multicast group");
+    }
+
+    wait_for_mac_state_eq(
+        &mut mac_state_stream,
+        fhardware_network::MacFilterMode::MulticastFilter,
+        expected_filters.to_vec(),
+    )
+    .await
+    .expect("joining the list of filters");
+
+    println!("Joining one more multicast group");
+    let multicast_addr = get_multicast_addr(fhardware_network_driver::MAX_MAC_FILTER + 1);
+    multicast_groups.push(multicast_addr);
+    sock.as_ref()
+        .join_multicast_v6(&(*multicast_addr).into(), id.try_into().unwrap())
+        .expect("error joining multicast group");
+
+    let mcast_filters = assert_matches::assert_matches!(
+        mac_state_stream.next().await,
+        Some(fnet_tun::MacState {
+            mode: Some(fhardware_network::MacFilterMode::MulticastPromiscuous),
+            multicast_filters: Some(mcast_filters),
+            ..
+        }) => mcast_filters
+    );
+    assert_eq!(mcast_filters, vec![]);
+
+    for multicast_addr in multicast_groups.iter() {
+        sock.as_ref()
+            .leave_multicast_v6(&(**multicast_addr).into(), id.try_into().unwrap())
+            .expect("error leaving multicast group");
+    }
+
+    // It should remain in the promiscuous state and never change until teardown.
+    // TODO(https://fxbug.dev/435532334): this behavior is less than ideal,
+    // instead we should recover back out of promiscuous mode.
+    assert_eq!(
+        mac_state_stream
+            .next()
+            .on_timeout(fasync::MonotonicInstant::after(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT), || {
+                None
+            })
+            .await,
+        None
+    );
 }

@@ -27,10 +27,7 @@ use netstack3_core::trace::trace_duration;
 use netstack3_core::types::WorkQueueReport;
 use thiserror::Error;
 
-use {
-    fidl_fuchsia_hardware_network as fhardware_network,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-};
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
 
 use crate::bindings::power::TransmitSuspensionHandler;
 use crate::bindings::routes::interface_local::LocalRouteTables;
@@ -38,6 +35,7 @@ use crate::bindings::util::NeedsDataNotifier;
 use crate::bindings::{
     interfaces_admin, neighbor_worker, netdevice_worker, BindingsCtx, Ctx, InterfaceEventProducer,
 };
+use netdevice_worker::LinkMulticastEvent;
 
 pub(crate) const LOOPBACK_MAC: Mac = Mac::new([0, 0, 0, 0, 0, 0]);
 
@@ -727,9 +725,7 @@ pub(crate) struct EthernetInfo {
     pub(crate) common_info: StaticCommonInfo,
     pub(crate) netdevice: StaticNetdeviceInfo,
     pub(crate) mac: UnicastAddr<Mac>,
-    // We must keep the mac proxy alive to maintain our multicast filtering mode
-    // selection set.
-    pub(crate) _mac_proxy: fhardware_network::MacAddressingProxy,
+    pub(crate) multicast_event_sink: futures::channel::mpsc::UnboundedSender<LinkMulticastEvent>,
 }
 
 impl EthernetInfo {

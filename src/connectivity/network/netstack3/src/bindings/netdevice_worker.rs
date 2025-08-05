@@ -8,12 +8,13 @@ use std::sync::Arc;
 
 use assert_matches::assert_matches;
 use fidl_fuchsia_hardware_network::{self as fhardware_network};
+use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{FutureExt as _, StreamExt, TryStreamExt as _};
 use log::{debug, error, info, warn};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6, Ipv6Addr, Mtu, Subnet};
-use net_types::UnicastAddr;
+use net_types::{MulticastAddr, UnicastAddr};
 use netstack3_core::device::{
     EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice, EthernetWeakDeviceId,
     MaxEthernetFrameSize, PureIpDevice, PureIpDeviceCreationProperties, PureIpDeviceId,
@@ -30,7 +31,7 @@ use {
 
 use crate::bindings::devices::{StaticCommonInfo, TxTask};
 use crate::bindings::interfaces_admin::{maybe_create_local_route_tables, InterfaceOptions};
-use crate::bindings::util::{NeedsDataNotifier, ScopeExt as _};
+use crate::bindings::util::{IntoFidl, NeedsDataNotifier, ScopeExt as _};
 use crate::bindings::{
     devices, interfaces_admin, routes, BindingId, BindingsCtx, Ctx, DeviceId, Netstack,
     DEFAULT_INTERFACE_METRIC,
@@ -80,8 +81,10 @@ pub(crate) enum Error {
     Client(#[from] netdevice_client::Error),
     #[error("port {0:?} already installed")]
     AlreadyInstalled(netdevice_client::Port),
-    #[error("failed to connect to port: {0}")]
-    CantConnectToPort(fidl::Error),
+    #[error("fidl error: {0}")]
+    Fidl(#[from] fidl::Error),
+    #[error("mac addressing error: {0}")]
+    MacAddressing(zx::Status),
     #[error("port closed")]
     PortClosed,
     #[error("invalid port info: {0}")]
@@ -397,13 +400,14 @@ impl DeviceHandler {
         scope: &fasync::ScopeHandle,
         InterfaceOptions { name, metric, netstack_managed_routes_designation }: InterfaceOptions,
         port: fhardware_network::PortId,
-        control_hook: futures::channel::mpsc::Sender<interfaces_admin::OwnedControlHandle>,
+        control_hook: mpsc::Sender<interfaces_admin::OwnedControlHandle>,
     ) -> Result<
         (
             BindingId,
             impl futures::Stream<Item = netdevice_client::Result<netdevice_client::PortStatus>> + use<>,
             fasync::scope::ScopeActiveGuard,
             TxTask,
+            Option<LinkMulticastWorker>,
         ),
         Error,
     > {
@@ -411,12 +415,8 @@ impl DeviceHandler {
 
         let DeviceHandler { inner: Inner { state, device, session: _ } } = self;
         let port_proxy = device.connect_port(port)?;
-        let netdevice_client::client::PortInfo { id: _, base_info } = port_proxy
-            .get_info()
-            .await
-            .map_err(Error::CantConnectToPort)?
-            .try_into()
-            .map_err(Error::InvalidPortInfo)?;
+        let netdevice_client::client::PortInfo { id: _, base_info } =
+            port_proxy.get_info().await?.try_into().map_err(Error::InvalidPortInfo)?;
 
         let mut status_stream =
             netdevice_client::client::new_port_status_stream(&port_proxy, None)?;
@@ -550,11 +550,14 @@ impl DeviceHandler {
                 ),
             };
 
-            let core_id = match properties {
+            let (core_id, link_multicast_task) = match properties {
                 DeviceProperties::Ethernet { max_frame_size, mac, mac_proxy } => {
+                    let (link_multicast_task, link_multicast_sink) =
+                        LinkMulticastWorker::new(mac_proxy);
+
                     let info = devices::EthernetInfo {
                         mac,
-                        _mac_proxy: mac_proxy,
+                        multicast_event_sink: link_multicast_sink,
                         netdevice: static_netdevice_info,
                         common_info: StaticCommonInfo::new(local_route_tables),
                         dynamic_info: CoreRwLock::new(devices::DynamicEthernetInfo {
@@ -569,7 +572,8 @@ impl DeviceHandler {
                         info,
                     );
                     state_entry.insert(WeakNetdeviceId::Ethernet(core_ethernet_id.downgrade()));
-                    DeviceId::from(core_ethernet_id)
+
+                    (DeviceId::from(core_ethernet_id), Some(link_multicast_task))
                 }
                 DeviceProperties::Ip { max_frame_size } => {
                     let info = devices::PureIpDeviceInfo {
@@ -589,7 +593,7 @@ impl DeviceHandler {
                         info,
                     );
                     state_entry.insert(WeakNetdeviceId::PureIp(core_pure_ip_id.downgrade()));
-                    DeviceId::from(core_pure_ip_id)
+                    (DeviceId::from(core_pure_ip_id), None)
                 }
             };
 
@@ -621,11 +625,11 @@ impl DeviceHandler {
             info!("created interface {:?}", core_id);
             ctx.bindings_ctx().devices.add_device_and_start_publishing(binding_id_alloc, core_id);
 
-            (binding_id, tx_task)
+            (binding_id, tx_task, link_multicast_task)
         };
-        let (binding_id, tx_task) = finalize().await;
+        let (binding_id, tx_task, link_multicast_task) = finalize().await;
 
-        Ok((binding_id, status_stream, guard, tx_task))
+        Ok((binding_id, status_stream, guard, tx_task, link_multicast_task))
     }
 }
 
@@ -636,7 +640,7 @@ async fn get_mac(
 ) -> Result<(UnicastAddr<Mac>, fhardware_network::MacAddressingProxy), Error> {
     let (mac_proxy, mac_server) =
         fidl::endpoints::create_proxy::<fhardware_network::MacAddressingMarker>();
-    let () = port_proxy.get_mac(mac_server).map_err(Error::CantConnectToPort)?;
+    port_proxy.get_mac(mac_server)?;
 
     let mac_addr = {
         let fnet::MacAddress { octets } = mac_proxy.get_unicast_address().await.map_err(|e| {
@@ -649,17 +653,6 @@ async fn get_mac(
             Error::MacNotUnicast { mac, port: *port }
         })?
     };
-    // Always set the interface to multicast promiscuous mode because we
-    // don't really plumb through multicast filtering.
-    // TODO(https://fxbug.dev/42136929): Remove this when multicast filtering
-    // is available.
-    zx::Status::ok(
-        mac_proxy
-            .set_mode(fhardware_network::MacFilterMode::MulticastPromiscuous)
-            .await
-            .map_err(Error::CantConnectToPort)?,
-    )
-    .unwrap_or_else(|e| warn!("failed to set multicast promiscuous for new interface: {:?}", e));
 
     Ok((mac_addr, mac_proxy))
 }
@@ -814,5 +807,60 @@ impl std::fmt::Debug for PortHandler {
             .field("wire_format", wire_format)
             .field("max_frame_size", max_frame_size)
             .finish()
+    }
+}
+
+pub(crate) enum LinkMulticastEvent {
+    Join(MulticastAddr<Mac>),
+    Leave(MulticastAddr<Mac>),
+}
+
+pub(crate) struct LinkMulticastWorker {
+    receiver: mpsc::UnboundedReceiver<LinkMulticastEvent>,
+    mac_proxy: fhardware_network::MacAddressingProxy,
+}
+
+impl LinkMulticastWorker {
+    fn new(
+        mac_proxy: fhardware_network::MacAddressingProxy,
+    ) -> (Self, mpsc::UnboundedSender<LinkMulticastEvent>) {
+        let (sender, receiver) = mpsc::unbounded();
+        (Self { receiver, mac_proxy }, sender)
+    }
+
+    pub(crate) async fn run(&mut self) -> Result<(), Error> {
+        while let Some(event) = self.receiver.next().await {
+            let result = match event {
+                LinkMulticastEvent::Join(addr) => {
+                    self.mac_proxy.add_multicast_address(&addr.into_fidl()).await
+                }
+                LinkMulticastEvent::Leave(addr) => {
+                    self.mac_proxy.remove_multicast_address(&addr.into_fidl()).await
+                }
+            }
+            .map(zx::Status::ok)?;
+
+            match result {
+                Ok(()) => {}
+                Err(e @ zx::Status::NO_RESOURCES) => {
+                    warn!(
+                        "too many multicast groups, switching device to multicast promiscuous: {e}"
+                    );
+                    // If we go over MAX_MAC_FILTER addresses, the netdevice driver
+                    // can't track the diffs anymore, so stick this device in promiscuous mode.
+                    // TODO(https://fxbug.dev/435532334): send a snapshot update to recover
+                    // instead of having a sticky error.
+                    zx::Status::ok(
+                        self.mac_proxy
+                            .set_mode(fhardware_network::MacFilterMode::MulticastPromiscuous)
+                            .await?,
+                    )
+                    .map_err(Error::MacAddressing)?;
+                }
+                Err(err) => return Err(Error::MacAddressing(err)),
+            };
+        }
+
+        Ok(())
     }
 }

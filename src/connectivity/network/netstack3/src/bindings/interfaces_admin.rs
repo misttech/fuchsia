@@ -41,7 +41,7 @@ use assert_matches::assert_matches;
 use fidl::endpoints::{ProtocolMarker, ServerEnd};
 use fidl_fuchsia_net_interfaces_ext::{NotPositiveMonotonicInstantError, PositiveMonotonicInstant};
 use fnet_interfaces_admin::GrantForInterfaceAuthorization;
-use futures::future::FusedFuture as _;
+use futures::future::{FusedFuture as _, OptionFuture};
 use futures::stream::FusedStream as _;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _, TryStreamExt as _};
 use log::{debug, error, info, warn};
@@ -72,6 +72,7 @@ use crate::bindings::devices::{
 use crate::bindings::interface_config::{
     FidlInterfaceConfig, InterfaceConfig, InterfaceConfigUpdate,
 };
+use crate::bindings::netdevice_worker::LinkMulticastWorker;
 use crate::bindings::routes::admin::RouteSet;
 use crate::bindings::routes::interface_local::LocalRouteTables;
 use crate::bindings::routes::TableIdOverflowsError;
@@ -458,7 +459,7 @@ async fn create_interface(
     let (control_sender, mut control_receiver) =
         OwnedControlHandle::new_channel_with_owned_handle(control).await;
     match handler.add_port(ns, scope, interface_options, port, control_sender).await {
-        Ok((binding_id, status_stream, guard, tx_task)) => {
+        Ok((binding_id, status_stream, guard, tx_task, link_multicast_task)) => {
             let _: fasync::JoinHandle<()> =
                 guard.as_handle().spawn(run_netdevice_interface_control(
                     ns.ctx.clone(),
@@ -467,6 +468,7 @@ async fn create_interface(
                     guard.clone(),
                     control_receiver,
                     tx_task,
+                    link_multicast_task,
                 ));
         }
         Err(e) => {
@@ -501,7 +503,7 @@ async fn create_interface(
                 netdevice_worker::Error::AlreadyInstalled(_) => {
                     Some(fnet_interfaces_admin::InterfaceRemovedReason::PortAlreadyBound)
                 }
-                netdevice_worker::Error::CantConnectToPort(_)
+                netdevice_worker::Error::Fidl(_)
                 | netdevice_worker::Error::PortClosed
                 | netdevice_worker::Error::ScopeFinished => {
                     Some(fnet_interfaces_admin::InterfaceRemovedReason::PortClosed)
@@ -510,7 +512,8 @@ async fn create_interface(
                 | netdevice_worker::Error::UnsupportedFrameType(_)
                 | netdevice_worker::Error::MacNotUnicast { .. }
                 | netdevice_worker::Error::MismatchedRxFrameType { .. }
-                | netdevice_worker::Error::InvalidPortClass(_) => {
+                | netdevice_worker::Error::InvalidPortClass(_)
+                | netdevice_worker::Error::MacAddressing(_) => {
                     Some(fnet_interfaces_admin::InterfaceRemovedReason::BadPort)
                 }
                 netdevice_worker::Error::DuplicateName(_) => {
@@ -546,6 +549,7 @@ async fn run_netdevice_interface_control<
     scope_guard: fasync::scope::ScopeActiveGuard,
     control_receiver: futures::channel::mpsc::Receiver<OwnedControlHandle>,
     tx_task: TxTask,
+    mut link_multicast_worker: Option<LinkMulticastWorker>,
 ) {
     let status_stream = status_stream.scan((), |(), status| {
         futures::future::ready(match status {
@@ -572,9 +576,9 @@ async fn run_netdevice_interface_control<
     // Create a scope where we'll spawn all the inner tasks for this interface,
     // and we'll give it to the interface control loop to ensure all tasks are
     // stopped before returning.
-    let scope = scope_guard.as_handle().new_child_with_name("netdevice_inner");
+    let inner_scope = scope_guard.as_handle().new_child_with_name("netdevice_inner");
 
-    let mut tx_task = scope
+    let mut tx_task = inner_scope
         .compute(tx_task.run().map(move |r| match r {
             Err(TxTaskError::Netdevice(e)) => {
                 // We expect all netdevice errors that can happen when driving the
@@ -587,11 +591,38 @@ async fn run_netdevice_interface_control<
         }))
         .fuse();
 
+    let link_multicast_fut: OptionFuture<_> = link_multicast_worker
+        .as_mut()
+        .map(|worker| {
+            worker
+                .run()
+                .then(async |r| match r {
+                    Ok(()) => {
+                        // The device has been destroyed, pend so we don't
+                        // interrupt the cleanup process.
+                        futures::future::pending().await
+                    }
+                    Err(e) => {
+                        // Tear down the device because we've either observed the
+                        // port closing or something has gone wrong.
+                        match e {
+                            netdevice_worker::Error::Fidl(e) if e.is_closed() => {}
+                            e => error!(
+                                "netdevice error operating link multicast task: {e:?} for {id}"
+                            ),
+                        }
+                        fnet_interfaces_admin::InterfaceRemovedReason::PortClosed
+                    }
+                })
+                .fuse()
+        })
+        .into();
+
     // Device-backed interfaces are always removable.
     let removable = true;
     let interface_control_fut = run_interface_control(
         ctx.clone(),
-        scope,
+        inner_scope,
         id,
         interface_control_stop_receiver,
         control_receiver,
@@ -599,25 +630,34 @@ async fn run_netdevice_interface_control<
         status_stream,
     )
     .fuse();
-    let mut interface_control_fut = pin!(interface_control_fut);
-    let mut canceled_fut = pin!(scope_guard.on_cancel().fuse());
-    let remove_reason = futures::select! {
-        () = canceled_fut => Some(fnet_interfaces_admin::InterfaceRemovedReason::PortClosed),
-        // Remove the interface if tx task exits with a reason.
-        r = tx_task => Some(r),
-        () = interface_control_fut => None,
-    };
 
-    if let Some(remove_reason) = remove_reason {
-        if !interface_control_fut.is_terminated() {
-            // Cancel interface control and drive it to completion, allowing it to terminate each
-            // control handle.
-            interface_control_stop_sender
-                .send(remove_reason)
-                .expect("failed to cancel interface control");
-            interface_control_fut.await
+    {
+        let mut interface_control_fut = pin!(interface_control_fut);
+        let mut canceled_fut = pin!(scope_guard.on_cancel().fuse());
+        let mut link_multicast_fut = pin!(link_multicast_fut);
+        let remove_reason = futures::select! {
+            () = canceled_fut => Some(fnet_interfaces_admin::InterfaceRemovedReason::PortClosed),
+            // Remove the interface if a task servicing the port exits with a reason.
+            r = tx_task => Some(r),
+            r = link_multicast_fut => r,
+            () = interface_control_fut => None,
+        };
+
+        if let Some(remove_reason) = remove_reason {
+            if !interface_control_fut.is_terminated() {
+                // Cancel interface control and drive it to completion,
+                // allowing it to terminate each control handle.
+                interface_control_stop_sender
+                    .send(remove_reason)
+                    .expect("failed to cancel interface control");
+
+                interface_control_fut.await
+            }
         }
     }
+
+    // This holds the link multicast receiver open until the device is fully gone.
+    drop(link_multicast_worker);
 }
 
 pub(crate) struct DeviceState {
@@ -1614,7 +1654,7 @@ async fn address_state_provider_main_loop(
                     &mut watch_state,
                 ) {
                     Ok(Some(UserRemove)) => {
-                        break Some(AddressStateProviderCancellationReason::UserRemoved)
+                        break Some(AddressStateProviderCancellationReason::UserRemoved);
                     }
                     Ok(None) => {}
                     Err(err) => {
@@ -1920,7 +1960,7 @@ mod enabled {
                         common_info: _,
                         dynamic_info,
                         mac: _,
-                        _mac_proxy: _,
+                        multicast_event_sink: _,
                     }) => (Info::Ethernet(dynamic_info.write()), Some(&netdevice.handler)),
                     devices::DeviceSpecificInfo::PureIp(devices::PureIpDeviceInfo {
                         netdevice,

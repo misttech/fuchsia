@@ -294,8 +294,6 @@ pub struct DynamicEthernetDeviceState {
     max_frame_size: MaxEthernetFrameSize,
 
     /// Link multicast groups this device has joined.
-    /// TODO(https://fxbug.dev/42136929): Plumb this information down to the
-    /// device driver.
     link_multicast_groups: RefCountedHashSet<MulticastAddr<Mac>>,
 }
 

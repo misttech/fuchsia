@@ -78,6 +78,7 @@ use devices::{
 use interfaces_watcher::{InterfaceEventProducer, InterfaceProperties, InterfaceUpdate};
 use multicast_admin::{MulticastAdminEventSinks, MulticastAdminWorkers};
 use ndp_watcher::RouterAdvertisementSinkError;
+use netdevice_worker::LinkMulticastEvent;
 use power::{PowerWorker, PowerWorkerSink};
 use resource_removal::{ResourceRemovalSink, ResourceRemovalWorker};
 
@@ -577,8 +578,13 @@ impl DeviceLayerEventDispatcher for BindingsCtx {
         frame: Buf<Vec<u8>>,
         dequeue_context: Option<&mut Self::DequeueContext>,
     ) -> Result<(), DeviceSendFrameError> {
-        let EthernetInfo { mac: _, _mac_proxy: _, common_info: _, netdevice, dynamic_info } =
-            device.external_state();
+        let EthernetInfo {
+            mac: _,
+            multicast_event_sink: _,
+            common_info: _,
+            netdevice,
+            dynamic_info,
+        } = device.external_state();
         let dynamic_info = dynamic_info.read();
         send_netdevice_frame(
             netdevice,
@@ -850,11 +856,20 @@ impl EventContext<RouterAdvertisementEvent<DeviceId<BindingsCtx>>> for BindingsC
 
 impl EventContext<EthernetDeviceEvent<EthernetDeviceId<BindingsCtx>>> for BindingsCtx {
     fn on_event(&mut self, event: EthernetDeviceEvent<EthernetDeviceId<BindingsCtx>>) {
-        // TODO(https://fxbug.dev/427804318): push these across a channel to an async worker
-        match event {
-            EthernetDeviceEvent::MulticastJoin { device: _, addr: _ } => {}
-            EthernetDeviceEvent::MulticastLeave { device: _, addr: _ } => {}
-        }
+        let (device, event) = match event {
+            EthernetDeviceEvent::MulticastJoin { device, addr } => {
+                (device, LinkMulticastEvent::Join(addr))
+            }
+            EthernetDeviceEvent::MulticastLeave { device, addr } => {
+                (device, LinkMulticastEvent::Leave(addr))
+            }
+        };
+
+        device
+            .external_state()
+            .multicast_event_sink
+            .unbounded_send(event)
+            .expect("sender was orphaned unexpectedly");
     }
 }
 

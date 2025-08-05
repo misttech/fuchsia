@@ -9,6 +9,7 @@ rustc_test("device") {
   output_name = "netstack_device_integration_test"
   deps = [
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust",
+    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_rust",
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust",
     "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
@@ -26,6 +27,7 @@ rustc_test("device") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/network/fidl_fuchsia_net_ext",
+    "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
     "//src/lib/network/packet",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures",
