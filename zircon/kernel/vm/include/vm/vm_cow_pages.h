@@ -1424,12 +1424,24 @@ class VmCowPages final : public VmHierarchyBase,
   // VMO. This releases both directly owned pages, as well as pages in hidden parents that may be
   // considered owned by this VMO.
   // If applicable this method will update the parent_limit_ to reflect that it has removed any
-  // reference to its parent range.
+  // reference to its parent range, and it can be assumed that upon return that
+  // |parent_limit_ <= start|.
   // The caller is responsible for actually freeing the pages, which are returned in freed_list.
   // If the caller has locked the immediate parent, then it can pass it in as |parent| to avoid
   // double locking, otherwise if no parent or not locked a nullptr can be given.
   void ReleaseOwnedPagesLocked(uint64_t start, const LockedPtr& parent,
-                               ScopedPageFreedList& freed_list) TA_REQ(lock());
+                               ScopedPageFreedList& freed_list) TA_REQ(lock()) {
+    ReleaseOwnedPagesRangeLocked(start, size_ - start, parent, freed_list);
+  }
+
+  // Similar to |ReleaseOwnedPagesLocked|, but only releases the specified range, and as such
+  // provides no guarantee on the value of |parent_limit_|, with respect to |offset|, requiring the
+  // caller to handle any issues with potential visibility into the parent range and content that
+  // should no longer be referenced. More specifically, whereupon the conclusion of
+  // |ReleaseOwnedPagesLocked| it can be assumed that |parent_limit_ <= start| it CANNOT be assumed
+  // that |parent_limit_ <= offset|.
+  void ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len, const LockedPtr& parent,
+                                    ScopedPageFreedList& freed_list) TA_REQ(lock());
 
   // When cleaning up a hidden vmo, merges the hidden vmo's content (e.g. page list, view
   // of the parent) into the remaining child.

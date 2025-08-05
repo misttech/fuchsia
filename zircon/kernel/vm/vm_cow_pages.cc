@@ -2681,25 +2681,29 @@ zx_status_t VmCowPages::CloneCowContentAsZeroLocked(uint64_t offset, ScopedPageF
   return ZX_OK;
 }
 
-void VmCowPages::ReleaseOwnedPagesLocked(uint64_t start, const LockedPtr& parent,
-                                         ScopedPageFreedList& freed_list) {
+void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
+                                              const LockedPtr& parent,
+                                              ScopedPageFreedList& freed_list) {
   DEBUG_ASSERT(!is_hidden());
-  DEBUG_ASSERT(start <= size_);
+  DEBUG_ASSERT(offset <= size_);
+  DEBUG_ASSERT(offset + len <= size_);
 
   __UNINITIALIZED BatchPQRemove page_remover(freed_list);
 
   // If we know that the only pages in this range that need to be freed are from our own page list,
   // and we no longer need to consider our parent, then just remove them.
-  if (!is_parent_hidden_locked() || start >= parent_limit_) {
-    if (start == 0) {
+  if (!is_parent_hidden_locked() || offset >= parent_limit_) {
+    if (offset == 0 && len == size_) {
       page_list_.RemoveAllContent(
           [&page_remover](VmPageOrMarker&& p) { page_remover.PushContent(&p); });
     } else {
-      page_list_.RemovePages(page_remover.RemovePagesCallback(), start, size_);
+      page_list_.RemovePages(page_remover.RemovePagesCallback(), offset, offset + len);
     }
     page_remover.Flush();
     // Potentially trim the parent limit to reflect the range that has been freed.
-    parent_limit_ = ktl::min(parent_limit_, start);
+    if (offset + len >= parent_limit_) {
+      parent_limit_ = ktl::min(parent_limit_, offset);
+    }
     return;
   }
 
@@ -2734,7 +2738,7 @@ void VmCowPages::ReleaseOwnedPagesLocked(uint64_t start, const LockedPtr& parent
         }
         return ZX_ERR_NEXT;
       },
-      start, size_ - start, parent);
+      offset, len, parent);
   DEBUG_ASSERT(status == ZX_OK);
 
   if (node_has_parent_content_markers()) {
@@ -2746,12 +2750,14 @@ void VmCowPages::ReleaseOwnedPagesLocked(uint64_t start, const LockedPtr& parent
           *slot = VmPageOrMarker::Empty();
           return ZX_ERR_NEXT;
         },
-        start, size_);
+        offset, offset + len);
   }
 
   // This node can no longer see into its parent in the range we just released.
-  DEBUG_ASSERT(start < parent_limit_);
-  parent_limit_ = start;
+  DEBUG_ASSERT(offset < parent_limit_);
+  if (offset + len >= parent_limit_) {
+    parent_limit_ = offset;
+  }
 
   page_remover.Flush();
 }
