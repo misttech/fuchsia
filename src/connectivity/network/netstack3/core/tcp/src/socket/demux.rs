@@ -1270,13 +1270,13 @@ mod test {
     #[ip_test(I)]
     #[test_case(
         Segment::syn(SEQ, UnscaledWindowSize::from(u16::MAX),
-        HandshakeOptions::default().into()), &[]
+        HandshakeOptions::default()), &[]
         ; "syn")]
     #[test_case(
         Segment::syn(SEQ, UnscaledWindowSize::from(u16::MAX),
         HandshakeOptions {
             mss: Some(Mss(NonZeroU16::new(1440 as u16).unwrap())),
-            ..Default::default() }.into()), &[]
+            ..Default::default() }), &[]
             ; "syn with mss")]
     #[test_case(Segment::ack(SEQ, ACK, UnscaledWindowSize::from(u16::MAX)), &[]; "ack")]
     #[test_case(Segment::with_fake_data(SEQ, ACK, FAKE_DATA), FAKE_DATA; "data")]

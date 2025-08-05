@@ -595,7 +595,7 @@ impl<P: Payload> Segment<P> {
 
     /// Creates an ACK segment.
     pub fn ack(seq: SeqNum, ack: SeqNum, wnd: UnscaledWindowSize) -> Self {
-        Self::ack_with_options(seq, ack, wnd, Options::default())
+        Self::ack_with_options(seq, ack, wnd, SegmentOptions::default())
     }
 
     /// Creates an ACK segment with options.
@@ -603,7 +603,7 @@ impl<P: Payload> Segment<P> {
         seq: SeqNum,
         ack: SeqNum,
         wnd: UnscaledWindowSize,
-        options: Options,
+        options: SegmentOptions,
     ) -> Self {
         Segment::new_empty(SegmentHeader {
             seq,
@@ -611,31 +611,36 @@ impl<P: Payload> Segment<P> {
             wnd,
             control: None,
             push: false,
-            options,
+            options: options.into(),
         })
     }
 
     /// Creates a SYN segment.
-    pub fn syn(seq: SeqNum, wnd: UnscaledWindowSize, options: Options) -> Self {
+    pub fn syn(seq: SeqNum, wnd: UnscaledWindowSize, options: HandshakeOptions) -> Self {
         Segment::new_empty(SegmentHeader {
             seq,
             ack: None,
             wnd,
             control: Some(Control::SYN),
             push: false,
-            options,
+            options: options.into(),
         })
     }
 
     /// Creates a SYN-ACK segment.
-    pub fn syn_ack(seq: SeqNum, ack: SeqNum, wnd: UnscaledWindowSize, options: Options) -> Self {
+    pub fn syn_ack(
+        seq: SeqNum,
+        ack: SeqNum,
+        wnd: UnscaledWindowSize,
+        options: HandshakeOptions,
+    ) -> Self {
         Segment::new_empty(SegmentHeader {
             seq,
             ack: Some(ack),
             wnd,
             control: Some(Control::SYN),
             push: false,
-            options,
+            options: options.into(),
         })
     }
 
