@@ -1,7 +1,7 @@
 Name: curl
 URL: https://curl.haxx.se/
 License: MIT/X derivate
-License File: COPYING
+License File: src/COPYING
 Upstream Git: https://github.com/curl/curl
 CPEPrefix: cpe:/a:haxx:curl:8.6.0
 Description:
