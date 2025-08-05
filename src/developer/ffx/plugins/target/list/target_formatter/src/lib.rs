@@ -59,6 +59,21 @@ impl<'a, T: Copy + IntoIterator<Item = &'a TargetAddr>> SshAddrFetcher for &'a T
     }
 }
 
+const DEFAULT_SSH_PORT: u16 = 22;
+pub fn port_str(ta: TargetAddr) -> String {
+    match ta {
+        TargetAddr::Net(mut addr) => {
+            let mut port = addr.port();
+            if port == 0 {
+                port = DEFAULT_SSH_PORT;
+            }
+            addr.set_port(port);
+            addr.to_string()
+        }
+        TargetAddr::VSockCtx(_) | TargetAddr::UsbCtx(_) => format!("{ta}"),
+    }
+}
+
 fn nodename_to_string(index: Option<usize>, nodename: Option<String>) -> String {
     match nodename {
         Some(name) => name,
@@ -164,7 +179,7 @@ impl TryFrom<Vec<ffx::TargetInfo>> for AddressesTargetFormatter {
 
 impl TargetFormatter for AddressesTargetFormatter {
     fn lines(&self, _default_nodename: Option<&str>) -> Vec<String> {
-        self.targets.iter().map(|t| t.0.optional_port_str()).collect()
+        self.targets.iter().map(|t| port_str(t.0)).collect()
     }
 }
 
@@ -1366,11 +1381,11 @@ mod test {
 
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
         let out = formatter.lines(None)[0].clone();
-        assert_eq!(out, "127.0.0.1".to_string());
+        assert_eq!(out, "127.0.0.1:22".to_string());
 
-        let target = make_target(make_ip_v6_port_info(0, 0));
+        let target = make_target(make_ip_v6_port_info(0, 22));
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
         let out = formatter.lines(None)[0].clone();
-        assert_eq!(out, "fe80::1:101:101:101".to_string());
+        assert_eq!(out, "[fe80::1:101:101:101]:22".to_string());
     }
 }
