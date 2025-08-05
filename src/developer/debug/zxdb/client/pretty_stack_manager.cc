@@ -104,11 +104,7 @@ void PrettyStackManager::LoadDefaultMatchers() {
   matchers.push_back(StackGlob("libc startup", {libc_start}));
 
   // Rust has placeholder symbols in the stack "__rust_begin_short_backtrace" and
-  // "__rust_end_short_backtrace" which are designed to help clean up backtraces. The production
-  // versions of these live in std::sys::backtrace, and the test versions live in test::backtrace
-  // which covers a bit more of test startup. Note that we ignore the ending marker for tests. This
-  // is because the default "break-on-failure" behavior for Rust tests is to panic - which follows
-  // the typical abort machinery.
+  // "__rust_end_short_backtrace" which are designed to help clean up backtraces.
   //
   // Rust uses the "begin" to indicate that the stack now contains "good" stack entries (the startup
   // code is complete) and then "end" before the internal crash code. But since we're walking the
@@ -132,14 +128,6 @@ void PrettyStackManager::LoadDefaultMatchers() {
       {PrettyFrameGlob::File("library/core/src/ops/function.rs"),
        PrettyFrameGlob::Func("std::sys::backtrace::__rust_begin_short_backtrace<*>"),
        PrettyFrameGlob::Wildcard(0, 16),
-       libc_start}));
-
-  // Rust test startup code, we want this one to match first since it could capture a few more
-  // frames (hence the slightly larger wildcard glob) than the standard library marker.
-  matchers.push_back(StackGlob(
-      "Rust test startup",
-      {PrettyFrameGlob::Func("test::__rust_begin_short_backtrace<*>"),
-       PrettyFrameGlob::Wildcard(0, 20),
        libc_start}));
   matchers.push_back(StackGlob(
       "Rust startup",
