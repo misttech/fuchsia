@@ -10,10 +10,6 @@
 
 namespace {
 
-bool is_valid_handle(zx_handle_t handle) {
-  return zx_object_get_info(handle, ZX_INFO_HANDLE_VALID, nullptr, 0, nullptr, nullptr) == ZX_OK;
-}
-
 // TestTaskEnumerator ctor flags.
 static constexpr unsigned int HAS_ON_JOB = 1u << 0;
 static constexpr unsigned int HAS_ON_PROCESS = 1u << 1;
@@ -52,7 +48,7 @@ class TestTaskEnumerator : public TaskEnumerator {
                             zx_koid_t parent_koid) override {
     EXPECT_TRUE(has_on_job());
     EXPECT_GE(depth, 0);
-    EXPECT_TRUE(is_valid_handle(job));
+    EXPECT_OK(zx_handle_check_valid(job));
     EXPECT_NE(koid, 0);
     if (depth == 0) {
       EXPECT_EQ(parent_koid, 0, "root job");
@@ -66,7 +62,7 @@ class TestTaskEnumerator : public TaskEnumerator {
                                 zx_koid_t parent_koid) override {
     EXPECT_TRUE(has_on_process());
     EXPECT_GT(depth, 0, "process depth should always be > 0");
-    EXPECT_TRUE(is_valid_handle(process));
+    EXPECT_OK(zx_handle_check_valid(process));
     EXPECT_NE(koid, 0);
     EXPECT_NE(parent_koid, 0);
     processes_seen_++;
@@ -76,7 +72,7 @@ class TestTaskEnumerator : public TaskEnumerator {
                                zx_koid_t parent_koid) override {
     EXPECT_TRUE(has_on_thread());
     EXPECT_GT(depth, 1, "thread depth should always be > 1");
-    EXPECT_TRUE(is_valid_handle(thread));
+    EXPECT_OK(zx_handle_check_valid(thread));
     EXPECT_NE(koid, 0);
     EXPECT_NE(parent_koid, 0);
     threads_seen_++;

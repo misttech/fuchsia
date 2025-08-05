@@ -388,7 +388,7 @@ TEST(Vmar, DestroyedVmarTest) {
 
   for (size_t i = 0; i < 2; ++i) {
     // Make sure the handles are still valid
-    EXPECT_EQ(zx_object_get_info(region[i], ZX_INFO_HANDLE_VALID, NULL, 0u, NULL, NULL), ZX_OK);
+    EXPECT_EQ(zx_handle_check_valid(region[i]), ZX_OK);
 
     // Make sure we can't access the memory mappings anymore
     {

@@ -43,10 +43,6 @@
 
 namespace {
 
-zx_status_t validate_handle(zx_handle_t handle) {
-  return zx_object_get_info(handle, ZX_INFO_HANDLE_VALID, nullptr, 0, 0u, nullptr);
-}
-
 TEST(ZxTestCase, HandleInvalid) {
   zx::handle handle;
   // A default constructed handle is invalid.
@@ -56,12 +52,12 @@ TEST(ZxTestCase, HandleInvalid) {
 TEST(ZxTestCase, HandleClose) {
   zx_handle_t raw_event;
   ASSERT_OK(zx_event_create(0u, &raw_event));
-  ASSERT_OK(validate_handle(raw_event));
+  ASSERT_OK(zx_handle_check_valid(raw_event));
   {
     zx::handle handle(raw_event);
   }
   // Make sure the handle was closed.
-  ASSERT_EQ(validate_handle(raw_event), ZX_ERR_BAD_HANDLE);
+  ASSERT_EQ(zx_handle_check_valid(raw_event), ZX_ERR_NOT_FOUND);
 }
 
 TEST(ZxTestCase, HandleMove) {
@@ -70,7 +66,7 @@ TEST(ZxTestCase, HandleMove) {
   ASSERT_OK(zx::event::create(0u, &event));
   zx::handle handle(std::move(event));
   ASSERT_EQ(event.release(), ZX_HANDLE_INVALID);
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 }
 
 TEST(ZxTestCase, HandleDuplicate) {
@@ -80,8 +76,8 @@ TEST(ZxTestCase, HandleDuplicate) {
   zx::handle handle(raw_event);
   ASSERT_OK(handle.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
   // The duplicate must be valid as well as the original.
-  ASSERT_OK(validate_handle(dup.get()));
-  ASSERT_OK(validate_handle(raw_event));
+  ASSERT_OK(zx_handle_check_valid(dup.get()));
+  ASSERT_OK(zx_handle_check_valid(raw_event));
 }
 
 TEST(ZxTestCase, HandleReplace) {
@@ -94,8 +90,8 @@ TEST(ZxTestCase, HandleReplace) {
     ASSERT_EQ(handle.release(), ZX_HANDLE_INVALID);
   }
   // The original shoould be invalid and the replacement should be valid.
-  ASSERT_EQ(validate_handle(raw_event), ZX_ERR_BAD_HANDLE);
-  ASSERT_OK(validate_handle(rep.get()));
+  ASSERT_EQ(zx_handle_check_valid(raw_event), ZX_ERR_NOT_FOUND);
+  ASSERT_OK(zx_handle_check_valid(rep.get()));
 }
 
 TEST(ZxTestCase, GetInfo) {
@@ -126,7 +122,7 @@ TEST(ZxTestCase, SetGetProperty) {
 TEST(ZxTestCase, Event) {
   zx::event event;
   ASSERT_OK(zx::event::create(0u, &event));
-  ASSERT_OK(validate_handle(event.get()));
+  ASSERT_OK(zx_handle_check_valid(event.get()));
   // TODO(cpu): test more.
 }
 
@@ -136,8 +132,8 @@ TEST(ZxTestCase, EventDuplicate) {
   ASSERT_OK(zx::event::create(0u, &event));
   ASSERT_OK(event.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
   // The duplicate must be valid as well as the original.
-  ASSERT_OK(validate_handle(dup.get()));
-  ASSERT_OK(validate_handle(event.get()));
+  ASSERT_OK(zx_handle_check_valid(dup.get()));
+  ASSERT_OK(zx_handle_check_valid(event.get()));
 }
 
 TEST(ZxTestCase, BtiCompilation) {
@@ -158,8 +154,8 @@ TEST(ZxTestCase, IommuCompilation) {
 TEST(ZxTestCase, Channel) {
   zx::channel channel[2];
   ASSERT_OK(zx::channel::create(0u, &channel[0], &channel[1]));
-  ASSERT_OK(validate_handle(channel[0].get()));
-  ASSERT_OK(validate_handle(channel[1].get()));
+  ASSERT_OK(zx_handle_check_valid(channel[0].get()));
+  ASSERT_OK(zx_handle_check_valid(channel[1].get()));
   // TODO(cpu): test more.
 }
 
@@ -207,16 +203,16 @@ TEST(ZxTestCase, ChannelRwEtc) {
 TEST(ZxTestCase, Socket) {
   zx::socket socket[2];
   ASSERT_OK(zx::socket::create(0u, &socket[0], &socket[1]));
-  ASSERT_OK(validate_handle(socket[0].get()));
-  ASSERT_OK(validate_handle(socket[1].get()));
+  ASSERT_OK(zx_handle_check_valid(socket[0].get()));
+  ASSERT_OK(zx_handle_check_valid(socket[1].get()));
   // TODO(cpu): test more.
 }
 
 TEST(ZxTestCase, EventPair) {
   zx::eventpair eventpair[2];
   ASSERT_OK(zx::eventpair::create(0u, &eventpair[0], &eventpair[1]));
-  ASSERT_OK(validate_handle(eventpair[0].get()));
-  ASSERT_OK(validate_handle(eventpair[1].get()));
+  ASSERT_OK(zx_handle_check_valid(eventpair[0].get()));
+  ASSERT_OK(zx_handle_check_valid(eventpair[1].get()));
   // TODO(cpu): test more.
 }
 
@@ -225,7 +221,7 @@ TEST(ZxTestCase, Vmar) {
   const size_t size = getpagesize();
   uintptr_t addr;
   ASSERT_OK(zx::vmar::root_self()->allocate(ZX_VM_CAN_MAP_READ, 0u, size, &vmar, &addr));
-  ASSERT_OK(validate_handle(vmar.get()));
+  ASSERT_OK(zx_handle_check_valid(vmar.get()));
   ASSERT_OK(vmar.destroy());
   // TODO(teisenbe): test more.
 }
@@ -233,7 +229,7 @@ TEST(ZxTestCase, Vmar) {
 TEST(ZxTestCase, Port) {
   zx::port port;
   ASSERT_OK(zx::port::create(0, &port));
-  ASSERT_OK(validate_handle(port.get()));
+  ASSERT_OK(zx_handle_check_valid(port.get()));
 
   zx::channel channel[2];
   auto key = 1111ull;
@@ -471,10 +467,10 @@ void IsValidHandle(const T& p) {
 
 TEST(ZxTestCase, ThreadSelf) {
   zx_handle_t raw = zx_thread_self();
-  ASSERT_OK(validate_handle(raw));
+  ASSERT_OK(zx_handle_check_valid(raw));
 
   ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::thread>(*zx::thread::self()));
-  EXPECT_OK(validate_handle(raw));
+  EXPECT_OK(zx_handle_check_valid(raw));
 
   // This does not compile:
   // const zx::thread self = zx::thread::self();
@@ -485,7 +481,7 @@ TEST(ZxTestCase, ThreadCreate) {
   const char* name = "test thread";
   ASSERT_OK(zx::thread::create(*zx::process::self(), name, sizeof(name), 0u, &thread));
   EXPECT_TRUE(thread.is_valid());
-  EXPECT_OK(validate_handle(thread.get()));
+  EXPECT_OK(zx_handle_check_valid(thread.get()));
 }
 
 TEST(ZxTestCase, ThreadSetProfile) {
@@ -536,10 +532,10 @@ TEST(ZxTestCase, ThreadSuspend) {
 
 TEST(ZxTestCase, ProcessSelf) {
   zx_handle_t raw = zx_process_self();
-  ASSERT_OK(validate_handle(raw));
+  ASSERT_OK(zx_handle_check_valid(raw));
 
   ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::process>(*zx::process::self()));
-  EXPECT_OK(validate_handle(raw));
+  EXPECT_OK(zx_handle_check_valid(raw));
 
   // This does not compile:
   // const zx::process self = zx::process::self();
@@ -547,10 +543,10 @@ TEST(ZxTestCase, ProcessSelf) {
 
 TEST(ZxTestCase, VmarRootSelf) {
   zx_handle_t raw = zx_vmar_root_self();
-  ASSERT_OK(validate_handle(raw));
+  ASSERT_OK(zx_handle_check_valid(raw));
 
   ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::vmar>(*zx::vmar::root_self()));
-  EXPECT_OK(validate_handle(raw));
+  EXPECT_OK(zx_handle_check_valid(raw));
 
   // This does not compile:
   // const zx::vmar root_self = zx::vmar::root_self();
@@ -558,10 +554,10 @@ TEST(ZxTestCase, VmarRootSelf) {
 
 TEST(ZxTestCase, JobDefault) {
   zx_handle_t raw = zx_job_default();
-  ASSERT_OK(validate_handle(raw));
+  ASSERT_OK(zx_handle_check_valid(raw));
 
   ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::job>(*zx::job::default_job()));
-  EXPECT_OK(validate_handle(raw));
+  EXPECT_OK(zx_handle_check_valid(raw));
 
   // This does not compile:
   // const zx::job default_job = zx::job::default_job();
@@ -571,14 +567,14 @@ bool takes_any_handle(const zx::handle& handle) { return handle.is_valid(); }
 
 TEST(ZxTestCase, HandleConversion) {
   EXPECT_TRUE(takes_any_handle(*zx::unowned_handle(zx_thread_self())));
-  ASSERT_OK(validate_handle(zx_thread_self()));
+  ASSERT_OK(zx_handle_check_valid(zx_thread_self()));
 }
 
 TEST(ZxTestCase, Unowned) {
   // Create a handle to test with.
   zx::event handle;
   ASSERT_OK(zx::event::create(0, &handle));
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 
   // Verify that unowned<T>(zx_handle_t) doesn't close handle on teardown.
   {
@@ -586,7 +582,7 @@ TEST(ZxTestCase, Unowned) {
     EXPECT_EQ(unowned->get(), handle.get());
     ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::event>(*unowned));
   }
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 
   // Verify that unowned<T>(const T&) doesn't close handle on teardown.
   {
@@ -594,7 +590,7 @@ TEST(ZxTestCase, Unowned) {
     EXPECT_EQ(unowned->get(), handle.get());
     ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::event>(*unowned));
   }
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 
   // Verify that unowned<T>(const unowned<T>&) doesn't close on teardown.
   {
@@ -606,7 +602,7 @@ TEST(ZxTestCase, Unowned) {
     ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::event>(*unowned2));
     ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::event>(*unowned));
   }
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 
   // Verify copy-assignment from unowned<> to unowned<> doesn't close.
   {
@@ -622,7 +618,7 @@ TEST(ZxTestCase, Unowned) {
     ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::event>(*unowned2));
     ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::event>(*unowned));
   }
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 
   // Verify move from unowned<> to unowned<> doesn't close on teardown.
   {
@@ -634,7 +630,7 @@ TEST(ZxTestCase, Unowned) {
     ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::event>(*unowned2));
     EXPECT_FALSE(unowned->is_valid());
   }
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 
   // Verify move-assignment from unowned<> to unowned<> doesn't close.
   {
@@ -650,7 +646,7 @@ TEST(ZxTestCase, Unowned) {
     ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::event>(*unowned2));
     EXPECT_FALSE(unowned->is_valid());
   }
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 
   // Verify move-assignment into non-empty unowned<>  doesn't close.
   {
@@ -665,7 +661,7 @@ TEST(ZxTestCase, Unowned) {
     ASSERT_NO_FATAL_FAILURE(IsValidHandle<zx::event>(*unowned2));
     EXPECT_FALSE(unowned->is_valid());
   }
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 
   // Explicitly verify dereference operator allows methods to be called.
   {
@@ -676,7 +672,7 @@ TEST(ZxTestCase, Unowned) {
     zx::event duplicate;
     EXPECT_OK(event_ref.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
   }
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 
   // Explicitly verify member access operator allows methods to be called.
   {
@@ -686,7 +682,7 @@ TEST(ZxTestCase, Unowned) {
     zx::event duplicate;
     EXPECT_OK(unowned->duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
   }
-  ASSERT_OK(validate_handle(handle.get()));
+  ASSERT_OK(zx_handle_check_valid(handle.get()));
 }
 
 TEST(ZxTestCase, GetChild) {
@@ -699,11 +695,11 @@ TEST(ZxTestCase, GetChild) {
 
     zx::handle as_handle;
     ASSERT_OK(zx::job::default_job()->get_child(info.koid, ZX_RIGHT_SAME_RIGHTS, &as_handle));
-    ASSERT_OK(validate_handle(as_handle.get()));
+    ASSERT_OK(zx_handle_check_valid(as_handle.get()));
 
     zx::process as_process;
     ASSERT_OK(zx::job::default_job()->get_child(info.koid, ZX_RIGHT_SAME_RIGHTS, &as_process));
-    ASSERT_OK(validate_handle(as_process.get()));
+    ASSERT_OK(zx_handle_check_valid(as_process.get()));
   }
 
   {
@@ -715,11 +711,11 @@ TEST(ZxTestCase, GetChild) {
 
     zx::handle as_handle;
     ASSERT_OK(zx::process::self()->get_child(info.koid, ZX_RIGHT_SAME_RIGHTS, &as_handle));
-    ASSERT_OK(validate_handle(as_handle.get()));
+    ASSERT_OK(zx_handle_check_valid(as_handle.get()));
 
     zx::thread as_thread;
     ASSERT_OK(zx::process::self()->get_child(info.koid, ZX_RIGHT_SAME_RIGHTS, &as_thread));
-    ASSERT_OK(validate_handle(as_thread.get()));
+    ASSERT_OK(zx_handle_check_valid(as_thread.get()));
   }
 }
 
@@ -821,8 +817,8 @@ TEST(ZxTestCase, IobCreateAndMap) {
   zx::iob ep0;
   zx::iob ep1;
   ASSERT_OK(zx::iob::create(0, regions, 2, &ep0, &ep1));
-  ASSERT_OK(validate_handle(ep0.get()));
-  ASSERT_OK(validate_handle(ep1.get()));
+  ASSERT_OK(zx_handle_check_valid(ep0.get()));
+  ASSERT_OK(zx_handle_check_valid(ep1.get()));
 
   zx::result<IobMapping> mapping0 =
       IobMapping::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0u, ep0, 0, 0, ZX_PAGE_SIZE);

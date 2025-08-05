@@ -37,12 +37,12 @@ TEST(ObjectGetInfoTest, ClosedValidHandleFails) {
 
   // Create a valid event.
   ASSERT_OK(zx::event::create(0u, &event));
-  ASSERT_OK(event.get_info(ZX_INFO_HANDLE_VALID, nullptr, 0, nullptr, nullptr));
+  ASSERT_OK(zx_handle_check_valid(event.get()));
 
   // Close and verify is no longer ok.
   event.reset(event.get());
 
-  ASSERT_NOT_OK(event.get_info(ZX_INFO_HANDLE_VALID, nullptr, 0, nullptr, nullptr));
+  ASSERT_NOT_OK(zx_handle_check_valid(event.get()));
 }
 #endif
 
