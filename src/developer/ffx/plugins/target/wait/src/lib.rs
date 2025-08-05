@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use discovery::query::TargetInfoQuery;
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::Notifier;
 use ffx_wait_args::WaitOptions;
@@ -32,7 +33,7 @@ pub trait DeviceWaiter {
         &self,
         dur: Option<Duration>,
         env: &EnvironmentContext,
-        target_spec: Option<String>,
+        target_spec: &TargetInfoQuery,
         behavior: ffx_target::WaitFor,
     ) -> impl Future<Output = Result<()>>;
 }
@@ -51,7 +52,7 @@ impl DeviceWaiter for DeviceWaiterImpl {
         &self,
         dur: Option<Duration>,
         env: &EnvironmentContext,
-        target_spec: Option<String>,
+        target_spec: &TargetInfoQuery,
         behavior: ffx_target::WaitFor,
     ) -> Result<()> {
         ffx_target::wait_for_device(dur, env, target_spec, behavior).await
@@ -122,7 +123,8 @@ impl<T: DeviceWaiter + fho::TryFromEnv> WaitOperation<T> {
         };
         let duration =
             if self.cmd.timeout > 0 { Some(Duration::from_secs(self.cmd.timeout)) } else { None };
-        self.waiter.wait(duration, &self.env, default_target, behavior).await
+        let spec: TargetInfoQuery = default_target.into();
+        self.waiter.wait(duration, &self.env, &spec, behavior).await
     }
 }
 

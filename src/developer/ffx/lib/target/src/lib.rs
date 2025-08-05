@@ -260,7 +260,7 @@ const DOWN_REPOLL_DELAY_MS: u64 = 500;
 pub async fn wait_for_device(
     wait_timeout: Option<Duration>,
     env: &EnvironmentContext,
-    target_spec: Option<String>,
+    target_spec: &TargetInfoQuery,
     behavior: WaitFor,
 ) -> Result<(), ffx_command_error::Error> {
     wait_for_device_inner(LocalRcsKnockerImpl, wait_timeout, env, target_spec, behavior).await
@@ -270,14 +270,14 @@ async fn wait_for_device_inner(
     knocker: impl RcsKnocker,
     wait_timeout: Option<Duration>,
     env: &EnvironmentContext,
-    target_spec: Option<String>,
+    target_spec: &TargetInfoQuery,
     behavior: WaitFor,
 ) -> Result<(), ffx_command_error::Error> {
     let target_spec_clone = target_spec.clone();
     let knock_fut = async {
         loop {
             futures_lite::future::yield_now().await;
-            break match knocker.knock_rcs(target_spec_clone.clone(), &env).await {
+            break match knocker.knock_rcs(&(target_spec_clone.clone().into()), &env).await {
                 Err(e) => {
                     log::debug!("unable to knock target: {e:?}");
                     if let WaitFor::DeviceOffline = behavior {
@@ -311,13 +311,14 @@ async fn wait_for_device_inner(
     futures_lite::FutureExt::or(knock_fut, async {
         timer.await;
         Err(ffx_command_error::Error::User(match behavior {
-            WaitFor::DeviceOnline => {
-                FfxTargetError::DaemonError { err: DaemonError::Timeout, target: target_spec }
-                    .into()
+            WaitFor::DeviceOnline => FfxTargetError::DaemonError {
+                err: DaemonError::Timeout,
+                target: target_spec.clone().into(),
             }
+            .into(),
             WaitFor::DeviceOffline => FfxTargetError::DaemonError {
                 err: DaemonError::ShutdownTimeout,
-                target: target_spec,
+                target: target_spec.clone().into(),
             }
             .into(),
         }))
@@ -330,7 +331,7 @@ async fn wait_for_device_inner(
 pub trait RcsKnocker {
     fn knock_rcs(
         &self,
-        target_spec: Option<String>,
+        target_spec: &TargetInfoQuery,
         env: &EnvironmentContext,
     ) -> impl Future<Output = Result<(), KnockError>>;
 }
@@ -341,7 +342,7 @@ pub struct LocalRcsKnockerImpl;
 impl<T: RcsKnocker + ?Sized> RcsKnocker for Box<T> {
     fn knock_rcs(
         &self,
-        target_spec: Option<String>,
+        target_spec: &TargetInfoQuery,
         env: &EnvironmentContext,
     ) -> impl Future<Output = Result<(), KnockError>> {
         (**self).knock_rcs(target_spec, env)
@@ -351,11 +352,10 @@ impl<T: RcsKnocker + ?Sized> RcsKnocker for Box<T> {
 impl RcsKnocker for LocalRcsKnockerImpl {
     async fn knock_rcs(
         &self,
-        target_spec: Option<String>,
+        target_spec: &TargetInfoQuery,
         env: &EnvironmentContext,
     ) -> Result<(), KnockError> {
-        let spec: TargetInfoQuery = target_spec.into();
-        knock_target_daemonless(&spec, env, None).await.map(|compat| {
+        knock_target_daemonless(target_spec, env, None).await.map(|compat| {
             let msg = match compat {
                 Some(c) => format!("Received compat info: {c:?}"),
                 None => format!("No compat info received"),
@@ -783,7 +783,7 @@ mod test {
             mock,
             Some(Duration::from_secs(10000)),
             &env.context,
-            Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOnline,
         )
         .await;
@@ -799,7 +799,7 @@ mod test {
             mock,
             Some(Duration::from_secs(5)),
             &env.context,
-            Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOffline,
         )
         .await;
@@ -825,7 +825,7 @@ mod test {
             mock,
             Some(Duration::from_secs(5)),
             &env.context,
-            Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOnline,
         )
         .await;
@@ -843,7 +843,7 @@ mod test {
             mock,
             Some(Duration::from_secs(5)),
             &env.context,
-            Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOnline,
         )
         .await;
@@ -861,7 +861,7 @@ mod test {
             mock,
             Some(Duration::from_secs(5)),
             &env.context,
-            Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOffline,
         )
         .await;
@@ -879,7 +879,7 @@ mod test {
             mock,
             Some(Duration::from_secs(3)),
             &env.context,
-            Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOnline,
         )
         .await;
@@ -897,7 +897,7 @@ mod test {
             mock,
             Some(Duration::from_secs(5)),
             &env.context,
-            Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOffline,
         )
         .await;
@@ -920,7 +920,7 @@ mod test {
             mock,
             Some(Duration::from_secs(10)),
             &env.context,
-            Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOnline,
         )
         .await;
@@ -949,7 +949,7 @@ mod test {
             mock,
             Some(Duration::from_secs(10)),
             &env.context,
-            Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOffline,
         )
         .await;
@@ -965,7 +965,7 @@ mod test {
             mock,
             Some(Duration::from_secs(5)),
             &env.context,
-            Some("foo".to_string()),
+            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOffline,
         )
         .await;
