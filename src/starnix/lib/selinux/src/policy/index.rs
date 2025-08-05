@@ -320,14 +320,12 @@ impl PolicyIndex {
         &self,
         fs_type: NullessByteStr<'_>,
     ) -> Option<FsUseLabelAndType> {
-        self.parsed_policy
-            .fs_uses()
-            .iter()
-            .find(|fs_use| fs_use.fs_type() == fs_type.as_bytes())
-            .map(|fs_use| FsUseLabelAndType {
+        self.parsed_policy.fs_uses().find(|fs_use| fs_use.fs_type() == fs_type.as_bytes()).map(
+            |fs_use| FsUseLabelAndType {
                 context: SecurityContext::new_from_policy_context(fs_use.context()),
                 use_type: fs_use.behavior(),
-            })
+            },
+        )
     }
 
     /// If there is a genfscon statement for the given filesystem type, returns the associated
@@ -341,12 +339,11 @@ impl PolicyIndex {
         class_id: Option<ClassId>,
     ) -> Option<SecurityContext> {
         // All contexts listed in the policy for the file system type.
-        let fs_contexts = self
+        let found = self
             .parsed_policy
             .generic_fs_contexts()
-            .iter()
-            .find(|genfscon| genfscon.fs_type() == fs_type.as_bytes())?
-            .contexts();
+            .find(|genfscon| genfscon.fs_type() == fs_type.as_bytes())?;
+        let fs_contexts = found.contexts();
 
         // The correct match is the closest parent among the ones given in the policy file.
         // E.g. if in the policy we have

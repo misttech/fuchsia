@@ -958,9 +958,7 @@ pub(super) struct ContextMetadata {
     context_type: le::U32,
 }
 
-pub(super) type NamedContextPairs = Vec<NamedContextPair>;
-
-impl Validate for NamedContextPairs {
+impl Validate for SimpleArrayView<NamedContextPair> {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`NamedContextPairs`] objects.
@@ -1005,9 +1003,7 @@ where
     }
 }
 
-pub(super) type Ports = Vec<Port>;
-
-impl Validate for Ports {
+impl Validate for SimpleArrayView<Port> {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`Ports`] objects.
@@ -1048,17 +1044,6 @@ pub(super) struct PortMetadata {
     protocol: le::U32,
     low_port: le::U32,
     high_port: le::U32,
-}
-
-pub(super) type Nodes = Vec<Node>;
-
-impl Validate for Nodes {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate consistency of sequence of [`Node`] objects.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -1105,19 +1090,6 @@ impl Validate for Node {
 
     /// TODO: Validate consistency between fields of [`Node`].
     fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-pub(super) type FsUses = Vec<FsUse>;
-
-impl Validate for FsUses {
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
-        for fs_use in self {
-            fs_use.validate(context)?;
-        }
         Ok(())
     }
 }
@@ -1211,9 +1183,7 @@ impl TryFrom<le::U32> for FsUseType {
     }
 }
 
-pub(super) type IPv6Nodes = Vec<IPv6Node>;
-
-impl Validate for IPv6Nodes {
+impl Validate for SimpleArrayView<IPv6Node> {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`IPv6Node`] objects.
@@ -1259,17 +1229,6 @@ where
             .context("parsing context for ipv6 node")?;
 
         Ok((Self { address, mask, context }, tail))
-    }
-}
-
-pub(super) type InfinitiBandPartitionKeys = Vec<InfinitiBandPartitionKey>;
-
-impl Validate for InfinitiBandPartitionKeys {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate consistency of sequence of [`InfinitiBandPartitionKey`] objects.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
     }
 }
 
@@ -1320,9 +1279,7 @@ impl Validate for InfinitiBandPartitionKey {
     }
 }
 
-pub(super) type InfinitiBandEndPorts = Vec<InfinitiBandEndPort>;
-
-impl Validate for InfinitiBandEndPorts {
+impl Validate for SimpleArrayView<InfinitiBandEndPort> {
     type Error = anyhow::Error;
 
     /// TODO: Validate sequence of [`InfinitiBandEndPort`] objects.
@@ -1372,9 +1329,7 @@ impl Counted for InfinitiBandEndPortMetadata {
     }
 }
 
-pub(super) type GenericFsContexts = Vec<GenericFsContext>;
-
-impl Validate for GenericFsContexts {
+impl Validate for SimpleArrayView<GenericFsContext> {
     type Error = anyhow::Error;
 
     /// TODO: Validate sequence of  [`GenericFsContext`] objects.
@@ -1484,14 +1439,12 @@ where
     }
 }
 
-pub(super) type RangeTransitions = Vec<RangeTransition>;
-
-impl Validate for RangeTransitions {
+impl Validate for SimpleArrayView<RangeTransition> {
     type Error = anyhow::Error;
 
     /// TODO: Validate sequence of [`RangeTransition`] objects.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
-        for range_transition in self {
+    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+        for range_transition in self.data().iter(&context.data) {
             if range_transition.metadata.target_class.get() == 0 {
                 return Err(ValidateError::NonOptionalIdIsZero.into());
             }
