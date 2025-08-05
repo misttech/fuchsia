@@ -1219,14 +1219,6 @@ void Client::ApplyConfigImpl() {
 
   bool config_missing_image = false;
 
-  // The total number of registered layers is an upper bound on the number of
-  // layers assigned to display configurations.
-  //
-  // This VLA (Variable-Length Array) is guaranteed not to be empty,
-  // because SetDisplayLayers() requires a non-empty layer list.
-  layer_t layers[layers_.size()];
-  int layers_index = 0;
-
   // Layers may have pending images, and it is possible that a layer still
   // uses images from previous configurations. We should take this into account
   // when sending the config_stamp to `Controller`.
@@ -1242,12 +1234,12 @@ void Client::ApplyConfigImpl() {
 
   for (DisplayConfig& display_config : display_configs_) {
     display_config.applied_.layers_count = 0;
-    display_config.applied_.layers_list = layers + layers_index;
 
     // Displays with no current layers are filtered out in `Controller::ApplyConfig`,
     // after it updates its own image tracking logic.
 
     for (LayerNode& applied_layer_node : display_config.applied_layers_) {
+      display_config.applied_.layers_count++;
       Layer* applied_layer = applied_layer_node.layer;
       const bool activated = applied_layer->ActivateLatestReadyImage();
       if (activated && applied_layer->applied_image()) {
@@ -1266,10 +1258,6 @@ void Client::ApplyConfigImpl() {
       if (applied_layer_client_config_stamp != std::nullopt) {
         applied_config_stamp = std::min(applied_config_stamp, *applied_layer_client_config_stamp);
       }
-
-      display_config.applied_.layers_count++;
-      layers[layers_index] = applied_layer->applied_layer_config_.ToBanjo();
-      ++layers_index;
 
       bool is_solid_color_fill = applied_layer->applied_layer_config_.image_source().width() == 0 ||
                                  applied_layer->applied_layer_config_.image_source().height() == 0;

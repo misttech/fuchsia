@@ -37,6 +37,7 @@
 #include <fbl/array.h>
 #include <fbl/auto_lock.h>
 #include <fbl/ref_ptr.h>
+#include <fbl/static_vector.h>
 #include <fbl/vector.h>
 
 #include "src/graphics/display/drivers/coordinator/added-display-info.h"
@@ -436,6 +437,7 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
   //
   // Populated from `controller_stamp_` while the mutex is held.
   display::DriverConfigStamp driver_config_stamp = {};
+  fbl::static_vector<layer_t, display::EngineInfo::kMaxAllowedMaxLayerCount> banjo_layers;
 
   {
     fbl::AutoLock lock(mtx());
@@ -468,8 +470,10 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
 
     banjo_display_config = *display_config.applied_config();
 
+    ZX_DEBUG_ASSERT(banjo_layers.empty());
     for (const LayerNode& applied_layer_node : display_config.get_applied_layers()) {
       const Layer* applied_layer = applied_layer_node.layer;
+      banjo_layers.push_back(applied_layer->applied_driver_layer_config().ToBanjo());
       fbl::RefPtr<Image> applied_image = applied_layer->applied_image();
 
       if (applied_layer->is_skipped() || applied_image == nullptr) {
@@ -516,6 +520,10 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
       });
     }
   }
+
+  // Populated by Client::ApplyConfig().
+  ZX_DEBUG_ASSERT(banjo_display_config.layers_count == banjo_layers.size());
+  banjo_display_config.layers_list = banjo_layers.data();
 
   engine_driver_client_->ApplyConfiguration(&banjo_display_config, driver_config_stamp);
 }

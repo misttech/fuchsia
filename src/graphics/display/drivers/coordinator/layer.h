@@ -141,6 +141,8 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
   // "waiting" (in the context of a specific layer) when that layer appears in an applied config.
   bool HasWaitingImages() const;
 
+  const display::DriverLayer& applied_driver_layer_config() const { return applied_layer_config_; }
+
  private:
   // Retires the `draft_image_`.
   void RetireDraftImage();
