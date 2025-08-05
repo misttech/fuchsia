@@ -245,7 +245,7 @@ pub async fn serve_starnix_manager(
 
                 suspend_context.wake_sources.lock().insert(
                     message_counter.get_koid().unwrap(),
-                    WakeSource::new(
+                    WakeSource::from_counter(
                         message_counter.duplicate_handle(zx::Rights::SAME_RIGHTS)?,
                         name.clone(),
                     ),
@@ -266,6 +266,23 @@ pub async fn serve_starnix_manager(
                 if let Err(e) = responder.send() {
                     warn!("error registering power watcher: {e}");
                 }
+            }
+            fstarnixrunner::ManagerRequest::AddWakeSource { payload, .. } => {
+                let fstarnixrunner::ManagerAddWakeSourceRequest {
+                    // TODO: Handle more than one container.
+                    container_job: Some(_container_job),
+                    name: Some(name),
+                    handle: Some(handle),
+                    ..
+                } = payload
+                else {
+                    continue;
+                };
+
+                suspend_context.wake_sources.lock().insert(
+                    handle.get_koid().unwrap(),
+                    WakeSource::from_handle(handle, name.clone()),
+                );
             }
             fstarnixrunner::ManagerRequest::CreatePager { payload, .. } => {
                 std::thread::spawn(|| {

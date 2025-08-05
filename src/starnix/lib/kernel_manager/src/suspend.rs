@@ -18,19 +18,24 @@ pub const AWAKE_SIGNAL: zx::Signals = zx::Signals::USER_0;
 pub const ASLEEP_SIGNAL: zx::Signals = zx::Signals::USER_1;
 
 pub struct WakeSource {
-    counter: zx::Counter,
+    handle: zx::Handle,
     name: String,
+    signals: zx::Signals,
 }
 
 impl WakeSource {
-    pub fn new(counter: zx::Counter, name: String) -> Self {
-        Self { counter, name }
+    pub fn from_counter(counter: zx::Counter, name: String) -> Self {
+        Self { handle: counter.into_handle(), name, signals: zx::Signals::COUNTER_POSITIVE }
+    }
+
+    pub fn from_handle(handle: zx::Handle, name: String) -> Self {
+        Self { handle, name, signals: zx::Signals::COUNTER_POSITIVE }
     }
 
     fn as_wait_item(&self) -> zx::WaitItem<'_> {
         zx::WaitItem {
-            handle: self.counter.as_handle_ref(),
-            waitfor: zx::Signals::COUNTER_POSITIVE,
+            handle: self.handle.as_handle_ref(),
+            waitfor: self.signals,
             pending: zx::Signals::empty(),
         }
     }
@@ -140,11 +145,7 @@ pub async fn suspend_container(
         if wait_item.pending.contains(zx::Signals::COUNTER_POSITIVE) {
             let koid = wait_item.handle.get_koid().unwrap();
             if let Some(event) = wake_sources.get(&koid) {
-                log::info!(
-                    "Woke container from sleep for: {}, count: {:?}",
-                    event.name,
-                    event.counter.read()
-                );
+                log::info!("Woke container from sleep for: {}", event.name,);
                 resume_reason = Some(event.name.clone());
             }
         }

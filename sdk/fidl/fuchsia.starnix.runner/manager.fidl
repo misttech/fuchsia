@@ -62,6 +62,26 @@ open protocol Manager {
         5: counter zx.Handle:COUNTER;
     });
 
+    /// Adds `signals` on `handle` as a way to prevent the container from suspending, or wake it
+    /// if it is already suspended.
+    ///
+    /// TODO(b/436557027): Add support for removing wake sources.
+    flexible AddWakeSource(resource table {
+        /// The job of the container that is meant to be woken by `signals` on `handle`.
+        1: container_job zx.Handle:JOB;
+
+        /// The name of the wake source, used for debugging purposes.
+        2: name string:PROXY_NAME_LEN;
+
+        /// A handle that is used to prevent the container from suspending when `signals` are
+        /// raised. If one of `signals` is raised while the container is suspended, the
+        /// container will be woken up.
+        3: handle zx.Handle;
+
+        /// The signals on `handle` that are meant to wake the container.
+        4: signals zx.Signals;
+    });
+
     /// Registers an eventpair that will be signaled when the container is suspended or resumed.
     /// The signals are ASLEEP(USER_1) and AWAKE(USER_0).
     ///
