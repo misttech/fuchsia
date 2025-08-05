@@ -1,0 +1,17 @@
+Name: Mesa
+URL: https://www.mesa3d.org/
+License: MIT
+License File: ../mesa/CREDITS.fuchsia
+Upstream Git: https://anongit.freedesktop.org/git/mesa/mesa.git
+Description:
+
+The Mesa3D graphics library.
+
+Path: src/vulkan/wsi/wayland
+Name: wayland-protocols
+URL: https://github.com/wayland-project/wayland-protocols
+License: MIT
+Description:
+The wsi/wayland path contains wayland protocols that WSI depends on, and is analogous to the
+egl/wayland path for EGL dependencies. Note that protocols outside the //third_party/wayland
+repo are not approved for general use. Refer to OSRB-209 for context.
