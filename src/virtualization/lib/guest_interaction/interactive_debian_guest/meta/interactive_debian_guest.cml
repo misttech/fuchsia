@@ -25,7 +25,10 @@
     ],
     use: [
         {
-            protocol: [ "fuchsia.virtualization.DebianGuestManager" ],
+            protocol: [
+                "fuchsia.intl.PropertyProvider",
+                "fuchsia.virtualization.DebianGuestManager",
+            ],
             from: "#guest-manager",
         },
     ],
