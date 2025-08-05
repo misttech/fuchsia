@@ -46,12 +46,22 @@ async fn main() -> Result<(), Error> {
     system_image_package.write_to_blobfs(&blobfs).await;
 
     let blobfs_client = blobfs.client();
+
+    serve_and_handle(blobfs_client, test_package.hash()).await?;
+
+    Ok(())
+}
+
+async fn serve_and_handle(
+    blobfs_client: blobfs::Client,
+    hash: &fuchsia_hash::Hash,
+) -> Result<(), crate::Error> {
     let (client, server) = endpoints::create_proxy();
 
     package_directory::serve(
         vfs::execution_scope::ExecutionScope::new(),
         blobfs_client,
-        *test_package.hash(),
+        *hash,
         fio::PERM_READABLE | fio::PERM_EXECUTABLE,
         server,
     )
