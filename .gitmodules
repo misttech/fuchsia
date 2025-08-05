@@ -703,3 +703,8 @@
 	url = https://fuchsia.googlesource.com/third_party/curl
 	name = third_party/curl
 	ignore = all
+[submodule "third_party/pylibs/pyusb/src"]
+	path = third_party/pylibs/pyusb/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/pyusb/pyusb
+	name = third_party/pylibs/pyusb
+	ignore = all
