@@ -137,7 +137,9 @@ class FfxClient:
                 "-t",
                 target_name,
                 "target",
-                "get-ssh-address",
+                "list",
+                "--format",
+                "addresses",
             ]
             output = subprocess.check_output(cmd, timeout=5).decode().strip()
         except (
