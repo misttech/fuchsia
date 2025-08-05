@@ -122,6 +122,11 @@ zx_status_t sys_pager_create_vmo(zx_handle_t pager, uint32_t options, zx_handle_
     return status;
   }
 
+  // As part of VMO creation some initial zeroing might have happened, placing the VMO in a modified
+  // state. However, as the zeroing as part of the initialization, we do not want to consider it
+  // modified and so reset any modification information.
+  vmo->ResetPagerVmoStats();
+
   return up->MakeAndAddHandle(ktl::move(kernel_handle), rights, out);
 }
 

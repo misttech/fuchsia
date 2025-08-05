@@ -107,12 +107,6 @@ zx_status_t VmObjectDispatcher::Create(fbl::RefPtr<VmObject> vmo, uint64_t conte
       if (status != ZX_OK) {
         return status;
       }
-      if (pager_koid != ZX_HANDLE_INVALID) {
-        // Zeroing will qualify as a modification and mark the VMO as modified. Since the zeroing
-        // was part of initialization, reset the modified state.
-        fbl::RefPtr<VmObjectPaged> object_paged = DownCastVmObject<VmObjectPaged>(vmo);
-        object_paged->ResetPagerVmoStats();
-      }
     }
   }
   return CreateWithCsm(ktl::move(vmo), ktl::move(csm), pager_koid, initial_mutability, handle,
