@@ -901,6 +901,8 @@ closed protocol Object {
     /// Returns `ZX_OK` if *handle* is valid, or `ZX_ERR_BAD_HANDLE` otherwise. No
     /// records are returned and *buffer* may be NULL.
     ///
+    /// Prefer using `zx_handle_check_valid()` to this topic.
+    ///
     /// ### ZX_INFO_HANDLE_BASIC
     ///
     /// *handle* type: `Any`
