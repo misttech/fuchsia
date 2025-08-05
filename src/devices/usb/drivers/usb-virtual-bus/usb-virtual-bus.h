@@ -79,6 +79,8 @@ class UsbVirtualBus : public fdf::DriverBase,
 
   // Public for unit tests.
   void SetConnected(bool connected);
+  std::unique_ptr<UsbVirtualDevice>& device() { return device_; }
+  std::unique_ptr<UsbVirtualHost>& host() { return host_; }
 
   UsbVirtualEp& ep(uint8_t index) { return eps_[index]; }
 

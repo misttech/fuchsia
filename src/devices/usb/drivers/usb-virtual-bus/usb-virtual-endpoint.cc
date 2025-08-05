@@ -205,8 +205,11 @@ void UsbEpServer::RequestComplete(zx_status_t status, size_t actual, RequestVari
 void UsbVirtualEp::ProcessRequests() {
   ZX_DEBUG_ASSERT(!is_control());
 
+  // Device can queue up requests when not connected to host. Host must return ZX_ERR_IO_NOT_PRESENT
+  // immediately.
   if (!bus_->connected_) {
-    // Do not process any requests if not connected.
+    // Do not process any requests if not connected. Cancel all host requests.
+    host_.CommonCancelAll();
     return;
   }
 

@@ -243,8 +243,13 @@ void UsbVirtualBus::Disable(DisableCompleter::Sync& completer) { completer.Reply
 
 zx_status_t UsbVirtualBus::Disable() {
   SetConnected(false);
-  bus_intf_.clear();
+  libsync::Completion wait;
+  async::PostTask(bus_intf_dispatcher_.async_dispatcher(), [this, &wait]() {
+    bus_intf_.clear();
+    wait.Signal();
+  });
   dci_intf_ = {};
+  wait.Wait();
   zx::result host_result = RemoveChild(host_);
   if (host_result.is_error()) {
     FDF_LOG(ERROR, "Failed to remove host %s", host_result.status_string());
