@@ -4,6 +4,8 @@
 
 // Stubs used by third party code.
 
+#include <cstddef>
+
 extern "C" {
 void* malloc(size_t s) { return operator new(s); }
 

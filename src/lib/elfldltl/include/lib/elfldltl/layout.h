@@ -6,6 +6,7 @@
 #define SRC_LIB_ELFLDLTL_INCLUDE_LIB_ELFLDLTL_LAYOUT_H_
 
 #include <array>
+#include <cstddef>
 #include <limits>
 #include <optional>
 #include <string>

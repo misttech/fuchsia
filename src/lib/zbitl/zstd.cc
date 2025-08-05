@@ -5,6 +5,7 @@
 #include <lib/zbitl/decompress.h>
 #include <zircon/assert.h>
 
+#include <cstddef>
 #include <functional>
 
 #include <zstd/zstd.h>
