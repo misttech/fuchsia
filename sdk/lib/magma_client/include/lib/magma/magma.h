@@ -61,9 +61,12 @@ MAGMA_EXPORT void magma_device_release(
     magma_device_t device);
 
 ///
-/// \brief Returns information describing the magma devices that are available.  Returns:
-///        MAGMA_STATUS_MEMORY_ERROR if |device_count_inout| is insufficient;
-///        MAGMA_STATUS_INVALID_ARGS if |device_path_size| is insufficient.
+/// \brief Returns information describing the magma devices that are available. NOTE - this is
+///        appropriate for use only if devices are guaranteed to be present at the time the call is
+///        made. On Fuchsia, this guarantee is provided by the loader design for Vulkan ICDs. Other
+///        asynchronous environments may require a directory watcher mechanism to handle racy
+///        startup conditions. Returns: MAGMA_STATUS_MEMORY_ERROR if |device_count_inout| is
+///        insufficient; MAGMA_STATUS_INVALID_ARGS if |device_path_size| is insufficient.
 /// \param device_namespace Namespace corresponding to the |device_directory_channel|; this should
 ///        be MAGMA_DEVICE_NAMESPACE.  Used only on Fuchsia.
 /// \param device_directory_channel Channel used for reading devices from |device_namespace|.  Used
