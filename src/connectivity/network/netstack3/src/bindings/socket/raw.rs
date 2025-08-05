@@ -7,7 +7,7 @@ use std::ops::ControlFlow;
 
 use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream};
 use futures::TryStreamExt as _;
-use log::error;
+use log::{error, warn};
 use net_types::ip::{Ip, IpInvariant, IpVersion, Ipv4, Ipv6};
 use net_types::SpecifiedAddr;
 use netstack3_core::ip::{
@@ -177,7 +177,11 @@ impl<I: IpExt + IpSockAddrExt> SocketWorkerHandler for SocketWorkerState<I> {
     type SetupArgs = fposix_socket::SocketCreationOptions;
 
     fn setup(&mut self, ctx: &mut Ctx, options: fposix_socket::SocketCreationOptions) {
-        let fposix_socket::SocketCreationOptions { marks, __source_breaking } = options;
+        let fposix_socket::SocketCreationOptions { marks, group, __source_breaking } = options;
+        if group.is_some() {
+            // TODO(https://fxbug.dev/436354514): support raw sockets in wake groups.
+            warn!("raw sockets do not support wake groups, but one was provided for {:?}", self.id);
+        }
         for (domain, mark) in marks.into_iter().map(fidl_fuchsia_net_ext::Marks::from).flatten() {
             ctx.api().raw_ip_socket().set_mark(
                 &self.id,
@@ -950,8 +954,10 @@ impl<I: IpExt> TryFromFidl<fpraw::ProtocolAssociation> for RawIpSocketProtocol<I
             fpraw::ProtocolAssociation::Associated(val) => {
                 let protocol = RawIpSocketProtocol::<I>::new(I::Proto::from(val));
                 match &protocol {
-                    RawIpSocketProtocol::Raw => Err(ErrnoError::new(fposix::Errno::Einval,
-                    "raw socket associated with a protocol should not specify `raw` as the protocol"
+                    RawIpSocketProtocol::Raw => Err(ErrnoError::new(
+                        fposix::Errno::Einval,
+                        "raw socket associated with a protocol should not specify `raw` as the \
+                        protocol",
                     )),
                     RawIpSocketProtocol::Proto(_) => Ok(protocol),
                 }

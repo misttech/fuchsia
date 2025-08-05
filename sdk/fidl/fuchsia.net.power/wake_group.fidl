@@ -1,0 +1,84 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+@available(added=HEAD)
+library fuchsia.net.power;
+
+using fuchsia.net;
+using fuchsia.power.system;
+
+type Empty = struct {};
+
+/// A group of networking resources, such as sockets, for which the client
+/// wishes to receive a notification when data is available.
+///
+/// This may be useful to, for example, allow a client to suspend execution
+/// until it is notified that some data is available to be processed.
+///
+/// Each connection to this protocol represents a distinct wake group.
+closed protocol WakeGroup {
+    /// Registers the client to be woken up (in the form of a response) when
+    /// there is incoming data available for any of the resources registered
+    /// with this wake group.
+    ///
+    /// Note that the client is required to "arm" this hanging get by calling
+    /// `Suspending` in order to ensure a response. Once the `WaitForData` call
+    /// has returned, the next call to the method will hang until `Suspending`
+    /// has been called again *and* new data has arrived. In other words,
+    /// `Suspending` re-arms the hanging get and should be called when a
+    /// response is required in order to be woken up.
+    ///
+    /// If the caller is responsible for keeping the system awake while handling
+    /// the incoming data, the netstack will delegate (baton-pass) a lease to
+    /// the caller that it can retain until it is ready to allow the system to
+    /// suspend.
+    strict WaitForData() -> (resource table {
+        /// The source of the wakeup.
+        ///
+        /// Always present.
+        1: source @generated_name("WakeSource") flexible resource union {
+            /// The caller is being notified of data to be processed.
+            1: data Empty;
+
+            /// The caller is being notified of a lease delegated from the
+            /// network driver.
+            ///
+            /// The caller should retain the lease until it is ready to allow
+            /// the system to suspend.
+            2: lease fuchsia.power.system.LeaseToken;
+        };
+    });
+
+    /// Notifies the netstack that the client has handled any previous
+    /// `WaitForData` response that has arrived on the channel, and expects to
+    /// be woken up again when data arrives, in the form of a response to the
+    /// pending `WaitForData` call.
+    ///
+    /// In other words, calling this method "re-arms" the hanging get.
+    strict Suspending() -> ();
+};
+
+const MAX_NAME_LEN uint8 = 255;
+
+type WakeGroupOptions = table {
+    /// A name to identify the wake group for the purposes of debugging.
+    ///
+    /// Optional. If absent, the netstack chooses a debug name.
+    1: debug_name string:MAX_NAME_LEN;
+};
+
+/// A provider of `WakeGroup`s.
+@discoverable
+closed protocol WakeGroupProvider {
+    /// Creates a new wake group with the provided options.
+    strict CreateWakeGroup(@generated_name("CreateWakeGroupRequest") resource struct {
+        options WakeGroupOptions;
+        request server_end:WakeGroup;
+    }) -> (@generated_name("CreateWakeGroupResponse") resource table {
+        /// A token that can be used to identify this wake group when adding
+        /// networking resources (such as sockets) to the group.
+        ///
+        /// Always present.
+        1: token fuchsia.net.WakeGroupToken;
+    });
+};

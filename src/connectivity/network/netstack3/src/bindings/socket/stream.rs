@@ -14,7 +14,7 @@ use explicit::ResultExt as _;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker as _, RequestStream as _};
 use fidl::{AsHandleRef as _, HandleBased as _};
 use futures::channel::{mpsc, oneshot};
-use log::{debug, error};
+use log::{debug, error, warn};
 use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv6};
 use net_types::{NonMappedAddr, SpecifiedAddr, ZonedAddr};
 use netstack3_core::device::{DeviceId, WeakDeviceId};
@@ -249,9 +249,18 @@ impl<I: IpExt + IpSockAddrExt> worker::SocketWorkerHandler for BindingData<I> {
         match args {
             InitialSocketState::Unbound(fposix_socket::SocketCreationOptions {
                 marks,
+                group,
                 __source_breaking: _,
             }) => {
                 let Self { id, .. } = self;
+
+                if group.is_some() {
+                    // TODO(https://fxbug.dev/434262947): support TCP sockets in wake groups.
+                    warn!(
+                        "stream sockets do not support wake groups, but one was provided for {id:?}"
+                    );
+                }
+
                 for (domain, mark) in
                     marks.into_iter().map(fidl_fuchsia_net_ext::Marks::from).flatten()
                 {

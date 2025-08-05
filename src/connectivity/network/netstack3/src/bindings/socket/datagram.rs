@@ -1368,7 +1368,14 @@ where
     type SetupArgs = fposix_socket::SocketCreationOptions;
 
     fn setup(&mut self, ctx: &mut Ctx, options: fposix_socket::SocketCreationOptions) {
-        let fposix_socket::SocketCreationOptions { marks, __source_breaking } = options;
+        let fposix_socket::SocketCreationOptions { marks, group, __source_breaking } = options;
+        if group.is_some() {
+            // TODO(https://fxbug.dev/434262738): support UDP sockets in wake groups.
+            warn!(
+                "datagram sockets do not support wake groups, but one was provided for {:?}",
+                self.info.id
+            );
+        }
         for (domain, mark) in marks.into_iter().map(fidl_fuchsia_net_ext::Marks::from).flatten() {
             T::set_mark(ctx, &self.info.id, domain.into_core(), Mark(Some(mark)))
         }

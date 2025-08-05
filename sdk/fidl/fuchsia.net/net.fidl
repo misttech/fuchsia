@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 library fuchsia.net;
 
+using zx;
+
 /// The maximum length of a hostname, as per
 /// [RFC 1035 section 2.3.4](https://tools.ietf.org/html/rfc1035#section-2.3.4).
 // TODO(https://fxbug.dev/42164951): inline this constant below.
@@ -107,3 +109,10 @@ type Marks = table {
 
 /// The metric of a route. Lower metrics indicate higher priority.
 alias RouteMetric = uint32;
+
+/// A token representing a wake group that can be provided to networking
+/// resources (such as sockets) to add them to the group.
+@available(added=HEAD)
+type WakeGroupToken = resource struct {
+    token zx.Handle:<EVENT, zx.Rights.TRANSFER | zx.Rights.DUPLICATE>;
+};

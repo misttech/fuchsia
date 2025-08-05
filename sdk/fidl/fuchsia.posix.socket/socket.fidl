@@ -1203,10 +1203,17 @@ type InterfaceFlags = strict bits : uint16 {
 
 /// Options that can be provided at socket creation.
 @available(added=HEAD)
-type SocketCreationOptions = table {
+type SocketCreationOptions = resource table {
     /// The marks for the created socket. If a mark is missing from the table,
     /// it will remain unset for the created socket.
     1: marks fuchsia.net.Marks;
+
+    /// A wake group to add the socket to on creation.
+    ///
+    /// If absent, the socket is not added to any wake group. If the token
+    /// provided does not correspond to an existing wake group, socket creation
+    /// fails with `fuchsia.posix/Errno.EINVAL`.
+    2: group fuchsia.net.WakeGroupToken;
 };
 
 /// Provider implements the POSIX sockets API.
@@ -1220,7 +1227,7 @@ closed protocol Provider {
     /// Requests a stream socket with the specified parameters and the creation
     /// options.
     @available(added=HEAD)
-    strict StreamSocketWithOptions(struct {
+    strict StreamSocketWithOptions(resource struct {
         domain Domain;
         proto StreamSocketProtocol;
         opts SocketCreationOptions;
@@ -1257,7 +1264,7 @@ closed protocol Provider {
     /// Requests a datagram socket with the specified parameters and the creation
     /// options.
     @available(added=HEAD)
-    strict DatagramSocketWithOptions(struct {
+    strict DatagramSocketWithOptions(resource struct {
         domain Domain;
         proto DatagramSocketProtocol;
         opts SocketCreationOptions;

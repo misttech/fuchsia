@@ -42,7 +42,7 @@ closed protocol Provider {
 
     /// Requests a raw socket with creation options.
     @available(added=HEAD)
-    strict SocketWithOptions(struct {
+    strict SocketWithOptions(resource struct {
         domain fuchsia.posix.socket.Domain;
         proto ProtocolAssociation;
         opts fuchsia.posix.socket.SocketCreationOptions;

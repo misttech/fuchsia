@@ -155,7 +155,7 @@ impl SocketProvider {
                         metrics.stream.track(marks);
                         responder.send(
                             inner_provider
-                                .stream_socket_with_options(domain, proto, &fposix_socket::SocketCreationOptions {
+                                .stream_socket_with_options(domain, proto, fposix_socket::SocketCreationOptions {
                                     marks: Some(marks.into()),
                                     ..Default::default()
                                 })
@@ -183,7 +183,7 @@ impl SocketProvider {
                         }
                         responder.send(
                             inner_provider
-                                .stream_socket_with_options(domain, proto, &fposix_socket::SocketCreationOptions {
+                                .stream_socket_with_options(domain, proto, fposix_socket::SocketCreationOptions {
                                     marks: Some(marks.into()),
                                     ..opts
                                 })
@@ -213,7 +213,7 @@ impl SocketProvider {
                         let mut metrics = metrics_lock.as_mut();
                         metrics.sockets += 1;
                         let datagram_socket = inner_provider
-                            .datagram_socket_with_options(domain, proto, &fposix_socket::SocketCreationOptions {
+                            .datagram_socket_with_options(domain, proto, fposix_socket::SocketCreationOptions {
                                 marks: Some(marks.into()),
                                 ..Default::default()
                             })
@@ -256,7 +256,7 @@ impl SocketProvider {
                             );
                         }
                         let datagram_socket = inner_provider
-                                .datagram_socket_with_options(domain, proto, &fposix_socket::SocketCreationOptions {
+                                .datagram_socket_with_options(domain, proto, fposix_socket::SocketCreationOptions {
                                     marks: Some(marks.into()),
                                     ..opts
                                 })
@@ -320,7 +320,7 @@ impl SocketProvider {
                                 .socket_with_options(
                                     domain,
                                     &proto,
-                                    &fposix_socket::SocketCreationOptions {
+                                    fposix_socket::SocketCreationOptions {
                                         marks: Some(marks.into()),
                                         ..Default::default()
                                     },
@@ -352,7 +352,7 @@ impl SocketProvider {
                                 .socket_with_options(
                                     domain,
                                     &proto,
-                                    &fposix_socket::SocketCreationOptions {
+                                    fposix_socket::SocketCreationOptions {
                                         marks: Some(marks.into()),
                                         ..opts
                                     },
