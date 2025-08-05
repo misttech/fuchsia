@@ -306,7 +306,6 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             ]
             + expected_args
             + [
-                "--no-exception-channel",
                 "fuchsia-pkg://fuchsia.com/foo#meta/foo_test.cm",
             ],
         )
@@ -318,19 +317,14 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
     @parameterized.expand(
         [
             (
-                "test execution passes a --no-exception-channel by default",
+                "test execution does not pass a --no-exception-channel by default",
                 None,
-                ["--no-exception-channel"],
+                [],
             ),
             (
-                "test execution respects explicit create_no_exception_channel in test specs",
+                "test execution respects create_no_exception_channel in test specs",
                 True,
                 ["--no-exception-channel"],
-            ),
-            (
-                "test execution respects explicit create_no_exception_channel in test specs",
-                False,
-                [],
             ),
         ]
     )

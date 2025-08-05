@@ -157,7 +157,7 @@ mod tests {
             no_cases_equals_success: None,
             parallel: Some(10),
             min_severity_logs: None,
-            create_no_exception_channel: true,
+            create_no_exception_channel: false,
         };
 
         let expected_config = TestConfig {
