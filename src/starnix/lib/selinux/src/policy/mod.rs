@@ -704,7 +704,7 @@ macro_rules! array_type {
         #[doc = "`] metadata and [`"]
         #[doc = $data_type_name]
         #[doc = "`] data items."]
-        #[derive(Debug, PartialEq)]
+        #[derive(Debug, Clone, PartialEq)]
         pub(super) struct $type_name(crate::policy::Array<$metadata_type, $data_type>);
 
         impl std::ops::Deref for $type_name {

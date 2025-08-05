@@ -413,7 +413,7 @@ impl Validate for Constraints {
 /// A set of permissions and a boolean expression giving a constraint on those
 /// permissions, for a particular class. Corresponds to a single `constrain` or
 /// `mlsconstrain` statement in policy language.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct Constraint {
     access_vector: le::U32,
     constraint_expr: ConstraintExpr,
@@ -516,7 +516,7 @@ impl Validate for ConstraintTerms {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct ConstraintTerm {
     metadata: ConstraintTermMetadata,
     names: Option<ExtensibleBitmap>,
@@ -619,7 +619,7 @@ impl Validate for ConstraintTermMetadata {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct TypeSet {
     types: ExtensibleBitmap,
     negative_set: ExtensibleBitmap,
@@ -1362,7 +1362,7 @@ impl Validate for UserMetadata {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct MlsLevel {
     sensitivity: le::U32,
     categories: ExtensibleBitmap,
@@ -1410,7 +1410,7 @@ impl<'a> Level<'a, ExtensibleBitmapSpan, ExtensibleBitmapSpansIterator<'a>> for 
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct MlsRange {
     count: le::U32,
     low: MlsLevel,

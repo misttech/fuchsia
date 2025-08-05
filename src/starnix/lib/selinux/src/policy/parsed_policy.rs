@@ -7,7 +7,7 @@ use crate::NullessByteStr;
 use super::arrays::{
     AccessVectorRule, ConditionalNode, Context, DeprecatedFilenameTransitions,
     FilenameTransitionList, FilenameTransitions, FsUses, GenericFsContexts, IPv6Nodes,
-    InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSids, NamedContextPairs, Nodes, Ports,
+    InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSid, NamedContextPairs, Nodes, Ports,
     RangeTransitions, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
     SimpleArrayView, MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, XPERMS_TYPE_IOCTL_PREFIXES,
     XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
@@ -77,7 +77,7 @@ pub struct ParsedPolicy {
     /// The set of role transitions allowed by policy.
     role_allowlist: RoleAllows,
     filename_transition_list: FilenameTransitionList,
-    initial_sids: SimpleArray<InitialSids>,
+    initial_sids: SimpleArrayView<InitialSid>,
     filesystems: SimpleArray<NamedContextPairs>,
     ports: SimpleArray<Ports>,
     network_interfaces: SimpleArray<NamedContextPairs>,
@@ -319,10 +319,16 @@ impl ParsedPolicy {
     }
 
     /// Returns the policy entry for the specified initial Security Context.
-    pub(super) fn initial_context(&self, id: crate::InitialSid) -> &Context {
+    pub(super) fn initial_context(&self, id: crate::InitialSid) -> Context {
         let id = le::U32::from(id as u32);
         // [`InitialSids`] validates that all `InitialSid` values are defined by the policy.
-        &self.initial_sids.data.iter().find(|initial| initial.id() == id).unwrap().context()
+        self.initial_sids
+            .data()
+            .iter(&self.data)
+            .find(|initial| initial.id() == id)
+            .unwrap()
+            .context()
+            .clone()
     }
 
     /// Returns the `User` structure for the requested Id. Valid policies include definitions
@@ -595,7 +601,7 @@ fn parse_policy_internal(
         (FilenameTransitionList::PolicyVersionLeq32(filename_transition_list), tail)
     };
 
-    let (initial_sids, tail) = SimpleArray::<InitialSids>::parse(tail)
+    let (initial_sids, tail) = SimpleArrayView::<InitialSid>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing initial sids")?;
 
@@ -857,7 +863,7 @@ impl ParsedPolicy {
         // Validate that initial contexts use only defined user, role, type, etc Ids.
         // Check that all sensitivity and category IDs are defined and that MLS levels
         // are internally consistent.
-        for initial_sid in &self.initial_sids.data {
+        for initial_sid in self.initial_sids.data().iter(&self.data) {
             let context = initial_sid.context();
             validate_id(&user_ids, context.user_id(), "user")?;
             validate_id(&role_ids, context.role_id(), "role")?;
@@ -908,7 +914,7 @@ impl ParsedPolicy {
         // Validate that constraints are well-formed by evaluating against
         // a source and target security context.
         let initial_context = SecurityContext::new_from_policy_context(
-            self.initial_context(crate::InitialSid::Kernel),
+            &self.initial_context(crate::InitialSid::Kernel),
         );
         for class in self.classes() {
             for constraint in class.constraints() {

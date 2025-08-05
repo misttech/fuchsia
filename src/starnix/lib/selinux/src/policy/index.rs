@@ -387,7 +387,7 @@ impl PolicyIndex {
 
     /// Helper used to construct and validate well-known [`SecurityContext`] values.
     fn resolve_initial_context(&self, id: crate::InitialSid) -> SecurityContext {
-        SecurityContext::new_from_policy_context(self.parsed_policy().initial_context(id))
+        SecurityContext::new_from_policy_context(&self.parsed_policy().initial_context(id))
     }
 
     fn role_transition_new_role(

@@ -851,15 +851,14 @@ pub(super) struct DeprecatedFilenameTransitionMetadata {
     out_type: le::U32,
 }
 
-pub(super) type InitialSids = Vec<InitialSid>;
-
-impl Validate for InitialSids {
+impl Validate for SimpleArrayView<InitialSid> {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`InitialSid`] objects.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
         for initial_sid in crate::InitialSid::all_variants() {
-            self.iter()
+            self.data()
+                .iter(&context.data)
                 .find(|initial| initial.id().get() == *initial_sid as u32)
                 .ok_or(ValidateError::MissingInitialSid { initial_sid: *initial_sid })?;
         }
@@ -907,7 +906,7 @@ where
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct Context {
     metadata: ContextMetadata,
     mls_range: MlsRange,
