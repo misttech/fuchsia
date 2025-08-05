@@ -69,6 +69,12 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/pylint-dev/pylint"
         revision="efee9618894795cc8847727108522aa79431ee25"
         gerrithost="https://fuchsia-review.googlesource.com"/>
+    <!-- pyusb-1.3.1 -->
+    <project name="third_party/pylibs/pyusb"
+        path="third_party/pylibs/pyusb/src"
+        remote="https://fuchsia.googlesource.com/third_party/github.com/pyusb/pyusb"
+        revision="b9b8a2b1ecb822af0c0f1d2cf0c0ec69f19765e3"
+        gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- tomlkit-0.12.3 -->
     <project name="third_party/pylibs/tomlkit"
         path="third_party/pylibs/tomlkit/src"
