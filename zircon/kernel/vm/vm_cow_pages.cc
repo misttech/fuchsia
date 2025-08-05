@@ -5669,13 +5669,78 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
     return ZX_ERR_BAD_STATE;
   }
 
+  const uint64_t start = range.offset;
+  const uint64_t end = range.end();
+
+  const CanOverwriteContent overwrite_policy = options == SupplyOptions::TransferData
+                                                   ? CanOverwriteContent::NonZero
+                                                   : CanOverwriteContent::None;
+
+  // If this node is utilizing parent content markers then we can perform a very efficient supply
+  // as we can freely clear existing content and leave gaps to indicate zero content.
+  // TODO(https://fxbug.dev/434536251): Deduplicate this into a more general solution for all kinds
+  // supply pages.
+  if (node_has_parent_content_markers()) {
+    DEBUG_ASSERT(!page_source_);
+    DEBUG_ASSERT(options == SupplyOptions::TransferData);
+    DEBUG_ASSERT(overwrite_policy == CanOverwriteContent::NonZero);
+    VmCompression* compression = Pmm::Node().GetPageCompression();
+
+    RangeChangeUpdateLocked(range, RangeChangeOp::Unmap, &deferred);
+
+    // For any content in the splice list we want to insert into our page list, overwriting (i.e.
+    // freeing) any existing content. Any gaps in the splice list imply zeroes which, given this
+    // node users parent content markers, can be represented by ensuring the corresponding range in
+    // this VMO is empty.
+    zx_status_t status = pages->RemovePagesAndIterateGaps(
+        [&](VmPageOrMarker slot, uint64_t src_offset) {
+          AssertHeld(lock_ref());
+          DEBUG_ASSERT(!slot.IsInterval());
+          const uint64_t dst_offset = start + src_offset;
+          zx::result<VmPageOrMarker> result =
+              AddPageLocked(dst_offset, ktl::move(slot), overwrite_policy, nullptr);
+          if (result.is_error()) {
+            *supplied_len = src_offset;
+            return result.error_value();
+          }
+          if (result->IsPage()) {
+            vm_page_t* page = result->ReleasePage();
+            Pmm::Node().GetPageQueues()->Remove(page);
+            list_add_tail(deferred.FreedList(this).List(), &page->queue_node);
+          } else if (result->IsReference()) {
+            compression->Free(result->ReleaseReference());
+          } else if (result->IsParentContent()) {
+            // In the case of parent content need to find the original owner and release our share
+            // count to the content.
+            PageLookup lookup_info;
+            FindInitialPageContentLocked(dst_offset, &lookup_info);
+            DEBUG_ASSERT(lookup_info.cursor.current() && !lookup_info.cursor.current()->IsEmpty());
+            DEBUG_ASSERT(lookup_info.owner);
+            lookup_info.owner.locked().DecrementCowContentShareCount(
+                lookup_info.cursor.current(), dst_offset, deferred.FreedList(this), compression);
+          }
+          return ZX_ERR_NEXT;
+        },
+        [&](uint64_t gap_start, uint64_t gap_end) {
+          const uint64_t gap_dst_start = gap_start + start;
+          const uint64_t gap_dst_end = gap_end + start;
+          AssertHeld(lock_ref());
+          ReleaseOwnedPagesRangeLocked(gap_dst_start, gap_dst_end - gap_dst_start, LockedPtr(),
+                                       deferred.FreedList(this));
+          return ZX_ERR_NEXT;
+        });
+    if (status == ZX_OK) {
+      *supplied_len = range.len;
+    }
+    return status;
+  }
+
   // If this VMO has a parent, we need to make sure we take ownership of all of the pages in the
   // input range.
   // TODO(https://fxbug.dev/42076904): This is suboptimal, as we take ownership of a page just to
   // free it immediately when we replace it with the supplied page.
   if (parent_) {
-    const uint64_t end = range.end();
-    uint64_t position = range.offset;
+    uint64_t position = start;
     auto cursor = GetLookupCursorLocked(range);
     if (cursor.is_error()) {
       return cursor.error_value();
@@ -5690,9 +5755,6 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
       position += PAGE_SIZE;
     }
   }
-
-  const uint64_t start = range.offset;
-  const uint64_t end = range.end();
 
   // [new_pages_start, new_pages_start + new_pages_len) tracks the current run of
   // consecutive new pages added to this vmo.
@@ -5740,9 +5802,6 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
 
     VmPageOrMarker old_page;
     // Defer individual range updates so we can do them in blocks.
-    const CanOverwriteContent overwrite_policy = options == SupplyOptions::TransferData
-                                                     ? CanOverwriteContent::NonZero
-                                                     : CanOverwriteContent::None;
     if (src_page.IsEmpty()) {
       DEBUG_ASSERT(node_has_parent_content_markers());
       DEBUG_ASSERT(overwrite_policy == CanOverwriteContent::NonZero);

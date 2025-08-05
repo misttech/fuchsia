@@ -1835,6 +1835,49 @@ class VmPageSpliceList final {
   // splice list.
   VmPageOrMarker Pop();
 
+  // Iterates all the pages and gaps in this splice list. The page_func is given ownership of each
+  // page. It is invalid to process a non-finalized splice list. The two callbacks are expected to
+  // have the signature:
+  // zx_status_t page_func(VmPageOrMarker slot, uint64_t splice_offset);
+  // zx_status_t gap_func(uint64_t gap_start, uint64_t gap_end);
+  // Due to page_func always taking ownership of the content if it returns any kind of error, either
+  // a graceful request to stop iteration via ZX_ERR_STOP or an explicit error, then that offset is
+  // considered processed and will not be repeated in future calls. In contrast, if iteration is
+  // stopped during gap_func, that gap will not be considered processed and can be returned in
+  // future calls.
+  template <typename PAGE_FUNC, typename GAP_FUNC>
+  zx_status_t RemovePagesAndIterateGaps(PAGE_FUNC page_func, GAP_FUNC gap_func) {
+    DEBUG_ASSERT(IsFinalized());
+    // Assume we will successfully process the whole range. This will get trimmed should any of the
+    // callbacks terminate early.
+    uint64_t processed = length_;
+    zx_status_t status = page_list_.RemovePagesAndIterateGaps(
+        [&](VmPageOrMarker* slot, uint64_t src_offset) {
+          // Move the content out of slot before passing to the page_func to ensure it *must* deal
+          // with it and it cannot be left in slot.
+          VmPageOrMarker content = ktl::move(*slot);
+          zx_status_t status = page_func(ktl::move(content), src_offset);
+          if (status != ZX_ERR_NEXT) {
+            processed = src_offset + PAGE_SIZE;
+          }
+          return status;
+        },
+        [&](uint64_t gap_start, uint64_t gap_end) {
+          zx_status_t status = gap_func(gap_start, gap_end);
+          if (status != ZX_ERR_NEXT) {
+            processed = gap_start;
+          }
+          return status;
+        },
+        pos_, length_);
+    pos_ = processed;
+    if (pos_ == length_) {
+      DEBUG_ASSERT(page_list_.IsEmpty());
+      state_ = State::Processed;
+    }
+    return status;
+  }
+
   // Peeks at the head of the splice list and returns a non-null VmPageOrMarkerRef pointing to it
   // if and only if it is a reference. It is invalid to peek at a non-finalized splice list.
   VmPageOrMarkerRef PeekReference();
