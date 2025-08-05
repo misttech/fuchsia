@@ -1,7 +1,6 @@
 # buildifier: disable=bzl-visibility
 load("@rules_fuchsia//fuchsia/private:fuchsia_api_level.bzl", "fuchsia_api_level")
 
-
 # Specifies the target Fuchsia API level for Fuchsia artifacts.
 # Used both as a command line flag to override levels specified for the package
 # or the repository default (`repository_default_fuchsia_api_level`) and to

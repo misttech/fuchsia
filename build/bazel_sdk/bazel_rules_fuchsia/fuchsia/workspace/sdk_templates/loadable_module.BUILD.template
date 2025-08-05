@@ -34,5 +34,5 @@ fuchsia_package_resource_collection(
         constants.target_cpus,
     ) + [
         ":{{name}}_resources",
-    ]
+    ],
 )
