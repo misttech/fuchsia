@@ -5,7 +5,7 @@
 use crate::NullessByteStr;
 
 use super::arrays::{
-    AccessVectorRule, ConditionalNodes, Context, DeprecatedFilenameTransitions,
+    AccessVectorRule, ConditionalNode, Context, DeprecatedFilenameTransitions,
     FilenameTransitionList, FilenameTransitions, FsUses, GenericFsContexts, IPv6Nodes,
     InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSids, NamedContextPairs, Nodes, Ports,
     RangeTransitions, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
@@ -71,7 +71,7 @@ pub struct ParsedPolicy {
     categories: SymbolList<Category>,
     /// The set of access vector rules referenced by this policy.
     access_vector_rules: SimpleArrayView<AccessVectorRule>,
-    conditional_lists: SimpleArray<ConditionalNodes>,
+    conditional_lists: SimpleArrayView<ConditionalNode>,
     /// The set of role transitions to apply when instantiating new objects.
     role_transitions: RoleTransitions,
     /// The set of role transitions allowed by policy.
@@ -570,7 +570,7 @@ fn parse_policy_internal(
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing access vector rules")?;
 
-    let (conditional_lists, tail) = SimpleArray::<ConditionalNodes>::parse(tail)
+    let (conditional_lists, tail) = SimpleArrayView::<ConditionalNode>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing conditional lists")?;
 

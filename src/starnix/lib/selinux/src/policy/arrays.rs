@@ -121,12 +121,10 @@ impl Counted for le::U32 {
     }
 }
 
-pub(super) type ConditionalNodes = Vec<ConditionalNode>;
-
-impl Validate for ConditionalNodes {
+impl Validate for SimpleArrayView<ConditionalNode> {
     type Error = anyhow::Error;
 
-    /// TODO: Validate internal consistency between consecutive [`ConditionalNode`] instances.
+    // TODO: Validate internal consistency between consecutive [`ConditionalNode`] instances.
     fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -150,17 +148,22 @@ impl ValidateArray<ConditionalNodeMetadata, ConditionalNodeDatum> for Conditiona
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub(super) struct ConditionalNode {
+    #[allow(dead_code)]
     items: ConditionalNodeItems,
-    true_list: SimpleArray<AccessVectorRules>,
-    false_list: SimpleArray<AccessVectorRules>,
+
+    #[allow(dead_code)]
+    true_list: SimpleArrayView<AccessVectorRule>,
+
+    #[allow(dead_code)]
+    false_list: SimpleArrayView<AccessVectorRule>,
 }
 
 impl Parse for ConditionalNode
 where
     ConditionalNodeItems: Parse,
-    SimpleArray<AccessVectorRules>: Parse,
+    SimpleArrayView<AccessVectorRule>: Parse,
 {
     type Error = anyhow::Error;
 
@@ -171,11 +174,11 @@ where
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing conditional node items")?;
 
-        let (true_list, tail) = SimpleArray::<AccessVectorRules>::parse(tail)
+        let (true_list, tail) = SimpleArrayView::<AccessVectorRule>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing conditional node true list")?;
 
-        let (false_list, tail) = SimpleArray::<AccessVectorRules>::parse(tail)
+        let (false_list, tail) = SimpleArrayView::<AccessVectorRule>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing conditional node false list")?;
 
@@ -217,27 +220,6 @@ impl Validate for [ConditionalNodeDatum] {
 
     /// TODO: Validate sequence of [`ConditionalNodeDatum`].
     fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-/// The list of access control rules defined by policy statements of the
-/// following kinds:
-/// - `allow`, `dontaudit`, `auditallow`, and `neverallow`, which specify
-///   an access vector describing a permission set.
-/// - `allowxperm`, `auditallowxperm`, `dontaudit`, which specify a set
-///   of extended permissions.
-/// - `type_transition`, `type_change`, and `type_member', which include
-///   a type id describing a permitted new type.
-pub(super) type AccessVectorRules = Vec<AccessVectorRule>;
-
-impl Validate for AccessVectorRules {
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
-        for access_vector_rule in self {
-            access_vector_rule.validate(context)?;
-        }
         Ok(())
     }
 }
