@@ -5,11 +5,11 @@
 use crate::NullessByteStr;
 
 use super::arrays::{
-    AccessVectorRule, ConditionalNode, Context, DeprecatedFilenameTransitions,
-    FilenameTransitionList, FilenameTransitions, FsUse, GenericFsContext, IPv6Node,
-    InfinitiBandEndPort, InfinitiBandPartitionKey, InitialSid, NamedContextPair, Node, Port,
-    RangeTransition, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
-    SimpleArrayView, MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, XPERMS_TYPE_IOCTL_PREFIXES,
+    AccessVectorRule, ConditionalNode, Context, DeprecatedFilenameTransition, FilenameTransition,
+    FilenameTransitionList, FsUse, GenericFsContext, IPv6Node, InfinitiBandEndPort,
+    InfinitiBandPartitionKey, InitialSid, NamedContextPair, Node, Port, RangeTransition, RoleAllow,
+    RoleAllows, RoleTransition, RoleTransitions, SimpleArrayView,
+    MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, XPERMS_TYPE_IOCTL_PREFIXES,
     XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
 };
 use super::error::{ParseError, ValidateError};
@@ -437,25 +437,24 @@ impl ParsedPolicy {
     ) -> Option<TypeId> {
         match &self.filename_transition_list {
             FilenameTransitionList::PolicyVersionGeq33(list) => {
-                let entry = list.data.iter().find(|transition| {
+                let entry = list.data().iter(&self.data).find(|transition| {
                     transition.target_type() == target_type
                         && transition.target_class() == class
-                        && transition.name_bytes() == name.as_bytes()
+                        && transition.name_bytes(&self.data) == name.as_bytes()
                 })?;
                 entry
-                    .outputs()
-                    .iter()
+                    .outputs(&self.data)
                     .find(|entry| entry.has_source_type(source_type))
                     .map(|x| x.out_type())
             }
             FilenameTransitionList::PolicyVersionLeq32(list) => list
-                .data
-                .iter()
+                .data()
+                .iter(&self.data)
                 .find(|transition| {
                     transition.target_class() == class
                         && transition.target_type() == target_type
                         && transition.source_type() == source_type
-                        && transition.name_bytes() == name.as_bytes()
+                        && transition.name_bytes(&self.data) == name.as_bytes()
                 })
                 .map(|x| x.out_type()),
         }
@@ -589,13 +588,13 @@ fn parse_policy_internal(
         .context("parsing role allow rules")?;
 
     let (filename_transition_list, tail) = if policy_version_value >= 33 {
-        let (filename_transition_list, tail) = SimpleArray::<FilenameTransitions>::parse(tail)
+        let (filename_transition_list, tail) = SimpleArrayView::<FilenameTransition>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing standard filename transitions")?;
         (FilenameTransitionList::PolicyVersionGeq33(filename_transition_list), tail)
     } else {
         let (filename_transition_list, tail) =
-            SimpleArray::<DeprecatedFilenameTransitions>::parse(tail)
+            SimpleArrayView::<DeprecatedFilenameTransition>::parse(tail)
                 .map_err(Into::<anyhow::Error>::into)
                 .context("parsing deprecated filename transitions")?;
         (FilenameTransitionList::PolicyVersionLeq32(filename_transition_list), tail)

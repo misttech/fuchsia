@@ -5,7 +5,7 @@
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 use crate::policy::{Counted, Parse};
 use std::marker::PhantomData;
-use zerocopy::FromBytes;
+use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 #[derive(Debug, Clone, Copy)]
 pub struct View<T> {
@@ -51,6 +51,15 @@ impl<D> ArrayDataView<D> {
     pub fn iter(self, policy_data: &PolicyData) -> ArrayDataViewIter<D> {
         let cursor = PolicyCursor::new_at(policy_data.clone(), self.start);
         ArrayDataViewIter::new(cursor, self.count)
+    }
+}
+
+impl<D: FromBytes + KnownLayout + Immutable> ArrayDataView<D> {
+    pub fn slice(self, policy_data: &PolicyData) -> &[D] {
+        let start = self.start as usize;
+        let (slice, _) =
+            <[D]>::ref_from_prefix_with_elems(&policy_data[start..], self.count as usize).unwrap();
+        slice
     }
 }
 
