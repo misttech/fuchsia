@@ -338,12 +338,13 @@ impl PolicyIndex {
         node_path: NullessByteStr<'_>,
         class_id: Option<ClassId>,
     ) -> Option<SecurityContext> {
+        let policy_data = &self.parsed_policy.data;
         // All contexts listed in the policy for the file system type.
         let found = self
             .parsed_policy
             .generic_fs_contexts()
-            .find(|genfscon| genfscon.fs_type() == fs_type.as_bytes())?;
-        let fs_contexts = found.contexts();
+            .find(|genfscon| genfscon.fs_type(policy_data) == fs_type.as_bytes())?;
+        let fs_contexts = found.contexts(policy_data);
 
         // The correct match is the closest parent among the ones given in the policy file.
         // E.g. if in the policy we have
@@ -357,11 +358,12 @@ impl PolicyIndex {
         // Partial paths are prefix-matched, so that "/abc/default" would also be assigned label3.
         //
         // TODO(372212126): Optimize the algorithm.
-        let mut result: Option<&FsContext> = None;
+        let mut result: Option<FsContext> = None;
         for fs_context in fs_contexts {
-            if node_path.0.starts_with(fs_context.partial_path()) {
+            let partial_path = fs_context.partial_path(policy_data);
+            if node_path.0.starts_with(partial_path) {
                 if result.is_none()
-                    || result.unwrap().partial_path().len() < fs_context.partial_path().len()
+                    || result.as_ref().unwrap().partial_path(policy_data).len() < partial_path.len()
                 {
                     if class_id.is_none()
                         || fs_context

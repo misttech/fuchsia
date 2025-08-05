@@ -14,6 +14,7 @@ use crate::policy::symbols::{MlsLevel, MlsRange};
 use crate::policy::UserId;
 use anyhow::Context as _;
 
+use std::iter::Iterator;
 use std::num::NonZeroU32;
 use std::ops::Shl;
 use zerocopy::{little_endian as le, FromBytes, Immutable, KnownLayout, Unaligned};
@@ -86,19 +87,6 @@ pub(super) const XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES: u8 = 1;
 /// that the xperms set consists of all 16-bit ioctl xperms with a
 /// given high byte, for one or more high byte values.
 pub(super) const XPERMS_TYPE_IOCTL_PREFIXES: u8 = 2;
-
-#[allow(type_alias_bounds)]
-pub(super) type SimpleArray<T> = Array<le::U32, T>;
-
-impl<T: Validate> Validate for SimpleArray<T> {
-    type Error = <T as Validate>::Error;
-
-    /// Defers to `self.data` for validation. `self.data` has access to all information, including
-    /// size stored in `self.metadata`.
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
-        self.data.validate(context)
-    }
-}
 
 pub(super) type SimpleArrayView<T> = ArrayView<le::U32, T>;
 
@@ -967,16 +955,21 @@ impl Validate for SimpleArrayView<NamedContextPair> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub(super) struct NamedContextPair {
-    name: SimpleArray<Vec<u8>>,
+    #[allow(dead_code)]
+    name: SimpleArrayView<u8>,
+
+    #[allow(dead_code)]
     context1: Context,
+
+    #[allow(dead_code)]
     context2: Context,
 }
 
 impl Parse for NamedContextPair
 where
-    SimpleArray<Vec<u8>>: Parse,
+    SimpleArrayView<u8>: Parse,
     Context: Parse,
 {
     type Error = anyhow::Error;
@@ -984,7 +977,7 @@ where
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let (name, tail) = SimpleArray::parse(tail)
+        let (name, tail) = SimpleArrayView::<u8>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing filesystem context name")?;
 
@@ -1337,39 +1330,39 @@ impl Validate for SimpleArrayView<GenericFsContext> {
 
 /// Information parsed parsed from `genfscon [fs_type] [partial_path] [fs_context]` statements
 /// about a specific filesystem type.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub(super) struct GenericFsContext {
     /// The filesystem type.
-    fs_type: SimpleArray<Vec<u8>>,
+    fs_type: SimpleArrayView<u8>,
     /// The set of contexts defined for this filesystem.
-    contexts: SimpleArray<FsContexts>,
+    contexts: SimpleArrayView<FsContext>,
 }
 
 impl GenericFsContext {
-    pub(super) fn fs_type(&self) -> &[u8] {
-        &self.fs_type.data
+    pub(super) fn fs_type<'a>(&self, data: &'a PolicyData) -> &'a [u8] {
+        self.fs_type.data().slice(data)
     }
 
-    pub(super) fn contexts(&self) -> &FsContexts {
-        &self.contexts.data
+    pub(super) fn contexts(&self, data: &PolicyData) -> impl Iterator<Item = FsContext> {
+        self.contexts.data().iter(data)
     }
 }
 
 impl Parse for GenericFsContext
 where
-    SimpleArray<Vec<u8>>: Parse,
-    SimpleArray<FsContexts>: Parse,
+    SimpleArrayView<u8>: Parse,
+    SimpleArrayView<FsContext>: Parse,
 {
     type Error = anyhow::Error;
 
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let (fs_type, tail) = SimpleArray::<Vec<u8>>::parse(tail)
+        let (fs_type, tail) = SimpleArrayView::<u8>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing generic filesystem context name")?;
 
-        let (contexts, tail) = SimpleArray::<FsContexts>::parse(tail)
+        let (contexts, tail) = SimpleArrayView::<FsContext>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing generic filesystem contexts")?;
 
@@ -1377,13 +1370,11 @@ where
     }
 }
 
-pub(super) type FsContexts = Vec<FsContext>;
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub(super) struct FsContext {
     /// The partial path, relative to the root of the filesystem. The partial path can only be set for
     /// virtual filesystems, like `proc/`. Otherwise, this must be `/`
-    partial_path: SimpleArray<Vec<u8>>,
+    partial_path: SimpleArrayView<u8>,
     /// Optional. When provided, the context will only be applied to files of this type. Allowed files
     /// types are: blk_file, chr_file, dir, fifo_file, lnk_file, sock_file, file. When set to 0, the
     /// context applies to all file types.
@@ -1393,8 +1384,8 @@ pub(super) struct FsContext {
 }
 
 impl FsContext {
-    pub(super) fn partial_path(&self) -> &[u8] {
-        &self.partial_path.data
+    pub(super) fn partial_path<'a>(&self, data: &'a PolicyData) -> &'a [u8] {
+        &self.partial_path.data().slice(data)
     }
 
     pub(super) fn context(&self) -> &Context {
@@ -1408,7 +1399,7 @@ impl FsContext {
 
 impl Parse for FsContext
 where
-    SimpleArray<Vec<u8>>: Parse,
+    SimpleArrayView<u8>: Parse,
     Context: Parse,
 {
     type Error = anyhow::Error;
@@ -1416,7 +1407,7 @@ where
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let (partial_path, tail) = SimpleArray::<Vec<u8>>::parse(tail)
+        let (partial_path, tail) = SimpleArrayView::<u8>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing filesystem context partial path")?;
 
