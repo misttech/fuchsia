@@ -421,7 +421,7 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id, zx::time_mon
   }
 }
 
-void Controller::ApplyConfig(std::span<DisplayConfig*> display_configs,
+void Controller::ApplyConfig(DisplayConfig& display_config,
                              display::ConfigStamp client_config_stamp, ClientId client_id) {
   zx_instant_mono_t timestamp = zx_clock_get_monotonic();
   last_valid_apply_config_timestamp_ns_property_.Set(timestamp);
@@ -430,12 +430,7 @@ void Controller::ApplyConfig(std::span<DisplayConfig*> display_configs,
 
   last_valid_apply_config_config_stamp_property_.Set(client_config_stamp.value());
 
-  // TODO(https://fxbug.dev/42080631): Replace VLA with fixed-size array once we have a
-  // limit on the number of connected displays.
-  const int32_t banjo_display_configs_size =
-      std::max<int32_t>(1, static_cast<int32_t>(display_configs.size()));
-  display_config_t banjo_display_configs[banjo_display_configs_size];
-  uint32_t display_count = 0;
+  display_config_t banjo_display_config;
 
   // The applied configuration's stamp.
   //
@@ -449,62 +444,63 @@ void Controller::ApplyConfig(std::span<DisplayConfig*> display_configs,
     ++last_issued_driver_config_stamp_;
     driver_config_stamp = last_issued_driver_config_stamp_;
 
-    for (DisplayConfig* display_config : display_configs) {
-      auto displays_it = displays_.find(display_config->id());
-      if (!displays_it.IsValid()) {
+    auto displays_it = displays_.find(display_config.id());
+    if (!displays_it.IsValid()) {
+      fdf::warn("ApplyConfig(): Cannot find display with id {}", display_config.id());
+      return;
+    }
+    DisplayInfo& display_info = *displays_it;
+
+    display_info.config_image_queue.push({.config_stamp = driver_config_stamp, .images = {}});
+
+    display_info.switching_client = switching_client;
+    display_info.pending_layer_change = display_config.apply_layer_change();
+    if (display_info.pending_layer_change) {
+      display_info.pending_layer_change_driver_config_stamp = driver_config_stamp;
+    }
+    display_info.layer_count = display_config.applied_layer_count();
+
+    if (display_info.layer_count == 0) {
+      // TODO(https://fxbug.dev/336394440): Make this a fatal error.
+      fdf::warn("ApplyConfig(): config doesn't have any valid layer; skipped");
+      return;
+    }
+
+    banjo_display_config = *display_config.applied_config();
+
+    for (const LayerNode& applied_layer_node : display_config.get_applied_layers()) {
+      const Layer* applied_layer = applied_layer_node.layer;
+      fbl::RefPtr<Image> applied_image = applied_layer->applied_image();
+
+      if (applied_layer->is_skipped() || applied_image == nullptr) {
         continue;
       }
-      DisplayInfo& display_info = *displays_it;
 
-      display_info.config_image_queue.push({.config_stamp = driver_config_stamp, .images = {}});
+      // Set the image controller config stamp so vsync knows what config the
+      // image was used at.
+      AssertMtxAliasHeld(*applied_image->mtx());
+      applied_image->set_latest_driver_config_stamp(driver_config_stamp);
 
-      display_info.switching_client = switching_client;
-      display_info.pending_layer_change = display_config->apply_layer_change();
-      if (display_info.pending_layer_change) {
-        display_info.pending_layer_change_driver_config_stamp = driver_config_stamp;
+      // NOTE: If changing this flow name or ID, please also do so in the
+      // corresponding FLOW_END.
+      TRACE_FLOW_BEGIN("gfx", "present_image", applied_image->id().value());
+
+      // It's possible that the image's layer was moved between displays. The logic around
+      // pending_layer_change guarantees that the old display will be done with the image
+      // before the new display is, so deleting it from the old list is fine.
+      //
+      // Even if we're on the same display, the entry needs to be moved to the end of the
+      // list to ensure that the last config->current.layer_count elements in the queue
+      // are the current images.
+      //
+      // TODO(https://fxbug.dev/317914671): investigate whether storing Images in doubly-linked
+      //                                    lists continues to be desirable.
+      if (applied_image->InDoublyLinkedList()) {
+        applied_image->RemoveFromDoublyLinkedList();
       }
-      display_info.layer_count = display_config->applied_layer_count();
-
-      if (display_info.layer_count == 0) {
-        continue;
-      }
-
-      banjo_display_configs[display_count++] = *display_config->applied_config();
-
-      for (const LayerNode& applied_layer_node : display_config->get_applied_layers()) {
-        const Layer* applied_layer = applied_layer_node.layer;
-        fbl::RefPtr<Image> applied_image = applied_layer->applied_image();
-
-        if (applied_layer->is_skipped() || applied_image == nullptr) {
-          continue;
-        }
-
-        // Set the image controller config stamp so vsync knows what config the
-        // image was used at.
-        AssertMtxAliasHeld(*applied_image->mtx());
-        applied_image->set_latest_driver_config_stamp(driver_config_stamp);
-
-        // NOTE: If changing this flow name or ID, please also do so in the
-        // corresponding FLOW_END.
-        TRACE_FLOW_BEGIN("gfx", "present_image", applied_image->id().value());
-
-        // It's possible that the image's layer was moved between displays. The logic around
-        // pending_layer_change guarantees that the old display will be done with the image
-        // before the new display is, so deleting it from the old list is fine.
-        //
-        // Even if we're on the same display, the entry needs to be moved to the end of the
-        // list to ensure that the last config->current.layer_count elements in the queue
-        // are the current images.
-        //
-        // TODO(https://fxbug.dev/317914671): investigate whether storing Images in doubly-linked
-        //                                    lists continues to be desirable.
-        if (applied_image->InDoublyLinkedList()) {
-          applied_image->RemoveFromDoublyLinkedList();
-        }
-        display_info.images.push_back(applied_image);
-        display_info.config_image_queue.back().images.push_back(
-            {.image_id = applied_image->id(), .client_id = applied_image->client_id()});
-      }
+      display_info.images.push_back(applied_image);
+      display_info.config_image_queue.back().images.push_back(
+          {.image_id = applied_image->id(), .client_id = applied_image->client_id()});
     }
 
     applied_client_id_ = client_id;
@@ -521,12 +517,7 @@ void Controller::ApplyConfig(std::span<DisplayConfig*> display_configs,
     }
   }
 
-  // TODO(https://fxbug.com/42080631): Remove multiple displays from the coordinator.
-  if (display_count != 1) {
-    fdf::warn("Attempted to ApplyConfiguration() with {} displays", display_count);
-  }
-
-  engine_driver_client_->ApplyConfiguration(banjo_display_configs, driver_config_stamp);
+  engine_driver_client_->ApplyConfiguration(&banjo_display_config, driver_config_stamp);
 }
 
 void Controller::ReleaseImage(display::DriverImageId driver_image_id) {

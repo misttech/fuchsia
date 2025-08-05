@@ -1282,16 +1282,9 @@ void Client::ApplyConfigImpl() {
   }
 
   if (!config_missing_image && is_owner_) {
-    DisplayConfig* display_config_ptrs[std::max(size_t{1}, display_configs_.size())];
-    size_t display_config_ptrs_index = 0;
     for (DisplayConfig& display_config : display_configs_) {
-      display_config_ptrs[display_config_ptrs_index] = &display_config;
-      ++display_config_ptrs_index;
+      controller_.ApplyConfig(display_config, applied_config_stamp, id_);
     }
-
-    controller_.ApplyConfig(
-        std::span<DisplayConfig*>(display_config_ptrs, display_config_ptrs_index),
-        applied_config_stamp, id_);
   }
 }
 

@@ -107,9 +107,8 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   void OnClientDead(ClientProxy* client);
   void SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode);
 
-  void ApplyConfig(std::span<DisplayConfig*> display_configs,
-                   display::ConfigStamp client_config_stamp, ClientId client_id)
-      __TA_EXCLUDES(mtx());
+  void ApplyConfig(DisplayConfig& display_config, display::ConfigStamp client_config_stamp,
+                   ClientId client_id) __TA_EXCLUDES(mtx());
 
   void ReleaseImage(display::DriverImageId driver_image_id);
   void ReleaseCaptureImage(display::DriverCaptureImageId driver_capture_image_id);
