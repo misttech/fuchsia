@@ -486,7 +486,7 @@ func SetFFXDefaultDevice(deviceName string) error {
 }
 
 func (sdk SDKProperties) getDeviceSSHAddress(device *deviceInfo) (string, error) {
-	args := []string{"--target", device.Nodename, "target", "get-ssh-address"}
+	args := []string{"--target", device.Nodename, "target", "list", "--format", "addresses"}
 	output, err := sdk.RunFFX(args, false)
 	if err != nil {
 		return "", fmt.Errorf("Unable to get ssh address: %v", err)

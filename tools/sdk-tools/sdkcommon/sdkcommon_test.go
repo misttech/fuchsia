@@ -1475,21 +1475,21 @@ func fakeFfxTarget(args []string) {
 	expected := []string{}
 	argsStr := strings.Join(args, " ")
 	expectedListArgs := []string{"--machine", "json", "target", "list"}
-	expectedGetSSHAddressArgs := []string{"--target", "*", "target", "get-ssh-address"}
+	expectedGetSSHAddressArgs := []string{"--target", "*", "target", "list", "--format", "addresses"}
 	expectedGetDefaultTarget := []string{"target", "default", "get"}
-	if strings.Contains(argsStr, "target list") {
-		expected = expectedListArgs
-		if os.Getenv("TEST_FFX_TARGET_LIST_OUTPUT") != "" {
-			fmt.Println(os.Getenv("TEST_FFX_TARGET_LIST_OUTPUT"))
-		} else {
-			fmt.Println(defaultTargetJSONOutput)
-		}
-	} else if strings.Contains(argsStr, "target get-ssh-address") {
+	if strings.Contains(argsStr, "target list --format addresses") {
 		expected = expectedGetSSHAddressArgs
 		if val, ok := sshAddresses[args[1]]; ok {
 			fmt.Println(val)
 		} else {
 			fmt.Println(getSSHAddressOutput)
+		}
+	} else if strings.Contains(argsStr, "target list") {
+		expected = expectedListArgs
+		if os.Getenv("TEST_FFX_TARGET_LIST_OUTPUT") != "" {
+			fmt.Println(os.Getenv("TEST_FFX_TARGET_LIST_OUTPUT"))
+		} else {
+			fmt.Println(defaultTargetJSONOutput)
 		}
 	} else if strings.Contains(argsStr, "target default") {
 		if args[2] == "get" {
@@ -1511,7 +1511,7 @@ func fakeFfxTarget(args []string) {
 		}
 	}
 	if !ok {
-		fmt.Fprintf(os.Stderr, "unexpected ssh args  %v exepected %v", args, expected)
+		fmt.Fprintf(os.Stderr, "unexpected target args  %v expected %v", args, expected)
 		os.Exit(1)
 	}
 }
@@ -1874,7 +1874,7 @@ func fakeSSHKeygen(args []string) {
 		}
 	}
 	if !ok {
-		fmt.Fprintf(os.Stderr, "unexpected ssh-keygen args  %v exepected %v", args, expected)
+		fmt.Fprintf(os.Stderr, "unexpected ssh-keygen args  %v expected %v", args, expected)
 		os.Exit(1)
 	}
 }
