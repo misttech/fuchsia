@@ -326,7 +326,7 @@ std::optional<WatchpointInfo> DebugRegisters::DecodeHitWatchpoint() const {
     length = GetWatchpointLength(regs_.dr7, 3);
     slot = 3;
   } else {
-    FX_NOTREACHED() << "x86: No known hw exception set in DR6";
+    FX_NOTREACHED() << "x86: No known hw exception set in DR6\n" << ToString();
     return std::nullopt;
   }
 

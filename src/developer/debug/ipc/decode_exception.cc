@@ -93,7 +93,7 @@ ExceptionType DecodeX64Exception(uint32_t code,
   } else if (X86_DBG_STATUS_B3_GET(regs->dr6)) {
     return DecodeHardwareRegister(regs->dr7, 3);
   } else {
-    FX_NOTREACHED() << "x86: No known hw exception set in DR6";
+    FX_NOTREACHED() << "x86: No known hw exception set in DR6. Got: " << std::hex << regs->dr6;
     return ExceptionType::kUnknown;
   }
 }
