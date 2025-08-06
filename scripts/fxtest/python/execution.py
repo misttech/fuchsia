@@ -486,7 +486,7 @@ async def get_device_environment_from_exec_env(
     recorder: event.EventRecorder | None = None,
 ) -> environment.DeviceEnvironment:
     ssh_output = await run_command(
-        *exec_env.fx_cmd_line("ffx", "target", "get-ssh-address"),
+        *exec_env.fx_cmd_line("ffx", "target", "list", "--format", "addresses"),
         recorder=recorder,
     )
     if not ssh_output or ssh_output.return_code != 0:
