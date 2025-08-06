@@ -72,7 +72,7 @@ pub async fn get_category_group_names(ctx: &EnvironmentContext) -> Result<Vec<St
 
 pub fn validate_category_name(category_name: &str) -> Result<()> {
     static VALID_CATEGORY_REGEX: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"^[^\*,\s]*\*?$"#).unwrap());
+        LazyLock::new(|| Regex::new(r#"^[^\*,\s"]*\*?$"#).unwrap());
     if !VALID_CATEGORY_REGEX.is_match(category_name) {
         return Err(anyhow!("Error: category \"{}\" is invalid", category_name));
     }
@@ -204,6 +204,7 @@ impl SymbolizationMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[fuchsia::test]
     async fn test_get_category_group() {
@@ -213,9 +214,8 @@ mod tests {
             .query("trace.category_groups.birds")
             .level(Some(ffx_config::ConfigLevel::User))
             .set(json!(birds))
-            .await
             .unwrap();
-        assert_eq!(birds, get_category_group(&env.context, "birds").await.unwrap());
+        assert_eq!(birds, get_category_group(&env.context, "birds").unwrap());
     }
 
     #[fuchsia::test]
@@ -227,19 +227,16 @@ mod tests {
             .query("trace.category_groups.birds")
             .level(Some(ffx_config::ConfigLevel::User))
             .set(json!(birds))
-            .await
             .unwrap();
         env.context
             .query("trace.category_groups.bees")
             .level(Some(ffx_config::ConfigLevel::User))
             .set(json!(bees))
-            .await
             .unwrap();
         env.context
             .query("trace.category_groups.*invalid")
             .level(Some(ffx_config::ConfigLevel::User))
             .set(json!(bees))
-            .await
             .unwrap();
         assert!(get_category_group_names(&env.context)
             .await
@@ -255,7 +252,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_get_category_group_not_found() {
         let env = ffx_config::test_init().await.unwrap();
-        let err = get_category_group(&env.context, "not_found").await.unwrap_err();
+        let err = get_category_group(&env.context, "not_found").unwrap_err();
         assert!(
             err.to_string().contains("Error: no category group found for not_found"),
             "the actual value was \"{}\"",
@@ -267,6 +264,22 @@ mod tests {
         &["chic*kens", "*turkeys", "golden eagle", "ha,wk*", "goose:gosl\"ing"];
 
     #[fuchsia::test]
+    async fn test_validate_category_name() {
+        for category in INVALID_CATEGORIES {
+            let err = validate_category_name(category).unwrap_err();
+            let expected_message = format!("category \"{category}\" is invalid");
+            assert!(
+                err.to_string().contains(&expected_message),
+                "the actual value was \"{}\"",
+                err.to_string()
+            );
+        }
+        for category in vec!["chickens", "bald_eagle", "hawk*", "goose:gosling", "blue-jay"] {
+            assert!(validate_category_name(category).is_ok());
+        }
+    }
+
+    #[fuchsia::test]
     async fn test_get_category_group_invalid_category() {
         let env = ffx_config::test_init().await.unwrap();
         for invalid_category in INVALID_CATEGORIES {
@@ -274,9 +287,8 @@ mod tests {
                 .query("trace.category_groups.flawed")
                 .level(Some(ffx_config::ConfigLevel::User))
                 .set(json!(vec![invalid_category]))
-                .await
                 .unwrap();
-            let err = get_category_group(&env.context, "flawed").await.unwrap_err();
+            let err = get_category_group(&env.context, "flawed").unwrap_err();
             let expected_message = format!("invalid category \"{}\"", invalid_category);
             assert!(
                 err.to_string().contains(&expected_message),
@@ -294,7 +306,6 @@ mod tests {
             .query("trace.category_groups.birds")
             .level(Some(ffx_config::ConfigLevel::User))
             .set(json!(birds))
-            .await
             .unwrap();
         // The result should have all groups expanded, merge duplicate categories, and sort them.
         assert_eq!(
@@ -308,7 +319,6 @@ mod tests {
                     "*".to_string()
                 ]
             )
-            .await
             .unwrap()
         );
     }
@@ -317,9 +327,8 @@ mod tests {
     async fn test_expand_categories_invalid() {
         let env = ffx_config::test_init().await.unwrap();
         for invalid_category in INVALID_CATEGORIES {
-            let err = expand_categories(&env.context, vec![invalid_category.to_string()])
-                .await
-                .unwrap_err();
+            let err =
+                expand_categories(&env.context, vec![invalid_category.to_string()]).unwrap_err();
             let expected_message = format!("category \"{}\" is invalid", invalid_category);
             assert!(
                 err.to_string().contains(&expected_message),
@@ -338,8 +347,7 @@ mod tests {
             env.context.get("trace.category_groups").unwrap();
 
         for category_group_name in category_groups_json.as_object().unwrap().keys() {
-            let category_group =
-                get_category_group(&env.context, category_group_name).await.unwrap();
+            let category_group = get_category_group(&env.context, category_group_name).unwrap();
             assert_ne!(0, category_group.len());
         }
     }

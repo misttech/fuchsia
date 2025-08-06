@@ -21,10 +21,20 @@ rustc_library("lib") {
     "//third_party/rust_crates:serde_json",
   ]
 
+  test_deps = [ "//src/lib/fuchsia" ]
+
   sources = [ "src/lib.rs" ]
 }
 
 group("tests") {
   testonly = true
   deps = [ ":lib_test" ]
+}
+
+group("trace") {
+  testonly = true
+  deps = [
+    ":lib",
+    ":tests",
+  ]
 }
