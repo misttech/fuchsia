@@ -12,7 +12,7 @@
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 
-#include "src/graphics/display/drivers/coordinator/banjo-fidl-conversion.h"
+#include "src/graphics/display/drivers/coordinator/fidl-conversion.h"
 
 namespace display_coordinator {
 
@@ -54,10 +54,11 @@ zx::result<> EngineDriverClientFidl::ReleaseCapture(
 }
 
 display::ConfigCheckResult EngineDriverClientFidl::CheckConfiguration(
-    const display_config_t* display_config) {
+    const DriverDisplayConfig& driver_display_config,
+    std::span<const display::DriverLayer> layers) {
   fdf::Arena arena(kArenaTag);
   fuchsia_hardware_display_engine::wire::DisplayConfig fidl_config =
-      ToFidlDisplayConfig(*display_config, arena);
+      ToFidlDisplayConfig(driver_display_config, layers, arena);
 
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CheckConfiguration>
       fidl_transport_result = fidl_engine_.buffer(arena)->CheckConfiguration(fidl_config);
@@ -74,11 +75,12 @@ display::ConfigCheckResult EngineDriverClientFidl::CheckConfiguration(
   return display::ConfigCheckResult::kOk;
 }
 
-void EngineDriverClientFidl::ApplyConfiguration(const display_config_t* display_config,
+void EngineDriverClientFidl::ApplyConfiguration(const DriverDisplayConfig& driver_display_config,
+                                                std::span<const display::DriverLayer> layers,
                                                 display::DriverConfigStamp config_stamp) {
   fdf::Arena arena(kArenaTag);
   fuchsia_hardware_display_engine::wire::DisplayConfig fidl_config =
-      ToFidlDisplayConfig(*display_config, arena);
+      ToFidlDisplayConfig(driver_display_config, layers, arena);
 
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ApplyConfiguration>
       fidl_transport_result =

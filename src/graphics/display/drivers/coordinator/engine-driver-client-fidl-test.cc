@@ -12,9 +12,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/graphics/display/drivers/coordinator/driver-display-config.h"
 #include "src/graphics/display/drivers/coordinator/testing/mock-engine-fidl.h"
+#include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
+#include "src/graphics/display/lib/api-types/cpp/display-id.h"
+#include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-layer.h"
-#include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
+#include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace display_coordinator {
@@ -224,47 +228,52 @@ TEST_F(EngineDriverClientFidlTest, ReleaseImage) {
 }
 
 TEST_F(EngineDriverClientFidlTest, CheckConfigurationOk) {
-  constexpr layer_t kBanjoLayer0 = {
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 30, .y = 40, .width = 500, .height = 600},
-      .image_handle = 4242,
-      .image_metadata = {.dimensions = {.width = 700, .height = 800},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format = static_cast<fuchsia_images2_pixel_format_enum_value_t>(
-                             fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_PREMULTIPLIED,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_REFLECT_X,
-  };
-  const layer_t* banjo_layers[] = {&kBanjoLayer0};
-  display_config_t banjo_config = {
-      .display_id = 1,
-      .mode_id = 2,
+  const display::DriverLayer kLayer0({
+      .display_destination = display::Rectangle({.x = 10, .y = 20, .width = 300, .height = 400}),
+      .image_source = display::Rectangle({.x = 30, .y = 40, .width = 500, .height = 600}),
+      .image_id = display::DriverImageId(4242),
+      .image_metadata = display::ImageMetadata(
+          {.width = 700, .height = 800, .tiling_type = display::ImageTilingType::kLinear}),
+      .fallback_color = display::Color({.format = display::PixelFormat::kR8G8B8A8,
+                                        .bytes = {{0xff, 0, 0xff, 0xff, 0, 0, 0, 0}}}),
+      .alpha_mode = display::AlphaMode::kPremultiplied,
+      .alpha_coefficient = 0.25f,
+      .image_source_transformation = display::CoordinateTransformation::kReflectX,
+  });
+  const display::DriverLayer kLayers[] = {kLayer0};
+  const DriverDisplayConfig kDisplayConfig = {
+      .display_id = display::DisplayId(1),
+      .mode_id = display::ModeId(2),
       .timing =
-          {
-              .h_addressable = 1920,
-              .v_addressable = 1080,
+          display::DisplayTiming{
+              .horizontal_active_px = 1920,
+              .vertical_active_lines = 1080,
           },
-      .color_conversion =
-          {
-              .preoffsets = {0.1f, 0.2f, 0.3f},
-              .coefficients = {{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}, {7.0f, 8.0f, 9.0f}},
-              .postoffsets = {0.4f, 0.5f, 0.6f},
-          },
-      .layers_list = banjo_layers[0],
-      .layers_count = 1,
+      .color_conversion = display::ColorConversion({
+          .preoffsets = {0.1f, 0.2f, 0.3f},
+          .coefficients =
+              {
+                  std::array<float, 3>{1.0f, 2.0f, 3.0f},
+                  std::array<float, 3>{4.0f, 5.0f, 6.0f},
+                  std::array<float, 3>{7.0f, 8.0f, 9.0f},
+              },
+          .postoffsets = {0.4f, 0.5f, 0.6f},
+      }),
+      .layer_count = 1,
   };
 
   mock_.ExpectCheckConfiguration(
       [&](fuchsia_hardware_display_engine::wire::EngineCheckConfigurationRequest* request,
           fdf::Arena& arena,
           testing::MockEngineFidl::CheckConfigurationCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_config.display_id), display::DisplayId(1));
+        EXPECT_EQ(display::DisplayId(request->display_config.display_id),
+                  kDisplayConfig.display_id);
 
-        EXPECT_EQ(request->display_config.mode_id.value, banjo_config.mode_id);
-        EXPECT_EQ(request->display_config.timing.h_addressable, banjo_config.timing.h_addressable);
-        EXPECT_EQ(request->display_config.timing.v_addressable, banjo_config.timing.v_addressable);
+        EXPECT_EQ(request->display_config.mode_id.value, kDisplayConfig.mode_id.value());
+        EXPECT_EQ(request->display_config.timing.h_addressable,
+                  static_cast<uint32_t>(kDisplayConfig.timing.horizontal_active_px));
+        EXPECT_EQ(request->display_config.timing.v_addressable,
+                  static_cast<uint32_t>(kDisplayConfig.timing.vertical_active_lines));
 
         EXPECT_THAT(request->display_config.color_conversion.preoffsets,
                     ::testing::ElementsAre(0.1f, 0.2f, 0.3f));
@@ -281,58 +290,62 @@ TEST_F(EngineDriverClientFidlTest, CheckConfigurationOk) {
                     ::testing::ElementsAre(0.4f, 0.5f, 0.6f));
 
         ASSERT_EQ(request->display_config.layers.size(), 1u);
-        EXPECT_EQ(display::DriverLayer(request->display_config.layers[0]),
-                  display::DriverLayer(kBanjoLayer0));
+        EXPECT_EQ(display::DriverLayer(request->display_config.layers[0]), kLayer0);
 
         completer.buffer(arena).ReplySuccess();
       });
 
-  display::ConfigCheckResult result = fidl_client_.CheckConfiguration(&banjo_config);
+  display::ConfigCheckResult result = fidl_client_.CheckConfiguration(kDisplayConfig, kLayers);
   EXPECT_EQ(result, display::ConfigCheckResult::kOk);
 }
 
 TEST_F(EngineDriverClientFidlTest, CheckConfigurationError) {
-  constexpr layer_t kBanjoLayer0 = {
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 30, .y = 40, .width = 500, .height = 600},
-      .image_handle = 4242,
-      .image_metadata = {.dimensions = {.width = 700, .height = 800},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format = static_cast<fuchsia_images2_pixel_format_enum_value_t>(
-                             fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_PREMULTIPLIED,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_REFLECT_X,
-  };
-  const layer_t* banjo_layers[] = {&kBanjoLayer0};
-  display_config_t banjo_config = {
-      .display_id = 1,
-      .mode_id = 2,
+  const display::DriverLayer kLayer0({
+      .display_destination = display::Rectangle({.x = 10, .y = 20, .width = 300, .height = 400}),
+      .image_source = display::Rectangle({.x = 30, .y = 40, .width = 500, .height = 600}),
+      .image_id = display::DriverImageId(4242),
+      .image_metadata = display::ImageMetadata(
+          {.width = 700, .height = 800, .tiling_type = display::ImageTilingType::kLinear}),
+      .fallback_color = display::Color({.format = display::PixelFormat::kR8G8B8A8,
+                                        .bytes = {{0xff, 0, 0xff, 0xff, 0, 0, 0, 0}}}),
+      .alpha_mode = display::AlphaMode::kPremultiplied,
+      .alpha_coefficient = 0.25f,
+      .image_source_transformation = display::CoordinateTransformation::kReflectX,
+  });
+  const display::DriverLayer kLayers[] = {kLayer0};
+  const DriverDisplayConfig kDisplayConfig = {
+      .display_id = display::DisplayId(1),
+      .mode_id = display::ModeId(2),
       .timing =
-          {
-              .h_addressable = 1920,
-              .v_addressable = 1080,
+          display::DisplayTiming{
+              .horizontal_active_px = 1920,
+              .vertical_active_lines = 1080,
           },
-      .color_conversion =
-          {
-              .preoffsets = {0.1f, 0.2f, 0.3f},
-              .coefficients = {{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}, {7.0f, 8.0f, 9.0f}},
-              .postoffsets = {0.4f, 0.5f, 0.6f},
-          },
-      .layers_list = banjo_layers[0],
-      .layers_count = 1,
+      .color_conversion = display::ColorConversion({
+          .preoffsets = {0.1f, 0.2f, 0.3f},
+          .coefficients =
+              {
+                  std::array<float, 3>{1.0f, 2.0f, 3.0f},
+                  std::array<float, 3>{4.0f, 5.0f, 6.0f},
+                  std::array<float, 3>{7.0f, 8.0f, 9.0f},
+              },
+          .postoffsets = {0.4f, 0.5f, 0.6f},
+      }),
+      .layer_count = 1,
   };
 
   mock_.ExpectCheckConfiguration(
       [&](fuchsia_hardware_display_engine::wire::EngineCheckConfigurationRequest* request,
           fdf::Arena& arena,
           testing::MockEngineFidl::CheckConfigurationCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_config.display_id), display::DisplayId(1));
+        EXPECT_EQ(display::DisplayId(request->display_config.display_id),
+                  kDisplayConfig.display_id);
 
-        EXPECT_EQ(request->display_config.mode_id.value, banjo_config.mode_id);
-        EXPECT_EQ(request->display_config.timing.h_addressable, banjo_config.timing.h_addressable);
-        EXPECT_EQ(request->display_config.timing.v_addressable, banjo_config.timing.v_addressable);
+        EXPECT_EQ(request->display_config.mode_id.value, kDisplayConfig.mode_id.value());
+        EXPECT_EQ(request->display_config.timing.h_addressable,
+                  static_cast<uint32_t>(kDisplayConfig.timing.horizontal_active_px));
+        EXPECT_EQ(request->display_config.timing.v_addressable,
+                  static_cast<uint32_t>(kDisplayConfig.timing.vertical_active_lines));
 
         EXPECT_THAT(request->display_config.color_conversion.preoffsets,
                     ::testing::ElementsAre(0.1f, 0.2f, 0.3f));
@@ -349,48 +362,49 @@ TEST_F(EngineDriverClientFidlTest, CheckConfigurationError) {
                     ::testing::ElementsAre(0.4f, 0.5f, 0.6f));
 
         ASSERT_EQ(request->display_config.layers.size(), 1u);
-        EXPECT_EQ(display::DriverLayer(request->display_config.layers[0]),
-                  display::DriverLayer(kBanjoLayer0));
+        EXPECT_EQ(display::DriverLayer(request->display_config.layers[0]), kLayer0);
 
         completer.buffer(arena).ReplyError(
             fuchsia_hardware_display_types::ConfigResult::kUnsupportedConfig);
       });
 
-  display::ConfigCheckResult result = fidl_client_.CheckConfiguration(&banjo_config);
+  display::ConfigCheckResult result = fidl_client_.CheckConfiguration(kDisplayConfig, kLayers);
   EXPECT_EQ(result, display::ConfigCheckResult::kUnsupportedConfig);
 }
 
 TEST_F(EngineDriverClientFidlTest, ApplyConfiguration) {
-  constexpr layer_t kBanjoLayer0 = {
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 30, .y = 40, .width = 500, .height = 600},
-      .image_handle = 4242,
-      .image_metadata = {.dimensions = {.width = 700, .height = 800},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format = static_cast<fuchsia_images2_pixel_format_enum_value_t>(
-                             fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_PREMULTIPLIED,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_REFLECT_X,
-  };
-  const layer_t* banjo_layers[] = {&kBanjoLayer0};
-  display_config_t banjo_config = {
-      .display_id = 1,
-      .mode_id = 2,
+  const display::DriverLayer kLayer0({
+      .display_destination = display::Rectangle({.x = 10, .y = 20, .width = 300, .height = 400}),
+      .image_source = display::Rectangle({.x = 30, .y = 40, .width = 500, .height = 600}),
+      .image_id = display::DriverImageId(4242),
+      .image_metadata = display::ImageMetadata(
+          {.width = 700, .height = 800, .tiling_type = display::ImageTilingType::kLinear}),
+      .fallback_color = display::Color({.format = display::PixelFormat::kR8G8B8A8,
+                                        .bytes = {{0xff, 0, 0xff, 0xff, 0, 0, 0, 0}}}),
+      .alpha_mode = display::AlphaMode::kPremultiplied,
+      .alpha_coefficient = 0.25f,
+      .image_source_transformation = display::CoordinateTransformation::kReflectX,
+  });
+  const display::DriverLayer kLayers[] = {kLayer0};
+  const DriverDisplayConfig kDisplayConfig = {
+      .display_id = display::DisplayId(1),
+      .mode_id = display::ModeId(2),
       .timing =
-          {
-              .h_addressable = 1920,
-              .v_addressable = 1080,
+          display::DisplayTiming{
+              .horizontal_active_px = 1920,
+              .vertical_active_lines = 1080,
           },
-      .color_conversion =
-          {
-              .preoffsets = {0.1f, 0.2f, 0.3f},
-              .coefficients = {{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}, {7.0f, 8.0f, 9.0f}},
-              .postoffsets = {0.4f, 0.5f, 0.6f},
-          },
-      .layers_list = banjo_layers[0],
-      .layers_count = 1,
+      .color_conversion = display::ColorConversion({
+          .preoffsets = {0.1f, 0.2f, 0.3f},
+          .coefficients =
+              {
+                  std::array<float, 3>{1.0f, 2.0f, 3.0f},
+                  std::array<float, 3>{4.0f, 5.0f, 6.0f},
+                  std::array<float, 3>{7.0f, 8.0f, 9.0f},
+              },
+          .postoffsets = {0.4f, 0.5f, 0.6f},
+      }),
+      .layer_count = 1,
   };
   constexpr display::DriverConfigStamp kConfigStamp(42);
 
@@ -398,11 +412,14 @@ TEST_F(EngineDriverClientFidlTest, ApplyConfiguration) {
       [&](fuchsia_hardware_display_engine::wire::EngineApplyConfigurationRequest* request,
           fdf::Arena& arena,
           testing::MockEngineFidl::ApplyConfigurationCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_config.display_id), display::DisplayId(1));
+        EXPECT_EQ(display::DisplayId(request->display_config.display_id),
+                  kDisplayConfig.display_id);
 
-        EXPECT_EQ(request->display_config.mode_id.value, banjo_config.mode_id);
-        EXPECT_EQ(request->display_config.timing.h_addressable, banjo_config.timing.h_addressable);
-        EXPECT_EQ(request->display_config.timing.v_addressable, banjo_config.timing.v_addressable);
+        EXPECT_EQ(request->display_config.mode_id.value, kDisplayConfig.mode_id.value());
+        EXPECT_EQ(request->display_config.timing.h_addressable,
+                  static_cast<uint32_t>(kDisplayConfig.timing.horizontal_active_px));
+        EXPECT_EQ(request->display_config.timing.v_addressable,
+                  static_cast<uint32_t>(kDisplayConfig.timing.vertical_active_lines));
 
         EXPECT_THAT(request->display_config.color_conversion.preoffsets,
                     ::testing::ElementsAre(0.1f, 0.2f, 0.3f));
@@ -419,14 +436,13 @@ TEST_F(EngineDriverClientFidlTest, ApplyConfiguration) {
                     ::testing::ElementsAre(0.4f, 0.5f, 0.6f));
 
         ASSERT_EQ(request->display_config.layers.size(), 1u);
-        EXPECT_EQ(display::DriverLayer(request->display_config.layers[0]),
-                  display::DriverLayer(kBanjoLayer0));
+        EXPECT_EQ(display::DriverLayer(request->display_config.layers[0]), kLayer0);
         EXPECT_EQ(display::DriverConfigStamp(request->config_stamp), kConfigStamp);
 
         completer.buffer(arena).Reply();
       });
 
-  fidl_client_.ApplyConfiguration(&banjo_config, kConfigStamp);
+  fidl_client_.ApplyConfiguration(kDisplayConfig, kLayers, kConfigStamp);
 }
 
 TEST_F(EngineDriverClientFidlTest, ReleaseCapture) {

@@ -7,7 +7,6 @@
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/dispatcher.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -36,6 +35,7 @@
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
 #include <fbl/ref_ptr.h>
+#include <fbl/static_vector.h>
 #include <fbl/string_printf.h>
 #include <fbl/vector.h>
 
@@ -507,8 +507,8 @@ void Client::SetDisplayMode(SetDisplayModeRequestView request,
     return;
   }
 
-  display_config.draft_.mode_id = mode_id.ToBanjo();
-  display_config.draft_.timing = display::ToBanjoDisplayTiming(*display_timing);
+  display_config.draft_.mode_id = mode_id;
+  display_config.draft_.timing = *display_timing;
   display_config.has_draft_nonlayer_config_change_ = true;
   draft_display_config_was_validated_ = false;
 }
@@ -525,28 +525,37 @@ void Client::SetDisplayColorConversion(SetDisplayColorConversionRequestView requ
   }
   DisplayConfig& display_config = *display_configs_it;
 
-  display_config.draft_.color_conversion = display::ColorConversion::kIdentity.ToBanjo();
-  if (std::isfinite(request->preoffsets[0])) {
-    std::memcpy(display_config.draft_.color_conversion.preoffsets, request->preoffsets.data(),
-                sizeof(request->preoffsets.data_));
-    static_assert(sizeof(request->preoffsets) ==
-                  sizeof(display_config.draft_.color_conversion.preoffsets));
+  fidl::Array<float, 3>& fidl_preoffsets = request->preoffsets;
+  fidl::Array<float, 9>& fidl_coefficients = request->coefficients;
+  fidl::Array<float, 3>& fidl_postoffsets = request->postoffsets;
+
+  if (std::ranges::any_of(fidl_preoffsets, [](float x) { return !std::isfinite(x); })) {
+    fdf::warn("SetDisplayColorConversion called with invalid preoffsets: {}", display_id.value());
+    return;
+  }
+  if (std::ranges::any_of(fidl_coefficients, [](float x) { return !std::isfinite(x); })) {
+    fdf::warn("SetDisplayColorConversion called with invalid coefficients: {}", display_id.value());
+    return;
+  }
+  if (std::ranges::any_of(fidl_postoffsets, [](float x) { return !std::isfinite(x); })) {
+    fdf::warn("SetDisplayColorConversion called with invalid postoffsets: {}", display_id.value());
+    return;
   }
 
-  if (std::isfinite(request->coefficients[0])) {
-    std::memcpy(display_config.draft_.color_conversion.coefficients, request->coefficients.data(),
-                sizeof(request->coefficients.data_));
-    static_assert(sizeof(request->coefficients) ==
-                  sizeof(display_config.draft_.color_conversion.coefficients));
-  }
-
-  if (std::isfinite(request->postoffsets[0])) {
-    std::memcpy(display_config.draft_.color_conversion.postoffsets, request->postoffsets.data(),
-                sizeof(request->postoffsets.data_));
-    static_assert(sizeof(request->postoffsets) ==
-                  sizeof(display_config.draft_.color_conversion.postoffsets));
-  }
-
+  display::ColorConversion color_conversion({
+      .preoffsets = {fidl_preoffsets[0], fidl_preoffsets[1], fidl_preoffsets[2]},
+      .coefficients =
+          {
+              std::array<float, 3>{fidl_coefficients[0], fidl_coefficients[1],
+                                   fidl_coefficients[2]},
+              std::array<float, 3>{fidl_coefficients[3], fidl_coefficients[4],
+                                   fidl_coefficients[5]},
+              std::array<float, 3>{fidl_coefficients[6], fidl_coefficients[7],
+                                   fidl_coefficients[8]},
+          },
+      .postoffsets = {fidl_postoffsets[0], fidl_postoffsets[1], fidl_postoffsets[2]},
+  });
+  display_config.draft_.color_conversion = std::move(color_conversion);
   display_config.has_draft_nonlayer_config_change_ = true;
   draft_display_config_was_validated_ = false;
 
@@ -592,7 +601,7 @@ void Client::SetDisplayLayers(SetDisplayLayersRequestView request,
       return;
     }
   }
-  display_config.draft_.layers_count = static_cast<int32_t>(request->layer_ids.size());
+  display_config.draft_.layer_count = static_cast<int>(request->layer_ids.size());
   draft_display_config_was_validated_ = false;
 
   // One-way call. No reply required.
@@ -1116,14 +1125,6 @@ display::ConfigCheckResult Client::CheckConfigForDisplay(
   ZX_DEBUG_ASSERT_MSG(max_layer_count > 0,
                       "DisplayConfig contract broken: engine_max_layer_count() must be positive");
 
-  // VLA is guaranteed  be non-empty (causing UB) thanks to the contract
-  // mentioned above.
-  //
-  // TODO(https://fxbug.dev/42080896): Do not use VLA. Store this buffer in the
-  // display configuration instead.
-  layer_t banjo_layers[max_layer_count];
-  size_t banjo_layers_index = 0;
-
   // Frame used for checking that each layer's `display_destination` lies
   // entirely within the display output.
 
@@ -1148,22 +1149,24 @@ display::ConfigCheckResult Client::CheckConfigForDisplay(
     display_area = {{
         .x = 0,
         .y = 0,
-        // The cast will not result in UB because the maximum value of
-        // `h_addressable` and `v_addressable` is `2^16 - 1`.
-        .width = static_cast<int32_t>(display_config.draft_.timing.h_addressable),
-        .height = static_cast<int32_t>(display_config.draft_.timing.v_addressable),
+        .width = display_config.draft_.timing.horizontal_active_px,
+        .height = display_config.draft_.timing.vertical_active_lines,
     }};
   }
+
+  fbl::static_vector<display::DriverLayer, display::EngineInfo::kMaxAllowedMaxLayerCount>
+      driver_layers;
 
   // Normalize the display configuration, and perform Coordinator-level
   // checks. The engine drivers API contract does not allow passing
   // configurations that fail these checks.
   for (const LayerNode& draft_layer_node : display_config.draft_layers_) {
-    if (banjo_layers_index >= max_layer_count) {
+    const display::DriverLayer& driver_layer = draft_layer_node.layer->draft_layer_config_;
+    driver_layers.push_back(driver_layer);
+    if (driver_layers.size() > max_layer_count) {
       return display::ConfigCheckResult::kUnsupportedConfig;
     }
 
-    const display::DriverLayer& driver_layer = draft_layer_node.layer->draft_layer_config_;
     if (driver_layer.image_source().width() != 0 && driver_layer.image_source().height() != 0) {
       // Frame for checking that the layer's `image_source` lies entirely within
       // the source image.
@@ -1184,24 +1187,18 @@ display::ConfigCheckResult Client::CheckConfigForDisplay(
     if (!OriginRectangleContains(display_area, driver_layer.display_destination())) {
       return display::ConfigCheckResult::kInvalidConfig;
     }
-
-    layer_t& banjo_layer = banjo_layers[banjo_layers_index];
-    ++banjo_layers_index;
-    banjo_layer = driver_layer.ToBanjo();
   }
 
-  ZX_DEBUG_ASSERT_MSG(display_config.draft_.layers_count == banjo_layers_index,
-                      "Draft configuration layer count %zu does not agree with list size %zu",
-                      display_config.draft_.layers_count, banjo_layers_index);
-
-  // The layer count will be replaced if the client has a valid configuration
-  // for a display.
-  display_config_t banjo_display_config = display_config.draft_;
-  banjo_display_config.layers_list = banjo_layers;
+  DriverDisplayConfig draft_driver_display_config = display_config.draft_;
+  ZX_DEBUG_ASSERT_MSG(
+      static_cast<size_t>(draft_driver_display_config.layer_count) == driver_layers.size(),
+      "Draft configuration layer count %d does not agree with list size %zu",
+      draft_driver_display_config.layer_count, driver_layers.size());
 
   {
     TRACE_DURATION("gfx", "Display::Client::CheckConfig engine_driver_client");
-    return controller_.engine_driver_client()->CheckConfiguration(&banjo_display_config);
+    return controller_.engine_driver_client()->CheckConfiguration(draft_driver_display_config,
+                                                                  driver_layers);
   }
 }
 
@@ -1233,13 +1230,13 @@ void Client::ApplyConfigImpl() {
   display::ConfigStamp applied_config_stamp = latest_config_stamp_;
 
   for (DisplayConfig& display_config : display_configs_) {
-    display_config.applied_.layers_count = 0;
+    display_config.applied_.layer_count = 0;
 
     // Displays with no current layers are filtered out in `Controller::ApplyConfig`,
     // after it updates its own image tracking logic.
 
     for (LayerNode& applied_layer_node : display_config.applied_layers_) {
-      display_config.applied_.layers_count++;
+      display_config.applied_.layer_count++;
       Layer* applied_layer = applied_layer_node.layer;
       const bool activated = applied_layer->ActivateLatestReadyImage();
       if (activated && applied_layer->applied_image()) {
@@ -1377,27 +1374,28 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
       continue;
     }
 
-    display_config->applied_.display_id = display_config->id().ToBanjo();
-    display_config->applied_.layers_list = nullptr;
-    display_config->applied_.layers_count = 0;
-
     std::span<const display::ModeAndId> display_preferred_modes =
         std::move(display_preferred_modes_result).value();
     std::span<const display::DisplayTiming> display_timings =
         std::move(display_timings_result).value();
-    if (!display_preferred_modes.empty()) {
-      const display::ModeAndId preferred_mode_and_id = display_preferred_modes[0];
-      display_config->applied_.mode_id = preferred_mode_and_id.id().ToBanjo();
-      const display::DisplayTiming placeholder_timing =
-          ToPlaceholderDisplayTiming(preferred_mode_and_id.mode());
-      display_config->applied_.timing = display::ToBanjoDisplayTiming(placeholder_timing);
-    } else {
-      ZX_DEBUG_ASSERT(!display_timings.empty());
-      display_config->applied_.mode_id = INVALID_MODE_ID;
-      display_config->applied_.timing = display::ToBanjoDisplayTiming(display_timings[0]);
-    }
-    display_config->applied_.color_conversion = display::ColorConversion::kIdentity.ToBanjo();
 
+    auto [mode_id, display_timing] = [&]() -> std::tuple<display::ModeId, display::DisplayTiming> {
+      if (!display_preferred_modes.empty()) {
+        const display::ModeAndId preferred_mode_and_id = display_preferred_modes[0];
+        return {preferred_mode_and_id.id(),
+                ToPlaceholderDisplayTiming(preferred_mode_and_id.mode())};
+      }
+      ZX_DEBUG_ASSERT(!display_timings.empty());
+      return {display::kInvalidModeId, display_timings[0]};
+    }();
+
+    display_config->applied_ = DriverDisplayConfig{
+        .display_id = display_config->id(),
+        .mode_id = mode_id,
+        .timing = display_timing,
+        .color_conversion = display::ColorConversion::kIdentity,
+        .layer_count = 0,
+    };
     display_config->draft_ = display_config->applied_;
 
     display_config->InitializeInspect(&proxy_->node());

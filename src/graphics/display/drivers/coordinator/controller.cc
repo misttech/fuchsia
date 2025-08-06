@@ -69,29 +69,6 @@ void Controller::PopulateDisplayTimings(DisplayInfo& display_info) {
 
   // Go through all the display mode timings and record whether or not
   // a basic layer configuration is acceptable.
-  layer_t test_layers[] = {
-      // The width and height will be replaced by the code below.
-      layer_t{
-          .display_destination = {.x = 0, .y = 0, .width = 0, .height = 0},
-          .image_source = {.x = 0, .y = 0, .width = 0, .height = 0},
-          .image_handle = INVALID_DISPLAY_ID,
-          .image_metadata = {.dimensions = {.width = 0, .height = 0},
-                             .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-          .fallback_color =
-              {
-                  .format = static_cast<uint32_t>(fuchsia_images2::PixelFormat::kR8G8B8A8),
-                  .bytes = {0},
-              },
-          .alpha_mode = ALPHA_DISABLE,
-          .alpha_layer_val = 0.0,
-          .image_source_transformation = COORDINATE_TRANSFORMATION_IDENTITY,
-      },
-  };
-  display_config_t test_config = {
-      .display_id = display_info.id().ToBanjo(),
-      .layers_list = test_layers,
-      .layers_count = 1,
-  };
 
   for (auto edid_timing_it = edid::timing_iterator(&edid_info); edid_timing_it.is_valid();
        ++edid_timing_it) {
@@ -112,22 +89,32 @@ void Controller::PopulateDisplayTimings(DisplayInfo& display_info) {
       continue;
     }
 
-    layer_t& test_layer = test_layers[0];
-    ZX_DEBUG_ASSERT_MSG(
-        static_cast<const layer_t*>(&test_layer) == &test_config.layers_list[0],
-        "test_layer should be a non-const alias for the first layer in test_configs");
-    test_layer.image_metadata.dimensions.width = width;
-    test_layer.image_metadata.dimensions.height = height;
-    test_layer.image_source.width = width;
-    test_layer.image_source.height = height;
-    test_layer.display_destination.width = width;
-    test_layer.display_destination.height = height;
+    std::array<display::DriverLayer, 1> test_layers = {display::DriverLayer({
+        .display_destination =
+            display::Rectangle({.x = 0, .y = 0, .width = width, .height = height}),
+        .image_source = display::Rectangle({.x = 0, .y = 0, .width = width, .height = height}),
+        .image_id = display::kInvalidDriverImageId,
+        .image_metadata = display::ImageMetadata(
+            {.width = width, .height = height, .tiling_type = display::ImageTilingType::kLinear}),
+        .fallback_color = display::Color({
+            .format = display::PixelFormat::kR8G8B8A8,
+            .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+        }),
+        .alpha_mode = display::AlphaMode::kDisable,
+        .alpha_coefficient = 0.0,
+        .image_source_transformation = display::CoordinateTransformation::kIdentity,
+    })};
 
-    test_config.mode_id = INVALID_MODE_ID;
-    test_config.timing = display::ToBanjoDisplayTiming(edid_timing);
+    DriverDisplayConfig test_config = {
+        .display_id = display_info.id(),
+        .mode_id = display::kInvalidModeId,
+        .timing = edid_timing,
+        .color_conversion = display::ColorConversion::kIdentity,
+        .layer_count = 1,
+    };
 
     display::ConfigCheckResult config_check_result =
-        engine_driver_client_->CheckConfiguration(&test_config);
+        engine_driver_client_->CheckConfiguration(test_config, test_layers);
     if (config_check_result != display::ConfigCheckResult::kOk) {
       continue;
     }
@@ -431,13 +418,12 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
 
   last_valid_apply_config_config_stamp_property_.Set(client_config_stamp.value());
 
-  display_config_t banjo_display_config;
-
   // The applied configuration's stamp.
   //
   // Populated from `controller_stamp_` while the mutex is held.
   display::DriverConfigStamp driver_config_stamp = {};
-  fbl::static_vector<layer_t, display::EngineInfo::kMaxAllowedMaxLayerCount> banjo_layers;
+  fbl::static_vector<display::DriverLayer, display::EngineInfo::kMaxAllowedMaxLayerCount>
+      driver_layers;
 
   {
     fbl::AutoLock lock(mtx());
@@ -460,7 +446,7 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
     if (display_info.pending_layer_change) {
       display_info.pending_layer_change_driver_config_stamp = driver_config_stamp;
     }
-    display_info.layer_count = display_config.applied_layer_count();
+    display_info.layer_count = display_config.applied_config().layer_count;
 
     if (display_info.layer_count == 0) {
       // TODO(https://fxbug.dev/336394440): Make this a fatal error.
@@ -468,12 +454,10 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
       return;
     }
 
-    banjo_display_config = *display_config.applied_config();
-
-    ZX_DEBUG_ASSERT(banjo_layers.empty());
+    ZX_DEBUG_ASSERT(driver_layers.empty());
     for (const LayerNode& applied_layer_node : display_config.get_applied_layers()) {
       const Layer* applied_layer = applied_layer_node.layer;
-      banjo_layers.push_back(applied_layer->applied_driver_layer_config().ToBanjo());
+      driver_layers.push_back(applied_layer->applied_driver_layer_config());
       fbl::RefPtr<Image> applied_image = applied_layer->applied_image();
 
       if (applied_layer->is_skipped() || applied_image == nullptr) {
@@ -521,11 +505,12 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
     }
   }
 
+  DriverDisplayConfig driver_display_config = display_config.applied_config();
   // Populated by Client::ApplyConfig().
-  ZX_DEBUG_ASSERT(banjo_display_config.layers_count == banjo_layers.size());
-  banjo_display_config.layers_list = banjo_layers.data();
+  ZX_DEBUG_ASSERT(static_cast<size_t>(driver_display_config.layer_count) == driver_layers.size());
 
-  engine_driver_client_->ApplyConfiguration(&banjo_display_config, driver_config_stamp);
+  engine_driver_client_->ApplyConfiguration(driver_display_config, driver_layers,
+                                            driver_config_stamp);
 }
 
 void Controller::ReleaseImage(display::DriverImageId driver_image_id) {

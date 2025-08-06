@@ -12,6 +12,7 @@
 #include <fbl/intrusive_double_list.h>
 #include <fbl/vector.h>
 
+#include "src/graphics/display/drivers/coordinator/driver-display-config.h"
 #include "src/graphics/display/drivers/coordinator/id-map.h"
 #include "src/graphics/display/drivers/coordinator/layer.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
@@ -64,16 +65,15 @@ class DisplayConfig : public IdMappable<std::unique_ptr<DisplayConfig>, display:
   // `display::EngineInfo::kMaxAllowedMaxLayerCount`.
   int engine_max_layer_count() const { return engine_max_layer_count_; }
 
-  int applied_layer_count() const { return static_cast<int>(applied_.layers_count); }
-  const display_config_t* applied_config() const { return &applied_; }
+  const DriverDisplayConfig& applied_config() const { return applied_; }
   const fbl::DoublyLinkedList<LayerNode*>& get_applied_layers() const { return applied_layers_; }
 
  private:
   // The last configuration sent to the display engine.
-  display_config_t applied_;
+  DriverDisplayConfig applied_;
 
   // The display configuration modified by client calls.
-  display_config_t draft_;
+  DriverDisplayConfig draft_;
 
   // If true, the draft configuration's layer list may differ from the current
   // configuration's list.

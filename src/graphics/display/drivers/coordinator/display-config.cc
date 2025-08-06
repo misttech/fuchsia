@@ -4,7 +4,6 @@
 
 #include "src/graphics/display/drivers/coordinator/display-config.h"
 
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <lib/inspect/cpp/vmo/types.h>
 #include <zircon/assert.h>
 
@@ -47,18 +46,21 @@ void DisplayConfig::DiscardNonLayerDraftConfig() {
   draft_has_layer_list_change_ = false;
   draft_has_layer_list_change_property_.Set(false);
 
-  // TODO(https://fxbug.dev/402804098): Remove this workaround.
-  //
-  // We preserve the draft display mode to work
-  // around a Scenic issue where it forgets to call SetDisplayMode() again after
-  // discarding a draft configuration with a load-bearing SetDisplayMode().
-  const display_timing_t draft_timing = draft_.timing;
+  draft_ = {
+      .display_id = applied_.display_id,
 
-  draft_ = applied_;
+      // We preserve the draft display mode to work
+      // around a Scenic issue where it forgets to call SetDisplayMode() again after
+      // discarding a draft configuration with a load-bearing SetDisplayMode().
+      //
+      // TODO(https://fxbug.dev/402804098): Remove this workaround.
+      .mode_id = draft_.mode_id,
+      .timing = draft_.timing,
+
+      .color_conversion = applied_.color_conversion,
+      .layer_count = applied_.layer_count,
+  };
   has_draft_nonlayer_config_change_ = false;
-
-  // TODO(https://fxbug.dev/402804098): Remove this workaround.
-  draft_.timing = draft_timing;
 }
 
 }  // namespace display_coordinator

@@ -39,8 +39,11 @@ class EngineDriverClientFidl : public EngineDriverClient {
   // `EngineDriverClient`:
   void ReleaseImage(display::DriverImageId driver_image_id) override;
   zx::result<> ReleaseCapture(display::DriverCaptureImageId driver_capture_image_id) override;
-  display::ConfigCheckResult CheckConfiguration(const display_config_t* display_config) override;
-  void ApplyConfiguration(const display_config_t* display_config,
+  display::ConfigCheckResult CheckConfiguration(
+      const DriverDisplayConfig& driver_display_config,
+      std::span<const display::DriverLayer> layers) override;
+  void ApplyConfiguration(const DriverDisplayConfig& driver_display_config,
+                          std::span<const display::DriverLayer> layers,
                           display::DriverConfigStamp config_stamp) override;
   display::EngineInfo CompleteCoordinatorConnection(
       fdf::ClientEnd<fuchsia_hardware_display_engine::EngineListener> fidl_listener_client)

@@ -6,19 +6,20 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_COORDINATOR_ENGINE_DRIVER_CLIENT_H_
 
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/cpp/banjo.h>
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/zx/result.h>
 
 #include <cstdint>
 #include <memory>
 
+#include "src/graphics/display/drivers/coordinator/driver-display-config.h"
 #include "src/graphics/display/lib/api-types/cpp/config-check-result.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-capture-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
+#include "src/graphics/display/lib/api-types/cpp/driver-layer.h"
 #include "src/graphics/display/lib/api-types/cpp/engine-info.h"
 #include "src/graphics/display/lib/api-types/cpp/image-buffer-usage.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
@@ -30,10 +31,7 @@ class Controller;
 // C++ bridge to a display engine driver.
 //
 // This abstract base class represents interfaces to the
-// [`fuchsia.hardware.display.engine/Engine`] FIDL interface,
-// as well as the
-// [`fuchsia.hardware.display.controller/DisplayEngine`] Banjo
-// interface.
+// [`fuchsia.hardware.display.engine/Engine`] FIDL interface.
 class EngineDriverClient {
  public:
   static zx::result<std::unique_ptr<EngineDriverClient>> Create(
@@ -47,8 +45,11 @@ class EngineDriverClient {
 
   virtual void ReleaseImage(display::DriverImageId driver_image_id) = 0;
   virtual zx::result<> ReleaseCapture(display::DriverCaptureImageId driver_capture_image_id) = 0;
-  virtual display::ConfigCheckResult CheckConfiguration(const display_config_t* display_config) = 0;
-  virtual void ApplyConfiguration(const display_config_t* display_config,
+  virtual display::ConfigCheckResult CheckConfiguration(
+      const DriverDisplayConfig& driver_display_config,
+      std::span<const display::DriverLayer> layers) = 0;
+  virtual void ApplyConfiguration(const DriverDisplayConfig& driver_display_config,
+                                  std::span<const display::DriverLayer> layers,
                                   display::DriverConfigStamp config_stamp) = 0;
   virtual display::EngineInfo CompleteCoordinatorConnection(
       fdf::ClientEnd<fuchsia_hardware_display_engine::EngineListener> fidl_listener_client) = 0;

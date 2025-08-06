@@ -49,8 +49,6 @@ source_set("shared") {
   sources = [
     "added-display-info.cc",
     "added-display-info.h",
-    "banjo-fidl-conversion.cc",
-    "banjo-fidl-conversion.h",
     "capture-image.cc",
     "capture-image.h",
     "client-id.h",
@@ -77,6 +75,8 @@ source_set("shared") {
     "engine-listener.h",
     "fence.cc",
     "fence.h",
+    "fidl-conversion.cc",
+    "fidl-conversion.h",
     "id-map.h",
     "image.cc",
     "image.h",
@@ -89,7 +89,6 @@ source_set("shared") {
   ]
   public_deps = [
     ":coordinator_bind",
-    "//sdk/banjo/fuchsia.hardware.display.controller:fuchsia.hardware.display.controller_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_cpp",
     "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",
     "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_cpp",
@@ -129,13 +128,13 @@ source_set("preferred-scanout-image-type") {
 test("display-coordinator-unittests") {
   sources = [
     "added-display-info-test.cc",
-    "banjo-fidl-conversion-test.cc",
     "client-proxy-test.cc",
     "client-vsync-queue-test.cc",
     "display-info-test.cc",
     "engine-driver-client-fidl-test.cc",
     "engine-listener-fidl-adapter-test.cc",
     "fence-test.cc",
+    "fidl-conversion-test.cc",
     "image-test.cc",
     "inspect-test.cc",
     "integration-test.cc",
