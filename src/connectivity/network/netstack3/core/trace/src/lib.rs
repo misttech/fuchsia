@@ -27,7 +27,7 @@ pub const CATEGORY: &'static core::ffi::CStr = c"net";
 pub mod __inner {
     use super::CATEGORY;
 
-    pub use fuchsia_trace::{duration, instant, ArgValue, Scope};
+    pub use fuchsia_trace::{duration, instant, ArgValue, AsTraceStrRef, Scope};
     use fuchsia_trace::{trace_site_t, TraceCategoryContext};
 
     /// A single trace site cache that is used in the macro expansions.
@@ -50,8 +50,14 @@ pub mod __inner {
         ($name:expr $(, $key:expr => $val:expr)* $(,)?) => {
             let mut args;
             let _scope = {
-                if $crate::__inner::category_context().is_some() {
-                    args = [$($crate::__inner::ArgValue::of($key, $val)),*];
+                if let Some(context) = $crate::__inner::category_context() {
+                    use $crate::__inner::AsTraceStrRef as _;
+
+                    args = [$($crate::__inner::ArgValue::of_registered(
+                        $key.as_trace_str_ref(&context),
+                        $val,
+                    )),*];
+
                     Some($crate::__inner::duration($crate::CATEGORY, $name, &args))
                 } else {
                     None
@@ -67,7 +73,13 @@ pub mod __inner {
     macro_rules! trace_instant {
         ($name:expr $(, $key:expr => $val:expr)* $(,)?) => {
             if let Some(context) = $crate::__inner::category_context() {
-                let args = [$($crate::__inner::ArgValue::of($key, $val)),*];
+                use $crate::__inner::AsTraceStrRef as _;
+
+                let args = [$($crate::__inner::ArgValue::of_registered(
+                    $key.as_trace_str_ref(&context),
+                    $val,
+                )),*];
+
                 $crate::__inner::instant(
                     &context,
                     $name,
