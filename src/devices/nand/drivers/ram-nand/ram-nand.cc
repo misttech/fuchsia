@@ -4,6 +4,7 @@
 
 #include "ram-nand.h"
 
+#include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/metadata.h>
 #include <lib/zbi-format/partition.h>
@@ -69,42 +70,30 @@ void ExtractNandConfig(const fuchsia_hardware_nand::wire::RamNandInfo& info,
   config->extra_partition_config_count = extra_count;
 }
 
-fbl::Array<char> ExtractPartitionMap(const fuchsia_hardware_nand::wire::RamNandInfo& info) {
-  uint32_t num_partitions = GetNumPartitions(info);
-  uint32_t dest_partitions = num_partitions;
-  for (uint32_t i = 0; i < num_partitions; i++) {
-    if (info.partition_map.partitions[i].hidden) {
-      dest_partitions--;
-    }
-  }
+fuchsia_boot_metadata::PartitionMap ExtractPartitionMap(
+    const fuchsia_hardware_nand::wire::RamNandInfo& info) {
+  fuchsia_boot_metadata::PartitionMap map{
+      {.block_count = info.nand_info.num_blocks,
+       .block_size = info.nand_info.page_size * info.nand_info.pages_per_block,
+       .guid{{0}}}};
+  std::ranges::copy(info.partition_map.device_guid, map.guid().value().begin());
 
-  size_t len = sizeof(zbi_partition_map_t) + sizeof(zbi_partition_t) * dest_partitions;
-  fbl::Array<char> buffer(new char[len], len);
-  memset(buffer.data(), 0, len);
-  zbi_partition_map_t* map = reinterpret_cast<zbi_partition_map_t*>(buffer.data());
-
-  map->block_count = info.nand_info.num_blocks;
-  map->block_size = info.nand_info.page_size * info.nand_info.pages_per_block;
-  map->partition_count = dest_partitions;
-  memcpy(map->guid, info.partition_map.device_guid.data(), sizeof(map->guid));
-
-  static_assert(alignof(zbi_partition_map_t) >= alignof(zbi_partition_t));
-  cpp20::span<zbi_partition_t> partitions(reinterpret_cast<zbi_partition_t*>(map + 1),
-                                          map->partition_count);
-  auto dest = partitions.begin();
-  for (uint32_t i = 0; i < num_partitions; ++i) {
-    const auto& src = info.partition_map.partitions[i];
-    if (!src.hidden) {
-      memcpy(dest->type_guid, src.type_guid.data(), sizeof(dest->type_guid));
-      memcpy(dest->uniq_guid, src.unique_guid.data(), sizeof(dest->uniq_guid));
-      dest->first_block = src.first_block;
-      dest->last_block = src.last_block;
-      memcpy(dest->name, src.name.data(), sizeof(dest->name));
-      ++dest;
-    }
-  }
-  ZX_DEBUG_ASSERT(dest == partitions.end());
-  return buffer;
+  std::span src_partitions{info.partition_map.partitions.begin(),
+                           info.partition_map.partition_count};
+  auto partitions =
+      src_partitions | std::views::filter([](const auto& partition) { return !partition.hidden; }) |
+      std::views::transform([](const auto& src) {
+        fuchsia_boot_metadata::Partition dst{{.type_guid{{0}},
+                                              .unique_guid{{0}},
+                                              .first_block = src.first_block,
+                                              .last_block = src.last_block,
+                                              .name{src.name.begin(), src.name.end()}}};
+        std::ranges::copy(src.type_guid, dst.type_guid().begin());
+        std::ranges::copy(src.unique_guid, dst.unique_guid().begin());
+        return dst;
+      });
+  map.partitions().emplace(partitions.begin(), partitions.end());
+  return map;
 }
 
 }  // namespace
@@ -144,9 +133,6 @@ zx_status_t NandDevice::Bind(fuchsia_hardware_nand::wire::RamNandInfo& info) {
     export_nand_config_ = std::make_optional<nand_config_t>();
     ExtractNandConfig(info, &*export_nand_config_);
   }
-  if (info.export_partition_map) {
-    export_partition_map_ = ExtractPartitionMap(info);
-  }
 
   zx_device_str_prop_t props[] = {
       ddk::MakeStrProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_nand::BIND_PROTOCOL_DEVICE),
@@ -164,10 +150,15 @@ zx_status_t NandDevice::Bind(fuchsia_hardware_nand::wire::RamNandInfo& info) {
     memcpy(metadata.data(), &export_nand_config_.value(), sizeof(export_nand_config_.value()));
     args.add_metadata(DEVICE_METADATA_PRIVATE, std::move(metadata));
   }
-  if (export_partition_map_) {
-    std::vector<uint8_t> metadata(export_partition_map_.size());
-    memcpy(metadata.data(), export_partition_map_.data(), export_partition_map_.size());
-    args.add_metadata(DEVICE_METADATA_PARTITION_MAP, std::move(metadata));
+  if (info.export_partition_map) {
+    auto partition_map = ExtractPartitionMap(info);
+    fit::result persisted = fidl::Persist(partition_map);
+    if (persisted.is_error()) {
+      zxlogf(ERROR, "Failed to persist partition map: %s",
+             persisted.error_value().FormatDescription().c_str());
+      return persisted.error_value().status();
+    }
+    args.add_metadata(DEVICE_METADATA_PARTITION_MAP, std::move(persisted.value()));
   }
 
   return DdkAdd(std::move(args));

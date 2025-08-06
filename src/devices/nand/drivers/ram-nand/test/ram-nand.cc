@@ -4,6 +4,7 @@
 
 #include "ram-nand.h"
 
+#include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/ddk/metadata.h>
 #include <lib/stdcompat/span.h>
@@ -143,6 +144,19 @@ TEST(RamNandTest, ExportNandConfig) {
 }
 
 TEST(RamNandTest, ExportPartitionMap) {
+  const std::array<uint8_t, 16> kGuid = {13, 13, 13, 13, 13, 13, 13, 13,
+                                         13, 13, 13, 13, 13, 13, 13, 13};
+  constexpr std::string kPartition1Name = "partition 1";
+  const std::array<uint8_t, 16> kPartition1TypeGuid = {44, 44, 44, 44, 44, 44, 44, 44,
+                                                       44, 44, 44, 44, 44, 44, 44, 44};
+  const std::array<uint8_t, 16> kPartition1UniqueGuid = {45, 45, 45, 45, 45, 45, 45, 45,
+                                                         45, 45, 45, 45, 45, 45, 45, 45};
+  constexpr std::string kPartition3Name = "partition 1";
+  const std::array<uint8_t, 16> kPartition3TypeGuid = {55, 55, 55, 55, 55, 55, 55, 55,
+                                                       55, 55, 55, 55, 55, 55, 55, 55};
+  const std::array<uint8_t, 16> kPartition3UniqueGuid = {56, 56, 56, 56, 56, 56, 56, 56,
+                                                         56, 56, 56, 56, 56, 56, 56, 56};
+
   auto fake_parent = MockDevice::FakeRootParent();
   NandParams params(kPageSize, kBlockSize, kNumBlocks, 6, 0);
   NandDevice* device(new NandDevice(params, fake_parent.get()));
@@ -150,63 +164,55 @@ TEST(RamNandTest, ExportPartitionMap) {
   fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
   config.export_partition_map = true;
   config.partition_map.partition_count = 3;
-  memset(config.partition_map.device_guid.data(), 33, ZBI_PARTITION_GUID_LEN);
+  std::ranges::copy(kGuid, config.partition_map.device_guid.begin());
 
   // Setup the first and third partitions with data, and the second one hidden.
-  memset(config.partition_map.partitions[0].type_guid.data(), 44, ZBI_PARTITION_GUID_LEN);
-  memset(config.partition_map.partitions[0].unique_guid.data(), 45, ZBI_PARTITION_GUID_LEN);
+  std::ranges::copy(kPartition1TypeGuid, config.partition_map.partitions[0].type_guid.begin());
+  std::ranges::copy(kPartition1UniqueGuid, config.partition_map.partitions[0].unique_guid.begin());
   config.partition_map.partitions[0].first_block = 46;
   config.partition_map.partitions[0].last_block = 47;
-  memset(config.partition_map.partitions[0].name.data(), 48, ZBI_PARTITION_NAME_LEN);
+  memcpy(config.partition_map.partitions[0].name.data(), kPartition1Name.c_str(),
+         kPartition1Name.size() + 1);
 
   config.partition_map.partitions[1].hidden = true;
 
-  memset(config.partition_map.partitions[2].type_guid.data(), 55, ZBI_PARTITION_GUID_LEN);
-  memset(config.partition_map.partitions[2].unique_guid.data(), 56, ZBI_PARTITION_GUID_LEN);
+  std::ranges::copy(kPartition3TypeGuid, config.partition_map.partitions[2].type_guid.begin());
+  std::ranges::copy(kPartition3UniqueGuid, config.partition_map.partitions[2].unique_guid.begin());
   config.partition_map.partitions[2].first_block = 57;
   config.partition_map.partitions[2].last_block = 58;
-  memset(config.partition_map.partitions[2].name.data(), 59, ZBI_PARTITION_NAME_LEN);
-
-  // Expect only two partitions on the result.
-  size_t expected_size = sizeof(zbi_partition_map_t) + 2 * sizeof(zbi_partition_t);
-  std::unique_ptr<char[]> buffer(new char[expected_size]);
-  memset(buffer.get(), 0, expected_size);
-  zbi_partition_map_t* expected = reinterpret_cast<zbi_partition_map_t*>(buffer.get());
-
-  expected->block_count = kNumBlocks;
-  expected->block_size = kPageSize * kBlockSize;
-  expected->partition_count = 2;
-
-  memset(expected->guid, 33, ZBI_PARTITION_GUID_LEN);
-
-  {
-    static_assert(alignof(zbi_partition_map_t) >= alignof(zbi_partition_t));
-    cpp20::span<zbi_partition_t> partitions(reinterpret_cast<zbi_partition_t*>(expected + 1),
-                                            expected->partition_count);
-    memset(partitions[0].type_guid, 44, ZBI_PARTITION_GUID_LEN);
-    memset(partitions[0].uniq_guid, 45, ZBI_PARTITION_GUID_LEN);
-    partitions[0].first_block = 46;
-    partitions[0].last_block = 47;
-    memset(partitions[0].name, 48, ZBI_PARTITION_NAME_LEN);
-
-    memset(partitions[1].type_guid, 55, ZBI_PARTITION_GUID_LEN);
-    memset(partitions[1].uniq_guid, 56, ZBI_PARTITION_GUID_LEN);
-    partitions[1].first_block = 57;
-    partitions[1].last_block = 58;
-    memset(partitions[1].name, 59, ZBI_PARTITION_NAME_LEN);
-  }
+  memcpy(config.partition_map.partitions[2].name.data(), kPartition3Name.c_str(),
+         kPartition3Name.size() + 1);
 
   ASSERT_OK(device->Bind(config));
   auto* child = fake_parent->GetLatestChild();
 
-  char metadata_buffer[256] = {};
-  size_t actual_size;
+  zx::result partition_map_result = ddk::GetEncodedMetadata<fuchsia_boot_metadata::PartitionMap>(
+      child, DEVICE_METADATA_PARTITION_MAP);
+  ASSERT_OK(partition_map_result);
+  const auto& partition_map = partition_map_result.value();
+  ASSERT_TRUE(partition_map.block_count().has_value());
+  EXPECT_EQ(partition_map.block_count().value(), kNumBlocks);
+  ASSERT_TRUE(partition_map.block_size().has_value());
+  EXPECT_EQ(partition_map.block_size().value(), kPageSize * kBlockSize);
+  ASSERT_TRUE(partition_map.guid().has_value());
+  EXPECT_EQ(partition_map.guid().value(), kGuid);
+  ASSERT_TRUE(partition_map.partitions().has_value());
+  const auto& partitions = partition_map.partitions().value();
+  ASSERT_EQ(partitions.size(), 2u);
 
-  EXPECT_OK(device_get_metadata(child, DEVICE_METADATA_PARTITION_MAP, metadata_buffer,
-                                sizeof(metadata_buffer), &actual_size));
-  EXPECT_EQ(expected_size, actual_size);
+  const auto& partition1 = partitions[0];
+  EXPECT_EQ(partition1.first_block(), 46);
+  EXPECT_EQ(partition1.last_block(), 47);
+  EXPECT_EQ(partition1.type_guid(), kPartition1TypeGuid);
+  EXPECT_EQ(partition1.unique_guid(), kPartition1UniqueGuid);
+  EXPECT_STREQ(partition1.name(), kPartition1Name);
 
-  EXPECT_BYTES_EQ(expected, metadata_buffer, actual_size);
+  const auto& partition2 = partitions[1];
+  EXPECT_EQ(partition2.first_block(), 57);
+  EXPECT_EQ(partition2.last_block(), 58);
+  EXPECT_EQ(partition2.type_guid(), kPartition3TypeGuid);
+  EXPECT_EQ(partition2.unique_guid(), kPartition3UniqueGuid);
+  EXPECT_STREQ(partition2.name(), kPartition3Name);
 
   child->UnbindOp();
   child->WaitUntilUnbindReplyCalled();
@@ -234,9 +240,12 @@ TEST(RamNandTest, AddMetadata) {
                                 sizeof(metadata_buffer), &actual_size));
   EXPECT_EQ(sizeof(nand_config_t), actual_size);
 
-  EXPECT_OK(device_get_metadata(child, DEVICE_METADATA_PARTITION_MAP, metadata_buffer,
-                                sizeof(metadata_buffer), &actual_size));
-  EXPECT_EQ(sizeof(zbi_partition_map_t), actual_size);
+  zx::result partition_map_result = ddk::GetEncodedMetadata<fuchsia_boot_metadata::PartitionMap>(
+      child, DEVICE_METADATA_PARTITION_MAP);
+  ASSERT_OK(partition_map_result);
+  const auto& partition_map = partition_map_result.value();
+  EXPECT_TRUE(partition_map.partitions().has_value());
+  EXPECT_TRUE(partition_map.partitions().value().empty());
 }
 
 std::unique_ptr<NandDevice> CreateDevice(size_t* operation_size) {

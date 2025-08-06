@@ -5,6 +5,7 @@
 #include "src/devices/block/drivers/bootpart/bootpart.h"
 
 #include <assert.h>
+#include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
 #include <inttypes.h>
@@ -54,7 +55,7 @@ void BootPartition::BlockImplQueue(block_op_t* bop, block_impl_queue_callback co
       }
 
       // Adjust for partition starting block
-      bop->rw.offset_dev += zbi_partition_.first_block;
+      bop->rw.offset_dev += partition_.first_block();
       break;
     }
     case BLOCK_OPCODE_FLUSH:
@@ -74,10 +75,10 @@ static_assert(ZBI_PARTITION_GUID_LEN == GUID_LENGTH, "GUID length mismatch");
 zx_status_t BootPartition::BlockPartitionGetGuid(guidtype_t guid_type, guid_t* out_guid) {
   switch (guid_type) {
     case GUIDTYPE_TYPE:
-      memcpy(out_guid, zbi_partition_.type_guid, ZBI_PARTITION_GUID_LEN);
+      memcpy(out_guid, partition_.type_guid().data(), ZBI_PARTITION_GUID_LEN);
       return ZX_OK;
     case GUIDTYPE_INSTANCE:
-      memcpy(out_guid, zbi_partition_.uniq_guid, ZBI_PARTITION_GUID_LEN);
+      memcpy(out_guid, partition_.unique_guid().data(), ZBI_PARTITION_GUID_LEN);
       return ZX_OK;
     default:
       return ZX_ERR_INVALID_ARGS;
@@ -91,8 +92,8 @@ zx_status_t BootPartition::BlockPartitionGetName(char* out_name, size_t capacity
     return ZX_ERR_BUFFER_TOO_SMALL;
   }
 
-  size_t len = strnlen(zbi_partition_.name, ZBI_PARTITION_NAME_LEN);
-  memcpy(out_name, zbi_partition_.name, len);
+  size_t len = strnlen(partition_.name().c_str(), ZBI_PARTITION_NAME_LEN);
+  memcpy(out_name, partition_.name().c_str(), len);
   out_name[len] = '\0';
 
   return ZX_OK;
@@ -103,11 +104,11 @@ zx_status_t BootPartition::BlockPartitionGetMetadata(partition_metadata_t* out_m
       status != ZX_OK) {
     return status;
   }
-  memcpy(&out_metadata->type_guid, zbi_partition_.type_guid, ZBI_PARTITION_GUID_LEN);
-  memcpy(&out_metadata->instance_guid, zbi_partition_.uniq_guid, ZBI_PARTITION_GUID_LEN);
-  out_metadata->start_block_offset = zbi_partition_.first_block;
-  out_metadata->num_blocks = zbi_partition_.last_block - zbi_partition_.first_block;
-  out_metadata->flags = zbi_partition_.flags;
+  memcpy(&out_metadata->type_guid, partition_.type_guid().data(), ZBI_PARTITION_GUID_LEN);
+  memcpy(&out_metadata->instance_guid, partition_.unique_guid().data(), ZBI_PARTITION_GUID_LEN);
+  out_metadata->start_block_offset = partition_.first_block();
+  out_metadata->num_blocks = partition_.last_block() - partition_.first_block();
+  out_metadata->flags = partition_.flags();
   return ZX_OK;
 }
 
@@ -135,22 +136,19 @@ zx_status_t BootPartition::Bind(void* ctx, zx_device_t* parent) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  uint8_t buffer[METADATA_PARTITION_MAP_MAX];
-  size_t actual;
-  zx_status_t status =
-      device_get_metadata(parent, DEVICE_METADATA_PARTITION_MAP, buffer, sizeof(buffer), &actual);
-  if (status != ZX_OK) {
-    return status;
+  zx::result metadata = ddk::GetEncodedMetadata<fuchsia_boot_metadata::PartitionMap>(
+      parent, DEVICE_METADATA_PARTITION_MAP);
+  if (metadata.is_error()) {
+    zxlogf(ERROR, "Failed to get metadata: %s", metadata.status_string());
+    return metadata.status_value();
   }
+  const auto& partition_map = metadata.value();
 
-  zbi_partition_map_t* map = reinterpret_cast<zbi_partition_map_t*>(buffer);
-  static_assert(alignof(zbi_partition_map_t) >= alignof(zbi_partition_t));
-  cpp20::span<const zbi_partition_t> partitions(reinterpret_cast<const zbi_partition_t*>(map + 1),
-                                                map->partition_count);
-  if (partitions.empty()) {
-    zxlogf(ERROR, "Partition count is zero.");
+  if (!partition_map.partitions().has_value() || partition_map.partitions().value().empty()) {
+    zxlogf(ERROR, "Missing partitions");
     return ZX_ERR_INTERNAL;
   }
+  const auto& partitions = partition_map.partitions().value();
 
   block_info_t block_info;
   size_t block_op_size;
@@ -165,7 +163,7 @@ zx_status_t BootPartition::Bind(void* ctx, zx_device_t* parent) {
       return ZX_ERR_NO_MEMORY;
     }
 
-    status = bootpart->AddBootPartition();
+    zx_status_t status = bootpart->AddBootPartition();
     if (status != ZX_OK) {
       return status;
     }
@@ -177,12 +175,12 @@ zx_status_t BootPartition::Bind(void* ctx, zx_device_t* parent) {
 }
 
 zx_status_t BootPartition::AddBootPartition() {
-  fbl::String type_guid = ToGuidString(zbi_partition_.type_guid);
-  fbl::String uniq_guid = ToGuidString(zbi_partition_.uniq_guid);
+  fbl::String type_guid = ToGuidString(partition_.type_guid().data());
+  fbl::String uniq_guid = ToGuidString(partition_.unique_guid().data());
   zxlogf(TRACE,
          "Partition %lu (%s) type=%s guid=%s name=%s first=0x%" PRIx64 " last=0x%" PRIx64 "\n",
          partition_index_, PartitionName().c_str(), type_guid.c_str(), uniq_guid.c_str(),
-         zbi_partition_.name, zbi_partition_.first_block, zbi_partition_.last_block);
+         partition_.name().c_str(), partition_.first_block(), partition_.last_block());
 
   zx_status_t status = DdkAdd(
       ddk::DeviceAddArgs(PartitionName().c_str()).add_metadata(DEVICE_METADATA_PARTITION_MAP, {}));

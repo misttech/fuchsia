@@ -28,63 +28,46 @@ constexpr nand_info_t kNandInfo = {
     .partition_guid = {},
 };
 
-zbi_partition_map_t MakePartitionMap(uint32_t partition_count) {
-  return zbi_partition_map_t{
-      .block_count = kNumBlocks * kPagesPerBlock,
-      .block_size = kPageSize,
-      .partition_count = partition_count,
-      .reserved = 0,
-      .guid = {},
-  };
-}
+const fuchsia_boot_metadata::PartitionMap kDefaultPartitionMap{{
+    .block_count = kNumBlocks * kPagesPerBlock,
+    .block_size = kPageSize,
+    .reserved = 0,
+    .partitions{{}},
+}};
 
-zbi_partition_t MakePartition(uint32_t first_block, uint32_t last_block) {
-  return zbi_partition_t{
-      .type_guid = {},
-      .uniq_guid = {},
+fuchsia_boot_metadata::Partition MakePartition(uint32_t first_block, uint32_t last_block) {
+  return fuchsia_boot_metadata::Partition{{
       .first_block = first_block,
       .last_block = last_block,
       .flags = 0,
       .name = {},
-  };
+  }};
 }
 
-cpp20::span<zbi_partition_t> GetPartitions(zbi_partition_map_t* pmap) {
-  static_assert(alignof(zbi_partition_map_t) >= alignof(zbi_partition_t));
-  return {reinterpret_cast<zbi_partition_t*>(pmap + 1), pmap->partition_count};
-}
-
-void ValidatePartition(zbi_partition_map_t* pmap, size_t partition_number, uint32_t first_block,
-                       uint32_t last_block) {
-  auto partitions = GetPartitions(pmap);
-  EXPECT_EQ(partitions[partition_number].first_block, first_block);
-  EXPECT_EQ(partitions[partition_number].last_block, last_block);
+void ValidatePartition(const fuchsia_boot_metadata::PartitionMap& pmap, size_t partition_number,
+                       uint32_t first_block, uint32_t last_block) {
+  ASSERT_TRUE(pmap.partitions().has_value());
+  ASSERT_GE(pmap.partitions().value().size(), partition_number);
+  const auto& partition = pmap.partitions().value()[partition_number];
+  EXPECT_EQ(partition.first_block(), first_block);
+  EXPECT_EQ(partition.last_block(), last_block);
 }
 
 TEST(NandPartUtilsTest, SanitizeEmptyPartitionMapTest) {
-  auto pmap = MakePartitionMap(0);
-  ASSERT_NE(SanitizePartitionMap(&pmap, kNandInfo), ZX_OK);
+  auto pmap = kDefaultPartitionMap;
+  ASSERT_NE(SanitizePartitionMap(pmap, kNandInfo), ZX_OK);
 }
 
 TEST(NandPartUtilsTest, SanitizeSinglePartitionMapTest) {
-  std::unique_ptr<uint8_t[]> pmap_buffer(
-      new uint8_t[sizeof(zbi_partition_map_t) + sizeof(zbi_partition_t)]);
-  auto* pmap = reinterpret_cast<zbi_partition_map_t*>(pmap_buffer.get());
-  *pmap = MakePartitionMap(1);
-  GetPartitions(pmap)[0] = MakePartition(0, 9);
+  auto pmap = kDefaultPartitionMap;
+  pmap.partitions().value().emplace_back(MakePartition(0, 9));
   ASSERT_OK(SanitizePartitionMap(pmap, kNandInfo));
   ASSERT_NO_FATAL_FAILURE(ValidatePartition(pmap, 0, 0, 4));
 }
 
 TEST(NandPartUtilsTest, SanitizeMultiplePartitionMapTest) {
-  std::unique_ptr<uint8_t[]> pmap_buffer(
-      new uint8_t[sizeof(zbi_partition_map_t) + 3 * sizeof(zbi_partition_t)]);
-  auto* pmap = reinterpret_cast<zbi_partition_map_t*>(pmap_buffer.get());
-  *pmap = MakePartitionMap(3);
-  auto partitions = GetPartitions(pmap);
-  partitions[0] = MakePartition(0, 3);
-  partitions[1] = MakePartition(4, 7);
-  partitions[2] = MakePartition(8, 9);
+  auto pmap = kDefaultPartitionMap;
+  pmap.partitions().emplace({MakePartition(0, 3), MakePartition(4, 7), MakePartition(8, 9)});
 
   ASSERT_OK(SanitizePartitionMap(pmap, kNandInfo));
   ASSERT_NO_FATAL_FAILURE(ValidatePartition(pmap, 0, 0, 1));
@@ -93,13 +76,8 @@ TEST(NandPartUtilsTest, SanitizeMultiplePartitionMapTest) {
 }
 
 TEST(NandPartUtilsTest, SanitizeMultiplePartitionMapOutOfOrderTest) {
-  std::unique_ptr<uint8_t[]> pmap_buffer(
-      new uint8_t[sizeof(zbi_partition_map_t) + 2 * sizeof(zbi_partition_t)]);
-  auto* pmap = reinterpret_cast<zbi_partition_map_t*>(pmap_buffer.get());
-  *pmap = MakePartitionMap(2);
-  auto partitions = GetPartitions(pmap);
-  partitions[0] = MakePartition(4, 9);
-  partitions[1] = MakePartition(0, 3);
+  auto pmap = kDefaultPartitionMap;
+  pmap.partitions().emplace({MakePartition(4, 9), MakePartition(0, 3)});
 
   ASSERT_OK(SanitizePartitionMap(pmap, kNandInfo));
   ASSERT_NO_FATAL_FAILURE(ValidatePartition(pmap, 0, 0, 1));
@@ -107,50 +85,29 @@ TEST(NandPartUtilsTest, SanitizeMultiplePartitionMapOutOfOrderTest) {
 }
 
 TEST(NandPartUtilsTest, SanitizeMultiplePartitionMapOverlappingTest) {
-  std::unique_ptr<uint8_t[]> pmap_buffer(
-      new uint8_t[sizeof(zbi_partition_map_t) + 3 * sizeof(zbi_partition_t)]);
-  auto* pmap = reinterpret_cast<zbi_partition_map_t*>(pmap_buffer.get());
-  *pmap = MakePartitionMap(3);
-  auto partitions = GetPartitions(pmap);
-  partitions[0] = MakePartition(0, 3);
-  partitions[1] = MakePartition(8, 9);
-  partitions[2] = MakePartition(4, 8);
+  auto pmap = kDefaultPartitionMap;
+  pmap.partitions().emplace({MakePartition(0, 3), MakePartition(8, 9), MakePartition(4, 8)});
 
   ASSERT_NE(SanitizePartitionMap(pmap, kNandInfo), ZX_OK);
 }
 
 TEST(NandPartUtilsTest, SanitizePartitionMapBadRangeTest) {
-  std::unique_ptr<uint8_t[]> pmap_buffer(
-      new uint8_t[sizeof(zbi_partition_map_t) + 2 * sizeof(zbi_partition_t)]);
-  auto* pmap = reinterpret_cast<zbi_partition_map_t*>(pmap_buffer.get());
-  *pmap = MakePartitionMap(2);
-  auto partitions = GetPartitions(pmap);
-  partitions[0] = MakePartition(1, 0);
-  partitions[1] = MakePartition(1, 9);
+  auto pmap = kDefaultPartitionMap;
+  pmap.partitions().emplace({MakePartition(1, 0), MakePartition(1, 9)});
 
   ASSERT_NE(SanitizePartitionMap(pmap, kNandInfo), ZX_OK);
 }
 
 TEST(NandPartUtilsTest, SanitizePartitionMapUnalignedTest) {
-  std::unique_ptr<uint8_t[]> pmap_buffer(
-      new uint8_t[sizeof(zbi_partition_map_t) + 2 * sizeof(zbi_partition_t)]);
-  auto* pmap = reinterpret_cast<zbi_partition_map_t*>(pmap_buffer.get());
-  *pmap = MakePartitionMap(2);
-  auto partitions = GetPartitions(pmap);
-  partitions[0] = MakePartition(0, 3);
-  partitions[1] = MakePartition(5, 8);
+  auto pmap = kDefaultPartitionMap;
+  pmap.partitions().emplace({MakePartition(0, 3), MakePartition(5, 8)});
 
   ASSERT_NE(SanitizePartitionMap(pmap, kNandInfo), ZX_OK);
 }
 
 TEST(NandPartUtilsTest, SanitizePartitionMapOutofBoundsTest) {
-  std::unique_ptr<uint8_t[]> pmap_buffer(
-      new uint8_t[sizeof(zbi_partition_map_t) + 2 * sizeof(zbi_partition_t)]);
-  auto* pmap = reinterpret_cast<zbi_partition_map_t*>(pmap_buffer.get());
-  *pmap = MakePartitionMap(2);
-  auto partitions = GetPartitions(pmap);
-  partitions[0] = MakePartition(0, 3);
-  partitions[1] = MakePartition(4, 11);
+  auto pmap = kDefaultPartitionMap;
+  pmap.partitions().emplace({MakePartition(0, 3), MakePartition(4, 11)});
 
   ASSERT_NE(SanitizePartitionMap(pmap, kNandInfo), ZX_OK);
 }

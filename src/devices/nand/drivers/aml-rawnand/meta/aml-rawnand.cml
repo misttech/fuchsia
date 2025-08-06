@@ -16,6 +16,11 @@
         fallback: "false",
     },
     use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
+        {
+            service: [
+                "fuchsia.boot.metadata.PartitionMap",
+                "fuchsia.hardware.platform.device.Service",
+            ],
+        },
     ],
 }

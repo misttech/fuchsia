@@ -4,6 +4,7 @@
 
 #include "src/devices/block/drivers/core/block-device.h"
 
+#include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.block.partition/cpp/natural_types.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
 #include <lib/fidl/cpp/wire/string_view.h>
@@ -364,17 +365,15 @@ zx_status_t BlockDevice::Bind(void* ctx, zx_device_t* dev) {
   }
 
   // Check to see if we have a ZBI partition map.
-  uint8_t buffer[METADATA_PARTITION_MAP_MAX];
-  size_t actual;
-  zx_status_t status =
-      device_get_metadata(dev, DEVICE_METADATA_PARTITION_MAP, buffer, sizeof(buffer), &actual);
-  if (status == ZX_OK && actual >= sizeof(zbi_partition_map_t)) {
+  zx::result partition_map = ddk::GetEncodedMetadata<fuchsia_boot_metadata::PartitionMap>(
+      dev, DEVICE_METADATA_PARTITION_MAP);
+  if (partition_map.is_ok()) {
     bdev->has_bootpart_ = true;
   }
 
   // We implement |ZX_PROTOCOL_BLOCK|, not |ZX_PROTOCOL_BLOCK_IMPL|. This is the
   // "core driver" protocol for block device drivers.
-  status = bdev->DdkAdd(ddk::DeviceAddArgs("block"));
+  zx_status_t status = bdev->DdkAdd(ddk::DeviceAddArgs("block"));
   if (status != ZX_OK) {
     return status;
   }

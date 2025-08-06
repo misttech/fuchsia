@@ -106,6 +106,7 @@ source_set("shared") {
   ]
   deps = [
     ":block-core-bind",
+    "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
     "//src/devices/lib/block",
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddk",

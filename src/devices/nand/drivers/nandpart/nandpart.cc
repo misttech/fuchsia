@@ -5,7 +5,6 @@
 
 #include <assert.h>
 #include <fuchsia/hardware/badblock/c/banjo.h>
-#include <inttypes.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
@@ -102,29 +101,13 @@ zx_status_t NandPartDevice::Create(void* ctx, zx_device_t* parent) {
   }
 
   // Query parent for partition map.
-  size_t actual;
-  uint8_t buffer[METADATA_PARTITION_MAP_MAX];
-  status =
-      device_get_metadata(parent, DEVICE_METADATA_PARTITION_MAP, buffer, sizeof(buffer), &actual);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "nandpart: parent device has no partition map");
-    return status;
+  zx::result metadata = ddk::GetEncodedMetadata<fuchsia_boot_metadata::PartitionMap>(
+      parent, DEVICE_METADATA_PARTITION_MAP);
+  if (metadata.is_error()) {
+    zxlogf(ERROR, "Failed to get metadata: %s", metadata.status_string());
+    return metadata.status_value();
   }
-  if (actual < sizeof(zbi_partition_map_t)) {
-    zxlogf(ERROR, "nandpart: Partition map is of size %zu, needs to at least be %zu", actual,
-           sizeof(zbi_partition_t));
-    return ZX_ERR_INTERNAL;
-  }
-
-  auto* pmap = reinterpret_cast<zbi_partition_map_t*>(buffer);
-
-  const size_t minimum_size =
-      sizeof(zbi_partition_map_t) + (sizeof(zbi_partition_t) * pmap->partition_count);
-  if (actual < minimum_size) {
-    zxlogf(ERROR, "nandpart: Partition map is of size %zu, needs to at least be %zu", actual,
-           minimum_size);
-    return ZX_ERR_INTERNAL;
-  }
+  auto& pmap = metadata.value();
 
   // Sanity check partition map and transform into expected form.
   status = SanitizePartitionMap(pmap, nand_info);
@@ -133,16 +116,13 @@ zx_status_t NandPartDevice::Create(void* ctx, zx_device_t* parent) {
   }
 
   // Create a device for each partition.
-  static_assert(alignof(zbi_partition_map_t) >= alignof(zbi_partition_t));
-  cpp20::span<const zbi_partition_t> partitions(reinterpret_cast<const zbi_partition_t*>(pmap + 1),
-                                                pmap->partition_count);
-  for (const zbi_partition_t& part : partitions) {
-    nand_info.num_blocks = static_cast<uint32_t>(part.last_block - part.first_block + 1);
-    memcpy(&nand_info.partition_guid, &part.type_guid, sizeof(nand_info.partition_guid));
+  for (const auto& part : pmap.partitions().value()) {
+    nand_info.num_blocks = static_cast<uint32_t>(part.last_block() - part.first_block() + 1);
+    memcpy(&nand_info.partition_guid, part.type_guid().data(), sizeof(nand_info.partition_guid));
     // We only use FTL for the FVM partition.
-    if (memcmp(part.type_guid, fvm_guid, sizeof(fvm_guid)) == 0) {
+    if (memcmp(part.type_guid().data(), fvm_guid, sizeof(fvm_guid)) == 0) {
       nand_info.nand_class = NAND_CLASS_FTL;
-    } else if (memcmp(part.type_guid, test_guid, sizeof(test_guid)) == 0) {
+    } else if (memcmp(part.type_guid().data(), test_guid, sizeof(test_guid)) == 0) {
       nand_info.nand_class = NAND_CLASS_TEST;
     } else {
       nand_info.nand_class = NAND_CLASS_BBS;
@@ -151,23 +131,23 @@ zx_status_t NandPartDevice::Create(void* ctx, zx_device_t* parent) {
     fbl::AllocChecker ac;
     std::unique_ptr<NandPartDevice> device(
         new (&ac) NandPartDevice(parent, nand_proto, bad_block, parent_op_size, nand_info,
-                                 static_cast<uint32_t>(part.first_block)));
+                                 static_cast<uint32_t>(part.first_block())));
     if (!ac.check()) {
       continue;
     }
     // Find optional partition_config information.
     uint32_t copy_count = 1;
     for (uint32_t i = 0; i < nand_config->extra_partition_config_count; i++) {
-      if (memcmp(nand_config->extra_partition_config[i].type_guid, part.type_guid,
-                 sizeof(part.type_guid)) == 0 &&
+      if (memcmp(nand_config->extra_partition_config[i].type_guid, part.type_guid().data(),
+                 part.type_guid().size()) == 0 &&
           nand_config->extra_partition_config[i].copy_count > 0) {
         copy_count = nand_config->extra_partition_config[i].copy_count;
         break;
       }
     }
-    status = device->Bind(part.name, copy_count);
+    status = device->Bind(part.name().c_str(), copy_count);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to bind %s with error %d", part.name, status);
+      zxlogf(ERROR, "Failed to bind %s with error %d", part.name().c_str(), status);
 
       continue;
     }
@@ -189,10 +169,8 @@ zx_status_t NandPartDevice::Bind(const char* name, uint32_t copy_count) {
   std::vector<uint8_t> metadata(sizeof(extra_partition_copy_count_));
   memcpy(metadata.data(), &extra_partition_copy_count_, sizeof(extra_partition_copy_count_));
 
-  return DdkAdd(ddk::DeviceAddArgs(name)
-                    .set_str_props(props)
-                    .add_metadata(DEVICE_METADATA_PARTITION_MAP, {})
-                    .add_metadata(DEVICE_METADATA_PRIVATE, std::move(metadata)));
+  return DdkAdd(ddk::DeviceAddArgs(name).set_str_props(props).add_metadata(DEVICE_METADATA_PRIVATE,
+                                                                           std::move(metadata)));
 }
 
 void NandPartDevice::NandQuery(nand_info_t* info_out, size_t* nand_op_size_out) {

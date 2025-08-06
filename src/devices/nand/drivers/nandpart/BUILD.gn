@@ -14,6 +14,38 @@ driver_bind_rules("nandpart-bind") {
   deps = [ "//src/devices/bind/fuchsia.nand" ]
 }
 
+source_set("common") {
+  sources = [
+    "aml-bad-block.cc",
+    "aml-bad-block.h",
+    "bad-block.cc",
+    "bad-block.h",
+    "nandpart-utils.cc",
+    "nandpart-utils.h",
+    "nandpart.cc",
+    "nandpart.h",
+  ]
+  deps = [
+    "//sdk/banjo/fuchsia.hardware.badblock:fuchsia.hardware.badblock_banjo_cpp",
+    "//sdk/lib/stdcompat",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.nand:fuchsia.nand_cpp",
+    "//src/devices/lib/dev-operation",
+    "//src/devices/lib/driver",
+    "//zircon/system/ulib/sync",
+    "//zircon/system/ulib/zircon-internal",
+  ]
+  public_deps = [
+    "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
+    "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
+    "//src/lib/ddk",
+    "//src/lib/ddk:ddk-metadata-headers",
+    "//src/lib/ddktl",
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
 fuchsia_cc_driver("nandpart-driver") {
   legacy = true
   output_name = "nandpart"
@@ -21,35 +53,16 @@ fuchsia_cc_driver("nandpart-driver") {
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  sources = [
-    "aml-bad-block.cc",
-    "bad-block.cc",
-    "nandpart-utils.cc",
-    "nandpart.cc",
-  ]
-  deps = [
-    ":nandpart-bind",
-    "//sdk/banjo/fuchsia.hardware.badblock:fuchsia.hardware.badblock_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
-    "//sdk/lib/stdcompat",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.nand:fuchsia.nand_cpp",
-    "//src/devices/lib/dev-operation",
-    "//src/devices/lib/driver",
-    "//src/lib/ddk",
-    "//src/lib/ddk:ddk-metadata-headers",
-    "//src/lib/ddktl",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zx",
-  ]
+  deps = [ ":common" ]
 }
 
 fuchsia_driver_component("nandpart") {
   info = "meta/nandpart-info.json"
   component_name = "nandpart"
-  deps = [ ":nandpart-driver" ]
+  deps = [
+    ":nandpart-bind",
+    ":nandpart-driver",
+  ]
   manifest = "meta/nandpart.cml"
 }
 
@@ -62,24 +75,17 @@ fuchsia_driver_package("package") {
 test("nandpart-test-bin") {
   output_name = "nandpart-test"
   sources = [
-    "aml-bad-block.cc",
-    "bad-block.cc",
-    "nandpart-utils.cc",
     "test/aml-bad-block-test.cc",
     "test/nandpart-utils-test.cc",
   ]
   include_dirs = [ "." ]
   deps = [
-    "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
+    ":common",
     "//sdk/lib/fdio",
     "//src/devices/testing/no_ddk",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
-    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
 }

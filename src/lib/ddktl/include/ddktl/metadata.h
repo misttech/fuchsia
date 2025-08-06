@@ -7,6 +7,7 @@
 
 #include <lib/ddk/device.h>
 #include <lib/ddk/driver.h>
+#include <lib/fidl/cpp/natural_types.h>
 #include <lib/fidl/cpp/wire/message.h>
 #include <lib/zx/result.h>
 
@@ -58,43 +59,20 @@ zx::result<std::vector<T>> GetMetadataArray(zx_device_t* dev, uint32_t type) {
   return zx::ok(std::vector<T>(mstart, mstart + (metadata->size() / sizeof(T))));
 }
 
+// Retrieves the persisted FIDL metadata of type `T` associated with the metadata ID `type` and
+// returns the unpersisted version of the metadata.
 template <typename T>
-class DecodedMetadata {
- public:
-  explicit DecodedMetadata(std::vector<uint8_t> metadata_blob, fidl::ObjectView<T> value)
-      : metadata_blob_(std::move(metadata_blob)), value_(value) {}
-
-  DecodedMetadata(const DecodedMetadata&) noexcept = delete;
-  DecodedMetadata& operator=(const DecodedMetadata&) noexcept = delete;
-  DecodedMetadata(DecodedMetadata&&) noexcept = default;
-  DecodedMetadata& operator=(DecodedMetadata&&) noexcept = default;
-
-  T& value() { return *value_.get(); }
-  T* operator->() { return &value(); }
-  T& operator*() { return value(); }
-
- private:
-  std::vector<uint8_t> metadata_blob_;
-  fidl::ObjectView<T> value_;
-};
-
-// Gets metadata that is encoded in the FIDL persistence convention. Decodes the
-// metadata and returns a |DecodedMetadata| object, which stores the raw data as
-// well as a decoded FIDL object view pointing to the raw data.
-template <typename T>
-zx::result<DecodedMetadata<T>> GetEncodedMetadata(zx_device_t* dev, uint32_t type) {
+zx::result<T> GetEncodedMetadata(zx_device_t* dev, uint32_t type) {
   auto metadata = GetMetadataBlob(dev, type);
   if (!metadata.is_ok()) {
     return metadata.take_error();
   }
   std::vector<uint8_t> metadata_blob = std::move(metadata.value());
-  fit::result decoded = fidl::InplaceUnpersist<T>(cpp20::span(metadata_blob));
+  fit::result decoded = fidl::Unpersist<T>(metadata_blob);
   if (!decoded.is_ok()) {
     return zx::error(ZX_ERR_INTERNAL);
   }
-  // Note: take care to move the |metadata_blob|, as |decoded| borrows the
-  // byte contents stored within.
-  return zx::ok(DecodedMetadata<T>{std::move(metadata_blob), decoded.value()});
+  return zx::ok(std::move(decoded.value()));
 }
 
 }  // namespace ddk

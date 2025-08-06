@@ -114,7 +114,6 @@ class NandDevice : public DeviceType, public ddk::NandProtocol<NandDevice, ddk::
   thrd_t worker_;
 
   std::optional<nand_config_t> export_nand_config_;
-  fbl::Array<char> export_partition_map_;
 
   // If non-zero, the driver will fail writes once the write-count reaches this value.
   uint64_t fail_after_ = 0;

@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_BOOTPART_BOOTPART_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_BOOTPART_BOOTPART_H_
 
+#include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
 #include <lib/ddk/metadata.h>
@@ -23,16 +24,16 @@ class BootPartition : public DeviceType,
  public:
   BootPartition(zx_device_t* parent, uint64_t partition_index,
                 const ddk::BlockImplProtocolClient& block_impl_client,
-                const zbi_partition_t& zbi_partition, const block_info_t& block_info,
+                fuchsia_boot_metadata::Partition partition, const block_info_t& block_info,
                 size_t block_op_size)
       : DeviceType(parent),
         partition_index_(partition_index),
         block_impl_client_(block_impl_client),
-        zbi_partition_(zbi_partition),
+        partition_(std::move(partition)),
         block_info_(block_info),
         block_op_size_(block_op_size) {
     // The last LBA is inclusive.
-    block_info_.block_count = zbi_partition.last_block - zbi_partition.first_block + 1;
+    block_info_.block_count = partition.last_block() - partition.first_block() + 1;
   }
   ~BootPartition() = default;
 
@@ -56,7 +57,7 @@ class BootPartition : public DeviceType,
   const uint64_t partition_index_;
 
   const ddk::BlockImplProtocolClient block_impl_client_;
-  const zbi_partition_t zbi_partition_;
+  const fuchsia_boot_metadata::Partition partition_;
 
   block_info_t block_info_;
   const size_t block_op_size_;

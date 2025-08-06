@@ -71,10 +71,7 @@ class FakeBlockDevice : public ddk::BlockImplProtocol<FakeBlockDevice> {
   bool flushed_ = true;
 };
 
-constexpr const char kLongName[32] = {
-    'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a',
-    'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a',
-};
+const std::string kLongName = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 class BootPartitionTest : public zxtest::Test {
  public:
@@ -83,35 +80,26 @@ class BootPartitionTest : public zxtest::Test {
                          &fake_block_device_);
 
     // Set up 2 partitions of equal size.
-    std::vector<uint8_t> partition_map_buffer;
-    // Add __STDCPP_DEFAULT_NEW_ALIGNMENT__ as loose upper-bound on alignment padding.
-    partition_map_buffer.resize(sizeof(zbi_partition_map_t) + __STDCPP_DEFAULT_NEW_ALIGNMENT__ +
-                                    2 * sizeof(zbi_partition_t),
-                                0);
-    zbi_partition_map_t* partition_map =
-        reinterpret_cast<zbi_partition_map_t*>(partition_map_buffer.data());
-    partition_map->partition_count = 2;
-
-    static_assert(alignof(zbi_partition_map_t) >= alignof(zbi_partition_t));
-    cpp20::span<zbi_partition_t> partitions(reinterpret_cast<zbi_partition_t*>(partition_map + 1),
-                                            partition_map->partition_count);
+    fuchsia_boot_metadata::PartitionMap partition_map{{.partitions{{}}}};
 
     // Set up partition 0.
-    partitions[0].first_block = 0;
-    partitions[0].last_block = 11;
-    memset(partitions[0].type_guid, 'T', sizeof(partitions[0].type_guid));
-    memset(partitions[0].uniq_guid, 'I', sizeof(partitions[0].uniq_guid));
-    strncpy(partitions[0].name, "This is partition0", sizeof(partitions[0].name));
+    auto& partition0 =
+        partition_map.partitions().value().emplace_back(fuchsia_boot_metadata::Partition{
+            {.first_block = 0, .last_block = 11, .name = "This is partition 0"}});
+    memset(partition0.type_guid().data(), 'T', partition0.type_guid().size());
+    memset(partition0.unique_guid().data(), 'I', partition0.unique_guid().size());
 
     // Set up partition 1.
-    partitions[1].first_block = 12;
-    partitions[1].last_block = 23;
-    memset(partitions[1].type_guid, 'U', sizeof(partitions[1].type_guid));
-    memset(partitions[1].uniq_guid, 'J', sizeof(partitions[1].uniq_guid));
-    memcpy(partitions[1].name, kLongName, sizeof(partitions[1].name));
+    auto& partition1 = partition_map.partitions().value().emplace_back(
+        fuchsia_boot_metadata::Partition{{.first_block = 12, .last_block = 23, .name = kLongName}});
+    memset(partition1.type_guid().data(), 'U', partition1.type_guid().size());
+    memset(partition1.unique_guid().data(), 'J', partition1.unique_guid().size());
 
-    parent_->SetMetadata(DEVICE_METADATA_PARTITION_MAP, partition_map_buffer.data(),
-                         partition_map_buffer.size());
+    fit::result persisted = fidl::Persist(partition_map);
+    ASSERT_TRUE(persisted.is_ok());
+
+    parent_->SetMetadata(DEVICE_METADATA_PARTITION_MAP, persisted.value().data(),
+                         persisted.value().size());
 
     ASSERT_OK(BootPartition::Bind(nullptr, parent_.get()));
     ASSERT_EQ(parent_->child_count(), 2);
@@ -124,7 +112,7 @@ class BootPartitionTest : public zxtest::Test {
 
 TEST_F(BootPartitionTest, BlockPartitionOps) {
   auto check_partition_info = [](BootPartition* driver, uint8_t guid_type_char,
-                                 uint8_t guid_instance_char, const char* partition_name) {
+                                 uint8_t guid_instance_char, const std::string& partition_name) {
     block_partition_protocol_t partition_proto;
     EXPECT_OK(driver->DdkGetProtocol(ZX_PROTOCOL_BLOCK_PARTITION, &partition_proto));
     ddk::BlockPartitionProtocolClient partition_client = {&partition_proto};
@@ -144,18 +132,18 @@ TEST_F(BootPartitionTest, BlockPartitionOps) {
 
     char name[MAX_PARTITION_NAME_LENGTH];
     EXPECT_OK(partition_client.GetName(name, sizeof(name)));
-    EXPECT_EQ(strncmp(name, partition_name, 32), 0);
+    EXPECT_EQ(strncmp(name, partition_name.c_str(), 32), 0);
 
     char name_short[33];
     EXPECT_OK(partition_client.GetName(name_short, 33));
-    EXPECT_EQ(strncmp(name_short, partition_name, 32), 0);
+    EXPECT_EQ(strncmp(name_short, partition_name.c_str(), 32), 0);
 
     EXPECT_NOT_OK(partition_client.GetName(name_short, 32));
   };
 
   auto child0 = parent_->children().front();
   ASSERT_NO_FATAL_FAILURE(check_partition_info(child0->GetDeviceContext<BootPartition>(), 'T', 'I',
-                                               "This is partition0"));
+                                               "This is partition 0"));
 
   auto child1 = parent_->children().back();
   ASSERT_NO_FATAL_FAILURE(

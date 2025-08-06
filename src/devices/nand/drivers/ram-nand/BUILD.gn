@@ -54,9 +54,13 @@ fuchsia_driver_component("ram-nand") {
 
 source_set("common") {
   visibility = [ ":*" ]
-  sources = [ "ram-nand.cc" ]
+  sources = [
+    "ram-nand.cc",
+    "ram-nand.h",
+  ]
   deps = [
     "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
+    "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.nand:fuchsia.nand_cpp",
@@ -85,6 +89,7 @@ test("test") {
   deps = [
     ":common",
     "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
+    "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",

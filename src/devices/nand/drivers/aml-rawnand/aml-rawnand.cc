@@ -4,6 +4,7 @@
 
 #include "src/devices/nand/drivers/aml-rawnand/aml-rawnand.h"
 
+#include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fuchsia/hardware/nandinfo/c/banjo.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
@@ -29,6 +30,7 @@
 #include <utility>
 
 #include <ddktl/device.h>
+#include <ddktl/metadata_server.h>
 #include <ddktl/suspend-txn.h>
 #include <ddktl/unbind-txn.h>
 #include <fbl/alloc_checker.h>
@@ -1030,9 +1032,27 @@ zx_status_t AmlRawNand::Init() {
 }
 
 zx_status_t AmlRawNand::Bind() {
-  zx_status_t status = DdkAdd(ddk::DeviceAddArgs("aml-raw_nand")
-                                  .forward_metadata(parent(), DEVICE_METADATA_PRIVATE)
-                                  .forward_metadata(parent(), DEVICE_METADATA_PARTITION_MAP));
+  ddk::DeviceAddArgs add_args{"aml-raw_nand"};
+  add_args.forward_metadata(parent(), DEVICE_METADATA_PRIVATE);
+
+  zx::result metadata =
+      ddk::GetMetadataIfExists<fuchsia_boot_metadata::PartitionMap>(parent(), "pdev");
+  if (metadata.is_error()) {
+    zxlogf(ERROR, "Failed to get partition map: %s", metadata.status_string());
+  }
+  if (metadata.value().has_value()) {
+    fit::result persisted = fidl::Persist(metadata.value().value());
+    if (persisted.is_error()) {
+      zxlogf(ERROR, "Failed to persist partition map: %s",
+             persisted.error_value().FormatDescription().c_str());
+      return persisted.error_value().status();
+    }
+    // TODO(b/356394645): Use `ddk::MetadataServer` instead to forward metadata once all retrievers
+    // stop using `device_get_metadata()` to retrieve the partition map.
+    add_args.add_metadata(DEVICE_METADATA_PARTITION_MAP, persisted.value());
+  }
+
+  zx_status_t status = DdkAdd(add_args);
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: DdkAdd failed", __FILE__);
   }
