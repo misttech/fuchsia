@@ -347,6 +347,12 @@ pub trait Driver: Send + Sync {
 
     /// Returns the current OpenThread capabilities for this interface.
     async fn get_capabilities(&self) -> ZxResult<Capabilities>;
+
+    /// Requests that OpenThread begin using the provided ephemeral key.
+    fn start_ephemeral_key(&self, lifetime: u32) -> ZxResult<Vec<u8>>;
+
+    /// Stops using the current ephemeral key.
+    fn stop_ephemeral_key(&self, retain_active_session: bool) -> ZxResult;
 }
 
 /// Wraps around a FIDL responder to prevent a drop from causing a shutdown.
@@ -1367,6 +1373,44 @@ impl<T: Driver> ServeTo<ThreadCapabilitiesRequestStream> for T {
         request_stream.err_into::<Error>().try_for_each_concurrent(None, closure).await.map_err(
             |err| {
                 error!("Error serving ThreadCapabilitiesRequestStream: {:?}", err);
+
+                if let Some(epitaph) = err.downcast_ref::<ZxStatus>() {
+                    request_control_handle.shutdown_with_epitaph(*epitaph);
+                }
+
+                err
+            },
+        )
+    }
+}
+
+#[async_trait()]
+impl<T: Driver> ServeTo<EpskcRequestStream> for T {
+    async fn serve_to(&self, request_stream: EpskcRequestStream) -> anyhow::Result<()> {
+        let request_control_handle = request_stream.control_handle();
+
+        let closure = |command| async {
+            match command {
+                EpskcRequest::StartEphemeralKey { lifetime, responder } => {
+                    match self.start_ephemeral_key(lifetime) {
+                        Ok(key) => responder.send(Ok(&key))?,
+                        Err(e) => responder.send(Err(e.into_raw()))?,
+                    }
+                }
+                EpskcRequest::StopEphemeralKey { retain_active_session, responder } => responder
+                    .send(
+                        self.stop_ephemeral_key(retain_active_session).map_err(|e| e.into_raw()),
+                    )?,
+                EpskcRequest::_UnknownMethod { .. } => {
+                    warn!("ePSKc encountered unknown method");
+                }
+            }
+            Result::<(), Error>::Ok(())
+        };
+
+        request_stream.err_into::<Error>().try_for_each_concurrent(None, closure).await.map_err(
+            |err| {
+                error!("Error serving EpskcRequestStream: {:?}", err);
 
                 if let Some(epitaph) = err.downcast_ref::<ZxStatus>() {
                     request_control_handle.shutdown_with_epitaph(*epitaph);

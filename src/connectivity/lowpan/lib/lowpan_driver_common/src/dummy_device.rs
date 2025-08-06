@@ -477,4 +477,12 @@ impl Driver for DummyDevice {
     async fn get_capabilities(&self) -> ZxResult<Capabilities> {
         Ok(Capabilities::default())
     }
+
+    fn start_ephemeral_key(&self, _lifetime: u32) -> ZxResult<Vec<u8>> {
+        Ok(vec![])
+    }
+
+    fn stop_ephemeral_key(&self, _retain_active_session: bool) -> ZxResult {
+        Ok(())
+    }
 }

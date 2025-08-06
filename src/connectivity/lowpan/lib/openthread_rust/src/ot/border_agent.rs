@@ -3,7 +3,13 @@
 // found in the LICENSE file.
 
 use crate::prelude_internal::*;
+use anyhow::format_err;
 use num::FromPrimitive;
+use std::os::raw::c_char;
+
+// This mirrors the behavior from ot-br-posix
+// https://github.com/openthread/ot-br-posix/blob/main/src/border_agent/border_agent.cpp
+const EPSKC_RANDOM_GEN_LEN: usize = 8;
 
 /// Represents the thread joiner state.
 ///
@@ -208,4 +214,40 @@ impl BorderAgent for Instance {
             >(fn_box));
         }
     }
+}
+
+/// Constructs a random key for use with ePSKc utilizing the algorithm from ot-br-posix.
+///
+/// [1]: https://github.com/openthread/ot-br-posix/blob/main/src/border_agent/border_agent.cpp
+pub fn create_ephemeral_key() -> Result<CString, anyhow::Error> {
+    let mut key: Vec<u8> = Vec::new();
+
+    // Generate a sequence of integers from 0-9 with equal probability.
+    for _ in 0..EPSKC_RANDOM_GEN_LEN {
+        loop {
+            let mut new_value: u8 = 0;
+            let rand_result = unsafe { otRandomCryptoFillBuffer(&mut new_value as *mut u8, 1) };
+
+            ot::Error::from(rand_result)
+                .into_result()
+                .map_err(|e| format_err!("Random number generation failed: {}", e))?;
+
+            if new_value < 250 {
+                key.push(b'0' + new_value % 10);
+                break;
+            }
+        }
+    }
+
+    // The final element in the key is a checksum.
+    let mut checksum_char: c_char = 0;
+    let checksum_result = unsafe {
+        otVerhoeffChecksumCalculate(key[0] as *const c_char, &mut checksum_char as *mut c_char)
+    };
+    ot::Error::from(checksum_result)
+        .into_result()
+        .map_err(|e| format_err!("Verhoeff checksum calculation failed: {}", e))?;
+
+    key.push(checksum_char as u8);
+    CString::new(key).map_err(|e| format_err!("Ephemeral key is not a valid string: {}", e))
 }

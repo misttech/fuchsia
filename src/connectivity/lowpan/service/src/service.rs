@@ -150,6 +150,39 @@ macro_rules! impl_serve_to_driver {
     };
 }
 
+macro_rules! impl_serve_open_protocol_to_driver {
+    ($request_stream:ty, $request:ident, $protocol_member:ident) => {
+        #[async_trait::async_trait()]
+        impl<S: Sync> ServeTo<$request_stream> for LowpanService<S> {
+            async fn serve_to(&self, request_stream: $request_stream) -> anyhow::Result<()> {
+                request_stream
+                    .err_into::<Error>()
+                    .try_for_each_concurrent(MAX_CONCURRENT, |command| async {
+                        match command {
+                            $request::Connect { name, server_end, .. } => {
+                                if let Err(err) = match self.lookup(&name) {
+                                    Ok(dev) => dev.get_protocols(Protocols {
+                                        $protocol_member: Some(server_end),
+                                        ..Default::default()
+                                    }),
+                                    Err(err) => server_end.close_with_epitaph(err.into()),
+                                } {
+                                    warn!("{:?}", err);
+                                }
+                            }
+                            $request::_UnknownMethod { ordinal, .. } => {
+                                warn!("Unknown method: {}", ordinal);
+                            }
+                        }
+                        Result::<(), anyhow::Error>::Ok(())
+                    })
+                    .inspect_err(|e| error!("{:?}", e))
+                    .await
+            }
+        }
+    };
+}
+
 impl_serve_to_driver!(DeviceConnectorRequestStream, DeviceConnectorRequest, device);
 impl_serve_to_driver!(DeviceExtraConnectorRequestStream, DeviceExtraConnectorRequest, device_extra);
 impl_serve_to_driver!(DeviceRouteConnectorRequestStream, DeviceRouteConnectorRequest, device_route);
@@ -190,6 +223,7 @@ impl_serve_to_driver!(
     CapabilitiesConnectorRequest,
     capabilities
 );
+impl_serve_open_protocol_to_driver!(EpskcConnectorRequestStream, EpskcConnectorRequest, epskc);
 
 #[async_trait::async_trait()]
 impl<S: Sync> ServeTo<DeviceWatcherRequestStream> for LowpanService<S> {

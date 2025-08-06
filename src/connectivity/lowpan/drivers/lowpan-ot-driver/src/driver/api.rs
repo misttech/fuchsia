@@ -3,12 +3,16 @@
 // found in the LICENSE file.
 
 use super::*;
+use crate::ot::{create_ephemeral_key, BorderAgentEphemeralKeyState};
 use anyhow::Error;
 use async_trait::async_trait;
 use core::future::ready;
 use lowpan_driver_common::lowpan_fidl::*;
 use lowpan_driver_common::{AsyncConditionWait, Driver as LowpanDriver};
 use openthread::ot::SrpServerLeaseInfo;
+use otsys::OT_BORDER_AGENT_MAX_EPHEMERAL_KEY_TIMEOUT;
+
+const EPSKC_PORT: u16 = 61632;
 
 /// Helpers for API-related tasks.
 impl<OT: Send, NI, BI: Send> OtDriver<OT, NI, BI> {
@@ -1148,5 +1152,62 @@ where
         // compile time, so they never change for a given software version.
 
         Ok(Capabilities { nat64: Some(true), dhcpv6_pd: Some(true), ..Default::default() })
+    }
+
+    fn start_ephemeral_key(&self, lifetime: u32) -> ZxResult<Vec<u8>> {
+        let driver_state = self.driver_state.lock();
+        let ot_instance = &driver_state.ot_instance;
+
+        // Verify ePSKc is enabled.
+        if ot_instance.border_agent_ephemeral_key_get_state()
+            == BorderAgentEphemeralKeyState::Disabled
+        {
+            return Err(zx::Status::BAD_STATE);
+        }
+
+        // Verify that the timeout is withing the allowed amount of time.
+        if lifetime > OT_BORDER_AGENT_MAX_EPHEMERAL_KEY_TIMEOUT {
+            return Err(zx::Status::INVALID_ARGS);
+        }
+
+        // Generate ephemeral key.
+        let key = create_ephemeral_key().map_err(|e| {
+            warn!(tag = "api"; "Ephemeral key generation failed; {:?}", e);
+            zx::Status::INTERNAL
+        })?;
+
+        // Start using the key.
+        ot_instance
+            .border_agent_ephemeral_key_start(key.as_c_str(), lifetime, EPSKC_PORT)
+            .map_err(|e| {
+                warn!("Ephemeral key start failed: {:?}", e);
+                zx::Status::INTERNAL
+            })?;
+
+        Ok(key.into())
+    }
+
+    fn stop_ephemeral_key(&self, retain_active_session: bool) -> ZxResult {
+        let driver_state = self.driver_state.lock();
+        let ot_instance = &driver_state.ot_instance;
+
+        let curr_state = ot_instance.border_agent_ephemeral_key_get_state();
+
+        match curr_state {
+            BorderAgentEphemeralKeyState::Disabled => Err(zx::Status::BAD_STATE),
+            BorderAgentEphemeralKeyState::Stopped => Ok(()),
+            BorderAgentEphemeralKeyState::Started => {
+                ot_instance.border_agent_ephemeral_key_stop();
+                Ok(())
+            }
+            BorderAgentEphemeralKeyState::Connected | BorderAgentEphemeralKeyState::Accepted => {
+                if !retain_active_session {
+                    ot_instance.border_agent_ephemeral_key_stop();
+                    Ok(())
+                } else {
+                    Err(zx::Status::BAD_STATE)
+                }
+            }
+        }
     }
 }
