@@ -362,7 +362,7 @@ pub struct Enum {
     pub _type: IntegerType,
     pub members: Vec<EnumMember>,
     pub strict: bool,
-    pub maybe_unknown_value: Option<u32>,
+    pub maybe_unknown_value: Option<i128>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
