@@ -1994,18 +1994,22 @@ impl MemoryManagerState {
         Ok(result)
     }
 
-    /// Finds the next mapping at or above the given address if that mapping has the
-    /// MappingFlags::GROWSDOWN flag.
+    /// Determines whether a fault at the given address could be covered by extending a growsdown
+    /// mapping.
     ///
-    /// If such a mapping exists, this function returns the address at which that mapping starts
-    /// and the mapping itself.
-    fn next_mapping_if_growsdown(&self, addr: UserAddress) -> Option<(UserAddress, &Mapping)> {
-        match self.mappings.find_at_or_after(addr) {
+    /// If the address already belongs to a mapping, this function returns `None`. If the next
+    /// mapping above the given address has the `MappingFlags::GROWSDOWN` flag, this function
+    /// returns the address at which that mapping starts and the mapping itself. Otherwise, this
+    /// function returns `None`.
+    fn find_growsdown_mapping(&self, addr: UserAddress) -> Option<(UserAddress, &Mapping)> {
+        match self.mappings.range(addr..).next() {
             Some((range, mapping)) => {
                 if range.contains(&addr) {
                     // |addr| is already contained within a mapping, nothing to grow.
-                    None
+                    return None;
                 } else if !mapping.flags().contains(MappingFlags::GROWSDOWN) {
+                    // The next mapping above the given address does not have the
+                    // `MappingFlags::GROWSDOWN` flag.
                     None
                 } else {
                     Some((range.start, mapping))
@@ -2024,7 +2028,7 @@ impl MemoryManagerState {
         is_write: bool,
     ) -> Result<bool, Error> {
         profile_duration!("ExtendGrowsDown");
-        let Some((mapping_low_addr, mapping_to_grow)) = self.next_mapping_if_growsdown(addr) else {
+        let Some((mapping_low_addr, mapping_to_grow)) = self.find_growsdown_mapping(addr) else {
             return Ok(false);
         };
         if is_write && !mapping_to_grow.can_write() {
@@ -2046,15 +2050,15 @@ impl MemoryManagerState {
         let mut released_mappings = ReleasedMappings::default();
         self.map_anonymous(
             mm,
-            DesiredAddress::Fixed(low_addr),
+            DesiredAddress::FixedOverwrite(low_addr),
             length,
             mapping_to_grow.flags().access_flags(),
             mapping_to_grow.flags().options(),
             mapping_to_grow.name(),
             &mut released_mappings,
         )?;
-        // We can't have any released mappings because `DesiredAddress::Fixed` won't overwrite any
-        // existing mappings.
+        // We can't have any released mappings because `find_growsdown_mapping` will return None if
+        // the mapping already exists in this range.
         assert!(released_mappings.is_empty());
         Ok(true)
     }
