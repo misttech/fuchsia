@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <gtest/gtest.h>
 
@@ -94,19 +93,6 @@ TEST(ImageMetadataTest, FromFidlImageMetadata) {
   EXPECT_EQ(ImageTilingType::kCapture, image_metadata.tiling_type());
 }
 
-TEST(ImageMetadataTest, FromBanjoImageMetadata) {
-  static constexpr image_metadata_t banjo_image_metadata = {
-      .dimensions = {.width = 640, .height = 480},
-      .tiling_type = IMAGE_TILING_TYPE_CAPTURE,
-  };
-
-  static constexpr ImageMetadata image_metadata(banjo_image_metadata);
-  EXPECT_EQ(Dimensions({.width = 640, .height = 480}), image_metadata.dimensions());
-  EXPECT_EQ(640, image_metadata.width());
-  EXPECT_EQ(480, image_metadata.height());
-  EXPECT_EQ(ImageTilingType::kCapture, image_metadata.tiling_type());
-}
-
 TEST(ImageMetadataTest, ToFidlImageMetadata) {
   static constexpr ImageMetadata image_metadata({
       .width = 640,
@@ -120,19 +106,6 @@ TEST(ImageMetadataTest, ToFidlImageMetadata) {
   EXPECT_EQ(480u, fidl_image_metadata.dimensions.height);
   EXPECT_EQ(fuchsia_hardware_display_types::wire::kImageTilingTypeCapture,
             fidl_image_metadata.tiling_type);
-}
-
-TEST(ImageMetadataTest, ToBanjoImageMetadata) {
-  static constexpr ImageMetadata image_metadata({
-      .width = 640,
-      .height = 480,
-      .tiling_type = ImageTilingType::kCapture,
-  });
-
-  static constexpr image_metadata_t banjo_image_metadata = image_metadata.ToBanjo();
-  EXPECT_EQ(640u, banjo_image_metadata.dimensions.width);
-  EXPECT_EQ(480u, banjo_image_metadata.dimensions.height);
-  EXPECT_EQ(IMAGE_TILING_TYPE_CAPTURE, banjo_image_metadata.tiling_type);
 }
 
 TEST(ImageMetadataTest, IsValidFidlSmallDisplay) {
@@ -153,27 +126,6 @@ TEST(ImageMetadataTest, IsValidFidlLargeHeight) {
   EXPECT_FALSE(ImageMetadata::IsValid(fuchsia_hardware_display_types::wire::ImageMetadata{
       .dimensions = {.width = 640, .height = 1'000'000},
       .tiling_type = fuchsia_hardware_display_types::wire::kImageTilingTypeCapture,
-  }));
-}
-
-TEST(ImageMetadataTest, IsValidBanjoSmallDisplay) {
-  EXPECT_TRUE(ImageMetadata::IsValid(image_metadata_t{
-      .dimensions = {.width = 640, .height = 480},
-      .tiling_type = IMAGE_TILING_TYPE_CAPTURE,
-  }));
-}
-
-TEST(ImageMetadataTest, IsValidBanjoLargeWidth) {
-  EXPECT_FALSE(ImageMetadata::IsValid(image_metadata_t{
-      .dimensions = {.width = 1'000'000, .height = 480},
-      .tiling_type = IMAGE_TILING_TYPE_CAPTURE,
-  }));
-}
-
-TEST(ImageMetadataTest, IsValidBanjoLargeHeight) {
-  EXPECT_FALSE(ImageMetadata::IsValid(image_metadata_t{
-      .dimensions = {.width = 640, .height = 1'000'000},
-      .tiling_type = IMAGE_TILING_TYPE_CAPTURE,
   }));
 }
 

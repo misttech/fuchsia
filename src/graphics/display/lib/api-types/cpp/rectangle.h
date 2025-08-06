@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_RECTANGLE_H_
 
 #include <fidl/fuchsia.math/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/cpp/banjo.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
@@ -17,7 +16,6 @@ namespace display {
 
 // FIDL type [`fuchsia.math/RectU`] representation useful for the display stack.
 //
-// Equivalent to the the banjo type [`fuchsia.hardware.display.controller/RectU`].
 // Also similar to the VkRect2D in the Vulkan API.
 //
 // See `::fuchsia_math::wire::RectU` for references.
@@ -41,15 +39,6 @@ class Rectangle {
  public:
   // True iff `fidl_rectangle` is convertible to a valid Rectangle.
   [[nodiscard]] static constexpr bool IsValid(const fuchsia_math::wire::RectU& fidl_rectangle);
-  [[nodiscard]] static constexpr bool IsValid(const rect_u_t& banjo_rectangle);
-
-  // `banjo_rectangle` must be convertible to a valid Rectangle.
-  //
-  // This is not a constructor to allow designated initializer syntax. Making
-  // this a constructor would introduce ambiguity when designated initializer
-  // syntax is used, because `rect_u_t` has the same field names as our
-  // supported designated initializer syntax.
-  [[nodiscard]] static constexpr Rectangle From(const rect_u_t& banjo_rectangle);
 
   // `fidl_rectangle` must be convertible to a valid Rectangle.
   //
@@ -74,7 +63,6 @@ class Rectangle {
   friend constexpr bool operator!=(const Rectangle& lhs, const Rectangle& rhs);
 
   constexpr fuchsia_math::wire::RectU ToFidl() const;
-  constexpr rect_u_t ToBanjo() const;
 
   // Guaranteed to be in [0, `Dimensions::kMaxWidth`].
   constexpr int32_t x() const { return x_; }
@@ -100,7 +88,6 @@ class Rectangle {
   // IsValid() variant with developer-friendly debug assertions.
   static constexpr void DebugAssertIsValid(const Rectangle::ConstructorArgs& args);
   static constexpr void DebugAssertIsValid(const fuchsia_math::wire::RectU& fidl_rectangle);
-  static constexpr void DebugAssertIsValid(const rect_u_t& banjo_rectangle);
 
   int32_t x_;
   int32_t y_;
@@ -137,36 +124,6 @@ constexpr bool Rectangle::IsValid(const fuchsia_math::wire::RectU& fidl_rectangl
   return true;
 }
 
-// static
-constexpr bool Rectangle::IsValid(const rect_u_t& banjo_rectangle) {
-  if (banjo_rectangle.x < 0) {
-    return false;
-  }
-  if (banjo_rectangle.x > Dimensions::kMaxWidth) {
-    return false;
-  }
-  if (banjo_rectangle.y < 0) {
-    return false;
-  }
-  if (banjo_rectangle.y > Dimensions::kMaxHeight) {
-    return false;
-  }
-  if (banjo_rectangle.width < 0) {
-    return false;
-  }
-  if (banjo_rectangle.width > Dimensions::kMaxWidth - banjo_rectangle.x) {
-    return false;
-  }
-  if (banjo_rectangle.height < 0) {
-    return false;
-  }
-  if (banjo_rectangle.height > Dimensions::kMaxHeight - banjo_rectangle.y) {
-    return false;
-  }
-
-  return true;
-}
-
 constexpr Rectangle::Rectangle(const Rectangle::ConstructorArgs& args)
     : x_(args.x), y_(args.y), dimensions_({.width = args.width, .height = args.height}) {
   DebugAssertIsValid(args);
@@ -183,17 +140,6 @@ constexpr Rectangle Rectangle::From(const fuchsia_math::wire::RectU& fidl_rectan
   });
 }
 
-// static
-constexpr Rectangle Rectangle::From(const rect_u_t& banjo_rectangle) {
-  DebugAssertIsValid(banjo_rectangle);
-  return Rectangle({
-      .x = static_cast<int32_t>(banjo_rectangle.x),
-      .y = static_cast<int32_t>(banjo_rectangle.y),
-      .width = static_cast<int32_t>(banjo_rectangle.width),
-      .height = static_cast<int32_t>(banjo_rectangle.height),
-  });
-}
-
 constexpr bool operator==(const Rectangle& lhs, const Rectangle& rhs) {
   return lhs.x_ == rhs.x_ && lhs.y_ == rhs.y_ && lhs.dimensions_ == rhs.dimensions_;
 }
@@ -202,17 +148,6 @@ constexpr bool operator!=(const Rectangle& lhs, const Rectangle& rhs) { return !
 
 constexpr fuchsia_math::wire::RectU Rectangle::ToFidl() const {
   return fuchsia_math::wire::RectU{
-      // The casts are guaranteed not to overflow (causing UB) because of the
-      // allowed ranges on image widths and heights.
-      .x = static_cast<uint32_t>(x_),
-      .y = static_cast<uint32_t>(y_),
-      .width = static_cast<uint32_t>(dimensions_.width()),
-      .height = static_cast<uint32_t>(dimensions_.height()),
-  };
-}
-
-constexpr rect_u_t Rectangle::ToBanjo() const {
-  return rect_u_t{
       // The casts are guaranteed not to overflow (causing UB) because of the
       // allowed ranges on image widths and heights.
       .x = static_cast<uint32_t>(x_),
@@ -246,19 +181,6 @@ constexpr void Rectangle::DebugAssertIsValid(const fuchsia_math::wire::RectU& fi
   ZX_DEBUG_ASSERT(fidl_rectangle.height >= 0);
   ZX_DEBUG_ASSERT(fidl_rectangle.height <= Dimensions::kMaxHeight - fidl_rectangle.y);
   ZX_DEBUG_ASSERT((fidl_rectangle.width == 0) == (fidl_rectangle.height == 0));
-}
-
-// static
-constexpr void Rectangle::DebugAssertIsValid(const rect_u_t& banjo_rectangle) {
-  ZX_DEBUG_ASSERT(banjo_rectangle.x >= 0);
-  ZX_DEBUG_ASSERT(banjo_rectangle.x <= Dimensions::kMaxWidth);
-  ZX_DEBUG_ASSERT(banjo_rectangle.y >= 0);
-  ZX_DEBUG_ASSERT(banjo_rectangle.y <= Dimensions::kMaxHeight);
-  ZX_DEBUG_ASSERT(banjo_rectangle.width >= 0);
-  ZX_DEBUG_ASSERT(banjo_rectangle.width <= Dimensions::kMaxWidth - banjo_rectangle.x);
-  ZX_DEBUG_ASSERT(banjo_rectangle.height >= 0);
-  ZX_DEBUG_ASSERT(banjo_rectangle.height <= Dimensions::kMaxHeight - banjo_rectangle.y);
-  ZX_DEBUG_ASSERT((banjo_rectangle.width == 0) == (banjo_rectangle.height == 0));
 }
 
 }  // namespace display

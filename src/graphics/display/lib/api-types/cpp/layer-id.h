@@ -9,14 +9,12 @@
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 
 #include <cstdint>
-#include <type_traits>
 
 #include "src/graphics/display/lib/api-types/cpp/id-type.h"
 
 namespace display::internal {
 
-using LayerIdTraits =
-    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display::wire::LayerId, std::false_type>;
+using LayerIdTraits = DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display::wire::LayerId>;
 
 }  // namespace display::internal
 

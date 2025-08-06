@@ -6,7 +6,6 @@
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <cstdint>
 #include <initializer_list>
@@ -87,19 +86,6 @@ TEST(ColorTest, FromFidlColor) {
                                  0x41, 0x42, 0x43, 0x44, 0, 0, 0, 0}));
 }
 
-TEST(ColorTest, FromBanjoColor) {
-  static constexpr color_t banjo_color = {
-      .format = static_cast<fuchsia_images2_pixel_format_enum_value_t>(
-          fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-      .bytes = {0x41, 0x42, 0x43, 0x44, 0, 0, 0, 0},
-  };
-
-  static constexpr Color color = Color::From(banjo_color);
-  EXPECT_EQ(PixelFormat::kR8G8B8A8, color.format());
-  EXPECT_THAT(color.bytes(), testing::ElementsAreArray(std::initializer_list<uint8_t>{
-                                 0x41, 0x42, 0x43, 0x44, 0, 0, 0, 0}));
-}
-
 TEST(ColorTest, ToFidlColor) {
   static constexpr Color color({
       .format = PixelFormat::kR8G8B8A8,
@@ -112,30 +98,9 @@ TEST(ColorTest, ToFidlColor) {
                                     0x41, 0x42, 0x43, 0x44, 0, 0, 0, 0}));
 }
 
-TEST(ColorTest, ToBanjoColor) {
-  static constexpr Color color({
-      .format = PixelFormat::kR8G8B8A8,
-      .bytes = std::initializer_list<uint8_t>{0x41, 0x42, 0x43, 0x44, 0, 0, 0, 0},
-  });
-
-  static constexpr color_t banjo_color = color.ToBanjo();
-  EXPECT_EQ(static_cast<fuchsia_images2_pixel_format_enum_value_t>(
-                fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-            banjo_color.format);
-  EXPECT_THAT(banjo_color.bytes, testing::ElementsAreArray(std::initializer_list<uint8_t>{
-                                     0x41, 0x42, 0x43, 0x44, 0, 0, 0, 0}));
-}
-
 TEST(ColorTest, IsValidFidlRgbaGreyish) {
   EXPECT_TRUE(Color::IsValid(fuchsia_hardware_display_types::wire::Color{
       .format = fuchsia_images2::wire::PixelFormat::kR8G8B8A8,
-      .bytes = {0x41, 0x42, 0x43, 0x44, 0, 0, 0, 0},
-  }));
-}
-
-TEST(ColorTest, IsValidBanjoRgbaGreyish) {
-  EXPECT_TRUE(Color::IsValid(color_t{
-      .format = static_cast<uint32_t>(fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
       .bytes = {0x41, 0x42, 0x43, 0x44, 0, 0, 0, 0},
   }));
 }

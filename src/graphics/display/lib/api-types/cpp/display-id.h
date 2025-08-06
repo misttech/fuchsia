@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_DISPLAY_ID_H_
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <cstdint>
 
@@ -15,7 +14,7 @@
 namespace display::internal {
 
 using DisplayIdTraits =
-    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_types::wire::DisplayId, uint64_t>;
+    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_types::wire::DisplayId>;
 
 }  // namespace display::internal
 

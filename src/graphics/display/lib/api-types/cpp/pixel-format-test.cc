@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
 
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <lib/image-format/image_format.h>
 
 #include <gtest/gtest.h>
@@ -38,26 +37,10 @@ TEST(PixelFormatTest, EqualityForDifferentValues) {
   EXPECT_NE(PixelFormat::kB8G8R8, kB8G8R8A8Alias);
 }
 
-TEST(PixelFormatTest, ToBanjoPixelFormat) {
-  static constexpr fuchsia_images2_pixel_format_enum_value_t banjo_pixel_format =
-      PixelFormat::kB8G8R8A8.ToBanjo();
-  EXPECT_EQ(static_cast<fuchsia_images2_pixel_format_enum_value_t>(
-                fuchsia_images2::wire::PixelFormat::kB8G8R8A8),
-            banjo_pixel_format);
-}
-
 TEST(PixelFormatTest, ToFidlPixelFormat) {
   static constexpr fuchsia_images2::wire::PixelFormat fidl_pixel_format =
       PixelFormat::kB8G8R8A8.ToFidl();
   EXPECT_EQ(fuchsia_images2::wire::PixelFormat::kB8G8R8A8, fidl_pixel_format);
-}
-
-TEST(PixelFormatTest, ToPixelFormatWithBanjoValue) {
-  static constexpr fuchsia_images2_pixel_format_enum_value_t banjo_format =
-      static_cast<fuchsia_images2_pixel_format_enum_value_t>(
-          fuchsia_images2::wire::PixelFormat::kB8G8R8A8);
-  static constexpr PixelFormat pixel_format(banjo_format);
-  EXPECT_EQ(PixelFormat::kB8G8R8A8, pixel_format);
 }
 
 TEST(PixelFormatTest, ToPixelFormatWithFidlValue) {
@@ -68,11 +51,6 @@ TEST(PixelFormatTest, ToPixelFormatWithFidlValue) {
 TEST(PixelFormatTest, ValueForLogging) {
   EXPECT_EQ(static_cast<uint32_t>(fuchsia_images2::wire::PixelFormat::kB8G8R8A8),
             PixelFormat::kB8G8R8A8.ValueForLogging());
-}
-
-TEST(PixelFormatTest, BanjoConversionRoundtrip) {
-  EXPECT_EQ(PixelFormat::kB8G8R8A8, PixelFormat(PixelFormat::kB8G8R8A8.ToBanjo()));
-  EXPECT_EQ(PixelFormat::kB8G8R8, PixelFormat(PixelFormat::kB8G8R8.ToBanjo()));
 }
 
 TEST(PixelFormatTest, FidlConversionRoundtrip) {

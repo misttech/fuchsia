@@ -26,7 +26,6 @@ library_sources = [
   "display-timing.h",
   "driver-buffer-collection-id.h",
   "driver-capture-image-id.h",
-  "driver-config-stamp.cc",
   "driver-config-stamp.h",
   "driver-image-id.h",
   "driver-layer.cc",
@@ -56,7 +55,6 @@ library_sources = [
 ]
 
 library_public_deps = [
-  "//sdk/banjo/fuchsia.hardware.display.controller:fuchsia.hardware.display.controller_banjo_cpp",
   "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_cpp",
   "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_cpp",
   "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",

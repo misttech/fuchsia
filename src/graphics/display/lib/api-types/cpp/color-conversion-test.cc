@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <lib/stdcompat/array.h>
 
 #include <array>
@@ -101,21 +100,6 @@ TEST(ColorConversionTest, FromFidl) {
   EXPECT_EQ(kAnotherConfig, config);
 }
 
-TEST(ColorConversionTest, FromBanjo) {
-  static constexpr color_conversion_t banjo_config = {
-      .preoffsets = {0.1f, 0.2f, 0.3f},
-      .coefficients =
-          {
-              {1.0f, 2.0f, 3.0f},
-              {4.0f, 5.0f, 6.0f},
-              {7.0f, 8.0f, 9.0f},
-          },
-      .postoffsets = {0.4f, 0.5f, 0.6f},
-  };
-  const ColorConversion config(banjo_config);
-  EXPECT_EQ(kAnotherConfig, config);
-}
-
 TEST(ColorConversionTest, ToFidl) {
   const fuchsia_hardware_display_engine::wire::ColorConversion fidl_config =
       kAnotherConfig.ToFidl();
@@ -127,50 +111,9 @@ TEST(ColorConversionTest, ToFidl) {
   EXPECT_THAT(fidl_config.postoffsets, testing::ElementsAreArray(std::array{0.4f, 0.5f, 0.6f}));
 }
 
-TEST(ColorConversionTest, ToBanjo) {
-  const color_conversion_t banjo_config = kAnotherConfig.ToBanjo();
-
-  EXPECT_THAT(banjo_config.preoffsets, testing::ElementsAreArray(std::array{0.1f, 0.2f, 0.3f}));
-  EXPECT_THAT(banjo_config.coefficients[0],
-              testing::ElementsAreArray(std::array{1.0f, 2.0f, 3.0f}));
-  EXPECT_THAT(banjo_config.coefficients[1],
-              testing::ElementsAreArray(std::array{4.0f, 5.0f, 6.0f}));
-  EXPECT_THAT(banjo_config.coefficients[2],
-              testing::ElementsAreArray(std::array{7.0f, 8.0f, 9.0f}));
-  EXPECT_THAT(banjo_config.postoffsets, testing::ElementsAreArray(std::array{0.4f, 0.5f, 0.6f}));
-}
-
-TEST(ColorConversionTest, BanjoRoundTrip) {
-  const ColorConversion config(kAnotherConfig.ToBanjo());
-  EXPECT_EQ(kAnotherConfig, config);
-}
-
 TEST(ColorConversionTest, FidlRoundTrip) {
   const ColorConversion config(kAnotherConfig.ToFidl());
   EXPECT_EQ(kAnotherConfig, config);
-}
-
-TEST(ColorConversionTest, IsValidBanjoForValidBanjo) {
-  EXPECT_TRUE(ColorConversion::IsValid(kIdentity.ToBanjo()));
-  EXPECT_TRUE(ColorConversion::IsValid(kAnotherConfig.ToBanjo()));
-}
-
-TEST(ColorConversionTest, IsValidBanjoForBanjoWithInfinity) {
-  color_conversion_t non_finite_config = kIdentity.ToBanjo();
-  non_finite_config.preoffsets[0] = std::numeric_limits<float>::infinity();
-  EXPECT_FALSE(ColorConversion::IsValid(non_finite_config));
-}
-
-TEST(ColorConversionTest, IsValidBanjoForBanjoWithNaN) {
-  color_conversion_t non_finite_config = kIdentity.ToBanjo();
-  non_finite_config.coefficients[1][1] = std::numeric_limits<float>::quiet_NaN();
-  EXPECT_FALSE(ColorConversion::IsValid(non_finite_config));
-}
-
-TEST(ColorConversionTest, IsValidBanjoForBanjoWithNegativeInfinity) {
-  color_conversion_t non_finite_config = kIdentity.ToBanjo();
-  non_finite_config.postoffsets[2] = -std::numeric_limits<float>::infinity();
-  EXPECT_FALSE(ColorConversion::IsValid(non_finite_config));
 }
 
 TEST(ColorConversionTest, IsValidFidlForValidFidl) {

@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/engine-info.h"
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/cpp/banjo.h>
 
 #include <gtest/gtest.h>
 
@@ -86,19 +85,6 @@ TEST(EngineInfoTest, FromFidlEngineInfo) {
   EXPECT_EQ(false, engine_info.is_capture_supported());
 }
 
-TEST(EngineInfoTest, FromBanjoEngineInfo) {
-  static constexpr engine_info_t banjo_engine_info = {
-      .max_layer_count = 4,
-      .max_connected_display_count = 1,
-      .is_capture_supported = false,
-  };
-
-  static constexpr EngineInfo engine_info = EngineInfo::From(banjo_engine_info);
-  EXPECT_EQ(4, engine_info.max_layer_count());
-  EXPECT_EQ(1, engine_info.max_connected_display_count());
-  EXPECT_EQ(false, engine_info.is_capture_supported());
-}
-
 TEST(EngineInfoTest, ToFidlEngineInfo) {
   static constexpr EngineInfo engine_info({
       .max_layer_count = 4,
@@ -111,19 +97,6 @@ TEST(EngineInfoTest, ToFidlEngineInfo) {
   EXPECT_EQ(4u, fidl_engine_info.max_layer_count);
   EXPECT_EQ(1u, fidl_engine_info.max_connected_display_count);
   EXPECT_EQ(false, fidl_engine_info.is_capture_supported);
-}
-
-TEST(EngineInfoTest, ToBanjoEngineInfo) {
-  static constexpr EngineInfo engine_info({
-      .max_layer_count = 4,
-      .max_connected_display_count = 1,
-      .is_capture_supported = false,
-  });
-
-  static constexpr engine_info_t banjo_engine_info = engine_info.ToBanjo();
-  EXPECT_EQ(4u, banjo_engine_info.max_layer_count);
-  EXPECT_EQ(1u, banjo_engine_info.max_connected_display_count);
-  EXPECT_EQ(false, banjo_engine_info.is_capture_supported);
 }
 
 TEST(EngineInfoTest, IsValidFidlMultiLayerCaptureSupported) {
@@ -160,46 +133,6 @@ TEST(EngineInfoTest, IsValidFidlLargeMaxConnectedDisplayCount) {
 
 TEST(EngineInfoTest, IsValidFidlZeroMaxConnectedDisplayCount) {
   EXPECT_FALSE(EngineInfo::IsValid(fuchsia_hardware_display_engine::wire::EngineInfo{
-      .max_layer_count = 1,
-      .max_connected_display_count = 0,
-      .is_capture_supported = false,
-  }));
-}
-
-TEST(EngineInfoTest, IsValidBanjoMultiLayerCaptureSupported) {
-  EXPECT_TRUE(EngineInfo::IsValid(engine_info_t{
-      .max_layer_count = 4,
-      .max_connected_display_count = 1,
-      .is_capture_supported = false,
-  }));
-}
-
-TEST(EngineInfoTest, IsValidBanjoLargeMaxLayerCount) {
-  EXPECT_FALSE(EngineInfo::IsValid(engine_info_t{
-      .max_layer_count = 1'000,
-      .max_connected_display_count = 1,
-      .is_capture_supported = false,
-  }));
-}
-
-TEST(EngineInfoTest, IsValidBanjoZeroMaxLayerCount) {
-  EXPECT_FALSE(EngineInfo::IsValid(engine_info_t{
-      .max_layer_count = 0,
-      .max_connected_display_count = 1,
-      .is_capture_supported = false,
-  }));
-}
-
-TEST(EngineInfoTest, IsValidBanjoLargeMaxConnectedDisplayCount) {
-  EXPECT_FALSE(EngineInfo::IsValid(engine_info_t{
-      .max_layer_count = 1,
-      .max_connected_display_count = 1'000,
-      .is_capture_supported = false,
-  }));
-}
-
-TEST(EngineInfoTest, IsValidBanjoZeroMaxConnectedDisplayCount) {
-  EXPECT_FALSE(EngineInfo::IsValid(engine_info_t{
       .max_layer_count = 1,
       .max_connected_display_count = 0,
       .is_capture_supported = false,

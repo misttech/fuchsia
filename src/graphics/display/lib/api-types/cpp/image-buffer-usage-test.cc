@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/image-buffer-usage.h"
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <gtest/gtest.h>
 
@@ -51,15 +50,6 @@ TEST(ImageBufferUsageTest, FromFidlImageBufferUsage) {
   EXPECT_EQ(ImageTilingType::kCapture, image_buffer_usage.tiling_type());
 }
 
-TEST(ImageBufferUsageTest, FromBanjoImageBufferUsage) {
-  static constexpr image_buffer_usage_t banjo_image_buffer_usage = {
-      .tiling_type = IMAGE_TILING_TYPE_CAPTURE,
-  };
-
-  static constexpr ImageBufferUsage image_buffer_usage(banjo_image_buffer_usage);
-  EXPECT_EQ(ImageTilingType::kCapture, image_buffer_usage.tiling_type());
-}
-
 TEST(ImageBufferUsageTest, ToFidlImageBufferUsage) {
   static constexpr fuchsia_hardware_display_types::wire::ImageBufferUsage fidl_image_buffer_usage =
       kCaptureUsage.ToFidl();
@@ -67,19 +57,9 @@ TEST(ImageBufferUsageTest, ToFidlImageBufferUsage) {
             fidl_image_buffer_usage.tiling_type);
 }
 
-TEST(ImageBufferUsageTest, ToBanjoImageBufferUsage) {
-  static constexpr image_buffer_usage_t banjo_image_buffer_usage = kCaptureUsage.ToBanjo();
-  EXPECT_EQ(IMAGE_TILING_TYPE_CAPTURE, banjo_image_buffer_usage.tiling_type);
-}
-
 TEST(ImageBufferUsageTest, FidlDisplayIdConversionRoundtrip) {
   EXPECT_EQ(kDisplayUsage, ImageBufferUsage(kDisplayUsage.ToFidl()));
   EXPECT_EQ(kCaptureUsage, ImageBufferUsage(kCaptureUsage.ToFidl()));
-}
-
-TEST(ImageBufferUsageTest, BanjoConversionRoundtrip) {
-  EXPECT_EQ(kDisplayUsage, ImageBufferUsage(kDisplayUsage.ToBanjo()));
-  EXPECT_EQ(kCaptureUsage, ImageBufferUsage(kCaptureUsage.ToBanjo()));
 }
 
 }  // namespace

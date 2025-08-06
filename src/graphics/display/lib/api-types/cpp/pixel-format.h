@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_PIXEL_FORMAT_H_
 
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
@@ -20,9 +19,6 @@ namespace display {
 
 // Equivalent to the FIDL type [`fuchsia.images2/PixelFormat`].
 //
-// Also equivalent to the banjo type
-// [`fuchsia.hardware.display.controller/FuchsiaImages2PixelFormatEnumValue`].
-//
 // See `::fuchsia_images2::wire::PixelFormat` for references.
 //
 // Instances are guaranteed to represent values supported by the display stack.
@@ -34,15 +30,9 @@ class PixelFormat {
   // True iff `fidl_pixel_format` is convertible to a valid PixelFormat.
   [[nodiscard]] static constexpr bool IsSupported(
       fuchsia_images2::wire::PixelFormat fidl_pixel_format);
-  // True iff `banjo_pixel_format` is convertible to a valid PixelFormat.
-  [[nodiscard]] static constexpr bool IsSupported(
-      fuchsia_images2_pixel_format_enum_value_t banjo_pixel_format);
 
   /// `fidl_pixel_format` must be a format supported by the display stack.
   explicit constexpr PixelFormat(fuchsia_images2::wire::PixelFormat fidl_pixel_format);
-
-  /// `banjo_pixel_format` must be a format supported by the display stack.
-  explicit constexpr PixelFormat(fuchsia_images2_pixel_format_enum_value_t banjo_pixel_format);
 
   constexpr PixelFormat(const PixelFormat&) noexcept = default;
   constexpr PixelFormat(PixelFormat&&) noexcept = default;
@@ -51,7 +41,6 @@ class PixelFormat {
   ~PixelFormat() = default;
 
   constexpr fuchsia_images2::wire::PixelFormat ToFidl() const;
-  constexpr fuchsia_images2_pixel_format_enum_value_t ToBanjo() const;
 
   // Raw numerical value of the equivalent FIDL value.
   //
@@ -121,21 +110,9 @@ constexpr bool PixelFormat::IsSupported(fuchsia_images2::wire::PixelFormat fidl_
   return false;
 }
 
-// static
-constexpr bool PixelFormat::IsSupported(
-    fuchsia_images2_pixel_format_enum_value_t banjo_pixel_format) {
-  auto fidl_pixel_format = static_cast<fuchsia_images2::wire::PixelFormat>(banjo_pixel_format);
-  return PixelFormat::IsSupported(fidl_pixel_format);
-}
-
 constexpr PixelFormat::PixelFormat(fuchsia_images2::wire::PixelFormat fidl_pixel_format)
     : format_(fidl_pixel_format) {
   ZX_DEBUG_ASSERT(IsSupported(fidl_pixel_format));
-}
-
-constexpr PixelFormat::PixelFormat(fuchsia_images2_pixel_format_enum_value_t banjo_pixel_format)
-    : format_(static_cast<fuchsia_images2::wire::PixelFormat>(banjo_pixel_format)) {
-  ZX_DEBUG_ASSERT(IsSupported(banjo_pixel_format));
 }
 
 constexpr bool operator==(const PixelFormat& lhs, const PixelFormat& rhs) {
@@ -145,10 +122,6 @@ constexpr bool operator==(const PixelFormat& lhs, const PixelFormat& rhs) {
 constexpr bool operator!=(const PixelFormat& lhs, const PixelFormat& rhs) { return !(lhs == rhs); }
 
 constexpr fuchsia_images2::wire::PixelFormat PixelFormat::ToFidl() const { return format_; }
-
-constexpr fuchsia_images2_pixel_format_enum_value_t PixelFormat::ToBanjo() const {
-  return static_cast<fuchsia_images2_pixel_format_enum_value_t>(format_);
-}
 
 constexpr uint32_t PixelFormat::ValueForLogging() const { return static_cast<uint32_t>(format_); }
 

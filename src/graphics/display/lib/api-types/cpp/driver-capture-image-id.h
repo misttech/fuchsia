@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_DRIVER_CAPTURE_IMAGE_ID_H_
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <cstdint>
 
@@ -15,7 +14,7 @@
 namespace display::internal {
 
 using DriverCaptureImageIdTraits =
-    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_engine::wire::ImageId, uint64_t>;
+    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_engine::wire::ImageId>;
 
 }  // namespace display::internal
 
@@ -31,7 +30,8 @@ namespace display {
 using DriverCaptureImageId =
     display::internal::IdType<display::internal::DriverCaptureImageIdTraits>;
 
-constexpr DriverCaptureImageId kInvalidDriverCaptureImageId(INVALID_ID);
+constexpr DriverCaptureImageId kInvalidDriverCaptureImageId(
+    fuchsia_hardware_display_engine::wire::kInvalidId);
 
 }  // namespace display
 

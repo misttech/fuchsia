@@ -7,7 +7,6 @@
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.math/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
@@ -33,7 +32,6 @@ class ImageMetadata {
   // True iff `image_metadata` is convertible to a valid ImageMetadata.
   [[nodiscard]] static constexpr bool IsValid(
       const fuchsia_hardware_display_types::wire::ImageMetadata& fidl_image_metadata);
-  [[nodiscard]] static constexpr bool IsValid(const image_metadata_t& banjo_image_metadata);
 
   // Constructor that enables the designated initializer syntax.
   //
@@ -43,9 +41,6 @@ class ImageMetadata {
   // `fidl_image_metadata` must be convertible to a valid ImageMetadata.
   explicit constexpr ImageMetadata(
       const fuchsia_hardware_display_types::wire::ImageMetadata& fidl_image_metadata);
-
-  // `banjo_image_metadata` must be convertible to a valid ImageMetadata.
-  explicit constexpr ImageMetadata(const image_metadata_t& banjo_image_metadata);
 
   constexpr ImageMetadata(const ImageMetadata&) noexcept = default;
   constexpr ImageMetadata(ImageMetadata&&) noexcept = default;
@@ -57,7 +52,6 @@ class ImageMetadata {
   friend constexpr bool operator!=(const ImageMetadata& lhs, const ImageMetadata& rhs);
 
   constexpr fuchsia_hardware_display_types::wire::ImageMetadata ToFidl() const;
-  constexpr image_metadata_t ToBanjo() const;
 
   constexpr const Dimensions& dimensions() const { return dimensions_; }
   constexpr ImageTilingType tiling_type() const { return tiling_type_; }
@@ -82,11 +76,6 @@ constexpr bool ImageMetadata::IsValid(
   return Dimensions::IsValid(fidl_image_metadata.dimensions);
 }
 
-// static
-constexpr bool ImageMetadata::IsValid(const image_metadata_t& banjo_image_metadata) {
-  return Dimensions::IsValid(banjo_image_metadata.dimensions);
-}
-
 constexpr ImageMetadata::ImageMetadata(const ImageMetadata::ConstructorArgs& args)
     : dimensions_({.width = args.width, .height = args.height}), tiling_type_(args.tiling_type) {}
 
@@ -94,10 +83,6 @@ constexpr ImageMetadata::ImageMetadata(
     const fuchsia_hardware_display_types::wire::ImageMetadata& fidl_image_metadata)
     : dimensions_(Dimensions::From(fidl_image_metadata.dimensions)),
       tiling_type_(fidl_image_metadata.tiling_type) {}
-
-constexpr ImageMetadata::ImageMetadata(const image_metadata_t& banjo_image_metadata)
-    : dimensions_(Dimensions::From(banjo_image_metadata.dimensions)),
-      tiling_type_(banjo_image_metadata.tiling_type) {}
 
 constexpr bool operator==(const ImageMetadata& lhs, const ImageMetadata& rhs) {
   return lhs.dimensions_ == rhs.dimensions_ && lhs.tiling_type_ == rhs.tiling_type_;
@@ -113,15 +98,6 @@ constexpr fuchsia_hardware_display_types::wire::ImageMetadata ImageMetadata::ToF
       // allowed ranges on image widths and heights.
       .dimensions = dimensions_.ToFidl(),
       .tiling_type = tiling_type_.ToFidl(),
-  };
-}
-
-constexpr image_metadata_t ImageMetadata::ToBanjo() const {
-  return image_metadata_t{
-      // The casts are guaranteed not to overflow (causing UB) because of the
-      // allowed ranges on image widths and heights.
-      .dimensions = dimensions_.ToBanjo(),
-      .tiling_type = tiling_type_.ToBanjo(),
   };
 }
 

@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/config-check-result.h"
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <gtest/gtest.h>
 
@@ -38,22 +37,11 @@ TEST(ConfigCheckResultTest, EqualityForDifferentValues) {
   EXPECT_NE(ConfigCheckResult::kInvalidConfig, kTooManyDisplays2);
 }
 
-TEST(ConfigCheckResultTest, ToBanjoConfigCheckResult) {
-  static constexpr coordinate_transformation_t banjo_transformation =
-      ConfigCheckResult::kTooManyDisplays.ToBanjo();
-  EXPECT_EQ(CONFIG_CHECK_RESULT_TOO_MANY, banjo_transformation);
-}
-
 TEST(ConfigCheckResultTest, ToFidlConfigCheckResult) {
   static constexpr fuchsia_hardware_display_types::wire::ConfigResult fidl_transformation =
       ConfigCheckResult::kTooManyDisplays.ToFidl();
   EXPECT_EQ(fuchsia_hardware_display_types::wire::ConfigResult::kTooManyDisplays,
             fidl_transformation);
-}
-
-TEST(ConfigCheckResultTest, ToConfigCheckResultWithBanjoValue) {
-  static constexpr ConfigCheckResult transformation(CONFIG_CHECK_RESULT_TOO_MANY);
-  EXPECT_EQ(ConfigCheckResult::kTooManyDisplays, transformation);
 }
 
 TEST(ConfigCheckResultTest, ToConfigCheckResultWithFidlValue) {
@@ -66,13 +54,6 @@ TEST(ConfigCheckResultTest, ValueForLogging) {
   EXPECT_EQ(
       static_cast<uint32_t>(fuchsia_hardware_display_types::wire::ConfigResult::kTooManyDisplays),
       ConfigCheckResult::kTooManyDisplays.ValueForLogging());
-}
-
-TEST(ConfigCheckResultTest, BanjoConversionRoundtrip) {
-  EXPECT_EQ(ConfigCheckResult::kTooManyDisplays,
-            ConfigCheckResult(ConfigCheckResult::kTooManyDisplays.ToBanjo()));
-  EXPECT_EQ(ConfigCheckResult::kInvalidConfig,
-            ConfigCheckResult(ConfigCheckResult::kInvalidConfig.ToBanjo()));
 }
 
 TEST(ConfigCheckResultTest, FidlConversionRoundtrip) {

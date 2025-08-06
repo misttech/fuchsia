@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_COLOR_CONVERSION_H_
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <lib/stdcompat/array.h>
 #include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
@@ -18,9 +17,6 @@
 namespace display {
 
 // Equivalent to the FIDL type [`fuchsia.hardware.display.engine/ColorConversion`].
-//
-// Also equivalent to the banjo type
-// [`fuchsia.hardware.display.controller/ColorConversion`].
 //
 // Instances are guaranteed to represent valid color conversion configurations.
 //
@@ -37,7 +33,6 @@ class ColorConversion {
   // True iff `fidl_config` is convertible to a valid ColorConversion.
   [[nodiscard]] static constexpr bool IsValid(
       const fuchsia_hardware_display_engine::wire::ColorConversion& fidl_config);
-  [[nodiscard]] static constexpr bool IsValid(const color_conversion_t& banjo_config);
 
   static const ColorConversion kIdentity;
 
@@ -50,9 +45,6 @@ class ColorConversion {
   explicit constexpr ColorConversion(
       const fuchsia_hardware_display_engine::wire::ColorConversion& fidl_config);
 
-  // `banjo_config` must be convertible to a valid ColorConversion.
-  explicit constexpr ColorConversion(const color_conversion_t& banjo_config);
-
   constexpr ColorConversion(const ColorConversion&) noexcept = default;
   constexpr ColorConversion(ColorConversion&&) noexcept = default;
   constexpr ColorConversion& operator=(const ColorConversion&) noexcept = default;
@@ -63,7 +55,6 @@ class ColorConversion {
   friend constexpr bool operator!=(const ColorConversion& lhs, const ColorConversion& rhs);
 
   constexpr fuchsia_hardware_display_engine::wire::ColorConversion ToFidl() const;
-  constexpr color_conversion_t ToBanjo() const;
 
   std::array<float, 3> preoffsets() const { return preoffsets_; }
   std::array<std::array<float, 3>, 3> coefficients() const { return coefficients_; }
@@ -89,7 +80,6 @@ class ColorConversion {
   static constexpr void DebugAssertIsValid(const ColorConversion::ConstructorArgs& args);
   static constexpr void DebugAssertIsValid(
       const fuchsia_hardware_display_engine::wire::ColorConversion& fidl_config);
-  static constexpr void DebugAssertIsValid(const color_conversion_t& banjo_config);
 
   std::array<float, 3> preoffsets_ = {};
   std::array<std::array<float, 3>, 3> coefficients_ = {};
@@ -122,26 +112,6 @@ constexpr bool ColorConversion::IsValid(
   return true;
 }
 
-// static
-constexpr bool ColorConversion::IsValid(const color_conversion_t& banjo_config) {
-  if (!AreAllFinite(banjo_config.preoffsets)) {
-    return false;
-  }
-  if (!AreAllFinite(banjo_config.coefficients[0])) {
-    return false;
-  }
-  if (!AreAllFinite(banjo_config.coefficients[1])) {
-    return false;
-  }
-  if (!AreAllFinite(banjo_config.coefficients[2])) {
-    return false;
-  }
-  if (!AreAllFinite(banjo_config.postoffsets)) {
-    return false;
-  }
-  return true;
-}
-
 constexpr ColorConversion::ColorConversion(const ColorConversion::ConstructorArgs& args)
     : preoffsets_(args.preoffsets),
       coefficients_(args.coefficients),
@@ -160,20 +130,6 @@ constexpr ColorConversion::ColorConversion(
   std::copy(fidl_config.coefficients[2].begin(), fidl_config.coefficients[2].end(),
             coefficients_[2].begin());
   std::copy(fidl_config.postoffsets.begin(), fidl_config.postoffsets.end(), postoffsets_.begin());
-}
-
-constexpr ColorConversion::ColorConversion(const color_conversion_t& banjo_config) {
-  DebugAssertIsValid(banjo_config);
-  std::copy(std::begin(banjo_config.preoffsets), std::end(banjo_config.preoffsets),
-            preoffsets_.begin());
-  std::copy(std::begin(banjo_config.coefficients[0]), std::end(banjo_config.coefficients[0]),
-            coefficients_[0].begin());
-  std::copy(std::begin(banjo_config.coefficients[1]), std::end(banjo_config.coefficients[1]),
-            coefficients_[1].begin());
-  std::copy(std::begin(banjo_config.coefficients[2]), std::end(banjo_config.coefficients[2]),
-            coefficients_[2].begin());
-  std::copy(std::begin(banjo_config.postoffsets), std::end(banjo_config.postoffsets),
-            postoffsets_.begin());
 }
 
 constexpr bool operator==(const ColorConversion& lhs, const ColorConversion& rhs) {
@@ -203,19 +159,6 @@ constexpr fuchsia_hardware_display_engine::wire::ColorConversion ColorConversion
   return fidl_config;
 }
 
-constexpr color_conversion_t ColorConversion::ToBanjo() const {
-  color_conversion_t banjo_config = {};
-  std::copy(preoffsets_.begin(), preoffsets_.end(), std::begin(banjo_config.preoffsets));
-  std::copy(coefficients_[0].begin(), coefficients_[0].end(),
-            std::begin(banjo_config.coefficients[0]));
-  std::copy(coefficients_[1].begin(), coefficients_[1].end(),
-            std::begin(banjo_config.coefficients[1]));
-  std::copy(coefficients_[2].begin(), coefficients_[2].end(),
-            std::begin(banjo_config.coefficients[2]));
-  std::copy(postoffsets_.begin(), postoffsets_.end(), std::begin(banjo_config.postoffsets));
-  return banjo_config;
-}
-
 // static
 constexpr void ColorConversion::DebugAssertIsValid(const ColorConversion::ConstructorArgs& args) {
   ZX_DEBUG_ASSERT(AreAllFinite(args.preoffsets));
@@ -233,15 +176,6 @@ constexpr void ColorConversion::DebugAssertIsValid(
   ZX_DEBUG_ASSERT(AreAllFinite(fidl_config.coefficients[1]));
   ZX_DEBUG_ASSERT(AreAllFinite(fidl_config.coefficients[2]));
   ZX_DEBUG_ASSERT(AreAllFinite(fidl_config.postoffsets));
-}
-
-// static
-constexpr void ColorConversion::DebugAssertIsValid(const color_conversion_t& banjo_config) {
-  ZX_DEBUG_ASSERT(AreAllFinite(banjo_config.preoffsets));
-  ZX_DEBUG_ASSERT(AreAllFinite(banjo_config.coefficients[0]));
-  ZX_DEBUG_ASSERT(AreAllFinite(banjo_config.coefficients[1]));
-  ZX_DEBUG_ASSERT(AreAllFinite(banjo_config.coefficients[2]));
-  ZX_DEBUG_ASSERT(AreAllFinite(banjo_config.postoffsets));
 }
 
 // static

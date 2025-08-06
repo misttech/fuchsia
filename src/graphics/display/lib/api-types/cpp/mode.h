@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_MODE_H_
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/cpp/banjo.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
@@ -39,15 +38,6 @@ class Mode {
   // True iff `fidl_mode` is convertible to a valid Mode.
   [[nodiscard]] static constexpr bool IsValid(
       const fuchsia_hardware_display_types::wire::Mode& fidl_mode);
-  [[nodiscard]] static constexpr bool IsValid(const display_mode_t& banjo_mode);
-
-  // `banjo_mode` must be convertible to a valid Mode.
-  //
-  // This is not a constructor to allow designated initializer syntax. Making
-  // this a constructor would introduce ambiguity when designated initializer
-  // syntax is used, because `display_mode_t` has the same field names as our
-  // supported designated initializer syntax.
-  [[nodiscard]] static constexpr Mode From(const display_mode_t& banjo_mode);
 
   // `fidl_mode` must be convertible to a valid Mode.
   //
@@ -73,7 +63,6 @@ class Mode {
   friend constexpr bool operator!=(const Mode& lhs, const Mode& rhs);
 
   constexpr fuchsia_hardware_display_types::wire::Mode ToFidl() const;
-  constexpr display_mode_t ToBanjo() const;
 
   // Guaranteed to meet the requirements in the FIDL documentation.
   constexpr Dimensions active_area() const { return active_area_; }
@@ -94,7 +83,6 @@ class Mode {
   static constexpr void DebugAssertIsValid(const Mode::ConstructorArgs& args);
   static constexpr void DebugAssertIsValid(
       const fuchsia_hardware_display_types::wire::Mode& fidl_mode);
-  static constexpr void DebugAssertIsValid(const display_mode_t& banjo_mode);
 
   Dimensions active_area_;
   int32_t refresh_rate_millihertz_;
@@ -125,30 +113,6 @@ constexpr bool Mode::IsValid(const fuchsia_hardware_display_types::wire::Mode& f
   return true;
 }
 
-// static
-constexpr bool Mode::IsValid(const display_mode_t& banjo_mode) {
-  const size_u_t banjo_active_area = banjo_mode.active_area;
-  if (!Dimensions::IsValid(banjo_active_area)) {
-    return false;
-  }
-
-  const Dimensions active_area = Dimensions::From(banjo_active_area);
-  ZX_DEBUG_ASSERT(!active_area.IsEmpty());
-
-  if (banjo_mode.refresh_rate_millihertz <= 0) {
-    return false;
-  }
-  if (banjo_mode.refresh_rate_millihertz > kMaxRefreshRateMillihertz) {
-    return false;
-  }
-
-  if (banjo_mode.flags != 0) {
-    return false;
-  }
-
-  return true;
-}
-
 constexpr Mode::Mode(const Mode::ConstructorArgs& args)
     : active_area_({.width = args.active_width, .height = args.active_height}),
       refresh_rate_millihertz_(args.refresh_rate_millihertz) {
@@ -167,18 +131,6 @@ constexpr Mode Mode::From(const fuchsia_hardware_display_types::wire::Mode& fidl
   });
 }
 
-// static
-constexpr Mode Mode::From(const display_mode_t& banjo_mode) {
-  DebugAssertIsValid(banjo_mode);
-  const Dimensions active_area = Dimensions::From(banjo_mode.active_area);
-
-  return Mode({
-      .active_width = active_area.width(),
-      .active_height = active_area.height(),
-      .refresh_rate_millihertz = static_cast<int32_t>(banjo_mode.refresh_rate_millihertz),
-  });
-}
-
 constexpr bool operator==(const Mode& lhs, const Mode& rhs) {
   return lhs.active_area_ == rhs.active_area_ &&
          lhs.refresh_rate_millihertz_ == rhs.refresh_rate_millihertz_;
@@ -189,16 +141,6 @@ constexpr bool operator!=(const Mode& lhs, const Mode& rhs) { return !(lhs == rh
 constexpr fuchsia_hardware_display_types::wire::Mode Mode::ToFidl() const {
   return fuchsia_hardware_display_types::wire::Mode{
       .active_area = active_area_.ToFidl(),
-
-      // This cast does not cause UB because the refresh rate must be
-      // non-negative.
-      .refresh_rate_millihertz = static_cast<uint32_t>(refresh_rate_millihertz_),
-  };
-}
-
-constexpr display_mode_t Mode::ToBanjo() const {
-  return display_mode_t{
-      .active_area = active_area_.ToBanjo(),
 
       // This cast does not cause UB because the refresh rate must be
       // non-negative.
@@ -226,18 +168,6 @@ constexpr void Mode::DebugAssertIsValid(
   ZX_DEBUG_ASSERT(fidl_mode.refresh_rate_millihertz <= kMaxRefreshRateMillihertz);
 
   ZX_DEBUG_ASSERT(fidl_mode.flags == fuchsia_hardware_display_types::wire::ModeFlags());
-}
-
-// static
-constexpr void Mode::DebugAssertIsValid(const display_mode_t& banjo_mode) {
-  ZX_DEBUG_ASSERT(Dimensions::IsValid(banjo_mode.active_area));
-  const Dimensions active_area = Dimensions::From(banjo_mode.active_area);
-  ZX_DEBUG_ASSERT(!active_area.IsEmpty());
-
-  ZX_DEBUG_ASSERT(banjo_mode.refresh_rate_millihertz > 0);
-  ZX_DEBUG_ASSERT(banjo_mode.refresh_rate_millihertz <= kMaxRefreshRateMillihertz);
-
-  ZX_DEBUG_ASSERT(banjo_mode.flags == 0);
 }
 
 }  // namespace display

@@ -7,7 +7,6 @@
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <cstdint>
 #include <initializer_list>
@@ -296,48 +295,6 @@ TEST(DriverLayerTest, FromFidlLayer) {
   EXPECT_EQ(CoordinateTransformation::kReflectX, layer.image_source_transformation());
 }
 
-TEST(DriverLayerTest, FromBanjoLayer) {
-  static constexpr layer_t banjo_layer = {
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 30, .y = 40, .width = 500, .height = 600},
-      .image_handle = 4242,
-      .image_metadata = {.dimensions = {.width = 700, .height = 800},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format = static_cast<fuchsia_images2_pixel_format_enum_value_t>(
-                             fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_PREMULTIPLIED,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_REFLECT_X,
-  };
-  static constexpr DriverLayer layer(banjo_layer);
-
-  EXPECT_EQ(10, layer.display_destination().x());
-  EXPECT_EQ(20, layer.display_destination().y());
-  EXPECT_EQ(300, layer.display_destination().width());
-  EXPECT_EQ(400, layer.display_destination().height());
-
-  EXPECT_EQ(30, layer.image_source().x());
-  EXPECT_EQ(40, layer.image_source().y());
-  EXPECT_EQ(500, layer.image_source().width());
-  EXPECT_EQ(600, layer.image_source().height());
-
-  EXPECT_EQ(kImageId, layer.image_id());
-
-  EXPECT_EQ(700, layer.image_metadata().width());
-  EXPECT_EQ(800, layer.image_metadata().height());
-  EXPECT_EQ(ImageTilingType::kLinear, layer.image_metadata().tiling_type());
-
-  EXPECT_EQ(PixelFormat::kR8G8B8A8, layer.fallback_color().format());
-  EXPECT_THAT(
-      layer.fallback_color().bytes(),
-      testing::ElementsAreArray(std::initializer_list<uint8_t>{0xff, 0, 0xff, 0xff, 0, 0, 0, 0}));
-
-  EXPECT_EQ(AlphaMode::kPremultiplied, layer.alpha_mode());
-  EXPECT_EQ(0.25f, layer.alpha_coefficient());
-  EXPECT_EQ(CoordinateTransformation::kReflectX, layer.image_source_transformation());
-}
-
 TEST(DriverLayerTest, ToFidlLayer) {
   static constexpr DriverLayer layer({
       .display_destination = Rectangle({.x = 10, .y = 20, .width = 300, .height = 400}),
@@ -382,50 +339,6 @@ TEST(DriverLayerTest, ToFidlLayer) {
             fidl_layer.image_source_transformation);
 }
 
-TEST(DriverLayerTest, ToBanjoLayer) {
-  static constexpr DriverLayer layer({
-      .display_destination = Rectangle({.x = 10, .y = 20, .width = 300, .height = 400}),
-      .image_source = Rectangle({.x = 30, .y = 40, .width = 500, .height = 600}),
-      .image_id = kImageId,
-      .image_metadata =
-          ImageMetadata({.width = 700, .height = 800, .tiling_type = ImageTilingType::kLinear}),
-      .fallback_color =
-          Color({.format = PixelFormat::kR8G8B8A8,
-                 .bytes = std::initializer_list<uint8_t>{0xff, 0, 0xff, 0xff, 0, 0, 0, 0}}),
-      .alpha_mode = AlphaMode::kPremultiplied,
-      .alpha_coefficient = 0.25f,
-      .image_source_transformation = CoordinateTransformation::kReflectX,
-  });
-  static constexpr layer_t banjo_layer = layer.ToBanjo();
-
-  EXPECT_EQ(10u, banjo_layer.display_destination.x);
-  EXPECT_EQ(20u, banjo_layer.display_destination.y);
-  EXPECT_EQ(300u, banjo_layer.display_destination.width);
-  EXPECT_EQ(400u, banjo_layer.display_destination.height);
-
-  EXPECT_EQ(30u, banjo_layer.image_source.x);
-  EXPECT_EQ(40u, banjo_layer.image_source.y);
-  EXPECT_EQ(500u, banjo_layer.image_source.width);
-  EXPECT_EQ(600u, banjo_layer.image_source.height);
-
-  EXPECT_EQ(4242u, banjo_layer.image_handle);
-
-  EXPECT_EQ(700u, banjo_layer.image_metadata.dimensions.width);
-  EXPECT_EQ(800u, banjo_layer.image_metadata.dimensions.height);
-  EXPECT_EQ(IMAGE_TILING_TYPE_LINEAR, banjo_layer.image_metadata.tiling_type);
-
-  EXPECT_EQ(static_cast<fuchsia_images2_pixel_format_enum_value_t>(
-                fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-            banjo_layer.fallback_color.format);
-  EXPECT_THAT(
-      banjo_layer.fallback_color.bytes,
-      testing::ElementsAreArray(std::initializer_list<uint8_t>{0xff, 0, 0xff, 0xff, 0, 0, 0, 0}));
-
-  EXPECT_EQ(ALPHA_PREMULTIPLIED, banjo_layer.alpha_mode);
-  EXPECT_EQ(0.25f, banjo_layer.alpha_layer_val);
-  EXPECT_EQ(COORDINATE_TRANSFORMATION_REFLECT_X, banjo_layer.image_source_transformation);
-}
-
 TEST(DriverLayerTest, IsValidFidlScaledLayer) {
   EXPECT_TRUE(DriverLayer::IsValid(fuchsia_hardware_display_engine::wire::Layer{
       .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
@@ -440,22 +353,6 @@ TEST(DriverLayerTest, IsValidFidlScaledLayer) {
       .alpha_layer_val = 0.25f,
       .image_source_transformation =
           fuchsia_hardware_display_types::CoordinateTransformation::kReflectX,
-  }));
-}
-
-TEST(DriverLayerTest, IsValidBanjoScaledLayer) {
-  EXPECT_TRUE(DriverLayer::IsValid(layer_t{
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 30, .y = 40, .width = 500, .height = 600},
-      .image_handle = 4242,
-      .image_metadata = {.dimensions = {.width = 700, .height = 800},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format = static_cast<fuchsia_images2_pixel_format_enum_value_t>(
-                             fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_DISABLE,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_REFLECT_X,
   }));
 }
 
@@ -477,22 +374,6 @@ TEST(DriverLayerTest, IsValidFidlScaledLayerWithoutImageId) {
   }));
 }
 
-TEST(DriverLayerTest, IsValidBanjoScaledLayerWithoutImageHandle) {
-  EXPECT_TRUE(DriverLayer::IsValid(layer_t{
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 30, .y = 40, .width = 500, .height = 600},
-      .image_handle = INVALID_ID,
-      .image_metadata = {.dimensions = {.width = 700, .height = 800},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format =
-                             static_cast<uint32_t>(fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_DISABLE,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_REFLECT_X,
-  }));
-}
-
 TEST(DriverLayerTest, IsValidFidlSolidFillLayer) {
   EXPECT_TRUE(DriverLayer::IsValid(fuchsia_hardware_display_engine::wire::Layer{
       .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
@@ -511,22 +392,6 @@ TEST(DriverLayerTest, IsValidFidlSolidFillLayer) {
   }));
 }
 
-TEST(DriverLayerTest, IsValidBanjoSolidFillLayer) {
-  EXPECT_TRUE(DriverLayer::IsValid(layer_t{
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 0, .y = 0, .width = 0, .height = 0},
-      .image_handle = INVALID_ID,
-      .image_metadata = {.dimensions = {.width = 0, .height = 0},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format =
-                             static_cast<uint32_t>(fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_DISABLE,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_IDENTITY,
-  }));
-}
-
 TEST(DriverLayerTest, IsValidFidlSolidFillLayerWithImageId) {
   EXPECT_FALSE(DriverLayer::IsValid(fuchsia_hardware_display_engine::wire::Layer{
       .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
@@ -541,22 +406,6 @@ TEST(DriverLayerTest, IsValidFidlSolidFillLayerWithImageId) {
       .alpha_layer_val = 0.25f,
       .image_source_transformation =
           fuchsia_hardware_display_types::CoordinateTransformation::kIdentity,
-  }));
-}
-
-TEST(DriverLayerTest, IsValidBanjoSolidFillLayerWithImageHandle) {
-  EXPECT_FALSE(DriverLayer::IsValid(layer_t{
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 0, .y = 0, .width = 0, .height = 0},
-      .image_handle = 4242,
-      .image_metadata = {.dimensions = {.width = 0, .height = 0},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format =
-                             static_cast<uint32_t>(fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_DISABLE,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_IDENTITY,
   }));
 }
 
@@ -578,22 +427,6 @@ TEST(DriverLayerTest, IsValidFidlSolidFillLayerWithMetadataDimensions) {
   }));
 }
 
-TEST(DriverLayerTest, IsValidBanjoSolidFillLayerWithMetadataDimensions) {
-  EXPECT_FALSE(DriverLayer::IsValid(layer_t{
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 0, .y = 0, .width = 0, .height = 0},
-      .image_handle = INVALID_ID,
-      .image_metadata = {.dimensions = {.width = 700, .height = 800},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format =
-                             static_cast<uint32_t>(fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_DISABLE,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_IDENTITY,
-  }));
-}
-
 TEST(DriverLayerTest, IsValidFidlSolidFillLayerWithMetadataTilingType) {
   EXPECT_FALSE(DriverLayer::IsValid(fuchsia_hardware_display_engine::wire::Layer{
       .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
@@ -609,22 +442,6 @@ TEST(DriverLayerTest, IsValidFidlSolidFillLayerWithMetadataTilingType) {
       .alpha_layer_val = 0.25f,
       .image_source_transformation =
           fuchsia_hardware_display_types::CoordinateTransformation::kIdentity,
-  }));
-}
-
-TEST(DriverLayerTest, IsValidBanjoSolidFillLayerWithMetadataTilingType) {
-  EXPECT_FALSE(DriverLayer::IsValid(layer_t{
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 0, .y = 0, .width = 0, .height = 0},
-      .image_handle = INVALID_ID,
-      .image_metadata = {.dimensions = {.width = 0, .height = 0},
-                         .tiling_type = IMAGE_TILING_TYPE_CAPTURE},
-      .fallback_color = {.format =
-                             static_cast<uint32_t>(fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_DISABLE,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_IDENTITY,
   }));
 }
 
@@ -646,22 +463,6 @@ TEST(DriverLayerTest, IsValidFidlSolidFillLayerWithTransformation) {
   }));
 }
 
-TEST(DriverLayerTest, IsValidBanjoSolidFillLayerWithTransformation) {
-  EXPECT_FALSE(DriverLayer::IsValid(layer_t{
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 0, .y = 0, .width = 0, .height = 0},
-      .image_handle = INVALID_ID,
-      .image_metadata = {.dimensions = {.width = 0, .height = 0},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format =
-                             static_cast<uint32_t>(fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_DISABLE,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_REFLECT_X,
-  }));
-}
-
 TEST(DriverLayerTest, IsValidFidlEmptyDestination) {
   EXPECT_FALSE(DriverLayer::IsValid(fuchsia_hardware_display_engine::wire::Layer{
       .display_destination = {.x = 0, .y = 0, .width = 0, .height = 0},
@@ -679,22 +480,6 @@ TEST(DriverLayerTest, IsValidFidlEmptyDestination) {
   }));
 }
 
-TEST(DriverLayerTest, IsValidBanjoEmptyDestination) {
-  EXPECT_FALSE(DriverLayer::IsValid(layer_t{
-      .display_destination = {.x = 0, .y = 0, .width = 0, .height = 0},
-      .image_source = {.x = 30, .y = 40, .width = 500, .height = 600},
-      .image_handle = 4242,
-      .image_metadata = {.dimensions = {.width = 700, .height = 800},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format =
-                             static_cast<uint32_t>(fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_DISABLE,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_REFLECT_X,
-  }));
-}
-
 TEST(DriverLayerTest, IsValidFidlScaledLayerWithEmptyMetadataDimensions) {
   EXPECT_FALSE(DriverLayer::IsValid(fuchsia_hardware_display_engine::wire::Layer{
       .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
@@ -709,22 +494,6 @@ TEST(DriverLayerTest, IsValidFidlScaledLayerWithEmptyMetadataDimensions) {
       .alpha_layer_val = 0.25f,
       .image_source_transformation =
           fuchsia_hardware_display_types::CoordinateTransformation::kReflectX,
-  }));
-}
-
-TEST(DriverLayerTest, IsValidBanjoScaledLayerWithEmptyMetadataDimensions) {
-  EXPECT_FALSE(DriverLayer::IsValid(layer_t{
-      .display_destination = {.x = 10, .y = 20, .width = 300, .height = 400},
-      .image_source = {.x = 30, .y = 40, .width = 500, .height = 600},
-      .image_handle = 4242,
-      .image_metadata = {.dimensions = {.width = 0, .height = 0},
-                         .tiling_type = IMAGE_TILING_TYPE_LINEAR},
-      .fallback_color = {.format =
-                             static_cast<uint32_t>(fuchsia_images2::wire::PixelFormat::kR8G8B8A8),
-                         .bytes = {0xff, 0, 0xff, 0xff, 0, 0, 0, 0}},
-      .alpha_mode = ALPHA_DISABLE,
-      .alpha_layer_val = 0.25f,
-      .image_source_transformation = COORDINATE_TRANSFORMATION_REFLECT_X,
   }));
 }
 

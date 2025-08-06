@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_DRIVER_IMAGE_ID_H_
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <cstdint>
 
@@ -15,7 +14,7 @@
 namespace display::internal {
 
 using DriverImageIdTraits =
-    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_engine::wire::ImageId, uint64_t>;
+    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_engine::wire::ImageId>;
 
 }  // namespace display::internal
 
@@ -34,7 +33,7 @@ namespace display {
 // when unifying image ID namespaces.
 using DriverImageId = display::internal::IdType<display::internal::DriverImageIdTraits>;
 
-constexpr DriverImageId kInvalidDriverImageId(INVALID_ID);
+constexpr DriverImageId kInvalidDriverImageId(fuchsia_hardware_display_engine::wire::kInvalidId);
 
 }  // namespace display
 

@@ -13,7 +13,7 @@ namespace display::internal {
 namespace {
 
 using TestIdTypeTraits =
-    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_types::wire::DisplayId, uint64_t>;
+    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_types::wire::DisplayId>;
 using TestIdType = IdType<TestIdTypeTraits>;
 
 static_assert(std::is_standard_layout_v<TestIdType>);

@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_IMAGE_TILING_TYPE_H_
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
@@ -35,7 +34,6 @@ class ImageTilingType {
   ~ImageTilingType() = default;
 
   constexpr fuchsia_hardware_display_types::wire::ImageTilingTypeIdValue ToFidl() const;
-  constexpr image_tiling_type_t ToBanjo() const;
 
   // Raw numerical value of the equivalent FIDL value.
   //
@@ -76,10 +74,6 @@ constexpr bool operator!=(const ImageTilingType& lhs, const ImageTilingType& rhs
 constexpr fuchsia_hardware_display_types::wire::ImageTilingTypeIdValue ImageTilingType::ToFidl()
     const {
   return tiling_type_id_;
-}
-
-constexpr image_tiling_type_t ImageTilingType::ToBanjo() const {
-  return static_cast<image_tiling_type_t>(tiling_type_id_);
 }
 
 constexpr uint32_t ImageTilingType::ValueForLogging() const {

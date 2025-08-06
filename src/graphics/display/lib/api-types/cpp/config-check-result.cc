@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/config-check-result.h"
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <zircon/assert.h>
 
 #include <cinttypes>
@@ -21,16 +20,6 @@ static_assert(std::is_trivially_copy_constructible_v<ConfigCheckResult>);
 static_assert(std::is_trivially_destructible_v<ConfigCheckResult>);
 static_assert(std::is_trivially_move_assignable_v<ConfigCheckResult>);
 static_assert(std::is_trivially_move_constructible_v<ConfigCheckResult>);
-
-// Ensure that the Banjo constants match the FIDL constants.
-static_assert(ConfigCheckResult::kOk.ToBanjo() == CONFIG_CHECK_RESULT_OK);
-static_assert(ConfigCheckResult::kEmptyConfig.ToBanjo() == CONFIG_CHECK_RESULT_EMPTY_CONFIG);
-static_assert(ConfigCheckResult::kInvalidConfig.ToBanjo() == CONFIG_CHECK_RESULT_INVALID_CONFIG);
-static_assert(ConfigCheckResult::kUnsupportedConfig.ToBanjo() ==
-              CONFIG_CHECK_RESULT_UNSUPPORTED_CONFIG);
-static_assert(ConfigCheckResult::kTooManyDisplays.ToBanjo() == CONFIG_CHECK_RESULT_TOO_MANY);
-static_assert(ConfigCheckResult::kUnsupportedDisplayModes.ToBanjo() ==
-              CONFIG_CHECK_RESULT_UNSUPPORTED_MODES);
 
 std::string_view ConfigCheckResult::ToString() const {
   switch (result_) {

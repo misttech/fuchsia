@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/rectangle.h"
 
 #include <fidl/fuchsia.math/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/cpp/banjo.h>
 
 #include <gtest/gtest.h>
 
@@ -119,22 +118,6 @@ TEST(RectangleTest, FromFidlRectU) {
   EXPECT_EQ(500, rectangle.height());
 }
 
-TEST(RectangleTest, FromBanjoRectangle) {
-  static constexpr rect_u_t banjo_rectangle = {
-      .x = 100,
-      .y = 200,
-      .width = 400,
-      .height = 500,
-  };
-
-  static constexpr Rectangle rectangle = Rectangle::From(banjo_rectangle);
-  EXPECT_EQ(100, rectangle.x());
-  EXPECT_EQ(200, rectangle.y());
-  EXPECT_EQ(Dimensions({.width = 400, .height = 500}), rectangle.dimensions());
-  EXPECT_EQ(400, rectangle.width());
-  EXPECT_EQ(500, rectangle.height());
-}
-
 TEST(RectangleTest, ToFidlRectangle) {
   static constexpr Rectangle rectangle({
       .x = 100,
@@ -148,21 +131,6 @@ TEST(RectangleTest, ToFidlRectangle) {
   EXPECT_EQ(200u, fidl_rectangle.y);
   EXPECT_EQ(400u, fidl_rectangle.width);
   EXPECT_EQ(500u, fidl_rectangle.height);
-}
-
-TEST(RectangleTest, ToBanjoRectangle) {
-  static constexpr Rectangle rectangle({
-      .x = 100,
-      .y = 200,
-      .width = 400,
-      .height = 500,
-  });
-
-  static constexpr rect_u_t banjo_rectangle = rectangle.ToBanjo();
-  EXPECT_EQ(100u, banjo_rectangle.x);
-  EXPECT_EQ(200u, banjo_rectangle.y);
-  EXPECT_EQ(400u, banjo_rectangle.width);
-  EXPECT_EQ(500u, banjo_rectangle.height);
 }
 
 TEST(RectangleTest, IsValidFidlLayerDestination) {
@@ -203,51 +171,6 @@ TEST(RectangleTest, IsValidFidlLargeWidth) {
 
 TEST(RectangleTest, IsValidFidlLargeHeight) {
   EXPECT_FALSE(Rectangle::IsValid(fuchsia_math::wire::RectU{
-      .x = 100,
-      .y = 200,
-      .width = 400,
-      .height = 1'000'000,
-  }));
-}
-
-TEST(RectangleTest, IsValidBanjoLayerDestination) {
-  EXPECT_TRUE(Rectangle::IsValid(rect_u_t{
-      .x = 100,
-      .y = 200,
-      .width = 400,
-      .height = 500,
-  }));
-}
-
-TEST(RectangleTest, IsValidBanjoLargeXOffset) {
-  EXPECT_FALSE(Rectangle::IsValid(rect_u_t{
-      .x = 1'000'000,
-      .y = 200,
-      .width = 400,
-      .height = 500,
-  }));
-}
-
-TEST(RectangleTest, IsValidBanjoLargeYOffset) {
-  EXPECT_FALSE(Rectangle::IsValid(rect_u_t{
-      .x = 100,
-      .y = 1'000'000,
-      .width = 400,
-      .height = 500,
-  }));
-}
-
-TEST(RectangleTest, IsValidBanjoLargeWidth) {
-  EXPECT_FALSE(Rectangle::IsValid(rect_u_t{
-      .x = 100,
-      .y = 200,
-      .width = 1'000'000,
-      .height = 500,
-  }));
-}
-
-TEST(RectangleTest, IsValidBanjoLargeHeight) {
-  EXPECT_FALSE(Rectangle::IsValid(rect_u_t{
       .x = 100,
       .y = 200,
       .width = 400,

@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_ALPHA_MODE_H_
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
@@ -19,8 +18,6 @@
 namespace display {
 
 // Equivalent to the FIDL type [`fuchsia.hardware.display.types/AlphaMode`].
-//
-// Also equivalent to the banjo type [`fuchsia.hardware.display.controller/Alpha`].
 //
 // See `::fuchsia_hardware_display_types::wire::AlphaMode` for references.
 //
@@ -35,12 +32,8 @@ class AlphaMode {
   // True iff `fidl_alpha_mode` is convertible to a valid AlphaMode.
   [[nodiscard]] static constexpr bool IsValid(
       fuchsia_hardware_display_types::wire::AlphaMode fidl_alpha_mode);
-  // True iff `banjo_alpha_mode` is convertible to a valid AlphaMode.
-  [[nodiscard]] static constexpr bool IsValid(alpha_t banjo_alpha_mode);
 
   explicit constexpr AlphaMode(fuchsia_hardware_display_types::wire::AlphaMode fidl_alpha_mode);
-
-  explicit constexpr AlphaMode(alpha_t banjo_alpha_mode);
 
   constexpr AlphaMode(const AlphaMode&) noexcept = default;
   constexpr AlphaMode(AlphaMode&&) noexcept = default;
@@ -49,7 +42,6 @@ class AlphaMode {
   ~AlphaMode() = default;
 
   constexpr fuchsia_hardware_display_types::wire::AlphaMode ToFidl() const;
-  constexpr alpha_t ToBanjo() const;
 
   // Raw numerical value of the equivalent FIDL value.
   //
@@ -83,25 +75,9 @@ constexpr bool AlphaMode::IsValid(fuchsia_hardware_display_types::wire::AlphaMod
   return false;
 }
 
-// static
-constexpr bool AlphaMode::IsValid(alpha_t banjo_alpha_mode) {
-  switch (banjo_alpha_mode) {
-    case ALPHA_DISABLE:
-    case ALPHA_PREMULTIPLIED:
-    case ALPHA_HW_MULTIPLY:
-      return true;
-  }
-  return false;
-}
-
 constexpr AlphaMode::AlphaMode(fuchsia_hardware_display_types::wire::AlphaMode fidl_alpha_mode)
     : alpha_mode_(fidl_alpha_mode) {
   ZX_DEBUG_ASSERT(IsValid(fidl_alpha_mode));
-}
-
-constexpr AlphaMode::AlphaMode(alpha_t banjo_alpha_mode)
-    : alpha_mode_(static_cast<fuchsia_hardware_display_types::wire::AlphaMode>(banjo_alpha_mode)) {
-  ZX_DEBUG_ASSERT(IsValid(banjo_alpha_mode));
 }
 
 constexpr bool operator==(const AlphaMode& lhs, const AlphaMode& rhs) {
@@ -113,8 +89,6 @@ constexpr bool operator!=(const AlphaMode& lhs, const AlphaMode& rhs) { return !
 constexpr fuchsia_hardware_display_types::wire::AlphaMode AlphaMode::ToFidl() const {
   return alpha_mode_;
 }
-
-constexpr alpha_t AlphaMode::ToBanjo() const { return static_cast<alpha_t>(alpha_mode_); }
 
 constexpr uint32_t AlphaMode::ValueForLogging() const { return static_cast<uint32_t>(alpha_mode_); }
 

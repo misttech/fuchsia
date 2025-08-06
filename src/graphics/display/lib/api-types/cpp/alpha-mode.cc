@@ -4,7 +4,6 @@
 
 #include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
 
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <zircon/assert.h>
 
 #include <cinttypes>
@@ -20,11 +19,6 @@ static_assert(std::is_trivially_copy_constructible_v<AlphaMode>);
 static_assert(std::is_trivially_destructible_v<AlphaMode>);
 static_assert(std::is_trivially_move_assignable_v<AlphaMode>);
 static_assert(std::is_trivially_move_constructible_v<AlphaMode>);
-
-// Ensure that the Banjo constants match the FIDL constants.
-static_assert(AlphaMode::kDisable.ToBanjo() == ALPHA_DISABLE);
-static_assert(AlphaMode::kPremultiplied.ToBanjo() == ALPHA_PREMULTIPLIED);
-static_assert(AlphaMode::kHwMultiply.ToBanjo() == ALPHA_HW_MULTIPLY);
 
 std::string_view AlphaMode::ToString() const {
   switch (alpha_mode_) {

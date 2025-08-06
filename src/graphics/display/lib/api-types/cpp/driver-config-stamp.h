@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_DRIVER_CONFIG_STAMP_H_
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <cstdint>
 
@@ -14,16 +13,8 @@
 
 namespace display::internal {
 
-struct DriverConfigStampTraits
-    : public DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_engine::wire::ConfigStamp,
-                                 config_stamp_t> {
-  static constexpr uint64_t FromBanjo(const config_stamp_t& banjo_config_stamp) noexcept {
-    return banjo_config_stamp.value;
-  }
-  static constexpr config_stamp_t ToBanjo(const uint64_t& config_stamp_value) noexcept {
-    return config_stamp_t{.value = config_stamp_value};
-  }
-};
+using DriverConfigStampTraits =
+    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_engine::wire::ConfigStamp>;
 
 }  // namespace display::internal
 

@@ -9,14 +9,12 @@
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 
 #include <cstdint>
-#include <type_traits>
 
 #include "src/graphics/display/lib/api-types/cpp/id-type.h"
 
 namespace display::internal {
 
-using ModeIdTraits =
-    DefaultIdTypeTraits<uint16_t, fuchsia_hardware_display_types::wire::ModeId, uint16_t>;
+using ModeIdTraits = DefaultIdTypeTraits<uint16_t, fuchsia_hardware_display_types::wire::ModeId>;
 
 }  // namespace display::internal
 

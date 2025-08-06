@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/dimensions.h"
 
 #include <fidl/fuchsia.math/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/cpp/banjo.h>
 
 #include <gtest/gtest.h>
 
@@ -77,17 +76,6 @@ TEST(DimensionsTest, FromFidlSizeU) {
   EXPECT_EQ(500, dimensions.height());
 }
 
-TEST(DimensionsTest, FromBanjoSizeU) {
-  static constexpr size_u_t banjo_size = {
-      .width = 400,
-      .height = 500,
-  };
-
-  static constexpr Dimensions dimensions = Dimensions::From(banjo_size);
-  EXPECT_EQ(400, dimensions.width());
-  EXPECT_EQ(500, dimensions.height());
-}
-
 TEST(DimensionsTest, ToFidlDimensions) {
   static constexpr Dimensions dimensions({
       .width = 400,
@@ -97,17 +85,6 @@ TEST(DimensionsTest, ToFidlDimensions) {
   static constexpr fuchsia_math::wire::SizeU fidl_size = dimensions.ToFidl();
   EXPECT_EQ(400u, fidl_size.width);
   EXPECT_EQ(500u, fidl_size.height);
-}
-
-TEST(DimensionsTest, ToBanjoDimensions) {
-  static constexpr Dimensions dimensions({
-      .width = 400,
-      .height = 500,
-  });
-
-  static constexpr size_u_t banjo_size = dimensions.ToBanjo();
-  EXPECT_EQ(400u, banjo_size.width);
-  EXPECT_EQ(500u, banjo_size.height);
 }
 
 TEST(DimensionsTest, IsValidFidlSmall) {
@@ -132,30 +109,6 @@ TEST(DimensionsTest, IsValidFidlEmptyHorizontalLine) {
 
 TEST(DimensionsTest, IsValidFidlEmptyVerticalLine) {
   EXPECT_FALSE(Dimensions::IsValid(fuchsia_math::wire::SizeU({.width = 0, .height = 10})));
-}
-
-TEST(DimensionsTest, IsValidBanjoSmall) {
-  EXPECT_TRUE(Dimensions::IsValid(size_u_t{.width = 10, .height = 20}));
-}
-
-TEST(DimensionsTest, IsValidBanjoLargeWidth) {
-  EXPECT_FALSE(Dimensions::IsValid(size_u_t{.width = 1'000'000, .height = 20}));
-}
-
-TEST(DimensionsTest, IsValidBanjoLargeHeight) {
-  EXPECT_FALSE(Dimensions::IsValid(size_u_t{.width = 10, .height = 1'000'000}));
-}
-
-TEST(DimensionsTest, IsValidBanjoCanonicalEmpty) {
-  EXPECT_TRUE(Dimensions::IsValid(size_u_t{.width = 0, .height = 0}));
-}
-
-TEST(DimensionsTest, IsValidBanjoEmptyHorizontalLine) {
-  EXPECT_FALSE(Dimensions::IsValid(size_u_t{.width = 10, .height = 0}));
-}
-
-TEST(DimensionsTest, IsValidBanjoEmptyVerticalLine) {
-  EXPECT_FALSE(Dimensions::IsValid(size_u_t{.width = 0, .height = 10}));
 }
 
 TEST(DimensionsTest, IsEmpty) {

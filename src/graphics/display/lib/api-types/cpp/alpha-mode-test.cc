@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <gtest/gtest.h>
 
@@ -38,21 +37,10 @@ TEST(AlphaModeTest, EqualityForDifferentValues) {
   EXPECT_NE(AlphaMode::kDisable, kPremultiplied2);
 }
 
-TEST(AlphaModeTest, ToBanjoAlphaMode) {
-  static constexpr coordinate_transformation_t banjo_transformation =
-      AlphaMode::kPremultiplied.ToBanjo();
-  EXPECT_EQ(coordinate_transformation_t{ALPHA_PREMULTIPLIED}, banjo_transformation);
-}
-
 TEST(AlphaModeTest, ToFidlAlphaMode) {
   static constexpr fuchsia_hardware_display_types::wire::AlphaMode fidl_transformation =
       AlphaMode::kPremultiplied.ToFidl();
   EXPECT_EQ(fuchsia_hardware_display_types::wire::AlphaMode::kPremultiplied, fidl_transformation);
-}
-
-TEST(AlphaModeTest, ToAlphaModeWithBanjoValue) {
-  static constexpr AlphaMode transformation(ALPHA_PREMULTIPLIED);
-  EXPECT_EQ(AlphaMode::kPremultiplied, transformation);
 }
 
 TEST(AlphaModeTest, ToAlphaModeWithFidlValue) {
@@ -64,11 +52,6 @@ TEST(AlphaModeTest, ToAlphaModeWithFidlValue) {
 TEST(AlphaModeTest, ValueForLogging) {
   EXPECT_EQ(static_cast<uint32_t>(fuchsia_hardware_display_types::wire::AlphaMode::kPremultiplied),
             AlphaMode::kPremultiplied.ValueForLogging());
-}
-
-TEST(AlphaModeTest, BanjoConversionRoundtrip) {
-  EXPECT_EQ(AlphaMode::kPremultiplied, AlphaMode(AlphaMode::kPremultiplied.ToBanjo()));
-  EXPECT_EQ(AlphaMode::kDisable, AlphaMode(AlphaMode::kDisable.ToBanjo()));
 }
 
 TEST(AlphaModeTest, FidlConversionRoundtrip) {

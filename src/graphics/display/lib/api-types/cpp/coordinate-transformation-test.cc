@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/coordinate-transformation.h"
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <gtest/gtest.h>
 
@@ -38,22 +37,11 @@ TEST(CoordinateTransformationTest, EqualityForDifferentValues) {
   EXPECT_NE(CoordinateTransformation::kReflectX, kReflectY2);
 }
 
-TEST(CoordinateTransformationTest, ToBanjoCoordinateTransformation) {
-  static constexpr coordinate_transformation_t banjo_transformation =
-      CoordinateTransformation::kReflectY.ToBanjo();
-  EXPECT_EQ(COORDINATE_TRANSFORMATION_REFLECT_Y, banjo_transformation);
-}
-
 TEST(CoordinateTransformationTest, ToFidlCoordinateTransformation) {
   static constexpr fuchsia_hardware_display_types::wire::CoordinateTransformation
       fidl_transformation = CoordinateTransformation::kReflectY.ToFidl();
   EXPECT_EQ(fuchsia_hardware_display_types::wire::CoordinateTransformation::kReflectY,
             fidl_transformation);
-}
-
-TEST(CoordinateTransformationTest, ToCoordinateTransformationWithBanjoValue) {
-  static constexpr CoordinateTransformation transformation(COORDINATE_TRANSFORMATION_REFLECT_Y);
-  EXPECT_EQ(CoordinateTransformation::kReflectY, transformation);
 }
 
 TEST(CoordinateTransformationTest, ToCoordinateTransformationWithFidlValue) {
@@ -66,13 +54,6 @@ TEST(CoordinateTransformationTest, ValueForLogging) {
   EXPECT_EQ(static_cast<uint32_t>(
                 fuchsia_hardware_display_types::wire::CoordinateTransformation::kReflectY),
             CoordinateTransformation::kReflectY.ValueForLogging());
-}
-
-TEST(CoordinateTransformationTest, BanjoConversionRoundtrip) {
-  EXPECT_EQ(CoordinateTransformation::kReflectY,
-            CoordinateTransformation(CoordinateTransformation::kReflectY.ToBanjo()));
-  EXPECT_EQ(CoordinateTransformation::kReflectX,
-            CoordinateTransformation(CoordinateTransformation::kReflectX.ToBanjo()));
 }
 
 TEST(CoordinateTransformationTest, FidlConversionRoundtrip) {

@@ -7,7 +7,6 @@
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/cpp/banjo.h>
 #include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
@@ -20,8 +19,6 @@
 namespace display {
 
 // Equivalent to the FIDL type [`fuchsia.hardware.display.types/Color`].
-//
-// Equivalent to the the banjo type [`fuchsia.hardware.display.controller/Color`].
 //
 // Instances are guaranteed to represent color constants whose pixel formats are
 // supported by the display stack.
@@ -37,15 +34,6 @@ class Color {
   // True iff `fidl_color` is convertible to a valid Color.
   [[nodiscard]] static constexpr bool IsValid(
       const fuchsia_hardware_display_types::wire::Color& fidl_color);
-  [[nodiscard]] static constexpr bool IsValid(const color_t& banjo_color);
-
-  // `banjo_color` must be convertible to a valid Color.
-  //
-  // This is not a constructor to allow designated initializer syntax. Making
-  // this a constructor would introduce ambiguity when designated initializer
-  // syntax is used, because `color_t` has the same field names as our supported
-  // designated initializer syntax.
-  [[nodiscard]] static constexpr Color From(const color_t& banjo_color);
 
   // `fidl_color` must be convertible to a valid Color.
   //
@@ -71,7 +59,6 @@ class Color {
   friend constexpr bool operator!=(const Color& lhs, const Color& rhs);
 
   constexpr fuchsia_hardware_display_types::wire::Color ToFidl() const;
-  constexpr color_t ToBanjo() const;
 
   // Guaranteed to meet the requirements in the FIDL documentation.
   constexpr PixelFormat format() const { return format_; }
@@ -94,7 +81,6 @@ class Color {
   static constexpr void DebugAssertIsValid(const Color::ConstructorArgs& args);
   static constexpr void DebugAssertIsValid(
       const fuchsia_hardware_display_types::wire::Color& fidl_color);
-  static constexpr void DebugAssertIsValid(const color_t& banjo_color);
 
   // Container for static_asserts on private data members.
   static void StaticAsserts();
@@ -130,25 +116,6 @@ constexpr bool Color::IsValid(const fuchsia_hardware_display_types::wire::Color&
   return true;
 }
 
-// static
-constexpr bool Color::IsValid(const color_t& banjo_color) {
-  if (!PixelFormat::IsSupported(banjo_color.format)) {
-    return false;
-  }
-  const PixelFormat pixel_format(banjo_color.format);
-
-  if (!Color::SupportsFormat(pixel_format)) {
-    return false;
-  }
-
-  for (int i = pixel_format.EncodingSize(); i < kBytesElements; ++i) {
-    if (banjo_color.bytes[i] != 0) {
-      return false;
-    }
-  }
-  return true;
-}
-
 constexpr Color::Color(const Color::ConstructorArgs& args)
     : format_(args.format),
       // TODO(https://fxbug.dev/378965477): Given C++20, this error-prone code can be replaced by
@@ -175,15 +142,6 @@ constexpr Color Color::From(const fuchsia_hardware_display_types::wire::Color& f
   });
 }
 
-// static
-constexpr Color Color::From(const color_t& banjo_color) {
-  DebugAssertIsValid(banjo_color);
-  return Color({
-      .format = PixelFormat(banjo_color.format),
-      .bytes = banjo_color.bytes,
-  });
-}
-
 constexpr bool operator==(const Color& lhs, const Color& rhs) {
   return lhs.format_ == rhs.format_ && lhs.bytes_ == rhs.bytes_;
 }
@@ -198,16 +156,6 @@ constexpr fuchsia_hardware_display_types::wire::Color Color::ToFidl() const {
     fidl_color.bytes[i] = bytes_[i];
   }
   return fidl_color;
-}
-
-constexpr color_t Color::ToBanjo() const {
-  color_t banjo_color{.format = format_.ToBanjo()};
-  // TODO(https://fxbug.dev/378965477): Given C++20, this error-prone code can be replaced by
-  //                                    std::ranges::copy().
-  for (int i = 0; i < Color::kBytesElements; ++i) {
-    banjo_color.bytes[i] = bytes_[i];
-  }
-  return banjo_color;
 }
 
 // static
@@ -232,20 +180,6 @@ constexpr void Color::DebugAssertIsValid(
   for (int i = pixel_format.EncodingSize(); i < kBytesElements; ++i) {
     ZX_DEBUG_ASSERT_MSG(fidl_color.bytes[i] == 0, "Padding byte %d set to %d", i,
                         int{fidl_color.bytes[i]});
-  }
-}
-
-// static
-constexpr void Color::DebugAssertIsValid(const color_t& banjo_color) {
-  ZX_DEBUG_ASSERT(PixelFormat::IsSupported(banjo_color.format));
-  const PixelFormat pixel_format(banjo_color.format);
-
-  ZX_DEBUG_ASSERT_MSG(Color::SupportsFormat(pixel_format), "Unsupported color format %" PRIu32,
-                      pixel_format.ValueForLogging());
-
-  for (int i = pixel_format.EncodingSize(); i < kBytesElements; ++i) {
-    ZX_DEBUG_ASSERT_MSG(banjo_color.bytes[i] == 0, "Padding byte %d set to %d", i,
-                        int{banjo_color.bytes[i]});
   }
 }
 

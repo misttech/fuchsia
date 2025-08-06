@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/color.h"
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include <type_traits>
 
@@ -21,8 +20,6 @@ static_assert(std::is_trivially_move_constructible_v<Color>);
 
 // static
 void Color::StaticAsserts() {
-  static_assert(kBytesElements == sizeof(color_t::bytes),
-                "Banjo color_t bytes size doesn't match Color");
   static_assert(
       kBytesElements == decltype(fuchsia_hardware_display_types::wire::Color::bytes)::size(),
       "FIDL fuchsia.hardware.display.types/Color bytes size doesn't match Color");

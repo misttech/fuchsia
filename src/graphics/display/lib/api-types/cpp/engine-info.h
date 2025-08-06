@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_ENGINE_INFO_H_
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/cpp/banjo.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
@@ -14,9 +13,6 @@
 namespace display {
 
 // Equivalent to the FIDL type [`fuchsia.hardware.display.engine/EngineInfo`].
-//
-// Also equivalent to the banjo type
-// [`fuchsia.hardware.display.controller/EngineInfo`].
 //
 // See `::fuchsia_hardware_display_engine::wire::EngineInfo` for references.
 //
@@ -39,15 +35,6 @@ class EngineInfo {
   // True iff `fidl_engine_info` is convertible to a valid EngineInfo.
   [[nodiscard]] static constexpr bool IsValid(
       const fuchsia_hardware_display_engine::wire::EngineInfo& fidl_engine_info);
-  [[nodiscard]] static constexpr bool IsValid(const engine_info_t& banjo_engine_info);
-
-  // `banjo_engine_info` must be convertible to a valid EngineInfo.
-  //
-  // This is not a constructor to allow designated initializer syntax. Making
-  // this a constructor would introduce ambiguity when designated initializer
-  // syntax is used, because `engine_info_t` has the same field names as our
-  // supported designated initializer syntax.
-  [[nodiscard]] static constexpr EngineInfo From(const engine_info_t& banjo_engine_info);
 
   // `fidl_engine_info` must be convertible to a valid EngineInfo.
   //
@@ -73,7 +60,6 @@ class EngineInfo {
   friend constexpr bool operator!=(const EngineInfo& lhs, const EngineInfo& rhs);
 
   constexpr fuchsia_hardware_display_engine::wire::EngineInfo ToFidl() const;
-  constexpr engine_info_t ToBanjo() const;
 
   // Guaranteed to meet the requirements in the FIDL documentation.
   constexpr int max_layer_count() const { return max_layer_count_; }
@@ -97,7 +83,6 @@ class EngineInfo {
   static constexpr void DebugAssertIsValid(const EngineInfo::ConstructorArgs& args);
   static constexpr void DebugAssertIsValid(
       const fuchsia_hardware_display_engine::wire::EngineInfo& fidl_engine_info);
-  static constexpr void DebugAssertIsValid(const engine_info_t& banjo_engine_info);
 
   int max_layer_count_;
   int max_connected_display_count_;
@@ -118,25 +103,6 @@ constexpr bool EngineInfo::IsValid(
     return false;
   }
   if (fidl_engine_info.max_connected_display_count > kMaxAllowedMaxConnectedDisplayCount) {
-    return false;
-  }
-
-  return true;
-}
-
-// static
-constexpr bool EngineInfo::IsValid(const engine_info_t& banjo_engine_info) {
-  if (banjo_engine_info.max_layer_count <= 0) {
-    return false;
-  }
-  if (banjo_engine_info.max_layer_count > kMaxAllowedMaxLayerCount) {
-    return false;
-  }
-
-  if (banjo_engine_info.max_connected_display_count <= 0) {
-    return false;
-  }
-  if (banjo_engine_info.max_connected_display_count > kMaxAllowedMaxConnectedDisplayCount) {
     return false;
   }
 
@@ -165,20 +131,6 @@ constexpr EngineInfo EngineInfo::From(
   });
 }
 
-// static
-constexpr EngineInfo EngineInfo::From(const engine_info_t& banjo_engine_info) {
-  DebugAssertIsValid(banjo_engine_info);
-
-  // The casts do not overflow (causing UB) because of the limits for valid
-  // values.
-  return EngineInfo({
-      .max_layer_count = static_cast<int16_t>(banjo_engine_info.max_layer_count),
-      .max_connected_display_count =
-          static_cast<int16_t>(banjo_engine_info.max_connected_display_count),
-      .is_capture_supported = banjo_engine_info.is_capture_supported,
-  });
-}
-
 constexpr bool operator==(const EngineInfo& lhs, const EngineInfo& rhs) {
   return lhs.max_layer_count_ == rhs.max_layer_count_ &&
          lhs.max_connected_display_count_ == rhs.max_connected_display_count_ &&
@@ -191,16 +143,6 @@ constexpr fuchsia_hardware_display_engine::wire::EngineInfo EngineInfo::ToFidl()
   // The casts do not underflow (causing UB) because all numeric data members
   // are positive.
   return fuchsia_hardware_display_engine::wire::EngineInfo{
-      .max_layer_count = static_cast<uint16_t>(max_layer_count_),
-      .max_connected_display_count = static_cast<uint16_t>(max_connected_display_count_),
-      .is_capture_supported = is_capture_supported_,
-  };
-}
-
-constexpr engine_info_t EngineInfo::ToBanjo() const {
-  // The casts do not underflow (causing UB) because all numeric data members
-  // are positive.
-  return engine_info_t{
       .max_layer_count = static_cast<uint16_t>(max_layer_count_),
       .max_connected_display_count = static_cast<uint16_t>(max_connected_display_count_),
       .is_capture_supported = is_capture_supported_,
@@ -224,16 +166,6 @@ constexpr void EngineInfo::DebugAssertIsValid(
 
   ZX_DEBUG_ASSERT(fidl_engine_info.max_connected_display_count > 0);
   ZX_DEBUG_ASSERT(fidl_engine_info.max_connected_display_count <=
-                  kMaxAllowedMaxConnectedDisplayCount);
-}
-
-// static
-constexpr void EngineInfo::DebugAssertIsValid(const engine_info_t& banjo_engine_info) {
-  ZX_DEBUG_ASSERT(banjo_engine_info.max_layer_count > 0);
-  ZX_DEBUG_ASSERT(banjo_engine_info.max_layer_count <= kMaxAllowedMaxLayerCount);
-
-  ZX_DEBUG_ASSERT(banjo_engine_info.max_connected_display_count > 0);
-  ZX_DEBUG_ASSERT(banjo_engine_info.max_connected_display_count <=
                   kMaxAllowedMaxConnectedDisplayCount);
 }
 

@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_IMAGE_BUFFER_USAGE_H_
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 
 #include "src/graphics/display/lib/api-types/cpp/image-tiling-type.h"
 
@@ -26,7 +25,6 @@ class ImageBufferUsage {
 
   explicit constexpr ImageBufferUsage(
       fuchsia_hardware_display_types::wire::ImageBufferUsage fidl_image_buffer_usage);
-  explicit constexpr ImageBufferUsage(image_buffer_usage_t banjo_image_buffer_usage);
 
   constexpr ImageBufferUsage(const ImageBufferUsage&) noexcept = default;
   constexpr ImageBufferUsage(ImageBufferUsage&&) noexcept = default;
@@ -38,7 +36,6 @@ class ImageBufferUsage {
   friend constexpr bool operator!=(const ImageBufferUsage& lhs, const ImageBufferUsage& rhs);
 
   constexpr fuchsia_hardware_display_types::wire::ImageBufferUsage ToFidl() const;
-  constexpr image_buffer_usage_t ToBanjo() const;
 
   constexpr ImageTilingType tiling_type() const { return tiling_type_; }
 
@@ -57,9 +54,6 @@ constexpr ImageBufferUsage::ImageBufferUsage(
     fuchsia_hardware_display_types::wire::ImageBufferUsage fidl_image_buffer_usage)
     : tiling_type_(fidl_image_buffer_usage.tiling_type) {}
 
-constexpr ImageBufferUsage::ImageBufferUsage(image_buffer_usage_t banjo_image_buffer_usage)
-    : tiling_type_(banjo_image_buffer_usage.tiling_type) {}
-
 constexpr bool operator==(const ImageBufferUsage& lhs, const ImageBufferUsage& rhs) {
   return lhs.tiling_type_ == rhs.tiling_type_;
 }
@@ -71,12 +65,6 @@ constexpr bool operator!=(const ImageBufferUsage& lhs, const ImageBufferUsage& r
 constexpr fuchsia_hardware_display_types::wire::ImageBufferUsage ImageBufferUsage::ToFidl() const {
   return fuchsia_hardware_display_types::wire::ImageBufferUsage{
       .tiling_type = tiling_type_.ToFidl(),
-  };
-}
-
-constexpr image_buffer_usage_t ImageBufferUsage::ToBanjo() const {
-  return image_buffer_usage_t{
-      .tiling_type = tiling_type_.ToBanjo(),
   };
 }
 

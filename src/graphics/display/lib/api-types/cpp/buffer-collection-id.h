@@ -14,7 +14,7 @@
 namespace display::internal {
 
 using BufferCollectionIdTraits =
-    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display::wire::BufferCollectionId, uint64_t>;
+    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display::wire::BufferCollectionId>;
 
 }  // namespace display::internal
 

@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/mode.h"
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/cpp/banjo.h>
 
 #include <gtest/gtest.h>
 
@@ -97,19 +96,6 @@ TEST(ModeTest, FromFidlMode) {
   EXPECT_EQ(60'000, mode.refresh_rate_millihertz());
 }
 
-TEST(ModeTest, FromBanjoMode) {
-  static constexpr display_mode_t banjo_mode = {
-      .active_area = {.width = 640, .height = 480},
-      .refresh_rate_millihertz = 60'000,
-  };
-
-  static constexpr Mode mode = Mode::From(banjo_mode);
-  EXPECT_EQ(640, mode.active_area().width());
-  EXPECT_EQ(480, mode.active_area().height());
-  EXPECT_EQ(Dimensions({.width = 640, .height = 480}), mode.active_area());
-  EXPECT_EQ(60'000, mode.refresh_rate_millihertz());
-}
-
 TEST(ModeTest, ToFidlMode) {
   static constexpr Mode mode({
       .active_width = 640,
@@ -122,20 +108,6 @@ TEST(ModeTest, ToFidlMode) {
   EXPECT_EQ(480u, fidl_mode.active_area.height);
   EXPECT_EQ(60'000u, fidl_mode.refresh_rate_millihertz);
   EXPECT_EQ(fuchsia_hardware_display_types::wire::ModeFlags(), fidl_mode.flags);
-}
-
-TEST(ModeTest, ToBanjoMode) {
-  static constexpr Mode mode({
-      .active_width = 640,
-      .active_height = 480,
-      .refresh_rate_millihertz = 60'000,
-  });
-
-  static constexpr display_mode_t banjo_mode = mode.ToBanjo();
-  EXPECT_EQ(640u, banjo_mode.active_area.width);
-  EXPECT_EQ(480u, banjo_mode.active_area.height);
-  EXPECT_EQ(60'000u, banjo_mode.refresh_rate_millihertz);
-  EXPECT_EQ(0u, banjo_mode.flags);
 }
 
 TEST(ModeTest, IsValidFidlVga60Fps) {
@@ -175,46 +147,6 @@ TEST(ModeTest, IsValidFidlNonZeroFlags) {
       .active_area = {.width = 640, .height = 480},
       .refresh_rate_millihertz = 10'000'000,
       .flags = static_cast<fuchsia_hardware_display_types::wire::ModeFlags>(1),
-  }));
-}
-
-TEST(ModeTest, IsValidBanjoVga60Fps) {
-  EXPECT_TRUE(Mode::IsValid(display_mode_t{
-      .active_area = {.width = 640, .height = 480},
-      .refresh_rate_millihertz = 60'000,
-      .flags = 0,
-  }));
-}
-
-TEST(ModeTest, IsValidBanjoLargeWidth) {
-  EXPECT_FALSE(Mode::IsValid(display_mode_t{
-      .active_area = {.width = 1'000'000, .height = 480},
-      .refresh_rate_millihertz = 60'000,
-      .flags = 0,
-  }));
-}
-
-TEST(ModeTest, IsValidBanjoLargeHeight) {
-  EXPECT_FALSE(Mode::IsValid(display_mode_t{
-      .active_area = {.width = 640, .height = 1'000'000},
-      .refresh_rate_millihertz = 60'000,
-      .flags = 0,
-  }));
-}
-
-TEST(ModeTest, IsValidBanjoLargeRefreshRate) {
-  EXPECT_FALSE(Mode::IsValid(display_mode_t{
-      .active_area = {.width = 640, .height = 480},
-      .refresh_rate_millihertz = 10'000'000,
-      .flags = 0,
-  }));
-}
-
-TEST(ModeTest, IsValidBanjoNonZeroFlags) {
-  EXPECT_FALSE(Mode::IsValid(display_mode_t{
-      .active_area = {.width = 640, .height = 480},
-      .refresh_rate_millihertz = 60'000,
-      .flags = 1,
   }));
 }
 

@@ -8,14 +8,12 @@
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 
 #include <cstdint>
-#include <type_traits>
 
 #include "src/graphics/display/lib/api-types/cpp/id-type.h"
 
 namespace display::internal {
 
-using EventIdTraits =
-    DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display::wire::EventId, std::false_type>;
+using EventIdTraits = DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display::wire::EventId>;
 
 }  // namespace display::internal
 

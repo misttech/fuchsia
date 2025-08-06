@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_DRIVER_LAYER_H_
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <fuchsia/hardware/display/controller/cpp/banjo.h>
 
 #include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
 #include "src/graphics/display/lib/api-types/cpp/color.h"
@@ -32,7 +31,6 @@ class DriverLayer {
   // True iff `layer` is convertible to a valid DriverLayer.
   [[nodiscard]] static constexpr bool IsValid(
       const fuchsia_hardware_display_engine::wire::Layer& fidl_layer);
-  [[nodiscard]] static constexpr bool IsValid(const layer_t& banjo_layer);
 
   // Constructor that enables the designated initializer syntax.
   //
@@ -41,9 +39,6 @@ class DriverLayer {
 
   // `fidl_layer` must be convertible to a valid DriverLayer.
   explicit constexpr DriverLayer(const fuchsia_hardware_display_engine::wire::Layer& fidl_layer);
-
-  // `banjo_layer` must be convertible to a valid DriverLayer.
-  explicit constexpr DriverLayer(const layer_t& banjo_layer);
 
   constexpr DriverLayer(const DriverLayer&) noexcept = default;
   constexpr DriverLayer(DriverLayer&&) noexcept = default;
@@ -55,7 +50,6 @@ class DriverLayer {
   friend constexpr bool operator!=(const DriverLayer& lhs, const DriverLayer& rhs);
 
   constexpr fuchsia_hardware_display_engine::wire::Layer ToFidl() const;
-  constexpr layer_t ToBanjo() const;
 
   const Rectangle& display_destination() const { return display_destination_; }
   const Rectangle& image_source() const { return image_source_; }
@@ -91,7 +85,6 @@ class DriverLayer {
   static constexpr void DebugAssertIsValid(const DriverLayer::ConstructorArgs& args);
   static constexpr void DebugAssertIsValid(
       const fuchsia_hardware_display_engine::wire::Layer& fidl_layer);
-  static constexpr void DebugAssertIsValid(const layer_t& banjo_layer);
 
   Rectangle display_destination_;
   Rectangle image_source_;
@@ -159,61 +152,6 @@ constexpr bool DriverLayer::IsValid(
   return true;
 }
 
-// static
-constexpr bool DriverLayer::IsValid(const layer_t& banjo_layer) {
-  // Constraints on `display_destination`.
-  if (!Rectangle::IsValid(banjo_layer.display_destination)) {
-    return false;
-  }
-  if (Rectangle::From(banjo_layer.display_destination).dimensions().IsEmpty()) {
-    return false;
-  }
-
-  // Constraints on `image_source`.
-  if (!Rectangle::IsValid(banjo_layer.image_source)) {
-    return false;
-  }
-  const Rectangle image_source = Rectangle::From(banjo_layer.image_source);
-
-  // Constraints on `image_id`.
-  const DriverImageId image_id = DriverImageId(banjo_layer.image_handle);
-  if (image_source.dimensions().IsEmpty() && (image_id != kInvalidDriverImageId)) {
-    return false;
-  }
-
-  // Constraints on `image_metadata`.
-  if (!ImageMetadata::IsValid(banjo_layer.image_metadata)) {
-    return false;
-  }
-  const ImageMetadata image_metadata(banjo_layer.image_metadata);
-  if (image_source.dimensions().IsEmpty() != image_metadata.dimensions().IsEmpty()) {
-    return false;
-  }
-  if (image_source.dimensions().IsEmpty() &&
-      (image_metadata.tiling_type() != ImageTilingType::kLinear)) {
-    return false;
-  }
-  // TODO(costan): `image_source` must be contained in `image_metadata`.
-
-  // Constraints on `fallback_color`.
-  if (!Color::IsValid(banjo_layer.fallback_color)) {
-    return false;
-  }
-
-  // Constraints on `image_source_transformation`.
-  if (!CoordinateTransformation::IsValid(banjo_layer.image_source_transformation)) {
-    return false;
-  }
-  const CoordinateTransformation image_source_transformation(
-      banjo_layer.image_source_transformation);
-  if (image_source.dimensions().IsEmpty() &&
-      (image_source_transformation != CoordinateTransformation::kIdentity)) {
-    return false;
-  }
-
-  return true;
-}
-
 constexpr DriverLayer::DriverLayer(const DriverLayer::ConstructorArgs& args)
     : display_destination_(args.display_destination),
       image_source_(args.image_source),
@@ -238,18 +176,6 @@ constexpr DriverLayer::DriverLayer(const fuchsia_hardware_display_engine::wire::
   DebugAssertIsValid(fidl_layer);
 }
 
-constexpr DriverLayer::DriverLayer(const layer_t& banjo_layer)
-    : display_destination_(Rectangle::From(banjo_layer.display_destination)),
-      image_source_(Rectangle::From(banjo_layer.image_source)),
-      image_id_(DriverImageId(banjo_layer.image_handle)),
-      image_metadata_(banjo_layer.image_metadata),
-      fallback_color_(Color::From(banjo_layer.fallback_color)),
-      alpha_mode_(banjo_layer.alpha_mode),
-      alpha_coefficient_(banjo_layer.alpha_layer_val),
-      image_source_transformation_(banjo_layer.image_source_transformation) {
-  DebugAssertIsValid(banjo_layer);
-}
-
 constexpr bool operator==(const DriverLayer& lhs, const DriverLayer& rhs) {
   return lhs.display_destination_ == rhs.display_destination_ &&
          lhs.image_source_ == rhs.image_source_ && lhs.image_id_ == rhs.image_id_ &&
@@ -270,19 +196,6 @@ constexpr fuchsia_hardware_display_engine::wire::Layer DriverLayer::ToFidl() con
       .alpha_mode = alpha_mode_.ToFidl(),
       .alpha_layer_val = alpha_coefficient_,
       .image_source_transformation = image_source_transformation_.ToFidl(),
-  };
-}
-
-constexpr layer_t DriverLayer::ToBanjo() const {
-  return layer_t{
-      .display_destination = display_destination_.ToBanjo(),
-      .image_source = image_source_.ToBanjo(),
-      .image_handle = image_id_.ToBanjo(),
-      .image_metadata = image_metadata_.ToBanjo(),
-      .fallback_color = fallback_color_.ToBanjo(),
-      .alpha_mode = alpha_mode_.ToBanjo(),
-      .alpha_layer_val = alpha_coefficient_,
-      .image_source_transformation = image_source_transformation_.ToBanjo(),
   };
 }
 
@@ -337,39 +250,6 @@ constexpr void DriverLayer::DebugAssertIsValid(
   ZX_DEBUG_ASSERT(CoordinateTransformation::IsValid(fidl_layer.image_source_transformation));
   const CoordinateTransformation image_source_transformation(
       fidl_layer.image_source_transformation);
-  ZX_DEBUG_ASSERT(!image_source.dimensions().IsEmpty() ||
-                  image_source_transformation == CoordinateTransformation::kIdentity);
-}
-
-// static
-constexpr void DriverLayer::DebugAssertIsValid(const layer_t& banjo_layer) {
-  // Constraints on `display_destination`.
-  ZX_DEBUG_ASSERT(Rectangle::IsValid(banjo_layer.display_destination));
-  ZX_DEBUG_ASSERT(!Rectangle::From(banjo_layer.display_destination).dimensions().IsEmpty());
-
-  // Constraints on `image_source`.
-  ZX_DEBUG_ASSERT(Rectangle::IsValid(banjo_layer.image_source));
-  const Rectangle image_source = Rectangle::From(banjo_layer.image_source);
-
-  // Constraints on `image_id`.
-  const DriverImageId image_id = DriverImageId(banjo_layer.image_handle);
-  ZX_DEBUG_ASSERT(!image_source.dimensions().IsEmpty() || image_id == kInvalidDriverImageId);
-
-  // Constraints on `image_metadata`.
-  ZX_DEBUG_ASSERT(ImageMetadata::IsValid(banjo_layer.image_metadata));
-  const ImageMetadata image_metadata(banjo_layer.image_metadata);
-  ZX_DEBUG_ASSERT(image_source.dimensions().IsEmpty() == image_metadata.dimensions().IsEmpty());
-  ZX_DEBUG_ASSERT(!image_source.dimensions().IsEmpty() ||
-                  image_metadata.tiling_type() == ImageTilingType::kLinear);
-  // TODO(costan): `image_source` must be contained in `image_metadata`.
-
-  // Constraints on `fallback_color`.
-  ZX_DEBUG_ASSERT(Color::IsValid(banjo_layer.fallback_color));
-
-  // Constraints on `image_source_transformation`.
-  ZX_DEBUG_ASSERT(CoordinateTransformation::IsValid(banjo_layer.image_source_transformation));
-  const CoordinateTransformation image_source_transformation(
-      banjo_layer.image_source_transformation);
   ZX_DEBUG_ASSERT(!image_source.dimensions().IsEmpty() ||
                   image_source_transformation == CoordinateTransformation::kIdentity);
 }

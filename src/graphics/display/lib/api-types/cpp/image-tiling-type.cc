@@ -4,7 +4,6 @@
 
 #include "src/graphics/display/lib/api-types/cpp/image-tiling-type.h"
 
-#include <fuchsia/hardware/display/controller/c/banjo.h>
 #include <zircon/assert.h>
 
 #include <string_view>
@@ -19,10 +18,6 @@ static_assert(std::is_trivially_copy_constructible_v<ImageTilingType>);
 static_assert(std::is_trivially_destructible_v<ImageTilingType>);
 static_assert(std::is_trivially_move_assignable_v<ImageTilingType>);
 static_assert(std::is_trivially_move_constructible_v<ImageTilingType>);
-
-// Ensure that the Banjo constants match the FIDL constants.
-static_assert(ImageTilingType::kLinear.ToBanjo() == IMAGE_TILING_TYPE_LINEAR);
-static_assert(ImageTilingType::kCapture.ToBanjo() == IMAGE_TILING_TYPE_CAPTURE);
 
 std::string_view ImageTilingType::ToString() const {
   switch (tiling_type_id_) {
