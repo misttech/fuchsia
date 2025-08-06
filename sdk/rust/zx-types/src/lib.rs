@@ -1866,7 +1866,7 @@ macro_rules! struct_decl_macro {
 
 // Don't need struct_decl_macro for this, the wrapper is different.
 #[repr(C)]
-#[derive(Default, Debug, Copy, Clone, Eq, FromBytes, Immutable, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, Eq, KnownLayout, FromBytes, Immutable, PartialEq)]
 pub struct zx_info_handle_basic_t {
     pub koid: zx_koid_t,
     pub rights: zx_rights_t,
