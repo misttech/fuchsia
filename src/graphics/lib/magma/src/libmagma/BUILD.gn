@@ -65,7 +65,7 @@ static_library("libmagma_static") {
 source_set("magma_sysmem") {
   visibility = [
     "./*",
-    "//third_party/mesa/src/gallium/frontends/lavapipe:*",
+    "//third_party/mesa-migrating/build/src/gallium/frontends/lavapipe:*",
   ]
 
   configs += [ ":static_lib_config" ]

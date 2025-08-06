@@ -55,7 +55,6 @@ source_set("lib") {
     "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl",
-    "//third_party/mesa/include:drm-uapi",
     "//zircon/system/ulib/virtio",
   ]
 }

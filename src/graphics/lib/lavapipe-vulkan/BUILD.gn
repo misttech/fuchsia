@@ -20,8 +20,8 @@ shared_library("libvulkan_lavapipe") {
     "//src/lib/llvm:LLVMMCJIT",
     "//src/lib/llvm:LLVMPasses",
     "//src/lib/llvm:LLVMTarget",
-    "//third_party/mesa/src/gallium/drivers/llvmpipe",
-    "//third_party/mesa/src/gallium/frontends/lavapipe",
+    "//third_party/mesa-migrating/build/src/gallium/drivers/llvmpipe",
+    "//third_party/mesa-migrating/build/src/gallium/frontends/lavapipe",
   ]
 
   if (target_cpu == "arm64") {

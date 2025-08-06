@@ -29,7 +29,8 @@
           {
             "projects": [
               "third_party/mesa",
-              "third_party/mesa-migrating"
+              "third_party/mesa-migrating",
+              "third_party/mesa-migrating/src"
             ],
             "bug": "",
             "notes": []

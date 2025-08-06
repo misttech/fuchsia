@@ -1,7 +1,7 @@
 Name: Mesa
 URL: https://www.mesa3d.org/
 License: MIT
-License File: ../mesa/CREDITS.fuchsia
+License File: src/CREDITS.fuchsia
 Upstream Git: https://anongit.freedesktop.org/git/mesa/mesa.git
 Description:
 

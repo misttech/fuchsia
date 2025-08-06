@@ -1189,6 +1189,7 @@ config("Wno-conversion") {
     "//third_party/glfw/*",
     "//third_party/iperf/*",
     "//third_party/libc-tests/*",
+    "//third_party/mesa-migrating/*",
     "//third_party/mesa/*",
     "//third_party/micro-ecc/*",
     "//third_party/modp_b64:*",

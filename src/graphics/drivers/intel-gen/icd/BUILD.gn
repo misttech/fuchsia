@@ -16,7 +16,7 @@ resource("vulkan_metadata") {
 libvulkan_intel_deps = [
   ":libvulkan_intel_config_resource",
   ":vulkan_metadata",
-  "//third_party/mesa:magma_vulkan",
+  "//third_party/mesa-migrating:magma_vulkan",
 ]
 fuchsia_package_with_single_component("libvulkan_intel_gen") {
   component_name = "vulkan"
@@ -44,33 +44,33 @@ icd_config_data("libvulkan_intel_config_resource") {
 }
 
 fuchsia_test_component("mesa_unit_tests_component") {
-  deps = [ "//third_party/mesa/tests:mesa_unit_tests" ]
+  deps = [ "//third_party/mesa-migrating/build/tests:mesa_unit_tests" ]
   manifest = "meta/mesa_unit_tests.cml"
 }
 
 fuchsia_test_component("state_pool_component") {
-  deps = [ "//third_party/mesa/src/intel/vulkan/tests:state_pool" ]
+  deps =
+      [ "//third_party/mesa-migrating/build/src/intel/vulkan/tests:state_pool" ]
   manifest = "meta/state_pool.cml"
 }
 
 fuchsia_test_component("state_pool_free_list_only_component") {
-  deps =
-      [ "//third_party/mesa/src/intel/vulkan/tests:state_pool_free_list_only" ]
+  deps = [ "//third_party/mesa-migrating/build/src/intel/vulkan/tests:state_pool_free_list_only" ]
   manifest = "meta/state_pool_free_list_only.cml"
 }
 
 fuchsia_test_component("state_pool_padding_component") {
-  deps = [ "//third_party/mesa/src/intel/vulkan/tests:state_pool_padding" ]
+  deps = [ "//third_party/mesa-migrating/build/src/intel/vulkan/tests:state_pool_padding" ]
   manifest = "meta/state_pool_padding.cml"
 }
 
 fuchsia_test_component("state_pool_no_free_component") {
-  deps = [ "//third_party/mesa/src/intel/vulkan/tests:state_pool_no_free" ]
+  deps = [ "//third_party/mesa-migrating/build/src/intel/vulkan/tests:state_pool_no_free" ]
   manifest = "meta/state_pool_no_free.cml"
 }
 
 fuchsia_test_component("block_pool_grow_first_component") {
-  deps = [ "//third_party/mesa/src/intel/vulkan/tests:block_pool_grow_first" ]
+  deps = [ "//third_party/mesa-migrating/build/src/intel/vulkan/tests:block_pool_grow_first" ]
   manifest = "meta/block_pool_grow_first.cml"
 }
 
@@ -86,7 +86,7 @@ fuchsia_test_package("mesa_unit_tests") {
 }
 
 fuchsia_test_component("mesa_integration_tests_component") {
-  deps = [ "//third_party/mesa:tests" ]
+  deps = [ "//third_party/mesa-migrating:tests" ]
   manifest = "meta/mesa_integration_tests.cml"
   test_type = "system"
 }

@@ -322,7 +322,7 @@
              gerrithost="https://fuchsia-review.googlesource.com"
              revision="2a1d9332d55d1270084232e42df08fdb08129f1b"/>
     <project name="third_party/mesa"
-             path="third_party/mesa"
+             path="third_party/mesa-migrating/src"
              remote="https://fuchsia.googlesource.com/third_party/mesa"
              revision="7c5bdb5ada09515b5088b33fe6d736eaa1b04ab2"
              gerrithost="https://fuchsia-review.googlesource.com"/>

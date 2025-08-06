@@ -7,7 +7,8 @@
                     "Temporarily disabled to allow for third_party repository moves."
                 ],
                 "paths": [
-                    "build/secondary/third_party/glog"
+                    "build/secondary/third_party/glog",
+                    "build/secondary/third_party/mesa"
                 ]
             },
             {
