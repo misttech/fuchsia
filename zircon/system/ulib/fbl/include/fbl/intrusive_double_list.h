@@ -231,8 +231,7 @@ class DoublyLinkedListBase {
 template <typename PtrType_, typename TagType_ = DefaultObjectTag,
           SizeOrder ListSizeOrder_ = SizeOrder::N,
           typename NodeTraits_ = DefaultDoublyLinkedListTraits<PtrType_, TagType_>>
-class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBase<PtrType_>,
-                                             private internal::SizeTracker<ListSizeOrder_> {
+class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBase<PtrType_> {
  private:
   using Base = internal::DoublyLinkedListBase<PtrType_>;
 
@@ -310,7 +309,7 @@ class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBa
     if (PtrTraits::IsManaged == false) {
       ZX_DEBUG_ASSERT(is_empty());
       if constexpr (SupportsConstantOrderSize) {
-        ZX_DEBUG_ASSERT(this->SizeTrackerCount() == 0);
+        ZX_DEBUG_ASSERT(size_tracker_.Count() == 0);
       }
     } else {
       clear();
@@ -452,11 +451,11 @@ class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBa
     other_list.head_ = other_list.sentinel();
 
     // Update our count bookkeeping.  Note: don't attempt to access
-    // SizeTrackerCount() unless we are a list which supports constant order
+    // SizeTracker::Count() unless we are a list which supports constant order
     // size.  The method will not exist when we have O(N) access to our size.
     if constexpr (ListSizeOrder == SizeOrder::Constant) {
-      this->IncSizeTracker(other_list.SizeTrackerCount());
-      other_list.ResetSizeTracker();
+      size_tracker_.Inc(other_list.size_tracker_.Count());
+      other_list.size_tracker_.Reset();
     }
   }
 
@@ -596,7 +595,7 @@ class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBa
     }
 
     // Update our count bookkeeping.
-    this->ResetSizeTracker();
+    size_tracker_.Reset();
   }
 
   // clear_unsafe
@@ -613,7 +612,7 @@ class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBa
     head_ = sentinel();
 
     // Update our count bookkeeping.
-    this->ResetSizeTracker();
+    size_tracker_.Reset();
   }
 
   // swap : swaps the contest of two lists.
@@ -626,7 +625,7 @@ class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBa
 
     sentinel_ptr = sentinel();
     other_sentinel_ptr = other.sentinel();
-    this->SwapSizeTracker(other);
+    size_tracker_.Swap(other.size_tracker_);
   }
 
   // size_slow : count the elements in the list in O(n) fashion.
@@ -651,7 +650,7 @@ class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBa
     static_assert(
         ListSizeOrder == SizeOrder::Constant,
         "size is only allowed when using a list which has O(1) size!  Use size_slow() instead.");
-    return this->SizeTrackerCount();
+    return size_tracker_.Count();
   }
 
   // erase_if
@@ -851,7 +850,7 @@ class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBa
     ZX_DEBUG_ASSERT((ptr_ns.prev_ == nullptr) && (ptr_ns.next_ == nullptr));
 
     // No matter what happens, we are going to be 1 larger after this operation.
-    this->IncSizeTracker(1);
+    size_tracker_.Inc(1);
 
     // Handle the (slightly) special case of an empty list.
     if (is_empty()) {
@@ -899,7 +898,7 @@ class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBa
     }
 
     // No matter what happens after this, we are going to be 1 smaller after this operation.
-    this->DecSizeTracker(1);
+    size_tracker_.Dec(1);
 
     // Defer to our base implementation in order to remove this node.
     return Base::template internal_erase<NodeTraits>(NodeTraits::node_state(*node));
@@ -958,6 +957,8 @@ class __POINTER(PtrType_) DoublyLinkedList : public internal::DoublyLinkedListBa
 
   using Base::head_;
   using Base::sentinel;
+
+  __NO_UNIQUE_ADDRESS internal::SizeTracker<ListSizeOrder_> size_tracker_;
 };
 
 // SizedDoublyLinkedList<> is an alias for a DoublyLinkedList<> which keeps

@@ -510,20 +510,31 @@ using node_state_t = std::decay_t<std::invoke_result_t<decltype(TraitClass::node
 template <typename TraitClass, typename RefType>
 using node_ptr_t = typename node_state_t<TraitClass, RefType>::PtrType;
 
+// The SizeTracker relies on [[no_unique_address]] to implement its claim of not
+// requiring storage when SizeOrder::N. Even though [[no_unique_address] is
+// supported in C++20, some compilers use a different name for the attribute and
+// so the __NO_UNIQUE_ADDRESS macro is used for compatibility. This struct and
+// the related static_assert ensure that this macro is properly defined and
+// working.
+struct CheckNoUniqueAddress {
+  struct ZeroSized {};
+  __NO_UNIQUE_ADDRESS ZeroSized zero_;
+  // A structure overall may not be zero sized, even if we can have a zero sized
+  // member, so declare some sized member that the struct should then be
+  // equivalent in size to.
+  uint64_t data_;
+};
+static_assert(
+    sizeof(CheckNoUniqueAddress) == sizeof(uint64_t),
+    "__NO_UNIQUE_ADDRESS macro is incorrectly defined, or your compiler does not support [[no_unique_address]]");
+
 // SizeTracker is a partially specialized internal class used to track (or
 // explicitly to not track) the size of Lists in the fbl:: containers.  Its
 // behavior and size depends on the SizeOrder template parameter passed to it.
 //
-// Please note that to use this class, containers must (sadly) derive from it, they
-// cannot simply encapsulate it.  The SizeOrder::N version of the tracker is
-// nominally of 0 size, however 0 sized members of a struct/class are not allowed
-// in C++.  Attempting to put a 0 sized member into a class results in at least
-// 1 byte of size impact, which changes the size of the entire object.
-//
-// 0 sized base classes, however, are totally fine.  So, if we encapsulate a
-// SizeTracker<SizeOrder::N>, then our container gets bigger for no reason, but
-// if we derive from one, then our container stays the size that we expect it
-// to.
+// Please note that to use this class the [[no_unique_address]] tag should be
+// be used to ensure the SizeOrder::N version of the tracker, which is nominally
+// of 0 size, does not have any storage allocated.
 //
 // static_assert tests for this exist in the non-sized doubly and singly linked
 // list tests.
@@ -532,7 +543,7 @@ class SizeTracker;
 
 template <>
 class SizeTracker<SizeOrder::N> {
- protected:
+ public:
   constexpr SizeTracker() = default;
   ~SizeTracker() = default;
 
@@ -544,15 +555,15 @@ class SizeTracker<SizeOrder::N> {
 
   // Inc, Dec, Reset, and swap operations are no-ops.  There is no count
   // accessor.  Anyone who attempts to access count has made a mistake.
-  void IncSizeTracker(size_t) {}
-  void DecSizeTracker(size_t) {}
-  void ResetSizeTracker() {}
-  void SwapSizeTracker(SizeTracker&) {}
+  void Inc(size_t) {}
+  void Dec(size_t) {}
+  void Reset() {}
+  void Swap(SizeTracker&) {}
 };
 
 template <>
 class SizeTracker<SizeOrder::Constant> {
- protected:
+ public:
   constexpr SizeTracker() = default;
   ~SizeTracker() = default;
 
@@ -563,16 +574,14 @@ class SizeTracker<SizeOrder::Constant> {
   SizeTracker& operator=(SizeTracker&& other) = delete;
 
   // Basic operations for manipulating the count storage.
-  void IncSizeTracker(size_t amt) { size_tracker_count_ += amt; }
-  void DecSizeTracker(size_t amt) { size_tracker_count_ -= amt; }
-  void ResetSizeTracker() { size_tracker_count_ = 0; }
-  void SwapSizeTracker(SizeTracker& other) {
-    std::swap(size_tracker_count_, other.size_tracker_count_);
-  }
-  size_t SizeTrackerCount() const { return size_tracker_count_; }
+  void Inc(size_t amt) { count_ += amt; }
+  void Dec(size_t amt) { count_ -= amt; }
+  void Reset() { count_ = 0; }
+  void Swap(SizeTracker& other) { std::swap(count_, other.count_); }
+  size_t Count() const { return count_; }
 
  private:
-  size_t size_tracker_count_ = 0;
+  size_t count_ = 0;
 };
 
 }  // namespace fbl::internal

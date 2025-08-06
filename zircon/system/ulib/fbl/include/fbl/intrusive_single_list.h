@@ -276,7 +276,7 @@ struct SinglyLinkedListable {
 template <typename PtrType_, typename TagType_ = DefaultObjectTag,
           SizeOrder ListSizeOrder_ = SizeOrder::N,
           typename NodeTraits_ = DefaultSinglyLinkedListTraits<PtrType_, TagType_>>
-class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListSizeOrder_> {
+class __POINTER(PtrType_) SinglyLinkedList {
  private:
   // Private fwd decls of the iterator implementation.
   template <typename IterTraits>
@@ -352,7 +352,7 @@ class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListS
     if (PtrTraits::IsManaged == false) {
       ZX_DEBUG_ASSERT(is_empty());
       if constexpr (SupportsConstantOrderSize) {
-        ZX_DEBUG_ASSERT(this->SizeTrackerCount() == 0);
+        ZX_DEBUG_ASSERT(size_tracker_.Count() == 0);
       }
     } else {
       clear();
@@ -429,7 +429,7 @@ class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListS
 
     ptr_ns.next_ = head_;
     head_ = PtrTraits::Leak(ptr);
-    this->IncSizeTracker(1);
+    size_tracker_.Inc(1);
   }
 
   // insert_after
@@ -451,7 +451,7 @@ class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListS
     ptr_ns.next_ = iter_ns.next_;
     auto* new_item = PtrTraits::Leak(ptr);
     iter_ns.next_ = new_item;
-    this->IncSizeTracker(1);
+    size_tracker_.Inc(1);
 
     // Return an iterator to the new element.
     return make_iterator(*new_item);
@@ -471,7 +471,7 @@ class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListS
 
     head_ = head_ns.next_;
     head_ns.next_ = nullptr;
-    this->DecSizeTracker(1);
+    size_tracker_.Dec(1);
 
     return ret;
   }
@@ -489,7 +489,7 @@ class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListS
       head_ns.next_ = nullptr;
       PtrTraits::Reclaim(tmp);
     }
-    this->ResetSizeTracker();
+    size_tracker_.Reset();
   }
 
   // clear_unsafe
@@ -513,7 +513,7 @@ class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListS
                   "NodeOptions::AllowClearUnsafe to your node storage.");
 
     head_ = sentinel();
-    this->ResetSizeTracker();
+    size_tracker_.Reset();
   }
 
   // erase_next
@@ -535,7 +535,7 @@ class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListS
     PtrType ret = PtrTraits::Reclaim(iter_ns.next_);
     iter_ns.next_ = next_ns.next_;
     next_ns.next_ = nullptr;
-    this->DecSizeTracker(1);
+    size_tracker_.Dec(1);
     return ret;
   }
 
@@ -546,7 +546,7 @@ class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListS
     auto tmp = head_;
     head_ = other.head_;
     other.head_ = tmp;
-    this->SwapSizeTracker(other);
+    size_tracker_.Swap(other.size_tracker_);
   }
 
   // size_slow
@@ -572,7 +572,7 @@ class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListS
     static_assert(
         ListSizeOrder == SizeOrder::Constant,
         "size is only allowed when using a list which has O(1) size!  Use size_slow() instead.");
-    return this->SizeTrackerCount();
+    return size_tracker_.Count();
   }
 
   // erase_if
@@ -853,6 +853,8 @@ class __POINTER(PtrType_) SinglyLinkedList : private internal::SizeTracker<ListS
 
   // State consists of just a head pointer.
   RawPtrType head_ = sentinel();
+
+  __NO_UNIQUE_ADDRESS internal::SizeTracker<ListSizeOrder_> size_tracker_;
 };
 
 // SizedSinglyLinkedList<> is an alias for a SinglyLinkedList<> which keeps
