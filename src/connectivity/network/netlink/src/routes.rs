@@ -46,8 +46,8 @@ use crate::netlink_packet::UNSPECIFIED_SEQUENCE_NUMBER;
 use crate::protocol_family::route::NetlinkRoute;
 use crate::protocol_family::ProtocolFamily;
 use crate::route_tables::{
-    FidlRouteMap, MainRouteTable, ManagedRouteTable, NetlinkRouteTableIndex,
-    NonZeroNetlinkRouteTableIndex, RouteRemoveResult, RouteTable, RouteTableMap, TableNeedsCleanup,
+    FidlRouteMap, ManagedRouteTable, NetlinkRouteTableIndex, NonZeroNetlinkRouteTableIndex,
+    RouteRemoveResult, RouteTable, RouteTableMap, TableNeedsCleanup, UnmanagedTable,
 };
 use crate::util::respond_to_completer;
 
@@ -465,7 +465,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
                     route_set_from_main_table_proxy,
                     ..
                 }) => (route_set_proxy, Some(route_set_from_main_table_proxy)),
-                RouteTable::Unmanaged(MainRouteTable { route_set_proxy, .. }) => {
+                RouteTable::Unmanaged(UnmanagedTable { route_set_proxy, .. }) => {
                     (route_set_proxy, None)
                 }
             };
@@ -544,7 +544,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
                     route_set_from_main_table_proxy,
                     ..
                 }) => (route_set_proxy, Some(route_set_from_main_table_proxy)),
-                RouteTable::Unmanaged(MainRouteTable { route_set_proxy, .. }) => {
+                RouteTable::Unmanaged(UnmanagedTable { route_set_proxy, .. }) => {
                     (route_set_proxy, None)
                 }
             },

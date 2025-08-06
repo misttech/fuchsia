@@ -34,7 +34,7 @@ use linux_uapi::{
     rtnetlink_groups_RTNLGRP_IPV6_IFADDR, rtnetlink_groups_RTNLGRP_LINK, ARPHRD_6LOWPAN,
     ARPHRD_ETHER, ARPHRD_LOOPBACK, ARPHRD_PPP, ARPHRD_VOID,
 };
-use net_types::ip::{AddrSubnetEither, IpVersion};
+use net_types::ip::{AddrSubnetEither, IpVersion, Ipv4, Ipv6};
 use netlink_packet_core::{NetlinkMessage, NLM_F_MULTIPART};
 use netlink_packet_route::address::{
     AddressAttribute, AddressFlags, AddressHeader, AddressHeaderFlags, AddressMessage,
@@ -52,7 +52,9 @@ use crate::netlink_packet::errno::Errno;
 use crate::netlink_packet::UNSPECIFIED_SEQUENCE_NUMBER;
 use crate::protocol_family::route::NetlinkRoute;
 use crate::protocol_family::ProtocolFamily;
+use crate::route_tables::{NetlinkRouteTableIndex, RouteTable, RouteTableMap, UnmanagedTable};
 use crate::util::respond_to_completer;
+use crate::SysctlError;
 
 /// A handler for interface events.
 pub trait InterfacesHandler: Send + Sync + 'static {
@@ -324,7 +326,116 @@ pub(crate) struct InterfaceState {
     addresses: BTreeMap<fnet::IpAddress, NetlinkAddressMessage>,
     link_address: Option<Vec<u8>>,
     control: Option<fnet_interfaces_ext::admin::Control>,
-    pub(crate) accept_ra_rt_table: AcceptRaRtTable,
+    accept_ra_rt_table: AcceptRaRtTable,
+}
+
+impl InterfaceState {
+    pub(crate) fn accept_ra_rt_table(&self) -> AcceptRaRtTable {
+        self.accept_ra_rt_table
+    }
+
+    pub(crate) async fn set_accept_ra_rt_table(
+        &mut self,
+        interface_id: NonZeroU64,
+        new_accept_ra_rt_table: AcceptRaRtTable,
+        interfaces_proxy: &fnet_root::InterfacesProxy,
+        route_table_maps: Option<(&mut RouteTableMap<Ipv4>, &mut RouteTableMap<Ipv6>)>,
+    ) -> Result<(), SysctlError> {
+        let old_accept_ra_rt_table = self.accept_ra_rt_table;
+        if old_accept_ra_rt_table == new_accept_ra_rt_table {
+            return Ok(());
+        }
+
+        enum InsertOrRemove {
+            Insert,
+            Remove,
+        }
+
+        let (delta, insert_or_remove) = match (old_accept_ra_rt_table, new_accept_ra_rt_table) {
+            (AcceptRaRtTable::Main, AcceptRaRtTable::Auto(delta)) => {
+                (delta, InsertOrRemove::Insert)
+            }
+            (AcceptRaRtTable::Auto(delta), AcceptRaRtTable::Main) => {
+                (delta, InsertOrRemove::Remove)
+            }
+            (from, to) => {
+                log::error!("unsupported transition from {from:?} to {to:?}");
+                return Err(SysctlError::Unsupported);
+            }
+        };
+
+        let netlink_id = match u32::try_from(interface_id.get()) {
+            Ok(i) => {
+                NetlinkRouteTableIndex::new(i.checked_add(delta).ok_or(SysctlError::Unsupported)?)
+            }
+            Err(std::num::TryFromIntError { .. }) => {
+                log::error!(
+                    "not using local route table for interface \
+                {interface_id:?} because it is not representable in u32"
+                );
+                return Err(SysctlError::Unsupported);
+            }
+        };
+
+        self.accept_ra_rt_table = new_accept_ra_rt_table;
+
+        let Some((v4_route_table_map, v6_route_table_map)) = route_table_maps else {
+            return Ok(());
+        };
+        let control = self.control(interfaces_proxy, interface_id);
+        match insert_or_remove {
+            InsertOrRemove::Insert => {
+                let result = futures::future::try_join(
+                    UnmanagedTable::<Ipv4>::interface_local(
+                        control,
+                        &v4_route_table_map.route_table_provider(),
+                    ),
+                    UnmanagedTable::<Ipv6>::interface_local(
+                        control,
+                        &v6_route_table_map.route_table_provider(),
+                    ),
+                )
+                .await;
+                match result {
+                    Ok((local_table_v4, local_table_v6)) => {
+                        log::info!(
+                            "local table mapping for {interface_id}: \
+                            {netlink_id:?} -> ({:?}, {:?})",
+                            local_table_v4.fidl_table_id,
+                            local_table_v6.fidl_table_id,
+                        );
+                        v4_route_table_map
+                            .insert(netlink_id, RouteTable::Unmanaged(local_table_v4));
+                        v6_route_table_map
+                            .insert(netlink_id, RouteTable::Unmanaged(local_table_v6));
+                    }
+                    Err(err) => {
+                        log::info!("failed to get a local table for {interface_id}: {err:?}");
+                    }
+                }
+            }
+            InsertOrRemove::Remove => {
+                let _: Option<_> = v4_route_table_map.remove(netlink_id);
+                let _: Option<_> = v6_route_table_map.remove(netlink_id);
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn control(
+        &mut self,
+        interfaces_proxy: &fnet_root::InterfacesProxy,
+        interface_id: NonZeroU64,
+    ) -> &fnet_interfaces_ext::admin::Control {
+        self.control.get_or_insert_with(|| {
+            let (control, server_end) = fnet_interfaces_ext::admin::Control::create_endpoints()
+                .expect("create Control endpoints");
+            interfaces_proxy
+                .get_admin(interface_id.get(), server_end)
+                .expect("send get admin request");
+            control
+        })
+    }
 }
 
 async fn set_link_address(
@@ -409,17 +520,15 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMess
         .await
         .expect("determining already installed interfaces should succeed");
 
-        for fnet_interfaces_ext::PropertiesAndState {
-            properties,
-            state: InterfaceState { addresses, link_address, control: _, accept_ra_rt_table: _ },
-        } in interface_properties.values_mut()
+        for fnet_interfaces_ext::PropertiesAndState { properties, state } in
+            interface_properties.values_mut()
         {
-            set_link_address(&interfaces_proxy, properties.id, link_address).await;
+            set_link_address(&interfaces_proxy, properties.id, &mut state.link_address).await;
 
             if let Some(interface_addresses) =
                 addresses_optionally_from_interface_properties(properties)
             {
-                *addresses = interface_addresses;
+                state.addresses = interface_addresses;
             }
 
             interfaces_handler.handle_new_link(&properties.name, properties.id);
@@ -450,6 +559,7 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMess
     pub(crate) async fn handle_interface_watcher_event(
         &mut self,
         event: fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::AllInterest>,
+        route_table_maps: Option<(&mut RouteTableMap<Ipv4>, &mut RouteTableMap<Ipv6>)>,
     ) {
         let update = self
             .interface_properties
@@ -457,15 +567,28 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMess
             .expect("Netstack interface event resulted in an invalid update");
 
         match update {
-            fnet_interfaces_ext::UpdateResult::Added {
-                properties,
-                state: InterfaceState { addresses, link_address, control: _, accept_ra_rt_table },
-            } => {
-                set_link_address(&self.interfaces_proxy, properties.id, link_address).await;
-                // The newly added device should have the default sysctl.
-                *accept_ra_rt_table = self.default_accept_ra_rt_table;
+            fnet_interfaces_ext::UpdateResult::Added { properties, state } => {
+                set_link_address(&self.interfaces_proxy, properties.id, &mut state.link_address)
+                    .await;
 
-                if let Some(message) = NetlinkLinkMessage::optionally_from(properties, link_address)
+                let interface_id = properties.id;
+
+                // The newly added device should have the default sysctl.
+                let initial_value = self.default_accept_ra_rt_table;
+                state
+                    .set_accept_ra_rt_table(
+                        interface_id,
+                        initial_value,
+                        &self.interfaces_proxy,
+                        route_table_maps,
+                    )
+                    .await
+                    .unwrap_or_else(|_err| {
+                        log::error!("failed to update the accept_ra_rt_table for {interface_id:?}")
+                    });
+
+                if let Some(message) =
+                    NetlinkLinkMessage::optionally_from(properties, &state.link_address)
                 {
                     self.route_clients.send_message_to_group(
                         message.into_rtnl_new_link(UNSPECIFIED_SEQUENCE_NUMBER, false),
@@ -479,7 +602,7 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMess
                 if let Some(updated_addresses) =
                     addresses_optionally_from_interface_properties(properties)
                 {
-                    update_addresses(addresses, updated_addresses, &self.route_clients);
+                    update_addresses(&mut state.addresses, updated_addresses, &self.route_clients);
                 }
 
                 self.interfaces_handler.handle_new_link(&properties.name, properties.id);
@@ -662,14 +785,7 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMess
     ) -> Option<&fnet_interfaces_ext::admin::Control> {
         let interface = self.interface_properties.get_mut(&interface_id.get())?;
 
-        Some(interface.state.control.get_or_insert_with(|| {
-            let (control, server_end) = fnet_interfaces_ext::admin::Control::create_endpoints()
-                .expect("create Control endpoints");
-            self.interfaces_proxy
-                .get_admin(interface_id.get().into(), server_end)
-                .expect("send get admin request");
-            control
-        }))
+        Some(interface.state.control(&self.interfaces_proxy, interface_id))
     }
 
     // Get the associated `PropertiesAndState` for the given `LinkSpecifier`
@@ -1933,7 +2049,7 @@ mod tests {
         let event_loop_fut = event_loop_fut.fuse();
         let mut event_loop_fut = pin!(event_loop_fut);
         let root_interfaces_fut =
-            expect_only_get_mac_root_requests_fut(interfaces_request_stream).fuse();
+            handle_only_get_mac_root_requests_fut(interfaces_request_stream).fuse();
         let mut root_interfaces_fut = pin!(root_interfaces_fut);
 
         // Existing events should never trigger messages to be sent.
@@ -2255,7 +2371,7 @@ mod tests {
         })
     }
 
-    async fn expect_only_get_mac_root_requests_fut(
+    async fn handle_only_get_mac_root_requests_fut(
         interfaces_request_stream: fnet_root::InterfacesRequestStream,
     ) {
         expect_only_get_mac_root_requests(interfaces_request_stream)
@@ -2485,6 +2601,21 @@ mod tests {
         )
     }
 
+    fn handle_get_admin_for_eth_or_panic(
+        req: Result<fnet_root::InterfacesRequest, fidl::Error>,
+    ) -> impl Future<Output = Option<fnet_interfaces_admin::ControlRequestStream>> {
+        futures::future::ready(match req.unwrap() {
+            fnet_root::InterfacesRequest::GetAdmin { id, control, control_handle: _ } => {
+                pretty_assertions::assert_eq!(id, ETH_INTERFACE_ID);
+                Some(control.into_stream())
+            }
+            req => {
+                handle_get_mac_root_request_or_panic(req);
+                None
+            }
+        })
+    }
+
     /// Returns a `FnOnce` suitable for use with [`test_request`].
     ///
     /// The closure serves a single `GetAdmin` request for the Ethernet
@@ -2505,22 +2636,7 @@ mod tests {
         move |interfaces_request_stream: fnet_root::InterfacesRequestStream| {
             Box::pin(
                 interfaces_request_stream
-                    .filter_map(|req| {
-                        futures::future::ready(match req.unwrap() {
-                            fnet_root::InterfacesRequest::GetAdmin {
-                                id,
-                                control,
-                                control_handle: _,
-                            } => {
-                                pretty_assertions::assert_eq!(id, ETH_INTERFACE_ID);
-                                Some(control.into_stream())
-                            }
-                            req => {
-                                handle_get_mac_root_request_or_panic(req);
-                                None
-                            }
-                        })
-                    })
+                    .filter_map(|req| handle_get_admin_for_eth_or_panic(req))
                     .into_future()
                     // This module's implementation is expected to only acquire one
                     // admin control handle per interface, so drop the remaining
@@ -2983,22 +3099,7 @@ mod tests {
 
         test_request([args1].into_iter().chain(args2), |interfaces_request_stream| {
             interfaces_request_stream
-                .filter_map(|req| {
-                    futures::future::ready(match req.unwrap() {
-                        fnet_root::InterfacesRequest::GetAdmin {
-                            id,
-                            control,
-                            control_handle: _,
-                        } => {
-                            pretty_assertions::assert_eq!(id, ETH_INTERFACE_ID);
-                            Some(control.into_stream())
-                        }
-                        req => {
-                            handle_get_mac_root_request_or_panic(req);
-                            None
-                        }
-                    })
-                })
+                .filter_map(|req| handle_get_admin_for_eth_or_panic(req))
                 .into_future()
                 // This method supports tests that want to make sure that the
                 // admin control is only requested once so we drop the remaining

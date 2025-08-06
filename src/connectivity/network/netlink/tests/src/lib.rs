@@ -15,11 +15,12 @@ use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
 use ip_test_macro::ip_test;
 use linux_uapi::{
-    rt_class_t_RT_TABLE_MAIN, rtnetlink_groups_RTNLGRP_IPV4_ROUTE,
-    rtnetlink_groups_RTNLGRP_IPV6_ROUTE, rtnetlink_groups_RTNLGRP_ND_USEROPT,
+    rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN, rt_class_t_RT_TABLE_UNSPEC,
+    rtnetlink_groups_RTNLGRP_IPV4_ROUTE, rtnetlink_groups_RTNLGRP_IPV6_ROUTE,
+    rtnetlink_groups_RTNLGRP_ND_USEROPT, NLM_F_DUMP,
 };
-use net_declare::{fidl_mac, net_ip_v6};
-use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
+use net_declare::{fidl_mac, net_ip_v6, std_ip};
+use net_types::ip::{Ip, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use netemul::{RealmUdpSocket as _, TestRealm};
 use netlink::multicast_groups::ModernGroup;
 use netlink_packet_core::{
@@ -37,12 +38,15 @@ use netstack_testing_common::{
 use packet_formats::icmp::ndp as packet_formats_ndp;
 use test_case::test_matrix;
 
+use fidl_fuchsia_net_ext::FromExt as _;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::FidlRuleIpExt;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_interfaces as fnet_interfaces, fidl_fuchsia_net_ndp as fnet_ndp,
+    fidl_fuchsia_net_interfaces as fnet_interfaces,
+    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_ndp as fnet_ndp,
     fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
 };
@@ -288,17 +292,18 @@ fn route_group<I: Ip>() -> ModernGroup {
 const ROUTE_PRIORITY: u32 = 1;
 
 fn create_route_in_table<I: Ip>(
-    table: u8,
+    table: u32,
     test_subnet: TestSubnet,
     interface_id: u32,
 ) -> RouteMessage {
     let mut route_message = RouteMessage::default();
+    let need_table_attr = table > (u8::MAX as u32);
     route_message.header = RouteHeader {
         address_family: address_family::<I>(),
         destination_prefix_length: TEST_SUBNET_LENGTH,
         source_prefix_length: 0,
         tos: 0,
-        table,
+        table: if need_table_attr { rt_class_t_RT_TABLE_COMPAT as u8 } else { table as u8 },
         protocol: RouteProtocol::Kernel,
         scope: RouteScope::Universe,
         kind: RouteType::Unicast,
@@ -312,6 +317,9 @@ fn create_route_in_table<I: Ip>(
         RouteAttribute::Oif(interface_id),
         RouteAttribute::Priority(ROUTE_PRIORITY),
     ]);
+    if need_table_attr {
+        route_message.attributes.push(RouteAttribute::Table(table));
+    }
     route_message
 }
 
@@ -319,7 +327,24 @@ async fn add_route_in_table_and_await_installed<I: Ip>(
     client: &mut NetlinkClient,
     test_subnet: TestSubnet,
     interface_id: u32,
-    table_id: u8,
+    table_id: u32,
+) {
+    add_route_in_table_and_await_installed_with_main_table_wanted::<I>(
+        client,
+        test_subnet,
+        interface_id,
+        table_id,
+        true,
+    )
+    .await
+}
+
+async fn add_route_in_table_and_await_installed_with_main_table_wanted<I: Ip>(
+    client: &mut NetlinkClient,
+    test_subnet: TestSubnet,
+    interface_id: u32,
+    table_id: u32,
+    main_table_wanted: bool,
 ) {
     let new_route_message = RouteNetlinkMessage::NewRoute(create_route_in_table::<I>(
         table_id,
@@ -333,21 +358,22 @@ async fn add_route_in_table_and_await_installed<I: Ip>(
     // We first receive notification of the route being added to the main table
     // (as a temporary hack while PBR support is being rolled out).
     // TODO(https://fxbug.dev/418849362): Remove this once PBR is completely supported.
-    let SentNetlinkMessage { message: received_msg, group } =
-        client.receiver.next().await.expect("should not be disconnected");
-    assert_eq!(group, Some(route_group::<I>()));
-    let received_route_message =
-        assert_matches!(received_msg.payload, NetlinkPayload::InnerMessage(message) => message);
+    if main_table_wanted {
+        let SentNetlinkMessage { message: received_msg, group } =
+            client.receiver.next().await.expect("should not be disconnected");
+        assert_eq!(group, Some(route_group::<I>()));
+        let received_route_message =
+            assert_matches!(received_msg.payload, NetlinkPayload::InnerMessage(message) => message);
 
-    assert_eq!(
-        received_route_message,
-        RouteNetlinkMessage::NewRoute(create_route_in_table::<I>(
-            rt_class_t_RT_TABLE_MAIN as u8,
-            test_subnet,
-            interface_id
-        ))
-    );
-
+        assert_eq!(
+            received_route_message,
+            RouteNetlinkMessage::NewRoute(create_route_in_table::<I>(
+                rt_class_t_RT_TABLE_MAIN,
+                test_subnet,
+                interface_id
+            ))
+        );
+    }
     // We then receive notification of the route being added to the table we actually requested.
     let SentNetlinkMessage { message: received_msg, group } =
         client.receiver.next().await.expect("should not be disconnected");
@@ -374,7 +400,7 @@ async fn add_route_and_await_installed<I: Ip>(
         client,
         test_subnet,
         interface_id,
-        test_subnet.table_index(),
+        test_subnet.table_index().into(),
     )
     .await
 }
@@ -1440,8 +1466,8 @@ async fn backup_route_does_not_override_interface_metric<I: Ip + FidlRouteIpExt>
     let network = sandbox.create_network("network").await.expect("create network");
 
     const SUBNET: TestSubnet = TestSubnet::A;
-    const TABLE_A: u8 = 1;
-    const TABLE_B: u8 = 2;
+    const TABLE_A: u32 = 1;
+    const TABLE_B: u32 = 2;
 
     let new_test_iface = |name: &'static str, metric: u32, subnet: fnet::Subnet| {
         let network = &network;
@@ -1534,4 +1560,227 @@ async fn backup_route_does_not_override_interface_metric<I: Ip + FidlRouteIpExt>
             assert_eq!(direct.interface_id, Some(ep_b.id()));
         }
     );
+}
+
+#[fuchsia::test]
+async fn netlink_uses_local_route_table() {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>("netstack").expect("create realm");
+
+    let protocols = connect_to_netlink_protocols_in_realm(&realm);
+    let (on_initialized, initialized) = oneshot::channel();
+    let (netlink, worker_fut) =
+        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
+            NoopInterfacesHandler,
+            protocols,
+            on_initialized,
+        );
+    let join_handle = fasync::Task::spawn(worker_fut);
+    initialized.await.expect("should not be dropped");
+
+    let network = sandbox.create_network("network").await.expect("create network");
+    let ep = realm
+        .join_network_with_if_config(
+            &network,
+            "ep",
+            netemul::InterfaceConfig {
+                netstack_managed_routes_designation: Some(
+                    fnet_interfaces_admin::NetstackManagedRoutesDesignation::InterfaceLocal(
+                        fnet_interfaces_admin::Empty,
+                    ),
+                ),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("failed to create the interface");
+    let interface_id = ep.id();
+
+    const ACCEPT_RA_RT_TABLE: i32 = -1000;
+
+    // `write_accept_ra_rt_table` is sync blocking, so we have to do it in
+    // another thread. The below code emulates this function being called from
+    // a starnix kernel thread.
+    let netlink = fasync::unblock(move || {
+        netlink
+            .write_accept_ra_rt_table(
+                netlink::SysctlInterfaceSelector::Id(NonZeroU64::new(interface_id).unwrap()),
+                ACCEPT_RA_RT_TABLE,
+            )
+            .expect("failed to update accept_ra_rt_table");
+        netlink
+    })
+    .await;
+
+    let expected_table_id =
+        u32::try_from(ep.id()).unwrap() + u32::try_from(-ACCEPT_RA_RT_TABLE).unwrap();
+
+    let mut client = add_route_client(&netlink);
+
+    let expected_route = move |af, dest: std::net::IpAddr, prefix_len: u8| {
+        let mut route_message = RouteMessage::default();
+        route_message.header = RouteHeader {
+            address_family: af,
+            destination_prefix_length: prefix_len,
+            source_prefix_length: 0,
+            tos: 0,
+            table: rt_class_t_RT_TABLE_COMPAT as u8,
+            protocol: RouteProtocol::Kernel,
+            scope: RouteScope::Universe,
+            kind: RouteType::Unicast,
+            flags: RouteFlags::empty(),
+        };
+
+        route_message.attributes.extend([
+            RouteAttribute::Destination(dest.into()),
+            RouteAttribute::Oif(u32::try_from(interface_id).unwrap()),
+            RouteAttribute::Priority(100),
+            RouteAttribute::Table(expected_table_id),
+        ]);
+
+        RouteNetlinkMessage::NewRoute(route_message)
+    };
+    // The initial device routes that we expect to be in the local table:
+    let mut expected_routes = Vec::from_iter([
+        expected_route(AddressFamily::Inet, std_ip!("224.0.0.0"), 4),
+        expected_route(AddressFamily::Inet6, std_ip!("fe80::"), 64),
+        expected_route(AddressFamily::Inet6, std_ip!("ff00::"), 8),
+    ]);
+
+    let mut route_message = RouteMessage::default();
+    route_message.header.address_family = AddressFamily::Unspec;
+    route_message.header.table = rt_class_t_RT_TABLE_UNSPEC as u8;
+    let dump_routes = RouteNetlinkMessage::GetRoute(route_message);
+    let mut message: NetlinkMessage<RouteNetlinkMessage> = dump_routes.into();
+    message.header.flags = NLM_F_DUMP as u16;
+    message.finalize();
+    client.sender.0.unbounded_send(message).expect("should not be disconnected");
+
+    while !expected_routes.is_empty() {
+        let next_msg = client.receiver.next().await.expect("should not be disconnected");
+        let route_msg = match next_msg.message.payload {
+            NetlinkPayload::InnerMessage(message) => message,
+            _ => continue,
+        };
+        expected_routes.retain(|r| r != &route_msg);
+    }
+
+    // Hold the receiver open until the worker is finished.
+    assert_eq!(join_handle.abort().await, None);
+}
+
+#[ip_test(I, test = false)]
+#[fuchsia::test]
+async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpExt>() {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>("netstack").expect("create realm");
+
+    let protocols = connect_to_netlink_protocols_in_realm(&realm);
+    let (on_initialized, initialized) = oneshot::channel();
+    let (netlink, worker_fut) =
+        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
+            NoopInterfacesHandler,
+            protocols,
+            on_initialized,
+        );
+    let join_handle = fasync::Task::spawn(worker_fut);
+    initialized.await.expect("should not be dropped");
+
+    let network = sandbox.create_network("network").await.expect("create network");
+    let ep = realm
+        .join_network_with_if_config(
+            &network,
+            "ep",
+            netemul::InterfaceConfig {
+                netstack_managed_routes_designation: Some(
+                    fnet_interfaces_admin::NetstackManagedRoutesDesignation::InterfaceLocal(
+                        fnet_interfaces_admin::Empty,
+                    ),
+                ),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("failed to create the interface");
+    const ACCEPT_RA_RT_TABLE: i32 = -1000;
+    let interface_id = ep.id();
+
+    // `write_accept_ra_rt_table` is sync blocking, so we have to do it in
+    // another thread. The below code emulates this function being called from
+    // a starnix kernel thread.
+    let netlink = fasync::unblock(move || {
+        netlink
+            .write_accept_ra_rt_table(
+                netlink::SysctlInterfaceSelector::Id(NonZeroU64::new(interface_id).unwrap()),
+                ACCEPT_RA_RT_TABLE,
+            )
+            .expect("failed to update accept_ra_rt_table");
+        netlink
+    })
+    .await;
+    let expected_table_id =
+        u32::try_from(ep.id()).unwrap() + u32::try_from(-ACCEPT_RA_RT_TABLE).unwrap();
+
+    let mut client = add_route_client(&netlink);
+    assert!(
+        client
+            .client
+            .add_membership(route_group::<I>())
+            .expect("should add membership successfully")
+            .is_noop(),
+        "should not produce blocking work"
+    );
+    const SUBNET_TO_ADD: TestSubnet = TestSubnet::B;
+    add_route_in_table_and_await_installed_with_main_table_wanted::<I>(
+        &mut client,
+        SUBNET_TO_ADD,
+        ep.id().try_into().unwrap(),
+        expected_table_id.try_into().unwrap(),
+        false,
+    )
+    .await;
+
+    let grant = ep.control().get_authorization_for_interface().await.expect("failed to get grant");
+    let proof = fnet_interfaces_ext::admin::proof_from_grant(&grant);
+    let provider =
+        realm.connect_to_protocol::<I::RouteTableProviderMarker>().expect("connect to protocol");
+    let local_table = fnet_routes_ext::admin::get_interface_local_table::<I>(&provider, proof)
+        .await
+        .expect("fidl")
+        .expect("failed to get interface local table");
+    let table_id = fnet_routes_ext::admin::get_table_id::<I>(&local_table).await.expect("fidl");
+    let state = realm.connect_to_protocol::<I::StateMarker>().expect("connect to protocol");
+    let mut stream = std::pin::pin!(fnet_routes_ext::event_stream_from_state_with_options(
+        &state,
+        fnet_routes_ext::WatcherOptions {
+            table_interest: Some(fnet_routes::TableInterest::Only(table_id.get())),
+        },
+    )
+    .expect("convert to stream"));
+    let routes = fnet_routes_ext::collect_routes_until_idle::<I, HashSet<_>>(stream.by_ref())
+        .await
+        .expect("collect routes until idle");
+    let network = I::map_ip_out(
+        SUBNET_TO_ADD.subnet::<I>(),
+        |subnet| assert_matches!(subnet, fnet::IpAddress::Ipv4(fidl) => Ipv4Addr::from_ext(fidl)),
+        |subnet| assert_matches!(subnet, fnet::IpAddress::Ipv6(fidl) => Ipv6Addr::from_ext(fidl)),
+    );
+    let expected_route = fnet_routes_ext::InstalledRoute {
+        route: fnet_routes_ext::Route {
+            destination: net_types::ip::Subnet::new(network, TEST_SUBNET_LENGTH).unwrap(),
+            action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
+                outbound_interface: ep.id(),
+                next_hop: None,
+            }),
+            properties: fnet_routes_ext::RouteProperties {
+                specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                    metric: fnet_routes::SpecifiedMetric::ExplicitMetric(ROUTE_PRIORITY),
+                },
+            },
+        },
+        effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: ROUTE_PRIORITY },
+        table_id,
+    };
+    assert!(routes.contains(&expected_route));
+    assert_eq!(join_handle.abort().await, None);
 }

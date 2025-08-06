@@ -550,17 +550,35 @@ impl<
                 match async_work {
                     AsyncWorkItem::SetAcceptRaRtTable { interface, value, responder } => {
                         let interfaces = interfaces_worker.get_mut();
-                        let result = (|| Ok(match interface {
+                        let route_table_maps =
+                            v4_route_table_map.present_mut().zip(
+                                v6_route_table_map.present_mut());
+                        let result = async { Ok(match interface {
                             SysctlInterfaceSelector::Default => {
-                                interfaces.default_accept_ra_rt_table = value;
+                                match value {
+                                    value @ (
+                                        interfaces::AcceptRaRtTable::Main
+                                        | interfaces::AcceptRaRtTable::Auto(_)
+                                    ) => {
+                                        interfaces.default_accept_ra_rt_table = value;
+                                    }
+                                    interfaces::AcceptRaRtTable::Manual(_) => {
+                                        return Err(SysctlError::Unsupported);
+                                    }
+                                }
+
                             }
                             SysctlInterfaceSelector::Id(id) => {
                                 interfaces
                                     .interface_properties
                                     .get_mut(&id.into())
                                     .ok_or(SysctlError::NoInterface)?
-                                    .state
-                                    .accept_ra_rt_table = value;
+                                    .state.set_accept_ra_rt_table(
+                                        id,
+                                        value,
+                                        interfaces_proxy.get_ref(),
+                                        route_table_maps,
+                                    ).await?;
                             }
                             SysctlInterfaceSelector::All => {
                                 // Note: It is intentional that we don't update
@@ -570,7 +588,8 @@ impl<
                                 // on Linux.
                                 interfaces.all_accept_ra_rt_table = value;
                             }
-                        }))();
+                        })};
+                        let result = result.await;
                         responder.send(result)
                     }
                     AsyncWorkItem::GetAcceptRaRtTable { interface, responder } => {
@@ -585,7 +604,7 @@ impl<
                                     .get(&id.into())
                                     .ok_or(SysctlError::NoInterface)?
                                     .state
-                                    .accept_ra_rt_table
+                                    .accept_ra_rt_table()
                             }
                             SysctlInterfaceSelector::All => {
                                 interfaces.all_accept_ra_rt_table
@@ -675,7 +694,10 @@ impl<
                         )
                     },
                     UnifiedEvent::InterfacesEvent(event) => {
-                        interfaces_worker.get_mut().handle_interface_watcher_event(event).await;
+                        interfaces_worker.get_mut().handle_interface_watcher_event(
+                            event,
+                            v4_route_table_map.present_mut().zip(
+                                v6_route_table_map.present_mut())).await;
                         Cleanup::None
                     },
                 }

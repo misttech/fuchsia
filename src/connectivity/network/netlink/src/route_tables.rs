@@ -7,7 +7,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 
 use fidl::endpoints::ProtocolMarker;
-use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_net_interfaces_ext::admin::TerminalError;
+use fidl_fuchsia_net_routes_admin::GetInterfaceLocalTableError;
+use {
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext,
+};
 
 use assert_matches::assert_matches;
 use net_types::ip::{GenericOverIp, Ip};
@@ -73,7 +78,7 @@ pub(crate) enum RouteTable<
     I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
 > {
     Managed(ManagedRouteTable<I>),
-    Unmanaged(MainRouteTable<I>),
+    Unmanaged(UnmanagedTable<I>),
 }
 
 impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt>
@@ -125,7 +130,7 @@ pub(crate) struct ManagedRouteTable<
 /// A reference to the main route table.
 #[derive(derivative::Derivative)]
 #[derivative(Debug(bound = ""))]
-pub(crate) struct MainRouteTable<
+pub(crate) struct UnmanagedTable<
     I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
 > {
     /// The route table FIDL proxy for the main route table.
@@ -142,6 +147,55 @@ pub(crate) struct MainRouteTable<
     /// Whether the netlink worker's fuchsia.net.routes.admin.RuleSet has been authenticated
     /// to install rules referencing this table.
     pub(crate) rule_set_authenticated: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum NoInterfaceLocalTableError {
+    #[error("the interface has been removed: {0:?}")]
+    InterfaceRemoved(TerminalError<fidl_fuchsia_net_interfaces_admin::InterfaceRemovedReason>),
+    #[error("the interface does not have a local table")]
+    NoInterfaceLocaltable,
+}
+
+impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt>
+    UnmanagedTable<I>
+{
+    pub(crate) async fn interface_local(
+        control: &fnet_interfaces_ext::admin::Control,
+        route_table_provider: &<I::RouteTableProviderMarker as ProtocolMarker>::Proxy,
+    ) -> Result<Self, NoInterfaceLocalTableError> {
+        let grant = control
+            .get_authorization_for_interface()
+            .await
+            .map_err(NoInterfaceLocalTableError::InterfaceRemoved)?;
+        let proof = fnet_interfaces_ext::admin::proof_from_grant(&grant);
+        let local_table =
+            fnet_routes_ext::admin::get_interface_local_table::<I>(route_table_provider, proof)
+                .await
+                .expect("fidl failure getting the local table")
+                .map_err(|err| match err {
+                    GetInterfaceLocalTableError::NoLocalRouteTable => {
+                        NoInterfaceLocalTableError::NoInterfaceLocaltable
+                    }
+                    GetInterfaceLocalTableError::InvalidAuthentication
+                    | GetInterfaceLocalTableError::__SourceBreaking { .. } => {
+                        panic!("unexpected error getting the local table: {err:?}")
+                    }
+                })?;
+        // From this point, we know that the local table exists and we cannot
+        // recover from the errors below.
+        let route_set_proxy = fnet_routes_ext::admin::new_route_set::<I>(&local_table)
+            .expect("failed to create the route set");
+        let fidl_table_id = fnet_routes_ext::admin::get_table_id::<I>(&local_table)
+            .await
+            .expect("failed to get the table ID");
+        Ok(Self {
+            route_table_proxy: local_table,
+            route_set_proxy,
+            fidl_table_id,
+            rule_set_authenticated: false,
+        })
+    }
 }
 
 /// Returned as the `Err` variant when the user attempts to remove the main table.
@@ -170,7 +224,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
         Self {
             route_tables: HashMap::from_iter(std::iter::once((
                 MAIN_ROUTE_TABLE_INDEX,
-                RouteTable::Unmanaged(MainRouteTable {
+                RouteTable::Unmanaged(UnmanagedTable {
                     route_table_proxy: main_route_table_proxy,
                     fidl_table_id: main_route_table_id,
                     route_set_proxy: unmanaged_route_set_proxy,
@@ -217,6 +271,12 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
         );
     }
 
+    /// Removes a netlink-managed route table.
+    pub(crate) fn remove(&mut self, key: NetlinkRouteTableIndex) -> Option<RouteTable<I>> {
+        let table_id = self.route_tables.get(&key)?.fidl_table_id();
+        Some(self.remove_table_by_fidl_id(table_id)?.expect("cannot remove the main table"))
+    }
+
     /// Removes the [`RouteTable`] with the given FIDL table ID.
     pub(crate) fn remove_table_by_fidl_id(
         &mut self,
@@ -233,6 +293,12 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
         let removed = self.route_tables.remove(&netlink_index)?;
         assert_eq!(removed.fidl_table_id(), table_id);
         Some(Ok(removed))
+    }
+
+    pub(crate) fn route_table_provider(
+        &self,
+    ) -> &<I::RouteTableProviderMarker as ProtocolMarker>::Proxy {
+        &self.route_table_provider
     }
 
     /// If a table corresponding to `key` is not already being tracked,
@@ -461,14 +527,6 @@ mod test {
     use {fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_ext as fnet_routes_ext};
 
     use super::*;
-
-    impl<I: FidlRouteAdminIpExt + fnet_routes_ext::FidlRouteIpExt> RouteTableMap<I> {
-        /// Removes a netlink-managed route table.
-        fn remove(&mut self, key: NetlinkRouteTableIndex) -> Option<RouteTable<I>> {
-            let table_id = self.route_tables.get(&key)?.fidl_table_id();
-            Some(self.remove_table_by_fidl_id(table_id)?.expect("cannot remove the main table"))
-        }
-    }
 
     impl Arbitrary for NetlinkRouteTableIndex {
         type Parameters = ();

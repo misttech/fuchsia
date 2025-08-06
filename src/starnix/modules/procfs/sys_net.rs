@@ -4,7 +4,7 @@
 
 use std::sync::atomic::Ordering;
 
-use netlink::SysctlInterfaceSelector;
+use netlink::{SysctlError, SysctlInterfaceSelector};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::{
@@ -492,6 +492,14 @@ impl NetworkNetlinkSysctlFile {
     }
 }
 
+fn to_errno(error: SysctlError) -> Errno {
+    match error {
+        SysctlError::Disconnected => errno!(EIO),
+        SysctlError::NoInterface => errno!(ENODEV),
+        SysctlError::Unsupported => errno!(ENOTSUP),
+    }
+}
+
 impl BytesFileOps for NetworkNetlinkSysctlFile {
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         let value = parse_i32_file(&data)?;
@@ -501,7 +509,7 @@ impl BytesFileOps for NetworkNetlinkSysctlFile {
             .write_accept_ra_rt_table(self.interface, value)
             .map_err(|err| {
                 log_error!("failed to write to {:?}: {:?}", self.interface, err);
-                errno!(EBADF)
+                to_errno(err)
             })
     }
 
@@ -512,7 +520,7 @@ impl BytesFileOps for NetworkNetlinkSysctlFile {
             .read_accept_ra_rt_table(self.interface)
             .map_err(|err| {
                 log_error!("failed to read from {:?}: {:?}", self.interface, err);
-                errno!(EBADF)
+                to_errno(err)
             })?;
         Ok(serialize_for_file(value).into())
     }

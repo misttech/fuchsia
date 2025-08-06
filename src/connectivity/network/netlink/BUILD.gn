@@ -46,6 +46,7 @@ rustc_library("netlink") {
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:thiserror",
   ]
 
   test_deps = [

@@ -218,6 +218,8 @@ pub enum SysctlError {
     Disconnected,
     /// The interface went away.
     NoInterface,
+    /// The written value requests for an unsupported operation.
+    Unsupported,
 }
 
 /// Parameters used to start the Netlink asynchronous worker.

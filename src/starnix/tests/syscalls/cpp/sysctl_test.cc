@@ -55,7 +55,7 @@ TEST_F(SysctlTest, AcceptRaRtTable) {
   }
 
   const char *kVal1 = "-100\n";
-  const char *kVal2 = "100\n";
+  const char *kVal2 = "-200\n";
 
   for (auto const &path : {kDefault, kLo}) {
     EXPECT_TRUE(files::ReadFileToString(path, &accept_ra_rt_table_str));

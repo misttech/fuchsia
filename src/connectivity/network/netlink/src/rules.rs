@@ -31,8 +31,8 @@ use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::route::NetlinkRoute;
 use crate::protocol_family::ProtocolFamily;
 use crate::route_tables::{
-    MainRouteTable, ManagedRouteTable, NetlinkRouteTableIndex, RouteTable, RouteTableMap,
-    TableNeedsCleanup,
+    ManagedRouteTable, NetlinkRouteTableIndex, RouteTable, RouteTableMap, TableNeedsCleanup,
+    UnmanagedTable,
 };
 
 mod conversions;
@@ -488,7 +488,7 @@ impl<I: IpExt> RulesWorker<I> {
                 let (table, fidl_table_id, rule_set_authenticated) =
                     match route_table_map.get_mut(&table_index).expect("should have just inserted")
                     {
-                        RouteTable::Unmanaged(MainRouteTable {
+                        RouteTable::Unmanaged(UnmanagedTable {
                             route_table_proxy,
                             fidl_table_id,
                             rule_set_authenticated,
