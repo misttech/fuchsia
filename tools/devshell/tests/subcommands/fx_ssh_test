@@ -98,7 +98,7 @@ TEST_ssh_resolve_addr_port() {
 
   cat >> "${ffx}.mock_side_effects" << EOF
 
-  if [ "\$4" == "get-ssh-address" ]; then
+  if [ "\$*" == *"target list --format addresses"* ]; then
      echo $ipv6
   elif [ "\$4" == "default" ]; then
      echo $ipv6

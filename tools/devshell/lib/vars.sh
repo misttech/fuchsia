@@ -693,7 +693,7 @@ function fx-target-finder-info {
 }
 
 function fx-target-ssh-address {
-  ffx target get-ssh-address
+  ffx target list --format addresses
 }
 
 function multi-device-fail {

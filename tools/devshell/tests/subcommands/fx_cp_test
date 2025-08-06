@@ -24,7 +24,7 @@ declare fx ffx sftp
 init_fake_ffx() {
   echo > "${ffx}_mock_errors"
   cat >"${ffx}.mock_side_effects" <<INPUT
-if [[ \${@: -1} == "get" || \${@: -1} == "get-ssh-address" ]]; then
+if [[ \${@: -1} == "get" || "\$*" == *"target list --format addresses"* ]]; then
   if [[ -n "\$FUCHSIA_DEVICE_ADDR" ]]; then
     echo "\$FUCHSIA_DEVICE_ADDR"
   elif [[ -n "\$FUCHSIA_NODENAME" ]]; then
