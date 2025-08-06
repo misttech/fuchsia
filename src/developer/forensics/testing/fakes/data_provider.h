@@ -10,8 +10,8 @@
 namespace forensics {
 namespace fakes {
 
-// Fake handler for fuchsia.feedback.DataProvider, returns valid payloads for GetSnpashot() and
-// GetScreenshot(). Tests should not have hard expectations on these payloads as they're subject to
+// Fake handler for fuchsia.feedback.DataProvider, returns valid payloads for GetSnapshot() and
+// GetAnnotations(). Tests should not have hard expectations on these payloads as they're subject to
 // change.
 class DataProvider : public fuchsia::feedback::DataProvider {
  public:
