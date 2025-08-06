@@ -7,7 +7,7 @@ import("//build/components.gni")
 group("transport") {
   deps = [
     "banjo",
-    "driver/v1:drivers",
+    "driver",
     "zircon",
   ]
 }

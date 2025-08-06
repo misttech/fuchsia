@@ -5,7 +5,7 @@
     include: [ 'syslog/client.shard.cml' ],
     program: {
         runner: 'driver',
-        binary: 'driver/driver_transport_parent.so',
+        binary: 'driver/libdriver-transport-parent.so',
         bind: 'meta/bind/parent-driver.bindbc',
     },
     capabilities: [

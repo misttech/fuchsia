@@ -5,7 +5,7 @@
     include: [ 'syslog/client.shard.cml' ],
     program: {
         runner: 'driver',
-        binary: 'driver/driver_transport_child.so',
+        binary: 'driver/libdriver-transport-child.so',
         bind: 'meta/bind/child-driver.bindbc',
 
         // Set to allow synchronous calls over driver transport. Once the driver

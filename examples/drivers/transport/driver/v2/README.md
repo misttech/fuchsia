@@ -19,12 +19,12 @@ $ fx build
 
 Register the parent driver by running this command
 ```bash
-$ ffx driver register fuchsia-pkg://fuchsia.com/driver_transport#meta/driver_transport_parent.cm
+$ ffx driver register fuchsia-pkg://fuchsia.com/driver_transport_parent_pkg#meta/parent-driver.cm
 ```
 
 Register the child driver by running this command
 ```bash
-$ ffx driver register fuchsia-pkg://fuchsia.com/driver_transport#meta/driver_transport_child.cm
+$ ffx driver register fuchsia-pkg://fuchsia.com/driver_transport_child_pkg#meta/child-driver.cm
 ```
 
 Verify that both drivers show up in this command
