@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use super::parser::PolicyCursor;
-use super::view::ArrayView;
 use super::{
     array_type, array_type_validate_deref_both, AccessVector, Array, ClassId, Counted, Parse,
     PolicyValidationContext, RoleId, TypeId, Validate, ValidateArray,
@@ -97,21 +96,6 @@ impl<T: Validate> Validate for SimpleArray<T> {
     /// size stored in `self.metadata`.
     fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
         self.data.validate(context)
-    }
-}
-
-pub(super) type SimpleArrayView<T> = ArrayView<le::U32, T>;
-
-impl<T: Validate + Parse> Validate for SimpleArrayView<T> {
-    type Error = <T as Validate>::Error;
-
-    /// Defers to `self.data` for validation. `self.data` has access to all information, including
-    /// size stored in `self.metadata`.
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
-        for item in self.data().iter(&context.data) {
-            item.validate(context)?;
-        }
-        Ok(())
     }
 }
 
@@ -1588,6 +1572,7 @@ mod tests {
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules()
+            .into_iter()
             .filter(|rule| rule.target_class() == class_id)
             .collect();
 
@@ -1616,6 +1601,7 @@ mod tests {
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules()
+            .into_iter()
             .filter(|rule| rule.target_class() == class_id)
             .collect();
 
@@ -1645,6 +1631,7 @@ mod tests {
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules()
+            .into_iter()
             .filter(|rule| rule.target_class() == class_id)
             .collect();
 
@@ -1678,6 +1665,7 @@ mod tests {
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules()
+            .into_iter()
             .filter(|rule| rule.target_class() == class_id)
             .collect();
 
@@ -1705,6 +1693,7 @@ mod tests {
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules()
+            .into_iter()
             .filter(|rule| rule.target_class() == class_id)
             .collect();
 
@@ -1733,6 +1722,7 @@ mod tests {
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules()
+            .into_iter()
             .filter(|rule| rule.target_class() == class_id)
             .collect();
 
@@ -1771,6 +1761,7 @@ mod tests {
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules()
+            .into_iter()
             .filter(|rule| rule.target_class() == class_id)
             .collect();
 
@@ -1804,6 +1795,7 @@ mod tests {
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules()
+            .into_iter()
             .filter(|rule| rule.target_class() == class_id)
             .collect();
 

@@ -430,6 +430,7 @@ impl PolicyIndex {
         // multiple matches, so behavior on multiple matches is undefined.
         self.parsed_policy
             .access_vector_rules()
+            .iter()
             .find(|access_vector_rule| {
                 access_vector_rule.is_type_transition()
                     && access_vector_rule.source_type() == source_type
