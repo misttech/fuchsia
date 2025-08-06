@@ -51,9 +51,14 @@ bool CodeBlock::ContainsAddress(const SymbolContext& symbol_context,
   // as containing all code of the function since using them will lose the context associated with
   // the inlined instance.
 
+  // NOTE: According to the DWARF spec, the end of the range (aka DW_AT_high_pc) should NOT be
+  // included in this range calculation. However, there are several cases where the PC falls
+  // directly on the ending address for which we still are going to want to be able to do variable
+  // lookups, for example, and will want to include this range. This is also what LLDB does:
+  // https://github.com/llvm/llvm-project/blob/main/lldb/include/lldb/Utility/RangeMap.h#L101
   for (const auto& range : code_ranges_) {
     if (absolute_address >= symbol_context.RelativeToAbsolute(range.begin()) &&
-        absolute_address < symbol_context.RelativeToAbsolute(range.end()))
+        absolute_address <= symbol_context.RelativeToAbsolute(range.end()))
       return true;
   }
   return false;

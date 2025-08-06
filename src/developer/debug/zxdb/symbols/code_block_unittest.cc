@@ -27,14 +27,15 @@ TEST(CodeBlock, ContainsAddress) {
   block->set_code_ranges(AddressRanges(
       AddressRanges::kCanonical, {AddressRange(0x1000, 0x2000), AddressRange(0x3000, 0x3001)}));
 
-  // Blocks should count the beginning but not the end as inside them.
+  // Blocks should count the beginning and the end as inside them.
   EXPECT_TRUE(block->ContainsAddress(context, 0x1000));
   EXPECT_TRUE(block->ContainsAddress(context, 0x1100));
-  EXPECT_FALSE(block->ContainsAddress(context, 0x2000));
+  EXPECT_TRUE(block->ContainsAddress(context, 0x2000));
+  EXPECT_FALSE(block->ContainsAddress(context, 0x2001));
 
   EXPECT_FALSE(block->ContainsAddress(context, 0x2fff));
   EXPECT_TRUE(block->ContainsAddress(context, 0x3000));
-  EXPECT_FALSE(block->ContainsAddress(context, 0x3001));
+  EXPECT_TRUE(block->ContainsAddress(context, 0x3001));
   EXPECT_FALSE(block->ContainsAddress(context, 0x3002));
 
   // Test with a non-relative symbol context.
