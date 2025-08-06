@@ -142,7 +142,6 @@ impl<C: Controllable + 'static> Controller<C> {
         Controller { controllable: Some(controllable), request_stream: requests, control }
     }
 
-    #[allow(dead_code)]
     async fn serve_controller(&mut self) -> Result<(), ()> {
         while let Ok(Some(request)) = self.request_stream.try_next().await {
             match request {
@@ -184,7 +183,6 @@ impl<C: Controllable + 'static> Controller<C> {
     /// or the request stream closes. In either case the request stream is
     /// closed once this function returns since the stream itself, which owns
     /// the channel, is dropped.
-    #[allow(dead_code)]
     pub async fn serve(mut self, exit_fut: impl Future<Output = StopInfo> + Unpin) {
         let stop_info = {
             // Pin the server_controller future so we can use it with select
@@ -226,7 +224,6 @@ impl<C: Controllable + 'static> Controller<C> {
     }
 
     /// Kill the job and shutdown control handle supplied to this function.
-    #[allow(dead_code)]
     async fn kill(&mut self) {
         if let Some(mut controllable) = self.controllable.take() {
             controllable.kill().await;
