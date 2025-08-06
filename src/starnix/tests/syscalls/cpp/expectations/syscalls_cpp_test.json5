@@ -139,9 +139,6 @@
 
                 // TODO(https://fxbug.dev/418965139)
                 "ThreadGroupLifeCycleTest.EndMainThreadFirst",
-
-                // TODO(https://fxbug.dev/399939974): Re-enable after one-big vmo is enabled
-                "ProcessMemoryReleaseTest.SuccessfulRelease",
             ],
         },
     ],
