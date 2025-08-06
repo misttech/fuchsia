@@ -119,14 +119,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 }
             }
 
-            // These are mutually exclusive as power_framework_sag has a bootstrap shard that
-            // conflicts with the testing_sag variant.
-            if config.testing_sag_enabled {
-                builder.platform_bundle("power_framework_testing_sag");
-                builder.platform_bundle("power_framework_testing_sag_bootstrap_shard_deprecated");
-            } else {
-                builder.platform_bundle("power_framework_sag");
-            }
+            builder.platform_bundle("power_framework_sag");
         }
 
         if let Some(cpu_manager_config) = &context.board_config.configuration.cpu_manager {

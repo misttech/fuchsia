@@ -4704,29 +4704,6 @@ assembly_input_bundle("power_test_platform_drivers") {
   ]
 }
 
-# TODO(https://fxbug.dev/335526423): Remove when migrated to power testing phase 2.
-#
-# Bootstrap shard for the power_framework_testing_sag.
-#
-# feature_set_levels: all except embeddable
-# build-types: eng
-#
-assembly_input_bundle(
-    "power_framework_testing_sag_bootstrap_shard_deprecated") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/power/meta/testing-sag.shard.cml" ]
-        },
-      ]
-    },
-  ]
-}
-
 # Power framework cli tools and ffx power support components
 #
 # feature_set_levels: utility

@@ -20,13 +20,6 @@ pub struct PowerConfig {
     /// TODO(https://fxbug.dev/383772372): Remove when no longer needed.
     pub storage_power_management_enabled: bool,
 
-    /// Whether the testing SAG with testing based controls
-    /// should be used. This will only work when |suspend_enabled|
-    /// is also true, as there is no SAG when suspend support is disabled.
-    /// TODO(https://fxbug.dev/335526423): Remove when no longer needed.
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub testing_sag_enabled: bool,
-
     /// Whether to include the power framework components that are needed
     /// for power system non-hermetic testing in the platform.
     #[serde(skip_serializing_if = "crate::common::is_default")]
@@ -44,7 +37,6 @@ impl Default for PowerConfig {
         Self {
             suspend_enabled: false,
             storage_power_management_enabled: true,
-            testing_sag_enabled: false,
             enable_non_hermetic_testing: false,
             metrics_logging_config: None,
         }
