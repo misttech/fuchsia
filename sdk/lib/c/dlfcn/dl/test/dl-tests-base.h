@@ -6,21 +6,15 @@
 #define LIB_C_DLFCN_DL_TEST_DL_TESTS_BASE_H_
 
 #include <lib/elfldltl/resolve.h>
-#include <lib/fit/result.h>
 
 #include <gtest/gtest.h>
-
-#include "../../dl_phdr_info.h"
-#include "../error.h"
 
 namespace dl::testing {
 
 using DlIteratePhdrCallback = int(dl_phdr_info*, size_t, void*);
 
-// The main purpose of this base class is to document and declare the testing
-// API that each test fixture is expected to provide definitions for. Default
-// values for shared feature flags are also defined here so that test fixtures
-// may support testing features independently from each other.
+// The main purpose of this base class is provide default values for shared
+// feature flags.
 class DlTestsBase : public ::testing::Test {
  public:
   // These variables are indicators to GTEST of whether the test fixture
@@ -76,13 +70,6 @@ class DlTestsBase : public ::testing::Test {
   // Whether the test fixture's dlclose will run destructors out of order. Older
   // glibc versions resort the order that destructors are run.
   static constexpr bool kDestructorsRunOutOfOrder = false;
-
-  // Test fixtures are expected to provide definitions for the following API:
-  fit::result<Error, void*> DlOpen(const char* file, int mode);
-
-  fit::result<Error, void*> DlSym(void* module, const char* ref);
-
-  int DlIteratePhdr(DlIteratePhdrCallback* callback, void* data);
 };
 
 }  // namespace dl::testing
