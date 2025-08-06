@@ -896,6 +896,8 @@ class AsyncMain:
                     ]
                     if threshold is not None:
                         suggestion_args += ["--threshold", str(threshold)]
+                    if flags.remote_suggestions:
+                        suggestion_args += ["--remote"]
                     return exec_env.fx_cmd_line(*suggestion_args)
 
                 arg_threshold_pairs = []

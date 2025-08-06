@@ -60,6 +60,7 @@ class Flags:
     list: bool
     list_runtime_deps: bool
     previous: PrevOption | None
+    remote_suggestions: bool
 
     build: bool
     updateifinbase: bool
@@ -278,6 +279,12 @@ def parse_args(
         "--list-runtime-deps",
         action="store_true",
         help="Do not actually run tests. Instead print out the contents of the `runtime_deps` for each test. This can be useful for debugging whether the correct artifacts are being uploaded to test runners",
+    )
+    utility.add_argument(
+        "--remote-suggestions",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Whether to use remote tests.json files for tests suggestions.",
     )
     utility.add_argument(
         "-pr",
