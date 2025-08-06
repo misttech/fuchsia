@@ -71,6 +71,10 @@ const ZX_CLOCK_UNKNOWN_ERROR_BOUND: u64 = u64::MAX;
 /// 50ms is about the largest nonzero, but not broken typical value for standard deviation.
 const USER_SAMPLE_DEFAULT_STD_DEV: zx::BootDuration = zx::BootDuration::from_millis(50);
 
+/// If we receive a UTC reference timestamp that is less than this amount of time away from
+/// backstop, we reject it.
+const MIN_UTC_REFERENCE_TO_BACKSTOP_DIFF: UtcDuration = UtcDuration::from_hours(1);
+
 /// Describes how a correction will be made to a clock.
 enum ClockCorrection {
     Step(Step),
@@ -619,9 +623,11 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
         debug!("maintain_clock: function entered");
         let pull_delay = self.config.get_back_off_time_between_pull_samples();
 
-        let details = self.clock.get_details().expect("failed to get UTC clock details");
-        let mut clock_started = details.backstop != details.ticks_to_synthetic.synthetic_offset;
-        std::mem::drop(details);
+        let utc_details = self.clock.get_details().expect("failed to get UTC clock details");
+        let mut clock_started =
+            utc_details.backstop != utc_details.ticks_to_synthetic.synthetic_offset;
+        let utc_backstop = utc_details.backstop;
+        std::mem::drop(utc_details);
         let mut receiver = async_commands.fuse(); // Required by select! below.
 
         let serve_test_protocols = self.config.serve_test_protocols();
@@ -732,12 +738,23 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
                             };
                             // TODO: b/412337617 - probably want to demote this to debug! soon-ish.
                             info!("manage_clock: got a reference time sample: {:?}", sample);
-                            last_proposal = Some(sample);
-                            self.managed_clock_start(
-                                &mut clock_started,
-                                last_proposal.as_ref(),
-                                allow_timekeeper_to_update_rtc,
-                                &adjust_decision).await;
+                            let utc_reference_to_backstop_diff = (utc_reference - utc_backstop).max(UtcDuration::from_nanos(0));
+
+                            if utc_reference_to_backstop_diff < MIN_UTC_REFERENCE_TO_BACKSTOP_DIFF {
+                                warn!(
+                                    concat!(
+                                        "manage_clock: UTC clock not started, ",
+                                        "reference time sample is rejected ",
+                                        "as too close to backstop, {:?}"),
+                                    utc_reference_to_backstop_diff);
+                            } else {
+                                last_proposal = Some(sample);
+                                self.managed_clock_start(
+                                    &mut clock_started,
+                                    last_proposal.as_ref(),
+                                    allow_timekeeper_to_update_rtc,
+                                    &adjust_decision).await;
+                            }
 
                             responder.send(Ok(())).await.expect("infallible");
                         }
