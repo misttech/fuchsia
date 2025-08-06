@@ -325,7 +325,7 @@ void Client::CreateLayer(CreateLayerCompleter::Sync& completer) {
 
   fbl::AllocChecker alloc_checker;
   display::LayerId layer_id = next_layer_id_;
-  auto new_layer = fbl::make_unique_checked<Layer>(&alloc_checker, &controller_, layer_id);
+  auto new_layer = fbl::make_unique_checked<Layer>(&alloc_checker, layer_id);
   if (!alloc_checker.check()) {
     completer.ReplyError(ZX_ERR_NO_MEMORY);
     return;

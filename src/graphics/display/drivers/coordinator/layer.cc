@@ -20,7 +20,6 @@
 #include <fbl/intrusive_double_list.h>
 #include <fbl/ref_ptr.h>
 
-#include "src/graphics/display/drivers/coordinator/controller.h"
 #include "src/graphics/display/drivers/coordinator/fence.h"
 #include "src/graphics/display/drivers/coordinator/image.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
@@ -57,13 +56,10 @@ static_assert(WaitingImageList::kMaxSize ==
                   fuchsia_hardware_display::wire::kMaxWaitingImagesPerLayer,
               "Violation of fuchsia.hardware.display.Coordinator API contract.");
 
-Layer::Layer(Controller* controller, display::LayerId id)
+Layer::Layer(display::LayerId id)
     : IdMappable(id),
-      controller_(*controller),
       draft_layer_config_(CreatePlaceholderDriverLayer()),
       applied_layer_config_(CreatePlaceholderDriverLayer()) {
-  ZX_DEBUG_ASSERT(controller != nullptr);
-
   draft_layer_config_differs_from_applied_ = false;
 
   draft_display_config_list_node_.layer = this;
@@ -73,13 +69,10 @@ Layer::Layer(Controller* controller, display::LayerId id)
 
 Layer::~Layer() {
   ZX_DEBUG_ASSERT(!in_use());
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
   waiting_images_.RemoveAllImages();
 }
 
 bool Layer::ResolveDraftLayerProperties() {
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-
   // If the layer's image configuration changed, get rid of any current images
   if (draft_image_config_gen_ != applied_image_config_gen_) {
     applied_image_config_gen_ = draft_image_config_gen_;
@@ -96,8 +89,6 @@ bool Layer::ResolveDraftLayerProperties() {
 }
 
 bool Layer::ResolveDraftImage(FenceCollection* fences, display::ConfigStamp stamp) {
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-
   if (draft_image_ != nullptr) {
     auto wait_fence = fences->GetFence(draft_image_wait_event_id_);
     draft_image_wait_event_id_ = display::kInvalidEventId;
@@ -155,8 +146,6 @@ void Layer::DiscardChanges() {
 }
 
 bool Layer::CleanUpAllImages() {
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-
   RetireDraftImage();
 
   waiting_images_.RemoveAllImages();
@@ -185,8 +174,6 @@ std::optional<display::ConfigStamp> Layer::GetCurrentClientConfigStamp() const {
 }
 
 bool Layer::ActivateLatestReadyImage() {
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-
   fbl::RefPtr<Image> newest_ready_image = waiting_images_.PopNewestReadyImage();
   if (!newest_ready_image) {
     return false;
@@ -304,22 +291,13 @@ void Layer::SetImage(fbl::RefPtr<Image> image, display::EventId wait_event_id) {
   draft_image_wait_event_id_ = wait_event_id;
 }
 
-bool Layer::MarkFenceReady(FenceReference* fence) {
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-  return waiting_images_.MarkFenceReady(fence);
-}
+bool Layer::MarkFenceReady(FenceReference* fence) { return waiting_images_.MarkFenceReady(fence); }
 
-bool Layer::HasWaitingImages() const {
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-  return waiting_images_.size() > 0;
-}
+bool Layer::HasWaitingImages() const { return waiting_images_.size() > 0; }
 
 void Layer::RetireDraftImage() { draft_image_ = nullptr; }
 
-void Layer::RetireWaitingImage(const Image& image) {
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-  waiting_images_.RemoveImage(image);
-}
+void Layer::RetireWaitingImage(const Image& image) { waiting_images_.RemoveImage(image); }
 
 bool Layer::RetireAppliedImage() {
   if (applied_image_ == nullptr) {

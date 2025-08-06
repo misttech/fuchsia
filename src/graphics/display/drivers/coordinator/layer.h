@@ -42,12 +42,12 @@ struct LayerNode : public fbl::DoublyLinkedListable<LayerNode*> {
 
 // Manages Client-created Layer configurations.
 //
-// This class is not thread safe. Its methods and destructor must be invoked
-// on the Controller's driver dispatcher.
+// Instances are not thread-safe. Concurrent access must be synchronized
+// externally.
 class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
  public:
   // `controller` must be non-null.
-  explicit Layer(Controller* controller, display::LayerId id);
+  explicit Layer(display::LayerId id);
 
   Layer(const Layer&) = delete;
   Layer(Layer&&) = delete;
@@ -156,8 +156,6 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
   //
   // Returns true if this changes the applied display configuration.
   bool RetireAppliedImage();
-
-  Controller& controller_;
 
   display::DriverLayer draft_layer_config_;
   display::DriverLayer applied_layer_config_;
