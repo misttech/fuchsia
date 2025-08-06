@@ -4,12 +4,11 @@
 
 #include "src/ui/input/lib/hid-input-report/keyboard.h"
 
-#include <fuchsia/input/cpp/fidl.h>
+#include <fidl/fuchsia.input/cpp/fidl.h>
+#include <lib/fidl/cpp/channel.h>
 #include <lib/fit/defer.h>
 #include <lib/hid/boot.h>
 #include <lib/hid/usages.h>
-
-#include <variant>
 
 #include <zxtest/zxtest.h>
 
@@ -17,6 +16,8 @@
 #include "src/ui/input/lib/hid-input-report/test/test.h"
 
 namespace {
+
+// clang-format off
 
 // This is a keyboard with multiple keys of the same usage.
 const uint8_t double_keys_keyboard[] = {
@@ -86,6 +87,8 @@ const uint8_t full_keys_keyboard[] = {
     0x81, 0x00,        //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
     0xC0,              // End Collection
 };
+
+// clang-format on
 
 }  // namespace
 

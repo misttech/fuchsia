@@ -70,6 +70,7 @@ test("virtio-input-test") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
+    "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/async_patterns/testing/cpp",

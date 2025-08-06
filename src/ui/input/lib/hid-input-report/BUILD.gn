@@ -16,9 +16,9 @@ source_set("hid-input-report") {
     "touch.cc",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.input:fuchsia.input_hlcpp",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
-    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_hlcpp",
+    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_cpp",
     "//src/ui/input/lib/hid",
     "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/fbl",
@@ -49,9 +49,9 @@ test("lib-hid-input-report-test") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.input:fuchsia.input_hlcpp",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
-    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_hlcpp",
+    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_cpp",
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
     "//src/ui/input/lib/hid",

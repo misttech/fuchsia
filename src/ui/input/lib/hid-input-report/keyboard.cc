@@ -18,16 +18,16 @@ namespace hid_input_report {
 
 namespace {
 
-std::optional<fuchsia::input::Key> hid_key_to_fuchsia_key3(hid::Usage usage) {
+std::optional<fuchsia_input::Key> hid_key_to_fuchsia_key3(hid::Usage usage) {
   if (usage.page == hid::usage::Page::kKeyboardKeypad) {
     auto code = (((uint8_t)(hid::usage::Page::kKeyboardKeypad)) & 0xFF) << 16 | (usage.usage);
-    if (code == ((uint32_t)fuchsia::input::Key::KEYPAD_EQUALS) ||
-        code == ((uint32_t)fuchsia::input::Key::MENU) ||
-        (code >= ((uint32_t)fuchsia::input::Key::A) &&
-         code <= ((uint32_t)fuchsia::input::Key::NON_US_BACKSLASH)) ||
-        (code >= ((uint32_t)fuchsia::input::Key::LEFT_CTRL) &&
-         (code <= ((uint32_t)fuchsia::input::Key::RIGHT_META)))) {
-      return static_cast<fuchsia::input::Key>(code);
+    if (code == ((uint32_t)fuchsia_input::Key::kKeypadEquals) ||
+        code == ((uint32_t)fuchsia_input::Key::kMenu) ||
+        (code >= ((uint32_t)fuchsia_input::Key::kA) &&
+         code <= ((uint32_t)fuchsia_input::Key::kNonUsBackslash)) ||
+        (code >= ((uint32_t)fuchsia_input::Key::kLeftCtrl) &&
+         (code <= ((uint32_t)fuchsia_input::Key::kRightMeta)))) {
+      return static_cast<fuchsia_input::Key>(code);
     }
   }
   return {};
@@ -35,7 +35,7 @@ std::optional<fuchsia::input::Key> hid_key_to_fuchsia_key3(hid::Usage usage) {
 
 void InsertFuchsiaKey3(uint32_t hid_usage, uint32_t hid_key,
                        std::set<fuchsia_input::wire::Key>* key_values) {
-  std::optional<fuchsia::input::Key> fuchsia_key3 =
+  std::optional<fuchsia_input::Key> fuchsia_key3 =
       hid_key_to_fuchsia_key3(hid::USAGE(hid_usage, hid_key));
   if (fuchsia_key3) {
     // Cast the key enum from HLCPP to LLCPP. We are guaranteed that this will be
