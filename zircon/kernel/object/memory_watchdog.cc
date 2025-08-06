@@ -246,10 +246,10 @@ void MemoryWatchdog::WorkerThread() {
     if (gBootOptions->oom_trigger_on_alloc_failure && PmmNode::has_alloc_failed_no_mem()) {
       PmmNode::AllocFailure first_failure = Pmm::Node().GetFirstAllocFailure();
       printf(
-          "memory-pressure: failed one or more allocations (first reported type: %s size: %zu)"
-          ", escalating to oom...(free memory is %zuMB)\n",
+          "memory-pressure: failed one or more allocations "
+          "(first reported type: %s, size: %zu, free memory: %zuMB), escalating to oom...\n",
           PmmNode::AllocFailure::TypeToString(first_failure.type), first_failure.size,
-          pmm_count_free_pages() * PAGE_SIZE / MB);
+          first_failure.free_count * PAGE_SIZE / MB);
       mem_event_idx_ = PressureLevel::kOutOfMemory;
     }
 

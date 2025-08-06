@@ -1189,6 +1189,7 @@ void PmmNode::ReportAllocFailureLocked(AllocFailure failure) {
   const bool first_time = !alloc_failed_no_mem.exchange(true, ktl::memory_order_relaxed);
   if (first_time) {
     first_alloc_failure_ = failure;
+    first_alloc_failure_.free_count = free_count_;
   }
   if (first_time && mem_signal_) {
     SignalFreeMemoryChangeLocked();

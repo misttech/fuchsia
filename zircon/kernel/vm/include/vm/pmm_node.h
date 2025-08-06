@@ -262,6 +262,7 @@ class PmmNode {
     static const char* TypeToString(Type type);
     Type type = Type::None;
     size_t size = 0;
+    uint64_t free_count = 0;
   };
   void ReportAllocFailure(AllocFailure failure) TA_EXCL(lock_);
 
