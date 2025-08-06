@@ -14,7 +14,6 @@ rustc_library("fidl_message") {
   visibility = [
     ":*",
     "//src/developer/ffx/daemon/*",
-    "//src/developer/ffx/tools/usb_driver/*",
     "//src/developer/remote-control/*",
     "//src/lib/fdomain/*",
     "//src/lib/fidl/rust/external_tests:*",
