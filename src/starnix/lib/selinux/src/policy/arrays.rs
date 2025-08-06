@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::parser::{PolicyCursor, PolicyData};
+use super::parser::PolicyCursor;
 use super::view::ArrayView;
 use super::{
     array_type, array_type_validate_deref_both, AccessVector, Array, ClassId, Counted, Parse,
@@ -637,10 +637,10 @@ impl Validate for [RoleAllow] {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(super) enum FilenameTransitionList {
-    PolicyVersionGeq33(SimpleArrayView<FilenameTransition>),
-    PolicyVersionLeq32(SimpleArrayView<DeprecatedFilenameTransition>),
+    PolicyVersionGeq33(SimpleArray<FilenameTransitions>),
+    PolicyVersionLeq32(SimpleArray<DeprecatedFilenameTransitions>),
 }
 
 impl Validate for FilenameTransitionList {
@@ -658,7 +658,9 @@ impl Validate for FilenameTransitionList {
     }
 }
 
-impl Validate for SimpleArrayView<FilenameTransition> {
+pub(super) type FilenameTransitions = Vec<FilenameTransition>;
+
+impl Validate for FilenameTransitions {
     type Error = anyhow::Error;
 
     /// TODO: Validate sequence of [`FilenameTransition`] objects.
@@ -667,17 +669,17 @@ impl Validate for SimpleArrayView<FilenameTransition> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(super) struct FilenameTransition {
-    filename: SimpleArrayView<u8>,
+    filename: SimpleArray<Vec<u8>>,
     transition_type: le::U32,
     transition_class: le::U32,
-    items: SimpleArrayView<FilenameTransitionItem>,
+    items: SimpleArray<FilenameTransitionItems>,
 }
 
 impl FilenameTransition {
-    pub(super) fn name_bytes<'a>(&self, data: &'a PolicyData) -> &'a [u8] {
-        &self.filename.data().slice(data)
+    pub(super) fn name_bytes(&self) -> &[u8] {
+        &self.filename.data
     }
 
     pub(super) fn target_type(&self) -> TypeId {
@@ -688,25 +690,22 @@ impl FilenameTransition {
         ClassId(NonZeroU32::new(self.transition_class.get()).unwrap())
     }
 
-    pub(super) fn outputs(
-        &self,
-        data: &PolicyData,
-    ) -> impl Iterator<Item = FilenameTransitionItem> {
-        self.items.data().iter(data)
+    pub(super) fn outputs(&self) -> &[FilenameTransitionItem] {
+        &self.items.data
     }
 }
 
 impl Parse for FilenameTransition
 where
-    SimpleArrayView<u8>: Parse,
-    SimpleArrayView<FilenameTransitionItem>: Parse,
+    SimpleArray<Vec<u8>>: Parse,
+    SimpleArray<FilenameTransitionItems>: Parse,
 {
     type Error = anyhow::Error;
 
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let (filename, tail) = SimpleArrayView::<u8>::parse(tail)
+        let (filename, tail) = SimpleArray::<Vec<u8>>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing filename for filename transition")?;
 
@@ -726,13 +725,15 @@ where
                 num_bytes,
             })?;
 
-        let (items, tail) = SimpleArrayView::<FilenameTransitionItem>::parse(tail)
+        let (items, tail) = SimpleArray::<FilenameTransitionItems>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing items for filename transition")?;
 
         Ok((Self { filename, transition_type, transition_class, items }, tail))
     }
 }
+
+pub(super) type FilenameTransitionItems = Vec<FilenameTransitionItem>;
 
 #[derive(Debug, PartialEq)]
 pub(super) struct FilenameTransitionItem {
@@ -775,7 +776,9 @@ where
     }
 }
 
-impl Validate for SimpleArrayView<DeprecatedFilenameTransition> {
+pub(super) type DeprecatedFilenameTransitions = Vec<DeprecatedFilenameTransition>;
+
+impl Validate for DeprecatedFilenameTransitions {
     type Error = anyhow::Error;
 
     /// TODO: Validate sequence of [`DeprecatedFilenameTransition`] objects.
@@ -784,15 +787,15 @@ impl Validate for SimpleArrayView<DeprecatedFilenameTransition> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(super) struct DeprecatedFilenameTransition {
-    filename: SimpleArrayView<u8>,
+    filename: SimpleArray<Vec<u8>>,
     metadata: DeprecatedFilenameTransitionMetadata,
 }
 
 impl DeprecatedFilenameTransition {
-    pub(super) fn name_bytes<'a>(&self, data: &'a PolicyData) -> &'a [u8] {
-        &self.filename.data().slice(data)
+    pub(super) fn name_bytes(&self) -> &[u8] {
+        &self.filename.data
     }
 
     pub(super) fn source_type(&self) -> TypeId {
@@ -814,14 +817,14 @@ impl DeprecatedFilenameTransition {
 
 impl Parse for DeprecatedFilenameTransition
 where
-    SimpleArrayView<u8>: Parse,
+    SimpleArray<Vec<u8>>: Parse,
 {
     type Error = anyhow::Error;
 
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let (filename, tail) = SimpleArrayView::<u8>::parse(tail)
+        let (filename, tail) = SimpleArray::<Vec<u8>>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing filename for deprecated filename transition")?;
 
