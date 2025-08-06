@@ -903,6 +903,21 @@ DEPRECATED - This option is scheduled to be removed in an upcoming release.  Do 
 critical dependencies on it.
 )""")
 
+DEFINE_OPTION("kernel.scheduler.enable-new-wakeup-accounting", bool, enable_new_wakeup_accounting,
+              {false},
+              R"""(
+This option disables emulation of the previous scheduling behavior that makes a
+newly woken thread less likely to preempt a currently running thread. While the
+previous behavior is less fair to newly woken threads than the improved
+behavior, emulating the previous behavior reduces the likelihood of certain
+types of latent race conditions causing problems in the system. These race
+conditions need to be fixed before fully adopting the improved wakeup behavior
+on all products.
+
+TODO(https://fxbug.dev/322207536): Stop resetting start and finish times when
+unblocking once we solve races higher in the stack.
+)""")
+
 DEFINE_OPTION("kernel.ubsan.action", CheckFailAction, ubsan_action, {CheckFailAction::kPanic}, R"""(
 When the kernel is instrumented with UndefinedBehaviorSanitizer, problems
 it detects are reported on the serial console.  These can be fatal or not.

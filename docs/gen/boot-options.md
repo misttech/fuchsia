@@ -1043,6 +1043,21 @@ this option trades off improved performance in favor of reduced power consumptio
 DEPRECATED - This option is scheduled to be removed in an upcoming release.  Do not take any
 critical dependencies on it.
 
+### kernel.scheduler.enable-new-wakeup-accounting=\<bool>
+
+**Default:** `false`
+
+This option disables emulation of the previous scheduling behavior that makes a
+newly woken thread less likely to preempt a currently running thread. While the
+previous behavior is less fair to newly woken threads than the improved
+behavior, emulating the previous behavior reduces the likelihood of certain
+types of latent race conditions causing problems in the system. These race
+conditions need to be fixed before fully adopting the improved wakeup behavior
+on all products.
+
+TODO(https://fxbug.dev/322207536): Stop resetting start and finish times when
+unblocking once we solve races higher in the stack.
+
 ### kernel.ubsan.action=\[oops | panic\]
 
 **Default:** `panic`

@@ -48,6 +48,12 @@
 #include <object/thread_dispatcher.h>
 #include <vm/vm.h>
 
+#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
+// TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
+// when unblocking once we solve races higher in the stack.
+#include <lib/boot-options/boot-options.h>
+#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
+
 #include <ktl/enforce.h>
 
 using ffl::Round;
@@ -2689,7 +2695,7 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
       // period.
       // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
       // when unblocking once we solve races higher in the stack.
-      if (placement == Placement::Insertion) {
+      if (!gBootOptions->enable_new_wakeup_accounting && placement == Placement::Insertion) {
         const SchedDuration period = state.effective_period();
         state.start_time_ = now;
         state.finish_time_ = now + period;
@@ -2700,7 +2706,7 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
         // we've adjusted the fair bandwidth.
         // TODO(https://fxbug.dev/322207536): Stop resetting start and finish
         // times when unblocking once we solve races higher in the stack.
-        if (placement == Placement::Insertion) {
+        if (!gBootOptions->enable_new_wakeup_accounting && placement == Placement::Insertion) {
           const SchedDuration period = state.effective_period();
           state.start_time_ = now;
           state.finish_time_ = now + period;
