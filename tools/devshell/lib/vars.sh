@@ -711,22 +711,37 @@ function multi-device-fail {
   exit 1
 }
 
-function get-fuchsia-device-addr {
-  fx-config-read
-  local device
-  device="$(get-device-name)" || exit $?
+function remove-address-brackets-and-port {
+  local device="$1"
+
+  # Remove any trailing port (e.g. :22, :34567) from the address
+  local regex='(.*):[0-9]+$'
+  [[ "$device" =~ $regex ]] && device="${BASH_REMATCH[1]}"
 
   # Treat IPv4 addresses in the device name as an already resolved
   # device address.
   if _looks_like_ipv4 "${device}"; then
     echo "${device}"
-    return
+    return 0
   fi
   if _looks_like_ipv6 "${device}"; then
     # remove brackets
     device="${device%]}"
     device="${device#[}"
     echo "${device}"
+    return 0
+  fi
+  return 1
+}
+
+function get-fuchsia-device-addr {
+  fx-config-read
+  local device
+  device="$(get-device-name)" || exit $?
+
+  addr=$(remove-address-brackets-and-port "${device}")
+  if [ $? -eq 0 ]; then
+    echo "${addr}"
     return
   fi
 
@@ -741,8 +756,11 @@ function get-fuchsia-device-addr {
         if [[ "$(echo "${output}" | wc -l)" -gt "1" ]]; then
           multi-device-fail
         fi
-        echo "${output}" ;;
-     *) fx-target-finder-resolve "$device" ;;
+        addr=$(remove-address-brackets-and-port "${output}")
+        echo "${addr}" ;;
+     *) output=$(fx-target-finder-resolve "$device")
+        addr=$(remove-address-brackets-and-port  "${output}")
+        echo "${addr}" ;;
   esac
 }
 

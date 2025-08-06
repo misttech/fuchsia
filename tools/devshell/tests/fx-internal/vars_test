@@ -467,4 +467,36 @@ TEST_json_config() {
   BT_EXPECT_FILE_CONTAINS "${json_test_file}" '{"test":{"something":"else"}}'
 }
 
+TEST_device_addr() {
+  local addrs=(
+    # default-target address-with-port address-without-port
+    "foo 1.2.3.4" "1.2.3.4"
+    "foo 1.2.3.4:5678" "1.2.3.4"
+    "foo fe80::4607:bff:fe68:41c9%zircon1-4" "fe80::4607:bff:fe68:41c9%zircon1-4"
+    "foo [fe80::4607:bff:fe68:41c9%zircon1-4]:1234" "fe80::4607:bff:fe68:41c9%zircon1-4"
+    "1.2.3.4" "1.2.3.4" "1.2.3.4"
+    "1.2.3.4:5678" "1.2.3.4:5678" "1.2.3.4"
+    "fe80::4607:bff:fe68:41c9%zircon1-4" "fe80::4607:bff:fe68:41c9%zircon1-4" "fe80::4607:bff:fe68:41c9%zircon1-4"
+    "[fe80::4607:bff:fe68:41c9%zircon1-4]:1234" "[fe80::4607:bff:fe68:41c9%zircon1-4]:1234" "fe80::4607:bff:fe68:41c9%zircon1-4"
+  )
+
+  echo "${addrs[@]}" | xargs -n 3 |while read default_target addr_port addr; do
+    cat >"${ffx}.mock_side_effects" <<INPUT
+      echo "\$@" >> /tmp/xxx
+      case "\$@" in
+        *"target default get")
+          echo $default_target
+        ;;
+        *"target list --format a"*)
+          echo $addr_port
+        ;;
+        *)
+          exit 1
+        ;;
+      esac
+INPUT
+    BT_ASSERT_EQ "$(get-fuchsia-device-addr)" $addr
+  done
+}
+
 BT_RUN_TESTS "$@"
