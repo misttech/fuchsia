@@ -173,6 +173,8 @@ static_library("testing") {
     "testing/mock-engine-fidl.h",
     "testing/mock-engine-listener.cc",
     "testing/mock-engine-listener.h",
+    "testing/mock-image-lifecycle-listener.cc",
+    "testing/mock-image-lifecycle-listener.h",
   ]
   deps = [
     "//src/devices/testing/mock-ddk",

@@ -4,75 +4,79 @@
 
 #include "src/graphics/display/drivers/coordinator/waiting-image-list.h"
 
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
-
-#include <memory>
+#include <lib/driver/testing/cpp/driver_runtime.h>
+#include <lib/driver/testing/cpp/scoped_global_logger.h>
+#include <lib/fdf/cpp/dispatcher.h>
+#include <lib/fit/defer.h>
 
 #include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
 
-#include "src/graphics/display/drivers/coordinator/testing/base.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/image-id.h"
+#include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
+#include "src/graphics/display/lib/api-types/cpp/image-tiling-type.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace display_coordinator {
 
-// Inherits from `TestBase` because otherwise it would be diffficult to implement `CreateImage()`.
-class WaitingImageListTest : public TestBase {
+namespace {
+
+class StubImageLifecycleListener : public Image::LifecycleListener {
  public:
-  void SetUp() override {
-    TestBase::SetUp();
-    loop_ = std::make_unique<async::Loop>(&kAsyncLoopConfigAttachToCurrentThread);
+  using ImageWillBeDestroyedChecker = fit::function<void(display::DriverImageId)>;
 
-    fences_ = std::make_unique<FenceCollection>(
-        loop_->dispatcher(),
-        [this](FenceReference* fence_ref) { waiting_images_->MarkFenceReady(fence_ref); });
+  StubImageLifecycleListener() = default;
+  ~StubImageLifecycleListener() = default;
 
-    waiting_images_ = std::make_unique<WaitingImageList>();
-  }
+  StubImageLifecycleListener(const StubImageLifecycleListener&) = delete;
+  StubImageLifecycleListener& operator=(const StubImageLifecycleListener&) = delete;
 
-  void TearDown() override {
-    waiting_images_.reset();
-    fences_.reset();
-    loop_.reset();
+  // ImageLifecycleListener:
+  void ImageWillBeDestroyed(display::DriverImageId driver_image_id) override {}
+};
 
-    TestBase::TearDown();
-  }
+class WaitingImageListTest : public ::testing::Test {
+ public:
+  WaitingImageListTest()
+      : fences_(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                [this](FenceReference* fence_ref) { waiting_images_.MarkFenceReady(fence_ref); }) {}
+
+  ~WaitingImageListTest() override = default;
 
   fbl::RefPtr<Image> CreateImage() {
-    zx::result<display::DriverImageId> import_result =
-        FakeDisplayEngine().ImportVmoImageForTesting(zx::vmo(0), 0);
-    EXPECT_OK(import_result);
-    EXPECT_NE(import_result.value(), display::kInvalidDriverImageId);
-
-    static constexpr uint32_t kDisplayWidth = 1024;
-    static constexpr uint32_t kDisplayHeight = 600;
-    static constexpr display::ImageMetadata image_metadata({
-        .width = kDisplayWidth,
-        .height = kDisplayHeight,
+    static constexpr ClientId kClientId(1);
+    static constexpr display::ImageMetadata kImageMetadata({
+        .width = 100,
+        .height = 200,
         .tiling_type = display::ImageTilingType::kLinear,
     });
 
     display::ImageId image_id = next_image_id_;
     ++next_image_id_;
 
-    fbl::RefPtr<Image> image =
-        fbl::AdoptRef(new Image(CoordinatorController(), image_metadata, image_id,
-                                import_result.value(), nullptr, ClientId(1)));
+    display::DriverImageId driver_image_id = next_driver_image_id_;
+    ++next_driver_image_id_;
+
+    fbl::RefPtr<Image> image = fbl::AdoptRef(new Image(
+        &image_lifecycle_listener_, kImageMetadata, image_id, driver_image_id, nullptr, kClientId));
     return image;
   }
 
-  async::Loop& loop() { return *loop_; }
-  WaitingImageList& waiting_images() { return *waiting_images_; }
-  FenceCollection& fences() { return *fences_; }
+  WaitingImageList& waiting_images() { return waiting_images_; }
+  FenceCollection& fences() { return fences_; }
 
- private:
-  std::unique_ptr<async::Loop> loop_;
-  std::unique_ptr<FenceCollection> fences_;
-  std::unique_ptr<WaitingImageList> waiting_images_;
-  display::ImageId next_image_id_ = display::ImageId(1);
+ protected:
+  fdf_testing::ScopedGlobalLogger logger_;
+  fdf_testing::DriverRuntime driver_runtime_;
+
+  display::ImageId next_image_id_ = display::ImageId(1000);
+  display::DriverImageId next_driver_image_id_ = display::DriverImageId(2000);
+
+  StubImageLifecycleListener image_lifecycle_listener_;
+  WaitingImageList waiting_images_;
+
+  FenceCollection fences_;
 };
 
 TEST_F(WaitingImageListTest, AddTooManyImages) {
@@ -275,7 +279,7 @@ TEST_F(WaitingImageListTest, ReadyImages) {
   // Signal third fence. Because the third image is the oldest (since the first/second images were
   // retired, then re-added), it will be the only one popped/removed.
   fences().GetFence(kWaitFenceId_3)->Signal();
-  loop().RunUntilIdle();
+  driver_runtime_.RunUntilIdle();
   EXPECT_EQ(waiting_images().PopNewestReadyImage(), image3);
   {
     auto remaining = waiting_images().GetFullContentsForTesting();
@@ -288,7 +292,7 @@ TEST_F(WaitingImageListTest, ReadyImages) {
   // Signal the second fence. Because the second image is the newest (even newer than the first
   // image), the first image will be retired and the second image will be popped.
   fences().GetFence(kWaitFenceId_2)->Signal();
-  loop().RunUntilIdle();
+  driver_runtime_.RunUntilIdle();
   EXPECT_EQ(waiting_images().PopNewestReadyImage(), image2);
   EXPECT_EQ(waiting_images().PopNewestReadyImage(), nullptr);
   EXPECT_EQ(waiting_images().size(), 0U);
@@ -328,7 +332,7 @@ TEST_F(WaitingImageListTest, AddSameImage) {
 
   // Signal the oldest fence.
   fences().GetFence(kWaitFenceId_1)->Signal();
-  loop().RunUntilIdle();
+  driver_runtime_.RunUntilIdle();
   EXPECT_EQ(waiting_images().size(), 3U);
   EXPECT_EQ(waiting_images().PopNewestReadyImage(), image);
   EXPECT_EQ(waiting_images().PopNewestReadyImage(), nullptr);
@@ -338,7 +342,7 @@ TEST_F(WaitingImageListTest, AddSameImage) {
   // with the 2nd fence because although unsignaled, it is older than the entry associated with the
   // 3rd fence.
   fences().GetFence(kWaitFenceId_3)->Signal();
-  loop().RunUntilIdle();
+  driver_runtime_.RunUntilIdle();
   EXPECT_EQ(waiting_images().size(), 2U);
   EXPECT_EQ(waiting_images().PopNewestReadyImage(), image);
   EXPECT_EQ(waiting_images().PopNewestReadyImage(), nullptr);
@@ -375,7 +379,7 @@ TEST_F(WaitingImageListTest, CannotReuseBusyFence) {
 
   // Signaling the fence is one way to make it available for use.
   fences().GetFence(kWaitFenceId)->Signal();
-  loop().RunUntilIdle();
+  driver_runtime_.RunUntilIdle();
   EXPECT_OK(waiting_images().PushImage(image2, fences().GetFence(kWaitFenceId)));
   {
     auto remaining = waiting_images().GetFullContentsForTesting();
@@ -457,5 +461,7 @@ TEST_F(WaitingImageListTest, UpdateLatestClientConfigStamp) {
     EXPECT_EQ(remaining[0].image()->latest_client_config_stamp(), display::ConfigStamp(6));
   }
 }
+
+}  // namespace
 
 }  // namespace display_coordinator

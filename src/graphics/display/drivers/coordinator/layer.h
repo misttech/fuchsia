@@ -34,6 +34,7 @@ class FenceCollection;
 class Layer;
 class LayerTest;
 class Client;
+class Controller;
 
 struct LayerNode : public fbl::DoublyLinkedListable<LayerNode*> {
   Layer* layer;

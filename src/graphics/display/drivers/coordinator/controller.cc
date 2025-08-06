@@ -466,7 +466,6 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
 
       // Set the image controller config stamp so vsync knows what config the
       // image was used at.
-      AssertMtxAliasHeld(*applied_image->mtx());
       applied_image->set_latest_driver_config_stamp(driver_config_stamp);
 
       // NOTE: If changing this flow name or ID, please also do so in the
@@ -513,7 +512,7 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
                                             driver_config_stamp);
 }
 
-void Controller::ReleaseImage(display::DriverImageId driver_image_id) {
+void Controller::ImageWillBeDestroyed(display::DriverImageId driver_image_id) {
   engine_driver_client_->ReleaseImage(driver_image_id);
 }
 

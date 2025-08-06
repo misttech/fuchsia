@@ -56,7 +56,8 @@ class DisplayConfig;
 
 // Multiplexes between display controller clients and display engine drivers.
 class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
-                   public EngineListener {
+                   public EngineListener,
+                   public Image::LifecycleListener {
  public:
   // Factory method for production use.
   // Creates and initializes a Controller instance.
@@ -111,7 +112,9 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   void ApplyConfig(DisplayConfig& display_config, display::ConfigStamp client_config_stamp,
                    ClientId client_id) __TA_EXCLUDES(mtx());
 
-  void ReleaseImage(display::DriverImageId driver_image_id);
+  // ImageLifecycleListener:
+  void ImageWillBeDestroyed(display::DriverImageId driver_image_id) override;
+
   void ReleaseCaptureImage(display::DriverCaptureImageId driver_capture_image_id);
 
   // The display modes are guaranteed to be valid as long as the display with

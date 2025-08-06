@@ -163,7 +163,7 @@ zx_status_t Client::ImportImageForDisplay(const display::ImageMetadata& image_me
 
   const display::DriverImageId driver_image_id = result.value();
   auto release_image =
-      fit::defer([this, driver_image_id]() { controller_.ReleaseImage(driver_image_id); });
+      fit::defer([this, driver_image_id]() { controller_.ImageWillBeDestroyed(driver_image_id); });
 
   fbl::AllocChecker alloc_checker;
   fbl::RefPtr<Image> image = fbl::AdoptRef(new (&alloc_checker) Image(

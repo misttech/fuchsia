@@ -25,9 +25,12 @@
 
 namespace display_coordinator {
 
-class Controller;
+class Image;
 
-// An Image is a reference to an imported sysmem pixel buffer.
+// Manages the lifetime of an imported sysmem pixel buffer.
+//
+// Instances are not thread-safe. Concurrent access must be synchronized
+// externally.
 class Image : public fbl::RefCounted<Image>,
               public IdMappable<fbl::RefPtr<Image>, display::ImageId> {
  private:
@@ -41,6 +44,24 @@ class Image : public fbl::RefCounted<Image>,
       DoublyLinkedListTraits<DoublyLinkedListPointer, fbl::DefaultObjectTag>;
 
  public:
+  class LifecycleListener {
+   public:
+    LifecycleListener() = default;
+
+    // LifecycleListener pointers must remain stable.
+    LifecycleListener(const LifecycleListener&) = delete;
+    LifecycleListener(LifecycleListener&&) = delete;
+    LifecycleListener& operator=(const LifecycleListener&) = default;
+    LifecycleListener& operator=(LifecycleListener&&) = delete;
+
+    // Called when the image is about to be destroyed.
+    virtual void ImageWillBeDestroyed(display::DriverImageId driver_image_id) = 0;
+
+   protected:
+    // LifecycleListener is not intended to be an owning pointer type.
+    ~LifecycleListener() = default;
+  };
+
   // This defines the specific type of fbl::DoublyLinkedList that an Image can
   // be placed into. Any intrusive container that can hold an Image must be of
   // type Image::DoublyLinkedList.
@@ -50,8 +71,8 @@ class Image : public fbl::RefCounted<Image>,
   using DoublyLinkedList = fbl::DoublyLinkedList<DoublyLinkedListPointer, fbl::DefaultObjectTag,
                                                  fbl::SizeOrder::N, DefaultDoublyLinkedListTraits>;
 
-  // `controller` must be non-null, and must outlive the Image.
-  Image(Controller* controller, const display::ImageMetadata& metadata, display::ImageId id,
+  // `lifecycle_listener` must be non-null, and must outlive the Image.
+  Image(LifecycleListener* listener, const display::ImageMetadata& metadata, display::ImageId id,
         display::DriverImageId driver_id, inspect::Node* parent_node, ClientId client_id);
 
   Image(const Image&) = delete;
@@ -87,17 +108,14 @@ class Image : public fbl::RefCounted<Image>,
   // images.
   void MarkDisposed() { disposed_ = true; }
 
-  // Aliases controller_.mtx() for the purpose of thread-safety analysis.
-  fbl::Mutex* mtx() const;
-
   // Checks if the Image is in a DoublyLinkedList container.
   // TODO(https://fxbug.dev/317914671): investigate whether storing Images in doubly-linked lists
   //                                    continues to be desirable.
-  bool InDoublyLinkedList() const __TA_REQUIRES(mtx());
+  bool InDoublyLinkedList() const;
 
   // Removes the Image from the DoublyLinkedList. The Image must be in a
   // DoublyLinkedList when this is called.
-  DoublyLinkedListPointer RemoveFromDoublyLinkedList() __TA_REQUIRES(mtx());
+  DoublyLinkedListPointer RemoveFromDoublyLinkedList();
 
  private:
   // This defines the node trait used by the fbl::DoublyLinkedList that an Image
@@ -122,12 +140,12 @@ class Image : public fbl::RefCounted<Image>,
   // controller mutex.
   fbl::DoublyLinkedListNodeState<DoublyLinkedListPointer,
                                  fbl::NodeOptions::AllowRemoveFromContainer>
-      doubly_linked_list_node_state_ __TA_GUARDED(mtx());
+      doubly_linked_list_node_state_;
 
   const display::DriverImageId driver_id_;
   const display::ImageMetadata metadata_;
 
-  Controller& controller_;
+  LifecycleListener& lifecycle_listener_;
   const ClientId client_id_;
 
   // Stamp of the latest applied display configuration that uses this image.
