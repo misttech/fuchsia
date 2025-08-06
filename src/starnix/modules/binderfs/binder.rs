@@ -3358,6 +3358,7 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
             self.remote_ioctl.vmo.write(bytes, offset).map_err(|_| errno!(ENOENT))?;
             return Ok(bytes.len());
         }
+        self.remote_ioctl.ioctl_writes.set(ioctl_writes);
         // Otherwise use ProcessAccessor to write to the process.
         if bytes.len() <= fbinder::MAX_WRITE_BYTES as usize {
             self.remote_resource_accessor.process_accessor.write_bytes(
@@ -9719,6 +9720,10 @@ pub mod tests {
                     .write_memory((vector.as_ptr() as u64).into(), &other_vector[..small_size])
                     .expect("write_memory");
             }
+            assert_eq!(
+                remote_ioctl.ioctl_writes.take().len(),
+                fbinder::MAX_IOCTL_WRITE_COUNT as usize
+            );
             assert_eq!(vector[1], 1);
             assert_eq!(vector[..small_size], other_vector[..small_size]);
 
