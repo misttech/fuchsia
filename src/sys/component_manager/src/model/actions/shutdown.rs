@@ -4,7 +4,7 @@
 
 use crate::model::actions::{Action, ActionKey, ActionsManager};
 use crate::model::component::instance::{InstanceState, ResolvedInstanceState};
-use crate::model::component::ComponentInstance;
+use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use async_trait::async_trait;
 use cm_rust::NativeIntoFidl;
 use errors::{ActionError, ShutdownActionError};
@@ -99,7 +99,7 @@ struct ShutdownJob {
     /// A reference-counted pointer to the component instance being shut down.
     instance: Arc<ComponentInstance>,
     /// A map of the live children of the `instance`.
-    children: HashMap<ChildName, Arc<ComponentInstance>>,
+    children: HashMap<ChildName, WeakComponentInstance>,
     /// Dynamic offers from a parent to a collection that this instance may be a part of.
     dynamic_offers: Vec<fdecl::Offer>,
 }
@@ -119,7 +119,11 @@ impl ShutdownJob {
         let dynamic_offers: Vec<fdecl::Offer> =
             state.dynamic_offers.iter().map(|g| g.clone().native_into_fidl()).collect();
 
-        let children = state.children.clone();
+        let children = state
+            .children
+            .iter()
+            .map(|(k, v)| (k.clone(), WeakComponentInstance::new(v)))
+            .collect();
 
         let new_job = ShutdownJob {
             shutdown_type,
@@ -155,10 +159,14 @@ impl ShutdownJob {
                         .map_err(|err| ShutdownActionError::InvalidChildName { err })?;
 
                     let child_instance_res = self.children.get(moniker);
-                    if child_instance_res.is_none() {
+                    let Some(child_instance) = child_instance_res else {
                         continue;
+                    };
+                    let upgraded_instance_result = child_instance.upgrade();
+                    match upgraded_instance_result {
+                        Ok(upgraded_instance) => upgraded_instance,
+                        Err(_) => continue,
                     }
-                    child_instance_res.unwrap().clone()
                 }
                 _ => self.instance.clone(),
             };
