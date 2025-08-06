@@ -15,6 +15,7 @@ fidl("fuchsia.ui.composition") {
     "overview.fidl",
     "screen_capture.fidl",
     "screenshot.fidl",
+    "trusted_flatland_factory.fidl",
   ]
 
   public_deps = [

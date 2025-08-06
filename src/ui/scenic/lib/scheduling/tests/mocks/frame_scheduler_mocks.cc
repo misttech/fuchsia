@@ -28,9 +28,10 @@ void MockFrameScheduler::SetRenderContinuously(bool render_continuously) {
 }
 
 void MockFrameScheduler::ScheduleUpdateForSession(zx::time presentation_time,
-                                                  SchedulingIdPair id_pair, bool squashable) {
+                                                  SchedulingIdPair id_pair, bool squashable,
+                                                  bool schedule_asap) {
   if (schedule_update_for_session_callback_) {
-    schedule_update_for_session_callback_(presentation_time, id_pair, squashable);
+    schedule_update_for_session_callback_(presentation_time, id_pair, squashable, schedule_asap);
   }
 }
 

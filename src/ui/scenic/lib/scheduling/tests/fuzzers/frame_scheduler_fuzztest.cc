@@ -63,9 +63,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* Data, size_t Size) {
       });
 
   const bool squashable = fuzzed_data.ConsumeIntegral<bool>();
+  const bool schedule_asap = fuzzed_data.ConsumeIntegral<bool>();
 
   const SessionId client_id = 5;
-  frame_scheduler.ScheduleUpdateForSession(schedule_present_time, {client_id, 1}, squashable);
+  frame_scheduler.ScheduleUpdateForSession(schedule_present_time, {client_id, 1}, squashable,
+                                           schedule_asap);
 
   test_loop.RunUntilIdle();
 

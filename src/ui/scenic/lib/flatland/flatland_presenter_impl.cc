@@ -50,20 +50,23 @@ std::vector<zx::event> FlatlandPresenterImpl::TakeReleaseFences() {
 void FlatlandPresenterImpl::ScheduleUpdateForSession(zx::time requested_presentation_time,
                                                      scheduling::SchedulingIdPair id_pair,
                                                      bool unsquashable,
-                                                     std::vector<zx::event> release_fences) {
-  // TODO(https://fxbug.dev/42139440): The FrameScheduler is not thread-safe, but a lock is not sufficient
-  // since GFX sessions may access the FrameScheduler without passing through this object. Post a
-  // task to the main thread, which is where GFX runs, to account for thread safety.
-  async::PostTask(
-      main_dispatcher_, [thiz = shared_from_this(), requested_presentation_time, id_pair,
-                         unsquashable, release_fences = std::move(release_fences)]() mutable {
-        TRACE_DURATION("gfx", "FlatlandPresenterImpl::ScheduleUpdateForSession[task]");
-        FX_DCHECK(thiz->release_fences_.find(id_pair) == thiz->release_fences_.end());
-        thiz->release_fences_.emplace(id_pair, std::move(release_fences));
-        thiz->frame_scheduler_.RegisterPresent(id_pair.session_id, {}, id_pair.present_id);
-        thiz->frame_scheduler_.ScheduleUpdateForSession(requested_presentation_time, id_pair,
-                                                        !unsquashable);
-      });
+                                                     std::vector<zx::event> release_fences,
+                                                     bool schedule_asap) {
+  // TODO(https://fxbug.dev/42139440): The FrameScheduler is not thread-safe, but a lock is not
+  // sufficient since GFX sessions may access the FrameScheduler without passing through this
+  // object. Post a task to the main thread, which is where GFX runs, to account for thread safety.
+  async::PostTask(main_dispatcher_,
+                  [thiz = shared_from_this(), requested_presentation_time, id_pair, unsquashable,
+                   release_fences = std::move(release_fences), schedule_asap]() mutable {
+                    TRACE_DURATION("gfx", "FlatlandPresenterImpl::ScheduleUpdateForSession[task]");
+                    FX_DCHECK(thiz->release_fences_.find(id_pair) == thiz->release_fences_.end());
+                    thiz->release_fences_.emplace(id_pair, std::move(release_fences));
+                    thiz->frame_scheduler_.RegisterPresent(id_pair.session_id, {},
+                                                           id_pair.present_id);
+                    thiz->frame_scheduler_.ScheduleUpdateForSession(
+                        schedule_asap ? zx::time(0) : requested_presentation_time, id_pair,
+                        !unsquashable, schedule_asap);
+                  });
 }
 
 std::vector<scheduling::FuturePresentationInfo>
@@ -103,7 +106,7 @@ void FlatlandPresenterImpl::RemoveSession(scheduling::SessionId session_id,
     thiz->frame_scheduler_.RemoveSession(session_id);
     thiz->frame_scheduler_.RegisterPresent(session_id, {});
     thiz->frame_scheduler_.ScheduleUpdateForSession(zx::time(0), {session_id, present_id},
-                                                    /*squashable*/ true);
+                                                    /*squashable=*/true, /*schedule_asap=*/false);
   });
 }
 

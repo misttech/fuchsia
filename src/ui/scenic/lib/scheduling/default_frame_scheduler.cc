@@ -62,7 +62,7 @@ void DefaultFrameScheduler::Initialize(std::shared_ptr<const VsyncTiming> vsync_
 void DefaultFrameScheduler::SetRenderContinuously(bool render_continuously) {
   render_continuously_ = render_continuously;
   if (render_continuously_) {
-    RequestFrame(zx::time(0));
+    RequestFrame(zx::time(0), /*schedule_asap=*/false);
   }
 }
 
@@ -100,18 +100,21 @@ std::pair<zx::time, zx::time> DefaultFrameScheduler::ComputePresentationAndWakeu
   return std::make_pair(times.presentation_time, times.latch_point_time);
 }
 
-void DefaultFrameScheduler::RequestFrame(zx::time requested_presentation_time) {
+void DefaultFrameScheduler::RequestFrame(zx::time requested_presentation_time, bool schedule_asap) {
   FX_DCHECK(HaveUpdatableSessions() || render_continuously_ || !last_frame_is_presented_);
 
-  const auto [new_target_presentation_time, new_wakeup_time] =
+  auto [new_target_presentation_time, new_wakeup_time] =
       ComputePresentationAndWakeupTimesForTargetTime(requested_presentation_time);
+  if (schedule_asap) {
+    new_wakeup_time = zx::time(async_now(dispatcher_));
+  }
 
-  TRACE_DURATION("gfx", "DefaultFrameScheduler::RequestFrame", "requested presentation time",
-                 requested_presentation_time.get() / 1'000'000, "target_presentation_time",
-                 new_target_presentation_time.get() / 1'000'000, "candidate wakeup time",
-                 new_wakeup_time.get() / 1'000'000, "current wakeup time",
-                 wakeup_time_.get() / 1'000'000, "now",
-                 zx::time(async_now(dispatcher_)).get() / 1'000'000);
+  TRACE_DURATION(
+      "gfx", "DefaultFrameScheduler::RequestFrame", "requested presentation time",
+      requested_presentation_time.get() / 1'000'000, "target_presentation_time",
+      new_target_presentation_time.get() / 1'000'000, "candidate wakeup time",
+      new_wakeup_time.get() / 1'000'000, "current wakeup time", wakeup_time_.get() / 1'000'000,
+      "now", zx::time(async_now(dispatcher_)).get() / 1'000'000, "schedule_asap", schedule_asap);
 
   // Output requested presentation time in milliseconds.
   // Logging the first few frames to find common startup bugs.
@@ -132,8 +135,8 @@ void DefaultFrameScheduler::RequestFrame(zx::time requested_presentation_time) {
   if (!frame_render_task_.is_pending() || new_wakeup_time < wakeup_time_) {
     frame_render_task_.Cancel();
 
-    wakeup_time_ = new_wakeup_time;
     next_target_presentation_time_ = new_target_presentation_time;
+    wakeup_time_ = new_wakeup_time;
     frame_render_task_.PostForTime(dispatcher_, wakeup_time_);
   }
 }
@@ -144,16 +147,18 @@ void DefaultFrameScheduler::HandleNextFrameRequest() {
   if (!pending_present_requests_.empty()) {
     SessionId last_session = scheduling::kInvalidSessionId;
     zx::time next_min_time = zx::time(std::numeric_limits<zx_time_t>::max());
+    bool schedule_asap = false;
     for (const auto& [id_pair, request] : pending_present_requests_) {
       if (id_pair.session_id != last_session &&
           sessions_with_unsquashable_updates_pending_presentation_.count(id_pair.session_id) == 0) {
         last_session = id_pair.session_id;
         next_min_time = std::min(next_min_time, request.requested_presentation_time);
+        schedule_asap |= request.schedule_asap;
       }
     }
 
     if (next_min_time.get() != std::numeric_limits<zx_time_t>::max()) {
-      RequestFrame(next_min_time);
+      RequestFrame(next_min_time, /*schedule_asap=*/schedule_asap);
     }
   }
 }
@@ -162,8 +167,8 @@ void DefaultFrameScheduler::MaybeRenderFrame(async_dispatcher_t*, async::TaskBas
   const uint64_t frame_number = frame_number_;
 
   {
-    // Trace event to track the delta between the targeted wakeup_time_ and the actual wakeup time.
-    // It is used to detect delays (i.e. if this thread is blocked on the cpu). The intended
+    // Trace event to track the delta between the targeted wakeup_time_ and the actual wakeup
+    // time. It is used to detect delays (i.e. if this thread is blocked on the cpu). The intended
     // wakeup_time_ is used to track the canonical "start" of this frame at various points during
     // the frame's execution.
     const zx::duration wakeup_delta = zx::time(async_now(dispatcher_)) - wakeup_time_;
@@ -277,7 +282,8 @@ void DefaultFrameScheduler::MaybeRenderFrame(async_dispatcher_t*, async::TaskBas
 }
 
 void DefaultFrameScheduler::ScheduleUpdateForSession(zx::time requested_presentation_time,
-                                                     SchedulingIdPair id_pair, bool squashable) {
+                                                     SchedulingIdPair id_pair, bool squashable,
+                                                     bool schedule_asap) {
   FX_DCHECK(id_pair.session_id != scheduling::kInvalidSessionId);
   TRACE_DURATION("gfx", "DefaultFrameScheduler::ScheduleUpdateForSession",
                  "requested_presentation_time", requested_presentation_time.get() / 1'000'000);
@@ -306,7 +312,8 @@ void DefaultFrameScheduler::ScheduleUpdateForSession(zx::time requested_presenta
   pending_present_requests_.emplace(std::make_pair(
       id_pair, PresentRequest{.requested_presentation_time = requested_presentation_time,
                               .flow_id = flow_id,
-                              .squashable = squashable}));
+                              .squashable = squashable,
+                              .schedule_asap = schedule_asap}));
 
   HandleNextFrameRequest();
 }
@@ -350,8 +357,8 @@ std::vector<FuturePresentationInfo> DefaultFrameScheduler::GetFuturePresentation
     // Therefore what we add to last_vsync_time is the difference between now and
     // last_vsync_time, integer divided by vsync_interval, then multipled by vsync_interval.
     //
-    // Because now' is the latch_point, and latch points are monotonically increasing, we guarantee
-    // that |difference| and therefore last_vsync_time is also monotonically increasing.
+    // Because now' is the latch_point, and latch points are monotonically increasing, we
+    // guarantee that |difference| and therefore last_vsync_time is also monotonically increasing.
     zx::duration difference = request.now - request.last_vsync_time;
     uint64_t num_intervals = difference / request.vsync_interval;
     request.last_vsync_time += request.vsync_interval * num_intervals;
@@ -422,7 +429,7 @@ void DefaultFrameScheduler::HandleFramePresented(uint64_t frame_number, zx::time
   sessions_with_unsquashable_updates_pending_presentation_.clear();
 
   if (!last_frame_is_presented_ || render_continuously_) {
-    RequestFrame(zx::time(0));
+    RequestFrame(zx::time(0), /*schedule_asap=*/false);
   } else {
     // Schedule next frame if any unhandled presents are left.
     HandleNextFrameRequest();

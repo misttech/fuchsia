@@ -116,7 +116,8 @@ std::shared_ptr<Flatland> Flatland::New(
     fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
         register_touch_source,
     fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
-        register_mouse_source) {
+        register_mouse_source,
+    fuchsia_ui_composition::TrustedFlatlandConfig config) {
   // clang-format off
   auto flatland = std::shared_ptr<Flatland>(new Flatland(
       dispatcher_holder,
@@ -128,7 +129,8 @@ std::shared_ptr<Flatland> Flatland::New(
       std::move(register_view_focuser),
       std::move(register_view_ref_focused),
       std::move(register_touch_source),
-      std::move(register_mouse_source)));
+      std::move(register_mouse_source),
+      std::move(config)));
   // clang-format on
 
   // Natural FIDL bindings must be created and deleted on the same thread that it handles messages.
@@ -155,7 +157,8 @@ Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
                    fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
                        register_touch_source,
                    fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
-                       register_mouse_source)
+                       register_mouse_source,
+                   fuchsia_ui_composition::TrustedFlatlandConfig config)
     : dispatcher_holder_(std::move(dispatcher_holder)),
       session_id_(session_id),
       present2_helper_([this](fuchsia_scenic_scheduling::FramePresentedInfo info) {
@@ -181,7 +184,8 @@ Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
       register_view_focuser_(std::move(register_view_focuser)),
       register_view_ref_focused_(std::move(register_view_ref_focused)),
       register_touch_source_(std::move(register_touch_source)),
-      register_mouse_source_(std::move(register_mouse_source)) {
+      register_mouse_source_(std::move(register_mouse_source)),
+      config_(std::move(config)) {
   FX_DCHECK(flatland_presenter_);
 
   FX_LOGS(INFO) << "Flatland NEW session_id=" << session_id_;
@@ -508,7 +512,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
   // Flatland is non-movable and FenceQueue does not fire closures after destruction.
   // TODO(https://fxbug.dev/42156567): make the fences be the first arg, and the closure be the
   // second.
-  fence_queue_->QueueTask(
+  auto task =
       [this, present_id, requested_presentation_time = args.requested_presentation_time().value(),
        unsquashable = args.unsquashable().value(), uber_struct = std::move(uber_struct),
        link_operations = std::move(pending_link_operations_),
@@ -528,9 +532,9 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
         // Push the UberStruct, then schedule the associated Present that will eventually publish
         // it to the InstanceMap used for rendering.
         uber_struct_queue_->Push(present_id, std::move(uber_struct));
-        flatland_presenter_->ScheduleUpdateForSession(zx::time(requested_presentation_time),
-                                                      {session_id_, present_id}, unsquashable,
-                                                      std::move(release_fences));
+        flatland_presenter_->ScheduleUpdateForSession(
+            zx::time(requested_presentation_time), {session_id_, present_id}, unsquashable,
+            std::move(release_fences), config_.schedule_asap().value_or(false));
 
         // Finalize Link destruction operations after publishing the new UberStruct. This
         // ensures that any local Transforms referenced by the to-be-deleted Links are already
@@ -538,8 +542,13 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
         for (auto& operation : link_operations) {
           operation();
         }
-      },
-      std::move(*args.acquire_fences()));
+      };
+
+  if (config_.pass_acquire_fences().value_or(false)) {
+    task();
+  } else {
+    fence_queue_->QueueTask(std::move(task), std::move(*args.acquire_fences()));
+  }
   pending_link_operations_.clear();
 }
 

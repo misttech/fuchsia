@@ -65,11 +65,13 @@ class FrameSchedulerTest : public ::gtest::TestLoopFixture {
 
   // Schedule an update on the frame scheduler.
   void ScheduleUpdate(SessionId session_id, zx::time presentation_time,
-                      std::vector<zx::event> release_fences = {}, bool squashable = true) {
+                      std::vector<zx::event> release_fences = {}, bool squashable = true,
+                      bool schedule_asap = false) {
     scheduling::PresentId present_id =
         scheduler_.RegisterPresent(session_id, std::move(release_fences));
-    scheduler_.ScheduleUpdateForSession(
-        presentation_time, {.session_id = session_id, .present_id = present_id}, squashable);
+    scheduler_.ScheduleUpdateForSession(presentation_time,
+                                        {.session_id = session_id, .present_id = present_id},
+                                        squashable, schedule_asap);
   }
 
   void FireFramePresentedCallback(std::optional<Timestamps> timestamps = std::nullopt) {
@@ -812,6 +814,105 @@ TEST_F(FrameSchedulerTest, RenderContinuously_ShouldCauseRenders_WithoutSchedule
   FireFramePresentedCallback();
   RunLoopFor(zx::duration(vsync_timing_->vsync_interval()));
   EXPECT_FALSE(frame_presented_callback_.has_value());
+}
+
+TEST_F(FrameSchedulerTest, ScheduleAsap_ShouldBeScheduledAsap) {
+  constexpr SessionId kSessionId = 1;
+
+  EXPECT_EQ(update_sessions_call_count_, 0u);
+  EXPECT_FALSE(frame_presented_callback_.has_value());
+
+  // Schedule an update for a time far in the future, but with schedule_asap=true.
+  // It should be scheduled immediately, not waiting for the presentation time.
+  ScheduleUpdate(kSessionId, Now() + zx::sec(10), /*release_fences*/ {}, /*squashable*/ true,
+                 /*schedule_asap*/ true);
+
+  // The update should be applied immediately without waiting for a vsync or the
+  // requested presentation time.
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(update_sessions_call_count_, 1u);
+  EXPECT_TRUE(frame_presented_callback_.has_value());
+}
+
+TEST_F(FrameSchedulerTest, AsapUpdate_ShouldPreemptNormallyScheduledUpdate) {
+  constexpr SessionId kSessionId = 1;
+  constexpr SessionId kScheduleAsapSessionId = 2;
+
+  // Schedule a normal update far in the future.
+  ScheduleUpdate(kSessionId, Now() + zx::sec(10), {}, /*squashable*/ true, /*schedule_asap*/ false);
+
+  // The task should be scheduled, but not run yet.
+  // Let the first schedule request go through.
+  RunLoopUntilIdle();
+  EXPECT_EQ(update_sessions_call_count_, 0u);
+
+  // Now schedule an ASAP update for "now".
+  ScheduleUpdate(kScheduleAsapSessionId, Now(), {}, /*squashable*/ true, /*schedule_asap*/ true);
+
+  // The ASAP update should cause an immediate render.
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(update_sessions_call_count_, 1u);
+  EXPECT_TRUE(frame_presented_callback_.has_value());
+
+  // The frame should only contain the ASAP update, because the other one is for the future.
+  FireFramePresentedCallback();
+  EXPECT_EQ(last_latched_times_.at(kScheduleAsapSessionId).size(), 1u);
+
+  // Now run until the original update should have been processed.
+  RunLoopFor(zx::sec(11));
+  EXPECT_EQ(update_sessions_call_count_, 2u);
+  EXPECT_TRUE(frame_presented_callback_.has_value());
+  FireFramePresentedCallback();
+  EXPECT_EQ(last_latched_times_.at(kSessionId).size(), 1u);
+}
+
+TEST_F(FrameSchedulerTest, AsapAndNormalUpdateForSameTime_ShouldBeScheduledAsap) {
+  constexpr SessionId kSessionId = 1;
+  constexpr SessionId kScheduleAsapSessionId = 2;
+
+  // Schedule a normal update and an ASAP update for a time far in the future.
+  zx::time presentation_time = Now() + zx::sec(10);
+  ScheduleUpdate(kSessionId, presentation_time, {}, /*squashable*/ true, /*schedule_asap*/ false);
+  ScheduleUpdate(kScheduleAsapSessionId, presentation_time, {}, /*squashable*/ true,
+                 /*schedule_asap*/ true);
+
+  // The ASAP flag should cause them to be scheduled immediately.
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(update_sessions_call_count_, 1u);
+  EXPECT_TRUE(frame_presented_callback_.has_value());
+
+  // The frame should contain both updates.
+  FireFramePresentedCallback();
+  EXPECT_EQ(last_latched_times_.at(kSessionId).size(), 1u);
+  EXPECT_EQ(last_latched_times_.at(kScheduleAsapSessionId).size(), 1u);
+}
+
+TEST_F(FrameSchedulerTest, UnsquashableAsapUpdate_ShouldNotBeSquashedWithNextAsap) {
+  constexpr SessionId kSessionId = 1;
+
+  // Schedule an unsquashable ASAP update, then a squashable one.
+  ScheduleUpdate(kSessionId, Now(), {}, /*squashable*/ false, /*schedule_asap*/ true);
+  ScheduleUpdate(kSessionId, Now(), {}, /*squashable*/ true, /*schedule_asap*/ true);
+
+  // The first update should be rendered immediately.
+  RunLoopUntilIdle();
+  EXPECT_EQ(update_sessions_call_count_, 1u);
+  EXPECT_TRUE(frame_presented_callback_.has_value());
+
+  // It should only contain the first update. Present the frame to allow the next update to be
+  // scheduled.
+  FireFramePresentedCallback();
+  EXPECT_EQ(last_latched_times_.at(kSessionId).size(), 1u);
+
+  // The second update should be rendered in the next frame.
+  RunLoopUntilIdle();
+  EXPECT_EQ(update_sessions_call_count_, 2u);
+  EXPECT_TRUE(frame_presented_callback_.has_value());
+  FireFramePresentedCallback();
+  EXPECT_EQ(last_latched_times_.at(kSessionId).size(), 1u);
 }
 
 }  // namespace scheduling::test

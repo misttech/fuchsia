@@ -495,6 +495,13 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
                                      &flatland::FlatlandManager::CreateFlatlandDisplay);
       FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
     }
+    {
+      trusted_flatland_factory_ =
+          std::make_unique<flatland::TrustedFlatlandFactoryImpl>(flatland_manager_);
+      FX_CHECK(
+          app_context_->outgoing()->AddProtocol<fuchsia_ui_composition::TrustedFlatlandFactory>(
+              trusted_flatland_factory_->GetHandler()) == ZX_OK);
+    }
   }
 
   const auto screen_capture_buffer_collection_importer =

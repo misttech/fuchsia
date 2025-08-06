@@ -65,7 +65,7 @@ class DefaultFrameScheduler final : public FrameScheduler {
 
   // |FrameScheduler|
   void ScheduleUpdateForSession(zx::time requested_presentation_time, SchedulingIdPair id_pair,
-                                bool squashable) override;
+                                bool squashable, bool schedule_asap) override;
 
   // |FrameScheduler|
   std::vector<FuturePresentationInfo> GetFuturePresentationInfos(
@@ -88,7 +88,8 @@ class DefaultFrameScheduler final : public FrameScheduler {
   // Requests a new frame to be drawn, which schedules the next wake up time for rendering. If we've
   // already scheduled a wake up time, it checks if it needs rescheduling and deals with it
   // appropriately.
-  void RequestFrame(zx::time requested_presentation_time);
+  // If schedule_asp is given, immediately starts the render.
+  void RequestFrame(zx::time requested_presentation_time, bool schedule_asap);
 
   // Check if there are pending updates, and if there are then find the lowest next requested
   // presentation time among all sessions and use it to request another frame.
@@ -139,6 +140,7 @@ class DefaultFrameScheduler final : public FrameScheduler {
     // Determines if this Present can be combined with following Presents, or must be displayed for
     // at least one frame.
     bool squashable;
+    bool schedule_asap;
   };
   // Map of all pending Present calls ordered by SessionId and then PresentId.
   std::map<SchedulingIdPair, PresentRequest> pending_present_requests_;

@@ -35,7 +35,7 @@ class FlatlandPresenterImpl final : public FlatlandPresenter,
   // |FlatlandPresenter|
   void ScheduleUpdateForSession(zx::time requested_presentation_time,
                                 scheduling::SchedulingIdPair id_pair, bool unsquashable,
-                                std::vector<zx::event> release_fences) override;
+                                std::vector<zx::event> release_fences, bool schedule_asap) override;
 
   // |FlatlandPresenter|.
   std::vector<scheduling::FuturePresentationInfo> GetFuturePresentationInfos() override;

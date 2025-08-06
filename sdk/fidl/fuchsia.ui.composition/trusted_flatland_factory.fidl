@@ -1,0 +1,52 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+library fuchsia.ui.composition;
+
+/// All arguments are optional; default values will be provided if they are absent.
+/// By default, the resulting Flatland will behave identically to connecting
+/// to the `fuchsia.ui.composition.Flatland` service instead of connecting via the factory.
+@available(added=NEXT)
+type TrustedFlatlandConfig = resource table {
+    /// If true, a frame will be scheduled to be presented as soon as all acquire fences are
+    /// signaled, instead of waiting for other clients to present in the same vsync. This can reduce
+    /// latency for this client, but may increase power consumption.
+    ///
+    /// If absent, `schedule_asap` is false.
+    1: schedule_asap bool;
+    /// If true, Scenic should pass acquire fences to the drivers for composition HW, instead of
+    /// waiting for them on CPU. This can improve performance by reducing CPU overhead.
+    ///
+    /// If absent, `pass_acquire_fences` is false.
+    2: pass_acquire_fences bool;
+};
+
+/// An error that can occur when using the `TrustedFlatlandFactory`.
+@available(added=NEXT)
+type TrustedFlatlandFactoryError = flexible enum {
+    /// A general error occurred during the method call. This may happen if the configuration
+    /// is invalid or if the system is unable to create a new Flatland instance.
+    BAD_OPERATION = 1;
+};
+
+/// A privileged factory for creating Flatland instances with special configurations.
+///
+/// This protocol is intended for trusted clients that require fine-grained control over
+/// Flatland's behavior for performance-critical applications. It is not intended for
+/// general use. Misuse of this API can negatively impact system performance and stability.
+@discoverable
+@available(added=NEXT)
+closed protocol TrustedFlatlandFactory {
+    /// Creates a new Flatland instance with the specified configuration.
+    ///
+    /// ## Error
+    ///
+    /// Returns a `TrustedFlatlandFactoryError` error if the operation fails.
+    strict CreateFlatland(resource struct {
+        /// The server end of the `fuchsia.ui.composition.Flatland` protocol to be created.
+        server_end server_end:Flatland;
+        /// The configuration for the new Flatland instance. See `TrustedFlatlandConfig` for
+        /// details on available options.
+        config TrustedFlatlandConfig;
+    }) -> () error TrustedFlatlandFactoryError;
+};

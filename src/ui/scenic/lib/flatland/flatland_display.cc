@@ -170,7 +170,8 @@ void FlatlandDisplay::SetContent(ViewportCreationToken token,
   auto present_id = scheduling::GetNextPresentId();
   uber_struct_queue_->Push(present_id, std::move(uber_struct));
   flatland_presenter_->ScheduleUpdateForSession(zx::time(0), {session_id_, present_id},
-                                                /*squashable=*/true, /*release_fences=*/{});
+                                                /*squashable=*/true, /*release_fences=*/{},
+                                                /*schedule_asap=*/false);
 
   // TODO(https://fxbug.dev/42156567): Flatland::Present() does:
   //    for (auto& operation : link_operations) { operation(); }

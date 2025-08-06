@@ -26,7 +26,7 @@ class MockFrameScheduler : public FrameScheduler {
 
   // |FrameScheduler|
   void ScheduleUpdateForSession(zx::time presentation_time, SchedulingIdPair id_pair,
-                                bool squashable) override;
+                                bool squashable, bool schedule_asap) override;
 
   // |FrameScheduler|
   std::vector<scheduling::FuturePresentationInfo> GetFuturePresentationInfos(
@@ -37,7 +37,8 @@ class MockFrameScheduler : public FrameScheduler {
 
   // Testing only. Used for mock method callbacks.
   using OnSetRenderContinuouslyCallback = std::function<void(bool)>;
-  using OnScheduleUpdateForSessionCallback = std::function<void(zx::time, SchedulingIdPair, bool)>;
+  using OnScheduleUpdateForSessionCallback =
+      std::function<void(zx::time, SchedulingIdPair, bool, bool)>;
   using OnGetFuturePresentationInfosCallback =
       std::function<std::vector<FuturePresentationInfo>(zx::duration requested_prediction_span)>;
   using RegisterPresentCallback = std::function<void(

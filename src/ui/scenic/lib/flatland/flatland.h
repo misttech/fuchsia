@@ -80,7 +80,8 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
       fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
           register_touch_source,
       fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
-          register_mouse_source);
+          register_mouse_source,
+      fuchsia_ui_composition::TrustedFlatlandConfig config);
 
   // Because this object captures its "this" pointer in internal closures, it is unsafe to copy or
   // move it. Disable all copy and move operations.
@@ -306,7 +307,8 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
            fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
                register_touch_source,
            fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
-               register_mouse_source);
+               register_mouse_source,
+           fuchsia_ui_composition::TrustedFlatlandConfig config);
 
   // `Flatland::New()` dispatches a task to invoke this.
   void Bind(fidl::ServerEnd<fuchsia_ui_composition::Flatland> server_end,
@@ -510,6 +512,9 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
       register_touch_source_;
   fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
       register_mouse_source_;
+
+  // The configuration for this Flatland instance.
+  fuchsia_ui_composition::TrustedFlatlandConfig config_;
 
   // Helper class that is responsible for managing the Flatland instance's FIDL connection, and also
   // provides an RAII approach to guaranteeing that `destroy_instance_function_` is invoked.

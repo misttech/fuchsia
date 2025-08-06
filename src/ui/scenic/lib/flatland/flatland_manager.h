@@ -47,7 +47,8 @@ class FlatlandManager {
   ~FlatlandManager();
 
   scheduling::SessionId CreateFlatland(
-      fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> flatland);
+      fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> flatland,
+      fuchsia_ui_composition::TrustedFlatlandConfig config = {});
 
   // TODO(https://fxbug.dev/42156949): This creates a FlatlandDisplay attached to the "primary"
   // hardware display (i.e. the only one supported). In the future there will be APIs that allow
@@ -138,7 +139,8 @@ class FlatlandManager {
       std::shared_ptr<LinkSystem> link_system,
       std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue,
       const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&
-          buffer_collection_importers) const;
+          buffer_collection_importers,
+      fuchsia_ui_composition::TrustedFlatlandConfig config) const;
 
   // Used to assert that code is running on the expected thread.
   void CheckIsOnMainThread() const {

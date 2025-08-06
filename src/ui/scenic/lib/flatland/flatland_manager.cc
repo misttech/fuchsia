@@ -78,7 +78,8 @@ FlatlandManager::~FlatlandManager() {
 }
 
 scheduling::SessionId FlatlandManager::CreateFlatland(
-    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request) {
+    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
+    fuchsia_ui_composition::TrustedFlatlandConfig config) {
   CheckIsOnMainThread();
 
   const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
@@ -116,10 +117,11 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
       FX_LOGS(WARNING) << "Failed to apply profile to flatland thread: " << status;
     }
   });
-  instance->impl = NewFlatland(
-      instance->loop, std::move(request), id,
-      std::bind(&FlatlandManager::DestroyInstanceFunction, this, id), flatland_presenter_,
-      link_system_, uber_struct_system_->AllocateQueueForSession(id), buffer_collection_importers_);
+  instance->impl = NewFlatland(instance->loop, std::move(request), id,
+                               std::bind(&FlatlandManager::DestroyInstanceFunction, this, id),
+                               flatland_presenter_, link_system_,
+                               uber_struct_system_->AllocateQueueForSession(id),
+                               buffer_collection_importers_, std::move(config));
 
   zx_status_t status = instance->loop->loop().StartThread(name.c_str());
   FX_DCHECK(status == ZX_OK);
@@ -135,7 +137,8 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
     std::shared_ptr<FlatlandPresenter> flatland_presenter, std::shared_ptr<LinkSystem> link_system,
     std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue,
     const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&
-        buffer_collection_importers) const {
+        buffer_collection_importers,
+    fuchsia_ui_composition::TrustedFlatlandConfig config) const {
   return Flatland::New(
       std::move(dispatcher_holder), fidl::HLCPPToNatural(std::move(request)), session_id,
       std::move(destroy_instance_function), std::move(flatland_presenter), std::move(link_system),
@@ -181,7 +184,8 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
                           CheckIsOnMainThread();
                           register_mouse_source_(fidl::NaturalToHLCPP(mouse_source), view_ref_koid);
                         });
-      });
+      },
+      std::move(config));
 }
 
 void FlatlandManager::CreateFlatlandDisplay(

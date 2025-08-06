@@ -54,10 +54,9 @@ using ::testing::Return;
 using BufferCollectionId = flatland::Flatland::BufferCollectionId;
 using allocation::Allocator;
 using allocation::BufferCollectionImporter;
-// TODO(https://fxbug.dev/351845529): see comment below on BufferCollectionImportExportTokensNatural
-// using allocation::BufferCollectionImportExportTokens;
 using allocation::ImageMetadata;
 using allocation::MockBufferCollectionImporter;
+using allocation::cpp::BufferCollectionImportExportTokens;
 using flatland::Flatland;
 using flatland::FlatlandDisplay;
 using flatland::FlatlandPresenter;
@@ -129,31 +128,6 @@ struct GlobalIdPair {
   allocation::GlobalImageId image_id;
 };
 
-// TODO(https://fxbug.dev/351845529): rename this to `BufferCollectionImportExportTokens` and
-// replace the HLCPP version at:
-// `//src/ui/scenic/lib/allocation/buffer_collection_import_export_tokens.h`
-struct BufferCollectionImportExportTokensNatural {
-  // Convenience function which allows clients to easily create a valid
-  // `BufferCollectionImport/ExportToken` pair for use between Allocator and Flatland.
-  static BufferCollectionImportExportTokensNatural New() {
-    BufferCollectionImportExportTokensNatural ref_pair;
-    zx_status_t status =
-        zx::eventpair::create(0, &ref_pair.export_token.value(), &ref_pair.import_token.value());
-    ZX_ASSERT(status == ZX_OK);
-    return ref_pair;
-  }
-
-  BufferCollectionImportToken DuplicateImportToken() {
-    BufferCollectionImportToken import_dup;
-    zx_status_t status = import_token.value().duplicate(ZX_RIGHT_SAME_RIGHTS, &import_dup.value());
-    ZX_ASSERT(status == ZX_OK);
-    return import_dup;
-  }
-
-  BufferCollectionExportToken export_token;
-  BufferCollectionImportToken import_token;
-};
-
 // These macros works like functions that check a variety of conditions, but if those conditions
 // fail, the line number for the failure will appear in-line rather than in a function.
 
@@ -181,7 +155,7 @@ struct BufferCollectionImportExportTokensNatural {
       if (!had_acquire_fences) {                                                       \
         EXPECT_CALL(*mock_flatland_presenter_,                                         \
                     ScheduleUpdateForSession((args).requested_presentation_time, _,    \
-                                             (args).unsquashable, _));                 \
+                                             (args).unsquashable, _, _));              \
       }                                                                                \
       RunLoopUntilIdle();                                                              \
       if (!(args).skip_session_update_and_release_fences) {                            \
@@ -282,10 +256,10 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   void SetUp() override {
     mock_flatland_presenter_ = new ::testing::StrictMock<MockFlatlandPresenter>();
 
-    ON_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _))
+    ON_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _))
         .WillByDefault(::testing::Invoke(
             [&](zx::time requested_presentation_time, scheduling::SchedulingIdPair id_pair,
-                bool unsquashable, std::vector<zx::event> release_fences) {
+                bool unsquashable, std::vector<zx::event> release_fences, bool schedule_asap) {
               // The ID must not already be registered.
               EXPECT_FALSE(pending_release_fences_.find(id_pair) != pending_release_fences_.end());
               pending_release_fences_[id_pair] = std::move(release_fences);
@@ -350,20 +324,21 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
         utils::CreateSysmemAllocatorSyncPtr("FlatlandTest::CreateAllocator"));
   }
 
-  std::shared_ptr<Flatland> CreateFlatland() {
+  std::shared_ptr<Flatland> CreateFlatland(
+      fuchsia_ui_composition::TrustedFlatlandConfig config = {}) {
     auto session_id = scheduling::GetNextSessionId();
-    flatlands_.push_back({});
     std::vector<std::shared_ptr<BufferCollectionImporter>> importers;
     importers.push_back(buffer_collection_importer_);
 
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_composition::Flatland>::Create();
 
     std::shared_ptr<Flatland> flatland = Flatland::New(
-        std::make_shared<utils::UnownedDispatcherHolder>(dispatcher()), std::move(server_end),
+        std::make_shared<utils::UnownedDispatcherHolder>(this->dispatcher()), std::move(server_end),
         session_id,
         /*destroy_instance_functon=*/[this, session_id]() { flatland_errors_.erase(session_id); },
         flatland_presenter_, link_system_, uber_struct_system_->AllocateQueueForSession(session_id),
-        importers, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {});
+        importers, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {},
+        std::move(config));
 
     // Wait for server channel to be bound; see `Flatland::Bind()`.
     RunLoopUntilIdle();
@@ -398,7 +373,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
           /*destroy_instance_function=*/[]() {}, std::move(presenter), std::move(link_system),
           uber_struct_system->AllocateQueueForSession(session_id),
           /*buffer_collection_importers=*/{}, [](auto...) {}, [](auto...) {}, [](auto...) {},
-          [](auto...) {});
+          [](auto...) {}, fuchsia_ui_composition::TrustedFlatlandConfig());
 
       libsync::Completion completion;
       async::PostTask(client_loop_.dispatcher(), [&, dispatcher = client_loop_.dispatcher()]() {
@@ -628,10 +603,10 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     ViewCreationToken child_token;
     ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value, &child_token.value()));
     auto present_id = scheduling::PeekNextPresentId();
-    EXPECT_CALL(
-        *mock_flatland_presenter_,
-        ScheduleUpdateForSession(
-            zx::time(0), scheduling::SchedulingIdPair{display->session_id(), present_id}, true, _));
+    EXPECT_CALL(*mock_flatland_presenter_,
+                ScheduleUpdateForSession(
+                    zx::time(0), scheduling::SchedulingIdPair{display->session_id(), present_id},
+                    true, _, _));
     display->SetContent(std::move(parent_token),
                         fidl::NaturalToHLCPP(child_view_watcher_server_end));
     child->CreateView2(std::move(child_token),
@@ -644,7 +619,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   // struct for that Image.
   GlobalIdPair CreateImage(
       Flatland* flatland, Allocator* allocator, ContentId image_id,
-      BufferCollectionImportExportTokensNatural buffer_collection_import_export_tokens,
+      BufferCollectionImportExportTokens buffer_collection_import_export_tokens,
       ImageProperties properties) {
     const auto koid =
         fsl::GetKoid(buffer_collection_import_export_tokens.export_token.value().get());
@@ -785,7 +760,7 @@ TEST_F(FlatlandTest, PresentWithNoFieldsSet) {
   flatland->Present(std::move(present_args));
 
   EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(kDefaultRequestedPresentationTime,
-                                                                  _, kDefaultUnsquashable, _));
+                                                                  _, kDefaultUnsquashable, _, _));
   RunLoopUntilIdle();
 }
 
@@ -826,7 +801,7 @@ TEST_F(FlatlandTest, PresentWaitsForAcquireFences) {
   // instance, and the release fence is signaled.
   acquire1_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
   RunLoopUntilIdle();
 
   // After signaling the final acquire fence (and running the loop), there is now a registered
@@ -879,7 +854,7 @@ TEST_F(FlatlandTest, PresentForwardsRequestedPresentationTime) {
   // presentation time.
   acquire_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
   RunLoopUntilIdle();
 
   registered_presents = GetRegisteredPresents(flatland->GetRoot().GetInstanceId());
@@ -909,7 +884,7 @@ TEST_F(FlatlandTest, PresentWithSignaledFencesUpdatesImmediately) {
   // update immediately, and the release fence should be signaled. The PRESENT macro only expects
   // the ScheduleUpdateForSession() call when no acquire fences are present, but since this test
   // specifically tests pre-signaled fences, the EXPECT_CALL must be added here.
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
   PRESENT_WITH_ARGS(flatland, std::move(args), true);
 
   auto registered_presents = GetRegisteredPresents(flatland->GetRoot().GetInstanceId());
@@ -987,7 +962,7 @@ TEST_F(FlatlandTest, PresentsUpdateInCallOrder) {
   // registered Presents and an UberStruct with a 2-element topology: the local root, and kId.
   acquire1_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _)).Times(2);
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _)).Times(2);
   RunLoopUntilIdle();
 
   ApplySessionUpdatesAndSignalFences();
@@ -1715,8 +1690,7 @@ TEST_F(FlatlandTest, SetImageBlendFunctionUberstructTest) {
 
   // Setup first image to be opaque.
   {
-    BufferCollectionImportExportTokensNatural ref_pair_1 =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
 
     ImageProperties properties1;
     properties1.size(fuchsia_math::SizeU{kImageWidth, kImageHeight});
@@ -1736,8 +1710,7 @@ TEST_F(FlatlandTest, SetImageBlendFunctionUberstructTest) {
 
   // Create a second image to be transparent.
   {
-    BufferCollectionImportExportTokensNatural ref_pair_1 =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
 
     ImageProperties properties1;
     properties1.size(fuchsia_math::SizeU{kImageWidth, kImageHeight});
@@ -1815,8 +1788,7 @@ TEST_F(FlatlandTest, SetImageFlipUberstructTest) {
 
   // Setup first image to have default NONE flip property.
   {
-    BufferCollectionImportExportTokensNatural ref_pair_1 =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
 
     ImageProperties properties1;
     properties1.size(fuchsia_math::SizeU{kImageWidth, kImageHeight});
@@ -1835,8 +1807,7 @@ TEST_F(FlatlandTest, SetImageFlipUberstructTest) {
 
   // Create a second image to be flipped up-down.
   {
-    BufferCollectionImportExportTokensNatural ref_pair_1 =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
 
     ImageProperties properties1;
     properties1.size(fuchsia_math::SizeU{kImageWidth, kImageHeight});
@@ -2712,7 +2683,7 @@ TEST_F(FlatlandTest, ClearDelaysLinkDestructionUntilPresent) {
   // Signal the acquire fence to unbind the links.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
   RunLoopUntilIdle();
 
   EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end));
@@ -2749,7 +2720,7 @@ TEST_F(FlatlandTest, ClearDelaysLinkDestructionUntilPresent) {
   // Signal the acquire fence to unbind the links.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
   RunLoopUntilIdle();
 
   EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end2));
@@ -3136,7 +3107,7 @@ TEST_F(FlatlandTest, ValidChildToParentFlow_ChildUsedCreateView2) {
 
   // Signal the acquire fence to unblock the present.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
   RunLoopUntilIdle();
   ApplySessionUpdatesAndSignalFences();
   UpdateLinks(parent->GetRoot());
@@ -3232,7 +3203,7 @@ TEST_F(FlatlandTest, ContentHasPresentedSignalWaitsForAcquireFences) {
   EXPECT_FALSE(cvs.has_value());
 
   // Signal the acquire fence.
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
   acquire1_copy.signal(0, ZX_EVENT_SIGNALED);
   RunLoopUntilIdle();
   ApplySessionUpdatesAndSignalFences();
@@ -3801,8 +3772,7 @@ TEST_F(FlatlandTest, ReleaseViewportErrorCases) {
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     const ContentId kImageId = {2};
-    BufferCollectionImportExportTokensNatural ref_pair =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair = BufferCollectionImportExportTokens::New();
 
     ImageProperties properties;
     properties.size(SizeU{100, 200});
@@ -3908,7 +3878,7 @@ TEST_F(FlatlandTest, ReleaseViewportViaFidlClient) {
 
     // Now present.  We do this via the FIDL client to ensure correct sequencing (i.e. this way the
     // `Present()` is guaranteed to follow the `ReleaseViewport()`).
-    EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _));
+    EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
     async::PostTask(client_server->client_loop().dispatcher(), [&]() {
       fuchsia_ui_composition::PresentArgs present_args;
       present_args.requested_presentation_time(0)
@@ -3966,7 +3936,7 @@ TEST_F(FlatlandTest, ReleaseViewportReturnsOriginalToken) {
   // Signal the acquire fence to unbind the link.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
   RunLoopUntilIdle();
 
   EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end));
@@ -4299,8 +4269,7 @@ TEST_F(FlatlandTest, CreateImageValidCase) {
 
   // Setup a valid image.
   const ContentId kImageId = {1};
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   ImageProperties properties;
   properties.size(SizeU{100, 200});
 
@@ -4316,8 +4285,7 @@ TEST_F(FlatlandTest, CreateImageSetsDefaults) {
   const ContentId kImageId = {1};
   const uint32_t kWidth = 100;
   const uint32_t kHeight = 200;
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   ImageProperties properties;
   properties.size(SizeU{kWidth, kHeight});
 
@@ -4375,8 +4343,7 @@ TEST_F(FlatlandTest, SetImageOpacityTestCases) {
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     // Setup a valid image
-    BufferCollectionImportExportTokensNatural ref_pair_1 =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
 
     ImageProperties properties1;
     properties1.size(SizeU{100, 200});
@@ -4396,8 +4363,7 @@ TEST_F(FlatlandTest, SetImageOpacityTestCases) {
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     // Setup a valid image
-    BufferCollectionImportExportTokensNatural ref_pair_1 =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
 
     ImageProperties properties1;
     properties1.size(SizeU{100, 200});
@@ -4419,8 +4385,7 @@ TEST_F(FlatlandTest, SetImageOpacityTestCases) {
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     // Setup a valid image
-    BufferCollectionImportExportTokensNatural ref_pair_1 =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
 
     ImageProperties properties1;
     properties1.size(SizeU{100, 200});
@@ -4695,8 +4660,7 @@ TEST_F(FlatlandTest, SetImageSampleRegionTestCases) {
   flatland->CreateTransform(kTransformId);
   flatland->SetRootTransform(kTransformId);
 
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   ImageProperties properties;
   properties.size(fuchsia_math::SizeU{kImageWidth, kImageHeight});
 
@@ -4859,8 +4823,7 @@ TEST_F(FlatlandTest, CreateImageErrorCases) {
   const uint32_t kDefaultHeight = 1000;
 
   // Setup a valid buffer collection.
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
 
   // Zero is not a valid image ID.
@@ -4988,8 +4951,7 @@ TEST_F(FlatlandTest, CreateImageWithDuplicatedImportTokens) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
 
   const uint64_t kNumImages = 3;
@@ -5011,8 +4973,7 @@ TEST_F(FlatlandTest, CreateImageInMultipleFlatlands) {
   std::shared_ptr<Flatland> flatland1 = CreateFlatland();
   std::shared_ptr<Flatland> flatland2 = CreateFlatland();
 
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
 
   // We can import the same image in both flatland instances.
@@ -5045,8 +5006,7 @@ TEST_F(FlatlandTest, SetContentErrorCases) {
 
   // Setup a valid image.
   const ContentId kImageId = {1};
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   const uint32_t kWidth = 100;
   const uint32_t kHeight = 200;
 
@@ -5090,8 +5050,7 @@ TEST_F(FlatlandTest, ClearContentOnTransform) {
 
   // Setup a valid image.
   const ContentId kImageId = {1};
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
 
   ImageProperties properties;
   properties.size(SizeU{100, 200});
@@ -5138,8 +5097,7 @@ TEST_F(FlatlandTest, SetTheSameContentOnMultipleTransforms) {
 
   // Setup a valid image.
   const ContentId kImageId = {1};
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   ImageProperties properties;
   properties.size(SizeU{100, 200});
   auto import_token_dup = ref_pair.DuplicateImportToken();
@@ -5171,8 +5129,7 @@ TEST_F(FlatlandTest, TopologyVisitsContentBeforeChildren) {
 
   // Setup two valid images.
   const ContentId kImageId1 = {1};
-  BufferCollectionImportExportTokensNatural ref_pair_1 =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair_1 = BufferCollectionImportExportTokens::New();
 
   ImageProperties properties1;
   properties1.size(SizeU{100, 200});
@@ -5185,8 +5142,7 @@ TEST_F(FlatlandTest, TopologyVisitsContentBeforeChildren) {
   const auto image_handle1 = maybe_image_handle1.value();
 
   const ContentId kImageId2 = {2};
-  BufferCollectionImportExportTokensNatural ref_pair_2 =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair_2 = BufferCollectionImportExportTokens::New();
 
   ImageProperties properties2;
   properties2.size(SizeU{300, 400});
@@ -5257,8 +5213,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionHappensAfterCreateImage) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
   // Register a valid buffer collection.
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
 
   const ContentId kImageId = {1};
@@ -5286,8 +5241,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction1) 
     std::shared_ptr<Flatland> flatland = CreateFlatland();
 
     const ContentId kImageId = {3};
-    BufferCollectionImportExportTokensNatural ref_pair =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair = BufferCollectionImportExportTokens::New();
     ImageProperties properties;
     properties.size(SizeU{200, 200});
     auto import_token_dup = ref_pair.DuplicateImportToken();
@@ -5332,8 +5286,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction2) 
     std::shared_ptr<Flatland> flatland = CreateFlatland();
 
     const ContentId kImageId = {3};
-    BufferCollectionImportExportTokensNatural ref_pair =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair = BufferCollectionImportExportTokens::New();
     ImageProperties properties;
     properties.size(SizeU{200, 200});
     auto import_token_dup = ref_pair.DuplicateImportToken();
@@ -5378,8 +5331,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction3) 
     std::shared_ptr<Flatland> flatland = CreateFlatland();
 
     const ContentId kImageId = {3};
-    BufferCollectionImportExportTokensNatural ref_pair =
-        BufferCollectionImportExportTokensNatural::New();
+    auto ref_pair = BufferCollectionImportExportTokens::New();
     ImageProperties properties;
     properties.size(SizeU{200, 200});
     auto import_token_dup = ref_pair.DuplicateImportToken();
@@ -5418,8 +5370,7 @@ TEST_F(FlatlandTest, ReleaseImageWaitsForReleaseFence) {
 
   // Setup a valid buffer collection and Image.
   const ContentId kImageId = {1};
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
 
   ImageProperties properties;
   properties.size(SizeU{100, 200});
@@ -5528,15 +5479,15 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
       std::move(flatland_server_end), session_id,
       /*destroy_instance_functon=*/[]() {}, flatland_presenter_, link_system_,
       uber_struct_system_->AllocateQueueForSession(session_id), importers, [](auto...) {},
-      [](auto...) {}, [](auto...) {}, [](auto...) {});
+      [](auto...) {}, [](auto...) {}, [](auto...) {},
+      fuchsia_ui_composition::TrustedFlatlandConfig());
   // Wait for Bind() to occur within Flatland::New().
   RunLoopUntilIdle();
 
   EXPECT_CALL(*local_mock_buffer_collection_importer, ImportBufferCollection(_, _, _, _, _))
       .WillOnce(Return(true));
 
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
 
   ImageProperties properties;
@@ -5558,8 +5509,7 @@ TEST_F(FlatlandTest, BufferImporterImportImageReturnsFalseTest) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
   REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
 
   // Create a proper properties struct.
@@ -5594,8 +5544,7 @@ TEST_F(FlatlandTest, BufferImporterImageReleaseTest) {
 
   // Setup a valid image.
   const ContentId kImageId = {1};
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
 
   ImageProperties properties1;
   properties1.size(SizeU{100, 200});
@@ -5635,8 +5584,7 @@ TEST_F(FlatlandTest, ReleasedImageRemainsUntilCleared) {
 
   // Setup a valid image.
   const ContentId kImageId = {1};
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
 
   ImageProperties properties1;
   properties1.size(SizeU{100, 200});
@@ -5697,8 +5645,7 @@ TEST_F(FlatlandTest, ReleasedImageIdCanBeReused) {
 
   // Setup a valid image.
   const ContentId kImageId = {1};
-  BufferCollectionImportExportTokensNatural ref_pair_1 =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair_1 = BufferCollectionImportExportTokens::New();
 
   ImageProperties properties1;
   properties1.size(SizeU{100, 200});
@@ -5723,8 +5670,7 @@ TEST_F(FlatlandTest, ReleasedImageIdCanBeReused) {
 
   // The ContentId can be re-used even though the old image is still present. Add a second
   // transform so that both images show up in the global image vector.
-  BufferCollectionImportExportTokensNatural ref_pair_2 =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair_2 = BufferCollectionImportExportTokens::New();
   ImageProperties properties2;
   properties2.size(SizeU{300, 400});
 
@@ -5764,8 +5710,7 @@ TEST_F(FlatlandTest, ReleasedImagePersistsOutsideGlobalTopology) {
 
   // Setup a valid image.
   const ContentId kImageId = {1};
-  BufferCollectionImportExportTokensNatural ref_pair =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair = BufferCollectionImportExportTokens::New();
 
   ImageProperties properties1;
   properties1.size(SizeU{100, 200});
@@ -5816,8 +5761,7 @@ TEST_F(FlatlandTest, ClearReleasesImagesAndBufferCollections) {
 
   // Setup a valid image.
   const ContentId kImageId = {1};
-  BufferCollectionImportExportTokensNatural ref_pair_1 =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair_1 = BufferCollectionImportExportTokens::New();
 
   ImageProperties properties1;
   properties1.size(SizeU{100, 200});
@@ -5848,8 +5792,7 @@ TEST_F(FlatlandTest, ClearReleasesImagesAndBufferCollections) {
   PRESENT(flatland, true);
 
   // The Image ID should be available for re-use.
-  BufferCollectionImportExportTokensNatural ref_pair_2 =
-      BufferCollectionImportExportTokensNatural::New();
+  auto ref_pair_2 = BufferCollectionImportExportTokens::New();
   ImageProperties properties2;
   properties2.size(SizeU{400, 800});
 
@@ -5916,7 +5859,8 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
         child_flatland_thread_loop_holder, std::move(child_flatland_server_end), session_id,
         [](auto...) {}, flatland_presenter_, link_system_,
         uber_struct_system_->AllocateQueueForSession(session_id), importers, [](auto...) {},
-        [](auto...) {}, [](auto...) {}, [](auto...) {});
+        [](auto...) {}, [](auto...) {}, [](auto...) {},
+        fuchsia_ui_composition::TrustedFlatlandConfig());
 
     auto status = child_flatland_thread_loop.StartThread();
     EXPECT_EQ(status, ZX_OK);
@@ -5947,7 +5891,7 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
   // We post this task onto the other Flatland's thread, so that we can have a *chance* of locking
   // the LinkSystem mutex in between the execution of the two link-resolution closures (each of
   // which also locks the LinkSystem mutex).
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
   libsync::Completion completion;
   async::PostTask(child_flatland_thread_loop.dispatcher(), ([&]() {
                     child_flatland->CreateView2(
@@ -6019,7 +5963,8 @@ TEST_F(FlatlandTest, NoDoubleDestroyRequest) {
         ++destroy_instance_function_invocation_count;
       },
       flatland_presenter_, link_system_, uber_struct_system_->AllocateQueueForSession(session_id),
-      no_importers, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {});
+      no_importers, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {},
+      fuchsia_ui_composition::TrustedFlatlandConfig());
 
   // Wait for server channel to be bound; see `Flatland::Bind()`.
   RunLoopUntilIdle();
@@ -6122,6 +6067,22 @@ TEST_F(FlatlandTest, CreateAndReleaseFilledRect) {
   PRESENT(flatland, true);
   flatland->ReleaseFilledRect(kFilledRectId);
   PRESENT(flatland, true);
+}
+
+TEST_F(FlatlandTest, PresentWithScheduleAsapConfig) {
+  fuchsia_ui_composition::TrustedFlatlandConfig config;
+  config.schedule_asap() = true;
+  std::shared_ptr<Flatland> flatland = CreateFlatland(std::move(config));
+
+  EXPECT_CALL(*mock_flatland_presenter_,
+              ScheduleUpdateForSession(_, _, _, _, /*schedule_asap=*/true));
+
+  fuchsia_ui_composition::PresentArgs present_args;
+  present_args.requested_presentation_time(0);
+  flatland->Present(std::move(present_args));
+
+  RunLoopUntilIdle();
+  ApplySessionUpdatesAndSignalFences();
 }
 
 // TODO(https://fxbug.dev/42156567): other FlatlandDisplayTests that should be written:

@@ -1674,6 +1674,67 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.ui.composition/TrustedFlatlandConfig.pass_acquire_fences",
+        "ordinal": "2",
+        "type": "bool"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.ui.composition/TrustedFlatlandConfig.schedule_asap",
+        "ordinal": "1",
+        "type": "bool"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.ui.composition/TrustedFlatlandConfig",
+        "resourceness": "resource"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.composition/TrustedFlatlandFactory.CreateFlatland",
+        "strictness": "strict",
+        "ordinal": "5253620849650786780",
+        "direction": "two_way",
+        "request": "fuchsia.ui.composition/TrustedFlatlandFactoryCreateFlatlandRequest",
+        "response": "fuchsia.ui.composition/TrustedFlatlandFactory_CreateFlatland_Response",
+        "error": "fuchsia.ui.composition/TrustedFlatlandFactoryError"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.ui.composition/TrustedFlatlandFactory",
+        "openness": "closed",
+        "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.composition/TrustedFlatlandFactoryCreateFlatlandRequest.config",
+        "ordinal": "2",
+        "type": "fuchsia.ui.composition/TrustedFlatlandConfig"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.composition/TrustedFlatlandFactoryCreateFlatlandRequest.server_end",
+        "ordinal": "1",
+        "type": "server_end:fuchsia.ui.composition/Flatland"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.composition/TrustedFlatlandFactoryCreateFlatlandRequest",
+        "resourceness": "resource"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.ui.composition/TrustedFlatlandFactoryError.BAD_OPERATION",
+        "value": "1"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.ui.composition/TrustedFlatlandFactoryError",
+        "strictness": "flexible",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.ui.composition/ViewBoundProtocols.mouse_source",
         "ordinal": "4",
         "type": "server_end:fuchsia.ui.pointer/MouseSource"

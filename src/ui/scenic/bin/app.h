@@ -22,6 +22,7 @@
 #include "src/ui/scenic/lib/flatland/flatland_manager.h"
 #include "src/ui/scenic/lib/flatland/flatland_presenter_impl.h"
 #include "src/ui/scenic/lib/flatland/link_system.h"
+#include "src/ui/scenic/lib/flatland/trusted_flatland_factory.h"
 #include "src/ui/scenic/lib/flatland/uber_struct_system.h"
 #include "src/ui/scenic/lib/focus/focus_manager.h"
 #include "src/ui/scenic/lib/input/input_system.h"
@@ -108,6 +109,7 @@ class App {
   std::shared_ptr<flatland::LinkSystem> link_system_;
   std::shared_ptr<flatland::FlatlandPresenterImpl> flatland_presenter_;
   std::shared_ptr<flatland::FlatlandManager> flatland_manager_;
+  std::unique_ptr<flatland::TrustedFlatlandFactoryImpl> trusted_flatland_factory_;
   std::shared_ptr<flatland::DisplayCompositor> flatland_compositor_;
   std::shared_ptr<flatland::Engine> flatland_engine_;
 

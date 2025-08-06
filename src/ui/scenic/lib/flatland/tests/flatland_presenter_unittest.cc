@@ -60,7 +60,7 @@ TEST_F(FlatlandPresenterTest, RegisterPresentForwardsToFrameScheduler) {
   const scheduling::SessionId kSessionId = 2;
   const scheduling::PresentId present_id = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionId, present_id}, /*unsquashable=*/false,
-                                      /*release_fences=*/{});
+                                      /*release_fences=*/{}, false);
   RunLoopUntilIdle();
 
   EXPECT_EQ(last_session_id, kSessionId);
@@ -77,13 +77,16 @@ TEST_F(FlatlandPresenterTest, ScheduleUpdateForSessionForwardsToFrameScheduler) 
       .present_id = scheduling::kInvalidPresentId,
   });
   bool last_squashable = false;
+  bool last_schedule_asap = false;
 
   frame_scheduler.set_schedule_update_for_session_callback(
-      [&last_presentation_time, &last_id_pair, &last_squashable](
-          zx::time presentation_time, scheduling::SchedulingIdPair id_pair, bool squashable) {
+      [&last_presentation_time, &last_id_pair, &last_squashable, &last_schedule_asap](
+          zx::time presentation_time, scheduling::SchedulingIdPair id_pair, bool squashable,
+          bool schedule_asap) {
         last_presentation_time = presentation_time;
         last_id_pair = id_pair;
         last_squashable = squashable;
+        last_schedule_asap = schedule_asap;
       });
 
   auto presenter = CreateFlatlandPresenterImpl(frame_scheduler);
@@ -94,14 +97,75 @@ TEST_F(FlatlandPresenterTest, ScheduleUpdateForSessionForwardsToFrameScheduler) 
   });
   const zx::time kPresentationTime = zx::time(123);
   const bool kUnsquashable = false;
+  bool kScheduleAsap = false;
 
   presenter->ScheduleUpdateForSession(kPresentationTime, kIdPair, kUnsquashable,
-                                      /*release_fences=*/{});
+                                      /*release_fences=*/{}, kScheduleAsap);
   RunLoopUntilIdle();
 
   EXPECT_EQ(last_presentation_time, kPresentationTime);
   EXPECT_EQ(last_id_pair, kIdPair);
   EXPECT_EQ(last_squashable, !kUnsquashable);
+  EXPECT_EQ(last_schedule_asap, kScheduleAsap);
+
+  // Send another update where schedule_asap is true.
+  kScheduleAsap = true;
+  const auto kIdPair2 = scheduling::SchedulingIdPair({
+      .session_id = 1,
+      .present_id = 3,
+  });
+  presenter->ScheduleUpdateForSession(kPresentationTime, kIdPair2, kUnsquashable,
+                                      /*release_fences=*/{}, /*schedule_asap=*/kScheduleAsap);
+  RunLoopUntilIdle();
+
+  // zx::time is zeroed.
+  EXPECT_EQ(last_presentation_time, zx::time(0));
+  EXPECT_EQ(last_id_pair, kIdPair2);
+  EXPECT_EQ(last_squashable, !kUnsquashable);
+  EXPECT_EQ(last_schedule_asap, kScheduleAsap);
+}
+
+TEST_F(FlatlandPresenterTest, ScheduleAsapModifiesPresentationTime) {
+  scheduling::test::MockFrameScheduler frame_scheduler;
+
+  // Capture the relevant arguments of the ScheduleUpdateForSession() call.
+  zx::time last_presentation_time = zx::time(0);
+  auto last_id_pair = scheduling::SchedulingIdPair({
+      .session_id = scheduling::kInvalidSessionId,
+      .present_id = scheduling::kInvalidPresentId,
+  });
+  bool last_squashable = false;
+  bool last_schedule_asap = false;
+
+  frame_scheduler.set_schedule_update_for_session_callback(
+      [&last_presentation_time, &last_id_pair, &last_squashable, &last_schedule_asap](
+          zx::time presentation_time, scheduling::SchedulingIdPair id_pair, bool squashable,
+          bool schedule_asap) {
+        last_presentation_time = presentation_time;
+        last_id_pair = id_pair;
+        last_squashable = squashable;
+        last_schedule_asap = schedule_asap;
+      });
+
+  auto presenter = CreateFlatlandPresenterImpl(frame_scheduler);
+
+  const auto kIdPair = scheduling::SchedulingIdPair({
+      .session_id = 1,
+      .present_id = 2,
+  });
+  const zx::time kPresentationTime = zx::time(123);
+  const bool kUnsquashable = false;
+  const bool kScheduleAsap = true;
+
+  presenter->ScheduleUpdateForSession(kPresentationTime, kIdPair, kUnsquashable,
+                                      /*release_fences=*/{}, kScheduleAsap);
+  RunLoopUntilIdle();
+
+  // zx::time is zeroed.
+  EXPECT_EQ(last_presentation_time, zx::time(0));
+  EXPECT_EQ(last_id_pair, kIdPair);
+  EXPECT_EQ(last_squashable, !kUnsquashable);
+  EXPECT_EQ(last_schedule_asap, kScheduleAsap);
 }
 
 TEST_F(FlatlandPresenterTest, RemoveSessionForwardsToFrameScheduler) {
@@ -114,7 +178,7 @@ TEST_F(FlatlandPresenterTest, RemoveSessionForwardsToFrameScheduler) {
     results.emplace_back("RemoveSession", session_id);
   });
   frame_scheduler.set_schedule_update_for_session_callback(
-      [&results](auto time, auto id_pair, auto squashable) {
+      [&results](auto time, auto id_pair, auto squashable, auto schedule_asap) {
         results.emplace_back("Schedule", id_pair.session_id);
       });
 
@@ -192,16 +256,16 @@ TEST_F(FlatlandPresenterTest, TakeReleaseFences) {
 
   const auto present_id_A1 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdA, present_id_A1},
-                                      /*unsquashable=*/true, std::move(release_fences_A1));
+                                      /*unsquashable=*/true, std::move(release_fences_A1), false);
   const auto present_id_A2 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdA, present_id_A2},
-                                      /*unsquashable=*/true, std::move(release_fences_A2));
+                                      /*unsquashable=*/true, std::move(release_fences_A2), false);
   const auto present_id_B1 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdB, present_id_B1},
-                                      /*unsquashable=*/true, std::move(release_fences_B1));
+                                      /*unsquashable=*/true, std::move(release_fences_B1), false);
   const auto present_id_B2 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdB, present_id_B2},
-                                      /*unsquashable=*/true, std::move(release_fences_B2));
+                                      /*unsquashable=*/true, std::move(release_fences_B2), false);
 
   // There will be no fences yet, because ScheduleUpdateForSession() stashes the fences in a task
   // dispatched to the main thread, which hasn't run yet.
@@ -235,7 +299,7 @@ TEST_F(FlatlandPresenterTest, TakeReleaseFences) {
   // Register one more present.
   const auto present_id_B3 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdB, present_id_B3},
-                                      /*unsquashable=*/true, std::move(release_fences_B3));
+                                      /*unsquashable=*/true, std::move(release_fences_B3), false);
   RunLoopUntilIdle();
   auto fences_B2B3 = TakeReleaseFences(presenter, {
                                                       {kSessionIdB, present_id_B3},
@@ -272,7 +336,8 @@ TEST_F(FlatlandPresenterTest, MultithreadedAccess) {
 
   frame_scheduler.set_schedule_update_for_session_callback(
       [&scheduled_updates, &function_count](zx::time presentation_time,
-                                            scheduling::SchedulingIdPair id_pair, bool squashable) {
+                                            scheduling::SchedulingIdPair id_pair, bool squashable,
+                                            bool schedule_asap) {
         scheduled_updates.insert(id_pair);
 
         ++function_count;
@@ -325,7 +390,7 @@ TEST_F(FlatlandPresenterTest, MultithreadedAccess) {
         // ScheduleUpdateForSession() is one of the two functions being tested.
         auto present_id = scheduling::GetNextPresentId();
         presenter->ScheduleUpdateForSession(zx::time(0), {session_id, present_id},
-                                            /*unsquashable=*/true, /*release_fences=*/{});
+                                            /*unsquashable=*/true, /*release_fences=*/{}, false);
         presents.push_back(present_id);
 
         // Yield with some randomness so the threads get jumbled up a bit.
@@ -377,7 +442,7 @@ TEST_F(FlatlandPresenterTest, MultithreadedAccess) {
 
     // ScheduleUpdateForSession() is the second function being tested.
     frame_scheduler.ScheduleUpdateForSession(zx::time(0), {kGfxSessionId, present_id},
-                                             /*squashable=*/true);
+                                             /*squashable=*/true, /*schedule_asap=*/false);
   }
 
   {

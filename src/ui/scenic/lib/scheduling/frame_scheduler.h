@@ -29,9 +29,9 @@ struct FuturePresentationInfo {
 using SessionsWithFailedUpdates = std::unordered_set<SessionId>;
 
 // The timestamp data that is expected to be delivered after rendering and presenting a frame.
-// TODO(https://fxbug.dev/42098890): If there are multiple render passes, |render_done_time| is the time
-// furthest forward in time. Solving 24669 may involve expanding this struct to support multiple
-// passes in data.
+// TODO(https://fxbug.dev/42098890): If there are multiple render passes, |render_done_time| is the
+// time furthest forward in time. Solving 24669 may involve expanding this struct to support
+// multiple passes in data.
 // TODO(https://fxbug.dev/42149510): when there are multiple displays, there is no single "actual
 // presentation time" that the FrameRenderer can return.
 struct Timestamps {
@@ -71,7 +71,7 @@ class FrameScheduler {
   // |squashable| determines if the update is allowed to be combined with a following one in case
   // of delays.
   virtual void ScheduleUpdateForSession(zx::time presentation_time, SchedulingIdPair id_pair,
-                                        bool squashable) = 0;
+                                        bool squashable, bool schedule_asap) = 0;
 
   // Gets the predicted latch points and presentation times for the frames at or before the next
   // |requested_prediction_span| time span. Uses the FramePredictor to do so.

@@ -31,7 +31,8 @@ class FlatlandPresenter {
   // This function should be called from Flatland instance worker threads.
   virtual void ScheduleUpdateForSession(zx::time requested_presentation_time,
                                         scheduling::SchedulingIdPair id_pair, bool squashable,
-                                        std::vector<zx::event> release_fences) = 0;
+                                        std::vector<zx::event> release_fences,
+                                        bool schedule_asap) = 0;
 
   // From scheduling::FrameScheduler::GetFuturePresentationInfos():
   // Gets the predicted latch points and presentation times for the frames at or before the next
