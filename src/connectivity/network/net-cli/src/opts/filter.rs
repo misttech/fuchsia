@@ -10,8 +10,9 @@ use anyhow::{anyhow, Context as _};
 use argh::{ArgsInfo, FromArgs};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_filter_ext as fnet_filter_ext,
+    fidl_fuchsia_net_filter_ext as fnet_filter_ext,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers as fnet_matchers,
 };
 
 #[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
@@ -317,12 +318,12 @@ impl FromStr for AddressMatcherType {
             "range" => {
                 let (start, end) = value.split_once("..=").ok_or_else(|| {
                     anyhow!(
-                    "expected inclusive address range to be specified in the form $start..=$end"
-                )
+                        "expected inclusive address range to be specified in the form $start..=$end"
+                    )
                 })?;
                 let start: fnet::IpAddress = start.parse::<fnet_ext::IpAddress>()?.into();
                 let end: fnet::IpAddress = end.parse::<fnet_ext::IpAddress>()?.into();
-                let range = fnet_filter::AddressRange { start, end }.try_into()?;
+                let range = fnet_matchers::AddressRange { start, end }.try_into()?;
                 Ok(Self::Range(range))
             }
             other => Err(anyhow!("unrecognized address property {other}")),
@@ -614,7 +615,7 @@ mod tests {
         "range:192.0.2.1..=192.0.2.255" =>
         Ok(AddressMatcher {
             matcher: AddressMatcherType::Range(
-                fnet_filter::AddressRange {
+                fnet_matchers::AddressRange {
                     start: fidl_ip!("192.0.2.1"),
                     end: fidl_ip!("192.0.2.255"),
                 }.try_into().unwrap()
@@ -627,7 +628,7 @@ mod tests {
         "range:2001:db8::1..=2001:db8::2" =>
         Ok(AddressMatcher {
             matcher: AddressMatcherType::Range(
-                fnet_filter::AddressRange {
+                fnet_matchers::AddressRange {
                     start: fidl_ip!("2001:db8::1"),
                     end: fidl_ip!("2001:db8::2"),
                 }.try_into().unwrap()
@@ -640,7 +641,7 @@ mod tests {
         "!range:192.0.2.1..=192.0.2.255" =>
         Ok(AddressMatcher {
             matcher: AddressMatcherType::Range(
-                fnet_filter::AddressRange {
+                fnet_matchers::AddressRange {
                     start: fidl_ip!("192.0.2.1"),
                     end: fidl_ip!("192.0.2.255"),
                 }.try_into().unwrap()

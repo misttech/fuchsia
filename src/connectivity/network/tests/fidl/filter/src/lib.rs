@@ -36,7 +36,10 @@ use netstack_testing_common::{
 };
 use netstack_testing_macros::netstack_test;
 use test_case::{test_case, test_matrix};
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter};
+use {
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_net_matchers as fnet_matchers,
+};
 
 trait TestValue {
     fn test_value() -> Self;
@@ -623,7 +626,7 @@ async fn push_change_invalid_interface_matcher(name: &str) {
                         index: 0,
                     },
                     matchers: fnet_filter::Matchers {
-                        in_interface: Some(fnet_filter::InterfaceMatcher::Id(0)),
+                        in_interface: Some(fnet_matchers::Interface::Id(0)),
                         ..Default::default()
                     },
                     action: fnet_filter::Action::Drop(fnet_filter::Empty {}),
@@ -639,8 +642,8 @@ async fn push_change_invalid_interface_matcher(name: &str) {
 
 #[netstack_test]
 #[test_case(
-    fnet_filter::AddressMatcher {
-        matcher: fnet_filter::AddressMatcherType::Range(fnet_filter::AddressRange {
+    fnet_matchers::Address {
+        matcher: fnet_matchers::AddressMatcherType::Range(fnet_matchers::AddressRange {
             start: fidl_ip!("192.0.2.1"),
             end: fidl_ip!("2001:db8::1"),
         }),
@@ -649,8 +652,8 @@ async fn push_change_invalid_interface_matcher(name: &str) {
     "address family mismatch"
 )]
 #[test_case(
-    fnet_filter::AddressMatcher {
-        matcher: fnet_filter::AddressMatcherType::Range(fnet_filter::AddressRange {
+    fnet_matchers::Address {
+        matcher: fnet_matchers::AddressMatcherType::Range(fnet_matchers::AddressRange {
             start: fidl_ip!("192.0.2.2"),
             end: fidl_ip!("192.0.2.1"),
         }),
@@ -659,8 +662,8 @@ async fn push_change_invalid_interface_matcher(name: &str) {
     "start > end"
 )]
 #[test_case(
-    fnet_filter::AddressMatcher {
-        matcher: fnet_filter::AddressMatcherType::Subnet(fnet::Subnet {
+    fnet_matchers::Address {
+        matcher: fnet_matchers::AddressMatcherType::Subnet(fnet::Subnet {
             addr: fidl_ip!("192.0.2.1"),
             prefix_len: 33,
         }),
@@ -669,13 +672,13 @@ async fn push_change_invalid_interface_matcher(name: &str) {
     "subnet prefix too long"
 )]
 #[test_case(
-    fnet_filter::AddressMatcher {
-        matcher: fnet_filter::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.1/24")),
+    fnet_matchers::Address {
+        matcher: fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.1/24")),
         invert: false,
     };
     "subnet host bits set"
 )]
-async fn push_change_invalid_address_matcher(name: &str, matcher: fnet_filter::AddressMatcher) {
+async fn push_change_invalid_address_matcher(name: &str, matcher: fnet_matchers::Address) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
     let control =
@@ -736,9 +739,9 @@ async fn push_change_invalid_port_matcher(name: &str) {
                         index: 0,
                     },
                     matchers: fnet_filter::Matchers {
-                        transport_protocol: Some(fnet_filter::TransportProtocol::Tcp(
-                            fnet_filter::TcpMatcher {
-                                src_port: Some(fnet_filter::PortMatcher {
+                        transport_protocol: Some(fnet_matchers::PacketTransportProtocol::Tcp(
+                            fnet_matchers::TcpPacket {
+                                src_port: Some(fnet_matchers::Port {
                                     start: 1,
                                     end: 0,
                                     invert: false,
@@ -1326,7 +1329,7 @@ fn invalid_address_range_matcher<I: net_types::ip::Ip>() -> Matchers {
                         // IPv4 range in an IPv6 namespace
                         IpVersion::V6 => (fidl_ip!("192.0.2.1"), fidl_ip!("192.0.2.2")),
                     };
-                    fnet_filter::AddressRange { start, end }
+                    fnet_matchers::AddressRange { start, end }
                 })
                 .unwrap(),
             ),

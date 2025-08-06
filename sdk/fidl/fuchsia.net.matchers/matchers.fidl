@@ -1,0 +1,87 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+/// A collection of fundamental matchers for network objects.
+@available(added=HEAD)
+library fuchsia.net.matchers;
+
+using fuchsia.net;
+using fuchsia.net.interfaces;
+
+/// A matcher for network interfaces.
+type Interface = flexible union {
+    /// The ID of the interface as assigned by the netstack.
+    1: id fuchsia.net.InterfaceId;
+    /// The name of the interface.
+    2: name fuchsia.net.interfaces.Name;
+    /// The port class of the interface.
+    3: port_class fuchsia.net.interfaces.PortClass;
+};
+
+/// A matcher for IP addresses.
+type Address = struct {
+    matcher @generated_name("AddressMatcherType") flexible union {
+        /// The subnet that must contain the IP address in the packet header in
+        /// order for it to match.
+        1: subnet fuchsia.net.Subnet;
+        /// The range of addresses that must include the IP address in the
+        /// packet header in order for it to match.
+        ///
+        /// The endpoints of the range must be in the same address family, and
+        /// `start` must <= `end`. (Comparisons are performed on the numerical
+        /// big-endian representation of the IP address.)
+        2: range @generated_name("AddressRange") struct {
+            /// The inclusive start of the address range.
+            start fuchsia.net.IpAddress;
+            /// The inclusive end of the address range.
+            end fuchsia.net.IpAddress;
+        };
+    };
+    /// Whether to check for an "inverse" or "negative" match (in which case,
+    /// if the matcher criteria do *not* apply, it *is* considered a match, and
+    /// vice versa).
+    invert bool;
+};
+
+/// A matcher for transport-layer port numbers.
+///
+/// `start` must <= `end`.
+type Port = struct {
+    /// The inclusive start of the port range.
+    start uint16;
+    /// The inclusive end of the port range.
+    end uint16;
+    /// Whether to check for an "inverse" or "negative" match.
+    invert bool;
+};
+
+/// A matcher for TCP packets.
+type TcpPacket = table {
+    /// Matcher for the TCP source port.
+    1: src_port Port;
+    /// Matcher for the TCP destination port.
+    2: dst_port Port;
+};
+
+/// A matcher for UDP packets.
+type UdpPacket = table {
+    /// Matcher for the UDP source port.
+    1: src_port Port;
+    /// Matcher for the UDP destination port.
+    2: dst_port Port;
+};
+
+/// A matcher for ICMPv4 packets.
+type IcmpPacket = table {};
+
+/// A matcher for ICMPv6 packets.
+type Icmpv6Packet = table {};
+
+/// A matcher for transport-layer information in packets.
+type PacketTransportProtocol = flexible union {
+    1: tcp TcpPacket;
+    2: udp UdpPacket;
+    3: icmp IcmpPacket;
+    4: icmpv6 Icmpv6Packet;
+};

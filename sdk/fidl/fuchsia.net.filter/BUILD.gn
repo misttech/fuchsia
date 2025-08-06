@@ -19,6 +19,7 @@ fidl("fuchsia.net.filter") {
     "//sdk/fidl/fuchsia.hardware.network",
     "//sdk/fidl/fuchsia.net",
     "//sdk/fidl/fuchsia.net.interfaces",
+    "//sdk/fidl/fuchsia.net.matchers",
   ]
 
   enable_hlcpp = true

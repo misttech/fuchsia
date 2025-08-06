@@ -5,7 +5,7 @@
 library fuchsia.net.filter;
 
 using fuchsia.net;
-using fuchsia.net.interfaces;
+using fuchsia.net.matchers;
 
 const MAX_NAME_LEN uint8 = 255;
 
@@ -156,53 +156,6 @@ type RuleId = struct {
     index uint32;
 };
 
-/// A matcher for network interfaces.
-type InterfaceMatcher = flexible union {
-    /// The ID of the interface as assigned by the netstack.
-    1: id fuchsia.net.InterfaceId;
-    /// The name of the interface.
-    2: name fuchsia.net.interfaces.Name;
-    /// The port class of the interface.
-    3: port_class fuchsia.net.interfaces.PortClass;
-};
-
-/// A matcher for IP addresses.
-type AddressMatcher = struct {
-    matcher @generated_name("AddressMatcherType") flexible union {
-        /// The subnet that must contain the IP address in the packet header in
-        /// order for it to match.
-        1: subnet fuchsia.net.Subnet;
-        /// The range of addresses that must include the IP address in the
-        /// packet header in order for it to match.
-        ///
-        /// The endpoints of the range must be in the same address family, and
-        /// `start` must <= `end`. (Comparisons are performed on the numerical
-        /// big-endian representation of the IP address.)
-        2: range @generated_name("AddressRange") struct {
-            /// The inclusive start of the address range.
-            start fuchsia.net.IpAddress;
-            /// The inclusive end of the address range.
-            end fuchsia.net.IpAddress;
-        };
-    };
-    /// Whether to check for an "inverse" or "negative" match (in which case,
-    /// if the matcher criteria do *not* apply, it *is* considered a match, and
-    /// vice versa).
-    invert bool;
-};
-
-/// A matcher for transport-layer port numbers.
-///
-/// `start` must <= `end`.
-type PortMatcher = struct {
-    /// The inclusive start of the port range.
-    start uint16;
-    /// The inclusive end of the port range.
-    end uint16;
-    /// Whether to check for an "inverse" or "negative" match.
-    invert bool;
-};
-
 /// The criteria that a packet must match for a rule to be applied.
 ///
 /// Each field is optional, and will only be checked if provided. An unset
@@ -218,37 +171,22 @@ type Matchers = table {
     /// The interface on which the packet entered the stack.
     ///
     /// Only available in `INGRESS`, `LOCAL_INGRESS`, and `FORWARDING`.
-    1: in_interface InterfaceMatcher;
+    1: in_interface fuchsia.net.matchers.Interface;
     /// The interface through which the packet exits the stack.
     ///
     /// Only available in `FORWARDING`, `LOCAL_EGRESS`, and `EGRESS`.
-    2: out_interface InterfaceMatcher;
+    2: out_interface fuchsia.net.matchers.Interface;
     /// Matcher for the source IP address.
-    3: src_addr AddressMatcher;
+    3: src_addr fuchsia.net.matchers.Address;
     /// Matcher for the destination IP address.
-    4: dst_addr AddressMatcher;
+    4: dst_addr fuchsia.net.matchers.Address;
     /// Matchers for the transport layer protocol.
     ///
     /// Note that the variants of the `TransportProtocol` union allow matching
     /// on the transport layer protocol itself; to match on specific properties
     /// at the transport layer (such as TCP or UDP ports), clients should use
     /// the fields of a protocol-specific matcher.
-    5: transport_protocol @generated_name("TransportProtocol") flexible union {
-        1: tcp @generated_name("TcpMatcher") table {
-            /// Matcher for the TCP source port.
-            1: src_port PortMatcher;
-            /// Matcher for the TCP destination port.
-            2: dst_port PortMatcher;
-        };
-        2: udp @generated_name("UdpMatcher") table {
-            /// Matcher for the UDP source port.
-            1: src_port PortMatcher;
-            /// Matcher for the UDP destination port.
-            2: dst_port PortMatcher;
-        };
-        3: icmp @generated_name("IcmpMatcher") table {};
-        4: icmpv6 @generated_name("Icmpv6Matcher") table {};
-    };
+    5: transport_protocol fuchsia.net.matchers.PacketTransportProtocol;
 };
 
 /// An inclusive range of transport-layer ports.

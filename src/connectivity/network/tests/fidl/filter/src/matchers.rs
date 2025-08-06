@@ -11,7 +11,7 @@ use fidl_fuchsia_net_filter_ext::{
     TransportProtocolMatcher,
 };
 use net_types::ip::{Ip, IpVersion};
-use {fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_filter as fnet_filter};
+use {fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_matchers as fnet_matchers};
 
 use crate::ip_hooks::{
     IcmpSocket, Interfaces, IrrelevantToTest, Ports, SocketType, Subnets, TcpSocket, UdpSocket,
@@ -197,7 +197,7 @@ impl Matcher for SrcAddressRange {
             src_addr: Some(match inversion {
                 Inversion::Default => AddressMatcher {
                     matcher: AddressMatcherType::Range(
-                        fnet_filter::AddressRange { start: src.addr, end: src.addr }
+                        fnet_matchers::AddressRange { start: src.addr, end: src.addr }
                             .try_into()
                             .expect("address range should be valid"),
                     ),
@@ -205,7 +205,7 @@ impl Matcher for SrcAddressRange {
                 },
                 Inversion::InverseMatch => AddressMatcher {
                     matcher: AddressMatcherType::Range(
-                        fnet_filter::AddressRange { start: other.addr, end: other.addr }
+                        fnet_matchers::AddressRange { start: other.addr, end: other.addr }
                             .try_into()
                             .expect("address range should be valid"),
                     ),
@@ -273,7 +273,7 @@ impl Matcher for DstAddressRange {
             dst_addr: Some(match inversion {
                 Inversion::Default => AddressMatcher {
                     matcher: AddressMatcherType::Range(
-                        fnet_filter::AddressRange { start: dst.addr, end: dst.addr }
+                        fnet_matchers::AddressRange { start: dst.addr, end: dst.addr }
                             .try_into()
                             .expect("address range should be valid"),
                     ),
@@ -281,7 +281,7 @@ impl Matcher for DstAddressRange {
                 },
                 Inversion::InverseMatch => AddressMatcher {
                     matcher: AddressMatcherType::Range(
-                        fnet_filter::AddressRange { start: other.addr, end: other.addr }
+                        fnet_matchers::AddressRange { start: other.addr, end: other.addr }
                             .try_into()
                             .expect("address range should be valid"),
                     ),

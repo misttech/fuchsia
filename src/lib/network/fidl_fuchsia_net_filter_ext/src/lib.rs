@@ -27,7 +27,8 @@ use thiserror::Error;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_root as fnet_root,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_root as fnet_root,
 };
 
 /// Conversion errors from `fnet_filter` FIDL types to the
@@ -78,9 +79,9 @@ mod type_names {
     pub(super) const IP_INSTALLATION_HOOK: &str = "fuchsia.net.filter/IpInstallationHook";
     pub(super) const NAT_INSTALLATION_HOOK: &str = "fuchsia.net.filter/NatInstallationHook";
     pub(super) const ROUTINE_TYPE: &str = "fuchsia.net.filter/RoutineType";
-    pub(super) const INTERFACE_MATCHER: &str = "fuchsia.net.filter/InterfaceMatcher";
+    pub(super) const INTERFACE_MATCHER: &str = "fuchsia.net.matchers/Interface";
     pub(super) const ADDRESS_MATCHER_TYPE: &str = "fuchsia.net.filter/AddressMatcherType";
-    pub(super) const TRANSPORT_PROTOCOL: &str = "fuchsia.net.filter/TransportProtocol";
+    pub(super) const TRANSPORT_PROTOCOL: &str = "fuchsia.net.matchers/TransportProtocol";
     pub(super) const ACTION: &str = "fuchsia.net.filter/Action";
     pub(super) const MARK_ACTION: &str = "fuchsia.net.filter/MarkAction";
     pub(super) const TRANSPARENT_PROXY: &str = "fuchsia.net.filter/TransparentProxy";
@@ -445,7 +446,7 @@ impl TryFrom<fnet_filter::Routine> for Routine {
     }
 }
 
-/// Extension type for [`fnet_filter::InterfaceMatcher`].
+/// Extension type for [`fnet_matchers::Interface`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum InterfaceMatcher {
     Id(NonZeroU64),
@@ -453,7 +454,7 @@ pub enum InterfaceMatcher {
     PortClass(fnet_interfaces_ext::PortClass),
 }
 
-impl From<InterfaceMatcher> for fnet_filter::InterfaceMatcher {
+impl From<InterfaceMatcher> for fnet_matchers::Interface {
     fn from(matcher: InterfaceMatcher) -> Self {
         match matcher {
             InterfaceMatcher::Id(id) => Self::Id(id.get()),
@@ -463,17 +464,17 @@ impl From<InterfaceMatcher> for fnet_filter::InterfaceMatcher {
     }
 }
 
-impl TryFrom<fnet_filter::InterfaceMatcher> for InterfaceMatcher {
+impl TryFrom<fnet_matchers::Interface> for InterfaceMatcher {
     type Error = FidlConversionError;
 
-    fn try_from(matcher: fnet_filter::InterfaceMatcher) -> Result<Self, Self::Error> {
+    fn try_from(matcher: fnet_matchers::Interface) -> Result<Self, Self::Error> {
         match matcher {
-            fnet_filter::InterfaceMatcher::Id(id) => {
+            fnet_matchers::Interface::Id(id) => {
                 let id = NonZeroU64::new(id).ok_or(FidlConversionError::ZeroInterfaceId)?;
                 Ok(Self::Id(id))
             }
-            fnet_filter::InterfaceMatcher::Name(name) => Ok(Self::Name(name)),
-            fnet_filter::InterfaceMatcher::PortClass(port_class) => {
+            fnet_matchers::Interface::Name(name) => Ok(Self::Name(name)),
+            fnet_matchers::Interface::PortClass(port_class) => {
                 port_class.try_into().map(Self::PortClass).map_err(|e| match e {
                     fnet_interfaces_ext::UnknownPortClassError::NetInterfaces(_) => {
                         FidlConversionError::UnknownUnionVariant(
@@ -487,14 +488,14 @@ impl TryFrom<fnet_filter::InterfaceMatcher> for InterfaceMatcher {
                     }
                 })
             }
-            fnet_filter::InterfaceMatcher::__SourceBreaking { .. } => {
+            fnet_matchers::Interface::__SourceBreaking { .. } => {
                 Err(FidlConversionError::UnknownUnionVariant(type_names::INTERFACE_MATCHER))
             }
         }
     }
 }
 
-/// Extension type for the `Subnet` variant of [`fnet_filter::AddressMatcherType`].
+/// Extension type for the `Subnet` variant of [`fnet_matchers::Address`].
 ///
 /// This type witnesses to the invariant that the prefix length of the subnet is
 /// no greater than the number of bits in the IP address, and that no host bits
@@ -574,7 +575,7 @@ impl Debug for Subnet {
     }
 }
 
-/// Extension type for [`fnet_filter::AddressRange`].
+/// Extension type for [`fnet_matchers::AddressRange`].
 ///
 /// This type witnesses to the invariant that `start` is in the same IP family
 /// as `end`, and that `start <= end`. (Comparisons are performed on the
@@ -594,17 +595,17 @@ impl AddressRange {
     }
 }
 
-impl From<AddressRange> for fnet_filter::AddressRange {
+impl From<AddressRange> for fnet_matchers::AddressRange {
     fn from(range: AddressRange) -> Self {
         Self { start: range.start(), end: range.end() }
     }
 }
 
-impl TryFrom<fnet_filter::AddressRange> for AddressRange {
+impl TryFrom<fnet_matchers::AddressRange> for AddressRange {
     type Error = FidlConversionError;
 
-    fn try_from(range: fnet_filter::AddressRange) -> Result<Self, Self::Error> {
-        let fnet_filter::AddressRange { start, end } = range;
+    fn try_from(range: fnet_matchers::AddressRange) -> Result<Self, Self::Error> {
+        let fnet_matchers::AddressRange { start, end } = range;
         match (start, end) {
             (
                 fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: start_bytes }),
@@ -631,14 +632,14 @@ impl TryFrom<fnet_filter::AddressRange> for AddressRange {
     }
 }
 
-/// Extension type for [`fnet_filter::AddressMatcherType`].
+/// Extension type for [`fnet_matchers::Address`].
 #[derive(Clone, PartialEq)]
 pub enum AddressMatcherType {
     Subnet(Subnet),
     Range(AddressRange),
 }
 
-impl From<AddressMatcherType> for fnet_filter::AddressMatcherType {
+impl From<AddressMatcherType> for fnet_matchers::AddressMatcherType {
     fn from(matcher: AddressMatcherType) -> Self {
         match matcher {
             AddressMatcherType::Subnet(subnet) => Self::Subnet(subnet.into()),
@@ -647,14 +648,16 @@ impl From<AddressMatcherType> for fnet_filter::AddressMatcherType {
     }
 }
 
-impl TryFrom<fnet_filter::AddressMatcherType> for AddressMatcherType {
+impl TryFrom<fnet_matchers::AddressMatcherType> for AddressMatcherType {
     type Error = FidlConversionError;
 
-    fn try_from(matcher: fnet_filter::AddressMatcherType) -> Result<Self, Self::Error> {
+    fn try_from(matcher: fnet_matchers::AddressMatcherType) -> Result<Self, Self::Error> {
         match matcher {
-            fnet_filter::AddressMatcherType::Subnet(subnet) => Ok(Self::Subnet(subnet.try_into()?)),
-            fnet_filter::AddressMatcherType::Range(range) => Ok(Self::Range(range.try_into()?)),
-            fnet_filter::AddressMatcherType::__SourceBreaking { .. } => {
+            fnet_matchers::AddressMatcherType::Subnet(subnet) => {
+                Ok(Self::Subnet(subnet.try_into()?))
+            }
+            fnet_matchers::AddressMatcherType::Range(range) => Ok(Self::Range(range.try_into()?)),
+            fnet_matchers::AddressMatcherType::__SourceBreaking { .. } => {
                 Err(FidlConversionError::UnknownUnionVariant(type_names::ADDRESS_MATCHER_TYPE))
             }
         }
@@ -670,30 +673,30 @@ impl Debug for AddressMatcherType {
     }
 }
 
-/// Extension type for [`fnet_filter::AddressMatcher`].
+/// Extension type for [`fnet_matchers::Address`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct AddressMatcher {
     pub matcher: AddressMatcherType,
     pub invert: bool,
 }
 
-impl From<AddressMatcher> for fnet_filter::AddressMatcher {
+impl From<AddressMatcher> for fnet_matchers::Address {
     fn from(matcher: AddressMatcher) -> Self {
         let AddressMatcher { matcher, invert } = matcher;
         Self { matcher: matcher.into(), invert }
     }
 }
 
-impl TryFrom<fnet_filter::AddressMatcher> for AddressMatcher {
+impl TryFrom<fnet_matchers::Address> for AddressMatcher {
     type Error = FidlConversionError;
 
-    fn try_from(matcher: fnet_filter::AddressMatcher) -> Result<Self, Self::Error> {
-        let fnet_filter::AddressMatcher { matcher, invert } = matcher;
+    fn try_from(matcher: fnet_matchers::Address) -> Result<Self, Self::Error> {
+        let fnet_matchers::Address { matcher, invert } = matcher;
         Ok(Self { matcher: matcher.try_into()?, invert })
     }
 }
 
-/// Extension type for [`fnet_filter::PortMatcher`].
+/// Extension type for [`fnet_matchers::Port`].
 ///
 /// This type witnesses to the invariant that `start <= end`.
 #[derive(Debug, Clone, PartialEq)]
@@ -730,18 +733,18 @@ impl PortMatcher {
     }
 }
 
-impl From<PortMatcher> for fnet_filter::PortMatcher {
+impl From<PortMatcher> for fnet_matchers::Port {
     fn from(matcher: PortMatcher) -> Self {
         let PortMatcher { range, invert } = matcher;
         Self { start: *range.start(), end: *range.end(), invert }
     }
 }
 
-impl TryFrom<fnet_filter::PortMatcher> for PortMatcher {
+impl TryFrom<fnet_matchers::Port> for PortMatcher {
     type Error = FidlConversionError;
 
-    fn try_from(matcher: fnet_filter::PortMatcher) -> Result<Self, Self::Error> {
-        let fnet_filter::PortMatcher { start, end, invert } = matcher;
+    fn try_from(matcher: fnet_matchers::Port) -> Result<Self, Self::Error> {
+        let fnet_matchers::Port { start, end, invert } = matcher;
         if start > end {
             return Err(FidlConversionError::InvalidPortMatcherRange);
         }
@@ -749,7 +752,7 @@ impl TryFrom<fnet_filter::PortMatcher> for PortMatcher {
     }
 }
 
-/// Extension type for [`fnet_filter::TransportProtocol`].
+/// Extension type for [`fnet_matchers::PacketTransportProtocol`].
 #[derive(Clone, PartialEq)]
 pub enum TransportProtocolMatcher {
     Tcp { src_port: Option<PortMatcher>, dst_port: Option<PortMatcher> },
@@ -758,35 +761,37 @@ pub enum TransportProtocolMatcher {
     Icmpv6,
 }
 
-impl From<TransportProtocolMatcher> for fnet_filter::TransportProtocol {
+impl From<TransportProtocolMatcher> for fnet_matchers::PacketTransportProtocol {
     fn from(matcher: TransportProtocolMatcher) -> Self {
         match matcher {
             TransportProtocolMatcher::Tcp { src_port, dst_port } => {
-                Self::Tcp(fnet_filter::TcpMatcher {
+                Self::Tcp(fnet_matchers::TcpPacket {
                     src_port: src_port.map(Into::into),
                     dst_port: dst_port.map(Into::into),
                     __source_breaking: SourceBreaking,
                 })
             }
             TransportProtocolMatcher::Udp { src_port, dst_port } => {
-                Self::Udp(fnet_filter::UdpMatcher {
+                Self::Udp(fnet_matchers::UdpPacket {
                     src_port: src_port.map(Into::into),
                     dst_port: dst_port.map(Into::into),
                     __source_breaking: SourceBreaking,
                 })
             }
-            TransportProtocolMatcher::Icmp => Self::Icmp(fnet_filter::IcmpMatcher::default()),
-            TransportProtocolMatcher::Icmpv6 => Self::Icmpv6(fnet_filter::Icmpv6Matcher::default()),
+            TransportProtocolMatcher::Icmp => Self::Icmp(fnet_matchers::IcmpPacket::default()),
+            TransportProtocolMatcher::Icmpv6 => {
+                Self::Icmpv6(fnet_matchers::Icmpv6Packet::default())
+            }
         }
     }
 }
 
-impl TryFrom<fnet_filter::TransportProtocol> for TransportProtocolMatcher {
+impl TryFrom<fnet_matchers::PacketTransportProtocol> for TransportProtocolMatcher {
     type Error = FidlConversionError;
 
-    fn try_from(matcher: fnet_filter::TransportProtocol) -> Result<Self, Self::Error> {
+    fn try_from(matcher: fnet_matchers::PacketTransportProtocol) -> Result<Self, Self::Error> {
         match matcher {
-            fnet_filter::TransportProtocol::Tcp(fnet_filter::TcpMatcher {
+            fnet_matchers::PacketTransportProtocol::Tcp(fnet_matchers::TcpPacket {
                 src_port,
                 dst_port,
                 __source_breaking,
@@ -794,7 +799,7 @@ impl TryFrom<fnet_filter::TransportProtocol> for TransportProtocolMatcher {
                 src_port: src_port.map(TryInto::try_into).transpose()?,
                 dst_port: dst_port.map(TryInto::try_into).transpose()?,
             }),
-            fnet_filter::TransportProtocol::Udp(fnet_filter::UdpMatcher {
+            fnet_matchers::PacketTransportProtocol::Udp(fnet_matchers::UdpPacket {
                 src_port,
                 dst_port,
                 __source_breaking,
@@ -802,13 +807,13 @@ impl TryFrom<fnet_filter::TransportProtocol> for TransportProtocolMatcher {
                 src_port: src_port.map(TryInto::try_into).transpose()?,
                 dst_port: dst_port.map(TryInto::try_into).transpose()?,
             }),
-            fnet_filter::TransportProtocol::Icmp(fnet_filter::IcmpMatcher {
+            fnet_matchers::PacketTransportProtocol::Icmp(fnet_matchers::IcmpPacket {
                 __source_breaking,
             }) => Ok(Self::Icmp),
-            fnet_filter::TransportProtocol::Icmpv6(fnet_filter::Icmpv6Matcher {
+            fnet_matchers::PacketTransportProtocol::Icmpv6(fnet_matchers::Icmpv6Packet {
                 __source_breaking,
             }) => Ok(Self::Icmpv6),
-            fnet_filter::TransportProtocol::__SourceBreaking { .. } => {
+            fnet_matchers::PacketTransportProtocol::__SourceBreaking { .. } => {
                 Err(FidlConversionError::UnknownUnionVariant(type_names::TRANSPORT_PROTOCOL))
             }
         }
@@ -1872,18 +1877,18 @@ mod tests {
         "Routine"
     )]
     #[test_case(
-        fnet_filter::InterfaceMatcher::Id(1),
+        fnet_matchers::Interface::Id(1),
         InterfaceMatcher::Id(NonZeroU64::new(1).unwrap());
         "InterfaceMatcher"
     )]
     #[test_case(
-        fnet_filter::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.0/24")),
+        fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.0/24")),
         AddressMatcherType::Subnet(Subnet(fidl_subnet!("192.0.2.0/24")));
         "AddressMatcherType"
     )]
     #[test_case(
-        fnet_filter::AddressMatcher {
-            matcher: fnet_filter::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.0/24")),
+        fnet_matchers::Address {
+            matcher: fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.0/24")),
             invert: true,
         },
         AddressMatcher {
@@ -1893,7 +1898,7 @@ mod tests {
         "AddressMatcher"
     )]
     #[test_case(
-        fnet_filter::AddressRange {
+        fnet_matchers::AddressRange {
             start: fidl_ip!("192.0.2.0"),
             end: fidl_ip!("192.0.2.1"),
         },
@@ -1903,8 +1908,8 @@ mod tests {
         "AddressRange"
     )]
     #[test_case(
-        fnet_filter::TransportProtocol::Udp(fnet_filter::UdpMatcher {
-            src_port: Some(fnet_filter::PortMatcher { start: 1024, end: u16::MAX, invert: false }),
+        fnet_matchers::PacketTransportProtocol::Udp(fnet_matchers::UdpPacket {
+            src_port: Some(fnet_matchers::Port { start: 1024, end: u16::MAX, invert: false }),
             dst_port: None,
             ..Default::default()
         }),
@@ -1916,10 +1921,10 @@ mod tests {
     )]
     #[test_case(
         fnet_filter::Matchers {
-            in_interface: Some(fnet_filter::InterfaceMatcher::Name(String::from("wlan"))),
-            transport_protocol: Some(fnet_filter::TransportProtocol::Tcp(fnet_filter::TcpMatcher {
+            in_interface: Some(fnet_matchers::Interface::Name(String::from("wlan"))),
+            transport_protocol: Some(fnet_matchers::PacketTransportProtocol::Tcp(fnet_matchers::TcpPacket {
                 src_port: None,
-                dst_port: Some(fnet_filter::PortMatcher { start: 22, end: 22, invert: false }),
+                dst_port: Some(fnet_matchers::Port { start: 22, end: 22, invert: false }),
                 ..Default::default()
             })),
             ..Default::default()
@@ -1949,8 +1954,8 @@ mod tests {
                 index: 1,
             },
             matchers: fnet_filter::Matchers {
-                transport_protocol: Some(fnet_filter::TransportProtocol::Icmp(
-                    fnet_filter::IcmpMatcher::default()
+                transport_protocol: Some(fnet_matchers::PacketTransportProtocol::Icmp(
+                    fnet_matchers::IcmpPacket::default()
                 )),
                 ..Default::default()
             },
@@ -2114,7 +2119,7 @@ mod tests {
     #[test]
     fn interface_matcher_try_from_unknown_variant() {
         assert_eq!(
-            InterfaceMatcher::try_from(fnet_filter::InterfaceMatcher::__SourceBreaking {
+            InterfaceMatcher::try_from(fnet_matchers::Interface::__SourceBreaking {
                 unknown_ordinal: 0
             }),
             Err(FidlConversionError::UnknownUnionVariant(type_names::INTERFACE_MATCHER))
@@ -2124,7 +2129,7 @@ mod tests {
     #[test]
     fn interface_matcher_try_from_invalid() {
         assert_eq!(
-            InterfaceMatcher::try_from(fnet_filter::InterfaceMatcher::Id(0)),
+            InterfaceMatcher::try_from(fnet_matchers::Interface::Id(0)),
             Err(FidlConversionError::ZeroInterfaceId)
         );
     }
@@ -2132,7 +2137,7 @@ mod tests {
     #[test]
     fn address_matcher_type_try_from_unknown_variant() {
         assert_eq!(
-            AddressMatcherType::try_from(fnet_filter::AddressMatcherType::__SourceBreaking {
+            AddressMatcherType::try_from(fnet_matchers::AddressMatcherType::__SourceBreaking {
                 unknown_ordinal: 0
             }),
             Err(FidlConversionError::UnknownUnionVariant(type_names::ADDRESS_MATCHER_TYPE))
@@ -2154,14 +2159,14 @@ mod tests {
     #[test]
     fn address_range_try_from_invalid() {
         assert_eq!(
-            AddressRange::try_from(fnet_filter::AddressRange {
+            AddressRange::try_from(fnet_matchers::AddressRange {
                 start: fidl_ip!("192.0.2.1"),
                 end: fidl_ip!("192.0.2.0"),
             }),
             Err(FidlConversionError::InvalidAddressRange)
         );
         assert_eq!(
-            AddressRange::try_from(fnet_filter::AddressRange {
+            AddressRange::try_from(fnet_matchers::AddressRange {
                 start: fidl_ip!("2001:db8::1"),
                 end: fidl_ip!("2001:db8::"),
             }),
@@ -2172,7 +2177,7 @@ mod tests {
     #[test]
     fn address_range_try_from_family_mismatch() {
         assert_eq!(
-            AddressRange::try_from(fnet_filter::AddressRange {
+            AddressRange::try_from(fnet_matchers::AddressRange {
                 start: fidl_ip!("192.0.2.0"),
                 end: fidl_ip!("2001:db8::"),
             }),
@@ -2183,7 +2188,7 @@ mod tests {
     #[test]
     fn port_matcher_try_from_invalid() {
         assert_eq!(
-            PortMatcher::try_from(fnet_filter::PortMatcher { start: 1, end: 0, invert: false }),
+            PortMatcher::try_from(fnet_matchers::Port { start: 1, end: 0, invert: false }),
             Err(FidlConversionError::InvalidPortMatcherRange)
         );
     }
@@ -2191,9 +2196,9 @@ mod tests {
     #[test]
     fn transport_protocol_try_from_unknown_variant() {
         assert_eq!(
-            TransportProtocolMatcher::try_from(fnet_filter::TransportProtocol::__SourceBreaking {
-                unknown_ordinal: 0
-            }),
+            TransportProtocolMatcher::try_from(
+                fnet_matchers::PacketTransportProtocol::__SourceBreaking { unknown_ordinal: 0 }
+            ),
             Err(FidlConversionError::UnknownUnionVariant(type_names::TRANSPORT_PROTOCOL))
         );
     }
