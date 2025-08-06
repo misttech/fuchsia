@@ -806,6 +806,7 @@ class MappingProtectionRanges {
       : first_region_arch_mmu_flags_(arch_mmu_flags) {}
   MappingProtectionRanges(MappingProtectionRanges&&) = default;
   ~MappingProtectionRanges() = default;
+  MappingProtectionRanges& operator=(MappingProtectionRanges&&) = default;
 
   // Helper struct for FlagsRangeAtAddr
   struct FlagsRange {

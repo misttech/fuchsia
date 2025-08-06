@@ -1422,6 +1422,8 @@ static bool vm_mapping_attribution_map_unmap_test() {
   status =
       mapping->DebugUnmap(mapping->base_locking() + mapping->size_locking() - PAGE_SIZE, PAGE_SIZE);
   ASSERT_EQ(ZX_OK, status);
+  mapping = aspace->FindRegion(old_base)->as_vm_mapping();
+  ASSERT_TRUE(mapping);
   EXPECT_EQ(old_base, mapping->base_locking());
   EXPECT_EQ(7ul * PAGE_SIZE, mapping->size_locking());
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
@@ -1431,6 +1433,8 @@ static bool vm_mapping_attribution_map_unmap_test() {
   // Unmap from the center of the mapping.
   status = mapping->DebugUnmap(mapping->base_locking() + 4 * PAGE_SIZE, PAGE_SIZE);
   ASSERT_EQ(ZX_OK, status);
+  mapping = aspace->FindRegion(old_base)->as_vm_mapping();
+  ASSERT_TRUE(mapping);
   EXPECT_EQ(old_base, mapping->base_locking());
   EXPECT_EQ(4ul * PAGE_SIZE, mapping->size_locking());
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
@@ -1440,6 +1444,8 @@ static bool vm_mapping_attribution_map_unmap_test() {
   // Unmap from the left end of the mapping.
   status = mapping->DebugUnmap(mapping->base_locking(), PAGE_SIZE);
   ASSERT_EQ(ZX_OK, status);
+  mapping = aspace->FindRegion(old_base + PAGE_SIZE)->as_vm_mapping();
+  ASSERT_TRUE(mapping);
   EXPECT_NE(old_base, mapping->base_locking());
   EXPECT_EQ(3ul * PAGE_SIZE, mapping->size_locking());
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));

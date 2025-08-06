@@ -269,86 +269,71 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
 
   LTRACEF("%p\n", this);
 
+  // First create any new mapping. One or two might be required depending on whether unmapping from
+  // an end or the middle.
+  fbl::RefPtr<VmMapping> left, right;
+  if (base_ != base) {
+    fbl::AllocChecker ac;
+    left = fbl::AdoptRef(new (&ac) VmMapping(*parent_, base_, base - base_, flags_, object_,
+                                             object_offset_locked(), MappingProtectionRanges(0),
+                                             Mergeable::YES));
+    if (!ac.check()) {
+      return ZX_ERR_NO_MEMORY;
+    }
+  }
+  if (base + size != base_ + size_) {
+    fbl::AllocChecker ac;
+    const vaddr_t offset = base + size - base_;
+    right = fbl::AdoptRef(new (&ac) VmMapping(*parent_, base_ + offset, size_ - offset, flags_,
+                                              object_, object_offset_locked() + offset,
+                                              MappingProtectionRanges(0), Mergeable::YES));
+    if (!ac.check()) {
+      return ZX_ERR_NO_MEMORY;
+    }
+  }
+
   // Grab the lock for the vmo. This is acquired here so that it is held continuously over both the
-  // architectural unmap and the set_size_locked call.
+  // architectural unmap and removing the current mapping from the VMO.
   DEBUG_ASSERT(object_);
   Guard<CriticalMutex> guard{object_->lock()};
 
-  // Check if unmapping from one of the ends
-  if (base_ == base || base + size == base_ + size_) {
-    LTRACEF("unmapping base %#lx size %#zx\n", base, size);
-    zx_status_t status =
-        aspace_->arch_aspace().Unmap(base, size / PAGE_SIZE, aspace_->EnlargeArchUnmap());
-    if (status != ZX_OK) {
-      return status;
-    }
-
-    if (base_ == base) {
-      DEBUG_ASSERT(size != size_);
-      // First remove any protect regions we will no longer need.
-      protection_ranges_.DiscardBelow(base_ + size);
-
-      // We need to remove ourselves from tree before updating base_, since base_ is the tree key.
-      // In this case, size_ must also be updated outside of the tree to prevent overlapping ranges
-      // when subtree_state_ is updated on insertion.
-      object_->RemoveMappingLocked(this);
-      AssertHeld(parent_->lock_ref());
-      fbl::RefPtr<VmAddressRegionOrMapping> ref(parent_->subregions_.RemoveRegion(this));
-      base_ += size;
-      object_offset_ += size;
-      set_size_locked(size_ - size);
-      parent_->subregions_.InsertRegion(ktl::move(ref));
-      object_->AddMappingLocked(this);
-    } else {
-      // Resize the protection range, will also cause it to discard any protection ranges that are
-      // outside the new size.
-      protection_ranges_.DiscardAbove(base);
-
-      // In this case, size_ can be changed while in the tree, since it will not overlap other
-      // regions when subtree_state_ is updated by set_size_locked.
-      set_size_locked(size_ - size);
-    }
-
-    return ZX_OK;
-  }
-
-  // We're unmapping from the center, so we need to split the mapping
-  DEBUG_ASSERT(parent_->state_ == LifeCycleState::ALIVE);
-
-  const uint64_t vmo_offset = object_offset_ + (base + size) - base_;
-  const vaddr_t new_base = base + size;
-  const size_t new_size = (base_ + size_) - new_base;
-
-  // Split off any protection information for the new mapping.
-  MappingProtectionRanges new_protect = protection_ranges_.SplitAt(new_base);
-
-  fbl::AllocChecker ac;
-  fbl::RefPtr<VmMapping> mapping(
-      fbl::AdoptRef(new (&ac) VmMapping(*parent_, new_base, new_size, flags_, object_, vmo_offset,
-                                        ktl::move(new_protect), Mergeable::YES)));
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  // Unmap the middle segment
-  LTRACEF("unmapping base %#lx size %#zx\n", base, size);
   zx_status_t status =
       aspace_->arch_aspace().Unmap(base, size / PAGE_SIZE, aspace_->EnlargeArchUnmap());
-  if (status != ZX_OK) {
-    return status;
+  ASSERT(status == ZX_OK);
+
+  // Split the protection_ranges_ from this mapping into the new mapping(s). This has be done after
+  // the mapping construction as this step is destructive and hard to rollback.
+  if (right) {
+    AssertHeld(right->lock_ref());
+    AssertHeld(right->object_lock_ref());
+    MappingProtectionRanges right_prot = protection_ranges_.SplitAt(base + size);
+    right->protection_ranges_ = ktl::move(right_prot);
+  }
+  if (left) {
+    AssertHeld(left->lock_ref());
+    AssertHeld(left->object_lock_ref());
+    protection_ranges_.DiscardAbove(base);
+    left->protection_ranges_ = ktl::move(protection_ranges_);
   }
 
-  // Turn us into the left half
-  protection_ranges_.DiscardAbove(base);
-  // Reduce size_ in tree and update subtree_state_.
-  set_size_locked(base - base_);
-  AssertHeld(mapping->lock_ref());
-  mapping->assert_object_lock();
-  mapping->ActivateLocked();
-  // Release the VMO lock and then apply any memory priority to the new mapping portion.
-  guard.Release();
-  status = mapping->SetMemoryPriorityLocked(memory_priority_);
-  DEBUG_ASSERT(status == ZX_OK);
+  // Now finish destroying this mapping, but remember any memory_priority_ to apply to the new
+  // mappings.
+  const MemoryPriority old_priority = memory_priority_;
+  status = DestroyLockedObject(false);
+  ASSERT(status == ZX_OK);
+
+  // Install the new mappings and set their memory priorities.
+  auto finish_mapping = [old_priority](fbl::RefPtr<VmMapping>& mapping) {
+    if (mapping) {
+      AssertHeld(mapping->lock_ref());
+      AssertHeld(mapping->object_lock_ref());
+      mapping->ActivateLocked();
+      zx_status_t status = mapping->SetMemoryPriorityLockedObject(old_priority);
+      ASSERT(status == ZX_OK);
+    }
+  };
+  finish_mapping(left);
+  finish_mapping(right);
   return ZX_OK;
 }
 
