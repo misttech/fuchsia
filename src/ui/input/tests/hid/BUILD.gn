@@ -8,7 +8,7 @@ import("//build/test.gni")
 test("hid-driver-test") {
   sources = [ "hid-driver.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_hlcpp",
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
     "//sdk/fidl/fuchsia.hardware.hidctl:fuchsia.hardware.hidctl_cpp",
     "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
@@ -18,8 +18,10 @@ test("hid-driver-test") {
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm/realm_builder/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/ddk",
     "//src/ui/input/lib/hid",
+    "//src/ui/testing/util:fidl_cpp_helpers",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",

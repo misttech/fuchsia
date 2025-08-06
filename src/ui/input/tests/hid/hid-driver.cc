@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <fidl/fuchsia.driver.test/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.hidctl/cpp/wire.h>
 #include <fidl/fuchsia.hardware.input/cpp/wire.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
-#include <fuchsia/driver/test/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -16,14 +16,17 @@
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
+#include <lib/fidl/cpp/channel.h>
 #include <lib/hid/boot.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/sys/component/cpp/testing/realm_builder_types.h>
+#include <lib/syslog/cpp/macros.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <zircon/syscalls.h>
 
 #include <fbl/unique_fd.h>
+#include <src/ui/testing/util/fidl_cpp_helpers.h>
 #include <zxtest/zxtest.h>
 
 namespace {
@@ -38,13 +41,12 @@ class HidDriverTest : public zxtest::Test {
         std::make_unique<component_testing::RealmRoot>(realm_builder.Build(loop_.dispatcher()));
 
     // Start DriverTestRealm.
-    ASSERT_OK(realm_->component().Connect(driver_test_realm.NewRequest()));
-    fuchsia::driver::test::Realm_Start_Result realm_result;
+    auto res = realm_->component().Connect<fuchsia_driver_test::Realm>();
+    ZX_ASSERT_OK(res);
+    driver_test_realm_ = fidl::SyncClient(std::move(res.value()));
 
-    auto args = fuchsia::driver::test::RealmArgs();
-
-    ASSERT_OK(driver_test_realm->Start(std::move(args), &realm_result));
-    ASSERT_FALSE(realm_result.is_err());
+    auto realm_start_res = driver_test_realm_->Start({});
+    ZX_ASSERT_OK(realm_start_res);
 
     auto exposed = realm_->component().CloneExposedDir();
     ASSERT_OK(fdio_fd_create(exposed.TakeChannel().release(), exposed_fd_.reset_and_get_address()));
@@ -85,7 +87,7 @@ class HidDriverTest : public zxtest::Test {
   fbl::unique_fd exposed_fd_;
   fidl::WireSyncClient<fuchsia_hardware_hidctl::Device> hidctl_client_;
   std::unique_ptr<component_testing::RealmRoot> realm_;
-  fidl::SynchronousInterfacePtr<fuchsia::driver::test::Realm> driver_test_realm;
+  fidl::SyncClient<fuchsia_driver_test::Realm> driver_test_realm_;
 };
 
 const uint8_t kBootMouseReportDesc[50] = {
