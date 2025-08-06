@@ -39,9 +39,7 @@ namespace dwc2 {
 class Dwc2;
 using Dwc2Type = ddk::Device<Dwc2, ddk::Initializable, ddk::Unbindable, ddk::Suspendable>;
 
-class Dwc2 : public Dwc2Type,
-             public ddk::UsbDciProtocol<Dwc2, ddk::base_protocol>,
-             public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
+class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
  public:
   explicit Dwc2(zx_device_t* parent, async_dispatcher_t* dispatcher)
       : Dwc2Type(parent), dispatcher_(dispatcher), outgoing_(dispatcher) {}
@@ -55,17 +53,6 @@ class Dwc2 : public Dwc2Type,
   void DdkUnbind(ddk::UnbindTxn txn);
   void DdkRelease();
   void DdkSuspend(ddk::SuspendTxn txn);
-
-  // USB DCI protocol implementation.
-  void UsbDciRequestQueue(usb_request_t* req, const usb_request_complete_callback_t* cb);
-  zx_status_t UsbDciSetInterface(const usb_dci_interface_protocol_t* interface);
-  zx_status_t UsbDciConfigEp(const usb_endpoint_descriptor_t* ep_desc,
-                             const usb_ss_ep_comp_descriptor_t* ss_comp_desc);
-  zx_status_t UsbDciDisableEp(uint8_t ep_address);
-  zx_status_t UsbDciEpSetStall(uint8_t ep_address);
-  zx_status_t UsbDciEpClearStall(uint8_t ep_address);
-  size_t UsbDciGetRequestSize();
-  zx_status_t UsbDciCancelAll(uint8_t ep_address);
 
   // fuchsia_hardware_usb_dci::UsbDci protocol implementation.
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
@@ -105,14 +92,8 @@ class Dwc2 : public Dwc2Type,
   // For the purposes of banjo->FIDL migration. Once banjo is ripped out of the driver, the logic
   // here can be folded into the FIDL endpoint implementation and calling code.
   //
-  // The CommonFoo() methods are for implementing protocol endpoints in both banjo and FIDL.
-  // Similarly, the DciIntfWrapFoo() methods are for dispatching to the UsbDciInterface protocol
-  // served over either banjo or FIDL.
-  zx_status_t CommonSetInterface();
-  zx_status_t CommonDisableEndpoint(uint8_t ep_address);
-  zx_status_t CommonConfigureEndpoint(const usb_endpoint_descriptor_t* ep_desc,
-                                      const usb_ss_ep_comp_descriptor_t* ss_comp_desc);
-  zx_status_t CommonCancelAll(uint8_t ep_address);
+  // The DciIntfWrapFoo() methods are for dispatching to the UsbDciInterface protocol served over
+  // either banjo or FIDL.
   void DciIntfWrapSetSpeed(usb_speed_t speed);
   void DciIntfWrapSetConnected(bool connected);
   zx_status_t DciIntfWrapControl(const usb_setup_t* setup, const uint8_t* write_buffer,
