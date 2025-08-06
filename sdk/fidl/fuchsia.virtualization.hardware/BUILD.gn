@@ -12,12 +12,9 @@ fidl("fuchsia.virtualization.hardware") {
 
   public_deps = [
     "//sdk/fidl/fuchsia.net",
-    "//sdk/fidl/fuchsia.sysmem2",
-    "//sdk/fidl/fuchsia.ui.composition",
     "//sdk/fidl/fuchsia.ui.input3",
     "//sdk/fidl/fuchsia.ui.pointer",
     "//sdk/fidl/fuchsia.virtualization",
-    "//sdk/fidl/fuchsia.wayland",
   ]
 
   enable_hlcpp = true

@@ -107,10 +107,6 @@ fit::result<GuestManagerError, GuestConfig> TerminaGuestManager::GetDefaultGuest
   termina_config.set_virtio_gpu(false);
   termina_config.set_block_devices(std::move(block_devices_result.value()));
 
-  // Include a wayland device.
-  fuchsia::wayland::ServerPtr server_proxy;
-  termina_config.mutable_wayland_device();
-
   // Add the vsock listeners for gRPC services.
   *termina_config.mutable_vsock_listeners() = guest_->take_vsock_listeners();
 

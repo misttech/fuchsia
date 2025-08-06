@@ -416,8 +416,6 @@ void GuestManager::SnapshotConfig(const fuchsia::virtualization::GuestConfig& co
   guest_descriptor_.set_num_cpus(config.cpus());
   guest_descriptor_.set_guest_memory(config.guest_memory());
 
-  guest_descriptor_.set_wayland(config.has_wayland_device());
-
   guest_descriptor_.set_balloon(config.has_virtio_balloon() && config.virtio_balloon());
   guest_descriptor_.set_console(config.has_virtio_console() && config.virtio_console());
   guest_descriptor_.set_gpu(config.has_virtio_gpu() && config.virtio_gpu());

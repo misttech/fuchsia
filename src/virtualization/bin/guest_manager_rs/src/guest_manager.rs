@@ -494,7 +494,6 @@ impl GuestManager {
         GuestDescriptor {
             num_cpus: config.cpus,
             guest_memory: config.guest_memory,
-            wayland: config.wayland_device.as_ref().and(Some(true)),
             balloon: config.virtio_balloon,
             console: config.virtio_console,
             gpu: config.virtio_gpu,

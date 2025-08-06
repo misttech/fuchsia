@@ -6,7 +6,6 @@ library fuchsia.virtualization;
 using fuchsia.hardware.block;
 using fuchsia.net;
 using fuchsia.io;
-using fuchsia.wayland;
 using zx;
 
 const MAX_BLOCK_DEVICE_ID uint8 = 20;
@@ -52,19 +51,6 @@ type NetSpec = struct {
     enable_bridge bool;
 };
 
-/// Properties describing a virtio_wl device.
-type WaylandDevice = resource struct {
-    /// The amount of guest-physical address space to allocate for virtio_wl
-    /// buffers.
-    ///
-    /// Default to a 1GiB allocation.
-    @allow_deprecated_struct_defaults
-    memory uint64 = 1073741824;
-
-    /// The server for new virtio_wl connections.
-    server client_end:<fuchsia.wayland.Server, optional>;
-};
-
 /// Properties describing a virtio_magma device.
 type MagmaDevice = struct {
     /// The amount of guest-physical address space to allocate for virtio_magma
@@ -103,11 +89,8 @@ type GuestConfig = resource table {
     9: block_devices vector<BlockSpec>:MAX_BLOCK_DEVICES;
     /// A list of specifications for network devices.
     10: net_devices vector<NetSpec>:MAX_NET_DEVICES;
-    /// Optional virtio-wl device.
-    11: wayland_device WaylandDevice;
-    /// Optional virtio-magma device.
-    12: magma_device MagmaDevice;
-
+    /// "11: wayland_device WaylandDevice" was removed
+    /// "12: magma_device MagmaDevice" was removed
     /// Whether to add a default network device.
     13: default_net bool;
     /// Enable virtio-balloon.

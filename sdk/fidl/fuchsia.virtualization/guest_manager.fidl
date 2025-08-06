@@ -57,8 +57,8 @@ type GuestDescriptor = table {
     2: guest_memory uint64;
 
     /// Whether the guest was started with the given virtual device.
-    3: wayland bool;
-    4: magma bool;
+    /// "3: wayland bool" was removed
+    /// "4: magma bool" was removed
     5: balloon bool;
     6: console bool;
     7: gpu bool;

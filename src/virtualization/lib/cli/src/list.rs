@@ -165,7 +165,6 @@ async fn get_detailed_information(
                     table.push((device.to_string(), count));
                 };
 
-            add_to_table("wayland", config.wayland, &mut details.device_counts);
             add_to_table("balloon", config.balloon, &mut details.device_counts);
             add_to_table("console", config.console, &mut details.device_counts);
             add_to_table("gpu", config.gpu, &mut details.device_counts);
@@ -409,7 +408,6 @@ mod test {
             guest_descriptor: Some(GuestDescriptor {
                 num_cpus: Some(4),
                 guest_memory: Some(1073741824),
-                wayland: Some(false),
                 networks: Some(vec![
                     NetSpec {
                         mac_address: MacAddress { octets: [0u8; 6] },
@@ -450,8 +448,7 @@ mod test {
             "                     vsock  \n",
             "                     network (2 devices)  \n",
             "                     \n",
-            " Inactive devices:   wayland  \n",
-            "                     gpu  \n",
+            " Inactive devices:   gpu  \n",
             "                     sound  \n",
             "                                                        \n",
             " 2 problems detected:                                    \n",

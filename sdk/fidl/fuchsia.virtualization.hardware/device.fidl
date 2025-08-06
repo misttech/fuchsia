@@ -5,12 +5,9 @@
 library fuchsia.virtualization.hardware;
 
 using fuchsia.net;
-using fuchsia.sysmem2;
-using fuchsia.ui.composition;
 using fuchsia.ui.input3;
 using fuchsia.ui.pointer;
 using fuchsia.virtualization;
-using fuchsia.wayland;
 using zx;
 
 // The following EVENT_* constants indicate which user signal is associated with an event.
@@ -149,20 +146,6 @@ closed protocol VirtioInput {
 };
 
 @discoverable
-closed protocol VirtioMagma {
-    compose VirtioDevice;
-
-    /// Start the magma device.
-    strict Start(resource struct {
-        start_info StartInfo;
-        vmar zx.Handle:VMAR;
-        wayland_importer client_end:<VirtioWaylandImporter, optional>;
-    }) -> (struct {
-        status zx.Status;
-    });
-};
-
-@discoverable
 closed protocol VirtioNet {
     compose VirtioDevice;
 
@@ -225,63 +208,6 @@ closed protocol VirtioVsock {
         guest_cid uint32;
         listeners vector<fuchsia.virtualization.Listener>:MAX;
     }) -> () error zx.Status;
-};
-
-/// Sufficient to contain the opaque image info.
-const VIRTIO_WAYLAND_MAX_IMAGE_INFO_SIZE uint32 = 128;
-
-/// VirtioImages are shared with VirtioMagma, enabling guest clients to allocate
-/// GBM and Vulkan compatible images and share them with Sommelier as dma-bufs.
-/// An image corresponds to a single buffer collection, and also contains some
-/// opaque image info needed by VirtioMagma.
-type VirtioImage = resource struct {
-    vmo zx.Handle:VMO;
-    token zx.Handle:<EVENTPAIR, optional>;
-    info vector<uint8>:VIRTIO_WAYLAND_MAX_IMAGE_INFO_SIZE;
-};
-
-const VIRTIO_WAYLAND_INVALID_VFD_ID uint32 = 0;
-
-// Provides an interface to import images into the wayland device.
-closed protocol VirtioWaylandImporter {
-    strict ImportImage(resource struct {
-        image VirtioImage;
-    }) -> (struct {
-        vfd_id uint32;
-    });
-    strict ExportImage(struct {
-        vfd_id uint32;
-    }) -> (resource struct {
-        status zx.Status;
-        image box<VirtioImage>;
-    });
-};
-
-@discoverable
-closed protocol VirtioWayland {
-    compose VirtioDevice;
-
-    /// Start the wayland device using the built-in wayland server.
-    strict Start(resource struct {
-        start_info StartInfo;
-        vmar zx.Handle:VMAR;
-        sysmem_allocator client_end:fuchsia.sysmem2.Allocator;
-        scenic_allocator client_end:fuchsia.ui.composition.Allocator;
-    }) -> ();
-
-    /// Start the wayland device using the provided wayland server.
-    strict StartWithWaylandServer(resource struct {
-        start_info StartInfo;
-        vmar zx.Handle:VMAR;
-        wayland_server client_end:<fuchsia.wayland.Server, optional>;
-        sysmem_allocator client_end:fuchsia.sysmem2.Allocator;
-        scenic_allocator client_end:fuchsia.ui.composition.Allocator;
-    }) -> ();
-
-    // Get the VMO importer for this wayland device.
-    strict GetImporter(resource struct {
-        importer server_end:VirtioWaylandImporter;
-    });
 };
 
 @discoverable
