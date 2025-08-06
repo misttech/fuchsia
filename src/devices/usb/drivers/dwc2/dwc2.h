@@ -7,7 +7,7 @@
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
-#include <fuchsia/hardware/usb/dci/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fuchsia/hardware/usb/phy/cpp/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
@@ -89,16 +89,9 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
   const zx::bti& bti() const { return bti_; }
 
  private:
-  // For the purposes of banjo->FIDL migration. Once banjo is ripped out of the driver, the logic
-  // here can be folded into the FIDL endpoint implementation and calling code.
-  //
-  // The DciIntfWrapFoo() methods are for dispatching to the UsbDciInterface protocol served over
-  // either banjo or FIDL.
-  void DciIntfWrapSetSpeed(usb_speed_t speed);
-  void DciIntfWrapSetConnected(bool connected);
-  zx_status_t DciIntfWrapControl(const usb_setup_t* setup, const uint8_t* write_buffer,
-                                 size_t write_size, uint8_t* out_read_buffer, size_t read_size,
-                                 size_t* out_read_actual);
+  zx_status_t DoControl(const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup,
+                        const uint8_t* write_buffer, size_t write_size, uint8_t* out_read_buffer,
+                        size_t read_size, size_t* out_read_actual);
 
   enum class Ep0State {
     DISCONNECTED,
@@ -139,7 +132,7 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
       completer.Reply(fit::ok());
     }
 
-    void QueueRequest(usb::RequestVariant request);
+    void QueueRequest(usb::FidlRequest request);
     void CancelAll();
 
     async_dispatcher_t* dispatcher() { return loop_.dispatcher(); }
@@ -216,14 +209,10 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
   // DMA buffer for endpoint zero requests
   ddk::IoBuffer ep0_buffer_;
   // Current endpoint zero request
-  usb_setup_t cur_setup_ = {};
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup cur_setup_ = {};
   Ep0State ep0_state_ = Ep0State::DISCONNECTED;
 
-  using DciInterfaceBanjoClient = ddk::UsbDciInterfaceProtocolClient;
-  using DciInterfaceFidlClient = fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDciInterface>;
-
-  // The protocol client to either a Banjo protocol or FIDL server.
-  std::optional<std::variant<DciInterfaceBanjoClient, DciInterfaceFidlClient>> dci_intf_;
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDciInterface> dci_intf_;
 
   std::optional<usb_phy::UsbPhyClient> usb_phy_;
 

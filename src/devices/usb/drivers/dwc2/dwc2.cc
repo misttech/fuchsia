@@ -5,6 +5,7 @@
 #include "src/devices/usb/drivers/dwc2/dwc2.h"
 
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/hw/arch_ops.h>
 #include <lib/ddk/metadata.h>
@@ -175,8 +176,10 @@ void Dwc2::HandleEnumDone() {
 
   GUSBCFG::Get().ReadFrom(mmio).set_usbtrdtim(metadata_.usb_turnaround_time).WriteTo(mmio);
 
-  if (dci_intf_) {
-    DciIntfWrapSetSpeed(USB_SPEED_HIGH);
+  if (dci_intf_.is_valid()) {
+    fidl::Arena arena;
+    auto result = dci_intf_.buffer(arena)->SetSpeed(fdescriptor::wire::UsbSpeed::kHigh);
+    ZX_ASSERT(result.ok());  // Never expected to fail.
   }
   StartEp0();
 }
@@ -344,16 +347,15 @@ void Dwc2::HandleOutEpInterrupt() {
 zx_status_t Dwc2::HandleSetupRequest(size_t* out_actual) {
   zx_status_t status;
 
-  auto* setup = &cur_setup_;
   auto* buffer = ep0_buffer_.virt();
   zx::duration elapsed;
   zx::time_boot now;
-  if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) {
+  if (cur_setup_.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) {
     // Handle some special setup requests in this driver
-    switch (setup->b_request) {
+    switch (cur_setup_.b_request) {
       case USB_REQ_SET_ADDRESS:
-        zxlogf(INFO, "SET_ADDRESS %d", setup->w_value);
-        SetAddress(static_cast<uint8_t>(setup->w_value));
+        zxlogf(INFO, "SET_ADDRESS %d", cur_setup_.w_value);
+        SetAddress(static_cast<uint8_t>(cur_setup_.w_value));
         now = zx::clock::get_boot();
         elapsed = now - irq_timestamp_;
         zxlogf(
@@ -368,14 +370,14 @@ zx_status_t Dwc2::HandleSetupRequest(size_t* out_actual) {
         *out_actual = 0;
         return ZX_OK;
       case USB_REQ_SET_CONFIGURATION:
-        zxlogf(INFO, "SET_CONFIGURATION %d", setup->w_value);
+        zxlogf(INFO, "SET_CONFIGURATION %d", cur_setup_.w_value);
         configured_ = true;
-        if (dci_intf_) {
-          status = DciIntfWrapControl(setup, nullptr, 0, nullptr, 0, out_actual);
+        if (dci_intf_.is_valid()) {
+          status = DoControl(cur_setup_, nullptr, 0, nullptr, 0, out_actual);
         } else {
           status = ZX_ERR_NOT_SUPPORTED;
         }
-        if (status == ZX_OK && setup->w_value) {
+        if (status == ZX_OK && cur_setup_.w_value) {
           StartEndpoints();
         } else {
           configured_ = false;
@@ -387,15 +389,15 @@ zx_status_t Dwc2::HandleSetupRequest(size_t* out_actual) {
     }
   }
 
-  bool is_in = ((setup->bm_request_type & USB_DIR_MASK) == USB_DIR_IN);
-  auto length = le16toh(setup->w_length);
+  bool is_in = ((cur_setup_.bm_request_type & USB_DIR_MASK) == USB_DIR_IN);
+  auto length = le16toh(cur_setup_.w_length);
 
-  if (dci_intf_) {
+  if (dci_intf_.is_valid()) {
     if (length == 0) {
-      status = DciIntfWrapControl(setup, nullptr, 0, nullptr, 0, out_actual);
+      status = DoControl(cur_setup_, nullptr, 0, nullptr, 0, out_actual);
     } else if (is_in) {
-      status = DciIntfWrapControl(setup, nullptr, 0, reinterpret_cast<uint8_t*>(buffer), length,
-                                  out_actual);
+      status =
+          DoControl(cur_setup_, nullptr, 0, reinterpret_cast<uint8_t*>(buffer), length, out_actual);
     } else {
       status = ZX_ERR_NOT_SUPPORTED;
     }
@@ -430,7 +432,7 @@ void Dwc2::StartEp0() {
   auto* mmio = get_mmio();
   auto& ep = endpoints_[DWC_EP0_OUT];
   ep->req_offset = 0;
-  ep->req_xfersize = 3 * sizeof(usb_setup_t);
+  ep->req_xfersize = 3 * sizeof(usb_setup_info_t);
 
   ep0_buffer_.CacheFlushInvalidate(0, sizeof(cur_setup_));
 
@@ -481,21 +483,15 @@ void Dwc2::StartTransfer(Endpoint* ep, uint32_t length) {
   auto* mmio = get_mmio();
   bool is_in = DWC_EP_IS_IN(ep_num);
 
-  // FidlRequests should be flushed already by higher level drivers!
-  if (length > 0 && (!ep->current_req || std::holds_alternative<Request>(*ep->current_req))) {
+  // Non-control endpoint flushing is the responsibility of the usb-function driver.
+  if (length > 0 && !ep->current_req) {
     if (is_in) {
       if (ep_num == DWC_EP0_IN) {
         ep0_buffer_.CacheFlush(ep->req_offset, length);
-      } else {
-        usb_request_cache_flush(std::get<Request>(ep->current_req.value()).request(),
-                                ep->req_offset, length);
       }
     } else {
       if (ep_num == DWC_EP0_OUT) {
         ep0_buffer_.CacheFlushInvalidate(ep->req_offset, length);
-      } else {
-        usb_request_cache_flush_invalidate(std::get<Request>(ep->current_req.value()).request(),
-                                           ep->req_offset, length);
       }
     }
   }
@@ -609,10 +605,8 @@ void Dwc2::EnableEp(uint8_t ep_num, bool enable) {
 }
 
 void Dwc2::HandleEp0Setup() {
-  auto* setup = &cur_setup_;
-
-  auto length = letoh16(setup->w_length);
-  bool is_in = ((setup->bm_request_type & USB_DIR_MASK) == USB_DIR_IN);
+  auto length = letoh16(cur_setup_.w_length);
+  bool is_in = ((cur_setup_.bm_request_type & USB_DIR_MASK) == USB_DIR_IN);
   size_t actual = 0;
 
   // No data to read, can handle setup now
@@ -684,10 +678,10 @@ void Dwc2::HandleEp0TransferComplete(bool is_in) {
         }
       } else {  // data direction is OUT-type (from the host).
         if (ep->req_offset == ep->req_length) {
-          if (dci_intf_) {
+          if (dci_intf_.is_valid()) {
             size_t actual;
-            DciIntfWrapControl(&cur_setup_, (uint8_t*)ep0_buffer_.virt(), ep->req_length, nullptr,
-                               0, &actual);
+            DoControl(cur_setup_, (uint8_t*)ep0_buffer_.virt(), ep->req_length, nullptr, 0,
+                      &actual);
           }
           HandleEp0Status(true);
         } else {
@@ -920,8 +914,11 @@ void Dwc2::SetConnected(bool connected) {
     return;
   }
 
-  if (dci_intf_) {
-    DciIntfWrapSetConnected(connected);
+  if (dci_intf_.is_valid()) {
+    fidl::Arena arena;
+    auto result = dci_intf_.buffer(arena)->SetConnected(connected);
+    ZX_ASSERT_MSG(result.ok(), "SetConnected failed: %s",
+                  result.status_string());  // Never expected to fail.
   }
   if (usb_phy_) {
     usb_phy_->ConnectStatusChanged(connected);
@@ -1214,83 +1211,16 @@ void Dwc2::DdkSuspend(ddk::SuspendTxn txn) {
   txn.Reply(ZX_OK, 0);
 }
 
-void Dwc2::DciIntfWrapSetSpeed(usb_speed_t speed) {
-  ZX_ASSERT(dci_intf_.has_value());
-
-  if (std::holds_alternative<DciInterfaceBanjoClient>(*dci_intf_)) {
-    std::get<DciInterfaceBanjoClient>(*dci_intf_).SetSpeed(speed);
-    return;
-  }
-
-  fidl::Arena arena;
-  fdescriptor::UsbSpeed fspeed;
-
-  // Convert banjo usb_speed_t into FIDL speed.
-  switch (speed) {
-    case USB_SPEED_UNDEFINED:
-      fspeed = fdescriptor::UsbSpeed::kUndefined;
-      break;
-    case USB_SPEED_LOW:
-      fspeed = fdescriptor::UsbSpeed::kLow;
-      break;
-    case USB_SPEED_FULL:
-      fspeed = fdescriptor::UsbSpeed::kFull;
-      break;
-    case USB_SPEED_HIGH:
-      fspeed = fdescriptor::UsbSpeed::kHigh;
-      break;
-    case USB_SPEED_SUPER:
-      fspeed = fdescriptor::UsbSpeed::kSuper;
-      break;
-    case USB_SPEED_ENHANCED_SUPER:
-      fspeed = fdescriptor::UsbSpeed::kEnhancedSuper;
-      break;
-  };
-  auto result = std::get<DciInterfaceFidlClient>(*dci_intf_).buffer(arena)->SetSpeed(fspeed);
-  ZX_ASSERT(result.ok());  // Never expected to fail.
-}
-
-void Dwc2::DciIntfWrapSetConnected(bool connected) {
-  ZX_ASSERT(dci_intf_.has_value());
-
-  if (std::holds_alternative<DciInterfaceBanjoClient>(*dci_intf_)) {
-    std::get<DciInterfaceBanjoClient>(*dci_intf_).SetConnected(connected);
-    return;
-  }
-
-  fidl::Arena arena;
-  auto result = std::get<DciInterfaceFidlClient>(*dci_intf_).buffer(arena)->SetConnected(connected);
-  ZX_ASSERT_MSG(result.ok(), "SetConnected failed: %s",
-                result.status_string());  // Never expected to fail.
-}
-
-zx_status_t Dwc2::DciIntfWrapControl(const usb_setup_t* setup, const uint8_t* write_buffer,
-                                     size_t write_size, uint8_t* out_read_buffer, size_t read_size,
-                                     size_t* out_read_actual) {
-  ZX_ASSERT(dci_intf_.has_value());
-
-  if (std::holds_alternative<DciInterfaceBanjoClient>(*dci_intf_)) {
-    return std::get<DciInterfaceBanjoClient>(*dci_intf_)
-        .Control(setup, write_buffer, write_size, out_read_buffer, read_size, out_read_actual);
-  }
+zx_status_t Dwc2::DoControl(const fdescriptor::wire::UsbSetup& setup, const uint8_t* write_buffer,
+                            size_t write_size, uint8_t* out_read_buffer, size_t read_size,
+                            size_t* out_read_actual) {
+  ZX_ASSERT(dci_intf_.is_valid());
   fidl::Arena arena;
 
-  // Convert banjo usb_setup_t into FIDL-equivalent.
-  fdescriptor::wire::UsbSetup fsetup;
-  fsetup.bm_request_type = setup->bm_request_type;
-  fsetup.b_request = setup->b_request;
-  fsetup.w_value = setup->w_value;
-  fsetup.w_index = setup->w_index;
-  fsetup.w_length = setup->w_length;
-
-  // Convert banjo @buffer IO pointers into FIDL-equivalent.
-  //
-  // TODO(b/42160282) It doesn't look like const pointers will ever be supported for VectorView<T>,
-  // so rewrite this using FIDL-types throughout once the banjo stuff is gone.
   auto fwrite =
       fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(write_buffer), write_size);
 
-  auto result = std::get<DciInterfaceFidlClient>(*dci_intf_).buffer(arena)->Control(fsetup, fwrite);
+  auto result = dci_intf_.buffer(arena)->Control(setup, fwrite);
   if (!result.ok()) {
     return ZX_ERR_INTERNAL;  // framework error.
   }
@@ -1328,13 +1258,12 @@ void Dwc2::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Syn
     return;
   }
 
-  if (dci_intf_) {
+  if (dci_intf_.is_valid()) {
     zxlogf(ERROR, "%s: dci_intf_ already set!", __func__);
     completer.Reply(zx::error(ZX_ERR_ALREADY_BOUND));
     return;
   }
-  dci_intf_ = DciInterfaceFidlClient();
-  std::get<DciInterfaceFidlClient>(*dci_intf_).Bind(std::move(request.interface()));
+  dci_intf_.Bind(std::move(request.interface()));
 
   completer.Reply(zx::ok());
 }
@@ -1449,7 +1378,7 @@ void Dwc2::Endpoint::QueueRequests(QueueRequestsRequest& request,
   }
 }
 
-void Dwc2::Endpoint::QueueRequest(usb::RequestVariant request) {
+void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
   {
     fbl::AutoLock l(&dwc2_->lock_);
     if (dwc2_->shutting_down_) {
@@ -1461,9 +1390,7 @@ void Dwc2::Endpoint::QueueRequest(usb::RequestVariant request) {
 
   // OUT transactions must have length > 0 and multiple of max packet size
   if (DWC_EP_IS_OUT(ep_addr())) {
-    auto length = std::holds_alternative<Request>(request)
-                      ? std::get<Request>(request).request()->header.length
-                      : std::get<usb::FidlRequest>(request).length();
+    size_t length = request.length();
     if (length == 0 || length % max_packet_size != 0) {
       zxlogf(ERROR, "dwc_ep_queue: OUT transfers must be multiple of max packet size");
       RequestComplete(ZX_ERR_INVALID_ARGS, 0, std::move(request));
