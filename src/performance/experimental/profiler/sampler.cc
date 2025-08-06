@@ -6,7 +6,6 @@
 
 #include <lib/async/cpp/task.h>
 #include <lib/async/dispatcher.h>
-#include <lib/stdcompat/span.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 #include <lib/zx/process.h>
@@ -24,6 +23,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <span>
 
 #include <src/lib/unwinder/fp_unwinder.h>
 #include <src/lib/unwinder/registers.h>
@@ -189,7 +189,7 @@ zx::result<> profiler::Sampler::Start(size_t buffer_size_mb /* unused, we buffer
   //
   // A job or process may have exited between us configuring our target tree and actually starting,
   // so if we find we're unable to attach to a task, we simply move on without it.
-  zx::result<> res = targets_.ForEachProcess([this](cpp20::span<const zx_koid_t> job_path,
+  zx::result<> res = targets_.ForEachProcess([this](std::span<const zx_koid_t> job_path,
                                                     const ProcessTarget& p) -> zx::result<> {
     TRACE_DURATION("cpu_profiler", "Sampler::Start/ForEachProcess");
     std::vector<zx_koid_t> saved_path{job_path.begin(), job_path.end()};
@@ -263,7 +263,7 @@ void profiler::Sampler::CollectSamples(async_dispatcher_t* dispatcher, async::Ta
   }
 
   zx::result res =
-      targets_.ForEachProcess([this](cpp20::span<const zx_koid_t>, const ProcessTarget& target) {
+      targets_.ForEachProcess([this](std::span<const zx_koid_t>, const ProcessTarget& target) {
         for (const auto& [_, thread] : target.threads) {
           TRACE_DURATION("cpu_profiler", "Sampler::CollectSamples/ForEachProcess");
           unwinder::CfiUnwinder cfi_unwinder{target.unwinder_data->modules};
@@ -288,7 +288,7 @@ void profiler::Sampler::CollectSamples(async_dispatcher_t* dispatcher, async::Ta
 zx::result<profiler::SymbolizationContext> profiler::Sampler::GetContexts() {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   zx::result<> res = targets_.ForEachProcess(
-      [this](cpp20::span<const zx_koid_t>, const ProcessTarget& target) mutable -> zx::result<> {
+      [this](std::span<const zx_koid_t>, const ProcessTarget& target) mutable -> zx::result<> {
         zx::result<std::map<std::vector<std::byte>, profiler::Module>> modules =
             profiler::GetProcessModules(target.handle, searcher_);
         if (modules.is_ok()) {

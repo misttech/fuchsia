@@ -103,7 +103,7 @@ zx::result<> profiler::KernelSampler::Start(size_t buffer_size_mb) {
 
   FX_LOGS(DEBUG) << "Attaching to known tasks and watching for new ones.";
   zx::result known_threads_res = targets_.ForEachProcess(
-      [this](cpp20::span<const zx_koid_t> job_path, const ProcessTarget& p) -> zx::result<> {
+      [this](std::span<const zx_koid_t> job_path, const ProcessTarget& p) -> zx::result<> {
         TRACE_DURATION("cpu_profiler", "KernelSampler::Start/ForEachProcess");
 
         // Before we start sampling the thread, make sure we've recorded information about its
@@ -170,7 +170,7 @@ zx::result<> profiler::KernelSampler::AddTarget(JobTarget&& target) {
       return watch_res;
     }
     zx::result<> res = target.ForEachProcess(
-        [this](cpp20::span<const zx_koid_t> job_path, const ProcessTarget& p) -> zx::result<> {
+        [this](std::span<const zx_koid_t> job_path, const ProcessTarget& p) -> zx::result<> {
           TRACE_DURATION("cpu_profiler", "KernelSampler::AddTarget/ForEachProcess");
 
           // Before we start sampling the thread, make sure we've recorded information about its

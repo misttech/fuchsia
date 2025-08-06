@@ -4,7 +4,6 @@
 
 #include "src/performance/experimental/profiler/targets.h"
 
-#include <lib/stdcompat/span.h>
 #include <lib/zx/job.h>
 #include <lib/zx/process.h>
 #include <lib/zx/result.h>
@@ -19,6 +18,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <span>
 
 #include <gtest/gtest.h>
 
@@ -112,11 +112,11 @@ TEST(TargetsTest, TargetTreeAddProcessTopLevel) {
 
 TEST(TargetsTest, TargetTreeAddJobTopLevel) {
   profiler::TargetTree tree;
-  profiler::JobTarget j1{zx::job{ZX_HANDLE_INVALID}, 2, cpp20::span<const zx_koid_t>{}};
+  profiler::JobTarget j1{zx::job{ZX_HANDLE_INVALID}, 2, std::span<const zx_koid_t>{}};
 
   EXPECT_TRUE(tree.AddJob(std::move(j1)).is_ok());
 
-  profiler::JobTarget j2{zx::job{ZX_HANDLE_INVALID}, 2, cpp20::span<const zx_koid_t>{}};
+  profiler::JobTarget j2{zx::job{ZX_HANDLE_INVALID}, 2, std::span<const zx_koid_t>{}};
   zx::result res = tree.AddJob(std::move(j2));
   ASSERT_TRUE(res.is_error());
   EXPECT_EQ(res.status_value(), ZX_ERR_ALREADY_EXISTS);
@@ -252,7 +252,7 @@ TEST(TargetsTest, TargetTreeForEachProcess) {
   EXPECT_TRUE(res.is_ok());
 
   std::set<zx_koid_t> seen;
-  res = tree.ForEachProcess([&seen](cpp20::span<const zx_koid_t> job_path,
+  res = tree.ForEachProcess([&seen](std::span<const zx_koid_t> job_path,
                                     const profiler::ProcessTarget& process) -> zx::result<> {
     EXPECT_EQ(seen.find(process.pid), seen.end());
     seen.insert(process.pid);
@@ -290,7 +290,7 @@ TEST(TargetsTest, TargetTreeForEachProcess) {
   EXPECT_TRUE(res.is_ok());
 
   // Check that a top level error gets propagated
-  res = tree.ForEachProcess([](cpp20::span<const zx_koid_t> job_path,
+  res = tree.ForEachProcess([](std::span<const zx_koid_t> job_path,
                                const profiler::ProcessTarget& process) -> zx::result<> {
     return zx::make_result(process.pid == top_level_pid2 ? ZX_ERR_BAD_STATE : ZX_OK);
   });
@@ -298,7 +298,7 @@ TEST(TargetsTest, TargetTreeForEachProcess) {
   EXPECT_EQ(res.status_value(), ZX_ERR_BAD_STATE);
 
   // Check that a nested error gets propagated
-  res = tree.ForEachProcess([](cpp20::span<const zx_koid_t> job_path,
+  res = tree.ForEachProcess([](std::span<const zx_koid_t> job_path,
                                const profiler::ProcessTarget& process) -> zx::result<> {
     return zx::make_result(process.pid == nested_pid6 ? ZX_ERR_BAD_STATE : ZX_OK);
   });

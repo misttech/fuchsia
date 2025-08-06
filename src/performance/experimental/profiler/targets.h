@@ -6,7 +6,6 @@
 #define SRC_PERFORMANCE_EXPERIMENTAL_PROFILER_TARGETS_H_
 
 #include <lib/fit/function.h>
-#include <lib/stdcompat/span.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/job.h>
 #include <lib/zx/process.h>

@@ -5,7 +5,6 @@
 #include "targets.h"
 
 #include <lib/fit/function.h>
-#include <lib/stdcompat/span.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 #include <lib/zx/job.h>
@@ -22,11 +21,12 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <span>
 
 #include <src/lib/unwinder/module.h>
 
 zx::result<> profiler::JobTarget::ForEachProcess(
-    const fit::function<zx::result<>(cpp20::span<const zx_koid_t> job_path,
+    const fit::function<zx::result<>(std::span<const zx_koid_t> job_path,
                                      const ProcessTarget& target)>& f) const {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   std::vector<zx_koid_t> job_path{ancestry.begin(), ancestry.end()};
@@ -63,7 +63,7 @@ zx::result<> profiler::JobTarget::ForEachJob(
   return zx::ok();
 }
 
-zx::result<> profiler::JobTarget::AddJob(cpp20::span<const zx_koid_t> ancestry, JobTarget&& job) {
+zx::result<> profiler::JobTarget::AddJob(std::span<const zx_koid_t> ancestry, JobTarget&& job) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   if (ancestry.empty()) {
     zx_koid_t job_id = job.job_id;
@@ -77,7 +77,7 @@ zx::result<> profiler::JobTarget::AddJob(cpp20::span<const zx_koid_t> ancestry, 
   return it->second.AddJob(ancestry.subspan(1), std::move(job));
 }
 
-zx::result<> profiler::JobTarget::AddProcess(cpp20::span<const zx_koid_t> job_path,
+zx::result<> profiler::JobTarget::AddProcess(std::span<const zx_koid_t> job_path,
                                              ProcessTarget&& process) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   if (job_path.empty()) {
@@ -109,7 +109,7 @@ zx::result<profiler::ProcessTarget*> profiler::JobTarget::GetProcess(
   return next_child->second.GetProcess(job_path.subspan(1), pid);
 }
 
-zx::result<> profiler::JobTarget::AddThread(cpp20::span<const zx_koid_t> job_path, zx_koid_t pid,
+zx::result<> profiler::JobTarget::AddThread(std::span<const zx_koid_t> job_path, zx_koid_t pid,
                                             ThreadTarget&& thread) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   if (job_path.empty()) {
@@ -129,7 +129,7 @@ zx::result<> profiler::JobTarget::AddThread(cpp20::span<const zx_koid_t> job_pat
   return next_child->second.AddThread(job_path.subspan(1), pid, std::move(thread));
 }
 
-zx::result<> profiler::JobTarget::RemoveThread(cpp20::span<const zx_koid_t> job_path, zx_koid_t pid,
+zx::result<> profiler::JobTarget::RemoveThread(std::span<const zx_koid_t> job_path, zx_koid_t pid,
                                                zx_koid_t tid) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   if (job_path.empty()) {
@@ -224,7 +224,7 @@ zx::result<profiler::ProcessTarget> profiler::MakeProcessTarget(zx::process proc
 }
 
 zx::result<profiler::JobTarget> profiler::MakeJobTarget(zx::job job,
-                                                        cpp20::span<const zx_koid_t> ancestry,
+                                                        std::span<const zx_koid_t> ancestry,
                                                         elf_search::Searcher& searcher) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   zx_info_handle_basic_t info;
@@ -332,14 +332,14 @@ zx::result<profiler::JobTarget> profiler::MakeJobTarget(zx::job job,
 
 zx::result<profiler::JobTarget> profiler::MakeJobTarget(zx::job job,
                                                         elf_search::Searcher& searcher) {
-  return MakeJobTarget(std::move(job), cpp20::span<const zx_koid_t>{}, searcher);
+  return MakeJobTarget(std::move(job), std::span<const zx_koid_t>{}, searcher);
 }
 
 zx::result<> profiler::TargetTree::AddJob(JobTarget&& job) {
-  return AddJob(cpp20::span<const zx_koid_t>{}, std::move(job));
+  return AddJob(std::span<const zx_koid_t>{}, std::move(job));
 }
 
-zx::result<> profiler::TargetTree::AddJob(cpp20::span<const zx_koid_t> ancestry, JobTarget&& job) {
+zx::result<> profiler::TargetTree::AddJob(std::span<const zx_koid_t> ancestry, JobTarget&& job) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   if (ancestry.empty()) {
     zx_koid_t job_id = job.job_id;
@@ -354,10 +354,10 @@ zx::result<> profiler::TargetTree::AddJob(cpp20::span<const zx_koid_t> ancestry,
 }
 
 zx::result<> profiler::TargetTree::AddProcess(ProcessTarget&& process) {
-  return AddProcess(cpp20::span<const zx_koid_t>{}, std::move(process));
+  return AddProcess(std::span<const zx_koid_t>{}, std::move(process));
 }
 
-zx::result<> profiler::TargetTree::AddProcess(cpp20::span<const zx_koid_t> job_path,
+zx::result<> profiler::TargetTree::AddProcess(std::span<const zx_koid_t> job_path,
                                               ProcessTarget&& process) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   if (job_path.empty()) {
@@ -389,14 +389,14 @@ zx::result<profiler::ProcessTarget*> profiler::TargetTree::GetProcess(
 }
 
 zx::result<> profiler::TargetTree::AddThread(zx_koid_t pid, ThreadTarget&& thread) {
-  return AddThread(cpp20::span<const zx_koid_t>{}, pid, std::move(thread));
+  return AddThread(std::span<const zx_koid_t>{}, pid, std::move(thread));
 }
 
 zx::result<> profiler::TargetTree::RemoveThread(zx_koid_t pid, zx_koid_t tid) {
-  return RemoveThread(cpp20::span<const zx_koid_t>{}, pid, tid);
+  return RemoveThread(std::span<const zx_koid_t>{}, pid, tid);
 }
 
-zx::result<> profiler::TargetTree::AddThread(cpp20::span<const zx_koid_t> job_path, zx_koid_t pid,
+zx::result<> profiler::TargetTree::AddThread(std::span<const zx_koid_t> job_path, zx_koid_t pid,
                                              ThreadTarget&& thread) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   if (job_path.empty()) {
@@ -415,7 +415,7 @@ zx::result<> profiler::TargetTree::AddThread(cpp20::span<const zx_koid_t> job_pa
                            : it->second.AddThread(job_path.subspan(1), pid, std::move(thread));
 }
 
-zx::result<> profiler::TargetTree::RemoveThread(cpp20::span<const zx_koid_t> job_path,
+zx::result<> profiler::TargetTree::RemoveThread(std::span<const zx_koid_t> job_path,
                                                 zx_koid_t pid, zx_koid_t tid) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   if (job_path.empty()) {
@@ -452,11 +452,11 @@ zx::result<> profiler::TargetTree::ForEachJob(
 }
 
 zx::result<> profiler::TargetTree::ForEachProcess(
-    const fit::function<zx::result<>(cpp20::span<const zx_koid_t> job_path,
+    const fit::function<zx::result<>(std::span<const zx_koid_t> job_path,
                                      const ProcessTarget& target)>& f) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   for (const auto& [_, process] : processes_) {
-    zx::result res = f(cpp20::span<const zx_koid_t>{}, process);
+    zx::result res = f(std::span<const zx_koid_t>{}, process);
     if (res.is_error()) {
       return res;
     }

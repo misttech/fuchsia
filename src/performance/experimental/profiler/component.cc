@@ -63,7 +63,7 @@ zx::result<fidl::Box<fuchsia_component_decl::Component>> GetResolvedDeclaration(
   }
 
   auto unpersist_res = fidl::InplaceUnpersist<fuchsia_component_decl::wire::Component>(
-      cpp20::span<uint8_t>(drain_res->begin(), drain_res->size()));
+      std::span<uint8_t>(drain_res->begin(), drain_res->size()));
   if (unpersist_res.is_error()) {
     return zx::error(unpersist_res.error_value().status());
   }
