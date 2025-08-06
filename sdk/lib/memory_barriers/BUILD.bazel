@@ -15,6 +15,7 @@ idk_cc_source_library(
     visibility = [
         "//src/media:__subpackages__",
         "//src/sysmem:__subpackages__",
+        "//vendor/amlogic/drivers:__subpackages__",
 
         # This visibility entry is for GN-only.
         "//src/lib/memory_barriers:__subpackages__",
