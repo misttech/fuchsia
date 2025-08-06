@@ -1172,7 +1172,7 @@ void VmMapping::Activate() {
   ActivateLocked();
 }
 
-void VmMapping::TryMergeRightNeighborLocked(VmMapping* right_candidate) {
+fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_candidate) {
   AssertHeld(right_candidate->lock_ref());
 
   // This code is tolerant of many 'miss calls' if mappings aren't mergeable or are not neighbours
@@ -1188,20 +1188,20 @@ void VmMapping::TryMergeRightNeighborLocked(VmMapping* right_candidate) {
 
   // Need to refer to the same object.
   if (object_.get() != right_candidate->object_.get()) {
-    return;
+    return nullptr;
   }
   // Aspace and VMO ranges need to be contiguous. Validate that the right candidate is actually to
   // the right in addition to checking that base+size lines up for single scenario where base_+size_
   // can overflow and becomes zero.
   if (base_ + size_ != right_candidate->base_ || right_candidate->base_ < base_) {
-    return;
+    return nullptr;
   }
   if (object_offset_locked() + size_ != right_candidate->object_offset_locked()) {
-    return;
+    return nullptr;
   }
   // All flags need to be consistent.
   if (flags_ != right_candidate->flags_) {
-    return;
+    return nullptr;
   }
   // Although we can combine the protect_region_list_rest_ of the two mappings, we require that they
   // be of the same cacheability, as this is an assumption that mapping has a single cacheability
@@ -1211,45 +1211,65 @@ void VmMapping::TryMergeRightNeighborLocked(VmMapping* right_candidate) {
   // does not hurt.
   if ((ProtectRangesLocked().FirstRegionMmuFlags() & ARCH_MMU_FLAG_CACHE_MASK) !=
       (right_candidate->ProtectRangesLocked().FirstRegionMmuFlags() & ARCH_MMU_FLAG_CACHE_MASK)) {
-    return;
+    return nullptr;
   }
 
   // Only merge live mappings.
   if (state_ != LifeCycleState::ALIVE || right_candidate->state_ != LifeCycleState::ALIVE) {
-    return;
+    return nullptr;
   }
   // Both need to be mergeable.
   if (mergeable_ == Mergeable::NO || right_candidate->mergeable_ == Mergeable::NO) {
-    return;
+    return nullptr;
   }
 
-  {
-    // Although it was safe to read size_ without holding the object lock, we need to acquire it to
-    // perform changes.
-    Guard<CriticalMutex> guard{AliasedLock, object_->lock(), right_candidate->object_->lock()};
-
-    // Attempt to merge the protection region lists first. This is done first as a node allocation
-    // might be needed, which could fail. If it fails we can still abort now without needing to roll
-    // back any changes.
-    zx_status_t status = protection_ranges_.MergeRightNeighbor(right_candidate->protection_ranges_,
-                                                               right_candidate->base_);
-    if (status != ZX_OK) {
-      ASSERT(status == ZX_ERR_NO_MEMORY);
-      return;
-    }
-
-    const size_t new_size = size_ + right_candidate->size_;
-
-    status = right_candidate->DestroyLockedObject(false);
-    ASSERT(status == ZX_OK);
-
-    // The size of this mapping must be updated after removing the right candidate from the region
-    // tree to ensure correct re-validation of the subtree invariants. Failure to do so may trigger
-    // a consistency check, depending on the structure of related WAVLTree nodes.
-    set_size_locked(new_size);
+  fbl::AllocChecker ac;
+  fbl::RefPtr<VmMapping> new_mapping = fbl::AdoptRef(
+      new (&ac) VmMapping(*parent_, base_, size_ + right_candidate->size_, flags_, object_,
+                          object_offset_locked(), MappingProtectionRanges(0), Mergeable::YES));
+  if (!ac.check()) {
+    return nullptr;
   }
+  AssertHeld(new_mapping->lock_ref());
+
+  const MemoryPriority old_priority = memory_priority_;
+  // Although it is somewhat awkward and verbose, we use a lambda here instead of just a subscope to
+  // prevent the usages of `AssertHeld` from 'leaking' beyond the actual guard scope.
+  const bool failure =
+      [&]() TA_REQ(lock()) TA_REQ(right_candidate->lock()) TA_REQ(new_mapping->lock()) {
+        // Although it was safe to read size_ without holding the object lock, we need to acquire it
+        // to perform changes.
+        Guard<CriticalMutex> guard{AliasedLock, object_->lock(), right_candidate->object_->lock()};
+
+        // Attempt to merge the protection region lists first. This is done first as a node
+        // allocation might be needed, which could fail. If it fails we can still abort now without
+        // needing to roll back any changes.
+        zx_status_t status = protection_ranges_.MergeRightNeighbor(
+            right_candidate->protection_ranges_, right_candidate->base_);
+        if (status != ZX_OK) {
+          ASSERT(status == ZX_ERR_NO_MEMORY);
+          return true;
+        }
+
+        AssertHeld(new_mapping->object_lock_ref());
+        new_mapping->protection_ranges_ = ktl::move(protection_ranges_);
+
+        status = DestroyLockedObject(false);
+        ASSERT(status == ZX_OK);
+        status = right_candidate->DestroyLockedObject(false);
+        ASSERT(status == ZX_OK);
+
+        new_mapping->ActivateLocked();
+        return false;
+      }();
+  if (failure) {
+    return nullptr;
+  }
+
+  new_mapping->SetMemoryPriorityLocked(old_priority);
 
   vm_mappings_merged.Add(1);
+  return new_mapping;
 }
 
 void VmMapping::TryMergeNeighborsLocked() {
@@ -1266,27 +1286,27 @@ void VmMapping::TryMergeNeighborsLocked() {
   // cannot trigger our own destructor should we remove ourselves from the hierarchy.
   DEBUG_ASSERT(ref_count_debug() > 1);
 
-  // First consider merging any mapping on our right, into |this|.
   AssertHeld(parent_->lock_ref());
-  auto right_candidate = parent_->subregions_.RightOf(this);
-  if (right_candidate.IsValid()) {
-    // Request mapping as a refptr as we need to hold a refptr across the try merge.
-    if (fbl::RefPtr<VmMapping> mapping = right_candidate->as_vm_mapping()) {
-      TryMergeRightNeighborLocked(mapping.get());
-    }
+
+  // Find our two merge candidates.
+  fbl::RefPtr<VmMapping> left, right;
+  if (auto left_candidate = parent_->subregions_.LeftOf(this); left_candidate.IsValid()) {
+    left = left_candidate->as_vm_mapping();
+  }
+  if (auto right_candidate = parent_->subregions_.RightOf(this); right_candidate.IsValid()) {
+    right = right_candidate->as_vm_mapping();
   }
 
-  // Now attempt to merge |this| with any left neighbor.
-  AssertHeld(parent_->lock_ref());
-  auto left_candidate = parent_->subregions_.LeftOf(this);
-  if (!left_candidate.IsValid()) {
-    return;
+  // Attempt to merge with each candidate. Any successful merge will produce a new mapping and
+  // invalidate this.
+  if (right) {
+    right = TryMergeRightNeighborLocked(right.get());
   }
-  if (auto mapping = left_candidate->as_vm_mapping()) {
-    // Attempt actual merge. If this succeeds then |this| is in the dead state, but that's fine as
-    // we are finished anyway.
-    AssertHeld(mapping->lock_ref());
-    mapping->TryMergeRightNeighborLocked(this);
+  if (left) {
+    // We either merge the left with our result of the right merge, or if that was not successful
+    // with |this|.
+    AssertHeld(left->lock_ref());
+    left->TryMergeRightNeighborLocked(right ? right.get() : this);
   }
 }
 

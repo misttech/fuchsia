@@ -1482,7 +1482,6 @@ static bool vm_mapping_attribution_merge_test() {
   // Create some contiguous mappings, marked unmergeable (default behavior) to begin with.
   struct {
     fbl::RefPtr<VmMapping> ref = nullptr;
-    VmMapping* ptr = nullptr;
     AttributionCounts expected_attribution_counts;
   } mappings[4];
 
@@ -1493,9 +1492,8 @@ static bool vm_mapping_attribution_merge_test() {
         offset, kSize, 0, VMAR_FLAG_SPECIFIC, vmo, offset, kArchRwUserFlags, "test-mapping");
     ASSERT_EQ(ZX_OK, mapping_result.status_value());
     mappings[i].ref = ktl::move(mapping_result->mapping);
-    mappings[i].ptr = mappings[i].ref.get();
     EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
-    EXPECT_TRUE(mappings[i].ptr->GetAttributedMemory() == mappings[i].expected_attribution_counts);
+    EXPECT_TRUE(mappings[i].ref->GetAttributedMemory() == mappings[i].expected_attribution_counts);
     offset += kSize;
   }
   EXPECT_EQ(offset, 16ul * PAGE_SIZE);
@@ -1506,7 +1504,7 @@ static bool vm_mapping_attribution_merge_test() {
   for (int i = 0; i < 4; i++) {
     mappings[i].expected_attribution_counts = make_private_attribution_counts(4ul * PAGE_SIZE, 0);
     EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * PAGE_SIZE, 0));
-    EXPECT_TRUE(mappings[i].ptr->GetAttributedMemory() == mappings[i].expected_attribution_counts);
+    EXPECT_TRUE(mappings[i].ref->GetAttributedMemory() == mappings[i].expected_attribution_counts);
   }
 
   // Mark mappings 0 and 2 mergeable. This should not change anything since they're separated by an
@@ -1515,7 +1513,10 @@ static bool vm_mapping_attribution_merge_test() {
   VmMapping::MarkMergeable(ktl::move(mappings[2].ref));
   for (int i = 0; i < 4; i++) {
     EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * PAGE_SIZE, 0));
-    EXPECT_TRUE(mappings[i].ptr->GetAttributedMemory() == mappings[i].expected_attribution_counts);
+    fbl::RefPtr<VmMapping> map =
+        aspace->FindRegion(aspace->RootVmar()->base() + kSize * i)->as_vm_mapping();
+    ASSERT_TRUE(map);
+    EXPECT_TRUE(map->GetAttributedMemory() == mappings[i].expected_attribution_counts);
   }
 
   // Mark mapping 3 mergeable. This will merge mappings 2 and 3, destroying mapping 3 and moving all
@@ -1524,7 +1525,10 @@ static bool vm_mapping_attribution_merge_test() {
   mappings[2].expected_attribution_counts += mappings[3].expected_attribution_counts;
   for (int i = 0; i < 3; i++) {
     EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * PAGE_SIZE, 0));
-    EXPECT_TRUE(mappings[i].ptr->GetAttributedMemory() == mappings[i].expected_attribution_counts);
+    fbl::RefPtr<VmMapping> map =
+        aspace->FindRegion(aspace->RootVmar()->base() + kSize * i)->as_vm_mapping();
+    ASSERT_TRUE(map);
+    EXPECT_TRUE(map->GetAttributedMemory() == mappings[i].expected_attribution_counts);
   }
 
   // Mark mapping 1 mergeable. This will merge mappings 0, 1 and 2, with only mapping 0 surviving
@@ -1533,7 +1537,9 @@ static bool vm_mapping_attribution_merge_test() {
   mappings[0].expected_attribution_counts += mappings[1].expected_attribution_counts;
   mappings[0].expected_attribution_counts += mappings[2].expected_attribution_counts;
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(16ul * PAGE_SIZE, 0));
-  EXPECT_TRUE(mappings[0].ptr->GetAttributedMemory() == mappings[0].expected_attribution_counts);
+  fbl::RefPtr<VmMapping> map = aspace->FindRegion(aspace->RootVmar()->base())->as_vm_mapping();
+  ASSERT_TRUE(map);
+  EXPECT_TRUE(map->GetAttributedMemory() == mappings[0].expected_attribution_counts);
 
   // Free the test address space.
   status = aspace->Destroy();

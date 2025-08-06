@@ -1232,12 +1232,13 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // removed itself from the hierarchy, dropping a refptr.
   void TryMergeNeighborsLocked() TA_REQ(lock());
 
-  // Attempts to merge the given mapping into this one. This only succeeds if the candidate is
-  // placed just after |this|, both in the aspace and the vmo. See implementation for the full
-  // requirements for merging to succeed.
-  // The candidate must be held as a RefPtr by the caller so that this function does not trigger
-  // any VmMapping destructor by dropping the last reference when removing from the parent vmar.
-  void TryMergeRightNeighborLocked(VmMapping* right_candidate) TA_REQ(lock());
+  // Attempts to merge this and the given mapping into a new one. This only succeeds if the
+  // candidate is placed just after |this|, both in the aspace and the vmo. See implementation for
+  // the full requirements for merging to succeed. The candidate and this must be held as a RefPtr
+  // by the caller so that this function does not trigger any VmMapping destructor by dropping the
+  // last reference when removing from the parent vmar. If merging is successfully the newly created
+  // and installed mapping is returned, otherwise a nullptr is returned.
+  fbl::RefPtr<VmMapping> TryMergeRightNeighborLocked(VmMapping* right_candidate) TA_REQ(lock());
 
   // Helper function that updates the |size_| to |new_size| and also increments the mapping
   // generation count. Requires both the aspace lock and the object lock to be held, since |size_|
