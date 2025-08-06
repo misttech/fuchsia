@@ -124,6 +124,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         let format_data_on_corruption = storage_config.filesystems.format_data_on_corruption.0;
         let storage_host = storage_config.storage_host_enabled;
         let nand = storage_config.filesystems.watch_for_nand;
+        let provision_fxfs = storage_config.provision_fxfs;
 
         // Prepare some default arguments that may get overridden by the product config.
         let mut blob_deprecated_padded = false;
@@ -140,6 +141,9 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                     ensure!(gpt, "GPT required for Fxfs-based product assemblies");
                     fxfs_blob = true;
                     builder.platform_bundle("fshost_storage_host_fxfs");
+                    if provision_fxfs {
+                        builder.platform_bundle("fshost_provision_fxfs");
+                    }
                 }
                 VolumeConfig::Fvm(FvmVolumeConfig { blob, data, .. }) => {
                     blob_deprecated_padded = blob.blob_layout == BlobfsLayout::DeprecatedPadded;
@@ -290,8 +294,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             ("fuchsia.fshost.InlineCrypto", inline_crypto),
             ("fuchsia.blobfs.WriteCompressionAlgorithm", algorithm),
             ("fuchsia.blobfs.CacheEvictionPolicy", policy),
-            // TODO(https://fxbug.dev/411312604): determine the value here.
-            ("fuchsia.fshost.ProvisionFxfs", Config::new_bool(false)),
+            ("fuchsia.fshost.ProvisionFxfs", Config::new_bool(provision_fxfs)),
         ];
         for config in configs {
             builder.set_config_capability(config.0, config.1)?;

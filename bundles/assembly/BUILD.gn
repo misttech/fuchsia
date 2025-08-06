@@ -3356,6 +3356,30 @@ assembly_input_bundle("fshost_fvm_fxfs") {
   ]
 }
 
+# AIB containing fshost support for provisioning fxfs.
+# Should be included with fshost_fxfs when migration is necessary.
+#
+# optional: product must specify its inclusion
+# valid feature_set_levels: all
+# valid build-types: all
+# requires: fshost_fxfs
+#
+assembly_input_bundle("fshost_provision_fxfs") {
+  compiled_packages = [
+    {
+      bootfs_package = true
+      name = "fshost"
+      components = [
+        {
+          component_name = "fshost"
+          shards =
+              [ "//src/storage/fshost/meta/provision_fxfs_fshost.shard.cml" ]
+        },
+      ]
+    },
+  ]
+}
+
 # AIB containing fshost support for minfs. Not compatible with fxfs.
 #
 # optional: product must specify its inclusion

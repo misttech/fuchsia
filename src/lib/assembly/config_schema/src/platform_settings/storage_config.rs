@@ -35,6 +35,10 @@ pub struct StorageConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub mutable_storage_garbage_collection: bool,
 
+    /// Enable provisioning of the fxfs partition.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub provision_fxfs: bool,
+
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub starnix_volume: StarnixVolumeConfig,
 }
@@ -55,6 +59,7 @@ impl Default for StorageConfig {
             filesystems: Default::default(),
             disable_automount: Default::default(),
             storage_host_enabled: true,
+            provision_fxfs: false,
             mutable_storage_garbage_collection: Default::default(),
             starnix_volume: Default::default(),
         }

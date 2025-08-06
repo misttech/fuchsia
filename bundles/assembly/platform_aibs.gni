@@ -63,6 +63,7 @@ bootstrap_user_platform_aib_names = [
   "fshost_non_eng",
   "fshost_non_recovery",
   "fshost_non_storage_host",
+  "fshost_provision_fxfs",
   "fshost_storage",
   "fshost_storage_host_fvm_minfs",
   "fshost_storage_host_fxfs",
