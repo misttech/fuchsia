@@ -4,6 +4,6 @@
     <project name="third_party/android/device/generic/goldfish-opengl"
              path="third_party/android/device/generic/goldfish-opengl"
              remote="https://fuchsia.googlesource.com/third_party/android/device/generic/goldfish-opengl"
-             revision="f69ae2d5d0e7eac3ca9f27fb252440d0cec28984"/>
+             revision="e740a7fa5aad358efc2ff2d6875161545e675f61"/>
   </projects>
 </manifest>
