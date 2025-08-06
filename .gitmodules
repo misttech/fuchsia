@@ -243,11 +243,6 @@
 	url = https://fuchsia.googlesource.com/third_party/markupsafe
 	name = third_party/markupsafe
 	ignore = all
-[submodule "third_party/mesa"]
-	path = third_party/mesa
-	url = https://fuchsia.googlesource.com/third_party/mesa
-	name = third_party/mesa
-	ignore = all
 [submodule "third_party/micro-ecc"]
 	path = third_party/micro-ecc
 	url = https://fuchsia.googlesource.com/third_party/github.com/kmackay/micro-ecc
@@ -707,4 +702,9 @@
 	path = third_party/pylibs/pyusb/src
 	url = https://fuchsia.googlesource.com/third_party/github.com/pyusb/pyusb
 	name = third_party/pylibs/pyusb
+	ignore = all
+[submodule "third_party/mesa-migrating/src"]
+	path = third_party/mesa-migrating/src
+	url = https://fuchsia.googlesource.com/third_party/mesa
+	name = third_party/mesa
 	ignore = all
