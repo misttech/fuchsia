@@ -313,4 +313,18 @@ llvm::DWARFDie DwarfBinaryImpl::GetLLVMDieAtOffset(uint64_t offset) const {
   return context_->getDIEForOffset(offset);
 }
 
+void DwarfBinaryImpl::ClearLLVMCache() {
+  for (size_t i = 0; i < GetNormalUnitCount(); i++) {
+    auto llvm_unit = GetUnitAtIndex(UnitIndex(false, i))->GetLLVMUnit();
+    context_->clearLineTableForUnit(llvm_unit);
+    llvm_unit->clear();
+  }
+
+  for (size_t i = 0; i < GetDWOUnitCount(); i++) {
+    auto llvm_unit = GetUnitAtIndex(UnitIndex(true, i))->GetLLVMUnit();
+    context_->clearLineTableForUnit(llvm_unit);
+    llvm_unit->clear();
+  }
+}
+
 }  // namespace zxdb

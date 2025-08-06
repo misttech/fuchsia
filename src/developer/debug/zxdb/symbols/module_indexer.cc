@@ -156,6 +156,9 @@ ModuleIndexerResult IndexModule(fxl::WeakPtr<ModuleSymbols> module_symbols, Dwar
   // Next index all of the .dwo references that were discovered.
   indexer.IndexDwos();
 
+  // Clear the LLVM cache to significantly reduce the amount of duplicated caches we carry.
+  binary.ClearLLVMCache();
+
   return indexer.GetResult();
 }
 

@@ -103,6 +103,8 @@ class DwarfBinary {
 
   // Looks up a DIE by offset. This DIE can be in any unit.
   virtual llvm::DWARFDie GetLLVMDieAtOffset(uint64_t offset) const = 0;
+
+  virtual void ClearLLVMCache() = 0;
 };
 
 }  // namespace zxdb

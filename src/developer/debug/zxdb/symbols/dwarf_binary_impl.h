@@ -56,6 +56,7 @@ class DwarfBinaryImpl final : public DwarfBinary {
   fxl::RefPtr<DwarfUnit> UnitForRelativeAddress(uint64_t relative_address) override;
   std::optional<uint64_t> GetDebugAddrEntry(uint64_t addr_base, uint64_t index) const override;
   llvm::DWARFDie GetLLVMDieAtOffset(uint64_t offset) const override;
+  void ClearLLVMCache() override;
 
  private:
   // Lazily creates a unit for us and returns it. This can handle null input pointers, which will
