@@ -141,8 +141,15 @@ inline void TraceContextSwitch(const Thread* current_thread, const Thread* next_
 inline void TraceWakeup(const Thread* thread, cpu_num_t target_cpu)
     TA_REQ_SHARED(thread->get_lock()) {
   const SchedulerState& state = thread->scheduler_state();
-  KTRACE_THREAD_WAKEUP("kernel:sched", target_cpu, thread->fxt_ref(),
-                       ("weight", thread->IsIdle() ? kIdleWeight : state.weight()));
+  const Thread* current_thread = Thread::Current::Get();
+  if (!current_thread->IsIdle()) {
+    KTRACE_THREAD_WAKEUP("kernel:sched", target_cpu, thread->fxt_ref(),
+                         ("weight", thread->IsIdle() ? kIdleWeight : state.weight()),
+                         ("waker", ktrace::Koid{current_thread->tid()}));
+  } else {
+    KTRACE_THREAD_WAKEUP("kernel:sched", target_cpu, thread->fxt_ref(),
+                         ("weight", thread->IsIdle() ? kIdleWeight : state.weight()));
+  }
 }
 
 // Returns a delta value to additively update a predictor. Compares the given
