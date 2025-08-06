@@ -15,6 +15,7 @@ use flyweights::FlyStr;
 use futures::{AsyncRead, AsyncReadExt, SinkExt, Stream};
 use std::collections::BTreeMap;
 use std::num::{NonZeroU16, NonZeroU8};
+use std::sync::Mutex;
 
 pub fn parse_full_session<'a>(
     buf: &'a [u8],
@@ -24,10 +25,10 @@ pub fn parse_full_session<'a>(
     while let Some(record) = parser.next() {
         records.push(record?);
     }
-    Ok((records, parser.warnings().to_owned()))
+    Ok((records, parser.take_warnings()))
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct SessionParser<R> {
     buffer: Vec<u8>,
     reader: R,
@@ -51,8 +52,8 @@ impl<R: std::io::Read> SessionParser<R> {
 }
 
 impl<R> SessionParser<R> {
-    pub fn warnings(&self) -> &[ParseWarning] {
-        self.resolver.warnings()
+    pub fn take_warnings(&self) -> Vec<ParseWarning> {
+        self.resolver.take_warnings()
     }
 
     pub fn parsed_bytes(&self) -> &[u8] {
@@ -181,7 +182,7 @@ impl<R: AsyncRead + Send + Unpin + 'static> SessionParser<R> {
                 }
             }
 
-            parser.warnings().to_owned()
+            parser.take_warnings()
         });
 
         (recv, pump_task)
@@ -211,14 +212,14 @@ impl<R: AsyncRead + Send + Unpin + 'static> SessionParser<R> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub(crate) struct ResolveCtx {
     ticks_per_second: u64,
     current_provider: Option<Provider>,
     providers: BTreeMap<u32, FlyStr>,
     strings: BTreeMap<NonZeroU16, FlyStr>,
     threads: BTreeMap<NonZeroU8, (ProcessKoid, ThreadKoid)>,
-    warnings: Vec<ParseWarning>,
+    warnings: Mutex<Vec<ParseWarning>>,
 }
 
 impl ResolveCtx {
@@ -233,12 +234,13 @@ impl ResolveCtx {
         }
     }
 
-    pub fn add_warning(&mut self, warning: ParseWarning) {
-        self.warnings.push(warning);
+    pub fn add_warning(&self, warning: ParseWarning) {
+        self.warnings.lock().expect("adding warning").push(warning);
     }
 
-    pub fn warnings(&self) -> &[ParseWarning] {
-        &self.warnings
+    pub fn take_warnings(&self) -> Vec<ParseWarning> {
+        let mut guard = self.warnings.lock().expect("taking warnings");
+        std::mem::replace(&mut *guard, Vec::new())
     }
 
     pub fn current_provider(&self) -> Option<Provider> {
@@ -303,7 +305,7 @@ impl ResolveCtx {
         self.threads.insert(t.index, (t.process_koid, t.thread_koid));
     }
 
-    pub fn resolve_str(&mut self, s: StringRef<'_>) -> FlyStr {
+    pub fn resolve_str(&self, s: StringRef<'_>) -> FlyStr {
         match s {
             StringRef::Empty => FlyStr::default(),
             StringRef::Inline(inline) => FlyStr::from(inline),
@@ -318,7 +320,7 @@ impl ResolveCtx {
         }
     }
 
-    pub fn resolve_process(&mut self, p: ProcessRef) -> ProcessKoid {
+    pub fn resolve_process(&self, p: ProcessRef) -> ProcessKoid {
         match p {
             ProcessRef::Index(id) => {
                 if let Some(process) = self.threads.get(&id).map(|(process, _thread)| *process) {
@@ -332,13 +334,13 @@ impl ResolveCtx {
         }
     }
 
-    pub fn resolve_thread(&mut self, t: ThreadRef) -> ThreadKoid {
+    pub fn resolve_thread(&self, t: ThreadRef) -> ThreadKoid {
         match t {
             ThreadRef::Index(id) => {
                 if let Some(thread) = self.threads.get(&id).map(|(_process, thread)| *thread) {
                     thread
                 } else {
-                    self.warnings.push(ParseWarning::UnknownThreadRef(t));
+                    self.add_warning(ParseWarning::UnknownThreadRef(t));
                     ThreadKoid(u64::MAX)
                 }
             }
