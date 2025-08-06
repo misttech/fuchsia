@@ -36,6 +36,34 @@
       "short": "r",
       "description": "changes the visual orientation of the graph's nodes. Allowed values are \"lefttoright\"/\"lr\" and \"toptobottom\"/\"tb\".",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--services",
+      "short": null,
+      "description": "whether to show an edge for service routes between nodes. It is highly recommended to narrow down the graph by using filters to just the nodes you need, otherwise the graph is extremely crowded and can cause timeouts on render engines.",
+      "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--html",
+      "short": null,
+      "description": "generate an html to display a generated svg with interactivity like highlighting. Reads from stdin or from the given svg file.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "svg"
+        }
+      },
+      "optionality": "optional",
+      "long": "--svg",
+      "short": "s",
+      "description": "the svg file to read for processing with the html generation.",
+      "hidden": false
     }
   ],
   "notes": [],

@@ -31,6 +31,21 @@ pub struct GraphNodeCommand {
     /// changes the visual orientation of the graph's nodes.
     /// Allowed values are "lefttoright"/"lr" and "toptobottom"/"tb".
     pub orientation: GraphOrientation,
+
+    /// whether to show an edge for service routes between nodes. It is highly recommended to
+    /// narrow down the graph by using filters to just the nodes you need, otherwise the graph
+    /// is extremely crowded and can cause timeouts on render engines.
+    #[argh(switch, long = "services")]
+    pub services: bool,
+
+    /// generate an html to display a generated svg with interactivity like highlighting. Reads
+    /// from stdin or from the given svg file.
+    #[argh(switch, long = "html")]
+    pub generate_html: bool,
+
+    /// the svg file to read for processing with the html generation.
+    #[argh(option, long = "svg", short = 's')]
+    pub svg_path: Option<String>,
 }
 
 /// Determines the visual orientation of the graph's nodes.

@@ -34,6 +34,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:prettytable-rs",
+    "//third_party/rust_crates:regex",
     "//third_party/rust_crates:termion",
   ]
   if (is_host) {
