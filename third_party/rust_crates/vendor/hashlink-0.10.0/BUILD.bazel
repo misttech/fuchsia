@@ -74,6 +74,6 @@ rust_library(
     }),
     version = "0.10.0",
     deps = [
-        "//third_party/rust_crates/vendor/hashbrown-0.15.2:hashbrown",
+        "//third_party/rust_crates/vendor/hashbrown-0.15.4:hashbrown",
     ],
 )

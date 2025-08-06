@@ -7734,18 +7734,18 @@ rustc_library("hashbrown-v0_12_3") {
   applicable_licenses = [ ":hashbrown-v0_12_3.license" ]
 }
 
-license("hashbrown-v0_15_2.license") {
+license("hashbrown-v0_15_4.license") {
   public_package_name = "hashbrown"
   license_files = [
-    "//third_party/rust_crates/vendor/hashbrown-0.15.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/hashbrown-0.15.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/hashbrown-0.15.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hashbrown-0.15.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("hashbrown-v0_15_2") {
+rustc_library("hashbrown-v0_15_4") {
   crate_name = "hashbrown"
-  source_root = "//third_party/rust_crates/vendor/hashbrown-0.15.2/src/lib.rs"
-  output_name = "hashbrown-3e27d22364621cb"
+  source_root = "//third_party/rust_crates/vendor/hashbrown-0.15.4/src/lib.rs"
+  output_name = "hashbrown-c4194f87b030c456"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -7758,15 +7758,15 @@ rustc_library("hashbrown-v0_15_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=3e27d22364621cb",
-    "-Cextra-filename=-3e27d22364621cb",
+    "-Cmetadata=c4194f87b030c456",
+    "-Cextra-filename=-c4194f87b030c456",
     "--cfg=feature=\"default-hasher\"",
     "--cfg=feature=\"inline-more\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":hashbrown-v0_15_2.license" ]
+  applicable_licenses = [ ":hashbrown-v0_15_4.license" ]
 }
 
 license("hashlink-v0_10_0.license") {
@@ -7787,7 +7787,7 @@ rustc_library("hashlink-v0_10_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":hashbrown-v0_15_2" ]
+  deps += [ ":hashbrown-v0_15_4" ]
 
   rustenv = []
 
