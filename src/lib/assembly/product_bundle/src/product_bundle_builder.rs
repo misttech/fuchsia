@@ -11,7 +11,7 @@ use assembly_container::AssemblyContainer;
 use assembly_partitions_config::{PartitionImageMapper, PartitionsConfig, Slot as PartitionSlot};
 use assembly_release_info::ProductBundleReleaseInfo;
 use assembly_tool::ToolProvider;
-use assembly_update_package::{Slot, UpdatePackage, UpdatePackageBuilder};
+use assembly_update_package::{write_ota_manifest, Slot, UpdatePackage, UpdatePackageBuilder};
 use assembly_update_packages_manifest::UpdatePackagesManifest;
 use camino::{Utf8Path, Utf8PathBuf};
 use delivery_blob::DeliveryBlobType;
@@ -195,6 +195,21 @@ impl ProductBundleBuilder {
         let gen_dir_path = Utf8Path::from_path(gen_dir.path())
             .context("checking if temporary directory is UTF-8")?;
         let update_package = if let Some(update_details) = update_details {
+            if let Some(repository_details) = &repository_details {
+                write_ota_manifest(
+                    &update_details.version_file,
+                    &update_details.epoch,
+                    repository_details.delivery_blob_type,
+                    &system_a,
+                    &system_r,
+                    &partitions,
+                    &packages_a,
+                    // Put the manifest under /repository, ffx repository server will serve all
+                    // files in that directory.
+                    out_dir.join("repository/ota_manifest.json"),
+                )
+                .context("writing OTA manifest")?;
+            }
             Some(write_update_package(
                 update_details,
                 &packages_a,

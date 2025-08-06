@@ -6,6 +6,8 @@
 
 //! Library for constructing the Update Package.
 
+mod ota_manifest;
 mod update_package;
 
+pub use crate::ota_manifest::write_ota_manifest;
 pub use crate::update_package::{Slot, UpdatePackage, UpdatePackageBuilder};

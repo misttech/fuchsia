@@ -98,6 +98,41 @@ pub struct Image {
     pub fuchsia_merkle_root: fuchsia_hash::Hash,
 }
 
+impl Image {
+    /// Create a new `Image` from a file path.
+    pub fn from_path(
+        path: impl AsRef<std::path::Path>,
+        slot: Slot,
+        image_type: ImageType,
+        delivery_blob_type: u32,
+    ) -> Result<Self, std::io::Error> {
+        use sha2::Digest as _;
+        use std::io::Read as _;
+
+        let mut file = std::fs::File::open(path)?;
+        let mut sha256_hasher = sha2::Sha256::new();
+        let mut merkle_builder = fuchsia_merkle::MerkleTreeBuilder::new();
+        let mut buf = [0; 65536];
+        let mut size = 0;
+        loop {
+            let bytes_read = file.read(&mut buf)?;
+            if bytes_read == 0 {
+                break;
+            }
+            let buf = &buf[..bytes_read];
+            sha256_hasher.update(buf);
+            merkle_builder.write(buf);
+            size += bytes_read as u64;
+        }
+
+        let fuchsia_merkle_root = merkle_builder.finish().root();
+        let sha256 =
+            fuchsia_hash::Sha256::from(*AsRef::<[u8; 32]>::as_ref(&sha256_hasher.finalize()));
+
+        Ok(Self { slot, image_type, sha256, size, delivery_blob_type, fuchsia_merkle_root })
+    }
+}
+
 /// The type of the image, asset or firmware.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -123,7 +158,10 @@ pub struct Blob {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use sha2::Digest as _;
+    use std::io::Write as _;
     use std::str::FromStr;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_parse_ota_manifest_success() {
@@ -271,5 +309,47 @@ mod tests {
     fn test_parse_ota_manifest_invalid_json() {
         let err = parse_ota_manifest(b"invalid json").unwrap_err();
         assert_matches!(err, OtaManifestError::Parse(_));
+    }
+
+    #[test]
+    fn image_from_path() {
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), b"hello world").unwrap();
+
+        let image =
+            Image::from_path(file.path(), Slot::AB, ImageType::Asset(AssetType::Zbi), 1).unwrap();
+
+        assert_eq!(image.size, 11);
+        assert_eq!(
+            image.sha256,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9".parse().unwrap()
+        );
+        assert_eq!(
+            image.fuchsia_merkle_root,
+            "8af85e2fe5da3385ea468ed1cb8412eaea6530a90b5dd8dee96529c8d9d39b97".parse().unwrap()
+        );
+    }
+
+    #[test]
+    fn image_from_path_large_file() {
+        let mut file = NamedTempFile::new().unwrap();
+        let chunk = [1; 1024];
+        let mut sha256_hasher = sha2::Sha256::new();
+        let mut merkle_builder = fuchsia_merkle::MerkleTreeBuilder::new();
+        for _ in 0..1000 {
+            file.write_all(&chunk).unwrap();
+            sha256_hasher.update(chunk);
+            merkle_builder.write(&chunk);
+        }
+
+        let image =
+            Image::from_path(file.path(), Slot::AB, ImageType::Asset(AssetType::Zbi), 1).unwrap();
+
+        assert_eq!(image.size, 1000 * 1024);
+        assert_eq!(
+            image.sha256,
+            fuchsia_hash::Sha256::from(*AsRef::<[u8; 32]>::as_ref(&sha256_hasher.finalize()))
+        );
+        assert_eq!(image.fuchsia_merkle_root, merkle_builder.finish().root());
     }
 }
