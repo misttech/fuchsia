@@ -13,7 +13,10 @@
     ],
     offer: [
         {
-            config: [ "fuchsia.power.SuspendEnabled" ],
+            config: [
+                "fuchsia.power.SuspendEnabled",
+                "fuchsia.starnix.ExpectMcuReady",
+            ],
             from: "parent",
             to: "#base-drivers",
         },
