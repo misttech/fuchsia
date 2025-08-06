@@ -1188,6 +1188,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
             Mergeable mergeable);
 
   zx_status_t DestroyLocked() TA_REQ(lock()) override;
+  zx_status_t DestroyLockedObject(bool unmap) TA_REQ(lock()) TA_REQ(object_->lock());
 
   // Unmap a subset of the region of memory in the containing address space,
   // returning it to the parent region to allocate.  If all of the memory is unmapped,
@@ -1209,6 +1210,9 @@ class VmMapping final : public VmAddressRegionOrMapping {
 
   zx_status_t SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) override
       TA_REQ(lock());
+
+  zx_status_t SetMemoryPriorityLockedObject(VmAddressRegion::MemoryPriority priority) TA_REQ(lock())
+      TA_REQ(object_->lock());
 
   void CommitHighMemoryPriority() override TA_EXCL(lock());
 

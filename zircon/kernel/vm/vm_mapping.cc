@@ -845,8 +845,13 @@ zx_status_t VmMapping::DecommitRange(size_t offset, size_t len) {
 
 zx_status_t VmMapping::DestroyLocked() {
   canary_.Assert();
-  LTRACEF("%p\n", this);
+  // Keep a refptr to the object_ so we know our lock remains valid.
+  fbl::RefPtr<VmObject> object(object_);
+  Guard<CriticalMutex> guard{object_->lock()};
+  return DestroyLockedObject(true);
+}
 
+zx_status_t VmMapping::DestroyLockedObject(bool unmap) {
   // Take a reference to ourself, so that we do not get destructed after
   // dropping our last reference in this method (e.g. when calling
   // subregions_.erase below).
@@ -869,30 +874,27 @@ zx_status_t VmMapping::DestroyLocked() {
   }
 
   // Remove any priority.
-  zx_status_t status = SetMemoryPriorityLocked(MemoryPriority::DEFAULT);
+  zx_status_t status = SetMemoryPriorityLockedObject(MemoryPriority::DEFAULT);
   DEBUG_ASSERT(status == ZX_OK);
 
-  // grab the object lock to unmap and remove ourselves from its list.
-  {
-    Guard<CriticalMutex> guard{object_->lock()};
-    // Perform unmap holding the object lock to prevent mappings being modified in between.
+  if (unmap) {
     status = aspace_->arch_aspace().Unmap(base_, size_ / PAGE_SIZE, aspace_->EnlargeArchUnmap());
     if (status != ZX_OK) {
       return status;
     }
-    protection_ranges_.clear();
-    object_->RemoveMappingLocked(this);
-
-    // Detach the region from the parent.
-    if (parent_) {
-      AssertHeld(parent_->lock_ref());
-      DEBUG_ASSERT(this->in_subregion_tree());
-      parent_->subregions_.RemoveRegion(this);
-    }
-
-    // The size may only be set to zero when not in the subregion tree.
-    set_size_locked(0);
   }
+  protection_ranges_.clear();
+  object_->RemoveMappingLocked(this);
+
+  // Detach the region from the parent.
+  if (parent_) {
+    AssertHeld(parent_->lock_ref());
+    DEBUG_ASSERT(this->in_subregion_tree());
+    parent_->subregions_.RemoveRegion(this);
+  }
+
+  // The size may only be set to zero when not in the subregion tree.
+  set_size_locked(0);
 
   // detach from any object we have mapped. Note that we are holding the aspace_->lock() so we
   // will not race with other threads calling vmo()
@@ -1236,9 +1238,6 @@ void VmMapping::TryMergeRightNeighborLocked(VmMapping* right_candidate) {
     return;
   }
 
-  // Destroy / DestroyLocked perform a lot more cleanup than we want, we just need to clear out a
-  // few things from right_candidate and then mark it as dead, as we do not want to clear out any
-  // arch page table mappings etc.
   {
     // Although it was safe to read size_ without holding the object lock, we need to acquire it to
     // perform changes.
@@ -1254,35 +1253,16 @@ void VmMapping::TryMergeRightNeighborLocked(VmMapping* right_candidate) {
       return;
     }
 
-    right_candidate->object_->RemoveMappingLocked(right_candidate);
+    const size_t new_size = size_ + right_candidate->size_;
 
-    // Detach region from the parent, ensuring our caller is correctly holding a refptr.
-    DEBUG_ASSERT(right_candidate->in_subregion_tree());
-    DEBUG_ASSERT(right_candidate->ref_count_debug() > 1);
-    AssertHeld(parent_->lock_ref());
-    parent_->subregions_.RemoveRegion(right_candidate);
+    status = right_candidate->DestroyLockedObject(false);
+    ASSERT(status == ZX_OK);
 
     // The size of this mapping must be updated after removing the right candidate from the region
     // tree to ensure correct re-validation of the subtree invariants. Failure to do so may trigger
     // a consistency check, depending on the structure of related WAVLTree nodes.
-    set_size_locked(size_ + right_candidate->size_);
-    right_candidate->set_size_locked(0);
+    set_size_locked(new_size);
   }
-
-  // Detach from the VMO. As we have removed ourselves as a mapping we also need to remove any
-  // priority we might have been propagating to that VMO. Additionally, we're destroying this
-  // mapping and so to not trip the assert in the destructor we can accomplish both goals by
-  // setting our priority back to the default.
-  right_candidate->SetMemoryPriorityLocked(MemoryPriority::DEFAULT);
-  right_candidate->object_.reset();
-
-  if (aspace_->last_fault_ == right_candidate) {
-    aspace_->last_fault_ = nullptr;
-  }
-
-  // Mark it as dead.
-  right_candidate->parent_ = nullptr;
-  right_candidate->state_ = LifeCycleState::DEAD;
 
   vm_mappings_merged.Add(1);
 }
@@ -1346,10 +1326,18 @@ zx_status_t VmMapping::SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority p
   if (priority == memory_priority_) {
     return ZX_OK;
   }
+  Guard<CriticalMutex> guard{object_->lock()};
+  return SetMemoryPriorityLockedObject(priority);
+}
+
+zx_status_t VmMapping::SetMemoryPriorityLockedObject(VmAddressRegion::MemoryPriority priority) {
+  DEBUG_ASSERT(state_ == LifeCycleState::ALIVE);
+  if (priority == memory_priority_) {
+    return ZX_OK;
+  }
   memory_priority_ = priority;
   const bool is_high = priority == VmAddressRegion::MemoryPriority::HIGH;
   aspace_->ChangeHighPriorityCountLocked(is_high ? 1 : -1);
-  Guard<CriticalMutex> guard{object_->lock()};
   object_->ChangeHighPriorityCountLocked(is_high ? 1 : -1);
   return ZX_OK;
 }
