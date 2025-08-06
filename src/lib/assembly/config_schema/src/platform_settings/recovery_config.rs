@@ -63,4 +63,8 @@ pub enum SystemRecovery {
 pub struct BootfsRecoveryConfig {
     /// Url of the product-provided bootfs recovery component
     pub product_component_url: String,
+
+    /// Don't start on startup
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub disable_eager_startup: bool,
 }

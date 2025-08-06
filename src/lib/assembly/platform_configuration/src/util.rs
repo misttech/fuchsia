@@ -61,15 +61,18 @@ pub(crate) fn add_platform_declared_product_provided_component(
 
 pub fn render_bootfs_cml_template(
     product_component_url: &str,
+    eager_startup: bool,
     template_contents: &str,
 ) -> anyhow::Result<String> {
     // Gather the data to render the cml template.
     let url = BootUrl::parse(product_component_url)
         .with_context(|| format!("Parsing bootfs component_url: {product_component_url}"))?;
 
-    // Only COMPONENT_URL makes sense for bootfs
-    let data =
-        BTreeMap::from([("COMPONENT_URL", product_component_url), ("PACKAGE_PATH", url.path())]);
+    let data = BTreeMap::from([
+        ("COMPONENT_URL", product_component_url),
+        ("PACKAGE_PATH", url.path()),
+        ("STARTUP", if eager_startup { "eager" } else { "lazy" }),
+    ]);
 
     let handlebars = Handlebars::new();
     handlebars.render_template(template_contents, &data).with_context(|| {
@@ -157,6 +160,7 @@ mod tests {
                 {
                     "name": "something",
                     "url": "{{COMPONENT_URL}}",
+                    "startup": "{{STARTUP}}",
                 },
             ],
             "offer": [
@@ -171,6 +175,7 @@ mod tests {
 
         let cml = render_bootfs_cml_template(
             "fuchsia-boot:///my-package/path#meta/my-component.cm",
+            true,
             &cml_template.to_string(),
         )
         .unwrap();
@@ -183,6 +188,36 @@ mod tests {
                     {
                         "name": "something",
                         "url": "fuchsia-boot:///my-package/path#meta/my-component.cm",
+                        "startup": "eager",
+                    },
+                ],
+                "offer": [
+                    {
+                        "directory": "config-data",
+                        "from": "parent",
+                        "to": "#something",
+                        "subdir": "/my-package/path",
+                    },
+                ],
+            })
+        );
+
+        let cml = render_bootfs_cml_template(
+            "fuchsia-boot:///my-package/path#meta/my-component.cm",
+            false,
+            &cml_template.to_string(),
+        )
+        .unwrap();
+        let cml: serde_json::Value = serde_json::from_str(&cml).unwrap();
+
+        assert_eq!(
+            cml,
+            json!({
+                 "children": [
+                    {
+                        "name": "something",
+                        "url": "fuchsia-boot:///my-package/path#meta/my-component.cm",
+                        "startup": "lazy",
                     },
                 ],
                 "offer": [

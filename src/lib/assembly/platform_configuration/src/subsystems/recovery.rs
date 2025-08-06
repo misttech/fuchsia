@@ -18,8 +18,10 @@ use assembly_constants::{
     PackageSetDestination,
 };
 use assembly_images_config::VolumeConfig;
+use camino::Utf8PathBuf;
 
 pub(crate) struct RecoverySubsystem;
+
 impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for RecoverySubsystem {
     fn define_configuration(
         context: &ConfigurationContext<'_>,
@@ -84,85 +86,37 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
         )?;
 
         if let Some(system_recovery) = &config.system_recovery {
-            context.ensure_feature_set_level(&[FeatureSetLevel::Utility], "System Recovery")?;
-
-            let mut configure_system_recovery = true;
             match system_recovery {
-                SystemRecovery::Fdr => builder.platform_bundle("recovery_fdr"),
+                SystemRecovery::Fdr => {
+                    context
+                        .ensure_feature_set_level(&[FeatureSetLevel::Utility], "System Recovery")?;
+                    builder.platform_bundle("recovery_fdr");
+                    configure_platform_system_recovery(context, config, builder)?;
+                }
                 SystemRecovery::Android => {
+                    context.ensure_feature_set_level(
+                        &[FeatureSetLevel::Utility],
+                        "Android System Recovery",
+                    )?;
                     builder.platform_bundle("recovery_android");
                     builder.platform_bundle("fastbootd_usb_support");
                     builder.platform_bundle("adb_support");
+                    configure_platform_system_recovery(context, config, builder)?;
                 }
                 SystemRecovery::Bootfs(bootfs_recovery_config) => {
-                    let cml_template =
-                        context.get_resource("bootfs_recovery.bootstrap_shard.cml.template");
-                    let cml_template = std::fs::read_to_string(cml_template.clone())
-                        .with_context(|| format!("Reading template: {cml_template}"))?;
-
-                    let cml = util::render_bootfs_cml_template(
-                        &bootfs_recovery_config.product_component_url,
-                        &cml_template,
+                    // Bootfs recovery can be part of a product directly and so is allowed at Standard.
+                    context.ensure_feature_set_level(
+                        &[FeatureSetLevel::Utility, FeatureSetLevel::Standard],
+                        "Bootfs Recovery",
                     )?;
 
-                    let cml_name = "bootfs_recovery.cml";
-                    let cml_path = gendir.join(cml_name);
-                    let mut cml_file = std::fs::File::create(&cml_path)?;
-                    cml_file.write_all(cml.as_bytes())?;
-                    let components = vec![CompiledComponentDefinition {
-                        component_name: "bootstrap".into(),
-                        shards: vec![cml_path.into()],
-                    }];
-                    let destination = CompiledPackageDestination::Boot(
-                        BootfsCompiledPackageDestination::Bootstrap,
-                    );
-                    let def = CompiledPackageDefinition {
-                        name: destination.clone(),
-                        components,
-                        contents: vec![],
-                        includes: vec![],
-                        bootfs_package: true,
-                    };
-                    builder
-                        .compiled_package(destination.clone(), def)
-                        .with_context(|| format!("Inserting compiled package: {destination}"))?;
-
-                    // A default package for bootfs recovery is not
-                    // provided and should be provided by the product.
-                    configure_system_recovery = false;
-                }
-            }
-
-            if configure_system_recovery {
-                // Create the recovery domain configuration package
-                let directory = builder
-                    .add_domain_config(PackageSetDestination::Blob(
-                        PackageDestination::SystemRecoveryConfig,
-                    ))
-                    .directory("system-recovery-config");
-
-                let logo_source = if let Some(logo) = &config.logo {
-                    logo.clone()
-                } else {
-                    context.get_resource("fuchsia-logo.riv")
-                };
-                directory
-                    .entry(FileEntry { source: logo_source, destination: "logo.riv".to_owned() })
-                    .context("Adding logo to system-recovery-config")?;
-
-                if let Some(instructions_source) = &config.instructions {
-                    directory
-                        .entry(FileEntry {
-                            source: instructions_source.clone(),
-                            destination: "instructions.txt".to_owned(),
-                        })
-                        .context("Adding instructions.txt to system-recovery-config")?;
-                }
-
-                if config.check_for_managed_mode {
-                    directory
-                        .entry_from_contents("check_fdr_restriction.json", "{}")
-                        .context("Adding check_fdr_restriction.json to system-recovery_config")?;
+                    configure_bootfs_recovery(
+                        context,
+                        builder,
+                        &gendir,
+                        &bootfs_recovery_config.product_component_url,
+                        !bootfs_recovery_config.disable_eager_startup,
+                    )?;
                 }
             }
         }
@@ -188,4 +142,83 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
         }
         Ok(())
     }
+}
+
+/// Helper function to configure platform-provided system recovery
+fn configure_platform_system_recovery(
+    context: &ConfigurationContext<'_>,
+    config: &RecoveryConfig,
+    builder: &mut dyn ConfigurationBuilder,
+) -> anyhow::Result<()> {
+    // Create the recovery domain configuration package
+    let directory = builder
+        .add_domain_config(PackageSetDestination::Blob(PackageDestination::SystemRecoveryConfig))
+        .directory("system-recovery-config");
+
+    let logo_source = if let Some(logo) = &config.logo {
+        logo.clone()
+    } else {
+        context.get_resource("fuchsia-logo.riv")
+    };
+    directory
+        .entry(FileEntry { source: logo_source, destination: "logo.riv".to_owned() })
+        .context("Adding logo to system-recovery-config")?;
+
+    if let Some(instructions_source) = &config.instructions {
+        directory
+            .entry(FileEntry {
+                source: instructions_source.clone(),
+                destination: "instructions.txt".to_owned(),
+            })
+            .context("Adding instructions.txt to system-recovery-config")?;
+    }
+
+    if config.check_for_managed_mode {
+        directory
+            .entry_from_contents("check_fdr_restriction.json", "{}")
+            .context("Adding check_fdr_restriction.json to system-recovery_config")?;
+    }
+
+    Ok(())
+}
+
+/// Helper function to configure bootfs recovery
+fn configure_bootfs_recovery(
+    context: &ConfigurationContext<'_>,
+    builder: &mut dyn ConfigurationBuilder,
+    gendir: &Utf8PathBuf,
+    product_component_url: &str,
+    eager_startup: bool,
+) -> anyhow::Result<()> {
+    let cml_template = context.get_resource("bootfs_recovery.bootstrap_shard.cml.template");
+    let cml_template = std::fs::read_to_string(cml_template.clone())
+        .with_context(|| format!("Reading template: {cml_template}"))?;
+
+    let cml =
+        util::render_bootfs_cml_template(product_component_url, eager_startup, &cml_template)?;
+
+    let cml_name = "bootfs_recovery.cml";
+    let cml_path = gendir.join(cml_name);
+    let mut cml_file = std::fs::File::create(&cml_path)
+        .with_context(|| format!("Creating cml file: {}", &cml_path))?;
+    cml_file
+        .write_all(cml.as_bytes())
+        .with_context(|| format!("Writing cml file: {}", &cml_path))?;
+    let components = vec![CompiledComponentDefinition {
+        component_name: "bootstrap".into(),
+        shards: vec![cml_path.into()],
+    }];
+    let destination = CompiledPackageDestination::Boot(BootfsCompiledPackageDestination::Bootstrap);
+    let def = CompiledPackageDefinition {
+        name: destination.clone(),
+        components,
+        contents: vec![],
+        includes: vec![],
+        bootfs_package: true,
+    };
+    builder
+        .compiled_package(destination.clone(), def)
+        .with_context(|| format!("Inserting compiled package: {destination}"))?;
+
+    Ok(())
 }

@@ -9,7 +9,7 @@
         {
             name: "bootfs_recovery",
             url: "{{COMPONENT_URL}}",
-            startup: "eager",
+            startup: "{{STARTUP}}",
         },
     ],
     offer: [
