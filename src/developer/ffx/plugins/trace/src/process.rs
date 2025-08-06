@@ -5,7 +5,7 @@
 use anyhow::{anyhow, Context, Result};
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
-use ffx_trace::SymbolizationMap;
+use ffx_tracing::SymbolizationMap;
 use fxt::{ArgValue, RawArg, RawArgValue, RawEventRecord, SessionParser, StringRef, TraceRecord};
 use log::warn;
 use std::collections::{BTreeMap, HashMap};
