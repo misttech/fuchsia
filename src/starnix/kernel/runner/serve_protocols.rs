@@ -321,19 +321,20 @@ fn forward_to_pty(
     let mut tx = fuchsia_async::Socket::from_socket(console_out);
     let pty_sink = pty.clone();
     kernel.kthreads.spawn_async(async move |locked_and_task: LockedAndTask<'_>| {
-        let _result: Result<(), Error> = (async |locked: &mut Locked<Unlocked>, current_task| {
+        let _result: Result<(), Error> = (async || {
             let mut buffer = vec![0u8; BUFFER_CAPACITY];
             loop {
                 let bytes = rx.read(&mut buffer[..]).await?;
                 if bytes == 0 {
                     return Ok(());
                 }
-                pty_sink.write(locked, current_task, &mut VecInputBuffer::new(&buffer[..bytes]))?;
+                pty_sink.write(
+                    &mut locked_and_task.unlocked(),
+                    locked_and_task.current_task(),
+                    &mut VecInputBuffer::new(&buffer[..bytes]),
+                )?;
             }
-        })(
-            &mut locked_and_task.unlocked(),
-            locked_and_task.current_task(),
-        )
+        })()
         .await;
     });
 
