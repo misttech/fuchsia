@@ -18,6 +18,7 @@ cc_test_executable("starnix-touch-test-bin") {
   testonly = true
   sources = [
     "relay-api.h",
+    "starnix-input-test-base.h",
     "starnix-touch-test.cc",
   ]
   output_name = "starnix-touch-test"
@@ -49,7 +50,7 @@ cc_test_executable("starnix-touch-test-bin") {
 
 fuchsia_test_component("starnix-touch-test-component") {
   testonly = true
-  manifest = "meta/starnix-touch-test.cml"
+  manifest = "meta/starnix-input-test.cml"
   deps = [ ":starnix-touch-test-bin" ]
   test_type = "starnix"
 }

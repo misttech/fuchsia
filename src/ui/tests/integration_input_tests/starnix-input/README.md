@@ -1,6 +1,6 @@
 ## Overview
 
-This test exercises the touch input dispatch path from Input Pipeline to a Scenic client. It is a multi-component test, and carefully avoids polling for component coordination.
+This test exercises the starnix input dispatch path from Input Pipeline to a Scenic client. It is a multi-component test, and carefully avoids polling for component coordination.
 
 - It runs real Scene Manager and Scenic components.
 - It uses a fake display controller; the physical device is unused.
@@ -32,7 +32,7 @@ This test exercises the touch input dispatch path from Input Pipeline to a Sceni
   - [debian_container](ui-client/meta/debian_container.cml): The Linux userspace that
     is run by the Starnix kernel. This provides a shell environment (e.g. `/bin/sh`),
     runs the `launch_input` program to initialize Starnix input, and runs the
-    `touch_dump` program to relay `evdev` data back to `starnix-touch-test.cc`.
+    `input_dump` program to relay `evdev` data back to `starnix-touch-test.cc`.
   - [launch_input](ui-client/meta/launch_input.cml): This program triggers the
     initialization of Starnix input.
     - The C++ source code is trivial, as the main requirement is just to have some
@@ -42,13 +42,13 @@ This test exercises the touch input dispatch path from Input Pipeline to a Sceni
     - When we refactor Starnix graphics and input, so that the `framebuffer`
       feature is associated with a kernel, rather than with components running
       under Starnix, this program can go away.
-  - [touch_dump](ui-client/touch_dump.cc): The `evdev` client. This reads touch
+  - [input_dump](ui-client/input_dump.cc): The `evdev` client. This reads input
     events from `/dev/input/event0`, parses the `struct input_event` records
     read from that device, and prints them out in a simple text format.
 
 ### Touch dispatch path
 
-- `starnix-touch-test.cc` -> Input Pipeline -> Scenic -> Starnix kernel -> touch_dump
+- `starnix-touch-test.cc` -> Input Pipeline -> Scenic -> Starnix kernel -> input_dump
 
 ### Setup sequence
 
@@ -62,8 +62,8 @@ This test exercises the touch input dispatch path from Input Pipeline to a Sceni
 1. Input Pipeline dispatches the touch event to Scenic.
 1. Scenic dispatch the touch event to the Starnix kernel.
 1. Starnix kernel receives the touch event from Scenic.
-1. `touch-dump.cc` reads the event from the Starnix kernel using the `evdev` protocol.
-1. `touch-dump.cc` reports the event details back to `starnix-touch-test.cc` over
+1. `input-dump.cc` reads the event from the Starnix kernel using the `evdev` protocol.
+1. `input-dump.cc` reports the event details back to `starnix-touch-test.cc` over
    a Zircon datagram socket.
 1. `starnix-touch-test.cc` validates the contents of the event.
 
@@ -83,7 +83,7 @@ input handling threads will also have been spawned before init runs.
 ## Build the test
 
 ```shell
-$ fx set core.x64 --with //src/ui/tests/integration_input_tests/starnix-touch:tests
+$ fx set core.x64 --with //src/ui/tests/integration_input_tests/starnix-input:tests
 ```
 
 ## Run the test

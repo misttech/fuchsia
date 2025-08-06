@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_UI_TESTS_INTEGRATION_INPUT_TESTS_STARNIX_TOUCH_RELAY_API_H_
-#define SRC_UI_TESTS_INTEGRATION_INPUT_TESTS_STARNIX_TOUCH_RELAY_API_H_
+#ifndef SRC_UI_TESTS_INTEGRATION_INPUT_TESTS_STARNIX_INPUT_RELAY_API_H_
+#define SRC_UI_TESTS_INTEGRATION_INPUT_TESTS_STARNIX_INPUT_RELAY_API_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -48,4 +48,4 @@ constexpr size_t kDownUpNumPackets = kDownNumPackets + kUpNumPackets;
 
 }  // namespace relay_api
 
-#endif  // SRC_UI_TESTS_INTEGRATION_INPUT_TESTS_STARNIX_TOUCH_RELAY_API_H_
+#endif  // SRC_UI_TESTS_INTEGRATION_INPUT_TESTS_STARNIX_INPUT_RELAY_API_H_

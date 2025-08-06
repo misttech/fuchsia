@@ -11,7 +11,7 @@ group("integration_input_tests") {
     "factory-reset-handler:tests",
     "interaction-state:tests",
     "mouse:tests",
-    "starnix-touch:tests",
+    "starnix-input:tests",
     "text-input:tests",
     "touch:tests",
     "virtual-keyboard:tests",
@@ -22,6 +22,6 @@ group("integration_input_tests") {
   # TODO(https://fxbug.dev/359323478): Figure out a better way to disable these tests without
   # relying on a global GN argument.
   if (data_filesystem_format == "minfs") {
-    deps -= [ "starnix-touch:tests" ]
+    deps -= [ "starnix-input:tests" ]
   }
 }

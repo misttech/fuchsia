@@ -14,7 +14,7 @@
 #include <iostream>
 #include <sstream>
 
-#include "src/ui/tests/integration_input_tests/starnix-touch/relay-api.h"
+#include "src/ui/tests/integration_input_tests/starnix-input/relay-api.h"
 #include "third_party/android/platform/bionic/libc/kernel/uapi/linux/input.h"
 
 // Note: This program uses `fprintf()` instead of `std::cerr`, because the latter flushes the writes
@@ -150,7 +150,7 @@ int main() {
   char input_buffer[128];
 
   while (true) {
-    // Let `starnix-touch-test.cc` know that we are ready for input message.
+    // Let starnix test fixture know that we are ready for an input message.
     write_message_to_stdout(relay_api::kWaitForStdinMessage);
 
     std::string cmd;
@@ -176,10 +176,9 @@ int main() {
       size_t num_of_events;
       ss >> num_of_events;
 
-      int touch_fd = open_device(epoll_fd, kDevice);
+      int device_fd = open_device(epoll_fd, kDevice);
 
-      // Let `starnix-touch-test.cc` know that we're ready for it to inject
-      // touch events.
+      // Let starnix test fixture know that we're ready for it to inject input events.
       write_message_to_stdout(relay_api::kReadyMessage);
 
       // Now just copy events from `evdev` to stdout.
@@ -188,7 +187,7 @@ int main() {
       relay_events(epoll_fd, num_of_events);
 
       // Close file.
-      close_device(touch_fd, epoll_fd);
+      close_device(device_fd, epoll_fd);
 
     } else {
       // Unknown command.

@@ -33,9 +33,9 @@
         },
     ],
 
-    // This collection is where `touch-input-test.cc` dynamically launches
-    // `touch_dump`, so that the test can have a handle to read the stdout
-    // of `touch_dump`.
+    // This collection is where a starnix input test dynamically launches
+    // `input_dump`, so that the test can have a handle to read the stdout
+    // of `input_dump`.
     collections: [
         {
             name: "debian_userspace",
@@ -51,8 +51,8 @@
     ],
     expose: [
         {
-            // Expose the `Realm` protocol, so that `starnix-touch-test.cc`
-            // can call `CreateChild()` to launch `touch_dump.cm`.
+            // Expose the `Realm` protocol, so that the starnix input test
+            // can call `CreateChild()` to launch `input_dump.cm`.
             protocol: [ "fuchsia.component.Realm" ],
             from: "framework",
         },
