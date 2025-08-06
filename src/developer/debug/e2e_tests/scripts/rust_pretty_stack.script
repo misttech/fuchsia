@@ -11,3 +11,10 @@
 # into the binary and so are resolvable. The same is true for the below as well.
 rust_crasher::main
 «Rust startup»
+
+[zxdb] run-test fuchsia-pkg://fuchsia.com/crasher_test#meta/rust_crasher_test.cm
+🛑
+
+[zxdb] frame --force-remote-unwind
+rust_crasher_bin_test::tests::test_should_fail
+«Rust test startup»

@@ -32,6 +32,7 @@ if (is_host && has_board) {
       "inferiors:zxdb_e2e_inferiors",
       "//src/developer/debug/debug_agent",
       "//src/developer/forensics/crasher:crasher",
+      "//src/developer/forensics/crasher:crasher_test",
     ]
     deps = [
       # In variant builds the variant version of the test executable will be run. However, the test
