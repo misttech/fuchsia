@@ -4,7 +4,7 @@
 
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
-#include <lib/syslog/structured_backend/cpp/fuchsia_syslog.h>
+#include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/socket.h>
 
@@ -100,12 +100,12 @@ TEST(StructuredLogging, ThreadInitialization) {
 
 TEST(StructuredLogging, BackendDirect) {
   {
-    syslog_runtime::LogBufferBuilder builder(LogSeverity::Warn);
+    LogBufferBuilder builder(LogSeverity::Warn);
     auto buffer =
         builder.WithFile("foo.cc", 42).WithCondition("condition").WithMsg("fake tag").Build();
     buffer.Flush();
   }
-  syslog_runtime::LogBufferBuilder builder(LogSeverity::Warn);
+  LogBufferBuilder builder(LogSeverity::Warn);
   auto buffer =
       builder.WithFile("foo.cc", 42).WithCondition("condition").WithMsg("fake tag").Build();
   buffer.WriteKeyValue("foo", static_cast<int64_t>(42));
@@ -120,12 +120,12 @@ TEST(StructuredLogging, Overflow) {
   memset(very_large_string.data(), 5, very_large_string.size());
   very_large_string[very_large_string.size() - 1] = 0;
   {
-    syslog_runtime::LogBufferBuilder builder(LogSeverity::Warn);
+    LogBufferBuilder builder(LogSeverity::Warn);
     auto buffer =
         builder.WithFile("foo.cc", 42).WithCondition("condition").WithMsg("fake tag").Build();
     buffer.Flush();
   }
-  syslog_runtime::LogBufferBuilder builder(LogSeverity::Warn);
+  LogBufferBuilder builder(LogSeverity::Warn);
   auto buffer =
       builder.WithFile("foo.cc", 42).WithCondition("condition").WithMsg("fake tag").Build();
   buffer.WriteKeyValue("foo", static_cast<int64_t>(42));

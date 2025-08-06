@@ -280,13 +280,13 @@ TEST_F(LoggingFixture, BackendDirect) {
   LogState state = SetupLogs(false);
 
   {
-    syslog_runtime::LogBufferBuilder builder(LogSeverity::Error);
+    LogBufferBuilder builder(LogSeverity::Error);
     auto buffer =
         builder.WithFile("foo.cc", 42).WithMsg("Log message").WithCondition("condition").Build();
     buffer.WriteKeyValue("tag", "fake tag");
     buffer.Flush();
   }
-  syslog_runtime::LogBufferBuilder builder(LogSeverity::Error);
+  LogBufferBuilder builder(LogSeverity::Error);
   auto buffer =
       builder.WithMsg("fake message").WithCondition("condition").WithFile("foo.cc", 42).Build();
   buffer.WriteKeyValue("tag", "fake tag");
@@ -328,7 +328,7 @@ TEST(StructuredLogging, Remaining) {
   ASSERT_TRUE(temp_dir.NewTempFile(&log_file));
   builder.WithLogFile(log_file);
   builder.BuildAndInitialize();
-  syslog_runtime::LogBufferBuilder builder2(LogSeverity::Info);
+  LogBufferBuilder builder2(LogSeverity::Info);
   auto buffer = builder2.WithFile("test", 5).WithMsg("test_msg").Build();
   auto header = internal::MsgHeader::CreatePtr(&buffer);
   auto initial = header->RemainingSpace();
@@ -339,7 +339,7 @@ TEST(StructuredLogging, Remaining) {
 }
 
 TEST(StructuredLogging, FlushAndReset) {
-  syslog_runtime::LogBufferBuilder builder(LogSeverity::Info);
+  LogBufferBuilder builder(LogSeverity::Info);
   auto buffer = builder.WithFile("test", 5).WithMsg("test_msg").Build();
   auto header = internal::MsgHeader::CreatePtr(&buffer);
   auto initial = header->RemainingSpace();
@@ -347,7 +347,7 @@ TEST(StructuredLogging, FlushAndReset) {
   ASSERT_EQ(header->RemainingSpace(), initial - 4);
   header->FlushAndReset();
   ASSERT_EQ(header->RemainingSpace(),
-            syslog_runtime::LogBuffer::data_size() - 2);  // last byte reserved for NULL terminator
+            LogBuffer::data_size() - 2);  // last byte reserved for NULL terminator
 }
 #endif
 

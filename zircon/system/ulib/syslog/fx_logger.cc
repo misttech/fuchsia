@@ -7,7 +7,6 @@
 #include <fidl/fuchsia.logger/cpp/wire.h>
 #include <lib/syslog/cpp/macros.h>  //nogncheck
 #include <lib/syslog/logger.h>
-#include <lib/syslog/structured_backend/cpp/fuchsia_syslog.h>
 #include <lib/syslog/wire_format.h>
 #include <stdio.h>
 #include <zircon/assert.h>
@@ -170,7 +169,7 @@ zx_status_t fx_logger::VLogWriteToSocket(fx_log_severity_t severity, const char*
     if (severity < 0) {
       severity = 0;
     }
-    auto builder = syslog_runtime::LogBufferBuilder(static_cast<uint8_t>(severity));
+    auto builder = fuchsia_logging::LogBufferBuilder(static_cast<uint8_t>(severity));
     if (file) {
       builder.WithFile(file, line);
     }

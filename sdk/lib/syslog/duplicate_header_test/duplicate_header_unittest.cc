@@ -4,10 +4,10 @@
 
 #include <fidl/fuchsia.diagnostics/cpp/fidl.h>
 #include <lib/syslog/logger.h>
-#include <lib/syslog/structured_backend/fuchsia_syslog.h>
 
 #include <gtest/gtest.h>
 #include <sdk/lib/syslog/cpp/log_level.h>
+#include <sdk/lib/syslog/structured_backend/fuchsia_syslog.h>
 
 template <typename T, size_t Count>
 static constexpr bool MultiEquals(const T values[Count]) {

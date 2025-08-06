@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_LIB_LOG_LOG_H_
 #define SRC_DEVICES_LIB_LOG_LOG_H_
 
-#include <lib/syslog/structured_backend/cpp/fuchsia_syslog.h>
+#include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/zx/result.h>
 #include <stdarg.h>
 #include <stdio.h>

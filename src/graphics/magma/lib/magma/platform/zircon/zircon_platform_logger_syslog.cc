@@ -7,7 +7,7 @@
 #include <lib/magma/platform/platform_logger.h>
 #include <lib/magma/platform/platform_logger_provider.h>
 #include <lib/magma/platform/platform_thread.h>
-#include <lib/syslog/structured_backend/cpp/fuchsia_syslog.h>
+#include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/socket.h>
 #include <stdarg.h>

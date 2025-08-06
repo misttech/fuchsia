@@ -38,7 +38,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   auto line = provider.ConsumeIntegral<unsigned int>();
   auto msg = provider.ConsumeRandomLengthString();
   auto condition = provider.ConsumeRandomLengthString();
-  auto builder = syslog_runtime::LogBufferBuilder(severity);
+  auto builder = fuchsia_logging::LogBufferBuilder(severity);
   auto buffer = builder.WithCondition(condition).WithMsg(msg).WithFile(file, line).Build();
   while (provider.remaining_bytes()) {
     auto op = provider.ConsumeEnum<OP>();

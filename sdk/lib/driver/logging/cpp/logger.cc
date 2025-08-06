@@ -9,7 +9,7 @@
 
 #include <cstdarg>
 
-namespace flog = fuchsia_syslog;
+namespace flog = ::fuchsia_logging;
 
 namespace fdf {
 

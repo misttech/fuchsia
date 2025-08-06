@@ -42,7 +42,7 @@ class Puppet : public fuchsia::validate::logs::LogSinkPuppet {
 
   void EmitLog(fuchsia::validate::logs::RecordSpec spec, EmitLogCallback callback) override {
     if (fuchsia_logging::IsSeverityEnabled(spec.record.severity)) {
-      auto builder = syslog_runtime::LogBufferBuilder(static_cast<uint8_t>(spec.record.severity));
+      auto builder = fuchsia_logging::LogBufferBuilder(static_cast<uint8_t>(spec.record.severity));
       auto buffer = builder.WithFile(spec.file, spec.line).Build();
       for (auto& arg : spec.record.arguments) {
         switch (arg.value.Which()) {
@@ -90,7 +90,7 @@ int main(int argc, const char** argv) {
           is_init = false;
           return;
         }
-        auto builder = syslog_runtime::LogBufferBuilder(severity);
+        auto builder = fuchsia_logging::LogBufferBuilder(severity);
         auto buffer = builder.WithFile(__FILE__, __LINE__).WithMsg("Changed severity").Build();
         buffer.Flush();
       });

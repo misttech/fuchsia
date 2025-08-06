@@ -11,7 +11,7 @@
 
 #include "lib/async/dispatcher.h"
 #include "lib/fdio/directory.h"
-#include "lib/syslog/structured_backend/cpp/fuchsia_syslog.h"
+#include "lib/syslog/structured_backend/cpp/log_buffer.h"
 
 zx_koid_t GetKoid(zx_handle_t handle) {
   zx_info_handle_basic_t info;

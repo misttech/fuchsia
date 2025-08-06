@@ -6,7 +6,7 @@
 #define LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_CONNECTION_H_
 
 #include <fidl/fuchsia.logger/cpp/fidl.h>
-#include <lib/syslog/structured_backend/cpp/fuchsia_syslog.h>
+#include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/zx/result.h>
 
 namespace fuchsia_logging {
@@ -21,7 +21,7 @@ class LogConnection {
       fidl::UnownedClientEnd<fuchsia_logger::LogSink> client_end);
 
   LogConnection() = default;
-  LogConnection(zx::socket socket, fuchsia_syslog::FlushConfig config)
+  LogConnection(zx::socket socket, FlushConfig config)
       : socket_(std::move(socket)), block_if_full_(config.block_if_full) {}
 
   LogConnection(LogConnection&&) = default;
@@ -31,9 +31,7 @@ class LogConnection {
   bool is_valid() const { return socket_.is_valid(); }
 
   // Flushes the LogBuffer to the connection.
-  zx::result<> FlushBuffer(fuchsia_syslog::LogBuffer& buffer) const {
-    return FlushSpan(buffer.EndRecord());
-  }
+  zx::result<> FlushBuffer(LogBuffer& buffer) const { return FlushSpan(buffer.EndRecord()); }
 
  private:
   zx::result<> FlushSpan(cpp20::span<const uint8_t> data) const;

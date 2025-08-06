@@ -20,7 +20,7 @@ namespace {
 TEST(LogDecoder, DecodesCorrectly) {
   zx::socket logger_socket, our_socket;
   zx::socket::create(ZX_SOCKET_DATAGRAM, &logger_socket, &our_socket);
-  syslog_runtime::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
+  fuchsia_logging::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
   auto buffer = builder.WithSocket(logger_socket.release())
                     .WithMsg("test message")
                     .WithFile(__FILE__, __LINE__)
@@ -55,7 +55,7 @@ TEST(LogDecoder, DecodesArchivistArguments) {
   constexpr char kTestMoniker[] = "some_moniker";
   zx::socket logger_socket, our_socket;
   zx::socket::create(ZX_SOCKET_DATAGRAM, &logger_socket, &our_socket);
-  syslog_runtime::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
+  fuchsia_logging::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
   auto buffer = builder.WithSocket(logger_socket.release())
                     .WithMsg("test message")
                     .WithFile("test_file", 42)

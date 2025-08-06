@@ -184,6 +184,8 @@ bool IsSeverityEnabled(RawLogSeverity severity);
 
 }  // namespace fuchsia_logging
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+
 namespace syslog_runtime {
 
 template <typename K, typename V>
@@ -192,5 +194,7 @@ using LogBuffer = ::fuchsia_logging::LogBuffer;
 using LogBufferBuilder = ::fuchsia_logging::LogBufferBuilder;
 
 }  // namespace syslog_runtime
+
+#endif
 
 #endif  // LIB_SYSLOG_CPP_LOG_MESSAGE_IMPL_H_

@@ -59,7 +59,7 @@ LogMessage::~LogMessage() {
   }
 #endif
   auto str = stream_.str();
-  syslog_runtime::LogBufferBuilder builder(severity_);
+  LogBufferBuilder builder(severity_);
   if (condition_) {
     builder.WithCondition(condition_);
   }

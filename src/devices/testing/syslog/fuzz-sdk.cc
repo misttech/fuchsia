@@ -13,7 +13,7 @@
 
 #include <fuzzer/FuzzedDataProvider.h>
 
-#include "lib/syslog/structured_backend/cpp/fuchsia_syslog.h"
+#include "lib/syslog/structured_backend/cpp/log_buffer.h"
 
 // use -f to get printf output from this test.
 

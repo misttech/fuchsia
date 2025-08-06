@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.logger/cpp/markers.h>
 #include <fidl/fuchsia.logger/cpp/wire_types.h>
 #include <lib/driver/incoming/cpp/namespace.h>
-#include <lib/syslog/structured_backend/cpp/fuchsia_syslog.h>
+#include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/syslog/structured_backend/fuchsia_syslog.h>
 #include <lib/zx/socket.h>
 
