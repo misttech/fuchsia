@@ -15,6 +15,8 @@ class FuchsiaController(abc.ABC):
     Fuchsia-Controller.
     """
 
+    ctx: fuchsia_controller.Context
+
     @abc.abstractmethod
     def create_context(self) -> None:
         """Creates the fuchsia-controller context.

@@ -115,6 +115,7 @@ class WlanCoreTests(wlan_base_test.WlanBaseTest):
         self.device.wlan_core.set_region(CountryCode.UNITED_STATES_OF_AMERICA)
 
         end_time = time.time() + TIME_TO_WAIT_FOR_COUNTRY_CODE
+        country_resp = None
         while time.time() < end_time:
             country_resp = self.device.wlan_core.get_country(phy_ids[0])
             if country_resp == CountryCode.UNITED_STATES_OF_AMERICA:
