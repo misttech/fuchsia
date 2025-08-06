@@ -26,6 +26,9 @@ LogCallback& GetDefaultLogCallback() {
 void vLogToCallback(::fuchsia_logging::LogSeverity severity, const char* file, int line,
                     const char* prefix, const char* format, va_list args,
                     const LogCallback& log_callback) {
+  if (!fuchsia_logging::IsSeverityEnabled(severity)) {
+    return;
+  }
   fbl::String new_format;
   if (prefix) {
     new_format = fbl::StringPrintf("[%s] %s", prefix, format);
