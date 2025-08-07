@@ -8,11 +8,11 @@
 toc:
 - title: "Overview"
   path: /docs/concepts/index.md
+- title: "Software model"
+  path: /docs/concepts/software_model.md
 - title: "Principles"
   section:
   - include: /docs/concepts/principles/_toc.yaml
-- title: "Software model"
-  path: /docs/concepts/software_model.md
 - title: "Accessibility"
   section:
   - include: /docs/concepts/accessibility/_toc.yaml
@@ -43,6 +43,9 @@ toc:
 - title: "Power framework"
   section:
   - include: /docs/concepts/power/intro/_toc.yaml
+- title: "Products"
+  section:
+  - include: /docs/concepts/products/_toc.yaml
 - title: "Security"
   section:
   - include: /docs/concepts/security/_toc.yaml
