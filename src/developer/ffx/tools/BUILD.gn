@@ -39,9 +39,12 @@ _tools = [
   "starnix",
   "storage",
   "triage",
-  "usb_driver",
   "wm",
 ]
+
+if (!is_mac) {
+  _tools += [ "usb_driver" ]
+}
 
 group("tools") {
   public_deps = _tools

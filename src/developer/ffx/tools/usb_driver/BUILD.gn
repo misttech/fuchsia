@@ -7,6 +7,8 @@ import("//build/rust/rustc_library.gni")
 import("//src/developer/ffx/build/ffx_tool.gni")
 import("//src/developer/ffx/lib/version/build/ffx_apply_version.gni")
 
+assert(!is_mac, "The USB host driver is not supported on Mac")
+
 rustc_library("lib") {
   # This is named as such to avoid a conflict with an existing ffx echo command.
   name = "ffx_usb_host_driver"

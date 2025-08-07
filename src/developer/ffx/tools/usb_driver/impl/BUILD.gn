@@ -4,14 +4,30 @@
 
 import("//build/rust/rustc_library.gni")
 
+assert(!is_mac, "The USB host driver is not supported on Mac")
+
 rustc_library("lib") {
   name = "usb_driver_impl"
   edition = "2021"
   with_unit_tests = true
 
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/adapters.rs",
+    "src/lib.rs",
+  ]
 
-  deps = []
+  deps = [
+    "//src/developer/ffx/fidl/usb:fuchsia.ffx.usb_rust_common",
+    "//src/developer/ffx/lib/usb_vsock_host",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust/fidl_message",
+    "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+    "//third_party/rust_crates:rand",
+    "//third_party/rust_crates:tokio",
+  ]
 }
 
 group("tests") {
