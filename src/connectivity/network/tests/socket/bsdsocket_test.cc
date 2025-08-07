@@ -2318,5 +2318,24 @@ INSTANTIATE_TEST_SUITE_P(
                 {.value = 200, .domain = ZXIO_SOCKET_MARK_DOMAIN_1, .is_present = true},
                 {.value = 0, .domain = ZXIO_SOCKET_MARK_DOMAIN_1, .is_present = false}})));
 
-#endif
+TEST(SocketTest, ExhaustFdTable) {
+  // Fill up the FD table.
+  std::vector<fbl::unique_fd> fds;
+  while (true) {
+    int fd = open("/", O_RDONLY);
+    if (fd != -1) {
+      fds.push_back(fbl::unique_fd(fd));
+    } else {
+      ASSERT_EQ(errno, EMFILE);
+      // FD table full, continue the test.
+      break;
+    }
+  }
+  int socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  EXPECT_EQ(socket_fd, -1);
+  EXPECT_EQ(errno, EMFILE);
+}
+
+#endif  // __Fuchsia__
+
 }  // namespace

@@ -99,7 +99,7 @@ int socket(int domain, int type, int protocol) {
   if (fd.has_value()) {
     return fd.value();
   }
-  return ERROR(ZX_ERR_NO_MEMORY);
+  return ERRNO(EMFILE);
 }
 
 __EXPORT
