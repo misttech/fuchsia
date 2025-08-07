@@ -24,7 +24,7 @@ uint64_t ToWord(const T& value) {
 
 static inline trace::TraceReader::RecordConsumer MakeRecordConsumer(
     std::vector<trace::Record>* out_records) {
-  return [out_records](trace::Record record) { out_records->push_back(std::move(record)); };
+  return [out_records](trace::Record record) { out_records->emplace_back(std::move(record)); };
 }
 
 static inline trace::TraceReader::ErrorHandler MakeErrorHandler(std::string_view* out_error) {

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <inttypes.h>
 #include <lib/trace-engine/fields.h>
 
 #include <sstream>
@@ -719,22 +718,22 @@ bool TraceReader::ReadArguments(Chunk& record, size_t count, std::vector<Argumen
     auto type = ArgumentFields::Type::Get<ArgumentType>(header);
     switch (type) {
       case ArgumentType::kNull: {
-        out_arguments->push_back(Argument{std::move(name), ArgumentValue::MakeNull()});
+        out_arguments->emplace_back(std::move(name), ArgumentValue::MakeNull());
         break;
       }
       case ArgumentType::kBool: {
         auto value = BoolArgumentFields::Value::Get<bool>(header);
-        out_arguments->push_back(Argument{std::move(name), ArgumentValue::MakeBool(value)});
+        out_arguments->emplace_back(std::move(name), ArgumentValue::MakeBool(value));
         break;
       }
       case ArgumentType::kInt32: {
         auto value = Int32ArgumentFields::Value::Get<int32_t>(header);
-        out_arguments->push_back(Argument{std::move(name), ArgumentValue::MakeInt32(value)});
+        out_arguments->emplace_back(std::move(name), ArgumentValue::MakeInt32(value));
         break;
       }
       case ArgumentType::kUint32: {
         auto value = Uint32ArgumentFields::Value::Get<uint32_t>(header);
-        out_arguments->push_back(Argument{std::move(name), ArgumentValue::MakeUint32(value)});
+        out_arguments->emplace_back(std::move(name), ArgumentValue::MakeUint32(value));
         break;
       }
       case ArgumentType::kInt64: {
@@ -743,8 +742,7 @@ bool TraceReader::ReadArguments(Chunk& record, size_t count, std::vector<Argumen
           ReportError("Failed to read int64 argument value");
           return false;
         }
-        out_arguments->push_back(
-            Argument{std::move(name), ArgumentValue::MakeInt64(value.value())});
+        out_arguments->emplace_back(std::move(name), ArgumentValue::MakeInt64(value.value()));
         break;
       }
       case ArgumentType::kUint64: {
@@ -753,8 +751,7 @@ bool TraceReader::ReadArguments(Chunk& record, size_t count, std::vector<Argumen
           ReportError("Failed to read uint64 argument value");
           return false;
         }
-        out_arguments->push_back(
-            Argument{std::move(name), ArgumentValue::MakeUint64(value.value())});
+        out_arguments->emplace_back(std::move(name), ArgumentValue::MakeUint64(value.value()));
         break;
       }
       case ArgumentType::kDouble: {
@@ -763,8 +760,7 @@ bool TraceReader::ReadArguments(Chunk& record, size_t count, std::vector<Argumen
           ReportError("Failed to read double argument value");
           return false;
         }
-        out_arguments->push_back(
-            Argument{std::move(name), ArgumentValue::MakeDouble(value.value())});
+        out_arguments->emplace_back(std::move(name), ArgumentValue::MakeDouble(value.value()));
         break;
       }
       case ArgumentType::kString: {
@@ -774,8 +770,7 @@ bool TraceReader::ReadArguments(Chunk& record, size_t count, std::vector<Argumen
           ReportError("Failed to read string argument value");
           return false;
         }
-        out_arguments->push_back(
-            Argument{std::move(name), ArgumentValue::MakeString(std::move(value))});
+        out_arguments->emplace_back(std::move(name), ArgumentValue::MakeString(std::move(value)));
         break;
       }
       case ArgumentType::kPointer: {
@@ -784,8 +779,7 @@ bool TraceReader::ReadArguments(Chunk& record, size_t count, std::vector<Argumen
           ReportError("Failed to read pointer argument value");
           return false;
         }
-        out_arguments->push_back(
-            Argument{std::move(name), ArgumentValue::MakePointer(value.value())});
+        out_arguments->emplace_back(std::move(name), ArgumentValue::MakePointer(value.value()));
         break;
       }
       case ArgumentType::kKoid: {
@@ -794,15 +788,15 @@ bool TraceReader::ReadArguments(Chunk& record, size_t count, std::vector<Argumen
           ReportError("Failed to read koid argument value");
           return false;
         }
-        out_arguments->push_back(Argument{std::move(name), ArgumentValue::MakeKoid(value.value())});
+        out_arguments->emplace_back(std::move(name), ArgumentValue::MakeKoid(value.value()));
         break;
       }
       case ArgumentType::kBlob: {
         std::span<const uint64_t> value = arg.Words();
         const uint8_t* start = reinterpret_cast<const uint8_t*>(value.data());
         const uint8_t* end = start + (value.size() * sizeof(uint64_t));
-        out_arguments->push_back(
-            Argument{std::move(name), ArgumentValue::MakeBlob(std::vector<uint8_t>(start, end))});
+        out_arguments->emplace_back(std::move(name),
+                                    ArgumentValue::MakeBlob(std::vector<uint8_t>(start, end)));
         break;
       }
       default: {

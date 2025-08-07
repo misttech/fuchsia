@@ -655,8 +655,8 @@ TEST(TraceRecords, Record) {
 
   {
     std::vector<trace::Argument> args;
-    args.push_back(trace::Argument("arg1", trace::ArgumentValue::MakeInt32(11)));
-    args.push_back(trace::Argument("arg2", trace::ArgumentValue::MakeDouble(-3.14)));
+    args.emplace_back("arg1", trace::ArgumentValue::MakeInt32(11));
+    args.emplace_back("arg2", trace::ArgumentValue::MakeDouble(-3.14));
 
     trace::Record r(trace::Record::Event{123, trace::ProcessThread(4, 5), "category", "name",
                                          std::move(args),
@@ -744,8 +744,8 @@ TEST(TraceRecords, Record) {
 
   {
     std::vector<trace::Argument> args;
-    args.push_back(trace::Argument("arg1", trace::ArgumentValue::MakeInt32(11)));
-    args.push_back(trace::Argument("arg2", trace::ArgumentValue::MakeDouble(-3.14)));
+    args.emplace_back("arg1", trace::ArgumentValue::MakeInt32(11));
+    args.emplace_back("arg2", trace::ArgumentValue::MakeDouble(-3.14));
 
     trace::Record r(trace::Record::KernelObject{123, ZX_OBJ_TYPE_VMO, "name", std::move(args)});
     EXPECT_EQ(trace::RecordType::kKernelObject, r.type());
@@ -987,8 +987,8 @@ TEST(TraceRecords, Record) {
     const char preview[] = "<61 62 63 00>";
 
     std::vector<trace::Argument> args;
-    args.push_back(trace::Argument("arg1", trace::ArgumentValue::MakeInt32(11)));
-    args.push_back(trace::Argument("arg2", trace::ArgumentValue::MakeDouble(-3.14)));
+    args.emplace_back("arg1", trace::ArgumentValue::MakeInt32(11));
+    args.emplace_back("arg2", trace::ArgumentValue::MakeDouble(-3.14));
 
     trace::Record r(trace::Record::Large{Format{"category", "name", 123, trace::ProcessThread(4, 5),
                                                 std::move(args), blob, sizeof(blob)}});
