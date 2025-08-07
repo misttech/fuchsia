@@ -140,6 +140,7 @@ group("bazel_action_allowlist") {
     "//build/bazel/examples/hello_host",
     "//build/bazel/examples/hello_no_sdk",
     "//build/bazel/examples/hello_world",
+    "//build/bazel/host:bazel_root_host_targets.bazel_build_group",
   ]
 
   visibility += [ "//vendor/*" ]
@@ -165,19 +166,13 @@ group("bazel_action_allowlist") {
     "//src/media/audio/drivers/aml-g12-tdm:aml-g12-composite-bazel-package.bazel_build",
     "//src/ui/input/drivers/adc-buttons:bazel_package.bazel_build",
   ]
-
-  visibility += [ ":bazel_root_host_targets.build" ]
 }
 
 group("bazel_root_targets") {
   public_deps = [
-    ":bazel_root_host_targets",
     ":bazel_root_targets_json",
+    "//build/bazel/host:bazel_root_host_targets(${host_toolchain})",
   ]
-}
-
-build_bazel_root_host_targets("bazel_root_host_targets") {
-  # Nothing to do here
 }
 
 generated_file("bazel_root_targets_json") {

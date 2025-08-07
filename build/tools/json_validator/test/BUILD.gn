@@ -40,8 +40,8 @@ if (is_host) {
   _valico_validator_target = ""
   foreach(_root_target, resolved_bazel_root_targets) {
     if (_root_target.bazel_label == _valico_validator_label) {
-      _valico_validator_path = _root_target.ninja_output
-      _valico_validator_target = _root_target.gn_label
+      _valico_validator_path = "${host_out_dir}/json_validator_valico"
+      _valico_validator_target = _root_target.host_bin_label
     }
   }
   assert(_valico_validator_path != "",

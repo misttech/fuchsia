@@ -72,8 +72,8 @@ template("_bazel_tool_action_target") {
       _found,
       "The Bazel label ${invoker.tool_label} does not name one of the root Bazel host targets. See //build/bazel/bazel_root_targets.gni")
 
-  _tool_deps = [ _tool_root_target.gn_label ]
-  _tool_executable = _tool_root_target.ninja_output
+  _tool_deps = [ _tool_root_target.host_bin_label ]
+  _tool_executable = "${host_out_dir}/${_tool_root_target.ninja_name}"
 
   if (host_tools_base_path_override != "") {
     # Use a prebuilt version of the host tool. Assume the tool is already

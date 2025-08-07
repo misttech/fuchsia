@@ -92,7 +92,7 @@ subbuild("ctf_subbuild") {
   extra_deps = [
     # Some host tools required by the sub-build are Bazel artifacts.
     # Since Bazel cannot be invoked from sub-builds, ensure they are generated first.
-    "//build/bazel:bazel_root_host_targets",
+    "//build/bazel/host:bazel_root_host_targets($host_toolchain)",
 
     # Catch changes in source tests.
     "//sdk/ctf/tests:ctf-tests",
