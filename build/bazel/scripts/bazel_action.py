@@ -89,6 +89,15 @@ _IGNORED_FILE_SUFFIXES = (
     ".pyc",
 )
 
+# A set of labels that should be ignored from depfiles.
+_IGNORED_LABELS = {
+    # This file does not exist. It is returned by the cquery due to an
+    # unfortunate sequence of events.
+    #
+    # See details in https://fxbug.dev/434864899.
+    "//third_party/rust_crates/vendor/ansi_term-0.12.1:LICENSE",
+}
+
 # A list of external repository names which do not require a hash content file
 # I.e. their implementation should already record the right dependencies to
 # their input files.
@@ -871,7 +880,9 @@ def is_ignored_input_label(label: str) -> bool:
         workspace_utils.innermost_repository_name(label)
         in _BAZEL_BUILTIN_REPOSITORIES
     )
-    is_ignored = label.endswith(_IGNORED_FILE_SUFFIXES)
+    is_ignored = (
+        label.endswith(_IGNORED_FILE_SUFFIXES) or label in _IGNORED_LABELS
+    )
     return is_builtin or is_ignored
 
 

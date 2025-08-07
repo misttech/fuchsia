@@ -31,6 +31,10 @@ declare_args() {
       bazel_label = "//build/tools/json_validator:json_validator_valico"
       install_host_tool = true
     },
+    {
+      bazel_label = "//build/tools/formatjson5"
+      install_host_tool = true
+    },
   ]
 
   # A similar list to extend the list above for custom build configuration

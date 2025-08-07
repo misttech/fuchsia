@@ -3,12 +3,7 @@
 # found in the LICENSE file.
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load(
-    "//build/tools/bazel2gn/bazel_rules:defs.bzl",
-    "install_host_tools",
-    "rustc_binary",
-    "sdk_host_tool",
-)
+load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "rustc_binary")
 
 rustc_binary(
     name = "formatjson5",
@@ -21,19 +16,4 @@ rustc_binary(
         "//third_party/rust_crates/vendor:json5format",
         "//third_party/rust_crates/vendor:structopt",
     ],
-)
-
-sdk_host_tool(
-    name = "formatjson5_sdk",
-    category = "partner",
-    output_name = "formatjson5",
-    target_compatible_with = HOST_CONSTRAINTS,
-    deps = [":formatjson5"],
-)
-
-install_host_tools(
-    name = "install",
-    outputs = ["formatjson5"],
-    target_compatible_with = HOST_CONSTRAINTS,
-    deps = [":formatjson5"],
 )

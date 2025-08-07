@@ -64,6 +64,7 @@ template("build_bazel_root_host_targets") {
   } else if (current_toolchain == host_toolchain) {
     # Expand host tool targets in the host toolchain.
     # This makes them less confusing when added as deps, i.e. no $default_toolchain redirection required.
+
     _all_deps = []
 
     foreach(_root_target, resolved_bazel_root_targets) {
@@ -76,6 +77,20 @@ template("build_bazel_root_host_targets") {
         outputs = [ "${host_out_dir}/${_root_target.ninja_name}" ]
         sources = [ _ninja_output ]
         deps = [ _root_target.bazel_subtarget_label ]
+
+        metadata = {
+          # Used by //:tool_paths build API module
+          tool_paths = [
+            {
+              os = host_os
+              cpu = host_cpu
+              name = _root_target.ninja_name
+              label =
+                  get_label_info(":${_gn_target_name}", "label_with_toolchain")
+              path = rebase_path(outputs[0], root_build_dir)
+            },
+          ]
+        }
       }
       _all_deps += [ ":${_gn_target_name}" ]
 
@@ -85,20 +100,6 @@ template("build_bazel_root_host_targets") {
           outputs = [ "${host_tools_dir}/${_root_target.ninja_name}" ]
           sources = [ _ninja_output ]
           deps = [ _root_target.bazel_subtarget_label ]
-
-          metadata = {
-            # Used by //:tool_paths build API module
-            tool_paths = [
-              {
-                os = host_os
-                cpu = host_cpu
-                name = _root_target.ninja_name
-                label = get_label_info(":${_host_tool_target}",
-                                       "label_with_toolchain")
-                path = rebase_path(outputs[0], root_build_dir)
-              },
-            ]
-          }
         }
         _all_deps += [ ":${_host_tool_target}" ]
       }

@@ -6,7 +6,7 @@
 group("shac_tools") {
   testonly = true
   deps = [
-    "//build/tools/formatjson5:formatjson5.actual($host_toolchain)",
+    "//build/bazel/host:root_target.formatjson5($host_toolchain)",
     "//tools/cmc:cmc.actual($host_toolchain)",
     "//tools/doc_checker:doc_checker_bin.actual($host_toolchain)",
     "//tools/fidl/fidlc:fidl-format($host_toolchain)",
