@@ -140,16 +140,6 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
         }
 
         builder.set_config_capability(
-            "fuchsia.power.AndroidPowerHintsEnabled",
-            Config::new(
-                ConfigValueType::Bool,
-                serde_json::Value::Bool(
-                    context.board_config.provides_feature("fuchsia::android_power_hints"),
-                ),
-            ),
-        )?;
-
-        builder.set_config_capability(
             "fuchsia.power.SuspendEnabled",
             Config::new(ConfigValueType::Bool, config.suspend_enabled.into()),
         )?;

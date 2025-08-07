@@ -581,12 +581,6 @@
             from: "parent",
             to: "#session",
         },
-        {
-            config: "fuchsia.power.AndroidPowerHintsEnabled",
-            from: "parent",
-            to: "#session",
-            availability: "same_as_target",
-        },
     ],
     expose: [
         // Served by session_manager.
