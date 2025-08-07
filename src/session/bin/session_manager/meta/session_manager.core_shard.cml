@@ -311,6 +311,12 @@
             to: "#session-manager",
         },
         {
+            config: [ "fuchsia.power.AndroidPowerHintsEnabled" ],
+            from: "parent",
+            to: "#session-manager",
+            availability: "same_as_target",
+        },
+        {
             protocol: [
                 "fuchsia.fshost.StarnixVolumeProvider",
                 "fuchsia.power.system.ActivityGovernor",
