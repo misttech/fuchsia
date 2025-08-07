@@ -25,7 +25,7 @@ use perfetto_trace_protos::perfetto::protos::{trace_packet, Trace};
 use prost::Message;
 use starnix_core::task::{CurrentTask, Kernel, LockedAndTask};
 use starnix_core::vfs::FsString;
-use starnix_logging::{log_error, log_info, CATEGORY_ATRACE, NAME_PERFETTO_BLOB};
+use starnix_logging::{log_debug, log_error, log_info, CATEGORY_ATRACE, NAME_PERFETTO_BLOB};
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::pid_t;
@@ -224,7 +224,7 @@ impl CallbackState {
                         if frame.request_id != Some(read_buffers_request) {
                             continue;
                         } else {
-                            log_info!(
+                            log_debug!(
                                 "perfetto_consumer ignoring frame while looking for ReadBuffersRequest {read_buffers_request}: {frame:?}"
                             );
                         }
