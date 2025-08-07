@@ -106,7 +106,7 @@ value-layout-member = ( attribute-list ) , IDENTIFIER , "=" ,
 
 struct-layout =  "{" , ( struct-layout-member , ";" )* , "}" ;
 
-struct-layout-member = ( attribute-list ) , member-field ;
+struct-layout-member = ( attribute-list ) , member-field , ( '=' , constant ) ; [NOTE 10]
 
 ordinal-layout =  "{" , ( ordinal-layout-member , ";" )* , "}" ; [NOTE 5]
 
@@ -175,7 +175,7 @@ type-constraint-list = type-constraint | type-constraint , "," ,
 
 type-constraint = constant ;
 
-constant = compound-identifier | literal ;
+constant = compound-identifier , ( '|' , constant ) | literal , ( '|' , constant );
 
 ordinal = NUMERIC-LITERAL ;
 
@@ -263,7 +263,14 @@ but the compiler limits this to `client_end` types.
 The `modifier-availability` allows the more liberal `attribute-args` in the
 grammar, but the compiler limits this to `added` and `removed` arguments.
 
+### NOTE 10
+
+Default values for struct fields are currently supported, but deprecated.
+Support will be dropped when all uses of struct defaults are removed (see
+[this issue][struct_defaults_issue]).
+
 [primitives]: /docs/reference/fidl/language/language.md#primitives
 [fidldoc]: /tools/fidl/fidldoc/
 [doc_reference]: /docs/reference/fidl/language/attributes.md#doc
 [comment_style_guide]: /docs/development/languages/fidl/guides/style.md#comments
+[struct_defaults_issue]: https://g-issues.fuchsia.dev/issues/42051255
