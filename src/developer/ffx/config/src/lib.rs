@@ -383,6 +383,89 @@ mod test {
         assert!(<PathBuf>::try_convert(c(json!(["test", "test2"]))).is_err());
     }
 
+    #[test]
+    fn test_conversion_errors() {
+        // Probably don't want so much in the way of hard-coded string comparison, but this might
+        // at least simplify it a bit.
+        let nv_str = |ty: &'static str| format!("no value set. Could not convert to {ty}");
+        let badv_str = |from: &'static str, to: &'static str| {
+            format!("conversion to {to} not possible for value: {from}")
+        };
+        let no_val = ConfigValue(None);
+        let err = <String>::try_convert(no_val.clone()).unwrap_err();
+        assert_eq!(err.to_string(), nv_str("String"));
+
+        let err = <u64>::try_convert(no_val.clone()).unwrap_err();
+        assert_eq!(err.to_string(), nv_str("u64"));
+
+        let err = <bool>::try_convert(no_val.clone()).unwrap_err();
+        assert_eq!(err.to_string(), nv_str("bool"));
+
+        let err = <PathBuf>::try_convert(no_val.clone()).unwrap_err();
+        assert_eq!(err.to_string(), nv_str("PathBuf"));
+
+        let wrong_val = ConfigValue(Some(json!(123)));
+        let err = <String>::try_convert(wrong_val).unwrap_err();
+        assert_eq!(err.to_string(), badv_str("123", "String"));
+
+        let wrong_val = ConfigValue(Some(json!(true)));
+        let err = <u64>::try_convert(wrong_val).unwrap_err();
+        assert_eq!(err.to_string(), badv_str("true", "u64"));
+
+        let wrong_val = ConfigValue(Some(json!(123)));
+        let err = <bool>::try_convert(wrong_val).unwrap_err();
+        assert_eq!(err.to_string(), badv_str("123", "bool"));
+
+        let wrong_val = ConfigValue(Some(json!(false)));
+        let err = <PathBuf>::try_convert(wrong_val).unwrap_err();
+        assert_eq!(err.to_string(), badv_str("false", "PathBuf"));
+
+        let wrong_val = ConfigValue(Some(json!("frog")));
+        let err = <usize>::try_convert(wrong_val).unwrap_err();
+        assert_eq!(err.to_string(), badv_str("\"frog\"", "usize"));
+
+        let wrong_val = ConfigValue(Some(json!("frog")));
+        let err = <i64>::try_convert(wrong_val).unwrap_err();
+        assert_eq!(err.to_string(), badv_str("\"frog\"", "i64"));
+
+        let wrong_val = ConfigValue(Some(json!("frog")));
+        let err = <u16>::try_convert(wrong_val).unwrap_err();
+        assert_eq!(err.to_string(), badv_str("\"frog\"", "u16"));
+
+        let wrong_val = ConfigValue(Some(json!("frog")));
+        let err = <f64>::try_convert(wrong_val).unwrap_err();
+        assert_eq!(err.to_string(), badv_str("\"frog\"", "f64"));
+    }
+
+    #[test]
+    fn test_string_fallback_conversion() {
+        // This doesn't attempt to handle things like underflow/overflow, just plain
+        // string conversions.
+        let val = ConfigValue(Some(json!("2.0")));
+        let res = <f64>::try_convert(val).unwrap();
+        assert_eq!(res, 2.0);
+
+        let val = ConfigValue(Some(json!("20")));
+        let res = <u64>::try_convert(val).unwrap();
+        assert_eq!(res, 20);
+
+        let val = ConfigValue(Some(json!("20")));
+        let res = <u16>::try_convert(val).unwrap();
+        assert_eq!(res, 20);
+
+        let val = ConfigValue(Some(json!("20")));
+        let res = <i64>::try_convert(val).unwrap();
+        assert_eq!(res, 20);
+
+        let val = ConfigValue(Some(json!("20")));
+        let res = <usize>::try_convert(val).unwrap();
+        assert_eq!(res, 20);
+
+        let val = ConfigValue(Some(json!("true")));
+        let res = <bool>::try_convert(val).unwrap();
+        assert_eq!(res, true);
+    }
+
     #[derive(FfxConfigBacked, Default)]
     struct TestConfigBackedStruct {
         #[ffx_config_default(key = "test.test.thing", default = "thing")]

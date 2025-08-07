@@ -100,10 +100,10 @@ impl ValueStrategy for String {}
 
 impl TryConvert for String {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        value
-            .0
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .ok_or_else(|| anyhow!("no configuration String value found").into())
+        let inner = value.0.ok_or_else(|| anyhow!("no value set. Could not convert to String"))?;
+        let conversion = inner.as_str().map(|s| s.to_string());
+        conversion
+            .ok_or_else(|| anyhow!("conversion to String not possible for value: {}", inner).into())
     }
 }
 
@@ -119,18 +119,16 @@ impl ValueStrategy for usize {}
 
 impl TryConvert for usize {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        value
-            .0
-            .and_then(|v| {
-                v.as_u64().and_then(|v| usize::try_from(v).ok()).or_else(|| {
-                    if let Value::String(s) = v {
-                        s.parse().ok()
-                    } else {
-                        None
-                    }
-                })
-            })
-            .ok_or_else(|| anyhow!("no configuration usize value found").into())
+        let inner = value.0.ok_or_else(|| anyhow!("no value set. Could not convert to usize"))?;
+        let conversion = inner.as_u64().and_then(|v| usize::try_from(v).ok()).or_else(|| {
+            if let Value::String(ref s) = inner {
+                s.parse().ok()
+            } else {
+                None
+            }
+        });
+        conversion
+            .ok_or_else(|| anyhow!("conversion to usize not possible for value: {}", inner).into())
     }
 }
 
@@ -138,12 +136,16 @@ impl ValueStrategy for u64 {}
 
 impl TryConvert for u64 {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        value
-            .0
-            .and_then(|v| {
-                v.as_u64().or_else(|| if let Value::String(s) = v { s.parse().ok() } else { None })
-            })
-            .ok_or_else(|| anyhow!("no configuration Number value found").into())
+        let inner = value.0.ok_or_else(|| anyhow!("no value set. Could not convert to u64"))?;
+        let conversion = inner.as_u64().or_else(|| {
+            if let Value::String(ref s) = inner {
+                s.parse().ok()
+            } else {
+                None
+            }
+        });
+        conversion
+            .ok_or_else(|| anyhow!("conversion to u64 not possible for value: {}", inner).into())
     }
 }
 
@@ -161,13 +163,13 @@ impl ValueStrategy for u16 {}
 
 impl TryConvert for u16 {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        value
-            .0
-            .and_then(|v| {
-                v.as_u64().or_else(|| if let Value::String(s) = v { s.parse().ok() } else { None })
-            })
-            .and_then(|v| u16::try_from(v).ok())
-            .ok_or_else(|| anyhow!("no configuration Number value found").into())
+        let inner = value.0.ok_or_else(|| anyhow!("no value set. Could not convert to u16"))?;
+        let conversion = inner
+            .as_u64()
+            .or_else(|| if let Value::String(ref s) = inner { s.parse().ok() } else { None })
+            .and_then(|v| u16::try_from(v).ok());
+        conversion
+            .ok_or_else(|| anyhow!("conversion to u16 not possible for value: {}", inner).into())
     }
 }
 
@@ -175,12 +177,16 @@ impl ValueStrategy for i64 {}
 
 impl TryConvert for i64 {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        value
-            .0
-            .and_then(|v| {
-                v.as_i64().or_else(|| if let Value::String(s) = v { s.parse().ok() } else { None })
-            })
-            .ok_or_else(|| anyhow!("no configuration Number value found").into())
+        let inner = value.0.ok_or_else(|| anyhow!("no value set. Could not convert to i64"))?;
+        let conversion = inner.as_i64().or_else(|| {
+            if let Value::String(ref s) = inner {
+                s.parse().ok()
+            } else {
+                None
+            }
+        });
+        conversion
+            .ok_or_else(|| anyhow!("conversion to i64 not possible for value: {}", inner).into())
     }
 }
 
@@ -188,12 +194,16 @@ impl ValueStrategy for bool {}
 
 impl TryConvert for bool {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        value
-            .0
-            .and_then(|v| {
-                v.as_bool().or_else(|| if let Value::String(s) = v { s.parse().ok() } else { None })
-            })
-            .ok_or_else(|| anyhow!("no configuration Boolean value found").into())
+        let inner = value.0.ok_or_else(|| anyhow!("no value set. Could not convert to bool"))?;
+        let conversion = inner.as_bool().or_else(|| {
+            if let Value::String(ref s) = inner {
+                s.parse().ok()
+            } else {
+                None
+            }
+        });
+        conversion
+            .ok_or_else(|| anyhow!("conversion to bool not possible for value: {}", inner).into())
     }
 }
 
@@ -211,10 +221,11 @@ impl ValueStrategy for PathBuf {}
 
 impl TryConvert for PathBuf {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        value
-            .0
-            .and_then(|v| v.as_str().map(|s| PathBuf::from(s.to_string())))
-            .ok_or_else(|| anyhow!("no configuration PathBuf value found").into())
+        let inner = value.0.ok_or_else(|| anyhow!("no value set. Could not convert to PathBuf"))?;
+        let conversion = inner.as_str().map(|s| PathBuf::from(s.to_string()));
+        conversion.ok_or_else(|| {
+            anyhow!("conversion to PathBuf not possible for value: {}", inner).into()
+        })
     }
 }
 
@@ -262,12 +273,16 @@ impl ValueStrategy for f64 {}
 
 impl TryConvert for f64 {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        value
-            .0
-            .and_then(|v| {
-                v.as_f64().or_else(|| if let Value::String(s) = v { s.parse().ok() } else { None })
-            })
-            .ok_or_else(|| anyhow!("no configuration Number value found").into())
+        let inner = value.0.ok_or_else(|| anyhow!("no value set. Could not convert to f64"))?;
+        let conversion = inner.as_f64().or_else(|| {
+            if let Value::String(ref s) = inner {
+                s.parse().ok()
+            } else {
+                None
+            }
+        });
+        conversion
+            .ok_or_else(|| anyhow!("conversion to f64 not possible for value: {}", inner).into())
     }
 }
 
