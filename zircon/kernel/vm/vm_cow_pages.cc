@@ -4189,6 +4189,8 @@ zx_status_t VmCowPages::ZeroPagesLocked(VmCowRange range, bool dirty_track, Defe
 
   DEBUG_ASSERT(range.IsBoundedBy(size_));
   DEBUG_ASSERT(range.is_page_aligned());
+  // This function is only valid on a visible node as it will not handle zeroing children.
+  DEBUG_ASSERT(!is_hidden());
   ASSERT(zeroed_len_out);
 
   // This function tries to zero pages as optimally as possible for most cases, so we attempt

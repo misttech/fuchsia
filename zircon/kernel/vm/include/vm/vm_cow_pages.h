@@ -984,6 +984,7 @@ class VmCowPages final : public VmHierarchyBase,
   fbl::RefPtr<VmCowPages> DeadTransitionLocked(const LockedPtr& parent, const LockedPtr& sibling)
       TA_REQ(lock());
 
+  // A hidden VmCowPages has no associated VMO.
   bool is_hidden() const { return !!(options_ & VmCowPagesOptions::kHidden); }
   bool can_decommit_zero_pages() const {
     return !(options_ & VmCowPagesOptions::kCannotDecommitZeroPages);
