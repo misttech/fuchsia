@@ -8,6 +8,7 @@ mod config;
 mod crash_handler;
 pub mod crash_info;
 mod error;
+mod logger;
 mod memory;
 pub mod process_launcher;
 mod runtime_dir;
@@ -722,7 +723,7 @@ mod tests {
     use fidl::endpoints::{create_endpoints, create_proxy, DiscoverableProtocolMarker, Proxy};
     use fidl_connector::Connect;
     use fidl_fuchsia_component_runner::Task as DiagnosticsTask;
-    use fidl_fuchsia_logger::{LogSinkMarker, LogSinkRequest, LogSinkRequestStream};
+    use fidl_fuchsia_logger::{LogSinkMarker, LogSinkRequestStream};
     use fidl_fuchsia_process_lifecycle::LifecycleProxy;
     use fidl_test_util::spawn_stream_handler;
     use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
@@ -1369,7 +1370,7 @@ mod tests {
     // functionality should be refactored into a common test util lib.
     #[fuchsia::test]
     async fn enable_stdout_and_stderr_logging() -> Result<(), Error> {
-        let (dir, ns) = create_fs_with_mock_logsink()?;
+        let (mut dir, ns) = create_fs_with_mock_logsink()?;
 
         let run_component_fut = async move {
             let (_runtime_dir, runtime_dir_server) = create_endpoints::<fio::DirectoryMarker>();
@@ -1391,39 +1392,19 @@ mod tests {
         };
 
         // Just check for connection count, other integration tests cover decoding the actual logs.
-        let connection_count = 1u8;
-        let request_count = Arc::new(Mutex::new(0u8));
-        let request_count_copy = request_count.clone();
-
-        let service_fs_listener_fut = async move {
-            dir.for_each_concurrent(None, move |request: MockServiceRequest| match request {
-                MockServiceRequest::LogSink(mut r) => {
-                    let req_count = request_count_copy.clone();
-                    async move {
-                        while let Some(Ok(req)) = r.next().await {
-                            match req {
-                                LogSinkRequest::ConnectStructured { .. } => {
-                                    let mut count = req_count.lock().await;
-                                    *count += 1;
-                                }
-                                LogSinkRequest::WaitForInterestChange { .. } => {
-                                    // this is expected but asserting it was received is flakey because
-                                    // it's sent at some point after the scoped logger is created
-                                }
-                                LogSinkRequest::_UnknownMethod { .. } => {
-                                    panic!("Unexpected unknown method")
-                                }
-                            }
-                        }
-                    }
-                }
-            })
-            .await;
+        let service_fs_listener_fut = async {
+            let mut requests = Vec::new();
+            while let Some(MockServiceRequest::LogSink(r)) = dir.next().await {
+                // The client is expecting us to send OnInit, but we're not testing that, so just
+                // park the requests.
+                requests.push(r);
+            }
+            requests.len()
         };
 
-        join!(run_component_fut, service_fs_listener_fut);
+        let connection_count = join!(run_component_fut, service_fs_listener_fut).1;
 
-        assert_eq!(*request_count.lock().await, connection_count);
+        assert_eq!(connection_count, 1);
         Ok(())
     }
 

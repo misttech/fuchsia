@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context};
-use cm_logger::scoped::ScopedLogger;
+use anyhow::{format_err, Context, Error};
 use cm_rust::CapabilityTypeName;
 use cm_types::{Name, NamespacePath};
+use diagnostics_log::{Publisher, PublisherOptions};
 use dispatcher_config::Config;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fuchsia_component::client::connect::connect_to_protocol_at_dir_root;
@@ -24,11 +24,24 @@ use {
     fidl_fuchsia_io as fio,
 };
 
-fn scoped_log(scoped_logger: &ScopedLogger, error: anyhow::Error) {
-    let mut builder = log::Record::builder();
-    builder.level(log::Level::Warn);
-    scoped_logger
-        .log(&builder.args(format_args!("failed to run dispatcher component: {error}")).build());
+#[derive(Clone)]
+struct Logger(Option<Publisher>);
+
+impl Logger {
+    fn log(&self, error: Error) {
+        let mut builder = log::Record::builder();
+        builder.level(log::Level::Warn);
+
+        let log_it = |record| {
+            if let Some(p) = &self.0 {
+                p.log(record);
+            } else {
+                log::logger().log(record);
+            }
+        };
+
+        log_it(&builder.args(format_args!("failed to run dispatcher component: {error}")).build());
+    }
 }
 
 /// The dispatcher is a built-in component that expects configuration capabilities giving it a
@@ -56,28 +69,25 @@ impl Dispatcher {
             return;
         };
         let svc_dir_proxy = svc_dir.into_proxy();
-        let log_sink_client = match connect_to_protocol_at_dir_root(&svc_dir_proxy) {
-            Ok(log_sink_client) => log_sink_client,
-            Err(error) => {
-                log::error!(error:?; "failed to open logsink for dispatcher component");
-                return;
-            }
-        };
-        let Ok(logger) = ScopedLogger::create(log_sink_client) else {
-            log::error!("failed to create scoped logger for dispatcher component");
-            return;
-        };
+        let logger = Logger(
+            get_logger(&svc_dir_proxy)
+                .await
+                .inspect_err(|error| {
+                    log::warn!(error:?; "unable to get logger for dispatcher component");
+                })
+                .ok(),
+        );
         if let Err(err) = Self::run_inner(svc_dir_proxy, outgoing_dir, config, logger.clone()).await
         {
-            scoped_log(&logger, err);
+            logger.log(err);
         }
     }
 
-    pub async fn run_inner(
+    async fn run_inner(
         svc_dir_proxy: fio::DirectoryProxy,
         outgoing_dir: ServerEnd<fio::DirectoryMarker>,
         config: Option<zx::Vmo>,
-        logger: ScopedLogger,
+        logger: Logger,
     ) -> Result<(), anyhow::Error> {
         let (realm_proxy, realm_server_end) =
             fidl::endpoints::create_proxy::<fcomponent::RealmMarker>();
@@ -129,7 +139,7 @@ impl Dispatcher {
             let logger = logger.clone();
             self_.task_group.spawn(async move {
                 if let Err(err) = self_clone.handle_router_stream(stream).await {
-                    scoped_log(&logger, err);
+                    logger.log(err);
                 }
             });
         });
@@ -341,4 +351,9 @@ impl Dispatcher {
             }
         });
     }
+}
+
+async fn get_logger(svc_dir: &fio::DirectoryProxy) -> Result<Publisher, Error> {
+    let log_sink_client = connect_to_protocol_at_dir_root(svc_dir)?;
+    Ok(Publisher::new_async(PublisherOptions::default().use_log_sink(log_sink_client)).await?)
 }

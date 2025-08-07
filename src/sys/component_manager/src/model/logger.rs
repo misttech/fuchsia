@@ -4,7 +4,7 @@
 
 use crate::model::component::instance::ResolvedInstanceState;
 use crate::model::component::ComponentInstance;
-use diagnostics_log::{Publisher, PublisherOptions};
+use diagnostics_log::{BufferedPublisher, PublisherOptions};
 use fidl::endpoints;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use log::Log;
@@ -22,7 +22,7 @@ static LOGGER_CACHE: LazyLock<Mutex<LoggerCache>> =
     LazyLock::new(|| Mutex::new(LoggerCache { list: LinkedList::new() }));
 
 pub struct LoggerCache {
-    list: LinkedList<(Moniker, Arc<Publisher>)>,
+    list: LinkedList<(Moniker, Arc<BufferedPublisher>)>,
 }
 
 impl LoggerCache {
@@ -82,12 +82,14 @@ impl LoggerCache {
             ))
         });
 
-        let Ok(publisher) = Publisher::new(PublisherOptions::empty().use_log_sink(logsink)) else {
+        let Ok(publisher) =
+            BufferedPublisher::new(PublisherOptions::default().use_log_sink(logsink))
+        else {
             return false;
         };
 
         publisher.log(record);
-        cache.list.push_front((moniker.clone(), Arc::new(publisher)));
+        cache.list.push_front((moniker.clone(), publisher));
 
         if cache.list.len() > CACHE_SIZE {
             cache.list.pop_back();

@@ -1,69 +1,87 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-use crate::PublishError;
 use diagnostics_log_encoding::encode::{
     Encoder, EncoderOpts, EncodingError, LogEvent, MutableBuffer, TestRecord, WriteEventParams,
 };
-use diagnostics_log_encoding::Metatag;
-use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_logger::{LogSinkMarker, LogSinkSynchronousProxy, MAX_DATAGRAM_LEN_BYTES};
+use diagnostics_log_encoding::{Header, Metatag};
+use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
 use fuchsia_runtime as rt;
+use std::cell::UnsafeCell;
 use std::collections::HashSet;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::mem::MaybeUninit;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::{OnceLock, RwLock};
 use zx::{self as zx, AsHandleRef};
+
+// This is the amount of data that can be buffered by the BufferedPublisher before messages are
+// dropped.
+const QUEUE_SIZE: usize = 256 * 1024;
 
 #[derive(Default)]
 pub(crate) struct SinkConfig {
     pub(crate) metatags: HashSet<Metatag>,
-    pub(crate) retry_on_buffer_full: bool,
     pub(crate) tags: Vec<String>,
     pub(crate) always_log_file_line: bool,
 }
 
 thread_local! {
-    static PROCESS_ID: zx::Koid =
-        rt::process_self().get_koid().unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX));
+    static PROCESS_ID: zx::Koid = rt::process_self()
+        .get_koid()
+        .unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX));
     static THREAD_ID: zx::Koid = rt::with_thread_self(|thread| {
         thread.get_koid().unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX))
     });
 }
 
-pub(crate) struct Sink {
-    socket: zx::Socket,
-    num_events_dropped: AtomicU32,
-    config: SinkConfig,
-}
+pub trait Sink {
+    fn num_events_dropped(&self) -> &AtomicU32;
+    fn config(&self) -> &SinkConfig;
+    fn send(&self, packet: &[u8]) -> Result<(), zx::Status>;
 
-impl Sink {
-    pub fn new(
-        log_sink: &ClientEnd<LogSinkMarker>,
-        config: SinkConfig,
-    ) -> Result<Self, PublishError> {
-        let (socket, remote_socket) = zx::Socket::create_datagram();
-        let log_sink = zx::Unowned::<LogSinkSynchronousProxy>::new(log_sink.channel());
-        log_sink.connect_structured(remote_socket).map_err(PublishError::SendSocket)?;
-        Ok(Self { socket, config, num_events_dropped: AtomicU32::new(0) })
+    fn event_for_testing(&self, record: TestRecord<'_>) {
+        self.encode_and_send(move |encoder, previously_dropped| {
+            encoder.write_event(WriteEventParams {
+                event: record,
+                tags: &self.config().tags,
+                metatags: std::iter::empty(),
+                pid: PROCESS_ID.with(|p| *p),
+                tid: THREAD_ID.with(|t| *t),
+                dropped: previously_dropped.into(),
+            })
+        });
     }
-}
 
-impl Sink {
+    fn record_log(&self, record: &log::Record<'_>) {
+        self.encode_and_send(|encoder, previously_dropped| {
+            encoder.write_event(WriteEventParams {
+                event: LogEvent::new(record),
+                tags: &self.config().tags,
+                metatags: self.config().metatags.iter(),
+                pid: PROCESS_ID.with(|p| *p),
+                tid: THREAD_ID.with(|t| *t),
+                dropped: previously_dropped.into(),
+            })
+        });
+    }
+
     #[inline]
     fn encode_and_send(
         &self,
         encode: impl FnOnce(&mut Encoder<Cursor<&mut [u8]>>, u32) -> Result<(), EncodingError>,
     ) {
         let ordering = Ordering::Relaxed;
-        let previously_dropped = self.num_events_dropped.swap(0, ordering);
+        let num_events_dropped = self.num_events_dropped();
+        let previously_dropped = num_events_dropped.swap(0, ordering);
         let restore_and_increment_dropped_count = || {
-            self.num_events_dropped.fetch_add(previously_dropped + 1, ordering);
+            num_events_dropped.fetch_add(previously_dropped + 1, ordering);
         };
 
         let mut buf = [0u8; MAX_DATAGRAM_LEN_BYTES as _];
         let mut encoder = Encoder::new(
             Cursor::new(&mut buf[..]),
-            EncoderOpts { always_log_file_line: self.config.always_log_file_line },
+            EncoderOpts { always_log_file_line: self.config().always_log_file_line },
         );
         if encode(&mut encoder, previously_dropped).is_err() {
             restore_and_increment_dropped_count();
@@ -72,57 +90,187 @@ impl Sink {
 
         let end = encoder.inner().cursor();
         let packet = &encoder.inner().get_ref()[..end];
-        self.send(packet, restore_and_increment_dropped_count);
+
+        if packet.is_empty() || self.send(packet).is_err() {
+            restore_and_increment_dropped_count();
+        }
+    }
+}
+
+pub struct IoBufferSink {
+    iob: zx::Iob,
+    num_events_dropped: AtomicU32,
+    config: SinkConfig,
+}
+
+impl Sink for IoBufferSink {
+    fn num_events_dropped(&self) -> &AtomicU32 {
+        &self.num_events_dropped
     }
 
-    fn send(&self, packet: &[u8], on_error: impl Fn()) {
-        while let Err(status) = self.socket.write(packet) {
-            if status != zx::Status::SHOULD_WAIT || !self.config.retry_on_buffer_full {
-                on_error();
-                break;
+    fn config(&self) -> &SinkConfig {
+        &self.config
+    }
+
+    fn send(&self, packet: &[u8]) -> Result<(), zx::Status> {
+        self.iob.write(Default::default(), 0, packet)
+    }
+}
+
+impl IoBufferSink {
+    pub fn new(iob: zx::Iob, config: SinkConfig) -> Self {
+        Self { iob, num_events_dropped: AtomicU32::new(0), config }
+    }
+}
+
+pub struct BufferedSink {
+    iob: OnceLock<zx::Iob>,
+    buffer: RwLock<Option<Buffer>>,
+    num_events_dropped: AtomicU32,
+    config: SinkConfig,
+}
+
+struct Buffer {
+    queue: Queue,
+}
+
+impl BufferedSink {
+    pub fn new(config: SinkConfig) -> Self {
+        Self {
+            iob: OnceLock::new(),
+            buffer: RwLock::new(Some(Buffer { queue: Queue::new() })),
+            num_events_dropped: AtomicU32::new(0),
+            config,
+        }
+    }
+
+    /// Spawns a thread that is responsible for setting the buffer.
+    pub fn set_buffer(&self, io_buffer: zx::Iob) {
+        // Forward the outstanding messages in two phases. In the first phase, we forward the queue
+        // without blocking other loggers.  In the second phase, we forward the queue whilst
+        // blocking other loggers, which should hopefully be for a small amount of time.
+        let queue = {
+            let mut buffer = self.buffer.write().unwrap();
+            if let Some(Buffer { queue, .. }) = &mut *buffer {
+                Some(std::mem::replace(queue, Queue::new()))
+            } else {
+                None
             }
-            let Ok(signals) = self
-                .socket
-                .wait_handle(
-                    zx::Signals::SOCKET_PEER_CLOSED | zx::Signals::SOCKET_WRITABLE,
-                    zx::MonotonicInstant::INFINITE,
-                )
-                .to_result()
-            else {
-                on_error();
-                break;
+        };
+
+        let mut dropped = 0;
+        if let Some(mut queue) = queue {
+            self.forward_queue(&mut queue, &io_buffer, &mut dropped);
+        }
+
+        // This time, hold the lock until we've finished.
+        let mut buffer = self.buffer.write().unwrap();
+        if let Some(Buffer { queue, .. }) = &mut *buffer {
+            self.forward_queue(queue, &io_buffer, &mut dropped);
+        }
+
+        self.num_events_dropped.fetch_add(dropped, Ordering::Relaxed);
+
+        self.iob.set(io_buffer).unwrap();
+        *buffer = None;
+    }
+
+    fn forward_queue(&self, queue: &mut Queue, iob: &zx::Iob, dropped: &mut u32) {
+        let mut slice = queue.as_slice();
+        while !slice.is_empty() {
+            let header = Header(u64::from_le_bytes(slice[..8].try_into().unwrap()));
+            let message_len = header.size_words() as usize * 8;
+            assert!(message_len > 0);
+            if *dropped > 0 || iob.write(Default::default(), 0, &slice[..message_len]).is_err() {
+                *dropped += 1;
+            }
+            slice = &slice[message_len..];
+        }
+    }
+}
+
+impl Sink for BufferedSink {
+    fn num_events_dropped(&self) -> &AtomicU32 {
+        &self.num_events_dropped
+    }
+
+    fn config(&self) -> &SinkConfig {
+        &self.config
+    }
+
+    fn send(&self, packet: &[u8]) -> Result<(), zx::Status> {
+        loop {
+            if let Some(iob) = self.iob.get() {
+                return iob.write(Default::default(), 0, packet);
+            }
+
+            let buffer = self.buffer.read().unwrap();
+            let Some(Buffer { queue, .. }) = &*buffer else {
+                // We lost a race, loop and write with the IOBuffer.
+                continue;
             };
-            if signals.contains(zx::Signals::SOCKET_PEER_CLOSED) {
-                on_error();
-                break;
+
+            return if queue.push(packet) { Ok(()) } else { Err(zx::Status::NO_SPACE) };
+        }
+    }
+}
+
+struct Queue {
+    buf: UnsafeCell<Box<[MaybeUninit<u8>]>>,
+    len: AtomicUsize,
+}
+
+// SAFETY: `Queue` is made safe below.
+unsafe impl Send for BufferedSink {}
+unsafe impl Sync for BufferedSink {}
+
+impl Queue {
+    fn new() -> Self {
+        Self { buf: UnsafeCell::new(Box::new_uninit_slice(QUEUE_SIZE)), len: AtomicUsize::new(0) }
+    }
+
+    fn capacity(&self) -> usize {
+        // SAFETY: The length is immutable.
+        unsafe { (&*self.buf.get()).len() }
+    }
+
+    /// Returns false if there is no capacity.
+    fn push(&self, data: &[u8]) -> bool {
+        let mut len = self.len.load(Ordering::Relaxed);
+        loop {
+            if len + data.len() > self.capacity() {
+                return false;
+            }
+            match self.len.compare_exchange_weak(
+                len,
+                len + data.len(),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    // SAFETY: We check bounds above, and thanks to the atomic update of len
+                    // we can be sure there are no other concurrent writes to the same part
+                    // of the buffer.
+                    unsafe {
+                        (*self.buf.get())
+                            .as_mut_ptr()
+                            .cast::<u8>()
+                            .add(len)
+                            .copy_from_nonoverlapping(&data[0], data.len());
+                    }
+                    return true;
+                }
+                Err(old) => len = old,
             }
         }
     }
 
-    pub(crate) fn record_log(&self, record: &log::Record<'_>) {
-        self.encode_and_send(|encoder, previously_dropped| {
-            encoder.write_event(WriteEventParams {
-                event: LogEvent::new(record),
-                tags: &self.config.tags,
-                metatags: self.config.metatags.iter(),
-                pid: PROCESS_ID.with(|p| *p),
-                tid: THREAD_ID.with(|t| *t),
-                dropped: previously_dropped.into(),
-            })
-        });
-    }
-
-    pub fn event_for_testing(&self, record: TestRecord<'_>) {
-        self.encode_and_send(move |encoder, previously_dropped| {
-            encoder.write_event(WriteEventParams {
-                event: record,
-                tags: &self.config.tags,
-                metatags: std::iter::empty(),
-                pid: PROCESS_ID.with(|p| *p),
-                tid: THREAD_ID.with(|t| *t),
-                dropped: previously_dropped.into(),
-            })
-        });
+    fn as_slice(&mut self) -> &[u8] {
+        // SAFETY: This is safe because `len` is only updated above, but we have exclusive access
+        // here, so we can be certain `len` bytes have been written to above.
+        unsafe {
+            std::slice::from_raw_parts(self.buf.get_mut().as_ptr().cast(), *self.len.get_mut())
+        }
     }
 }
 
@@ -133,24 +281,21 @@ mod tests {
     use diagnostics_log_encoding::parse::parse_record;
     use diagnostics_log_encoding::{Argument, Record};
     use diagnostics_log_types::Severity;
-    use fidl::endpoints::create_request_stream;
-    use fidl_fuchsia_logger::{LogSinkMarker, LogSinkRequest};
-    use futures::stream::StreamExt;
-    use futures::AsyncReadExt;
+    use futures::FutureExt;
     use log::{debug, error, info, trace, warn};
+    use ring_buffer::{self, RingBuffer, RING_BUFFER_MESSAGE_HEADER_SIZE};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use test_util::assert_gt;
-    use zx::Status;
 
     const TARGET: &str = "diagnostics_log_lib_test::fuchsia::sink::tests";
 
     struct TestLogger {
-        sink: Sink,
+        sink: IoBufferSink,
     }
 
     impl TestLogger {
-        fn new(sink: Sink) -> Self {
+        fn new(sink: IoBufferSink) -> Self {
             Self { sink }
         }
     }
@@ -169,16 +314,15 @@ mod tests {
         fn flush(&self) {}
     }
 
-    async fn init_sink(config: SinkConfig) -> fidl::Socket {
-        let (client, mut requests) = create_request_stream::<LogSinkMarker>();
-        let sink = Sink::new(&client, config).unwrap();
+    async fn init_sink(config: SinkConfig) -> ring_buffer::Reader {
+        let ring_buffer = RingBuffer::create(32 * zx::system_get_page_size() as usize);
+        let (iob, _) = ring_buffer.new_iob_writer(0).unwrap();
+
+        let sink = IoBufferSink::new(iob, config);
         log::set_boxed_logger(Box::new(TestLogger::new(sink))).expect("set logger");
         log::set_max_level(log::LevelFilter::Info);
 
-        match requests.next().await.unwrap().unwrap() {
-            LogSinkRequest::ConnectStructured { socket, .. } => socket,
-            _ => panic!("sink ctor sent the wrong message"),
-        }
+        ring_buffer
     }
 
     fn arg_prefix() -> Vec<Argument<'static>> {
@@ -186,68 +330,34 @@ mod tests {
     }
 
     #[fuchsia::test(logging = false)]
-    async fn wait_and_retry_is_possible() {
-        // 160 writes so we write 5 MB given that we write 32K each write. Without enabling
-        // retrying, this would lead to dropped logs.
-        const TOTAL_WRITES: usize = 32 * 5;
-        let (client, mut requests) = create_request_stream::<LogSinkMarker>();
-        // Writes a megabyte of data to the Sink.
-        std::thread::spawn(move || {
-            let sink = Sink::new(
-                &client,
-                SinkConfig { retry_on_buffer_full: true, ..SinkConfig::default() },
-            )
-            .unwrap();
-            for i in 0..TOTAL_WRITES {
-                let buf = [i as u8; MAX_DATAGRAM_LEN_BYTES as _];
-                sink.send(&buf, || unreachable!("We should never drop a log in this test"));
-            }
-        });
-        let socket = match requests.next().await.unwrap().unwrap() {
-            LogSinkRequest::ConnectStructured { socket, .. } => socket,
-            _ => panic!("sink ctor sent the wrong message"),
-        };
-        let mut socket = fuchsia_async::Socket::from_socket(socket);
-        // Ensure we are able to read all of the data written to the socket and we didn't drop
-        // anything.
-        for i in 0..TOTAL_WRITES {
-            let mut buf = vec![0u8; MAX_DATAGRAM_LEN_BYTES as _];
-            let len = socket.read(&mut buf).await.unwrap();
-            assert_eq!(len, MAX_DATAGRAM_LEN_BYTES as usize);
-            assert_eq!(buf, vec![i as u8; MAX_DATAGRAM_LEN_BYTES as _]);
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-    }
-
-    #[fuchsia::test(logging = false)]
     async fn packets_are_sent() {
-        let socket = init_sink(SinkConfig {
+        let mut ring_buffer = init_sink(SinkConfig {
             metatags: HashSet::from([Metatag::Target]),
             ..SinkConfig::default()
         })
         .await;
         log::set_max_level(log::LevelFilter::Trace);
-        let mut buf = [0u8; MAX_DATAGRAM_LEN_BYTES as _];
-        let mut next_message = || {
-            let len = socket.read(&mut buf).unwrap();
-            let (record, _) = parse_record(&buf[..len]).unwrap();
-            assert_eq!(socket.outstanding_read_bytes().unwrap(), 0, "socket must be empty");
+
+        let mut next_message = async move || {
+            let (_tag, buf) = ring_buffer.read_message().await.unwrap();
+            let (record, _) = parse_record(&buf).unwrap();
+            assert_eq!(ring_buffer.head(), ring_buffer.tail(), "buffer must be empty");
             record.into_owned()
         };
 
         // emit some expected messages and then we'll retrieve them for parsing
         trace!(count = 123; "whoa this is noisy");
-        let observed_trace = next_message();
+        let observed_trace = next_message().await;
         debug!(maybe = true; "don't try this at home");
-        let observed_debug = next_message();
+        let observed_debug = next_message().await;
         info!("this is a message");
-        let observed_info = next_message();
+        let observed_info = next_message().await;
         warn!(reason = "just cuz"; "this is a warning");
-        let observed_warn = next_message();
+        let observed_warn = next_message().await;
         error!(e = "something went pretty wrong"; "this is an error");
         let error_line = line!() - 1;
         let metatag = Argument::tag(TARGET);
-        let observed_error = next_message();
+        let observed_error = next_message().await;
 
         // TRACE
         {
@@ -320,21 +430,21 @@ mod tests {
 
     #[fuchsia::test(logging = false)]
     async fn tags_are_sent() {
-        let socket = init_sink(SinkConfig {
+        let mut ring_buffer = init_sink(SinkConfig {
             tags: vec!["tags_are_sent".to_string()],
             ..SinkConfig::default()
         })
         .await;
-        let mut buf = [0u8; MAX_DATAGRAM_LEN_BYTES as _];
-        let mut next_message = || {
-            let len = socket.read(&mut buf).unwrap();
-            let (record, _) = parse_record(&buf[..len]).unwrap();
-            assert_eq!(socket.outstanding_read_bytes().unwrap(), 0, "socket must be empty");
+
+        let mut next_message = async move || {
+            let (_tag, buf) = ring_buffer.read_message().await.unwrap();
+            let (record, _) = parse_record(&buf).unwrap();
+            assert_eq!(ring_buffer.head(), ring_buffer.tail(), "buffer must be empty");
             record.into_owned()
         };
 
         info!("this should have a tag");
-        let observed = next_message();
+        let observed = next_message().await;
 
         let mut expected = Record {
             timestamp: observed.timestamp,
@@ -348,12 +458,11 @@ mod tests {
 
     #[fuchsia::test(logging = false)]
     async fn log_every_n_seconds_test() {
-        let socket = init_sink(SinkConfig { ..SinkConfig::default() }).await;
-        let mut buf = [0u8; MAX_DATAGRAM_LEN_BYTES as _];
-        let next_message = |buf: &mut [u8]| {
-            let len = socket.read(buf).unwrap();
-            let (record, _) = parse_record(&buf[..len]).unwrap();
-            assert_eq!(socket.outstanding_read_bytes().unwrap(), 0, "socket must be empty");
+        let mut ring_buffer = init_sink(SinkConfig { ..SinkConfig::default() }).await;
+        let mut next_message = async move || {
+            let (_tag, buf) = ring_buffer.read_message().await.unwrap();
+            let (record, _) = parse_record(&buf).unwrap();
+            assert_eq!(ring_buffer.head(), ring_buffer.tail(), "buffer must be empty");
             record.into_owned()
         };
 
@@ -361,8 +470,8 @@ mod tests {
             log_every_n_seconds!(5, INFO, "test message");
         };
 
-        let expect_message = |buf: &mut [u8]| {
-            let observed = next_message(buf);
+        let mut expect_message = async move || {
+            let observed = next_message().await;
 
             let mut expected = Record {
                 timestamp: observed.timestamp,
@@ -375,38 +484,62 @@ mod tests {
 
         log_fn();
         // First log call should result in a message.
-        expect_message(&mut buf);
+        expect_message().await;
         log_fn();
         // Subsequent log call in less than 5 seconds should NOT
         // result in a message.
-        assert_eq!(socket.read(&mut buf), Err(Status::SHOULD_WAIT));
+        assert!(expect_message().now_or_never().is_none());
         increment_clock(Duration::from_secs(5));
 
         // Calling log_fn after 5 seconds should result in a message.
         log_fn();
-        expect_message(&mut buf);
+        expect_message().await;
     }
 
     #[fuchsia::test(logging = false)]
     async fn drop_count_is_tracked() {
-        let socket = init_sink(SinkConfig::default()).await;
-        let mut buf = [0u8; MAX_DATAGRAM_LEN_BYTES as _];
+        let mut ring_buffer = init_sink(SinkConfig::default()).await;
         const MESSAGE_SIZE: usize = 104;
         const MESSAGE_SIZE_WITH_DROPS: usize = 136;
         const NUM_DROPPED: usize = 100;
 
-        let socket_capacity = || {
-            let info = socket.info().unwrap();
-            info.rx_buf_max - info.rx_buf_size
-        };
         let emit_message = || info!("it's-a-me, a message-o");
-        let mut drain_message = |with_drops| {
-            let len = socket.read(&mut buf).unwrap();
+
+        // Post one message and wait for it to appear.
+        emit_message();
+        ring_buffer.read_message().await.unwrap();
+
+        // From now on, messages should get posted immediately.  Fill up the buffer.
+        let mut num_emitted = 0;
+        let buffer_space =
+            || ring_buffer.capacity() - (ring_buffer.head() - ring_buffer.tail()) as usize;
+        while buffer_space() >= RING_BUFFER_MESSAGE_HEADER_SIZE + MESSAGE_SIZE {
+            emit_message();
+            num_emitted += 1;
+            assert_eq!(
+                (ring_buffer.head() - ring_buffer.tail()) as usize,
+                num_emitted * (RING_BUFFER_MESSAGE_HEADER_SIZE + MESSAGE_SIZE),
+                "incorrect bytes stored after {} messages sent",
+                num_emitted
+            );
+        }
+
+        // drop messages
+        for _ in 0..NUM_DROPPED {
+            emit_message();
+        }
+
+        let mut drain_message = async |with_drops| {
+            let (_tag, buf) = ring_buffer.read_message().await.unwrap();
 
             let expected_len = if with_drops { MESSAGE_SIZE_WITH_DROPS } else { MESSAGE_SIZE };
-            assert_eq!(len, expected_len, "constant message size is used to calculate thresholds");
+            assert_eq!(
+                buf.len(),
+                expected_len,
+                "constant message size is used to calculate thresholds"
+            );
 
-            let (record, _) = parse_record(&buf[..len]).unwrap();
+            let (record, _) = parse_record(&buf).unwrap();
             let mut expected_args = arg_prefix();
 
             if with_drops {
@@ -425,47 +558,29 @@ mod tests {
             );
         };
 
-        // fill up the socket
-        let mut num_emitted = 0;
-        while socket_capacity() > MESSAGE_SIZE {
-            emit_message();
-            num_emitted += 1;
-            assert_eq!(
-                socket.info().unwrap().rx_buf_size,
-                num_emitted * MESSAGE_SIZE,
-                "incorrect bytes stored after {} messages sent",
-                num_emitted
-            );
-        }
-
-        // drop messages
-        for _ in 0..NUM_DROPPED {
-            emit_message();
-        }
-
         // make space for a message to convey the drop count
         // we drain two messages here because emitting the drop count adds to the size of the packet
         // if we only drain one message then we're relying on the kernel's buffer size to satisfy
         //   (rx_buf_max_size % MESSAGE_SIZE) > (MESSAGE_SIZE_WITH_DROPS - MESSAGE_SIZE)
         // this is true at the time of writing of this test but we don't know whether that's a
         // guarantee.
-        drain_message(false);
-        drain_message(false);
+        drain_message(false).await;
+        drain_message(false).await;
         // we use this count below to drain the rest of the messages
         num_emitted -= 2;
         // convey the drop count, it's now at the tail of the socket
         emit_message();
         // drain remaining "normal" messages ahead of the drop count
         for _ in 0..num_emitted {
-            drain_message(false);
+            drain_message(false).await;
         }
         // verify that messages were dropped
-        drain_message(true);
+        drain_message(true).await;
 
         // check that we return to normal after reporting the drops
         emit_message();
-        drain_message(false);
-        assert_eq!(socket.outstanding_read_bytes().unwrap(), 0, "must drain all messages");
+        drain_message(false).await;
+        assert_eq!(ring_buffer.head(), ring_buffer.tail(), "must drain all messages");
     }
 
     #[fuchsia::test(logging = false)]
@@ -547,5 +662,56 @@ mod tests {
         }
 
         fn flush(&self) {}
+    }
+
+    #[fuchsia::test]
+    async fn buffered_sink() {
+        const TAG: &str = "foo";
+        let sink = Arc::new(BufferedSink::new(SinkConfig {
+            tags: vec![TAG.to_string()],
+            ..Default::default()
+        }));
+        const MSG: &str = "The quick brown fox jumped over the lazy dog.";
+        const COUNT: usize = 1000;
+        // Log from a different thread to test races.
+        {
+            let sink = Arc::clone(&sink);
+            std::thread::spawn(move || {
+                for i in 0..COUNT {
+                    sink.record_log(
+                        &log::Record::builder()
+                            .level(log::Level::Warn)
+                            .args(format_args!("{i}: {MSG}"))
+                            .build(),
+                    );
+                }
+            });
+        }
+        // 128 KiB should be large enough to ensure no messages are dropped.
+        let mut ring_buffer = RingBuffer::create(128 * 1024);
+        sink.set_buffer(ring_buffer.new_iob_writer(0).unwrap().0);
+        // Now check that all the messages got written.
+        for i in 0..COUNT {
+            let (_tag, msg) = ring_buffer.read_message().await.unwrap();
+            let (record, _) = parse_record(&msg).unwrap();
+            assert_eq!(record.severity, Severity::Warn as u8);
+            let mut found = 0;
+            for arg in record.arguments {
+                match arg {
+                    Argument::Message(msg) => {
+                        assert_eq!(msg, format!("{i}: {MSG}"));
+                        assert_eq!(found & 1, 0);
+                        found |= 1;
+                    }
+                    Argument::Tag(tag) => {
+                        assert_eq!(tag, TAG);
+                        assert_eq!(found & 2, 0);
+                        found |= 2;
+                    }
+                    _ => {}
+                }
+            }
+            assert_eq!(found, 3);
+        }
     }
 }

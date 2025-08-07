@@ -49,6 +49,16 @@ impl Default for PublisherOptions<'_> {
     }
 }
 
+impl Default for PublishOptions<'static> {
+    fn default() -> Self {
+        Self {
+            publisher: PublisherOptions::default(),
+            install_panic_hook: true,
+            panic_prefix: None,
+        }
+    }
+}
+
 /// Initializes logging. This should be called only once.
 pub fn initialize(opts: PublishOptions<'_>) -> Result<(), PublishError> {
     static START: Once = Once::new();

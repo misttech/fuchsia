@@ -4,13 +4,9 @@
 use crate::PublishOptions;
 use diagnostics_log_types::Severity;
 use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_logger::{
-    LogSinkEvent, LogSinkMarker, LogSinkOnInitRequest, LogSinkProxy, LogSinkSynchronousProxy,
-};
+use fidl_fuchsia_logger::LogSinkMarker;
 use fuchsia_async as fasync;
 use fuchsia_component_client::connect::connect_to_protocol;
-use futures::stream::StreamExt;
-use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
@@ -25,7 +21,7 @@ mod filter;
 mod sink;
 
 use filter::InterestFilter;
-use sink::{BufferedSink, IoBufferSink, Sink, SinkConfig};
+use sink::{Sink, SinkConfig};
 
 pub use diagnostics_log_encoding::encode::{LogEvent, TestRecord};
 pub use diagnostics_log_encoding::Metatag;
@@ -44,7 +40,6 @@ pub trait OnInterestChanged {
 }
 
 /// Options to configure a `Publisher`.
-#[derive(Default)]
 pub struct PublisherOptions<'t> {
     blocking: bool,
     pub(crate) interest: Interest,
@@ -52,31 +47,73 @@ pub struct PublisherOptions<'t> {
     log_sink_client: Option<ClientEnd<LogSinkMarker>>,
     pub(crate) metatags: HashSet<Metatag>,
     pub(crate) tags: &'t [&'t str],
+    wait_for_initial_interest: bool,
     pub(crate) always_log_file_line: bool,
-    register_global_logger: bool,
+}
+
+impl Default for PublisherOptions<'_> {
+    fn default() -> Self {
+        Self {
+            blocking: false,
+            interest: Interest::default(),
+            listen_for_interest_updates: true,
+            log_sink_client: None,
+            metatags: HashSet::new(),
+            tags: &[],
+            wait_for_initial_interest: true,
+            always_log_file_line: false,
+        }
+    }
 }
 
 impl Default for PublishOptions<'static> {
     fn default() -> Self {
         Self {
-            publisher: PublisherOptions {
-                // Default to registering the global logger and listening for interest updates for
-                // `PublishOptions` because it's used by the `initialize...` functions which are
-                // typically called at program start time.
-                listen_for_interest_updates: true,
-                register_global_logger: true,
-                ..PublisherOptions::default()
-            },
+            publisher: PublisherOptions::default(),
             install_panic_hook: true,
             panic_prefix: None,
         }
     }
 }
 
+impl PublisherOptions<'_> {
+    /// Creates a `PublishOptions` with all sets either empty or set to false. This is
+    /// useful when fine grain control of `Publisher` and its behavior is necessary.
+    ///
+    /// However, for the majority of binaries that "just want to log",
+    /// `PublishOptions::default` is preferred as that brings all the default
+    /// configuration that is desired in most scenarios.
+    pub fn empty() -> Self {
+        Self {
+            blocking: false,
+            interest: Interest::default(),
+            listen_for_interest_updates: false,
+            log_sink_client: None,
+            metatags: HashSet::new(),
+            tags: &[],
+            wait_for_initial_interest: false,
+            always_log_file_line: false,
+        }
+    }
+}
 macro_rules! publisher_options {
     ($(($name:ident, $self:ident, $($self_arg:ident),*)),*) => {
         $(
             impl<'t> $name<'t> {
+                /// Whether or not to block on initial runtime interest being received before
+                /// starting to emit log records using the default interest configured.
+                ///
+                /// It's recommended that this is set when
+                /// developing to guarantee that a dynamically configured minimum severity makes it
+                /// to the component before it starts emitting logs.
+                ///
+                /// Default: true.
+                pub fn wait_for_initial_interest(mut $self, enable: bool) -> Self {
+                    let this = &mut $self$(.$self_arg)*;
+                    this.wait_for_initial_interest = enable;
+                    $self
+                }
+
                 /// Whether or not to log file/line information regardless of severity.
                 ///
                 /// Default: false.
@@ -87,10 +124,9 @@ macro_rules! publisher_options {
                 }
 
                 /// When set, a `fuchsia_async::Task` will be spawned and held that will be
-                /// listening for interest changes. This option can only be set if
-                /// `register_global_logger` is set.
+                /// listening for interest changes.
                 ///
-                /// Default: true for `PublishOptions`, false for `PublisherOptions`.
+                /// Default: true
                 pub fn listen_for_interest_updates(mut $self, enable: bool) -> Self {
                     let this = &mut $self$(.$self_arg)*;
                     this.listen_for_interest_updates = enable;
@@ -115,16 +151,6 @@ macro_rules! publisher_options {
                     this.blocking = is_blocking;
                     $self
                 }
-
-                /// When set to true, the publisher will be registered as the global logger. This
-                /// can only be done once.
-                ///
-                /// Default: true for `PublishOptions`, false for `PublisherOptions`.
-                pub fn register_global_logger(mut $self, value: bool) -> Self {
-                    let this = &mut $self$(.$self_arg)*;
-                    this.register_global_logger = value;
-                    $self
-                }
             }
         )*
     };
@@ -132,25 +158,23 @@ macro_rules! publisher_options {
 
 publisher_options!((PublisherOptions, self,), (PublishOptions, self, publisher));
 
+fn initialize_publishing(opts: PublishOptions<'_>) -> Result<Publisher, PublishError> {
+    let publisher = Publisher::new(opts.publisher)?;
+    publisher.register_logger()?;
+    if opts.install_panic_hook {
+        crate::install_panic_hook(opts.panic_prefix);
+    }
+    Ok(publisher)
+}
+
 /// Initializes logging with the given options.
 ///
 /// IMPORTANT: this should be called at most once in a program, and must be
 /// called only after an async executor has been set for the current thread,
 /// otherwise it'll return errors or panic. Therefore it's recommended to never
 /// call this from libraries and only do it from binaries.
-// Ideally this would be an async function, but fixing that is a bit of a Yak shave.
 pub fn initialize(opts: PublishOptions<'_>) -> Result<(), PublishError> {
-    let result = Publisher::new_sync_with_async_listener(opts.publisher);
-    if matches!(result, Err(PublishError::MissingOnInit)) {
-        // NOTE: We ignore missing OnInit errors as these can happen on products where the log sink
-        // connection isn't routed. If this is a mistake, then there will be warning messages from
-        // Component Manager regarding failed routing.
-        return Ok(());
-    }
-    result?;
-    if opts.install_panic_hook {
-        crate::install_panic_hook(opts.panic_prefix);
-    }
+    let _ = initialize_publishing(opts)?;
     Ok(())
 }
 
@@ -159,6 +183,19 @@ pub fn initialize(opts: PublishOptions<'_>) -> Result<(), PublishError> {
 pub fn set_minimum_severity(severity: impl Into<Severity>) {
     let severity: Severity = severity.into();
     log::set_max_level(severity.into());
+}
+
+struct AbortAndJoinOnDrop(
+    Option<futures::future::AbortHandle>,
+    Option<std::thread::JoinHandle<()>>,
+);
+impl Drop for AbortAndJoinOnDrop {
+    fn drop(&mut self) {
+        if let Some(handle) = &mut self.0 {
+            handle.abort();
+        }
+        self.1.take().unwrap().join().unwrap();
+    }
 }
 
 /// Initializes logging with the given options.
@@ -170,20 +207,69 @@ pub fn set_minimum_severity(severity: impl Into<Severity>) {
 /// called only after an async executor has been set for the current thread,
 /// otherwise it'll return errors or panic. Therefore it's recommended to never
 /// call this from libraries and only do it from binaries.
-pub fn initialize_sync(opts: PublishOptions<'_>) {
-    match Publisher::new_sync(opts.publisher) {
-        Ok(_) => {}
-        Err(PublishError::MissingOnInit) => {
-            // NOTE: We ignore missing OnInit errors as these can happen on products where the log
-            // sink connection isn't routed. If this is a mistake, then there will be warning
-            // messages from Component Manager regarding failed routing.
-            return;
+pub fn initialize_sync(opts: PublishOptions<'_>) -> impl Drop {
+    let (send, recv) = std::sync::mpsc::channel();
+    let (ready_send, ready_recv) = {
+        let (snd, rcv) = std::sync::mpsc::channel();
+        if opts.publisher.wait_for_initial_interest {
+            (Some(snd), Some(rcv))
+        } else {
+            (None, None)
         }
-        Err(e) => panic!("Unable to initialize logging: {e:?}"),
+    };
+    let PublishOptions {
+        publisher:
+            PublisherOptions {
+                blocking,
+                interest,
+                metatags,
+                listen_for_interest_updates,
+                log_sink_client,
+                tags,
+                wait_for_initial_interest,
+                always_log_file_line,
+            },
+        install_panic_hook,
+        panic_prefix,
+    } = opts;
+    let tags = tags.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+    let bg_thread = std::thread::spawn(move || {
+        let options = PublishOptions {
+            publisher: PublisherOptions {
+                interest,
+                metatags,
+                tags: &tags.iter().map(String::as_ref).collect::<Vec<_>>(),
+                listen_for_interest_updates,
+                log_sink_client,
+                wait_for_initial_interest,
+                blocking,
+                always_log_file_line,
+            },
+            install_panic_hook,
+            panic_prefix,
+        };
+        let mut exec = fuchsia_async::LocalExecutor::new();
+        let mut publisher = initialize_publishing(options).expect("initialize logging");
+        if let Some(ready_send) = ready_send {
+            ready_send.send(()).unwrap();
+        }
+
+        let interest_listening_task = publisher.take_interest_listening_task();
+
+        if let Some(on_interest_changes) = interest_listening_task {
+            let (on_interest_changes, cancel_interest) =
+                futures::future::abortable(on_interest_changes);
+            send.send(cancel_interest).unwrap();
+            drop(send);
+            exec.run_singlethreaded(on_interest_changes).ok();
+        }
+    });
+    if let Some(ready_recv) = ready_recv {
+        let _ = ready_recv.recv();
     }
-    if opts.install_panic_hook {
-        crate::install_panic_hook(opts.panic_prefix);
-    }
+
+    AbortAndJoinOnDrop(recv.recv().ok(), Some(bg_thread))
 }
 
 /// A `Publisher` acts as broker, implementing [`log::Log`] to receive log
@@ -194,127 +280,48 @@ pub struct Publisher {
 }
 
 struct InnerPublisher {
-    sink: IoBufferSink,
+    sink: Sink,
     filter: InterestFilter,
+    interest_listening_task: Mutex<Option<fasync::Task<()>>>,
+}
+
+impl Default for Publisher {
+    fn default() -> Self {
+        Self::new(PublisherOptions::default()).expect("failed to create Publisher")
+    }
 }
 
 impl Publisher {
-    fn new(opts: PublisherOptions<'_>, iob: zx::Iob) -> Self {
-        Self {
-            inner: Arc::new(InnerPublisher {
-                sink: IoBufferSink::new(
-                    iob,
-                    SinkConfig {
-                        tags: opts.tags.iter().map(|s| s.to_string()).collect(),
-                        metatags: opts.metatags,
-                        always_log_file_line: opts.always_log_file_line,
-                    },
-                ),
-                filter: InterestFilter::new(opts.interest),
-            }),
-        }
-    }
-
-    /// Returns a new `Publisher`. This will connect synchronously and, if configured, run a
-    /// listener in a separate thread.
-    pub fn new_sync(opts: PublisherOptions<'_>) -> Result<Self, PublishError> {
-        let listen_for_interest_updates = opts.listen_for_interest_updates;
-        let (publisher, client) = Self::new_sync_no_listener(opts)?;
-        if listen_for_interest_updates {
-            let publisher = publisher.clone();
-            std::thread::spawn(move || {
-                fuchsia_async::LocalExecutor::new()
-                    .run_singlethreaded(publisher.listen_for_interest_updates(client.into_proxy()));
-            });
-        }
-        Ok(publisher)
-    }
-
-    /// Returns a new `Publisher`. This will connect synchronously and, if configured, run a
-    /// listener in an async task. Prefer to use `new_async`.
-    pub fn new_sync_with_async_listener(opts: PublisherOptions<'_>) -> Result<Self, PublishError> {
-        let listen_for_interest_updates = opts.listen_for_interest_updates;
-        let (publisher, client) = Self::new_sync_no_listener(opts)?;
-        if listen_for_interest_updates {
-            fasync::Task::spawn(publisher.clone().listen_for_interest_updates(client.into_proxy()))
-                .detach();
-        }
-        Ok(publisher)
-    }
-
-    /// Returns a new `Publisher`, but doesn't listen for interest updates. This will connect
-    /// synchronously.
-    fn new_sync_no_listener(
-        mut opts: PublisherOptions<'_>,
-    ) -> Result<(Self, ClientEnd<LogSinkMarker>), PublishError> {
-        let PublisherOptions { listen_for_interest_updates, register_global_logger, .. } = opts;
-
-        if listen_for_interest_updates && !register_global_logger {
-            // We can only support listening for interest updates if we are registering a global
-            // logger. This is because if we don't register, the initial interest is dropped.
-            return Err(PublishError::UnsupportedOption);
-        }
-
-        let client = match opts.log_sink_client.take() {
+    /// Construct a new `Publisher` using the given options.
+    ///
+    /// Should be called only once.
+    pub fn new(opts: PublisherOptions<'_>) -> Result<Self, PublishError> {
+        let client = match opts.log_sink_client {
             Some(log_sink) => log_sink,
             None => connect_to_protocol()
                 .map_err(|e| e.to_string())
                 .map_err(PublishError::LogSinkConnect)?,
         };
-
-        let proxy = zx::Unowned::<LogSinkSynchronousProxy>::new(client.channel());
-        let Ok(LogSinkEvent::OnInit {
-            payload: LogSinkOnInitRequest { buffer: Some(iob), interest, .. },
-        }) = proxy.wait_for_event(zx::MonotonicInstant::INFINITE)
-        else {
-            return Err(PublishError::MissingOnInit);
+        let sink = Sink::new(
+            &client,
+            SinkConfig {
+                tags: opts.tags.iter().map(|s| s.to_string()).collect(),
+                metatags: opts.metatags,
+                retry_on_buffer_full: opts.blocking,
+                always_log_file_line: opts.always_log_file_line,
+            },
+        )?;
+        let (filter, on_change) =
+            InterestFilter::new(client, opts.interest, opts.wait_for_initial_interest);
+        let interest_listening_task = if opts.listen_for_interest_updates {
+            Mutex::new(Some(fasync::Task::spawn(on_change)))
+        } else {
+            Mutex::new(None)
         };
-        drop(proxy);
-
-        let publisher = Self::new(opts, iob);
-
-        if register_global_logger {
-            publisher.register_logger(if listen_for_interest_updates { interest } else { None })?;
-        }
-
-        Ok((publisher, client))
+        Ok(Self { inner: Arc::new(InnerPublisher { sink, filter, interest_listening_task }) })
     }
 
-    /// Returns a new `Publisher`. This will connect asynchronously and, if configured, run a
-    /// listener in an async task.
-    pub async fn new_async(mut opts: PublisherOptions<'_>) -> Result<Self, PublishError> {
-        let PublisherOptions { listen_for_interest_updates, register_global_logger, .. } = opts;
-
-        if listen_for_interest_updates && !register_global_logger {
-            // We can only support listening for interest updates if we are registering a global
-            // logger. This is because if we don't register, the initial interest is dropped.
-            return Err(PublishError::UnsupportedOption);
-        }
-
-        let proxy = match opts.log_sink_client.take() {
-            Some(log_sink) => log_sink.into_proxy(),
-            None => connect_to_protocol()
-                .map_err(|e| e.to_string())
-                .map_err(PublishError::LogSinkConnect)?,
-        };
-
-        let Some(Ok(LogSinkEvent::OnInit {
-            payload: LogSinkOnInitRequest { buffer: Some(iob), interest, .. },
-        })) = proxy.take_event_stream().next().await
-        else {
-            return Err(PublishError::MissingOnInit);
-        };
-
-        let publisher = Self::new(opts, iob);
-
-        if register_global_logger {
-            publisher.register_logger(if listen_for_interest_updates { interest } else { None })?;
-            fasync::Task::spawn(publisher.clone().listen_for_interest_updates(proxy)).detach();
-        }
-
-        Ok(publisher)
-    }
-
+    // TODO(https://fxbug.dev/42150573) delete this and make Publisher private
     /// Publish the provided event for testing.
     pub fn event_for_testing(&self, record: TestRecord<'_>) {
         if self.inner.filter.enabled_for_testing(&record) {
@@ -330,10 +337,14 @@ impl Publisher {
         self.inner.filter.set_interest_listener(listener);
     }
 
+    /// Takes the task listening for interest changes if one exists.
+    fn take_interest_listening_task(&mut self) -> Option<fasync::Task<()>> {
+        self.inner.interest_listening_task.lock().unwrap().take()
+    }
+
     /// Sets the global logger to this publisher. This function may only be called once in the
     /// lifetime of a program.
-    pub fn register_logger(&self, interest: Option<Interest>) -> Result<(), PublishError> {
-        self.inner.filter.update_interest(interest.unwrap_or_default());
+    pub fn register_logger(&self) -> Result<(), PublishError> {
         // SAFETY: This leaks which guarantees the publisher remains alive for the lifetime of the
         // program.
         unsafe {
@@ -343,12 +354,6 @@ impl Publisher {
             })?;
         }
         Ok(())
-    }
-
-    /// Listens for interest updates. Callers must maintain a clone to keep the publisher alive;
-    /// this function will downgrade to a weak reference.
-    async fn listen_for_interest_updates(self, proxy: LogSinkProxy) {
-        self.inner.filter.listen_for_interest_updates(proxy).await;
     }
 }
 
@@ -383,124 +388,6 @@ impl log::Log for Publisher {
     }
 }
 
-impl Borrow<InterestFilter> for InnerPublisher {
-    fn borrow(&self) -> &InterestFilter {
-        &self.filter
-    }
-}
-
-/// Initializes logging, but buffers logs until the connection is established. This is required for
-/// things like Component Manager, which would otherwise deadlock when starting. This carries some
-/// overhead, so should be avoided unless required.
-pub fn initialize_buffered(opts: PublishOptions<'_>) -> Result<(), PublishError> {
-    BufferedPublisher::new(opts.publisher)?;
-    if opts.install_panic_hook {
-        crate::install_panic_hook(opts.panic_prefix);
-    }
-    Ok(())
-}
-
-/// A buffered publisher will buffer log messages until the IOBuffer is received. If this is
-/// registered as the global logger, then messages will be logged at the default level until an
-/// updated level is received from Archivist.
-pub struct BufferedPublisher {
-    sink: BufferedSink,
-    filter: InterestFilter,
-    interest_listening_task: Mutex<Option<fasync::Task<()>>>,
-}
-
-impl BufferedPublisher {
-    /// Returns a publisher that will buffer messages until the IOBuffer is received. An async
-    /// executor must be established.
-    pub fn new(opts: PublisherOptions<'_>) -> Result<Arc<Self>, PublishError> {
-        if opts.listen_for_interest_updates && !opts.register_global_logger {
-            // We can only support listening for interest updates if we are registering a global
-            // logger. This is because if we don't register, the initial interest is dropped.
-            return Err(PublishError::UnsupportedOption);
-        }
-
-        let client = match opts.log_sink_client {
-            Some(log_sink) => log_sink,
-            None => connect_to_protocol()
-                .map_err(|e| e.to_string())
-                .map_err(PublishError::LogSinkConnect)?,
-        };
-
-        let this = Arc::new(Self {
-            sink: BufferedSink::new(SinkConfig {
-                tags: opts.tags.iter().map(|s| s.to_string()).collect(),
-                metatags: opts.metatags,
-                always_log_file_line: opts.always_log_file_line,
-            }),
-            filter: InterestFilter::new(opts.interest),
-            interest_listening_task: Mutex::default(),
-        });
-
-        if opts.register_global_logger {
-            // SAFETY: This leaks which guarantees the publisher remains alive for the lifetime
-            // of the program. This leaks even when there is an error (which shouldn't happen so
-            // we don't worry about it).
-            unsafe {
-                log::set_logger(&*Arc::into_raw(this.clone()))?;
-            }
-        }
-
-        // Whilst we are waiting for the OnInit event, we hold a strong reference to the publisher
-        // which will prevent the publisher from being dropped and ensure that buffered log messages
-        // are sent.
-        let this_clone = this.clone();
-        *this_clone.interest_listening_task.lock().unwrap() =
-            Some(fasync::Task::spawn(async move {
-                let proxy = client.into_proxy();
-
-                let Some(Ok(LogSinkEvent::OnInit {
-                    payload: LogSinkOnInitRequest { buffer: Some(buffer), interest, .. },
-                })) = proxy.take_event_stream().next().await
-                else {
-                    // There's not a lot we can do here: we haven't received the event we expected
-                    // and there's no way we can log the issue.
-                    return;
-                };
-
-                // Ignore the interest sent in the OnInit request if `listen_for_interest_updates`
-                // is false; it is assumed that the caller wants the interest specified in the
-                // options to stick.
-                this.filter.update_interest(
-                    (if opts.listen_for_interest_updates { interest } else { None })
-                        .unwrap_or_default(),
-                );
-
-                this.sink.set_buffer(buffer);
-
-                if opts.listen_for_interest_updates {
-                    this.filter.listen_for_interest_updates(proxy).await;
-                }
-            }));
-
-        Ok(this_clone)
-    }
-}
-
-impl log::Log for BufferedPublisher {
-    fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
-        // NOTE: we handle minimum severity directly through the log max_level. So we call,
-        // log::set_max_level, log::max_level where appropriate.
-        true
-    }
-
-    fn log(&self, record: &log::Record<'_>) {
-        self.sink.record_log(record);
-    }
-
-    fn flush(&self) {}
-}
-
-impl Borrow<InterestFilter> for BufferedPublisher {
-    fn borrow(&self) -> &InterestFilter {
-        &self.filter
-    }
-}
-
 /// Errors arising while forwarding a diagnostics stream to the environment.
 #[derive(Debug, Error)]
 pub enum PublishError {
@@ -519,14 +406,6 @@ pub enum PublishError {
     /// Installing a Logger.
     #[error("failed to install the loger")]
     InitLogForward(#[from] log::SetLoggerError),
-
-    /// Unsupported publish option.
-    #[error("unsupported option")]
-    UnsupportedOption,
-
-    /// The channel was closed with no OnInit event.
-    #[error("did not receive the OnInit event")]
-    MissingOnInit,
 }
 
 #[cfg(test)]
@@ -626,13 +505,12 @@ mod tests {
     async fn verify_setting_minimum_log_severity() {
         let reader = ArchiveReader::logs();
         let (logs, _) = reader.snapshot_then_subscribe().unwrap().split_streams();
-        let _publisher = Publisher::new_async(PublisherOptions {
+        let publisher = Publisher::new(PublisherOptions {
             tags: &["verify_setting_minimum_log_severity"],
-            register_global_logger: true,
-            ..PublisherOptions::default()
+            ..PublisherOptions::empty()
         })
-        .await
         .expect("initialized log");
+        log::set_boxed_logger(Box::new(publisher)).unwrap();
 
         info!("I'm an info log");
         debug!("I'm a debug log and won't show up");

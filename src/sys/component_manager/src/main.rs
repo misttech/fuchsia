@@ -72,7 +72,8 @@ fn main() {
 
     match runtime_config.log_destination {
         finternal::LogDestination::Syslog => {
-            diagnostics_log::initialize(diagnostics_log::PublishOptions::default()).unwrap();
+            diagnostics_log::initialize_buffered(diagnostics_log::PublishOptions::default())
+                .unwrap();
         }
         finternal::LogDestination::Klog => {
             klog::KernelLogger::init();

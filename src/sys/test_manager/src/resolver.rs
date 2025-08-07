@@ -3,21 +3,20 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use diagnostics_log::Publisher;
 use fidl::endpoints::ProtocolMarker;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::LocalComponentHandles;
 use fuchsia_url::{ComponentUrl, PackageUrl};
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
-use log::warn;
+use log::{warn, Log};
 use std::collections::HashSet;
 use std::sync::Arc;
 use {
     diagnostics_log as flog, fidl_fuchsia_component_resolution as fresolution,
     fidl_fuchsia_logger as flogger, fidl_fuchsia_pkg as fpkg, fuchsia_async as fasync,
 };
-
-type LogSubscriber = dyn log::Log + std::marker::Send + std::marker::Sync + 'static;
 
 // The list of non-hermetic packages allowed to resolved by a test.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,7 +40,7 @@ impl AllowedPackages {
 
 async fn validate_hermetic_package(
     component_url_str: &str,
-    logger: Arc<LogSubscriber>,
+    logger: OptionLogger,
     hermetic_test_package_name: &String,
     other_allowed_packages: &AllowedPackages,
 ) -> Result<(), fresolution::ResolverError> {
@@ -78,7 +77,7 @@ async fn validate_hermetic_package(
 
 async fn validate_hermetic_url(
     pkg_url_str: &str,
-    logger: Arc<LogSubscriber>,
+    logger: OptionLogger,
     hermetic_test_package_name: &String,
     other_allowed_packages: &AllowedPackages,
 ) -> Result<(), fpkg::ResolveError> {
@@ -114,7 +113,7 @@ async fn validate_hermetic_url(
 
 async fn serve_resolver(
     mut stream: fresolution::ResolverRequestStream,
-    logger: Arc<LogSubscriber>,
+    logger: OptionLogger,
     hermetic_test_package_name: Arc<String>,
     other_allowed_packages: AllowedPackages,
     full_resolver: Arc<fresolution::ResolverProxy>,
@@ -199,7 +198,7 @@ async fn serve_resolver(
 
 async fn serve_pkg_resolver(
     mut stream: fpkg::PackageResolverRequestStream,
-    logger: Arc<LogSubscriber>,
+    logger: OptionLogger,
     hermetic_test_package_name: Arc<String>,
     other_allowed_packages: AllowedPackages,
     pkg_resolver: Arc<fpkg::PackageResolverProxy>,
@@ -317,16 +316,15 @@ async fn serve_pkg_resolver(
     }
 }
 
-struct NoOpLogger;
+#[derive(Clone)]
+pub struct OptionLogger(Option<Publisher>);
 
-impl log::Log for NoOpLogger {
-    fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
-        false
+impl OptionLogger {
+    pub fn log(&self, record: &log::Record<'_>) {
+        if let Some(logger) = self.0.as_ref() {
+            logger.log(record);
+        }
     }
-
-    fn log(&self, _record: &log::Record<'_>) {}
-
-    fn flush(&self) {}
 }
 
 pub async fn serve_hermetic_resolver(
@@ -341,13 +339,15 @@ pub async fn serve_hermetic_resolver(
     let mut pkg_resolver_tasks = vec![];
     let log_client = handles.connect_to_named_protocol(flogger::LogSinkMarker::DEBUG_NAME)?;
     let tags = ["test_resolver"];
-    let log_publisher = match flog::Publisher::new(
+    let log_publisher = match flog::Publisher::new_async(
         flog::PublisherOptions::default().tags(&tags).use_log_sink(log_client),
-    ) {
-        Ok(publisher) => Arc::new(publisher) as Arc<LogSubscriber>,
+    )
+    .await
+    {
+        Ok(publisher) => OptionLogger(Some(publisher)),
         Err(e) => {
             warn!("Error creating log publisher for resolver: {:?}", e);
-            Arc::new(NoOpLogger) as Arc<LogSubscriber>
+            OptionLogger(None)
         }
     };
 
@@ -449,11 +449,11 @@ mod tests {
     ) -> (fasync::Task<()>, fresolution::ResolverProxy) {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fresolution::ResolverMarker>();
-        let logger = NoOpLogger;
+        let logger = OptionLogger(None);
         let task = fasync::Task::local(async move {
             serve_resolver(
                 stream,
-                Arc::new(logger),
+                logger,
                 hermetic_test_package_name,
                 other_allowed_packages,
                 mock_full_resolver,
