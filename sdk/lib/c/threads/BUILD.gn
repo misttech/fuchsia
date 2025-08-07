@@ -8,12 +8,20 @@ import("../libc.gni")
 # This is only included in the new implementation.
 libc_source_set("threads") {
   sources = []
-  libc_deps = [ ":thread-storage" ]
+  libc_deps = [
+    ":thread-storage",
+
+    # TODO(https://fxbug.dev/342469121): This is still needed by the musl
+    # threads code post-startup.  When thread creation uses ThreadStorage
+    # too, this can be removed.
+    ":thread-list.musl-glue",
+  ]
 }
 
 # This doesn't need to be libc_source_set() because it's just a header.
 source_set("shadow-call-stack") {
   public = [ "shadow-call-stack.h" ]
+  public_deps = [ "//zircon/kernel/lib/arch" ]
   sources = []
 }
 
@@ -24,6 +32,9 @@ libc_source_set("thread-storage") {
     ":shadow-call-stack",
     "//src/lib/elfldltl:headers",
     "//zircon/system/ulib/zx",
+
+    # TODO(https://fxbug.dev/342469121): remove when :musl-tls is removed
+    "..:asm-linkage",
   ]
   sources = [ "thread-storage.cc" ]
   deps = [ "//zircon/third_party/ulib/musl:musl_internal" ]
@@ -94,7 +105,7 @@ libc_source_set("thread-list.musl-glue") {
   undefined_symbols = [
     "${libc_namespace}_gAllThreads",
     "${libc_namespace}_gAllThreadsLock",
-    "__assert_fail",
+    "${libc_namespace}_gLog",
     "_zx_thread_self",
   ]
   undefined_symbols += libzircon_linkage_names
@@ -102,7 +113,7 @@ libc_source_set("thread-list.musl-glue") {
   sources = [ "musl-thread-list.cc" ]
   deps = [
     ":thread-list.headers",
-    "..:asm-linkage",
+    "../ld:log-panic",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
 }

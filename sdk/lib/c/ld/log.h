@@ -7,16 +7,27 @@
 
 #include <lib/ld/log-zircon.h>
 
+#include <atomic>
+
 #include "../asm-linkage.h"
+#include "src/__support/macros/config.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
-// TODO(https://fxbug.dev/342469121): This will later have more methods only
-// visible inside a particular hermetic_source_set().  Calls outside that can
-// use the ld::Log methods, which will be separately compiled inside and
-// outside that hermetic link.
+// These methods are only visible at link time inside the hermetic_source_set()
+// for __sanitizer_log_write.  Calls outside that can use the ld::Log methods,
+// which will be separately compiled inside and outside that hermetic link.
 class Log : public ld::Log {
  public:
+  // Print all the symbolzer context not already printed.
+  void SymbolizerContext();
+
+  // This indicates the symbolizer context was already printed by the startup
+  // dynamic linker, so startup modules don't need to be logged again.
+  void StartupSymbolizerContext();
+
+ private:
+  std::atomic_flag context_logged_;
 };
 
 // The gLog instance is defined outside the hermetic_source_set(), so it needs

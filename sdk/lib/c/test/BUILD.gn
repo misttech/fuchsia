@@ -72,8 +72,29 @@ source_set("safe-zero-construction") {
 # (i.e. all runtime dependencies are installed and loaded properly).
 libc_component_tests += [ ":noop-test" ]
 test("noop-test") {
+  deps = [ ":noop-test.common" ]
+}
+
+source_set("noop-test.common") {
+  visibility = [ ":*" ]
+  testonly = true
   sources = [ "noop-test.cc" ]
   deps = [ "//src/sys/testing/elftest" ]
+}
+
+# The same code but built as a static PIE to exercise the static libc.a case.
+libc_component_tests += [ ":static-pie-noop-test" ]
+test("static-pie-noop-test") {
+  configs -= [ "//build/config/fuchsia:fdio_config" ]
+  configs += [ "//build/config:standalone" ]
+  ldflags = [ "-Wl,-z,stack-size=0x40000" ]
+  deps = [
+    ":noop-test.common",
+    "..:static",
+  ]
+
+  # The static libc.a doesn't handle the setup needed for things like ASan.
+  exclude_toolchain_tags = [ "uses-shadow" ]
 }
 
 default_stack_size_cases = [

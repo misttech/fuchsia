@@ -349,10 +349,7 @@ if (zircon_toolchain != false) {
     ]
 
     # These things are only used in the new implementation.
-    assert_no_deps = [
-      "ld",
-      "startup",
-    ]
+    assert_no_deps = [ "ld" ]
 
     if (!is_gcc && current_cpu == "riscv64" &&
         toolchain_variant.tags + [ "instrumented" ] - [ "instrumented" ] !=
@@ -451,6 +448,40 @@ verify_public_symbols("verify_abi") {
 # target, and it uses this.
 ifs_shared_library("c") {
   abi = "libc.ifs"
+}
+
+if (toolchain_environment != "user.libc") {
+  group("static") {
+    # TODO(https://fxbug.dev/342469121): not hermetic, still experimental
+    testonly = true
+
+    public_deps = [ ":static($libc_toolchain)" ]
+  }
+} else {
+  static_library("static") {
+    testonly = true  # TODO(https://fxbug.dev/342469121)
+
+    complete_static_lib = true
+    output_name = "c"
+    public_configs = [
+      "//build/config/zircon:user-executable",
+      "//build/config/fuchsia:static_cpp_standard_library",
+    ]
+    deps = [
+      ":components",
+      ":legacy-components",
+      "ld",
+      "startup",
+      "startup:static-only",
+      "threads",
+      "threads:musl-glue",
+      "//zircon/third_party/ulib/musl:common-impl",
+    ]
+
+    # TODO(https://fxbug.dev/435557561): Work around RBE linking bugs handling
+    # the maze of linker scripts that come with static libc.
+    public_configs += [ "//build/config/rbe:remote_link_scandeps_workaround" ]
+  }
 }
 
 group("tests") {

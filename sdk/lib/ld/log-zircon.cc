@@ -105,7 +105,8 @@ int Log::operator()(std::string_view str) const {
   return debuglog_ ? static_cast<int>(str.size()) : -1;
 }
 
-void Log::TakeLogFd(zx::handle handle) {
+void Log::TakeLogHandle(zx::handle handle) {
+  assert(handle);
   zx_info_handle_basic_t info;
   zx_status_t status = handle.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
   if (status != ZX_OK) [[unlikely]] {

@@ -41,6 +41,10 @@ StartupData ReadBootstrap(zx::unowned_channel bootstrap) {
   std::span handles = std::span{handles_buffer}.subspan(0, read->handles);
   const std::span handle_info = message.handle_info(read->handles);
 
+  if (!message.Valid(*read)) [[unlikely]] {
+    CRASH_WITH_UNIQUE_BACKTRACE();
+  }
+
   for (uint32_t i = 0; i < handles.size(); ++i) {
     // If not otherwise consumed below, the handle will be closed.
     zx::handle handle{std::exchange(handles[i], {})};
@@ -58,8 +62,8 @@ StartupData ReadBootstrap(zx::unowned_channel bootstrap) {
         break;
 
       case PA_FD:
-        if (ld::IsProcessargsLogFd(handle_info[i])) {
-          startup.log.TakeLogFd(std::move(handle));
+        if (ld::IsProcessargsLogHandle(handle_info[i])) {
+          startup.log.TakeLogHandle(std::move(handle));
         }
         break;
 

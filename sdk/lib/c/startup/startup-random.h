@@ -6,6 +6,7 @@
 #define LIB_C_STARTUP_STARTUP_RANDOM_H_
 
 #include "../asm-linkage.h"
+#include "src/__support/macros/config.h"
 
 namespace LIBC_NAMESPACE_DECL {
 

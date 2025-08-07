@@ -13,6 +13,8 @@
 
 #include <lib/ld/abi.h>
 
+#include "src/__support/macros/config.h"
+
 #ifndef LIBC_COPT_PUBLIC_PACKAGING
 #include <lib/ld/testing/startup-ld-abi.h>
 #endif

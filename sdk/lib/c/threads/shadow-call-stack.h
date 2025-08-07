@@ -1,3 +1,4 @@
+
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -5,7 +6,10 @@
 #ifndef LIB_C_THREADS_SHADOW_CALL_STACK_H_
 #define LIB_C_THREADS_SHADOW_CALL_STACK_H_
 
+#include <lib/arch/asm.h>
+
 #include <concepts>
+#include <cstdint>
 #include <type_traits>
 
 #include "src/__support/macros/config.h"
@@ -16,6 +20,19 @@ namespace LIBC_NAMESPACE_DECL {
 // with `if constexpr (kShadowCallStackAbi)` guarding using `member_` as a T or
 // separate overloads for NoShadowCallStack and T.
 
+// This indicates whether the Fuchsia Compiler ABI for this machine includes
+// keeping the shadow-call-stack pointer register valid.  This is an unchanging
+// fact about the ABI for each machine.  Every build of libc is required to
+// support the full ABI regardless of how libc itself is being compiled.
+//
+// The choice of compiler or configs used for the build determines whether all
+// the normal libc code in a particular build itself _uses_ shadow-call-stack
+// (and likewise the unsafe stack).  Bootstrapping realities mean that certain
+// libc code (that built in the user.basic environment) itself _never_ uses the
+// shadow-call-stack (or the unsafe stack)--including the code using this
+// file's functions to bootstrap the shadow-call-stack ABI.  These questions of
+// what libc's own code is _using_ have no bearing on the ABI mandate libc is
+// _implementing_, which is specified here.
 #if defined(__x86_64__)
 inline constexpr bool kShadowCallStackAbi = false;
 #else
@@ -35,6 +52,81 @@ constexpr void OnShadowCallStack(auto&& stack, auto&& f) {
 constexpr auto ShadowCallStackOr(NoShadowCallStack, auto value) { return value; }
 constexpr auto ShadowCallStackOr(auto stack, std::convertible_to<decltype(stack)> auto value) {
   return stack;
+}
+
+// This function is only used in code compiled for the basic machine ABI and
+// only if kShadowCallStackAbi is true.  It installs the shadow call stack.
+#if !__has_feature(shadow_call_stack)
+inline void ShadowCallStackSet(uint64_t* scsp) {
+#if defined(__aarch64__)
+  __asm__ volatile("mov x18, %0" : : "r"(scsp));
+  return;
+#elif defined(__riscv)
+  __asm__ volatile("mv gp, %0" : : "r"(scsp));
+  return;
+#endif
+  __builtin_abort();
+}
+#endif  //  !__has_feature(shadow_call_stack)
+
+// This must be called first thing in the first function that runs with the
+// full compiler ABI available.  In builds of libc without shadow-call-stack
+// support enabled on machines where the ABI includes it, this mimics what the
+// compiler's (non-leaf) function prologue would usually do.  This ensures that
+// however libc is built, the shadow-call-stack backtraces are consistent with
+// the frame-pointer backtraces for the initial frames, yielding a predictable
+// backtrace of _start -> __libc_start_main -> main via CFI, frame-pointer, and
+// shadow-call-stack techniques.  If main and the code it calls (outside libc)
+// do use shadow-call-stack and expect good backtraces taken purely from the
+// shadow call stack, then the outermost frames will match expectations.
+[[gnu::always_inline]] inline void ShadowCallStackPrologue(
+    // This is a bit of belt-and-suspenders.  The always_inline attribute by
+    // itself should ensure this is inlined into __libc_start_main and so
+    // __builtin_return_address(0) used in the body would be evaluated as if in
+    // the caller anyway.  But a default argument is always formally evaluated
+    // in the caller's context, so that also guarantees it (and technically
+    // makes it unnecessary to ensure this gets inlined, though it's only one
+    // or two instructions and so obviously should be!).
+    void* caller = __builtin_return_address(0)) {
+#ifndef __x86_64__
+  static_assert(kShadowCallStackAbi);
+
+#if !__has_feature(shadow_call_stack)
+
+  // The INIT asm template pushes our own return address on the shadow call
+  // stack so it appears in a backtrace just as it would if this function
+  // itself were using the normal shadow-call-stack protocol.  Before that, it
+  // pushes a zero return address as an end marker similar to how CFI unwinding
+  // marks the base frame by having its return address column compute zero and
+  // FP unwinding marks the base frame by having its prior FP value be zero.
+  // The kDwarfRegno identifies the ABI's shadow-call-stack pointer register,
+  // so CFI can describe how to get the caller's value.
+#if defined(__aarch64__)
+  constexpr int kDwarfRegno = 18;
+#define LIBC_SHADOW_CALL_STACK_INIT(cfi_asm_template) \
+  /* One instruction does it all.  */                 \
+  "stp xzr, %[ra], [x18], #16\n" cfi_asm_template
+#elif defined(__riscv)
+  constexpr int kDwarfRegno = 3;
+#define LIBC_SHADOW_CALL_STACK_INIT(cfi_asm_template)                     \
+  /* The first instruction moves the pointer so the CFI is necessary.  */ \
+  "add gp, gp, 16\n" cfi_asm_template                                     \
+  "sd zero, -16(gp)\n"                                                    \
+  "sd %[ra], -8(gp)\n"
+#endif
+
+  __asm__ volatile(  // This uses %[ra] as an input operand.
+      LIBC_SHADOW_CALL_STACK_INIT(
+          // DW_CFA_val_expression <regno>, { DW_OP_breg<regno> -16 }
+          ".cfi_escape %c[insn], %c[regno], 2, %c[breg], (-16 & 0x7f)")
+      :
+      : [insn] "i"(DW_CFA_val_expression), [ra] "r"(caller),  //
+        [regno] "i"(kDwarfRegno), [breg] "i"(DW_OP_breg(kDwarfRegno)));
+  static_assert(kDwarfRegno < 32, "needs DW_OP_bregx, maybe ULEB128");
+#undef LIBC_SHADOW_CALL_STACK_INIT
+
+#endif  // !__has_feature(shadow_call_stack)
+#endif  // !__x86_64__
 }
 
 }  // namespace LIBC_NAMESPACE_DECL

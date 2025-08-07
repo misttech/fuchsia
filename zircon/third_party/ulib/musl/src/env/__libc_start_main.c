@@ -15,8 +15,6 @@
 #include "threads_impl.h"
 #include "zircon_impl.h"
 
-zx_handle_t __zircon_namespace_svc = ZX_HANDLE_INVALID;
-
 // This is actually defined in C++ and aliased with a -D... switch.
 void __libc_init_randoms(void);
 

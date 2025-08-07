@@ -5,10 +5,15 @@
 #ifndef LIB_C_LD_WRITABLE_SEGMENTS_H_
 #define LIB_C_LD_WRITABLE_SEGMENTS_H_
 
+#include <lib/ld/module.h>
 #include <zircon/compiler.h>
 #include <zircon/sanitizer.h>
 
+#include <cstddef>
+#include <span>
+
 #include "../dlfcn/dlfcn-abi.h"
+#include "src/__support/macros/config.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
@@ -20,6 +25,19 @@ namespace LIBC_NAMESPACE_DECL {
 // function can safely take locks but also can probably safely ignore locking.
 void WritableSegmentsMemorySnapshot(sanitizer_memory_snapshot_callback_t*, void*)
     __TA_EXCLUDES(kDlfcnLock);
+
+// This returns a void(const ld::abi::Abi<>::Module&) callable to make such
+// callbacks for one module.
+constexpr auto ModuleWritableSegmentsCallback(sanitizer_memory_snapshot_callback_t* callback,
+                                              void* callback_arg) {
+  auto report_segment = [callback, callback_arg](std::span<std::byte> segment) {
+    callback(segment.data(), segment.size_bytes(), callback_arg);
+    return true;
+  };
+  return [report_segment](const ld::abi::Abi<>::Module& module) {
+    ld::OnModuleWritableSegments(module, report_segment);
+  };
+}
 
 }  // namespace LIBC_NAMESPACE_DECL
 

@@ -935,6 +935,7 @@ config("Wno-vla-cxx-extension") {
     cflags_cc = [ "-Wno-vla-cxx-extension" ]
   }
   visibility = [
+    "//sdk/lib/c/startup:*",
     "//sdk/lib/fdio:*",
     "//sdk/lib/fdio/tests:*",
     "//sdk/lib/zxio:*",

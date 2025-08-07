@@ -34,7 +34,7 @@ class Log {
 
   // Consume a log handle as transferred by the bootstrap protocol.  This does
   // set_debuglog() or set_socket() if the handle is of a recognized type.
-  void TakeLogFd(zx::handle handle);
+  void TakeLogHandle(zx::handle handle);
 
  private:
   zx::debuglog debuglog_;

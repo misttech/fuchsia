@@ -40,13 +40,15 @@ zx::result<std::span<std::byte>> GuardedPageBlock::Allocate<std::byte>(  //
     ZX_DEBUG_ASSERT_MSG(status == ZX_OK, "zx_vmar_destroy: %s", zx_status_get_string(status));
   });
 
+  ZX_DEBUG_ASSERT(vmo.vmo);
+  ZX_DEBUG_ASSERT(data_size);
   zx_vaddr_t address;
   zx_status_t status =
       vmar.map(kMapOptions, guard_below.get(), vmo.vmo, vmo.offset, data_size.get(), &address);
   if (status != ZX_OK) [[unlikely]] {
     return zx::error{status};
   }
-  assert(address == start_ + guard_below.get());
+  ZX_DEBUG_ASSERT(address == start_ + guard_below.get());
   vmo.offset += data_size.get();
 
   // From this point on, this GuardedPageBlock owns the mapping.  The VMAR will

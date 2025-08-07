@@ -142,18 +142,23 @@ size_t __sanitizer_fast_backtrace(uintptr_t* pc_buffer, size_t max_frames);
 // definitions are seen by libc even if the user code is being compiled
 // with -fvisibility=hidden or equivalent.
 
-// This is called once for each ELF module loaded, including the main executable,
-// its shared library dependencies, and modules loaded later via dlopen and their
-// dependencies. It's always called after constant initialization, including PT_TLS
-// segment initialization and dynamic relocation, have been done for the module and
-// its dependencies; but before static constructors or any code from them has run.
-// At program startup, this is called for the executable and its dependencies in
-// load order, before `__sanitizer_startup_hook` (below) is called. Note that this
-// is before general C library initialization, but after the Fuchsia Compiler ABI
-// and proper thread stacks are in place.  So while normally-compiled C and C++
-// code can be used here, it must not call into any library functions that might
-// depend on initialization. For dynamic loading, this will be called before static
-// constructors run and thus before dlopen returns.
+// This is called once for each ELF module loaded, including the main
+// executable, its shared library dependencies, and modules loaded later via
+// dlopen and their dependencies.  It's always called after constant
+// initialization, including PT_TLS segment initialization and dynamic
+// relocation, have been done for the module and its dependencies; but before
+// static constructors or any code from them has run.  At program startup, this
+// is called for the executable and its dependencies in load order, before
+// `__sanitizer_startup_hook` (below) is called.  Note that this is before
+// general C library initialization, but after the Fuchsia Compiler ABI and
+// proper thread stacks are in place.  So while normally-compiled C and C++
+// code can be used here, it must not call into any library functions that
+// might depend on initialization.  For dynamic loading, this will be called
+// before static constructors run and thus before dlopen returns.
+//
+// The information provided is the same as `dl_iterate_phdr` will report later,
+// except that the `dlpi_adds`, `dlpi_subs`, and `dlpi_tls_data` fields are
+// always zero (and nullptr, respectively) here.
 __EXPORT void __sanitizer_module_loaded(const struct dl_phdr_info* info, size_t size);
 
 // This is called at program startup, with the arguments that will be

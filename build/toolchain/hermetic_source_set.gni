@@ -45,7 +45,6 @@ _hermetic_custom_abi = toolchain_variant.tags + [ "custom-abi" ] -
 #     - Type: list(string)
 #
 #   * undefined_symbols
-
 #     - Optional: The list of linkage symbol names that may be left undefined
 #     in the output.  This can be true instead of list to allow anything, or
 #     false to allow absolutely nothing.  By default ([], the empty list), no
@@ -72,6 +71,20 @@ _hermetic_custom_abi = toolchain_variant.tags + [ "custom-abi" ] -
 #     - Type: scope
 #
 # See source_set() for other parameters.
+#
+# Metadata
+#
+#   * hermetic_source_set_objcopy_flags
+#     - Optional: Additional flags for the objcopy step done after the
+#     partial link step to make it hermetic.  This can be set in metadata
+#     anywhere reached by $deps.
+#     - Type: list(string)
+#
+#   * hermetic_source_set_barrier
+#     - Optional: This is used for $walk_keys in the metadata collection that
+#     picks up $hermetic_source_set_objcopy_flags.
+#     - Type: list(label)
+#
 template("hermetic_source_set") {
   assert(defined(invoker.global_symbols),
          "hermetic_source_set() must define `global_symbols`")
@@ -79,10 +92,12 @@ template("hermetic_source_set") {
   export_target = target_name
   link_target = "_hermetic_source_set.$target_name.link"
   link_rspfile_target = "$link_target.rsp"
+  objcopy_rspfile_target = "_hermetic_source_set.$target_name.objcopy.rsp"
   libs_target = "_hermetic_source_set.$target_name.libs"
   hermetic_target = "$target_name.objfile"
   link_output_name = "$target_name.link"
   link_rspfile = "$target_gen_dir/$link_output_name.rsp"
+  objcopy_rspfile = "$target_gen_dir/$hermetic_target.rsp"
   hermetic_output_file = "$target_out_dir/$target_name.o"
 
   if (_hermetic_custom_abi) {
@@ -118,7 +133,7 @@ template("hermetic_source_set") {
   }
 
   # The source_set() will just contribute $hermetic_output_file as a link
-  # input via libs, and reflect the top-level target metadata and pulibc_*.
+  # input via libs, and reflect the top-level target metadata and public_*.
   source_set(export_target) {
     forward_variables_from(invoker,
                            [
@@ -130,7 +145,7 @@ template("hermetic_source_set") {
                              "visibility",
                            ])
 
-    libs = [ hermetic_output_file ]
+    sources = [ hermetic_output_file ]
     deps = [
              ":$hermetic_target",
              ":$libs_target",
@@ -142,7 +157,10 @@ template("hermetic_source_set") {
   # as hermetic_source_set(), i.e. no variant selection.  This performs a
   # relocatable (-r) link.
   basic_executable(link_target) {
-    visibility = [ ":$link_rspfile_target" ]
+    visibility = [
+      ":$link_rspfile_target",
+      ":$objcopy_rspfile_target",
+    ]
     forward_variables_from(invoker, [ "testonly" ])
 
     ldflags = []
@@ -256,14 +274,21 @@ template("hermetic_source_set") {
       forward_variables_from(invoker, [ "testonly" ])
       script = "//build/toolchain/verify-undefined-symbols.py"
       utils = [ "llvm-readelf" ]
-      deps = [ ":$link_rspfile_target" ]
-      sources = [ link_rspfile ]
+      deps = [
+        ":$hermetic_target",
+        ":$link_rspfile_target",
+      ]
+      sources = [
+        hermetic_output_file,
+        link_rspfile,
+      ]
       outputs = [ "$target_out_dir/$target_name.txt" ]
       depfile = "$target_out_dir/$target_name.d"
       args = [
         "--stamp=" + rebase_path(outputs[0], root_build_dir),
         "--depfile=" + rebase_path(depfile, root_build_dir),
         "--rspfile=" + rebase_path(link_rspfile, root_build_dir),
+        "--objfile=" + rebase_path(hermetic_output_file, root_build_dir),
       ]
       if (allow_init) {
         args += [ "--init-array" ]
@@ -292,6 +317,15 @@ template("hermetic_source_set") {
                            ])
   }
 
+  generated_file(objcopy_rspfile_target) {
+    visibility = [ ":$hermetic_target" ]
+    forward_variables_from(invoker, [ "testonly" ])
+    outputs = [ objcopy_rspfile ]
+    data_keys = [ "hermetic_source_set_objcopy_flags" ]
+    walk_keys = [ "hermetic_source_set_barrier" ]
+    deps = [ ":$link_target" ]
+  }
+
   toolchain_utils_action(hermetic_target) {
     forward_variables_from(invoker,
                            [
@@ -310,15 +344,27 @@ template("hermetic_source_set") {
       args += [ "--keep-global-symbol=$symbol" ]
     }
 
-    sources = [ link_rspfile ]
-    deps = [ ":$link_rspfile_target" ]
-    args += [ "@" + rebase_path(link_rspfile, root_build_dir) ]
+    sources = [
+      link_rspfile,
+      objcopy_rspfile,
+    ]
+    deps = [
+      ":$link_rspfile_target",
+      ":$objcopy_rspfile_target",
+    ]
+    args += [
+      "@" + rebase_path(objcopy_rspfile, root_build_dir),
+      "@" + rebase_path(link_rspfile, root_build_dir),
+    ]
 
     outputs = [ hermetic_output_file ]
     args += rebase_path(outputs, root_build_dir)
 
-    if (defined(invoker.objfile_metadata)) {
-      metadata = invoker.objfile_metadata
+    metadata = {
+      hermetic_source_set_barrier = []
+      if (defined(invoker.objfile_metadata)) {
+        forward_variables_from(invoker.objfile_metadata, "*")
+      }
     }
   }
 }

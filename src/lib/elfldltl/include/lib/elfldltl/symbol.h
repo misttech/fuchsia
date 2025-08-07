@@ -177,7 +177,7 @@ class SymbolInfo {
   // called.
   constexpr explicit SymbolInfo(LinkerZeroInitialized) : strtab_{} {}
 
-  constexpr void InitLinkerZeroInitialized() { strtab_ = kEmptyStrtab; }
+  constexpr void InitLinkerZeroInitialized() { strtab_ = EmptyStrtab(); }
 
   // Each flavor of hash table has a support class with a compatible API,
   // except for the argument to the constructor and Valid, which is a
@@ -336,7 +336,7 @@ class SymbolInfo {
   constexpr SymbolInfo& set_strtab(std::string_view strtab) {
     if (strtab.empty() || strtab.back() != '\0') {
       // Invalid string table has no NUL terminator; don't use it at all.
-      strtab = kEmptyStrtab;
+      strtab = EmptyStrtab();
     }
     strtab_ = strtab;
     return *this;
@@ -384,13 +384,14 @@ class SymbolInfo {
   // guaranteed NUL terminated.  In remoting instantiations, the values will
   // always be reset from known-valid local instantiations so the zero-length
   // view will never be used.
-  static constexpr AbiStringView<Elf, AbiTraits> kEmptyStrtab = []() {
+  static constexpr AbiStringView<Elf, AbiTraits> EmptyStrtab() {
     AbiStringView<Elf, AbiTraits> empty;
     if constexpr (std::is_constructible_v<AbiStringView<Elf, AbiTraits>, std::string_view>) {
-      empty = std::string_view{"", 1};
+      using namespace std::literals;
+      empty = "\0"sv;
     }
     return empty;
-  }();
+  }
 
   size_type safe_symtab_size() const {
     if (symtab_.empty()) {
@@ -424,7 +425,7 @@ class SymbolInfo {
     return symtab_.size();
   }
 
-  AbiStringView<Elf, AbiTraits> strtab_ = kEmptyStrtab;
+  AbiStringView<Elf, AbiTraits> strtab_ = EmptyStrtab();
   Span<Sym> symtab_;
   Span<Word> compat_hash_;
   Span<Addr> gnu_hash_;

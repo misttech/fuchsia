@@ -16,8 +16,7 @@ struct StartupBootstrap : public ld::Bootstrap {
   StartupBootstrap(auto& diag, const void* vdso_base, PageSizeT&& page_size)
       : ld::Bootstrap{diag, vdso_base, std::forward<PageSizeT>(page_size),
                       // See below about the module storage.
-                      (gSelfModule.InitLinkerZeroInitialized(), gSelfModule),
-                      (gVdsoModule.InitLinkerZeroInitialized(), gVdsoModule)} {}
+                      gSelfModule, gVdsoModule} {}
 
   // We want these objects to be in bss to reduce the amount of data pages
   // which need COW.  In general the only data/bss we want should be part of

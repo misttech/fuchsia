@@ -81,6 +81,7 @@ zx_koid_t GetKoid(zx_handle_t handle) {
   zx_info_handle_basic_t info;
   zx_status_t status =
       zx_object_get_info(handle, ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+  EXPECT_OK(status);
   return status == ZX_OK ? info.koid : ZX_KOID_INVALID;
 }
 
@@ -88,6 +89,7 @@ zx_koid_t GetPeerKoid(zx_handle_t handle) {
   zx_info_handle_basic_t info;
   zx_status_t status =
       zx_object_get_info(handle, ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+  EXPECT_OK(status);
   return status == ZX_OK ? info.related_koid : ZX_KOID_INVALID;
 }
 

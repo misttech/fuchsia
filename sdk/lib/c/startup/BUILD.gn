@@ -6,21 +6,71 @@ import("//build/zircon/c_utils.gni")
 import("//src/zircon/lib/zircon/libzircon.gni")
 import("../libc.gni")
 
-# This will go into the new libc.so, but will never go into the legacy libc.so
-# and so is not in the $components list in ../BUILD.gn; there is no unittests
-# target in this directory.
 libc_source_set("startup") {
   sources = []
-  non_test_deps = []
-  testonly_deps = []
-  foreach(label,
-          [
-            # TODO(mcgrathr): more later
-            ":startup-random-impl",
-          ]) {
-    non_test_deps += [ label ]
-    testonly_deps += [ "$label.testonly" ]
-  }
+  libc_deps = [
+    ":processargs-preinit",
+    ":start-main",
+    ":startup-random-impl",
+  ]
+}
+
+libc_test("unittests") {
+  sources = []
+}
+
+# These are referenced by StartCompilerAbi in one basic_abi libc_source_set()
+# and defined in a different basic_abi libc_source_set() for modularity.
+startup_relocate_symbols = [
+  "${libc_namespace}_StartupRelocate",
+  "${libc_namespace}_StartupProtectRelro",
+]
+
+libc_source_set("shared-only") {
+  visibility = [ "..:*" ]
+
+  basic_abi = true
+  global_symbols = startup_relocate_symbols
+
+  sources = [ "stub-relocate.cc" ]
+  deps = [ ":headers" ]
+}
+
+libc_source_set("static-only") {
+  visibility = [ "..:*" ]
+
+  sources = []
+  libc_deps = [
+    ":crt1",
+    ":static-pie-relocate",
+  ]
+}
+
+libc_source_set("static-pie-relocate") {
+  visibility = [ ":*" ]
+
+  basic_abi = true
+  global_symbols = startup_relocate_symbols + [ "_ld_abi" ]
+  undefined_symbols = [
+    "${libc_namespace}_gLog",
+
+    # These will be defined implicitly by the linker in the outer link.
+    "_DYNAMIC",
+    "_GLOBAL_OFFSET_TABLE_",
+    "__ehdr_start",
+    "_end",
+  ]
+
+  # All the vDSO's symbols are safe since it uses only the basic ABI anyway.
+  undefined_symbols += libzircon_linkage_names
+
+  sources = [ "static-pie-relocate.cc" ]
+  libc_deps = [ "../ld:log-panic" ]
+  deps = [
+    ":headers",
+    "//sdk/lib/ld:headers",
+    "//src/lib/elfldltl:hermetic",
+  ]
 }
 
 # This doesn't go into libc, but becomes the Scrt1.o linked into executables.
@@ -134,6 +184,27 @@ basic_source_set("nostartfiles.basic") {
   libs = get_target_outputs(deps[0])
 }
 
+# The headers for the things used across hermetic boundaries are in this
+# separate headers-only target to avoid deps from any hermetic_source_set() to
+# any other targets providing link inputs.  Each hermetic_source_set() can have
+# its own `public` list if it's in deps of other non-hermetic targets.  But no
+# hermetic_source_set()'s own deps list can need to include any code targets
+# that don't go into the same hermetic partial link.
+source_set("headers") {
+  visibility = [ "../*" ]
+
+  public = [
+    "start-main.h",
+    "startup-relocate.h",
+    "startup-trampoline.h",
+  ]
+  public_deps = [
+    "../zircon:vmar.headers",
+    "//zircon/system/ulib/zx",
+  ]
+  deps = [ "..:asm-linkage" ]
+}
+
 # :startup-random-impl is a basic ABI hermetic_source_set() defining this
 # symbol.  It's directly in deps of :startup to get into the outer link.  The
 # symbol will be used by other basic ABI hermetic partial link targets but they
@@ -169,7 +240,7 @@ libc_source_set("startup-random-impl") {
   undefined_symbols += libzircon_linkage_names
 
   # This helps the legacy C code call the function declared only in C++.
-  public_configs = [ ":startup-random.musl_glue" ]
+  public_configs = [ ":startup-random.musl-glue" ]
   visibility += [ "//zircon/third_party/ulib/musl/src/env:start-main" ]
 
   sources = [ "startup-random.cc" ]
@@ -180,7 +251,129 @@ libc_source_set("startup-random-impl") {
   ]
 }
 
-config("startup-random.musl_glue") {
+config("startup-random.musl-glue") {
   visibility = [ ":*" ]
   defines = [ "__libc_init_randoms=${startup_random_symbols[0]}" ]
+}
+
+# These parts go into libc: __libc_start_main and its call graph.
+libc_source_set("startup-trampoline") {
+  visibility = [ ":*" ]
+
+  public_deps = [ ":headers" ]
+
+  basic_abi = true
+  global_symbols = [ "__libc_start_main" ]
+  undefined_symbols = [
+                        "${libc_namespace}_SetStartHandles",
+                        "${libc_namespace}_gLog",
+                        "${libc_namespace}_start_main",
+                        "_zx_startup_get_handles",
+                      ] + startup_relocate_symbols + startup_random_symbols +
+                      libzircon_linkage_names
+
+  undefined_symbols += [
+    # TODO(https://fxbug.dev/342469121): These won't be used anymore when
+    # ../threads:musl-tls is removed.
+    "${libc_namespace}_GetTlsLayout",
+    "${libc_namespace}_InitializeTls",
+
+    # TODO(https://fxbug.dev/342469121): This won't be used anymore when
+    # :musl-glue is removed.
+    "${libc_namespace}_InitialStackSize",
+  ]
+
+  sources = [ "startup-trampoline.S" ]
+  libc_deps = [
+    ":start-compiler-abi",
+    "../ld:log-panic",
+  ]
+  deps = [
+    "..:asm-linkage",
+    "//zircon/kernel/lib/arch",
+  ]
+}
+
+libc_source_set("start-compiler-abi") {
+  visibility = [ ":*" ]
+
+  public_deps = [ ":headers" ]
+
+  sources = [ "start-compiler-abi.cc" ]
+  deps = [
+    ":startup-random",
+    "../ld:log.headers",
+    "../threads:shadow-call-stack",
+    "../threads:thread-storage",
+    "//zircon/system/ulib/runtime:headers",
+    "//zircon/system/ulib/zx",
+    "//zircon/third_party/ulib/musl:musl_internal",
+  ]
+}
+
+# This the second half of __libc_start_main, outside the basic_abi bubble.
+# It's called by :startup-trampoline, but the deps go the other way, since
+# that target needs hermeticity that this target doesn't.
+libc_source_set("start-main") {
+  visibility = [ ":*" ]
+
+  public_deps = [ ":headers" ]
+
+  sources = [ "start-main.cc" ]
+  deps = [
+    ":startup-trampoline",
+    "../stdlib:exit",
+    "../threads:thread-list",
+    "//sdk/lib/ld:fuchsia-debugdata",
+    "//zircon/system/ulib/runtime",
+    "//zircon/third_party/ulib/musl:musl_internal",
+  ]
+}
+
+# This is used in the first half of __libc_start_main, in the basic ABI.
+libc_source_set("processargs-get-handles") {
+  visibility = [ ":*" ]
+
+  public = [ "processargs.h" ]
+  public_deps = [
+    ":headers",
+    "..:asm-linkage",
+    "//sdk/lib/ld:processargs",
+    "//zircon/system/ulib/zx",
+  ]
+
+  basic_abi = true
+  global_symbols = [
+    "${libc_namespace}_ProcessargsGetHandles",
+    "_zx_startup_get_handles",
+  ]
+  undefined_symbols = libzircon_linkage_names + [
+                        "${libc_namespace}_gLog",
+                        "__libc",
+                      ]
+
+  sources = [ "processargs-get-handles.cc" ]
+  libc_deps = [
+    "../ld:log-panic",
+    "../zircon:vmar",
+  ]
+  deps = [
+    "//sdk/lib/ld:processargs",
+    "//zircon/system/ulib/zircon-internal",
+  ]
+
+  configs = [ "//build/config:Wno-vla-cxx-extension" ]
+}
+
+# This is used in the second half of __libc_start_main, with the full ABI.
+libc_source_set("processargs-preinit") {
+  visibility = [ ":*" ]
+
+  sources = [ "processargs-preinit.cc" ]
+  libc_deps = [ ":processargs-get-handles" ]
+  deps = [
+    "..:weak",
+    "../ld:log.headers",
+    "//zircon/third_party/ulib/musl:musl_internal",
+  ]
 }

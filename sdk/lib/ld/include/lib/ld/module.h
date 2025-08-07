@@ -7,13 +7,16 @@
 
 #include <lib/elfldltl/init-fini.h>
 #include <lib/elfldltl/link-map-list.h>
+#include <lib/elfldltl/phdr.h>
 #include <lib/elfldltl/svr4-abi.h>
 #include <lib/elfldltl/symbol.h>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <ranges>
+#include <span>
 #include <type_traits>
 
 #include "abi.h"
@@ -232,6 +235,21 @@ template <class Module>
 constexpr bool ModuleUsesStaticTls(const Module& module) {
   return (module.symbols.flags() & elfldltl::ElfDynFlags::kStaticTls) ||
          (module.symbols.flags1() & elfldltl::ElfDynFlags1::kPie);
+}
+
+// Given a module, call the callback as `bool(std::span<std::byte>)` to cover
+// all the writable segment data in the module, excluding the RELRO region.
+// This covers all the module's global (and static) variables (excluding TLS)
+// that could hold root pointers for GC or leak detection, for example.
+constexpr bool OnModuleWritableSegments(const auto& module,
+                                        std::invocable<std::span<std::byte>> auto&& callback) {
+  static_assert(std::is_invocable_r_v<bool, decltype(callback), std::span<std::byte>>);
+  auto on_segment = [load_bias = module.link_map.addr(), &callback](  //
+                        uintptr_t start, size_t size) -> bool {
+    std::byte* const data = reinterpret_cast<std::byte*>(start + load_bias);
+    return callback(std::span{data, size});
+  };
+  return elfldltl::OnPhdrWritableSegments(module.phdrs.get(), on_segment);
 }
 
 }  // namespace ld

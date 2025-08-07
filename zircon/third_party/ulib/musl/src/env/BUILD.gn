@@ -12,10 +12,7 @@ source_set("env") {
     "unsetenv.c",
   ]
 
-  deps = [
-    ":start-main",
-    "//zircon/third_party/ulib/musl:musl_internal",
-  ]
+  deps = [ "//zircon/third_party/ulib/musl:musl_internal" ]
 
   configs -= [ "//build/config:symbol_visibility_hidden" ]
 
@@ -24,8 +21,6 @@ source_set("env") {
 }
 
 source_set("start-main") {
-  visibility = [ ":*" ]
-
   sources = [ "__libc_start_main.c" ]
 
   deps = [

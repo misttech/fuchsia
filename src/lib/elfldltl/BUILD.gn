@@ -115,9 +115,29 @@ library_headers("headers") {
   }
 }
 
-static_library("elfldltl") {
-  public_deps = [ ":headers" ]
+# The implementation code is in the hermetic library, below.  This target is
+# used to link that into a final link where input linker scripts can have
+# dangling symbol references.
+source_set("elfldltl") {
+  public_deps = [ ":hermetic" ]
+  if (is_elf) {
+    if (is_gcc && linker == "") {
+      libs = [ "./self-base-bfd.ld" ]
+    } else {
+      libs = [ "./self-base.ld" ]
+    }
+  }
+}
+
+# This target is used to link the code into an hermetic_source_set() target.
+# It supplies metadata that directs hermetic_source_set() to do some post-link
+# shenanigans with the same effect as self-base.ld, which doesn't work as an
+# input to the hermetic partial link (ld -r).
+static_library("hermetic") {
+  output_name = "elfldltl"
   complete_static_lib = true
+
+  public_deps = [ ":headers" ]
 
   sources = [ "leb128.cc" ]
   deps = []
@@ -126,6 +146,10 @@ static_library("elfldltl") {
       deps += [ ":self.basic" ]
     } else {
       deps += [ ":self" ]
+    }
+    metadata = {
+      hermetic_source_set_objcopy_flags =
+          [ "--redefine-sym=elfldltl.kBase=__ehdr_start" ]
     }
   }
 
@@ -162,11 +186,6 @@ if (is_elf) {
     visibility = [ ":*" ]
     deps = [ ":headers" ]
     sources = [ "self.cc" ]
-    if (is_gcc && linker == "") {
-      libs = [ "./self-base-bfd.ld" ]
-    } else {
-      libs = [ "./self-base.ld" ]
-    }
   }
 }
 

@@ -71,9 +71,6 @@ template("user_basic_redirect") {
     # This variant is excluded, so select a different one.
     select = true
   }
-  if (!no_abi) {
-    select = true
-  }
   if (needs_abi) {
     select = true
   }
@@ -84,6 +81,7 @@ template("user_basic_redirect") {
     group_deps = [ ":$target_name.select" ]
     deps_tc = _user_basic
     not_needed(invoker, [ "public_deps" ])
+    not_needed([ "no_abi" ])
   } else if (no_abi) {
     # This is already a basic machine ABI compatible toolchain.
     assert(!needs_abi)

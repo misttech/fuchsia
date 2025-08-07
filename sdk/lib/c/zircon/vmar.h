@@ -143,19 +143,13 @@ class GuardedPageBlock {
                                     PageRoundedSize data_size, PageRoundedSize guard_below,
                                     PageRoundedSize guard_above);
 
-  // The underlying implementation is out-of-line in this specialization.
-  template <>
-  zx::result<std::span<std::byte>> Allocate<std::byte>(  //
-      zx::unowned_vmar allocate_from, AllocationVmo& vmo, PageRoundedSize data_size,
-      PageRoundedSize guard_below, PageRoundedSize guard_above);
-
   void reset() {
     if (size_) {
       Unmap();
     }
   }
 
-  uintptr_t release() {
+  [[nodiscard]] uintptr_t release() {
     vmar_ = {};
     size_ = {};
     return std::exchange(start_, 0);
@@ -183,6 +177,12 @@ class GuardedPageBlock {
   PageRoundedSize size_;
   zx::unowned_vmar vmar_;
 };
+
+// The underlying implementation is out-of-line in this specialization.
+template <>
+zx::result<std::span<std::byte>> GuardedPageBlock::Allocate<std::byte>(
+    zx::unowned_vmar allocate_from, AllocationVmo& vmo, PageRoundedSize data_size,
+    PageRoundedSize guard_below, PageRoundedSize guard_above);
 
 // The real implementation is the std::byte specialization, out of line.
 // Others just convert the pointer type.

@@ -102,6 +102,7 @@ TEST_F(SvcSingleProcessTest, SanitizerPublishDataShowsUpInStashedHandle) {
   constexpr const char* kDataSink = "some_sink_name";
   zx_koid_t vmo_koid = GetKoid(vmo.get());
   zx::eventpair token_1(__sanitizer_publish_data(kDataSink, vmo.release()));
+  ASSERT_TRUE(token_1);
 
   zx_koid_t token_koid = GetPeerKoid(token_1.get());
   ASSERT_NE(token_koid, ZX_KOID_INVALID);

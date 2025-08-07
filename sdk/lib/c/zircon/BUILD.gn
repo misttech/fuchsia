@@ -45,12 +45,16 @@ libc_test("unittests") {
   deps = [ ":vmar-tests" ]
 }
 
-libc_source_set("vmar") {
+source_set("vmar.headers") {
   public = [ "vmar.h" ]
   public_deps = [
     # "vmar.h" uses "zircon_impl.h" for now.
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
+}
+
+libc_source_set("vmar") {
+  public_deps = [ ":vmar.headers" ]
   sources = [ "vmar.cc" ]
   deps = [
     "//sdk/lib/fit",

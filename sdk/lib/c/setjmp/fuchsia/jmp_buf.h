@@ -66,6 +66,8 @@
 #include <array>
 #include <cstdint>
 
+#include "src/__support/macros/config.h"
+
 namespace LIBC_NAMESPACE_DECL {
 
 // This is used by the assembly code via LIBC_ASM_LINKAGE(gJmpBufManglers).

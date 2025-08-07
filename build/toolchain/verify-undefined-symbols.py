@@ -7,6 +7,7 @@ import argparse
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 
 def main():
@@ -49,7 +50,13 @@ def main():
     parser.add_argument(
         "--rspfile",
         type=argparse.FileType("r"),
-        help="Response file listing name of ET_REL file to check",
+        help="Response file listing name of ET_REL file to report",
+        required=True,
+    )
+    parser.add_argument(
+        "--objfile",
+        type=Path,
+        help="ET_REL file to examine",
         required=True,
     )
     parser.add_argument("readelf", help="llvm-readelf binary", nargs=1)
@@ -58,7 +65,10 @@ def main():
     [file] = [line.strip() for line in args.rspfile.readlines()]
     args.rspfile.close()
 
-    args.depfile.write(f"{args.stamp.name}: {file}\n")
+    depfile_deps = " ".join(
+        [args.readelf[0], str(args.objfile), args.rspfile.name]
+    )
+    args.depfile.write(f"{args.stamp.name}: {depfile_deps}\n")
     args.depfile.close()
 
     data = json.loads(
@@ -68,7 +78,7 @@ def main():
                 "--elf-output-style=JSON",
                 "--sections",
                 "--symbols",
-                file,
+                args.objfile,
             ]
         )
     )

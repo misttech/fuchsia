@@ -5,7 +5,9 @@
 #include "thread-storage.h"
 
 #include <lib/elfldltl/machine.h>
+#include <zircon/assert.h>
 
+#include <cassert>
 #include <concepts>
 #include <utility>
 
@@ -61,6 +63,7 @@ class Block<Member> {
     } else {
       guard_below = storage.guard_size();
     }
+
     return block_.Allocate<uint64_t>(vmar->borrow(), vmo, storage.stack_size(), guard_below,
                                      guard_above);
   }
@@ -276,7 +279,10 @@ ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
   // see if a correctly-placed new block fits in the space left over.  There
   // may also be space at the beginning of the block if the TLS alignment is
   // greater than alignof(Thread), which will not be recovered for reuse.
-  const size_t aligned_thread_size = static_tls_layout.Align(sizeof(Thread));
+  constexpr size_t kThreadToTp =  // Size from Thread* (T) to $tp.
+      sizeof(Thread) - TlsTraits::kTlsLocalExecOffset;
+  const size_t aligned_thread_size = static_tls_layout.Align(  //
+      kThreadToTp, alignof(Thread));
   auto tls_layout_size = [static_tls_layout]() -> size_t {
     if (static_tls_layout.size_bytes() == 0) {
       return 0;
@@ -296,7 +302,7 @@ ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
 void ThreadStorage::FreeStacks() {
   auto unmap = [this, block_size = stack_size_ + guard_size_](uintptr_t base) {
     if (base != 0) {
-      ZX_DEBUG_ASSERT(thread_block_.vmar());
+      assert(thread_block_.vmar());
       zx::result result = zx::make_result(thread_block_.vmar().unmap(base, block_size.get()));
       ZX_ASSERT_MSG(result.is_ok(), "zx_vmar_unmap: %s", result.status_string());
     }
@@ -378,6 +384,9 @@ void ThreadStorage::ToThread(Thread& thread) && {
 zx::result<Thread*> ThreadStorage::Allocate(zx::unowned_vmar allocate_from,
                                             std::string_view thread_name, PageRoundedSize stack,
                                             PageRoundedSize guard) {
+  ZX_DEBUG_ASSERT(*allocate_from);
+  ZX_DEBUG_ASSERT(stack);
+
   if (thread_name.empty()) {
     thread_name = kVmoName;
   }

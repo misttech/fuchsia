@@ -44,10 +44,11 @@ inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(  //
     const Self& self, DiagnosticsType& diagnostics, const void* vdso_base);
 
 // This version takes vDSO details already distilled separately.
-template <class Self, class DiagnosticsType>
+template <class Self, class DiagnosticsType, typename... DynamicObservers>
 inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(
     const Self& self, DiagnosticsType& diagnostics,
-    const SymbolInfo<typename Self::Elf>& vdso_symbols, typename Self::Elf::size_type vdso_bias) {
+    const SymbolInfo<typename Self::Elf>& vdso_symbols, typename Self::Elf::size_type vdso_bias,
+    DynamicObservers&&... dynamic_observers) {
   using namespace std::literals;
   using Elf = Self::Elf;
   using size_type = typename Elf::size_type;
@@ -62,7 +63,8 @@ inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(
   SymbolInfo<Elf> symbol_info;
   DecodeDynamic(diagnostics, memory, Self::Dynamic(),       //
                 DynamicRelocationInfoObserver(reloc_info),  //
-                DynamicSymbolInfoObserver(symbol_info));
+                DynamicSymbolInfoObserver(symbol_info),
+                std::forward<DynamicObservers>(dynamic_observers)...);
 
   // Apply simple fixups first, just in case anything else needs them done.
   if (RelocateRelative(diagnostics, memory, reloc_info, bias)) {
@@ -73,9 +75,9 @@ inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(
 
   // This communicates the results of a symbol lookup back to RelocateSymbolic.
   struct Definition {
-    constexpr bool undefined_weak() const { return false; }
+    constexpr bool undefined_weak() const { return !symbol_; }
 
-    constexpr const Sym& symbol() const { return symbol_; }
+    constexpr const Sym& symbol() const { return *symbol_; }
 
     constexpr size_type bias() const { return bias_; }
 
@@ -87,7 +89,7 @@ inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(
     }
     constexpr TlsDescGot tls_desc_undefined_weak() const { return {}; }
 
-    const Sym& symbol_;
+    const Sym* symbol_;
     size_type bias_;
   };
 
@@ -99,10 +101,11 @@ inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(
     }
     SymbolName name(symbol_info, ref);
     const Sym* vdso_sym = name.Lookup(vdso_symbols);
-    if (!vdso_sym) [[unlikely]] {
-      return fit::error{diagnostics.FormatError("reference to symbol not defined in vDSO"sv, name)};
+    if (!vdso_sym && ref.bind() != ElfSymBind::kWeak) [[unlikely]] {
+      return fit::error{
+          diagnostics.FormatError("reference to symbol not defined in vDSO: "sv, name)};
     }
-    return fit::ok(Definition{*vdso_sym, vdso_bias});
+    return fit::ok(Definition{vdso_sym, vdso_bias});
   };
 
   // Apply all the symbolic relocations, resolving each reference in the vDSO.

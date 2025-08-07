@@ -19,6 +19,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <tuple>
 
 namespace ld {
 
@@ -45,9 +46,10 @@ concept BootstrapPageSize =
 // returns.  It should be an object from TrapDiagnostics() or similar.
 //
 // This mostly initializes the Module data structures for the preloaded
-// modules: this program itself, and the vDSO.  It fills out all the fields of
-// each Module except the linked-list pointers.  The caller supplies the two
-// default-initialized objects to fill.
+// modules: this program itself, and the vDSO.  It fills out only the name,
+// symbols, and vaddr bounds in each Module.  The caller supplies the two
+// objects to fill.  Each must be in LinkerZeroInitialized() state as regards
+// those members filled by Bootstrap, but other members may be set already.
 //
 // The vdso_module() describes the vDSO, which is already fully loaded
 // according to its PT_LOAD segments, relocated and initialized in place as we
@@ -70,6 +72,7 @@ class Bootstrap {
   using Ehdr = Elf::Ehdr;
   using Phdr = Elf::Phdr;
   using Dyn = Elf::Dyn;
+  using Addr = Elf::Addr;
   using size_type = Elf::size_type;
   using Module = abi::Abi<>::Module;
 
@@ -81,18 +84,22 @@ class Bootstrap {
   };
   using PreloadedList = std::array<Preloaded, 2>;
 
-  template <BootstrapPageSize PageSizeT, class... PhdrObservers>
+  template <BootstrapPageSize PageSizeT, class... PhdrObservers, class... DynamicObservers>
   Bootstrap(auto& diag, const void* vdso_base,
             // The page size now, or how to get it after dynamic linking.
             PageSizeT&& get_page_size,
             // The caller supplies storage for the two preloaded modules.
             Module& self_module_storage, Module& vdso_module_storage,
-            // Optional additional self-phdr observers can be folded in.
-            PhdrObservers&&... phdr_observers)
+            // Optional additional self-phdr and self-dynamic observers.
+            std::tuple<PhdrObservers...> phdr_observers = {},
+            std::tuple<DynamicObservers...> dynamic_observers = {})
       : preloaded_{
             Preloaded{.module = self_module_storage},
             Preloaded{.module = vdso_module_storage},
         } {
+    self_module_storage.InitLinkerZeroInitialized();
+    vdso_module_storage.InitLinkerZeroInitialized();
+
     // If the page-size argument is an integer, the true size is already known.
     // Otherwise, it's a callback that cannot be made until after relocation.
     constexpr bool kHaveEarlyPageSize = BootstrapEarlyPageSize<PageSizeT>;
@@ -108,7 +115,7 @@ class Bootstrap {
     }
 
     // Now collect information from this executable itself and do the linking.
-    LinkSelf(diag, std::forward<decltype(phdr_observers)>(phdr_observers)...);
+    LinkSelf(diag, std::move(phdr_observers), std::move(dynamic_observers));
 
     if constexpr (!kHaveEarlyPageSize) {
       // Now that relocation is done, the true page size can be determined.
@@ -133,7 +140,6 @@ class Bootstrap {
     module.vaddr_end = vaddr_start + vaddr_size;
     module.phdrs = phdrs;
     module.soname = module.symbols.soname();
-    module.link_map.name = module.soname.str().data();
   }
 
   static std::span<const Dyn> ReadDyn(elfldltl::DirectMemory& memory, const Phdr& phdr) {
@@ -143,9 +149,19 @@ class Bootstrap {
   void InitVdso(auto& diag, const void* vdso_base, Module& vdso_module) {
     auto& vdso_dyn = preloaded_.back().dyn;
 
-    std::span image{static_cast<std::byte*>(const_cast<void*>(vdso_base)),
-                    std::numeric_limits<size_t>::max()};
-    elfldltl::DirectMemory memory(image, 0);
+    // The vDSO base address comes without an immediately known upper bound on
+    // the valid range of mapped image.  Create a span that's the most it could
+    // possibly be and still fit it entirely into the address space while not
+    // allowing .data() + .size() to wrap around.
+    constexpr auto unbounded_span = [](std::byte* base) {
+      constexpr uintptr_t end = std::numeric_limits<uintptr_t>::max();
+      uintptr_t begin = reinterpret_cast<uintptr_t>(base);
+      return std::span{base, end - begin};
+    };
+
+    // The vDSO's static vaddr_start is presumed to be zero.
+    auto* vdso_bytes = static_cast<std::byte*>(const_cast<void*>(vdso_base));
+    elfldltl::DirectMemory memory(unbounded_span(vdso_bytes), 0);
     const Ehdr& ehdr = *memory.ReadFromFile<Ehdr>(0);
     const std::span phdrs =
         *memory.ReadArrayFromFile<Phdr>(ehdr.phoff, elfldltl::NoArrayFromFile<Phdr>{}, ehdr.phnum);
@@ -163,10 +179,12 @@ class Bootstrap {
 
     size_type bias = reinterpret_cast<uintptr_t>(vdso_base) - vaddr_start;
     FillModule(vdso_module, vdso_dyn, vaddr_start, vaddr_size, bias, phdrs);
+    vdso_module.link_map.name = vdso_module.soname.c_str();
   }
 
-  template <class... PhdrObservers>
-  void LinkSelf(auto& diag, PhdrObservers&&... phdr_observers) {
+  template <class... PhdrObservers, class... DynamicObservers>
+  void LinkSelf(auto& diag, std::tuple<PhdrObservers...> phdr_observers,
+                std::tuple<DynamicObservers...> dynamic_observers) {
     auto& self_dyn = preloaded_.front().dyn;
 
     auto memory = elfldltl::Self<>::Memory();
@@ -175,17 +193,25 @@ class Bootstrap {
     const uintptr_t start = memory.base() + bias;
 
     std::optional<Phdr> dyn_phdr;
-    elfldltl::DecodePhdrs(diag, phdrs, elfldltl::PhdrDynamicObserver<Elf>(dyn_phdr),
-                          PhdrMemoryBuildIdObserver(memory, self_module()),
-                          std::forward<PhdrObservers>(phdr_observers)...);
+    auto decode_phdrs = [this, &diag, &phdrs, &dyn_phdr, &memory](  //
+                            PhdrObservers&... phdr_observers) {
+      elfldltl::DecodePhdrs(diag, phdrs, elfldltl::PhdrDynamicObserver<Elf>(dyn_phdr),
+                            PhdrMemoryBuildIdObserver(memory, self_module()), phdr_observers...);
+    };
+    std::apply(decode_phdrs, phdr_observers);
 
-    self_module().symbols = elfldltl::LinkStaticPieWithVdso(
-        elfldltl::Self<>(), diag, vdso_module().symbols, vdso_module().link_map.addr);
+    auto link = [this, &diag](DynamicObservers&... dynamic_observers) {
+      self_module().symbols = elfldltl::LinkStaticPieWithVdso(  //
+          elfldltl::Self<>(), diag, vdso_module().symbols, vdso_module().link_map.addr,
+          dynamic_observers...);
+    };
+    std::apply(link, dynamic_observers);
 
     self_dyn = elfldltl::Self<>::Dynamic();
     assert(self_dyn.data() == ReadDyn(memory, *dyn_phdr).data());
     self_dyn = self_dyn.subspan(0, dyn_phdr->memsz / sizeof(Dyn));
     FillModule(self_module(), self_dyn, start, memory.image().size(), bias, phdrs);
+    self_module().link_map.name = abi::Abi<>::kExecutableName.c_str();
   }
 
   // This is called only when the module was originally set up without knowing
@@ -202,6 +228,7 @@ class Bootstrap {
 #endif
 
   PreloadedList preloaded_;
+  std::span<const Elf::Addr> preinit_array_;
   size_t page_size_ = 1;
 };
 

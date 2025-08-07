@@ -14,8 +14,8 @@ void _dl_log_write(const char* buffer, size_t len) { gLog({buffer, len}); }
 // This is called by __dls3 for any PA_FD handle in the bootstrap message.
 void _dl_log_write_init(zx_handle_t handle, uint32_t info) {
   zx::handle fd{handle};
-  if (ld::IsProcessargsLogFd(info)) {
-    gLog.TakeLogFd(std::move(fd));
+  if (ld::IsProcessargsLogHandle(info)) {
+    gLog.TakeLogHandle(std::move(fd));
   }
 }
 

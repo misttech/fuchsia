@@ -28,6 +28,7 @@ libc_headers = {
     "zircon/dlfcn.h",
     "zircon/lookup.h",
     "zircon/sanitizer.h",
+    "zircon/startup.h",
     "zircon/threads.h",
     "zircon/utc.h",
   ]
