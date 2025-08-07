@@ -37,6 +37,13 @@ void DisplayEngineEventsFidl::SetListener(
   }
 }
 
+namespace {
+
+// Used for all FIDL calls coming from this client.
+constexpr fdf_arena_tag_t kArenaTag = 'DISP';
+
+}  // namespace
+
 void DisplayEngineEventsFidl::OnDisplayAdded(
     display::DisplayId display_id, cpp20::span<const display::ModeAndId> preferred_modes,
     cpp20::span<const uint8_t> edid_bytes, cpp20::span<const display::PixelFormat> pixel_formats) {
@@ -73,7 +80,7 @@ void DisplayEngineEventsFidl::OnDisplayAdded(
 
   // TODO(https://fxbug.dev/430058446): Eliminate the per-call dynamic memory
   // allocation caused by fdf::Arena creation.
-  fdf::Arena arena('DISP');
+  fdf::Arena arena(kArenaTag);
   fidl::OneWayStatus fidl_transport_status =
       fidl_client_.buffer(arena)->OnDisplayAdded(std::move(fidl_display_info));
   if (!fidl_transport_status.ok()) {
@@ -90,7 +97,7 @@ void DisplayEngineEventsFidl::OnDisplayRemoved(display::DisplayId display_id) {
 
   // TODO(https://fxbug.dev/430058446): Eliminate the per-call dynamic memory
   // allocation caused by fdf::Arena creation.
-  fdf::Arena arena('DISP');
+  fdf::Arena arena(kArenaTag);
   fidl::OneWayStatus fidl_transport_status =
       fidl_client_.buffer(arena)->OnDisplayRemoved(display_id.ToFidl());
   if (!fidl_transport_status.ok()) {
@@ -109,7 +116,7 @@ void DisplayEngineEventsFidl::OnDisplayVsync(display::DisplayId display_id,
 
   // TODO(https://fxbug.dev/430058446): Eliminate the per-call dynamic memory
   // allocation caused by fdf::Arena creation.
-  fdf::Arena arena('DISP');
+  fdf::Arena arena(kArenaTag);
   fidl::OneWayStatus fidl_transport_status = fidl_client_.buffer(arena)->OnDisplayVsync(
       display_id.ToFidl(), timestamp, config_stamp.ToFidl());
   if (!fidl_transport_status.ok()) {
@@ -126,7 +133,7 @@ void DisplayEngineEventsFidl::OnCaptureComplete() {
 
   // TODO(https://fxbug.dev/430058446): Eliminate the per-call dynamic memory
   // allocation caused by fdf::Arena creation.
-  fdf::Arena arena('DISP');
+  fdf::Arena arena(kArenaTag);
   fidl::OneWayStatus fidl_transport_status = fidl_client_.buffer(arena)->OnCaptureComplete();
   if (!fidl_transport_status.ok()) {
     FDF_LOG(ERROR, "OnCaptureComplete() FIDL failure: %s",

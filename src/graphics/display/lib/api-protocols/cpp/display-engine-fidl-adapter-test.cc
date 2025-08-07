@@ -100,7 +100,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CompleteCoordinatorConnection) {
   auto [listener_client, listener_server] =
       fdf::Endpoints<fuchsia_hardware_display_engine::EngineListener>::Create();
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CompleteCoordinatorConnection>
       fidl_transport_result =
           fidl_client_.buffer(arena)->CompleteCoordinatorConnection(std::move(listener_client));
@@ -127,7 +127,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ImportBufferCollectionSuccess) {
         return zx::ok();
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ImportBufferCollection>
       fidl_transport_result = fidl_client_.buffer(arena)->ImportBufferCollection(
           kBufferCollectionId.ToFidl(), std::move(buffer_collection_token_client));
@@ -148,7 +148,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ImportBufferCollectionEngineError) {
         return zx::error(ZX_ERR_INTERNAL);
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ImportBufferCollection>
       fidl_transport_result = fidl_client_.buffer(arena)->ImportBufferCollection(
           kBufferCollectionId.ToFidl(), std::move(buffer_collection_token_client));
@@ -166,7 +166,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ReleaseBufferCollectionSuccess) {
     return zx::ok();
   });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ReleaseBufferCollection>
       fidl_transport_result =
           fidl_client_.buffer(arena)->ReleaseBufferCollection(kBufferCollectionId.ToFidl());
@@ -183,7 +183,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ReleaseBufferCollectionEngineError) {
     return zx::error(ZX_ERR_INTERNAL);
   });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ReleaseBufferCollection>
       fidl_transport_result =
           fidl_client_.buffer(arena)->ReleaseBufferCollection(kBufferCollectionId.ToFidl());
@@ -209,7 +209,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ImportImageSuccess) {
     return zx::ok(kImageId);
   });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ImportImage>
       fidl_transport_result = fidl_client_.buffer(arena)->ImportImage(
           kImageMetadata.ToFidl(), kBufferCollectionId.ToFidl(), kBufferIndex);
@@ -231,7 +231,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ImportImageEngineError) {
                               display::DriverBufferCollectionId buffer_collection_id,
                               uint32_t buffer_index) { return zx::error(ZX_ERR_INTERNAL); });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ImportImage>
       fidl_transport_result = fidl_client_.buffer(arena)->ImportImage(
           kImageMetadata.ToFidl(), kBufferCollectionId.ToFidl(), kBufferIndex);
@@ -255,7 +255,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ImportImageForCaptureSuccess) {
         return zx::ok(kCaptureImageId);
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ImportImageForCapture>
       fidl_transport_result = fidl_client_.buffer(arena)->ImportImageForCapture(
           kBufferCollectionId.ToFidl(), kBufferIndex);
@@ -278,7 +278,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ImportImageForCaptureEngineError) {
         return zx::error(ZX_ERR_INTERNAL);
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ImportImageForCapture>
       fidl_transport_result = fidl_client_.buffer(arena)->ImportImageForCapture(
           kBufferCollectionId.ToFidl(), kBufferIndex);
@@ -300,7 +300,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ReleaseImageSuccess) {
     release_image_called.Signal();
   });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fidl::OneWayStatus fidl_transport_status =
       fidl_client_.buffer(arena)->ReleaseImage(kImageId.ToFidl());
   ASSERT_TRUE(fidl_transport_status.ok()) << fidl_transport_status.FormatDescription();
@@ -380,7 +380,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationSingleLayerSuccess) {
         return display::ConfigCheckResult::kOk;
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CheckConfiguration>
       fidl_transport_result = fidl_client_.buffer(arena)->CheckConfiguration(fidl_display_config);
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -420,7 +420,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationMultiLayerSuccess) {
         return display::ConfigCheckResult::kOk;
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CheckConfiguration>
       fidl_transport_result = fidl_client_.buffer(arena)->CheckConfiguration(fidl_display_config);
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -452,7 +452,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationAdapterErrorLayerCountPas
   // invoking the engine driver. So, the mock driver should not receive any
   // calls.
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CheckConfiguration>
       fidl_transport_result = fidl_client_.buffer(arena)->CheckConfiguration(fidl_display_config);
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -497,7 +497,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationEngineError) {
         return display::ConfigCheckResult::kUnsupportedDisplayModes;
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CheckConfiguration>
       fidl_transport_result = fidl_client_.buffer(arena)->CheckConfiguration(fidl_display_config);
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -552,7 +552,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationSuccessValidModeIdPreferr
         return display::ConfigCheckResult::kOk;
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CheckConfiguration>
       fidl_transport_result = fidl_client_.buffer(arena)->CheckConfiguration(fidl_display_config);
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -605,7 +605,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationSuccessValidDisplayTiming
         return display::ConfigCheckResult::kOk;
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CheckConfiguration>
       fidl_transport_result = fidl_client_.buffer(arena)->CheckConfiguration(fidl_display_config);
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -638,7 +638,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationAdapterErrorNeitherModeId
   // invoking the engine driver. So, the mock driver should not receive any
   // calls.
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CheckConfiguration> fidl_status =
       fidl_client_.buffer(arena)->CheckConfiguration(fidl_display_config);
   ASSERT_TRUE(fidl_status.ok()) << fidl_status.FormatDescription();
@@ -675,7 +675,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationAdapterErrorInvalidColorC
   // CheckConfiguration() is never called on the MockDisplayEngine, because the
   // color conversion check in `DisplayEngineFidlAdapter` has failed.
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CheckConfiguration>
       fidl_transport_result = fidl_client_.buffer(arena)->CheckConfiguration(fidl_display_config);
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -727,7 +727,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationSingleLayer) {
         EXPECT_EQ(kConfigStamp, config_stamp);
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ApplyConfiguration>
       fidl_transport_status = fidl_client_.buffer(arena)->ApplyConfiguration(fidl_display_config,
                                                                              kConfigStamp.ToFidl());
@@ -765,7 +765,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationMultiLayer) {
         EXPECT_EQ(kConfigStamp, config_stamp);
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ApplyConfiguration>
       fidl_transport_status = fidl_client_.buffer(arena)->ApplyConfiguration(fidl_display_config,
                                                                              kConfigStamp.ToFidl());
@@ -817,7 +817,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationPrefersValidModeIdOverTim
         EXPECT_EQ(kConfigStamp, config_stamp);
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ApplyConfiguration>
       fidl_transport_status = fidl_client_.buffer(arena)->ApplyConfiguration(fidl_display_config,
                                                                              kConfigStamp.ToFidl());
@@ -868,7 +868,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationWithOnlyValidDisplayTimin
         EXPECT_EQ(kConfigStamp, config_stamp);
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ApplyConfiguration>
       fidl_transport_status = fidl_client_.buffer(arena)->ApplyConfiguration(fidl_display_config,
                                                                              kConfigStamp.ToFidl());
@@ -888,7 +888,7 @@ TEST_F(DisplayEngineFidlAdapterTest, SetBufferCollectionConstraintsSuccess) {
         return zx::ok();
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetBufferCollectionConstraints>
       fidl_transport_result = fidl_client_.buffer(arena)->SetBufferCollectionConstraints(
           kImageBufferUsage.ToFidl(), kBufferCollectionId.ToFidl());
@@ -909,7 +909,7 @@ TEST_F(DisplayEngineFidlAdapterTest, SetBufferCollectionConstraintsEngineError) 
         return zx::error(ZX_ERR_INTERNAL);
       });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetBufferCollectionConstraints>
       fidl_transport_result = fidl_client_.buffer(arena)->SetBufferCollectionConstraints(
           kImageBufferUsage.ToFidl(), kBufferCollectionId.ToFidl());
@@ -928,7 +928,7 @@ TEST_F(DisplayEngineFidlAdapterTest, SetDisplayPowerSuccess) {
     return zx::ok();
   });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetDisplayPower>
       fidl_transport_result =
           fidl_client_.buffer(arena)->SetDisplayPower(kDisplayId.ToFidl(), true);
@@ -944,7 +944,7 @@ TEST_F(DisplayEngineFidlAdapterTest, SetDisplayPowerEngineError) {
   mock_.ExpectSetDisplayPower(
       [&](display::DisplayId display_id, bool power_on) { return zx::error(ZX_ERR_INTERNAL); });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetDisplayPower>
       fidl_transport_result =
           fidl_client_.buffer(arena)->SetDisplayPower(kDisplayId.ToFidl(), true);
@@ -962,7 +962,7 @@ TEST_F(DisplayEngineFidlAdapterTest, StartCaptureSuccess) {
     return zx::ok();
   });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::StartCapture>
       fidl_transport_result = fidl_client_.buffer(arena)->StartCapture(kCaptureImageId.ToFidl());
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -977,7 +977,7 @@ TEST_F(DisplayEngineFidlAdapterTest, StartCaptureEngineError) {
   mock_.ExpectStartCapture(
       [&](display::DriverCaptureImageId capture_image_id) { return zx::error(ZX_ERR_INTERNAL); });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::StartCapture>
       fidl_transport_result = fidl_client_.buffer(arena)->StartCapture(kCaptureImageId.ToFidl());
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -994,7 +994,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ReleaseCaptureSuccess) {
     return zx::ok();
   });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ReleaseCapture>
       fidl_transport_result = fidl_client_.buffer(arena)->ReleaseCapture(kCaptureImageId.ToFidl());
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -1009,7 +1009,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ReleaseCaptureEngineError) {
   mock_.ExpectReleaseCapture(
       [&](display::DriverCaptureImageId capture_image_id) { return zx::error(ZX_ERR_INTERNAL); });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ReleaseCapture>
       fidl_transport_result = fidl_client_.buffer(arena)->ReleaseCapture(kCaptureImageId.ToFidl());
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -1026,7 +1026,7 @@ TEST_F(DisplayEngineFidlAdapterTest, SetMinimumRgbSuccess) {
     return zx::ok();
   });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetMinimumRgb>
       fidl_transport_result = fidl_client_.buffer(arena)->SetMinimumRgb(kMinimumRgb);
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -1040,7 +1040,7 @@ TEST_F(DisplayEngineFidlAdapterTest, SetMinimumRgbEngineError) {
 
   mock_.ExpectSetMinimumRgb([&](uint8_t minimum_rgb) { return zx::error(ZX_ERR_IO_REFUSED); });
 
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetMinimumRgb>
       fidl_transport_result = fidl_client_.buffer(arena)->SetMinimumRgb(kMinimumRgb);
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -1050,7 +1050,7 @@ TEST_F(DisplayEngineFidlAdapterTest, SetMinimumRgbEngineError) {
 }
 
 TEST_F(DisplayEngineFidlAdapterTest, IsAvailable) {
-  fdf::Arena arena('DISP');
+  fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::IsAvailable>
       fidl_transport_status = fidl_client_.buffer(arena)->IsAvailable();
   ASSERT_TRUE(fidl_transport_status.ok()) << fidl_transport_status.FormatDescription();
