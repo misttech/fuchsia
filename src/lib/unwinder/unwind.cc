@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/lib/unwinder/arm_ehabi_unwinder.h"
 #include "src/lib/unwinder/cfi_unwinder.h"
 #include "src/lib/unwinder/error.h"
 #include "src/lib/unwinder/fp_unwinder.h"
@@ -137,10 +138,11 @@ std::vector<Frame> Unwinder::Unwind(Memory* stack, const Registers& registers, s
 }
 
 void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
-  SigReturnUnwinder sigreturn_unwinder(&cfi_unwinder_);
+  ArmEhAbiUnwinder arm_ehabi_unwinder(&cfi_unwinder_);
   FramePointerUnwinder fp_unwinder(&cfi_unwinder_);
   PltUnwinder plt_unwinder(&cfi_unwinder_);
   ShadowCallStackUnwinder scs_unwinder(&cfi_unwinder_);
+  SigReturnUnwinder sigreturn_unwinder(&cfi_unwinder_);
 
   bool success = false;
   std::string err_msg;
@@ -153,6 +155,19 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
       success = true;
     } else {
       err_msg += "CFI: " + err.msg();
+    }
+  }
+
+  // Try ArmEhAbi before the others because it will play well with CFI. Note that this is only
+  // possible today by running a 32 bit ARM binary in Starnix - which will be running as a typical
+  // 64 bit Fuchsia program. The unwinder implementation will only participate in unwinding if it
+  // can successfully probe that the current PC is within a 32 bit ELF module.
+  if (!success) {
+    if (auto err = TryUnwinder(&arm_ehabi_unwinder, Frame::Trust::kArmEhAbi, stack, current, next);
+        err.ok()) {
+      success = true;
+    } else {
+      err_msg += "; ARMEHABI: " + err.msg();
     }
   }
 
