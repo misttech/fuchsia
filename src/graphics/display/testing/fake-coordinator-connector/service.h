@@ -9,6 +9,8 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/fidl/cpp/wire/channel.h>
+#include <lib/fit/function.h>
+#include <lib/zx/result.h>
 
 #include <memory>
 #include <queue>
@@ -58,7 +60,7 @@ class FakeDisplayCoordinatorConnector : public fidl::Server<fuchsia_hardware_dis
     bool is_virtcon;
     fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_request;
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_client_end;
-    fit::function<void(zx_status_t)> on_coordinator_opened;
+    fit::function<void(zx::result<>)> on_coordinator_opened;
   };
 
   // Encapsulates state for thread safety, since

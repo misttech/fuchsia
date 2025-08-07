@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/fdio/directory.h>
+#include <lib/sync/cpp/completion.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
@@ -105,10 +106,22 @@ FakeDisplayStack::~FakeDisplayStack() {
   ZX_ASSERT_MSG(shutdown_, "FakeDisplayStack::SyncShutdown() not called");
 }
 
-display_coordinator::Controller* FakeDisplayStack::coordinator_controller() {
-  ZX_ASSERT(!shutdown_);
-  ZX_ASSERT(coordinator_controller_ != nullptr);
-  return coordinator_controller_.get();
+zx::result<> FakeDisplayStack::ConnectCoordinatorClient(
+    display_coordinator::ClientPriority client_priority,
+    fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
+    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_client_end,
+    fit::function<void()> on_client_disconnected) {
+  libsync::Completion completion;
+  zx::result<> result = zx::ok();
+  async::PostTask(coordinator_controller_->driver_dispatcher()->async_dispatcher(), [&]() mutable {
+    zx_status_t status = coordinator_controller_->CreateClient(
+        client_priority, std::move(coordinator_server_end),
+        std::move(coordinator_listener_client_end), std::move(on_client_disconnected));
+    result = zx::make_result(status);
+    completion.Signal();
+  });
+  completion.Wait();
+  return result;
 }
 
 FakeDisplay& FakeDisplayStack::display_engine() {

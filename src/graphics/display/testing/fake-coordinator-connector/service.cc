@@ -42,14 +42,8 @@ void FakeDisplayCoordinatorConnector::OpenCoordinatorWithListenerForPrimary(
       .is_virtcon = false,
       .coordinator_request = std::move(*request.coordinator()),
       .coordinator_listener_client_end = std::move(*request.coordinator_listener()),
-      .on_coordinator_opened =
-          [async_completer = completer.ToAsync()](zx_status_t status) mutable {
-            if (status == ZX_OK) {
-              async_completer.Reply(fit::ok());
-            } else {
-              async_completer.Reply(fit::error(status));
-            }
-          },
+      .on_coordinator_opened = [async_completer = completer.ToAsync()](
+                                   zx::result<> result) mutable { async_completer.Reply(result); },
   });
 }
 
@@ -60,14 +54,8 @@ void FakeDisplayCoordinatorConnector::OpenCoordinatorWithListenerForVirtcon(
       .is_virtcon = true,
       .coordinator_request = std::move(*request.coordinator()),
       .coordinator_listener_client_end = std::move(*request.coordinator_listener()),
-      .on_coordinator_opened =
-          [async_completer = completer.ToAsync()](zx_status_t status) mutable {
-            if (status == ZX_OK) {
-              async_completer.Reply(fit::ok());
-            } else {
-              async_completer.Reply(fit::error(status));
-            }
-          },
+      .on_coordinator_opened = [async_completer = completer.ToAsync()](
+                                   zx::result<> result) mutable { async_completer.Reply(result); },
   });
 }
 
@@ -111,7 +99,7 @@ void FakeDisplayCoordinatorConnector::ConnectClient(OpenCoordinatorRequest reque
   display_coordinator::ClientPriority client_priority =
       request.is_virtcon ? display_coordinator::ClientPriority::kVirtcon
                          : display_coordinator::ClientPriority::kPrimary;
-  zx_status_t status = state->fake_display_stack->coordinator_controller()->CreateClient(
+  zx::result<> result = state->fake_display_stack->ConnectCoordinatorClient(
       client_priority, std::move(request.coordinator_request),
       std::move(request.coordinator_listener_client_end),
       /*on_client_disconnected=*/
@@ -131,7 +119,7 @@ void FakeDisplayCoordinatorConnector::ConnectClient(OpenCoordinatorRequest reque
           }
         });
       });
-  request.on_coordinator_opened(status);
+  request.on_coordinator_opened(result);
 }
 
 }  // namespace display

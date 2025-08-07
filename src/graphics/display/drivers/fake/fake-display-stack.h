@@ -13,11 +13,14 @@
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
+#include <lib/fit/function.h>
 #include <lib/sync/cpp/completion.h>
+#include <lib/zx/result.h>
 
 #include <memory>
 #include <optional>
 
+#include "src/graphics/display/drivers/coordinator/client-priority.h"
 #include "src/graphics/display/drivers/coordinator/controller.h"
 #include "src/graphics/display/drivers/fake/fake-display.h"
 #include "src/graphics/display/drivers/fake/sysmem-service-provider.h"
@@ -36,13 +39,15 @@ class FakeDisplayStack {
   ~FakeDisplayStack();
 
   // Must not be called after SyncShutdown().
-  //
-  // The returned pointer is guaranteed to be non-null. The Controller is
-  // guaranteed to be alive until SyncShutdown() is called.
-  display_coordinator::Controller* coordinator_controller();
+  FakeDisplay& display_engine();
 
   // Must not be called after SyncShutdown().
-  FakeDisplay& display_engine();
+  zx::result<> ConnectCoordinatorClient(
+      display_coordinator::ClientPriority client_priority,
+      fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
+      fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
+          coordinator_listener_client_end,
+      fit::function<void()> on_client_disconnected);
 
   // Must not be called after SyncShutdown().
   //
