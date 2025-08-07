@@ -16,13 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <list>
-#include <memory>
 #include <span>
-#include <vector>
-
-#include <fbl/auto_lock.h>
-#include <fbl/mutex.h>
-#include <fbl/ring_buffer.h>
 
 #include "src/graphics/display/drivers/coordinator/client-id.h"
 #include "src/graphics/display/drivers/coordinator/client-priority.h"
@@ -37,8 +31,7 @@ namespace display_coordinator {
 
 class Controller;
 
-// ClientProxy manages interactions between its Client instance and the
-// controller. Methods on this class are thread safe.
+// Instances must be accessed on the Coordinator's driver dispatcher.
 class ClientProxy {
  public:
   // `client_id` is assigned by the Controller to distinguish clients.
@@ -62,7 +55,6 @@ class ClientProxy {
   // Must be called on the driver dispatcher.
   void TearDown();
 
-  // Requires holding `controller_.mtx()` lock.
   void OnDisplayVsync(display::DisplayId display_id, zx_instant_mono_t timestamp,
                       display::DriverConfigStamp driver_config_stamp);
   void OnDisplaysChanged(std::span<const display::DisplayId> added_display_ids,
@@ -76,10 +68,7 @@ class ClientProxy {
   // Must be called on the driver dispatcher.
   void AcknowledgeVsync(display::VsyncAckCookie ack_cookie);
 
-  void EnableCapture(bool enable) {
-    fbl::AutoLock lock(&mtx_);
-    enable_capture_ = enable;
-  }
+  void EnableCapture(bool enable);
   void OnClientDead();
 
   // This function restores client configurations that are not part of
@@ -105,11 +94,6 @@ class ClientProxy {
   // greater than existing pending controller stamps.
   void UpdateConfigStampMapping(ConfigStampPair stamps);
 
-  void CloseForTesting();
-
-  // Fired after the FIDL client is unbound.
-  sync_completion_t* FidlUnboundCompletionForTesting();
-
   // Define these constants here so we can access them in tests.
 
   // At the moment, maximum image handles returned by any driver is 4 which is
@@ -119,18 +103,16 @@ class ClientProxy {
   static constexpr uint32_t kMaxImageHandles = 8;
 
  private:
-  void DrainVsyncQueue() __TA_REQUIRES(&mtx_);
+  void DrainVsyncQueue();
 
-  fbl::Mutex mtx_;
   Controller& controller_;
 
   Client handler_;
-  bool enable_capture_ __TA_GUARDED(&mtx_) = false;
+  bool enable_capture_ = false;
 
-  fbl::Mutex task_mtx_;
-  std::vector<std::unique_ptr<async::Task>> client_scheduled_tasks_ __TA_GUARDED(task_mtx_);
+  std::vector<std::unique_ptr<async::Task>> client_scheduled_tasks_;
 
-  ClientVsyncQueue vsync_queue_ __TA_GUARDED(mtx_);
+  ClientVsyncQueue vsync_queue_;
 
   fit::function<void()> on_client_disconnected_;
 

@@ -1603,8 +1603,6 @@ void Client::TearDown(zx_status_t epitaph) {
   collection_map_.clear();
 }
 
-void Client::TearDownForTesting() { valid_ = false; }
-
 bool Client::CleanUpAllImages() {
   // Clean up any layer state associated with the images.
   bool current_config_changed = [&] {

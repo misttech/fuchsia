@@ -18,12 +18,9 @@
 #include <zircon/types.h>
 
 #include <algorithm>
-#include <memory>
 #include <span>
 
 #include <fbl/alloc_checker.h>
-#include <fbl/auto_lock.h>
-#include <fbl/mutex.h>
 #include <fbl/string_printf.h>
 
 #include "src/graphics/display/drivers/coordinator/client-id.h"
@@ -39,16 +36,11 @@
 
 namespace display_coordinator {
 
-namespace {
-
-// TODO(https://fxbug.dev/353627964): Make `AssertHeld()` a member function of `fbl::Mutex`.
-void AssertHeld(fbl::Mutex& mutex) __TA_ASSERT(mutex) {
-  ZX_DEBUG_ASSERT(mtx_trylock(mutex.GetInternal()) == thrd_busy);
-}
-
-}  // namespace
-
 void ClientProxy::SetOwnership(bool is_owner) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
+  is_owner_property_.Set(is_owner);
+
   fbl::AllocChecker ac;
   auto task = fbl::make_unique_checked<async::Task>(&ac);
   if (!ac.check()) {
@@ -62,14 +54,12 @@ void ClientProxy::SetOwnership(bool is_owner) {
       client_handler->SetOwnership(is_owner);
     }
     // Update `client_scheduled_tasks_`.
-    fbl::AutoLock task_lock(&task_mtx_);
     auto it = std::find_if(client_scheduled_tasks_.begin(), client_scheduled_tasks_.end(),
                            [&](std::unique_ptr<async::Task>& t) { return t.get() == task; });
     // Current task must have been added to the list.
     ZX_DEBUG_ASSERT(it != client_scheduled_tasks_.end());
     client_scheduled_tasks_.erase(it);
   });
-  fbl::AutoLock task_lock(&task_mtx_);
   if (task->Post(controller_.driver_dispatcher()->async_dispatcher()) == ZX_OK) {
     client_scheduled_tasks_.push_back(std::move(task));
   }
@@ -77,11 +67,12 @@ void ClientProxy::SetOwnership(bool is_owner) {
 
 void ClientProxy::OnDisplaysChanged(std::span<const display::DisplayId> added_display_ids,
                                     std::span<const display::DisplayId> removed_display_ids) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
   handler_.OnDisplaysChanged(added_display_ids, removed_display_ids);
 }
 
 void ClientProxy::ReapplySpecialConfigs() {
-  AssertHeld(*controller_.mtx());
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
 
   zx::result<> result = controller_.engine_driver_client()->SetMinimumRgb(handler_.GetMinimumRgb());
   if (!result.is_ok()) {
@@ -90,6 +81,8 @@ void ClientProxy::ReapplySpecialConfigs() {
 }
 
 void ClientProxy::ReapplyConfig() {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
   fbl::AllocChecker ac;
   auto task = fbl::make_unique_checked<async::Task>(&ac);
   if (!ac.check()) {
@@ -103,22 +96,20 @@ void ClientProxy::ReapplyConfig() {
       client_handler->ReapplyConfig();
     }
     // Update `client_scheduled_tasks_`.
-    fbl::AutoLock task_lock(&task_mtx_);
     auto it = std::find_if(client_scheduled_tasks_.begin(), client_scheduled_tasks_.end(),
                            [&](std::unique_ptr<async::Task>& t) { return t.get() == task; });
     // Current task must have been added to the list.
     ZX_DEBUG_ASSERT(it != client_scheduled_tasks_.end());
     client_scheduled_tasks_.erase(it);
   });
-  fbl::AutoLock task_lock(&task_mtx_);
   if (task->Post(controller_.driver_dispatcher()->async_dispatcher()) == ZX_OK) {
     client_scheduled_tasks_.push_back(std::move(task));
   }
 }
 
 void ClientProxy::OnCaptureComplete() {
-  AssertHeld(*controller_.mtx());
-  fbl::AutoLock l(&mtx_);
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
   if (enable_capture_) {
     handler_.CaptureCompleted();
   }
@@ -126,7 +117,7 @@ void ClientProxy::OnCaptureComplete() {
 }
 
 void ClientProxy::AcknowledgeVsync(display::VsyncAckCookie ack_cookie) {
-  fbl::AutoLock lock(&mtx_);
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
 
   if (!vsync_queue_.Acknowledge(ack_cookie)) {
     fdf::error("Client passed incorrect VSync ack cookie: {}", ack_cookie.value());
@@ -136,7 +127,7 @@ void ClientProxy::AcknowledgeVsync(display::VsyncAckCookie ack_cookie) {
 
 void ClientProxy::OnDisplayVsync(display::DisplayId display_id, zx_instant_mono_t timestamp,
                                  display::DriverConfigStamp driver_config_stamp) {
-  AssertHeld(*controller_.mtx());
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
 
   display::ConfigStamp client_stamp = {};
   auto it =
@@ -152,23 +143,28 @@ void ClientProxy::OnDisplayVsync(display::DisplayId display_id, zx_instant_mono_
     pending_applied_config_stamps_.erase(pending_applied_config_stamps_.begin(), it);
   }
 
-  {
-    fbl::AutoLock lock(&mtx_);
-    vsync_queue_.Push(ClientVsyncQueue::Message{.display_id = display_id,
-                                                .timestamp = zx::time_monotonic(timestamp),
-                                                .config_stamp = client_stamp});
-    DrainVsyncQueue();
-  }
+  vsync_queue_.Push(ClientVsyncQueue::Message{.display_id = display_id,
+                                              .timestamp = zx::time_monotonic(timestamp),
+                                              .config_stamp = client_stamp});
+  DrainVsyncQueue();
 }
 
 void ClientProxy::DrainVsyncQueue() {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
   vsync_queue_.DrainUntilThrottled([&](const ClientVsyncQueue::Message& message,
                                        display::VsyncAckCookie ack_cookie) {
     handler_.NotifyVsync(message.display_id, message.timestamp, message.config_stamp, ack_cookie);
   });
 }
 
+void ClientProxy::EnableCapture(bool enable) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+  enable_capture_ = enable;
+}
+
 void ClientProxy::OnClientDead() {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT_MSG(on_client_disconnected_, "OnClientDead() called twice");
 
   // Stash any data members we need to access after the ClientProxy is deleted.
@@ -181,20 +177,15 @@ void ClientProxy::OnClientDead() {
 }
 
 void ClientProxy::UpdateConfigStampMapping(ConfigStampPair stamps) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(pending_applied_config_stamps_.empty() ||
                   pending_applied_config_stamps_.back().driver_stamp < stamps.driver_stamp);
+
   pending_applied_config_stamps_.push_back({
       .driver_stamp = stamps.driver_stamp,
       .client_stamp = stamps.client_stamp,
   });
 }
-
-sync_completion_t* ClientProxy::FidlUnboundCompletionForTesting() {
-  fbl::AutoLock<fbl::Mutex> lock(&mtx_);
-  return &fidl_unbound_completion_;
-}
-
-void ClientProxy::CloseForTesting() { handler_.TearDownForTesting(); }
 
 void ClientProxy::TearDown() {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
@@ -206,6 +197,8 @@ zx_status_t ClientProxy::Init(
     fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
         coordinator_listener_client_end) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
   node_ =
       parent_node->CreateChild(fbl::StringPrintf("client-%" PRIu64, handler_.id().value()).c_str());
   node_.RecordString("priority", DebugStringFromClientPriority(handler_.priority()));
@@ -236,6 +229,8 @@ zx::result<> ClientProxy::InitForTesting(
     fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
         coordinator_listener_client_end) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
   // `ClientProxy` created by tests may not have a full-fledged display engine.
   // The production client teardown logic doesn't work here so we replace it with a no-op unbound
   // callback instead.
@@ -255,6 +250,6 @@ ClientProxy::ClientProxy(Controller* controller, ClientPriority client_priority,
   ZX_DEBUG_ASSERT(on_client_disconnected_);
 }
 
-ClientProxy::~ClientProxy() {}
+ClientProxy::~ClientProxy() = default;
 
 }  // namespace display_coordinator

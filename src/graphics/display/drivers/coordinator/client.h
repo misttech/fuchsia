@@ -90,7 +90,6 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   void OnFenceFired(FenceReference* fence);
 
   void TearDown(zx_status_t epitaph);
-  void TearDownForTesting();
 
   bool IsValid() const { return valid_; }
   ClientId id() const { return id_; }
