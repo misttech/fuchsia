@@ -37,8 +37,8 @@ class IdkGeneratorTest(unittest.TestCase):
         "prebuild_info": {
             "library_name": "fuchsia.simple",
             "file_base": "fidl/fuchsia.simple",
-            "deps": [],
         },
+        "atom_deps": [],
         "atom_files": [],
         "is_stable": True,
         "api_area": "Unknown",
@@ -52,11 +52,11 @@ class IdkGeneratorTest(unittest.TestCase):
         "prebuild_info": {
             "library_name": "simple_cc_source",
             "file_base": "pkg/simple_cc_source",
-            "deps": [],
             "headers": [],
             "include_dir": "include",
             "sources": [],
         },
+        "atom_deps": [],
         "atom_files": [],
         "is_stable": True,
     }
@@ -188,11 +188,11 @@ class IdkGeneratorTest(unittest.TestCase):
                 "prebuild_info": {
                     "library_name": "test_cc_source",
                     "file_base": "pkg/test_cc_source",
-                    "deps": [self._SIMPLE_FIDL_LIBRARY_INFO["atom_label"]],
                     "headers": [],
                     "include_dir": "include",
                     "sources": [],
                 },
+                "atom_deps": [self._SIMPLE_FIDL_LIBRARY_INFO["atom_label"]],
                 "atom_files": [],
                 "is_stable": True,
             },
@@ -472,11 +472,11 @@ class IdkGeneratorTest(unittest.TestCase):
                 "prebuild_info": {
                     "library_name": "test_cc_source",
                     "file_base": "pkg/test_cc_source",
-                    "deps": [self._SIMPLE_FIDL_LIBRARY_INFO["atom_label"]],
                     "headers": [],
                     "include_dir": "include",
                     "sources": [],
                 },
+                "atom_deps": [self._SIMPLE_FIDL_LIBRARY_INFO["atom_label"]],
                 "atom_files": [],
                 "is_stable": True,
             },
@@ -617,8 +617,10 @@ class IdkGeneratorTest(unittest.TestCase):
                 "prebuild_info": {
                     "library_name": "fuchsia.test",
                     "file_base": "bind/fuchsia.test",
-                    "deps": [self._SIMPLE_CC_SOURCE_LIBRARY_INFO["atom_label"]],
                 },
+                "atom_deps": [
+                    self._SIMPLE_CC_SOURCE_LIBRARY_INFO["atom_label"]
+                ],
                 "atom_files": [],
                 "is_stable": True,
             },
@@ -672,11 +674,11 @@ sdk://pkg/test_bind must specify an API area. Valid areas: \\['Bluetooth', 'Comp
                 "prebuild_info": {
                     "library_name": "test_cc",
                     "file_base": "pkg/test_cc",
-                    "deps": [self._SIMPLE_DATA_INFO["atom_label"]],
                     "headers": [],
                     "include_dir": "include",
                     "sources": [],
                 },
+                "atom_deps": [self._SIMPLE_DATA_INFO["atom_label"]],
                 "atom_files": [],
                 "is_stable": True,
             },
@@ -703,11 +705,11 @@ sdk://pkg/test_bind must specify an API area. Valid areas: \\['Bluetooth', 'Comp
                 "prebuild_info": {
                     "library_name": "test_cc",
                     "file_base": "pkg/test_cc",
-                    "deps": [self._SIMPLE_DATA_INFO["atom_label"]],
                     "headers": [],
                     "include_dir": "include",
                     "sources": [],
                 },
+                "atom_deps": [self._SIMPLE_DATA_INFO["atom_label"]],
                 "atom_files": [],
                 "is_stable": True,
             },
@@ -732,8 +734,10 @@ sdk://pkg/test_bind must specify an API area. Valid areas: \\['Bluetooth', 'Comp
                 "prebuild_info": {
                     "library_name": "fuchsia.test",
                     "file_base": "fidl/fuchsia.test",
-                    "deps": [self._SIMPLE_CC_SOURCE_LIBRARY_INFO["atom_label"]],
                 },
+                "atom_deps": [
+                    self._SIMPLE_CC_SOURCE_LIBRARY_INFO["atom_label"]
+                ],
                 "atom_files": [],
                 "is_stable": True,
                 # API area is also missing.
@@ -816,9 +820,8 @@ sdk://pkg/fuchsia.simple must specify an API area. Valid areas: \\['Bluetooth', 
                     "dest": "data/data_with_deps/meta.json",
                     "value": {"name": "data_with_deps", "type": "data"},
                 },
-                "prebuild_info": {  # Data atoms shouldn't have deps
-                    "deps": [self._SIMPLE_FIDL_LIBRARY_INFO["atom_label"]],
-                },
+                # Data atoms shouldn't have deps
+                "atom_deps": [self._SIMPLE_FIDL_LIBRARY_INFO["atom_label"]],
                 "atom_files": [],
                 "is_stable": True,
             },

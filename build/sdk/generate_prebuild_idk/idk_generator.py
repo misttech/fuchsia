@@ -296,18 +296,9 @@ class PrebuildMap(object):
 
         """
         for atom_info in self._labels_map.values():
-            if atom_info["atom_type"] == "none":
-                # A noop atom, such as "zircon_sdk" or a package that is not
-                # supported in the current API level.
-                assert "prebuild_info" not in atom_info
-                continue
-            if "prebuild_info" not in atom_info:
-                # Atoms without prebuild info do not have deps.
-                continue
-
             atom_type = atom_info["atom_type"]
             all_deps = self.resolve_unique_labels(
-                atom_info["prebuild_info"].get("deps", {})
+                atom_info.get("atom_deps", [])
             )
             for dep_label in all_deps:
                 dep_atom = self._labels_map[self.resolve_label(dep_label)]
@@ -359,6 +350,7 @@ class PrebuildMap(object):
             #   "host_tool"
             #   "loadable_module"
             #   "sysroot"
+            assert "atom_deps" not in info
             return self.GetMetaResult(value, {}, {}, set())
 
         generator = {
@@ -383,7 +375,7 @@ class PrebuildMap(object):
     def _meta_for_fidl_library(self, info: AtomInfo) -> GetMetaResult:
         prebuild = info["prebuild_info"]
         fidl_sources = [f["dest"] for f in info["atom_files"]]
-        fidl_deps = self.resolve_unique_labels(prebuild.get("deps", {}))
+        fidl_deps = self.resolve_unique_labels(info.get("atom_deps", []))
         return self.GetMetaResult(
             {
                 "name": prebuild["library_name"],
@@ -401,7 +393,7 @@ class PrebuildMap(object):
     def _meta_for_bind_library(self, info: AtomInfo) -> GetMetaResult:
         prebuild = info["prebuild_info"]
         bind_sources = [f["dest"] for f in info["atom_files"]]
-        bind_deps = self.resolve_unique_labels(prebuild.get("deps", {}))
+        bind_deps = self.resolve_unique_labels(info.get("atom_deps", []))
         return self.GetMetaResult(
             {
                 "name": prebuild["library_name"],
@@ -416,11 +408,11 @@ class PrebuildMap(object):
         )
 
     def _meta_for_cc_source_library(self, info: AtomInfo) -> GetMetaResult:
-        prebuild = info["prebuild_info"]
-        all_deps = self.resolve_unique_labels(prebuild.get("deps", {}))
+        atom_deps = info.get("atom_deps", [])
+        all_deps = self.resolve_unique_labels(atom_deps)
 
         fidl_layers = collections.defaultdict(list)
-        for dep_label in get_unique_sequence(prebuild.get("deps", {})):
+        for dep_label in get_unique_sequence(atom_deps):
             dep_atom = self._labels_map[self.resolve_label(dep_label)]
             if dep_atom["atom_type"] != "fidl_library":
                 continue
@@ -434,6 +426,7 @@ class PrebuildMap(object):
             else:
                 assert f"Unexpected dependency label: {dep_label}"
 
+        prebuild = info["prebuild_info"]
         return self.GetMetaResult(
             {
                 "name": prebuild["library_name"],
@@ -500,7 +493,7 @@ class PrebuildMap(object):
                 variant["values"]["ifs"] = ifs_file
             variants.append(variant)
 
-        all_deps = self.resolve_unique_labels(prebuild.get("deps", {}))
+        all_deps = self.resolve_unique_labels(info.get("atom_deps", []))
         result = {
             "name": prebuild["library_name"],
             "root": prebuild["file_base"],
@@ -519,6 +512,7 @@ class PrebuildMap(object):
         return self.GetMetaResult(result, {}, {}, set())
 
     def _meta_for_version_history(self, info: AtomInfo) -> GetMetaResult:
+        assert "atom_deps" not in info
         prebuild = info["prebuild_info"]
         # prebuild contains enough information to generate the final version
         # history file  by calling a Python module function.
@@ -561,6 +555,7 @@ class PrebuildMap(object):
         )
 
     def _meta_for_companion_host_tool(self, info: AtomInfo) -> GetMetaResult:
+        assert "atom_deps" not in info
         prebuild = info["prebuild_info"]
         result = {
             "name": prebuild["name"],
@@ -635,7 +630,7 @@ class PrebuildMap(object):
 
         dart_deps = []
         fidl_deps = []
-        for dep_label in prebuild["deps"]:
+        for dep_label in info.get("atom_deps", []):
             dep_label = self.resolve_label(dep_label)
             dep_info = self._labels_map[dep_label]
             if dep_info["atom_type"] == "dart_library":
@@ -661,6 +656,7 @@ class PrebuildMap(object):
     def _meta_for_experimental_python_e2e_test(
         self, info: AtomInfo
     ) -> GetMetaResult:
+        assert "atom_deps" not in info
         prebuild = info["prebuild_info"]
 
         root = prebuild["file_base"]
@@ -712,6 +708,7 @@ class PrebuildMap(object):
         Unlike peer functions, the metadata for packages can only be generated
         after the Ninja build because the blob IDs are not predictable.
         """
+        assert "atom_deps" not in info
         prebuild = info["prebuild_info"]
 
         package_manifest_relative_path = prebuild["package_manifest"]
@@ -771,9 +768,11 @@ class PrebuildMap(object):
         )
 
     def _meta_for_noop(self, info: AtomInfo) -> GetMetaResult:
+        assert "atom_deps" not in info
         return self.GetMetaResult(None, {}, {}, set())
 
     def _meta_for_collection(self, info: AtomInfo) -> GetMetaResult:
+        assert "atom_deps" not in info
         prebuild = info["prebuild_info"]
         return self.GetMetaResult(
             {

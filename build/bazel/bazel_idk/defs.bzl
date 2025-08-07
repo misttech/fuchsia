@@ -648,9 +648,6 @@ def idk_cc_source_library(
             "include_dir": [include_dest],
             "sources": idk_metadata_sources,
             "headers": idk_metadata_headers,
-            # TODO(https://fxbug.dev/417304469): Standardize on using a common
-            # `idk_deps` for all atoms.
-            "deps": idk_deps,
             # TODO(https://fxbug.dev/417304469): Standardize on using `idk_name`
             # for all atoms.
             "library_name": [idk_name],

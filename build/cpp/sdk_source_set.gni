@@ -284,7 +284,6 @@ template("sdk_source_set") {
     include_dir = include_dest
     sources = sdk_metadata_sources
     headers = sdk_metadata_headers
-    deps = sdk_deps
     library_name = sdk_name
     file_base = sdk_root_path
   }

@@ -409,6 +409,10 @@ template("sdk_atom") {
         _cross_compiled_atom_types) {
       atom_label += "-${current_cpu}"
     }
+
+    if (defined(invoker.deps)) {
+      atom_deps = invoker.deps
+    }
   }
 
   assert(defined(invoker.api) == defined(invoker.api_contents),

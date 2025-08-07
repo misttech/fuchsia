@@ -54,7 +54,6 @@ template("_bind_library_sdk") {
     sdk_deps += [ sdk_dep ]
   }
   _prebuild_info = {
-    deps = all_deps
     library_name = library_name
     file_base = file_base
   }

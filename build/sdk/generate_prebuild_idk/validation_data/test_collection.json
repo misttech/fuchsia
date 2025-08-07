@@ -140,10 +140,10 @@
     "is_stable": true,
     "atom_type": "cc_source_library",
     "category": "partner",
-    "prebuild_info": {
-      "deps": [
+    "atom_deps": [
 
-      ],
+    ],
+    "prebuild_info": {
       "file_base": "pkg/stdcompat",
       "headers": [
         "pkg/stdcompat/include/lib/stdcompat/algorithm.h",
@@ -255,10 +255,10 @@
     "is_stable": true,
     "atom_type": "cc_source_library",
     "category": "partner",
+    "atom_deps": [
+      "//sdk/lib/stdcompat:stdcompat_sdk"
+    ],
     "prebuild_info": {
-      "deps": [
-        "//sdk/lib/stdcompat:stdcompat_sdk"
-      ],
       "file_base": "pkg/fit",
       "headers": [
         "pkg/fit/include/lib/fit/defer.h",
@@ -336,12 +336,12 @@
     "atom_type": "cc_source_library",
     "category": "partner",
     "is_stable": true,
+    "atom_deps": [
+      "//sdk/lib/fit:fit_sdk",
+      "//src/zircon/lib/zircon:zircon_sdk",
+      "//sdk/lib/fit:fit_sdk"
+    ],
     "prebuild_info": {
-      "deps": [
-        "//sdk/lib/fit:fit_sdk",
-        "//src/zircon/lib/zircon:zircon_sdk",
-        "//sdk/lib/fit:fit_sdk"
-      ],
       "file_base": "pkg/async",
       "headers": [
         "pkg/async/include/lib/async/dispatcher.h",
@@ -442,6 +442,9 @@
     "is_stable": true,
     "atom_type": "cc_prebuilt_library",
     "category": "partner",
+    "atom_deps": [
+
+    ],
     "prebuild_info": {
       "atom_label": "//sdk/lib/fdio:fdio",
       "binaries": {
@@ -453,9 +456,6 @@
         "ifs": "pkg/fdio/fdio.ifs",
         "link_lib": "arch/x64/lib/libfdio.so"
       },
-      "deps": [
-
-      ],
       "file_base": "pkg/fdio",
       "format": "shared",
       "generator_label": "//sdk/lib/fdio:fdio(//build/toolchain/fuchsia:x64-shared)",
@@ -509,10 +509,10 @@
     "atom_type": "cc_source_library",
     "category": "partner",
     "is_stable": true,
+    "atom_deps": [
+      "//sdk/lib/fdio:fdio_sdk"
+    ],
     "prebuild_info": {
-      "deps": [
-        "//sdk/lib/fdio:fdio_sdk"
-      ],
       "file_base": "pkg/driver_fake_object_cpp",
       "headers": [
         "pkg/driver_fake_object_cpp/include/lib/driver/fake-object/cpp/fake-object.h"
@@ -558,6 +558,9 @@
     "atom_type": "cc_prebuilt_library",
     "category": "partner",
     "is_stable": true,
+    "atom_deps": [
+      "//sdk/lib/async:async_sdk"
+    ],
     "prebuild_info": {
       "atom_label": "//sdk/lib/svc:svc",
       "binaries": {
@@ -569,9 +572,6 @@
         "ifs": "obj/x64-api-NEXT/lib/libsvc.ifs",
         "link_lib": "obj/x64-api-NEXT/lib/libsvc.so"
       },
-      "deps": [
-        "//sdk/lib/async:async_sdk"
-      ],
       "file_base": "pkg/svc",
       "format": "shared",
       "generator_label": "//sdk/lib/svc:svc(//build/toolchain/fuchsia:x64-shared)",
@@ -608,10 +608,10 @@
     "is_stable": true,
     "atom_type": "fidl_library",
     "category": "partner",
-    "prebuild_info": {
-      "deps": [
+    "atom_deps": [
 
-      ],
+    ],
+    "prebuild_info": {
       "file_base": "fidl/zx",
       "library_name": "zx"
     }
@@ -634,10 +634,10 @@
     "is_stable": true,
     "atom_type": "fidl_library",
     "category": "partner",
+    "atom_deps": [
+      "//zircon/vdso/zx:zx_sdk"
+    ],
     "prebuild_info": {
-      "deps": [
-        "//zircon/vdso/zx:zx_sdk"
-      ],
       "file_base": "fidl/fuchsia.unknown",
       "library_name": "fuchsia.unknown"
     }
@@ -688,11 +688,11 @@
     "is_stable": true,
     "atom_type": "fidl_library",
     "category": "partner",
+    "atom_deps": [
+      "//sdk/fidl/fuchsia.unknown:fuchsia.unknown_sdk",
+      "//zircon/vdso/zx:zx_sdk"
+    ],
     "prebuild_info": {
-      "deps": [
-        "//sdk/fidl/fuchsia.unknown:fuchsia.unknown_sdk",
-        "//zircon/vdso/zx:zx_sdk"
-      ],
       "file_base": "fidl/fuchsia.io",
       "library_name": "fuchsia.io"
     }
@@ -715,11 +715,11 @@
     "atom_type": "fidl_library",
     "category": "prebuilt",
     "is_stable": true,
+    "atom_deps": [
+      "//sdk/fidl/fuchsia.io:fuchsia.io_sdk",
+      "//sdk/fidl/fuchsia.unknown:fuchsia.unknown_sdk"
+    ],
     "prebuild_info": {
-      "deps": [
-        "//sdk/fidl/fuchsia.io:fuchsia.io_sdk",
-        "//sdk/fidl/fuchsia.unknown:fuchsia.unknown_sdk"
-      ],
       "file_base": "fidl/fuchsia.hardware.pty",
       "library_name": "fuchsia.hardware.pty"
     }
@@ -821,10 +821,10 @@
     "is_stable": true,
     "atom_type": "bind_library",
     "category": "partner",
-    "prebuild_info": {
-      "deps": [
+    "atom_deps": [
 
-      ],
+    ],
+    "prebuild_info": {
       "file_base": "bind/fuchsia.serial",
       "library_name": "fuchsia.serial"
     }
@@ -1074,10 +1074,10 @@
     "is_stable": true,
     "atom_type": "dart_library",
     "category": "partner",
-    "prebuild_info": {
-      "deps": [
+    "atom_deps": [
 
-      ],
+    ],
+    "prebuild_info": {
       "file_base": "dart/sl4f",
       "library_name": "sl4f",
       "null_safe": false,

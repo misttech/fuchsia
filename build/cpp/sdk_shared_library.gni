@@ -446,7 +446,6 @@ template("sdk_shared_library") {
       debug_lib = debug_lib
       ifs = packaged_ifs_file
     }
-    deps = sdk_deps
   }
 
   # LINT.ThenChange(//build/sdk/idk_prebuild_manifest.gni)

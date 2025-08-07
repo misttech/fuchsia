@@ -39,6 +39,11 @@ template("idk_prebuild_manifest") {
   #     Without 'source' or 'source_prebuild_info' values. See documentation
   #     in //build/sdk/sdk_atom.gni for schema details.
   #
+  #   atom_deps (list[string])
+  #     List of labels to direct atom dependencies for the current atom.
+  #     Supported only for the following library types: bind, C++ prebuilt,
+  #     C++ source, Dart, FIDL.
+  #
   #   category (string)
   #     Describes the availability of the element. See sdk_atom.gni.
   #
@@ -73,9 +78,6 @@ template("idk_prebuild_manifest") {
   #     sources (list[string])
   #       List of C++ source file paths for this atom, relative to the SDK
   #       export directory.
-  #
-  #     deps (list[string])
-  #       List of labels to direct atom dependencies for the current atom.
   #
   #     library_name (string)
   #       Name of the library in the IDK (e.g. "magma_common").
@@ -128,7 +130,6 @@ template("idk_prebuild_manifest") {
   #           Only for "shared" prebuilts. Path of the IFS file for the prebuilt
   #           library, relative to SDK export dir (e.g. "pkg/fdio/fdio.ifs")
   #
-  #     deps (list[string])
   #     include_dir (string)
   #     headers (list[string])
   #     library_name (string)

@@ -314,7 +314,6 @@ template("sdk_static_library") {
       arch = target_cpu
       link_lib = link_lib
     }
-    deps = sdk_deps
   }
 
   # LINT.ThenChange(//build/sdk/idk_prebuild_manifest.gni)
