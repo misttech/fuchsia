@@ -160,7 +160,16 @@ size_t crashlog_to_string(ktl::span<char> target, zircon_crash_reason_t reason) 
   if (static_cast<bool>(regions & RenderRegion::DebugInfo)) {
     PrintSymbolizerContext(&outfile);
 
-    // Note; it is the architecture specific implementation which is responsible
+    // The presence of "REGISTERS" is load-bearing; we have crashlog tests that
+    // that explicitly parse for it.
+    // LINT.IfChange
+    fprintf(&outfile, "REGISTERS\n");
+    // LINT.ThenChange(
+    //     //src/tests/kernel_crashlog/kernel_crashlog_test.go,
+    //     //zircon/kernel/lib/crashlog/test/crashlog-tests.cc
+    // )
+
+    // Note: it is the architecture specific implementation which is responsible
     // for determining if the crashlog registers are valid, and what (if
     // anything) to print.
     arch_render_crashlog_registers(outfile, g_crashlog.regs);

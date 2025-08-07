@@ -18,14 +18,13 @@ ktl::atomic<bool> gSuppressELRDump{false};
 }
 
 void arch_render_crashlog_registers(FILE& target, const crashlog_regs_t& regs) {
-  if (regs.iframe == nullptr) {
-    fprintf(&target, "ARM64 REGISTERS: missing\n");
+  if (!regs.iframe) {
+    fprintf(&target, "missing\n");
     return;
   }
 
   fprintf(&target,
           // clang-format off
-          "REGISTERS (v1.0)\n"
           "  x0: %#18" PRIx64 "\n"
           "  x1: %#18" PRIx64 "\n"
           "  x2: %#18" PRIx64 "\n"

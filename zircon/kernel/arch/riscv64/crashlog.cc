@@ -10,14 +10,13 @@
 #include <arch/crashlog.h>
 
 void arch_render_crashlog_registers(FILE& target, const crashlog_regs_t& regs) {
-  if (regs.iframe == nullptr) {
-    fprintf(&target, "RISCV REGISTERS: missing\n");
+  if (!regs.iframe) {
+    fprintf(&target, "missing\n");
     return;
   }
 
   fprintf(&target,
           // clang-format off
-          "REGISTERS (v1.0)\n"
           "  pc: %#18" PRIx64 "\n"
           "  ra: %#18" PRIx64 "\n"
           "  sp: %#18" PRIx64 "\n"
