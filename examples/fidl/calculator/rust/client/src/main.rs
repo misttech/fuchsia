@@ -95,6 +95,7 @@ mod tests {
         Ok(())
     }
 
+    // LINT.IfChange
     #[fuchsia::test]
     async fn add_test() {
         let (proxy, stream) = create_proxy_and_stream::<CalculatorMarker>();
@@ -114,6 +115,7 @@ mod tests {
            }
         };
     }
+    // LINT.ThenChange(//docs/development/debugger/tutorial-test.md)
 
     #[fuchsia::test]
     async fn subtract_test() {

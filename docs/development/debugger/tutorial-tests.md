@@ -1,4 +1,4 @@
-# Tutorial: Debug tests using zxdb
+[#](#) Tutorial: Debug tests using zxdb
 
 This tutorial walks through a debugging workflow using the `fx test` command
 and the Fuchsia debugger (`zxdb`).
@@ -22,30 +22,37 @@ the `fx test` command with `zxdb`.
   processes are supported.
 
   Here is an example based on some sample
-  [rust test code][archivist-test-example]:
+  [rust test code][rust-calculator-test-example]:
 
   Note: This code is a modified version of the original code and is abbreviated
   for brevity.
 
   ```rust
-  ...
-  let mut log_helper2 = LogSinkHelper::new(&directory);
-  log_helper2.write_log("my msg1");
-  log_helper.write_log("my msg2");
+  #[fuchsia::test]
+  async fn add_test() {
+      let (proxy, stream) = create_proxy_and_stream::<CalculatorMarker>();
 
-  let mut expected = vec!["my msg1".to_owned(), "my msg3".to_owned()];
-  expected.sort();
-  let mut actual = vec![recv_logs.next().await.unwrap(), recv_logs.next().await.unwrap()];
-  actual.sort();
-
-  assert_eq!(expected, actual);
-  ...
+      // Run two tasks: The calculator_fake & the calculator_line method we're interested
+      // in testing.
+      let fake_task = calculator_fake(stream).fuse();
+      let calculator_line_task = calculator_line("1 + 2", &proxy).fuse();
+      futures::pin_mut!(fake_task, calculator_line_task);
+      futures::select! {
+          actual = calculator_line_task => {
+              let actual = actual.expect("Calculator didn't return value");
+              assert_eq!(actual, 5.0);
+          },
+          _ = fake_task => {
+              panic!("Fake should never complete.")
+          }
+      };
+  }
   ```
 
   You can add this test target to your build graph with `fx set`:
 
   ```posix-terminal
-  fx set workbench_eng.x64 --with-test //src/diagnostics/archivist:tests
+  fx set workbench_eng.x64 --with-test //examples/fidl/calculator/rust/client:hermetic_tests
   ```
 
 * {C++}
@@ -93,7 +100,7 @@ the `fx test` command with `zxdb`.
   Execute the tests with the `fx test --break-on-failure` command, for example:
 
   ```posix-terminal
-  fx test -o --break-on-failure archivist-unittests
+  fx test -o --break-on-failure calculator-client-rust-unittests
   ```
 
   The output looks like:
@@ -101,32 +108,35 @@ the `fx test` command with `zxdb`.
   ```none {:.devsite-disable-click-to-copy}
   <...fx test startup...>
 
-  Running 1 tests
-
-  Starting: fuchsia-pkg://fuchsia.com/archivist-tests#meta/archivist-unittests.cm
-  Command: fx ffx test run --max-severity-logs WARN --break-on-failure fuchsia-pkg://fuchsia.com/archivist-tests?hash=9a531e48fe82d86edef22f86f7e9b819d18a7d678f0823912d9224dd91f8926f#meta/archivist-unittests.cm
-  Running test 'fuchsia-pkg://fuchsia.com/archivist-tests?hash=9a531e48fe82d86edef22f86f7e9b819d18a7d678f0823912d9224dd91f8926f#meta/archivist-unittests.cm'
-
-  [RUNNING] archivist::tests::can_log_and_retrieve_log
-  [101430.272555][5631048][5631050][<root>][can_log_and_retrieve_log] WARN: Failed to create event source for log sink requests err=Error connecting to protocol path: /events/log_sink_requested_event_stream
-
-  Caused by:
-      NOT_FOUND
-  [101430.277339][5631048][5631050][<root>][can_log_and_retrieve_log] WARN: Failed to create event source for InspectSink requests err=Error connecting to protocol path: /events/inspect_sink_requested_event_stream
-  [101430.336160][5631048][5631050][<root>][can_log_and_retrieve_log] INFO: archivist: Entering core loop.
-  [101430.395986][5631048][5631050][<root>][can_log_and_retrieve_log] ERROR: [src/lib/diagnostics/log/rust/src/lib.rs(62)] PANIC info=panicked at ../../src/diagnostics/archivist/src/archivist.rs:544:9:
+  ...
+  [RUNNING]       tests::add_test
+  [RUNNING]       tests::divide_test
+  [RUNNING]       tests::multiply_test
+  [PASSED]        parse::tests::parse_expression
+  [RUNNING]       tests::pow_test
+  [PASSED]        parse::tests::parse_expression_with_negative_numbers
+  [RUNNING]       tests::subtract_test
+  [PASSED]        parse::tests::parse_expression_with_multiplication
+  [PASSED]        parse::tests::parse_expression_with_subtraction
+  [PASSED]        parse::tests::parse_expression_with_pow
+  [PASSED]        parse::tests::parse_operators
+  [01234.052188][218417][218422][<root>][add_test] ERROR: [examples/fidl/calculator/rust/client/src/main.rs(110)] PANIC info=panicked at ../../examples/fidl/calculato
+  r/rust/client/src/main.rs:110:17:
   assertion `left == right` failed
-    left: ["my msg1", "my msg2"]
-   right: ["my msg1", "my msg3"]
-
-  👋 zxdb is loading symbols to debug test failure in archivist-unittests.cm, please wait.
-  ⚠️  test failure in archivist-unittests.cm, type `frame` or `help` to get started.
-    536         actual.sort();
-    537
-  ▶ 538         assert_eq!(expected, actual);
-    539
-    540         // can log after killing log sink proxy
-  🛑 process 9 archivist_lib_lib_test::archivist::tests::can_log_and_retrieve_log::test_entry_point::λ(core::task::wake::Context*) • archivist.rs:538
+    left: 3.0
+   right: 5.0
+  [PASSED]        parse::tests::parse_expression_with_division
+  [PASSED]        tests::multiply_test
+  [PASSED]        tests::divide_test
+  ...
+    👋 zxdb is loading symbols to debug test failure in calculator-client-rust-unittest, please wait.
+  ⚠  test failure in calculator-client-rust-unittest, type `frame` or `help` to get started.
+     108            actual = calculator_line_task => {
+     109                 let actual = actual.expect("Calculator didn't return value");
+   ▶ 110                 assert_eq!(actual, 5.0);
+     111            },
+     112            _ = fake_task => {
+  🛑 process 8 calculator_client_bin_test::tests::add_test::test_entry_point::λ(core::task::wake::Context*) • main.rs:110
   [zxdb]
   ```
 
@@ -134,7 +144,39 @@ the `fx test` command with `zxdb`.
   the rust test runner runs test cases in
   [parallel by default][rust-test-runner-parallel-default]. You can avoid
   this by using the `--parallel-cases` option with `fx test`, for example:
-  `fx test --parallel-cases 1 --break-on-failure archivist-unittests`
+  `fx test --parallel-cases 1 --break-on-failure
+  calculator-client-rust-unittests`. This flag is not required for the tools to
+  function, but it can be helpful for debugging as it prevents the output of
+  multiple tests from being interleaved, making it easier to read.
+
+  With that option, the output looks like this:
+
+  ```none {:.devsite-disable-click-to-copy}
+  fx test --parallel-cases 1 -o --break-on-failure calculator-client-rust-unittests
+
+  ...
+  [RUNNING]       parse::tests::parse_operators
+  [PASSED]        parse::tests::parse_operators
+  [RUNNING]       tests::add_test
+  [01391.909144][249125][249127][<root>][add_test] ERROR: [examples/fidl/calculator/rust/client/src/main.rs(110)] PANIC info=panicked at ../../examples/fidl/calculato
+  r/rust/client/src/main.rs:110:17:
+  assertion `left == right` failed
+    left: 3.0
+   right: 5.0
+
+  Status: [duration: 5.0s]
+    Running 1 tests                        [                                                                                                        ]            0.0%
+      fuchsia-pkg://fuchsia.com/calculator-client-rust-unittests#meta/calculator-client-rust-unittests.cm                            [0.5s]
+  👋 zxdb is loading symbols to debug test failure in calculator-client-rust-unittest, please wait.
+  ⚠  test failure in calculator-client-rust-unittest, type `frame` or `help` to get started.
+     108            actual = calculator_line_task => {
+     109                 let actual = actual.expect("Calculator didn't return value");
+   ▶ 110                 assert_eq!(actual, 5.0);
+     111            },
+     112            _ = fake_task => {
+  🛑 process 2 calculator_client_bin_test::tests::add_test::test_entry_point::λ(core::task::wake::Context*) • main.rs:110
+  [zxdb]
+  ```
 
 * {C++}
 
@@ -177,23 +219,22 @@ the `fx test` command with `zxdb`.
 
   ```none {: .devsite-terminal data-terminal-prefix="[zxdb]" }
   list
-    533         expected.sort();
-    534
-    535         let mut actual = vec![recv_logs.next().await.unwrap(), recv_logs.next().await.unwrap()];
-    536         actual.sort();
-    537
-  ▶ 538         assert_eq!(expected, actual);
-    539
-    540         // can log after killing log sink proxy
-    541         log_helper.kill_log_sink();
-    542         log_helper.write_log("my msg1");
-    543         log_helper.write_log("my msg2");
-    544
-    545         assert_eq!(
-    546             expected,
-    547             vec! {recv_logs.next().await.unwrap(),recv_logs.next().await.unwrap()}
-    548         );
-  [zxdb]
+    105         let calculator_line_task = calculator_line("1 + 2", &proxy).fuse();
+    106         futures::pin_mut!(fake_task, calculator_line_task);
+    107         futures::select! {
+    108            actual = calculator_line_task => {
+    109                 let actual = actual.expect("Calculator didn't return value");
+  ▶ 110                 assert_eq!(actual, 5.0);
+    111            },
+    112            _ = fake_task => {
+    113                panic!("Fake should never complete.")
+    114            }
+    115         };
+    116     }
+    117
+    118     #[fuchsia::test]
+    119     async fn subtract_test() {
+    120         let (proxy, stream) = create_proxy_and_stream::<CalculatorMarker>()
   ```
 
   You can also examine the entire call stack with `frame`, for example:
@@ -201,114 +242,33 @@ the `fx test` command with `zxdb`.
   ```none {: .devsite-terminal data-terminal-prefix="[zxdb]" }
   frame
     0…12 «Rust library» (-r expands)
-    13 std::panicking::begin_panic_handler(…) • library/std/src/panicking.rs:645
-    14 core::panicking::panic_fmt(…) • library/core/src/panicking.rs:72
-    15 core::panicking::assert_failed_inner(…) • library/core/src/panicking.rs:402
-    16 core::panicking::assert_failed<…>(…) • /b/s/w/ir/x/w/fuchsia-third_party-rust/library/core/src/panicking.rs:357
-  ▶ 17 archivist_lib_lib_test::archivist::tests::can_log_and_retrieve_log::test_entry_point::λ(…) • archivist.rs:544
-    18 core::future::future::«impl»::poll<…>(…) • future/future.rs:123
-    19 fuchsia_async::test_support::«impl»::run_singlethreaded::λ::λ(…) • test_support.rs:26
-    20 fuchsia_async::test_support::«impl»::run_singlethreaded::λ::λ(…) • test_support.rs:121
-    21 fuchsia_async::atomic_future::«impl»::poll<…>(…) • atomic_future.rs:78
-    22 fuchsia_async::atomic_future::AtomicFuture::try_poll(…) • atomic_future.rs:223
-    23 fuchsia_async::runtime::fuchsia::executor::common::Inner::try_poll(…) • executor/common.rs:588
-    24 fuchsia_async::runtime::fuchsia::executor::common::Inner::poll_ready_tasks(…) • executor/common.rs:148
-    25 fuchsia_async::runtime::fuchsia::executor::common::Inner::worker_lifecycle<…>(…) • executor/common.rs:448
-    26 fuchsia_async::runtime::fuchsia::executor::local::LocalExecutor::run<…>(…) • executor/local.rs:100
-    27 fuchsia_async::runtime::fuchsia::executor::local::LocalExecutor::run_singlethreaded<…>(…) • executor/local.rs:68
-    28 fuchsia_async::test_support::«impl»::run_singlethreaded::λ() • test_support.rs:119
-    29 fuchsia_async::test_support::Config::in_parallel(…) • test_support.rs:214
-    30 fuchsia_async::test_support::«impl»::run_singlethreaded(…) • test_support.rs:116
-    31 fuchsia_async::test_support::run_singlethreaded_test<…>(…) • test_support.rs:226
-    32 fuchsia::test_singlethreaded<…>(…) • fuchsia/src/lib.rs:188
-    33 archivist_lib_lib_test::archivist::tests::can_log_and_retrieve_log() • archivist.rs:519
-    34 archivist_lib_lib_test::archivist::tests::can_log_and_retrieve_log::λ(…) • archivist.rs:520
-    35 core::ops::function::FnOnce::call_once<…>(…) • /b/s/w/ir/x/w/fuchsia-third_party-rust/library/core/src/ops/function.rs:250
-    36 core::ops::function::FnOnce::call_once<…>(…) • library/core/src/ops/function.rs:250 (inline)
-    37 test::__rust_begin_short_backtrace<…>(…) • library/test/src/lib.rs:621
-    38 test::run_test_in_spawned_subprocess(…) • library/test/src/lib.rs:749
-    39 test::test_main_static_abort(…) • library/test/src/lib.rs:197
-    40 archivist_lib_lib_test::main() • archivist/src/lib.rs:1
-    41…58 «Rust startup» (-r expands)
-  [zxdb]
+    13 std::panicking::begin_panic_handler(…) • library/std/src/panicking.rs:697
+    14 core::panicking::panic_fmt(…) • library/core/src/panicking.rs:75
+    15 core::panicking::assert_failed_inner(…) • library/core/src/panicking.rs:448
+    16 core::panicking::assert_failed<…>(…) • fuchsia-third_party-rust/library/core/src/panicking.rs:403
+  ▶ 17 calculator_client_bin_test::tests::add_test::test_entry_point::λ(…) • main.rs:110
+    18 core::future::future::«impl»::poll<…>(…) • future/future.rs:133
+    19…44 «Polled event in fuchsia::test_singlethreaded» (-r expands)
+    45 calculator_client_bin_test::tests::add_test() • main.rs:98
+    46 calculator_client_bin_test::tests::add_test::λ(…) • main.rs:99
+    47 core::ops::function::FnOnce::call_once<…>(…) • fuchsia-third_party-rust/library/core/src/ops/function.rs:253
+    48 core::ops::function::FnOnce::call_once<…>(…) • library/core/src/ops/function.rs:253 (inline)
+    49…70 «Rust test startup» (-r expands)
   ```
 
   Or, when in an asynchronous context, you can use `async-backtrace`, for example:
 
-  ```none {:.devsite-disable-click-to-copy}
-  [zxdb] async-backtrace
-  Task(id = 0)
-  └─ fuchsia_async::test_support::«impl»::run_singlethreaded::λ • test_support.rs:122
-     └─ fuchsia_async::test_support::«impl»::run_singlethreaded::λ • test_support.rs:27
-        └─ archivist_lib_lib_test::archivist::tests::can_log_and_retrieve_log::test_entry_point • archivist.rs:546
-           └─ futures_util::stream::stream::next::Next
-  Task(id = 1)
-  └─ diagnostics_log::fuchsia::filter::«impl»::listen_to_interest_changes • fuchsia/filter.rs:77
-     └─ fidl::client::QueryResponseFut
-  Task(id = 2)
-  └─ archivist_lib_lib_test::logs::repository::«impl»::new • logs/repository.rs:433
-     └─ futures_util::stream::stream::next::Next
-  Task(id = 3)
-  └─ archivist_lib_lib_test::logs::repository::«impl»::process_removal_of_components • logs/repository.rs:232
-     └─ futures_util::stream::stream::next::Next
-  Task(id = 4)
-  └─ archivist_lib_lib_test::logs::servers::log_settings::«impl»::new • log_settings.rs:33
-     └─ futures_util::stream::stream::for_each_concurrent::ForEachConcurrent
-  Task(id = 5)
-  └─ archivist_lib_lib_test::inspect::servers::inspect_sink::«impl»::new • inspect_sink.rs:42
-     └─ futures_util::stream::stream::for_each_concurrent::ForEachConcurrent
-  Task(id = 6)
-  └─ archivist_lib_lib_test::logs::servers::log_settings::«impl»::new • log_settings.rs:33
-     └─ futures_util::stream::stream::for_each_concurrent::ForEachConcurrent
-  Task(id = 7)
-  └─ archivist_lib_lib_test::logs::servers::log_settings::«impl»::new • log_settings.rs:33
-     └─ futures_util::stream::stream::for_each_concurrent::ForEachConcurrent
-  Task(id = 8)
-  └─ archivist_lib_lib_test::logs::servers::log_settings::«impl»::new • log_settings.rs:33
-     └─ futures_util::stream::stream::for_each_concurrent::ForEachConcurrent
-  Task(id = 9)
-  └─ archivist_lib_lib_test::archivist::tests::run_archivist::λ • archivist.rs:518
-     └─ archivist_lib_lib_test::archivist::«impl»::run • archivist.rs:342
-        └─ futures_util::future::join::Join3
-  Task(id = 10)
-  └─ archivist_lib_lib_test::logs::testing::start_listener • logs/testing.rs:592
-     └─ fuchsia_syslog_listener::run_log_listener_with_proxy • syslog-listener/src/lib.rs:78
-        └─ fuchsia_syslog_listener::log_listener • syslog-listener/src/lib.rs:34
-           └─ futures_util::stream::try_stream::try_next::TryNext
-  Task(id = 11)
-  └─ inspect_runtime::service::spawn_tree_server_with_stream • runtime/rust/src/service.rs:80
-     └─ inspect_runtime::service::handle_request_stream • runtime/rust/src/service.rs:28
-        └─ futures_util::stream::try_stream::try_next::TryNext
-  Task(id = 12)
-  └─ archivist_lib_lib_test::archivist::«impl»::run::λ • archivist.rs:293
-     └─ archivist_lib_lib_test::events::router::«impl»::start • router.rs:96
-        └─ futures_util::stream::stream::next::Next
-  Task(id = 14)
-  └─ archivist_lib_lib_test::logs::servers::log::«impl»::spawn • log.rs:46
-     └─ archivist_lib_lib_test::logs::servers::log::«impl»::handle_requests • log.rs:78
-        └─ futures_util::stream::stream::next::Next
-  Task(id = 15)
-  └─ archivist_lib_lib_test::logs::listener::«impl»::spawn • logs/listener.rs:83
-     └─ archivist_lib_lib_test::logs::listener::«impl»::run • logs/listener.rs:106
-        └─ archivist_lib_lib_test::logs::listener::«impl»::send_new_logs • logs/listener.rs:123
-           └─ archivist_lib_lib_test::logs::listener::«impl»::send_log • logs/listener.rs:181
-              └─ fidl::client::QueryResponseFut
-  Task(id = 16)
-  └─ archivist_lib_lib_test::logs::container::«impl»::actually_handle_log_sink • logs/container.rs:256
-     └─ futures_util::stream::stream::next::Next
-  Task(id = 17)
-  └─ archivist_lib_lib_test::logs::container::«impl»::drain_messages • logs/container.rs:373
-     └─ futures_util::stream::stream::next::Next
-  Task(id = 18)
-  └─ archivist_lib_lib_test::logs::container::«impl»::actually_handle_log_sink • logs/container.rs:256
-     └─ futures_util::stream::stream::next::Next
-  Task(id = 19)
-  └─ archivist_lib_lib_test::logs::container::«impl»::drain_messages • logs/container.rs:373
-     └─ futures_util::stream::stream::next::Next
-  Scope(0x1771eceb2a0)
-  └─ Task(id = 13)
-     └─ vfs::execution_scope::«impl»::spawn • execution_scope.rs:120
-        └─ core::future::poll_fn::PollFn
+  ```none {: .devsite-terminal data-terminal-prefix="[zxdb]" }
+  async-backtrace
+    Task(id = 0)
+    └─ calculator_client_bin_test::tests::divide_test::test_entry_point • select_mod.rs:321
+       └─ select!
+          └─ (terminated)
+          └─ calculator_client_bin_test::tests::calculator_fake • main.rs:93
+             └─ futures_util::stream::try_stream::try_for_each::TryForEach
+    Task(id = 1)
+    └─ diagnostics_log::fuchsia::filter::«impl»::listen_to_interest_changes • fuchsia/filter.rs:63
+       └─ fidl::client::QueryResponseFut
   ```
 
   All commands that you run are in the context of frame #17, as indicated by `▶`.
@@ -316,28 +276,27 @@ the `fx test` command with `zxdb`.
 
   ```none {: .devsite-terminal data-terminal-prefix="[zxdb]" }
   list -c 10
-    528         let mut log_helper2 = LogSinkHelper::new(&directory);
-    529         log_helper2.write_log("my msg1");
-    530         log_helper.write_log("my msg3");
-    531
-    532         let mut expected = vec!["my msg1".to_owned(), "my msg2".to_owned()];
-    533         expected.sort();
-    534
-    535         let mut actual = vec![recv_logs.next().await.unwrap(), recv_logs.next().await.unwrap()];
-    536         actual.sort();
-    537
-  ▶ 538         assert_eq!(expected, actual);
-    539
-    540         // can log after killing log sink proxy
-    541         log_helper.kill_log_sink();
-    542         log_helper.write_log("my msg1");
-    543         log_helper.write_log("my msg2");
-    544
-    545         assert_eq!(
-    546             expected,
-    547             vec! {recv_logs.next().await.unwrap(),recv_logs.next().await.unwrap()}
-    548         );
-  [zxdb]
+    100         let (proxy, stream) = create_proxy_and_stream::<CalculatorMarker>();
+    101
+    102         // Run two tasks: The calculator_fake & the calculator_line method we're interested
+    103         // in testing.
+    104         let fake_task = calculator_fake(stream).fuse();
+    105         let calculator_line_task = calculator_line("1 + 2", &proxy).fuse();
+    106         futures::pin_mut!(fake_task, calculator_line_task);
+    107         futures::select! {
+    108            actual = calculator_line_task => {
+    109                 let actual = actual.expect("Calculator didn't return value");
+  ▶ 110                 assert_eq!(actual, 5.0);
+    111            },
+    112            _ = fake_task => {
+    113                panic!("Fake should never complete.")
+    114            }
+    115         };
+    116     }
+    117
+    118     #[fuchsia::test]
+    119     async fn subtract_test() {
+    120         let (proxy, stream) = create_proxy_and_stream::<CalculatorMarker>();
   ```
 
   To find out why the test failed, print out some variables to see what is
@@ -347,40 +306,40 @@ the `fx test` command with `zxdb`.
   mpsc channel `recv_logs`:
 
   ```none {: .devsite-terminal data-terminal-prefix="[zxdb]" }
-  print expected
-  vec!["my msg1", "my msg3"]
-  [zxdb] print actual
-  vec!["my msg1", "my msg2"]
+  print actual
+    3
   ```
 
   It seems that the test's expectations are slightly incorrect. It was expected
-  that `"my msg3"` should be the second string, but it actually logged
-  `"my msg2"`. You can correct the test to expect `"my msg2"`. You can now
-  detach from the tests to continue and complete the test suite:
+  that the calculator would return "1 + 2" would be equal to 3, but the test
+  expected it to be 5! The calculator returned the right answer but the test
+  expectation is incorrect. You can now detach from the failed test case and fix
+  the test expectation.
 
   ```none {: .devsite-terminal data-terminal-prefix="[zxdb]" }
-  quit
+  detach
 
   <...fx test output continues...>
 
-  Failed tests: archivist::tests::can_log_and_retrieve_log
-  122 out of 123 tests passed...
+  Failed tests: tests::add_test
+  11 out of 12 tests passed...
 
-  Test fuchsia-pkg://fuchsia.com/archivist-tests?hash=8bcb30a2bfb923a4b42d1f0ea590af613ab0b1aa1ac67ada56ae4d325f3330a0#meta/archivist-unittests.cm produced unexpected high-severity logs:
+  Test fuchsia-pkg://fuchsia.com/calculator-client-rust-unittests?hash=b105775fa7c39eb67195a09d63be6c4314eeef8e93eb542616c0b5dbda73b8e2#meta/calculator-client-rust-unittests.cm produced unex
+  pected high-severity logs:
   ----------------xxxxx----------------
-  [105255.347070][5853309][5853311][<root>][can_log_and_retrieve_log] ERROR: [src/lib/diagnostics/log/rust/src/lib.rs(62)] PANIC info=panicked at ../../src/diagnostics/archivist/src/archivist.rs:544:9:
+  [09353.731026][1225676][1225678][<root>][add_test] ERROR: [examples/fidl/calculator/rust/client/src/main.rs(110)] PANIC info=panicked at ../../examples/fidl/calculator/rust/client/src/main
+  .rs:110:17:
   assertion `left == right` failed
-    left: ["my msg1", "my msg2"]
-   right: ["my msg1", "my msg3"]
+    left: 3.0
+   right: 5.0
 
   ----------------xxxxx----------------
   Failing this test. See: https://fuchsia.dev/fuchsia-src/development/diagnostics/test_and_logs#restricting_log_severity
 
-  fuchsia-pkg://fuchsia.com/archivist-tests?hash=8bcb30a2bfb923a4b42d1f0ea590af613ab0b1aa1ac67ada56ae4d325f3330a0#meta/archivist-unittests.cm completed with result: FAILED
+  fuchsia-pkg://fuchsia.com/calculator-client-rust-unittests?hash=b105775fa7c39eb67195a09d63be6c4314eeef8e93eb542616c0b5dbda73b8e2#meta/calculator-client-rust-unittests.cm completed with res
+  ult: FAILED
   The test was executed in the hermetic realm. If your test depends on system capabilities, pass in correct realm. See https://fuchsia.dev/go/components/non-hermetic-tests
   Tests failed.
-  Deleting 1 files at /tmp/tmpgr0otc3w: ffx_logs/ffx.log
-  To keep these files, set --ffx-output-directory.
   ```
 
   Now you can fix the test by making the following change to the code:
@@ -388,14 +347,14 @@ the `fx test` command with `zxdb`.
   Note: `-` indicates a removal of a line and `+` indicates an added line.
 
   ```diff
-  - let mut expected = vec!["my msg1".to_owned(), "my msg3".to_owned()];
-  + let mut expected = vec!["my msg1".to_owned(), "my msg2".to_owned()];
+  - assert_eq!(actual, 5.0);
+  + assert_eq!(actual, 3.0);
   ```
 
   You can now run the tests again:
 
   ```posix-terminal
-  fx test --break-on-failure archivist-unittests
+  fx test --break-on-failure calculator-client-rust-unittests
   ```
 
   The output should look like:
@@ -405,53 +364,45 @@ the `fx test` command with `zxdb`.
 
   Running 1 tests
 
-  Starting: fuchsia-pkg://fuchsia.com/archivist-tests#meta/archivist-unittests.cm
-  Command: fx ffx test run --max-severity-logs WARN --break-on-failure fuchsia-pkg://fuchsia.com/archivist-tests?hash=36bf634de9f8850fad02fe43ec7fbe2b086000d0f55f7028d6d9fc8320738301#meta/archivist-unittests.cm
-  Running test 'fuchsia-pkg://fuchsia.com/archivist-tests?hash=36bf634de9f8850fad02fe43ec7fbe2b086000d0f55f7028d6d9fc8320738301#meta/archivist-unittests.cm'
-  [RUNNING]	accessor::tests::accessor_skips_invalid_selectors
-  [RUNNING]	accessor::tests::batch_iterator_on_ready_is_called
-  [RUNNING]	accessor::tests::batch_iterator_terminates_on_client_disconnect
-  [RUNNING]	accessor::tests::buffered_iterator_handles_peer_closed
-  [RUNNING]	accessor::tests::buffered_iterator_handles_two_consecutive_buffer_waits
-  [RUNNING]	accessor::tests::logs_only_accept_basic_component_selectors
-  [RUNNING]	accessor::tests::socket_writer_does_not_handle_cbor
-  [RUNNING]	accessor::tests::socket_writer_handles_closed_socket
-  [RUNNING]	accessor::tests::socket_writer_handles_text
-  [RUNNING]	archivist::tests::can_log_and_retrieve_log
-  [PASSED]	accessor::tests::socket_writer_handles_text
-  [RUNNING]	archivist::tests::log_from_multiple_sock
-  [PASSED]	accessor::tests::socket_writer_does_not_handle_cbor
-  [RUNNING]	archivist::tests::remote_log_test
-  [PASSED]	accessor::tests::socket_writer_handles_closed_socket
-  [RUNNING]	archivist::tests::stop_works
-  [PASSED]	accessor::tests::buffered_iterator_handles_peer_closed
-  [RUNNING]	configs::tests::parse_allow_empty_pipeline
-  [PASSED]	accessor::tests::buffered_iterator_handles_two_consecutive_buffer_waits
-  [RUNNING]	configs::tests::parse_disabled_valid_pipeline
-  <...lots of tests...>
-  [PASSED]	logs::repository::tests::multiplexer_broker_cleanup
-  [PASSED]	logs::tests::attributed_inspect_two_v2_streams_different_identities
-  [RUNNING]	logs::tests::unfiltered_stats
-  [PASSED]	logs::tests::test_debuglog_drainer
-  [RUNNING]	utils::tests::drop_test
-  [PASSED]	logs::tests::test_filter_by_combination
-  [PASSED]	logs::tests::test_filter_by_min_severity
-  [PASSED]	logs::tests::test_filter_by_pid
-  [PASSED]	logs::tests::test_filter_by_tags
-  [PASSED]	logs::tests::test_filter_by_tid
-  [PASSED]	logs::tests::test_log_manager_dump
-  [PASSED]	logs::tests::test_structured_log
-  [PASSED]	logs::tests::test_log_manager_simple
-  [PASSED]	logs::tests::unfiltered_stats
-  [PASSED]	utils::tests::drop_test
+  Status: [duration: 13.5s]
+    Running 1 tests
 
-  128 out of 128 tests passed...
-  fuchsia-pkg://fuchsia.com/archivist-tests?hash=36bf634de9f8850fad02fe43ec7fbe2b086000d0f55f7028d6d9fc8320738301#meta/archivist-unittests.cm completed with result: PASSED
-  Deleting 1 files at /tmp/tmpho9yjjz9: ffx_logs/ffx.log
+  Starting: fuchsia-pkg://fuchsia.com/calculator-client-rust-unittests#meta/calculator-client-rust-unittests.cm
+  Command: fx --dir /usr/local/google/home/jruthe/upstream/fuchsia/out/default ffx test run --max-severity-logs WARN --parallel 1 --no-exception-channel --break-on-failure fuchsia-pkg://fuchsia.com/calculator-client-rust-unittests?hash=abc77325b830d25e47d1de85b764f2b7a0d8975269dfc654f3a7f9a6859b851a#meta/calculator-client-rust-unittests.cm
+
+  Running test 'fuchsia-pkg://fuchsia.com/calculator-client-rust-unittests?hash=abc77325b830d25e47d1de85b764f2b7a0d8975269dfc654f3a7f9a6859b851a#meta/calculator-client-rust-unittests.cm'
+  [RUNNING]       parse::tests::parse_expression
+  [PASSED]        parse::tests::parse_expression
+  [RUNNING]       parse::tests::parse_expression_with_division
+  [PASSED]        parse::tests::parse_expression_with_division
+  [RUNNING]       parse::tests::parse_expression_with_multiplication
+  [PASSED]        parse::tests::parse_expression_with_multiplication
+  [RUNNING]       parse::tests::parse_expression_with_negative_numbers
+  [PASSED]        parse::tests::parse_expression_with_negative_numbers
+  [RUNNING]       parse::tests::parse_expression_with_pow
+  [PASSED]        parse::tests::parse_expression_with_pow
+  [RUNNING]       parse::tests::parse_expression_with_subtraction
+  [PASSED]        parse::tests::parse_expression_with_subtraction
+  [RUNNING]       parse::tests::parse_operators
+  [PASSED]        parse::tests::parse_operators
+  [RUNNING]       tests::add_test
+  [PASSED]        tests::add_test
+  [RUNNING]       tests::divide_test
+  [PASSED]        tests::divide_test
+  [RUNNING]       tests::multiply_test
+  [PASSED]        tests::multiply_test
+  [RUNNING]       tests::pow_test
+  [PASSED]        tests::pow_test
+  [RUNNING]       tests::subtract_test
+  [PASSED]        tests::subtract_test
+
+  12 out of 12 tests passed...
+  fuchsia-pkg://fuchsia.com/calculator-client-rust-unittests?hash=abc77325b830d25e47d1de85b764f2b7a0d8975269dfc654f3a7f9a6859b851a#meta/calculator-client-rust-unittests.cm completed with res
+  ult: PASSED
+  Deleting 1 files at /tmp/tmprwdcy73n: ffx_logs/ffx.log
   To keep these files, set --ffx-output-directory.
 
-  Status: [duration: 36.4s] [tests: PASS: 1 FAIL: 0 SKIP: 0]
-    Running 1 tests                            [====================================================================================================================]            100.0%
+  Status: [duration: 14.8s] [tests: PASSED: 1 FAILED: 0 SKIPPED: 0]
   ```
 
 * {C++}
@@ -710,9 +661,9 @@ the `fx test` command with `zxdb`.
   zxdb no longer appears, because you have successfully fixed all of the test
   failures!
 
-[archivist-test-example]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/diagnostics/archivist/src/archivist.rs;l=539-549;drc=b266522960501274fbe62ac9a0d0f9631a2a58b6
-[debug-agent-test-example]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/developer/debug/debug_agent/debug_agent_unittest.cc;l=63-147
+[debug-agent-test-example]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/developer/debug/debug_agent/debug_agent_unittest.cc;l=64-148;drc=0ebebaff9f1f0f4b48325c9d63fddda924cd8da7
+[rust-calculator-test-example]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/fidl/calculator/rust/client/src/main.rs;l=99;drc=97a1774dd7457ffec1ffcebf81e35b7695a4cf54
 [rust-test-runner]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/sys/test_runners/rust/
-[rust-test-runner-parallel-default]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/sys/test_runners/rust/src/test_server.rs;l=55
+[rust-test-runner-parallel-default]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/sys/test_runners/rust/src/test_server.rs;l=48;drc=906023d3bdbf3d0aeb3b1080b2cdeb316112112f
 [zxdb-test-doc]: /docs/development/debugger/tests.md
 [zxdb-parallel-tests]: /docs/development/debugger/tests.md#executing-test-cases-in-parallel
