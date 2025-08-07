@@ -17,6 +17,9 @@ struct crashlog_regs_t {
   // On x86/x64, the CR2 register is important for diagnosing kernel crashes,
   // but is not included in the iframe_t.
   uint64_t cr2{0};
+  uint64_t fsbase{0};
+  uint64_t gsbase{0};
+  uint64_t swapgs_gsbase{0};
 };
 
 #endif  // ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_CRASHLOG_REGS_H_

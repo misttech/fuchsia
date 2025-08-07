@@ -18,6 +18,10 @@ struct crashlog_regs_t {
   // are not included in the iframe_t.
   uint32_t esr{0};
   uint64_t far{0};
+
+  uint64_t tpidr_el0{};
+  uint64_t tpidr_el1{};
+  uint64_t tpidrro_el0{};
 };
 
 #endif  // ZIRCON_KERNEL_ARCH_ARM64_INCLUDE_ARCH_CRASHLOG_REGS_H_

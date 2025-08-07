@@ -106,6 +106,11 @@ __NO_RETURN static void exception_die(iframe_t* frame, const char* msg) {
   g_crashlog.regs.iframe = frame;
   g_crashlog.regs.cr2 = x86_get_cr2();
 
+  // No need to try to optimize with rdfsbase and rdgsbase here.
+  g_crashlog.regs.fsbase = read_msr(X86_MSR_IA32_FS_BASE);
+  g_crashlog.regs.gsbase = read_msr(X86_MSR_IA32_GS_BASE);
+  g_crashlog.regs.swapgs_gsbase = read_msr(X86_MSR_IA32_KERNEL_GS_BASE);
+
   printf("vector %lu\n", (ulong)frame->vector);
   dprintf(CRITICAL, "%s", msg);
   dump_fault_frame(frame);

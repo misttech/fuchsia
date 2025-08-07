@@ -169,6 +169,9 @@ zx_status_t try_dispatch_user_exception(zx_excp_type_t type, iframe_t* iframe, u
   g_crashlog.regs.iframe = iframe;
   g_crashlog.regs.esr = esr;
   g_crashlog.regs.far = far;
+  g_crashlog.regs.tpidr_el0 = __arm_rsr64("tpidr_el0");
+  g_crashlog.regs.tpidr_el1 = __arm_rsr64("tpidr_el1");
+  g_crashlog.regs.tpidrro_el0 = __arm_rsr64("tpidrro_el0");
 
   platform_halt(HALT_ACTION_HALT, ZirconCrashReason::Panic);
 }
