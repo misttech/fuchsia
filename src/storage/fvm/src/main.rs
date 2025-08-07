@@ -1743,6 +1743,7 @@ impl Interface for PartitionInterface {
     }
 
     async fn extend(&self, start_slice: u64, slice_count: u64) -> Result<(), zx::Status> {
+        bounds_check_slice_extent(start_slice, slice_count)?;
         if slice_count == 0 {
             return Ok(());
         }
@@ -1751,6 +1752,7 @@ impl Interface for PartitionInterface {
         } else {
             start_slice
         };
+
         let inner = self.fvm.inner.upgradable_read().await;
 
         let partition_state = &inner.partition_state[&self.partition_index];
@@ -1809,6 +1811,10 @@ impl Interface for PartitionInterface {
     }
 
     async fn shrink(&self, start_slice: u64, slice_count: u64) -> Result<(), zx::Status> {
+        bounds_check_slice_extent(start_slice, slice_count)?;
+        if slice_count == 0 {
+            return Ok(());
+        }
         let start_slice = if self.key.is_some() {
             start_slice.checked_add(1).ok_or(zx::Status::OUT_OF_RANGE)?
         } else {
@@ -1900,6 +1906,23 @@ impl Interface for PartitionInterface {
         }
 
         Ok(())
+    }
+}
+
+fn bounds_check_slice_extent(start_slice: u64, slice_count: u64) -> Result<(), zx::Status> {
+    if start_slice == 0 {
+        return Err(zx::Status::OUT_OF_RANGE); // 0 is an invalid slice number
+    }
+
+    match start_slice.checked_add(slice_count) {
+        None => Err(zx::Status::OUT_OF_RANGE), // integer overflow
+        Some(final_slice) => {
+            if final_slice > MAX_SLICE_COUNT {
+                Err(zx::Status::OUT_OF_RANGE) // End of request is outside addressable slice range
+            } else {
+                Ok(())
+            }
+        }
     }
 }
 
@@ -2559,6 +2582,48 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_extend_bounds() {
+        let fixture = Fixture::new(SLICE_SIZE * 3).await;
+
+        // Mount the blobfs partition.
+        let volume_proxy = fixture.mount_volume("blobfs").await;
+
+        // No op succeeds.
+        assert_eq!(volume_proxy.extend(1, 0).await.expect("extend failed (FIDL)"), zx::sys::ZX_OK);
+        assert_eq!(volume_proxy.extend(1, 0).await.expect("extend failed (FIDL)"), zx::sys::ZX_OK);
+
+        // Trying to do things with slice zero fails.
+        assert_eq!(
+            volume_proxy.extend(0, 0).await.expect("extend failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+        assert_eq!(
+            volume_proxy.extend(0, 4).await.expect("extend failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+
+        // Calls are protected against integer overflow.
+        assert_eq!(
+            volume_proxy.extend(1, u64::MAX).await.expect("extend failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+        assert_eq!(
+            volume_proxy.extend(u64::MAX, 1).await.expect("extend failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+
+        // Also against numbers we have no hope of addressing to.
+        assert_eq!(
+            volume_proxy.extend(u32::MAX as u64, 1).await.expect("extend failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+        assert_eq!(
+            volume_proxy.extend(1, u32::MAX as u64).await.expect("extend failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+    }
+
+    #[fuchsia::test]
     async fn test_extend() {
         let fixture = Fixture::new(SLICE_SIZE * 3).await;
 
@@ -2628,6 +2693,48 @@ mod tests {
         client.read_at(MutableBufferSlice::Memory(&mut buf), SLICE_SIZE).await.unwrap();
 
         assert_eq!(&buf, &data);
+    }
+
+    #[fuchsia::test]
+    async fn test_shrink_bounds() {
+        let fixture = Fixture::new(SLICE_SIZE * 3).await;
+
+        // Mount the blobfs partition.
+        let volume_proxy = fixture.mount_volume("blobfs").await;
+
+        // No op succeeds.
+        assert_eq!(volume_proxy.shrink(1, 0).await.expect("shrink failed (FIDL)"), zx::sys::ZX_OK);
+        assert_eq!(volume_proxy.shrink(1, 0).await.expect("shrink failed (FIDL)"), zx::sys::ZX_OK);
+
+        // Trying to do things with slice zero fails.
+        assert_eq!(
+            volume_proxy.shrink(0, 0).await.expect("shrink failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+        assert_eq!(
+            volume_proxy.shrink(0, 4).await.expect("shrink failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+
+        // Calls are protected against integer overflow.
+        assert_eq!(
+            volume_proxy.shrink(1, u64::MAX).await.expect("shrink failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+        assert_eq!(
+            volume_proxy.shrink(u64::MAX, 1).await.expect("shrink failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+
+        // Also against numbers we have no hope of addressing to.
+        assert_eq!(
+            volume_proxy.shrink(u32::MAX as u64, 1).await.expect("shrink failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
+        assert_eq!(
+            volume_proxy.shrink(1, u32::MAX as u64).await.expect("shrink failed (FIDL)"),
+            zx::sys::ZX_ERR_OUT_OF_RANGE
+        );
     }
 
     #[fuchsia::test]
