@@ -205,6 +205,80 @@ TEST(UnixSocket, BigWrite) {
   delete[] read_info.mem;
 }
 
+TEST(UnixSocket, SeqPacket) {
+  char* tmp = getenv("TEST_TMPDIR");
+  auto socket_path =
+      tmp == nullptr ? "/tmp/socktest_seqpacket" : std::string(tmp) + "/socktest_seqpacket";
+  struct sockaddr_un sun;
+  sun.sun_family = AF_UNIX;
+  strcpy(sun.sun_path, socket_path.c_str());
+  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&sun);
+
+  auto server = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+  ASSERT_GE(server, 0);
+  ASSERT_EQ(bind(server, addr, sizeof(sun)), 0);
+  ASSERT_EQ(listen(server, 1), 0);
+  int pipes[2];
+  ASSERT_EQ(pipe(pipes), 0);
+  pid_t pid = fork();
+  if (pid == 0) {
+    // Child
+    auto client = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+    if (client < 0) {
+      exit(1);
+    }
+    if (connect(client, addr, sizeof(sun)) < 0) {
+      exit(1);
+    }
+    const char* message = "hello";
+    if (send(client, message, strlen(message), 0) < 0) {
+      exit(1);
+    }
+    char data;
+    read(pipes[0], &data, 1);
+    close(pipes[0]);
+    close(client);
+    exit(0);
+  }
+
+  // Parent
+  auto accepted_fd = accept(server, nullptr, nullptr);
+  ASSERT_GE(accepted_fd, 0);
+  char byte = 0;
+  write(accepted_fd, &byte, 1);
+
+  char buf[1024];
+  ssize_t bytes_read = recv(accepted_fd, buf, sizeof(buf), 0);
+  ASSERT_EQ(bytes_read, 5);
+  ASSERT_EQ(memcmp(buf, "hello", 5), 0);
+
+  char buffer[256];
+  struct iovec iov[1];
+  iov[0].iov_base = buffer;
+  iov[0].iov_len = sizeof(buffer);
+
+  struct msghdr msg;
+  memset(&msg, 0, sizeof(msg));
+  msg.msg_iov = iov;
+  msg.msg_iovlen = 1;
+  ASSERT_EQ(write(pipes[1], buffer, 1), 1);
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  // recvmsg should return ECONNRESET when the peer closes the connection
+  // followed by 0 on the subsequent read.
+  ssize_t n = recvmsg(accepted_fd, &msg, MSG_CMSG_CLOEXEC);
+  ASSERT_EQ(errno, ECONNRESET);
+  ASSERT_EQ(n, -1);
+  n = recvmsg(accepted_fd, &msg, MSG_CMSG_CLOEXEC);
+  ASSERT_EQ(n, 0);
+
+  ASSERT_EQ(unlink(socket_path.c_str()), 0);
+  ASSERT_EQ(close(accepted_fd), 0);
+  ASSERT_EQ(close(server), 0);
+  close(pipes[1]);
+}
+
 TEST(UnixSocket, ConnectZeroBacklog) {
   char* tmp = getenv("TEST_TMPDIR");
   auto socket_path =

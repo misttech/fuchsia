@@ -973,6 +973,8 @@ impl UnixSocketInner {
         };
         if info.message_length == 0 {
             if self.peer_closed_with_unread_data {
+                // Reset the flag
+                self.peer_closed_with_unread_data = false;
                 return error!(ECONNRESET);
             }
             if !self.is_shutdown {
