@@ -180,6 +180,6 @@ async fn implementation(logging_enabled: &mut bool) -> Result<ExitStatus> {
         }
     }
 
-    usb_driver_impl::HostDriver::run(socket_path).await;
+    usb_driver_impl::HostDriver::run(socket_path, log_id).await;
     Ok(ExitStatus::from_raw(0))
 }

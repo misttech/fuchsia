@@ -80,6 +80,7 @@ open protocol FfxUsb {
         current uint32;
         minimum uint32;
         session_id uint64;
+        log_id uint64;
     });
 
     /// Connect to the given CID and port. After a successful response from this

@@ -183,11 +183,12 @@ pub struct HostDriver {
     listeners: Arc<ListenerTable>,
     listener_tasks: fuchsia_async::Scope,
     new_device_listeners: AsyncMutex<Vec<mpsc::Sender<UsbVsockHostEvent>>>,
+    log_id: u64,
 }
 
 impl HostDriver {
     /// Create a new [`HostDriver`] and listen for users at the given socket path.
-    pub async fn run(socket_path: PathBuf) {
+    pub async fn run(socket_path: PathBuf, log_id: u64) {
         let listener = match UnixListener::bind(socket_path) {
             Ok(l) => l,
             Err(e) => {
@@ -202,6 +203,7 @@ impl HostDriver {
             UsbVsockHost::new([] as [&str; 0], true, sender),
             receiver,
             listener,
+            log_id,
         )
         .await;
     }
@@ -210,12 +212,14 @@ impl HostDriver {
         driver: Arc<UsbVsockHost<WrapStream>>,
         mut events: mpsc::Receiver<UsbVsockHostEvent>,
         listener: UnixListener,
+        log_id: u64,
     ) {
         let driver = HostDriver {
             driver,
             listeners: Arc::new(ListenerTable(Mutex::new(HashMap::new()))),
             listener_tasks: fuchsia_async::Scope::new_with_name("usb_driver_listeners"),
             new_device_listeners: AsyncMutex::new(Vec::new()),
+            log_id,
         };
         let tasks = std::sync::Mutex::new(Vec::<LocalBoxFuture<'_, ()>>::new());
         let mut task_poller = futures::future::poll_fn(|ctx| {
@@ -257,8 +261,12 @@ impl HostDriver {
     > {
         let listener = UnixListener::bind(socket_path).expect("Could not create socket for test");
         let (host, conn) = usb_vsock_host::TestConnection::<WrapStream>::new();
-        let fut =
-            HostDriver::run_with_driver_and_listener(host.host, host.event_receiver, listener);
+        let fut = HostDriver::run_with_driver_and_listener(
+            host.host,
+            host.event_receiver,
+            listener,
+            0xdeadbeef,
+        );
         conn.scope.spawn_local(fut);
         conn
     }
@@ -396,12 +404,11 @@ impl HostDriver {
         }
 
         let session_id = rand::random();
-        // TODO(429272550): Report some sort of log ID to clients so we
-        // can correlate log messages with a particular driver process.
         let res = usb_fidl::FfxUsbInitializeControlResponse {
             current: CURRENT_VERSION,
             minimum: CURRENT_VERSION,
             session_id,
+            log_id: self.log_id,
         };
 
         let resp = fidl_message::encode_response_flexible(header, res)?;
