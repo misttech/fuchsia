@@ -133,7 +133,7 @@
             // These services replace the directory capabilities above.
             service: [
                 "fuchsia.gpu.magma.Service",
-                "fuchsia.hardware.display.service",
+                "fuchsia.hardware.display.Service",
                 "fuchsia.hardware.goldfish.AddressSpaceService",
                 "fuchsia.hardware.goldfish.ControllerService",
                 "fuchsia.hardware.goldfish.ControlService",

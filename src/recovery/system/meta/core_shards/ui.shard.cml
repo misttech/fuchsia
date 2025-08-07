@@ -19,7 +19,7 @@
         },
         {
             // This service replaces the directory capability above.
-            service: "fuchsia.hardware.display.service",
+            service: "fuchsia.hardware.display.Service",
             from: "parent",
             to: "#system_recovery",
         },

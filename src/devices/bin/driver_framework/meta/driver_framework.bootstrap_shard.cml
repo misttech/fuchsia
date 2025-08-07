@@ -478,7 +478,7 @@
                 "fuchsia.hardware.camera.Service",
                 "fuchsia.hardware.clock.measure.Service",
                 "fuchsia.hardware.cpu.ctrl.Service",
-                "fuchsia.hardware.display.service",
+                "fuchsia.hardware.display.Service",
                 "fuchsia.hardware.fan.Service",
                 "fuchsia.hardware.fastboot.Service",
                 "fuchsia.hardware.goldfish.AddressSpaceService",

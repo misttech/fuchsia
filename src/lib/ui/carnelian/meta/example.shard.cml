@@ -50,7 +50,7 @@
         },
         {
             // This service replaces the directory capability above.
-            service: "fuchsia.hardware.display.service",
+            service: "fuchsia.hardware.display.Service",
         },
         {
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
