@@ -42,15 +42,6 @@ constexpr uuid::Uuid kTestPartSystemGuid = {
     0xEE, 0xFF, 0xBB, 0x00, 0x33, 0x44, 0x88, 0x99, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
 };
 
-const fs_management::PartitionMatcher kPartition1Matcher = {
-    .type_guids = {kTestPartDataGuid},
-    .instance_guids = {kTestUniqueGuid1},
-};
-const fs_management::PartitionMatcher kPartition2Matcher = {
-    .type_guids = {kTestPartDataGuid},
-    .instance_guids = {kTestUniqueGuid2},
-};
-
 class BlockConnector {
  public:
   virtual ~BlockConnector() = default;
@@ -97,7 +88,7 @@ class FvmInstance {
 
   // Opens an existing partition. This will wait for it to appear if it doesn't already exist.
   virtual zx::result<std::unique_ptr<BlockConnector>> OpenPartition(
-      const fs_management::PartitionMatcher& matcher) const = 0;
+      std::string_view label) const = 0;
 
   // Returns the block interface of the underlying ramdisk.
   virtual fidl::UnownedClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const = 0;
@@ -114,16 +105,14 @@ class DriverFvmInstance : public FvmInstance {
   fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() const override;
   zx::result<std::unique_ptr<BlockConnector>> AllocatePartition(
       const AllocatePartitionRequest& request) const override;
-  zx::result<std::unique_ptr<BlockConnector>> OpenPartition(
-      const fs_management::PartitionMatcher& matcher) const override;
+  zx::result<std::unique_ptr<BlockConnector>> OpenPartition(std::string_view label) const override;
   fidl::UnownedClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const override;
 
   fidl::UnownedClientEnd<fuchsia_device::Controller> GetRamdiskControllerInterface() const;
   const fbl::unique_fd& devfs_root() const { return devfs_root_; }
   zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager>> GetVolumeManager()
       const;
-  zx::result<std::unique_ptr<BlockConnector>> OpenPartitionNoWait(
-      const fs_management::PartitionMatcher& matcher) const;
+  zx::result<std::unique_ptr<BlockConnector>> OpenPartitionNoWait(std::string_view label) const;
   std::string GetFvmPath() const;
 
  private:

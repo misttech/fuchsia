@@ -153,9 +153,10 @@ zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::AllocatePartition
 }
 
 zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::OpenPartition(
-    const fs_management::PartitionMatcher& matcher) const {
+    std::string_view label) const {
   fdio_cpp::UnownedFdioCaller caller(devfs_root());
-  zx::result controller = fs_management::OpenPartitionWithDevfs(caller.directory(), matcher, true);
+  zx::result controller =
+      fs_management::OpenPartitionWithDevfs(caller.directory(), {.labels = {label}}, true);
   if (controller.is_error()) {
     return controller.take_error();
   }
@@ -182,9 +183,10 @@ DriverFvmInstance::GetVolumeManager() const {
 }
 
 zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::OpenPartitionNoWait(
-    const fs_management::PartitionMatcher& matcher) const {
+    std::string_view label) const {
   fdio_cpp::UnownedFdioCaller caller(devfs_root());
-  zx::result controller = fs_management::OpenPartitionWithDevfs(caller.directory(), matcher, false);
+  zx::result controller =
+      fs_management::OpenPartitionWithDevfs(caller.directory(), {.labels = {label}}, false);
   if (controller.is_error()) {
     return controller.take_error();
   }

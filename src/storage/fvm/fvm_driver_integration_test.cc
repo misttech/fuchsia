@@ -45,13 +45,12 @@ class FvmDriverTest : public zxtest::Test {
   void Upgrade(const uuid::Uuid& old_guid, const uuid::Uuid& new_guid, zx_status_t status) const;
 
   zx::result<std::unique_ptr<fvm::BlockConnector>> OpenPartitionNoWait(
-      const fs_management::PartitionMatcher& matcher) const {
-    return instance_->OpenPartitionNoWait(matcher);
+      std::string_view label) const {
+    return instance_->OpenPartitionNoWait(label);
   }
 
-  zx::result<std::unique_ptr<fvm::BlockConnector>> WaitForPartition(
-      const fs_management::PartitionMatcher& matcher) const {
-    return instance_->OpenPartition(matcher);
+  zx::result<std::unique_ptr<fvm::BlockConnector>> WaitForPartition(std::string_view label) const {
+    return instance_->OpenPartition(label);
   }
 
   zx::result<std::unique_ptr<fvm::BlockConnector>> AllocatePartition(
@@ -108,9 +107,9 @@ TEST_F(FvmDriverTest, TestVPartitionUpgrade) {
   FVMRebind();
 
   // The active partition should still exist.
-  ASSERT_OK(WaitForPartition(fvm::kPartition2Matcher));
+  ASSERT_OK(WaitForPartition(fvm::kTestPartBlobName));
   // The inactive partition should be gone.
-  ASSERT_STATUS(OpenPartitionNoWait(fvm::kPartition1Matcher).status_value(), ZX_ERR_NOT_FOUND);
+  ASSERT_STATUS(OpenPartitionNoWait(fvm::kTestPartDataName).status_value(), ZX_ERR_NOT_FOUND);
 
   // Reallocate GUID1 as inactive.
 
@@ -127,16 +126,16 @@ TEST_F(FvmDriverTest, TestVPartitionUpgrade) {
   // Atomically set GUID1 as active and GUID2 as inactive.
   Upgrade(fvm::kTestUniqueGuid2, fvm::kTestUniqueGuid1, ZX_OK);
   // After upgrading, we should be able to open both partitions
-  ASSERT_OK(WaitForPartition(fvm::kPartition1Matcher));
-  ASSERT_OK(WaitForPartition(fvm::kPartition2Matcher));
+  ASSERT_OK(WaitForPartition(fvm::kTestPartDataName));
+  ASSERT_OK(WaitForPartition(fvm::kTestPartBlobName));
 
   // Rebind the FVM driver, check that the upgrade has succeeded.
   // The original (GUID2) should be deleted, and the new partition (GUID)
   // should exist.
   FVMRebind();
 
-  ASSERT_OK(WaitForPartition(fvm::kPartition1Matcher));
-  ASSERT_STATUS(OpenPartitionNoWait(fvm::kPartition2Matcher).status_value(), ZX_ERR_NOT_FOUND);
+  ASSERT_OK(WaitForPartition(fvm::kTestPartDataName));
+  ASSERT_STATUS(OpenPartitionNoWait(fvm::kTestPartBlobName).status_value(), ZX_ERR_NOT_FOUND);
 
   // Try upgrading when the "new" version doesn't exist.
   // (It should return an error and have no noticeable effect).
@@ -145,8 +144,8 @@ TEST_F(FvmDriverTest, TestVPartitionUpgrade) {
   // Release FVM device that we opened earlier
   FVMRebind();
 
-  ASSERT_OK(WaitForPartition(fvm::kPartition1Matcher));
-  ASSERT_STATUS(OpenPartitionNoWait(fvm::kPartition2Matcher).status_value(), ZX_ERR_NOT_FOUND);
+  ASSERT_OK(WaitForPartition(fvm::kTestPartDataName));
+  ASSERT_STATUS(OpenPartitionNoWait(fvm::kTestPartBlobName).status_value(), ZX_ERR_NOT_FOUND);
 
   // Try upgrading when the "old" version doesn't exist.
   {
@@ -165,9 +164,9 @@ TEST_F(FvmDriverTest, TestVPartitionUpgrade) {
   FVMRebind();
 
   // We should be able to open both partitions again.
-  zx::result vp_or = WaitForPartition(fvm::kPartition1Matcher);
+  zx::result vp_or = WaitForPartition(fvm::kTestPartDataName);
   ASSERT_OK(vp_or);
-  ASSERT_OK(WaitForPartition(fvm::kPartition2Matcher));
+  ASSERT_OK(WaitForPartition(fvm::kTestPartBlobName));
 
   // Destroy and reallocate the first partition as inactive.
   {
@@ -193,8 +192,8 @@ TEST_F(FvmDriverTest, TestVPartitionUpgrade) {
   FVMRebind();
 
   // We should be able to open both partitions again.
-  ASSERT_OK(WaitForPartition(fvm::kPartition1Matcher));
-  ASSERT_OK(WaitForPartition(fvm::kPartition2Matcher));
+  ASSERT_OK(WaitForPartition(fvm::kTestPartDataName));
+  ASSERT_OK(WaitForPartition(fvm::kTestPartBlobName));
 }
 
 TEST_F(FvmDriverTest, TestAbortDriverLoadSmallDevice) {

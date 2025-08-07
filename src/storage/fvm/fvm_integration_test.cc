@@ -116,9 +116,8 @@ class FvmTest : public zxtest::Test {
 
   void FVMCheckAllocatedCount(size_t expected_allocated, size_t expected_total) const;
 
-  zx::result<std::unique_ptr<fvm::BlockConnector>> WaitForPartition(
-      const fs_management::PartitionMatcher& matcher) const {
-    return instance_->OpenPartition(matcher);
+  zx::result<std::unique_ptr<fvm::BlockConnector>> WaitForPartition(std::string_view label) const {
+    return instance_->OpenPartition(label);
   }
 
   zx::result<std::unique_ptr<fvm::BlockConnector>> AllocatePartition(
@@ -189,15 +188,6 @@ constexpr uuid::Uuid kTestPartBlobGuid = {
 constexpr std::string_view kTestPartSystemName = "system";
 constexpr uuid::Uuid kTestPartSystemGuid = {
     0xEE, 0xFF, 0xBB, 0x00, 0x33, 0x44, 0x88, 0x99, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-};
-
-const fs_management::PartitionMatcher kPartition1Matcher = {
-    .type_guids = {kTestPartDataGuid},
-    .instance_guids = {kTestUniqueGuid1},
-};
-const fs_management::PartitionMatcher kPartition2Matcher = {
-    .type_guids = {kTestPartDataGuid},
-    .instance_guids = {kTestUniqueGuid2},
 };
 
 class VmoBuf;
@@ -471,7 +461,7 @@ TEST_F(FvmTest, TestAllocateOne) {
 
   // Try accessing the block again after closing / re-opening it.
   vp = {};
-  vp_or = WaitForPartition(kPartition1Matcher);
+  vp_or = WaitForPartition(kTestPartDataName);
   ASSERT_OK(vp_or, "Couldn't re-open Data VPart");
   vp = std::move(vp_or.value());
   CheckWriteReadBlock(vp->as_block(), 0, 1);
@@ -1648,7 +1638,7 @@ TEST_F(FvmTest, TestPersistenceSimple) {
   // Check that it still exists after rebinding the driver
   FVMRebind();
 
-  vp_or = WaitForPartition(kPartition1Matcher);
+  vp_or = WaitForPartition(kTestPartDataName);
   ASSERT_OK(vp_or);
   vp = *std::move(vp_or);
   device = vp->as_block();
@@ -1681,7 +1671,7 @@ TEST_F(FvmTest, TestPersistenceSimple) {
   // Rebind the FVM driver, check the extension has succeeded.
   FVMRebind();
 
-  vp_or = WaitForPartition(kPartition1Matcher);
+  vp_or = WaitForPartition(kTestPartDataName);
   ASSERT_OK(vp_or);
   vp = *std::move(vp_or);
   device = vp->as_block();
@@ -1728,7 +1718,7 @@ TEST_F(FvmTest, TestPersistenceSimple) {
   vp = {};
   FVMRebind();
 
-  vp_or = WaitForPartition(kPartition1Matcher);
+  vp_or = WaitForPartition(kTestPartDataName);
   ASSERT_OK(vp_or);
   vp = *std::move(vp_or);
   device = vp->as_block();
@@ -2097,7 +2087,7 @@ TEST_F(FvmTest, TestCorruptionOk) {
 
   FVMRebind();
 
-  vp_or = WaitForPartition(kPartition1Matcher);
+  vp_or = WaitForPartition(kTestPartDataName);
   ASSERT_OK(vp_or, "Couldn't re-open Data VPart");
   vp = *std::move(vp_or);
 
@@ -2163,7 +2153,7 @@ TEST_F(FvmTest, TestCorruptionRegression) {
 
   FVMRebind();
 
-  vp_or = WaitForPartition(kPartition1Matcher);
+  vp_or = WaitForPartition(kTestPartDataName);
   ASSERT_OK(vp_or);
   vp = *std::move(vp_or);
 
