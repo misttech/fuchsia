@@ -6,7 +6,7 @@ use askama::Template;
 
 use super::{filters, Context, Contextual};
 use crate::id::IdExt as _;
-use crate::ir::{Service, TypeKind};
+use crate::ir::{CompId, Service, ServiceMember, TypeKind};
 use crate::templates::reserved::escape;
 
 #[derive(Template)]
@@ -17,13 +17,15 @@ pub struct ServiceTemplate<'a> {
 
     non_canonical_name: &'a str,
     service_name: String,
-    instance_trait_name: String,
+    connector_name: String,
+    handler_name: String,
 }
 
 impl<'a> ServiceTemplate<'a> {
     pub fn new(service: &'a Service, context: Context<'a>) -> Self {
         let base_name = service.name.decl_name().camel();
-        let instance_trait_name = format!("{base_name}Instance");
+        let connector_name = format!("{base_name}Connector");
+        let handler_name = format!("{base_name}Handler");
 
         Self {
             service,
@@ -31,13 +33,30 @@ impl<'a> ServiceTemplate<'a> {
 
             non_canonical_name: service.name.decl_name().non_canonical(),
             service_name: escape(base_name),
-            instance_trait_name: escape(instance_trait_name),
+            connector_name: escape(connector_name),
+            handler_name: escape(handler_name),
         }
     }
 
     fn service_name(&self) -> String {
         let (library, name) = self.service.name.split();
         format!("{}.{}", library, name.camel())
+    }
+
+    fn member_protocol<'m>(&self, member: &'m ServiceMember) -> &'m CompId {
+        let TypeKind::Endpoint { protocol, .. } = &member.ty.kind else {
+            panic!("service member type must be an endpoint");
+        };
+
+        protocol
+    }
+
+    fn member_transport(&self, member: &ServiceMember) -> &str {
+        let TypeKind::Endpoint { protocol_transport, .. } = &member.ty.kind else {
+            panic!("service member type must be an endpoint");
+        };
+
+        &self.resource_bindings().endpoint(protocol_transport).natural_path
     }
 }
 

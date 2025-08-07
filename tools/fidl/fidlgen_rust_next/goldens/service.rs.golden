@@ -6,26 +6,36 @@
 #[derive(Debug)]
 pub struct EmptyService;
 
-impl ::fidl_next::Service for EmptyService {
+impl ::fidl_next::DiscoverableService for EmptyService {
     const SERVICE_NAME: &'static str = "test.service.EmptyService";
     const MEMBER_NAMES: &'static [&'static str] = &[];
 }
 
-/// A helper trait for instances of the `EmptyService` service.
-pub trait EmptyServiceInstance {
-    /// The error type for the instance.
-    type Error: ::core::error::Error + Send + Sync + 'static;
-
-    /// The transport type created by connecting to a member.
-    type Transport: ::fidl_next::Transport;
+impl<___C> ::fidl_next::Service<___C> for EmptyService {
+    type Connector = EmptyServiceConnector<___C>;
 }
 
-impl<___I> EmptyServiceInstance for ::fidl_next::ServiceInstance<___I, EmptyService>
+/// A strongly-typed service connector for the `EmptyService` service.
+#[repr(transparent)]
+pub struct EmptyServiceConnector<___C> {
+    #[allow(dead_code)]
+    connector: ___C,
+}
+
+impl<___C> EmptyServiceConnector<___C> {}
+
+/// A service handler for the `EmptyService` service.
+pub trait EmptyServiceHandler<___T> {}
+
+impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for EmptyService
 where
-    ___I: ::fidl_next::protocol::ServiceInstance,
+    ___H: EmptyServiceHandler<___T>,
 {
-    type Error = ___I::Error;
-    type Transport = ___I::Transport;
+    fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        match member {
+            _ => unreachable!(),
+        }
+    }
 }
 
 /// The type corresponding to the FirstProtocol protocol.
@@ -62,6 +72,7 @@ pub mod first_protocol {
         }
 
         /// The client sender for the `FirstProtocol` protocol.
+        #[repr(transparent)]
         pub struct FirstProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -93,9 +104,9 @@ pub mod first_protocol {
 /// See [`FirstProtocol`] for more details.
 pub trait FirstProtocolClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for FirstProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for FirstProtocol
 where
-    ___H: FirstProtocolClientHandler<___T> + Send,
+    ___H: FirstProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -122,9 +133,9 @@ pub trait FirstProtocolServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for FirstProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for FirstProtocol
 where
-    ___H: FirstProtocolServerHandler<___T> + Send,
+    ___H: FirstProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -163,52 +174,96 @@ where
 #[derive(Debug)]
 pub struct MultiHeterogeneousMemberService;
 
-impl ::fidl_next::Service for MultiHeterogeneousMemberService {
+impl ::fidl_next::DiscoverableService for MultiHeterogeneousMemberService {
     const SERVICE_NAME: &'static str = "test.service.MultiHeterogeneousMemberService";
     const MEMBER_NAMES: &'static [&'static str] = &["first_member", "second_member"];
 }
 
-/// A helper trait for instances of the `MultiHeterogeneousMemberService` service.
-pub trait MultiHeterogeneousMemberServiceInstance {
-    /// The error type for the instance.
-    type Error: ::core::error::Error + Send + Sync + 'static;
+impl<___C> ::fidl_next::Service<___C> for MultiHeterogeneousMemberService
+where
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
 
-    /// The transport type created by connecting to a member.
-    type Transport: ::fidl_next::Transport;
-
-    /// Attempts to connect the given server end to the `first_member` member.
-    fn connect_to_first_member(
-        &self,
-        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error>;
-
-    /// Attempts to connect the given server end to the `second_member` member.
-    fn connect_to_second_member(
-        &self,
-        server_end: ::fidl_next::ServerEnd<crate::SecondProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error>;
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
+{
+    type Connector = MultiHeterogeneousMemberServiceConnector<___C>;
 }
 
-impl<___I> MultiHeterogeneousMemberServiceInstance
-    for ::fidl_next::ServiceInstance<___I, MultiHeterogeneousMemberService>
-where
-    ___I: ::fidl_next::protocol::ServiceInstance,
-{
-    type Error = ___I::Error;
-    type Transport = ___I::Transport;
+/// A strongly-typed service connector for the `MultiHeterogeneousMemberService` service.
+#[repr(transparent)]
+pub struct MultiHeterogeneousMemberServiceConnector<___C> {
+    #[allow(dead_code)]
+    connector: ___C,
+}
 
-    fn connect_to_first_member(
+impl<___C> MultiHeterogeneousMemberServiceConnector<___C>
+where
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
+
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
+{
+    /// Attempts to connect to the `first_member` service member.
+    pub fn first_member(
         &self,
-        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error> {
-        self.as_untyped().connect_to("first_member", server_end.into_untyped())
+        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ::fidl_next::fuchsia::zx::Channel>,
+    ) -> Result<
+        (),
+        <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
+    > {
+        ::fidl_next::protocol::ServiceConnector::<
+                ::fidl_next::fuchsia::zx::Channel
+            >::connect_to_member(
+                &self.connector,
+                "first_member",
+                server_end.into_untyped(),
+            )
     }
 
-    fn connect_to_second_member(
+    /// Attempts to connect to the `second_member` service member.
+    pub fn second_member(
         &self,
-        server_end: ::fidl_next::ServerEnd<crate::SecondProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error> {
-        self.as_untyped().connect_to("second_member", server_end.into_untyped())
+        server_end: ::fidl_next::ServerEnd<
+            crate::SecondProtocol,
+            ::fidl_next::fuchsia::zx::Channel,
+        >,
+    ) -> Result<
+        (),
+        <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
+    > {
+        ::fidl_next::protocol::ServiceConnector::<
+                ::fidl_next::fuchsia::zx::Channel
+            >::connect_to_member(
+                &self.connector,
+                "second_member",
+                server_end.into_untyped(),
+            )
+    }
+}
+
+/// A service handler for the `MultiHeterogeneousMemberService` service.
+pub trait MultiHeterogeneousMemberServiceHandler<___T> {
+    /// Handles an attempt to connect to the `first_member` member.
+    fn first_member(&self, server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ___T>);
+
+    /// Handles an attempt to connect to the `second_member` member.
+    fn second_member(&self, server_end: ::fidl_next::ServerEnd<crate::SecondProtocol, ___T>);
+}
+
+impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for MultiHeterogeneousMemberService
+where
+    ___H: MultiHeterogeneousMemberServiceHandler<___T>,
+{
+    fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        match member {
+            "first_member" => {
+                handler.first_member(::fidl_next::ServerEnd::from_untyped(server_end))
+            }
+
+            "second_member" => {
+                handler.second_member(::fidl_next::ServerEnd::from_untyped(server_end))
+            }
+
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -216,52 +271,93 @@ where
 #[derive(Debug)]
 pub struct MultiHomogeneousMemberService;
 
-impl ::fidl_next::Service for MultiHomogeneousMemberService {
+impl ::fidl_next::DiscoverableService for MultiHomogeneousMemberService {
     const SERVICE_NAME: &'static str = "test.service.MultiHomogeneousMemberService";
     const MEMBER_NAMES: &'static [&'static str] = &["first_member", "second_member"];
 }
 
-/// A helper trait for instances of the `MultiHomogeneousMemberService` service.
-pub trait MultiHomogeneousMemberServiceInstance {
-    /// The error type for the instance.
-    type Error: ::core::error::Error + Send + Sync + 'static;
+impl<___C> ::fidl_next::Service<___C> for MultiHomogeneousMemberService
+where
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
 
-    /// The transport type created by connecting to a member.
-    type Transport: ::fidl_next::Transport;
-
-    /// Attempts to connect the given server end to the `first_member` member.
-    fn connect_to_first_member(
-        &self,
-        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error>;
-
-    /// Attempts to connect the given server end to the `second_member` member.
-    fn connect_to_second_member(
-        &self,
-        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error>;
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
+{
+    type Connector = MultiHomogeneousMemberServiceConnector<___C>;
 }
 
-impl<___I> MultiHomogeneousMemberServiceInstance
-    for ::fidl_next::ServiceInstance<___I, MultiHomogeneousMemberService>
-where
-    ___I: ::fidl_next::protocol::ServiceInstance,
-{
-    type Error = ___I::Error;
-    type Transport = ___I::Transport;
+/// A strongly-typed service connector for the `MultiHomogeneousMemberService` service.
+#[repr(transparent)]
+pub struct MultiHomogeneousMemberServiceConnector<___C> {
+    #[allow(dead_code)]
+    connector: ___C,
+}
 
-    fn connect_to_first_member(
+impl<___C> MultiHomogeneousMemberServiceConnector<___C>
+where
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
+
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
+{
+    /// Attempts to connect to the `first_member` service member.
+    pub fn first_member(
         &self,
-        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error> {
-        self.as_untyped().connect_to("first_member", server_end.into_untyped())
+        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ::fidl_next::fuchsia::zx::Channel>,
+    ) -> Result<
+        (),
+        <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
+    > {
+        ::fidl_next::protocol::ServiceConnector::<
+                ::fidl_next::fuchsia::zx::Channel
+            >::connect_to_member(
+                &self.connector,
+                "first_member",
+                server_end.into_untyped(),
+            )
     }
 
-    fn connect_to_second_member(
+    /// Attempts to connect to the `second_member` service member.
+    pub fn second_member(
         &self,
-        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error> {
-        self.as_untyped().connect_to("second_member", server_end.into_untyped())
+        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ::fidl_next::fuchsia::zx::Channel>,
+    ) -> Result<
+        (),
+        <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
+    > {
+        ::fidl_next::protocol::ServiceConnector::<
+                ::fidl_next::fuchsia::zx::Channel
+            >::connect_to_member(
+                &self.connector,
+                "second_member",
+                server_end.into_untyped(),
+            )
+    }
+}
+
+/// A service handler for the `MultiHomogeneousMemberService` service.
+pub trait MultiHomogeneousMemberServiceHandler<___T> {
+    /// Handles an attempt to connect to the `first_member` member.
+    fn first_member(&self, server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ___T>);
+
+    /// Handles an attempt to connect to the `second_member` member.
+    fn second_member(&self, server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ___T>);
+}
+
+impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for MultiHomogeneousMemberService
+where
+    ___H: MultiHomogeneousMemberServiceHandler<___T>,
+{
+    fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        match member {
+            "first_member" => {
+                handler.first_member(::fidl_next::ServerEnd::from_untyped(server_end))
+            }
+
+            "second_member" => {
+                handler.second_member(::fidl_next::ServerEnd::from_untyped(server_end))
+            }
+
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -300,6 +396,7 @@ pub mod second_protocol {
         }
 
         /// The client sender for the `SecondProtocol` protocol.
+        #[repr(transparent)]
         pub struct SecondProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -331,9 +428,9 @@ pub mod second_protocol {
 /// See [`SecondProtocol`] for more details.
 pub trait SecondProtocolClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for SecondProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for SecondProtocol
 where
-    ___H: SecondProtocolClientHandler<___T> + Send,
+    ___H: SecondProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -360,9 +457,9 @@ pub trait SecondProtocolServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for SecondProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for SecondProtocol
 where
-    ___H: SecondProtocolServerHandler<___T> + Send,
+    ___H: SecondProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -401,38 +498,65 @@ where
 #[derive(Debug)]
 pub struct SingleMemberService;
 
-impl ::fidl_next::Service for SingleMemberService {
+impl ::fidl_next::DiscoverableService for SingleMemberService {
     const SERVICE_NAME: &'static str = "test.service.SingleMemberService";
     const MEMBER_NAMES: &'static [&'static str] = &["single_member"];
 }
 
-/// A helper trait for instances of the `SingleMemberService` service.
-pub trait SingleMemberServiceInstance {
-    /// The error type for the instance.
-    type Error: ::core::error::Error + Send + Sync + 'static;
-
-    /// The transport type created by connecting to a member.
-    type Transport: ::fidl_next::Transport;
-
-    /// Attempts to connect the given server end to the `single_member` member.
-    fn connect_to_single_member(
-        &self,
-        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error>;
+impl<___C> ::fidl_next::Service<___C> for SingleMemberService
+where
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
+{
+    type Connector = SingleMemberServiceConnector<___C>;
 }
 
-impl<___I> SingleMemberServiceInstance for ::fidl_next::ServiceInstance<___I, SingleMemberService>
-where
-    ___I: ::fidl_next::protocol::ServiceInstance,
-{
-    type Error = ___I::Error;
-    type Transport = ___I::Transport;
+/// A strongly-typed service connector for the `SingleMemberService` service.
+#[repr(transparent)]
+pub struct SingleMemberServiceConnector<___C> {
+    #[allow(dead_code)]
+    connector: ___C,
+}
 
-    fn connect_to_single_member(
+impl<___C> SingleMemberServiceConnector<___C>
+where
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
+{
+    /// Attempts to connect to the `single_member` service member.
+    pub fn single_member(
         &self,
-        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error> {
-        self.as_untyped().connect_to("single_member", server_end.into_untyped())
+        server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ::fidl_next::fuchsia::zx::Channel>,
+    ) -> Result<
+        (),
+        <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
+    > {
+        ::fidl_next::protocol::ServiceConnector::<
+                ::fidl_next::fuchsia::zx::Channel
+            >::connect_to_member(
+                &self.connector,
+                "single_member",
+                server_end.into_untyped(),
+            )
+    }
+}
+
+/// A service handler for the `SingleMemberService` service.
+pub trait SingleMemberServiceHandler<___T> {
+    /// Handles an attempt to connect to the `single_member` member.
+    fn single_member(&self, server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ___T>);
+}
+
+impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for SingleMemberService
+where
+    ___H: SingleMemberServiceHandler<___T>,
+{
+    fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        match member {
+            "single_member" => {
+                handler.single_member(::fidl_next::ServerEnd::from_untyped(server_end))
+            }
+
+            _ => unreachable!(),
+        }
     }
 }
 

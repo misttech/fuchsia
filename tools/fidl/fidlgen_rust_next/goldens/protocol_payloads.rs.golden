@@ -2263,6 +2263,7 @@ pub mod main_protocol {
         }
 
         /// The client sender for the `MainProtocol` protocol.
+        #[repr(transparent)]
         pub struct MainProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -2871,9 +2872,9 @@ pub trait MainProtocolClientHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for MainProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for MainProtocol
 where
-    ___H: MainProtocolClientHandler<___T> + Send,
+    ___H: MainProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <main_protocol::TwoWayComposed as ::fidl_next::Method>::Response:
@@ -3059,9 +3060,9 @@ pub trait MainProtocolServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for MainProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for MainProtocol
 where
-    ___H: MainProtocolServerHandler<___T> + Send,
+    ___H: MainProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <main_protocol::OneWayComposed as ::fidl_next::Method>::Request:

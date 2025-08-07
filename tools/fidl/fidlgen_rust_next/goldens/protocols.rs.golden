@@ -29,6 +29,7 @@ pub mod another_discoverable_protocol {
         }
 
         /// The client sender for the `AnotherDiscoverableProtocol` protocol.
+        #[repr(transparent)]
         pub struct AnotherDiscoverableProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -51,9 +52,9 @@ pub mod another_discoverable_protocol {
 /// See [`AnotherDiscoverableProtocol`] for more details.
 pub trait AnotherDiscoverableProtocolClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for AnotherDiscoverableProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for AnotherDiscoverableProtocol
 where
-    ___H: AnotherDiscoverableProtocolClientHandler<___T> + Send,
+    ___H: AnotherDiscoverableProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -75,9 +76,9 @@ where
 /// See [`AnotherDiscoverableProtocol`] for more details.
 pub trait AnotherDiscoverableProtocolServerHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for AnotherDiscoverableProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for AnotherDiscoverableProtocol
 where
-    ___H: AnotherDiscoverableProtocolServerHandler<___T> + Send,
+    ___H: AnotherDiscoverableProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -1559,6 +1560,7 @@ pub mod channel_protocol {
         }
 
         /// The client sender for the `ChannelProtocol` protocol.
+        #[repr(transparent)]
         pub struct ChannelProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -1777,9 +1779,9 @@ pub trait ChannelProtocolClientHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for ChannelProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ChannelProtocol
 where
-    ___H: ChannelProtocolClientHandler<___T> + Send,
+    ___H: ChannelProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <channel_protocol::EventA as ::fidl_next::Method>::Response:
@@ -1851,9 +1853,9 @@ pub trait ChannelProtocolServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for ChannelProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ChannelProtocol
 where
-    ___H: ChannelProtocolServerHandler<___T> + Send,
+    ___H: ChannelProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <channel_protocol::MethodA as ::fidl_next::Method>::Request:
@@ -1975,6 +1977,7 @@ pub mod discoverable_protocol {
         }
 
         /// The client sender for the `DiscoverableProtocol` protocol.
+        #[repr(transparent)]
         pub struct DiscoverableProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -2006,9 +2009,9 @@ pub mod discoverable_protocol {
 /// See [`DiscoverableProtocol`] for more details.
 pub trait DiscoverableProtocolClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for DiscoverableProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for DiscoverableProtocol
 where
-    ___H: DiscoverableProtocolClientHandler<___T> + Send,
+    ___H: DiscoverableProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -2035,9 +2038,9 @@ pub trait DiscoverableProtocolServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for DiscoverableProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for DiscoverableProtocol
 where
-    ___H: DiscoverableProtocolServerHandler<___T> + Send,
+    ___H: DiscoverableProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -2906,6 +2909,7 @@ pub mod handle_rights_protocol {
         }
 
         /// The client sender for the `HandleRightsProtocol` protocol.
+        #[repr(transparent)]
         pub struct HandleRightsProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -3039,9 +3043,9 @@ pub trait HandleRightsProtocolClientHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for HandleRightsProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for HandleRightsProtocol
 where
-    ___H: HandleRightsProtocolClientHandler<___T> + Send,
+    ___H: HandleRightsProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <handle_rights_protocol::ResponseMethod as ::fidl_next::Method>::Response:
@@ -3092,9 +3096,9 @@ pub trait HandleRightsProtocolServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for HandleRightsProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for HandleRightsProtocol
 where
-    ___H: HandleRightsProtocolServerHandler<___T> + Send,
+    ___H: HandleRightsProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <handle_rights_protocol::NoResponseMethod as ::fidl_next::Method>::Request:
@@ -3786,6 +3790,7 @@ pub mod many_parameters {
         }
 
         /// The client sender for the `ManyParameters` protocol.
+        #[repr(transparent)]
         pub struct ManyParametersClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -3939,9 +3944,9 @@ pub mod many_parameters {
 /// See [`ManyParameters`] for more details.
 pub trait ManyParametersClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for ManyParameters
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ManyParameters
 where
-    ___H: ManyParametersClientHandler<___T> + Send,
+    ___H: ManyParametersClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -3970,9 +3975,9 @@ pub trait ManyParametersServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for ManyParameters
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ManyParameters
 where
-    ___H: ManyParametersServerHandler<___T> + Send,
+    ___H: ManyParametersServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <many_parameters::Fifteen as ::fidl_next::Method>::Request:
@@ -4799,6 +4804,7 @@ pub mod method_with_union {
         }
 
         /// The client sender for the `MethodWithUnion` protocol.
+        #[repr(transparent)]
         pub struct MethodWithUnionClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -4860,9 +4866,9 @@ pub mod method_with_union {
 /// See [`MethodWithUnion`] for more details.
 pub trait MethodWithUnionClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for MethodWithUnion
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for MethodWithUnion
 where
-    ___H: MethodWithUnionClientHandler<___T> + Send,
+    ___H: MethodWithUnionClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <method_with_union::UnionMethod as ::fidl_next::Method>::Response:
@@ -4896,9 +4902,9 @@ pub trait MethodWithUnionServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for MethodWithUnion
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for MethodWithUnion
 where
-    ___H: MethodWithUnionServerHandler<___T> + Send,
+    ___H: MethodWithUnionServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <method_with_union::UnionMethod as ::fidl_next::Method>::Request:
@@ -4970,6 +4976,7 @@ pub mod platform_server {
         }
 
         /// The client sender for the `PlatformServer` protocol.
+        #[repr(transparent)]
         pub struct PlatformServerClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -4992,9 +4999,9 @@ pub mod platform_server {
 /// See [`PlatformServer`] for more details.
 pub trait PlatformServerClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for PlatformServer
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for PlatformServer
 where
-    ___H: PlatformServerClientHandler<___T> + Send,
+    ___H: PlatformServerClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -5016,9 +5023,9 @@ where
 /// See [`PlatformServer`] for more details.
 pub trait PlatformServerServerHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for PlatformServer
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for PlatformServer
 where
-    ___H: PlatformServerServerHandler<___T> + Send,
+    ___H: PlatformServerServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -6630,6 +6637,7 @@ pub mod with_and_without_request_response {
         }
 
         /// The client sender for the `WithAndWithoutRequestResponse` protocol.
+        #[repr(transparent)]
         pub struct WithAndWithoutRequestResponseClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -6846,9 +6854,9 @@ pub trait WithAndWithoutRequestResponseClientHandler<___T: ::fidl_next::Transpor
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for WithAndWithoutRequestResponse
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithAndWithoutRequestResponse
 where
-    ___H: WithAndWithoutRequestResponseClientHandler<___T> + Send,
+    ___H: WithAndWithoutRequestResponseClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <with_and_without_request_response::NoRequestWithResponse as ::fidl_next::Method>::Response:
@@ -6949,9 +6957,9 @@ pub trait WithAndWithoutRequestResponseServerHandler<___T: ::fidl_next::Transpor
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for WithAndWithoutRequestResponse
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for WithAndWithoutRequestResponse
 where
-    ___H: WithAndWithoutRequestResponseServerHandler<___T> + Send,
+    ___H: WithAndWithoutRequestResponseServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <with_and_without_request_response::WithRequestNoResponse as ::fidl_next::Method>::Request:
@@ -7496,6 +7504,7 @@ pub mod with_error_syntax {
         }
 
         /// The client sender for the `WithErrorSyntax` protocol.
+        #[repr(transparent)]
         pub struct WithErrorSyntaxClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -7565,9 +7574,9 @@ pub mod with_error_syntax {
 /// See [`WithErrorSyntax`] for more details.
 pub trait WithErrorSyntaxClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for WithErrorSyntax
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithErrorSyntax
 where
-    ___H: WithErrorSyntaxClientHandler<___T> + Send,
+    ___H: WithErrorSyntaxClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <with_error_syntax::ResponseAsStruct as ::fidl_next::Method>::Response:
@@ -7629,9 +7638,9 @@ pub trait WithErrorSyntaxServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for WithErrorSyntax
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for WithErrorSyntax
 where
-    ___H: WithErrorSyntaxServerHandler<___T> + Send,
+    ___H: WithErrorSyntaxServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -8725,6 +8734,7 @@ pub mod with_protocol_ends {
         }
 
         /// The client sender for the `WithProtocolEnds` protocol.
+        #[repr(transparent)]
         pub struct WithProtocolEndsClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -8870,9 +8880,9 @@ pub mod with_protocol_ends {
 /// See [`WithProtocolEnds`] for more details.
 pub trait WithProtocolEndsClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for WithProtocolEnds
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithProtocolEnds
 where
-    ___H: WithProtocolEndsClientHandler<___T> + Send,
+    ___H: WithProtocolEndsClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <with_protocol_ends::ClientEnds as ::fidl_next::Method>::Response:
@@ -8930,9 +8940,9 @@ pub trait WithProtocolEndsServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for WithProtocolEnds
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for WithProtocolEnds
 where
-    ___H: WithProtocolEndsServerHandler<___T> + Send,
+    ___H: WithProtocolEndsServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <with_protocol_ends::ClientEnds as ::fidl_next::Method>::Request:

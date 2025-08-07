@@ -24,8 +24,9 @@
 pub use ::fidl_next_bind::*;
 pub use ::fidl_next_codec::*;
 pub use ::fidl_next_protocol::{
-    self as protocol, Flexible, FlexibleResult, FrameworkError, ProtocolError, RecvFuture,
-    SendFuture, Transport, WireFlexible, WireFlexibleResult, WireFrameworkError,
+    self as protocol, ClientHandler, Flexible, FlexibleResult, FrameworkError, ProtocolError,
+    RecvFuture, SendFuture, ServerHandler, Transport, WireFlexible, WireFlexibleResult,
+    WireFrameworkError,
 };
 
 /// Fuchsia-specific FIDL extensions.

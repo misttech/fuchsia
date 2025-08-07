@@ -608,6 +608,7 @@ pub mod simple_protocol {
         }
 
         /// The client sender for the `SimpleProtocol` protocol.
+        #[repr(transparent)]
         pub struct SimpleProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -668,9 +669,9 @@ pub mod simple_protocol {
 /// See [`SimpleProtocol`] for more details.
 pub trait SimpleProtocolClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for SimpleProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for SimpleProtocol
 where
-    ___H: SimpleProtocolClientHandler<___T> + Send,
+    ___H: SimpleProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <simple_protocol::Add as ::fidl_next::Method>::Response:
@@ -704,9 +705,9 @@ pub trait SimpleProtocolServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for SimpleProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for SimpleProtocol
 where
-    ___H: SimpleProtocolServerHandler<___T> + Send,
+    ___H: SimpleProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <simple_protocol::Add as ::fidl_next::Method>::Request:

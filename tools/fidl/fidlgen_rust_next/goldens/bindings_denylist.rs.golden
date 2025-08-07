@@ -1005,6 +1005,7 @@ pub mod allowed {
         }
 
         /// The client sender for the `Allowed` protocol.
+        #[repr(transparent)]
         pub struct AllowedClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -1041,9 +1042,9 @@ pub mod allowed {
 /// See [`Allowed`] for more details.
 pub trait AllowedClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for Allowed
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Allowed
 where
-    ___H: AllowedClientHandler<___T> + Send,
+    ___H: AllowedClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <allowed::Denied as ::fidl_next::Method>::Response:
@@ -1075,9 +1076,9 @@ pub trait AllowedServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for Allowed
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Allowed
 where
-    ___H: AllowedServerHandler<___T> + Send,
+    ___H: AllowedServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -1137,6 +1138,7 @@ pub mod contains_allowed {
         }
 
         /// The client sender for the `ContainsAllowed` protocol.
+        #[repr(transparent)]
         pub struct ContainsAllowedClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -1159,9 +1161,9 @@ pub mod contains_allowed {
 /// See [`ContainsAllowed`] for more details.
 pub trait ContainsAllowedClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for ContainsAllowed
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ContainsAllowed
 where
-    ___H: ContainsAllowedClientHandler<___T> + Send,
+    ___H: ContainsAllowedClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -1183,9 +1185,9 @@ where
 /// See [`ContainsAllowed`] for more details.
 pub trait ContainsAllowedServerHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for ContainsAllowed
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ContainsAllowed
 where
-    ___H: ContainsAllowedServerHandler<___T> + Send,
+    ___H: ContainsAllowedServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -2293,6 +2295,7 @@ pub mod denied {
         }
 
         /// The client sender for the `Denied` protocol.
+        #[repr(transparent)]
         pub struct DeniedClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -2364,9 +2367,9 @@ pub mod denied {
 /// See [`Denied`] for more details.
 pub trait DeniedClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for Denied
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Denied
 where
-    ___H: DeniedClientHandler<___T> + Send,
+    ___H: DeniedClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -2395,9 +2398,9 @@ pub trait DeniedServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for Denied
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Denied
 where
-    ___H: DeniedServerHandler<___T> + Send,
+    ___H: DeniedServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <denied::ShouldNeverAppearInAnyBinding as ::fidl_next::Method>::Request:
@@ -5867,6 +5870,7 @@ pub mod deny_each_binding {
         }
 
         /// The client sender for the `DenyEachBinding` protocol.
+        #[repr(transparent)]
         pub struct DenyEachBindingClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -6108,9 +6112,9 @@ pub mod deny_each_binding {
 /// See [`DenyEachBinding`] for more details.
 pub trait DenyEachBindingClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for DenyEachBinding
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for DenyEachBinding
 where
-    ___H: DenyEachBindingClientHandler<___T> + Send,
+    ___H: DenyEachBindingClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <deny_each_binding::OnlyDenyCpp as ::fidl_next::Method>::Response:
@@ -6204,9 +6208,9 @@ pub trait DenyEachBindingServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for DenyEachBinding
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for DenyEachBinding
 where
-    ___H: DenyEachBindingServerHandler<___T> + Send,
+    ___H: DenyEachBindingServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <deny_each_binding::OnlyDenyCpp as ::fidl_next::Method>::Request:
@@ -6423,6 +6427,7 @@ pub mod imports_same_name_context {
         }
 
         /// The client sender for the `ImportsSameNameContext` protocol.
+        #[repr(transparent)]
         pub struct ImportsSameNameContextClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -6488,9 +6493,9 @@ pub mod imports_same_name_context {
 /// See [`ImportsSameNameContext`] for more details.
 pub trait ImportsSameNameContextClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for ImportsSameNameContext
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ImportsSameNameContext
 where
-    ___H: ImportsSameNameContextClientHandler<___T> + Send,
+    ___H: ImportsSameNameContextClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -6529,9 +6534,9 @@ pub trait ImportsSameNameContextServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for ImportsSameNameContext
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ImportsSameNameContext
 where
-    ___H: ImportsSameNameContextServerHandler<___T> + Send,
+    ___H: ImportsSameNameContextServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <imports_same_name_context::AlwaysDenied as ::fidl_next::Method>::Request:
@@ -6973,6 +6978,7 @@ pub mod only_cpp_and_deps {
         }
 
         /// The client sender for the `OnlyCppAndDeps` protocol.
+        #[repr(transparent)]
         pub struct OnlyCppAndDepsClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -6995,9 +7001,9 @@ pub mod only_cpp_and_deps {
 /// See [`OnlyCppAndDeps`] for more details.
 pub trait OnlyCppAndDepsClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for OnlyCppAndDeps
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for OnlyCppAndDeps
 where
-    ___H: OnlyCppAndDepsClientHandler<___T> + Send,
+    ___H: OnlyCppAndDepsClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -7019,9 +7025,9 @@ where
 /// See [`OnlyCppAndDeps`] for more details.
 pub trait OnlyCppAndDepsServerHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for OnlyCppAndDeps
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for OnlyCppAndDeps
 where
-    ___H: OnlyCppAndDepsServerHandler<___T> + Send,
+    ___H: OnlyCppAndDepsServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -7326,26 +7332,36 @@ where
 #[derive(Debug)]
 pub struct OnlyHlcpp;
 
-impl ::fidl_next::Service for OnlyHlcpp {
+impl ::fidl_next::DiscoverableService for OnlyHlcpp {
     const SERVICE_NAME: &'static str = "test.bindingsdenylist.OnlyHlcpp";
     const MEMBER_NAMES: &'static [&'static str] = &[];
 }
 
-/// A helper trait for instances of the `OnlyHlcpp` service.
-pub trait OnlyHlcppInstance {
-    /// The error type for the instance.
-    type Error: ::core::error::Error + Send + Sync + 'static;
-
-    /// The transport type created by connecting to a member.
-    type Transport: ::fidl_next::Transport;
+impl<___C> ::fidl_next::Service<___C> for OnlyHlcpp {
+    type Connector = OnlyHlcppConnector<___C>;
 }
 
-impl<___I> OnlyHlcppInstance for ::fidl_next::ServiceInstance<___I, OnlyHlcpp>
+/// A strongly-typed service connector for the `OnlyHlcpp` service.
+#[repr(transparent)]
+pub struct OnlyHlcppConnector<___C> {
+    #[allow(dead_code)]
+    connector: ___C,
+}
+
+impl<___C> OnlyHlcppConnector<___C> {}
+
+/// A service handler for the `OnlyHlcpp` service.
+pub trait OnlyHlcppHandler<___T> {}
+
+impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for OnlyHlcpp
 where
-    ___I: ::fidl_next::protocol::ServiceInstance,
+    ___H: OnlyHlcppHandler<___T>,
 {
-    type Error = ___I::Error;
-    type Transport = ___I::Transport;
+    fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        match member {
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

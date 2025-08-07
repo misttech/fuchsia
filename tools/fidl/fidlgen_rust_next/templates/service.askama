@@ -5,7 +5,7 @@
 {%- endif %}
 pub struct {{ service_name }};
 
-impl ::fidl_next::Service for {{ service_name }} {
+impl ::fidl_next::DiscoverableService for {{ service_name }} {
     const SERVICE_NAME: &'static str = "{{ self.service_name() }}";
     const MEMBER_NAMES: &'static [&'static str] = &[
         {% for member in service.members %}
@@ -14,40 +14,84 @@ impl ::fidl_next::Service for {{ service_name }} {
     ];
 }
 
-/// A helper trait for instances of the `{{ non_canonical_name }}` service.
-pub trait {{ instance_trait_name }} {
-    /// The error type for the instance.
-    type Error: ::core::error::Error + Send + Sync + 'static;
-
-    /// The transport type created by connecting to a member.
-    type Transport: ::fidl_next::Transport;
-
+impl<___C> ::fidl_next::Service<___C> for {{ service_name }}
+where
     {% for member in service.members %}
-        {% if let TypeKind::Endpoint with { nullable: _, role: _, protocol, protocol_transport: _ } = member.ty.kind %}
-            /// Attempts to connect the given server end to the `{{ member.name.non_canonical() }}` member.
-            fn connect_to_{{ member.name|snake }}(
-                &self,
-                server_end: ::fidl_next::ServerEnd<{{ self.natural_id(protocol) }}, Self::Transport>,
-            ) -> Result<(), Self::Error>;
-        {% endif %}
+        ___C: ::fidl_next::protocol::ServiceConnector<
+            {{ self.member_transport(member) }}
+        >,
+    {% endfor %}
+{
+    type Connector = {{ connector_name }}<___C>;
+}
+
+/// A strongly-typed service connector for the `{{ non_canonical_name }}` service.
+#[repr(transparent)]
+pub struct {{ connector_name }}<___C> {
+    #[allow(dead_code)]
+    connector: ___C,
+}
+
+impl<___C> {{ connector_name }}<___C>
+where
+    {% for member in service.members %}
+        ___C: ::fidl_next::protocol::ServiceConnector<
+            {{ self.member_transport(member) }}
+        >,
+    {% endfor %}
+{
+    {% for member in service.members %}
+        /// Attempts to connect to the `{{ member.name.non_canonical() }}` service member.
+        pub fn {{ member.name|snake }}(
+            &self,
+            server_end: ::fidl_next::ServerEnd<
+                {{ self.natural_id(self.member_protocol(member)) }},
+                {{ self.member_transport(member) }},
+            >,
+        ) -> Result<
+            (),
+            <___C as ::fidl_next::protocol::ServiceConnector<
+                {{ self.member_transport(member) }}
+            >>::Error,
+        > {
+            ::fidl_next::protocol::ServiceConnector::<
+                {{ self.member_transport(member) }}
+            >::connect_to_member(
+                &self.connector,
+                "{{ member.name.non_canonical() }}",
+                server_end.into_untyped(),
+            )
+        }
     {% endfor %}
 }
 
-impl<___I> {{ instance_trait_name }} for ::fidl_next::ServiceInstance<___I, {{ service_name }}>
-where
-    ___I: ::fidl_next::protocol::ServiceInstance,
-{
-    type Error = ___I::Error;
-    type Transport = ___I::Transport;
-
+/// A service handler for the `{{ non_canonical_name }}` service.
+pub trait {{ handler_name }}<___T> {
     {% for member in service.members %}
-        {% if let TypeKind::Endpoint with { nullable: _, role: _, protocol, protocol_transport: _ } = member.ty.kind %}
-            fn connect_to_{{ member.name|snake }}(
-                &self,
-                server_end: ::fidl_next::ServerEnd<{{ self.natural_id(protocol) }}, Self::Transport>,
-            ) -> Result<(), Self::Error> {
-                self.as_untyped().connect_to("{{ member.name.snake() }}", server_end.into_untyped())
-            }
-        {% endif %}
+        /// Handles an attempt to connect to the `{{ member.name.non_canonical() }}` member.
+        fn {{ member.name|snake }}(
+            &self,
+            server_end: ::fidl_next::ServerEnd<{{ self.natural_id(self.member_protocol(member)) }}, ___T>,
+        );
     {% endfor %}
+}
+
+impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for {{ service_name }}
+where
+    ___H: {{ handler_name }}<___T>,
+{
+    fn on_connection(
+        handler: &___H,
+        member: &str,
+        server_end: ___T,
+    ) {
+        match member {
+            {% for member in service.members %}
+                "{{ member.name.non_canonical() }}" => handler.{{ member.name|snake }}(
+                    ::fidl_next::ServerEnd::from_untyped(server_end),
+                ),
+            {% endfor %}
+            _ => unreachable!(),
+        }
+    }
 }

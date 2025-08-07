@@ -152,6 +152,7 @@ pub mod driver_protocol {
         }
 
         /// The client sender for the `DriverProtocol` protocol.
+        #[repr(transparent)]
         pub struct DriverProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -174,9 +175,9 @@ pub mod driver_protocol {
 /// See [`DriverProtocol`] for more details.
 pub trait DriverProtocolClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for DriverProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for DriverProtocol
 where
-    ___H: DriverProtocolClientHandler<___T> + Send,
+    ___H: DriverProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -198,9 +199,9 @@ where
 /// See [`DriverProtocol`] for more details.
 pub trait DriverProtocolServerHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for DriverProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for DriverProtocol
 where
-    ___H: DriverProtocolServerHandler<___T> + Send,
+    ___H: DriverProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -628,6 +629,7 @@ pub mod handles_in_protocol {
         }
 
         /// The client sender for the `HandlesInProtocol` protocol.
+        #[repr(transparent)]
         pub struct HandlesInProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -685,9 +687,9 @@ pub mod handles_in_protocol {
 /// See [`HandlesInProtocol`] for more details.
 pub trait HandlesInProtocolClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for HandlesInProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for HandlesInProtocol
 where
-    ___H: HandlesInProtocolClientHandler<___T> + Send,
+    ___H: HandlesInProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -716,9 +718,9 @@ pub trait HandlesInProtocolServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for HandlesInProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for HandlesInProtocol
 where
-    ___H: HandlesInProtocolServerHandler<___T> + Send,
+    ___H: HandlesInProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <handles_in_protocol::SendHandles as ::fidl_next::Method>::Request:

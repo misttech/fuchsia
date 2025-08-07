@@ -403,6 +403,7 @@ pub mod interface {
         }
 
         /// The client sender for the `Interface` protocol.
+        #[repr(transparent)]
         pub struct InterfaceClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -451,9 +452,9 @@ pub trait InterfaceClientHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for Interface
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Interface
 where
-    ___H: InterfaceClientHandler<___T> + Send,
+    ___H: InterfaceClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -485,9 +486,9 @@ pub trait InterfaceServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for Interface
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Interface
 where
-    ___H: InterfaceServerHandler<___T> + Send,
+    ___H: InterfaceServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -1013,38 +1014,63 @@ impl ::core::convert::From<MyStrictEnum> for WireMyStrictEnum {
 #[derive(Debug)]
 pub struct Service;
 
-impl ::fidl_next::Service for Service {
+impl ::fidl_next::DiscoverableService for Service {
     const SERVICE_NAME: &'static str = "test.doccomments.Service";
     const MEMBER_NAMES: &'static [&'static str] = &["interface"];
 }
 
-/// A helper trait for instances of the `Service` service.
-pub trait ServiceInstance {
-    /// The error type for the instance.
-    type Error: ::core::error::Error + Send + Sync + 'static;
-
-    /// The transport type created by connecting to a member.
-    type Transport: ::fidl_next::Transport;
-
-    /// Attempts to connect the given server end to the `interface` member.
-    fn connect_to_interface(
-        &self,
-        server_end: ::fidl_next::ServerEnd<crate::Interface, Self::Transport>,
-    ) -> Result<(), Self::Error>;
+impl<___C> ::fidl_next::Service<___C> for Service
+where
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
+{
+    type Connector = ServiceConnector<___C>;
 }
 
-impl<___I> ServiceInstance for ::fidl_next::ServiceInstance<___I, Service>
-where
-    ___I: ::fidl_next::protocol::ServiceInstance,
-{
-    type Error = ___I::Error;
-    type Transport = ___I::Transport;
+/// A strongly-typed service connector for the `Service` service.
+#[repr(transparent)]
+pub struct ServiceConnector<___C> {
+    #[allow(dead_code)]
+    connector: ___C,
+}
 
-    fn connect_to_interface(
+impl<___C> ServiceConnector<___C>
+where
+    ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
+{
+    /// Attempts to connect to the `interface` service member.
+    pub fn interface(
         &self,
-        server_end: ::fidl_next::ServerEnd<crate::Interface, Self::Transport>,
-    ) -> Result<(), Self::Error> {
-        self.as_untyped().connect_to("interface", server_end.into_untyped())
+        server_end: ::fidl_next::ServerEnd<crate::Interface, ::fidl_next::fuchsia::zx::Channel>,
+    ) -> Result<
+        (),
+        <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
+    > {
+        ::fidl_next::protocol::ServiceConnector::<
+                ::fidl_next::fuchsia::zx::Channel
+            >::connect_to_member(
+                &self.connector,
+                "interface",
+                server_end.into_untyped(),
+            )
+    }
+}
+
+/// A service handler for the `Service` service.
+pub trait ServiceHandler<___T> {
+    /// Handles an attempt to connect to the `interface` member.
+    fn interface(&self, server_end: ::fidl_next::ServerEnd<crate::Interface, ___T>);
+}
+
+impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for Service
+where
+    ___H: ServiceHandler<___T>,
+{
+    fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        match member {
+            "interface" => handler.interface(::fidl_next::ServerEnd::from_untyped(server_end)),
+
+            _ => unreachable!(),
+        }
     }
 }
 

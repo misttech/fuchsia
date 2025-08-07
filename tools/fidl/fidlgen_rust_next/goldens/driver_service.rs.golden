@@ -6,38 +6,61 @@
 #[derive(Debug)]
 pub struct DriverOnlyService;
 
-impl ::fidl_next::Service for DriverOnlyService {
+impl ::fidl_next::DiscoverableService for DriverOnlyService {
     const SERVICE_NAME: &'static str = "test.driverservice.DriverOnlyService";
     const MEMBER_NAMES: &'static [&'static str] = &["member"];
 }
 
-/// A helper trait for instances of the `DriverOnlyService` service.
-pub trait DriverOnlyServiceInstance {
-    /// The error type for the instance.
-    type Error: ::core::error::Error + Send + Sync + 'static;
-
-    /// The transport type created by connecting to a member.
-    type Transport: ::fidl_next::Transport;
-
-    /// Attempts to connect the given server end to the `member` member.
-    fn connect_to_member(
-        &self,
-        server_end: ::fidl_next::ServerEnd<crate::SomeDriverProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error>;
+impl<___C> ::fidl_next::Service<___C> for DriverOnlyService
+where
+    ___C: ::fidl_next::protocol::ServiceConnector<::fdf_fidl::DriverChannel>,
+{
+    type Connector = DriverOnlyServiceConnector<___C>;
 }
 
-impl<___I> DriverOnlyServiceInstance for ::fidl_next::ServiceInstance<___I, DriverOnlyService>
-where
-    ___I: ::fidl_next::protocol::ServiceInstance,
-{
-    type Error = ___I::Error;
-    type Transport = ___I::Transport;
+/// A strongly-typed service connector for the `DriverOnlyService` service.
+#[repr(transparent)]
+pub struct DriverOnlyServiceConnector<___C> {
+    #[allow(dead_code)]
+    connector: ___C,
+}
 
-    fn connect_to_member(
+impl<___C> DriverOnlyServiceConnector<___C>
+where
+    ___C: ::fidl_next::protocol::ServiceConnector<::fdf_fidl::DriverChannel>,
+{
+    /// Attempts to connect to the `member` service member.
+    pub fn member(
         &self,
-        server_end: ::fidl_next::ServerEnd<crate::SomeDriverProtocol, Self::Transport>,
-    ) -> Result<(), Self::Error> {
-        self.as_untyped().connect_to("member", server_end.into_untyped())
+        server_end: ::fidl_next::ServerEnd<crate::SomeDriverProtocol, ::fdf_fidl::DriverChannel>,
+    ) -> Result<
+        (),
+        <___C as ::fidl_next::protocol::ServiceConnector<::fdf_fidl::DriverChannel>>::Error,
+    > {
+        ::fidl_next::protocol::ServiceConnector::<::fdf_fidl::DriverChannel>::connect_to_member(
+            &self.connector,
+            "member",
+            server_end.into_untyped(),
+        )
+    }
+}
+
+/// A service handler for the `DriverOnlyService` service.
+pub trait DriverOnlyServiceHandler<___T> {
+    /// Handles an attempt to connect to the `member` member.
+    fn member(&self, server_end: ::fidl_next::ServerEnd<crate::SomeDriverProtocol, ___T>);
+}
+
+impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for DriverOnlyService
+where
+    ___H: DriverOnlyServiceHandler<___T>,
+{
+    fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        match member {
+            "member" => handler.member(::fidl_next::ServerEnd::from_untyped(server_end)),
+
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -64,6 +87,7 @@ pub mod some_driver_protocol {
         }
 
         /// The client sender for the `SomeDriverProtocol` protocol.
+        #[repr(transparent)]
         pub struct SomeDriverProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -86,9 +110,9 @@ pub mod some_driver_protocol {
 /// See [`SomeDriverProtocol`] for more details.
 pub trait SomeDriverProtocolClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for SomeDriverProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for SomeDriverProtocol
 where
-    ___H: SomeDriverProtocolClientHandler<___T> + Send,
+    ___H: SomeDriverProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -110,9 +134,9 @@ where
 /// See [`SomeDriverProtocol`] for more details.
 pub trait SomeDriverProtocolServerHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for SomeDriverProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for SomeDriverProtocol
 where
-    ___H: SomeDriverProtocolServerHandler<___T> + Send,
+    ___H: SomeDriverProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(

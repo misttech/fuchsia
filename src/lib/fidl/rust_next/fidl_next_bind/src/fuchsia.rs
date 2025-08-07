@@ -10,8 +10,8 @@ use zx::Channel;
 use fidl_next_protocol::Transport;
 
 use crate::{
-    Client, ClientEnd, ClientProtocol, ClientSender, Server, ServerEnd, ServerProtocol,
-    ServerSender,
+    Client, ClientEnd, ClientSender, DispatchClientMessage, DispatchServerMessage, Server,
+    ServerEnd, ServerSender,
 };
 
 /// Creates a `ClientEnd` and `ServerEnd` for the given protocol over Zircon channels.
@@ -28,7 +28,7 @@ pub fn create_channel<P>() -> (ClientEnd<P, zx::Channel>, ServerEnd<P, zx::Chann
 /// Returns a `ClientSender` for the spawned client.
 pub fn spawn_client_detached<P, T, H>(client_end: ClientEnd<P, T>, handler: H) -> ClientSender<P, T>
 where
-    P: ClientProtocol<H, T> + 'static,
+    P: DispatchClientMessage<H, T> + 'static,
     T: Transport + 'static,
     H: Send + 'static,
 {
@@ -64,7 +64,7 @@ where
 pub fn spawn_server_detached<P, T, H>(server_end: ServerEnd<P, T>, handler: H) -> ServerSender<P, T>
 where
     T: Transport + 'static,
-    P: ServerProtocol<H, T> + 'static,
+    P: DispatchServerMessage<H, T> + 'static,
     H: Send + 'static,
 {
     let mut server = Server::new(server_end);

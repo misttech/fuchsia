@@ -405,6 +405,7 @@ pub mod one_way {
         }
 
         /// The client sender for the `OneWay` protocol.
+        #[repr(transparent)]
         pub struct OneWayClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -458,9 +459,9 @@ pub mod one_way {
 /// See [`OneWay`] for more details.
 pub trait OneWayClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for OneWay
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for OneWay
 where
-    ___H: OneWayClientHandler<___T> + Send,
+    ___H: OneWayClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -489,9 +490,9 @@ pub trait OneWayServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for OneWay
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for OneWay
 where
-    ___H: OneWayServerHandler<___T> + Send,
+    ___H: OneWayServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <one_way::Send as ::fidl_next::Method>::Request:

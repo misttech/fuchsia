@@ -182,6 +182,7 @@ pub mod {{ module_name }} {
         }
 
         /// The client sender for the `{{ non_canonical_name }}` protocol.
+        #[repr(transparent)]
         pub struct {{ client_sender_name }}<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -422,9 +423,9 @@ pub trait {{ client_handler_name }}<___T: ::fidl_next::Transport> {
     {% endif %}
 }
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for {{ protocol_name }}
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for {{ protocol_name }}
 where
-    ___H: {{ client_handler_name }}<___T> + Send,
+    ___H: {{ client_handler_name }}<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
     {% for method in protocol.methods %}
         {% if method.maybe_response_payload.is_some() %}
@@ -516,9 +517,9 @@ pub trait {{ server_handler_name }}<___T: ::fidl_next::Transport> {
     {% endif %}
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for {{ protocol_name }}
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for {{ protocol_name }}
 where
-    ___H: {{ server_handler_name }}<___T> + Send,
+    ___H: {{ server_handler_name }}<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
     {% for method in protocol.methods %}
         {% if method.maybe_request_payload.is_some() %}

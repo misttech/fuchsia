@@ -498,6 +498,7 @@ pub mod example_use_of_error_syntax {
         }
 
         /// The client sender for the `ExampleUseOfErrorSyntax` protocol.
+        #[repr(transparent)]
         pub struct ExampleUseOfErrorSyntaxClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -601,9 +602,9 @@ pub mod example_use_of_error_syntax {
 /// See [`ExampleUseOfErrorSyntax`] for more details.
 pub trait ExampleUseOfErrorSyntaxClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for ExampleUseOfErrorSyntax
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ExampleUseOfErrorSyntax
 where
-    ___H: ExampleUseOfErrorSyntaxClientHandler<___T> + Send,
+    ___H: ExampleUseOfErrorSyntaxClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <example_use_of_error_syntax::ComposedCallWhichMayFail as ::fidl_next::Method>::Response:
@@ -649,9 +650,9 @@ pub trait ExampleUseOfErrorSyntaxServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for ExampleUseOfErrorSyntax
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ExampleUseOfErrorSyntax
 where
-    ___H: ExampleUseOfErrorSyntaxServerHandler<___T> + Send,
+    ___H: ExampleUseOfErrorSyntaxServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <example_use_of_error_syntax::ComposedCallWhichMayFail as ::fidl_next::Method>::Request:

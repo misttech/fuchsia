@@ -22,6 +22,7 @@ pub mod child {
         }
 
         /// The client sender for the `Child` protocol.
+        #[repr(transparent)]
         pub struct ChildClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -44,9 +45,9 @@ pub mod child {
 /// See [`Child`] for more details.
 pub trait ChildClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for Child
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Child
 where
-    ___H: ChildClientHandler<___T> + Send,
+    ___H: ChildClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -68,9 +69,9 @@ where
 /// See [`Child`] for more details.
 pub trait ChildServerHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for Child
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Child
 where
-    ___H: ChildServerHandler<___T> + Send,
+    ___H: ChildServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(
@@ -783,6 +784,7 @@ pub mod parent {
         }
 
         /// The client sender for the `Parent` protocol.
+        #[repr(transparent)]
         pub struct ParentClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -896,9 +898,9 @@ pub mod parent {
 /// See [`Parent`] for more details.
 pub trait ParentClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for Parent
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Parent
 where
-    ___H: ParentClientHandler<___T> + Send,
+    ___H: ParentClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <parent::GetChild as ::fidl_next::Method>::Response:
@@ -954,9 +956,9 @@ pub trait ParentServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for Parent
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Parent
 where
-    ___H: ParentServerHandler<___T> + Send,
+    ___H: ParentServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <parent::TakeChild as ::fidl_next::Method>::Request:

@@ -36,6 +36,7 @@ pub mod top {
         }
 
         /// The client sender for the `Top` protocol.
+        #[repr(transparent)]
         pub struct TopClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -72,9 +73,9 @@ pub mod top {
 /// See [`Top`] for more details.
 pub trait TopClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for Top
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Top
 where
-    ___H: TopClientHandler<___T> + Send,
+    ___H: TopClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 
     <top::GetFoo as ::fidl_next::Method>::Response:
@@ -106,9 +107,9 @@ pub trait TopServerHandler<___T: ::fidl_next::Transport> {
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for Top
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Top
 where
-    ___H: TopServerHandler<___T> + Send,
+    ___H: TopServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(

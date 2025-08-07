@@ -9,7 +9,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 
 use fidl_next_codec::{Decode, DecoderExt as _};
-use fidl_next_protocol::{self as protocol, IgnoreEvents, ProtocolError, Transport};
+use fidl_next_protocol::{self as protocol, ClientHandler, IgnoreEvents, ProtocolError, Transport};
 
 use crate::{ClientEnd, Error, Method, Protocol, Response};
 
@@ -58,8 +58,8 @@ impl<P: Protocol<T>, T: Transport> Deref for ClientSender<P, T> {
     }
 }
 
-/// A protocol which supports clients.
-pub trait ClientProtocol<
+/// A protocol which dispatches incoming client messages to a handler.
+pub trait DispatchClientMessage<
     H,
     #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
     #[cfg(not(feature = "fuchsia"))] T: Transport,
@@ -75,23 +75,23 @@ pub trait ClientProtocol<
 }
 
 /// An adapter for a client protocol handler.
-pub struct ClientAdapter<P, H> {
+pub struct ClientHandlerAdapter<P, H> {
     handler: H,
     _protocol: PhantomData<P>,
 }
 
-unsafe impl<P, H> Send for ClientAdapter<P, H> where H: Send {}
+unsafe impl<P, H> Send for ClientHandlerAdapter<P, H> where H: Send {}
 
-impl<P, H> ClientAdapter<P, H> {
+impl<P, H> ClientHandlerAdapter<P, H> {
     /// Creates a new protocol client handler from a supported handler.
     pub fn from_untyped(handler: H) -> Self {
         Self { handler, _protocol: PhantomData }
     }
 }
 
-impl<P, H, T> protocol::ClientHandler<T> for ClientAdapter<P, H>
+impl<P, H, T> ClientHandler<T> for ClientHandlerAdapter<P, H>
 where
-    P: ClientProtocol<H, T>,
+    P: DispatchClientMessage<H, T>,
     T: Transport,
 {
     fn on_event(
@@ -140,9 +140,9 @@ impl<P, T: Transport> Client<P, T> {
     /// Runs the client with the provided handler.
     pub async fn run<H>(&mut self, handler: H) -> Result<(), ProtocolError<T::Error>>
     where
-        P: ClientProtocol<H, T>,
+        P: DispatchClientMessage<H, T>,
     {
-        self.client.run(ClientAdapter { handler, _protocol: PhantomData::<P> }).await
+        self.client.run(ClientHandlerAdapter { handler, _protocol: PhantomData::<P> }).await
     }
 
     /// Runs the client, ignoring any incoming events.

@@ -62,6 +62,7 @@ pub mod my_protocol {
         }
 
         /// The client sender for the `MyProtocol` protocol.
+        #[repr(transparent)]
         pub struct MyProtocolClientSender<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
             sender: ::fidl_next::protocol::ClientSender<___T>,
@@ -84,9 +85,9 @@ pub mod my_protocol {
 /// See [`MyProtocol`] for more details.
 pub trait MyProtocolClientHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ClientProtocol<___H, ___T> for MyProtocol
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for MyProtocol
 where
-    ___H: MyProtocolClientHandler<___T> + Send,
+    ___H: MyProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_event(
@@ -108,9 +109,9 @@ where
 /// See [`MyProtocol`] for more details.
 pub trait MyProtocolServerHandler<___T: ::fidl_next::Transport> {}
 
-impl<___H, ___T> ::fidl_next::ServerProtocol<___H, ___T> for MyProtocol
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for MyProtocol
 where
-    ___H: MyProtocolServerHandler<___T> + Send,
+    ___H: MyProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
 {
     async fn on_one_way(

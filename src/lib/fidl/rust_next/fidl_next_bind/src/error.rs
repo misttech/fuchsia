@@ -27,7 +27,10 @@ impl core::error::Error for UnknownStrictEnumMemberError {}
 
 /// An encoding, decoding, or transport FIDL error.
 #[derive(Error, Clone, Debug)]
-pub enum Error<E> {
+pub enum Error<
+    #[cfg(feature = "fuchsia")] E = <zx::Channel as fidl_next_protocol::Transport>::Error,
+    #[cfg(not(feature = "fuchsia"))] E,
+> {
     /// A FIDL encoding error.
     #[error("encoding error: {0}")]
     Encode(#[from] EncodeError),

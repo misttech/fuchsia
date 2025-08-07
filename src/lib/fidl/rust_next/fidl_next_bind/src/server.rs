@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 
 use fidl_next_codec::{Encode, EncodeError};
-use fidl_next_protocol::{self as protocol, ProtocolError, SendFuture, Transport};
+use fidl_next_protocol::{self as protocol, ProtocolError, SendFuture, ServerHandler, Transport};
 
 use crate::{Method, Protocol, ServerEnd};
 
@@ -56,8 +56,8 @@ impl<P: Protocol<T>, T: Transport> Deref for ServerSender<P, T> {
     }
 }
 
-/// A protocol which supports servers.
-pub trait ServerProtocol<
+/// A protocol which dispatches incoming server messages to a handler.
+pub trait DispatchServerMessage<
     H,
     #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
     #[cfg(not(feature = "fuchsia"))] T: Transport,
@@ -82,23 +82,23 @@ pub trait ServerProtocol<
 }
 
 /// An adapter for a server protocol handler.
-pub struct ServerAdapter<P, H> {
+pub struct ServerHandlerAdapter<P, H> {
     handler: H,
     _protocol: PhantomData<P>,
 }
 
-unsafe impl<P, H> Send for ServerAdapter<P, H> where H: Send {}
+unsafe impl<P, H> Send for ServerHandlerAdapter<P, H> where H: Send {}
 
-impl<P, H> ServerAdapter<P, H> {
+impl<P, H> ServerHandlerAdapter<P, H> {
     /// Creates a new protocol server handler from a supported handler.
     pub fn from_untyped(handler: H) -> Self {
         Self { handler, _protocol: PhantomData }
     }
 }
 
-impl<P, H, T> protocol::ServerHandler<T> for ServerAdapter<P, H>
+impl<P, H, T> ServerHandler<T> for ServerHandlerAdapter<P, H>
 where
-    P: ServerProtocol<H, T>,
+    P: DispatchServerMessage<H, T>,
     T: Transport,
 {
     fn on_one_way(
@@ -163,10 +163,10 @@ impl<P, T: Transport> Server<P, T> {
     /// Runs the server with the provided handler.
     pub async fn run<H>(&mut self, handler: H) -> Result<(), ProtocolError<T::Error>>
     where
-        P: ServerProtocol<H, T>,
+        P: DispatchServerMessage<H, T>,
         H: Send,
     {
-        self.server.run(ServerAdapter { handler, _protocol: PhantomData::<P> }).await
+        self.server.run(ServerHandlerAdapter { handler, _protocol: PhantomData::<P> }).await
     }
 }
 
