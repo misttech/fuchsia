@@ -5,9 +5,7 @@
 use crate::api::ConfigResult;
 use crate::mapping::env_var::env_var_strict;
 use crate::nested::RecursiveMap;
-use crate::{
-    validate_type, ConfigError, ConfigLevel, Environment, EnvironmentContext, ValueStrategy,
-};
+use crate::{ConfigError, ConfigLevel, Environment, EnvironmentContext, ValueStrategy};
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::Value;
 use std::default::Default;
@@ -108,8 +106,7 @@ impl<'a> ConfigQuery<'a> {
         T::validate_query(self)?;
         let cv = self
             .get_config(ctx.load().map_err(|e| ConfigError::new(e))?)
-            .map_err(|e| ConfigError::new(e))?
-            .recursive_map(&validate_type::<T>);
+            .map_err(|e| ConfigError::new(e))?;
         T::try_convert(cv)
     }
 
@@ -173,7 +170,6 @@ impl<'a> ConfigQuery<'a> {
             };
             // The problem is not with an env variable; keep going
             let cv = cv.recursive_map(&T::handle_arrays);
-            let cv = cv.recursive_map(&validate_type::<T>);
             T::try_convert(cv)
         } else {
             let cv = self
@@ -188,8 +184,7 @@ impl<'a> ConfigQuery<'a> {
                 .recursive_map(&|val| build(&ctx, val))
                 .recursive_map(&|val| workspace(&ctx, val))
                 .recursive_map(&|val| env_var(&ctx, val))
-                .recursive_map(&T::handle_arrays)
-                .recursive_map(&validate_type::<T>);
+                .recursive_map(&T::handle_arrays);
             T::try_convert(cv)
         }
     }

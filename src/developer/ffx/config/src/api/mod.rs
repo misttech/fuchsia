@@ -12,7 +12,6 @@ pub mod value;
 pub type ConfigResult = Result<ConfigValue>;
 pub use query::ConfigQuery;
 pub use value::ConfigValue;
-use value::TryConvert;
 
 use crate::ConfigLevel;
 
@@ -34,17 +33,6 @@ pub enum ConfigError {
 impl ConfigError {
     pub fn new(e: anyhow::Error) -> Self {
         Self::Error(e)
-    }
-}
-
-pub(crate) fn validate_type<T>(value: Value) -> Option<Value>
-where
-    T: TryConvert,
-{
-    let result = T::try_convert(ConfigValue(Some(value.clone())));
-    match result {
-        Ok(_) => Some(value),
-        Err(_) => None,
     }
 }
 

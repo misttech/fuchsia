@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::api::validate_type;
 use crate::api::value::{ConfigValue, ValueStrategy};
 use ::errors::ffx_bail;
 use analytics::metrics_state::MetricsStatus;
@@ -328,37 +327,6 @@ mod test {
     }
 
     #[test]
-    fn test_validating_types() {
-        assert!(validate_type::<String>(json!("test")).is_some());
-        assert!(validate_type::<String>(json!(1)).is_none());
-        assert!(validate_type::<String>(json!(false)).is_none());
-        assert!(validate_type::<String>(json!(true)).is_none());
-        assert!(validate_type::<String>(json!({"test": "whatever"})).is_none());
-        assert!(validate_type::<String>(json!(["test", "test2"])).is_none());
-        assert!(validate_type::<bool>(json!(true)).is_some());
-        assert!(validate_type::<bool>(json!(false)).is_some());
-        assert!(validate_type::<bool>(json!("true")).is_some());
-        assert!(validate_type::<bool>(json!("false")).is_some());
-        assert!(validate_type::<bool>(json!(1)).is_none());
-        assert!(validate_type::<bool>(json!("test")).is_none());
-        assert!(validate_type::<bool>(json!({"test": "whatever"})).is_none());
-        assert!(validate_type::<bool>(json!(["test", "test2"])).is_none());
-        assert!(validate_type::<u64>(json!(2)).is_some());
-        assert!(validate_type::<u64>(json!(100)).is_some());
-        assert!(validate_type::<u64>(json!("100")).is_some());
-        assert!(validate_type::<u64>(json!("0")).is_some());
-        assert!(validate_type::<u64>(json!(true)).is_none());
-        assert!(validate_type::<u64>(json!("test")).is_none());
-        assert!(validate_type::<u64>(json!({"test": "whatever"})).is_none());
-        assert!(validate_type::<u64>(json!(["test", "test2"])).is_none());
-        assert!(validate_type::<PathBuf>(json!("/")).is_some());
-        assert!(validate_type::<PathBuf>(json!("test")).is_some());
-        assert!(validate_type::<PathBuf>(json!(true)).is_none());
-        assert!(validate_type::<PathBuf>(json!({"test": "whatever"})).is_none());
-        assert!(validate_type::<PathBuf>(json!(["test", "test2"])).is_none());
-    }
-
-    #[test]
     fn test_converting_array() -> Result<()> {
         let c = |val: Value| -> ConfigValue { ConfigValue(Some(val)) };
         let conv_elem: Vec<String> = <_>::try_convert(c(json!("test")))?;
@@ -380,6 +348,38 @@ mod test {
             <_>::try_convert(c(json!(["test"])));
         assert!(bad_elem_2.is_err());
         Ok(())
+    }
+
+    #[test]
+    fn test_validating_types() {
+        let c = |val: Value| -> ConfigValue { ConfigValue(Some(val)) };
+        assert!(<String>::try_convert(c(json!("test"))).is_ok());
+        assert!(<String>::try_convert(c(json!(1))).is_err());
+        assert!(<String>::try_convert(c(json!(false))).is_err());
+        assert!(<String>::try_convert(c(json!(true))).is_err());
+        assert!(<String>::try_convert(c(json!({"test": "whatever"}))).is_err());
+        assert!(<String>::try_convert(c(json!(["test", "test2"]))).is_err());
+        assert!(<bool>::try_convert(c(json!(true))).is_ok());
+        assert!(<bool>::try_convert(c(json!(false))).is_ok());
+        assert!(<bool>::try_convert(c(json!("true"))).is_ok());
+        assert!(<bool>::try_convert(c(json!("false"))).is_ok());
+        assert!(<bool>::try_convert(c(json!(1))).is_err());
+        assert!(<bool>::try_convert(c(json!("test"))).is_err());
+        assert!(<bool>::try_convert(c(json!({"test": "whatever"}))).is_err());
+        assert!(<bool>::try_convert(c(json!(["test", "test2"]))).is_err());
+        assert!(<u64>::try_convert(c(json!(2))).is_ok());
+        assert!(<u64>::try_convert(c(json!(100))).is_ok());
+        assert!(<u64>::try_convert(c(json!("100"))).is_ok());
+        assert!(<u64>::try_convert(c(json!("0"))).is_ok());
+        assert!(<u64>::try_convert(c(json!(true))).is_err());
+        assert!(<u64>::try_convert(c(json!("test"))).is_err());
+        assert!(<u64>::try_convert(c(json!({"test": "whatever"}))).is_err());
+        assert!(<u64>::try_convert(c(json!(["test", "test2"]))).is_err());
+        assert!(<PathBuf>::try_convert(c(json!("/"))).is_ok());
+        assert!(<PathBuf>::try_convert(c(json!("test"))).is_ok());
+        assert!(<PathBuf>::try_convert(c(json!(true))).is_err());
+        assert!(<PathBuf>::try_convert(c(json!({"test": "whatever"}))).is_err());
+        assert!(<PathBuf>::try_convert(c(json!(["test", "test2"]))).is_err());
     }
 
     #[derive(FfxConfigBacked, Default)]
