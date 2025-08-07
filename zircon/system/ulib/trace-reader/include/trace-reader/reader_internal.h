@@ -5,6 +5,7 @@
 #ifndef TRACE_READER_READER_INTERNAL_H_
 #define TRACE_READER_READER_INTERNAL_H_
 
+#include <lib/fit/function.h>
 #include <lib/trace-engine/buffer_internal.h>
 #include <zircon/assert.h>
 

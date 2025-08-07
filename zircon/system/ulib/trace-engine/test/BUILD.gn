@@ -58,7 +58,7 @@ test("trace_engine_test") {
     "//sdk/lib/fit",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/trace-engine",
-    "//zircon/system/ulib/trace-reader",
+    "//zircon/system/ulib/trace-engine:trace-engine-headers-for-reader",
   ]
 }
 

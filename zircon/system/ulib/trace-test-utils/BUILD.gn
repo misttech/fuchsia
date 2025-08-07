@@ -41,7 +41,7 @@ zx_library("trace-test-utils") {
     "//sdk/lib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/trace-provider:trace-handler",
-    "//zircon/system/ulib/trace-reader",
+    "//zircon/system/ulib/trace-reader:trace-buffer-reader",
     "//zircon/system/ulib/zx",
   ]
 }

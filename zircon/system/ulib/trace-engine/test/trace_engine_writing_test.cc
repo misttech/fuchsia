@@ -5,6 +5,7 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fit/defer.h>
+#include <lib/trace-engine/buffer_internal.h>
 #include <lib/trace-engine/context.h>
 #include <lib/trace-engine/handler.h>
 #include <lib/trace-engine/instrumentation.h>
@@ -14,7 +15,6 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <trace-reader/reader_internal.h>
 using trace::internal::trace_buffer_header;
 
 namespace {

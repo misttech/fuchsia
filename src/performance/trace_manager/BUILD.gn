@@ -44,7 +44,7 @@ source_set("lib") {
     "//sdk/lib/fit",
     "//sdk/lib/sys/cpp",
     "//src/lib/fxl:fxl_cli",
-    "//zircon/system/ulib/trace-reader",
+    "//zircon/system/ulib/trace-reader:trace-buffer-reader",
     "//zircon/system/ulib/zx",
   ]
 }

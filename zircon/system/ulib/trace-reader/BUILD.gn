@@ -9,21 +9,36 @@ zx_library("trace-reader") {
   sdk_headers = [
     "trace-reader/file_reader.h",
     "trace-reader/reader.h",
-    "trace-reader/reader_internal.h",
     "trace-reader/records.h",
   ]
   sources = [
     "file_reader.cc",
     "reader.cc",
-    "reader_internal.cc",
     "records.cc",
   ]
   public_deps = [
     # <trace-reader/records.h> has #include <trace-engine/types.h>.
-    "//zircon/system/ulib/trace-engine:trace-engine-headers-for-reader",
+    "//zircon/system/ulib/trace-engine:trace-engine-headersonly",
 
     # <trace-reader/reader.h> has #include <lib/fit/function.h>.
     "//sdk/lib/fit",
+  ]
+  deps = [ "//sdk/lib/fit" ]
+}
+
+zx_library("trace-buffer-reader") {
+  sdk = "source"
+  sdk_headers = [ "trace-reader/reader_internal.h" ]
+  sources = [ "reader_internal.cc" ]
+  public_deps = [
+    # <trace-reader/reader_internal.h> has #include <trace-engine/buffer_internal.h>.
+    "//zircon/system/ulib/trace-engine:trace-engine-headers-for-reader",
+
+    # <trace-reader/reader_internal.h> has #include <lib/fit/function.h>.
+    "//sdk/lib/fit",
+
+    # <trace-reader/reader_internal.h> has #include <trace-reader/reader.h>.
+    ":trace-reader",
   ]
   deps = [ "//sdk/lib/fit" ]
 }
