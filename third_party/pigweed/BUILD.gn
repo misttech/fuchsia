@@ -21,6 +21,7 @@ group("tests") {
   testonly = true
   deps = [
     "backends/pw_async_fuchsia:tests",
+    "backends/pw_log:tests",
     "backends/pw_random:tests",
   ]
 }

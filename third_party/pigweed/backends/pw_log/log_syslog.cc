@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/syslog/cpp/macros.h>
+#include <lib/syslog/cpp/log_message_impl.h>
 
 #include "pw_log_fuchsia/log_fuchsia.h"
 
 extern "C" {
+
 namespace {
 
-::fuchsia_logging::LogSeverity ToFuchsiaLevel(int pw_level) {
+fuchsia_logging::LogSeverity ToFuchsiaLevel(int pw_level) {
   switch (pw_level) {
     case PW_LOG_LEVEL_ERROR:
       return fuchsia_logging::LogSeverity::Error;
@@ -28,8 +29,11 @@ namespace {
 
 void pw_log_fuchsia_impl(int level, const char* module_name, const char* file_name, int line_number,
                          const char* message) {
-  ::fuchsia_logging::LogMessage(ToFuchsiaLevel(level), file_name, line_number, nullptr, module_name)
-          .stream()
-      << message;
+  fuchsia_logging::LogSeverity severity = ToFuchsiaLevel(level);
+  if (fuchsia_logging::IsSeverityEnabled(severity)) {
+    fuchsia_logging::LogMessage(severity, file_name, line_number, nullptr, module_name).stream()
+        << message;
+  }
 }
-}
+
+}  // extern "C"

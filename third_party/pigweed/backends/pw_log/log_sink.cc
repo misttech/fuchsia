@@ -6,27 +6,30 @@
 
 #include <fidl/fuchsia.logger/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/syslog/structured_backend/cpp/fuchsia_syslog.h>
+#include <lib/syslog/structured_backend/cpp/log_connection.h>
+#include <lib/syslog/structured_backend/fuchsia_syslog.h>
 #include <zircon/process.h>
 
 #include "pw_log_fuchsia/log_fuchsia.h"
 
 namespace {
 
-FuchsiaLogSeverity FuchsiaLogSeverityFromFidl(fuchsia_diagnostics::Severity severity) {
+FuchsiaLogSeverity FuchsiaLogSeverityFromFidl(fuchsia_diagnostics_types::Severity severity) {
   switch (severity) {
-    case fuchsia_diagnostics::Severity::kTrace:
+    case fuchsia_diagnostics_types::Severity::kTrace:
       return FUCHSIA_LOG_TRACE;
-    case fuchsia_diagnostics::Severity::kDebug:
+    case fuchsia_diagnostics_types::Severity::kDebug:
       return FUCHSIA_LOG_DEBUG;
-    case fuchsia_diagnostics::Severity::kInfo:
+    case fuchsia_diagnostics_types::Severity::kInfo:
       return FUCHSIA_LOG_INFO;
-    case fuchsia_diagnostics::Severity::kWarn:
+    case fuchsia_diagnostics_types::Severity::kWarn:
       return FUCHSIA_LOG_WARNING;
-    case fuchsia_diagnostics::Severity::kError:
+    case fuchsia_diagnostics_types::Severity::kError:
       return FUCHSIA_LOG_ERROR;
-    case fuchsia_diagnostics::Severity::kFatal:
+    case fuchsia_diagnostics_types::Severity::kFatal:
       return FUCHSIA_LOG_FATAL;
+    default:
+      return FUCHSIA_LOG_ERROR;
   }
 }
 
@@ -52,12 +55,11 @@ class LogState {
 
     auto client_end = ::component::Connect<fuchsia_logger::LogSink>();
     ZX_ASSERT(client_end.is_ok());
-    log_sink_.Bind(std::move(*client_end), dispatcher_);
 
-    zx::socket local, remote;
-    zx::socket::create(ZX_SOCKET_DATAGRAM, &local, &remote);
-    ::fidl::OneWayStatus result = log_sink_->ConnectStructured(std::move(remote));
-    ZX_ASSERT(result.ok());
+    auto log_connection = fuchsia_logging::LogConnection::Create(*client_end);
+    ZX_ASSERT(log_connection.is_ok());
+
+    log_sink_.Bind(std::move(*client_end), dispatcher_);
 
     // Get interest level synchronously to avoid dropping DEBUG logs during initialization (before
     // an async interest response would be received).
@@ -66,12 +68,12 @@ class LogState {
     ZX_ASSERT(interest_result.ok());
     HandleInterest(interest_result->value()->data);
 
-    socket_ = std::move(local);
+    log_connection_ = *std::move(log_connection);
 
     WaitForInterestChanged();
   }
 
-  void HandleInterest(fuchsia_diagnostics::wire::Interest& interest) {
+  void HandleInterest(fuchsia_diagnostics_types::wire::Interest& interest) {
     if (!interest.has_min_severity()) {
       severity_ = FUCHSIA_LOG_INFO;
     } else {
@@ -93,13 +95,13 @@ class LogState {
         });
   }
 
-  zx::socket& socket() { return socket_; }
+  fuchsia_logging::LogConnection& log_connection() { return log_connection_; }
   FuchsiaLogSeverity severity() const { return severity_; }
 
  private:
   fidl::WireClient<::fuchsia_logger::LogSink> log_sink_;
   async_dispatcher_t* dispatcher_;
-  zx::socket socket_;
+  fuchsia_logging::LogConnection log_connection_;
   FuchsiaLogSeverity severity_ = FUCHSIA_LOG_INFO;
 };
 
@@ -132,12 +134,11 @@ void pw_log_fuchsia_impl(int level, const char* module_name, const char* file_na
     return;
   }
 
-  ::fuchsia_syslog::LogBuffer buffer;
+  fuchsia_logging::LogBuffer buffer;
   buffer.BeginRecord(fuchsia_severity, std::string_view(file_name), line_number,
-                     std::string_view(message), log_state.socket().borrow(), /*dropped_count=*/0,
-                     process_koid, thread_koid);
+                     std::string_view(message), /*dropped_count=*/0, process_koid, thread_koid);
   buffer.WriteKeyValue("tag", module_name);
-  buffer.FlushRecord();
+  [[maybe_unused]] zx::result<> result = log_state.log_connection().FlushBuffer(buffer);
 }
 
 }  // extern C
