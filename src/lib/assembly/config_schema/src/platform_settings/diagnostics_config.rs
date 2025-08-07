@@ -29,6 +29,13 @@ pub struct DiagnosticsConfig {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub additional_serial_log_components: Vec<String>,
 
+    /// Additional set of entries to be incorporated into a deny list for logs
+    /// being forwarded to the serial port.
+    ///
+    /// Entries in this list take precedence over those in `additional_serial_log_components`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub additional_denied_serial_log_components: Vec<String>,
+
     #[walk_paths]
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub sampler: SamplerConfig,

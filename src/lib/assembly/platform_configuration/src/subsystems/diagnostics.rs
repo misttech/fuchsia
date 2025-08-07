@@ -56,6 +56,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             archivist,
             archivist_pipelines,
             additional_serial_log_components,
+            additional_denied_serial_log_components,
             sampler,
             memory_monitor,
             component_log_initial_interests,
@@ -106,8 +107,10 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
         allow_serial_logs
             .extend(additional_serial_log_components.iter().map(|ref s| s.to_string()));
         let allow_serial_logs: Vec<String> = allow_serial_logs.into_iter().collect();
-        let deny_serial_log_tags: Vec<String> =
+        let mut deny_serial_log_tags: Vec<String> =
             DENIED_SERIAL_LOG_TAGS.iter().map(|ref s| s.to_string()).collect();
+        deny_serial_log_tags
+            .extend(additional_denied_serial_log_components.iter().map(|ref s| s.to_string()));
 
         builder.set_config_capability(
             "fuchsia.diagnostics.BindServices",
