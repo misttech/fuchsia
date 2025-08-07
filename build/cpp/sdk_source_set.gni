@@ -284,7 +284,6 @@ template("sdk_source_set") {
     include_dir = include_dest
     sources = sdk_metadata_sources
     headers = sdk_metadata_headers
-    library_name = sdk_name
     file_base = sdk_root_path
   }
 
@@ -316,6 +315,7 @@ template("sdk_source_set") {
     }
 
     id = sdk_id
+    idk_name = sdk_name
 
     if (is_stable) {
       api = "${sdk_name}.api"

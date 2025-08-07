@@ -306,7 +306,6 @@ template("sdk_static_library") {
   _prebuild_info = {
     format = "static"
     include_dir = include_dest
-    library_name = sdk_name
     file_base = sdk_root_path
     headers = sdk_metadata_headers
     binaries = {
@@ -343,6 +342,7 @@ template("sdk_static_library") {
                            ])
 
     id = sdk_id
+    idk_name = sdk_name
 
     if (is_internal) {
       assert(

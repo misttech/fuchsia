@@ -54,12 +54,12 @@ template("_bind_library_sdk") {
     sdk_deps += [ sdk_dep ]
   }
   _prebuild_info = {
-    library_name = library_name
     file_base = file_base
   }
 
   sdk_atom("${target_name}_sdk") {
     id = "sdk://bind/$library_name"
+    idk_name = library_name
 
     category = invoker.sdk_category
     forward_variables_from(invoker, [ "sdk_area" ])

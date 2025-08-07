@@ -216,15 +216,15 @@ class PrebuildMap(object):
         """Resolve list of labels through aliases, removing duplicates."""
         return get_unique_sequence(self.resolve_labels(labels))
 
-    def label_to_library_name(self, label: str) -> str:
-        """Retrieve the library_name of a given atom label."""
-        return self._labels_map[label]["prebuild_info"]["library_name"]
+    def label_to_idk_name(self, label: str) -> str:
+        """Retrieve the IDK name of a given atom label."""
+        return self._labels_map[label]["idk_name"]
 
     def _deps_labels_to_atom_types(
         self, deps_labels: T.Sequence[str], atom_types: T.Sequence[str]
     ) -> T.List[str]:
         return sorted(
-            self.label_to_library_name(d)
+            self.label_to_idk_name(d)
             for d in deps_labels
             if self._labels_map[d]["atom_type"] in atom_types
         )
@@ -232,19 +232,19 @@ class PrebuildMap(object):
     def labels_to_bind_library_names(
         self, deps_labels: T.Sequence[str]
     ) -> T.List[str]:
-        """Convert a list of labels into a list of bind_library names."""
+        """Convert a list of labels into a list of bind_library IDK names."""
         return self._deps_labels_to_atom_types(deps_labels, ("bind_library",))
 
     def labels_to_fidl_library_names(
         self, deps_labels: T.Sequence[str]
     ) -> T.List[str]:
-        """Convert a list of labels into a list of fidl_library names."""
+        """Convert a list of labels into a list of fidl_library IDK names."""
         return self._deps_labels_to_atom_types(deps_labels, ("fidl_library",))
 
     def labels_to_cc_library_names(
         self, deps_labels: T.Sequence[str]
     ) -> T.List[str]:
-        """Convert a list of labels into a list of cc_xxxx_library names."""
+        """Convert a list of labels into a list of cc_xxxx_library IDK names."""
         return self._deps_labels_to_atom_types(
             deps_labels, ("cc_source_library", "cc_prebuilt_library")
         )
@@ -350,7 +350,7 @@ class PrebuildMap(object):
             #   "host_tool"
             #   "loadable_module"
             #   "sysroot"
-            assert "atom_deps" not in info
+            assert "atom_deps" not in info and "idk_name" not in info
             return self.GetMetaResult(value, {}, {}, set())
 
         generator = {
@@ -378,12 +378,12 @@ class PrebuildMap(object):
         fidl_deps = self.resolve_unique_labels(info.get("atom_deps", []))
         return self.GetMetaResult(
             {
-                "name": prebuild["library_name"],
+                "name": info["idk_name"],
                 "root": prebuild["file_base"],
                 "sources": fidl_sources,
                 "stable": info["is_stable"],
                 "type": info["atom_type"],
-                "deps": [self.label_to_library_name(d) for d in fidl_deps],
+                "deps": [self.label_to_idk_name(d) for d in fidl_deps],
             },
             {},
             {},
@@ -396,9 +396,9 @@ class PrebuildMap(object):
         bind_deps = self.resolve_unique_labels(info.get("atom_deps", []))
         return self.GetMetaResult(
             {
-                "name": prebuild["library_name"],
+                "name": info["idk_name"],
                 "root": prebuild["file_base"],
-                "deps": [self.label_to_library_name(d) for d in bind_deps],
+                "deps": [self.label_to_idk_name(d) for d in bind_deps],
                 "sources": bind_sources,
                 "type": info["atom_type"],
             },
@@ -417,7 +417,7 @@ class PrebuildMap(object):
             if dep_atom["atom_type"] != "fidl_library":
                 continue
 
-            name = dep_atom["prebuild_info"]["library_name"]
+            name = dep_atom["idk_name"]
             dep_label = dep_label.removesuffix("_sdk")
             if "_cpp" in dep_label:
                 fidl_layers["cpp"].append(name)
@@ -429,7 +429,7 @@ class PrebuildMap(object):
         prebuild = info["prebuild_info"]
         return self.GetMetaResult(
             {
-                "name": prebuild["library_name"],
+                "name": info["idk_name"],
                 "root": prebuild["file_base"],
                 "deps": self.labels_to_cc_library_names(all_deps),
                 "bind_deps": self.labels_to_bind_library_names(all_deps),
@@ -495,7 +495,7 @@ class PrebuildMap(object):
 
         all_deps = self.resolve_unique_labels(info.get("atom_deps", []))
         result = {
-            "name": prebuild["library_name"],
+            "name": info["idk_name"],
             "root": prebuild["file_base"],
             "format": prebuild["format"],
             "headers": prebuild["headers"],
@@ -512,7 +512,7 @@ class PrebuildMap(object):
         return self.GetMetaResult(result, {}, {}, set())
 
     def _meta_for_version_history(self, info: AtomInfo) -> GetMetaResult:
-        assert "atom_deps" not in info
+        assert "atom_deps" not in info and "idk_name" not in info
         prebuild = info["prebuild_info"]
         # prebuild contains enough information to generate the final version
         # history file  by calling a Python module function.
@@ -555,7 +555,7 @@ class PrebuildMap(object):
         )
 
     def _meta_for_companion_host_tool(self, info: AtomInfo) -> GetMetaResult:
-        assert "atom_deps" not in info
+        assert "atom_deps" not in info and "idk_name" not in info
         prebuild = info["prebuild_info"]
         result = {
             "name": prebuild["name"],
@@ -634,15 +634,15 @@ class PrebuildMap(object):
             dep_label = self.resolve_label(dep_label)
             dep_info = self._labels_map[dep_label]
             if dep_info["atom_type"] == "dart_library":
-                dep_name = dep_info["prebuild"]["library_name"]
+                dep_name = dep_info["idk_name"]
                 dart_deps.append(dep_name)
             elif dep_info["atom_type"] == "fidl_library":
-                dep_name = dep_info["prebuild"]["library_name"]
+                dep_name = dep_info["idk_name"]
                 fidl_deps.append(dep_name)
 
         result = {
             "type": "dart_library",
-            "name": prebuild["library_name"],
+            "name": info["idk_name"],
             "root": prebuild["file_base"],
             "sources": prebuild["sources"],
             "deps": dart_deps,
@@ -656,7 +656,7 @@ class PrebuildMap(object):
     def _meta_for_experimental_python_e2e_test(
         self, info: AtomInfo
     ) -> GetMetaResult:
-        assert "atom_deps" not in info
+        assert "atom_deps" not in info and "idk_name" not in info
         prebuild = info["prebuild_info"]
 
         root = prebuild["file_base"]
@@ -715,7 +715,7 @@ class PrebuildMap(object):
         api_level = prebuild["api_level"]
         assert type(api_level) is str, "API levels are always strings."
         arch = prebuild["arch"]
-        distribution_name = prebuild["distribution_name"]
+        distribution_name = info["idk_name"]
 
         # The base metadata. The function will add to it.
         meta = {
@@ -768,11 +768,11 @@ class PrebuildMap(object):
         )
 
     def _meta_for_noop(self, info: AtomInfo) -> GetMetaResult:
-        assert "atom_deps" not in info
+        assert "atom_deps" not in info and "idk_name" not in info
         return self.GetMetaResult(None, {}, {}, set())
 
     def _meta_for_collection(self, info: AtomInfo) -> GetMetaResult:
-        assert "atom_deps" not in info
+        assert "atom_deps" not in info and "idk_name" not in info
         prebuild = info["prebuild_info"]
         return self.GetMetaResult(
             {

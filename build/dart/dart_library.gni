@@ -384,12 +384,12 @@ if (current_toolchain == dart_toolchain) {
         forward_variables_from(invoker, [ "sdk_area" ])
 
         id = "sdk://dart/${invoker.package_name}"
+        idk_name = package_name
 
         category = invoker.sdk_category
 
         meta = {
           source_prebuild_info = {
-            library_name = package_name
             file_base = file_base
             sources = sdk_sources
             third_party_specs =

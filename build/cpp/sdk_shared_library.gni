@@ -434,7 +434,6 @@ template("sdk_shared_library") {
   _prebuild_info = {
     format = "shared"
     include_dir = include_dest
-    library_name = atom_name
     file_base = sdk_root_path
     headers = sdk_metadata_headers
     binaries = {
@@ -480,6 +479,7 @@ template("sdk_shared_library") {
                            ])
 
     id = sdk_id
+    idk_name = atom_name
 
     category = invoker.category
 

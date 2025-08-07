@@ -384,6 +384,9 @@ template("sdk_atom") {
     atom_meta = {
       forward_variables_from(meta, "*", [ "source_prebuild_info" ])
     }
+    if (defined(invoker.idk_name)) {
+      idk_name = invoker.idk_name
+    }
     if (defined(meta.source_prebuild_info)) {
       prebuild_info = meta.source_prebuild_info
     }

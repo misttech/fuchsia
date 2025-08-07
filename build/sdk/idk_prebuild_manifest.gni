@@ -47,6 +47,12 @@ template("idk_prebuild_manifest") {
   #   category (string)
   #     Describes the availability of the element. See sdk_atom.gni.
   #
+  #   idk_name (string)
+  #     Name of the atom in the IDK (e.g. "magma_common"). For example, the
+  #     library name or package distribution name.
+  #     Supported only for packages and bind, C++ prebuilt, C++ source, Dart,
+  #     and FIDL libraries.
+  #
   #   is_stable (bool)
   #     Whether the atom is stable and subject to compatibility guarantees.
   #
@@ -78,9 +84,6 @@ template("idk_prebuild_manifest") {
   #     sources (list[string])
   #       List of C++ source file paths for this atom, relative to the SDK
   #       export directory.
-  #
-  #     library_name (string)
-  #       Name of the library in the IDK (e.g. "magma_common").
   #
   #     file_base(string)
   #        The root path for all files in the IDK. The paths above include this.
@@ -132,7 +135,6 @@ template("idk_prebuild_manifest") {
   #
   #     include_dir (string)
   #     headers (list[string])
-  #     library_name (string)
   #     file_base (string)
   #       Same as "cc_source_library"
   #
@@ -149,9 +151,6 @@ template("idk_prebuild_manifest") {
   #
   #     arch (string)
   #       CPU architecture name of the binary (e.g. "x64" or "arm64").
-  #
-  #     distribution_name (string)
-  #       Name of the library in the IDK (e.g. "intl_property_manager").
   #
   #     package_manifest (string)
   #       Path to the manifest for the underlying Fuchsia package.

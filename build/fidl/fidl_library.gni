@@ -617,7 +617,6 @@ template("fidl_library") {
     }
 
     _prebuild_info = {
-      library_name = library_name
       file_base = file_base
     }
 
@@ -636,6 +635,7 @@ template("fidl_library") {
                              ])
 
       id = "sdk://fidl/$library_name"
+      idk_name = library_name
 
       category = invoker.sdk_category
 
