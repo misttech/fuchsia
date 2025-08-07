@@ -7,11 +7,13 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/port.h>
+#include <zircon/compiler.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/utc.h>
 
-#include <thread>
+#include <atomic>
+#include <mutex>
 
 #include <src/lib/fake-clock/named-timer/named_timer.h>
 
@@ -46,6 +48,57 @@ zx::eventpair MakeEvent(zx_time_t deadline) {
   const fidl::Status result = fidl::WireCall(GetService())->RegisterEvent(std::move(r), deadline);
   ZX_ASSERT_MSG(result.ok(), "%s", result.FormatDescription().c_str());
   return l;
+}
+
+// Manages port keys used by the fake clock implementation. All keys provided by callers to
+// zx_object_wait_async() and zx_port_queue() have their keys replaced by a new key allocated
+// by this type which is then translated in zx_port_cancel() and zx_port_wait() calls.
+class PortKeyNamespace {
+ public:
+  // Allocates a new key backed by a given client key.
+  uint64_t AddNewKey(uint64_t client_key);
+
+  // Allocates a new key private to the fake clock library.
+  uint64_t AddNewPrivateKey();
+
+  // Maps a key from a Zircon system call back to the client's key and stops tracking
+  // the key.
+  uint64_t MapAndRemoveKey(uint64_t syscall_key);
+
+ private:
+  std::atomic_uint64_t next_available_port_key_{0};
+  std::mutex lock_;
+  std::unordered_map<uint64_t, uint64_t> syscall_to_client_map_ __TA_GUARDED(lock_);
+};
+
+PortKeyNamespace& GetPortKeyNamespace() {
+  static auto* port_key_namespace = new PortKeyNamespace;
+  return *port_key_namespace;
+}
+
+uint64_t PortKeyNamespace::AddNewKey(uint64_t client_key) {
+  uint64_t new_key = next_available_port_key_.fetch_add(1);
+  std::lock_guard guard(lock_);
+  syscall_to_client_map_[new_key] = client_key;
+  return new_key;
+}
+
+uint64_t PortKeyNamespace::AddNewPrivateKey() {
+  // We don't need to track these, the caller is responsible for keeping their use private.
+  return next_available_port_key_.fetch_add(1);
+}
+
+uint64_t PortKeyNamespace::MapAndRemoveKey(uint64_t syscall_key) {
+  std::lock_guard guard(lock_);
+  auto it = syscall_to_client_map_.find(syscall_key);
+  ZX_ASSERT(it != syscall_to_client_map_.end());
+  uint64_t client_key = it->second;
+  syscall_to_client_map_.erase(it);
+  return client_key;
+}
+
+void TranslateKeyInPacket(zx_port_packet& packet) {
+  packet.key = GetPortKeyNamespace().MapAndRemoveKey(packet.key);
 }
 
 }  // namespace
@@ -142,13 +195,14 @@ __EXPORT zx_status_t zx_object_wait_many(zx_wait_item_t* items, size_t num_items
     }
     for (size_t i = 0; i < num_items; i++) {
       if (zx_status_t status =
-              zx::unowned_handle(items[i].handle)->wait_async(port, i, items[i].waitfor, 0);
+              _zx_object_wait_async(items[i].handle, port.get(), i, items[i].waitfor, 0);
           status != ZX_OK) {
         return status;
       }
     }
     zx::eventpair event = MakeEvent(deadline);
-    if (zx_status_t status = event.wait_async(port, num_items, ZX_EVENTPAIR_SIGNALED, 0);
+    if (zx_status_t status =
+            _zx_object_wait_async(event.get(), port.get(), num_items, ZX_EVENTPAIR_SIGNALED, 0);
         status != ZX_OK) {
       ZX_PANIC("%s", zx_status_get_string(status));
     }
@@ -165,7 +219,8 @@ __EXPORT zx_status_t zx_object_wait_many(zx_wait_item_t* items, size_t num_items
     };
 
     zx_port_packet_t packet;
-    if (zx_status_t status = port.wait(zx::time::infinite(), &packet); status != ZX_OK) {
+    if (zx_status_t status = _zx_port_wait(port.get(), ZX_TIME_INFINITE, &packet);
+        status != ZX_OK) {
       return status;
     }
     // update_item will return true if the first packet out of the port is a timeout.
@@ -174,7 +229,7 @@ __EXPORT zx_status_t zx_object_wait_many(zx_wait_item_t* items, size_t num_items
     }
     // many things may have happened at once, how we just keep polling the port with a zero deadline
     // and updating the items
-    while (port.wait(zx::time(0), &packet) == ZX_OK) {
+    while (_zx_port_wait(port.get(), 0u, &packet) == ZX_OK) {
       if (update_item(packet)) {
         break;
       }
@@ -201,31 +256,61 @@ __EXPORT zx_status_t zx_object_wait_many(zx_wait_item_t* items, size_t num_items
   return ZX_OK;
 }
 
+__EXPORT zx_status_t zx_object_wait_async(zx_handle_t handle, zx_handle_t port, uint64_t key,
+                                          uint32_t signals, uint32_t options) {
+  // Allocate a key for |key| that is unique within this process and register on that.
+  uint64_t syscall_key = GetPortKeyNamespace().AddNewKey(key);
+  return _zx_object_wait_async(handle, port, syscall_key, signals, options);
+}
+
+__EXPORT zx_status_t zx_port_cancel(zx_handle_t handle, zx_handle_t object, uint64_t key) {
+  uint64_t syscall_key = GetPortKeyNamespace().MapAndRemoveKey(key);
+  return _zx_port_cancel(handle, object, syscall_key);
+}
+
+__EXPORT zx_status_t zx_port_cancel_key(zx_handle_t handle, uint32_t options, uint64_t key) {
+  uint64_t syscall_key = GetPortKeyNamespace().MapAndRemoveKey(key);
+  return _zx_port_cancel_key(handle, options, syscall_key);
+}
+
+__EXPORT zx_status_t zx_port_queue(zx_handle_t handle, const zx_port_packet_t* packet) {
+  uint64_t syscall_key = GetPortKeyNamespace().AddNewKey(packet->key);
+  zx_port_packet_t translated_packet = *packet;
+  translated_packet.key = syscall_key;
+  return _zx_port_queue(handle, &translated_packet);
+}
+
 // port_wait adds an extra fake-clock eventpair handle to the port and changes the deadline to
 // ZX_TIME_INFINITE.
 __EXPORT zx_status_t zx_port_wait(zx_handle_t handle, zx_time_t deadline,
                                   zx_port_packet_t* packet) {
   if (deadline == ZX_TIME_INFINITE) {
-    return _zx_port_wait(handle, deadline, packet);
+    zx_status_t status = _zx_port_wait(handle, deadline, packet);
+    if (status == ZX_OK) {
+      TranslateKeyInPacket(*packet);
+    }
+    return status;
   }
 
   zx::eventpair event = MakeEvent(deadline);
-  uint64_t key = 0xFACEFACE00000000 | event.get();
-  if (zx_status_t status = zx_object_wait_async(event.get(), handle, key, ZX_EVENTPAIR_SIGNALED, 0);
+  uint64_t private_syscall_key = GetPortKeyNamespace().AddNewPrivateKey();
+  if (zx_status_t status =
+          _zx_object_wait_async(event.get(), handle, private_syscall_key, ZX_EVENTPAIR_SIGNALED, 0);
       status != ZX_OK) {
     ZX_PANIC("%s", zx_status_get_string(status));
   }
   zx_port_packet_t tmp;
   zx_status_t status = _zx_port_wait(handle, ZX_TIME_INFINITE, &tmp);
-  // always cancel the wait in case it wasn't a timeout
-  zx::unowned_port(handle)->cancel(event, key);
+  // Always cancel the wait.
+  _zx_port_cancel_key(handle, 0u, private_syscall_key);
   if (status != ZX_OK) {
     return status;
   }
-  if (tmp.type == ZX_PKT_TYPE_SIGNAL_ONE && tmp.key == key &&
+  if (tmp.type == ZX_PKT_TYPE_SIGNAL_ONE && tmp.key == private_syscall_key &&
       tmp.signal.observed == ZX_EVENTPAIR_SIGNALED) {
     return ZX_ERR_TIMED_OUT;
   }
+  TranslateKeyInPacket(tmp);
   *packet = tmp;
   return ZX_OK;
 }
