@@ -15,7 +15,6 @@ rustc_library("ring-buffer") {
     "//src/diagnostics/validator/*",
     "//src/lib/diagnostics/fake-log-sink/*",
     "//src/lib/diagnostics/log/*",
-    "//src/lib/diagnostics/log/bench/*",
   ]
 
   sources = [ "src/lib.rs" ]

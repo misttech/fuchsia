@@ -989,7 +989,7 @@ mod tests {
         let (_instance, publisher, reader) = init_isolated_logging().await;
         let (mut stream, _errors) =
             reader.snapshot_then_subscribe().expect("subscribed to logs").split_streams();
-        publisher.register_logger(None).unwrap();
+        log::set_boxed_logger(Box::new(publisher)).unwrap();
         info!("hello from test");
         error!("error from test");
         let log = stream.next().await.unwrap();
@@ -1130,8 +1130,10 @@ mod tests {
         let accessor_proxy = instance.root.connect_to_protocol_at_exposed_dir().unwrap();
         let mut reader = ArchiveReader::logs();
         reader.with_archive(accessor_proxy);
-        let options = PublisherOptions::default().use_log_sink(log_sink_client);
-        let publisher = Publisher::new_async(options).await.unwrap();
+        let options = PublisherOptions::default()
+            .wait_for_initial_interest(false)
+            .use_log_sink(log_sink_client);
+        let publisher = Publisher::new(options).unwrap();
         (instance, publisher, reader)
     }
 

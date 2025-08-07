@@ -15,17 +15,13 @@ use {diagnostics_log_validator_utils as utils, fuchsia_runtime as rt};
 
 #[fuchsia::main(logging = false)]
 async fn main() {
-    let publisher = diagnostics_log::Publisher::new_async(
-        PublisherOptions::default()
-            .log_file_line_info(true)
-            .register_global_logger(true)
-            .listen_for_interest_updates(true),
-    )
-    .await
-    .unwrap();
+    let publisher =
+        diagnostics_log::Publisher::new(PublisherOptions::default().log_file_line_info(true))
+            .unwrap();
 
     publisher.set_interest_listener(Listener);
 
+    log::set_boxed_logger(Box::new(publisher.clone())).unwrap();
     log::info!("Puppet started.");
 
     let mut fs = ServiceFs::new_local();

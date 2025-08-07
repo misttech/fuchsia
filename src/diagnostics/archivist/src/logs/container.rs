@@ -10,10 +10,9 @@ use crate::logs::stats::LogStreamStats;
 use crate::logs::stored_message::StoredMessage;
 use derivative::Derivative;
 use diagnostics_data::{BuilderArgs, Data, LogError, Logs, LogsData, LogsDataBuilder};
-use fidl::endpoints::RequestStream;
 use fidl_fuchsia_diagnostics::{LogInterestSelector, StreamMode};
 use fidl_fuchsia_diagnostics_types::{Interest as FidlInterest, Severity as FidlSeverity};
-use fidl_fuchsia_logger::{LogSinkOnInitRequest, LogSinkRequest, LogSinkRequestStream};
+use fidl_fuchsia_logger::{LogSinkRequest, LogSinkRequestStream};
 use fuchsia_async::condition::Condition;
 use futures::future::{Fuse, FusedFuture};
 use futures::prelude::*;
@@ -219,18 +218,6 @@ impl LogsArtifactsContainer {
         stream: LogSinkRequestStream,
         scope: fasync::ScopeHandle,
     ) {
-        if stream
-            .control_handle()
-            .send_on_init(LogSinkOnInitRequest {
-                buffer: Some(self.buffer.iob()),
-                interest: Some(self.state.lock().min_interest()),
-                ..Default::default()
-            })
-            .is_err()
-        {
-            return;
-        }
-
         {
             let mut guard = self.state.lock();
             guard.num_active_channels += 1;

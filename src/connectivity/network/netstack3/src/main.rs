@@ -41,6 +41,7 @@ pub fn main() {
         // logging framework, we want logs pegged at Severity::Debug.
         log_options = log_options
             .minimum_severity(diagnostics_log::Severity::Debug)
+            .wait_for_initial_interest(false)
             .listen_for_interest_updates(false);
     }
     diagnostics_log::initialize(log_options).expect("failed to initialize log");

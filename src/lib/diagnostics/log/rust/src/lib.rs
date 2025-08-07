@@ -9,17 +9,10 @@
 //! This library isn't Fuchsia-specific and provides a general `log::Log` that allows
 //! the library to also be used in the host.
 
-#[cfg(all(target_os = "fuchsia", fuchsia_api_level_at_least = "NEXT"))]
+#[cfg(target_os = "fuchsia")]
 mod fuchsia;
-#[cfg(all(target_os = "fuchsia", fuchsia_api_level_at_least = "NEXT"))]
+#[cfg(target_os = "fuchsia")]
 use self::fuchsia as implementation;
-
-// Version 28 of the SDK was the last version that used sockets for the Rust
-// client. The latest uses IOBuffers.
-#[cfg(all(target_os = "fuchsia", not(fuchsia_api_level_at_least = "NEXT")))]
-mod fuchsia_28;
-#[cfg(all(target_os = "fuchsia", not(fuchsia_api_level_at_least = "NEXT")))]
-use self::fuchsia_28 as implementation;
 
 #[cfg(not(target_os = "fuchsia"))]
 mod portable;
@@ -73,11 +66,20 @@ impl SeverityExt for log::Metadata<'_> {
 
 /// Options to configure publishing. This is for initialization of logs, it's a superset of
 /// `PublisherOptions`.
-// NOTE: `Default` is implemented by the target specific implementations.
 pub struct PublishOptions<'t> {
     pub(crate) publisher: PublisherOptions<'t>,
     pub(crate) install_panic_hook: bool,
     pub(crate) panic_prefix: Option<&'static str>,
+}
+
+impl Default for PublishOptions<'_> {
+    fn default() -> Self {
+        Self {
+            publisher: PublisherOptions::default(),
+            install_panic_hook: true,
+            panic_prefix: None,
+        }
+    }
 }
 
 impl PublishOptions<'_> {

@@ -12,7 +12,6 @@
         args: [
             "--ignore-tag",
             "fuchsia_async",
-            "--use-iob",
         ],
     },
     use: [

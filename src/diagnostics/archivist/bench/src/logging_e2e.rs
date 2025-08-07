@@ -68,8 +68,11 @@ fn bench_write_read_log(b: &mut criterion::Bencher, format: Format) {
     let mut reader = ArchiveReader::logs();
     reader.with_archive(accessor_proxy).with_format(format);
 
-    let options = PublisherOptions::default().tags(&["some-tag"]).use_log_sink(log_sink_client);
-    let publisher = Publisher::new_sync(options).unwrap();
+    let options = PublisherOptions::default()
+        .tags(&["some-tag"])
+        .wait_for_initial_interest(false)
+        .use_log_sink(log_sink_client);
+    let publisher = Publisher::new(options).unwrap();
     let (stream, _errors) =
         reader.snapshot_then_subscribe().expect("subscribed to logs").split_streams();
 

@@ -40,7 +40,7 @@ enum IncomingServices {
 async fn main() -> Result<(), Error> {
     // Listen for log interest change events.
     let (interest_send, interest_recv) = unbounded::<InterestChangedEvent>();
-    let logger = subscribe_to_log_interest_changes(InterestChangedNotifier(interest_send)).await?;
+    let logger = subscribe_to_log_interest_changes(InterestChangedNotifier(interest_send))?;
 
     let mut fs = ServiceFs::new();
 
@@ -65,14 +65,16 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn subscribe_to_log_interest_changes(
+fn subscribe_to_log_interest_changes(
     notifier: InterestChangedNotifier,
 ) -> Result<Publisher, Error> {
-    let publisher = Publisher::new_async(
-        PublisherOptions::default().register_global_logger(true).listen_for_interest_updates(true),
-    )
-    .await?;
+    // Don't wait for initial interest. Many times the test cases rely on knowing when the
+    // component received its initial interest to know that it's running and already serving FIDL
+    // requests.
+    let publisher = Publisher::new(PublisherOptions::default().wait_for_initial_interest(false))?;
     publisher.set_interest_listener(notifier);
+    log::set_boxed_logger(Box::new(publisher.clone()))?;
+    log::set_max_level(log::LevelFilter::Info);
 
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
