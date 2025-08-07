@@ -67,6 +67,9 @@ class DriverRuntime final {
   // Gets the active instance of the DriverRuntime. The instance is stored in thread_local storage.
   static DriverRuntime* GetInstance();
 
+  // Returns the current foreground driver dispatcher.
+  fdf::UnownedSynchronizedDispatcher GetForegroundDispatcher();
+
   // Starts a background driver dispatcher and returns it. Background dispatchers are automatically
   // ran on the managed thread pool inside the driver runtime. Objects that live on background
   // dispatchers are not safe to access directly from a test, but instead must be wrapped inside of

@@ -52,6 +52,17 @@ DriverRuntime::~DriverRuntime() {
 
 DriverRuntime* DriverRuntime::GetInstance() { return g_instance; }
 
+fdf::UnownedSynchronizedDispatcher DriverRuntime::GetForegroundDispatcher() {
+  AssertCurrentThreadIsInitialThread();
+  ZX_ASSERT_MSG(!is_shutdown_,
+                "Cannot retrieve the foreground dispatcher after calling ShutdownAllDispatchers.");
+
+  ZX_ASSERT_MSG(foreground_dispatcher_,
+                "Cannot retrieve the foreground dispatcher after it was reset");
+
+  return foreground_dispatcher_->driver_dispatcher().borrow();
+}
+
 fdf::UnownedSynchronizedDispatcher DriverRuntime::StartBackgroundDispatcher() {
   AssertCurrentThreadIsInitialThread();
   ZX_ASSERT_MSG(!is_shutdown_,
