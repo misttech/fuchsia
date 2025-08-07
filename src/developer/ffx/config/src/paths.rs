@@ -212,7 +212,7 @@ fn get_data_base() -> Result<PathBuf> {
     }
 }
 
-fn get_state_base() -> Result<PathBuf> {
+pub fn get_state_base() -> Result<PathBuf> {
     if cfg!(target_os = "macos") {
         let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
         home.push("Library");

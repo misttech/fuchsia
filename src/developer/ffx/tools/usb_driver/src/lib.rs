@@ -4,9 +4,11 @@
 use argh::{ArgsInfo, FromArgs, SubCommand};
 use fho::subtool::{StandaloneFhoHandler, StandaloneToolCommand};
 use fho::{FfxContext, Result};
+use std::fs::OpenOptions;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::ExitStatus;
+use std::sync::{Arc, Mutex};
 
 /// Config element for the path of the socket we will use to communicate.
 const USB_SOCKET_PATH_CONFIG: &str = "connectivity.usb_socket_path";
@@ -27,11 +29,16 @@ pub struct UsbDriverCommand {
 // [END command_struct]
 
 pub async fn run() {
-    let result = implementation().await;
+    let mut logging_enabled = false;
+    let result = implementation(&mut logging_enabled).await;
     let should_format = match fho::FfxCommandLine::from_env() {
         Ok(cli) => cli.global.machine.is_some(),
         Err(e) => {
-            log::warn!("Received error getting command line: {}", e);
+            if logging_enabled {
+                log::warn!("Received error getting command line: {}", e);
+            } else {
+                eprintln!("Received error getting command line: {}", e);
+            }
             match e {
                 fho::Error::Help { .. } => false,
                 _ => true,
@@ -41,11 +48,11 @@ pub async fn run() {
     ffx_command::exit(result, should_format).await;
 }
 
-async fn implementation() -> Result<ExitStatus> {
+async fn implementation(logging_enabled: &mut bool) -> Result<ExitStatus> {
     let ffx_command::InitializedCmd { cmd: ffx, context: ctx, help_state } =
         ffx_command::init_cmd(ffx_config::environment::ExecutableKind::Subtool)?;
 
-    // TODO(429272253): Set up logging
+    let log_id: u64 = rand::random();
 
     match help_state {
         ffx_command::HelpState::ReturnArgsInfo => {
@@ -71,12 +78,56 @@ async fn implementation() -> Result<ExitStatus> {
     )
     .map_err(|err| ffx_command::Error::from_early_exit(&ffx.command, err))?;
 
-    let _command = match command.subcommand {
+    let command = match command.subcommand {
         StandaloneFhoHandler::Metadata(metadata_cmd) => {
             return metadata_cmd.run(UsbDriverCommand::COMMAND).await;
         }
         StandaloneFhoHandler::Standalone(cmd) => cmd,
     };
+
+    let sink = if command.background {
+        let mut path = match ffx_config::get_state_base_path() {
+            Ok(p) => p,
+            Err(e) => return Err(ffx_command::Error::Config(e.into())),
+        };
+
+        path.push("ffx_usb");
+        path.push(format!("ffx_usb.{log_id:x}.log"));
+
+        let file = match OpenOptions::new().write(true).append(true).create(true).open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                return Err(ffx_command::Error::Config(anyhow::anyhow!(
+                    "Could not open log file: {e}"
+                )));
+            }
+        };
+
+        Box::new(logging::FfxLogSink::new(Arc::new(Mutex::new(file))))
+            as Box<dyn logging::LogSinkTrait>
+    } else {
+        Box::new(logging::FfxLogSink::new(Arc::new(Mutex::new(std::io::stderr()))))
+            as Box<dyn logging::LogSinkTrait>
+    };
+
+    struct Filter;
+    impl logging::Filter for Filter {
+        fn should_emit(&self, _record: &log::Metadata<'_>) -> bool {
+            true
+        }
+    }
+
+    let logger = logging::FfxLog::new(
+        vec![sink],
+        logging::FormatOpts::new(0),
+        Filter,
+        log::LevelFilter::Debug,
+        logging::TargetsFilter::new(vec![]),
+    );
+
+    let _ = log::set_boxed_logger(Box::new(logger))
+        .map(|()| log::set_max_level(log::LevelFilter::Trace));
+    *logging_enabled = true;
 
     if ffx.global.schema {
         todo!();
