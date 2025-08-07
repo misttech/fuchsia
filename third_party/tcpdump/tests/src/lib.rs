@@ -253,6 +253,8 @@ async fn version_test() {
 #[variant(N, Netstack)]
 // TODO(https://fxbug.dev/42169332): Fix memory leak and run this with Lsan.
 #[cfg_attr(feature = "variant_asan", ignore)]
+// TODO(https://fxbug.dev/436867782): Fix memory leak and run this with HWASan.
+#[cfg_attr(feature = "variant_hwasan", ignore)]
 async fn packet_test<N: Netstack>(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox.create_netstack_realm::<N, _>(name).expect("create realm");
@@ -272,6 +274,8 @@ async fn packet_test<N: Netstack>(name: &str) {
 #[netstack_test]
 // TODO(https://fxbug.dev/42169332): Fix memory leak and run this with Lsan.
 #[cfg_attr(feature = "variant_asan", ignore)]
+// TODO(https://fxbug.dev/436867782): Fix memory leak and run this with HWASan.
+#[cfg_attr(feature = "variant_hwasan", ignore)]
 async fn bridged_packet_test(name: &str) {
     type N = netstack_testing_common::realms::Netstack2;
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
