@@ -21,6 +21,17 @@ pub enum KernelArg {
     /// critical dependencies on it.
     SchedulerPreferLittleCpus(bool),
 
+    /// Disable emulation of the previous thread wakeup accounting behavior when unified bookkeeping
+    /// is enabled. The previous wakeup behavior makes it less likely that a newly woken thread will
+    /// preempt a currently running thread. This behavior is less fair to newly woken threads than
+    /// the new behavior implemented by unified bookkeeping, but is desirable because it makes
+    /// latent race conditions less likely to cause problems.
+    ///
+    /// This option should be enabled on builds that are not affected by latent race conditions.
+    /// When the set of builds affected by latent race conditions reaches 0, this option should be
+    /// removed.
+    SchedulerEnableNewWakeupAccounting(bool),
+
     /// This controls the degree of logging to the serial console in the kernel's early
     /// boot phase; if false, only error-related logging will take place.
     ///
@@ -232,6 +243,9 @@ impl KernelArg {
             Self::SchedulerPreferLittleCpus(b) => {
                 ("kernel.scheduler.prefer-little-cpus", b.to_string())
             }
+            Self::SchedulerEnableNewWakeupAccounting(b) => {
+                ("kernel.scheduler.enable-new-wakeup-accounting", b.to_string())
+            }
             Self::PhysVerbose(b) => ("kernel.phys.verbose", b.to_string()),
             Self::Serial(s) => ("kernel.serial", s.to_string()),
             Self::OomEvictAtWarning(b) => ("kernel.oom.evict-at-warning", b.to_string()),
@@ -281,6 +295,7 @@ impl KernelArg {
             // These kernel args do not have any product-provided pieces, therefore they can be
             // serialized as-is.
             Self::SchedulerPreferLittleCpus(_)
+            | Self::SchedulerEnableNewWakeupAccounting(_)
             | Self::OomEvictAtWarning(_)
             | Self::OomEvictContinuous(_)
             | Self::OomEvictWithMinTarget(_)

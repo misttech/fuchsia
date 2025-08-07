@@ -48,6 +48,8 @@
 ?kernel.ppb.loan=true
 ?kernel.ppb.replace-on-unloan=true
 ?kernel.render-dlog-to-crashlog=true
+?kernel.scheduler.enable-new-wakeup-accounting=false
+?kernel.scheduler.enable-new-wakeup-accounting=true
 ?kernel.scheduler.prefer-little-cpus=false
 ?kernel.scheduler.prefer-little-cpus=true
 ?kernel.serial=*
