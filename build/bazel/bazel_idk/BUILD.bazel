@@ -5,19 +5,19 @@
 # Allowlists for each IDK atom type.
 #
 # Unlike GN, visibility cannot be limited to individual labels and is instead
-# either the package (`__pkg__`) or all subpackages (`__subpackages__`).
+# either all targets in the package/directory (`__pkg__`) or all
+# subpackages/subdirectories (`__subpackages__`). Only use the former.
 # TODO(https://fxbug.dev/417305295): Is there an another allowlist pattern in
-# Bazel that allows specifying individual targets? If not, we may need to
-# establish a pattern where all IDK  targets are the package target
-# (directory name) and `__pkg__` is always used.
+# Bazel that allows specifying individual targets? If not, the best we can do
+# is specify which directories can define IDK atoms.
 
 filegroup(
     name = "partner_idk_source_sets_allowlist",
     visibility = [
-        "//build/bazel/bazel_idk/tests:__subpackages__",
+        "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/lib/fit:__pkg__",
         "//sdk/lib/magma_common:__pkg__",
-        "//sdk/lib/media/cpp:__subpackages__",  # ":no_converters"
+        "//sdk/lib/media/cpp:__pkg__",
         "//sdk/lib/stdcompat:__pkg__",
         "//sdk/lib/utf-utils:__pkg__",
     ],
@@ -26,7 +26,7 @@ filegroup(
 filegroup(
     name = "partner_idk_unstable_source_sets_allowlist",
     visibility = [
-        "//build/bazel/bazel_idk/tests:__subpackages__",
+        "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/lib/memory_barriers:__pkg__",
     ],
 )

@@ -4,7 +4,7 @@
 
 load("@rules_python//python:defs.bzl", "py_binary")
 
-package(default_visibility = ["//build/bazel/bazel_idk:__subpackages__"])
+package(default_visibility = ["//build/bazel/bazel_idk:__pkg__"])
 
 py_binary(
     name = "verify_pragma_once",

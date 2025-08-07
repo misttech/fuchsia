@@ -619,8 +619,6 @@ def idk_cc_source_library(
     # on the atom in addition to the visibility of the underlying library.
     # The built-in visibility labels cannot be used in combination with other
     # labels so handle them specificcally.
-    # Note: This does not support visibility between IDK atoms in the same
-    # package when visibility is "//visibility:private".
     if "//visibility:public" in visibility:
         atom_visibility = visibility
     else:

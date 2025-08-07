@@ -18,13 +18,13 @@ idk_cc_source_library(
         "//vendor/amlogic/drivers:__subpackages__",
 
         # This visibility entry is for GN-only.
-        "//src/lib/memory_barriers:__subpackages__",
+        "//src/lib/memory_barriers:__pkg__",
 
         # TODO(https://fxbug.dev/330709069): Remove these once the bots and targets are removed.
         "//build/sdk:__subpackages__",
 
         # TODO(https://fxbug.dev/417305295): Remove when no longer using real
         # atoms in tests.
-        "//build/bazel/bazel_idk/tests:__subpackages__",
+        "//build/bazel/bazel_idk/tests:__pkg__",
     ],
 )

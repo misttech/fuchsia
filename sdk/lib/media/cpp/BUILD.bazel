@@ -29,6 +29,6 @@ idk_cc_source_library(
         "//build/bazel/bazel_idk/tests:__subpackages__",
 
         # TODO(https://fxbug.dev/330709069): Remove these once the bots and targets are removed.
-        "//build/sdk:__subpackages__",
+        "//build/sdk:__pkg__",
     ],
 )
