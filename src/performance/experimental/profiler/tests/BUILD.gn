@@ -54,6 +54,7 @@ fuchsia_test_package("profiler_integration_test") {
 
 executable("profiler_unittest_bin") {
   sources = [
+    "fxt_writer_test.cc",
     "process_watcher_test.cc",
     "symbolizer_markup_test.cc",
     "targets_test.cc",
@@ -61,6 +62,7 @@ executable("profiler_unittest_bin") {
   deps = [
     "//src/lib/fxl/test:gtest_main",
     "//src/performance/experimental/profiler:lib",
+    "//src/performance/lib/fxt",
   ]
   testonly = true
 }

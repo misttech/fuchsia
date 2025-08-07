@@ -9,6 +9,7 @@ source_set("lib") {
   sources = [
     "component.cc",
     "component_watcher.cc",
+    "fxt_writer.cc",
     "job_watcher.cc",
     "kernel_sampler.cc",
     "process_watcher.cc",
@@ -32,6 +33,7 @@ source_set("lib") {
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/syslog/cpp",
+    "//src/lib/fsl",
     "//src/lib/fxl",
     "//src/lib/symbolizer-markup",
     "//src/lib/unwinder",
