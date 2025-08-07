@@ -6,11 +6,10 @@
 import abc
 from collections.abc import Sequence
 
-import fidl_fuchsia_wlan_common as f_wlan_common
-import fidl_fuchsia_wlan_common_security as f_wlan_common_security
-
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
+    Authentication,
+    BssDescription,
     ClientStatusResponse,
     CountryCode,
     QueryIfaceResponse,
@@ -29,8 +28,8 @@ class WlanCore(affordance.Affordance):
         # TODO(http://b/356234331): Remove the password field once
         # authentication is used everywhere.
         password: str | None,
-        bss_desc: f_wlan_common.BssDescription,
-        authentication: f_wlan_common_security.Authentication | None = None,
+        bss_desc: BssDescription,
+        authentication: Authentication | None = None,
     ) -> bool:
         """Trigger connection to a network.
 
@@ -138,9 +137,7 @@ class WlanCore(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def scan_for_bss_info(
-        self,
-    ) -> dict[str, list[f_wlan_common.BssDescription]]:
+    def scan_for_bss_info(self) -> dict[str, list[BssDescription]]:
         """Scans and returns BSS info.
 
         Returns:

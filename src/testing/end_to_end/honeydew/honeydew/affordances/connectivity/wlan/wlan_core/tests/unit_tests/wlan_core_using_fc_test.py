@@ -23,6 +23,9 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
+    Authentication,
+    BssDescription,
+    BssType,
     ChannelBandwidth,
     ClientStatusConnected,
     ClientStatusConnecting,
@@ -31,8 +34,12 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     InformationElementType,
     Protection,
     QueryIfaceResponse,
+    SecurityProtocol,
+    WepCredentials,
     WlanChannel,
     WlanMacRole,
+    WpaPassphraseCredentials,
+    WpaPskCredentials,
 )
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
 from honeydew.errors import NotSupportedError
@@ -51,22 +58,34 @@ _TEST_PSK = (
     )
 )
 
-_TEST_BSS_DESC_1 = f_wlan_common.BssDescription(
+_TEST_BSS_DESC_1_FC = f_wlan_common.BssDescription(
     bssid=[1, 2, 3],
     bss_type=f_wlan_common.BssType.PERSONAL,
     beacon_period=2,
     capability_info=3,
     ies=[InformationElementType.SSID, len(_TEST_SSID)] + _TEST_SSID_BYTES,
     channel=f_wlan_ieee80211.WlanChannel(
-        primary=1, cbw=f_wlan_ieee80211.ChannelBandwidth.CBW20, secondary80=3
+        primary=1,
+        cbw=f_wlan_ieee80211.ChannelBandwidth.CBW20,
+        secondary80=3,
     ),
+    rssi_dbm=4,
+    snr_db=5,
+)
+_TEST_BSS_DESC_1 = BssDescription(
+    bssid=[1, 2, 3],
+    bss_type=BssType.PERSONAL,
+    beacon_period=2,
+    capability_info=3,
+    ies=[InformationElementType.SSID, len(_TEST_SSID)] + _TEST_SSID_BYTES,
+    channel=WlanChannel(primary=1, cbw=ChannelBandwidth.CBW20, secondary80=3),
     rssi_dbm=4,
     snr_db=5,
 )
 
 # Use the same SSID such that the two scan results will be merged under the same
 # SSID key, allowing the user to choose from multiple BSSes.
-_TEST_BSS_DESC_2 = f_wlan_common.BssDescription(
+_TEST_BSS_DESC_2_FC = f_wlan_common.BssDescription(
     bssid=[3, 2, 1],
     bss_type=f_wlan_common.BssType.PERSONAL,
     beacon_period=5,
@@ -77,6 +96,16 @@ _TEST_BSS_DESC_2 = f_wlan_common.BssDescription(
         cbw=f_wlan_ieee80211.ChannelBandwidth.CBW40,
         secondary80=4,
     ),
+    rssi_dbm=3,
+    snr_db=2,
+)
+_TEST_BSS_DESC_2 = BssDescription(
+    bssid=[3, 2, 1],
+    bss_type=BssType.PERSONAL,
+    beacon_period=5,
+    capability_info=4,
+    ies=[InformationElementType.SSID, len(_TEST_SSID)] + _TEST_SSID_BYTES,
+    channel=WlanChannel(primary=2, cbw=ChannelBandwidth.CBW40, secondary80=4),
     rssi_dbm=3,
     snr_db=2,
 )
@@ -244,61 +273,37 @@ class WlanCoreFCTests(unittest.TestCase):
     def test_connect_passes(self) -> None:
         """Verify connect works with multiple authentication modes."""
         for msg, auth in [
-            (
-                "open",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.OPEN, None
-                ),
-            ),
+            ("open", Authentication(SecurityProtocol.OPEN, None)),
             (
                 "wep",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.WEP,
-                    f_wlan_common_security.Credentials(
-                        wep=f_wlan_common_security.WepCredentials(
-                            _TEST_PASSWORD.encode("ascii")
-                        )
-                    ),
+                Authentication(
+                    SecurityProtocol.WEP, WepCredentials(_TEST_PASSWORD)
                 ),
             ),
             (
                 "wpa1+passphrase",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.WPA1,
-                    f_wlan_common_security.Credentials(
-                        wpa=f_wlan_common_security.WpaCredentials(
-                            passphrase=_TEST_PASSWORD.encode("ascii")
-                        )
-                    ),
+                Authentication(
+                    SecurityProtocol.WPA1,
+                    WpaPassphraseCredentials(_TEST_PASSWORD),
                 ),
             ),
             (
                 "wpa1+psk",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.WPA1,
-                    f_wlan_common_security.Credentials(
-                        wpa=f_wlan_common_security.WpaCredentials(psk=_TEST_PSK)
-                    ),
+                Authentication(
+                    SecurityProtocol.WPA1, WpaPskCredentials(_TEST_PSK)
                 ),
             ),
             (
                 "wpa2+passphrase",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.WPA2_PERSONAL,
-                    f_wlan_common_security.Credentials(
-                        wpa=f_wlan_common_security.WpaCredentials(
-                            passphrase=_TEST_PASSWORD.encode("ascii")
-                        )
-                    ),
+                Authentication(
+                    SecurityProtocol.WPA2_PERSONAL,
+                    WpaPassphraseCredentials(_TEST_PASSWORD),
                 ),
             ),
             (
                 "wpa2+psk",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.WPA2_PERSONAL,
-                    f_wlan_common_security.Credentials(
-                        wpa=f_wlan_common_security.WpaCredentials(psk=_TEST_PSK)
-                    ),
+                Authentication(
+                    SecurityProtocol.WPA2_PERSONAL, WpaPskCredentials(_TEST_PSK)
                 ),
             ),
         ]:
@@ -316,9 +321,10 @@ class WlanCoreFCTests(unittest.TestCase):
                     ) -> None:
                         expect = f_wlan_sme.ConnectRequest(
                             ssid=_TEST_SSID_BYTES,
-                            bss_description=_TEST_BSS_DESC_1,
+                            bss_description=_TEST_BSS_DESC_1_FC,
                             multiple_bss_candidates=False,
-                            authentication=auth,
+                            # pylint: disable-next=cell-var-from-loop
+                            authentication=auth.to_fidl(),
                             deprecated_scan_type=f_wlan_common.ScanType.ACTIVE,
                         )
                         self.assertSequenceEqual(req.ssid, expect.ssid)
@@ -383,9 +389,7 @@ class WlanCoreFCTests(unittest.TestCase):
                     _TEST_SSID,
                     None,
                     _TEST_BSS_DESC_1,
-                    f_wlan_common_security.Authentication(
-                        f_wlan_common_security.Protocol.OPEN, None
-                    ),
+                    Authentication(SecurityProtocol.OPEN, None),
                 )
 
     def test_connect_fails_connect_timeout(self) -> None:
@@ -404,9 +408,7 @@ class WlanCoreFCTests(unittest.TestCase):
                         _TEST_SSID,
                         None,
                         _TEST_BSS_DESC_1,
-                        f_wlan_common_security.Authentication(
-                            f_wlan_common_security.Protocol.OPEN, None
-                        ),
+                        Authentication(SecurityProtocol.OPEN, None),
                     )
 
     def test_connect_fails_driver_error(self) -> None:
@@ -461,9 +463,7 @@ class WlanCoreFCTests(unittest.TestCase):
                             _TEST_SSID,
                             None,
                             _TEST_BSS_DESC_1,
-                            f_wlan_common_security.Authentication(
-                                f_wlan_common_security.Protocol.OPEN, None
-                            ),
+                            Authentication(SecurityProtocol.OPEN, None),
                         )
 
     def test_connect_fails_client_status_wrong_ssid(self) -> None:
@@ -479,11 +479,11 @@ class WlanCoreFCTests(unittest.TestCase):
             def connect(req: f_wlan_sme.ConnectRequest, txn: int) -> None:
                 expect = f_wlan_sme.ConnectRequest(
                     ssid=_TEST_SSID_BYTES,
-                    bss_description=_TEST_BSS_DESC_1,
+                    bss_description=_TEST_BSS_DESC_1_FC,
                     multiple_bss_candidates=False,
-                    authentication=f_wlan_common_security.Authentication(
-                        f_wlan_common_security.Protocol.OPEN, None
-                    ),
+                    authentication=Authentication(
+                        SecurityProtocol.OPEN, None
+                    ).to_fidl(),
                     deprecated_scan_type=f_wlan_common.ScanType.ACTIVE,
                 )
                 self.assertSequenceEqual(req.ssid, expect.ssid)
@@ -518,9 +518,7 @@ class WlanCoreFCTests(unittest.TestCase):
                     _TEST_SSID,
                     None,
                     _TEST_BSS_DESC_1,
-                    f_wlan_common_security.Authentication(
-                        f_wlan_common_security.Protocol.OPEN, None
-                    ),
+                    Authentication(SecurityProtocol.OPEN, None),
                 )
 
     def test_connect_fails_client_status_error(self) -> None:
@@ -559,11 +557,11 @@ class WlanCoreFCTests(unittest.TestCase):
                     ) -> None:
                         expect = f_wlan_sme.ConnectRequest(
                             ssid=_TEST_SSID_BYTES,
-                            bss_description=_TEST_BSS_DESC_1,
+                            bss_description=_TEST_BSS_DESC_1_FC,
                             multiple_bss_candidates=False,
-                            authentication=f_wlan_common_security.Authentication(
-                                f_wlan_common_security.Protocol.OPEN, None
-                            ),
+                            authentication=Authentication(
+                                SecurityProtocol.OPEN, None
+                            ).to_fidl(),
                             deprecated_scan_type=f_wlan_common.ScanType.ACTIVE,
                         )
                         self.assertSequenceEqual(req.ssid, expect.ssid)
@@ -593,9 +591,7 @@ class WlanCoreFCTests(unittest.TestCase):
                             _TEST_SSID,
                             None,
                             _TEST_BSS_DESC_1,
-                            f_wlan_common_security.Authentication(
-                                f_wlan_common_security.Protocol.OPEN, None
-                            ),
+                            Authentication(SecurityProtocol.OPEN, None),
                         )
 
     def test_create_iface(self) -> None:
@@ -854,12 +850,12 @@ class WlanCoreFCTests(unittest.TestCase):
                                             f_wlan_sme.ScanResult(
                                                 compatibility=compatibility,
                                                 timestamp_nanos=0,
-                                                bss_description=_TEST_BSS_DESC_1,
+                                                bss_description=_TEST_BSS_DESC_1_FC,
                                             ),
                                             f_wlan_sme.ScanResult(
                                                 compatibility=compatibility,
                                                 timestamp_nanos=0,
-                                                bss_description=_TEST_BSS_DESC_2,
+                                                bss_description=_TEST_BSS_DESC_2_FC,
                                             ),
                                         ],
                                     )

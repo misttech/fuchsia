@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import fidl_fuchsia_wlan_common as f_wlan_common
+import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_policy as f_wlan_policy
@@ -677,13 +678,55 @@ class InformationElementType(enum.IntEnum):
     # Types 1-255 are not implemented. Only implement a new type if it is being used.
 
 
-class BssDescriptionParser:
-    """BssDescription with parsed information elements."""
+# TODO(http://b/346424966): Only necessary because Python does not have static
+# typing for FIDL. Once these static types are available and the SL4F affordance
+# is removed, replace with the statically generated FIDL equivalent.
+@dataclass(frozen=True)
+class BssDescription:
+    """BssDescription
+
+    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/sl4f/src/wlan/types.rs
+    """
+
+    bssid: list[int]
+    bss_type: BssType
+    beacon_period: int
+    capability_info: int
+    ies: list[int]
+    channel: WlanChannel
+    rssi_dbm: int
+    snr_db: int
 
     @staticmethod
-    def ssid(bss_description: f_wlan_common.BssDescription) -> str | None:
+    def from_fidl(fidl: f_wlan_common.BssDescription) -> "BssDescription":
+        """Parse from a fuchsia.wlan.common.BssDescription."""
+        return BssDescription(
+            bssid=list(fidl.bssid),
+            bss_type=BssType.from_fidl(f_wlan_common.BssType(fidl.bss_type)),
+            beacon_period=fidl.beacon_period,
+            capability_info=fidl.capability_info,
+            ies=list(fidl.ies),
+            channel=WlanChannel.from_fidl(fidl.channel),
+            rssi_dbm=fidl.rssi_dbm,
+            snr_db=fidl.snr_db,
+        )
+
+    def to_fidl(self) -> f_wlan_common.BssDescription:
+        """Convert to a fuchsia.wlan.common.BssDescription."""
+        return f_wlan_common.BssDescription(
+            bssid=self.bssid,
+            bss_type=self.bss_type.to_fidl(),
+            beacon_period=self.beacon_period,
+            capability_info=self.capability_info,
+            ies=self.ies,
+            channel=self.channel.to_fidl(),
+            rssi_dbm=self.rssi_dbm,
+            snr_db=self.snr_db,
+        )
+
+    def ssid(self) -> str | None:
         """Parse information elements for SSID."""
-        ies = bytes(bss_description.ies)
+        ies = bytes(self.ies)
         i = 0
         while i < len(ies):
             if not len(ies) > i + 1:
@@ -716,6 +759,118 @@ class BssDescriptionParser:
                     )
 
         return None
+
+
+# TODO(http://b/346424966): Only necessary because Python does not have static
+# typing for FIDL. Once these static types are available, replace with the
+# statically generated FIDL equivalent.
+@dataclass(frozen=True)
+class Authentication:
+    """Pairs credentials with a particular security protocol.
+
+    This type requires validation, as `protocol` and `credentials` may disagree.
+    """
+
+    protocol: SecurityProtocol
+    """Security protocol."""
+
+    credentials: Credentials | None
+    """Credentials to pair with the security protocol."""
+
+    def to_fidl(self) -> f_wlan_common_security.Authentication:
+        """Convert to a fuchsia.wlan.common.security/Authentication."""
+        return f_wlan_common_security.Authentication(
+            protocol=self.protocol,
+            credentials=(
+                self.credentials.to_fidl() if self.credentials else None
+            ),
+        )
+
+
+class SecurityProtocol(enum.IntEnum):
+    """WLAN security protocols."""
+
+    OPEN = 1
+    """Open network security.
+
+    This indicates that no security protocol or suite is used by a WLAN; it
+    is not to be confused with "open authentication".
+    """
+
+    WEP = 2
+    WPA1 = 3
+    WPA2_PERSONAL = 4
+    WPA2_ENTERPRISE = 5
+    WPA3_PERSONAL = 6
+    WPA3_ENTERPRISE = 7
+
+
+class Credentials(Protocol):
+    """Credentials used to authenticate with a WLAN."""
+
+    def to_fidl(self) -> f_wlan_common_security.Credentials:
+        """Convert to a fuchsia.wlan.common.security/Credentials."""
+
+
+@dataclass(frozen=True)
+class WepCredentials(Credentials):
+    """WEP credentials."""
+
+    key: str
+    """Unencoded WEP key.
+
+    This field is always a binary key; ASCII hexadecimal encoding should not be
+    used here.
+    """
+
+    def to_fidl(self) -> f_wlan_common_security.Credentials:
+        """Convert to a fuchsia.wlan.common.security/Credentials."""
+        return f_wlan_common_security.Credentials(
+            wep=f_wlan_common_security.WepCredentials(
+                key=list(self.key.encode("utf-8"))
+            )
+        )
+
+
+@dataclass(frozen=True)
+class WpaPskCredentials(Credentials):
+    """WPA-PSK credentials."""
+
+    psk: bytes
+    """
+    Unencoded pre-shared key (PSK).
+
+    This field is always a binary key; ASCII hexadecimal encoding should not be
+    used here.
+    """
+
+    def to_fidl(self) -> f_wlan_common_security.Credentials:
+        """Convert to a fuchsia.wlan.common.security/Credentials."""
+        return f_wlan_common_security.Credentials(
+            wpa=f_wlan_common_security.WpaCredentials(psk=list(self.psk))
+        )
+
+
+@dataclass(frozen=True)
+class WpaPassphraseCredentials(Credentials):
+    """WPA credentials with passphrase."""
+
+    passphrase: str
+    """
+    UTF-8 encoded passphrase.
+
+    This field is expected to use UTF-8 or compatible encoding. This is more
+    permissive than the passphrase to PSK mapping specified in IEEE Std
+    802.11-2016 Appendix J.4, but UTF-8 is typically used in practice.
+    """
+
+    def to_fidl(self) -> f_wlan_common_security.Credentials:
+        """Convert to a fuchsia.wlan.common.security/Credentials."""
+        return f_wlan_common_security.Credentials(
+            wpa=f_wlan_common_security.WpaCredentials(
+                passphrase=list(self.passphrase.encode("utf-8"))
+            )
+        )
 
 
 # TODO(http://b/346424966): Only necessary because Python does not have static

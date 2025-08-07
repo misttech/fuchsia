@@ -6,7 +6,6 @@
 import logging
 import time
 
-import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
 from mobly import asserts, signals, test_runner
@@ -14,10 +13,12 @@ from wlan_base_test import wlan_base_test
 
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.types import (
+    Authentication,
     ClientStatusConnected,
     ClientStatusConnecting,
     ClientStatusIdle,
     CountryCode,
+    SecurityProtocol,
     WlanMacRole,
 )
 from honeydew.fuchsia_device import fuchsia_device
@@ -166,9 +167,7 @@ class WlanCoreTests(wlan_base_test.WlanBaseTest):
                     ssid=test_ssid,
                     password=None,
                     bss_desc=bss_desc_for_ssid[0],
-                    authentication=f_wlan_common_security.Authentication(
-                        f_wlan_common_security.Protocol.OPEN, None
-                    ),
+                    authentication=Authentication(SecurityProtocol.OPEN, None),
                 ),
                 "Failed to connect.",
             )

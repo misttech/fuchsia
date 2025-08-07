@@ -9,7 +9,6 @@ from collections.abc import Sequence
 
 import fidl_fuchsia_location_namedplace as f_location_namedplace
 import fidl_fuchsia_wlan_common as f_wlan_common
-import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_sme as f_wlan_sme
@@ -20,7 +19,8 @@ from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 from honeydew import affordances_capable, errors
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    BssDescriptionParser,
+    Authentication,
+    BssDescription,
     ClientStatusConnected,
     ClientStatusResponse,
     CountryCode,
@@ -139,8 +139,8 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         # TODO(http://b/356234331): Remove the password field once
         # authentication is used everywhere.
         password: str | None,
-        bss_desc: f_wlan_common.BssDescription,
-        authentication: f_wlan_common_security.Authentication | None = None,
+        bss_desc: BssDescription,
+        authentication: Authentication | None = None,
     ) -> bool:
         """Trigger connection to a network.
 
@@ -174,9 +174,9 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
         req = f_wlan_sme.ConnectRequest(
             ssid=list(ssid.encode("utf-8")),
-            bss_description=bss_desc,
+            bss_description=bss_desc.to_fidl(),
             multiple_bss_candidates=False,  # only used for metrics, selected arbitrarily
-            authentication=authentication,
+            authentication=authentication.to_fidl(),
             deprecated_scan_type=f_wlan_common.ScanType.ACTIVE,
         )
 
@@ -419,9 +419,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
-    async def scan_for_bss_info(
-        self,
-    ) -> dict[str, list[f_wlan_common.BssDescription]]:
+    async def scan_for_bss_info(self) -> dict[str, list[BssDescription]]:
         """Scans and returns BSS info.
 
         Returns:
@@ -447,11 +445,11 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                 "ClientSme.ScanForController() error"
             ) from e
 
-        results: dict[str, list[f_wlan_common.BssDescription]] = {}
+        results: dict[str, list[BssDescription]] = {}
 
         for scan_result in scan_for_controller_response.scan_results:
-            desc = scan_result.bss_description
-            ssid = BssDescriptionParser.ssid(desc)
+            desc = BssDescription.from_fidl(scan_result.bss_description)
+            ssid = desc.ssid()
             if ssid:
                 if ssid in results:
                     results[ssid].append(desc)
