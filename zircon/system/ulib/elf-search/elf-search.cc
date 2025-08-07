@@ -233,13 +233,14 @@ Elf64_Dyn UpcastElf32Dyn(const Elf32_Dyn& to_convert) {
   return converted;
 }
 
-void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& map,
-                       zx_vaddr_t& end_of_last_module, const ModuleAction& action) {
+void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& current_map,
+                       const cpp20::span<zx_info_maps_t> next_maps, zx_vaddr_t& end_of_last_module,
+                       const ModuleAction& action) {
   zx_status_t status;
 
   // First probe the IDENT header to see if this is a 64 or 32 bit module.
   uint8_t e_ident[EI_NIDENT];
-  status = reader.ReadArray(map.base, e_ident, sizeof(e_ident));
+  status = reader.ReadArray(current_map.base, e_ident, sizeof(e_ident));
   if (status != ZX_OK) {
     return;
   }
@@ -249,7 +250,7 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& map,
   // Read in what might be an ELF header.
   Elf64_Ehdr ehdr;
   if (is_64bit) {
-    status = reader.Read(map.base, &ehdr);
+    status = reader.Read(current_map.base, &ehdr);
     if (status != ZX_OK) {
       return;
     }
@@ -260,7 +261,7 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& map,
     }
   } else {
     Elf32_Ehdr ehdr32;
-    status = reader.Read(map.base, &ehdr32);
+    status = reader.Read(current_map.base, &ehdr32);
     if (status != ZX_OK) {
       return;
     }
@@ -285,7 +286,7 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& map,
   auto phdrs = cpp20::span<const Elf64_Phdr>{phdrs_buf, ehdr.e_phnum};
 
   if (is_64bit) {
-    status = reader.ReadArray(map.base + ehdr.e_phoff, phdrs_buf, ehdr.e_phnum);
+    status = reader.ReadArray(current_map.base + ehdr.e_phoff, phdrs_buf, ehdr.e_phnum);
     if (status != ZX_OK) {
       return;
     }
@@ -293,7 +294,7 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& map,
     Elf32_Phdr phdrs32_buf[kMaxProgramHeaders];
     auto phdrs32 = std::span<const Elf32_Phdr>{phdrs32_buf, ehdr.e_phnum};
 
-    status = reader.ReadArray(map.base + ehdr.e_phoff, phdrs32_buf, ehdr.e_phnum);
+    status = reader.ReadArray(current_map.base + ehdr.e_phoff, phdrs32_buf, ehdr.e_phnum);
     if (status != ZX_OK) {
       return;
     }
@@ -307,10 +308,12 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& map,
   uintptr_t dynamic = 0;
   size_t dynamic_count = 0;
   uintptr_t vaddr_start = -1ul;
+  size_t next_map_index = 0;
   const size_t size_of_dyn = is_64bit ? sizeof(Elf64_Dyn) : sizeof(Elf32_Dyn);
-  for (const auto& phdr : phdrs) {
+  for (size_t i = 0; i < phdrs.size(); i++) {
+    const auto& phdr = phdrs[i];
     if (phdr.p_type == PT_DYNAMIC) {
-      dynamic = map.base + phdr.p_vaddr;
+      dynamic = current_map.base + phdr.p_vaddr;
       dynamic_count = phdr.p_filesz / size_of_dyn;
       break;
     }
@@ -320,9 +323,50 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& map,
         // The first p_vaddr may not be 0.
         vaddr_start = phdr.p_vaddr & -PAGESIZE;
       }
-      end_of_last_module = map.base - vaddr_start + phdr.p_vaddr + phdr.p_memsz;
+
+      zx_vaddr_t phdr_start = current_map.base - vaddr_start + phdr.p_vaddr;
+      phdr_start = phdr_start & -PAGESIZE;
+
+      // Inspect the next mappings after the current one to check that the starting addrs match.
+      // This is important to distinguish when a single module has been broken up to discontiguous
+      // mappings so that |end_of_last_module| doesn't cause us to ignore any modules that have been
+      // placed in the intermediate mappings.
+      //
+      // An example of this looks something like this:
+      //      Start              End  Prot   Size   Koid       Offset  Cmt.Pgs  Name
+      // 0xdfe52000       0xdfe6e000  r-x    112K  82411          0x0        0  blob-7736e79f
+      // 0xdfe78000       0xdfe7a000  rw-      8K  83515          0x0        1  starnix-anon
+      // 0xdfe7a000       0xdfe7c000  rw-      8K  83473          0x0        2  starnix-anon
+      // 0xdfe7c000       0xdfe7d000  r--      4K   1093          0x0        0  time_values
+      // 0xdfe7d000       0xdfe7e000  r--      4K  81533          0x0        1  starnix:vsdo
+      // 0xdfe7e000       0xdfe80000  r-x      8K  83468          0x0        0  blob-814b69fa
+      // 0xdfe80000       0xdfe82000  r--      8K  83467          0x0        2  data:blob-7736e79f
+      // 0xdfe82000       0xdfe83000  rw-      4K  83467       0x2000        1  data:blob-7736e79f
+      //
+      // Notice how blob-7736e79f has an interleaved module, namely blob-814b69fa. We want to make
+      // sure the end_of_last_module stops at 0xdfe6e000 in this example, rather than purely looking
+      // at phdrs to see the actual end of this module at 0xdfe83000.
+      if (i > 0 && end_of_last_module != 0 && next_map_index < next_maps.size()) {
+        const auto& next_map = next_maps[next_map_index++];
+        if (next_map.base != phdr_start) {
+          break;
+        }
+      }
+
+      end_of_last_module = current_map.base - vaddr_start + phdr.p_vaddr + phdr.p_memsz;
       // Round up to pages.
       end_of_last_module = (end_of_last_module + PAGESIZE - 1) & -PAGESIZE;
+    }
+  }
+
+  // If we didn't find a |PT_DYNAMIC| above, make sure we iterate over everything now.
+  if (dynamic == 0) {
+    for (const auto& phdr : phdrs) {
+      if (phdr.p_type == PT_DYNAMIC) {
+        dynamic = current_map.base + phdr.p_vaddr;
+        dynamic_count = phdr.p_filesz / size_of_dyn;
+        break;
+      }
     }
   }
 
@@ -345,10 +389,10 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& map,
         // Glibc will relocate the entries in the dynamic table if it's not readonly. Other libc's
         // such as bionic or musl won't. Use a heuristic here to detect: if the value is larger
         // than map.base, it's considered an address. Otherwise it's an offset.
-        if (dyn.d_un.d_val >= map.base) {
+        if (dyn.d_un.d_val >= current_map.base) {
           strtab = dyn.d_un.d_val;
         } else {
-          strtab = map.base + dyn.d_un.d_val;
+          strtab = current_map.base + dyn.d_un.d_val;
         }
       } else if (dyn.d_tag == DT_SONAME) {
         soname_offset = dyn.d_un.d_val;
@@ -372,7 +416,7 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& map,
   for (const auto& phdr : phdrs) {
     if (phdr.p_type == PT_NOTE) {
       size_t size;
-      status = GetBuildID(&reader, map.base, phdr, build_id_buf, &size);
+      status = GetBuildID(&reader, current_map.base, phdr, build_id_buf, &size);
       if (status == ZX_OK && size != 0) {
         build_id = cpp20::span<const uint8_t>(build_id_buf, size);
         break;
@@ -388,16 +432,17 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& map,
   char name[kNameBufferSize];
   if (soname[0] != '\0') {
     snprintf(name, sizeof(name), "%s", soname);
-  } else if (map.name[0] != '\0') {
-    snprintf(name, sizeof(name), "<VMO#%" PRIu64 "=%s>", map.u.mapping.vmo_koid, map.name);
+  } else if (current_map.name[0] != '\0') {
+    snprintf(name, sizeof(name), "<VMO#%" PRIu64 "=%s>", current_map.u.mapping.vmo_koid,
+             current_map.name);
   } else {
-    snprintf(name, sizeof(name), "<VMO#%" PRIu64 ">", map.u.mapping.vmo_koid);
+    snprintf(name, sizeof(name), "<VMO#%" PRIu64 ">", current_map.u.mapping.vmo_koid);
   }
 
   // All checks have passed so we can give the user a module.
   action(ModuleInfo{
       .name = name,
-      .vaddr = map.base,
+      .vaddr = current_map.base,
       .build_id = build_id,
       .ehdr = ehdr,
       .phdrs = phdrs,
@@ -481,7 +526,8 @@ zx_status_t Searcher::ForEachModule(const zx::process& process, ModuleAction act
       continue;
     }
 
-    DoActionForModule(reader, map, end_of_last_module, action);
+    auto next_maps = std::span<zx_info_maps_t>(maps_.get() + i + 1, actual - (i + 1));
+    DoActionForModule(reader, map, next_maps, end_of_last_module, action);
   }
 
   return ZX_OK;
