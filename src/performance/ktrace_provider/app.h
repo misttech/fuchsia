@@ -13,52 +13,87 @@
 #include <fbl/unique_fd.h>
 
 #include "src/lib/fxl/command_line.h"
+#include "src/performance/ktrace_provider/device_reader.h"
 #include "src/performance/ktrace_provider/log_importer.h"
+
+#ifdef EXPERIMENTAL_KTRACE_STREAMING_ENABLED
+constexpr bool kKernelStreamingSupport = EXPERIMENTAL_KTRACE_STREAMING_ENABLED;
+#else
+constexpr bool kKernelStreamingSupport = false;
+#endif
 
 namespace ktrace_provider {
 
 std::vector<trace::KnownCategory> GetKnownCategories();
 
 struct DrainContext {
-  DrainContext(zx::time start, zx::resource tracing_resource, zx::duration poll_period,
-               size_t buffer_size)
+  DrainContext(zx::time start, trace_prolonged_context_t* context, zx::resource tracing_resource,
+               zx::duration poll_period, std::unique_ptr<uint64_t[]> buffer, size_t buffer_size)
       : start(start),
-        tracing_resource(std::move(tracing_resource)),
+        reader(std::move(tracing_resource)),
+        context(context),
         poll_period(poll_period),
-        buffer(std::make_unique_for_overwrite<uint64_t[]>(buffer_size / sizeof(uint64_t))),
+        buffer(std::move(buffer)),
         buffer_size(buffer_size) {}
 
-  static zx::result<DrainContext> Create(const zx::resource& tracing_resource,
-                                         zx::duration poll_period) {
+  // We have a buffer allocated as part of the struct which we don't want to copy or move.
+  DrainContext(const DrainContext& other) = delete;
+  DrainContext& operator=(const DrainContext& other) = delete;
+  DrainContext(DrainContext&& other) = delete;
+  DrainContext& operator=(DrainContext&& other) = delete;
+
+  static std::unique_ptr<DrainContext> Create(const zx::resource& tracing_resource,
+                                              zx::duration poll_period) {
+    trace_prolonged_context_t* context = nullptr;
+    if constexpr (!kKernelStreamingSupport) {
+      context = trace_acquire_prolonged_context();
+      if (context == nullptr) {
+        return nullptr;
+      }
+    }
     zx::resource cloned_resource;
-    if (zx_status_t status = tracing_resource.duplicate(ZX_RIGHT_SAME_RIGHTS, &cloned_resource);
-        status != ZX_OK) {
-      return zx::error(status);
+    zx_status_t res = tracing_resource.duplicate(ZX_RIGHT_SAME_RIGHTS, &cloned_resource);
+    if (res != ZX_OK) {
+      return nullptr;
     }
 
-    // We need to ask how big our buffer to copy data into needs to be.
-    // We ask the kernel using zx_ktrace_read with a nullptr;
+    std::unique_ptr<uint64_t[]> buffer;
     size_t buffer_size = 0;
-    if (zx_status_t status = zx_ktrace_read(tracing_resource.get(), nullptr, 0, 0, &buffer_size);
-        status != ZX_OK) {
-      return zx::error(status);
+    // In streaming mode, we need to ask how big our buffer to copy data into needs to be.
+    // In non-streaming mode, this buffer isn't used and we defer to the device reader
+    if constexpr (kKernelStreamingSupport) {
+      // We ask the kernel using zx_ktrace_read with a nullptr;
+      zx_status_t status = zx_ktrace_read(tracing_resource.get(), nullptr, 0, 0, &buffer_size);
+      if (status != ZX_OK) {
+        return nullptr;
+      }
+      buffer = std::make_unique_for_overwrite<uint64_t[]>(buffer_size / sizeof(uint64_t));
     }
 
-    return zx::ok(DrainContext{zx::clock::get_monotonic(), std::move(cloned_resource), poll_period,
-                               buffer_size});
+    return std::make_unique<DrainContext>(zx::clock::get_monotonic(), context,
+                                          std::move(cloned_resource), poll_period,
+                                          std::move(buffer), buffer_size);
   }
 
+  ~DrainContext() {
+    if (context != nullptr) {
+      trace_release_prolonged_context(context);
+    }
+  }
   zx::time start;
-  zx::resource tracing_resource;
+  DeviceReader reader;
+  trace_prolonged_context_t* context;
   zx::duration poll_period;
 
+  // For kernel streaming, we don't use the DeviceReader, we just do all the data management here.
   std::unique_ptr<uint64_t[]> buffer;
   size_t buffer_size;
 };
 
 class App {
  public:
-  App(zx::resource tracing_resource, const fxl::CommandLine& command_line);
+  explicit App(zx::resource tracing_resource, const fxl::CommandLine& command_line);
+  ~App();
 
  private:
   zx::result<> UpdateState();
@@ -70,6 +105,9 @@ class App {
   trace::TraceObserver trace_observer_;
   LogImporter log_importer_;
   uint32_t current_group_mask_ = 0u;
+  // This context keeps the trace context alive until we've written our trace
+  // records, which doesn't happen until after tracing has stopped.
+  trace_prolonged_context_t* context_ = nullptr;
   zx::resource tracing_resource_;
 
   App(const App&) = delete;
