@@ -17,11 +17,8 @@ pub async fn exec() -> anyhow::Result<()> {
             // TODO(https://fxbug.dev/296283299): Verify that the optional Launcher protocol is
             // available before connecting.
             let dash_launcher = connect_to_protocol::<fdash::LauncherMarker>()?;
-            let stdout = if args.command.is_some() {
-                socket_to_stdio::Stdout::buffered()
-            } else {
-                socket_to_stdio::Stdout::raw()?
-            };
+            // TODO(https://fxbug.dev/42077838): Use Stdout::raw when a command is not provided.
+            let stdout = socket_to_stdio::Stdout::buffered();
 
             #[allow(clippy::large_futures)]
             explore_cmd(args, dash_launcher, stdout).await
