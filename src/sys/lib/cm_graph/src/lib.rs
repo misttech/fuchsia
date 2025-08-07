@@ -4,6 +4,7 @@
 
 use directed_graph::DirectedGraph;
 use fidl_fuchsia_component_decl as fdecl;
+use flyweights::FlyStr;
 use std::fmt;
 
 #[cfg(fuchsia_api_level_at_least = "25")]
@@ -21,16 +22,16 @@ macro_rules! get_source_dictionary {
 
 /// A node in the DependencyGraph. The first string describes the type of node and the second
 /// string is the name of the node.
-#[derive(Copy, Clone, Hash, Ord, Debug, PartialOrd, PartialEq, Eq)]
-pub enum DependencyNode<'a> {
+#[derive(Clone, Hash, Ord, Debug, PartialOrd, PartialEq, Eq)]
+pub enum DependencyNode {
     Self_,
-    Child(&'a str, Option<&'a str>),
-    Collection(&'a str),
-    Environment(&'a str),
-    Capability(&'a str),
+    Child(FlyStr, Option<FlyStr>),
+    Collection(FlyStr),
+    Environment(FlyStr),
+    Capability(FlyStr),
 }
 
-impl<'a> fmt::Display for DependencyNode<'a> {
+impl fmt::Display for DependencyNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DependencyNode::Self_ => write!(f, "self"),
@@ -45,17 +46,17 @@ impl<'a> fmt::Display for DependencyNode<'a> {
     }
 }
 
-fn ref_to_dependency_node<'a>(ref_: Option<&'a fdecl::Ref>) -> Option<DependencyNode<'a>> {
+fn ref_to_dependency_node(ref_: Option<&fdecl::Ref>) -> Option<DependencyNode> {
     match ref_? {
         fdecl::Ref::Self_(_) => Some(DependencyNode::Self_),
         fdecl::Ref::Child(fdecl::ChildRef { name, collection }) => {
-            Some(DependencyNode::Child(name, collection.as_ref().map(|s| s.as_str())))
+            Some(DependencyNode::Child(name.into(), collection.as_ref().map(|s| s.into())))
         }
         fdecl::Ref::Collection(fdecl::CollectionRef { name }) => {
-            Some(DependencyNode::Collection(name))
+            Some(DependencyNode::Collection(name.into()))
         }
         fdecl::Ref::Capability(fdecl::CapabilityRef { name }) => {
-            Some(DependencyNode::Capability(name))
+            Some(DependencyNode::Capability(name.into()))
         }
         fdecl::Ref::Framework(_)
         | fdecl::Ref::Parent(_)
@@ -68,10 +69,10 @@ fn ref_to_dependency_node<'a>(ref_: Option<&'a fdecl::Ref>) -> Option<Dependency
 }
 
 // Generates the edges of the graph that are from a components `uses`.
-fn get_dependencies_from_uses<'a>(
-    strong_dependencies: &mut DirectedGraph<DependencyNode<'a>>,
-    decl: &'a fdecl::Component,
-    dynamic_children: &Vec<(&'a str, &'a str)>,
+fn get_dependencies_from_uses(
+    strong_dependencies: &mut DirectedGraph<DependencyNode>,
+    decl: &fdecl::Component,
+    dynamic_children: &Vec<(&str, &str)>,
 ) {
     if let Some(uses) = decl.uses.as_ref() {
         for use_ in uses.iter() {
@@ -116,13 +117,13 @@ fn get_dependencies_from_uses<'a>(
 
             let dependency_nodes = match &source {
                 Some(fdecl::Ref::Child(fdecl::ChildRef { name, collection })) => {
-                    vec![DependencyNode::Child(name, collection.as_ref().map(|s| s.as_str()))]
+                    vec![DependencyNode::Child(name.into(), collection.as_ref().map(|s| s.into()))]
                 }
                 Some(fdecl::Ref::Self_(_)) => {
                     #[cfg(fuchsia_api_level_at_least = "25")]
                     if dict.as_ref().is_some() {
                         if let Some(source_name) = source_name.as_ref() {
-                            vec![DependencyNode::Capability(source_name)]
+                            vec![DependencyNode::Capability(source_name.into())]
                         } else {
                             vec![]
                         }
@@ -136,7 +137,7 @@ fn get_dependencies_from_uses<'a>(
                 Some(fdecl::Ref::Collection(fdecl::CollectionRef { name })) => {
                     let mut nodes = vec![];
                     for child_name in dynamic_children_in_collection(dynamic_children, &name) {
-                        nodes.push(DependencyNode::Child(child_name, Some(&name)));
+                        nodes.push(DependencyNode::Child(child_name, Some(name.into())));
                     }
                     nodes
                 }
@@ -150,9 +151,9 @@ fn get_dependencies_from_uses<'a>(
     }
 }
 
-fn get_dependencies_from_capabilities<'a>(
-    strong_dependencies: &mut DirectedGraph<DependencyNode<'a>>,
-    decl: &'a fdecl::Component,
+fn get_dependencies_from_capabilities(
+    strong_dependencies: &mut DirectedGraph<DependencyNode>,
+    decl: &fdecl::Component,
 ) {
     if let Some(capabilities) = decl.capabilities.as_ref() {
         for cap in capabilities {
@@ -163,8 +164,10 @@ fn get_dependencies_from_capabilities<'a>(
                         if let Some(name) = dictionary.name.as_ref() {
                             // If `source_path` is set that means the dictionary is provided by the program,
                             // which implies a dependency from `self` to the dictionary declaration.
-                            strong_dependencies
-                                .add_edge(DependencyNode::Self_, DependencyNode::Capability(name));
+                            strong_dependencies.add_edge(
+                                DependencyNode::Self_,
+                                DependencyNode::Capability(name.into()),
+                            );
                         }
                     }
                 }
@@ -174,7 +177,7 @@ fn get_dependencies_from_capabilities<'a>(
                     {
                         if let Some(source_node) = ref_to_dependency_node(storage.source.as_ref()) {
                             strong_dependencies
-                                .add_edge(source_node, DependencyNode::Capability(name));
+                                .add_edge(source_node, DependencyNode::Capability(name.into()));
                         }
                     }
                 }
@@ -184,19 +187,19 @@ fn get_dependencies_from_capabilities<'a>(
     }
 }
 
-fn get_dependencies_from_environments<'a>(
-    strong_dependencies: &mut DirectedGraph<DependencyNode<'a>>,
-    decl: &'a fdecl::Component,
+fn get_dependencies_from_environments(
+    strong_dependencies: &mut DirectedGraph<DependencyNode>,
+    decl: &fdecl::Component,
 ) {
     if let Some(environment) = decl.environments.as_ref() {
         for environment in environment {
             if let Some(name) = &environment.name {
-                let target = DependencyNode::Environment(name);
+                let target = DependencyNode::Environment(name.into());
                 if let Some(debugs) = environment.debug_capabilities.as_ref() {
                     for debug in debugs {
                         if let fdecl::DebugRegistration::Protocol(o) = debug {
                             if let Some(source_node) = ref_to_dependency_node(o.source.as_ref()) {
-                                strong_dependencies.add_edge(source_node, target);
+                                strong_dependencies.add_edge(source_node, target.clone());
                             }
                         }
                     }
@@ -204,7 +207,7 @@ fn get_dependencies_from_environments<'a>(
                 if let Some(runners) = environment.runners.as_ref() {
                     for runner in runners {
                         if let Some(source_node) = ref_to_dependency_node(runner.source.as_ref()) {
-                            strong_dependencies.add_edge(source_node, target);
+                            strong_dependencies.add_edge(source_node, target.clone());
                         }
                     }
                 }
@@ -212,7 +215,7 @@ fn get_dependencies_from_environments<'a>(
                     for resolver in resolvers {
                         if let Some(source_node) = ref_to_dependency_node(resolver.source.as_ref())
                         {
-                            strong_dependencies.add_edge(source_node, target);
+                            strong_dependencies.add_edge(source_node, target.clone());
                         }
                     }
                 }
@@ -221,16 +224,16 @@ fn get_dependencies_from_environments<'a>(
     }
 }
 
-fn get_dependencies_from_children<'a>(
-    strong_dependencies: &mut DirectedGraph<DependencyNode<'a>>,
-    decl: &'a fdecl::Component,
+fn get_dependencies_from_children(
+    strong_dependencies: &mut DirectedGraph<DependencyNode>,
+    decl: &fdecl::Component,
 ) {
     if let Some(children) = decl.children.as_ref() {
         for child in children {
             if let Some(name) = child.name.as_ref() {
                 if let Some(env) = child.environment.as_ref() {
-                    let source = DependencyNode::Environment(env.as_str());
-                    let target = DependencyNode::Child(name, None);
+                    let source = DependencyNode::Environment(env.into());
+                    let target = DependencyNode::Child(name.into(), None);
                     strong_dependencies.add_edge(source, target);
                 }
             }
@@ -238,22 +241,24 @@ fn get_dependencies_from_children<'a>(
     }
 }
 
-fn get_dependencies_from_collections<'a>(
-    strong_dependencies: &mut DirectedGraph<DependencyNode<'a>>,
-    decl: &'a fdecl::Component,
-    dynamic_children: &Vec<(&'a str, &'a str)>,
+fn get_dependencies_from_collections(
+    strong_dependencies: &mut DirectedGraph<DependencyNode>,
+    decl: &fdecl::Component,
+    dynamic_children: &Vec<(&str, &str)>,
 ) {
     if let Some(collections) = decl.collections.as_ref() {
         for collection in collections {
             if let Some(env) = collection.environment.as_ref() {
                 if let Some(name) = collection.name.as_ref() {
-                    let source = DependencyNode::Environment(env.as_str());
-                    let target = DependencyNode::Collection(name.as_str());
-                    strong_dependencies.add_edge(source, target);
+                    let source = DependencyNode::Environment(env.into());
+                    let target = DependencyNode::Collection(name.into());
+                    strong_dependencies.add_edge(source.clone(), target);
 
                     for child_name in dynamic_children_in_collection(dynamic_children, &name) {
-                        strong_dependencies
-                            .add_edge(source, DependencyNode::Child(child_name, Some(&name)));
+                        strong_dependencies.add_edge(
+                            source.clone(),
+                            DependencyNode::Child(child_name, Some(name.into())),
+                        );
                     }
                 }
             }
@@ -261,64 +266,64 @@ fn get_dependencies_from_collections<'a>(
     }
 }
 
-fn find_offer_node<'a>(
-    offer: &'a fdecl::Offer,
-    source: Option<&'a fdecl::Ref>,
-    source_name: &'a Option<String>,
-    _dictionary: Option<&'a String>,
-) -> Option<DependencyNode<'a>> {
+fn find_offer_node(
+    offer: &fdecl::Offer,
+    source: Option<&fdecl::Ref>,
+    source_name: &Option<String>,
+    _dictionary: Option<&String>,
+) -> Option<DependencyNode> {
     if source.is_none() {
         return None;
     }
 
     match source? {
         fdecl::Ref::Child(fdecl::ChildRef { name, collection }) => {
-            Some(DependencyNode::Child(name, collection.as_ref().map(|s| s.as_str())))
+            Some(DependencyNode::Child(name.into(), collection.as_ref().map(|s| s.into())))
         }
         #[cfg(fuchsia_api_level_at_least = "25")]
         fdecl::Ref::Self_(_) if _dictionary.is_some() => {
             let root_dict = _dictionary.unwrap().split('/').next().unwrap();
-            return Some(DependencyNode::Capability(root_dict));
+            return Some(DependencyNode::Capability(root_dict.into()));
         }
         fdecl::Ref::Self_(_) => {
             if let Some(source_name) = source_name {
                 #[cfg(fuchsia_api_level_at_least = "25")]
                 if matches!(offer, fdecl::Offer::Dictionary(_)) {
-                    return Some(DependencyNode::Capability(source_name));
+                    return Some(DependencyNode::Capability(source_name.into()));
                 }
                 if matches!(offer, fdecl::Offer::Storage(_)) {
-                    return Some(DependencyNode::Capability(source_name));
+                    return Some(DependencyNode::Capability(source_name.into()));
                 }
             }
 
             Some(DependencyNode::Self_)
         }
         fdecl::Ref::Collection(fdecl::CollectionRef { name }) => {
-            Some(DependencyNode::Collection(name))
+            Some(DependencyNode::Collection(name.into()))
         }
         fdecl::Ref::Capability(fdecl::CapabilityRef { name }) => {
-            Some(DependencyNode::Capability(name))
+            Some(DependencyNode::Capability(name.into()))
         }
         fdecl::Ref::Parent(_) | fdecl::Ref::Framework(_) | fdecl::Ref::VoidType(_) => None,
         _ => None,
     }
 }
 
-fn dynamic_children_in_collection<'a>(
-    dynamic_children: &Vec<(&'a str, &'a str)>,
-    collection: &'a str,
-) -> Vec<&'a str> {
+fn dynamic_children_in_collection(
+    dynamic_children: &Vec<(&str, &str)>,
+    collection: &str,
+) -> Vec<FlyStr> {
     dynamic_children
         .iter()
-        .filter_map(|(n, c)| if *c == collection { Some(*n) } else { None })
+        .filter_map(|(n, c)| if *c == collection { Some((*n).into()) } else { None })
         .collect()
 }
 
-fn add_offer_edges<'a>(
-    source_node: Option<DependencyNode<'a>>,
-    target_node: Option<DependencyNode<'a>>,
-    strong_dependencies: &mut DirectedGraph<DependencyNode<'a>>,
-    dynamic_children: &Vec<(&'a str, &'a str)>,
+fn add_offer_edges(
+    source_node: Option<DependencyNode>,
+    target_node: Option<DependencyNode>,
+    strong_dependencies: &mut DirectedGraph<DependencyNode>,
+    dynamic_children: &Vec<(&str, &str)>,
 ) {
     if source_node.is_none() {
         return;
@@ -326,11 +331,11 @@ fn add_offer_edges<'a>(
 
     let source = source_node.unwrap();
 
-    if let DependencyNode::Collection(name) = source {
+    if let DependencyNode::Collection(name) = &source {
         for child_name in dynamic_children_in_collection(dynamic_children, &name) {
             strong_dependencies.add_edge(
-                DependencyNode::Child(&child_name, Some(&name)),
-                DependencyNode::Collection(name),
+                DependencyNode::Child(child_name, Some(name.clone())),
+                DependencyNode::Collection(name.clone()),
             );
         }
     }
@@ -341,21 +346,22 @@ fn add_offer_edges<'a>(
 
     let target = target_node.unwrap();
 
-    strong_dependencies.add_edge(source, target);
+    strong_dependencies.add_edge(source.clone(), target.clone());
 
     if let DependencyNode::Collection(name) = target {
         for child_name in dynamic_children_in_collection(dynamic_children, &name) {
-            strong_dependencies.add_edge(source, DependencyNode::Child(child_name, Some(&name)));
+            strong_dependencies
+                .add_edge(source.clone(), DependencyNode::Child(child_name, Some(name.clone())));
         }
     }
 }
 
 // Populates a dependency graph of a component's `offers`.
-fn get_dependencies_from_offers<'a>(
-    strong_dependencies: &mut DirectedGraph<DependencyNode<'a>>,
-    decl: &'a fdecl::Component,
-    dynamic_children: &Vec<(&'a str, &'a str)>,
-    dynamic_offers: &'a Vec<fdecl::Offer>,
+fn get_dependencies_from_offers(
+    strong_dependencies: &mut DirectedGraph<DependencyNode>,
+    decl: &fdecl::Component,
+    dynamic_children: &Vec<(&str, &str)>,
+    dynamic_offers: &Vec<fdecl::Offer>,
 ) {
     let mut all_offers: Vec<&fdecl::Offer> = vec![];
 
@@ -498,11 +504,11 @@ fn get_dependencies_from_offers<'a>(
 }
 
 // Populates a dependency graph of the disjoint sets of graphs.
-pub fn generate_dependency_graph<'a>(
-    strong_dependencies: &mut DirectedGraph<DependencyNode<'a>>,
-    decl: &'a fdecl::Component,
-    dynamic_children: &Vec<(&'a str, &'a str)>,
-    dynamic_offers: &'a Vec<fdecl::Offer>,
+pub fn generate_dependency_graph(
+    strong_dependencies: &mut DirectedGraph<DependencyNode>,
+    decl: &fdecl::Component,
+    dynamic_children: &Vec<(&str, &str)>,
+    dynamic_offers: &Vec<fdecl::Offer>,
 ) {
     get_dependencies_from_uses(strong_dependencies, decl, dynamic_children);
     get_dependencies_from_offers(strong_dependencies, decl, dynamic_children, dynamic_offers);

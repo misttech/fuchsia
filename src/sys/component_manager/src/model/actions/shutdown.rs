@@ -53,15 +53,15 @@ impl Action for ShutdownAction {
 }
 
 /// Used to track information during the shutdown process.
-struct ShutdownComponentInfo<'a> {
-    dependency_node: DependencyNode<'a>,
+struct ShutdownComponentInfo {
+    dependency_node: DependencyNode,
     component: Arc<ComponentInstance>,
 }
 
-async fn shutdown_component<'a>(
-    target: ShutdownComponentInfo<'a>,
+async fn shutdown_component(
+    target: ShutdownComponentInfo,
     shutdown_type: ShutdownType,
-) -> Result<DependencyNode<'a>, ActionError> {
+) -> Result<DependencyNode, ActionError> {
     match target.dependency_node {
         DependencyNode::Self_ => {
             // TODO: Put `self` in a "shutting down" state so that if it creates
@@ -155,7 +155,7 @@ impl ShutdownJob {
         for dependency_node in sorted_map.into_iter() {
             let component = match dependency_node {
                 DependencyNode::Child(name, coll) => {
-                    let moniker = &ChildName::try_new(name, coll)
+                    let moniker = &ChildName::try_new(name, coll.as_ref())
                         .map_err(|err| ShutdownActionError::InvalidChildName { err })?;
 
                     let child_instance_res = self.children.get(moniker);
@@ -170,8 +170,8 @@ impl ShutdownJob {
                 }
                 _ => self.instance.clone(),
             };
-            let target: ShutdownComponentInfo<'_> =
-                ShutdownComponentInfo { dependency_node, component };
+            let target: ShutdownComponentInfo =
+                ShutdownComponentInfo { dependency_node: dependency_node.clone(), component };
             shutdown_component(target, self.shutdown_type).await?;
         }
         Ok(())
@@ -249,12 +249,12 @@ pub async fn do_shutdown(
 /// For a given component `decl`, identify capability dependencies between the
 /// component itself and its children. A directed graph of these dependencies is
 /// returned.
-pub fn process_deps<'a>(
-    decl: &'a fdecl::Component,
-    dynamic_children: &Vec<(&'a str, &'a str)>,
-    dynamic_offers: &'a Vec<fdecl::Offer>,
-) -> directed_graph::DirectedGraph<DependencyNode<'a>> {
-    let mut strong_dependencies: DirectedGraph<DependencyNode<'a>> =
+pub fn process_deps(
+    decl: &fdecl::Component,
+    dynamic_children: &Vec<(&str, &str)>,
+    dynamic_offers: &Vec<fdecl::Offer>,
+) -> directed_graph::DirectedGraph<DependencyNode> {
+    let mut strong_dependencies: DirectedGraph<DependencyNode> =
         directed_graph::DirectedGraph::new();
     cm_graph::generate_dependency_graph(
         &mut strong_dependencies,
@@ -262,24 +262,30 @@ pub fn process_deps<'a>(
         dynamic_children,
         dynamic_offers,
     );
-    let self_dep_closure = strong_dependencies.get_closure(DependencyNode::Self_);
+    let self_dep_closure = strong_dependencies.get_closure(&DependencyNode::Self_);
 
+    let mut edges_to_add = vec![];
     if let Some(children) = decl.children.as_ref() {
         for child in children {
             if let Some(child_name) = child.name.as_ref() {
-                let dependency_node = DependencyNode::Child(child_name, None);
+                let dependency_node = DependencyNode::Child(child_name.into(), None);
                 if !self_dep_closure.contains(&dependency_node) {
-                    strong_dependencies.add_edge(DependencyNode::Self_, dependency_node);
+                    edges_to_add.push((DependencyNode::Self_, dependency_node));
                 }
             }
         }
     }
 
     for (child_name, collection) in dynamic_children {
-        let dependency_node = DependencyNode::Child(child_name, Some(collection));
+        let dependency_node =
+            DependencyNode::Child((*child_name).into(), Some((*collection).into()));
         if !self_dep_closure.contains(&dependency_node) {
-            strong_dependencies.add_edge(DependencyNode::Self_, dependency_node);
+            edges_to_add.push((DependencyNode::Self_, dependency_node));
         }
+    }
+
+    for (a, b) in edges_to_add {
+        strong_dependencies.add_edge(a, b);
     }
     strong_dependencies.add_node(DependencyNode::Self_);
     strong_dependencies
@@ -329,10 +335,14 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> =
-            vec![DependencyNode::Child("childA", None), DependencyNode::Self_];
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> =
+            vec![DependencyNode::Child("childA".into(), None), DependencyNode::Self_];
 
         assert_eq!(ans, sorted_map)
     }
@@ -352,10 +362,14 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> =
-            vec![DependencyNode::Child("childA", None), DependencyNode::Self_];
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> =
+            vec![DependencyNode::Child("childA".into(), None), DependencyNode::Self_];
 
         assert_eq!(ans, sorted_map)
     }
@@ -374,10 +388,14 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> =
-            vec![DependencyNode::Child("childA", None), DependencyNode::Self_];
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> =
+            vec![DependencyNode::Child("childA".into(), None), DependencyNode::Self_];
 
         assert_eq!(ans, sorted_map)
     }
@@ -404,11 +422,15 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childA", None),
-            DependencyNode::Child("childB", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Child("childB".into(), None),
             DependencyNode::Self_,
         ];
 
@@ -445,12 +467,16 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childB", None),
-            DependencyNode::Capability("dict"),
-            DependencyNode::Child("childA", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Capability("dict".into()),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
 
@@ -472,13 +498,17 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childA", None),
-            DependencyNode::Child("childB", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Child("childB".into(), None),
             DependencyNode::Self_,
-            DependencyNode::Environment("env"),
+            DependencyNode::Environment("env".into()),
         ];
         assert_eq!(ans, sorted_map)
     }
@@ -499,12 +529,16 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childA", None),
-            DependencyNode::Child("childB", None),
-            DependencyNode::Environment("env"),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Environment("env".into()),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -525,12 +559,16 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childB", None),
-            DependencyNode::Environment("env"),
-            DependencyNode::Child("childA", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Environment("env".into()),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -554,13 +592,16 @@ mod tests {
         let sorted_map =
             process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
                 .topological_sort()
-                .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("dyn1", Some("coll")),
-            DependencyNode::Child("dyn2", Some("coll")),
-            DependencyNode::Collection("coll"),
-            DependencyNode::Environment("env"),
-            DependencyNode::Child("childA", None),
+                .unwrap()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("dyn1".into(), Some("coll".into())),
+            DependencyNode::Child("dyn2".into(), Some("coll".into())),
+            DependencyNode::Collection("coll".into()),
+            DependencyNode::Environment("env".into()),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -589,14 +630,18 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childC", None),
-            DependencyNode::Environment("env2"),
-            DependencyNode::Child("childB", None),
-            DependencyNode::Environment("env"),
-            DependencyNode::Child("childA", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childC".into(), None),
+            DependencyNode::Environment("env2".into()),
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Environment("env".into()),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -625,13 +670,17 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childC", None),
-            DependencyNode::Child("childB", None),
-            DependencyNode::Environment("env"),
-            DependencyNode::Child("childA", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childC".into(), None),
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Environment("env".into()),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -652,13 +701,17 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childA", None),
-            DependencyNode::Child("childB", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Child("childB".into(), None),
             DependencyNode::Self_,
-            DependencyNode::Environment("resolver_env"),
+            DependencyNode::Environment("resolver_env".into()),
         ];
         assert_eq!(ans, sorted_map)
     }
@@ -678,12 +731,16 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childB", None),
-            DependencyNode::Environment("resolver_env"),
-            DependencyNode::Child("childA", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Environment("resolver_env".into()),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -714,14 +771,18 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childC", None),
-            DependencyNode::Environment("env2"),
-            DependencyNode::Child("childB", None),
-            DependencyNode::Environment("env1"),
-            DependencyNode::Child("childA", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childC".into(), None),
+            DependencyNode::Environment("env2".into()),
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Environment("env1".into()),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -750,13 +811,17 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childC", None),
-            DependencyNode::Environment("multi_env"),
-            DependencyNode::Child("childA", None),
-            DependencyNode::Child("childB", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childC".into(), None),
+            DependencyNode::Environment("multi_env".into()),
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Child("childB".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -780,13 +845,16 @@ mod tests {
         let sorted_map =
             process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
                 .topological_sort()
-                .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("dyn1", Some("coll")),
-            DependencyNode::Child("dyn2", Some("coll")),
-            DependencyNode::Collection("coll"),
-            DependencyNode::Environment("resolver_env"),
-            DependencyNode::Child("childA", None),
+                .unwrap()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("dyn1".into(), Some("coll".into())),
+            DependencyNode::Child("dyn2".into(), Some("coll".into())),
+            DependencyNode::Collection("coll".into()),
+            DependencyNode::Environment("resolver_env".into()),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -843,14 +911,17 @@ mod tests {
             &dynamic_offers,
         )
         .topological_sort()
-        .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("dyn2", Some("coll")),
-            DependencyNode::Child("dyn3", Some("coll")),
-            DependencyNode::Child("dyn1", Some("coll")),
-            DependencyNode::Child("dyn4", Some("coll")),
-            DependencyNode::Collection("coll"),
-            DependencyNode::Child("childA", None),
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("dyn2".into(), Some("coll".into())),
+            DependencyNode::Child("dyn3".into(), Some("coll".into())),
+            DependencyNode::Child("dyn1".into(), Some("coll".into())),
+            DependencyNode::Child("dyn4".into(), Some("coll".into())),
+            DependencyNode::Collection("coll".into()),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -898,12 +969,15 @@ mod tests {
             &dynamic_offers,
         )
         .topological_sort()
-        .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("dyn1", Some("coll2")),
-            DependencyNode::Child("dyn1", Some("coll1")),
-            DependencyNode::Child("dyn2", Some("coll1")),
-            DependencyNode::Child("dyn2", Some("coll2")),
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("dyn1".into(), Some("coll2".into())),
+            DependencyNode::Child("dyn1".into(), Some("coll1".into())),
+            DependencyNode::Child("dyn2".into(), Some("coll1".into())),
+            DependencyNode::Child("dyn2".into(), Some("coll2".into())),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -927,10 +1001,13 @@ mod tests {
         let sorted_map =
             process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
                 .topological_sort()
-                .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("dyn1", Some("coll")),
-            DependencyNode::Child("dyn2", Some("coll")),
+                .unwrap()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("dyn1".into(), Some("coll".into())),
+            DependencyNode::Child("dyn2".into(), Some("coll".into())),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -954,10 +1031,13 @@ mod tests {
         let sorted_map =
             process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
                 .topological_sort()
-                .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("dyn1", Some("coll")),
-            DependencyNode::Child("dyn2", Some("coll")),
+                .unwrap()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("dyn1".into(), Some("coll".into())),
+            DependencyNode::Child("dyn2".into(), Some("coll".into())),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -984,17 +1064,19 @@ mod tests {
             dependency_type: Some(fdecl::DependencyType::Strong),
             ..Default::default()
         });
-
         let dynamic_offers = vec![offer_1];
         let sorted_map =
             process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
                 .topological_sort()
-                .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("dyn1", Some("coll")),
-            DependencyNode::Child("childA", None),
-            DependencyNode::Child("childB", None),
-            DependencyNode::Child("dyn2", Some("coll")),
+                .unwrap()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("dyn1".into(), Some("coll".into())),
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Child("dyn2".into(), Some("coll".into())),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1024,11 +1106,15 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childA", None),
-            DependencyNode::Child("childB", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Child("childB".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1063,11 +1149,15 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childA", None),
-            DependencyNode::Child("childB", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Child("childB".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1097,12 +1187,16 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childA", None),
-            DependencyNode::Child("childC", None),
-            DependencyNode::Child("childB", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Child("childC".into(), None),
+            DependencyNode::Child("childB".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1140,12 +1234,16 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childC", None),
-            DependencyNode::Child("childA", None),
-            DependencyNode::Child("childB", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childC".into(), None),
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Child("childB".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1174,12 +1272,16 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childC", None),
-            DependencyNode::Child("childB", None),
-            DependencyNode::Child("childA", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childC".into(), None),
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1235,14 +1337,18 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childD", None),
-            DependencyNode::Child("childB", None),
-            DependencyNode::Child("childE", None),
-            DependencyNode::Child("childC", None),
-            DependencyNode::Child("childA", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childD".into(), None),
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Child("childE".into(), None),
+            DependencyNode::Child("childC".into(), None),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1266,11 +1372,14 @@ mod tests {
         let sorted_map =
             process_deps(&fidl_decl, &vec![("dynamic_child", "coll")], &dynamic_offers)
                 .topological_sort()
-                .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("static_child", None),
-            DependencyNode::Collection("coll"),
-            DependencyNode::Child("dynamic_child", Some("coll")),
+                .unwrap()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("static_child".into(), None),
+            DependencyNode::Collection("coll".into()),
+            DependencyNode::Child("dynamic_child".into(), Some("coll".into())),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1295,11 +1404,14 @@ mod tests {
             &dynamic_offers,
         )
         .topological_sort()
-        .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
             DependencyNode::Self_,
-            DependencyNode::Child("dynamic_child1", Some("coll")),
-            DependencyNode::Child("dynamic_child2", Some("coll")),
+            DependencyNode::Child("dynamic_child1".into(), Some("coll".into())),
+            DependencyNode::Child("dynamic_child2".into(), Some("coll".into())),
         ];
         assert_eq!(ans, sorted_map)
     }
@@ -1325,12 +1437,15 @@ mod tests {
             &dynamic_offers,
         )
         .topological_sort()
-        .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("static_child", None),
-            DependencyNode::Collection("coll"),
-            DependencyNode::Child("dynamic_child1", Some("coll")),
-            DependencyNode::Child("dynamic_child2", Some("coll")),
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("static_child".into(), None),
+            DependencyNode::Collection("coll".into()),
+            DependencyNode::Child("dynamic_child1".into(), Some("coll".into())),
+            DependencyNode::Child("dynamic_child2".into(), Some("coll".into())),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1362,14 +1477,17 @@ mod tests {
             &dynamic_offers,
         )
         .topological_sort()
-        .unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("target_child1", Some("coll2")),
-            DependencyNode::Child("target_child2", Some("coll2")),
-            DependencyNode::Collection("coll2"),
-            DependencyNode::Collection("coll1"),
-            DependencyNode::Child("source_child1", Some("coll1")),
-            DependencyNode::Child("source_child2", Some("coll1")),
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("target_child1".into(), Some("coll2".into())),
+            DependencyNode::Child("target_child2".into(), Some("coll2".into())),
+            DependencyNode::Collection("coll2".into()),
+            DependencyNode::Collection("coll1".into()),
+            DependencyNode::Child("source_child1".into(), Some("coll1".into())),
+            DependencyNode::Child("source_child2".into(), Some("coll1".into())),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1391,10 +1509,14 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> =
-            vec![DependencyNode::Self_, DependencyNode::Child("childA", None)];
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> =
+            vec![DependencyNode::Self_, DependencyNode::Child("childA".into(), None)];
         assert_eq!(ans, sorted_map);
     }
 
@@ -1426,13 +1548,17 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Capability("dict"),
-            DependencyNode::Child("childA", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Capability("dict".into()),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
-            DependencyNode::Capability("serviceA"),
+            DependencyNode::Capability("serviceA".into()),
         ];
         assert_eq!(ans, sorted_map)
     }
@@ -1446,10 +1572,14 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> =
-            vec![DependencyNode::Self_, DependencyNode::Child("childA", None)];
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> =
+            vec![DependencyNode::Self_, DependencyNode::Child("childA".into(), None)];
         assert_eq!(ans, sorted_map)
     }
 
@@ -1470,12 +1600,16 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childB", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childB".into(), None),
             DependencyNode::Self_,
-            DependencyNode::Child("childA", None),
+            DependencyNode::Child("childA".into(), None),
         ];
         assert_eq!(ans, sorted_map)
     }
@@ -1514,14 +1648,18 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
             DependencyNode::Self_,
-            DependencyNode::Child("childA", None),
-            DependencyNode::Capability("cdata"),
-            DependencyNode::Child("childB", None),
-            DependencyNode::Capability("pdata"),
+            DependencyNode::Child("childA".into(), None),
+            DependencyNode::Capability("cdata".into()),
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Capability("pdata".into()),
         ];
         assert_eq!(ans, sorted_map)
     }
@@ -1547,10 +1685,14 @@ mod tests {
 
         let dynamic_offers = vec![];
 
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> =
-            vec![DependencyNode::Child("childA", None), DependencyNode::Self_];
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> =
+            vec![DependencyNode::Child("childA".into(), None), DependencyNode::Self_];
         assert_eq!(ans, sorted_map)
     }
 
@@ -1577,12 +1719,16 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childB", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childB".into(), None),
             DependencyNode::Self_,
-            DependencyNode::Child("childA", None),
+            DependencyNode::Child("childA".into(), None),
         ];
         assert_eq!(ans, sorted_map)
     }
@@ -1602,11 +1748,15 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![], &dynamic_offers).topological_sort().unwrap();
-        let ans: Vec<DependencyNode<'_>> = vec![
-            DependencyNode::Child("childB", None),
-            DependencyNode::Child("childA", None),
+        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+            .topological_sort()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let ans: Vec<DependencyNode> = vec![
+            DependencyNode::Child("childB".into(), None),
+            DependencyNode::Child("childA".into(), None),
             DependencyNode::Self_,
         ];
         assert_eq!(ans, sorted_map)
@@ -1838,7 +1988,7 @@ mod tests {
                 dynamic_offers: Some(vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     source: Some(fdecl::Ref::Child(fdecl::ChildRef {
                         name: "a".into(),
-                        collection: Some("coll".parse().unwrap()),
+                        collection: Some("coll".into()),
                     })),
                     source_name: Some("dyn_offer_source_name".to_string()),
                     target_name: Some("dyn_offer_target_name".to_string()),

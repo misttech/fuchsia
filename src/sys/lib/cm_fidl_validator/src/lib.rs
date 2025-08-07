@@ -295,7 +295,7 @@ struct ValidationContext<'a> {
 
     all_environment_names: HashSet<&'a str>,
     dynamic_children: Vec<(&'a str, &'a str)>,
-    strong_dependencies: DirectedGraph<cm_graph::DependencyNode<'a>>,
+    strong_dependencies: DirectedGraph<cm_graph::DependencyNode>,
     target_ids: IdMap<'a>,
     errors: Vec<Error>,
 }
@@ -2746,8 +2746,7 @@ mod tests {
                     decl.offers = Some(offers);
                     decl.children = Some(children);
                     let result = Err(ErrorList::new(vec![
-                        Error::dependency_cycle(
-                            directed_graph::Error::CyclesDetected([vec!["child a", "child b", "child a"]].iter().cloned().collect()).format_cycle()),
+                        Error::dependency_cycle("{{child a -> child b -> child a}}")
                     ]));
                     validate_test(decl, result);
                 }
@@ -3672,7 +3671,7 @@ mod tests {
                 }
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{self -> child child -> self}}".to_string()),
+                Error::dependency_cycle("{{self -> child child -> self}}"),
             ])),
         },
         test_validate_use_from_child_storage_no_cycle => {
@@ -3783,7 +3782,7 @@ mod tests {
                 }
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{self -> capability data -> child child -> self}}".to_string()),
+                Error::dependency_cycle("{{self -> capability data -> child child -> self}}"),
             ])),
         },
         test_validate_storage_strong_cycle_between_children => {
@@ -3834,7 +3833,7 @@ mod tests {
                 }
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{child child1 -> capability data -> child child2 -> child child1}}".to_string()),
+                Error::dependency_cycle("{{child child1 -> capability data -> child child2 -> child child1}}"),
             ])),
         },
         test_validate_strong_cycle_between_children_through_environment_debug => {
@@ -3885,7 +3884,7 @@ mod tests {
                 }
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{child child1 -> environment env -> child child2 -> child child1}}".to_string()),
+                Error::dependency_cycle("{{child child1 -> environment env -> child child2 -> child child1}}"),
             ])),
         },
         test_validate_strong_cycle_between_children_through_environment_runner => {
@@ -3936,7 +3935,7 @@ mod tests {
                 }
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{child child1 -> environment env -> child child2 -> child child1}}".to_string()),
+                Error::dependency_cycle("{{child child1 -> environment env -> child child2 -> child child1}}"),
             ])),
         },
         test_validate_strong_cycle_between_children_through_environment_resolver => {
@@ -3987,7 +3986,7 @@ mod tests {
                 }
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{child child1 -> environment env -> child child2 -> child child1}}".to_string()),
+                Error::dependency_cycle("{{child child1 -> environment env -> child child2 -> child child1}}"),
             ])),
         },
         test_validate_strong_cycle_between_self_and_two_children => {
@@ -4047,7 +4046,7 @@ mod tests {
                 }
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{self -> child child1 -> child child2 -> self}}".to_string()),
+                Error::dependency_cycle("{{self -> child child1 -> child child2 -> self}}"),
             ])),
         },
         test_validate_strong_cycle_with_self_storage => {
@@ -4098,7 +4097,7 @@ mod tests {
                 }
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{self -> capability data -> child child -> self}}".to_string()),
+                Error::dependency_cycle("{{self -> capability data -> child child -> self}}"),
             ])),
         },
         test_validate_strong_cycle_with_self_storage_admin_protocol => {
@@ -4150,7 +4149,7 @@ mod tests {
                 }
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{self -> capability data -> child child -> self}}".to_string()),
+                Error::dependency_cycle("{{self -> capability data -> child child -> self}}"),
             ])),
         },
         test_validate_strong_cycle_with_dictionary => {
@@ -4218,7 +4217,7 @@ mod tests {
                 ..Default::default()
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{child a -> child b -> capability dict -> child a}}".to_string()),
+                Error::dependency_cycle("{{child a -> child b -> capability dict -> child a}}"),
             ])),
         },
         test_validate_strong_cycle_with_dictionary_indirect => {
@@ -4287,7 +4286,7 @@ mod tests {
                 ..Default::default()
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{child a -> child b -> capability dict -> child a}}".to_string()),
+                Error::dependency_cycle("{{child a -> child b -> capability dict -> child a}}"),
             ])),
         },
         test_validate_use_from_child_offer_to_child_weak_cycle => {
@@ -6763,7 +6762,7 @@ mod tests {
                 decl
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{child logger -> child logger}}".to_string()),
+                Error::dependency_cycle("{{child logger -> child logger}}"),
             ])),
         },
         test_validate_offers_storage_target_equals_source => {
@@ -6808,7 +6807,7 @@ mod tests {
                 ..new_component_decl()
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{child logger -> capability data -> child logger}}".to_string()),
+                Error::dependency_cycle("{{child logger -> capability data -> child logger}}"),
             ])),
         },
         test_validate_offers_invalid_child => {
@@ -7636,7 +7635,7 @@ mod tests {
                 decl
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle(directed_graph::Error::CyclesDetected([vec!["child a", "child b", "child c", "child a"], vec!["child b", "child d", "child b"]].iter().cloned().collect()).format_cycle()),
+                Error::dependency_cycle("{{child a -> child b -> child c -> child a}, {child b -> child d -> child b}}")
             ])),
         },
         test_validate_offers_not_required_invalid_source_service => {
@@ -8314,7 +8313,7 @@ mod tests {
             },
             result = Err(ErrorList::new(vec![
                 Error::dependency_cycle(
-                    directed_graph::Error::CyclesDetected([vec!["child child", "environment env", "child child"]].iter().cloned().collect()).format_cycle()
+                    "{{child child -> environment env -> child child}}"
                 ),
             ])),
         },
@@ -8351,7 +8350,7 @@ mod tests {
             },
             result = Err(ErrorList::new(vec![
                 Error::dependency_cycle(
-                    directed_graph::Error::CyclesDetected([vec!["child child", "environment env", "child child"]].iter().cloned().collect()).format_cycle()
+                    "{{child child -> environment env -> child child}}"
                 ),
             ])),
         },
@@ -8413,7 +8412,7 @@ mod tests {
             },
             result = Err(ErrorList::new(vec![
                 Error::dependency_cycle(
-                    directed_graph::Error::CyclesDetected([vec!["child a", "environment env", "child b", "child a"]].iter().cloned().collect()).format_cycle()
+                    "{{child a -> environment env -> child b -> child a}}"
                 ),
             ])),
         },
@@ -10454,18 +10453,7 @@ mod tests {
                 }
             ),
             Err(ErrorList::new(vec![Error::dependency_cycle(
-                directed_graph::Error::CyclesDetected(
-                    [vec![
-                        "child coll:dyn",
-                        "collection coll",
-                        "child static_child",
-                        "child coll:dyn",
-                    ]]
-                    .iter()
-                    .cloned()
-                    .collect()
-                )
-                .format_cycle()
+                "{{child coll:dyn -> collection coll -> child static_child -> child coll:dyn}}"
             )]))
         );
     }
@@ -10520,18 +10508,7 @@ mod tests {
                 }
             ),
             Err(ErrorList::new(vec![Error::dependency_cycle(
-                directed_graph::Error::CyclesDetected(
-                    [vec![
-                        "child coll1:dyn",
-                        "child coll2:dyn",
-                        "collection coll2",
-                        "child coll1:dyn",
-                    ]]
-                    .iter()
-                    .cloned()
-                    .collect()
-                )
-                .format_cycle()
+                "{{child coll1:dyn -> child coll2:dyn -> collection coll2 -> child coll1:dyn}}"
             )]))
         );
     }
@@ -10583,18 +10560,7 @@ mod tests {
                 }
             ),
             Err(ErrorList::new(vec![Error::dependency_cycle(
-                directed_graph::Error::CyclesDetected(
-                    [vec![
-                        "child coll1:dyn",
-                        "collection coll1",
-                        "child coll2:dyn",
-                        "child coll1:dyn",
-                    ]]
-                    .iter()
-                    .cloned()
-                    .collect()
-                )
-                .format_cycle()
+                "{{child coll1:dyn -> collection coll1 -> child coll2:dyn -> child coll1:dyn}}",
             )]))
         );
     }

@@ -206,8 +206,8 @@ impl Error {
         )
     }
 
-    pub fn dependency_cycle(error: String) -> Self {
-        Error::DependencyCycle(error)
+    pub fn dependency_cycle(error: impl Into<String>) -> Self {
+        Error::DependencyCycle(error.into())
     }
 
     pub fn invalid_path_overlap(

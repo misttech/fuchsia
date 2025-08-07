@@ -8,11 +8,11 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 /// A directed graph, whose nodes contain an identifier of type `T`.
-pub struct DirectedGraph<T: PartialEq + Hash + Copy + Ord + Debug + Display>(
+pub struct DirectedGraph<T: Clone + PartialEq + Hash + Ord + Debug + Display>(
     HashMap<T, DirectedNode<T>>,
 );
 
-impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> DirectedGraph<T> {
+impl<T: Clone + PartialEq + Hash + Ord + Debug + Display> DirectedGraph<T> {
     /// Created a new empty `DirectedGraph`.
     pub fn new() -> Self {
         Self(HashMap::new())
@@ -20,19 +20,22 @@ impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> DirectedGraph<T> {
 
     /// Add an edge to the graph, adding nodes if necessary.
     pub fn add_edge(&mut self, source: T, target: T) {
-        self.0.entry(source).or_insert_with(DirectedNode::new).add_target(target);
+        self.0.entry(source).or_insert_with(DirectedNode::new).add_target(target.clone());
         self.0.entry(target).or_insert_with(DirectedNode::new);
     }
 
     /// Get targets of all edges from this node.
-    pub fn get_targets(&self, id: T) -> Option<&HashSet<T>> {
-        self.0.get(&id).as_ref().map(|node| &node.0)
+    pub fn get_targets<'a>(&'a self, id: &T) -> Option<&'a HashSet<T>> {
+        self.0.get(id).as_ref().map(|node| &node.0)
     }
 
     /// Given a dependency graph, find the set of all nodes that have a
     /// dependency on the `start` node (i.e., the reverse dependency closure).
     /// This includes `start` itself.
-    pub fn get_closure(&self, start: T) -> HashSet<T> {
+    pub fn get_closure<'a>(&'a self, start: &T) -> HashSet<&'a T> {
+        let Some((start, _)) = self.0.get_key_value(start) else {
+            return HashSet::new();
+        };
         let mut reverse_deps: HashMap<&T, Vec<&T>> = HashMap::new();
         for (source, targets) in &self.0 {
             for target in &targets.0 {
@@ -43,14 +46,14 @@ impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> DirectedGraph<T> {
         let mut closure = HashSet::new();
         let mut to_visit = VecDeque::new();
 
-        closure.insert(start.clone());
+        closure.insert(start);
         to_visit.push_back(start);
 
         while let Some(current_node) = to_visit.pop_front() {
             if let Some(parents) = reverse_deps.get(&current_node) {
                 for parent in parents {
-                    if closure.insert((*parent).clone()) {
-                        to_visit.push_back((*parent).clone());
+                    if closure.insert(*parent) {
+                        to_visit.push_back(*parent);
                     }
                 }
             }
@@ -67,13 +70,13 @@ impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> DirectedGraph<T> {
 
     /// Returns the nodes of the graph in reverse topological order, or an error if the graph
     /// contains a cycle.
-    pub fn topological_sort(&self) -> Result<Vec<T>, Error<T>> {
+    pub fn topological_sort<'a>(&'a self) -> Result<Vec<&'a T>, Error<'_, T>> {
         TarjanSCC::new(self).run()
     }
 
     /// Finds the shortest path between the `from` and `to` nodes in this graph, if such a path
     /// exists. Both `from` and `to` are included in the returned path.
-    pub fn find_shortest_path(&self, from: T, to: T) -> Option<Vec<T>> {
+    pub fn find_shortest_path<'a>(&'a self, from: &T, to: &T) -> Option<Vec<&'a T>> {
         // Keeps track of edges in the shortest path to each node.
         //
         // The key in this map is a node whose shortest path to it is known. The value
@@ -83,7 +86,9 @@ impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> DirectedGraph<T> {
         // map will contain:
         // (c, b)
         // (b, a)
-        let mut shortest_path_edges: HashMap<T, T> = HashMap::new();
+        let mut shortest_path_edges: HashMap<&'a T, &'a T> = HashMap::new();
+        let from = self.0.get_key_value(from).map(|e| e.0)?;
+        let to = self.0.get_key_value(to).map(|e| e.0)?;
 
         // Nodes which we have found in the graph but have not yet been visited.
         let mut discovered_nodes = VecDeque::new();
@@ -103,16 +108,16 @@ impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> DirectedGraph<T> {
                         // If we haven't yet visited this node, add it to our set of edges and add
                         // it to the set of nodes we should visit.
                         if !shortest_path_edges.contains_key(target) {
-                            shortest_path_edges.insert(*target, current_node);
-                            discovered_nodes.push_back(*target);
+                            shortest_path_edges.insert(target, current_node);
+                            discovered_nodes.push_back(target);
                         }
                         // If this node is the node we're searching for a path to, then compute the
                         // path based on the hashmap we've built and return it.
-                        if *target == to {
-                            let mut result = vec![*target];
-                            let mut path_node: T = *target;
+                        if target == to {
+                            let mut result = vec![target];
+                            let mut path_node: &T = target;
                             loop {
-                                path_node = *shortest_path_edges.get(&path_node).unwrap();
+                                path_node = shortest_path_edges.get(&path_node).unwrap();
                                 result.push(path_node);
                                 if path_node == from {
                                     break;
@@ -128,7 +133,7 @@ impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> DirectedGraph<T> {
     }
 }
 
-impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> Default for DirectedGraph<T> {
+impl<T: Clone + PartialEq + Hash + Ord + Debug + Display> Default for DirectedGraph<T> {
     fn default() -> Self {
         Self(HashMap::new())
     }
@@ -136,9 +141,9 @@ impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> Default for DirectedGra
 
 /// A graph node. Contents contain the nodes mapped by edges from this node.
 #[derive(Eq, PartialEq)]
-pub struct DirectedNode<T: PartialEq + Hash + Copy + Ord + Debug + Display>(HashSet<T>);
+pub struct DirectedNode<T: Clone + PartialEq + Hash + Ord + Debug + Display>(HashSet<T>);
 
-impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> DirectedNode<T> {
+impl<T: Clone + PartialEq + Hash + Ord + Debug + Display> DirectedNode<T> {
     /// Create an empty node.
     pub fn new() -> Self {
         Self(HashSet::new())
@@ -152,11 +157,11 @@ impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> DirectedNode<T> {
 
 /// Errors produced by `DirectedGraph`.
 #[derive(Debug)]
-pub enum Error<T: PartialEq + Hash + Copy + Ord + Debug + Display> {
-    CyclesDetected(HashSet<Vec<T>>),
+pub enum Error<'a, T: Clone + PartialEq + Hash + Ord + Debug + Display> {
+    CyclesDetected(HashSet<Vec<&'a T>>),
 }
 
-impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> Error<T> {
+impl<'a, T: Clone + PartialEq + Hash + Ord + Debug + Display> Error<'a, T> {
     pub fn format_cycle(&self) -> String {
         match &self {
             Error::CyclesDetected(cycles) => {
@@ -190,27 +195,27 @@ impl<T: PartialEq + Hash + Copy + Ord + Debug + Display> Error<T> {
 ///
 /// Description of algorithm:
 /// https://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm
-struct TarjanSCC<'a, T: PartialEq + Hash + Copy + Ord + Debug + Display> {
+struct TarjanSCC<'a, T: Clone + PartialEq + Hash + Ord + Debug + Display> {
     // Each node is assigned an index in the order we find them. This tracks the next index to use.
     index: u64,
     // The mappings between nodes and indices
-    indices: HashMap<T, u64>,
+    indices: HashMap<&'a T, u64>,
     // The lowest index (numerically) that's accessible from each node
-    low_links: HashMap<T, u64>,
+    low_links: HashMap<&'a T, u64>,
     // The set of nodes we're currently in the process of considering
-    stack: Vec<T>,
+    stack: Vec<&'a T>,
     // A set containing the nodes in the stack, so we can more efficiently check if an element is
     // in the stack
-    on_stack: HashSet<T>,
+    on_stack: HashSet<&'a T>,
     // Detected cycles
-    cycles: HashSet<Vec<T>>,
+    cycles: HashSet<Vec<&'a T>>,
     // Nodes sorted by reverse topological order
-    node_order: Vec<T>,
+    node_order: Vec<&'a T>,
     // The graph this run will be operating on
     graph: &'a DirectedGraph<T>,
 }
 
-impl<'a, T: Hash + Copy + Ord + Debug + Display> TarjanSCC<'a, T> {
+impl<'a, T: Clone + Hash + Ord + Debug + Display> TarjanSCC<'a, T> {
     fn new(graph: &'a DirectedGraph<T>) -> Self {
         TarjanSCC {
             index: 0,
@@ -226,10 +231,10 @@ impl<'a, T: Hash + Copy + Ord + Debug + Display> TarjanSCC<'a, T> {
 
     /// Runs the tarjan scc algorithm. Must only be called once, as it will panic on subsequent
     /// calls.
-    fn run(mut self) -> Result<Vec<T>, Error<T>> {
+    fn run(&mut self) -> Result<Vec<&'a T>, Error<'a, T>> {
         // Sort the nodes we visit, to make the output deterministic instead of being based on
         // whichever node we find first.
-        let mut nodes: Vec<_> = self.graph.0.keys().cloned().collect();
+        let mut nodes: Vec<_> = self.graph.0.keys().collect();
         nodes.sort_unstable();
         for node in &nodes {
             // Iterate over each node, visiting each one we haven't already visited. We determine
@@ -246,7 +251,7 @@ impl<'a, T: Hash + Copy + Ord + Debug + Display> TarjanSCC<'a, T> {
         }
     }
 
-    fn visit(&mut self, current_node: T) {
+    fn visit(&mut self, current_node: &'a T) {
         // assign a new index for this node, and push it on to the stack
         self.indices.insert(current_node, self.index);
         self.low_links.insert(current_node, self.index);
@@ -254,13 +259,13 @@ impl<'a, T: Hash + Copy + Ord + Debug + Display> TarjanSCC<'a, T> {
         self.stack.push(current_node);
         self.on_stack.insert(current_node);
 
-        let mut targets: Vec<_> = self.graph.0[&current_node].0.iter().cloned().collect();
+        let mut targets: Vec<_> = self.graph.0[current_node].0.iter().collect();
         targets.sort_unstable();
 
-        for target in &targets {
+        for target in targets {
             if !self.indices.contains_key(target) {
                 // Target has not yet been visited; recurse on it
-                self.visit(*target);
+                self.visit(target);
                 // Set our lowlink to the min of our lowlink and the target's new lowlink
                 let current_node_low_link = *self.low_links.get(&current_node).unwrap();
                 let target_low_link = *self.low_links.get(&target).unwrap();
@@ -298,10 +303,10 @@ impl<'a, T: Hash + Copy + Ord + Debug + Display> TarjanSCC<'a, T> {
     /// adds those cycles to self.cycles.
     fn insert_cycles_from_scc(
         &mut self,
-        scc_nodes: &HashSet<T>,
-        current_node: T,
-        mut visited_nodes: HashSet<T>,
-        mut path: Vec<T>,
+        scc_nodes: &HashSet<&'a T>,
+        current_node: &'a T,
+        mut visited_nodes: HashSet<&'a T>,
+        mut path: Vec<&'a T>,
     ) {
         if visited_nodes.contains(&current_node) {
             // We've already visited this node, we've got a cycle. Grab all the elements in the
@@ -326,14 +331,14 @@ impl<'a, T: Hash + Copy + Ord + Debug + Display> TarjanSCC<'a, T> {
         let targets_in_scc: Vec<_> =
             self.graph.0[&current_node].0.iter().filter(|n| scc_nodes.contains(n)).collect();
         for target in targets_in_scc {
-            self.insert_cycles_from_scc(scc_nodes, *target, visited_nodes.clone(), path.clone());
+            self.insert_cycles_from_scc(scc_nodes, target, visited_nodes.clone(), path.clone());
         }
     }
 
     /// Rotates the cycle such that ordering is maintained and the lowest element comes first. This
     /// is so that the reported cycles are consistent, as opposed to varying based on which node we
     /// happened to find first.
-    fn rotate_cycle(cycle: &mut Vec<T>) {
+    fn rotate_cycle(cycle: &mut Vec<&'a T>) {
         let mut lowest_index = 0;
         let mut lowest_value = cycle.first().unwrap();
         for (index, node) in cycle.iter().enumerate() {
@@ -411,7 +416,7 @@ mod tests {
         edges.iter().for_each(|e| graph.add_edge(e.0, e.1));
         let actual_order = graph.topological_sort().expect("found a cycle");
 
-        let expected_order: Vec<_> = order.iter().cloned().collect();
+        let expected_order: Vec<_> = order.iter().collect();
         assert_eq!(expected_order, actual_order);
     }
 
@@ -423,7 +428,7 @@ mod tests {
             .expect_err("topological sort succeeded on a dataset with a cycle");
 
         let expected_cycles: HashSet<Vec<_>> =
-            cycles.iter().cloned().map(|c| c.iter().cloned().collect()).collect();
+            cycles.iter().cloned().map(|c| c.iter().collect()).collect();
         assert_eq!(reported_cycles, expected_cycles);
     }
 
@@ -435,9 +440,9 @@ mod tests {
     ) {
         let mut graph = DirectedGraph::new();
         edges.iter().for_each(|e| graph.add_edge(e.0, e.1));
-        let actual_shortest_path = graph.find_shortest_path(from, to);
+        let actual_shortest_path = graph.find_shortest_path(&from, &to);
         let expected_shortest_path =
-            expected_shortest_path.map(|path| path.iter().cloned().collect::<Vec<_>>());
+            expected_shortest_path.map(|path| path.iter().collect::<Vec<_>>());
         assert_eq!(actual_shortest_path, expected_shortest_path);
     }
 

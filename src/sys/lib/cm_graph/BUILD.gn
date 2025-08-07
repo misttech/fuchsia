@@ -12,6 +12,7 @@ rustc_library("cm_graph") {
   deps = [
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//src/lib/directed_graph",
+    "//third_party/rust_crates:flyweights",
   ]
 
   sources = [ "src/lib.rs" ]
