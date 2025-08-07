@@ -154,6 +154,11 @@
     "package_name": "singleton-display-integration-test-suite"
   },
   {
+    "archive_gn_label": "//src/ui/scenic/tests:trusted-flatland-factory-integration-test-suite_archive_copy",
+    "archive_name": "trusted-flatland-factory-integration-test-suite",
+    "package_name": "trusted-flatland-factory-integration-test-suite"
+  },
+  {
     "archive_gn_label": "//src/ui/scenic/tests:cpu-renderer-integration-test-suite_archive_copy",
     "archive_name": "cpu-renderer-integration-test-suite",
     "package_name": "cpu-renderer-integration-test-suite"

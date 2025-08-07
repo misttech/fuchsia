@@ -1043,6 +1043,28 @@ template("generate_flatland-pixeltest-yuv-suite") {
   }
 }
 
+template("generate_trusted-flatland-factory-integration-test-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  fuchsia_package_with_test(target_name) {
+    test_component = "//src/ui/scenic/tests:trusted-flatland-factory-integration-test-component"
+    test_component_name = "trusted-flatland-factory-integration-test.cm"
+    subpackages = [
+      test_info.target_label,
+      "//src/ui/testing/scenic_realm_factory:pkg",
+    ]
+    test_specs = {
+      environments = vulkan_envs
+      log_settings = {
+        max_severity = "ERROR"
+      }
+    }
+  }
+}
+
 # Expands a prebuilt CTF test into a runnable fuchsia package.
 #
 # This template is called several times with every combination of ctf_test and

@@ -8,6 +8,7 @@ use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_scheduler::RoleManagerMarker;
 use fidl_fuchsia_ui_composition::{
     AllocatorMarker, FlatlandDisplayMarker, FlatlandMarker, ScreenCaptureMarker, ScreenshotMarker,
+    TrustedFlatlandFactoryMarker,
 };
 use fidl_fuchsia_ui_composition_internal::{
     DisplayOwnershipMarker, ScreenCaptureMarker as ScreenCaptureMarker2,
@@ -236,6 +237,7 @@ async fn assemble_realm(
                 .capability(Capability::protocol::<LocalHitMarker>())
                 .capability(Capability::protocol::<ViewRefInstalledMarker>())
                 .capability(Capability::protocol::<ScreenshotMarker>())
+                .capability(Capability::protocol::<TrustedFlatlandFactoryMarker>())
                 .from(Ref::child(SCENIC))
                 .to(Ref::parent()),
         )

@@ -27,6 +27,7 @@ group("tests") {
     ":screen-capture-integration-test",
     ":screen-capture2-integration-test",
     ":singleton-display-integration-test",
+    ":trusted-flatland-factory-integration-test",
   ]
 
   # TODO(https://fxbug.dev/42075218): Re-enable this test once zx_cache_flush is implemented on
@@ -59,6 +60,7 @@ group("ctf-tests") {
     ":null-renderer-integration-test-suite_archive",
     ":screen-capture-integration-test-suite_archive",
     ":singleton-display-integration-test-suite_archive",
+    ":trusted-flatland-factory-integration-test-suite_archive",
   ]
 
   # TODO(https://fxbug.dev/42075218): Re-enable this test once zx_cache_flush is implemented on
@@ -526,6 +528,22 @@ ctf_components_packages("flatland-pixeltest-yuv") {
   test_specs = {
     # TODO(https://fxbug.dev/42137913): Skip this test for AEMU as YUV Sysmem images are not supported yet.
     environments = magma_libvulkan_hardware_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("trusted-flatland-factory-integration-test") {
+  sources = [
+    "flatland_integration_tests/trusted_flatland_factory_integration_test.cc",
+  ]
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+  ]
+  test_specs = {
+    environments = vulkan_envs
     log_settings = {
       max_severity = "ERROR"
     }
