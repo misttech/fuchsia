@@ -34,6 +34,7 @@ pub async fn launch_serial(
 ) {
     let mut writer =
         SerialWriter::new(sink, deny_serial_log_tags.into_iter().map(|s| s.to_string()).collect());
+
     let mut barrier = writer.get_barrier();
     let mut log_stream = logs_repo
         .logs_cursor(
@@ -250,8 +251,19 @@ impl SerialWriter {
 
     /// Writes a log record.
     async fn log(&mut self, log: &Data<Logs>) {
-        if let Some(tags) = log.tags() {
-            if tags.iter().any(|tag| self.denied_tags.contains(tag)) {
+        // Most of the time, this is empty.
+        if !self.denied_tags.is_empty() {
+            if let Some(tags) = log.tags() {
+                if tags.iter().any(|tag| self.denied_tags.contains(tag)) {
+                    return;
+                }
+            }
+
+            // Consider `component_name` as a tag. A log viewer will be presented
+            // the component name just as any tag.
+            let name = log.component_name();
+
+            if self.denied_tags.contains(name.as_ref()) {
                 return;
             }
         }
@@ -497,6 +509,11 @@ mod tests {
             ExtendedMoniker::parse_str("./bootstrap/bar").unwrap(),
             "fuchsia-pkg://bootstrap-bar",
         )));
+        let bootstrap_denied_component_container =
+            repo.get_log_container(Arc::new(ComponentIdentity::new(
+                ExtendedMoniker::parse_str("./bootstrap/denied_component").unwrap(),
+                "fuchsia-pkg://bootstrap-denied_component",
+            )));
 
         let core_foo_container = repo.get_log_container(Arc::new(ComponentIdentity::new(
             ExtendedMoniker::parse_str("./core/foo").unwrap(),
@@ -521,17 +538,22 @@ mod tests {
         let (mut sender, receiver) = unbounded();
         let _serial_task = fasync::Task::spawn(async move {
             let allowed = &["bootstrap/**", "/core/foo"];
-            let denied = &["foo"];
+            let denied = &["denied_tag", "denied_component"];
             launch_serial(allowed, denied, cloned_repo, sink, receiver, flush_receiver).await;
         });
+
         bootstrap_bar_container.ingest_message(make_message(
             "b",
-            Some("foo"),
+            Some("denied_tag"),
+            zx::BootInstant::from_nanos(3),
+        ));
+        bootstrap_denied_component_container.ingest_message(make_message(
+            "d",
+            None,
             zx::BootInstant::from_nanos(3),
         ));
 
         let received = rcv.next().await.unwrap();
-
         assert_eq!(received, "[00000.000] 00001:00002> [foo] DEBUG: a\n");
 
         let (tx, rx) = oneshot::channel();
@@ -562,6 +584,11 @@ mod tests {
             ExtendedMoniker::parse_str("./bootstrap/bar").unwrap(),
             "fuchsia-pkg://bootstrap-bar",
         )));
+        let bootstrap_denied_component_container =
+            repo.get_log_container(Arc::new(ComponentIdentity::new(
+                ExtendedMoniker::parse_str("./bootstrap/denied_component").unwrap(),
+                "fuchsia-pkg://bootstrap-denied_component",
+            )));
 
         let core_foo_container = repo.get_log_container(Arc::new(ComponentIdentity::new(
             ExtendedMoniker::parse_str("./core/foo").unwrap(),
@@ -584,15 +611,21 @@ mod tests {
         let (_flush_sender, flush_receiver) = unbounded();
         let _serial_task = fasync::Task::spawn(launch_serial(
             &["bootstrap/**", "/core/foo"],
-            &["foo"],
+            &["denied_tag", "denied_component"],
             Arc::clone(&repo),
             sink,
             freeze_receiver,
             flush_receiver,
         ));
+
         bootstrap_bar_container.ingest_message(make_message(
             "b",
-            Some("foo"),
+            Some("denied_tag"),
+            zx::BootInstant::from_nanos(3),
+        ));
+        bootstrap_denied_component_container.ingest_message(make_message(
+            "d",
+            None,
             zx::BootInstant::from_nanos(3),
         ));
         core_foo_container.ingest_message(make_message("c", None, zx::BootInstant::from_nanos(4)));
