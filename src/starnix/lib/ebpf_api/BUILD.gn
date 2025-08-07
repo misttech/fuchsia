@@ -14,7 +14,6 @@ rustc_library("ebpf_api") {
   edition = "2021"
 
   sources = [
-    "src/context.rs",
     "src/helpers.rs",
     "src/lib.rs",
     "src/maps/array.rs",

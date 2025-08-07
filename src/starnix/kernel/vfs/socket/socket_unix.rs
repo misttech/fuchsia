@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::bpf::context::EbpfRunContextImpl;
 use crate::bpf::fs::get_bpf_object;
 use crate::mm::MemoryAccessorExt;
 use crate::security;
@@ -22,8 +23,8 @@ use ebpf::{
     BpfProgramContext, BpfValue, CbpfConfig, DataWidth, EbpfProgram, Packet, ProgramArgument, Type,
 };
 use ebpf_api::{
-    get_socket_filter_helpers, LoadBytesBase, MapValueRef, MapsContext, PinnedMap, ProgramType,
-    SocketCookieContext, SocketFilterContext, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE,
+    get_socket_filter_helpers, LoadBytesBase, PinnedMap, ProgramType, SocketCookieContext,
+    SocketFilterContext, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE,
 };
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
@@ -1014,7 +1015,7 @@ impl UnixSocketInner {
     fn write(
         &mut self,
         _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
         address: Option<SocketAddress>,
         ancillary_data: &mut Vec<AncillaryData>,
@@ -1031,7 +1032,7 @@ impl UnixSocketInner {
             // TODO(https://fxbug.dev/385015056): Fill in SkBuf.
             let mut sk_buf = SkBuf::default();
 
-            let mut context = UnixSocketEbpfHelpersContext::<'_>::default();
+            let mut context = EbpfRunContextImpl::<'_>::new(current_task);
             let s = bpf_program.run(&mut context, &mut sk_buf);
             if s == 0 {
                 None
@@ -1103,25 +1104,14 @@ impl Packet for &mut SkBuf {
     }
 }
 
-#[derive(Default)]
-struct UnixSocketEbpfHelpersContext<'a> {
-    map_refs: Vec<MapValueRef<'a>>,
-}
-
-impl<'a> MapsContext<'a> for UnixSocketEbpfHelpersContext<'a> {
-    fn add_value_ref(&mut self, map_ref: MapValueRef<'a>) {
-        self.map_refs.push(map_ref)
-    }
-}
-
-impl<'a, 'b> SocketCookieContext<&'a mut SkBuf> for UnixSocketEbpfHelpersContext<'b> {
+impl<'a, 'b> SocketCookieContext<&'a mut SkBuf> for EbpfRunContextImpl<'b> {
     fn get_socket_cookie(&self, _sk_buf: &'a mut SkBuf) -> u64 {
         track_stub!(TODO("https://fxbug.dev/385015056"), "bpf_get_socket_cookie");
         0
     }
 }
 
-impl<'a, 'b> SocketFilterContext<&'a mut SkBuf> for UnixSocketEbpfHelpersContext<'b> {
+impl<'a, 'b> SocketFilterContext<&'a mut SkBuf> for EbpfRunContextImpl<'b> {
     fn get_socket_uid(&self, _sk_buf: &'a mut SkBuf) -> Option<uid_t> {
         track_stub!(TODO("https://fxbug.dev/385015056"), "bpf_get_socket_uid");
         None
@@ -1147,7 +1137,7 @@ impl ProgramArgument for &'_ mut SkBuf {
 
 struct UnixSocketEbpfContext {}
 impl BpfProgramContext for UnixSocketEbpfContext {
-    type RunContext<'a> = UnixSocketEbpfHelpersContext<'a>;
+    type RunContext<'a> = EbpfRunContextImpl<'a>;
     type Packet<'a> = &'a mut SkBuf;
     type Map = PinnedMap;
     const CBPF_CONFIG: &'static CbpfConfig = &SOCKET_FILTER_CBPF_CONFIG;

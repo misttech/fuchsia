@@ -116,6 +116,7 @@ rustc_library("starnix_core") {
     "arch/${current_cpu}/vdso.rs",
     "arch/mod.rs",
     "bpf/attachments.rs",
+    "bpf/context.rs",
     "bpf/fs.rs",
     "bpf/mod.rs",
     "bpf/program.rs",

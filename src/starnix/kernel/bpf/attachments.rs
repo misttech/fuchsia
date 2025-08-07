@@ -5,6 +5,7 @@
 // TODO(https://github.com/rust-lang/rust/issues/39371): remove
 #![allow(non_upper_case_globals)]
 
+use crate::bpf::context::EbpfRunContextImpl;
 use crate::bpf::fs::{get_bpf_object, BpfHandle};
 use crate::bpf::program::ProgramHandle;
 use crate::mm::PAGE_SIZE;
@@ -15,8 +16,7 @@ use crate::vfs::socket::{
 use crate::vfs::FdNumber;
 use ebpf::{EbpfProgram, EbpfProgramContext, ProgramArgument, Type};
 use ebpf_api::{
-    AttachType, BaseEbpfRunContext, CurrentTaskContext, MapValueRef, MapsContext, PinnedMap,
-    ProgramType, SocketCookieContext, BPF_SOCK_ADDR_TYPE, BPF_SOCK_TYPE,
+    AttachType, PinnedMap, ProgramType, SocketCookieContext, BPF_SOCK_ADDR_TYPE, BPF_SOCK_TYPE,
 };
 use fidl_fuchsia_net_filter as fnet_filter;
 use fuchsia_component::client::connect_to_protocol_sync;
@@ -25,8 +25,7 @@ use starnix_sync::{EbpfStateLock, FileOpsCore, Locked, OrderedRwLock, Unlocked};
 use starnix_syscalls::{SyscallResult, SUCCESS};
 use starnix_uapi::errors::{Errno, ErrnoCode};
 use starnix_uapi::{
-    bpf_attr__bindgen_ty_6, bpf_sock, bpf_sock_addr, errno, error, gid_t, pid_t, uid_t,
-    CGROUP2_SUPER_MAGIC,
+    bpf_attr__bindgen_ty_6, bpf_sock, bpf_sock_addr, errno, error, CGROUP2_SUPER_MAGIC,
 };
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, OnceLock};
@@ -132,54 +131,6 @@ pub fn bpf_prog_detach(
     )
 }
 
-struct EbpfRunContextImpl<'a> {
-    base: BaseEbpfRunContext<'a>,
-    current_task: &'a CurrentTask,
-}
-impl<'a> EbpfRunContextImpl<'a> {
-    fn new(current_task: &'a CurrentTask) -> Self {
-        Self { base: Default::default(), current_task }
-    }
-}
-
-impl<'a> MapsContext<'a> for EbpfRunContextImpl<'a> {
-    fn add_value_ref(&mut self, map_ref: MapValueRef<'a>) {
-        self.base.add_value_ref(map_ref)
-    }
-}
-
-impl<'a> CurrentTaskContext for EbpfRunContextImpl<'a> {
-    fn get_uid_gid(&self) -> (uid_t, gid_t) {
-        let creds = self.current_task.current_creds();
-        (creds.uid, creds.gid)
-    }
-
-    fn get_tid_tgid(&self) -> (pid_t, pid_t) {
-        let task = &self.current_task.task;
-        (task.get_tid(), task.get_pid())
-    }
-}
-
-impl<'a, 'b> SocketCookieContext<&'a BpfSock<'a>> for EbpfRunContextImpl<'b> {
-    fn get_socket_cookie(&self, bpf_sock: &'a BpfSock<'a>) -> u64 {
-        let v = bpf_sock.socket.get_socket_cookie();
-        v.unwrap_or_else(|errno| {
-            log_error!("Failed to get socket cookie: {:?}", errno);
-            0
-        })
-    }
-}
-
-impl<'a, 'b> SocketCookieContext<&'a mut BpfSockAddr<'a>> for EbpfRunContextImpl<'b> {
-    fn get_socket_cookie(&self, bpf_sock_addr: &'a mut BpfSockAddr<'a>) -> u64 {
-        let v = bpf_sock_addr.socket.get_socket_cookie();
-        v.unwrap_or_else(|errno| {
-            log_error!("Failed to get socket cookie: {:?}", errno);
-            0
-        })
-    }
-}
-
 // Wrapper for `bpf_sock_addr` used to implement `ProgramArgument` trait.
 #[repr(C)]
 pub struct BpfSockAddr<'a> {
@@ -204,6 +155,16 @@ impl<'a> DerefMut for BpfSockAddr<'a> {
 impl<'a> ProgramArgument for &'_ mut BpfSockAddr<'a> {
     fn get_type() -> &'static Type {
         &*BPF_SOCK_ADDR_TYPE
+    }
+}
+
+impl<'a, 'b> SocketCookieContext<&'a mut BpfSockAddr<'a>> for EbpfRunContextImpl<'b> {
+    fn get_socket_cookie(&self, bpf_sock_addr: &'a mut BpfSockAddr<'a>) -> u64 {
+        let v = bpf_sock_addr.socket.get_socket_cookie();
+        v.unwrap_or_else(|errno| {
+            log_error!("Failed to get socket cookie: {:?}", errno);
+            0
+        })
     }
 }
 
@@ -277,6 +238,16 @@ impl<'a> DerefMut for BpfSock<'a> {
 impl<'a> ProgramArgument for &'_ BpfSock<'a> {
     fn get_type() -> &'static Type {
         &*BPF_SOCK_TYPE
+    }
+}
+
+impl<'a, 'b> SocketCookieContext<&'a BpfSock<'a>> for EbpfRunContextImpl<'b> {
+    fn get_socket_cookie(&self, bpf_sock: &'a BpfSock<'a>) -> u64 {
+        let v = bpf_sock.socket.get_socket_cookie();
+        v.unwrap_or_else(|errno| {
+            log_error!("Failed to get socket cookie: {:?}", errno);
+            0
+        })
     }
 }
 

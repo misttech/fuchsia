@@ -10,6 +10,7 @@
 //! non-networking-related contexts.
 
 pub mod attachments;
+pub mod context;
 pub mod fs;
 pub mod program;
 pub mod syscalls;
