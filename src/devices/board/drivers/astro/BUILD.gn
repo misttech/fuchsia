@@ -72,6 +72,7 @@ fuchsia_cc_driver("astro-driver") {
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo_cpp",
     "//sdk/fidl/fuchsia.hardware.light:fuchsia.hardware.light_cpp",
+    "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_cpp",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",

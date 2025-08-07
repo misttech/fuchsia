@@ -24,7 +24,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/nand/cpp/bind.h>
-#include <ddk/metadata/nand.h>
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 
@@ -83,14 +82,15 @@ zx_status_t NandPartDevice::Create(void* ctx, zx_device_t* parent) {
   parent_op_size = fbl::round_up(parent_op_size, 8u);
 
   // Query parent for nand configuration info.
-  auto nand_config = ddk::GetMetadata<nand_config_t>(parent, DEVICE_METADATA_PRIVATE);
+  zx::result nand_config =
+      ddk::GetEncodedMetadata<fuchsia_hardware_nand::Config>(parent, DEVICE_METADATA_PRIVATE);
   if (!nand_config.is_ok()) {
     zxlogf(ERROR, "Failed to get metadata: %s", nand_config.status_string());
     return nand_config.error_value();
   }
   // Create a bad block instance.
   BadBlock::Config config = {
-      .bad_block_config = nand_config->bad_block_config,
+      .bad_block_config = nand_config->bad_block_config(),
       .nand_proto = nand_proto,
   };
   fbl::RefPtr<BadBlock> bad_block;
@@ -137,11 +137,10 @@ zx_status_t NandPartDevice::Create(void* ctx, zx_device_t* parent) {
     }
     // Find optional partition_config information.
     uint32_t copy_count = 1;
-    for (uint32_t i = 0; i < nand_config->extra_partition_config_count; i++) {
-      if (memcmp(nand_config->extra_partition_config[i].type_guid, part.type_guid().data(),
-                 part.type_guid().size()) == 0 &&
-          nand_config->extra_partition_config[i].copy_count > 0) {
-        copy_count = nand_config->extra_partition_config[i].copy_count;
+    for (const auto& extra : nand_config.value().extra_partition_configs()) {
+      if (memcmp(extra.type_guid().data(), part.type_guid().data(), part.type_guid().size()) == 0 &&
+          extra.copy_count() > 0) {
+        copy_count = extra.copy_count();
         break;
       }
     }

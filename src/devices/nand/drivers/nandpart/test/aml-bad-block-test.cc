@@ -194,15 +194,11 @@ nand_protocol_ops_t kNandProtocolOps = {
 
 BadBlock::Config MakeBadBlockConfig(Context* ctx) {
   return BadBlock::Config{
-      .bad_block_config =
-          {
-              .type = kAmlogicUboot,
-              .aml_uboot =
-                  {
-                      .table_start_block = 0,
-                      .table_end_block = 3,
-                  },
-          },
+      .bad_block_config = {{
+          .type = fuchsia_hardware_nand::BadBlockConfigType::kAmlogicUboot,
+          .table_start_block = 0,
+          .table_end_block = 3,
+      }},
       .nand_proto =
           {
               .ops = &kNandProtocolOps,

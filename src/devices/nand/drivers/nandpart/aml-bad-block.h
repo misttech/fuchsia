@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_NAND_DRIVERS_NANDPART_AML_BAD_BLOCK_H_
 #define SRC_DEVICES_NAND_DRIVERS_NANDPART_AML_BAD_BLOCK_H_
 
+#include <fidl/fuchsia.hardware.nand/cpp/fidl.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
@@ -13,7 +14,6 @@
 
 #include <utility>
 
-#include <ddk/metadata/bad-block.h>
 #include <fbl/array.h>
 #include <fbl/ref_ptr.h>
 
@@ -97,7 +97,7 @@ class AmlBadBlock : public BadBlock {
   zx_status_t FindBadBlockTable(void) TA_REQ(lock_);
 
   // Top level config.
-  const bad_block_config_t config_;
+  const fuchsia_hardware_nand::BadBlockConfig config_;
   // Parent nand protocol implementation.
   nand_protocol_t nand_proto_;
   ddk::NandProtocolClient nand_;

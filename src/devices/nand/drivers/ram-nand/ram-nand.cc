@@ -23,8 +23,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/nand/cpp/bind.h>
-#include <ddk/metadata/bad-block.h>
-#include <ddk/metadata/nand.h>
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/array.h>
@@ -46,28 +44,30 @@ uint32_t GetNumPartitions(const fuchsia_hardware_nand::wire::RamNandInfo& info) 
   return std::min(info.partition_map.partition_count, fuchsia_hardware_nand::wire::kMaxPartitions);
 }
 
-void ExtractNandConfig(const fuchsia_hardware_nand::wire::RamNandInfo& info,
-                       nand_config_t* config) {
-  config->bad_block_config.type = kAmlogicUboot;
+fuchsia_hardware_nand::Config ExtractNandConfig(
+    const fuchsia_hardware_nand::wire::RamNandInfo& info) {
+  fuchsia_hardware_nand::BadBlockConfig bad_block_config{{
+      .type = fuchsia_hardware_nand::BadBlockConfigType::kAmlogicUboot,
+  }};
+  std::vector<fuchsia_hardware_nand::PartitionConfig> extra_partition_configs;
 
-  uint32_t extra_count = 0;
   for (uint32_t i = 0; i < GetNumPartitions(info); i++) {
     const auto& partition = info.partition_map.partitions[i];
     if (partition.hidden && partition.bbt) {
-      config->bad_block_config.aml_uboot.table_start_block = partition.first_block;
-      config->bad_block_config.aml_uboot.table_end_block = partition.last_block;
-    } else if (!partition.hidden) {
-      if (partition.copy_count > 1) {
-        nand_partition_config_t* extra = &config->extra_partition_config[extra_count];
-
-        memcpy(extra->type_guid, partition.unique_guid.data(), ZBI_PARTITION_GUID_LEN);
-        extra->copy_count = partition.copy_count;
-        extra->copy_byte_offset = partition.copy_byte_offset;
-        extra_count++;
-      }
+      bad_block_config.table_start_block() = partition.first_block;
+      bad_block_config.table_end_block() = partition.last_block;
+    } else if (!partition.hidden && partition.copy_count > 1) {
+      auto& extra = extra_partition_configs.emplace_back(fuchsia_hardware_nand::PartitionConfig{{
+          .copy_count = partition.copy_count,
+          .copy_byte_offset = partition.copy_byte_offset,
+      }});
+      std::ranges::copy(partition.unique_guid, extra.type_guid().begin());
     }
   }
-  config->extra_partition_config_count = extra_count;
+
+  return fuchsia_hardware_nand::Config{
+      {.bad_block_config = bad_block_config,
+       .extra_partition_configs = std::move(extra_partition_configs)}};
 }
 
 fuchsia_boot_metadata::PartitionMap ExtractPartitionMap(
@@ -99,7 +99,7 @@ fuchsia_boot_metadata::PartitionMap ExtractPartitionMap(
 }  // namespace
 
 NandDevice::NandDevice(const NandParams& params, zx_device_t* parent)
-    : DeviceType(parent), params_(params), export_nand_config_{} {}
+    : DeviceType(parent), params_(params) {}
 
 NandDevice::~NandDevice() {
   if (thread_created_) {
@@ -129,11 +129,6 @@ zx_status_t NandDevice::Bind(fuchsia_hardware_nand::wire::RamNandInfo& info) {
     }
   }
 
-  if (info.export_nand_config) {
-    export_nand_config_ = std::make_optional<nand_config_t>();
-    ExtractNandConfig(info, &*export_nand_config_);
-  }
-
   zx_device_str_prop_t props[] = {
       ddk::MakeStrProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_nand::BIND_PROTOCOL_DEVICE),
       ddk::MakeStrProperty(bind_fuchsia::NAND_CLASS, params_.nand_class),
@@ -145,10 +140,15 @@ zx_status_t NandDevice::Bind(fuchsia_hardware_nand::wire::RamNandInfo& info) {
   }
 
   auto args = ddk::DeviceAddArgs(device_name->data()).set_str_props(props);
-  if (export_nand_config_) {
-    std::vector<uint8_t> metadata(sizeof(export_nand_config_.value()));
-    memcpy(metadata.data(), &export_nand_config_.value(), sizeof(export_nand_config_.value()));
-    args.add_metadata(DEVICE_METADATA_PRIVATE, std::move(metadata));
+  if (info.export_nand_config) {
+    auto nand_config = ExtractNandConfig(info);
+    fit::result persisted = fidl::Persist(nand_config);
+    if (persisted.is_error()) {
+      zxlogf(ERROR, "Failed to persist nand config: %s",
+             persisted.error_value().FormatDescription().c_str());
+      return persisted.error_value().status();
+    }
+    args.add_metadata(DEVICE_METADATA_PRIVATE, std::move(persisted.value()));
   }
   if (info.export_partition_map) {
     auto partition_map = ExtractPartitionMap(info);

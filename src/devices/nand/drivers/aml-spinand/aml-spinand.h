@@ -7,7 +7,6 @@
 #include <fuchsia/hardware/rawnand/cpp/banjo.h>
 #include <lib/ddk/platform-defs.h>
 
-#include <ddk/metadata/nand.h>
 #include <ddktl/device.h>
 
 #include "aml-spifc.h"

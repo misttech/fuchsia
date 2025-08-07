@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_NAND_DRIVERS_RAM_NAND_RAM_NAND_H_
 #define SRC_DEVICES_NAND_DRIVERS_RAM_NAND_RAM_NAND_H_
 
-#include <fidl/fuchsia.hardware.nand/cpp/wire.h>
+#include <fidl/fuchsia.hardware.nand/cpp/fidl.h>
 #include <fuchsia/hardware/nand/c/banjo.h>
 #include <fuchsia/hardware/nand/cpp/banjo.h>
 #include <inttypes.h>
@@ -21,7 +21,6 @@
 #include <array>
 #include <optional>
 
-#include <ddk/metadata/nand.h>
 #include <ddktl/device.h>
 #include <fbl/array.h>
 #include <fbl/macros.h>
@@ -112,8 +111,6 @@ class NandDevice : public DeviceType, public ddk::NandProtocol<NandDevice, ddk::
 
   sync_completion_t wake_signal_;
   thrd_t worker_;
-
-  std::optional<nand_config_t> export_nand_config_;
 
   // If non-zero, the driver will fail writes once the write-count reaches this value.
   uint64_t fail_after_ = 0;

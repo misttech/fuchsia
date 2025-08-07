@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_NAND_DRIVERS_NANDPART_BAD_BLOCK_H_
 #define SRC_DEVICES_NAND_DRIVERS_NANDPART_BAD_BLOCK_H_
 
+#include <fidl/fuchsia.hardware.nand/cpp/fidl.h>
 #include <fuchsia/hardware/nand/c/banjo.h>
 #include <fuchsia/hardware/nand/cpp/banjo.h>
 #include <lib/ddk/driver.h>
@@ -14,7 +15,6 @@
 
 #include <utility>
 
-#include <ddk/metadata/bad-block.h>
 #include <fbl/array.h>
 #include <fbl/mutex.h>
 #include <fbl/ref_counted.h>
@@ -27,7 +27,7 @@ class BadBlock : public fbl::RefCounted<BadBlock> {
  public:
   struct Config {
     // Bad block configuration for device.
-    bad_block_config_t bad_block_config;
+    fuchsia_hardware_nand::BadBlockConfig bad_block_config;
     // Parent device NAND protocol.
     nand_protocol_t nand_proto;
   };

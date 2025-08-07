@@ -17,7 +17,6 @@
 #include <memory>
 #include <utility>
 
-#include <ddk/metadata/nand.h>
 #include <fbl/alloc_checker.h>
 #include <zxtest/zxtest.h>
 
@@ -103,38 +102,51 @@ TEST(RamNandTest, ExportNandConfig) {
   config.partition_map.partitions[2].copy_count = 23;
   config.partition_map.partitions[2].copy_byte_offset = 24;
 
-  nand_config_t expected = {
-      .bad_block_config =
+  const fuchsia_hardware_nand::Config kExpectedNandConfig{{
+      .bad_block_config{{
+          .type = fuchsia_hardware_nand::BadBlockConfigType::kAmlogicUboot,
+          .table_start_block = 66,
+          .table_end_block = 77,
+      }},
+      .extra_partition_configs =
           {
-              .type = 0,
-              .aml_uboot =
-                  {
-                      .table_start_block = 66,
-                      .table_end_block = 77,
-                  },
+              {{.type_guid = {11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11},
+                .copy_count = 12,
+                .copy_byte_offset = 13}},
+              {{.type_guid = {22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22},
+                .copy_count = 23,
+                .copy_byte_offset = 24}},
           },
-      .extra_partition_config_count = 2,
-      .extra_partition_config = {},
-  };
-  memset(expected.extra_partition_config[0].type_guid, 11, ZBI_PARTITION_GUID_LEN);
-  expected.extra_partition_config[0].copy_count = 12;
-  expected.extra_partition_config[0].copy_byte_offset = 13;
-
-  memset(expected.extra_partition_config[1].type_guid, 22, ZBI_PARTITION_GUID_LEN);
-  expected.extra_partition_config[1].copy_count = 23;
-  expected.extra_partition_config[1].copy_byte_offset = 24;
+  }};
 
   ASSERT_OK(device->Bind(config));
   auto* child = fake_parent->GetLatestChild();
 
-  char metadata_buffer[256] = {};
-  size_t actual_size;
+  zx::result nand_config =
+      ddk::GetEncodedMetadata<fuchsia_hardware_nand::Config>(child, DEVICE_METADATA_PRIVATE);
+  ASSERT_OK(nand_config);
 
-  EXPECT_OK(device_get_metadata(child, DEVICE_METADATA_PRIVATE, metadata_buffer,
-                                sizeof(metadata_buffer), &actual_size));
-  EXPECT_EQ(sizeof(expected), actual_size);
+  const auto& bad_block_config = nand_config.value().bad_block_config();
+  ASSERT_EQ(bad_block_config.type(), kExpectedNandConfig.bad_block_config().type());
+  ASSERT_EQ(bad_block_config.table_start_block(),
+            kExpectedNandConfig.bad_block_config().table_start_block());
+  ASSERT_EQ(bad_block_config.table_end_block(),
+            kExpectedNandConfig.bad_block_config().table_end_block());
 
-  EXPECT_BYTES_EQ(&expected, metadata_buffer, actual_size);
+  const auto& extra_partition_configs = nand_config.value().extra_partition_configs();
+  ASSERT_EQ(extra_partition_configs.size(), 2);
+
+  const auto& extra1 = extra_partition_configs[0];
+  const auto& expected_extra_1 = kExpectedNandConfig.extra_partition_configs()[0];
+  ASSERT_EQ(extra1.type_guid(), expected_extra_1.type_guid());
+  ASSERT_EQ(extra1.copy_count(), expected_extra_1.copy_count());
+  ASSERT_EQ(extra1.copy_byte_offset(), expected_extra_1.copy_byte_offset());
+
+  const auto& extra2 = extra_partition_configs[1];
+  const auto& expected_extra_2 = kExpectedNandConfig.extra_partition_configs()[1];
+  ASSERT_EQ(extra2.type_guid(), expected_extra_2.type_guid());
+  ASSERT_EQ(extra2.copy_count(), expected_extra_2.copy_count());
+  ASSERT_EQ(extra2.copy_byte_offset(), expected_extra_2.copy_byte_offset());
 
   child->UnbindOp();
   child->WaitUntilUnbindReplyCalled();
@@ -233,12 +245,9 @@ TEST(RamNandTest, AddMetadata) {
   ASSERT_OK(device->Bind(config));
   auto* child = fake_parent->GetLatestChild();
 
-  char metadata_buffer[256] = {};
-  size_t actual_size;
-
-  EXPECT_OK(device_get_metadata(child, DEVICE_METADATA_PRIVATE, metadata_buffer,
-                                sizeof(metadata_buffer), &actual_size));
-  EXPECT_EQ(sizeof(nand_config_t), actual_size);
+  zx::result nand_config =
+      ddk::GetEncodedMetadata<fuchsia_hardware_nand::Config>(child, DEVICE_METADATA_PRIVATE);
+  ASSERT_OK(nand_config);
 
   zx::result partition_map_result = ddk::GetEncodedMetadata<fuchsia_boot_metadata::PartitionMap>(
       child, DEVICE_METADATA_PARTITION_MAP);

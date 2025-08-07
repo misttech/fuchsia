@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.nand/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/ddk/debug.h>
@@ -15,7 +16,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <ddk/metadata/nand.h>
 #include <soc/aml-common/aml-guid.h>
 #include <soc/aml-s905d2/s905d2-gpio.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
@@ -56,66 +56,12 @@ static const std::vector<fpbus::Bti> raw_nand_btis{
     }},
 };
 
-static const nand_config_t config = {
-    .bad_block_config =
-        {
-            .type = kAmlogicUboot,
-            .aml_uboot =
-                {
-                    .table_start_block = 20,
-                    .table_end_block = 23,
-                },
-        },
-    .extra_partition_config_count = 3,
-    .extra_partition_config =
-        {
-            {
-                .type_guid = GUID_BL2_VALUE,
-                .copy_count = 8,
-                .copy_byte_offset = 0,
-            },
-            {
-                .type_guid = GUID_BOOTLOADER_VALUE,
-                .copy_count = 4,
-                .copy_byte_offset = 0,
-            },
-            {
-                .type_guid = GUID_SYS_CONFIG_VALUE,
-                .copy_count = 4,
-                .copy_byte_offset = 0,
-            },
-
-        },
-};
-
-static const std::vector<fpbus::Metadata> raw_nand_metadata{
-    {{
-        .id = std::to_string(DEVICE_METADATA_PRIVATE),
-        .data = std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(&config),
-                                     reinterpret_cast<const uint8_t*>(&config) + sizeof(config)),
-    }},
-};
-
 static const std::vector<fpbus::BootMetadata> raw_nand_boot_metadata{
     {{
         .zbi_type = DEVICE_METADATA_PARTITION_MAP,
         .zbi_extra = 0,
     }},
 };
-
-static const fpbus::Node raw_nand_dev = []() {
-  fpbus::Node dev = {};
-  dev.name() = "raw_nand";
-  dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
-  dev.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
-  dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_RAW_NAND;
-  dev.mmio() = raw_nand_mmios;
-  dev.irq() = raw_nand_irqs;
-  dev.bti() = raw_nand_btis;
-  dev.metadata() = raw_nand_metadata;
-  dev.boot_metadata() = raw_nand_boot_metadata;
-  return dev;
-}();
 
 static const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
     fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
@@ -140,6 +86,56 @@ zx_status_t Astro::RawNandInit() {
   gpio_init_steps_.push_back(GpioFunction(S905D2_GPIOBOOT(12), 2));
   gpio_init_steps_.push_back(GpioFunction(S905D2_GPIOBOOT(14), 2));
   gpio_init_steps_.push_back(GpioFunction(S905D2_GPIOBOOT(15), 2));
+
+  const fuchsia_hardware_nand::Config kNandConfig{
+      {.bad_block_config{{
+           .type = fuchsia_hardware_nand::BadBlockConfigType::kAmlogicUboot,
+           .table_start_block = 20,
+           .table_end_block = 23,
+       }},
+       .extra_partition_configs = {
+           {{
+               .type_guid = GUID_BL2_VALUE,
+               .copy_count = 8,
+               .copy_byte_offset = 0,
+           }},
+           {{
+               .type_guid = GUID_BOOTLOADER_VALUE,
+               .copy_count = 4,
+               .copy_byte_offset = 0,
+           }},
+           {{
+               .type_guid = GUID_SYS_CONFIG_VALUE,
+               .copy_count = 4,
+               .copy_byte_offset = 0,
+           }},
+       }}};
+
+  fit::result persisted_nand_config = fidl::Persist(kNandConfig);
+  if (!persisted_nand_config.is_ok()) {
+    zxlogf(ERROR, "Failed to persist nand config: %s",
+           persisted_nand_config.error_value().FormatDescription().c_str());
+    return persisted_nand_config.error_value().status();
+  }
+
+  std::vector<fpbus::Metadata> metadata{
+      {{
+          .id = std::to_string(DEVICE_METADATA_PRIVATE),
+          .data = std::move(persisted_nand_config.value()),
+      }},
+  };
+
+  fpbus::Node raw_nand_dev{{
+      .name = "raw_nand",
+      .vid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC,
+      .pid = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC,
+      .did = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_RAW_NAND,
+      .mmio = raw_nand_mmios,
+      .irq = raw_nand_irqs,
+      .bti = raw_nand_btis,
+      .metadata = std::move(metadata),
+      .boot_metadata = raw_nand_boot_metadata,
+  }};
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('RAWN');

@@ -9,8 +9,8 @@
 namespace nand {
 
 zx_status_t BadBlock::Create(Config config, fbl::RefPtr<BadBlock>* out) {
-  switch (config.bad_block_config.type) {
-    case kAmlogicUboot:
+  switch (config.bad_block_config.type()) {
+    case fuchsia_hardware_nand::BadBlockConfigType::kAmlogicUboot:
       return AmlBadBlock::Create(config, out);
     default:
       return ZX_ERR_NOT_SUPPORTED;

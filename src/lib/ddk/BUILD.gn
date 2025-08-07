@@ -362,11 +362,9 @@ static_library("ddk") {
 
 library_headers("ddk-metadata-headers") {
   headers = [
-    "ddk/metadata/bad-block.h",
     "ddk/metadata/buttons.h",
     "ddk/metadata/camera.h",
     "ddk/metadata/display.h",
-    "ddk/metadata/nand.h",
     "ddk/metadata/test.h",
   ]
 
@@ -404,9 +402,6 @@ library_headers("ddk-metadata-headers") {
     "//src/devices/clock/drivers/clock:*",
     "//src/devices/gpio/drivers/gpio:*",
     "//src/devices/i2c/drivers/intel-i2c:*",
-    "//src/devices/nand/drivers/aml-spinand:*",
-    "//src/devices/nand/drivers/nandpart:*",
-    "//src/devices/nand/drivers/ram-nand:*",
     "//src/devices/power/drivers/power:*",
     "//src/devices/serial/drivers/ftdi:*",
     "//src/devices/serial/drivers/ftdi/test:*",

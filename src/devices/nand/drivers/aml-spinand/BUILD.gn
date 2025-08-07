@@ -49,7 +49,6 @@ source_set("common") {
     "//src/devices/lib/amlogic",
     "//src/devices/lib/mmio",
     "//src/lib/ddk",
-    "//src/lib/ddk:ddk-metadata-headers",
     "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/hwreg",
