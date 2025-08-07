@@ -17,6 +17,6 @@
         colocate: 'true',
     },
     use: [
-        { service: 'fuchsia.hardware.i2c.Service' },
+        { service: 'fuchsia.hardware.i2cimpl.Service' },
     ],
 }

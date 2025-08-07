@@ -6,6 +6,7 @@ import("//build/fidl/fidl.gni")
 
 group("driver") {
   deps = [
+    "rust_next:pkg",
     "v1:child_component",
     "v1:parent_component",
     "v2:child_bazel_package",

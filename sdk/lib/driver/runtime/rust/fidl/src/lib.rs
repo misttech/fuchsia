@@ -19,7 +19,7 @@ use fdf_channel::channel::Channel;
 use fdf_channel::futures::ReadMessageState;
 use fdf_channel::message::Message;
 use fdf_core::dispatcher::{CurrentDispatcher, OnDispatcher};
-use fdf_core::handle::{MixedHandle, MixedHandleType};
+use fdf_core::handle::{DriverHandle, MixedHandle, MixedHandleType};
 
 pub use self::wire::*;
 
@@ -37,6 +37,35 @@ impl<D> DriverChannel<D> {
     pub fn new_with_dispatcher(dispatcher: D, channel: Channel<[Chunk]>) -> Self {
         Self { dispatcher, channel }
     }
+
+    /// Create a new driver fidl channel pair that will perform its operations on the given
+    /// dispatcher handles.
+    pub fn create_with_dispatchers(dispatcher1: D, dispatcher2: D) -> (Self, Self) {
+        let (channel1, channel2) = Channel::create();
+        (
+            Self { dispatcher: dispatcher1, channel: channel1 },
+            Self { dispatcher: dispatcher2, channel: channel2 },
+        )
+    }
+
+    /// Create a new driver fidl channel pair that will perform its operations on the given
+    /// dispatcher handle, if the dispatcher implements [`Clone`]
+    pub fn create_with_dispatcher(dispatcher: D) -> (Self, Self)
+    where
+        D: Clone,
+    {
+        Self::create_with_dispatchers(dispatcher.clone(), dispatcher)
+    }
+
+    /// Returns the underlying data channel
+    pub fn into_channel(self) -> Channel<[Chunk]> {
+        self.channel
+    }
+
+    /// Returns the underlying `fdf_handle_t` for this channel
+    pub fn into_driver_handle(self) -> DriverHandle {
+        self.channel.into_driver_handle()
+    }
 }
 
 impl DriverChannel<CurrentDispatcher> {
@@ -45,6 +74,41 @@ impl DriverChannel<CurrentDispatcher> {
     pub fn new(channel: Channel<[Chunk]>) -> Self {
         Self::new_with_dispatcher(CurrentDispatcher, channel)
     }
+
+    /// Create a new driver fidl channel pair that will perform its operations on the
+    /// [`CurrentDispatcher`].
+    pub fn create() -> (Self, Self) {
+        Self::create_with_dispatcher(CurrentDispatcher)
+    }
+}
+
+/// Creates a pair of [`fidl_next::ClientEnd`] and [`fidl_next::ServerEnd`] backed by a new
+/// pair of [`DriverChannel`]s using dispatchers of type `D`.
+pub fn create_channel_with_dispatchers<P, D>(
+    client_dispatcher: D,
+    server_dispatcher: D,
+) -> (fidl_next::ClientEnd<P, DriverChannel<D>>, fidl_next::ServerEnd<P, DriverChannel<D>>) {
+    let (client_channel, server_channel) =
+        DriverChannel::create_with_dispatchers(client_dispatcher, server_dispatcher);
+    (
+        fidl_next::ClientEnd::from_untyped(client_channel),
+        fidl_next::ServerEnd::from_untyped(server_channel),
+    )
+}
+
+/// Creates a pair of [`fidl_next::ClientEnd`] and [`fidl_next::ServerEnd`] backed by a new
+/// pair of [`DriverChannel`]s using dispatchers of type `D`, where `D` implements [`Clone`]
+pub fn create_channel_with_dispatcher<P, D: Clone>(
+    dispatcher: D,
+) -> (fidl_next::ClientEnd<P, DriverChannel<D>>, fidl_next::ServerEnd<P, DriverChannel<D>>) {
+    create_channel_with_dispatchers(dispatcher.clone(), dispatcher)
+}
+
+/// Creates a pair of [`fidl_next::ClientEnd`] and [`fidl_next::ServerEnd`] backed by a new
+/// pair of [`DriverChannel`]s using the default [`CurrentDispatcher`]
+pub fn create_channel<P>(
+) -> (fidl_next::ClientEnd<P, DriverChannel>, fidl_next::ServerEnd<P, DriverChannel>) {
+    create_channel_with_dispatcher(CurrentDispatcher)
 }
 
 /// A channel buffer.

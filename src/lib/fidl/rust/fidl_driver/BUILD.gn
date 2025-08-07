@@ -25,6 +25,7 @@ rustc_library("fidl_driver") {
   visibility = [
     ":*",
     "//sdk/fidl/fuchsia.driver.framework:*",
+    "//sdk/fidl/fuchsia.hardware.i2cimpl:*",
     "//tools/fidl/fidlc/testdata/*",
   ]
 }

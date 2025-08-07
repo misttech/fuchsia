@@ -6,6 +6,7 @@ use std::marker::PhantomData;
 
 use anyhow::{anyhow, Context, Error};
 use cm_types::{IterablePath, RelativePath};
+use fdf_sys::fdf_token_transfer;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServiceMarker, ServiceProxy};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io::Flags;
@@ -15,7 +16,7 @@ use fuchsia_component::directory::{open_directory_async, AsRefDirectory, Directo
 use fuchsia_component::{DEFAULT_SERVICE_INSTANCE, SVC_DIR};
 use log::error;
 use namespace::{Entry, Namespace};
-use zx::Status;
+use zx::{HandleBased, Status};
 
 /// Implements access to the incoming namespace for a driver. It provides methods
 /// for accessing incoming protocols and services by either their marker or proxy
@@ -111,23 +112,44 @@ where
 /// Used with [`ServiceHandlerAdapter`] as a connector to members of a service instance.
 pub struct ServiceMemberConnector(fio::DirectoryProxy);
 
+fn connect(
+    dir: &fio::DirectoryProxy,
+    member: &str,
+    server_end: zx::Channel,
+) -> Result<(), fidl::Error> {
+    #[cfg(fuchsia_api_level_at_least = "27")]
+    return dir.open(member, fio::Flags::PROTOCOL_SERVICE, &fio::Options::default(), server_end);
+    #[cfg(not(fuchsia_api_level_at_least = "27"))]
+    return dir.open3(member, fio::Flags::PROTOCOL_SERVICE, &fio::Options::default(), server_end);
+}
+
 impl fidl_next_protocol::ServiceConnector<zx::Channel> for ServiceMemberConnector {
     type Error = fidl::Error;
     fn connect_to_member(&self, member: &str, server_end: zx::Channel) -> Result<(), Self::Error> {
-        #[cfg(fuchsia_api_level_at_least = "27")]
-        return self.0.open(
-            member,
-            fio::Flags::PROTOCOL_SERVICE,
-            &fio::Options::default(),
-            server_end,
-        );
-        #[cfg(not(fuchsia_api_level_at_least = "27"))]
-        return self.0.open3(
-            member,
-            fio::Flags::PROTOCOL_SERVICE,
-            &fio::Options::default(),
-            server_end,
-        );
+        connect(&self.0, member, server_end)
+    }
+}
+
+impl fidl_next_protocol::ServiceConnector<fdf_fidl::DriverChannel> for ServiceMemberConnector {
+    type Error = Status;
+    fn connect_to_member(
+        &self,
+        member: &str,
+        server_end: fdf_fidl::DriverChannel,
+    ) -> Result<(), Self::Error> {
+        let (client_token, server_token) = zx::Channel::create();
+        connect(&self.0, member, server_token).map_err(|err| {
+            error!("Failed to connect to service member {member}: {err:?}");
+            Status::CONNECTION_REFUSED
+        })?;
+        // SAFETY: client_token and server_end are valid by construction and `fdf_token_transfer`
+        // consumes both handles and does not interact with rust memory.
+        Status::ok(unsafe {
+            fdf_token_transfer(
+                client_token.into_raw(),
+                server_end.into_driver_handle().into_raw().get(),
+            )
+        })
     }
 }
 

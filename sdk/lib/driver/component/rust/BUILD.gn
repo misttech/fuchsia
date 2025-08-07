@@ -17,6 +17,7 @@ rustc_library("rust") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/lib/driver/runtime/rust",
     "//sdk/lib/driver/runtime/rust/fdf_sys",
+    "//sdk/lib/driver/runtime/rust/fidl",
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",

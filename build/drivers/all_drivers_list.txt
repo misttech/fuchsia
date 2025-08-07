@@ -13,6 +13,7 @@
 //examples/drivers/transport/banjo/v1:parent_driver
 //examples/drivers/transport/banjo/v2:child_driver
 //examples/drivers/transport/banjo/v2:parent_driver
+//examples/drivers/transport/driver/rust_next/child:driver
 //examples/drivers/transport/driver/v1:child_driver
 //examples/drivers/transport/driver/v1:parent_driver
 //examples/drivers/transport/driver/v2:child_bazel_package.bazel_build
