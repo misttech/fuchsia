@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod wire;
+
 use futures::task::AtomicWaker;
 use std::num::NonZero;
 use std::ptr::NonNull;
@@ -19,8 +21,11 @@ use fdf_channel::message::Message;
 use fdf_core::dispatcher::{CurrentDispatcher, OnDispatcher};
 use fdf_core::handle::{MixedHandle, MixedHandleType};
 
+pub use self::wire::*;
+
 /// A fidl-compatible driver channel that also holds a reference to the
 /// dispatcher. Defaults to using [`CurrentDispatcher`].
+#[derive(Debug)]
 pub struct DriverChannel<D = CurrentDispatcher> {
     dispatcher: D,
     channel: Channel<[Chunk]>,
@@ -95,7 +100,7 @@ impl fidl_next::fuchsia::HandleEncoder for SendBuffer {
         Ok(())
     }
 
-    fn push_raw_driver_handle(&mut self, handle: u32) -> Result<(), fidl_next::EncodeError> {
+    unsafe fn push_raw_driver_handle(&mut self, handle: u32) -> Result<(), fidl_next::EncodeError> {
         if let Some(handle) = NonZero::new(handle) {
             // SAFETY: the fidl framework is responsible for providing us with a valid, otherwise
             // unowned handle.

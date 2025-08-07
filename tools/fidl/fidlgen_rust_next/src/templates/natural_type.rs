@@ -5,7 +5,7 @@
 use core::fmt;
 
 use super::{Context, Contextual};
-use crate::ir::{EndpointRole, HandleSubtype, InternalSubtype, Type, TypeKind};
+use crate::ir::{EndpointRole, InternalSubtype, Type, TypeKind};
 
 pub struct NaturalTypeTemplate<'a> {
     context: Context<'a>,
@@ -46,15 +46,16 @@ impl fmt::Display for NaturalTypeTemplate<'_> {
                     write!(f, "String")?;
                 }
             }
-            TypeKind::Handle { nullable, subtype, .. } => {
-                let handle_ty = &self.resource_bindings().handle.natural_path(*subtype);
+            TypeKind::Handle { nullable, subtype, resource_identifier, .. } => {
+                let handle_ty =
+                    self.resource_bindings().handle(resource_identifier).natural_path(*subtype);
                 if *nullable {
                     write!(f, "Option<{handle_ty}>")?;
                 } else {
                     write!(f, "{handle_ty}")?;
                 }
             }
-            TypeKind::Endpoint { nullable, role, protocol, .. } => {
+            TypeKind::Endpoint { nullable, role, protocol, protocol_transport } => {
                 let role = match role {
                     EndpointRole::Client => "::fidl_next::ClientEnd",
                     EndpointRole::Server => "::fidl_next::ServerEnd",
@@ -64,13 +65,13 @@ impl fmt::Display for NaturalTypeTemplate<'_> {
                     write!(
                         f,
                         "Option<{role}<{protocol_id}, {}>>",
-                        self.resource_bindings().handle.natural_path(HandleSubtype::Channel),
+                        self.resource_bindings().endpoint(protocol_transport).natural_path,
                     )?;
                 } else {
                     write!(
                         f,
                         "{role}<{protocol_id}, {}>",
-                        self.resource_bindings().handle.natural_path(HandleSubtype::Channel),
+                        self.resource_bindings().endpoint(protocol_transport).natural_path,
                     )?;
                 }
             }

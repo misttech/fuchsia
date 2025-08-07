@@ -44,14 +44,12 @@ pub enum TypeKind {
         #[expect(dead_code)]
         rights: HandleRights,
         subtype: HandleSubtype,
-        #[expect(dead_code)]
         resource_identifier: String,
     },
     Endpoint {
         nullable: bool,
         role: EndpointRole,
         protocol: CompIdent,
-        #[expect(dead_code)]
         protocol_transport: String,
     },
     Primitive {
@@ -60,7 +58,7 @@ pub enum TypeKind {
     Identifier {
         identifier: CompIdent,
         nullable: bool,
-        #[serde(default)]
+        #[serde(default = "default_protocol_transport")]
         protocol_transport: String,
     },
     Internal {
@@ -72,4 +70,8 @@ pub enum TypeKind {
 #[serde(rename_all = "snake_case")]
 pub enum InternalSubtype {
     FrameworkError,
+}
+
+fn default_protocol_transport() -> String {
+    "Channel".to_string()
 }

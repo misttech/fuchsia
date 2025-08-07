@@ -175,6 +175,7 @@ template("fidl_rust_next") {
 
       if (defined(invoker.contains_drivers) && invoker.contains_drivers) {
         features = [ "driver" ]
+        deps += [ "//sdk/lib/driver/runtime/rust/fidl" ]
       } else {
         not_needed([ "contains_drivers" ])
       }

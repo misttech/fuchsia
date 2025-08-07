@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::collections::HashMap;
+
 use crate::ir::HandleSubtype;
 
 pub struct Config {
@@ -11,9 +13,9 @@ pub struct Config {
 }
 
 pub struct HandleResourceBinding {
-    wire_path: String,
-    optional_wire_path: String,
-    natural_path: String,
+    wire_path_template: String,
+    optional_wire_path_template: String,
+    natural_path_template: String,
 }
 
 impl HandleResourceBinding {
@@ -53,30 +55,92 @@ impl HandleResourceBinding {
     }
 
     pub fn wire_path(&self, subtype: HandleSubtype) -> String {
-        self.wire_path.replace("{subtype}", Self::handle_subtype_name(subtype))
+        self.wire_path_template.replace("{subtype}", Self::handle_subtype_name(subtype))
     }
 
     pub fn optional_wire_path(&self, subtype: HandleSubtype) -> String {
-        self.optional_wire_path.replace("{subtype}", Self::handle_subtype_name(subtype))
+        self.optional_wire_path_template.replace("{subtype}", Self::handle_subtype_name(subtype))
     }
 
     pub fn natural_path(&self, subtype: HandleSubtype) -> String {
-        self.natural_path.replace("{subtype}", Self::handle_subtype_name(subtype))
+        self.natural_path_template.replace("{subtype}", Self::handle_subtype_name(subtype))
     }
 }
 
+pub struct ResourceBinding {
+    pub wire_path: String,
+    pub optional_wire_path: String,
+    pub natural_path: String,
+}
+
 pub struct ResourceBindings {
-    pub handle: HandleResourceBinding,
+    // Maps resource identifier (e.g. "zx/Handle") to binding types.
+    handles: HashMap<String, HandleResourceBinding>,
+    // The resource identifier to use for unrecognized handles.
+    default_handle: String,
+    // Maps protocol transport (e.g. "Channel") to binding types.
+    endpoints: HashMap<String, ResourceBinding>,
+    // The protocol transport to use for unrecognized transports.
+    default_endpoint: String,
+}
+
+impl ResourceBindings {
+    pub fn handle(&self, handle: &str) -> &HandleResourceBinding {
+        self.handles.get(handle).or_else(|| self.handles.get(&self.default_handle)).unwrap()
+    }
+
+    pub fn endpoint(&self, transport: &str) -> &ResourceBinding {
+        self.endpoints
+            .get(transport)
+            .or_else(|| self.endpoints.get(&self.default_endpoint))
+            .unwrap()
+    }
 }
 
 impl Default for ResourceBindings {
     fn default() -> Self {
-        Self {
-            handle: HandleResourceBinding {
-                wire_path: "::fidl_next::fuchsia::Wire{subtype}".to_string(),
-                optional_wire_path: "::fidl_next::fuchsia::WireOptional{subtype}".to_string(),
-                natural_path: "::fidl_next::fuchsia::zx::{subtype}".to_string(),
+        let mut handles = HashMap::new();
+        handles.insert(
+            "zx/Handle".to_string(),
+            HandleResourceBinding {
+                wire_path_template: "::fidl_next::fuchsia::Wire{subtype}".to_string(),
+                optional_wire_path_template: "::fidl_next::fuchsia::WireOptional{subtype}"
+                    .to_string(),
+                natural_path_template: "::fidl_next::fuchsia::zx::{subtype}".to_string(),
             },
+        );
+        handles.insert(
+            "fdf/handle".to_string(),
+            HandleResourceBinding {
+                wire_path_template: "::fdf_fidl::WireDriverChannel".to_string(),
+                optional_wire_path_template: "::fdf_fidl::WireOptionalDriverChannel".to_string(),
+                natural_path_template: "::fdf_fidl::DriverChannel".to_string(),
+            },
+        );
+
+        let mut endpoints = HashMap::new();
+        endpoints.insert(
+            "Channel".to_string(),
+            ResourceBinding {
+                wire_path: "::fidl_next::fuchsia::WireChannel".to_string(),
+                optional_wire_path: "::fidl_next::fuchsia::WireOptionalChannel".to_string(),
+                natural_path: "::fidl_next::fuchsia::zx::Channel".to_string(),
+            },
+        );
+        endpoints.insert(
+            "Driver".to_string(),
+            ResourceBinding {
+                wire_path: "::fdf_fidl::WireDriverChannel".to_string(),
+                optional_wire_path: "::fdf_fidl::WireOptionalDriverChannel".to_string(),
+                natural_path: "::fdf_fidl::DriverChannel".to_string(),
+            },
+        );
+
+        Self {
+            handles,
+            default_handle: "zx/Handle".to_string(),
+            endpoints,
+            default_endpoint: "Channel".to_string(),
         }
     }
 }

@@ -5,7 +5,7 @@
 use core::fmt;
 
 use super::{Context, Contextual};
-use crate::ir::{DeclType, EndpointRole, HandleSubtype, InternalSubtype, Type, TypeKind};
+use crate::ir::{DeclType, EndpointRole, InternalSubtype, Type, TypeKind};
 
 pub struct WireTypeTemplate<'a> {
     context: Context<'a>,
@@ -59,14 +59,24 @@ impl fmt::Display for WireTypeTemplate<'_> {
                     write!(f, "::fidl_next::WireString<{}>", self.lifetime)?;
                 }
             }
-            TypeKind::Handle { nullable, subtype, .. } => {
+            TypeKind::Handle { nullable, subtype, resource_identifier, .. } => {
                 if *nullable {
-                    write!(f, "{}", self.resource_bindings().handle.optional_wire_path(*subtype),)?;
+                    write!(
+                        f,
+                        "{}",
+                        self.resource_bindings()
+                            .handle(resource_identifier)
+                            .optional_wire_path(*subtype)
+                    )?;
                 } else {
-                    write!(f, "{}", self.resource_bindings().handle.wire_path(*subtype),)?;
+                    write!(
+                        f,
+                        "{}",
+                        self.resource_bindings().handle(resource_identifier).wire_path(*subtype)
+                    )?;
                 }
             }
-            TypeKind::Endpoint { nullable, role, protocol, .. } => {
+            TypeKind::Endpoint { nullable, role, protocol, protocol_transport } => {
                 let role = match role {
                     EndpointRole::Client => "::fidl_next::ClientEnd",
                     EndpointRole::Server => "::fidl_next::ServerEnd",
@@ -76,13 +86,13 @@ impl fmt::Display for WireTypeTemplate<'_> {
                     write!(
                         f,
                         "{role}<{protocol_id}, {}>",
-                        self.resource_bindings().handle.optional_wire_path(HandleSubtype::Channel),
+                        self.resource_bindings().endpoint(protocol_transport).optional_wire_path,
                     )?;
                 } else {
                     write!(
                         f,
                         "{role}<{protocol_id}, {}>",
-                        self.resource_bindings().handle.wire_path(HandleSubtype::Channel),
+                        self.resource_bindings().endpoint(protocol_transport).wire_path,
                     )?;
                 }
             }
@@ -124,23 +134,7 @@ impl fmt::Display for WireTypeTemplate<'_> {
                             write!(f, "{id}")?;
                         }
                     }
-                    DeclType::Resource => {
-                        if *nullable {
-                            write!(
-                                f,
-                                "{}",
-                                self.resource_bindings()
-                                    .handle
-                                    .optional_wire_path(HandleSubtype::None)
-                            )?;
-                        } else {
-                            write!(
-                                f,
-                                "{}",
-                                self.resource_bindings().handle.wire_path(HandleSubtype::None)
-                            )?;
-                        }
-                    }
+                    DeclType::Resource => unreachable!(),
                     _ => unimplemented!(),
                 }
             }

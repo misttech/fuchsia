@@ -54,6 +54,7 @@ rustc_library("fidl_next_codec") {
   deps += [ "//src/lib/fidl/rust/fidl" ]
 
   if (is_fuchsia) {
+    # "fuchsia" feature
     sources += [
       "src/fuchsia/handle.rs",
       "src/fuchsia/handle_types.rs",
@@ -68,6 +69,7 @@ rustc_library("fidl_next_codec") {
   # NOTE: this library is still experimental
   visibility = [
     "//:developer_universe_packages",
+    "//sdk/lib/driver/runtime/rust/*",
     "//src/lib/fidl/rust_next/*",
     "//tools/fidl/fidlc/testdata/*",
     "//tools/fidl/fidlgen_rust_next/*",

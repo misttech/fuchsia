@@ -72,10 +72,7 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
             u32::MAX => {
                 let handle = decoder.take_raw_handle()?;
                 munge!(let Self { mut decoded } = slot);
-                // SAFETY: `Cell` has no uninit bytes, even though it doesn't implement `IntoBytes`.
-                unsafe {
-                    decoded.as_mut_ptr().write(handle);
-                }
+                decoded.write(handle);
             }
             e => return Err(DecodeError::InvalidHandlePresence(e)),
         }

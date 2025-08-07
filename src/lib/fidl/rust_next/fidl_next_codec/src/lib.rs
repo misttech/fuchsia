@@ -240,6 +240,8 @@ mod copy_optimization;
 mod decode;
 mod decoded;
 pub mod decoder;
+#[cfg(feature = "driver")]
+pub mod driver;
 mod encode;
 pub mod encoder;
 mod from_wire;

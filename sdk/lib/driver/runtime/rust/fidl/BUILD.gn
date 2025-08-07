@@ -27,7 +27,10 @@ rustc_library("fidl") {
     "//src/lib/fuchsia-async",
   ]
 
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/lib.rs",
+    "src/wire.rs",
+  ]
 }
 
 # Sample driver protocol using the Driver transport

@@ -364,7 +364,7 @@ impl OnDispatcher for Weak<Dispatcher> {
 
 /// A placeholder for the currently active dispatcher. Use [`OnDispatcher::on_dispatcher`] to
 /// access it when needed.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CurrentDispatcher;
 
 impl OnDispatcher for CurrentDispatcher {
