@@ -82,6 +82,11 @@ sdk_shared_library("instrumentation") {
   foreach(symbol, _exported_symbols) {
     ldflags += [ "-Wl,--undefined=" + symbol ]
   }
+
+  # TODO(https://fxbug.dev/436542065): Disable LTO until the LLD issue is fixed.
+  configs += [ "//build/config/lto" ]
+  configs -= [ "//build/config/lto" ]
+  configs += [ "//build/config/lto:no-lto" ]
 }
 
 config("include") {

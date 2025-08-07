@@ -70,6 +70,11 @@ shared_library("fastboot-shared-lib") {
   sources = [ "src/cpp/fastboot.cc" ]
   visibility = [ ":*" ]
   deps = [ "//src/firmware/lib/fastboot" ]
+
+  # TODO(https://fxbug.dev/436542065): Disable LTO until the LLD issue is fixed.
+  configs += [ "//build/config/lto" ]
+  configs -= [ "//build/config/lto" ]
+  configs += [ "//build/config/lto:no-lto" ]
 }
 
 test("fastboot-shared-lib-test") {
