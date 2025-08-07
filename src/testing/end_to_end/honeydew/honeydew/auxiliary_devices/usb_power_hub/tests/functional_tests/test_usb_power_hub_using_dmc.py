@@ -10,9 +10,10 @@ connected to a USB power hub.
 """
 
 import logging
+import time
 
 from fuchsia_base_test import fuchsia_base_test
-from mobly import test_runner
+from mobly import expects, test_runner
 
 from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub,
@@ -40,17 +41,31 @@ class UsbPowerHuUsingDmcTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def test_usb_power_hub_using_dmc(self) -> None:
         """Test case for UsbPowerHubUsingDmc.power_off and UsbPowerHubUsingDmc.power_on"""
-        # Check if device is online before powering off
-        self.dut.wait_for_online()
 
-        # power off the usb connection
-        self._usb_power_hub.power_off()
-        # self.dut.wait_for_offline()  # TODO(https://fxbug.dev/431799077): Reenable when fixed.
-
-        # power on the usb connection
-        self._usb_power_hub.power_on()
-        self.dut.wait_for_online()
-        self.dut.on_device_boot()
+        # TODO(https://fxbug.dev/431799077): The USB data connection currently does not drop on
+        # Sorrel when the USB is powered off, so this test reboots the dut into fastboot instead.
+        # We should go back to testing ths behavior while booted in Fuchsia once the bug is fixed
+        self.dut.fastboot.boot_to_fastboot_mode()
+        try:
+            self._usb_power_hub.power_off()
+            _LOGGER.info("Waiting 10 seconds for the usb to disconnect")
+            time.sleep(10)
+            expects.expect_false(
+                self.dut.fastboot.is_in_fastboot_mode(),
+                "Fasboot device is still visible",
+            )
+        finally:
+            self._usb_power_hub.power_on()
+            self.dut.fastboot.wait_for_fastboot_mode()
+            try:
+                # TODO(https://fxbug.dev/436414807): The `fastboot reboot` command sometimes
+                # reports an error, despite the command actually succeeding. Once this is fixed,
+                # we can remove the try/except block.
+                self.dut.fastboot.boot_to_fuchsia_mode()
+            except:
+                self.dut.fastboot.wait_for_fuchsia_mode()
+                self.dut.wait_for_online()
+                self.dut.on_device_boot()
 
 
 if __name__ == "__main__":

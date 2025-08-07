@@ -4,11 +4,12 @@
 """Usb Power Hub test."""
 
 import logging
+import time
 
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
 from honeydew.fuchsia_device import fuchsia_device
-from mobly import test_runner
+from mobly import expects, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -54,11 +55,32 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
         _LOGGER.info(
             "Starting the Usb Disconnect test iteration# %s", iteration
         )
-        self._usb_power_hub.power_off(port=self._usb_port)
-        # self.dut.wait_for_offline()  # TODO(https://fxbug.dev/431799077): Reenable when fixed.
-        self._usb_power_hub.power_on(port=self._usb_port)
-        self.dut.wait_for_online()
-        self.dut.on_device_boot()
+
+        # TODO(https://fxbug.dev/431799077): The USB data connection currently does not drop on
+        # Sorrel when the USB is powered off, so this test reboots the dut into fastboot instead.
+        # We should go back to testing ths behavior while booted in Fuchsia once the bug is fixed
+        self.dut.fastboot.boot_to_fastboot_mode()
+        try:
+            self._usb_power_hub.power_off(port=self._usb_port)
+            _LOGGER.info("Waiting 10 seconds for the usb to disconnect")
+            time.sleep(10)
+            expects.expect_false(
+                self.dut.fastboot.is_in_fastboot_mode(),
+                "Fasboot device is still visible",
+            )
+        finally:
+            self._usb_power_hub.power_on(port=self._usb_port)
+            self.dut.fastboot.wait_for_fastboot_mode()
+            try:
+                # TODO(https://fxbug.dev/436414807): The `fastboot reboot` command sometimes
+                # reports an error, despite the command actually succeeding. Once this is fixed,
+                # we can remove the try/except block.
+                self.dut.fastboot.boot_to_fuchsia_mode()
+            except:
+                self.dut.fastboot.wait_for_fuchsia_mode()
+                self.dut.wait_for_online()
+                self.dut.on_device_boot()
+
         _LOGGER.info(
             "Successfully ended the Usb Disconnect test iteration# %s",
             iteration,
