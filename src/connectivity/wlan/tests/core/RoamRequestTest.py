@@ -32,7 +32,6 @@ from fuchsia_controller_py.wrappers import asyncmethod
 from honeydew.affordances.connectivity.wlan.utils.types import (
     MacAddress,
     QueryIfaceResponse,
-    WepCredentials,
 )
 from mobly import signals, test_runner
 from mobly.asserts import (
@@ -322,9 +321,11 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                     credentials = None
                 case SecurityMode.WEP:
                     protocol = fidl_security.Protocol.WEP
-                    credentials = WepCredentials(
-                        TEST_WEP_PASSWORD_LITERAL
-                    ).to_fidl()
+                    credentials = fidl_security.Credentials(
+                        wep=fidl_security.WepCredentials(
+                            TEST_WEP_PASSWORD_LITERAL.encode("ascii")
+                        )
+                    )
                 case SecurityMode.WPA:
                     protocol = fidl_security.Protocol.WPA1
                     credentials = fidl_security.Credentials(
