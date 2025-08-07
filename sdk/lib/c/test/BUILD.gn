@@ -132,6 +132,51 @@ foreach(case, default_stack_size_cases) {
   }
 }
 
+# A static PIE using custom <zircon/startup.h> functions.  It expects a bespoke
+# bootstrap protocol sent by the test harness below.
+executable("static-pie-custom-startup-test") {
+  testonly = true
+
+  configs -= [ "//build/config/fuchsia:fdio_config" ]
+  configs += [
+    "//build/config:standalone",
+    "//build/config/sanitizers:no_sanitizers",
+  ]
+  ldflags = [ "-Wl,-z,stack-size=0x40000" ]
+
+  sources = [
+    "custom-startup-test.h",
+    "static-pie-custom-startup-test.cc",
+  ]
+  deps = [
+    "..:static",
+    "//zircon/system/ulib/zx",
+  ]
+  friend = [ ":custom-startup-test" ]
+
+  exclude_toolchain_tags = [ "uses-shadow" ]
+}
+
+# A gtest component that packs up that test static PIE and launches it via the
+# system program launcher, but interposing the test's bespoke protocol.
+libc_component_tests += [ ":custom-startup-test" ]
+libc_test_manifests += [ "custom-startup-test" ]
+test("custom-startup-test") {
+  sources = [ "custom-startup-test.cc" ]
+  deps = [
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.process:fuchsia.process_cpp",
+    "//sdk/lib/fdio",
+    "//sdk/lib/fit",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gmock",
+    "//zircon/system/ulib/fbl",
+  ]
+
+  # This is really data_deps, but using deps lets the friend logic work.
+  deps += [ ":static-pie-custom-startup-test" ]
+}
+
 executable("debugdata-test-helper") {
   testonly = true
 
