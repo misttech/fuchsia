@@ -5,6 +5,7 @@
 #include <lib/async/default.h>
 #include <lib/driver/testing/cpp/test_node.h>
 #include <lib/fdf/cpp/dispatcher.h>
+#include <zircon/availability.h>
 
 namespace fdf_testing {
 

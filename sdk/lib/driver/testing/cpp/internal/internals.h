@@ -8,17 +8,11 @@
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
+#include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
+#include <lib/driver/testing/cpp/internal/test_environment.h>
 #include <lib/driver/testing/cpp/test_node.h>
 
 #include <type_traits>
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
-#include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
-#else
-#include <lib/driver/testing/cpp/driver_lifecycle.h>
-#include <lib/driver/testing/cpp/test_environment.h>
-#endif
 
 namespace fdf_testing {
 
@@ -89,11 +83,7 @@ class EnvWrapper {
 
  private:
   fdf_testing::TestNode node_server_{"root"};
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
   TestEnvironment test_environment_;
-#else
-  fdf_testing::TestEnvironment test_environment_;
-#endif
   fidl::ClientEnd<fuchsia_io::Directory> outgoing_client_;
 
   // User env should be the last field as it could contain references to the test_environment_.

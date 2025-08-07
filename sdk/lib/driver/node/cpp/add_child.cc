@@ -2,16 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zircon/availability.h>
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
 #include <fidl/fuchsia.driver.framework/cpp/natural_messaging.h>
 #include <lib/driver/node/cpp/add_child.h>
-#endif
 
 namespace fdf {
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
 
 zx::result<OwnedChildNode> AddOwnedChild(
     fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent, fdf::Logger& logger,
@@ -131,10 +125,6 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
   return zx::ok(std::move(node_controller_client_end));
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
-
 zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
     fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent, fdf::Logger& logger,
     std::string_view node_name,
@@ -197,7 +187,5 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
 
   return zx::ok(std::move(node_controller_client_end));
 }
-
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(26)
 
 }  // namespace fdf

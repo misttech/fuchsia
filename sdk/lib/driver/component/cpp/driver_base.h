@@ -157,13 +157,11 @@ class DriverBase {
     return node.value();
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(25)
   const std::vector<fuchsia_driver_framework::Offer>& node_offers() {
     auto& node_offers = start_args_.node_offers();
     ZX_ASSERT(node_offers.has_value());
     return node_offers.value();
   }
-#endif
 
   template <typename StructuredConfig>
   StructuredConfig take_config() {
@@ -221,7 +219,6 @@ class DriverBase {
       const std::string& parent_node_name = "default") const;
 #endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
   // Returns the node properties of the node the driver is bound to or its parents.
   // Returns the node's own node properties if `parent_node_name` is "default" and the node is a
   // non-composite.
@@ -230,7 +227,6 @@ class DriverBase {
   // Returns an empty vector if the parent does not exist.
   cpp20::span<const fuchsia_driver_framework::NodeProperty2> node_properties_2(
       const std::string& parent_node_name = "default") const;
-#endif
 
   // The symbols field in the start args.
   // These come from the driver that added |node|, and are filtered to the symbols requested in the
@@ -252,8 +248,6 @@ class DriverBase {
   //
   // To avoid data races, subsequent calls are ignored are not an error.
   void InitInspectorExactlyOnce(inspect::Inspector inspector);
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
 
   // Creates an owned child node on the node that the driver is bound to. The driver framework will
   // NOT try to match and bind a driver to this child as it is owned by the current driver.
@@ -291,9 +285,6 @@ class DriverBase {
       cpp20::span<const fuchsia_driver_framework::NodeProperty> properties,
       cpp20::span<const fuchsia_driver_framework::Offer> offers);
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
       std::string_view node_name,
       cpp20::span<const fuchsia_driver_framework::NodeProperty2> properties,
@@ -303,13 +294,11 @@ class DriverBase {
       std::string_view node_name, fuchsia_driver_framework::DevfsAddArgs& devfs_args,
       cpp20::span<const fuchsia_driver_framework::NodeProperty2> properties,
       cpp20::span<const fuchsia_driver_framework::Offer> offers);
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(26)
 
  private:
   void InitializeAndServe(Namespace incoming,
                           fidl::ServerEnd<fuchsia_io::Directory> outgoing_directory_request);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(25)
   // This will enable validating service instance connection requests that are made to the incoming
   // namespace |incoming()|. It will ensure that the given service + instance combination is valid
   // before attempting to make a connection. If it is not a valid combination, |Connect()| attempts
@@ -318,7 +307,6 @@ class DriverBase {
   // This can be enabled by setting `service_connect_validation: "true"` in the driver cml's
   // `program` section.
   void EnableServiceValidator();
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(25)
 
   std::string name_;
   DriverStartArgs start_args_;
@@ -328,10 +316,8 @@ class DriverBase {
       node_properties_;
 #endif  // FUCHSIA_API_LEVEL_AT_MOST(26)
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
   std::unordered_map<std::string, cpp20::span<const fuchsia_driver_framework::NodeProperty2>>
       node_properties_2_;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(26)
 
   fdf::UnownedSynchronizedDispatcher driver_dispatcher_;
   async_dispatcher_t* dispatcher_;

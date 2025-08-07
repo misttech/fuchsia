@@ -27,23 +27,16 @@ DriverBase::DriverBase(std::string_view name, DriverStartArgs start_args,
     return std::move(incoming.value());
   }();
   logger_ = [&incoming, this]() {
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
     auto logger = Logger::Create2(incoming, dispatcher_, name_, FUCHSIA_LOG_INFO,
                                   logger_wait_for_initial_interest);
     return logger;
-#else
-    zx::result logger = Logger::Create(incoming, dispatcher_, name_, FUCHSIA_LOG_INFO,
-                                       logger_wait_for_initial_interest);
-    ZX_ASSERT_MSG(logger.is_ok(), "%s", logger.status_string());
-    return std::move(logger.value());
-#endif
   }();
   Logger::SetGlobalInstance(logger_.get());
   std::optional outgoing_request = std::move(start_args_.outgoing_dir());
   ZX_ASSERT(outgoing_request.has_value());
   InitializeAndServe(std::move(incoming), std::move(outgoing_request.value()));
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(19) && FUCHSIA_API_LEVEL_AT_MOST(26)
+#if FUCHSIA_API_LEVEL_AT_MOST(26)
   const auto& node_properties = start_args_.node_properties();
   if (node_properties.has_value()) {
     for (const auto& entry : node_properties.value()) {
@@ -52,24 +45,17 @@ DriverBase::DriverBase(std::string_view name, DriverStartArgs start_args,
   }
 #endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
   const auto& node_properties_2 = start_args_.node_properties_2();
   if (node_properties_2.has_value()) {
     for (const auto& entry : node_properties_2.value()) {
       node_properties_2_.emplace(std::string{entry.name()}, entry.properties());
     }
   }
-#endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(25)
   zx::result val = fdf_internal::ProgramValue(program(), "service_connect_validation");
   if (val.is_ok() && val.value() == "true") {
     EnableServiceValidator();
   }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(25)
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
-#endif
 }
 
 void DriverBase::RegisterInitMethods(InitMethodCallback cb) {
@@ -94,7 +80,6 @@ void DriverBase::InitializeAndServe(
   ZX_ASSERT(outgoing_->Serve(std::move(outgoing_directory_request)).is_ok());
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(25)
 void DriverBase::EnableServiceValidator() {
   if (start_args_.node_offers().has_value()) {
     incoming_->SetServiceValidator(
@@ -103,20 +88,15 @@ void DriverBase::EnableServiceValidator() {
     FDF_LOGL(INFO, *logger_, "No node_offers available, not able to enable service validation.");
   }
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(25)
 
 void DriverBase::InitInspectorExactlyOnce(inspect::Inspector inspector) {
   std::call_once(init_inspector_once_, [&] {
-#if FUCHSIA_API_LEVEL_AT_LEAST(16)
     inspector_.emplace(
         dispatcher(), inspect::PublishOptions{
                           .inspector = std::move(inspector),
                           .tree_name = {name_},
                           .client_end = incoming()->Connect<fuchsia_inspect::InspectSink>().value(),
                       });
-#else
-    inspector_.emplace(outgoing()->component(), dispatcher(), std::move(inspector));
-#endif
   });
 }
 
@@ -130,8 +110,6 @@ cpp20::span<const fuchsia_driver_framework::NodeProperty> DriverBase::node_prope
   return {it->second};
 }
 #endif
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
 
 zx::result<OwnedChildNode> DriverBase::AddOwnedChild(std::string_view node_name) {
   return fdf::AddOwnedChild(node(), logger(), node_name);
@@ -156,10 +134,6 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> DriverBase
   return fdf::AddChild(node(), logger(), node_name, devfs_args, properties, offers);
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
-
 zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> DriverBase::AddChild(
     std::string_view node_name,
     cpp20::span<const fuchsia_driver_framework::NodeProperty2> properties,
@@ -182,8 +156,6 @@ cpp20::span<const fuchsia_driver_framework::NodeProperty2> DriverBase::node_prop
   }
   return {it->second};
 }
-
-#endif
 
 DriverBase::~DriverBase() { Logger::SetGlobalInstance(nullptr); }
 

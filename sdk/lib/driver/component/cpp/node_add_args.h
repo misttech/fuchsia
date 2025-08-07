@@ -13,7 +13,6 @@
 #include <lib/fidl/cpp/wire/arena.h>
 #include <lib/fidl/cpp/wire/traits.h>
 #include <lib/fidl_driver/cpp/transport.h>
-#include <zircon/availability.h>
 
 #include <string_view>
 
@@ -25,26 +24,6 @@ fuchsia_component_decl::Offer MakeOffer(
 fuchsia_component_decl::wire::Offer MakeOffer(
     fidl::AnyArena& arena, std::string_view service_name,
     std::string_view instance_name = component::kDefaultInstance);
-
-#if FUCHSIA_API_LEVEL_AT_MOST(18)
-
-template <typename Service>
-fuchsia_component_decl::Offer MakeOffer(
-    std::string_view instance_name = component::kDefaultInstance) {
-  static_assert(fidl::IsServiceV<Service>, "Service must be a fidl Service");
-  return MakeOffer(Service::Name, instance_name);
-}
-
-template <typename Service>
-fuchsia_component_decl::wire::Offer MakeOffer(
-    fidl::AnyArena& arena, std::string_view instance_name = component::kDefaultInstance) {
-  static_assert(fidl::IsServiceV<Service>, "Service must be a fidl Service");
-  return MakeOffer(arena, Service::Name, instance_name);
-}
-
-#endif  // FUCHSIA_API_LEVEL_AT_MOST(18)
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
 
 template <typename Service>
 fuchsia_driver_framework::Offer MakeOffer2(
@@ -77,8 +56,6 @@ fuchsia_driver_framework::wire::Offer MakeOffer2(
     static_assert(std::false_type{}, "Service must be using DriverTransport or ChannelTransport.");
   }
 }
-
-#endif  //  FUCHSIA_API_LEVEL_AT_LEAST(18)
 
 inline fuchsia_driver_framework::NodeProperty MakeProperty(std::string_view key,
                                                            std::string_view value) {
@@ -133,8 +110,6 @@ inline fuchsia_driver_framework::wire::NodeProperty MakeProperty(fidl::AnyArena&
       .value = fuchsia_driver_framework::wire::NodePropertyValue::WithIntValue(value)};
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
-
 inline fuchsia_driver_framework::NodeProperty2 MakeProperty2(std::string_view key,
                                                              std::string_view value) {
   return fuchsia_driver_framework::NodeProperty2{
@@ -188,8 +163,6 @@ inline fuchsia_driver_framework::wire::NodeProperty2 MakeProperty2(fidl::AnyAren
       .key = fidl::StringView(arena, key),
       .value = fuchsia_driver_framework::wire::NodePropertyValue::WithIntValue(value)};
 }
-
-#endif
 
 }  // namespace fdf
 

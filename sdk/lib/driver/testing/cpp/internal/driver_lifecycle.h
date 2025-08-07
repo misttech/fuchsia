@@ -10,17 +10,12 @@
 #include <lib/driver/component/cpp/internal/driver_server.h>
 #include <lib/driver/symbols/symbols.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
-#include <zircon/availability.h>
 
 // This is the exported driver registration symbol that the driver framework looks for.
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 extern "C" const DriverRegistration __fuchsia_driver_registration__;
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
 namespace fdf_testing::internal {
-#else
-namespace fdf_testing {
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(24)
 
 using OpaqueDriverPtr = void*;
 
@@ -116,10 +111,6 @@ class DriverUnderTest final : public DriverUnderTestBase {
   Driver* operator*() { return static_cast<Driver*>(GetDriver<Driver>()); }
 };
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
 }  // namespace fdf_testing::internal
-#else
-}  // namespace fdf_testing
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(24)
 
 #endif  // LIB_DRIVER_TESTING_CPP_INTERNAL_DRIVER_LIFECYCLE_H_

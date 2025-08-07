@@ -5,9 +5,6 @@
 #ifndef LIB_DRIVER_INCOMING_CPP_SERVICE_VALIDATOR_H
 #define LIB_DRIVER_INCOMING_CPP_SERVICE_VALIDATOR_H
 
-#include <zircon/availability.h>
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
 #include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
 
 #include <unordered_set>
@@ -32,7 +29,5 @@ class ServiceValidator {
 };
 
 }  // namespace fdf
-
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
 
 #endif  // LIB_DRIVER_INCOMING_CPP_SERVICE_VALIDATOR_H

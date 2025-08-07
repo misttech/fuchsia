@@ -5,7 +5,6 @@
 #include <fidl/fuchsia.component.runner/cpp/natural_types.h>
 #include <fidl/fuchsia.component.runner/cpp/wire_types.h>
 #include <lib/driver/incoming/cpp/namespace.h>
-#include <zircon/availability.h>
 
 namespace fdf {
 

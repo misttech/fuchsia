@@ -56,7 +56,6 @@ std::unique_ptr<Logger> Logger::NoOp() {
   return std::make_unique<Logger>("", FUCHSIA_LOG_INFO, zx::socket(), std::move(log_sink));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
 std::unique_ptr<Logger> Logger::Create2(const Namespace& ns, async_dispatcher_t* dispatcher,
                                         std::string_view name, FuchsiaLogSeverity min_severity,
                                         bool wait_for_initial_interest) {
@@ -66,7 +65,6 @@ std::unique_ptr<Logger> Logger::Create2(const Namespace& ns, async_dispatcher_t*
   }
   return std::move(result.value());
 }
-#endif
 
 zx::result<std::unique_ptr<Logger>> Logger::Create(const Namespace& ns,
                                                    async_dispatcher_t* dispatcher,

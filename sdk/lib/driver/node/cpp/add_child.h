@@ -5,15 +5,9 @@
 #ifndef LIB_DRIVER_NODE_CPP_ADD_CHILD_H_
 #define LIB_DRIVER_NODE_CPP_ADD_CHILD_H_
 
-#include <zircon/availability.h>
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
-
 #include <fidl/fuchsia.driver.framework/cpp/markers.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/stdcompat/span.h>
-
-#endif
 
 // The following functions can be used to add various types of child nodes to a parent node.
 // There are two main types of nodes, owned and un-owned.
@@ -32,8 +26,6 @@
 // is how non-driver components can connect to driver provided protocols. If your node needs to
 // provide devfs support, that is available through the variants that support the DevfsAddArgs.
 namespace fdf {
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
 
 // Contains the client ends for an owned child node that was created using the helper functions.
 // This must be handled since the driver must ensure not to drop the node client.
@@ -83,9 +75,6 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
     cpp20::span<const fuchsia_driver_framework::NodeProperty> properties,
     cpp20::span<const fuchsia_driver_framework::Offer> offers);
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
 // Adds an un-owned child node under the given |parent|. The driver framework will try to match
 // and bind a driver to this child.
 //
@@ -105,8 +94,6 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
     std::string_view node_name, fuchsia_driver_framework::DevfsAddArgs& devfs_args,
     cpp20::span<const fuchsia_driver_framework::NodeProperty2> properties,
     cpp20::span<const fuchsia_driver_framework::Offer> offers);
-
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(26)
 
 }  // namespace fdf
 

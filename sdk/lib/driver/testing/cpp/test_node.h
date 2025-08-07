@@ -6,6 +6,7 @@
 #define LIB_DRIVER_TESTING_CPP_TEST_NODE_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
+#include <zircon/availability.h>
 
 namespace fdf_testing {
 

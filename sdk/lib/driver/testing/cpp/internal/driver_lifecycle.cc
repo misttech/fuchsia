@@ -3,13 +3,8 @@
 // found in the LICENSE file.
 
 #include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
-#include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
 namespace fdf_testing::internal {
-#else
-namespace fdf_testing {
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(24)
 
 DriverUnderTestBase::DriverUnderTestBase(DriverRegistration driver_registration_symbol)
     : driver_dispatcher_(fdf::Dispatcher::GetCurrent()->get()),
@@ -80,8 +75,4 @@ zx::result<> DriverUnderTestBase::Stop() {
   return zx::ok();
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
 }  // namespace fdf_testing::internal
-#else
-}  // namespace fdf_testing
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(24)

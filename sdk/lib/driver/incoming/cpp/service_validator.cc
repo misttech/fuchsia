@@ -5,8 +5,6 @@
 #include <fidl/fuchsia.component.decl/cpp/fidl.h>
 #include <lib/driver/incoming/cpp/service_validator.h>
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
-
 namespace fdf {
 
 ServiceValidator::ServiceValidator(const std::vector<fuchsia_driver_framework::Offer>& offers) {
@@ -89,5 +87,3 @@ bool ServiceValidator::IsValidDriverServiceInstance(const std::string& service_n
 }
 
 }  // namespace fdf
-
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
