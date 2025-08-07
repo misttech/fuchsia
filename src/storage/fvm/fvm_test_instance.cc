@@ -17,8 +17,6 @@
 
 #include "src/storage/lib/fs_management/cpp/fvm.h"
 
-constexpr char kFvmDriverLib[] = "fvm.cm";
-
 namespace fvm {
 
 class DriverBlockConnector : public BlockConnector {
@@ -111,14 +109,14 @@ void DriverFvmInstance::CreateFvm(uint64_t block_size, uint64_t block_count, uin
                                                block_count * block_size, slice_size));
 
   StartFvm();
-
-  ASSERT_OK(device_watcher::RecursiveWaitForFile(devfs_root().get(), GetFvmPath().c_str()));
 }
 
 void DriverFvmInstance::StartFvm() {
   auto resp = fidl::WireCall(GetRamdiskControllerInterface())->Bind(kFvmDriverLib);
   ASSERT_OK(resp.status());
   ASSERT_TRUE(resp->is_ok());
+
+  ASSERT_OK(device_watcher::RecursiveWaitForFile(devfs_root().get(), GetFvmPath().c_str()));
 }
 
 void DriverFvmInstance::RestartFvm() {

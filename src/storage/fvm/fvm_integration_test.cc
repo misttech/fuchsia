@@ -67,7 +67,6 @@
 #include "src/storage/lib/fs_management/cpp/mount.h"
 #include "src/storage/minfs/format.h"
 
-constexpr char kFvmDriverLib[] = "fvm.cm";
 #define STRLEN(s) (sizeof(s) / sizeof((s)[0]))
 
 namespace {
@@ -95,10 +94,6 @@ class FvmTest : public zxtest::Test {
 
   std::string fvm_path() const { return instance_->GetFvmPath(); }
 
-  fidl::UnownedClientEnd<fuchsia_device::Controller> ramdisk_controller_interface() const {
-    return instance_->GetRamdiskControllerInterface();
-  }
-
   fidl::UnownedClientEnd<fuchsia_hardware_block::Block> ramdisk_block_interface() const {
     return instance_->GetRamdiskPartition();
   }
@@ -121,13 +116,6 @@ class FvmTest : public zxtest::Test {
 
   void FVMCheckAllocatedCount(size_t expected_allocated, size_t expected_total) const;
 
-  void Upgrade(const uuid::Uuid& old_guid, const uuid::Uuid& new_guid, zx_status_t status) const;
-
-  zx::result<std::unique_ptr<fvm::BlockConnector>> OpenPartitionNoWait(
-      const fs_management::PartitionMatcher& matcher) const {
-    return instance_->OpenPartitionNoWait(matcher);
-  }
-
   zx::result<std::unique_ptr<fvm::BlockConnector>> WaitForPartition(
       const fs_management::PartitionMatcher& matcher) const {
     return instance_->OpenPartition(matcher);
@@ -139,9 +127,6 @@ class FvmTest : public zxtest::Test {
   }
 
  private:
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager>> fvm_device() const {
-    return instance_->GetVolumeManager();
-  }
   std::unique_ptr<fvm::DriverFvmInstance> instance_;
 };
 
@@ -154,21 +139,6 @@ void FvmTest::FVMCheckAllocatedCount(size_t expected_allocated, size_t expected_
   VolumeManagerInfo info = GetFvmInfo();
   ASSERT_EQ(info.slice_count, expected_total);
   ASSERT_EQ(info.assigned_slice_count, expected_allocated);
-}
-
-void FvmTest::Upgrade(const uuid::Uuid& old_guid, const uuid::Uuid& new_guid,
-                      zx_status_t status) const {
-  zx::result fvm = fvm_device();
-  ASSERT_OK(fvm);
-  fuchsia_hardware_block_partition::wire::Guid old_guid_fidl;
-  std::copy(old_guid.cbegin(), old_guid.cend(), old_guid_fidl.value.begin());
-  fuchsia_hardware_block_partition::wire::Guid new_guid_fidl;
-  std::copy(new_guid.cbegin(), new_guid.cend(), new_guid_fidl.value.begin());
-
-  const fidl::WireResult result = fidl::WireCall(*fvm)->Activate(old_guid_fidl, new_guid_fidl);
-  ASSERT_OK(result.status());
-  const fidl::WireResponse response = result.value();
-  ASSERT_STATUS(response.status, status);
 }
 
 enum class ValidationResult {
@@ -460,8 +430,6 @@ TEST_F(FvmTest, TestLarge) {
   ASSERT_OK(fs_management::FvmInit(ramdisk_block_interface(), kSliceSize));
 
   StartFVM();
-
-  ASSERT_OK(device_watcher::RecursiveWaitForFile(devfs_root_fd().get(), fvm_path().c_str()));
   ValidateFVM(ramdisk_block_interface());
 }
 
@@ -1949,125 +1917,6 @@ TEST_F(FvmTest, TestCorruptMount) {
                      blobfs_vslice_count);
 }
 
-TEST_F(FvmTest, TestVPartitionUpgrade) {
-  constexpr uint64_t kBlockSize = 512;
-  constexpr uint64_t kBlockCount = 1 << 16;
-  constexpr uint64_t kSliceSize = 64 * kBlockSize;
-  CreateFVM(kBlockSize, kBlockCount, kSliceSize);
-
-  // Allocate two VParts, one active, and one inactive.
-  {
-    auto vp_fd_or = AllocatePartition({
-        .type = kTestPartDataGuid,
-        .guid = kTestUniqueGuid1,
-        .name = kTestPartDataName,
-        .flags = fuchsia_hardware_block_volume::wire::kAllocatePartitionFlagInactive,
-    });
-    ASSERT_OK(vp_fd_or, "Couldn't open Volume");
-  }
-
-  {
-    auto vp_fd_or = AllocatePartition({
-        .type = kTestPartDataGuid,
-        .guid = kTestUniqueGuid2,
-        .name = kTestPartBlobName,
-    });
-    ASSERT_OK(vp_fd_or, "Couldn't open volume");
-  }
-
-  // Release FVM device that we opened earlier
-  FVMRebind();
-
-  // The active partition should still exist.
-  ASSERT_OK(WaitForPartition(kPartition2Matcher));
-  // The inactive partition should be gone.
-  ASSERT_STATUS(OpenPartitionNoWait(kPartition1Matcher).status_value(), ZX_ERR_NOT_FOUND);
-
-  // Reallocate GUID1 as inactive.
-
-  {
-    auto vp_fd_or = AllocatePartition({
-        .type = kTestPartDataGuid,
-        .guid = kTestUniqueGuid1,
-        .name = kTestPartDataName,
-        .flags = fuchsia_hardware_block_volume::wire::kAllocatePartitionFlagInactive,
-    });
-    ASSERT_OK(vp_fd_or, "Couldn't open new volume");
-  }
-
-  // Atomically set GUID1 as active and GUID2 as inactive.
-  Upgrade(kTestUniqueGuid2, kTestUniqueGuid1, ZX_OK);
-  // After upgrading, we should be able to open both partitions
-  ASSERT_OK(WaitForPartition(kPartition1Matcher));
-  ASSERT_OK(WaitForPartition(kPartition2Matcher));
-
-  // Rebind the FVM driver, check that the upgrade has succeeded.
-  // The original (GUID2) should be deleted, and the new partition (GUID)
-  // should exist.
-  FVMRebind();
-
-  ASSERT_OK(WaitForPartition(kPartition1Matcher));
-  ASSERT_STATUS(OpenPartitionNoWait(kPartition2Matcher).status_value(), ZX_ERR_NOT_FOUND);
-
-  // Try upgrading when the "new" version doesn't exist.
-  // (It should return an error and have no noticeable effect).
-  Upgrade(kTestUniqueGuid1, kTestUniqueGuid2, ZX_ERR_NOT_FOUND);
-
-  // Release FVM device that we opened earlier
-  FVMRebind();
-
-  ASSERT_OK(WaitForPartition(kPartition1Matcher));
-  ASSERT_STATUS(OpenPartitionNoWait(kPartition2Matcher).status_value(), ZX_ERR_NOT_FOUND);
-
-  // Try upgrading when the "old" version doesn't exist.
-  {
-    auto vp_fd_or = AllocatePartition({
-        .type = kTestPartDataGuid,
-        .guid = kTestUniqueGuid2,
-        .name = kTestPartBlobName,
-        .flags = fuchsia_hardware_block_volume::wire::kAllocatePartitionFlagInactive,
-    });
-    ASSERT_OK(vp_fd_or, "Couldn't open volume");
-  }
-
-  uuid::Uuid fake_guid = {};
-  Upgrade(fake_guid, kTestUniqueGuid2, ZX_OK);
-
-  FVMRebind();
-
-  // We should be able to open both partitions again.
-  zx::result vp_or = WaitForPartition(kPartition1Matcher);
-  ASSERT_OK(vp_or);
-  ASSERT_OK(WaitForPartition(kPartition2Matcher));
-
-  // Destroy and reallocate the first partition as inactive.
-  {
-    const fidl::WireResult result = fidl::WireCall(vp_or->as_volume())->Destroy();
-    ASSERT_OK(result.status());
-    const fidl::WireResponse response = result.value();
-    ASSERT_OK(response.status);
-  }
-  {
-    zx::result vp_or = AllocatePartition({
-        .type = kTestPartDataGuid,
-        .guid = kTestUniqueGuid1,
-        .name = kTestPartDataName,
-        .flags = fuchsia_hardware_block_volume::wire::kAllocatePartitionFlagInactive,
-    });
-    ASSERT_OK(vp_or, "Couldn't open volume");
-  }
-
-  // Upgrade the partition with old_guid == new_guid.
-  // This should activate the partition.
-  Upgrade(kTestUniqueGuid1, kTestUniqueGuid1, ZX_OK);
-
-  FVMRebind();
-
-  // We should be able to open both partitions again.
-  ASSERT_OK(WaitForPartition(kPartition1Matcher));
-  ASSERT_OK(WaitForPartition(kPartition2Matcher));
-}
-
 // Test that the FVM driver can mount filesystems.
 TEST_F(FvmTest, TestMounting) {
   constexpr uint64_t kBlockSize = 512;
@@ -2395,36 +2244,6 @@ TEST_F(FvmTest, TestCheckNewFVM) {
   const fuchsia_hardware_block::wire::BlockInfo& block_info = response.value()->info;
   fvm::Checker checker(device, block_info.block_size, true);
   ASSERT_TRUE(checker.Validate());
-}
-
-TEST_F(FvmTest, TestAbortDriverLoadSmallDevice) {
-  constexpr uint64_t kMB = 1 << 20;
-  constexpr uint64_t kGB = 1 << 30;
-  constexpr uint64_t kBlockSize = 512;
-  constexpr uint64_t kBlockCount = 50 * kMB / kBlockSize;
-  constexpr uint64_t kSliceSize = kMB;
-  constexpr uint64_t kFvmPartitionSize = 4 * kGB;
-
-  CreateRamdisk(kBlockSize, kBlockCount);
-
-  // Init fvm with a partition bigger than the underlying disk.
-  fs_management::FvmInitWithSize(ramdisk_block_interface(), kFvmPartitionSize, kSliceSize);
-
-  // Try to bind an fvm to the disk.
-  //
-  // Bind should return ZX_ERR_IO when the load of a driver fails.
-  auto resp = fidl::WireCall(ramdisk_controller_interface())->Bind(kFvmDriverLib);
-  ASSERT_OK(resp.status());
-  ASSERT_FALSE(resp->is_ok());
-  ASSERT_EQ(resp->error_value(), ZX_ERR_INTERNAL);
-
-  CreateRamdisk(kBlockSize, kFvmPartitionSize / kBlockSize);
-  fs_management::FvmInitWithSize(ramdisk_block_interface(), kFvmPartitionSize, kSliceSize);
-
-  auto resp2 = fidl::WireCall(ramdisk_controller_interface())->Bind(kFvmDriverLib);
-  ASSERT_OK(resp2.status());
-  ASSERT_TRUE(resp2->is_ok());
-  ASSERT_OK(device_watcher::RecursiveWaitForFile(devfs_root_fd().get(), fvm_path().c_str()));
 }
 
 TEST_F(FvmTest, TestPreventDuplicateDeviceNames) {

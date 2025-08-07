@@ -156,6 +156,7 @@ fuchsia_unittest_package("fvm-tests") {
 test("fvm-integration") {
   output_name = "fvm-integration-test"
   sources = [
+    "fvm_driver_integration_test.cc",
     "fvm_integration_test.cc",
     "resize_integration_test.cc",
   ]
