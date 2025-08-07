@@ -45,6 +45,7 @@ libs = [
   "testing",
   "timeout",
   "trace",
+  "usb_driver_api",
   "usb_fastboot_discovery",
   "version",
   "writer",
