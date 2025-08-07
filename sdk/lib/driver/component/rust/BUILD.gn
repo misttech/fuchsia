@@ -22,6 +22,8 @@ rustc_library("rust") {
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/diagnostics/log/rust",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next_bind",
+    "//src/lib/fidl/rust_next/fidl_next_protocol",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component/config",

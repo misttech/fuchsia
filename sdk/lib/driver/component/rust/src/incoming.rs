@@ -7,10 +7,12 @@ use std::marker::PhantomData;
 use anyhow::{anyhow, Context, Error};
 use cm_types::{IterablePath, RelativePath};
 use fidl::endpoints::{DiscoverableProtocolMarker, ServiceMarker, ServiceProxy};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io::Flags;
+use fidl_next_bind::Service;
 use fuchsia_component::client::{connect_to_service_instance_at_dir_svc, Connect};
-use fuchsia_component::directory::{AsRefDirectory, Directory};
-use fuchsia_component::DEFAULT_SERVICE_INSTANCE;
+use fuchsia_component::directory::{open_directory_async, AsRefDirectory, Directory};
+use fuchsia_component::{DEFAULT_SERVICE_INSTANCE, SVC_DIR};
 use log::error;
 use namespace::{Entry, Namespace};
 use zx::Status;
@@ -78,16 +80,18 @@ pub struct ServiceConnector<'incoming, ServiceProxy> {
     _p: PhantomData<ServiceProxy>,
 }
 
-impl<'a, S: ServiceProxy> ServiceConnector<'a, S>
-where
-    S::Service: ServiceMarker,
-{
+impl<'a, S> ServiceConnector<'a, S> {
     /// Overrides the instance name to connect to when [`Self::connect`] is called.
     pub fn instance(self, instance: &'a str) -> Self {
         let Self { incoming, _p, .. } = self;
         Self { incoming, instance, _p }
     }
+}
 
+impl<'a, S: ServiceProxy> ServiceConnector<'a, S>
+where
+    S::Service: ServiceMarker,
+{
     /// Connects to the service instance's path in the incoming namespace. Logs and returns
     /// a [`Status::CONNECTION_REFUSED`] if the service instance couldn't be opened.
     pub fn connect(self) -> Result<S, Status> {
@@ -101,6 +105,51 @@ where
                 Status::CONNECTION_REFUSED
             },
         )
+    }
+}
+
+/// Used with [`ServiceHandlerAdapter`] as a connector to members of a service instance.
+pub struct ServiceMemberConnector(fio::DirectoryProxy);
+
+impl fidl_next_protocol::ServiceConnector<zx::Channel> for ServiceMemberConnector {
+    type Error = fidl::Error;
+    fn connect_to_member(&self, member: &str, server_end: zx::Channel) -> Result<(), Self::Error> {
+        #[cfg(fuchsia_api_level_at_least = "27")]
+        return self.0.open(
+            member,
+            fio::Flags::PROTOCOL_SERVICE,
+            &fio::Options::default(),
+            server_end,
+        );
+        #[cfg(not(fuchsia_api_level_at_least = "27"))]
+        return self.0.open3(
+            member,
+            fio::Flags::PROTOCOL_SERVICE,
+            &fio::Options::default(),
+            server_end,
+        );
+    }
+}
+
+/// A type alias representing a service instance with members that can be connected to using the
+/// [`fidl_next`] bindings.
+pub type ServiceInstance<S> = fidl_next_bind::ServiceConnector<S, ServiceMemberConnector>;
+
+impl<'a, S: Service<ServiceMemberConnector>> ServiceConnector<'a, ServiceInstance<S>> {
+    /// Connects to the service instance's path in the incoming namespace with the new wire bindings.
+    /// Logs and returns a [`Status::CONNECTION_REFUSED`] if the service instance couldn't be opened.
+    pub fn connect_next(self) -> Result<ServiceInstance<S>, Status> {
+        let service_path = format!("{SVC_DIR}/{}/{}", S::SERVICE_NAME, self.instance);
+        let dir = open_directory_async(self.incoming, &service_path, fio::Rights::empty())
+            .map_err(|e| {
+                error!(
+                    "Failed to connect to aggregated service connector `{}`, instance `{}`: {e}",
+                    S::SERVICE_NAME,
+                    self.instance
+                );
+                Status::CONNECTION_REFUSED
+            })?;
+        Ok(fidl_next_bind::ServiceConnector::from_untyped(ServiceMemberConnector(dir)))
     }
 }
 

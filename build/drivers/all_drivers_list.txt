@@ -19,6 +19,8 @@
 //examples/drivers/transport/driver/v2:parent_bazel_package.bazel_build
 //examples/drivers/transport/zircon/rust/child:driver
 //examples/drivers/transport/zircon/rust/parent:driver
+//examples/drivers/transport/zircon/rust_next/child:driver
+//examples/drivers/transport/zircon/rust_next/parent:driver
 //examples/drivers/transport/zircon/v1:child_driver
 //examples/drivers/transport/zircon/v1:parent_driver
 //examples/drivers/transport/zircon/v2:child_driver

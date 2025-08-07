@@ -10,4 +10,5 @@ fidl("fuchsia.hardware.i2c") {
   sdk_area = "Unknown"
   sources = [ "i2c.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
+  enable_rust_next = true
 }

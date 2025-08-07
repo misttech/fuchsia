@@ -26,6 +26,9 @@ group("hermetic_tests") {
     "zircon/rust:realm-test-pkg",
     "zircon/rust/child:hermetic-test-pkg",
     "zircon/rust/parent:hermetic-test-pkg",
+    "zircon/rust_next:realm-test-pkg",
+    "zircon/rust_next/child:hermetic-test-pkg",
+    "zircon/rust_next/parent:hermetic-test-pkg",
     "zircon/v2/tests:child-driver-hermetic-test-pkg",
   ]
 }
