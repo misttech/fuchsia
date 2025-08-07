@@ -633,8 +633,6 @@ def idk_cc_source_library(
         idk_name = idk_name,
         id = "sdk://" + idk_root_path,
         meta_dest = idk_root_path + "/meta.json",
-        # Note: meta.value/source in the GN template are not needed because the
-        # metadata is generated from the prebuild data.
         type = "cc_source_library",
         category = category,
         stable = stable,

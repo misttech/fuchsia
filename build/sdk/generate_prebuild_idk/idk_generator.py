@@ -339,7 +339,7 @@ class PrebuildMap(object):
 
         Returns a `GetMetaResult` object .
         """
-        value = info["atom_meta"].get("value")
+        value = info.get("meta_contents")
         if value is not None:
             # For reference, the following types are currently handled this way:
             #   "component_manifest"
@@ -987,7 +987,7 @@ class IdkGenerator(object):
                 and not additional_files_read
             )
             if meta_json:
-                meta_path = info["atom_meta"]["dest"]
+                meta_path = info["meta_dest"]
                 self._meta_files[meta_path] = meta_json
 
                 if info["atom_type"] == "collection":

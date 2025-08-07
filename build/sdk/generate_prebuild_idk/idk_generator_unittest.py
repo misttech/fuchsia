@@ -21,7 +21,7 @@ class IdkGeneratorTest(unittest.TestCase):
         "atom_label": "//test_idk:collection",
         "atom_type": "collection",
         "category": "partner",
-        "atom_meta": {"dest": "meta/manifest.json"},
+        "meta_dest": "meta/manifest.json",
         "prebuild_info": {
             "arch": {"host": "x86_64-linux-gnu", "target": ["arm64"]},
             "root": ".",
@@ -33,7 +33,7 @@ class IdkGeneratorTest(unittest.TestCase):
         "atom_label": "//sdk/fidl/fuchsia.simple:fuchsia.simple_fidl_sdk",
         "atom_type": "fidl_library",
         "category": "partner",
-        "atom_meta": {"dest": "fidl/fuchsia.simple/meta.json"},
+        "meta_dest": "fidl/fuchsia.simple/meta.json",
         "idk_name": "fuchsia.simple",
         "prebuild_info": {
             "file_base": "fidl/fuchsia.simple",
@@ -48,7 +48,7 @@ class IdkGeneratorTest(unittest.TestCase):
         "atom_label": "//sdk/lib/simple:simple_cc_sdk",
         "atom_type": "cc_source_library",
         "category": "partner",
-        "atom_meta": {"dest": "pkg/simple_cc_source/meta.json"},
+        "meta_dest": "pkg/simple_cc_source/meta.json",
         "idk_name": "simple_cc_source",
         "prebuild_info": {
             "file_base": "pkg/simple_cc_source",
@@ -65,10 +65,8 @@ class IdkGeneratorTest(unittest.TestCase):
         "atom_label": "//sdk/data/invalid:some_data_sdk",
         "atom_type": "data",
         "category": "partner",
-        "atom_meta": {
-            "dest": "data/some/meta.json",
-            "value": {"name": "some_data", "type": "data"},
-        },
+        "meta_dest": "data/some/meta.json",
+        "meta_contents": {"name": "some_data", "type": "data"},
         "prebuild_info": {},  # No prebuild_info for data atoms.
         "atom_files": [],
         "is_stable": True,
@@ -136,7 +134,7 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/unhandled",
                 "atom_type": "unhandled_type",
                 "category": "partner",
-                "atom_meta": {"dest": "pkg/unhandled/meta.json"},
+                "meta_dest": "pkg/unhandled/meta.json",
                 "prebuild_info": {},
                 "atom_files": [],
                 "is_stable": True,
@@ -159,7 +157,7 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/collection:collection2",
                 "atom_type": "collection",
                 "category": "partner",
-                "atom_meta": {"dest": "meta/manifest2.json"},
+                "meta_dest": "meta/manifest2.json",
                 "prebuild_info": {
                     "arch": {"host": "x86_64-linux-gnu", "target": ["arm64"]},
                     "root": ".",
@@ -184,7 +182,7 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/lib/test:test_cc_sdk",
                 "atom_type": "cc_source_library",
                 "category": "partner",
-                "atom_meta": {"dest": "pkg/test_cc_source/meta.json"},
+                "meta_dest": "pkg/test_cc_source/meta.json",
                 "idk_name": "test_cc_source",
                 "prebuild_info": {
                     "file_base": "pkg/test_cc_source",
@@ -212,9 +210,10 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/partner/prebuilt_category_atom",
                 "atom_type": "data",
                 "category": "prebuilt",
-                "atom_meta": {
-                    "dest": "partner/prebuilt_category_atom/meta.json",
-                    "value": {"name": "prebuilt_category_atom", "type": "data"},
+                "meta_dest": "partner/prebuilt_category_atom/meta.json",
+                "meta_contents": {
+                    "name": "prebuilt_category_atom",
+                    "type": "data",
                 },
                 "prebuild_info": {},
                 "atom_files": [
@@ -230,10 +229,8 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/partner/partner_atom",
                 "atom_type": "data",
                 "category": "partner",
-                "atom_meta": {
-                    "dest": "partner/partner_atom/meta.json",
-                    "value": {"name": "partner_atom", "type": "data"},
-                },
+                "meta_dest": "partner/partner_atom/meta.json",
+                "meta_contents": {"name": "partner_atom", "type": "data"},
                 "prebuild_info": {},
                 "atom_files": [
                     {
@@ -293,7 +290,7 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/packages:test_package",
                 "atom_type": "package",
                 "category": "partner",
-                "atom_meta": {"dest": "packages/test_package/meta.json"},
+                "meta_dest": "packages/test_package/meta.json",
                 "idk_name": "a_package",
                 "prebuild_info": {
                     "package_manifest": str(
@@ -468,7 +465,7 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/lib/test:test_cc_sdk",
                 "atom_type": "cc_source_library",
                 "category": "partner",
-                "atom_meta": {"dest": "pkg/test_cc_source/meta.json"},
+                "meta_dest": "pkg/test_cc_source/meta.json",
                 "idk_name": "test_cc_source",
                 "prebuild_info": {
                     "file_base": "pkg/test_cc_source",
@@ -506,7 +503,7 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/lib/test:test_cc_sdk",
                 "atom_type": "cc_source_library",
                 "category": "internal",
-                "atom_meta": {"dest": "pkg/test_cc_source/meta.json"},
+                "meta_dest": "pkg/test_cc_source/meta.json",
                 "idk_name": "test_cc_source",
                 "prebuild_info": {
                     "file_base": "pkg/test_cc_source",
@@ -545,7 +542,7 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/lib/test:test_cc_sdk",
                 "atom_type": "cc_source_library",
                 "category": "partner",
-                "atom_meta": {"dest": "pkg/test_cc_source/meta.json"},
+                "meta_dest": "pkg/test_cc_source/meta.json",
                 "idk_name": "test_cc_source",
                 "prebuild_info": {
                     "file_base": "pkg/test_cc_source",
@@ -587,7 +584,7 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/lib/test:test_cc_sdk",
                 "atom_type": "cc_source_library",
                 "category": "host_tool",
-                "atom_meta": {"dest": "pkg/test_cc_source/meta.json"},
+                "meta_dest": "pkg/test_cc_source/meta.json",
                 "idk_name": "test_cc_source",
                 "prebuild_info": {
                     "file_base": "pkg/test_cc_source",
@@ -613,7 +610,7 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/bind/fuchsia.test:fuchsia.test_bind_sdk",
                 "atom_type": "bind_library",
                 "category": "partner",
-                "atom_meta": {"dest": "bind/fuchsia.test/meta.json"},
+                "meta_dest": "bind/fuchsia.test/meta.json",
                 "idk_name": "fuchsia.test",
                 "prebuild_info": {
                     "file_base": "bind/fuchsia.test",
@@ -642,7 +639,7 @@ class IdkGeneratorTest(unittest.TestCase):
                 "atom_label": "//sdk/bind/fuchsia.test:fuchsia.test_bind_sdk",
                 "atom_type": "bind_library",
                 "category": "partner",
-                "atom_meta": {"dest": "bind/fuchsia.test/meta.json"},
+                "meta_dest": "bind/fuchsia.test/meta.json",
                 "idk_name": "fuchsia.test",
                 "prebuild_info": {
                     "file_base": "bind/fuchsia.test",
@@ -670,7 +667,7 @@ sdk://pkg/test_bind must specify an API area. Valid areas: \\['Bluetooth', 'Comp
                 "atom_label": "//sdk/lib/test:test_cc_sdk",
                 "atom_type": "cc_prebuilt_library",
                 "category": "partner",
-                "atom_meta": {"dest": "pkg/test_cc/meta.json"},
+                "meta_dest": "pkg/test_cc/meta.json",
                 "idk_name": "test_cc",
                 "prebuild_info": {
                     "file_base": "pkg/test_cc",
@@ -701,7 +698,7 @@ sdk://pkg/test_bind must specify an API area. Valid areas: \\['Bluetooth', 'Comp
                 "atom_label": "//sdk/lib/test:test_cc_sdk",
                 "atom_type": "cc_source_library",
                 "category": "partner",
-                "atom_meta": {"dest": "pkg/test_cc/meta.json"},
+                "meta_dest": "pkg/test_cc/meta.json",
                 "idk_name": "test_cc",
                 "prebuild_info": {
                     "file_base": "pkg/test_cc",
@@ -730,7 +727,7 @@ sdk://pkg/test_bind must specify an API area. Valid areas: \\['Bluetooth', 'Comp
                 "atom_label": "//sdk/fidl/fuchsia.test:fuchsia.test_fidl_sdk",
                 "atom_type": "fidl_library",
                 "category": "partner",
-                "atom_meta": {"dest": "fidl/fuchsia.test/meta.json"},
+                "meta_dest": "fidl/fuchsia.test/meta.json",
                 "idk_name": "fuchsia.test",
                 "prebuild_info": {
                     "file_base": "fidl/fuchsia.test",
@@ -764,7 +761,7 @@ sdk://pkg/test_bind must specify an API area. Valid areas: \\['Bluetooth', 'Comp
                 "atom_label": "//sdk/fidl/fuchsia.test:fuchsia.test_fidl_sdk",
                 "atom_type": "fidl_library",
                 "category": "partner",
-                "atom_meta": {"dest": "fidl/fuchsia.test/meta.json"},
+                "meta_dest": "fidl/fuchsia.test/meta.json",
                 "idk_name": "fuchsia.test",
                 "prebuild_info": {
                     "file_base": "fidl/fuchsia.test",
@@ -792,10 +789,8 @@ sdk://pkg/fuchsia.simple must specify an API area. Valid areas: \\['Bluetooth', 
                 "atom_label": "//sdk/partner/no_prebuild",
                 "atom_type": "data",
                 "category": "partner",
-                "atom_meta": {
-                    "dest": "partner/no_prebuild/meta.json",
-                    "value": {"name": "no_prebuild", "type": "data"},
-                },
+                "meta_dest": "partner/no_prebuild/meta.json",
+                "meta_contents": {"name": "no_prebuild", "type": "data"},
                 "atom_files": [],
                 "is_stable": True,
             },
@@ -816,10 +811,8 @@ sdk://pkg/fuchsia.simple must specify an API area. Valid areas: \\['Bluetooth', 
                 "atom_label": "//sdk/data:data_with_deps_sdk",
                 "atom_type": "data",
                 "category": "partner",
-                "atom_meta": {
-                    "dest": "data/data_with_deps/meta.json",
-                    "value": {"name": "data_with_deps", "type": "data"},
-                },
+                "meta_dest": "data/data_with_deps/meta.json",
+                "meta_contents": {"name": "data_with_deps", "type": "data"},
                 # Data atoms shouldn't have deps
                 "atom_deps": [self._SIMPLE_FIDL_LIBRARY_INFO["atom_label"]],
                 "atom_files": [],

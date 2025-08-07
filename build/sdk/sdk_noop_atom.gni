@@ -49,9 +49,7 @@ template("sdk_noop_atom") {
     atom_id = _atom_id
     atom_label = get_label_info(":${target_name}", "label_no_toolchain")
     atom_type = "none"
-    atom_meta = {
-      dest = ""
-    }
+    meta_dest = ""
     atom_files = []
     is_stable = false
     category = invoker.category

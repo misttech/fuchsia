@@ -381,8 +381,9 @@ template("sdk_atom") {
     atom_id = invoker.id
     atom_label = get_label_info(":${target_name}", "label_no_toolchain")
     atom_type = type
-    atom_meta = {
-      forward_variables_from(meta, "*", [ "source_prebuild_info" ])
+    meta_dest = meta.dest
+    if (defined(meta.value)) {
+      meta_contents = meta.value
     }
     if (defined(invoker.idk_name)) {
       idk_name = invoker.idk_name

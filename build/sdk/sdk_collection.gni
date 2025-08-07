@@ -111,9 +111,7 @@ template("sdk_collection") {
           }
           atom_label = get_label_info(":${target_name}", "label_no_toolchain")
           atom_type = "collection"
-          atom_meta = {
-            dest = files.collection_manifest_relative_path
-          }
+          meta_dest = files.collection_manifest_relative_path
           prebuild_info = {
             arch = {
               host = host_triple
