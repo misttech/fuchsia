@@ -370,6 +370,8 @@ pub enum DynamicCapabilityError {
         #[source]
         err: cm_fidl_validator::error::ErrorList,
     },
+    #[error("dynamic offers are not allowed for {typename}")]
+    UnsupportedType { typename: &'static str },
     #[error("dynamic offer would create a cycle:\n\t{err}")]
     Cycle {
         #[source]

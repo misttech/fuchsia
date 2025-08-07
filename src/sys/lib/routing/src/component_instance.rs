@@ -147,7 +147,8 @@ pub trait ResolvedInstanceInterface: Send + Sync {
     /// Current view of this component's `exposes` declarations.
     fn exposes(&self) -> Box<[ExposeDecl]>;
 
-    /// Current view of this component's `offers` declarations.
+    /// Current view of this component's `offers` declarations. Does not include any dynamic
+    /// offers between children of this component.
     fn offers(&self) -> Box<[OfferDecl]>;
 
     /// Current view of this component's `capabilities` declarations.

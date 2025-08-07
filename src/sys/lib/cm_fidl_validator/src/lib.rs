@@ -10,6 +10,7 @@ pub use crate::util::check_url;
 
 use crate::error::*;
 use crate::util::*;
+use cm_graph::DependencyNode;
 use directed_graph::DirectedGraph;
 use fidl_fuchsia_component_decl as fdecl;
 use itertools::Itertools;
@@ -161,7 +162,7 @@ enum RefKey<'a> {
 /// All checks are local to this Component.
 pub fn validate(decl: &fdecl::Component) -> Result<(), ErrorList> {
     let ctx = ValidationContext::default();
-    ctx.validate(decl, &vec![]).map_err(|errs| ErrorList::new(errs))
+    ctx.validate(decl, &HashSet::new(), &vec![]).map_err(|errs| ErrorList::new(errs))
 }
 
 /// Validates a list of namespace or builtin Capabilities.
@@ -254,12 +255,14 @@ fn validate_child(
 ///    offers don't introduce any cycles.
 pub fn validate_dynamic_offers<'a>(
     dynamic_children: Vec<(&'a str, &'a str)>,
-    offers: &'a Vec<fdecl::Offer>,
+    existing_dynamic_offers: &HashSet<(DependencyNode, DependencyNode)>,
+    new_dynamic_offers: &'a Vec<fdecl::Offer>,
     decl: &'a fdecl::Component,
 ) -> Result<(), ErrorList> {
     let mut ctx = ValidationContext::default();
     ctx.dynamic_children = dynamic_children;
-    ctx.validate(decl, offers).map_err(|errs| ErrorList::new(errs))
+    ctx.validate(decl, existing_dynamic_offers, new_dynamic_offers)
+        .map_err(|errs| ErrorList::new(errs))
 }
 
 fn check_offer_name(
@@ -295,7 +298,7 @@ struct ValidationContext<'a> {
 
     all_environment_names: HashSet<&'a str>,
     dynamic_children: Vec<(&'a str, &'a str)>,
-    strong_dependencies: DirectedGraph<cm_graph::DependencyNode>,
+    strong_dependencies: DirectedGraph<DependencyNode>,
     target_ids: IdMap<'a>,
     errors: Vec<Error>,
 }
@@ -323,7 +326,8 @@ impl<'a> ValidationContext<'a> {
     fn validate(
         mut self,
         decl: &'a fdecl::Component,
-        dynamic_offers: &'a Vec<fdecl::Offer>,
+        existing_dynamic_offers: &HashSet<(DependencyNode, DependencyNode)>,
+        new_dynamic_offers: &'a Vec<fdecl::Offer>,
     ) -> Result<(), Vec<Error>> {
         // Collect all environment names first, so that references to them can be checked.
         if let Some(envs) = &decl.environments {
@@ -390,10 +394,15 @@ impl<'a> ValidationContext<'a> {
             self.validate_offer_group(&offers, OfferType::Static);
         }
 
-        for dynamic_offer in dynamic_offers.iter() {
-            self.validate_offer_decl(&dynamic_offer, OfferType::Dynamic);
+        for dynamic_offer in new_dynamic_offers {
+            self.validate_offer_decl(dynamic_offer, OfferType::Dynamic);
+            cm_graph::add_dependencies_from_offer(
+                &mut self.strong_dependencies,
+                dynamic_offer,
+                &self.dynamic_children,
+            );
         }
-        self.validate_offer_group(&dynamic_offers, OfferType::Dynamic);
+        self.validate_offer_group(new_dynamic_offers, OfferType::Dynamic);
 
         // Validate "environments" after all other declarations are processed.
         if let Some(environment) = decl.environments.as_ref() {
@@ -411,7 +420,7 @@ impl<'a> ValidationContext<'a> {
             &mut self.strong_dependencies,
             &decl,
             &self.dynamic_children,
-            dynamic_offers,
+            existing_dynamic_offers.clone(),
         );
         if let Err(e) = self.strong_dependencies.topological_sort() {
             self.errors.push(Error::dependency_cycle(e.format_cycle()));
@@ -10061,7 +10070,10 @@ mod tests {
 
     #[test]
     fn test_validate_dynamic_offers_empty() {
-        assert_eq!(validate_dynamic_offers(vec![], &vec![], &fdecl::Component::default()), Ok(()));
+        assert_eq!(
+            validate_dynamic_offers(vec![], &HashSet::new(), &vec![], &fdecl::Component::default()),
+            Ok(())
+        );
     }
 
     #[test]
@@ -10069,6 +10081,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                &HashSet::new(),
                 &vec![
                     fdecl::Offer::Protocol(fdecl::OfferProtocol {
                         dependency_type: Some(fdecl::DependencyType::Strong),
@@ -10151,6 +10164,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                &HashSet::new(),
                 &vec![
                     fdecl::Offer::Service(fdecl::OfferService {
                         source: Some(fdecl::Ref::Child(fdecl::ChildRef {
@@ -10229,6 +10243,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                &HashSet::new(),
                 &vec![
                     fdecl::Offer::Service(fdecl::OfferService {
                         source: Some(fdecl::Ref::Child(fdecl::ChildRef {
@@ -10303,6 +10318,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                &HashSet::new(),
                 &vec![
                     fdecl::Offer::Protocol(fdecl::OfferProtocol {
                         dependency_type: Some(fdecl::DependencyType::Strong),
@@ -10368,6 +10384,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                &HashSet::new(),
                 &vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     dependency_type: Some(fdecl::DependencyType::Strong),
                     source: Some(fdecl::Ref::Parent(fdecl::ParentRef)),
@@ -10411,6 +10428,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll")],
+                &HashSet::new(),
                 &vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     source_name: Some("bar".to_string()),
                     target_name: Some("bar".to_string()),
@@ -10463,6 +10481,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll1"), ("dyn", "coll2")],
+                &HashSet::new(),
                 &vec![
                     fdecl::Offer::Service(fdecl::OfferService {
                         source_name: Some("foo".to_string()),
@@ -10514,10 +10533,54 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_dynamic_offers_cycle_collection_to_dynamic_child_between_new_and_existing() {
+        assert_eq!(
+            validate_dynamic_offers(
+                vec![("dyn", "coll1"), ("dyn", "coll2")],
+                &HashSet::from([(
+                    DependencyNode::Child("dyn".into(), Some("coll1".into())),
+                    DependencyNode::Child("dyn".into(), Some("coll2".into())),
+                )]),
+                &vec![fdecl::Offer::Service(fdecl::OfferService {
+                    source_name: Some("foo".to_string()),
+                    target_name: Some("foo".to_string()),
+                    source: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
+                        name: "coll2".into(),
+                    })),
+                    target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                        name: "dyn".into(),
+                        collection: Some("coll1".into()),
+                    })),
+                    ..Default::default()
+                }),],
+                &fdecl::Component {
+                    collections: Some(vec![
+                        fdecl::Collection {
+                            name: Some("coll1".into()),
+                            durability: Some(fdecl::Durability::Transient),
+                            ..Default::default()
+                        },
+                        fdecl::Collection {
+                            name: Some("coll2".into()),
+                            durability: Some(fdecl::Durability::Transient),
+                            ..Default::default()
+                        },
+                    ]),
+                    ..Default::default()
+                }
+            ),
+            Err(ErrorList::new(vec![Error::dependency_cycle(
+                "{{child coll1:dyn -> child coll2:dyn -> collection coll2 -> child coll1:dyn}}"
+            )]))
+        );
+    }
+
+    #[test]
     fn test_validate_dynamic_offers_cycle_collection_to_collection() {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll1"), ("dyn", "coll2")],
+                &HashSet::new(),
                 &vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     source_name: Some("bar".to_string()),
                     target_name: Some("bar".to_string()),
@@ -10600,6 +10663,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                &HashSet::new(),
                 &vec![
                     fdecl::Offer::Protocol(fdecl::OfferProtocol::default()),
                     fdecl::Offer::Service(fdecl::OfferService::default()),

@@ -1555,6 +1555,7 @@ pub mod tests {
     };
     use ::routing::bedrock::structured_dict::ComponentInput;
     use assert_matches::assert_matches;
+    use cm_graph::DependencyNode;
     use cm_rust::{
         Availability, ChildRef, DependencyType, ExposeSource, OfferDecl, OfferProtocolDecl,
         OfferSource, OfferTarget,
@@ -1885,21 +1886,23 @@ pub mod tests {
         .expect("failed to create child");
         test.create_dynamic_child("coll_2", "a").await;
 
-        let example_dynamic_offer = OfferDecl::Protocol(OfferProtocolDecl {
-            source: OfferSource::Child(ChildRef {
+        let offer_dep = (
+            DependencyNode::Child("a".into(), Some("coll_1".into())),
+            DependencyNode::Child("b".into(), Some("coll_1".into())),
+        );
+
+        OfferBuilder::service()
+            .name("n0")
+            .source(OfferSource::Child(ChildRef {
                 name: "a".parse().unwrap(),
                 collection: Some("coll_1".parse().unwrap()),
-            }),
-            target: OfferTarget::Child(ChildRef {
+            }))
+            .target(OfferTarget::Child(ChildRef {
                 name: "b".parse().unwrap(),
                 collection: Some("coll_1".parse().unwrap()),
-            }),
-            source_dictionary: Default::default(),
-            source_name: "dyn_offer_source_name".parse().unwrap(),
-            target_name: "dyn_offer_target_name".parse().unwrap(),
-            dependency_type: DependencyType::Strong,
-            availability: Availability::Required,
-        });
+            }))
+            .availability(Availability::Transitional)
+            .build();
 
         let root_component = test.look_up(Moniker::root()).await;
 
@@ -1921,10 +1924,8 @@ pub mod tests {
                 ],
                 &*children
             );
-            pretty_assertions::assert_eq!(
-                &[example_offer.clone(), example_dynamic_offer.clone()],
-                &*root_resolved.offers()
-            )
+            pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
+            pretty_assertions::assert_eq!(root_resolved.dynamic_offers, HashSet::from([offer_dep]));
         }
 
         // Destroy `coll_1:b`. It should not be listed. The dynamic offer should be deleted.
@@ -1951,7 +1952,8 @@ pub mod tests {
                 &*children
             );
 
-            pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers())
+            pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
+            pretty_assertions::assert_eq!(root_resolved.dynamic_offers, HashSet::from([]));
         }
 
         // Recreate `coll_1:b`, this time with a dynamic offer from `a` in the other
@@ -1976,21 +1978,10 @@ pub mod tests {
         .await
         .expect("failed to create child");
 
-        let example_dynamic_offer2 = OfferDecl::Protocol(OfferProtocolDecl {
-            source: OfferSource::Child(ChildRef {
-                name: "a".parse().unwrap(),
-                collection: Some("coll_2".parse().unwrap()),
-            }),
-            target: OfferTarget::Child(ChildRef {
-                name: "b".parse().unwrap(),
-                collection: Some("coll_1".parse().unwrap()),
-            }),
-            source_name: "dyn_offer2_source_name".parse().unwrap(),
-            source_dictionary: Default::default(),
-            target_name: "dyn_offer2_target_name".parse().unwrap(),
-            dependency_type: DependencyType::Strong,
-            availability: Availability::Required,
-        });
+        let offer_dep2 = (
+            DependencyNode::Child("a".into(), Some("coll_2".into())),
+            DependencyNode::Child("b".into(), Some("coll_1".into())),
+        );
 
         {
             let root_resolved = root_component.lock_resolved_state().await.expect("resolving");
@@ -2011,10 +2002,11 @@ pub mod tests {
                 &*children
             );
 
+            pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
             pretty_assertions::assert_eq!(
-                &[example_offer.clone(), example_dynamic_offer2.clone()],
-                &*root_resolved.offers()
-            )
+                root_resolved.dynamic_offers,
+                HashSet::from([offer_dep2])
+            );
         }
     }
 
@@ -2434,6 +2426,43 @@ pub mod tests {
                     availability: Availability::Optional,
                 })
             }
+        );
+
+        assert_matches!(
+            validate_and_convert(vec![
+                fdecl::Offer::Storage(fdecl::OfferStorage {
+                    source: Some(fdecl::Ref::Self_(fdecl::SelfRef { })),
+                    source_name: Some("data".into()),
+                    target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                        name: "foo".parse().unwrap(),
+                        collection: Some("col".parse().unwrap()),
+                    })),
+                    target_name: Some("data".into()),
+                    ..Default::default()
+                })
+            ])
+            .await,
+            Err(AddChildError::DynamicCapabilityError {
+                err: DynamicCapabilityError::UnsupportedType { typename },
+            }) if typename == "storage"
+        );
+        assert_matches!(
+            validate_and_convert(vec![
+                fdecl::Offer::EventStream(fdecl::OfferEventStream {
+                    source: Some(fdecl::Ref::Parent(fdecl::ParentRef { })),
+                    source_name: Some("started".into()),
+                    target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                        name: "foo".parse().unwrap(),
+                        collection: Some("col".parse().unwrap()),
+                    })),
+                    target_name: Some("started".into()),
+                    ..Default::default()
+                })
+            ])
+            .await,
+            Err(AddChildError::DynamicCapabilityError {
+                err: DynamicCapabilityError::UnsupportedType { typename },
+            }) if typename == "event_stream"
         );
     }
 

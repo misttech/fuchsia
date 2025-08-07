@@ -42,6 +42,7 @@ use async_trait::async_trait;
 use async_utils::async_once::Once;
 use clonable_error::ClonableError;
 use cm_fidl_validator::error::{DeclType, Error as ValidatorError};
+use cm_graph::DependencyNode;
 use cm_rust::{
     Availability, CapabilityDecl, CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl,
     DeliveryType, FidlIntoNative, NativeIntoFidl, OfferDeclCommon, UseDecl,
@@ -66,8 +67,8 @@ use sandbox::{
     Router, RouterResponse, WeakInstanceToken,
 };
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::sync::Arc;
-use std::{fmt, mem};
 use vfs::directory::entry::{DirectoryEntry, OpenRequest, SubNode};
 use vfs::directory::immutable::simple as pfs;
 use vfs::execution_scope::ExecutionScope;
@@ -294,12 +295,9 @@ pub struct ResolvedInstanceState {
     /// Created on demand.
     exposed_dir: Once<Arc<dyn DirectoryEntry>>,
 
-    /// Dynamic offers targeting this component's dynamic children.
-    ///
-    /// Invariant: the `target` field of all offers must refer to a live dynamic
-    /// child (i.e., a member of `live_children`), and if the `source` field
-    /// refers to a dynamic child, it must also be live.
-    pub dynamic_offers: Box<[cm_rust::OfferDecl]>,
+    /// Dynamic offers targeting this component's dynamic children. For efficiency, this contains
+    /// just the edges needed to perform dependency calculations.
+    pub dynamic_offers: HashSet<(DependencyNode, DependencyNode)>,
 
     /// The as-resolved location of the component: either an absolute component
     /// URL, or (with a package context) a relative path URL.
@@ -418,7 +416,7 @@ impl ResolvedInstanceState {
             namespace_dir: Once::default(),
             exposed_dict: Once::default(),
             exposed_dir: Once::default(),
-            dynamic_offers: Box::from([]),
+            dynamic_offers: Default::default(),
             address,
             sandbox: Default::default(),
             program_escrow,
@@ -900,24 +898,27 @@ impl ResolvedInstanceState {
             return;
         }
 
-        // Delete any dynamic offers whose `source` or `target` matches the
-        // component we're deleting.
-        let dynamic_offers = mem::replace(&mut self.dynamic_offers, Box::from([]));
-        self.dynamic_offers = IntoIterator::into_iter(dynamic_offers)
-            .filter(|offer| {
-                let source_matches = offer.source()
-                    == &cm_rust::OfferSource::Child(cm_rust::ChildRef {
-                        name: moniker.name().into(),
-                        collection: moniker.collection().map(|c| c.into()),
-                    });
-                let target_matches = offer.target()
-                    == &cm_rust::OfferTarget::Child(cm_rust::ChildRef {
-                        name: moniker.name().into(),
-                        collection: moniker.collection().map(|c| c.into()),
-                    });
-                !source_matches && !target_matches
-            })
-            .collect();
+        #[must_use]
+        fn matches(o: &DependencyNode, moniker: &BorrowedChildName) -> bool {
+            match o {
+                DependencyNode::Child(name, coll) => {
+                    name == moniker.name().as_ref()
+                        && coll.as_ref().map(|s| s as &str)
+                            == moniker.collection().map(|s| s.as_ref())
+                }
+                DependencyNode::Collection(name) => match moniker.collection() {
+                    Some(n) => name == n.as_ref(),
+                    None => false,
+                },
+                DependencyNode::Capability(_)
+                | DependencyNode::Self_
+                | DependencyNode::Environment(_) => false,
+            }
+        }
+
+        // Delete any dynamic offers whose source or target matches the component we're deleting.
+        self.dynamic_offers
+            .retain(|offer| !matches(&offer.0, moniker) && !matches(&offer.1, moniker))
     }
 
     /// Creates a set of Environments instantiated from their EnvironmentDecls.
@@ -1003,7 +1004,7 @@ impl ResolvedInstanceState {
             (dynamic_offers.is_none()) || collection.is_some(),
             "setting numbered handles or dynamic offers for static children",
         );
-        let mut dynamic_offers =
+        let dynamic_offers =
             self.validate_and_convert_dynamic_component(dynamic_offers, child, collection)?;
 
         let child_name =
@@ -1058,30 +1059,44 @@ impl ResolvedInstanceState {
         .await;
         self.children.insert(child_name, child.clone());
 
-        let new_dynamic_offers = mem::replace(&mut self.dynamic_offers, Box::from([]));
-        let mut new_dynamic_offers: Vec<_> = new_dynamic_offers.into();
-        new_dynamic_offers.append(&mut dynamic_offers);
-        self.dynamic_offers = new_dynamic_offers.into();
+        self.dynamic_offers.extend(
+            dynamic_offers.into_iter().map(NativeIntoFidl::native_into_fidl).filter_map(|o| {
+                let (a, b) = cm_graph::get_dependency_from_offer(&o);
+                let a = a?;
+                let b = b?;
+                Some((a, b))
+            }),
+        );
         Ok(child)
     }
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401254441)
     fn add_target_dynamic_offers(
-        &self,
         mut dynamic_offers: Vec<fdecl::Offer>,
         child: &ChildDecl,
         collection: Option<&CollectionDecl>,
     ) -> Result<Vec<fdecl::Offer>, DynamicCapabilityError> {
-        for offer in dynamic_offers.iter_mut() {
+        for offer in &mut dynamic_offers {
             match offer {
+                // TODO(https://fxbug.dev/436869061): We can support this once storage uses bedrock
+                // routing
+                fdecl::Offer::Storage(_) => {
+                    return Err(DynamicCapabilityError::UnsupportedType { typename: "storage" });
+                }
+                // TODO(https://fxbug.dev/398830871): We can support this once event streams use
+                // bedrock routing
+                fdecl::Offer::EventStream(_) => {
+                    return Err(DynamicCapabilityError::UnsupportedType {
+                        typename: "event_stream",
+                    });
+                }
                 fdecl::Offer::Service(fdecl::OfferService { target, .. })
                 | fdecl::Offer::Protocol(fdecl::OfferProtocol { target, .. })
                 | fdecl::Offer::Directory(fdecl::OfferDirectory { target, .. })
-                | fdecl::Offer::Storage(fdecl::OfferStorage { target, .. })
                 | fdecl::Offer::Runner(fdecl::OfferRunner { target, .. })
                 | fdecl::Offer::Resolver(fdecl::OfferResolver { target, .. })
                 | fdecl::Offer::Config(fdecl::OfferConfiguration { target, .. })
-                | fdecl::Offer::EventStream(fdecl::OfferEventStream { target, .. }) => {
+                | fdecl::Offer::Dictionary(fdecl::OfferDictionary { target, .. }) => {
                     if target.is_some() {
                         return Err(DynamicCapabilityError::Invalid {
                             err: cm_fidl_validator::error::ErrorList {
@@ -1093,7 +1108,7 @@ impl ResolvedInstanceState {
                         });
                     }
                 }
-                _ => {
+                fdecl::OfferUnknown!() => {
                     return Err(DynamicCapabilityError::UnknownOfferType);
                 }
             }
@@ -1110,18 +1125,13 @@ impl ResolvedInstanceState {
     fn validate_dynamic_component(
         &self,
         all_dynamic_children: Vec<(&str, &str)>,
-        dynamic_offers: Vec<fdecl::Offer>,
+        new_dynamic_offers: Vec<fdecl::Offer>,
     ) -> Result<(), AddChildError> {
-        // Combine all our dynamic offers.
-        let mut all_dynamic_offers: Vec<_> = IntoIterator::into_iter(self.dynamic_offers.clone())
-            .map(NativeIntoFidl::native_into_fidl)
-            .collect();
-        all_dynamic_offers.append(&mut dynamic_offers.clone());
-
         // Validate!
         cm_fidl_validator::validate_dynamic_offers(
             all_dynamic_children,
-            &all_dynamic_offers,
+            &self.dynamic_offers,
+            &new_dynamic_offers,
             &self.resolved_component.decl.clone().native_into_fidl(),
         )
         .map_err(|err| {
@@ -1135,7 +1145,7 @@ impl ResolvedInstanceState {
         // Manifest validation is not informed of the contents of collections, and is thus unable
         // to confirm the source exists if it's in a collection. Let's check that here.
         let dynamic_offers: Vec<cm_rust::OfferDecl> =
-            dynamic_offers.into_iter().map(FidlIntoNative::fidl_into_native).collect();
+            new_dynamic_offers.into_iter().map(FidlIntoNative::fidl_into_native).collect();
         for offer in &dynamic_offers {
             if !self.offer_source_exists(offer.source()) {
                 return Err(DynamicCapabilityError::SourceNotFound { offer: offer.clone() }.into());
@@ -1153,7 +1163,7 @@ impl ResolvedInstanceState {
     ) -> Result<Vec<cm_rust::OfferDecl>, AddChildError> {
         let dynamic_offers = dynamic_offers.unwrap_or_default();
 
-        let dynamic_offers = self.add_target_dynamic_offers(dynamic_offers, child, collection)?;
+        let dynamic_offers = Self::add_target_dynamic_offers(dynamic_offers, child, collection)?;
         if !dynamic_offers.is_empty() {
             let mut all_dynamic_children: Vec<_> = self
                 .children()
@@ -1235,13 +1245,7 @@ impl ResolvedInstanceInterface for ResolvedInstanceState {
     }
 
     fn offers(&self) -> Box<[cm_rust::OfferDecl]> {
-        self.resolved_component
-            .decl
-            .offers
-            .iter()
-            .chain(self.dynamic_offers.iter())
-            .cloned()
-            .collect()
+        self.resolved_component.decl.offers.clone()
     }
 
     fn capabilities(&self) -> Box<[cm_rust::CapabilityDecl]> {

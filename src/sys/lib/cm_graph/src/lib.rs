@@ -69,7 +69,7 @@ fn ref_to_dependency_node(ref_: Option<&fdecl::Ref>) -> Option<DependencyNode> {
 }
 
 // Generates the edges of the graph that are from a components `uses`.
-fn get_dependencies_from_uses(
+fn add_dependencies_from_uses(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
     dynamic_children: &Vec<(&str, &str)>,
@@ -151,7 +151,7 @@ fn get_dependencies_from_uses(
     }
 }
 
-fn get_dependencies_from_capabilities(
+fn add_dependencies_from_capabilities(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
 ) {
@@ -187,7 +187,7 @@ fn get_dependencies_from_capabilities(
     }
 }
 
-fn get_dependencies_from_environments(
+fn add_dependencies_from_environments(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
 ) {
@@ -224,7 +224,7 @@ fn get_dependencies_from_environments(
     }
 }
 
-fn get_dependencies_from_children(
+fn add_dependencies_from_children(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
 ) {
@@ -241,7 +241,7 @@ fn get_dependencies_from_children(
     }
 }
 
-fn get_dependencies_from_collections(
+fn add_dependencies_from_collections(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
     dynamic_children: &Vec<(&str, &str)>,
@@ -356,151 +356,152 @@ fn add_offer_edges(
     }
 }
 
-// Populates a dependency graph of a component's `offers`.
-fn get_dependencies_from_offers(
+// Populates a dependency graph of a component's `offers` (not including dynamic offers)
+fn add_dependencies_from_offers(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
     dynamic_children: &Vec<(&str, &str)>,
-    dynamic_offers: &Vec<fdecl::Offer>,
 ) {
-    let mut all_offers: Vec<&fdecl::Offer> = vec![];
-
-    for dynamic_offer in dynamic_offers.iter() {
-        all_offers.push(dynamic_offer);
+    for offer in decl.offers.as_ref().map(|o| &*o as &[fdecl::Offer]).unwrap_or(&[]) {
+        add_dependencies_from_offer(strong_dependencies, offer, dynamic_children);
     }
+}
 
-    if let Some(offers) = decl.offers.as_ref() {
-        for offer in offers.iter() {
-            all_offers.push(offer);
+pub fn add_dependencies_from_offer(
+    strong_dependencies: &mut DirectedGraph<DependencyNode>,
+    offer: &fdecl::Offer,
+    dynamic_children: &Vec<(&str, &str)>,
+) {
+    let (source_node, target_node) = get_dependency_from_offer(offer);
+    add_offer_edges(source_node, target_node, strong_dependencies, dynamic_children);
+}
+
+pub fn get_dependency_from_offer(
+    offer: &fdecl::Offer,
+) -> (Option<DependencyNode>, Option<DependencyNode>) {
+    let (source_node, target_node) = match offer {
+        fdecl::Offer::Protocol(o) => {
+            let source_node = find_offer_node(
+                offer,
+                o.source.as_ref(),
+                &o.source_name,
+                get_source_dictionary!(o),
+            );
+
+            if let Some(fdecl::DependencyType::Strong) = o.dependency_type.as_ref() {
+                let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
+
+                (source_node, target_node)
+            } else {
+                return (None, None);
+            }
         }
-    }
+        #[cfg(fuchsia_api_level_at_least = "25")]
+        fdecl::Offer::Dictionary(o) => {
+            let source_node = find_offer_node(
+                offer,
+                o.source.as_ref(),
+                &o.source_name,
+                get_source_dictionary!(o),
+            );
 
-    for offer in all_offers {
-        let (source_node, target_node) = match offer {
-            fdecl::Offer::Protocol(o) => {
-                let source_node = find_offer_node(
-                    offer,
-                    o.source.as_ref(),
-                    &o.source_name,
-                    get_source_dictionary!(o),
-                );
+            if let Some(fdecl::DependencyType::Strong) = o.dependency_type.as_ref() {
+                let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
 
-                if let Some(fdecl::DependencyType::Strong) = o.dependency_type.as_ref() {
-                    let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
-
-                    (source_node, target_node)
-                } else {
-                    continue;
-                }
+                (source_node, target_node)
+            } else {
+                return (None, None);
             }
-            #[cfg(fuchsia_api_level_at_least = "25")]
-            fdecl::Offer::Dictionary(o) => {
-                let source_node = find_offer_node(
-                    offer,
-                    o.source.as_ref(),
-                    &o.source_name,
-                    get_source_dictionary!(o),
-                );
+        }
+        fdecl::Offer::Directory(o) => {
+            let source_node = find_offer_node(
+                offer,
+                o.source.as_ref(),
+                &o.source_name,
+                get_source_dictionary!(o),
+            );
+            if let Some(fdecl::DependencyType::Strong) = o.dependency_type.as_ref() {
+                let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
 
-                if let Some(fdecl::DependencyType::Strong) = o.dependency_type.as_ref() {
-                    let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
-
-                    (source_node, target_node)
-                } else {
-                    continue;
-                }
+                (source_node, target_node)
+            } else {
+                return (None, None);
             }
-            fdecl::Offer::Directory(o) => {
-                let source_node = find_offer_node(
-                    offer,
-                    o.source.as_ref(),
-                    &o.source_name,
-                    get_source_dictionary!(o),
-                );
-                if let Some(fdecl::DependencyType::Strong) = o.dependency_type.as_ref() {
-                    let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
+        }
+        fdecl::Offer::Service(o) => {
+            let source_node = find_offer_node(
+                offer,
+                o.source.as_ref(),
+                &o.source_name,
+                get_source_dictionary!(o),
+            );
 
-                    (source_node, target_node)
-                } else {
-                    continue;
-                }
-            }
-            fdecl::Offer::Service(o) => {
-                let source_node = find_offer_node(
-                    offer,
-                    o.source.as_ref(),
-                    &o.source_name,
-                    get_source_dictionary!(o),
-                );
-
-                #[cfg(fuchsia_api_level_at_least = "HEAD")]
-                {
-                    if &fdecl::DependencyType::Strong
-                        == o.dependency_type.as_ref().unwrap_or(&fdecl::DependencyType::Strong)
-                    {
-                        let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
-
-                        (source_node, target_node)
-                    } else {
-                        continue;
-                    }
-                }
-
-                #[cfg(fuchsia_api_level_less_than = "HEAD")]
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            {
+                if &fdecl::DependencyType::Strong
+                    == o.dependency_type.as_ref().unwrap_or(&fdecl::DependencyType::Strong)
                 {
                     let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
 
                     (source_node, target_node)
+                } else {
+                    return (None, None);
                 }
             }
-            fdecl::Offer::Storage(o) => {
-                let source_node = find_offer_node(offer, o.source.as_ref(), &o.source_name, None);
 
+            #[cfg(fuchsia_api_level_less_than = "HEAD")]
+            {
                 let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
 
                 (source_node, target_node)
             }
-            fdecl::Offer::Runner(o) => {
-                let source_node = find_offer_node(
-                    offer,
-                    o.source.as_ref(),
-                    &o.source_name,
-                    get_source_dictionary!(o),
-                );
+        }
+        fdecl::Offer::Storage(o) => {
+            let source_node = find_offer_node(offer, o.source.as_ref(), &o.source_name, None);
 
-                let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
+            let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
 
-                (source_node, target_node)
-            }
-            fdecl::Offer::Resolver(o) => {
-                let source_node = find_offer_node(
-                    offer,
-                    o.source.as_ref(),
-                    &o.source_name,
-                    get_source_dictionary!(o),
-                );
+            (source_node, target_node)
+        }
+        fdecl::Offer::Runner(o) => {
+            let source_node = find_offer_node(
+                offer,
+                o.source.as_ref(),
+                &o.source_name,
+                get_source_dictionary!(o),
+            );
 
-                let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
+            let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
 
-                (source_node, target_node)
-            }
-            fdecl::Offer::Config(o) => {
-                let source_node = find_offer_node(
-                    offer,
-                    o.source.as_ref(),
-                    &o.source_name,
-                    get_source_dictionary!(o),
-                );
+            (source_node, target_node)
+        }
+        fdecl::Offer::Resolver(o) => {
+            let source_node = find_offer_node(
+                offer,
+                o.source.as_ref(),
+                &o.source_name,
+                get_source_dictionary!(o),
+            );
 
-                let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
+            let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
 
-                (source_node, target_node)
-            }
-            _ => continue,
-        };
+            (source_node, target_node)
+        }
+        fdecl::Offer::Config(o) => {
+            let source_node = find_offer_node(
+                offer,
+                o.source.as_ref(),
+                &o.source_name,
+                get_source_dictionary!(o),
+            );
 
-        add_offer_edges(source_node, target_node, strong_dependencies, dynamic_children);
-    }
+            let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
+
+            (source_node, target_node)
+        }
+        _ => return (None, None),
+    };
+    (source_node, target_node)
 }
 
 // Populates a dependency graph of the disjoint sets of graphs.
@@ -508,12 +509,15 @@ pub fn generate_dependency_graph(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
     dynamic_children: &Vec<(&str, &str)>,
-    dynamic_offers: &Vec<fdecl::Offer>,
+    dynamic_offers: impl IntoIterator<Item = (DependencyNode, DependencyNode)>,
 ) {
-    get_dependencies_from_uses(strong_dependencies, decl, dynamic_children);
-    get_dependencies_from_offers(strong_dependencies, decl, dynamic_children, dynamic_offers);
-    get_dependencies_from_capabilities(strong_dependencies, decl);
-    get_dependencies_from_environments(strong_dependencies, decl);
-    get_dependencies_from_children(strong_dependencies, decl);
-    get_dependencies_from_collections(strong_dependencies, decl, dynamic_children);
+    add_dependencies_from_uses(strong_dependencies, decl, dynamic_children);
+    add_dependencies_from_offers(strong_dependencies, decl, dynamic_children);
+    add_dependencies_from_capabilities(strong_dependencies, decl);
+    add_dependencies_from_environments(strong_dependencies, decl);
+    add_dependencies_from_children(strong_dependencies, decl);
+    add_dependencies_from_collections(strong_dependencies, decl, dynamic_children);
+    for (source, target) in dynamic_offers.into_iter() {
+        add_offer_edges(Some(source), Some(target), strong_dependencies, dynamic_children);
+    }
 }

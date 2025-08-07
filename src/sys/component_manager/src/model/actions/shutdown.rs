@@ -6,7 +6,6 @@ use crate::model::actions::{Action, ActionKey, ActionsManager};
 use crate::model::component::instance::{InstanceState, ResolvedInstanceState};
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use async_trait::async_trait;
-use cm_rust::NativeIntoFidl;
 use errors::{ActionError, ShutdownActionError};
 use futures::prelude::*;
 use log::*;
@@ -101,7 +100,7 @@ struct ShutdownJob {
     /// A map of the live children of the `instance`.
     children: HashMap<ChildName, WeakComponentInstance>,
     /// Dynamic offers from a parent to a collection that this instance may be a part of.
-    dynamic_offers: Vec<fdecl::Offer>,
+    dynamic_offers: Vec<(DependencyNode, DependencyNode)>,
 }
 
 /// ShutdownJob encapsulates the logic and state require to shutdown a component.
@@ -115,16 +114,12 @@ impl ShutdownJob {
         shutdown_type: ShutdownType,
     ) -> ShutdownJob {
         let component_decl: fdecl::Component = state.decl().to_owned().into();
-
-        let dynamic_offers: Vec<fdecl::Offer> =
-            state.dynamic_offers.iter().map(|g| g.clone().native_into_fidl()).collect();
-
+        let dynamic_offers = state.dynamic_offers.iter().cloned().collect();
         let children = state
             .children
             .iter()
             .map(|(k, v)| (k.clone(), WeakComponentInstance::new(v)))
             .collect();
-
         let new_job = ShutdownJob {
             shutdown_type,
             component_decl,
@@ -137,8 +132,6 @@ impl ShutdownJob {
 
     /// Perform shutdown of the Component that was used to create this ShutdownJob.
     pub async fn execute(&mut self) -> Result<(), ActionError> {
-        let dynamic_offers = self.dynamic_offers.clone();
-
         let mut dynamic_children = vec![];
         dynamic_children.extend(
             self.children.keys().filter_map(|key| {
@@ -146,7 +139,7 @@ impl ShutdownJob {
             }),
         );
 
-        let deps = process_deps(&self.component_decl, &dynamic_children, &dynamic_offers);
+        let deps = process_deps(&self.component_decl, &dynamic_children, &self.dynamic_offers);
 
         let sorted_map = deps.topological_sort().map_err(|_| ActionError::ShutdownError {
             err: ShutdownActionError::CyclesDetected {},
@@ -252,7 +245,7 @@ pub async fn do_shutdown(
 pub fn process_deps(
     decl: &fdecl::Component,
     dynamic_children: &Vec<(&str, &str)>,
-    dynamic_offers: &Vec<fdecl::Offer>,
+    dynamic_offers: &Vec<(DependencyNode, DependencyNode)>,
 ) -> directed_graph::DirectedGraph<DependencyNode> {
     let mut strong_dependencies: DirectedGraph<DependencyNode> =
         directed_graph::DirectedGraph::new();
@@ -260,7 +253,7 @@ pub fn process_deps(
         &mut strong_dependencies,
         decl,
         dynamic_children,
-        dynamic_offers,
+        dynamic_offers.clone(),
     );
     let self_dep_closure = strong_dependencies.get_closure(&DependencyNode::Self_);
 
@@ -269,7 +262,7 @@ pub fn process_deps(
         for child in children {
             if let Some(child_name) = child.name.as_ref() {
                 let dependency_node = DependencyNode::Child(child_name.into(), None);
-                if !self_dep_closure.contains(&dependency_node) {
+                if !self_dep_closure.contains(&&dependency_node) {
                     edges_to_add.push((DependencyNode::Self_, dependency_node));
                 }
             }
@@ -283,6 +276,7 @@ pub fn process_deps(
             edges_to_add.push((DependencyNode::Self_, dependency_node));
         }
     }
+    drop(self_dep_closure);
 
     for (a, b) in edges_to_add {
         strong_dependencies.add_edge(a, b);
@@ -904,7 +898,7 @@ mod tests {
             ..Default::default()
         });
 
-        let dynamic_offers = vec![offer_1, offer_2];
+        let dynamic_offers = vec![make_dep(offer_1), make_dep(offer_2)];
         let sorted_map = process_deps(
             &fidl_decl,
             &vec![("dyn1", "coll"), ("dyn2", "coll"), ("dyn3", "coll"), ("dyn4", "coll")],
@@ -962,7 +956,7 @@ mod tests {
             ..Default::default()
         });
 
-        let dynamic_offers = vec![offer_1, offer_2];
+        let dynamic_offers = vec![make_dep(offer_1), make_dep(offer_2)];
         let sorted_map = process_deps(
             &fidl_decl,
             &vec![("dyn1", "coll1"), ("dyn2", "coll1"), ("dyn1", "coll2"), ("dyn2", "coll2")],
@@ -986,18 +980,8 @@ mod tests {
     #[fuchsia::test]
     fn test_dynamic_offer_from_parent() {
         let fidl_decl = ComponentDeclBuilder::new().collection_default("coll").build().into();
-        let offer_1 = fdecl::Offer::Protocol(fdecl::OfferProtocol {
-            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
-            target: Some(fdecl::Ref::Child(fdecl::ChildRef {
-                name: "dyn1".into(),
-                collection: Some("coll".parse().unwrap()),
-            })),
-            target_name: Some("test.protocol".to_string()),
-            dependency_type: Some(fdecl::DependencyType::Strong),
-            ..Default::default()
-        });
-
-        let dynamic_offers = vec![offer_1];
+        // parent does not generate a dependency node
+        let dynamic_offers = vec![];
         let sorted_map =
             process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
                 .topological_sort()
@@ -1016,18 +1000,8 @@ mod tests {
     #[fuchsia::test]
     fn test_dynamic_offer_from_self() {
         let fidl_decl = ComponentDeclBuilder::new().collection_default("coll").build().into();
-        let offer_1 = fdecl::Offer::Protocol(fdecl::OfferProtocol {
-            source: Some(fdecl::Ref::Self_(fdecl::SelfRef {})),
-            target: Some(fdecl::Ref::Child(fdecl::ChildRef {
-                name: "dyn1".into(),
-                collection: Some("coll".parse().unwrap()),
-            })),
-            target_name: Some("test.protocol".to_string()),
-            dependency_type: Some(fdecl::DependencyType::Strong),
-            ..Default::default()
-        });
-
-        let dynamic_offers = vec![offer_1];
+        // An offer from Self -> Child does not generate a dependency
+        let dynamic_offers = vec![];
         let sorted_map =
             process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
                 .topological_sort()
@@ -1064,7 +1038,7 @@ mod tests {
             dependency_type: Some(fdecl::DependencyType::Strong),
             ..Default::default()
         });
-        let dynamic_offers = vec![offer_1];
+        let dynamic_offers = vec![make_dep(offer_1)];
         let sorted_map =
             process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
                 .topological_sort()
@@ -3415,5 +3389,10 @@ mod tests {
             }
         });
         executor.run_until_stalled(&mut test_body).unwrap();
+    }
+
+    fn make_dep(offer: fdecl::Offer) -> (DependencyNode, DependencyNode) {
+        let (a, b) = cm_graph::get_dependency_from_offer(&offer);
+        (a.unwrap(), b.unwrap())
     }
 }
