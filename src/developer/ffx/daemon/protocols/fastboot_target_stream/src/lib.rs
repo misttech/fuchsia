@@ -72,7 +72,7 @@ impl FidlProtocol for FastbootTargetStreamProtocol {
                     fastboot_file_path,
                     true,
                     true,
-                    DiscoverySources::USB | DiscoverySources::FASTBOOT_FILE,
+                    DiscoverySources::USB_FASTBOOT | DiscoverySources::FASTBOOT_FILE,
                 )
                 .await?;
                 while let Some(event) = device_stream.next().await {

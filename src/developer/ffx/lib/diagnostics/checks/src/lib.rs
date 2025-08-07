@@ -207,8 +207,8 @@ fn sources_from_query(query: &TargetInfoQuery) -> DiscoverySources {
         TargetInfoQuery::NodenameOrSerial(_)
         | TargetInfoQuery::First
         | TargetInfoQuery::Serial(_) => DiscoverySources::all(),
-        TargetInfoQuery::VSock(_) => DiscoverySources::USB | DiscoverySources::EMULATOR,
-        TargetInfoQuery::Usb(_) => DiscoverySources::USB,
+        TargetInfoQuery::VSock(_) => DiscoverySources::USB_FASTBOOT | DiscoverySources::EMULATOR,
+        TargetInfoQuery::Usb(_) => DiscoverySources::USB_FASTBOOT,
         TargetInfoQuery::Addr(_) => {
             DiscoverySources::MDNS
                 | DiscoverySources::FASTBOOT_FILE

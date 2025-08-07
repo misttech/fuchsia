@@ -185,7 +185,7 @@ bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct DiscoverySources: u8 {
         const MDNS = 1 << 0;
-        const USB = 1 << 1;
+        const USB_FASTBOOT = 1 << 1;
         const MANUAL = 1 << 2;
         const EMULATOR = 1 << 3;
         const FASTBOOT_FILE = 1 << 4;
@@ -225,7 +225,7 @@ where
     };
 
     // USB Fastboot watcher
-    let fastboot_usb_watcher = if sources.contains(DiscoverySources::USB) {
+    let fastboot_usb_watcher = if sources.contains(DiscoverySources::USB_FASTBOOT) {
         let fastboot_sender = sender.clone();
         Some(fastboot_watcher(move |res: FastbootEvent| {
             // Translate the result to a TargetEvent
@@ -450,11 +450,11 @@ pub mod test {
             .set_source(DiscoverySources::MANUAL)
             .with_source(DiscoverySources::EMULATOR)
             .set_source(DiscoverySources::MDNS)
-            .with_source(DiscoverySources::USB)
+            .with_source(DiscoverySources::USB_FASTBOOT)
             .build();
         assert_eq!(discovery.notify_added, false);
         assert_eq!(discovery.notify_removed, false);
-        assert_eq!(discovery.sources, DiscoverySources::USB | DiscoverySources::MDNS);
+        assert_eq!(discovery.sources, DiscoverySources::USB_FASTBOOT | DiscoverySources::MDNS);
         assert!(discovery.emulator_instance_root.is_none());
         Ok(())
     }

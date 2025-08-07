@@ -213,7 +213,7 @@ async fn list_targets_main(args: SubCommandListTargets) -> Result<(), FunnelErro
         None,
         true,
         true,
-        DiscoverySources::MDNS | DiscoverySources::USB,
+        DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT,
     )
     .await?;
 
@@ -247,7 +247,7 @@ async fn funnel_main(args: SubCommandHost) -> Result<(), FunnelError> {
         None,
         true,
         false,
-        DiscoverySources::MDNS | DiscoverySources::USB,
+        DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT,
     )
     .await?;
 

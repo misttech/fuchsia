@@ -167,12 +167,12 @@ impl TargetInfoQuery {
             TargetInfoQuery::Addr(_) => {
                 DiscoverySources::MDNS | DiscoverySources::MANUAL | DiscoverySources::EMULATOR
             }
-            TargetInfoQuery::Serial(_) => DiscoverySources::USB,
+            TargetInfoQuery::Serial(_) => DiscoverySources::USB_FASTBOOT,
             _ => {
                 DiscoverySources::MDNS
                     | DiscoverySources::MANUAL
                     | DiscoverySources::EMULATOR
-                    | DiscoverySources::USB
+                    | DiscoverySources::USB_FASTBOOT
             }
         }
     }
@@ -314,7 +314,7 @@ mod test {
             DiscoverySources::MDNS
                 | DiscoverySources::MANUAL
                 | DiscoverySources::EMULATOR
-                | DiscoverySources::USB
+                | DiscoverySources::USB_FASTBOOT
         );
 
         // IP Address shouldn't use USB source
@@ -328,7 +328,7 @@ mod test {
         // Serial # should only use USB source
         let query = TargetInfoQuery::from("serial:abcdef");
         let sources = query.discovery_sources();
-        assert_eq!(sources, DiscoverySources::USB);
+        assert_eq!(sources, DiscoverySources::USB_FASTBOOT);
     }
 
     #[test]

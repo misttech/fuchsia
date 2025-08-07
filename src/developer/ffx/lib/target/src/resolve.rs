@@ -237,7 +237,7 @@ pub async fn resolve_target_query(
         query,
         ctx,
         DiscoverySources::MDNS
-            | DiscoverySources::USB
+            | DiscoverySources::USB_FASTBOOT
             | DiscoverySources::MANUAL
             | DiscoverySources::EMULATOR
             | DiscoverySources::FASTBOOT_FILE,
@@ -397,7 +397,7 @@ pub async fn resolve_target_query_with(
     let mut sources =
         DiscoverySources::MANUAL | DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
     if usb {
-        sources = sources | DiscoverySources::USB;
+        sources = sources | DiscoverySources::USB_FASTBOOT;
     }
     if mdns {
         sources = sources | DiscoverySources::MDNS;
@@ -450,7 +450,7 @@ pub async fn get_discovery_stream(
     let mut sources =
         DiscoverySources::MANUAL | DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
     if usb {
-        sources = sources | DiscoverySources::USB;
+        sources = sources | DiscoverySources::USB_FASTBOOT;
     }
     if mdns {
         sources = sources | DiscoverySources::MDNS;
