@@ -162,7 +162,24 @@ async fn implementation(logging_enabled: &mut bool) -> Result<ExitStatus> {
         )));
     }
 
-    // TODO(429272257): Daemonize if we're supposed to run in the background.
+    if command.background {
+        // daemonize(3) is deprecated on macOS 10.15. The replacement is not
+        // yet clear, we may want to replace this with a manual double fork
+        // setsid, etc.
+        #[allow(deprecated)]
+        // First argument: chdir(/)
+        // Second argument: close stdio
+        //
+        // SAFETY: This shouldn't do much of anything to memory state. If it
+        // succeeds we've effectively just been shuffled around the process
+        // table. If it fails then it likely has no side effects at all, but
+        // even if it does we're going to exit as fast as we can anyway.
+        match unsafe { libc::daemon(0, 0) } {
+            0 => (),
+            x => return Err(fho::Error::Unexpected(std::io::Error::from_raw_os_error(x).into())),
+        }
+    }
+
     usb_driver_impl::HostDriver::run(socket_path).await;
     Ok(ExitStatus::from_raw(0))
 }
