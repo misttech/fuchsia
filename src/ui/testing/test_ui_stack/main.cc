@@ -73,6 +73,8 @@ int run_test_ui_stack(int argc, const char** argv) {
                                                         realm_exposed_services.get());
   AddPublicService<fuchsia_ui_composition::Allocator>(context.get(), realm_exposed_services.get());
   AddPublicService<fuchsia_ui_composition::Flatland>(context.get(), realm_exposed_services.get());
+  AddPublicService<fuchsia_ui_composition::TrustedFlatlandFactory>(context.get(),
+                                                                   realm_exposed_services.get());
   AddPublicService<fuchsia_ui_focus::FocusChainListenerRegistry>(context.get(),
                                                                  realm_exposed_services.get());
   AddPublicService<fuchsia_ui_input::ImeService>(context.get(), realm_exposed_services.get());
