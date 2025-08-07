@@ -124,10 +124,6 @@ bool TestBase::PollUntilOnLoop(fit::function<bool()> predicate, zx::duration pol
   }
 }
 
-Controller* TestBase::CoordinatorController() {
-  return fake_display_stack_->coordinator_controller();
-}
-
 fake_display::FakeDisplay& TestBase::FakeDisplayEngine() {
   return fake_display_stack_->display_engine();
 }

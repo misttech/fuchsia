@@ -29,10 +29,6 @@ class TestBase : public testing::Test {
   void SetUp() override;
   void TearDown() override;
 
-  // Guaranteed to be non-null. The Coordinator is guaranteed to be alive
-  // throughout the entire test case, between SetUp() and TearDown().
-  Controller* CoordinatorController();
-
   fake_display::FakeDisplay& FakeDisplayEngine();
 
   fidl::ClientEnd<fuchsia_sysmem2::Allocator> ConnectToSysmemAllocatorV2();
