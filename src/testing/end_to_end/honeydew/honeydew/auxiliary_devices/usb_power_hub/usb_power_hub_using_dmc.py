@@ -112,7 +112,7 @@ class UsbPowerHubUsingDmc(usb_power_hub.UsbPowerHub):
             command: Command to run.
 
         Raises:
-            UsbPowerError: In case of failure.
+            UsbPowerHubError: In case of failure.
         """
         try:
             host_shell.run(cmd=command)
