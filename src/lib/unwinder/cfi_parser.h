@@ -12,6 +12,7 @@
 
 #include "src/lib/unwinder/dwarf_expr.h"
 #include "src/lib/unwinder/memory.h"
+#include "src/lib/unwinder/module.h"
 #include "src/lib/unwinder/registers.h"
 
 namespace unwinder {
@@ -20,7 +21,8 @@ namespace unwinder {
 class CfiParser {
  public:
   // arch is needed to default initialize register_locations_.
-  CfiParser(Registers::Arch arch, uint64_t code_alignment_factor, int64_t data_alignment_factor);
+  CfiParser(Registers::Arch arch, Module::AddressSize size, uint64_t code_alignment_factor,
+            int64_t data_alignment_factor);
 
   // Parse the CFA instructions until the (relative) pc reaches pc_limit.
   [[nodiscard]] Error ParseInstructions(Memory* elf, uint64_t instructions_begin,
@@ -83,6 +85,8 @@ class CfiParser {
   // Compute the CFA from |cfa_location_|, which should already be populated via |ParseInstructions|
   // before calling this method.
   [[nodiscard]] Error PrepareToStep(Memory* stack, const Registers& current, uint64_t& cfa);
+
+  Module::AddressSize address_size_;
 
   using RegisterLocations = std::map<RegisterID, RegisterLocation>;
   RegisterLocations register_locations_;

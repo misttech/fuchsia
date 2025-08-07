@@ -141,6 +141,12 @@ class Registers {
 
   explicit Registers(Arch arch) : arch_(arch) {}
 
+  // Converts the current register object to the equivalent 32 bit register set. This means that
+  // all general purpose registers are copied wholesale (without checking if the value can actually
+  // fit in a 32 bit register), and the specially named registers are copied using the getters and
+  // setters below.
+  Registers To32Bit() const;
+
   Arch arch() const { return arch_; }
 
   // Delegate size(), begin() and end() to regs_.

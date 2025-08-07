@@ -342,6 +342,10 @@ Error CfiModule::Step(Memory* stack, const Registers& current, Registers& next) 
     return err;
   }
 
+  if (address_size_ == Module::AddressSize::k32Bit) {
+    next = Registers(Registers::Arch::kArm32);
+  }
+
   if (auto err = cfi_parser_->Step(stack, cie.return_address_register, current, next);
       err.has_err()) {
     return err;
@@ -383,8 +387,8 @@ Error CfiModule::PrepareToStep(const Registers& current, DwarfCie& cie) {
     }
   }
 
-  cfi_parser_ = std::make_unique<CfiParser>(current.arch(), cie.code_alignment_factor,
-                                            cie.data_alignment_factor);
+  cfi_parser_ = std::make_unique<CfiParser>(current.arch(), address_size_,
+                                            cie.code_alignment_factor, cie.data_alignment_factor);
 
   // Parse instructions in CIE first.
   if (auto err =

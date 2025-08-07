@@ -6,6 +6,8 @@
 
 #include <cinttypes>
 #include <cstdint>
+#include <limits>
+#include <optional>
 
 #include "src/lib/unwinder/error.h"
 #include "src/lib/unwinder/registers.h"
@@ -33,11 +35,40 @@ Error ReadRegisterIDAndAdvance(Memory* elf, uint64_t& addr, RegisterID& reg) {
   return Success();
 }
 
+std::optional<Registers> TryConvertRegistersTo32Bit(const Registers& current,
+                                                    const Registers& next) {
+  if (current.arch() != Registers::Arch::kArm64 || next.arch() == Registers::Arch::kArm32)
+    return std::nullopt;
+
+  std::optional<Registers> result = std::nullopt;
+  std::optional<uint64_t> maybe_pc = std::nullopt;
+  std::optional<uint64_t> maybe_ra = std::nullopt;
+
+  if (uint64_t pc; next.GetPC(pc).ok()) {
+    maybe_pc = pc;
+  }
+
+  if (uint64_t ra; next.GetReturnAddress(ra).ok()) {
+    maybe_ra = ra;
+  }
+
+  if ((maybe_pc && !(*maybe_pc < std::numeric_limits<uint32_t>::max())) ||
+      (maybe_ra && !(*maybe_ra < std::numeric_limits<uint32_t>::max()))) {
+    return std::nullopt;
+  }
+
+  result = next.To32Bit();
+
+  return result;
+}
+
 }  // namespace
 
-CfiParser::CfiParser(Registers::Arch arch, uint64_t code_alignment_factor,
+CfiParser::CfiParser(Registers::Arch arch, Module::AddressSize size, uint64_t code_alignment_factor,
                      int64_t data_alignment_factor)
-    : code_alignment_factor_(code_alignment_factor), data_alignment_factor_(data_alignment_factor) {
+    : code_alignment_factor_(code_alignment_factor),
+      data_alignment_factor_(data_alignment_factor),
+      address_size_(size) {
   // Initialize those callee-preserved registers as kSameValue.
   static const RegisterID x64_preserved[] = {
       RegisterID::kX64_rbx, RegisterID::kX64_rbp, RegisterID::kX64_r12,
@@ -491,6 +522,11 @@ Error CfiParser::Step(Memory* stack, RegisterID return_address_register, const R
     }
   }
 
+  if (auto maybe_32bit = TryConvertRegistersTo32Bit(current, next)) {
+    next = *maybe_32bit;
+    return_address_register = RegisterID::kArm32_lr;
+  }
+
   // By definition, the CFA is the stack pointer at the call site, so restoring SP means setting it
   // to CFA. However, if there's a rule that defines SP, we don't override that. This is used in
   // the starnix restricted executor to achieve "unwinding into restricted mode".
@@ -507,7 +543,7 @@ Error CfiParser::Step(Memory* stack, RegisterID return_address_register, const R
   // whether we skip the assignment or not as it's just a noop.
   if (uint64_t pc; next.GetPC(pc).has_err()) {
     // Return address is the address after the call instruction, so setting PC to that simulates a
-    // return. It's RIP on x64, LR on Arm64, and RA on Riscv64.
+    // return. It's RIP on x64, LR on Arm64, r14 on Arm, and RA on Riscv64.
     //
     // An unavailable return address, usually because of "DW_CFA_undefined: RIP/LR", marks the end
     // of the unwinding. We don't consider it an error.
@@ -552,6 +588,11 @@ void CfiParser::AsyncStep(AsyncMemory* stack, RegisterID return_address_register
     // Now we should have all the needed memory fetched from the target so we can call the
     // synchronous Step to do the evaluations.
     Registers next(current.arch());
+
+    if (address_size_ == Module::AddressSize::k32Bit) {
+      next = Registers(Registers::Arch::kArm32);
+    }
+
     auto err = Step(stack, return_address_register, current, next, cfa);
 
     LOG_DEBUG("%s => %s\n", current.Describe().c_str(), next.Describe().c_str());

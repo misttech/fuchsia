@@ -86,8 +86,26 @@ Error Registers::GetReturnAddress(uint64_t& ra) const {
   return Get(GetReturnAddressRegister(arch_), ra);
 }
 
-Error Registers::SetReturnAddress(uint64_t ra) {
-  return Set(GetReturnAddressRegister(arch_), ra);
+Error Registers::SetReturnAddress(uint64_t ra) { return Set(GetReturnAddressRegister(arch_), ra); }
+
+Registers Registers::To32Bit() const {
+  Registers result = Registers(Arch::kArm32);
+  uint64_t r_val;
+
+  // SP is r13 in ARM32 parlance, so we copy everything up to there and then use the specific
+  // getters to move the special named registers.
+  for (RegisterID reg_id = RegisterID::kArm64_x0; reg_id < RegisterID::kArm32_last;
+       reg_id = static_cast<RegisterID>(static_cast<uint8_t>(reg_id) + 1)) {
+    Get(reg_id, r_val);
+    result.Set(reg_id, r_val);
+  }
+
+  if (GetPC(r_val).has_err()) {
+    // Make sure the new PC register is unset if it isn't defined in the original registers.
+    result.Unset(GetPcReg(result.arch()));
+  }
+
+  return result;
 }
 
 std::string Registers::Describe() const {
