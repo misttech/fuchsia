@@ -1069,7 +1069,7 @@ group("termtree") {
 }
 
 group("test-case") {
-  public_deps = [ ":test-case-v3_2_1" ]
+  public_deps = [ ":test-case-v3_3_1" ]
 }
 
 group("textwrap") {
@@ -17784,47 +17784,47 @@ rustc_library("termtree-v0_5_1") {
   applicable_licenses = [ ":termtree-v0_5_1.license" ]
 }
 
-license("test-case-v3_2_1.license") {
+license("test-case-v3_3_1.license") {
   public_package_name = "test_case"
-  license_files = [ "//third_party/rust_crates/vendor/test-case-3.2.1/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/test-case-3.3.1/LICENSE" ]
 }
 
-rustc_library("test-case-v3_2_1") {
+rustc_library("test-case-v3_3_1") {
   crate_name = "test_case"
-  source_root = "//third_party/rust_crates/vendor/test-case-3.2.1/src/lib.rs"
-  output_name = "test_case-be136360dfea9f8e"
+  source_root = "//third_party/rust_crates/vendor/test-case-3.3.1/src/lib.rs"
+  output_name = "test_case-7b3ff42d0da096d4"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":test-case-macros-v3_2_1($host_toolchain)" ]
+  deps += [ ":test-case-macros-v3_3_1($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=be136360dfea9f8e",
-    "-Cextra-filename=-be136360dfea9f8e",
+    "-Cmetadata=7b3ff42d0da096d4",
+    "-Cextra-filename=-7b3ff42d0da096d4",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":test-case-v3_2_1.license" ]
+  applicable_licenses = [ ":test-case-v3_3_1.license" ]
 }
 
-license("test-case-core-v3_2_1.license") {
+license("test-case-core-v3_3_1.license") {
   public_package_name = "test_case_core"
   license_files =
-      [ "//third_party/rust_crates/vendor/test-case-core-3.2.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/test-case-core-3.3.1/LICENSE" ]
 }
 
-rustc_library("test-case-core-v3_2_1") {
+rustc_library("test-case-core-v3_3_1") {
   crate_name = "test_case_core"
   source_root =
-      "//third_party/rust_crates/vendor/test-case-core-3.2.1/src/lib.rs"
-  output_name = "test_case_core-9ab37c64893682ce"
+      "//third_party/rust_crates/vendor/test-case-core-3.3.1/src/lib.rs"
+  output_name = "test_case_core-11e97813470f2109"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -17832,7 +17832,6 @@ rustc_library("test-case-core-v3_2_1") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_0" ]
-  deps += [ ":proc-macro-error-v1_0_4" ]
   deps += [ ":proc-macro2-v1_0_94" ]
   deps += [ ":quote-v1_0_40" ]
   deps += [ ":syn-v2_0_103" ]
@@ -17841,49 +17840,48 @@ rustc_library("test-case-core-v3_2_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9ab37c64893682ce",
-    "-Cextra-filename=-9ab37c64893682ce",
+    "-Cmetadata=11e97813470f2109",
+    "-Cextra-filename=-11e97813470f2109",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":test-case-core-v3_2_1.license" ]
+  applicable_licenses = [ ":test-case-core-v3_3_1.license" ]
 }
 
-license("test-case-macros-v3_2_1.license") {
+license("test-case-macros-v3_3_1.license") {
   public_package_name = "test_case_macros"
   license_files =
-      [ "//third_party/rust_crates/vendor/test-case-macros-3.2.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/test-case-macros-3.3.1/LICENSE" ]
 }
 
-rustc_macro("test-case-macros-v3_2_1") {
+rustc_macro("test-case-macros-v3_3_1") {
   crate_name = "test_case_macros"
   source_root =
-      "//third_party/rust_crates/vendor/test-case-macros-3.2.1/src/lib.rs"
-  output_name = "test_case_macros-941f368c4dcd5cb"
+      "//third_party/rust_crates/vendor/test-case-macros-3.3.1/src/lib.rs"
+  output_name = "test_case_macros-fbe46cef9b124207"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":proc-macro-error-v1_0_4" ]
   deps += [ ":proc-macro2-v1_0_94" ]
   deps += [ ":quote-v1_0_40" ]
   deps += [ ":syn-v2_0_103" ]
-  deps += [ ":test-case-core-v3_2_1" ]
+  deps += [ ":test-case-core-v3_3_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=941f368c4dcd5cb",
-    "-Cextra-filename=-941f368c4dcd5cb",
+    "-Cmetadata=fbe46cef9b124207",
+    "-Cextra-filename=-fbe46cef9b124207",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":test-case-macros-v3_2_1.license" ]
+  applicable_licenses = [ ":test-case-macros-v3_3_1.license" ]
 }
 
 license("textwrap-v0_11_0.license") {
