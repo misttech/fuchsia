@@ -61,16 +61,36 @@ fidl::UnownedClientEnd<fuchsia_io::Directory> MoonflowerPartitioner::SvcRoot() c
 }
 
 bool MoonflowerPartitioner::SupportsPartition(const PartitionSpec& spec) const {
-  constexpr PartitionSpec supported_specs[] = {
-      PartitionSpec(paver::Partition::kBootloaderA, "dtbo"),
-      PartitionSpec(paver::Partition::kBootloaderB, "dtbo"),
-      PartitionSpec(paver::Partition::kBootloaderA, "recovery_zbi"),
-      PartitionSpec(paver::Partition::kBootloaderB, "recovery_zbi"),
+  // We use the kBootloader spec here to allow paving arbitrary images to any partition named in the
+  // `content_type`. This is a bit of a misuse of the spec, these images aren't really bootloaders,
+  // but the bootloader paving API is the only one that supports arbitrary content type like this so
+  // we use it for this purpose so that we have the flexibility to add images later on without
+  // having to worry about updating the paver first.
+  //
+  // TODO(b/436253787): consider adding a paver API to support this use case more natually.
+  if (spec.partition == Partition::kBootloaderA || spec.partition == Partition::kBootloaderB) {
+    // Do not check if the partition actually exists here. For bootloaders, `SupportsPartition()`
+    // returning false results in a non-fatal skip of the image, intended to support soft-transition
+    // of new OTA files by being able to add new images before the paver may support them.
+    //
+    // In this case where we allow writing to any partition, it would be too easy to accidentally
+    // omit a partition e.g. if there were a typo in the partition name. Instead, we report that
+    // we support the image here, then if the partition doesn't exist we will error out later when
+    // writing it. This will result in a OTA failure instead of silently skipping the image.
+    //
+    // The downside is if we do need to modify the GPT later we'll have to use some other transition
+    // mechanism e.g. stepping-stone OTAs or re-flashing each device, since the paver will fail an
+    // OTA if a given partition does not yet exist on-device.
+    return !spec.content_type.empty();
+  }
+
+  constexpr PartitionSpec non_bootloader_specs[] = {
       PartitionSpec(paver::Partition::kZirconA),
       PartitionSpec(paver::Partition::kZirconB),
       PartitionSpec(paver::Partition::kFuchsiaVolumeManager),
-      PartitionSpec(paver::Partition::kFuchsiaVolumeManager, kOpaqueVolumeContentType)};
-  return std::any_of(std::cbegin(supported_specs), std::cend(supported_specs),
+      PartitionSpec(paver::Partition::kFuchsiaVolumeManager, kOpaqueVolumeContentType),
+  };
+  return std::any_of(std::cbegin(non_bootloader_specs), std::cend(non_bootloader_specs),
                      [&](const PartitionSpec& supported) { return SpecMatches(spec, supported); });
 }
 
@@ -85,14 +105,15 @@ zx::result<std::string> MoonflowerPartitioner::PartitionNameForSpec(
   switch (spec.partition) {
     case Partition::kBootloaderA:
     case Partition::kBootloaderB:
-      if (spec.content_type == "dtbo") {
-        part_name = "dtbo";
-      } else if (spec.content_type == "recovery_zbi") {
+      // Normally the `content_type` is the partition name, but we've also used "recovery_zbi" to
+      // map to the "vendor_boot" partition so we support that as well.
+      if (spec.content_type == "recovery_zbi") {
         part_name = "vendor_boot";
       } else {
-        ERROR("Unsupported bootloader partition type %s\n", std::string(spec.content_type).c_str());
-        return zx::error(ZX_ERR_NOT_SUPPORTED);
+        part_name = spec.content_type;
       }
+      // Only support slotted A/B partitions here. OTA'ing a non-A/B partition is very risky since
+      // any failure could result in a bricked device, we do not support it on moonflower.
       part_name += spec.partition == Partition::kBootloaderA ? "_a" : "_b";
       break;
     case Partition::kZirconA:

@@ -65,6 +65,7 @@ namespace partition = fuchsia_hardware_block_partition;
 
 using device_watcher::RecursiveWaitForFile;
 using driver_integration_test::IsolatedDevmgr;
+using uuid::Uuid;
 
 constexpr std::string_view kFirmwareTypeBootloader;
 constexpr std::string_view kFirmwareTypeBl2 = "bl2";
@@ -202,6 +203,34 @@ fuchsia_hardware_nand::wire::RamNandInfo BaseNandInfo() {
   };
 }
 
+// Creates a `Buffer` with payload of `data` repeating for `num_pages` pages.
+void CreateBuffer(size_t num_pages, fuchsia_mem::wire::Buffer* out, uint8_t data = 0x4a) {
+  zx::vmo vmo;
+  fzl::VmoMapper mapper;
+  const size_t size = kPageSize * num_pages;
+  ASSERT_OK(mapper.CreateAndMap(size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
+  memset(mapper.start(), data, mapper.size());
+  out->vmo = std::move(vmo);
+  out->size = size;
+}
+
+// Creates a `Buffer` with the given data as the payload.
+void CreateBuffer(std::span<const uint8_t> data, fuchsia_mem::wire::Buffer* out) {
+  zx::vmo vmo;
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(data.size(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
+  memcpy(mapper.start(), data.data(), data.size());
+  *out = {.vmo = std::move(vmo), .size = data.size()};
+}
+
+// Verifies that `buffer` contains exactly `data`.
+void VerifyBufferContents(const fuchsia_mem::wire::Buffer& buffer, std::span<const uint8_t> data) {
+  ASSERT_EQ(buffer.size, data.size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.Map(buffer.vmo, 0, buffer.size, ZX_VM_PERM_READ));
+  ASSERT_BYTES_EQ(mapper.start(), data.data(), buffer.size);
+}
+
 class PaverServiceTest : public PaverTest {
  public:
   PaverServiceTest();
@@ -256,6 +285,31 @@ class PaverServiceTest : public PaverTest {
     }
   }
 
+  // Opens a paver `DataSink` and calls `WriteFirmware`.
+  //
+  // Call with `ASSERT_NO_FATAL_FAILURE()` to ensure expected behavior.
+  //
+  // Args:
+  // * `firmware_type`: type string to pass to `WriteFirmware()`
+  // * `configuration`: paver slot configuration to pass to `WriteFirmware()`
+  // * `data`: data to copy into a VMO and pass to `WriteFirmware()`
+  // * `result`: will be filled with the FIDL result
+  void WriteFirmware(std::string_view firmware_type,
+                     fuchsia_paver::wire::Configuration configuration, std::vector<uint8_t> data,
+                     fuchsia_paver::wire::WriteFirmwareResult* result) {
+    auto [local, remote] = fidl::Endpoints<fuchsia_paver::DataSink>::Create();
+    ASSERT_OK(client_->FindDataSink(std::move(remote)));
+    fidl::WireSyncClient data_sink{std::move(local)};
+
+    fuchsia_mem::wire::Buffer wire_buffer;
+    ASSERT_NO_FATAL_FAILURE(CreateBuffer(data, &wire_buffer));
+
+    auto fidl_result = data_sink->WriteFirmware(
+        configuration, fidl::StringView::FromExternal(firmware_type), std::move(wire_buffer));
+    ASSERT_OK(fidl_result.status());
+    *result = fidl_result->result;
+  }
+
   IsolatedDevmgr devmgr_;
   std::unique_ptr<paver::Paver> paver_;
   fidl::WireSyncClient<fuchsia_paver::Paver> client_;
@@ -269,34 +323,6 @@ PaverServiceTest::PaverServiceTest() : loop_(&kAsyncLoopConfigAttachToCurrentThr
 PaverServiceTest::~PaverServiceTest() {
   loop_.Shutdown();
   paver_.reset();
-}
-
-// Creates a `Buffer` with payload of `data` repeating for `num_pages` pages.
-void CreateBuffer(size_t num_pages, fuchsia_mem::wire::Buffer* out, uint8_t data = 0x4a) {
-  zx::vmo vmo;
-  fzl::VmoMapper mapper;
-  const size_t size = kPageSize * num_pages;
-  ASSERT_OK(mapper.CreateAndMap(size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
-  memset(mapper.start(), data, mapper.size());
-  out->vmo = std::move(vmo);
-  out->size = size;
-}
-
-// Creates a `Buffer` with the given data as the payload.
-void CreateBuffer(std::span<const uint8_t> data, fuchsia_mem::wire::Buffer* out) {
-  zx::vmo vmo;
-  fzl::VmoMapper mapper;
-  ASSERT_OK(mapper.CreateAndMap(data.size(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
-  memcpy(mapper.start(), data.data(), data.size());
-  *out = {.vmo = std::move(vmo), .size = data.size()};
-}
-
-// Verifies that `buffer` contains exactly `data`.
-void VerifyBufferContents(const fuchsia_mem::wire::Buffer& buffer, std::span<const uint8_t> data) {
-  ASSERT_EQ(buffer.size, data.size());
-  fzl::VmoMapper mapper;
-  ASSERT_OK(mapper.Map(buffer.vmo, 0, buffer.size, ZX_VM_PERM_READ));
-  ASSERT_BYTES_EQ(mapper.start(), data.data(), buffer.size);
 }
 
 // Common logic to test writing an asset to disk and reading it back.
@@ -2337,6 +2363,19 @@ class PaverServiceGptDeviceTest : public PaverServiceTest {
     }
   }
 
+  // Reads `count` blocks from disk starting at the given block `offset`.
+  std::vector<uint8_t> ReadBlocks(size_t offset, size_t count) {
+    size_t num_bytes = count * block_size_;
+    zx::vmo vmo;
+    fzl::VmoMapper vmo_mapper;
+    EXPECT_OK(vmo_mapper.CreateAndMap(num_bytes, ZX_VM_PERM_READ, nullptr, &vmo));
+    gpt_dev_->Read(vmo, num_bytes, offset, 0);
+
+    std::vector<uint8_t> data(num_bytes);
+    memcpy(data.data(), vmo_mapper.start(), num_bytes);
+    return data;
+  }
+
   std::unique_ptr<BlockDevice> gpt_dev_;
   uint64_t block_count_;
   uint64_t block_size_;
@@ -2626,6 +2665,102 @@ TEST_F(PaverServiceLuisTest, OneShotRecovery) {
   AbrData disk_abr_data;
   memcpy(&disk_abr_data, block_read_vmo_mapper.start(), sizeof(disk_abr_data));
   ASSERT_TRUE(AbrIsOneShotRecoveryBoot(&disk_abr_data));
+}
+
+// Randomly generated. Moonflower A/B does care about GUIDs, but writing images doesn't, and
+// currently that's all we're testing here.
+constexpr Uuid kTestGuid = Uuid(0x8b, 0xa2, 0x50, 0x03, 0xc6, 0x0d, 0x4c, 0x9b, 0x85, 0xe7, 0x5c,
+                                0x4f, 0x71, 0xaf, 0x37, 0x10);
+
+// Creates a chunk of test data with incrementally increasing bytes rolling over at 0xFF->0x00.
+std::vector<uint8_t> TestData(size_t size) {
+  std::vector<uint8_t> data(size);
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = static_cast<uint8_t>(i);
+  }
+  return data;
+}
+
+class PaverServiceMoonflowerTest : public PaverServiceGptDeviceTest {
+ public:
+  IsolatedDevmgr::Args DevmgrArgs() override {
+    IsolatedDevmgr::Args args = PaverServiceGptDeviceTest::DevmgrArgs();
+    args.board_name = "sorrel";  // Any moonflower board name is fine here
+    auto boot_args = std::make_unique<FakeBootArgs>();
+    boot_args->AddStringArgs("zvb.current_slot", "_a");
+    args.fake_boot_args = std::move(boot_args);
+    return args;
+  }
+
+  void SetUp() override {
+    ASSERT_NO_FATAL_FAILURE(PaverServiceGptDeviceTest::SetUp());
+    ASSERT_NO_FATAL_FAILURE(
+        InitializeGptDevice(0x20000, 512,
+                            {
+                                {"boot_a", kTestGuid, 0x1000, 0x1000},
+                                {"boot_b", kTestGuid, 0x2000, 0x1000},
+                                {"vendor_boot_a", kTestGuid, 0x3000, 0x1000},
+                                {"vendor_boot_b", kTestGuid, 0x4000, 0x1000},
+                                {"vendor_kernel_boot_a", kTestGuid, 0x5000, 0x1000},
+                                {"vendor_kernel_boot_b", kTestGuid, 0x6000, 0x1000},
+                                {"super", kTestGuid, 0x7000, 0x1000},
+                                {"userdata", kTestGuid, 0x8000, 0x1000},
+                                {"dtbo_a", kTestGuid, 0x9000, 0x1000},
+                                {"dtbo_b", kTestGuid, 0x10000, 0x1000},
+                            }));
+  }
+};
+
+// `WriteFirmware()` with a named partition.
+TEST_F(PaverServiceMoonflowerTest, WriteFirmwareWithPartitionName) {
+  std::vector<uint8_t> test_data = TestData(block_size_ * 3);
+
+  fuchsia_paver::wire::WriteFirmwareResult result;
+  ASSERT_NO_FATAL_FAILURE(WriteFirmware(
+      "vendor_kernel_boot", fuchsia_paver::wire::Configuration::kA, test_data, &result));
+  ASSERT_TRUE(result.is_status());
+  ASSERT_OK(result.status());
+
+  // Read it back and make sure it matches what we wrote.
+  std::vector<uint8_t> actual = ReadBlocks(0x5000, 3);
+  ASSERT_EQ(test_data, actual);
+}
+
+// `WriteFirmware()` with the "recovery_zbi" -> "vendor_boot" mapping.
+TEST_F(PaverServiceMoonflowerTest, WriteFirmwareWithRecoveryZbi) {
+  std::vector<uint8_t> test_data = TestData(block_size_ * 3);
+
+  fuchsia_paver::wire::WriteFirmwareResult result;
+  ASSERT_NO_FATAL_FAILURE(
+      WriteFirmware("recovery_zbi", fuchsia_paver::wire::Configuration::kB, test_data, &result));
+  ASSERT_TRUE(result.is_status());
+  ASSERT_OK(result.status());
+
+  // Read it back and make sure it matches what we wrote.
+  std::vector<uint8_t> actual = ReadBlocks(0x4000, 3);
+  ASSERT_EQ(test_data, actual);
+}
+
+// `WriteFirmware()` should fail when the given partition name doesn't exist.
+TEST_F(PaverServiceMoonflowerTest, WriteFirmwareWithNonExistentPartitionFails) {
+  std::vector<uint8_t> test_data = TestData(block_size_ * 3);
+
+  fuchsia_paver::wire::WriteFirmwareResult result;
+  ASSERT_NO_FATAL_FAILURE(
+      WriteFirmware("not_a_partition", fuchsia_paver::wire::Configuration::kA, test_data, &result));
+  ASSERT_TRUE(result.is_status());
+  ASSERT_NOT_OK(result.status());
+}
+
+// `WriteFirmware()` should fail when the given a non-slotted partition.
+TEST_F(PaverServiceMoonflowerTest, WriteFirmwareWithNonSlottedPartitionFails) {
+  std::vector<uint8_t> test_data = TestData(block_size_ * 3);
+
+  fuchsia_paver::wire::WriteFirmwareResult result;
+  ASSERT_NO_FATAL_FAILURE(
+      WriteFirmware("userdata", fuchsia_paver::wire::Configuration::kA, test_data, &result));
+  ASSERT_TRUE(result.is_status());
+  ASSERT_NOT_OK(result.status());
 }
 
 }  // namespace

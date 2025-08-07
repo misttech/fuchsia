@@ -1233,8 +1233,12 @@ TEST_F(MoonflowerPartitionerTests, FindPartition) {
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconB)));
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
 
+  // We should not be able to find a kBootloader partition with unknown `content_type`.
   EXPECT_NOT_OK(
       partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA, "foo_type")));
+
+  // We should not be able to find an unslotted kBootloader partition.
+  EXPECT_NOT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA, "cache")));
 }
 
 TEST_F(MoonflowerPartitionerTests, SupportsPartition) {
@@ -1245,6 +1249,7 @@ TEST_F(MoonflowerPartitionerTests, SupportsPartition) {
   ASSERT_OK(status);
   std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
 
+  // We should support any kBootloader partitions with non-empty `content_type`.
   EXPECT_TRUE(
       partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA, "dtbo")));
   EXPECT_TRUE(
@@ -1266,8 +1271,7 @@ TEST_F(MoonflowerPartitionerTests, SupportsPartition) {
   // Unsupported content type.
   EXPECT_FALSE(
       partitioner->SupportsPartition(PartitionSpec(paver::Partition::kAbrMeta, "foo_type")));
-  EXPECT_FALSE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA, "foo_type")));
+  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA, "")));
 }
 
 class LuisPartitionerTests : public GptDevicePartitionerTests {
