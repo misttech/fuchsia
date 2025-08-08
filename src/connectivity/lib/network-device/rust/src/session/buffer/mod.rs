@@ -15,9 +15,9 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use fidl_fuchsia_hardware_network as netdev;
 use fuchsia_runtime::vmar_root_self;
-use zx::sys::ZX_MIN_PAGE_SHIFT;
-
 use static_assertions::{const_assert, const_assert_eq};
+use zx::sys::ZX_MIN_PAGE_SHIFT;
+use zx::AsHandleRef as _;
 
 use crate::error::{Error, Result};
 use crate::session::Port;
@@ -216,6 +216,10 @@ impl Descriptors {
         let size = u64::try_from(NETWORK_DEVICE_DESCRIPTOR_LENGTH * usize::from(total))
             .expect("vmo_size overflows u64");
         let vmo = zx::Vmo::create(size).map_err(|status| Error::Vmo("descriptors", status))?;
+
+        const VMO_NAME: zx::Name =
+            const_unwrap::const_unwrap_result(zx::Name::new("netdevice:descriptors"));
+        vmo.set_name(&VMO_NAME).map_err(|status| Error::Vmo("set name", status))?;
         // The unwrap is safe because it is guaranteed that the base address
         // returned will be non-zero.
         // https://fuchsia.dev/fuchsia-src/reference/syscalls/vmar_map

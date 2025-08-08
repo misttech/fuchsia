@@ -23,6 +23,7 @@ use explicit::ResultExt as _;
 use fidl_fuchsia_hardware_network as netdev;
 use fuchsia_runtime::vmar_root_self;
 use futures::channel::oneshot::{channel, Receiver, Sender};
+use zx::AsHandleRef as _;
 
 use super::{ChainLength, DescId, DescRef, DescRefMut, Descriptors};
 use crate::error::{Error, Result};
@@ -110,6 +111,10 @@ impl Pool {
 
         let size = buffer_stride.get() * u64::from(num_buffers);
         let data_vmo = zx::Vmo::create(size).map_err(|status| Error::Vmo("data", status))?;
+
+        const VMO_NAME: zx::Name =
+            const_unwrap::const_unwrap_result(zx::Name::new("netdevice:data"));
+        data_vmo.set_name(&VMO_NAME).map_err(|status| Error::Vmo("set name", status))?;
         // `as` is OK because `size` is positive and smaller than isize::MAX.
         // This is following the practice of rust stdlib to ensure allocation
         // size never reaches isize::MAX.
