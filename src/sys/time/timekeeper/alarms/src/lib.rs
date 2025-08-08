@@ -340,6 +340,11 @@ enum Cmd {
     AlarmDriverError {
         expired_deadline: fasync::BootInstant,
         error: ffhh::DriverError,
+
+        // Added these for debugging details, otherwise not necessary.
+        timer_config_id: u64,
+        resolution_nanos: i64,
+        ticks: u64,
     },
 }
 
@@ -366,7 +371,7 @@ impl std::fmt::Display for Cmd {
                     error
                 )
             }
-            Cmd::AlarmDriverError { expired_deadline, error } => {
+            Cmd::AlarmDriverError { expired_deadline, error, .. } => {
                 write!(
                     f,
                     "DriverError[deadline={}, err={:?}, NO_WAKE_LEASE!]",
@@ -1393,7 +1398,7 @@ async fn wake_timer_loop(
                     ))),
                 }
             }
-            Cmd::AlarmDriverError { expired_deadline, error } => {
+            Cmd::AlarmDriverError { expired_deadline, error, timer_config_id, resolution_nanos, ticks } => {
                 trace::duration!(c"alarms", c"Cmd::AlarmDriverError");
                 let (_dummy_lease, peer) = zx::EventPair::create();
                 debug!("XXX: [{}] bogus lease: {:?}", line!(), &peer.get_koid().unwrap());
@@ -1409,10 +1414,13 @@ async fn wake_timer_loop(
                     }
                     _ => {
                         error!(
-                            "wake_timer_loop: DRIVER SAYS: {:?}, deadline: {}, now: {}",
+                            "wake_timer_loop: DRIVER SAYS: {:?}, deadline: {}, now: {}\n\ttimer_id={}\n\tresolution={}\n\tticks={}",
                             error,
                             format_timer(expired_deadline.into()),
                             format_timer(now.into()),
+                            timer_config_id,
+                            resolution_nanos,
+                            ticks,
                         );
                         // We do not have a wake lease, so the system may sleep before
                         // we get to schedule a new timer. We have no way to avoid it
@@ -1517,6 +1525,7 @@ async fn schedule_hrtimer(
         "resolution_ns" => resolution_nanos,
         "ticks" => ticks
     );
+    let timer_config_id = timer_config.id;
     let start_and_wait_fut = hrtimer.start_and_wait(
         timer_config.id,
         &ffhh::Resolution::Duration(resolution_nanos),
@@ -1554,7 +1563,13 @@ async fn schedule_hrtimer(
                 // will result in this code path being hit.
                 debug!("schedule_hrtimer: hrtimer driver error: {:?}", e);
                 command_send
-                    .start_send(Cmd::AlarmDriverError { expired_deadline: now, error: e })
+                    .start_send(Cmd::AlarmDriverError {
+                        expired_deadline: now,
+                        error: e,
+                        timer_config_id,
+                        resolution_nanos,
+                        ticks,
+                    })
                     .unwrap();
                 // BAD: no way to keep alive.
             }
