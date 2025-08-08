@@ -52,6 +52,10 @@ idk_cc_source_library(
     idk_name = "source_dependency_1",
     include_base = ".",
     stable = True,
+    deps = [
+        # Used to ensure transitive dependencies are included.
+        ":test_source_set_subdependency",
+    ],
 )
 
 idk_cc_source_library(
@@ -62,6 +66,18 @@ idk_cc_source_library(
     category = "partner",
     hdrs_for_internal_use = ["another_header.h"],
     idk_name = "source_dependency_2",
+    include_base = ".",
+    stable = True,
+)
+
+idk_cc_source_library(
+    name = "test_source_set_subdependency",
+    testonly = True,
+    hdrs = ["dependency.h"],
+    api_area = "Developer",
+    category = "partner",
+    hdrs_for_internal_use = ["another_header.h"],
+    idk_name = "source_subdependency",
     include_base = ".",
     stable = True,
 )

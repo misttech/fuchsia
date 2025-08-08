@@ -2,9 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Extracts information from the FuchsiaIdkAtomInfo provider and formats it as a
-# JSON dictionary, mimicking the structure of the prebuild info generated from
-# the GN build.
+# Generates prebuild info for all atoms in the IDK dependency graph of the
+# given cquery target.
+#
+# For each such atom, it extracts information from the FuchsiaIdkAtomInfo
+# provider and formats it as a JSON dictionary, mimicking the structure of the
+# prebuild info generated from the GN build. The prebuild info for all atoms is
+# returned in a JSON list.
+#
+# Only atoms in the IDK deps tree are included. This means that, for example,
+# atoms coresponding to libraries used only in the internal implementation of a
+# prebuilt library atom are not included.
 
 def _get_path(file_or_target):
     """Gets the path from a File or a Target object."""
@@ -46,5 +54,25 @@ def _generate_prebuild_info_for_atom(target):
         "prebuild_info": prebuild_info,
     }
 
+def _generate_prebuild_info_for_all_atoms(target):
+    atom_targets = []
+    p = providers(target)
+
+    # If the `target` is an atom, include it in the output.
+    provider = p.get("//build/bazel/bazel_idk:defs.bzl%FuchsiaIdkAtomInfo")
+    if provider:
+      atom_targets.append(target)
+    else:
+      provider = p.get("//build/bazel/bazel_idk:defs.bzl%FuchsiaIdkMoleculeInfo")
+
+    # In either case, include all atom dependencies.
+    atom_targets += provider.atoms_depset.to_list()
+
+    infos = []
+    for atom in atom_targets:
+      infos.append(json.encode_indent(_generate_prebuild_info_for_atom(atom), indent = "  "))
+
+    return infos
+
 def format(target):
-    return json.encode_indent(_generate_prebuild_info_for_atom(target), indent = "  ")
+    return "[\n" + ",\n".join(_generate_prebuild_info_for_all_atoms(target)) + "\n]"
