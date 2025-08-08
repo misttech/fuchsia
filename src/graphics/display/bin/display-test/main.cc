@@ -13,24 +13,22 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/loop.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/stdcompat/span.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zircon-internal/align.h>
-#include <unistd.h>
 #include <zircon/process.h>
 #include <zircon/status.h>
 #include <zircon/syscalls.h>
 #include <zircon/types.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <limits>
 #include <memory>
 #include <string_view>
@@ -53,6 +51,21 @@ using display_test::ColorLayer;
 using display_test::Display;
 using display_test::PrimaryLayer;
 using display_test::VirtualLayer;
+
+namespace {
+
+zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> ConnectToDisplayProvider() {
+  component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
+  static constexpr zx::duration kTimeoutSeconds = zx::sec(30);
+  zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> watch_result =
+      watcher.GetNextInstance(/*stop_at_idle=*/false, zx::deadline_after(kTimeoutSeconds));
+  if (watch_result.status_value() == ZX_ERR_TIMED_OUT) {
+    fprintf(stderr, "Timed out after %" PRId64 "seconds waiting for display Provider",
+            kTimeoutSeconds.to_secs());
+    return watch_result.take_error();
+  }
+  return watch_result;
+}
 
 // Listens to [`fuchsia.hardware.display/CoordinatorListener`] requests.
 //
@@ -156,17 +169,9 @@ enum Platforms {
 Platforms platform = UNKNOWN_PLATFORM;
 fbl::StringBuffer<fuchsia_sysinfo::wire::kBoardNameLen> board_name;
 
-Platforms GetPlatform();
-void Usage();
-
-static bool bind_display(const char* coordinator, async::Loop& coordinator_listener_loop,
-                         fbl::Vector<Display>* displays) {
+bool BindDisplay(fidl::ClientEnd<fuchsia_hardware_display::Provider> provider,
+                 async::Loop& coordinator_listener_loop, fbl::Vector<Display>* displays) {
   printf("Opening coordinator\n");
-  zx::result provider = component::Connect<fuchsia_hardware_display::Provider>(coordinator);
-  if (provider.is_error()) {
-    printf("Failed to open display coordinator (%s)\n", provider.status_string());
-    return false;
-  }
 
   auto [coordinator_client, coordinator_server] =
       fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
@@ -180,9 +185,8 @@ static bool bind_display(const char* coordinator, async::Loop& coordinator_liste
           .coordinator(std::move(coordinator_server))
           .coordinator_listener(std::move(listener_client))
           .Build();
-  fidl::WireResult open_response =
-      fidl::WireCall(provider.value())
-          ->OpenCoordinatorWithListenerForPrimary(std::move(open_coordinator_request));
+  fidl::WireResult open_response = fidl::WireCall(provider)->OpenCoordinatorWithListenerForPrimary(
+      std::move(open_coordinator_request));
   if (!open_response.ok()) {
     printf("Failed to call service handle: %s\n", open_response.FormatDescription().c_str());
     return false;
@@ -622,9 +626,6 @@ void capture_release() {
 void usage(void) {
   printf(
       "Usage: display-test [OPTIONS]\n\n"
-      "--controller path        : Open the display coordinator device at <path>\n"
-      "                           If not specified, open the first available device at\n"
-      "                           /dev/class/display-coordinator\n"
       "--dump                   : print properties of attached display\n"
       "--mode-set D N           : Set Display D to mode N (use dump option for choices)\n"
       "--format-set D N         : Set Display D to format N (use dump option for choices)\n"
@@ -697,23 +698,7 @@ Platforms GetPlatform() {
   return UNKNOWN_PLATFORM;
 }
 
-std::optional<std::string> FindCoordinatorFromDirectory(std::string_view directory) {
-  std::filesystem::path directory_path(directory);
-  if (!std::filesystem::exists(directory_path)) {
-    fprintf(stderr, "%s does not exist!\n", directory_path.c_str());
-    return std::nullopt;
-  }
-  if (!std::filesystem::is_directory(directory_path)) {
-    fprintf(stderr, "%s is not a valid directory!\n", directory_path.c_str());
-    return std::nullopt;
-  }
-  for (const std::filesystem::directory_entry& entry :
-       std::filesystem::directory_iterator(directory)) {
-    return entry.path();
-  }
-  fprintf(stderr, "There is no display coordinator in %s!\n", directory_path.c_str());
-  return std::nullopt;
-}
+}  // namespace
 
 int main(int argc, const char* argv[]) {
   printf("Running display test\n");
@@ -725,7 +710,6 @@ int main(int argc, const char* argv[]) {
   int32_t delay = 0;
   bool capture = false;
   bool verify_capture = false;
-  std::optional<std::string> coordinator_path_override = std::nullopt;
   async::Loop coordinator_listener_loop(&kAsyncLoopConfigNeverAttachToThread);
 
   platform = GetPlatform();
@@ -742,30 +726,15 @@ int main(int argc, const char* argv[]) {
       testbundle = SIMPLE;
   }
 
-  for (int i = 1; i < argc - 1; i++) {
-    if (!strcmp(argv[i], "--controller")) {
-      coordinator_path_override = argv[i + 1];
-      break;
-    }
+  zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
+      ConnectToDisplayProvider();
+  if (provider_result.is_error()) {
+    fprintf(stderr, "Failed to connect to display provider: %s\n", provider_result.status_string());
+    return -1;
   }
+  fidl::ClientEnd<fuchsia_hardware_display::Provider> provider = std::move(provider_result.value());
 
-  std::string coordinator_path;
-  if (coordinator_path_override.has_value()) {
-    coordinator_path = coordinator_path_override.value();
-  } else {
-    static constexpr std::string_view kDefaultCoordinatorDirectory =
-        "/dev/class/display-coordinator";
-    std::optional<std::string> default_coordinator_path =
-        FindCoordinatorFromDirectory(kDefaultCoordinatorDirectory);
-    if (!default_coordinator_path.has_value()) {
-      fprintf(stderr, "Failed to find display coordinator from default path\n");
-      return -1;
-    }
-    coordinator_path = std::move(default_coordinator_path).value();
-  }
-  printf("Display coordinator device: %s\n", coordinator_path.c_str());
-
-  if (!bind_display(coordinator_path.c_str(), coordinator_listener_loop, &displays)) {
+  if (!BindDisplay(std::move(provider), coordinator_listener_loop, &displays)) {
     usage();
     return -1;
   }
