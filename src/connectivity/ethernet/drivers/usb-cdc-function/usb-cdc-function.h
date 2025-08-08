@@ -108,6 +108,7 @@ class UsbCdcFunction : public UsbCdcFunctionType,
   // Use this method to access the request lists defined above. These have correct thread
   // annotations and will ensure that any error in locking are caught during compilation.
   list_node_t* tx_pending_infos() __TA_REQUIRES(tx_mutex_) { return &tx_pending_infos_; }
+  void DiscardPendingTxInfos(zx_status_t status) __TA_EXCLUDES(tx_mutex_);
 
   std::atomic_bool unbound_ = false;  // set to true when device is going away.
 

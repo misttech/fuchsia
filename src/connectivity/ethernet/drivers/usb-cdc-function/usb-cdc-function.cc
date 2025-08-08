@@ -431,6 +431,7 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetConfigured(bool configured, u
     }
   }
 
+  zxlogf(INFO, "configured = %d", configured);
   if (configured) {
     if (zx_status_t status = function_.ConfigEp(&descriptors_.intr_ep, NULL); status != ZX_OK) {
       zxlogf(ERROR, "[bug] ConfigEp(): %s", zx_status_get_string(status));
@@ -443,6 +444,10 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetConfigured(bool configured, u
     function_.DisableEp(bulk_out_addr_);
     function_.DisableEp(bulk_in_addr_);
     function_.DisableEp(intr_addr_);
+
+    // Everything is disabled, cancel pending transactions if we have any.
+    DiscardPendingTxInfos(ZX_ERR_CANCELED);
+
     speed_ = USB_SPEED_UNDEFINED;
     configured_ = configured;
   }
@@ -495,6 +500,9 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetInterface(uint8_t interface,
     }
   } else {
     online = false;
+
+    // Everything is disabled, cancel pending transactions if we have any.
+    DiscardPendingTxInfos(ZX_ERR_CANCELED);
   }
 
   {
@@ -509,6 +517,14 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetInterface(uint8_t interface,
   cdc_send_notifications();
 
   return ZX_OK;
+}
+
+void UsbCdcFunction::DiscardPendingTxInfos(zx_status_t status) {
+  std::lock_guard<std::mutex> l(tx_mutex_);
+  txn_info_t* txn;
+  while ((txn = list_remove_head_type(tx_pending_infos(), txn_info_t, node)) != NULL) {
+    complete_txn(txn, status);
+  }
 }
 
 void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
@@ -633,13 +649,7 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
 
 void UsbCdcFunction::DdkUnbind(ddk::UnbindTxn txn) {
   unbound_ = true;
-  {
-    std::lock_guard<std::mutex> l(tx_mutex_);
-    txn_info_t* txn;
-    while ((txn = list_remove_head_type(tx_pending_infos(), txn_info_t, node)) != NULL) {
-      complete_txn(txn, ZX_ERR_PEER_CLOSED);
-    }
-  }
+  DiscardPendingTxInfos(ZX_ERR_PEER_CLOSED);
 
   txn.Reply();
 }
