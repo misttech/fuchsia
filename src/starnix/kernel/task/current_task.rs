@@ -126,6 +126,12 @@ pub struct FullCredentials {
     pub security_state: security::TaskState,
 }
 
+impl FullCredentials {
+    pub fn for_kernel() -> Self {
+        Self { creds: Credentials::root(), security_state: security::task_alloc_for_kernel() }
+    }
+}
+
 /// The task object associated with the currently executing thread.
 ///
 /// We often pass the `CurrentTask` as the first argument to functions if those functions need to

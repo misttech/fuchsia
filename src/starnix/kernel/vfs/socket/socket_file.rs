@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::security;
-use crate::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
+use crate::task::{CurrentTask, EventHandler, FullCredentials, WaitCanceler, Waiter};
 use crate::vfs::buffers::{AncillaryData, InputBuffer, MessageReadInfo, OutputBuffer};
 use crate::vfs::file_server::serve_file;
 use crate::vfs::socket::{
@@ -175,7 +175,8 @@ impl FileOps for SocketFile {
         if let Some(handle) = self.socket.to_handle(file, current_task)? {
             Ok(Some(handle))
         } else {
-            serve_file(current_task, file).map(|c| Some(c.0.into_handle()))
+            serve_file(current_task, file, FullCredentials::for_kernel())
+                .map(|c| Some(c.0.into_handle()))
         }
     }
 }

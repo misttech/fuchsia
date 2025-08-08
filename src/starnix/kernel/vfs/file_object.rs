@@ -8,7 +8,7 @@ use crate::power::OnWakeOps;
 use crate::security;
 use crate::task::{
     register_delayed_release, CurrentTask, CurrentTaskAndLocked, EncryptionKeyId, EventHandler,
-    Task, ThreadGroupKey, WaitCallback, WaitCanceler, Waiter,
+    FullCredentials, Task, ThreadGroupKey, WaitCallback, WaitCanceler, Waiter,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::file_server::serve_file;
@@ -426,7 +426,8 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<Option<zx::Handle>, Errno> {
-        serve_file(current_task, file).map(|c| Some(c.0.into_handle()))
+        serve_file(current_task, file, FullCredentials::for_kernel())
+            .map(|c| Some(c.0.into_handle()))
     }
 
     /// Returns the associated pid_t.

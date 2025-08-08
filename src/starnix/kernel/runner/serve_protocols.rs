@@ -14,7 +14,7 @@ use futures::{AsyncReadExt, AsyncWriteExt, Future, StreamExt, TryStreamExt};
 use starnix_core::execution::{create_init_child_process, execute_task_with_prerun_result};
 use starnix_core::fs::devpts::create_main_and_replica;
 use starnix_core::fs::fuchsia::create_fuchsia_pipe;
-use starnix_core::task::{CurrentTask, ExitStatus, Kernel, LockedAndTask, ProcessEntryRef};
+use starnix_core::task::{CurrentTask, ExitStatus, FullCredentials, Kernel, LockedAndTask, ProcessEntryRef};
 use starnix_core::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use starnix_core::vfs::file_server::serve_file_at;
 use starnix_core::vfs::socket::VsockSocket;
@@ -42,7 +42,12 @@ pub fn expose_root(
     server_end: ServerEnd<fio::DirectoryMarker>,
 ) -> Result<(), Error> {
     let root_file = system_task.open_file(locked, "/".into(), OpenFlags::RDONLY)?;
-    serve_file_at(server_end.into_channel().into(), system_task, &root_file)?;
+    serve_file_at(
+        server_end.into_channel().into(),
+        system_task,
+        &root_file,
+        FullCredentials::for_kernel(),
+    )?;
     Ok(())
 }
 
