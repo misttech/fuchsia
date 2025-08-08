@@ -29,13 +29,13 @@ bool I2cBusVisitor::is_match(fdf_devicetree::Node& node) {
     return false;
   }
 
-  auto address_cells = node.properties().find("#address-cells");
-  if (address_cells == node.properties().end() || address_cells->second.AsUint32() != 1) {
+  auto address_cells = node.GetProperty<uint32_t>("#address-cells");
+  if (address_cells.is_error() || *address_cells != 1) {
     return false;
   }
 
-  auto size_cells = node.properties().find("#size-cells");
-  if (size_cells == node.properties().end() || size_cells->second.AsUint32() != 0) {
+  auto size_cells = node.GetProperty<uint32_t>("#size-cells");
+  if (size_cells.is_error() || *size_cells != 0) {
     return false;
   }
 
@@ -78,29 +78,24 @@ zx::result<> I2cBusVisitor::CreateController(std::string node_name) {
 zx::result<> I2cBusVisitor::ParseChild(I2cController& controller, fdf_devicetree::Node& parent,
                                        fdf_devicetree::ChildNode& child) {
   // Parse reg to get the address.
-  auto property = child.properties().find("reg");
-  if (property == child.properties().end()) {
-    FDF_LOG(ERROR, "I2C child '%s' has no reg property.", child.name().c_str());
-    return zx::error(ZX_ERR_INVALID_ARGS);
+  auto reg = child.GetProperty<std::vector<uint32_t>>("reg");
+  if (reg.is_error()) {
+    FDF_LOG(ERROR, "I2C child '%s' has no reg property: %s.", child.name().c_str(),
+            reg.status_string());
+    return reg.take_error();
   }
 
-  auto reg_props = fdf_devicetree::Uint32Array(property->second.AsBytes());
-  if (reg_props.size() == 0) {
+  if (reg->empty()) {
     FDF_LOG(ERROR, "I2C child '%s' has an empty reg property.", child.name().c_str());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-  std::vector<uint32_t> addresses;
-  addresses.reserve(reg_props.size());
-  for (size_t i = 0; i < reg_props.size(); i++) {
-    addresses.push_back(reg_props[i]);
-  }
 
-  for (const uint32_t address : addresses) {
+  for (const uint32_t address : *reg) {
     fuchsia_hardware_i2c_businfo::I2CChannel channel;
     channel.address() = address;
 
     std::string child_name;
-    if (addresses.size() > 1) {
+    if (reg->size() > 1) {
       child_name = fbl::StringPrintf("%s-0x%02x", child.name().c_str(), address).c_str();
     } else {
       child_name = child.name();
@@ -109,8 +104,8 @@ zx::result<> I2cBusVisitor::ParseChild(I2cController& controller, fdf_devicetree
 
     // TODO(https://fxbug.dev/339981930) : RTC driver for nxp,pcf8563 is frozen and needs this hack
     // until it can be updated to devicetree new bind rules.
-    const bool is_nxp_pcf8563 = child.properties().find("compatible") != child.properties().end() &&
-                                child.properties().at("compatible").AsString() == "nxp,pcf8563";
+    auto compatible = child.GetProperty<std::string>("compatible");
+    const bool is_nxp_pcf8563 = compatible.is_ok() && *compatible == "nxp,pcf8563";
 
     if (is_nxp_pcf8563) {
       channel.vid() = PDEV_VID_NXP;

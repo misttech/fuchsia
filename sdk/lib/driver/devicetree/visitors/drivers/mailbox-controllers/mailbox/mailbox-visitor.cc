@@ -56,14 +56,16 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
   }
 
   std::vector<std::string_view> channel_names;
-  if (auto channel_names_property = node.properties().find(kMailboxNamesProperty);
-      channel_names_property != node.properties().end()) {
-    std::optional channel_names_list = channel_names_property->second.AsStringList();
-    if (!channel_names_list) {
-      FDF_LOG(ERROR, "Failed to parse mbox-names property for node \"%s\"", node.name().c_str());
-      return zx::error(ZX_ERR_INVALID_ARGS);
+  auto channel_names_property = node.GetProperty<std::vector<std::string>>(kMailboxNamesProperty);
+  if (channel_names_property.is_ok()) {
+    channel_names.reserve(channel_names_property->size());
+    for (const auto& name : *channel_names_property) {
+      channel_names.push_back(name);
     }
-    channel_names = {channel_names_list->begin(), channel_names_list->end()};
+  } else if (channel_names_property.status_value() != ZX_ERR_NOT_FOUND) {
+    FDF_LOG(ERROR, "Failed to parse mbox-names property for node \"%s\": %s", node.name().c_str(),
+            channel_names_property.status_string());
+    return channel_names_property.take_error();
   }
 
   const std::vector<fdf_devicetree::PropertyValue>& channels = (*properties)[kMailboxesProperty];
@@ -131,13 +133,14 @@ zx::result<> MailboxVisitor::FinalizeNode(fdf_devicetree::Node& node) {
     return zx::ok();  // Not a mailbox controller or no channels -- ignore.
   }
 
-  auto mbox_cells = node.properties().find(kMailboxCellsProperty);
-  if (mbox_cells == node.properties().end() || !mbox_cells->second.AsUint32()) {
-    FDF_LOG(ERROR, "Missing #mbox-cells property for node \"%s\"", node.name().c_str());
-    return zx::error(ZX_ERR_INVALID_ARGS);
+  auto mbox_cells = node.GetProperty<uint32_t>(kMailboxCellsProperty);
+  if (mbox_cells.is_error()) {
+    FDF_LOG(ERROR, "Missing #mbox-cells property for node \"%s\": %s", node.name().c_str(),
+            mbox_cells.status_string());
+    return mbox_cells.take_error();
   }
 
-  if (mbox_cells->second.AsUint32().value() != 1) {
+  if (*mbox_cells != 1) {
     FDF_LOG(ERROR, "Invalid #mbox-cells property for node \"%s\"", node.name().c_str());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }

@@ -144,10 +144,11 @@ zx::result<> RegulatorVisitor::AddRegulatorMetadata(fdf_devicetree::Node& node,
 
 zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
                                                 fdf_devicetree::ReferenceNode& parent) {
-  auto regulator_name = parent.properties().find(kRegulatorName);
-  if (regulator_name == parent.properties().end()) {
-    FDF_LOG(ERROR, "Regulator node '%s' does not have a name.", parent.name().c_str());
-    return zx::error(ZX_ERR_NOT_FOUND);
+  auto regulator_name = parent.GetProperty<std::string>(kRegulatorName);
+  if (regulator_name.is_error()) {
+    FDF_LOG(ERROR, "Regulator node '%s' does not have a name: %s.", parent.name().c_str(),
+            regulator_name.status_string());
+    return regulator_name.take_error();
   }
 
   auto regulator_node = fuchsia_driver_framework::ParentSpec2{{
@@ -155,15 +156,13 @@ zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
           {
               fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_vreg::SERVICE,
                                        bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia_regulator::NAME,
-                                       regulator_name->second.AsString().value()),
+              fdf::MakeAcceptBindRule2(bind_fuchsia_regulator::NAME, *regulator_name),
           },
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
                                  bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_regulator::NAME,
-                                 regulator_name->second.AsString().value()),
+              fdf::MakeProperty2(bind_fuchsia_regulator::NAME, *regulator_name),
           },
   }};
 

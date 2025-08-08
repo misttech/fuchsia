@@ -68,17 +68,11 @@ class InterconnectReferenceProperty : public fdf_devicetree::Property {
       cell_offset++;
       uint32_t cell_count = 0;
       constexpr char kInterconnectCells[] = "#interconnect-cells";
-      if (!reference->properties().contains(kInterconnectCells)) {
-        fdf::error("Reference node '{}' does not have '{}' property.", reference->name(),
-                   kInterconnectCells);
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-      std::optional cell_count_prop = reference->properties().at(kInterconnectCells).AsUint32();
-      if (!cell_count_prop) {
-        fdf::error("Reference node '{}' has invalid '{}' property.", reference->name(),
-                   kInterconnectCells);
-
-        return zx::error(ZX_ERR_INVALID_ARGS);
+      auto cell_count_prop = reference->GetProperty<uint32_t>(kInterconnectCells);
+      if (cell_count_prop.is_error()) {
+        fdf::error("Reference node '{}' does not have'{}' property: {}", reference->name(),
+                   kInterconnectCells, cell_count_prop.status_string());
+        return cell_count_prop.take_error();
       }
       cell_count = *cell_count_prop;
 

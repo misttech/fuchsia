@@ -4,6 +4,7 @@
 
 #include "lib/driver/devicetree/manager/node.h"
 
+#include <endian.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
@@ -54,13 +55,12 @@ Node::Node(Node *parent, const std::string_view name, devicetree::Properties pro
   }
 
   // Get phandle if exists.
-  const auto phandle_prop = properties_.find(kPhandleProp);
-  if (phandle_prop != properties_.end()) {
-    if (phandle_prop->second.AsUint32() != std::nullopt) {
-      phandle_ = phandle_prop->second.AsUint32();
-    } else {
-      FDF_LOG(WARNING, "Node '%s' has invalid phandle property", name_.c_str());
-    }
+  auto phandle = GetProperty<uint32_t>(kPhandleProp);
+  if (phandle.is_ok()) {
+    phandle_ = phandle.value();
+  } else if (phandle.status_value() != ZX_ERR_NOT_FOUND) {
+    FDF_LOG(WARNING, "Node '%s' has invalid phandle property: %s", name_.c_str(),
+            phandle.status_string());
   }
 }
 
@@ -146,15 +146,10 @@ zx::result<> Node::Publish(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pl
     return zx::ok();
   }
 
-  auto status_property = properties_.find("status");
-  if (status_property != properties_.end()) {
-    auto status_string = status_property->second.AsString();
-    if (status_string && (*status_string != "okay")) {
-      FDF_LOG(DEBUG, "Not publishing node '%.*s' because its status is %.*s.",
-              static_cast<int>(name().size()), name().data(),
-              static_cast<int>(status_string->size()), status_string->data());
-      return zx::ok();
-    }
+  auto status_property = GetProperty<std::string>("status");
+  if (status_property.is_ok() && *status_property != "okay") {
+    fdf::debug("Not publishing node '{}' because its status is {}.", name(), *status_property);
+    return zx::ok();
   }
 
   // Nodes are published as per below logic -
@@ -288,5 +283,69 @@ std::vector<ChildNode> Node::children() {
 }
 
 ParentNode ReferenceNode::parent() const { return node_->parent(); }
+
+template <typename T>
+typename GetPropertyReturn<T>::type Node::GetProperty(std::string_view property_name) const {
+  auto it = properties_.find(property_name);
+  if constexpr (std::is_same_v<T, bool>) {
+    return it != properties_.end();
+  } else {
+    if (it == properties_.end()) {
+      return zx::error(ZX_ERR_NOT_FOUND);
+    }
+
+    const devicetree::PropertyValue &prop_value = it->second;
+
+    if constexpr (std::is_same_v<T, std::string>) {
+      auto val = prop_value.AsString();
+      if (val) {
+        return zx::ok(std::string(*val));
+      }
+    } else if constexpr (std::is_same_v<T, uint32_t>) {
+      auto val = prop_value.AsUint32();
+      if (val) {
+        return zx::ok(*val);
+      }
+    } else if constexpr (std::is_same_v<T, uint64_t>) {
+      auto val = prop_value.AsUint64();
+      if (val) {
+        return zx::ok(*val);
+      }
+    } else if constexpr (std::is_same_v<T, std::vector<uint32_t>>) {
+      auto bytes = prop_value.AsBytes();
+      if (bytes.size() % sizeof(uint32_t) != 0) {
+        return zx::error(ZX_ERR_WRONG_TYPE);
+      }
+      std::vector<uint32_t> result;
+      result.reserve(bytes.size() / sizeof(uint32_t));
+      for (size_t i = 0; i < bytes.size(); i += sizeof(uint32_t)) {
+        uint32_t val;
+        memcpy(&val, bytes.data() + i, sizeof(uint32_t));
+        result.push_back(be32toh(val));
+      }
+      return zx::ok(result);
+    } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
+      auto string_list = prop_value.AsStringList();
+      if (string_list) {
+        std::vector<std::string> result(string_list->begin(), string_list->end());
+        return zx::ok(result);
+      }
+    } else {
+      static_assert(std::is_void_v<T>, "Invalid type for Node::GetProperty");
+    }
+
+    return zx::error(ZX_ERR_WRONG_TYPE);
+  }
+}
+
+template bool Node::GetProperty<bool>(std::string_view property_name) const;
+template zx::result<std::string> Node::GetProperty<std::string>(
+    std::string_view property_name) const;
+template zx::result<uint32_t> Node::GetProperty<uint32_t>(std::string_view property_name) const;
+template zx::result<uint64_t> Node::GetProperty<uint64_t>(std::string_view property_name) const;
+template zx::result<std::vector<uint32_t>> Node::GetProperty<std::vector<uint32_t>>(
+    std::string_view property_name) const;
+template zx::result<std::vector<std::string>> Node::GetProperty<std::vector<std::string>>(
+    std::string_view property_name) const;
 
 }  // namespace fdf_devicetree

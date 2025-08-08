@@ -53,4 +53,14 @@
 		compatible = "fuchsia,property1-child";
 		property1 = <0x01 0x04>;
 	};
+
+	test-properties-device {
+		bool-property;
+		compatible = "fuchsia,test-properties-device";
+		device_specific_prop = <0x03>;
+		string-list-property = "string1\0string2";
+		string-property = "hello";
+		uint32-vector-property = <0x01 0x02>;
+		uint64-property = <0x12345678 0x9abcdef0>;
+	};
 };

@@ -60,25 +60,22 @@ zx::result<PropertyValues> InterruptParser::Parse(Node& node) {
   // Traverse the parent chain upwards until interrupt parent or interrupt controller is
   // encountered.
   while (current) {
-    auto parent_prop = current.properties().find("interrupt-parent");
-    if (parent_prop != current.properties().end()) {
-      auto phandle = parent_prop->second.AsUint32();
-      if (!phandle) {
-        FDF_LOG(ERROR, "Invalid interrupt-parent property in node '%s", current.name().c_str());
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-      auto result = node.GetReferenceNode(*phandle);
+    auto parent_phandle = current.GetProperty<uint32_t>("interrupt-parent");
+    if (parent_phandle.is_ok()) {
+      auto result = node.GetReferenceNode(*parent_phandle);
       if (result.is_error()) {
-        FDF_LOG(ERROR, "Failed to get reference node for phandle %d - %s ", *phandle,
+        FDF_LOG(ERROR, "Failed to get reference node for phandle %d - %s ", *parent_phandle,
                 result.status_string());
         return result.take_error();
       }
       interrupt_parent = *result;
       break;
     }
+    if (parent_phandle.status_value() != ZX_ERR_NOT_FOUND) {
+      return parent_phandle.take_error();
+    }
 
-    auto controller_prop = current.properties().find("interrupt-controller");
-    if (controller_prop != current.properties().end()) {
+    if (current.GetProperty<bool>("interrupt-controller")) {
       interrupt_parent = current.MakeReferenceNode();
       break;
     }

@@ -96,20 +96,13 @@ zx::result<std::vector<PropertyValue>> ReferenceProperty::Parse(Node& node,
     uint32_t cell_count = 0;
     if (std::holds_alternative<PropertyName>(cell_specifier_)) {
       auto cells_prop_name = std::get<PropertyName>(cell_specifier_);
-      auto cell_specifier = reference->properties().find(cells_prop_name);
-      if (cell_specifier == reference->properties().end()) {
-        FDF_LOG(ERROR, "Reference node '%s' does not have '%s' property.",
-                reference->name().c_str(), cells_prop_name.c_str());
-        return zx::error(ZX_ERR_INVALID_ARGS);
+      auto cell_specifier = reference->GetProperty<uint32_t>(cells_prop_name);
+      if (cell_specifier.is_error()) {
+        FDF_LOG(ERROR, "Reference node '%s' does not have '%s' property: %s.",
+                reference->name().c_str(), cells_prop_name.c_str(), cell_specifier.status_string());
+        return cell_specifier.take_error();
       }
-      auto cell_specifier_value = cell_specifier->second.AsUint32();
-      if (!cell_specifier_value) {
-        FDF_LOG(ERROR, "Reference node '%s' has invalid '%s' property.", reference->name().c_str(),
-                cells_prop_name.c_str());
-
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-      cell_count = *cell_specifier_value;
+      cell_count = *cell_specifier;
     } else {
       cell_count = std::get<uint32_t>(cell_specifier_);
     }

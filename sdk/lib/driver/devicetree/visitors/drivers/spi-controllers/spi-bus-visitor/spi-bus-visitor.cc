@@ -98,15 +98,15 @@ void SpiBusVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t 
 
 zx::result<> SpiBusVisitor::ParseChild(SpiController& controller, fdf_devicetree::Node& parent,
                                        fdf_devicetree::ChildNode& child) {
-  const auto property = child.properties().find("reg");
-  if (property == child.properties().end()) {
-    FDF_LOG(ERROR, "SPI child '%s' has no reg property", child.name().c_str());
-    return zx::error(ZX_ERR_INVALID_ARGS);
+  auto reg = child.GetProperty<std::vector<uint32_t>>("reg");
+  if (reg.is_error()) {
+    FDF_LOG(ERROR, "SPI child '%s' has no reg property: %s", child.name().c_str(),
+            reg.status_string());
+    return reg.take_error();
   }
 
-  const fdf_devicetree::Uint32Array reg_props(property->second.AsBytes());
-  for (uint32_t i = 0; i < reg_props.size(); i++) {
-    const uint32_t chip_select = reg_props[i];
+  for (uint32_t i = 0; i < reg->size(); i++) {
+    const uint32_t chip_select = (*reg)[i];
 
     const auto it =
         std::find_if(controller.channels.cbegin(), controller.channels.cend(),
@@ -132,13 +132,13 @@ bool SpiBusVisitor::is_match(fdf_devicetree::Node& node) {
     return false;
   }
 
-  const auto address_cells = node.properties().find("#address-cells");
-  if (address_cells == node.properties().end() || address_cells->second.AsUint32() != 1) {
+  auto address_cells = node.GetProperty<uint32_t>("#address-cells");
+  if (address_cells.is_error() || *address_cells != 1) {
     return false;
   }
 
-  const auto size_cells = node.properties().find("#size-cells");
-  return size_cells != node.properties().end() && size_cells->second.AsUint32() == 0;
+  auto size_cells = node.GetProperty<uint32_t>("#size-cells");
+  return size_cells.is_ok() && *size_cells == 0;
 }
 
 }  // namespace spi_bus_dt

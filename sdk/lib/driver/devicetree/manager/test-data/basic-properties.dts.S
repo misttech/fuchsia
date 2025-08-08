@@ -13,6 +13,16 @@
     #address-cells = <2>;
     #size-cells = <2>;
 
+    test-properties-device {
+        compatible = "fuchsia,test-properties-device";
+        bool-property;
+        string-property = "hello";
+        device_specific_prop = <DEVICE_SPECIFIC_PROP_VALUE>;
+        uint64-property = <0x12345678 0x9abcdef0>;
+        uint32-vector-property = <1 2>;
+        string-list-property = "string1", "string2";
+    };
+
     sample-device@0 {
         compatible = "fuchsia,sample-device";
         reg = <0 TEST_REG_A_BASE 0 TEST_REG_A_LENGTH>;

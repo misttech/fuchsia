@@ -196,4 +196,13 @@ zx::result<> Manager::ChangePublishOrder(uint32_t node_id, uint32_t new_index) {
   return zx::ok();
 }
 
+std::optional<Node*> Manager::FindNode(std::string_view name) {
+  for (auto& node : nodes_publish_order_) {
+    if (node->name() == name) {
+      return node.get();
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace fdf_devicetree

@@ -157,9 +157,9 @@ TEST_F(ManagerTest, TestMetadata) {
     MetadataVisitor() : DriverVisitor({"fuchsia,sample-device"}) {}
 
     zx::result<> DriverVisit(Node& node, const devicetree::PropertyDecoder& decoder) override {
-      auto prop = node.properties().find("device_specific_prop");
-      EXPECT_NE(node.properties().end(), prop) << "Property device_specific_prop was unexpected.";
-      device_specific_prop = prop->second.AsUint32().value_or(ZX_ERR_INVALID_ARGS);
+      auto prop = node.GetProperty<uint32_t>("device_specific_prop");
+      EXPECT_TRUE(prop.is_ok()) << "Property device_specific_prop was unexpected.";
+      device_specific_prop = prop.value_or(ZX_ERR_INVALID_ARGS);
       EXPECT_EQ(device_specific_prop, (uint32_t)DEVICE_SPECIFIC_PROP_VALUE);
       fuchsia_hardware_platform_bus::Metadata metadata = {
           {.data = std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(&device_specific_prop),
@@ -178,7 +178,7 @@ TEST_F(ManagerTest, TestMetadata) {
   ASSERT_TRUE(DoPublish(manager).is_ok());
 
   ASSERT_EQ(1lu, env().SyncCall(&testing::FakeEnvWrapper::pbus_node_size));
-  ASSERT_EQ(9lu, env().SyncCall(&testing::FakeEnvWrapper::non_pbus_node_size));
+  ASSERT_EQ(10lu, env().SyncCall(&testing::FakeEnvWrapper::non_pbus_node_size));
 
   // Check metadata of sample-device.
   auto metadata = env().SyncCall(&testing::FakeEnvWrapper::pbus_nodes_at, 0).metadata();
@@ -505,6 +505,60 @@ TEST_F(ManagerTest, TestPublishOrder) {
   EXPECT_EQ(manager.nodes()[0]->id(), second_node_id);
   EXPECT_EQ(manager.nodes()[1]->id(), first_node_id);
   ASSERT_TRUE(DoPublish(manager).is_ok());
+}
+
+TEST_F(ManagerTest, GetPropertyTest) {
+  Manager manager(testing::LoadTestBlob("/pkg/test-data/basic-properties.dtb"));
+  DefaultVisitors<> visitor;
+  ASSERT_EQ(ZX_OK, manager.Walk(visitor).status_value());
+
+  auto test_device = manager.FindNode("test-properties-device");
+  ASSERT_TRUE(test_device.has_value());
+
+  // Test bool.
+  ASSERT_TRUE((*test_device)->GetProperty<bool>("bool-property"));
+  ASSERT_FALSE((*test_device)->GetProperty<bool>("non-existent-property"));
+
+  // Test string.
+  auto string_prop = (*test_device)->GetProperty<std::string>("string-property");
+  ASSERT_TRUE(string_prop.is_ok());
+  ASSERT_EQ(string_prop.value(), "hello");
+
+  // Test uint32.
+  auto uint32_prop = (*test_device)->GetProperty<uint32_t>("device_specific_prop");
+  ASSERT_TRUE(uint32_prop.is_ok());
+  ASSERT_EQ(uint32_prop.value(), static_cast<uint32_t>(DEVICE_SPECIFIC_PROP_VALUE));
+
+  // Test uint64.
+  auto uint64_prop = (*test_device)->GetProperty<uint64_t>("uint64-property");
+  ASSERT_TRUE(uint64_prop.is_ok());
+  ASSERT_EQ(uint64_prop.value(), 0x123456789abcdef0ULL);
+
+  // Test uint32 vector.
+  auto uint32_vector_prop =
+      (*test_device)->GetProperty<std::vector<uint32_t>>("uint32-vector-property");
+  ASSERT_TRUE(uint32_vector_prop.is_ok());
+  ASSERT_EQ(uint32_vector_prop.value().size(), 2u);
+  ASSERT_EQ(uint32_vector_prop.value()[0], 1u);
+  ASSERT_EQ(uint32_vector_prop.value()[1], 2u);
+
+  // Test string vector.
+  auto string_vector_prop =
+      (*test_device)->GetProperty<std::vector<std::string>>("string-list-property");
+  ASSERT_TRUE(string_vector_prop.is_ok());
+  ASSERT_EQ(string_vector_prop.value().size(), 2u);
+  ASSERT_EQ(string_vector_prop.value()[0], "string1");
+  ASSERT_EQ(string_vector_prop.value()[1], "string2");
+
+  // Test wrong type.
+  auto wrong_type_prop = (*test_device)->GetProperty<uint64_t>("string-property");
+  ASSERT_TRUE(wrong_type_prop.is_error());
+  ASSERT_EQ(wrong_type_prop.status_value(), ZX_ERR_WRONG_TYPE);
+
+  // Test not found.
+  auto not_found_prop = (*test_device)->GetProperty<std::string>("non-existent-property");
+  ASSERT_TRUE(not_found_prop.is_error());
+  ASSERT_EQ(not_found_prop.status_value(), ZX_ERR_NOT_FOUND);
 }
 
 }  // namespace

@@ -94,16 +94,17 @@ zx::result<> SerialPortVisitor::ParseReferenceChild(fdf_devicetree::Node& node,
   size_t count = properties[kUarts].size();
   std::vector<std::optional<std::string>> uart_names(count);
 
-  if (properties.find(kUartNames) != properties.end()) {
-    if (properties[kUartNames].size() > count) {
+  auto names = node.GetProperty<std::vector<std::string>>(kUartNames);
+  if (names.is_ok()) {
+    if (names->size() > count) {
       FDF_LOG(ERROR, "Node '%s' has %zu uart entries but has %zu uart names.", node.name().c_str(),
-              count, properties[kUartNames].size());
+              count, names->size());
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
     size_t name_idx = 0;
-    for (auto& name : properties[kUartNames]) {
-      uart_names[name_idx++] = name.AsString();
+    for (auto& name : *names) {
+      uart_names[name_idx++] = name;
     }
   }
 

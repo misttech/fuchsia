@@ -78,9 +78,7 @@ GpioImplVisitor::GpioImplVisitor() {
 
 zx::result<> GpioImplVisitor::Visit(fdf_devicetree::Node& node,
                                     const devicetree::PropertyDecoder& decoder) {
-  auto gpio_hog = node.properties().find("gpio-hog");
-
-  if (gpio_hog != node.properties().end()) {
+  if (node.GetProperty<bool>("gpio-hog")) {
     // Node containing gpio-hog property are to be parsed differently. They will be used to
     // construct gpio init step metadata.
     auto result = ParseGpioHogChild(node);
@@ -205,15 +203,14 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   }
 
   auto& controller = GetController(gpio_node.id());
-  auto pins_property = cfg_node.properties().find(kPins);
-  if (pins_property == cfg_node.properties().end()) {
-    FDF_LOG(ERROR, "Pin controller config '%s' does not have pins property",
-            cfg_node.name().c_str());
-    return zx::error(ZX_ERR_NOT_FOUND);
+  auto pins = cfg_node.GetProperty<std::vector<uint32_t>>(kPins);
+  if (pins.is_error()) {
+    FDF_LOG(ERROR, "Pin controller config '%s' does not have pins property: %s",
+            cfg_node.name().c_str(), pins.status_string());
+    return pins.take_error();
   }
 
-  auto pins = fdf_devicetree::Uint32Array(pins_property->second.AsBytes());
-  if (pins.size() == 0) {
+  if (pins->empty()) {
     FDF_LOG(ERROR, "No pins found in pin controller config '%s'", cfg_node.name().c_str());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
@@ -232,19 +229,19 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
     pull = val;
     return zx::ok();
   };
-  if (cfg_node.properties().contains(kPinBiasPullDown)) {
+  if (cfg_node.GetProperty<bool>(kPinBiasPullDown)) {
     auto result = save_pull(Pull::kDown);
     if (result.is_error()) {
       return result.take_error();
     }
   }
-  if (cfg_node.properties().contains(kPinBiasPullUp)) {
+  if (cfg_node.GetProperty<bool>(kPinBiasPullUp)) {
     auto result = save_pull(Pull::kUp);
     if (result.is_error()) {
       return result.take_error();
     }
   }
-  if (cfg_node.properties().contains(kPinBiasDisable)) {
+  if (cfg_node.GetProperty<bool>(kPinBiasDisable)) {
     auto result = save_pull(Pull::kNone);
     if (result.is_error()) {
       return result.take_error();
@@ -253,23 +250,22 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
 
   config.pull(pull);
 
-  if (cfg_node.properties().contains(kPinFunction)) {
-    auto function = cfg_node.properties().at(kPinFunction).AsUint64();
-    if (!function) {
-      FDF_LOG(ERROR, "Pin controller config '%s' has invalid function.", cfg_node.name().c_str());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-    config.function(function);
+  auto function = cfg_node.GetProperty<uint64_t>(kPinFunction);
+  if (function.is_ok()) {
+    config.function(function.value());
+  } else if (function.status_value() != ZX_ERR_NOT_FOUND) {
+    FDF_LOG(ERROR, "Pin controller config '%s' has invalid function: %s.", cfg_node.name().c_str(),
+            function.status_string());
+    return function.take_error();
   }
 
-  if (cfg_node.properties().contains(kPinDriveStrengthUa)) {
-    auto drive_strength_ua = cfg_node.properties().at(kPinDriveStrengthUa).AsUint64();
-    if (!drive_strength_ua) {
-      FDF_LOG(ERROR, "Pin controller config '%s' has invalid drive strength.",
-              cfg_node.name().c_str());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-    config.drive_strength_ua(drive_strength_ua);
+  auto drive_strength_ua = cfg_node.GetProperty<uint64_t>(kPinDriveStrengthUa);
+  if (drive_strength_ua.is_ok()) {
+    config.drive_strength_ua(drive_strength_ua.value());
+  } else if (drive_strength_ua.status_value() != ZX_ERR_NOT_FOUND) {
+    FDF_LOG(ERROR, "Pin controller config '%s' has invalid drive strength: %s.",
+            cfg_node.name().c_str(), drive_strength_ua.status_string());
+    return drive_strength_ua.take_error();
   }
 
   std::optional<DriveType> drive_type;
@@ -284,19 +280,19 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
     drive_type = val;
     return zx::ok();
   };
-  if (cfg_node.properties().contains(kPinDrivePushPull)) {
+  if (cfg_node.GetProperty<bool>(kPinDrivePushPull)) {
     auto result = save_drive_type(DriveType::kPushPull);
     if (result.is_error()) {
       return result.take_error();
     }
   }
-  if (cfg_node.properties().contains(kPinDriveOpenDrain)) {
+  if (cfg_node.GetProperty<bool>(kPinDriveOpenDrain)) {
     auto result = save_drive_type(DriveType::kOpenDrain);
     if (result.is_error()) {
       return result.take_error();
     }
   }
-  if (cfg_node.properties().contains(kPinDriveOpenSource)) {
+  if (cfg_node.GetProperty<bool>(kPinDriveOpenSource)) {
     auto result = save_drive_type(DriveType::kOpenSource);
     if (result.is_error()) {
       return result.take_error();
@@ -306,21 +302,20 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
     config.drive_type(drive_type);
   }
 
-  if (cfg_node.properties().contains(kPinPowerSource)) {
-    auto power_source = cfg_node.properties().at(kPinPowerSource).AsUint32();
-    if (!power_source) {
-      FDF_LOG(ERROR, "Pin controller config '%s' has invalid power source.",
-              cfg_node.name().c_str());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
+  auto power_source = cfg_node.GetProperty<uint32_t>(kPinPowerSource);
+  if (power_source.is_ok()) {
     config.power_source(*power_source);
+  } else if (power_source.status_value() != ZX_ERR_NOT_FOUND) {
+    FDF_LOG(ERROR, "Pin controller config '%s' has invalid power source: %s.",
+            cfg_node.name().c_str(), power_source.status_string());
+    return power_source.take_error();
   }
 
   std::optional<BufferMode> buffer_mode;
-  if (cfg_node.properties().contains(kPinOutputDisable)) {
+  if (cfg_node.GetProperty<bool>(kPinOutputDisable)) {
     buffer_mode = BufferMode::kInput;
   }
-  if (cfg_node.properties().contains(kPinOutputLow)) {
+  if (cfg_node.GetProperty<bool>(kPinOutputLow)) {
     if (buffer_mode) {
       FDF_LOG(
           ERROR,
@@ -330,7 +325,7 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
     }
     buffer_mode = BufferMode::kOutputLow;
   }
-  if (cfg_node.properties().contains(kPinOutputHigh)) {
+  if (cfg_node.GetProperty<bool>(kPinOutputHigh)) {
     if (buffer_mode) {
       FDF_LOG(
           ERROR,
@@ -355,12 +350,12 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   }
 
   // Add the init steps for all the pins in the config.
-  for (size_t i = 0; i < pins.size(); i++) {
+  for (size_t i = 0; i < pins->size(); i++) {
     FDF_LOG(DEBUG,
             "Gpio init steps (count: %zu) for child '%s' (pin 0x%x) added to controller '%s'",
-            init_calls.size(), child.name().c_str(), pins[i], gpio_node.name().c_str());
+            init_calls.size(), child.name().c_str(), (*pins)[i], gpio_node.name().c_str());
     for (auto& init_call : init_calls) {
-      auto step = fuchsia_hardware_pinimpl::InitStep::WithCall({{pins[i], init_call}});
+      auto step = fuchsia_hardware_pinimpl::InitStep::WithCall({{(*pins)[i], init_call}});
       controller.metadata.init_steps()->emplace_back(step);
     }
   }
@@ -384,27 +379,23 @@ zx::result<> GpioImplVisitor::ParseGpioHogChild(fdf_devicetree::Node& child) {
 
   std::optional<fuchsia_hardware_gpio::BufferMode> buffer_mode;
 
-  if (child.properties().contains("input")) {
+  if (child.GetProperty<bool>("input")) {
     buffer_mode = fuchsia_hardware_gpio::BufferMode::kInput;
   }
-  if (child.properties().contains("output-low")) {
+  if (child.GetProperty<bool>("output-low")) {
     if (buffer_mode) {
-      FDF_LOG(
-          ERROR,
-          "Multiple values for InitCall defined in gpio init hog '%s'. Property 'output-low' clashes with another property.",
-          child.name().c_str());
-      return zx::error(ZX_ERR_ALREADY_EXISTS);
+      FDF_LOG(ERROR, "Gpio init hog '%s' has more than one buffer mode property defined.",
+              child.name().c_str());
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
     buffer_mode = fuchsia_hardware_gpio::BufferMode::kOutputLow;
   }
 
-  if (child.properties().contains("output-high")) {
+  if (child.GetProperty<bool>("output-high")) {
     if (buffer_mode) {
-      FDF_LOG(
-          ERROR,
-          "Multiple values for InitCall defined in gpio init hog '%s'. Property 'output-high' clashes with another property.",
-          child.name().c_str());
-      return zx::error(ZX_ERR_ALREADY_EXISTS);
+      FDF_LOG(ERROR, "Gpio init hog '%s' has more than one buffer mode property defined.",
+              child.name().c_str());
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
     buffer_mode = fuchsia_hardware_gpio::BufferMode::kOutputHigh;
   }
@@ -414,24 +405,17 @@ zx::result<> GpioImplVisitor::ParseGpioHogChild(fdf_devicetree::Node& child) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
-  auto cell_size_property = parent.properties().find("#gpio-cells");
-  if (cell_size_property == parent.properties().end()) {
-    FDF_LOG(ERROR, "Gpio controller '%s' does not have '#gpio-cells' property",
-            parent.name().c_str());
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-
-  auto gpio_cell_size = cell_size_property->second.AsUint32();
-  if (!gpio_cell_size) {
-    FDF_LOG(ERROR, "Gpio controller '%s' has invalid '#gpio-cells' property",
-            parent.name().c_str());
-    return zx::error(ZX_ERR_INVALID_ARGS);
+  auto gpio_cell_size = parent.GetProperty<uint32_t>("#gpio-cells");
+  if (gpio_cell_size.is_error()) {
+    FDF_LOG(ERROR, "Gpio controller '%s' does not have '#gpio-cells' property: %s",
+            parent.name().c_str(), gpio_cell_size.status_string());
+    return gpio_cell_size.take_error();
   }
 
   auto gpios_bytes = gpios->second.AsBytes();
   size_t entry_size = (*gpio_cell_size) * sizeof(uint32_t);
 
-  if (gpios_bytes.size_bytes() % entry_size != 0) {
+  if (gpios_bytes.size_bytes() % *gpio_cell_size != 0) {
     FDF_LOG(
         ERROR,
         "Gpio init hog '%s' has incorrect number of gpio cells (%lu) - expected multiple of %d cells.",

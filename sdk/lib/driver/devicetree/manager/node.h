@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <lib/devicetree/devicetree.h>
+#include <lib/zx/result.h>
 #include <zircon/errors.h>
 
 #include <cstdint>
@@ -27,6 +28,17 @@ class Visitor;
 class ReferenceNode;
 class ParentNode;
 class ChildNode;
+
+// Helper to select return type for GetProperty.
+template <typename T>
+struct GetPropertyReturn {
+  using type = zx::result<T>;
+};
+
+template <>
+struct GetPropertyReturn<bool> {
+  using type = bool;
+};
 
 // Represents who provides the `reg` property for this node. This information will be set and used
 // by the visitors. By default `reg` property of all nodes are considered mmio.
@@ -99,6 +111,9 @@ class Node {
     return properties_;
   }
 
+  template <typename T>
+  typename GetPropertyReturn<T>::type GetProperty(std::string_view property_name) const;
+
   zx::result<ReferenceNode> GetReferenceNode(Phandle parent);
 
   std::optional<Phandle> phandle() const { return phandle_; }
@@ -153,6 +168,11 @@ class ReferenceNode {
     return node_->properties();
   }
 
+  template <typename T>
+  typename GetPropertyReturn<T>::type GetProperty(std::string_view property_name) {
+    return node_->GetProperty<T>(property_name);
+  }
+
   const std::string& name() const { return node_->name(); }
   const std::string& fdf_name() const { return node_->fdf_name(); }
 
@@ -185,6 +205,11 @@ class ParentNode {
     return node_->properties();
   }
 
+  template <typename T>
+  typename GetPropertyReturn<T>::type GetProperty(std::string_view property_name) {
+    return node_->GetProperty<T>(property_name);
+  }
+
   Node* GetNode() const { return node_; }
 
   ParentNode parent() const { return node_->parent(); }
@@ -208,6 +233,11 @@ class ChildNode {
 
   const std::unordered_map<std::string_view, devicetree::PropertyValue>& properties() const {
     return node_->properties();
+  }
+
+  template <typename T>
+  typename GetPropertyReturn<T>::type GetProperty(std::string_view property_name) const {
+    return node_->GetProperty<T>(property_name);
   }
 
   Node* GetNode() const { return node_; }

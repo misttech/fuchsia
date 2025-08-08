@@ -63,6 +63,9 @@ class Manager final : public NodeManager {
   // Moves the node with |node_id| to the |new_index| in the publish list.
   zx::result<> ChangePublishOrder(uint32_t node_id, uint32_t new_index) override;
 
+  // Find a node by its name.
+  std::optional<Node*> FindNode(std::string_view name);
+
  private:
   std::vector<uint8_t> fdt_blob_;
   devicetree::Devicetree tree_;

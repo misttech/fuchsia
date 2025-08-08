@@ -56,17 +56,12 @@ ClockImplVisitor::ClockImplVisitor() {
 }
 
 bool ClockImplVisitor::is_match(const fdf_devicetree::Node& node) {
-  auto clock_cells = node.properties().find(kClockCells);
-  if (clock_cells == node.properties().end()) {
+  auto clock_cells = node.GetProperty<uint32_t>(kClockCells);
+  if (clock_cells.is_error()) {
     return false;
   }
 
-  auto cells = clock_cells->second.AsUint32();
-  if (!cells) {
-    return false;
-  }
-
-  return *cells == 1;
+  return *clock_cells == 1;
 }
 
 uint32_t ClockImplVisitor::GetNextUniqueId() { return next_unique_id_++; }

@@ -18,25 +18,22 @@ namespace fdf_devicetree {
 constexpr const char kCompatibleProp[] = "compatible";
 
 zx::result<> BindPropertyVisitor::Visit(Node& node, const devicetree::PropertyDecoder& decoder) {
-  auto property = node.properties().find(kCompatibleProp);
-  if (property == node.properties().end()) {
-    // TODO(https://fxbug.dev/42058369): support extra "bind,..." properties as bind properties.
+  auto compatible = node.GetProperty<std::vector<std::string>>(kCompatibleProp);
+  if (compatible.is_error() && compatible.status_value() != ZX_ERR_NOT_FOUND) {
+    FDF_SLOG(WARNING, "Node has invalid compatible property", KV("node_name", node.name()),
+             KV("status", compatible.status_string()));
+    return compatible.take_error();
+  }
+
+  if (!compatible.is_ok() || compatible->empty()) {
     FDF_LOG(DEBUG, "Node '%s' has no compatible property.", node.name().data());
     return zx::ok();
   }
 
-  // Make sure value is a string.
-  if (property->second.AsStringList() == std::nullopt) {
-    FDF_SLOG(WARNING, "Node has invalid compatible property", KV("node_name", node.name()),
-             KV("prop_len", property->second.AsBytes().size()));
-    return zx::ok();
-  }
-
   fdf::NodeProperty2 prop(bind_fuchsia_devicetree::FIRST_COMPATIBLE,
-                          fdf::NodePropertyValue::WithStringValue(
-                              std::string(*property->second.AsStringList().value().begin())));
+                          fdf::NodePropertyValue::WithStringValue(compatible->front()));
 
-  FDF_LOG(DEBUG, "Added property %s to node '%s'", property->second.AsString()->data(),
+  FDF_LOG(DEBUG, "Added property %s to node '%s'", compatible->front().c_str(),
           node.name().c_str());
   node.AddBindProperty(std::move(prop));
 

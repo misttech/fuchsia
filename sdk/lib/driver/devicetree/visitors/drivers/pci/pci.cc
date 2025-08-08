@@ -41,40 +41,26 @@ struct InterruptParentInfo {
 
 zx::result<std::pair<uint32_t, uint32_t>> ParseAddressAndInterruptCells(
     fdf_devicetree::Node& node) {
-  const auto& properties = node.properties();
-  auto address_cells_prop = properties.find("#address-cells");
-  if (address_cells_prop == properties.end()) {
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-  std::optional<uint32_t> address_cells_u32 = address_cells_prop->second.AsUint32();
-  if (!address_cells_u32.has_value()) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
+  auto address_cells = node.GetProperty<uint32_t>("#address-cells");
+  if (address_cells.is_error()) {
+    return address_cells.take_error();
   }
 
-  auto interrupt_cells_prop = properties.find("#interrupt-cells");
-  if (interrupt_cells_prop == properties.end()) {
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-  std::optional<uint32_t> interrupt_cells_u32 = interrupt_cells_prop->second.AsUint32();
-  if (!interrupt_cells_u32.has_value()) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
+  auto interrupt_cells = node.GetProperty<uint32_t>("#interrupt-cells");
+  if (interrupt_cells.is_error()) {
+    return interrupt_cells.take_error();
   }
 
-  return zx::ok(std::make_pair(address_cells_u32.value(), interrupt_cells_u32.value()));
+  return zx::ok(std::make_pair(*address_cells, *interrupt_cells));
 }
 
 bool InterruptControllerIsArmGicV3(fdf_devicetree::Node& interrupt_parent_node) {
-  auto compatible_prop = interrupt_parent_node.properties().find("compatible");
-  if (compatible_prop == interrupt_parent_node.properties().end()) {
+  auto compatible_list = interrupt_parent_node.GetProperty<std::vector<std::string>>("compatible");
+  if (compatible_list.is_error()) {
     FDF_LOG(ERROR, "Could not find compatible node on interrupt parent");
     return false;
   }
-  std::optional<devicetree::StringList<>> compatible_list = compatible_prop->second.AsStringList();
-  if (!compatible_list) {
-    FDF_LOG(ERROR, "Could not parse compatible node on interrupt parent");
-    return false;
-  }
-  return std::ranges::any_of(compatible_list.value(),
+  return std::ranges::any_of(*compatible_list,
                              [](auto compatible) { return compatible == "arm,gic-v3"; });
 }
 
@@ -310,12 +296,12 @@ zx::result<> PciVisitor::DriverVisit(fdf_devicetree::Node& node,
 
   gic_v3_interrupt_map_elements_ = std::move(*interrupt_map);
 
-  auto compatible = node.properties().find("compatible");
-  if (compatible == node.properties().end()) {
+  auto compatible = node.GetProperty<std::string>("compatible");
+  if (compatible.is_error()) {
     FDF_LOG(ERROR, "Failed to find 'compatible' property");
-    return zx::error(ZX_ERR_INVALID_ARGS);
+    return compatible.take_error();
   }
-  is_extended_ = compatible->second.AsString() == std::string("pci-host-ecam-generic");
+  is_extended_ = *compatible == "pci-host-ecam-generic";
 
   return zx::ok();
 }
