@@ -24,7 +24,7 @@ if (!is_host) {
       "//tools/symbolizer",
 
       # For `fx format-code`.
-      "//build/bazel/host:root_target.formatjson5",
+      "//build/bazel/host:bazel_root_host_tools.formatjson5",
       "//tools/cmc",
       "//tools/fidl/fidlc:fidl-format",
       "//tools/fidl/gidl-format:host",

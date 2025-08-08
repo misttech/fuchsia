@@ -38,7 +38,7 @@ group("tools") {
 
 # This group is for host tools.
 _host_tools = [
-  "//build/bazel/host:root_target.formatjson5.host_tool",
+  "//build/bazel/host:bazel_root_host_tools.formatjson5.host_tool",
   "//src/developer/debug/zxdb:zxdb",
   "//src/diagnostics/triage:install",
   "//src/lib/chunked-compression:chunked-compress-host-tool",

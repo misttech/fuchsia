@@ -1154,9 +1154,7 @@ copy("idk_build_tools") {
 
   # The following tools are generated directly from Bazel.
   sources += [ "${host_out_dir}/json_validator_valico" ]
-  deps += [
-    "//build/bazel/host:root_target.json_validator_valico($host_toolchain)",
-  ]
+  deps += [ "//build/bazel/host:bazel_root_host_tools.json_validator_valico($host_toolchain)" ]
 }
 
 # Controls the maximum number of simultaneous subbuilds.

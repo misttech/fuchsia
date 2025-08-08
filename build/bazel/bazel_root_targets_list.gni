@@ -71,15 +71,13 @@ foreach(_root_target,
   _install_host_tool =
       defined(_root_target.install_host_tool) && _root_target.install_host_tool
 
-  _target_label = "//build/bazel/host:root_target.${_ninja_name}"
-
   resolved_bazel_root_targets += [
     {
       bazel_label = _root_target.bazel_label
       bazel_name = _bazel_name
       ninja_name = _ninja_name
-      host_bin_label = "${_target_label}($host_toolchain)"
-      bazel_subtarget_label = "${_target_label}($default_toolchain)"
+      host_bin_label = "//build/bazel/host:bazel_root_host_tools.${_ninja_name}($host_toolchain)"
+      gn_subtarget_label = "//build/bazel/host:bazel_root_targets.${_ninja_name}($default_toolchain)"
       install_host_tool = _install_host_tool
     },
   ]

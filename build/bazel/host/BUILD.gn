@@ -4,6 +4,15 @@
 
 import("//build/bazel/bazel_root_targets.gni")
 
-build_bazel_root_host_targets("bazel_root_host_targets") {
-  # Nothing to do here
+if (current_toolchain == default_toolchain) {
+  # This target actually builds Bazel root targets with Bazel.
+  bazel_root_targets_build_group("bazel_root_targets") {
+  }
+}
+
+if (current_toolchain == host_toolchain) {
+  # This target exposes host tools from Bazel root targets in the host
+  # toolchain.
+  install_bazel_host_tools("bazel_root_host_tools") {
+  }
 }

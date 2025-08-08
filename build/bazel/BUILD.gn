@@ -140,7 +140,7 @@ group("bazel_action_allowlist") {
     "//build/bazel/examples/hello_host",
     "//build/bazel/examples/hello_no_sdk",
     "//build/bazel/examples/hello_world",
-    "//build/bazel/host:bazel_root_host_targets.bazel_build_group",
+    "//build/bazel/host:bazel_root_targets",
   ]
 
   visibility += [ "//vendor/*" ]
@@ -171,7 +171,7 @@ group("bazel_action_allowlist") {
 group("bazel_root_targets") {
   public_deps = [
     ":bazel_root_targets_json",
-    "//build/bazel/host:bazel_root_host_targets(${host_toolchain})",
+    "//build/bazel/host:bazel_root_host_tools(${host_toolchain})",
   ]
 }
 

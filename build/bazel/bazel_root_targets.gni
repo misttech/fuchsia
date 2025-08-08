@@ -6,35 +6,30 @@ import("//build/bazel/bazel_build_group.gni")
 import("//build/bazel/bazel_root_targets_list.gni")
 import("//build/host.gni")
 
-# Generate a single bazel_build_group() to build all root bazel targets at once.
-# Bazel outputs are copied to GN/Ninja in the host toolchain, and host tools can
-# be optionally installed.
-#
-# This template does not take any arguments. It generates subtargets for each
-# entry in `resolved_bazel_root_targets`:
-#
-#  ${host_bin_label}
-#
-#    A copy() target to copy host tools to host_x64/ as this is expected by
-#    the bazel_tool_action() and subbuild() templates.
-#
-#  ${host_bin_label}.host_tool:
-#
-#    An optional copy() target to copy installable host tools to host-tools/.
-#
-#  ${bazel_subtarget_label}
-#
-#    NOTE: Prefer ${host_bin_label} over this target whenever possible.
-#
-#    A subtarget from the bazel build group that copies output from Bazel
-#    to GN. This should remain an implementation detail of this template.
-#    Users should always prefer the output from ${host_bin_label} which is
-#    easier to locate.
-#
-#
-template("build_bazel_root_host_targets") {
-  if (current_toolchain == default_toolchain) {
-    # Bazel actions can only be expanded in the default toolchain.
+if (current_toolchain == default_toolchain) {
+  # Generates a single bazel_build_group() to build all root bazel targets at
+  # once.
+  #
+  # This template does not take any arguments. It generates a bazel_build_group
+  # based on entries from `resolved_bazel_root_targets`.
+  #
+  # This target, because it runs `bazel build`, is expected to only expand in the
+  # default toolchain.
+  #
+  # Subtargets are created based on `gn_subtarget_name` from
+  # `resolved_bazel_root_targets` list.
+  #
+  # NOTE: To consume host binaries, prefer subtargets from
+  # `install_bazel_host_tools`, which are conventionally expanded in the host
+  # toolchain.
+  #
+  template("bazel_root_targets_build_group") {
+    assert(
+        current_toolchain == default_toolchain,
+        "bazel_host_tools_build_group should only be expanded in the default toolchain")
+    assert(resolved_bazel_root_targets != [],
+           "unexpected empty resolved_bazel_root_target")
+
     _subtargets = []
 
     foreach(_root_target, resolved_bazel_root_targets) {
@@ -42,7 +37,7 @@ template("build_bazel_root_host_targets") {
         {
           bazel_target = _root_target.bazel_label
           gn_target_name =
-              get_label_info(_root_target.bazel_subtarget_label, "name")
+              get_label_info(_root_target.gn_subtarget_label, "name")
 
           copy_outputs = [
             {
@@ -54,29 +49,51 @@ template("build_bazel_root_host_targets") {
       ]
     }
 
-    if (_subtargets != []) {
-      bazel_build_group("${target_name}.bazel_build_group") {
-        no_sdk = true
-        host = true
-        subtargets = _subtargets
-      }
+    bazel_build_group(target_name) {
+      no_sdk = true
+      host = true
+      subtargets = _subtargets
     }
-  } else if (current_toolchain == host_toolchain) {
-    # Expand host tool targets in the host toolchain.
-    # This makes them less confusing when added as deps, i.e. no $default_toolchain redirection required.
+
+    # This template doesn't take any arguments, ensure GN doesn't
+    # complain about the unused invoker scope.
+    not_needed([ "invoker" ])
+  }
+}
+
+if (current_toolchain == host_toolchain) {
+  # Creates subtargets for host tools from root Bazel targets.
+  #
+  # These targets follows GN convention to make host tool available in the host
+  # toolchain, with relevant metadata attached.
+  #
+  # These subtargets are created in the host toolchain for each entry in
+  # `resolved_bazel_root_targets`:
+  #
+  #   ${host_bin_label}
+  #     Copies the binary to ${host_out_dir}.
+  #
+  #   ${host_bin_label}.host_tool
+  #     Optionally created when `install_host_tool` is true.
+  #     Copies the binary to ${host_tools_dir}
+  #
+  template("install_bazel_host_tools") {
+    assert(
+        current_toolchain == host_toolchain,
+        "install_bazel_host_tools should only be expanded in the host toolchain")
 
     _all_deps = []
 
     foreach(_root_target, resolved_bazel_root_targets) {
       _gn_target_name = get_label_info(_root_target.host_bin_label, "name")
       _ninja_output =
-          get_label_info(":${_root_target.bazel_subtarget_label}",
+          get_label_info(":${_root_target.gn_subtarget_label}",
                          "target_out_dir") + "/${_root_target.ninja_name}"
 
       copy(_gn_target_name) {
         outputs = [ "${host_out_dir}/${_root_target.ninja_name}" ]
         sources = [ _ninja_output ]
-        deps = [ _root_target.bazel_subtarget_label ]
+        deps = [ _root_target.gn_subtarget_label ]
 
         metadata = {
           # Used by //:tool_paths build API module
@@ -99,7 +116,7 @@ template("build_bazel_root_host_targets") {
         copy(_host_tool_target) {
           outputs = [ "${host_tools_dir}/${_root_target.ninja_name}" ]
           sources = [ _ninja_output ]
-          deps = [ _root_target.bazel_subtarget_label ]
+          deps = [ _root_target.gn_subtarget_label ]
         }
         _all_deps += [ ":${_host_tool_target}" ]
       }
@@ -108,9 +125,9 @@ template("build_bazel_root_host_targets") {
     group(target_name) {
       deps = _all_deps
     }
-  }
 
-  # This template doesn't take any arguments, ensure GN doesn't
-  # complain about the unused invoker scope.
-  not_needed([ "invoker" ])
+    # This template doesn't take any arguments, ensure GN doesn't
+    # complain about the unused invoker scope.
+    not_needed([ "invoker" ])
+  }
 }
