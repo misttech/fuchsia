@@ -18,11 +18,6 @@
 	url = https://fuchsia.googlesource.com/third_party/abseil-cpp
 	name = third_party/abseil-cpp
 	ignore = all
-[submodule "third_party/acpica"]
-	path = third_party/acpica
-	url = https://fuchsia.googlesource.com/third_party/acpica
-	name = third_party/acpica
-	ignore = all
 [submodule "third_party/alacritty"]
 	path = third_party/alacritty
 	url = https://fuchsia.googlesource.com/third_party/github.com/alacritty/alacritty
@@ -707,4 +702,9 @@
 	path = third_party/mesa-migrating/src
 	url = https://fuchsia.googlesource.com/third_party/mesa
 	name = third_party/mesa
+	ignore = all
+[submodule "third_party/acpica-migrating/src"]
+	path = third_party/acpica-migrating/src
+	url = https://fuchsia.googlesource.com/third_party/acpica
+	name = third_party/acpica
 	ignore = all
