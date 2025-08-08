@@ -181,7 +181,7 @@ impl ConnectionNode {
         node_id: &str,
         protocol: &str,
         new_peer_sender: Sender<String>,
-    ) -> Result<(ConnectionNode, impl Stream<Item = Connection> + Send)> {
+    ) -> Result<(ConnectionNode, impl Stream<Item = Connection> + Send + use<>)> {
         let (incoming_stream_sender, incoming_stream_receiver) = channel(1);
         let node = Arc::new(Node::new(node_id, protocol, new_peer_sender, incoming_stream_sender)?);
         let conns = Arc::new(Mutex::new(HashMap::<u64, (Weak<StreamMap>, ClientOrServer)>::new()));
@@ -197,7 +197,7 @@ impl ConnectionNode {
         protocol: &str,
         interval: Duration,
         new_peer_sender: Sender<String>,
-    ) -> Result<(ConnectionNode, impl Stream<Item = Connection> + Send)> {
+    ) -> Result<(ConnectionNode, impl Stream<Item = Connection> + Send + use<>)> {
         let (incoming_stream_sender, incoming_stream_receiver) = channel(1);
         let (node, router) = Node::new_with_router(
             node_id,

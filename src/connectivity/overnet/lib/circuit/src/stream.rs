@@ -7,7 +7,7 @@ use crate::protocol;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex as SyncMutex};
-use tokio::sync::oneshot;
+use std::task::{ready, Context, Poll, Waker};
 
 /// We shrink our internal buffers until they are no more than this much larger
 /// than the actual data we are accumulating.
@@ -62,9 +62,10 @@ struct State {
     /// of the deque Rust counts them as uninitialized again, so to avoid duplicating the
     /// initialization process we just leave the initialized-but-unwritten bytes in the deque.
     readable: usize,
-    /// If the reader needs to sleep, it puts a oneshot sender here so it can be woken up again. It
-    /// also lists how many bytes should be available before it should be woken up.
-    notify_readable: Option<(oneshot::Sender<()>, usize)>,
+    /// If the reader needs to sleep, it puts a waker here so it can be woken up
+    /// again. It also lists how many bytes should be available before it should
+    /// be woken up.
+    notify_readable: Option<(Waker, usize)>,
     /// Whether this stream is closed. I.e. whether either the `Reader` or `Writer` has been dropped.
     closed: Status,
 }
@@ -85,100 +86,117 @@ impl Reader {
 
     /// Read bytes from the stream.
     ///
-    /// The reader will wait until there are *at least* `size` bytes to read, Then it will call the
-    /// given callback with a slice containing all available bytes to read.
+    /// The reader will wait until there are *at least* `size` bytes to read,
+    /// Then it will call the given callback with a slice containing all
+    /// available bytes to read.
     ///
-    /// If the callback processes data successfully, it should return `Ok` with a tuple containing
-    /// a value of the user's choice, and the number of bytes used. If the number of bytes returned
-    /// from the callback is less than what was available in the buffer, the unused bytes will
-    /// appear at the start of the buffer for subsequent read calls. It is allowable to `peek` at
-    /// the bytes in the buffer by returning a number of bytes read that is smaller than the number
-    /// of bytes actually used.
+    /// If the callback processes data successfully, it should return `Ok` with
+    /// a tuple containing a value of the user's choice, and the number of bytes
+    /// used. If the number of bytes returned from the callback is less than
+    /// what was available in the buffer, the unused bytes will appear at the
+    /// start of the buffer for subsequent read calls. It is allowable to `peek`
+    /// at the bytes in the buffer by returning a number of bytes read that is
+    /// smaller than the number of bytes actually used.
     ///
-    /// If the callback returns `Error::BufferTooShort` and the expected buffer value contained in
-    /// the error is larger than the data that was provided, we will wait again until there are
-    /// enough bytes to satisfy the error and then call the callback again. If the callback returns
-    /// `Error::BufferTooShort` but the buffer should have been long enough according to the error,
-    /// `Error::CallbackRejectedBuffer` is returned. Other errors from the callback are returned
-    /// as-is from `read` itself.
+    /// If the callback returns `Error::BufferTooShort` and the expected buffer
+    /// value contained in the error is larger than the data that was provided,
+    /// we will wait again until there are enough bytes to satisfy the error and
+    /// then call the callback again. If the callback returns
+    /// `Error::BufferTooShort` but the buffer should have been long enough
+    /// according to the error, `Error::CallbackRejectedBuffer` is returned.
+    /// Other errors from the callback are returned as-is from `read` itself.
     ///
-    /// If there are no bytes available to read and the `Writer` for this stream has already been
-    /// dropped, `read` returns `Error::ConnectionClosed`. If there are *not enough* bytes available
-    /// to be read and the `Writer` has been dropped, `read` returns `Error::BufferTooSmall`. This
-    /// is the only time `read` should return `Error::BufferTooSmall`.
+    /// If there are no bytes available to read and the `Writer` for this stream
+    /// has already been dropped, `read` returns `Error::ConnectionClosed`. If
+    /// there are *not enough* bytes available to be read and the `Writer` has
+    /// been dropped, `read` returns `Error::BufferTooSmall`. This is the only
+    /// time `read` should return `Error::BufferTooSmall`.
     ///
-    /// Panics if the callback returns a number of bytes greater than the size of the buffer.
+    /// Panics if the callback returns a number of bytes greater than the size
+    /// of the buffer.
     pub async fn read<F, U>(&self, mut size: usize, mut f: F) -> Result<U>
     where
         F: FnMut(&[u8]) -> Result<(U, usize)>,
     {
-        loop {
-            let receiver = {
-                let mut state = self.0.lock().unwrap();
+        let mut f = move |_: &mut Context<'_>, b: &'_ [u8]| Poll::Ready(f(b));
+        futures::future::poll_fn(move |ctx| self.poll_read(ctx, &mut size, &mut f)).await
+    }
 
-                if let Status::Closed(reason) = &state.closed {
-                    if size == 0 {
-                        return Err(Error::ConnectionClosed(reason.clone()));
-                    }
-                }
+    /// Like `read` but a poll function rather than a future. Passes the
+    /// `Context` to the callback so the callback can also poll.
+    ///
+    /// The `size` argument is a mutable reference so that if we determine
+    /// during reading that more data is needed, we can update the size. It
+    /// should always increase. The value of `size` is not meaningful after
+    /// returning `Poll::Ready`.
+    pub fn poll_read<F, U>(
+        &self,
+        ctx: &mut Context<'_>,
+        size: &mut usize,
+        mut f: F,
+    ) -> Poll<Result<U>>
+    where
+        F: FnMut(&mut Context<'_>, &[u8]) -> Poll<Result<(U, usize)>>,
+    {
+        let mut state = self.0.lock().unwrap();
 
-                if state.readable >= size {
-                    let (first, _) = state.deque.as_slices();
+        if let Status::Closed(reason) = &state.closed && *size == 0 {
+            return Poll::Ready(Err(Error::ConnectionClosed(reason.clone())));
+        }
 
-                    let first = if first.len() >= size {
-                        first
-                    } else {
-                        state.deque.make_contiguous();
-                        state.deque.as_slices().0
-                    };
+        if state.readable >= *size {
+            let (first, _) = state.deque.as_slices();
 
-                    debug_assert!(first.len() >= size);
-
-                    let first = &first[..std::cmp::min(first.len(), state.readable)];
-                    let (ret, consumed) = match f(first) {
-                        Err(Error::BufferTooShort(s)) => {
-                            if s < first.len() {
-                                return Err(Error::CallbackRejectedBuffer(s, first.len()));
-                            }
-
-                            size = s;
-                            continue;
-                        }
-                        other => other?,
-                    };
-
-                    if consumed > first.len() {
-                        panic!("Read claimed to consume more bytes than it was given!");
-                    }
-
-                    state.readable -= consumed;
-                    state.deque.drain(..consumed);
-                    let target_capacity = std::cmp::max(
-                        state.deque.len().next_multiple_of(BUFFER_TRIM_GRANULARITY),
-                        BUFFER_TRIM_GRANULARITY,
-                    );
-
-                    if target_capacity <= state.deque.capacity() / 2 {
-                        state.deque.shrink_to(target_capacity);
-                    }
-                    return Ok(ret);
-                }
-
-                if let Status::Closed(reason) = &state.closed {
-                    if state.readable > 0 {
-                        return Err(Error::BufferTooShort(size));
-                    } else {
-                        return Err(Error::ConnectionClosed(reason.clone()));
-                    }
-                }
-
-                let (sender, receiver) = oneshot::channel();
-                state.notify_readable = Some((sender, size));
-                receiver
+            let first = if first.len() >= *size {
+                first
+            } else {
+                state.deque.make_contiguous();
+                state.deque.as_slices().0
             };
 
-            let _ = receiver.await;
+            debug_assert!(first.len() >= *size);
+
+            let first = &first[..std::cmp::min(first.len(), state.readable)];
+            let (ret, consumed) = match ready!(f(ctx, first)) {
+                Err(Error::BufferTooShort(s)) => {
+                    if s < first.len() {
+                        return Poll::Ready(Err(Error::CallbackRejectedBuffer(s, first.len())));
+                    }
+
+                    *size = s;
+                    ctx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+                other => other?,
+            };
+
+            if consumed > first.len() {
+                panic!("Read claimed to consume more bytes than it was given!");
+            }
+
+            state.readable -= consumed;
+            state.deque.drain(..consumed);
+            let target_capacity = std::cmp::max(
+                state.deque.len().next_multiple_of(BUFFER_TRIM_GRANULARITY),
+                BUFFER_TRIM_GRANULARITY,
+            );
+
+            if target_capacity <= state.deque.capacity() / 2 {
+                state.deque.shrink_to(target_capacity);
+            }
+            return Poll::Ready(Ok(ret));
         }
+
+        if let Status::Closed(reason) = &state.closed {
+            if state.readable > 0 {
+                return Poll::Ready(Err(Error::BufferTooShort(*size)));
+            } else {
+                return Poll::Ready(Err(Error::ConnectionClosed(reason.clone())));
+            }
+        }
+
+        state.notify_readable = Some((ctx.waker().clone(), *size));
+        Poll::Pending
     }
 
     /// Read a protocol message from the stream. This is just a quick way to wire
@@ -211,11 +229,11 @@ impl Reader {
         debug_assert!(got == size);
         state.readable += size;
 
-        if let Some((sender, size)) = state.notify_readable.take() {
+        if let Some((waker, size)) = state.notify_readable.take() {
             if size <= state.readable {
-                let _ = sender.send(());
+                waker.wake();
             } else {
-                state.notify_readable = Some((sender, size));
+                state.notify_readable = Some((waker, size));
             }
         }
 
@@ -316,11 +334,11 @@ impl Writer {
 
         state.readable += size;
 
-        if let Some((sender, size)) = state.notify_readable.take() {
+        if let Some((waker, size)) = state.notify_readable.take() {
             if size <= state.readable {
-                let _ = sender.send(());
+                waker.wake();
             } else {
-                state.notify_readable = Some((sender, size));
+                state.notify_readable = Some((waker, size));
             }
         }
 
@@ -361,22 +379,19 @@ impl std::fmt::Debug for Writer {
 
 impl Drop for Writer {
     fn drop(&mut self) {
-        let Some(x) = ({
-            let mut state = self.0.lock().unwrap();
-            state.closed.close();
+        let mut state = self.0.lock().unwrap();
+        state.closed.close();
 
-            state.notify_readable.take()
-        }) else {
-            return;
-        };
-        let _ = x.0.send(());
+        if let Some((waker, _)) = state.notify_readable.take() {
+            waker.wake();
+        }
     }
 }
 
 /// Creates a unidirectional stream of bytes.
 ///
-/// The `Reader` and `Writer` share an expanding ring buffer. This allows sending bytes between
-/// tasks with minimal extra allocations or copies.
+/// The `Reader` and `Writer` share an expanding ring buffer. This allows
+/// sending bytes between tasks with minimal extra allocations or copies.
 pub fn stream() -> (Reader, Writer) {
     let reader = Arc::new(SyncMutex::new(State {
         deque: VecDeque::new(),
@@ -391,6 +406,7 @@ pub fn stream() -> (Reader, Writer) {
 
 #[cfg(test)]
 mod test {
+    use futures::channel::oneshot;
     use futures::task::noop_waker;
     use futures::FutureExt;
     use std::future::Future;

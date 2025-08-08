@@ -417,7 +417,7 @@ pub fn multi_stream_node_connection(
     quality: Quality,
     stream_errors_out: UnboundedSender<Error>,
     remote_name: String,
-) -> impl Future<Output = Result<()>> + Send {
+) -> impl Future<Output = Result<()>> + Send + use<> {
     let (mut new_stream_sender, streams_in) = channel(1);
     let (streams_out, new_stream_receiver) = channel(1);
 

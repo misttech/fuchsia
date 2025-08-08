@@ -12,7 +12,10 @@ use futures::stream::StreamExt;
 /// function runs the connection and must be polled continuously.
 ///
 /// This is written as a test function. In short: it panics at the slightest irregularity.
-async fn connect_nodes(a: &Node, b: &Node) -> impl std::future::Future<Output = ()> + Send + Sync {
+async fn connect_nodes(
+    a: &Node,
+    b: &Node,
+) -> impl std::future::Future<Output = ()> + Send + Sync + use<> {
     let (a_control_reader, write_a_control_reader) = stream::stream();
     let (read_a_control_writer, a_control_writer) = stream::stream();
     let (b_control_reader, write_b_control_reader) = stream::stream();

@@ -194,7 +194,7 @@ impl Node {
         interval: Duration,
         new_peer_sender: Sender<String>,
         incoming_stream_sender: Sender<(stream::Reader, stream::Writer, String)>,
-    ) -> Result<(Node, impl Future<Output = ()> + Send)> {
+    ) -> Result<(Node, impl Future<Output = ()> + Send + use<>)> {
         let mut node = Self::new(node_id, protocol, new_peer_sender, incoming_stream_sender)?;
         node.has_router = true;
 
@@ -269,15 +269,18 @@ impl Node {
     ///
     /// The returned future will continue to poll for the lifetime of the link and return the error
     /// that terminated it.
-    pub fn link_node(
+    pub fn link_node<F>(
         &self,
         control_stream: Option<(stream::Reader, stream::Writer)>,
         new_stream_sender: Sender<(stream::Reader, stream::Writer)>,
-        mut new_stream_receiver: impl futures::Stream<Item = (stream::Reader, stream::Writer, oneshot::Sender<Result<()>>)>
+        mut new_stream_receiver: F,
+        quality: Quality,
+    ) -> impl Future<Output = Result<()>> + Send + use<F>
+    where
+        F: futures::Stream<Item = (stream::Reader, stream::Writer, oneshot::Sender<Result<()>>)>
             + Unpin
             + Send,
-        quality: Quality,
-    ) -> impl Future<Output = Result<()>> + Send {
+    {
         let has_router = self.has_router;
         let peers = Arc::clone(&self.peers);
         let node_id = self.node_id.clone();
@@ -380,7 +383,7 @@ impl Node {
         control_reader: oneshot::Receiver<stream::Reader>,
         new_stream_sender: Sender<(stream::Reader, stream::Writer)>,
         quality: Quality,
-    ) -> impl Future<Output = Result<()>> + Send {
+    ) -> impl Future<Output = Result<()>> + Send + use<> {
         let peers = Arc::clone(&self.peers);
         let new_stream_sender = new_stream_sender;
         let node_id = self.node_id.clone();
@@ -440,15 +443,15 @@ impl Node {
     /// forward it to another peer.
     ///
     /// The returned future will poll until the back end hangs up the other end of the receiver.
-    fn handle_new_streams(
+    fn handle_new_streams<F>(
         &self,
-        new_stream_receiver_receiver: oneshot::Receiver<
-            impl futures::Stream<
-                    Item = (stream::Reader, stream::Writer, oneshot::Sender<Result<()>>),
-                > + Unpin,
-        >,
+        new_stream_receiver_receiver: oneshot::Receiver<F>,
         new_stream_sender: Sender<(stream::Reader, stream::Writer)>,
-    ) -> impl Future<Output = ()> {
+    ) -> impl Future<Output = ()> + use<F>
+    where
+        F: futures::Stream<Item = (stream::Reader, stream::Writer, oneshot::Sender<Result<()>>)>
+            + Unpin,
+    {
         let peers = Arc::clone(&self.peers);
         let mut incoming_stream_sender = self.incoming_stream_sender.clone();
         let mut new_peer_sender = self.new_peer_sender.clone();
