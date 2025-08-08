@@ -479,14 +479,18 @@ pub async fn create_component_from_stream(
                     ContainerServiceConfig { start_info, request_stream, receiver };
 
                 container.kernel.kthreads.spawn_future({
-                    let vvar = container.kernel.vdso.vvar_writeable.clone();
+                    let kernel = container.kernel.clone();
                     let utc_clock =
                         fruntime::duplicate_utc_clock_handle(zx::Rights::SAME_RIGHTS).unwrap();
                     async move {
+                        let vvar = &kernel.vdso.vvar_writeable;
                         loop {
                             let waitable =
                                 OnSignals::new(utc_clock.as_handle_ref(), Signals::CLOCK_UPDATED);
                             update_utc_clock(&vvar);
+                            if let Some(vdso_32) = &kernel.vdso_arch32 {
+                                update_utc_clock(&vdso_32.vvar_writeable);
+                            }
                             waitable.await.expect("async_wait should always succeed");
                             log_info!("Received a UTC update");
                         }
