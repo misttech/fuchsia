@@ -52,8 +52,8 @@ class Event:
         self.args: dict[str, Any] = args.copy()
 
     @classmethod
-    # from_dict must not be called on an instance
     def _from_dict(cls, event_dict: dict[str, Any]) -> Self:
+        """Factory-style constructor. Intended for use by subclasses."""
         category: str = event_dict["cat"]
         name: str = event_dict["name"]
         start: trace_time.TimePoint = trace_time.TimePoint.from_epoch_delta(
@@ -91,8 +91,8 @@ class InstantEvent(Event):
         self.scope: InstantEventScope = scope
 
     @classmethod
-    # from_dict must not be called on an instance
     def from_dict(cls, event_dict: dict[str, Any]) -> Self:
+        """Factory-style constructor."""
         scope_key: str = "s"
         if scope_key not in event_dict:
             raise TypeError(
@@ -127,8 +127,8 @@ class CounterEvent(Event):
         self.id: int | None = id
 
     @classmethod
-    # from_dict must not be called on an instance
     def from_dict(cls, event_dict: dict[str, Any]) -> Self:
+        """Factory-style constructor."""
         id_key: str = "id"
         id: int | None = None
         if id_key in event_dict:
@@ -176,6 +176,7 @@ class DurationEvent(Event):
 
     @classmethod
     def from_dict(cls, event_dict: dict[str, Any]) -> Self:
+        """Factory-style constructor."""
         duration_key: str = "dur"
         duration: trace_time.TimeDelta | None = None
         microseconds: float | int | None = event_dict.get(duration_key, None)
@@ -221,8 +222,8 @@ class AsyncEvent(Event):
         self.duration: trace_time.TimeDelta | None = duration
 
     @classmethod
-    # from_dict should not be called on an instance
     def from_dict(cls, id: int, event_dict: dict[str, Any]) -> Self:
+        """Factory-style constructor."""
         return cls(id, duration=None, base=Event._from_dict(event_dict))
 
     def end_time(self) -> trace_time.TimePoint | None:
@@ -268,13 +269,13 @@ class FlowEvent(Event):
         self.next_flow: Self | None = next_flow
 
     @classmethod
-    # from_dict should not be called on an instance
     def from_dict(
         cls,
         id: str,
         enclosing_duration: DurationEvent | None,
         event_dict: dict[str, Any],
     ) -> Self:
+        """Factory-style constructor."""
         phase_key: str = "ph"
         if phase_key not in event_dict:
             raise TypeError(
