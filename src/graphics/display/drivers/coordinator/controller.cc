@@ -811,7 +811,7 @@ zx::result<std::unique_ptr<Controller>> Controller::Create(
 }
 
 zx::result<> Controller::Initialize() {
-  ZX_DEBUG_ASSERT(fdf::Dispatcher::GetCurrent()->get() != engine_listener_dispatcher_->get());
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
   zx::result<> vsync_monitor_init_result = vsync_monitor_.Initialize();
   if (vsync_monitor_init_result.is_error()) {

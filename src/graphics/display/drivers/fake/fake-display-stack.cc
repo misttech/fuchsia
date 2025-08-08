@@ -83,23 +83,39 @@ FakeDisplayStack::FakeDisplayStack(std::unique_ptr<SysmemServiceProvider> sysmem
              zx_status_get_string(post_task_status));
   }
 
-  auto engine_driver_client =
-      std::make_unique<display_coordinator::EngineDriverClientFidl>(std::move(engine_client));
-  zx::result<std::unique_ptr<display_coordinator::Controller>> create_controller_result =
-      display_coordinator::Controller::Create(std::move(engine_driver_client),
-                                              coordinator_driver_dispatcher_.borrow(),
-                                              engine_listener_dispatcher_.borrow());
-  if (create_controller_result.is_error()) {
-    ZX_PANIC("Failed to create display coordinator Controller device: %s",
-             create_controller_result.status_string());
-  }
-  coordinator_controller_ = std::move(create_controller_result).value();
+  auto [display_provider_client, display_provider_server] =
+      fidl::Endpoints<fuchsia_hardware_display::Provider>::Create();
+  display_provider_client_ =
+      fidl::WireSyncClient<fuchsia_hardware_display::Provider>(std::move(display_provider_client));
 
-  auto display_endpoints = fidl::CreateEndpoints<fuchsia_hardware_display::Provider>();
-  fidl::BindServer(coordinator_driver_dispatcher_.async_dispatcher(),
-                   std::move(display_endpoints->server), coordinator_controller_.get());
-  display_provider_client_ = fidl::WireSyncClient<fuchsia_hardware_display::Provider>(
-      std::move(display_endpoints->client));
+  libsync::Completion controller_create_completed;
+  zx::result<std::unique_ptr<display_coordinator::Controller>> create_controller_result;
+  post_task_status =
+      async::PostTask(coordinator_driver_dispatcher_.async_dispatcher(), [&]() mutable {
+        auto engine_driver_client =
+            std::make_unique<display_coordinator::EngineDriverClientFidl>(std::move(engine_client));
+
+        create_controller_result = display_coordinator::Controller::Create(
+            std::move(engine_driver_client), coordinator_driver_dispatcher_.borrow(),
+            engine_listener_dispatcher_.borrow());
+        if (create_controller_result.is_error()) {
+          ZX_PANIC("Failed to create display coordinator Controller device: %s",
+                   create_controller_result.status_string());
+        }
+
+        fidl::BindServer(coordinator_driver_dispatcher_.async_dispatcher(),
+                         std::move(display_provider_server),
+                         create_controller_result.value().get());
+
+        controller_create_completed.Signal();
+      });
+  if (post_task_status != ZX_OK) {
+    ZX_PANIC("Failed to post task to create Controller: %s",
+             zx_status_get_string(post_task_status));
+  }
+  controller_create_completed.Wait();
+
+  coordinator_controller_ = std::move(create_controller_result).value();
 }
 
 FakeDisplayStack::~FakeDisplayStack() {
