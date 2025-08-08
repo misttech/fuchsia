@@ -21,8 +21,8 @@ import("//tools/cmc/build/expect_includes.gni")
 # ```
 source_set("devfs_factory") {
   sources = [
-    "devfs-factory.cc",
-    "devfs-factory.h",
+    "service-factory.cc",
+    "service-factory.h",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_cpp",

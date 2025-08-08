@@ -10,7 +10,7 @@
 
 #include <memory>
 
-#include "src/graphics/display/bin/coordinator-connector/devfs-factory.h"
+#include "src/graphics/display/bin/coordinator-connector/service-factory.h"
 
 int main(int argc, const char** argv) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
@@ -27,11 +27,11 @@ int main(int argc, const char** argv) {
 
   FX_LOGS(INFO) << "Starting standalone fuchsia.hardware.display.Provider service.";
 
-  zx::result<> create_and_publish_service_result =
-      display::DevFsCoordinatorFactory::CreateAndPublishService(outgoing, loop.dispatcher());
-  if (create_and_publish_service_result.is_error()) {
-    FX_LOGS(ERROR) << "Cannot start display Provider server and publish service: "
-                   << create_and_publish_service_result.status_string();
+  zx::result<> add_protocol_result = outgoing.AddProtocol<fuchsia_hardware_display::Provider>(
+      std::make_unique<display::ServiceCoordinatorFactory>());
+  if (add_protocol_result.is_error()) {
+    FX_LOGS(ERROR) << "Cannot start display Provider server and serve protocol: "
+                   << add_protocol_result.status_string();
     return -1;
   }
 
