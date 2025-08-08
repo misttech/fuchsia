@@ -76,6 +76,8 @@ struct TestEbpfRunContext<'a> {
 }
 
 impl<'a> ebpf_api::MapsContext<'a> for TestEbpfRunContext<'a> {
+    fn on_map_access(&mut self, _map: &ebpf_api::Map) {}
+
     fn add_value_ref(&mut self, map_ref: MapValueRef<'a>) {
         self.map_refs.push(map_ref)
     }

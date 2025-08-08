@@ -293,6 +293,10 @@ impl Map {
     pub fn ringbuf_reserve(&self, size: u32, flags: u64) -> Result<usize, MapError> {
         self.map_impl.ringbuf_reserve(size, flags)
     }
+
+    pub fn uses_locks(&self) -> bool {
+        self.schema.map_type != bpf_map_type_BPF_MAP_TYPE_ARRAY
+    }
 }
 
 pub enum MapValueRef<'a> {

@@ -21,6 +21,7 @@ use linux_uapi::{
 use std::slice;
 
 pub trait MapsContext<'a> {
+    fn on_map_access(&mut self, _map: &Map);
     fn add_value_ref(&mut self, map_ref: MapValueRef<'a>);
 }
 
@@ -43,6 +44,8 @@ where
     let key =
         unsafe { std::slice::from_raw_parts(key.as_ptr::<u8>(), map.schema.key_size as usize) };
 
+    context.on_map_access(map);
+
     let Some(value_ref) = map.lookup(key) else {
         return BpfValue::default();
     };
@@ -59,13 +62,16 @@ where
 }
 
 fn bpf_map_update_elem<C: EbpfProgramContext>(
-    _context: &mut C::RunContext<'_>,
+    context: &mut C::RunContext<'_>,
     map: BpfValue,
     key: BpfValue,
     value: BpfValue,
     flags: BpfValue,
     _: BpfValue,
-) -> BpfValue {
+) -> BpfValue
+where
+    for<'b> C::RunContext<'b>: MapsContext<'b>,
+{
     // SAFETY
     //
     // The safety of the operation is ensured by the bpf verifier. The `map` must be a reference to
@@ -78,17 +84,23 @@ fn bpf_map_update_elem<C: EbpfProgramContext>(
     let flags = flags.as_u64();
 
     let key = MapKey::from_slice(key);
+
+    context.on_map_access(map);
+
     map.update(key, value, flags).map(|_| 0).unwrap_or(u64::MAX).into()
 }
 
 fn bpf_map_delete_elem<C: EbpfProgramContext>(
-    _context: &mut C::RunContext<'_>,
+    context: &mut C::RunContext<'_>,
     map: BpfValue,
     key: BpfValue,
     _: BpfValue,
     _: BpfValue,
     _: BpfValue,
-) -> BpfValue {
+) -> BpfValue
+where
+    for<'b> C::RunContext<'b>: MapsContext<'b>,
+{
     // SAFETY
     //
     // The safety of the operation is ensured by the bpf verifier. The `map` must be a reference to
@@ -96,6 +108,9 @@ fn bpf_map_delete_elem<C: EbpfProgramContext>(
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
     let key =
         unsafe { std::slice::from_raw_parts(key.as_ptr::<u8>(), map.schema.key_size as usize) };
+
+    context.on_map_access(map);
+
     map.delete(key).map(|_| 0).unwrap_or(u64::MAX).into()
 }
 

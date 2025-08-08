@@ -16,7 +16,7 @@ use fuchsia_inspect::{ArrayProperty, NumericProperty, StringArrayProperty, UintP
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use itertools::Itertools;
 use starnix_logging::{log_info, log_warn};
-use starnix_sync::{Mutex, MutexGuard};
+use starnix_sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::fmt;
@@ -31,6 +31,9 @@ use {
 pub struct SuspendResumeManager {
     // The mutable state of [SuspendResumeManager].
     inner: Mutex<SuspendResumeManagerInner>,
+
+    // The lock used to to avoid suspension while holding eBPF locks.
+    ebpf_suspend_lock: RwLock<()>,
 }
 
 /// Manager for suspend and resume.
@@ -60,6 +63,8 @@ pub struct SuspendResumeManagerInner {
     /// object that is signaled.
     active_lock_writer: zx::EventPair,
 }
+
+pub type EbpfSuspendLock<'a> = RwLockReadGuard<'a, ()>;
 
 /// State associated with logging wake lock information in Inspect.
 struct WakeLocksInspect {
@@ -292,6 +297,8 @@ impl SuspendResumeManager {
             node.record_string(fobs::SUSPEND_REQUESTED_STATE, state.to_string());
         });
 
+        let ebpf_lock = self.ebpf_suspend_lock.write();
+
         let manager = connect_to_protocol_sync::<frunner::ManagerMarker>()
             .expect("Failed to connect to manager");
         fuchsia_trace::duration!(c"power", c"suspend_container:fidl");
@@ -380,7 +387,13 @@ impl SuspendResumeManager {
             }
         }
 
+        std::mem::drop(ebpf_lock);
+
         Ok(())
+    }
+
+    pub fn acquire_ebpf_suspend_lock<'a>(&'a self) -> EbpfSuspendLock<'a> {
+        self.ebpf_suspend_lock.read()
     }
 }
 

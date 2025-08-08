@@ -2,23 +2,34 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::power::EbpfSuspendLock;
 use crate::task::CurrentTask;
-use ebpf_api::{CurrentTaskContext, MapValueRef, MapsContext};
+use ebpf_api::{CurrentTaskContext, Map, MapValueRef, MapsContext};
 use starnix_uapi::{gid_t, pid_t, uid_t};
 
 pub struct EbpfRunContextImpl<'a> {
     current_task: &'a CurrentTask,
+
+    // Must precede `map_refs` to ensure it's dropped after `base`.
+    suspend_lock: Option<EbpfSuspendLock<'a>>,
 
     map_refs: Vec<MapValueRef<'a>>,
 }
 
 impl<'a> EbpfRunContextImpl<'a> {
     pub fn new(current_task: &'a CurrentTask) -> Self {
-        Self { current_task, map_refs: vec![] }
+        Self { current_task, suspend_lock: None, map_refs: vec![] }
     }
 }
 
 impl<'a> MapsContext<'a> for EbpfRunContextImpl<'a> {
+    fn on_map_access(&mut self, map: &Map) {
+        if self.suspend_lock.is_none() && map.uses_locks() {
+            self.suspend_lock =
+                Some(self.current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock());
+        }
+    }
+
     fn add_value_ref(&mut self, map_ref: MapValueRef<'a>) {
         self.map_refs.push(map_ref)
     }

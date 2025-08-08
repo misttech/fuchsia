@@ -280,6 +280,12 @@ impl<'a, 'b> ebpf_api::SocketFilterContext<&'a IpPacketForCgroupSkb<'a>>
 }
 
 impl<'a> ebpf_api::MapsContext<'a> for CgroupSkbRunContext<'a> {
+    fn on_map_access(&mut self, _map: &Map) {
+        // Starnix uses `on_map_access` to block suspension while executing
+        // eBPF programs that access eBPF maps. This is not a concern here
+        // since netstack doesn't get suspended.
+    }
+
     fn add_value_ref(&mut self, map_ref: MapValueRef<'a>) {
         self.map_refs.push(map_ref)
     }

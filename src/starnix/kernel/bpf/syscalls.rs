@@ -209,6 +209,10 @@ pub fn sys_bpf(
             // SAFETY: this union object was created with FromBytes so it's safe to access any
             // variant because all variants must be valid with all bit patterns.
             let user_value = UserAddress::from(unsafe { elem_attr.__bindgen_anon_1.value });
+
+            let _suspend_lock =
+                current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock();
+
             let value = map.load(&key).ok_or_else(|| errno!(ENOENT))?;
             current_task.write_memory(user_value, &value)?;
 
@@ -241,6 +245,9 @@ pub fn sys_bpf(
             let value =
                 current_task.read_memory_to_vec(user_value, map.schema.value_size as usize)?;
 
+            let _suspend_lock =
+                current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock();
+
             map.update(key, &value, flags).map_err(map_error_to_errno)?;
             Ok(SUCCESS)
         }
@@ -262,6 +269,9 @@ pub fn sys_bpf(
 
             let key =
                 read_map_key(current_task, UserAddress::from(elem_attr.key), map.schema.key_size)?;
+
+            let _suspend_lock =
+                current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock();
 
             map.delete(&key).map_err(map_error_to_errno)?;
             Ok(SUCCESS)
