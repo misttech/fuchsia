@@ -408,17 +408,6 @@ contents on the serial console.  This is the maximum size (in bytes) of stack
 memory that will be dumped; the actual amount dumped depends on stack depth.
 Each 16 bytes of stack is printed on one line using up to 75 characters.
 
-### kernel.ppb.borrow-in-supplypages=\<bool>
-
-**Default:** `false`
-
-This controls whether zx_pager_supply_pages can borrow loaned pages.  If true,
-zx_pager_supply_pages will copy supplied page contents into borrowed pages, if
-any loaned pages are available and the supplied pages aren't already loaned,
-else zx_pager_supply_pages will install the supplied pages into the VMO.  If
-false, zx_pager_supply_pages will install the supplied pages into the VMO
-(regardless of whether they are already loaned or not).
-
 ### kernel.ppb.borrow-on-mru=\<bool>
 
 **Default:** `false`

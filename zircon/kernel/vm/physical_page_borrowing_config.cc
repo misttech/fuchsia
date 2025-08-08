@@ -14,8 +14,6 @@ PhysicalPageBorrowingConfig PhysicalPageBorrowingConfig::instance_;
 
 static void ppb_init_func(uint level) {
   // One option per potential borrowing site.
-  PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(
-      gBootOptions->ppb_borrow_in_supplypages);
 
   PhysicalPageBorrowingConfig::Get().set_borrowing_on_mru_enabled(gBootOptions->ppb_borrow_on_mru);
 

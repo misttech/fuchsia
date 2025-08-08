@@ -5102,7 +5102,6 @@ assembly_input_bundle("kernel_contiguous_physical_pages") {
   # OOM, pages aren't being stranded when it really matters.
   kernel_cmdline = [
     "kernel.ppb.loan=true",
-    "kernel.ppb.borrow-in-supplypages=true",
     "kernel.ppb.borrow-on-mru=true",
     "kernel.ppb.replace-on-unloan=true",
   ]

@@ -5848,31 +5848,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
           break;
         }
       }
-      if (options != SupplyOptions::PhysicalPageProvider && should_borrow_locked() &&
-          src_page.IsPage() &&
-          PhysicalPageBorrowingConfig::Get().is_borrowing_in_supplypages_enabled()) {
-        // Assert some things we implicitly know are true (currently).  We can avoid explicitly
-        // checking these in the if condition for now.
-        DEBUG_ASSERT(!is_source_supplying_specific_physical_pages());
-        DEBUG_ASSERT(!src_page.Page()->is_loaned());
-        // Try to replace src_page with a loaned page.  We allocate the loaned page one page at a
-        // time to avoid failing the allocation due to asking for more loaned pages than there are
-        // free loaned pages.
-        auto result =
-            AllocLoanedPage([this, &src_page, &page_transaction, &old_page](vm_page_t* page) {
-              AssertHeld(lock_ref());
-              CopyPageMetadataForReplacementLocked(page, src_page.Page());
-              old_page =
-                  CompleteAddPageLocked(*page_transaction, VmPageOrMarker::Page(page), nullptr);
-            });
-        if (result.is_ok()) {
-          CopyPageContentsForReplacementLocked(*result, src_page.Page());
-          vm_page_t* free_page = src_page.ReleasePage();
-          list_add_tail(deferred.FreedList(this).List(), &free_page->queue_node);
-        } else {
-          old_page = CompleteAddPageLocked(*page_transaction, ktl::move(src_page), nullptr);
-        }
-      } else if (options == SupplyOptions::PhysicalPageProvider) {
+      if (options == SupplyOptions::PhysicalPageProvider) {
         // When being called from the physical page provider, we need to call InitializeVmPage(),
         // which AddNewPageLocked() will do.
         // We only want to populate offsets that have true absence of content, so do not overwrite

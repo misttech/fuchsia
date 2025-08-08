@@ -43,7 +43,6 @@
 ?kernel.page-scanner.zero-page-scans-per-second=*
 ?kernel.phys.verbose=false
 ?kernel.phys.verbose=true
-?kernel.ppb.borrow-in-supplypages=true
 ?kernel.ppb.borrow-on-mru=true
 ?kernel.ppb.loan=true
 ?kernel.ppb.replace-on-unloan=true

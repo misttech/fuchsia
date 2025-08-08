@@ -354,15 +354,6 @@ memory that will be dumped; the actual amount dumped depends on stack depth.
 Each 16 bytes of stack is printed on one line using up to 75 characters.
 )""")
 
-DEFINE_OPTION("kernel.ppb.borrow-in-supplypages", bool, ppb_borrow_in_supplypages, {false}, R"""(
-This controls whether zx_pager_supply_pages can borrow loaned pages.  If true,
-zx_pager_supply_pages will copy supplied page contents into borrowed pages, if
-any loaned pages are available and the supplied pages aren't already loaned,
-else zx_pager_supply_pages will install the supplied pages into the VMO.  If
-false, zx_pager_supply_pages will install the supplied pages into the VMO
-(regardless of whether they are already loaned or not).
-)""")
-
 DEFINE_OPTION("kernel.ppb.borrow-on-mru", bool, ppb_borrow_on_mru, {false}, R"""(
 This controls whether non-loaned pages will be replaced with loaned pages (if
 any loaned pages are available) when non-loaned pages are moved to the MRU

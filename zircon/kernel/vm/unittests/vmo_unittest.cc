@@ -287,14 +287,9 @@ static bool vmo_multiple_pin_test() {
   static const size_t alloc_size = PAGE_SIZE * 16;
   for (uint32_t is_ppb_enabled = 0; is_ppb_enabled < 2; ++is_ppb_enabled) {
     bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
-    bool borrowing_was_enabled =
-        PhysicalPageBorrowingConfig::Get().is_borrowing_in_supplypages_enabled();
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(is_ppb_enabled);
-    PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(is_ppb_enabled);
-    auto cleanup = fit::defer([loaning_was_enabled, borrowing_was_enabled] {
+    auto cleanup = fit::defer([loaning_was_enabled] {
       PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
-      PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(
-          borrowing_was_enabled);
     });
 
     fbl::RefPtr<VmObjectPaged> vmo;
@@ -352,14 +347,9 @@ static bool vmo_multiple_pin_contiguous_test() {
   static const size_t alloc_size = PAGE_SIZE * 16;
   for (uint32_t is_ppb_enabled = 0; is_ppb_enabled < 2; ++is_ppb_enabled) {
     bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
-    bool borrowing_was_enabled =
-        PhysicalPageBorrowingConfig::Get().is_borrowing_in_supplypages_enabled();
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(is_ppb_enabled);
-    PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(is_ppb_enabled);
-    auto cleanup = fit::defer([loaning_was_enabled, borrowing_was_enabled] {
+    auto cleanup = fit::defer([loaning_was_enabled] {
       PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
-      PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(
-          borrowing_was_enabled);
     });
 
     fbl::RefPtr<VmObjectPaged> vmo;
@@ -572,13 +562,9 @@ static bool vmo_contiguous_decommit_test() {
   BEGIN_TEST;
 
   bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
-  bool borrowing_was_enabled =
-      PhysicalPageBorrowingConfig::Get().is_borrowing_in_supplypages_enabled();
   PhysicalPageBorrowingConfig::Get().set_loaning_enabled(true);
-  PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(true);
-  auto cleanup = fit::defer([loaning_was_enabled, borrowing_was_enabled] {
+  auto cleanup = fit::defer([loaning_was_enabled] {
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
-    PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(borrowing_was_enabled);
   });
 
   static const size_t alloc_size = PAGE_SIZE * 16;
@@ -1721,53 +1707,34 @@ static bool vmo_always_need_evicts_loaned_test() {
   const uint32_t kTryCount = 30;
   for (uint32_t try_ordinal = 0; try_ordinal < kTryCount; ++try_ordinal) {
     bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
-    bool borrowing_was_enabled =
-        PhysicalPageBorrowingConfig::Get().is_borrowing_in_supplypages_enabled();
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(true);
-    PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(true);
-    auto cleanup = fit::defer([loaning_was_enabled, borrowing_was_enabled] {
+    auto cleanup = fit::defer([loaning_was_enabled] {
       PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
-      PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(
-          borrowing_was_enabled);
     });
 
-    zx_status_t status;
+    // create a contiguous VMO so that we are guaranteed to have a place to borrow from
+    fbl::RefPtr<VmObjectPaged> contiguous_vmo;
+    ASSERT_OK(VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, PAGE_SIZE, /*alignment_log2*/ 0,
+                                              &contiguous_vmo));
+    ASSERT_OK(contiguous_vmo->DecommitRange(0, PAGE_SIZE));
+
+    // we will replace the only page in vmo with a loaned page
     fbl::RefPtr<VmObjectPaged> vmo;
-    vm_page_t* page;
-    const uint32_t kPagesToLoan = 10;
-    fbl::RefPtr<VmObjectPaged> contiguous_vmos[kPagesToLoan];
-    uint32_t iteration_count = 0;
-    const uint32_t kMaxIterations = 2000;
-    do {
-      // Before we call make_committed_pager_vmo(), we create a few 1-page contiguous VMOs and
-      // decommit them, to increase the chance that make_committed_pager_vmo() picks up a loaned
-      // page, so we'll get to replace that page during HintRange() below.  The decommit (loaning)
-      // is best effort in case loaning is disabled.
-      for (uint32_t i = 0; i < kPagesToLoan; ++i) {
-        status = VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, PAGE_SIZE,
-                                                 /*alignment_log2=*/0, &contiguous_vmos[i]);
-        ASSERT_EQ(ZX_OK, status);
-        status = contiguous_vmos[i]->DecommitRange(0, PAGE_SIZE);
-        ASSERT_TRUE(status == ZX_OK || status == ZX_ERR_NOT_SUPPORTED);
-      }
-
-      // Create a pager-backed VMO with a single page.
-      status = make_committed_pager_vmo(1, /*trap_dirty=*/false, /*resizable=*/false, &page, &vmo);
-      ASSERT_EQ(ZX_OK, status);
-      ++iteration_count;
-    } while (!page->is_loaned() && iteration_count < kMaxIterations);
-
-    // If we hit this iteration count, something almost certainly went wrong...
-    ASSERT_TRUE(iteration_count < kMaxIterations);
-
-    // At this point we can't be absolutely certain that the page will stay loaned depending on
-    // which loaned page we got, so we run this in an outer loop that tries this a few times.
+    vm_page_t* before_page;
+    ASSERT_OK(
+        make_committed_pager_vmo(1, /*trap_dirty*/ false, /*resizable*/ false, &before_page, &vmo));
+    uint64_t offset = 0;
+    fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
+    ASSERT_OK(cow_pages->ReplacePageWithLoaned(before_page, offset));
+    // The call to ReplacePageWithLoaned may loan vmo's page to a VMO that's not contiguous_vmo.
+    // So, it might get called back, and the rest of the test must tolerate the vmo's page becoming
+    // unloaned at any time.
 
     // Hint that the page is always needed.
     ASSERT_OK(vmo->HintRange(0, PAGE_SIZE, VmObject::EvictionHint::AlwaysNeed));
 
     // If the page was still loaned, it will be replaced with a non-loaned page now.
-    page = vmo->DebugGetPage(0);
+    vm_page_t* page = vmo->DebugGetPage(0);
 
     ASSERT_FALSE(page->is_loaned());
   }
@@ -2072,14 +2039,9 @@ static bool vmo_attribution_ops_test() {
     dprintf(INFO, "is_ppb_enabled: %u\n", is_ppb_enabled);
 
     bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
-    bool borrowing_was_enabled =
-        PhysicalPageBorrowingConfig::Get().is_borrowing_in_supplypages_enabled();
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(is_ppb_enabled);
-    PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(is_ppb_enabled);
-    auto cleanup = fit::defer([loaning_was_enabled, borrowing_was_enabled] {
+    auto cleanup = fit::defer([loaning_was_enabled] {
       PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
-      PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(
-          borrowing_was_enabled);
     });
 
     fbl::RefPtr<VmObjectPaged> vmo;
@@ -2168,14 +2130,9 @@ static bool vmo_attribution_ops_contiguous_test() {
     dprintf(INFO, "is_ppb_enabled: %u\n", is_ppb_enabled);
 
     bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
-    bool borrowing_was_enabled =
-        PhysicalPageBorrowingConfig::Get().is_borrowing_in_supplypages_enabled();
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(is_ppb_enabled);
-    PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(is_ppb_enabled);
-    auto cleanup = fit::defer([loaning_was_enabled, borrowing_was_enabled] {
+    auto cleanup = fit::defer([loaning_was_enabled] {
       PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
-      PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(
-          borrowing_was_enabled);
     });
 
     fbl::RefPtr<VmObjectPaged> vmo;
@@ -3962,14 +3919,9 @@ static bool vmo_pin_race_loaned_test() {
   const uint32_t kTryCount = 5000;
   for (uint32_t try_ordinal = 0; try_ordinal < kTryCount; ++try_ordinal) {
     bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
-    bool borrowing_was_enabled =
-        PhysicalPageBorrowingConfig::Get().is_borrowing_in_supplypages_enabled();
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(true);
-    PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(true);
-    auto cleanup = fit::defer([loaning_was_enabled, borrowing_was_enabled] {
+    auto cleanup = fit::defer([loaning_was_enabled] {
       PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
-      PhysicalPageBorrowingConfig::Get().set_borrowing_in_supplypages_enabled(
-          borrowing_was_enabled);
     });
 
     const int kNumLoaned = 10;
@@ -3994,6 +3946,17 @@ static bool vmo_pin_race_loaned_test() {
       vm_page_t* page;
       status = make_committed_pager_vmo(1, /*trap_dirty=*/false, /*resizable=*/false, &page, &vmo);
       ASSERT_EQ(ZX_OK, status);
+
+      // make_committed_pager_vmo is not enough to ensure vmo's only page is loaned.
+      // We must explicitly call ReplacePageWithLoaned.
+      fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
+      uint64_t offset = 0;
+      ASSERT_OK(cow_pages->ReplacePageWithLoaned(page, offset));
+
+      // vmo's page should be a new page since we replaced the old one with
+      // a loaned page.
+      page = vmo->DebugGetPage(0);
+
       ++iteration_count;
       for (int i = 0; i < kNumLoaned; i++) {
         if (page == pages[i]) {

@@ -263,7 +263,6 @@ if (is_fuchsia) {
       "kernel.compression.storage-strategy=slot",
       "kernel.compression.reclaim_anonymous=true",
       "kernel.compression.reclaim_zero_forks=true",
-      "kernel.ppb.borrow-in-supplypages=true",
       "kernel.ppb.borrow-on-mru=true",
       "kernel.ppb.loan=true",
       "kernel.stack.canary-percent-free=10",

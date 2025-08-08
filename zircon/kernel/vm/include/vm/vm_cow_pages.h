@@ -240,8 +240,7 @@ class VmCowPages final : public VmHierarchyBase,
   // the VmCowPages should actually borrow pages also depends on a borrowing-site-specific flag that
   // the caller is responsible for checking (in addition to checking can_borrow_locked()).  Only if
   // both are true should the caller actually borrow at the caller's specific potential borrowing
-  // site.  For example, see is_borrowing_in_supplypages_enabled() and
-  // is_borrowing_on_mru_enabled().
+  // site.
   // Aside from the general borrowing in the PhysicalPageBorrowingConfig being turned on and
   // off, the ability to borrow is constant over the lifetime of the VmCowPages.
   bool can_borrow_locked() const TA_REQ(lock()) {
