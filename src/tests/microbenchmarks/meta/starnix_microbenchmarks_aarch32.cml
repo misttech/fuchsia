@@ -4,6 +4,6 @@
 {
     include: [ "//src/tests/microbenchmarks/meta/starnix_microbenchmarks_common.shard.cml" ],
     program: {
-        environ: [ "TEST_SUITE_LABEL=fuchsia.microbenchmarks.starnix" ],
+        environ: [ "TEST_SUITE_LABEL=fuchsia.microbenchmarks.starnix_aarch32" ],
     },
 }

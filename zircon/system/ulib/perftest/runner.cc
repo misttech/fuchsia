@@ -418,7 +418,8 @@ void ParseCommandArgs(int argc, char** argv, CommandArgs* dest) {
         long val = strtol(optarg, &end, 0);
         // Check that the string contains only a positive number and
         // that the number doesn't overflow.
-        if (val != static_cast<uint32_t>(val) || *end != '\0' || *optarg == '\0' || val == 0) {
+        if (val != static_cast<long>(static_cast<uint32_t>(val)) || *end != '\0' ||
+            *optarg == '\0' || val == 0) {
           fprintf(stderr, "Invalid argument for --runs: \"%s\"\n", optarg);
           exit(1);
         }

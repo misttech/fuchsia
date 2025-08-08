@@ -6,8 +6,10 @@ import("//build/components.gni")
 import("//build/fidl/fidl.gni")
 import("//build/testing/host_test.gni")
 import("//build/testing/perf/test.gni")
+import("//src/starnix/build/args.gni")
 import("//src/starnix/kernel/starnix.gni")
 import("//src/starnix/tests/build/starnix_linux_test_component.gni")
+import("//src/starnix/tests/environments.gni")
 import("//src/starnix/tests/starnix_test_subpackages.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 import("//zircon/vdso/vdso.gni")
@@ -339,65 +341,100 @@ if (host_os == "linux" && !is_asan) {
         fuchsia_microbenchmark_deps + [ "//zircon/system/ulib/zx-panic-libc" ]
   }
 
-  starnix_linux_test_component("starnix_microbenchmarks_component") {
-    test_label = ":starnix_microbenchmarks_bin"
-    test_binary = "starnix_microbenchmarks"
+  template("starnix_microbenchmark_rules") {
+    test_target_toolchain = target_linux_toolchain
+    if (defined(invoker.test_target_toolchain)) {
+      test_target_toolchain = invoker.test_target_toolchain
+    }
 
+    component_label = "${target_name}_component"
+    unittest_package_label = "${target_name}_unittestmode"
+    perftest_package_label = "${target_name}_perftestmode"
+    perf_test_label = "${target_name}_test"
+    metrics_name =
+        invoker.metrics_name  # ex fuchsia.microbenchmarks.starnix.txt
+
+    starnix_toolchain_test_component(component_label) {
+      test_label = ":starnix_microbenchmarks_bin"
+      test_binary = "starnix_microbenchmarks"
+      test_toolchain = test_target_toolchain
+
+      manifest = invoker.manifest
+      component_name = "starnix_microbenchmarks"
+      deps = [ ":no_op_executable_in_test_dir($test_target_toolchain)" ]
+      is_starnix_benchmark = true
+      test_type = "starnix"
+    }
+
+    fuchsia_test_package(unittest_package_label) {
+      test_components = [ ":${component_label}" ]
+
+      subpackages = starnix_test_subpackages +
+                    [ "//src/starnix/containers/debian:debian_package" ]
+
+      deps = [ "//src/lib/testing/expectation:expectation_comparer" ]
+
+      forward_variables_from(invoker, [ "test_specs" ])
+    }
+
+    fuchsia_package(perftest_package_label) {
+      testonly = true
+
+      subpackages = starnix_test_subpackages +
+                    [ "//src/starnix/containers/debian:debian_package" ]
+
+      deps = [ ":${component_label}" ]
+
+      # This package intentionally contains many non-Fuchia ELF binaries that
+      # are not under /data/, and some of them are even unstripped, so disable
+      # these checks to build successfully.
+      disable_elf_binaries_checks = true
+    }
+
+    fuchsia_component_perf_test(perf_test_label) {
+      package = ":${perftest_package_label}"
+      component_name = "starnix_microbenchmarks"
+      test_type = "starnix"
+
+      # We run the fuchsia_microbenchmarks process multiple times.  That is useful
+      # for tests that exhibit between-process variation in results (e.g. due to
+      # memory layout chosen when a process starts) -- it reduces the variation in
+      # the average that we report.
+      process_runs = 6
+
+      # Runs: we override the default number of within-process iterations of each
+      # test case and use a lower value.  This reduces the overall time taken and
+      # reduces the chance that these invocations hit Infra Swarming tasks' IO
+      # timeout (swarming_io_timeout_secs -- the amount of time that a task is
+      # allowed to run without producing log output).
+      test_component_args = [
+        "-p",
+        "--quiet",
+        "--runs",
+        "120",
+      ]
+      results_path_test_arg = "--out"
+
+      expected_metric_names_filepath =
+          "//src/tests/end_to_end/perf/expected_metric_names/${metrics_name}"
+    }
+  }
+
+  starnix_microbenchmark_rules("starnix_microbenchmarks") {
+    metrics_name = "fuchsia.microbenchmarks.starnix.txt"
     manifest = "meta/starnix_microbenchmarks.cml"
-    component_name = "starnix_microbenchmarks"
-    deps = [ ":no_op_executable_in_test_dir($target_linux_toolchain)" ]
-    is_starnix_benchmark = true
-    test_type = "starnix"
   }
 
-  fuchsia_test_package("starnix_microbenchmarks_unittestmode") {
-    test_components = [ ":starnix_microbenchmarks_component" ]
+  if (target_cpu == "arm64") {
+    starnix_microbenchmark_rules("starnix_microbenchmarks_aarch32") {
+      test_target_toolchain = target_linux_arch32_toolchain
+      metrics_name = "fuchsia.microbenchmarks.starnix_aarch32.txt"
+      manifest = "meta/starnix_microbenchmarks_aarch32.cml"
 
-    subpackages = starnix_test_subpackages +
-                  [ "//src/starnix/containers/debian:debian_package" ]
-
-    deps = [ "//src/lib/testing/expectation:expectation_comparer" ]
-  }
-
-  fuchsia_package("starnix_microbenchmarks_perftestmode") {
-    testonly = true
-
-    subpackages = starnix_test_subpackages +
-                  [ "//src/starnix/containers/debian:debian_package" ]
-
-    deps = [ ":starnix_microbenchmarks_component" ]
-
-    # This package intentionally contains many non-Fuchia ELF binaries that
-    # are not under /data/, and some of them are even unstripped, so disable
-    # these checks to build successfully.
-    disable_elf_binaries_checks = true
-  }
-
-  fuchsia_component_perf_test("starnix_microbenchmarks_test") {
-    package = ":starnix_microbenchmarks_perftestmode"
-    component_name = "starnix_microbenchmarks"
-    test_type = "starnix"
-
-    # We run the fuchsia_microbenchmarks process multiple times.  That is useful
-    # for tests that exhibit between-process variation in results (e.g. due to
-    # memory layout chosen when a process starts) -- it reduces the variation in
-    # the average that we report.
-    process_runs = 6
-
-    # Runs: we override the default number of within-process iterations of each
-    # test case and use a lower value.  This reduces the overall time taken and
-    # reduces the chance that these invocations hit Infra Swarming tasks' IO
-    # timeout (swarming_io_timeout_secs -- the amount of time that a task is
-    # allowed to run without producing log output).
-    test_component_args = [
-      "-p",
-      "--quiet",
-      "--runs",
-      "120",
-    ]
-    results_path_test_arg = "--out"
-
-    expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.microbenchmarks.starnix.txt"
+      test_specs = {
+        environments = arch32_envs
+      }
+    }
   }
 }
 
@@ -421,6 +458,12 @@ group("tests") {
         ":starnix_microbenchmarks_perftestmode",
         ":starnix_microbenchmarks_unittestmode",
       ]
+      if (target_cpu == "arm64") {
+        deps += [
+          ":starnix_microbenchmarks_aarch32_perftestmode",
+          ":starnix_microbenchmarks_aarch32_unittestmode",
+        ]
+      }
     }
   }
 }
@@ -442,5 +485,8 @@ group("benchmarks") {
   # NOTE: Minfs does not support the POSIX attributes required to run Starnix.
   if (!is_asan && host_os == "linux" && data_filesystem_format != "minfs") {
     deps += [ ":starnix_microbenchmarks_test" ]
+    if (target_cpu == "arm64") {
+      deps += [ ":starnix_microbenchmarks_aarch32_test" ]
+    }
   }
 }
