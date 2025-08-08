@@ -72,6 +72,10 @@ type AllCounters = table {
     /// IP Counters for RX.
     @available(added=8)
     7: ip_rx IpCounters;
+
+    /// Border agent related counters.
+    @available(added=NEXT)
+    8: border_agent BorderAgentCounters;
 };
 
 /// Counters associated with the MAC layer.
@@ -217,4 +221,56 @@ type IpCounters = table {
 
     /// The number of IPv6 packets failed to transmit/receive.
     2: failure uint32;
+};
+
+/// Counters associated with border agent functionality.
+@available(added=NEXT)
+type BorderAgentCounters = table {
+    /// The number of ePSKc activations.
+    1: epskc_activations uint32;
+
+    /// The number of ePSKc deactivations via API.
+    2: epskc_deactivation_clears uint32;
+
+    /// The number of ePSKc deactivations due to timeout.
+    3: epskc_deactivation_timeouts uint32;
+
+    /// The number of ePSKc deactivations due to reached max attempts.
+    4: epskc_deactivation_max_attempts uint32;
+
+    /// The number of ePSKc deactivations due to commissioner disconnected.
+    5: epskc_deactivation_disconnects uint32;
+
+    /// The number of invalid border agent state errors at ePSKc activation.
+    6: epskc_invalid_ba_state_errors uint32;
+
+    /// The number of invalid args errors at ePSKc activation.
+    7: epskc_invalid_args_errors uint32;
+
+    /// The number of start secure session errors at ePSKc activation.
+    8: epskc_start_secure_session_errors uint32;
+
+    /// The number of established secure sessions with ePSKc.
+    9: epskc_secure_session_successes uint32;
+
+    /// The number of failed secure sessions with ePSKc.
+    10: epskc_secure_session_failures uint32;
+
+    /// The number of successful commissioner petitions with ePSKc.
+    11: epskc_commissioner_petitions uint32;
+
+    /// The number of established secure sessions with PSKc.
+    12: pskc_secure_session_successes uint32;
+
+    /// The number of failed secure sessions with PSKc.
+    13: pskc_secure_session_failures uint32;
+
+    /// The number of successful commissioner petitions with PSKc.
+    14: pskc_commissioner_petitions uint32;
+
+    /// The number of MGMT_ACTIVE_GET.req sent over secure sessions.
+    15: mgmt_active_gets uint32;
+
+    /// The number of MGMT_PENDING_GET.req sent over secure sessions.
+    16: mgmt_pending_gets uint32;
 };

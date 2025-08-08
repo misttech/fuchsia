@@ -1,6 +1,12 @@
 [
     {
         "kind": "table/member",
+        "name": "fuchsia.lowpan.device/AllCounters.border_agent",
+        "ordinal": "8",
+        "type": "fuchsia.lowpan.device/BorderAgentCounters"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.lowpan.device/AllCounters.coex_rx",
         "ordinal": "4",
         "type": "fuchsia.lowpan.device/CoexCounters"
@@ -44,6 +50,106 @@
     {
         "kind": "table",
         "name": "fuchsia.lowpan.device/AllCounters"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_activations",
+        "ordinal": "1",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_commissioner_petitions",
+        "ordinal": "11",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_deactivation_clears",
+        "ordinal": "2",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_deactivation_disconnects",
+        "ordinal": "5",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_deactivation_max_attempts",
+        "ordinal": "4",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_deactivation_timeouts",
+        "ordinal": "3",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_invalid_args_errors",
+        "ordinal": "7",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_invalid_ba_state_errors",
+        "ordinal": "6",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_secure_session_failures",
+        "ordinal": "10",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_secure_session_successes",
+        "ordinal": "9",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.epskc_start_secure_session_errors",
+        "ordinal": "8",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.mgmt_active_gets",
+        "ordinal": "15",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.mgmt_pending_gets",
+        "ordinal": "16",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.pskc_commissioner_petitions",
+        "ordinal": "14",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.pskc_secure_session_failures",
+        "ordinal": "13",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters.pskc_secure_session_successes",
+        "ordinal": "12",
+        "type": "uint32"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.lowpan.device/BorderAgentCounters"
     },
     {
         "kind": "table/member",

@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.lowpan.experimental;
 
+using fuchsia.lowpan.device;
 using fuchsia.lowpan;
 using zx;
 
@@ -639,4 +640,9 @@ type Telemetry = table {
     ///
     /// Only present on Thread networks.
     24: link_metrics_entries vector<LinkMetricsEntry>:64;
+
+    /// Counters related to border agent functionality.
+    ///
+    /// Only present on Thread networks.
+    25: border_agent_counters fuchsia.lowpan.device.BorderAgentCounters;
 };
