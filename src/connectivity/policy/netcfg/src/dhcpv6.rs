@@ -385,7 +385,7 @@ mod tests {
     use net_declare::{fidl_socket_addr_v6, net_subnet_v6};
     use test_case::test_case;
 
-    use crate::interface::{generate_identifier, InterfaceNamingIdentifier, ProvisioningAction};
+    use crate::interface::{generate_identifier, InterfaceNamingIdentifier, ProvisioningType};
     use crate::{DeviceClass, HostInterfaceState, InterfaceConfigState, InterfaceState};
 
     use super::*;
@@ -408,7 +408,7 @@ mod tests {
             device_class: DeviceClass,
             dhcpv6_pd_config: Option<fnet_dhcpv6::PrefixDelegationConfig>,
             dhcpv6_client_state: Option<ClientState>,
-            provisioning: ProvisioningAction,
+            provisioning: ProvisioningType,
             interface_admin_auth: fnet_interfaces_admin::GrantForInterfaceAuthorization,
         ) -> Self {
             Self {
@@ -549,7 +549,7 @@ mod tests {
                         sockaddr: fidl_socket_addr_v6!("[fe80::1]:546"),
                         prefixes: prefixes,
                     }),
-                    ProvisioningAction::Local,
+                    ProvisioningType::Local,
                     fake_interface_grant(),
                 )
             }))

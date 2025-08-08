@@ -205,7 +205,7 @@ impl NetworkDeviceInstance {
         config: crate::InterfaceConfig,
     ) -> Result<(u64, fidl_fuchsia_net_interfaces_ext::admin::Control), AddDeviceError> {
         let NetworkDeviceInstance { port: _, port_id, device_control, topological_path: _ } = self;
-        let crate::InterfaceConfig { name, metric } = config;
+        let crate::InterfaceConfig { name, metric, netstack_managed_routes_designation } = config;
 
         let (control, control_server_end) =
             fidl_fuchsia_net_interfaces_ext::admin::Control::create_endpoints()
@@ -219,6 +219,8 @@ impl NetworkDeviceInstance {
                 fidl_fuchsia_net_interfaces_admin::Options {
                     name: Some(name.clone()),
                     metric: Some(metric),
+                    netstack_managed_routes_designation: netstack_managed_routes_designation
+                        .map(Into::into),
                     ..Default::default()
                 },
             )

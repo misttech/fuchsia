@@ -31,6 +31,7 @@ use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext, Update as _};
 use fuchsia_component::client::{clone_namespace_svc, new_protocol_connector_in_dir};
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use fuchsia_fs::directory as fvfs_watcher;
+
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp,
     fidl_fuchsia_net_dhcp_ext as fnet_dhcp_ext, fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6,
@@ -62,7 +63,10 @@ use thiserror::Error;
 use self::devices::DeviceInfo;
 use self::errors::{accept_error, ContextExt as _};
 use self::filter::{FilterControl, FilterEnabledState};
-use self::interface::{DeviceInfoRef, InterfaceNamingIdentifier};
+use self::interface::{
+    DeviceInfoRef, InterfaceNamingIdentifier, NetstackManagedRoutesDesignation, ProvisioningAction,
+    ProvisioningType,
+};
 use self::masquerade::MasqueradeHandler;
 use self::socketproxy::SocketProxyState;
 pub use network::NetworkTokenExt;
@@ -420,6 +424,7 @@ impl Config {
 struct InterfaceConfig {
     name: String,
     metric: u32,
+    netstack_managed_routes_designation: Option<NetstackManagedRoutesDesignation>,
 }
 
 #[derive(Debug)]
@@ -428,7 +433,7 @@ struct InterfaceState {
     control: fidl_fuchsia_net_interfaces_ext::admin::Control,
     device_class: DeviceClass,
     config: InterfaceConfigState,
-    provisioning: interface::ProvisioningAction,
+    provisioning: interface::ProvisioningType,
 }
 
 /// State for an interface.
@@ -470,7 +475,7 @@ impl InterfaceState {
         control: fidl_fuchsia_net_interfaces_ext::admin::Control,
         device_class: DeviceClass,
         dhcpv6_pd_config: Option<fnet_dhcpv6::PrefixDelegationConfig>,
-        provisioning: interface::ProvisioningAction,
+        provisioning: interface::ProvisioningType,
     ) -> Result<Self, errors::Error> {
         let interface_admin_auth =
             control.get_authorization_for_interface().await.map_err(|e| {
@@ -497,7 +502,7 @@ impl InterfaceState {
         interface_naming_id: interface::InterfaceNamingIdentifier,
         control: fidl_fuchsia_net_interfaces_ext::admin::Control,
         device_class: DeviceClass,
-        provisioning: interface::ProvisioningAction,
+        provisioning: interface::ProvisioningType,
     ) -> Self {
         Self {
             control,
@@ -509,7 +514,7 @@ impl InterfaceState {
 
     fn new_blackhole(
         control: fidl_fuchsia_net_interfaces_ext::admin::Control,
-        provisioning: interface::ProvisioningAction,
+        provisioning: interface::ProvisioningType,
     ) -> Self {
         Self {
             control,
@@ -560,7 +565,7 @@ impl InterfaceState {
 
         // Netcfg won't handle interface update results for a delegated
         // interface.
-        debug_assert!(provisioning == &interface::ProvisioningAction::Local);
+        debug_assert!(provisioning == &interface::ProvisioningType::Local);
 
         // Note: No discovery actions are needed for offline interfaces.
         if !online {
@@ -1048,7 +1053,7 @@ impl<'a> NetCfg<'a> {
                     .unwrap_or_else(|| panic!("no interface state found for id={}", interface_id));
 
                 // Netcfg won't start a DHCPv6 client for a delegated interface.
-                debug_assert!(provisioning == &interface::ProvisioningAction::Local);
+                debug_assert!(provisioning == &interface::ProvisioningType::Local);
 
                 match config {
                     InterfaceConfigState::Host(HostInterfaceState {
@@ -1112,7 +1117,7 @@ impl<'a> NetCfg<'a> {
                     .unwrap_or_else(|| panic!("no interface state found for id={}", interface_id));
 
                 // Netcfg won't watch NDP servers for a delegated interface.
-                debug_assert!(provisioning == &interface::ProvisioningAction::Local);
+                debug_assert!(provisioning == &interface::ProvisioningType::Local);
 
                 match config {
                     InterfaceConfigState::Host(HostInterfaceState { .. }) => {
@@ -1550,7 +1555,7 @@ impl<'a> NetCfg<'a> {
                 self.update_dns_servers(source, servers).await;
             }
             // TODO(https://fxbug.dev/42080722): Add tests to ensure we do not offer
-            // these services when interface has ProvisioningAction::Delegated
+            // these services when interface has ProvisioningType::Delegated
             // state.
             ProvisioningEvent::RequestStream(req_stream) => {
                 match req_stream.context("ServiceFs ended unexpectedly")? {
@@ -1962,7 +1967,7 @@ impl<'a> NetCfg<'a> {
             ) => Some(properties.id),
         } {
             if let Some(&InterfaceState { provisioning, .. }) = interface_states.get(&id.into()) {
-                if provisioning == interface::ProvisioningAction::Delegated {
+                if provisioning == interface::ProvisioningType::Delegated {
                     // Ignore result handling, which prevents provisioning
                     // activity from starting such as DHCP and DHCPv6 clients.
                     debug!(
@@ -2621,7 +2626,7 @@ impl<'a> NetCfg<'a> {
                 })
             })?;
         let interface_state =
-            InterfaceState::new_blackhole(control, interface::ProvisioningAction::Local);
+            InterfaceState::new_blackhole(control, interface::ProvisioningType::Local);
 
         assert_matches!(
             self.interface_states
@@ -2683,8 +2688,28 @@ impl<'a> NetCfg<'a> {
         naming id = {interface_naming_id:?}"
         );
 
+        let provisioning_action = interface::find_provisioning_action_from_provisioning_rules(
+            &self.interface_provisioning_policy,
+            &device_info,
+            &interface_name,
+        );
+        info!(
+            "interface with name {:?} will have {:?} provisioning",
+            &interface_name, provisioning_action
+        );
+
+        let ProvisioningAction { provisioning, netstack_managed_routes_designation } =
+            provisioning_action;
+
         let (interface_id, control) = device_instance
-            .add_to_stack(self, InterfaceConfig { name: interface_name.clone(), metric })
+            .add_to_stack(
+                self,
+                InterfaceConfig {
+                    name: interface_name.clone(),
+                    metric,
+                    netstack_managed_routes_designation,
+                },
+            )
             .await
             .context("error adding to stack")?;
 
@@ -2695,6 +2720,7 @@ impl<'a> NetCfg<'a> {
             interface_naming_id,
             &device_info,
             dns_watchers,
+            provisioning,
         )
         .await
         .context("error configuring ethernet interface")
@@ -2714,6 +2740,7 @@ impl<'a> NetCfg<'a> {
         interface_naming_id: interface::InterfaceNamingIdentifier,
         device_info: &DeviceInfoRef<'_>,
         dns_watchers: &mut DnsServerWatchers<'_>,
+        provisioning_type: ProvisioningType,
     ) -> Result<(), errors::Error> {
         let ForwardedDeviceClasses { ipv4, ipv6 } = &self.forwarded_device_classes;
         let ipv4_forwarding = ipv4.contains(&device_info.device_class);
@@ -2740,16 +2767,6 @@ impl<'a> NetCfg<'a> {
                 })
             })?;
         info!("installed configuration with result {:?}", config);
-
-        let provisioning_action = interface::find_provisioning_action_from_provisioning_rules(
-            &self.interface_provisioning_policy,
-            &device_info,
-            &interface_name,
-        );
-        info!(
-            "interface with name {:?} will have {:?} provisioning",
-            &interface_name, provisioning_action
-        );
 
         if device_info.is_wlan_ap() {
             if let Some(id) = self.interface_states.iter().find_map(|(id, state)| {
@@ -2778,7 +2795,7 @@ impl<'a> NetCfg<'a> {
                     interface_naming_id,
                     control,
                     device_info.device_class,
-                    provisioning_action,
+                    provisioning_type,
                 )),
             };
 
@@ -2846,7 +2863,7 @@ impl<'a> NetCfg<'a> {
                             control,
                             device_info.device_class,
                             dhcpv6_pd_config,
-                            provisioning_action,
+                            provisioning_type,
                         )
                         .await?,
                     )
@@ -2863,7 +2880,7 @@ impl<'a> NetCfg<'a> {
                 device_info,
                 // Disable in-stack DHCPv4 when provisioning is ignored.
                 self.dhcpv4_client_provider.is_none()
-                    && provisioning_action == interface::ProvisioningAction::Local,
+                    && provisioning_type == interface::ProvisioningType::Local,
             )
             .await
             .context("error configuring host")?;
@@ -3841,7 +3858,7 @@ mod tests {
     use test_case::test_case;
 
     use super::*;
-    use crate::interface::ProvisioningAction::{Delegated, Local};
+    use crate::interface::ProvisioningType::{Delegated, Local};
     use crate::socketproxy::socketproxy_utils::respond_to_socketproxy;
 
     impl Config {
@@ -4142,7 +4159,7 @@ mod tests {
                 control,
                 port_class.try_into().unwrap(),
                 None,
-                interface::ProvisioningAction::Local,
+                interface::ProvisioningType::Local,
             ),
             expect_get_interface_auth(&mut control_request_stream)
         );
@@ -4308,7 +4325,7 @@ mod tests {
             test_interface_naming_id(),
             control_client,
             port_class.try_into().unwrap(),
-            interface::ProvisioningAction::Local,
+            interface::ProvisioningType::Local,
         );
         assert_matches::assert_matches!(
             netcfg.interface_states.insert(INTERFACE_ID, wlan_ap),
@@ -4407,7 +4424,7 @@ mod tests {
                 control_client,
                 port_class.try_into().unwrap(),
                 None,
-                interface::ProvisioningAction::Local,
+                interface::ProvisioningType::Local,
             ),
             expect_get_interface_auth(&mut control)
         );
@@ -4713,7 +4730,7 @@ mod tests {
             control,
             port_class.try_into().unwrap(),
             None,
-            interface::ProvisioningAction::Local,
+            interface::ProvisioningType::Local,
         );
         let mut control = control_server_end.into_stream();
         let (new_host_result, ()) =
@@ -4867,7 +4884,7 @@ mod tests {
             control,
             port_class.try_into().unwrap(),
             None,
-            interface::ProvisioningAction::Local,
+            interface::ProvisioningType::Local,
         );
         let mut control = control_server_end.into_stream();
         let (new_host_result, ()) =
@@ -5012,7 +5029,7 @@ mod tests {
                 control,
                 port_class.try_into().unwrap(),
                 None,
-                interface::ProvisioningAction::Local,
+                interface::ProvisioningType::Local,
             ),
             expect_get_interface_auth(&mut control_request_stream)
         );
@@ -5304,7 +5321,7 @@ mod tests {
                                 test_interface_naming_id(),
                                 control,
                                 device_class,
-                                interface::ProvisioningAction::Local
+                                interface::ProvisioningType::Local
                             )
                         ),
                         None
@@ -5329,7 +5346,7 @@ mod tests {
                             control,
                             device_class,
                             None,
-                            interface::ProvisioningAction::Local,
+                            interface::ProvisioningType::Local,
                         ),
                         expect_get_interface_auth(&mut control_request_stream)
                     );
@@ -5749,7 +5766,7 @@ mod tests {
                     device_class,
                     upstream
                         .then_some(fnet_dhcpv6::PrefixDelegationConfig::Empty(fnet_dhcpv6::Empty)),
-                    interface::ProvisioningAction::Local,
+                    interface::ProvisioningType::Local,
                 ),
                 expect_get_interface_auth(&mut control_request_stream)
             );
@@ -5838,7 +5855,7 @@ mod tests {
     //
     // Returns None if there is no nth matching interface.
     fn get_nth_interface_id_locally_provisioned(
-        interfaces: &[(InterfaceId, interface::ProvisioningAction)],
+        interfaces: &[(InterfaceId, interface::ProvisioningType)],
         nth: usize,
     ) -> Option<InterfaceId> {
         interfaces.into_iter().filter_map(|(id, action)| (*action == Local).then_some(*id)).nth(nth)
@@ -5848,7 +5865,7 @@ mod tests {
     const INTERFACE_ID3: InterfaceId = InterfaceId::new(3).unwrap();
 
     async fn fuchsia_networks_fallback_helper(
-        interfaces: &[(InterfaceId, interface::ProvisioningAction)],
+        interfaces: &[(InterfaceId, interface::ProvisioningType)],
         final_event: fnet_interfaces::Event,
     ) {
         // The provided interface id list must be non-empty.
@@ -6069,7 +6086,7 @@ mod tests {
         interface_ids: &[InterfaceId],
         final_event: fnet_interfaces::Event,
     ) {
-        let interfaces: Vec<(InterfaceId, interface::ProvisioningAction)> =
+        let interfaces: Vec<(InterfaceId, interface::ProvisioningType)> =
             interface_ids.into_iter().map(|id| (*id, Local)).collect();
         fuchsia_networks_fallback_helper(&interfaces, final_event).await
     }
@@ -6095,7 +6112,7 @@ mod tests {
     ; "two_local_iface_not_first_iface")]
     #[fuchsia::test]
     async fn test_fuchsia_networks_fallback_mixed_provisioning(
-        interfaces: &[(InterfaceId, interface::ProvisioningAction)],
+        interfaces: &[(InterfaceId, interface::ProvisioningType)],
         final_event: fnet_interfaces::Event,
     ) {
         fuchsia_networks_fallback_helper(&interfaces, final_event).await
@@ -6138,7 +6155,8 @@ mod tests {
     ] } ],
     "interface_provisioning_policy": [ {
         "matchers": [ {"any": false } ],
-        "provisioning": "delegated"
+        "provisioning": "delegated",
+        "netstack_managed_routes_designation": "interface_local"
     }, {
         "matchers": [ {"interface_name": "xyz" } ],
         "provisioning": "local"
@@ -6237,13 +6255,21 @@ mod tests {
                 matchers: HashSet::from([interface::ProvisioningMatchingRule::Common(
                     interface::MatchingRule::Any(false),
                 )]),
-                provisioning: interface::ProvisioningAction::Delegated,
+                action: interface::ProvisioningAction {
+                    provisioning: interface::ProvisioningType::Delegated,
+                    netstack_managed_routes_designation: Some(
+                        interface::NetstackManagedRoutesDesignation::InterfaceLocal,
+                    ),
+                },
             },
             interface::ProvisioningRule {
                 matchers: HashSet::from([interface::ProvisioningMatchingRule::InterfaceName {
                     pattern: glob::Pattern::new("xyz").unwrap(),
                 }]),
-                provisioning: interface::ProvisioningAction::Local,
+                action: interface::ProvisioningAction {
+                    provisioning: interface::ProvisioningType::Local,
+                    netstack_managed_routes_designation: None,
+                },
             },
         ]);
         assert_eq!(interface_provisioning_policy, expected_provisioning_policy);
@@ -6613,14 +6639,34 @@ mod tests {
   }]
 }
 "#,
+            r#"
+{
+  "dns_config": { "servers": [] },
+  "filter_config": {
+    "rules": [],
+    "nat_rules": [],
+    "rdr_rules": []
+  },
+  "filter_enabled_interface_types": [],
+  "allowed_upstream_device_classes": [],
+  "forwarded_device_classes": { "ipv4": [], "ipv6": [] },
+  "interface_provisioning_policy": [{
+    "matchers": [ { "any": true } ],
+    "provisioning": "delegated",
+    "netstack_managed_routes_designation": "speling"
+  }]
+}
+"#,
         ];
 
         for config_str in bad_configs {
             let err =
                 Config::load_str(config_str).expect_err("config shouldn't accept unknown fields");
             let err = err.downcast::<serde_json5::Error>().expect("downcast error");
-            // Ensure the error is complaining about unknown field.
-            assert!(format!("{:?}", err).contains("speling"));
+            let err_str = format!("{:?}", err);
+            // Ensure the error is complaining about unknown field, or complaining
+            // about the missing field.
+            assert!(err_str.contains("speling") || err_str.contains("missing field"));
         }
     }
 

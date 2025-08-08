@@ -127,6 +127,7 @@ resource("netcfg-netemul-configs") {
 
   sources = [
     "management/config/all_delegated.json",
+    "management/config/all_interface_local_delegated.json",
     "management/config/dhcpv6.json",
     "management/config/duplicate_names.json",
     "management/config/empty.json",

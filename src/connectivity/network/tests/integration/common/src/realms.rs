@@ -202,6 +202,7 @@ pub enum ManagerConfig {
     PacketFilterEthernet,
     PacketFilterWlan,
     WithBlackhole,
+    AllInterfaceLocalDelegated,
 }
 
 impl ManagerConfig {
@@ -220,6 +221,9 @@ impl ManagerConfig {
             ManagerConfig::PacketFilterEthernet => "/pkg/netcfg/packet_filter_ethernet.json",
             ManagerConfig::PacketFilterWlan => "/pkg/netcfg/packet_filter_wlan.json",
             ManagerConfig::WithBlackhole => "/pkg/netcfg/with_blackhole.json",
+            ManagerConfig::AllInterfaceLocalDelegated => {
+                "/pkg/netcfg/all_interface_local_delegated.json"
+            }
         }
     }
 }
@@ -399,7 +403,8 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     | ManagerConfig::EnableSocketProxyAllDelegated
                     | ManagerConfig::PacketFilterEthernet
                     | ManagerConfig::PacketFilterWlan
-                    | ManagerConfig::WithBlackhole => false,
+                    | ManagerConfig::WithBlackhole
+                    | ManagerConfig::AllInterfaceLocalDelegated => false,
                 };
 
                 fnetemul::ChildDef {

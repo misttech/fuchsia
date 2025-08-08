@@ -15,6 +15,8 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 
 use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
+use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fidl_fuchsia_posix_socket::{self as fposix_socket, OptionalUint32};
 use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
 use {
@@ -40,8 +42,8 @@ use net_declare::{
     fidl_ip, fidl_ip_v4, fidl_subnet, net_ip_v6, net_prefix_length_v4, net_subnet_v6, std_ip,
 };
 use net_types::ethernet::Mac;
-use net_types::ip::{self as net_types_ip, Ip, IpVersion, Ipv4};
-use netemul::{RealmTcpListener, RealmTcpStream, RealmUdpSocket};
+use net_types::ip::{self as net_types_ip, Ip, IpVersion, Ipv4, Ipv6};
+use netemul::{RealmTcpListener, RealmTcpStream, RealmUdpSocket, TestRealm};
 use netstack_testing_common::interfaces::{self, TestInterfaceExt as _};
 use netstack_testing_common::nud::apply_nud_flake_workaround;
 use netstack_testing_common::realms::{
@@ -478,6 +480,52 @@ async fn test_install_only_no_provisioning<M: Manager, N: Netstack>(name: &str) 
                     .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT.after_now(), || None)
                     .await
                     .is_none());
+            }
+            .boxed_local()
+        },
+    )
+    .await;
+}
+
+// Test that Netcfg discovers a device, adds it to the Netstack,
+// and does not provision the device (send DHCP packets).
+#[netstack_test]
+#[variant(M, Manager)]
+async fn test_install_with_local_table<M: Manager>(name: &str) {
+    async fn assert_local_table_exists<I: FidlRouteAdminIpExt + FidlRouteIpExt>(
+        realm: &TestRealm<'_>,
+        grant: &fnet_interfaces_admin::GrantForInterfaceAuthorization,
+    ) {
+        let provider =
+            realm.connect_to_protocol::<I::RouteTableProviderMarker>().expect("failed to connect");
+        let proof = fnet_interfaces_ext::admin::proof_from_grant(grant);
+        let _local_table = fnet_routes_ext::admin::get_interface_local_table::<I>(&provider, proof)
+            .await
+            .expect("fidl error")
+            .expect("failed to get local table");
+    }
+    let _if_name: String = with_netcfg_owned_device::<M, Netstack3, _>(
+        name,
+        ManagerConfig::AllInterfaceLocalDelegated,
+        NetcfgOwnedDeviceArgs {
+            use_out_of_stack_dhcp_client: true,
+            use_socket_proxy: false,
+            extra_known_service_providers: vec![],
+        },
+        |if_id: u64,
+         _: &netemul::TestNetwork<'_>,
+         _: &fnet_interfaces::StateProxy,
+         realm: &netemul::TestRealm<'_>,
+         _: &netemul::TestSandbox| {
+            async move {
+                let control =
+                    realm.interface_control(if_id).expect("failed to get interface control");
+                let grant = control
+                    .get_authorization_for_interface()
+                    .await
+                    .expect("failed to get authorization");
+                assert_local_table_exists::<Ipv4>(realm, &grant).await;
+                assert_local_table_exists::<Ipv6>(realm, &grant).await;
             }
             .boxed_local()
         },

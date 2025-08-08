@@ -7,6 +7,8 @@ use serde::{Deserialize, Deserializer};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+
 use crate::DeviceClass;
 
 const INTERFACE_PREFIX_WLAN: &str = "wlan";
@@ -498,19 +500,53 @@ fn fallback_naming_rule() -> NamingRule {
     }
 }
 
+/// The provision action to take if the matchers are satisfied.
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields, rename_all = "lowercase")]
+pub struct ProvisioningAction {
+    /// The type of the provisioning.
+    pub provisioning: ProvisioningType,
+    /// Where the netstack managed routes should be installed.
+    pub netstack_managed_routes_designation: Option<NetstackManagedRoutesDesignation>,
+}
+
 /// Whether the interface should be provisioned locally by netcfg, or
 /// delegated. Provisioning is the set of events that occurs after
 /// interface enumeration, such as starting a DHCP client and assigning
 /// an IP to the interface. Provisioning actions work to support
 /// Internet connectivity.
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields, rename_all = "lowercase")]
-pub enum ProvisioningAction {
+pub enum ProvisioningType {
     /// Netcfg will provision the interface
+    #[default]
     Local,
     /// Netcfg will not provision the interface. The provisioning
     /// of the interface will occur elsewhere
     Delegated,
+}
+
+/// Where the netstack managed routes should be stored.
+///
+/// Mirrors [`fnet_interfaces_admin::NetstackManagedRoutesDesignation`].
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum NetstackManagedRoutesDesignation {
+    Main,
+    InterfaceLocal,
+}
+
+impl From<NetstackManagedRoutesDesignation>
+    for fnet_interfaces_admin::NetstackManagedRoutesDesignation
+{
+    fn from(value: NetstackManagedRoutesDesignation) -> Self {
+        match value {
+            NetstackManagedRoutesDesignation::Main => Self::Main(fnet_interfaces_admin::Empty),
+            NetstackManagedRoutesDesignation::InterfaceLocal => {
+                Self::InterfaceLocal(fnet_interfaces_admin::Empty)
+            }
+        }
+    }
 }
 
 /// A rule that dictates how interfaces that align with the property matching
@@ -520,12 +556,11 @@ pub enum ProvisioningAction {
 pub struct ProvisioningRule {
     /// A set of rules to check against an interface's properties. All rules
     /// must apply for the provisioning action to take effect.
-    #[allow(unused)]
     pub matchers: HashSet<ProvisioningMatchingRule>,
     /// The provisioning policy that netcfg applies to a matching
     /// interface.
-    #[allow(unused)]
-    pub provisioning: ProvisioningAction,
+    #[serde(flatten)]
+    pub action: ProvisioningAction,
 }
 
 // A ref version of `devices::DeviceInfo` to avoid the need to clone data
@@ -581,16 +616,12 @@ pub(crate) fn find_provisioning_action_from_provisioning_rules(
         .iter()
         .find_map(|rule| {
             if rule.does_interface_match(&info, &interface_name) {
-                Some(rule.provisioning)
+                Some(rule.action)
             } else {
                 None
             }
         })
-        .unwrap_or(
-            // When there are no `ProvisioningRule`s that match the device,
-            // use Local provisioning.
-            ProvisioningAction::Local,
-        )
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -1229,7 +1260,10 @@ mod tests {
     ) {
         let provisioning_rule = ProvisioningRule {
             matchers: HashSet::from_iter(matching_rules),
-            provisioning: ProvisioningAction::Local,
+            action: ProvisioningAction {
+                provisioning: ProvisioningType::Local,
+                ..Default::default()
+            },
         };
         assert_eq!(provisioning_rule.does_interface_match(&info, interface_name), want_match);
     }
@@ -1481,18 +1515,21 @@ mod tests {
         assert_eq!(name, expected_name.to_owned());
     }
 
-    #[test_case(true, ProvisioningAction::Delegated; "matches_first_rule")]
-    #[test_case(false, ProvisioningAction::Local; "fallback_default")]
+    #[test_case(true, ProvisioningType::Delegated; "matches_first_rule")]
+    #[test_case(false, ProvisioningType::Local; "fallback_default")]
     fn test_find_provisioning_action_from_provisioning_rules(
         match_first_rule: bool,
-        expected: ProvisioningAction,
+        expected: ProvisioningType,
     ) {
         let provisioning_action = find_provisioning_action_from_provisioning_rules(
             &[ProvisioningRule {
                 matchers: HashSet::from([ProvisioningMatchingRule::Common(MatchingRule::Any(
                     match_first_rule,
                 ))]),
-                provisioning: ProvisioningAction::Delegated,
+                action: ProvisioningAction {
+                    provisioning: ProvisioningType::Delegated,
+                    ..Default::default()
+                },
             }],
             &DeviceInfoRef {
                 device_class: DeviceClass::WlanClient,
@@ -1501,6 +1538,6 @@ mod tests {
             },
             "wlans5009",
         );
-        assert_eq!(provisioning_action, expected);
+        assert_eq!(provisioning_action.provisioning, expected);
     }
 }
