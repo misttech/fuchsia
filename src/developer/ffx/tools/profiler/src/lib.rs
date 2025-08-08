@@ -253,11 +253,12 @@ pub async fn profiler(
                 }),
                 ..Default::default()
             };
+            let extension = if opts.symbolize { "pb" } else { "txt" };
             let session_opts = SessionOpts {
                 symbolize: opts.symbolize,
                 buffer_size_mb: opts.buffer_size_mb,
                 print_stats: opts.print_stats,
-                output: opts.output,
+                output: format!("{}.{}", opts.output, extension),
                 duration: opts.duration,
                 pprof_conversion: opts.pprof_conversion,
                 color_output: opts.color_output,
@@ -296,11 +297,12 @@ pub async fn profiler(
                 }),
                 ..Default::default()
             };
+            let extension = if opts.symbolize { "pb" } else { "txt" };
             let session_opts = SessionOpts {
                 symbolize: opts.symbolize,
                 buffer_size_mb: opts.buffer_size_mb,
                 print_stats: opts.print_stats,
-                output: opts.output,
+                output: format!("{}.{}", opts.output, extension),
                 duration: opts.duration,
                 pprof_conversion: opts.pprof_conversion,
                 color_output: opts.color_output,

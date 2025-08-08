@@ -60,8 +60,8 @@ pub struct Attach {
     #[argh(option)]
     pub duration: Option<u64>,
 
-    /// name of output trace file. Defaults to profile.pb.
-    #[argh(option, default = "String::from(\"profile.pb\")")]
+    /// name of output trace file. Defaults to "profile.pb".
+    #[argh(option, default = "String::from(\"profile\")")]
     pub output: String,
 
     /// print stats about how the profiling session went
@@ -109,8 +109,8 @@ pub struct Launch {
     #[argh(option)]
     pub duration: Option<u64>,
 
-    /// name of output trace file. Defaults to profile.pb.
-    #[argh(option, default = "String::from(\"profile.pb\")")]
+    /// name of output trace file. Defaults to "profile.pb".
+    #[argh(option, default = "String::from(\"profile\")")]
     pub output: String,
 
     /// print stats about how the profiling session went
