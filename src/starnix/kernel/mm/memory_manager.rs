@@ -3909,6 +3909,7 @@ impl MemoryManager {
         self.state.read().executable_node.clone()
     }
 
+    #[track_caller]
     pub fn get_errno_for_map_err(status: zx::Status) -> Errno {
         match status {
             zx::Status::INVALID_ARGS => errno!(EINVAL),
