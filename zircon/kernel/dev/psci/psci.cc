@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 #include <inttypes.h>
 #include <lib/console.h>
+#include <lib/counters.h>
 #include <lib/zbi-format/driver-config.h>
 #include <string.h>
 #include <trace.h>
@@ -51,6 +52,20 @@ enum class PowerStateFormat {
   Extended,  // Section 5.4.2.2 of "Arm Power State Coordination Interface", DEN0022F.b.
 };
 PowerStateFormat power_state_format;
+
+// The number of PSCI CPU_SUSPEND calls that completed successfully and resulted in a powered down
+// state.
+KCOUNTER(counter_psci_cpu_suspend_powered_down, "psci.cpu_suspend.ok.powered_down")
+
+// The number of PSCI CPU_SUSPEND calls that completed successfully, but where state was retained
+// (i.e. did not reach a powered down state for whatever reason).
+KCOUNTER(counter_psci_cpu_suspend_retained, "psci.cpu_suspend.ok.retained")
+
+// The number of PSCI CPU_SUSPEND calls that failed with PSCI_INVALID_PARAMETERS.
+KCOUNTER(counter_psci_cpu_suspend_invalid_parameters, "psci.cpu_suspend.invalid_parameters")
+
+// The number of PSCI CPU_SUSPEND calls that failed with PSCI_DENIED.
+KCOUNTER(counter_psci_cpu_suspend_denied, "psci.cpu_suspend.psci_denied")
 
 uint64_t shutdown_args[3] = {0, 0, 0};
 uint64_t reboot_args[3] = {0, 0, 0};
@@ -256,15 +271,19 @@ PsciCpuSuspendResult psci_cpu_suspend(uint32_t power_state) {
   const int64_t result = psci_do_suspend(do_psci_call, power_state, entry_pa, &context);
   if (result > 0) {
     // We took the "long way" and restored CPU context from a powerdown state.
+    kcounter_add(counter_psci_cpu_suspend_powered_down, 1);
     return zx::ok(CpuPoweredDown::Yes);
   }
 
   switch (result) {
     case PSCI_SUCCESS:
+      kcounter_add(counter_psci_cpu_suspend_retained, 1);
       return zx::ok(CpuPoweredDown::No);
     case PSCI_INVALID_PARAMETERS:
+      kcounter_add(counter_psci_cpu_suspend_invalid_parameters, 1);
       return zx::error(ZX_ERR_INVALID_ARGS);
     case PSCI_DENIED:
+      kcounter_add(counter_psci_cpu_suspend_denied, 1);
       return zx::error(ZX_ERR_ACCESS_DENIED);
     default:
       panic("cpu %u, psci_call_routine 0x%" PRIx64 ", power_state 0x%x, entry 0x%" PRIx64
