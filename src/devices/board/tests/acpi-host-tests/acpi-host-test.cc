@@ -16,7 +16,7 @@
 #include "src/devices/board/lib/acpi/device-for-host.h"
 #include "src/devices/board/lib/acpi/manager-host.h"
 #include "src/devices/board/tests/acpi-host-tests/table-manager.h"
-#include "third_party/acpica/source/include/actypes.h"
+#include "third_party/acpica-migrating/src/source/include/actypes.h"
 
 // Path to the compiled tables in out/, passed in argv[1].
 std::string test_data_dir;

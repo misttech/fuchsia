@@ -34,7 +34,7 @@
 #include "src/devices/board/lib/acpi/manager.h"
 #include "src/devices/board/lib/acpi/pci-internal.h"
 #include "src/devices/board/lib/acpi/resources.h"
-#include "third_party/acpica/source/include/actypes.h"
+#include "third_party/acpica-migrating/src/source/include/actypes.h"
 
 // This file contains the implementation for the code supporting the in-progress userland
 // pci bus driver.

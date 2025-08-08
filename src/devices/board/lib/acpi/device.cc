@@ -31,7 +31,7 @@
 #include "src/devices/board/lib/acpi/manager.h"
 #include "src/devices/board/lib/acpi/power-resource.h"
 #include "src/devices/lib/iommu/iommu.h"
-#include "third_party/acpica/source/include/actypes.h"
+#include "third_party/acpica-migrating/src/source/include/actypes.h"
 
 namespace acpi {
 namespace {

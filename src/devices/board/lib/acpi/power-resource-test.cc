@@ -11,7 +11,7 @@
 #include "src/devices/board/lib/acpi/acpi.h"
 #include "src/devices/board/lib/acpi/test/mock-acpi.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
-#include "third_party/acpica/source/include/actypes.h"
+#include "third_party/acpica-migrating/src/source/include/actypes.h"
 #include "zxtest/base/values.h"
 
 using acpi::test::Device;

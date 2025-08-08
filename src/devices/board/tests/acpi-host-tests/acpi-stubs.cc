@@ -16,9 +16,9 @@
 #include <acpica/acpi.h>
 
 #include "src/devices/board/tests/acpi-host-tests/table-manager.h"
-#include "third_party/acpica/source/include/acexcep.h"
-#include "third_party/acpica/source/include/acpiosxf.h"
-#include "third_party/acpica/source/include/actypes.h"
+#include "third_party/acpica-migrating/src/source/include/acexcep.h"
+#include "third_party/acpica-migrating/src/source/include/acpiosxf.h"
+#include "third_party/acpica-migrating/src/source/include/actypes.h"
 
 extern "C" {
 #include <unistd.h>

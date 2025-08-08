@@ -31,7 +31,7 @@ shared_public_deps = [
 # this is a problem for another day.
 #
 # TODO(https://fxbug.dev/42075906): Remove this and the #ifndef guard around ACPI_FLEX_ARRAY in
-# https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/acpica/source/include/platform/acgcc.h.
+# https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/acpica-migrating/src/source/include/platform/acgcc.h.
 #
 # See https://github.com/acpica/acpica/blob/4578e0e94d945e56547/source/include/platform/acgcc.h#L214-L223
 # which does not guard this declaration.

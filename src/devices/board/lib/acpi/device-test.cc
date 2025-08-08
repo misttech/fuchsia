@@ -26,7 +26,7 @@
 #include "src/devices/board/lib/acpi/test/mock-acpi.h"
 #include "src/devices/board/lib/acpi/test/null-iommu-manager.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
-#include "third_party/acpica/source/include/actypes.h"
+#include "third_party/acpica-migrating/src/source/include/actypes.h"
 
 class NotifyHandlerServer : public fidl::WireServer<fuchsia_hardware_acpi::NotifyHandler> {
  public:
