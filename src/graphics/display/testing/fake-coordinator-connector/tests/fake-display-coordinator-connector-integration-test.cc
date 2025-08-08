@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 
 #include <string_view>
@@ -14,9 +15,30 @@
 
 namespace {
 
-TEST(FakeDisplayCoordinatorConnector, ConnectToSvcWithListener) {
+TEST(FakeDisplayCoordinatorConnector, ConnectToProtocolWithListener) {
   zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
       component::Connect<fuchsia_hardware_display::Provider>();
+  ASSERT_OK(provider_result);
+
+  fidl::SyncClient<fuchsia_hardware_display::Provider> provider(std::move(provider_result).value());
+
+  auto [coordinator_client, coordinator_server] =
+      fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
+  auto [listener_client, listener_server] =
+      fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
+  fidl::Result open_coordinator_result = provider->OpenCoordinatorWithListenerForPrimary({{
+      .coordinator = std::move(coordinator_server),
+      .coordinator_listener = std::move(listener_client),
+  }});
+  EXPECT_TRUE(open_coordinator_result.is_ok())
+      << "Failed to open coordinator: "
+      << open_coordinator_result.error_value().FormatDescription();
+}
+
+TEST(FakeDisplayCoordinatorConnector, ConnectToServiceMemberWithListener) {
+  component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
+  zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
+      watcher.GetNextInstance(/*stop_at_idle=*/false);
   ASSERT_OK(provider_result);
 
   fidl::SyncClient<fuchsia_hardware_display::Provider> provider(std::move(provider_result).value());
