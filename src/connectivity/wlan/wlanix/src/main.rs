@@ -1069,6 +1069,7 @@ async fn handle_supplicant_request<I: IfaceManager>(
                 if ifaces.is_empty() {
                     bail!("AddStaInterface but no interfaces exist.");
                 } else {
+                    info!("AddStaInterface: serving iface {}", ifaces[0]);
                     let client_iface = iface_manager.get_client_iface(ifaces[0]).await?;
                     let supplicant_sta_iface_stream = supplicant_sta_iface.into_stream();
                     serve_supplicant_sta_iface(
