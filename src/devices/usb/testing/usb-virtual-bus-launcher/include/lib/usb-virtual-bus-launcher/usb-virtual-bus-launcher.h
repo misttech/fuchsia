@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.virtual.bus/cpp/wire.h>
+#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/zx/result.h>
 
@@ -30,7 +31,8 @@ class BusLauncher {
   BusLauncher& operator=(const BusLauncher&) = delete;
 
   // Create the driver_test_realm, wait for it to start, then enable the virtual USB bus.
-  static zx::result<BusLauncher> Create();
+  static zx::result<BusLauncher> Create(
+      std::vector<fuchsia_component_test::Capability> exposes = {});
 
   // Set up a USB peripheral device with the given descriptors. See fuchsia.hardware.usb.peripheral
   // for more information. Waits for the functions to be registered and triggers a connect event on

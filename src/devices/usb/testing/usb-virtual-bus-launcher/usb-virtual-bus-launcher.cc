@@ -12,7 +12,6 @@
 #include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/watcher.h>
 #include <lib/usb-peripheral-utils/event-watcher.h>
@@ -26,14 +25,13 @@
 
 namespace usb_virtual {
 
-zx::result<BusLauncher> BusLauncher::Create() {
+zx::result<BusLauncher> BusLauncher::Create(
+    std::vector<fuchsia_component_test::Capability> exposes) {
   auto realm_builder = component_testing::RealmBuilder::Create();
   driver_test_realm::Setup(realm_builder);
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-  std::vector<fuchsia_component_test::Capability> exposes = {{
-      fuchsia_component_test::Capability::WithService(
-          fuchsia_component_test::Service{{.name = "fuchsia.hardware.usb.peripheral.Service"}}),
-  }};
+  exposes.emplace_back(fuchsia_component_test::Capability::WithService(
+      fuchsia_component_test::Service{{.name = fuchsia_hardware_usb_peripheral::Service::Name}}));
   driver_test_realm::AddDtrExposes(realm_builder, exposes);
   auto realm = realm_builder.Build(loop.dispatcher());
 
