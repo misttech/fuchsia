@@ -4,9 +4,15 @@
 
 use crate::{test_topology, utils};
 use diagnostics_reader::{ArchiveReader, RetryConfig};
-use fidl_fuchsia_archivist_test as ftest;
 use fidl_fuchsia_diagnostics_types::Severity;
 use futures::StreamExt;
+use std::time::Duration;
+use {fidl_fuchsia_archivist_test as ftest, fuchsia_async as fasync};
+
+// This should match the default time defined in shared_buffer, but that
+// value can't be directly depended on due to CTF constraints at the time
+// of writing. Archivist depends on a HEAD-only API.
+const DEFAULT_ARCHIVIST_SLEEP_TIME: Duration = Duration::from_millis(200);
 
 const SPAM_COUNT: usize = 1001;
 
@@ -77,13 +83,17 @@ async fn test_budget() {
             .expect("emitted log");
         expected.push(message);
 
-        // Each message is about 136 bytes.  Archivist delays rolling out messages to reduce CPU
-        // time, so we must take care to observe the messages in batches.  If we don't wait,
-        // the logs will get dropped when we try and send them.
+        // Each message is about 136 bytes. Archivist delays rolling out messages to reduce CPU
+        // time, so we must take care to observe the messages in batches. If we don't wait,
+        // the logs will get dropped when we try and send them. The batch size of 100 should
+        // fit in the buffer all at once, and then we sleep to ensure that Archivist will wake up
+        // and roll logs out before we write and read the next batch.
         if i.is_multiple_of(100) {
             for message in expected.drain(..) {
                 assert_eq!(message, observed_logs.next().await.unwrap().msg().unwrap());
             }
+
+            fasync::Timer::new(DEFAULT_ARCHIVIST_SLEEP_TIME).await;
         }
     }
 
