@@ -195,6 +195,13 @@ static int bootstrap2(void*) {
 
   dprintf(SPEW, "top of bootstrap2()\n");
 
+#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
+  // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
+  // when unblocking once we solve races higher in the stack.
+  dprintf(INFO, "Boot option: New thread wakeup accounting %s\n",
+          gBootOptions->enable_new_wakeup_accounting ? "enabled" : "disabled");
+#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
+
   // Initialize the rest of the architecture and platform.
   lk_primary_cpu_init_level(LK_INIT_LEVEL_THREADING, LK_INIT_LEVEL_ARCH - 1);
 
