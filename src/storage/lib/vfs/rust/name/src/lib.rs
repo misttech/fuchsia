@@ -30,7 +30,7 @@ use zx_status::Status;
 /// * It cannot contain "/".
 /// * It cannot contain embedded NUL.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Name(String);
+pub struct Name(Box<str>);
 
 /// The maximum length, in bytes, of a single filesystem component.
 pub const MAX_NAME_LENGTH: usize = fio::MAX_NAME_LENGTH as usize;
@@ -74,15 +74,14 @@ impl Name {
 
 impl Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let value = &self.0;
-        write!(f, "{value}")
+        f.write_str(&self.0)
     }
 }
 
 /// Parses a string name into a [Name].
 pub fn parse_name(name: String) -> Result<Name, ParseNameError> {
     validate_name(&name)?;
-    Ok(Name(name))
+    Ok(Name(name.into_boxed_str()))
 }
 
 /// Check whether a string name will be a valid input to [Name].
@@ -110,7 +109,7 @@ pub fn validate_name(name: &str) -> Result<(), ParseNameError> {
 
 impl From<Name> for String {
     fn from(value: Name) -> Self {
-        value.0
+        value.0.into_string()
     }
 }
 
@@ -161,11 +160,11 @@ mod tests {
         assert_matches!(parse_name("".to_string()), Err(ParseNameError::Empty));
         assert_matches!(parse_name(".".to_string()), Err(ParseNameError::Dot));
         assert_matches!(parse_name("..".to_string()), Err(ParseNameError::DotDot));
-        assert_matches!(parse_name(".a".to_string()), Ok(Name(name)) if &name == ".a");
-        assert_matches!(parse_name("..a".to_string()), Ok(Name(name)) if &name == "..a");
+        assert_matches!(parse_name(".a".to_string()), Ok(Name(name)) if &*name == ".a");
+        assert_matches!(parse_name("..a".to_string()), Ok(Name(name)) if &*name == "..a");
         assert_matches!(parse_name("a/b".to_string()), Err(ParseNameError::Slash));
         assert_matches!(parse_name("a\0b".to_string()), Err(ParseNameError::EmbeddedNul));
-        assert_matches!(parse_name("abc".to_string()), Ok(Name(name)) if &name == "abc");
+        assert_matches!(parse_name("abc".to_string()), Ok(Name(name)) if &*name == "abc");
     }
 
     #[test]
@@ -194,7 +193,7 @@ mod tests {
     #[test]
     fn test_try_from() {
         assert_matches!(Name::try_from("a".repeat(1000)), Err(ParseNameError::TooLong(_)));
-        assert_matches!(Name::try_from("abc".to_string()), Ok(Name(name)) if &name == "abc");
+        assert_matches!(Name::try_from("abc".to_string()), Ok(Name(name)) if &*name == "abc");
     }
 
     #[test]
