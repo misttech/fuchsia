@@ -174,7 +174,9 @@ zx_status_t SdmmcRootDevice::Init(const fuchsia_hardware_sdmmc::SdmmcMetadata& m
 
   // Failure to probe a hardwired device is unexpected. Reply with an error code so that our device
   // gets removed.
+  // LINT.IfChange(failed_to_probe_irremovable_device)
   FDF_LOGL(ERROR, logger(), "failed to probe irremovable device");
+  // LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go:failed_to_probe_irremovable_device)
   return ZX_ERR_NOT_FOUND;
 }
 

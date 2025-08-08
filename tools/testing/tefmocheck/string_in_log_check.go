@@ -502,6 +502,13 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			String: "QBG-D: Exit QBG",
 			Type:   syslogType,
 		},
+		// For https://fxbug.dev/437357219
+		&stringInLogCheck{
+			// LINT.IfChange(failed_to_probe_irremovable_device)
+			String: "failed to probe irremovable device",
+			// LINT.ThenChange(/src/devices/block/drivers/sdmmc/sdmmc-root-device.cc:failed_to_probe_irremovable_device)
+			Type: serialLogType,
+		},
 	}
 
 	oopsExceptBlocks := []*logBlock{
