@@ -2,22 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// See the top level API summary in `doc.fidl`.
+// See the top level API summary in `overview.fidl`.
 library fuchsia.time.alarms;
 
 using zx;
 using fuchsia.power.system;
 
-// The main protocol to look at in this file is `WakeAlarms` below.
-
+/// A unique identifier for an alarm.
+///
+/// This alias is used to identify alarms within a single `WakeAlarms`
+/// connection. It is the client's responsibility to ensure that the IDs are
+/// unique for all active alarms.
 alias AlarmId = string:128;
 
-/// [WakeAlarms] provides setting up platform-wide wake alarms.
+/// Provides a mechanism for scheduling platform-wide wake alarms.
 ///
 /// An alarm is a promise made by the system to the caller of the API to notify
-/// the caller that AT LEAST a certain amount of time has expired. The alarm
-/// may fire later than the requested amount of time at the discretion of the
-/// server implementing this API.
+/// the caller that *at least* the requested amount of time has expired. The
+/// alarm may fire later than the requested amount of time at the discretion of
+/// the server implementing this API.
 ///
 /// When this notification happens, we say that the wake alarm has "fired".
 ///
@@ -36,29 +39,26 @@ open protocol WakeAlarms {
     ///
     /// The caller may request multiple alarms concurrently. Re-requesting
     /// an alarm that has the same `alarm_id` as an already scheduled alarm
-    /// causes that scheduled alarm to be canceled before the same alarm
-    /// is scheduled again.
+    /// causes that scheduled alarm to be canceled before the new alarm is
+    /// scheduled.
     ///
-    /// The call to `SetAndWait` returns when the alarm fires, or an error
+    /// The call to `SetAndWait` returns when the alarm fires, an error
     /// occurs, or the alarm is canceled.
     ///
     /// ## Return value
     ///
-    /// * `keep_alive`: a handle which prevents system suspend so long as
-    ///   it is held alive.
+    /// * `keep_alive`: A handle that prevents the system from suspending as
+    ///   long as it is held.
     ///
     /// ## Protocol Errors
     ///
-    /// * [DROPPED] if the alarm has been canceled by using
-    ///   [Cancel].
-    /// * [UNSPECIFIED] you are observing a new failure mode which has not
-    ///   been assigned an error code yet. Expect this failure mode to be
-    ///   assigned a more specific error code in future versions of this API.
-    ///   This is not a bug, but an indication that you may need to update the
-    ///   API version.
-    /// * [INTERNAL] is a bug: an internal fallible call (which is expected
-    ///   to be unlikely to fail) has failed somehow. Please report this for
-    ///   investigation.
+    /// * `DROPPED`: The alarm was canceled by a call to `Cancel`.
+    /// * `UNSPECIFIED`: A new failure mode has been observed that has not
+    ///   yet been assigned an error code. This indicates that the API
+    ///   version may need to be updated.
+    /// * `INTERNAL` is a server-side bug: an internal fallible call (which is
+    ///   expected to be unlikely to fail) has failed somehow. Please report this
+    ///   for investigation.
     SetAndWait(@generated_name("SetAndWaitArgs") resource struct {
         /// The deadline at which the timer is supposed to fire. This
         /// corresponds to a time instant on the boot timeline.
@@ -67,11 +67,12 @@ open protocol WakeAlarms {
         /// Optional mode that allows the API to support a number of use cases.
         mode SetMode;
 
-        /// Set to a nonempty value to identify the alarm. A unique value
-        /// of [AlarmId] must be picked per each unique alarm within a
-        /// single FIDL connection's scope.
+        /// A unique identifier for the alarm.
         ///
-        /// Supplying an alarm_id for an already scheduled alarm reschedules
+        /// A unique value of `AlarmId` must be picked for each unique alarm
+        /// within a single FIDL connection's scope.
+        ///
+        /// Supplying an `alarm_id` for an already scheduled alarm reschedules
         /// that alarm.
         alarm_id AlarmId;
     }) -> (resource struct {
@@ -82,17 +83,16 @@ open protocol WakeAlarms {
 
     /// Cancels the alarm specified by `alarm_id`.
     ///
-    /// Providing an `alarm_id` of an alarm that is not scheduled quietly
-    /// succeeds.
+    /// Providing an `alarm_id` for an alarm that is not scheduled is a no-op.
     Cancel(struct {
         /// The unique identifier of the alarm to cancel.
         ///
         /// The alarm identified by `alarm_id` is canceled, and will no
         /// longer be expected to fire. The respective `SetAndWait` will
-        /// return [WakeAlarmsError::DROPPED].
+        /// return `WakeAlarmsError.DROPPED`.
         ///
         /// A race condition is possible where the alarm fires while
-        /// the Cancel call is being processed, or even slightly later.
+        /// the `Cancel` call is being processed, or even slightly later.
         /// The caller must handle such an event gracefully.
         alarm_id AlarmId;
     });
@@ -183,16 +183,14 @@ type SetMode = flexible resource union {
     2: notify_setup_done zx.Handle:EVENT;
 };
 
-/// WakeAlarmsError describes the error code that can be returned from wake
-/// alarm API calls.
+/// Describes the error codes that can be returned from `WakeAlarms` API calls.
 type WakeAlarmsError = flexible enum {
-    /// Denotes new failure mode which has not been assigned an error code yet.
+    /// A new failure mode has been observed that has not yet been assigned an
+    /// error code.
     ///
-    /// Expect this failure mode to be assigned a more specific error code in
-    /// the future versions of this API. This is not a bug, but an indication
-    /// that you may need to update the API version.
+    /// This indicates that the API version may need to be updated.
     UNSPECIFIED = 1;
-    /// This alarm was canceled, or rescheduled by the API user.
+    /// The alarm was canceled or rescheduled by the API user.
     DROPPED = 2;
     /// The server end encountered an error internal to its code, which should
     /// not ever happen in normal operation. Receiving this error means that the
