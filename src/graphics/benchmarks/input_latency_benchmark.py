@@ -13,7 +13,7 @@ from honeydew.affordances.ui.user_input import types as ui_custom_types
 from honeydew.fuchsia_device import fuchsia_device
 from mobly import test_runner
 from perf_publish import publish
-from trace_processing import trace_importing, trace_metrics, trace_model
+from trace_processing import trace_importing, trace_metrics
 from trace_processing.metrics import input_latency
 
 TOUCH_APP = (
@@ -72,12 +72,8 @@ class InputBenchmark(fuchsia_base_test.FuchsiaBaseTest):
 
         expected_trace_filename: str = os.path.join(self.log_path, "trace.fxt")
 
-        json_trace_file: str = trace_importing.convert_trace_file_to_json(
+        model = trace_importing.create_model_from_trace_file_path(
             expected_trace_filename
-        )
-
-        model: trace_model.Model = trace_importing.create_model_from_file_path(
-            json_trace_file
         )
 
         input_latency_results = input_latency.metrics_processor(

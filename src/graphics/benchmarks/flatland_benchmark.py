@@ -15,7 +15,7 @@ from fuchsia_base_test import fuchsia_base_test
 from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, test_runner
 from perf_publish import publish
-from trace_processing import trace_importing, trace_metrics, trace_model
+from trace_processing import trace_importing, trace_metrics
 from trace_processing.metrics import app_render, cpu
 
 TILE_URL = (
@@ -81,12 +81,8 @@ class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
             os.path.exists(expected_trace_filename), msg="trace failed"
         )
 
-        json_trace_file: str = trace_importing.convert_trace_file_to_json(
+        model = trace_importing.create_model_from_trace_file_path(
             expected_trace_filename
-        )
-
-        model: trace_model.Model = trace_importing.create_model_from_file_path(
-            json_trace_file
         )
 
         app_render_latency_results = (
