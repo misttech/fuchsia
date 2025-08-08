@@ -3,28 +3,19 @@
 // found in the LICENSE file.
 
 use super::config::StreamSink;
-use async_trait::async_trait;
-use cm_logger::scoped::ScopedLogger;
-use cm_types::NamespacePath;
-use fidl::prelude::*;
-use fuchsia_component::client::connect::connect_to_named_protocol_at_dir_root;
+use super::logger::{create_namespace_logger, LogWriter, OutputLevel, SyslogWriter};
+use diagnostics_log::Publisher;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::StreamExt;
-use lazy_static::lazy_static;
 use log::warn;
 use namespace::Namespace;
-use once_cell::unsync::OnceCell;
 use socket_parsing::{NewlineChunker, NewlineChunkerError};
-use std::sync::Arc;
+use std::future::Future;
 use zx::HandleBased;
-use {fidl_fuchsia_logger as flogger, fidl_fuchsia_process as fproc, fuchsia_async as fasync};
+use {fidl_fuchsia_process as fproc, fuchsia_async as fasync};
 
 const STDOUT_FD: i32 = 1;
 const STDERR_FD: i32 = 2;
-
-lazy_static! {
-    static ref SVC_DIRECTORY_PATH: NamespacePath = "/svc".parse().unwrap();
-}
 
 /// Max size for message when draining input stream socket. This number is
 /// slightly smaller than size allowed by Archivist (LogSink service implementation).
@@ -48,9 +39,7 @@ pub fn bind_streams_to_syslog(
     let mut tasks: Vec<fasync::Task<()>> = Vec::new();
     let mut handles: Vec<fproc::HandleInfo> = Vec::new();
 
-    // connect to the namespace's logger if we'll need it, wrap in OnceCell so we only do it once
-    // (can't use Lazy here because we need to capture `ns`)
-    let logger = OnceCell::new();
+    let mut logger = None;
     let mut forward_stream = |sink, fd, level| {
         if matches!(sink, StreamSink::Log) {
             // create the handle before dealing with the logger so components still receive an inert
@@ -59,10 +48,8 @@ pub fn bind_streams_to_syslog(
                 new_socket_bound_to_fd(fd).expect("failed to create socket");
             handles.push(handle_info);
 
-            if let Some(l) = logger.get_or_init(|| create_namespace_logger(ns).map(Arc::new)) {
-                tasks.push(forward_socket_to_syslog(l.clone(), socket, level));
-            } else {
-                warn!("Tried forwarding file descriptor {fd} but didn't have a LogSink available.");
+            if let Some(logger) = logger.get_or_insert_with(|| create_namespace_logger(ns)) {
+                tasks.push(forward_socket_to_syslog(logger.clone(), socket, level));
             }
         }
     };
@@ -73,21 +60,14 @@ pub fn bind_streams_to_syslog(
     (tasks, handles)
 }
 
-fn create_namespace_logger(ns: &Namespace) -> Option<ScopedLogger> {
-    let svc_dir = ns.get(&SVC_DIRECTORY_PATH)?;
-    let logsink =
-        connect_to_named_protocol_at_dir_root(svc_dir, flogger::LogSinkMarker::PROTOCOL_NAME)
-            .ok()?;
-    ScopedLogger::create(logsink).ok()
-}
-
 fn forward_socket_to_syslog(
-    logger: Arc<ScopedLogger>,
+    logger: impl Future<Output = Option<Publisher>> + Send + 'static,
     socket: fasync::Socket,
     level: OutputLevel,
 ) -> fasync::Task<()> {
-    let mut writer = SyslogWriter::new(logger, level);
     let task = fasync::Task::spawn(async move {
+        let Some(logger) = logger.await else { return };
+        let mut writer = SyslogWriter::new(logger, level);
         if let Err(error) = drain_lines(socket, &mut writer).await {
             warn!(error:%; "Draining output stream failed");
         }
@@ -113,7 +93,7 @@ fn new_socket_bound_to_fd(fd: i32) -> Result<(fasync::Socket, fproc::HandleInfo)
 /// MAX_MESSAGE_SIZE.
 async fn drain_lines(
     socket: fasync::Socket,
-    writer: &mut dyn LogWriter,
+    writer: &mut impl LogWriter,
 ) -> Result<(), NewlineChunkerError> {
     let chunker = NewlineChunker::new(socket, MAX_MESSAGE_SIZE);
     futures::pin_mut!(chunker);
@@ -125,65 +105,16 @@ async fn drain_lines(
     Ok(())
 }
 
-/// Object capable of writing a stream of bytes.
-#[async_trait]
-trait LogWriter: Send {
-    async fn write(&mut self, bytes: &[u8]);
-}
-
-struct SyslogWriter {
-    logger: Arc<dyn log::Log + Send + Sync>,
-    level: OutputLevel,
-}
-
-#[derive(Copy, Clone)]
-enum OutputLevel {
-    Info,
-    Warn,
-}
-
-impl From<OutputLevel> for log::Level {
-    fn from(level: OutputLevel) -> log::Level {
-        match level {
-            OutputLevel::Info => log::Level::Info,
-            OutputLevel::Warn => log::Level::Warn,
-        }
-    }
-}
-
-impl SyslogWriter {
-    fn new(logger: Arc<dyn log::Log + Send + Sync>, level: OutputLevel) -> Self {
-        Self { logger, level }
-    }
-}
-
-#[async_trait]
-impl LogWriter for SyslogWriter {
-    async fn write(&mut self, bytes: &[u8]) {
-        let msg = String::from_utf8_lossy(&bytes);
-        self.logger.log(
-            &log::Record::builder().level(self.level.into()).args(format_args!("{msg}")).build(),
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{create_fs_with_mock_logsink, MockServiceFs, MockServiceRequest};
-    use anyhow::{anyhow, format_err, Context, Error};
-    use async_trait::async_trait;
-    use diagnostics_message::MonikerWithUrl;
-    use fidl_fuchsia_component_runner as fcrunner;
-    use fidl_fuchsia_logger::LogSinkRequest;
+    use anyhow::{format_err, Context, Error};
     use fuchsia_async::Task;
     use futures::channel::mpsc;
     use futures::{try_join, FutureExt, SinkExt};
     use rand::distr::{Alphanumeric, SampleString as _};
     use rand::rng;
-    use std::sync::Mutex;
 
-    #[async_trait]
     impl LogWriter for mpsc::Sender<String> {
         async fn write(&mut self, bytes: &[u8]) {
             let message =
@@ -191,32 +122,6 @@ mod tests {
             let () =
                 self.send(message).await.expect("Failed to send message to other end of mpsc.");
         }
-    }
-
-    #[fuchsia::test]
-    async fn syslog_writer_decodes_valid_utf8_message() -> Result<(), Error> {
-        let (dir, ns_entries) = create_fs_with_mock_logsink()?;
-
-        let ((), actual) = try_join!(
-            write_to_syslog_or_panic(ns_entries, b"Hello World!"),
-            read_message_from_syslog(dir)
-        )?;
-
-        assert_eq!(actual, Some("Hello World!".to_owned()));
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn syslog_writer_decodes_non_utf8_message() -> Result<(), Error> {
-        let (dir, ns_entries) = create_fs_with_mock_logsink()?;
-
-        let ((), actual) = try_join!(
-            write_to_syslog_or_panic(ns_entries, b"Hello \xF0\x90\x80World!"),
-            read_message_from_syslog(dir)
-        )?;
-
-        assert_eq!(actual, Some("Hello �World!".to_owned()));
-        Ok(())
     }
 
     #[fuchsia::test]
@@ -335,69 +240,6 @@ mod tests {
         assert_eq!(recv.next().await, None);
 
         Ok(())
-    }
-
-    async fn write_to_syslog_or_panic(
-        ns_entries: Vec<fcrunner::ComponentNamespaceEntry>,
-        message: &[u8],
-    ) -> Result<(), Error> {
-        let ns = Namespace::try_from(ns_entries).context("Failed to create Namespace")?;
-        let logger = create_namespace_logger(&ns).context("Failed to create ScopedLogger")?;
-        let mut writer = SyslogWriter::new(Arc::new(logger), OutputLevel::Info);
-        writer.write(message).await;
-
-        Ok(())
-    }
-
-    /// Retrieve message logged to socket. The wire format is expected to
-    /// match with the LogSink protocol format.
-    pub fn get_message_logged_to_socket(socket: zx::Socket) -> Option<String> {
-        let mut buffer: [u8; 1024] = [0; 1024];
-        match socket.read(&mut buffer) {
-            Ok(read_len) => {
-                let msg = diagnostics_message::from_structured(
-                    MonikerWithUrl {
-                        url: "fuchsia-pkg://fuchsia.com/test-pkg#meta/test-component.cm".into(),
-                        moniker: "test-pkg/test-component".try_into().unwrap(),
-                    },
-                    &buffer[..read_len],
-                )
-                .expect("must be able to decode a valid message from buffer");
-
-                msg.msg().map(String::from)
-            }
-            Err(_) => None,
-        }
-    }
-
-    async fn read_message_from_syslog(
-        dir: MockServiceFs<'static>,
-    ) -> Result<Option<String>, Error> {
-        let message_logged = Arc::new(Mutex::new(Option::<String>::None));
-        dir.for_each_concurrent(None, |request: MockServiceRequest| match request {
-            MockServiceRequest::LogSink(mut r) => {
-                let message_logged_copy = Arc::clone(&message_logged);
-                async move {
-                    match r.next().await.expect("stream error").expect("fidl error") {
-                        LogSinkRequest::ConnectStructured { socket, .. } => {
-                            *message_logged_copy.lock().unwrap() =
-                                get_message_logged_to_socket(socket);
-                        }
-                        LogSinkRequest::WaitForInterestChange { .. } => {
-                            // we expect this request to come but asserting on it is flakey
-                        }
-                        LogSinkRequest::_UnknownMethod { .. } => {
-                            panic!("Unexpected unknown method")
-                        }
-                    }
-                }
-            }
-        })
-        .await;
-
-        let message_logged =
-            message_logged.lock().map_err(|_| anyhow!("Failed to lock mutex"))?.clone();
-        Ok(message_logged)
     }
 
     fn take_and_write_to_socket(socket: zx::Socket, message: &str) -> Result<(), Error> {

@@ -128,16 +128,15 @@ pub fn init_logging_for_test_with_threads<'a, R>(
     logging: LoggingOptions<'a>,
 ) -> impl Fn(usize) -> R + 'a {
     move |n| {
-        let _guard = init_logging_with_threads(logging.clone());
+        init_logging_with_threads(logging.clone());
         func(n)
     }
 }
 
-/// Initializes logging on a background thread, returning a guard which cancels interest listening
-/// when dropped.
+/// Initializes logging on a background thread.
 #[cfg(target_os = "fuchsia")]
-fn init_logging_with_threads(logging: LoggingOptions<'_>) -> impl Drop {
-    diagnostics_log::initialize_sync(logging.into())
+fn init_logging_with_threads(logging: LoggingOptions<'_>) {
+    diagnostics_log::initialize_sync(logging.into());
 }
 
 #[cfg(not(target_os = "fuchsia"))]

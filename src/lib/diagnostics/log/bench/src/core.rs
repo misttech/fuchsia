@@ -3,44 +3,29 @@
 // found in the LICENSE file.
 
 use diagnostics_log::{Publisher, PublisherOptions};
-use fidl_fuchsia_logger::{LogSinkMarker, LogSinkRequest, MAX_DATAGRAM_LEN_BYTES};
-use fuchsia_async as fasync;
+use fidl::endpoints::RequestStream;
+use fidl_fuchsia_logger::{LogSinkMarker, LogSinkOnInitRequest};
 use fuchsia_criterion::{criterion, FuchsiaCriterion};
-use futures::{AsyncReadExt, StreamExt};
-use std::thread;
+use ring_buffer::RingBuffer;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
-async fn set_up_logger() -> (thread::JoinHandle<()>, Publisher) {
-    let (client, mut requests) = fidl::endpoints::create_request_stream::<LogSinkMarker>();
-    let task = fasync::Task::spawn(async move {
-        let options = PublisherOptions::default()
-            .tags(&["some-tag"])
-            .wait_for_initial_interest(false)
-            .listen_for_interest_updates(false)
-            .use_log_sink(client);
+const RING_BUFFER_SIZE: usize = 512 * 1024;
 
-        Publisher::new(options).unwrap()
-    });
-    let socket = match requests.next().await.unwrap().unwrap() {
-        LogSinkRequest::ConnectStructured { socket, .. } => socket,
-        _ => panic!("sink ctor sent the wrong message"),
-    };
-    let drain_socket = std::thread::spawn(|| {
-        let mut executor = fasync::LocalExecutor::new();
-        executor.run_singlethreaded(async move {
-            let mut socket = fuchsia_async::Socket::from_socket(socket);
-            // Constantly drain the socket.
-            let mut buf = vec![0; MAX_DATAGRAM_LEN_BYTES as usize];
-            loop {
-                match socket.read(&mut buf).await {
-                    Ok(_) => {}
-                    Err(s) => panic!("Unexpected status {}", s),
-                }
-            }
-        });
-    });
-    let publisher = task.await;
-    (drain_socket, publisher)
+static RING_BUFFER: LazyLock<Arc<RingBuffer>> =
+    LazyLock::new(|| Arc::clone(&RingBuffer::create(RING_BUFFER_SIZE)));
+
+fn create_logger() -> Publisher {
+    let (client, stream) = fidl::endpoints::create_request_stream::<LogSinkMarker>();
+    stream
+        .control_handle()
+        .send_on_init(LogSinkOnInitRequest {
+            buffer: Some(RING_BUFFER.new_iob_writer(0).unwrap().0),
+            ..Default::default()
+        })
+        .unwrap();
+    Publisher::new_sync(PublisherOptions::default().tags(&["some-tag"]).use_log_sink(client))
+        .unwrap()
 }
 
 fn write_log_benchmark<F>(bencher: &mut criterion::Bencher, mut logging_fn: F)
@@ -48,9 +33,12 @@ where
     F: FnMut(),
 {
     bencher.iter_batched(
-        || {},
+        || {
+            // Reset the ring buffer so that it doesn't run out of room.
+            RING_BUFFER.increment_tail((RING_BUFFER.head() - RING_BUFFER.tail()) as usize);
+        },
         |_| logging_fn(),
-        // Limiting the batch size to 100 should prevent the socket from running out of
+        // Limiting the batch size to 100 should prevent the buffer from running out of
         // space.
         criterion::BatchSize::NumIterations(100),
     );
@@ -132,13 +120,8 @@ fn set_up_old_log_write_benchmarks(
         })
 }
 
-fn create_logger() -> (thread::JoinHandle<()>, Publisher) {
-    let mut executor = fasync::LocalExecutor::new();
-    let (drain_socket, publisher) = executor.run_singlethreaded(set_up_logger());
-    (drain_socket, publisher)
-}
-
 fn main() {
+    let _executor = fuchsia_async::LocalExecutor::new();
     let mut c = FuchsiaCriterion::default();
     let internal_c: &mut criterion::Criterion = &mut c;
     *internal_c = std::mem::take(internal_c)
@@ -149,8 +132,8 @@ fn main() {
         // and run for much longer.
         .sample_size(10);
 
-    let (_drain_logs, logger) = create_logger();
-    logger.register_logger().expect("set up logger");
+    let logger = create_logger();
+    logger.register_logger(None).expect("set up logger");
 
     // TODO(https://fxbug.dev/344980783): keep the old benchmarks to see continuity, but then
     // rename "Tracing" to "Log" and remove the old tracing benchmarks.

@@ -26,6 +26,7 @@ rustc_library("elf_runner") {
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//sdk/rust/zx",
+    "//src/lib/diagnostics/log/rust",
     "//src/lib/error/clonable_error",
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
@@ -37,7 +38,6 @@ rustc_library("elf_runner") {
     "//src/lib/trace/rust:trace",
     "//src/performance/memory/attribution/server",
     "//src/storage/lib/vfs/rust:vfs",
-    "//src/sys/component_manager/lib/logger",
     "//src/sys/lib/cm_types",
     "//src/sys/lib/fidl-connector",
     "//src/sys/lib/moniker",
@@ -52,7 +52,6 @@ rustc_library("elf_runner") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:log",
-    "//third_party/rust_crates:once_cell",
     "//third_party/rust_crates:thiserror",
   ]
 
@@ -64,6 +63,7 @@ rustc_library("elf_runner") {
     "src/crash_info.rs",
     "src/error.rs",
     "src/lib.rs",
+    "src/logger.rs",
     "src/memory/mod.rs",
     "src/memory/reporter.rs",
     "src/process_launcher.rs",
@@ -74,7 +74,6 @@ rustc_library("elf_runner") {
 
   test_deps = [
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
-    "//src/lib/diagnostics/log/message/rust",
     "//src/lib/fidl/rust/fidl_test_util",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-fs",
@@ -95,6 +94,38 @@ fuchsia_test_component("elf_runner_tests_cmp") {
   test_type = "system"
 }
 
+rustc_test("elf_runner_next_vdso_tests") {
+  edition = "2021"
+  sources = [
+    "src/logger.rs",
+    "src/next_vdso_tests.rs",
+  ]
+  source_root = "src/next_vdso_tests.rs"
+  deps = [
+    "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+    "//src/lib/diagnostics/fake-log-sink",
+    "//src/lib/diagnostics/log/rust",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/sys/lib/cm_types",
+    "//src/sys/lib/namespace",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:lazy_static",
+    "//third_party/rust_crates:log",
+  ]
+}
+
+fuchsia_test_component("elf_runner_next_vdso_tests_cmp") {
+  deps = [ ":elf_runner_next_vdso_tests" ]
+  component_name = "elf_runner_next_vdso_tests"
+  manifest = "meta/elf_runner_next_vdso_tests.cml"
+}
+
 fuchsia_test_package("elf_runner_tests") {
   # One test case causes an error log
   test_specs = {
@@ -102,7 +133,10 @@ fuchsia_test_package("elf_runner_tests") {
       max_severity = "ERROR"
     }
   }
-  test_components = [ ":elf_runner_tests_cmp" ]
+  test_components = [
+    ":elf_runner_tests_cmp",
+    ":elf_runner_next_vdso_tests_cmp",
+  ]
   deps = [
     ":elf_runner_tests_cmp",
     "tests/lifecycle:immediate_escrow_component",

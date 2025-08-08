@@ -10,7 +10,6 @@ use fuchsia_component_test::{
 use futures::stream::{self as stream, StreamExt, TryStreamExt};
 use futures::TryFutureExt;
 use log::Log;
-use std::sync::Arc;
 use {fidl_fidl_examples_routing_echo as fecho, fuchsia_async as fasync};
 
 async fn echo_server_mock(handles: LocalComponentHandles) -> Result<(), Error> {
@@ -18,10 +17,10 @@ async fn echo_server_mock(handles: LocalComponentHandles) -> Result<(), Error> {
     let mut fs = fserver::ServiceFs::new();
     let mut tasks = vec![];
     let log_client = handles.connect_to_protocol()?;
-    let publisher = diagnostics_log::Publisher::new(
+    let publisher = diagnostics_log::Publisher::new_async(
         diagnostics_log::PublisherOptions::default().use_log_sink(log_client),
-    )?;
-    let publisher = Arc::new(publisher);
+    )
+    .await?;
 
     // Add the echo protocol to the ServiceFs
     fs.dir("svc").add_fidl_service(move |mut stream: fecho::EchoRequestStream| {

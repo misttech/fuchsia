@@ -173,7 +173,6 @@ archivist_optimized_binary("bin") {
   ]
 
   test_deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//src/lib/diagnostics/selectors",
     "//third_party/rust_crates:futures",
