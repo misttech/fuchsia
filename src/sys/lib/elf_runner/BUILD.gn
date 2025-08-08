@@ -37,6 +37,7 @@ rustc_library("elf_runner") {
     "//src/lib/process_builder",
     "//src/lib/trace/rust:trace",
     "//src/performance/memory/attribution/server",
+    "//src/storage/lib/pseudo_fs",
     "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/lib/cm_types",
     "//src/sys/lib/fidl-connector",

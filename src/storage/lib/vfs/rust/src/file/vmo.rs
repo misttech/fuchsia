@@ -34,12 +34,7 @@ use zx::{self as zx, HandleBased as _, Status, Vmo};
 /// let from_vec = read_only(vec![0u8; 2]);
 /// ```
 pub fn read_only(content: impl AsRef<[u8]>) -> Arc<VmoFile> {
-    let bytes: &[u8] = content.as_ref();
-    let vmo = Vmo::create(bytes.len().try_into().unwrap()).unwrap();
-    if bytes.len() > 0 {
-        vmo.write(bytes, 0).unwrap();
-    }
-    VmoFile::new(vmo)
+    VmoFile::from_bytes(content.as_ref())
 }
 
 /// Implementation of a VMO-backed file in a virtual file system.
@@ -85,6 +80,19 @@ impl VmoFile {
     /// * `executable` - If true, allow connections with OpenFlags::PERM_EXECUTE.
     pub fn new_with_inode_and_executable(vmo: zx::Vmo, inode: u64, executable: bool) -> Arc<Self> {
         Arc::new(VmoFile { executable, inode, vmo })
+    }
+
+    /// Creates a `VmoFile` with the specified `data`.
+    pub fn from_data(data: impl AsRef<[u8]>) -> Arc<Self> {
+        Self::from_bytes(data.as_ref())
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Arc<Self> {
+        let vmo = Vmo::create(bytes.len().try_into().unwrap()).unwrap();
+        if !bytes.is_empty() {
+            vmo.write(bytes, 0).unwrap();
+        }
+        Self::new(vmo)
     }
 }
 

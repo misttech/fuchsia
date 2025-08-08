@@ -76,6 +76,7 @@ rustc_binary("fshost") {
     "//src/storage/lib/block_server:vmo_backed_block_server",
     "//src/storage/lib/fs_management/rust:fs_management",
     "//src/storage/lib/key-bag",
+    "//src/storage/lib/pseudo_fs",
     "//src/storage/lib/ramdevice_client/rust",
     "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust",
