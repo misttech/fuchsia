@@ -774,7 +774,7 @@ zx_status_t SdmmcDevice::HostInfo(sdmmc_host_info_t* info) {
     return result->error_value();
   }
   auto& response = result.value();
-  info->caps = response->info.caps;
+  info->caps = static_cast<uint64_t>(response->info.caps);
   info->max_transfer_size = response->info.max_transfer_size;
   info->max_buffer_regions = response->info.max_buffer_regions;
   return ZX_OK;
@@ -984,8 +984,9 @@ zx_status_t SdmmcDevice::RegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo
   }
 
   fdf::Arena arena('SDMC');
-  auto result = client_.sync().buffer(arena)->RegisterVmo(vmo_id, client_id, std::move(vmo), offset,
-                                                          size, vmo_rights);
+  auto result = client_.sync().buffer(arena)->RegisterVmo(
+      vmo_id, client_id, std::move(vmo), offset, size,
+      static_cast<fuchsia_hardware_sdmmc::SdmmcVmoRight>(vmo_rights));
   if (!result.ok()) {
     FDF_LOGL(ERROR, logger(), "RegisterVmo request failed: %s", result.status_string());
     return result.status();

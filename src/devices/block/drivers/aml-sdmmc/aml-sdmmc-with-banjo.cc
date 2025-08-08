@@ -44,7 +44,7 @@ zx::result<fuchsia_hardware_sdmmc::wire::SdmmcReq> AmlSdmmcWithBanjo::BanjoToFid
 }
 
 zx_status_t AmlSdmmcWithBanjo::SdmmcHostInfo(sdmmc_host_info_t* info) {
-  info->caps = dev_info_.caps;
+  info->caps = static_cast<uint64_t>(dev_info_.caps);
   info->max_transfer_size = dev_info_.max_transfer_size;
   info->max_buffer_regions = dev_info_.max_buffer_regions;
   return ZX_OK;
@@ -156,7 +156,8 @@ zx_status_t AmlSdmmcWithBanjo::SdmmcRegisterInBandInterrupt(
 zx_status_t AmlSdmmcWithBanjo::SdmmcRegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo,
                                                 uint64_t offset, uint64_t size,
                                                 uint32_t vmo_rights) {
-  return RegisterVmoImpl(vmo_id, client_id, std::move(vmo), offset, size, vmo_rights);
+  return RegisterVmoImpl(vmo_id, client_id, std::move(vmo), offset, size,
+                         static_cast<fuchsia_hardware_sdmmc::SdmmcVmoRight>(vmo_rights));
 }
 
 zx_status_t AmlSdmmcWithBanjo::SdmmcUnregisterVmo(uint32_t vmo_id, uint8_t client_id,

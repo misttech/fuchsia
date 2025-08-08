@@ -349,7 +349,7 @@ void FakeSdmmcDevice::HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& compl
   }
 
   fuchsia_hardware_sdmmc::wire::SdmmcHostInfo wire_info;
-  wire_info.caps = info.caps;
+  wire_info.caps = static_cast<fuchsia_hardware_sdmmc::SdmmcHostCap>(info.caps);
   wire_info.max_transfer_size = info.max_transfer_size;
   wire_info.max_buffer_regions = info.max_buffer_regions;
   completer.buffer(arena).ReplySuccess(wire_info);
@@ -476,7 +476,7 @@ void FakeSdmmcDevice::RegisterVmo(RegisterVmoRequestView request, fdf::Arena& ar
                                   RegisterVmoCompleter::Sync& completer) {
   zx_status_t status =
       SdmmcRegisterVmo(request->vmo_id, request->client_id, std::move(request->vmo),
-                       request->offset, request->size, request->vmo_rights);
+                       request->offset, request->size, static_cast<uint32_t>(request->vmo_rights));
   if (status != ZX_OK) {
     completer.buffer(arena).ReplyError(status);
     return;

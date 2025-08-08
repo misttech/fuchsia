@@ -104,7 +104,7 @@ type SdmmcHostPrefs = strict bits : uint64 {
 
 type SdmmcHostInfo = struct {
     /// Controller capabilities
-    caps uint64;
+    caps SdmmcHostCap;
     /// Maximum data request size, in bytes.
     /// Set to MAX_TRANSFER_UNBOUNDED if no such maximum exists.
     max_transfer_size uint32;
@@ -178,7 +178,7 @@ closed protocol Sdmmc {
         vmo zx.Handle:VMO;
         offset uint64;
         size uint64;
-        vmo_rights uint32;
+        vmo_rights SdmmcVmoRight;
     }) -> () error zx.Status;
     /// The callee unmaps/unpins the VMO and returns ownership to the caller.
     strict UnregisterVmo(struct {

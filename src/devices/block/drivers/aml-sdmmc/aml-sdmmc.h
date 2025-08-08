@@ -138,7 +138,8 @@ class AmlSdmmc : public fdf::DriverBase,
   zx_status_t RequestImpl(const fuchsia_hardware_sdmmc::wire::SdmmcReq& req,
                           uint32_t out_response[4]) __TA_REQUIRES(lock_);
   zx_status_t RegisterVmoImpl(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo, uint64_t offset,
-                              uint64_t size, uint32_t vmo_rights) __TA_EXCLUDES(lock_);
+                              uint64_t size, fuchsia_hardware_sdmmc::wire::SdmmcVmoRight rights)
+      __TA_EXCLUDES(lock_);
   zx_status_t UnregisterVmoImpl(uint32_t vmo_id, uint8_t client_id, zx::vmo* out_vmo)
       __TA_EXCLUDES(lock_);
 
@@ -192,7 +193,7 @@ class AmlSdmmc : public fdf::DriverBase,
   struct OwnedVmoInfo {
     uint64_t offset;
     uint64_t size;
-    uint32_t rights;
+    fuchsia_hardware_sdmmc::SdmmcVmoRight rights;
   };
 
   struct Inspect {

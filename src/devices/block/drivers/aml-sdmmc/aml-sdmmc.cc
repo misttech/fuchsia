@@ -1041,14 +1041,12 @@ zx::result<aml_sdmmc_desc_t*> AmlSdmmc::SetupOwnedVmoDescs(
     const fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion& buffer,
     vmo_store::StoredVmo<OwnedVmoInfo>& vmo, aml_sdmmc_desc_t* const cur_desc) {
   if (!(req.cmd_flags & SDMMC_CMD_READ) &&
-      !(vmo.meta().rights &
-        static_cast<uint32_t>(fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kRead))) {
+      !(vmo.meta().rights & fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kRead)) {
     FDF_LOGL(ERROR, logger(), "Request would read from write-only VMO");
     return zx::error(ZX_ERR_ACCESS_DENIED);
   }
   if ((req.cmd_flags & SDMMC_CMD_READ) &&
-      !(vmo.meta().rights &
-        static_cast<uint32_t>(fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kWrite))) {
+      !(vmo.meta().rights & fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kWrite)) {
     FDF_LOGL(ERROR, logger(), "Request would write to read-only VMO");
     return zx::error(ZX_ERR_ACCESS_DENIED);
   }
@@ -1562,11 +1560,13 @@ void AmlSdmmc::RegisterVmo(RegisterVmoRequestView request, fdf::Arena& arena,
 }
 
 zx_status_t AmlSdmmc::RegisterVmoImpl(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo,
-                                      uint64_t offset, uint64_t size, uint32_t vmo_rights) {
+                                      uint64_t offset, uint64_t size,
+                                      fuchsia_hardware_sdmmc::wire::SdmmcVmoRight vmo_rights) {
   if (client_id > fuchsia_hardware_sdmmc::wire::kSdmmcMaxClientId) {
     return ZX_ERR_OUT_OF_RANGE;
   }
-  if (vmo_rights == 0) {
+  if (!(vmo_rights & (fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead |
+                      fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite))) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -1576,13 +1576,9 @@ zx_status_t AmlSdmmc::RegisterVmoImpl(uint32_t vmo_id, uint8_t client_id, zx::vm
                                                                     .rights = vmo_rights,
                                                                 });
   const uint32_t read_perm =
-      (vmo_rights & static_cast<uint32_t>(fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kRead))
-          ? ZX_BTI_PERM_READ
-          : 0;
+      (vmo_rights & fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kRead) ? ZX_BTI_PERM_READ : 0;
   const uint32_t write_perm =
-      (vmo_rights & static_cast<uint32_t>(fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kWrite))
-          ? ZX_BTI_PERM_WRITE
-          : 0;
+      (vmo_rights & fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kWrite) ? ZX_BTI_PERM_WRITE : 0;
   zx_status_t status = stored_vmo.Pin(bti_, read_perm | write_perm, true);
   if (status != ZX_OK) {
     FDF_LOGL(ERROR, logger(), "Failed to pin VMO %u for client %u: %s", vmo_id, client_id,
@@ -1738,12 +1734,11 @@ zx_status_t AmlSdmmc::Init(const std::string& instance_identifier) {
     return status;
   }
 
-  dev_info_.caps = static_cast<uint64_t>(fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8) |
-                   static_cast<uint64_t>(fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330) |
-                   static_cast<uint64_t>(fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr104) |
-                   static_cast<uint64_t>(fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50) |
-                   static_cast<uint64_t>(fuchsia_hardware_sdmmc::SdmmcHostCap::kDdr50) |
-                   static_cast<uint64_t>(fuchsia_hardware_sdmmc::SdmmcHostCap::kDma);
+  dev_info_.caps =
+      fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8 |
+      fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330 |
+      fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr104 | fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50 |
+      fuchsia_hardware_sdmmc::SdmmcHostCap::kDdr50 | fuchsia_hardware_sdmmc::SdmmcHostCap::kDma;
 
   dev_info_.max_transfer_size = kMaxDmaDescriptors * zx_system_get_page_size();
 
