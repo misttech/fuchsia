@@ -4,6 +4,8 @@
 
 use crate::mm::mapping::MappingBackingMemory;
 use crate::mm::memory::MemoryObject;
+#[cfg(feature = "alternate_anon_allocs")]
+use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
     FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, Mapping, MappingBacking,
     MappingFlags, MappingName, MlockPinFlavor, MlockShadowProcess, PrivateFutexKey, UserFault,
@@ -308,78 +310,6 @@ pub struct MemoryManagerState {
 
 // 64k under the 4GB
 const LOWER_4GB_LIMIT: UserAddress = UserAddress::const_from(0xffff_0000);
-
-#[cfg(feature = "alternate_anon_allocs")]
-struct PrivateAnonymousMemoryManager {
-    /// Memory object backing private, anonymous memory allocations in this address space.
-    backing: Arc<MemoryObject>,
-}
-
-#[cfg(feature = "alternate_anon_allocs")]
-impl PrivateAnonymousMemoryManager {
-    fn new(backing_size: u64) -> Self {
-        let backing = Arc::new(
-            MemoryObject::from(
-                zx::Vmo::create(backing_size)
-                    .unwrap()
-                    .replace_as_executable(&VMEX_RESOURCE)
-                    .unwrap(),
-            )
-            .with_zx_name(b"starnix:memory_manager"),
-        );
-        Self { backing }
-    }
-
-    fn read_memory<'a>(
-        &self,
-        addr: UserAddress,
-        bytes: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], Errno> {
-        self.backing.read_uninit(bytes, addr.ptr() as u64).map_err(|_| errno!(EFAULT))
-    }
-
-    fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<(), Errno> {
-        self.backing.write(bytes, addr.ptr() as u64).map_err(|_| errno!(EFAULT))
-    }
-
-    fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
-        self.backing
-            .op_range(zx::VmoOp::ZERO, addr.ptr() as u64, length as u64)
-            .map_err(|_| errno!(EFAULT))?;
-        Ok(length)
-    }
-
-    fn move_pages(
-        &self,
-        source: &std::ops::Range<UserAddress>,
-        dest: UserAddress,
-    ) -> Result<(), Errno> {
-        let length = source.end - source.start;
-        let dest_memory_offset = dest.ptr() as u64;
-        let source_memory_offset = source.start.ptr() as u64;
-        self.backing
-            .memmove(
-                zx::TransferDataOptions::empty(),
-                dest_memory_offset,
-                source_memory_offset,
-                length.try_into().unwrap(),
-            )
-            .map_err(impossible_error)?;
-        Ok(())
-    }
-
-    fn snapshot(&self, backing_size: u64) -> Result<Self, Errno> {
-        Ok(Self {
-            backing: Arc::new(
-                self.backing
-                    .create_child(zx::VmoChildOptions::SNAPSHOT, 0, backing_size)
-                    .map_err(impossible_error)?
-                    .replace_as_executable(&VMEX_RESOURCE)
-                    .map_err(impossible_error)?,
-            ),
-        })
-    }
-}
 
 #[derive(Default, Clone)]
 pub struct MemoryManagerForkableState {

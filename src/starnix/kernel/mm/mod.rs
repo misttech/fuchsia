@@ -8,6 +8,7 @@ mod mapping;
 pub mod memory;
 mod memory_manager;
 mod mlock;
+mod private_anonymous_memory_manager;
 pub mod syscalls;
 mod userfault;
 mod vmex_resource;
