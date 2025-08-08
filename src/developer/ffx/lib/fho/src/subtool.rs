@@ -44,7 +44,14 @@ pub trait FfxTool: FfxMain {
     where
         Self: Sized,
     {
-        let result = ffx_command::run::<FhoSuite<Self>>(ExecutableKind::Subtool).await;
+        let mut env_context = None;
+        let result = match ffx_command::init_cmd(ExecutableKind::Subtool) {
+            Ok(c) => {
+                env_context = Some(c.context.clone());
+                ffx_command::run::<FhoSuite<Self>>(c).await
+            }
+            Err(e) => Err(e),
+        };
         let should_format = match FfxCommandLine::from_env() {
             Ok(cli) => cli.global.machine.is_some(),
             Err(e) => {
@@ -55,7 +62,7 @@ pub trait FfxTool: FfxMain {
                 }
             }
         };
-        ffx_command::exit(result, should_format).await;
+        ffx_command::exit(env_context, result, should_format).await;
     }
 }
 

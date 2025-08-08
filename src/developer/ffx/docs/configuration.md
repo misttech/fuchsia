@@ -165,6 +165,10 @@ When updating, please add the value in alphabetical order.
     |                                         | `error`, `warn`, `info`, `debug`,  |
     |                                         | `trace`. No components are defined |
     |                                         | by default                         |
+    | `metrics.upload_timeout`                | Defaults to `2.0`                  |
+    |                                         | The time in fractional seconds to  |
+    |                                         | wait before giving up on uploading |
+    |                                         | metrics data.                      |
     | `overnet.socket`                        | Path to the overnet socket.        |
     |                                         | Defaults to ASCENDD env variable,  |
     |                                         | or a dynamically-calculated path if|

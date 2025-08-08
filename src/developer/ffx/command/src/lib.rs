@@ -4,6 +4,7 @@
 
 use errors::IntoExitCode;
 use ffx_config::environment::ExecutableKind;
+use ffx_config::EnvironmentContext;
 use fuchsia_async::TimeoutExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -51,11 +52,44 @@ fn write_exit_code<W: Write>(res: &Result<ExitStatus>, out: &mut W) {
     write!(out, "{}\n", exit_code).ok();
 }
 
+fn get_upload_timeout(context: Option<&EnvironmentContext>) -> Duration {
+    let timeout_float: f64 = context
+        .and_then(|e| {
+            // The reason for this not surfacing an error is that if metrics are enabled and this
+            // value is malformed, then if a user successfully sets this to something like a
+            // string, then we'll fail to set this back to normal using the `ffx config` command,
+            // which would be a huge headache for any users. Generally we should return an error
+            // when fetching a config value (in the event that it's set to something unexpected).
+            //
+            // So the tl;dr is if we return an error here, this would happen:
+            //
+            // ```shell
+            // $ ffx config set metrics.upload_timeout "foobar"
+            // $ ffx config set metrics.upload_timeout 10
+            // ERROR!
+            // ```
+            //
+            // And they'd be stuck!
+            e.get(ffx_config::keys::METRICS_UPLOAD_TIMEOUT_KEY)
+                .map_err(|e| {
+                    // TODO(436934180): We shouldn't need to specify which key we couldn't fetch.
+                    // This should be the config's job to format this error properly for us.
+                    log::warn!(
+                        "unable to load `{}`: {e}",
+                        ffx_config::keys::METRICS_UPLOAD_TIMEOUT_KEY
+                    )
+                })
+                .ok()
+        })
+        .unwrap_or(ffx_config::keys::METRICS_UPLOAD_TIMEOUT_DEFAULT);
+    Duration::from_secs_f64(timeout_float)
+}
+
 /// Tries to report the given unexpected error to analytics if appropriate
-pub async fn report_bug(err: &impl std::fmt::Display) {
-    // TODO(66918): make configurable, and evaluate chosen time value.
+pub async fn report_bug(env_context: Option<&EnvironmentContext>, err: &impl std::fmt::Display) {
+    let upload_timeout = get_upload_timeout(env_context);
     if let Err(e) = analytics::add_crash_event(&format!("{}", err), None)
-        .on_timeout(Duration::from_secs(2), || {
+        .on_timeout(upload_timeout, || {
             log::error!("analytics timed out reporting crash event");
             Ok(())
         })
@@ -157,8 +191,12 @@ pub fn init_cmd(exe_kind: ExecutableKind) -> Result<InitializedCmd> {
     }
 }
 
-pub async fn run<T: ToolSuite>(exe_kind: ExecutableKind) -> Result<ExitStatus> {
-    let InitializedCmd { cmd, context, help_state } = init_cmd(exe_kind)?;
+/// Runs the specified tool suite.
+///
+/// If we're able to load the command and initialize the config without error, then `ctx_out` will
+/// be set to `Some(_)`.
+pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
+    let InitializedCmd { cmd, context, help_state } = icmd;
     let app = &cmd.global;
 
     // Everything that needs to use the config must be after loading the config.
@@ -290,7 +328,11 @@ pub async fn run<T: ToolSuite>(exe_kind: ExecutableKind) -> Result<ExitStatus> {
 }
 
 /// Terminates the process, outputting errors as appropriately and with the indicated exit code.
-pub async fn exit(res: Result<ExitStatus>, should_format: bool) -> ! {
+pub async fn exit(
+    env_context: Option<EnvironmentContext>,
+    res: Result<ExitStatus>,
+    should_format: bool,
+) -> ! {
     const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
     let exit_code = res.exit_code();
     match res {
@@ -323,7 +365,7 @@ pub async fn exit(res: Result<ExitStatus>, should_format: bool) -> ! {
                 writeln!(&mut out, "{message}").unwrap();
                 ffx_config::print_log_hint(&mut out);
             };
-            report_bug(&err).await;
+            report_bug(env_context.as_ref(), &err).await;
         }
         Ok(_) | Err(Error::ExitWithCode(_)) => (),
     }

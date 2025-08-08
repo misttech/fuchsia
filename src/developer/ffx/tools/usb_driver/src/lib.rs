@@ -29,8 +29,15 @@ pub struct UsbDriverCommand {
 // [END command_struct]
 
 pub async fn run() {
+    let mut env_context = None;
     let mut logging_enabled = false;
-    let result = implementation(&mut logging_enabled).await;
+    let result = match ffx_command::init_cmd(ffx_config::environment::ExecutableKind::Subtool) {
+        Ok(c) => {
+            env_context = Some(c.context.clone());
+            implementation(c, &mut logging_enabled).await
+        }
+        Err(e) => Err(e),
+    };
     let should_format = match fho::FfxCommandLine::from_env() {
         Ok(cli) => cli.global.machine.is_some(),
         Err(e) => {
@@ -45,12 +52,14 @@ pub async fn run() {
             }
         }
     };
-    ffx_command::exit(result, should_format).await;
+    ffx_command::exit(env_context, result, should_format).await;
 }
 
-async fn implementation(logging_enabled: &mut bool) -> Result<ExitStatus> {
-    let ffx_command::InitializedCmd { cmd: ffx, context: ctx, help_state } =
-        ffx_command::init_cmd(ffx_config::environment::ExecutableKind::Subtool)?;
+async fn implementation(
+    icmd: ffx_command::InitializedCmd,
+    logging_enabled: &mut bool,
+) -> Result<ExitStatus> {
+    let ffx_command::InitializedCmd { cmd: ffx, context: ctx, help_state } = icmd;
 
     let log_id: u64 = rand::random();
 

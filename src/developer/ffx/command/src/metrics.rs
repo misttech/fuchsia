@@ -19,6 +19,7 @@ use crate::{FfxContext, Result};
 const UNKNOWN_SDK: &str = "Unknown SDK";
 pub struct MetricsSession {
     enabled: bool,
+    upload_timeout: Duration,
     session_start: Instant,
 }
 
@@ -43,6 +44,7 @@ impl std::fmt::Display for CommandStats {
 
 impl MetricsSession {
     pub async fn start(context: &EnvironmentContext) -> Result<Self> {
+        let upload_timeout = crate::get_upload_timeout(Some(context));
         let invoker = context.get("fuchsia.analytics.ffx_invoker").unwrap_or(None);
         let build_info = context.build_info();
         let enabled = context.analytics_enabled();
@@ -57,7 +59,7 @@ impl MetricsSession {
             opt_out_for_this_invocation().await?
         }
         let session_start = Instant::now();
-        Ok(Self { enabled, session_start })
+        Ok(Self { enabled, session_start, upload_timeout })
     }
 
     pub async fn print_notice(&self, out: &mut impl Write) -> Result<()> {
@@ -98,8 +100,7 @@ impl MetricsSession {
             });
 
             let analytics_done = analytics_task
-                // TODO(66918): make configurable, and evaluate chosen time value.
-                .on_timeout(Duration::from_secs(2), || {
+                .on_timeout(self.upload_timeout, || {
                     log::error!("metrics submission timed out");
                     // Metrics timeouts should not impact user flows.
                     Instant::now()

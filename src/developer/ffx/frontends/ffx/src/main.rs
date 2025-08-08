@@ -276,13 +276,20 @@ async fn run_legacy_subcommand(
 
 #[fuchsia_async::run_singlethreaded]
 async fn main() {
-    let result = ffx_command::run::<FfxSuite>(ExecutableKind::MainFfx).await;
+    let mut env_context = None;
+    let result = match ffx_command::init_cmd(ExecutableKind::MainFfx) {
+        Ok(c) => {
+            env_context = Some(c.context.clone());
+            ffx_command::run::<FfxSuite>(c).await
+        }
+        Err(e) => Err(e),
+    };
     let should_format = match FfxCommandLine::from_env() {
         Ok(cli) => cli.global.machine.is_some(),
         Err(_e) => true,
     };
     show_mac_deprecation_warning(should_format);
-    ffx_command::exit(result, should_format).await
+    ffx_command::exit(env_context, result, should_format).await
 }
 
 fn show_mac_deprecation_warning(is_machine: bool) {
