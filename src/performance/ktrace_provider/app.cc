@@ -12,6 +12,7 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-engine/instrumentation.h>
 #include <lib/trace-provider/provider.h>
+#include <lib/zircon-internal/ktrace.h>
 #include <lib/zx/channel.h>
 #include <unistd.h>
 #include <zircon/status.h>
@@ -20,8 +21,6 @@
 #include <iterator>
 
 #include <fbl/algorithm.h>
-
-#include "src/performance/ktrace_provider/device_reader.h"
 
 namespace ktrace_provider {
 namespace {
@@ -75,68 +74,46 @@ zx::result<> RequestKtraceRewind(const zx::resource& tracing_resource) {
 
 zx::result<> RequestKtraceStart(const zx::resource& tracing_resource,
                                 trace_buffering_mode_t buffering_mode, uint32_t group_mask) {
-  if constexpr (kKernelStreamingSupport) {
-    if (zx_status_t status =
-            zx_ktrace_control(tracing_resource.get(), KTRACE_ACTION_REWIND, 0, nullptr);
-        status != ZX_OK) {
-      return zx::error(status);
-    }
-    return zx::make_result(
-        zx_ktrace_control(tracing_resource.get(), KTRACE_ACTION_START, group_mask, nullptr));
+  if (zx_status_t status =
+          zx_ktrace_control(tracing_resource.get(), KTRACE_ACTION_REWIND, 0, nullptr);
+      status != ZX_OK) {
+    return zx::error(status);
   }
-  // Without kKernelStreamingSupport, ktrace does not support streaming, so for now we preserve
-  // the legacy behavior of falling back on one-shot mode.
-  switch (buffering_mode) {
-    case trace_buffering_mode_t::TRACE_BUFFERING_MODE_STREAMING:
-    case trace_buffering_mode_t::TRACE_BUFFERING_MODE_ONESHOT:
-      return zx::make_result(
-          zx_ktrace_control(tracing_resource.get(), KTRACE_ACTION_START, group_mask, nullptr));
-
-    case trace_buffering_mode_t::TRACE_BUFFERING_MODE_CIRCULAR:
-      return zx::make_result(zx_ktrace_control(tracing_resource.get(), KTRACE_ACTION_START_CIRCULAR,
-                                               group_mask, nullptr));
-    default:
-      return zx::error(ZX_ERR_INVALID_ARGS);
-  };
+  return zx::make_result(
+      zx_ktrace_control(tracing_resource.get(), KTRACE_ACTION_START, group_mask, nullptr));
 }
 
-void ForwardBuffer(std::unique_ptr<DrainContext> drain_context) {
-  if (!drain_context) {
-    return;
-  }
-
+void ForwardBuffer(DrainContext drain_context) {
   const zx::time_monotonic start_time = zx::clock::get_monotonic();
 
   if (trace_context_t* buffer_context = trace_acquire_context()) {
     auto d = fit::defer([buffer_context]() { trace_release_context(buffer_context); });
 
-    // If we have kernel streaming support, instead of reading at an offset, we simply always emit a
-    // call to zx_ktrace_read to get the latest data.
     size_t actual;
     if (zx_status_t status =
-            zx_ktrace_read(drain_context->reader.Resource().get(), drain_context->buffer.get(), 0,
-                           drain_context->buffer_size, &actual);
+            zx_ktrace_read(drain_context.tracing_resource.get(), drain_context.buffer.get(), 0,
+                           drain_context.buffer_size, &actual);
         status != ZX_OK) {
       FX_PLOGS(ERROR, status) << "Failed to read from zx_ktrace open";
       return;
     }
-    size_t percent = actual * 100 / drain_context->buffer_size;
-    if (actual == drain_context->buffer_size) {
-      FX_LOGS(ERROR) << "[ 100% ] Read " << actual << " / " << drain_context->buffer_size
+    size_t percent = actual * 100 / drain_context.buffer_size;
+    if (actual == drain_context.buffer_size) {
+      FX_LOGS(ERROR) << "[ 100% ] Read " << actual << " / " << drain_context.buffer_size
                      << " bytes. May have dropped trace data!";
     } else if (percent > 75) {
       FX_LOGS(WARNING) << "[ " << percent << "% ] Read " << actual << " / "
-                       << drain_context->buffer_size << " bytes";
+                       << drain_context.buffer_size << " bytes";
     }
 
     size_t offset = 0;
     const size_t num_words = actual / 8;
     while (offset < num_words) {
-      uint64_t header = drain_context->buffer[offset];
+      uint64_t header = drain_context.buffer[offset];
       size_t record_size_words = fxt::RecordFields::RecordSize::Get<size_t>(header);
       if (void* dst = trace_context_alloc_record(buffer_context, record_size_words * 8);
           dst != nullptr) {
-        memcpy(dst, reinterpret_cast<const char*>(drain_context->buffer.get() + offset),
+        memcpy(dst, reinterpret_cast<const char*>(drain_context.buffer.get() + offset),
                record_size_words * 8);
         offset += record_size_words;
       } else {
@@ -172,10 +149,10 @@ void ForwardBuffer(std::unique_ptr<DrainContext> drain_context) {
 
   // Align the next read out to a multiple of the poll period to ensure a consistent sampling
   // interval, independent of scheduling latency.
-  const zx::time now_plus_poll_period = zx::clock::get_monotonic() + drain_context->poll_period;
+  const zx::time now_plus_poll_period = zx::clock::get_monotonic() + drain_context.poll_period;
   const zx::time_monotonic next_poll_time{static_cast<zx_time_t>(
       fbl::round_down(static_cast<uint64_t>(now_plus_poll_period.get()),
-                      static_cast<uint64_t>(drain_context->poll_period.get())))};
+                      static_cast<uint64_t>(drain_context.poll_period.get())))};
 
   async::PostTaskForTime(
       async_get_default_dispatcher(),
@@ -209,8 +186,6 @@ App::App(zx::resource tracing_resource, const fxl::CommandLine& command_line)
   });
 }
 
-App::~App() = default;
-
 zx::result<> App::UpdateState() {
   uint32_t group_mask = 0;
   bool capture_log = false;
@@ -236,20 +211,18 @@ zx::result<> App::UpdateState() {
   }
 
   if (current_group_mask_ != group_mask) {
-    trace_context_t* ctx = trace_acquire_context();
-    auto d = fit::defer([ctx]() {
-      if (ctx != nullptr) {
-        trace_release_context(ctx);
-      }
-    });
-
     if (zx::result res = StopKTrace(); res.is_error()) {
       return res.take_error();
     }
-    if (zx::result res =
-            StartKTrace(group_mask, trace_context_get_buffering_mode(ctx), retain_current_data);
-        res.is_error()) {
-      return res.take_error();
+
+    trace_context_t* ctx = trace_acquire_context();
+    if (ctx != nullptr) {
+      auto d = fit::defer([ctx]() { trace_release_context(ctx); });
+      if (zx::result res =
+              StartKTrace(group_mask, trace_context_get_buffering_mode(ctx), retain_current_data);
+          res.is_error()) {
+        return res.take_error();
+      }
     }
   }
 
@@ -263,18 +236,12 @@ zx::result<> App::UpdateState() {
 
 zx::result<> App::StartKTrace(uint32_t group_mask, trace_buffering_mode_t buffering_mode,
                               bool retain_current_data) {
-  FX_DCHECK(!context_);
   if (!group_mask) {
     return zx::ok();  // nothing to trace
   }
 
   FX_LOGS(INFO) << "Starting ktrace";
 
-  context_ = trace_acquire_prolonged_context();
-  if (!context_) {
-    // Tracing was disabled in the meantime.
-    return zx::ok();
-  }
   current_group_mask_ = group_mask;
 
   if (zx::result res = RequestKtraceStop(tracing_resource_); res.is_error()) {
@@ -290,92 +257,31 @@ zx::result<> App::StartKTrace(uint32_t group_mask, trace_buffering_mode_t buffer
     return res.take_error();
   }
 
-  if constexpr (kKernelStreamingSupport) {
-    // In kernel streaming mode, we need to poll zx_ktrace_read for data while tracing.
-    auto drain_context = DrainContext::Create(tracing_resource_, zx::msec(10));
-    if (!drain_context) {
-      FX_LOGS(ERROR) << "Failed to start reading kernel buffer";
-      return zx::error(ZX_ERR_NO_RESOURCES);
-    }
-    zx_status_t result = async::PostTask(async_get_default_dispatcher(),
-                                         [drain_context = std::move(drain_context)]() mutable {
-                                           ForwardBuffer(std::move(drain_context));
-                                         });
-    if (result != ZX_OK) {
-      FX_PLOGS(ERROR, result) << "Failed to schedule buffer writer";
-      return zx::error(result);
-    }
+  // We poll zx_ktrace_read for data while tracing.
+  auto drain_context = DrainContext::Create(tracing_resource_, zx::msec(10));
+  if (drain_context.is_error()) {
+    FX_PLOGS(ERROR, drain_context.error_value()) << "Failed to start reading kernel buffer";
+    return drain_context.take_error();
+  }
+  zx_status_t result = async::PostTask(
+      async_get_default_dispatcher(), [drain_context = std::move(drain_context.value())]() mutable {
+        ForwardBuffer(std::move(drain_context));
+      });
+  if (result != ZX_OK) {
+    FX_PLOGS(ERROR, result) << "Failed to schedule buffer writer";
+    return zx::error(result);
   }
 
   FX_LOGS(DEBUG) << "Ktrace started";
   return zx::ok();
 }
 
-void DrainBuffer(std::unique_ptr<DrainContext> drain_context) {
-  if (!drain_context) {
-    return;
-  }
-
-  trace_context_t* buffer_context = trace_acquire_context();
-  auto d = fit::defer([buffer_context]() {
-    if (buffer_context != nullptr) {
-      trace_release_context(buffer_context);
-    }
-  });
-  for (std::optional<uint64_t> fxt_header = drain_context->reader.PeekNextHeader();
-       fxt_header.has_value(); fxt_header = drain_context->reader.PeekNextHeader()) {
-    size_t record_size_bytes = fxt::RecordFields::RecordSize::Get<size_t>(*fxt_header) * 8;
-    // We try to be a bit too clever here and check that there is enough space before writing a
-    // record to the buffer. If we're in streaming mode, and there isn't space for the record, this
-    // will show up as a dropped record even though we retry later. Unfortunately, there isn't
-    // currently a good api exposed.
-    //
-    // TODO(issues.fuchsia.dev/304532640): Investigate a method to allow trace providers to wait on
-    // a full buffer
-    if (void* dst = trace_context_alloc_record(buffer_context, record_size_bytes); dst != nullptr) {
-      const uint64_t* record = drain_context->reader.ReadNextRecord();
-      memcpy(dst, reinterpret_cast<const char*>(record), record_size_bytes);
-    } else {
-      if (trace_context_get_buffering_mode(buffer_context) == TRACE_BUFFERING_MODE_STREAMING) {
-        // We are writing out our data on the async loop. Notifying the trace manager to begin
-        // saving the data also requires the context and occurs on the loop. If we run out of space,
-        // we'll release the loop and reschedule ourself to allow the buffer saving to begin.
-        async::PostDelayedTask(
-            async_get_default_dispatcher(),
-            [drain_context = std::move(drain_context)]() mutable {
-              DrainBuffer(std::move(drain_context));
-            },
-            drain_context->poll_period);
-        return;
-      }
-      // Outside of streaming mode, we aren't going to get more space. We'll need to read in this
-      // record and just drop it. Rather than immediately exiting, we allow the loop to continue so
-      // that we correctly enumerate all the dropped records for statistical reporting.
-      drain_context->reader.ReadNextRecord();
-    }
-  }
-
-  // Done writing trace data
-  size_t bytes_read = drain_context->reader.number_bytes_read();
-  zx::duration time_taken = zx::clock::get_monotonic() - drain_context->start;
-  double bytes_per_sec = static_cast<double>(bytes_read) /
-                         static_cast<double>(std::max(int64_t{1}, time_taken.to_usecs()));
-  FX_LOGS(INFO) << "Import of " << drain_context->reader.number_records_read() << " kernel records"
-                << "(" << bytes_read << " bytes) took: " << time_taken.to_msecs()
-                << "ms. MBytes/sec: " << bytes_per_sec;
-  FX_LOGS(DEBUG) << "Ktrace stopped";
-}
-
 zx::result<> App::StopKTrace() {
-  if (!context_) {
-    return zx::ok();  // not currently tracing
+  if (current_group_mask_ == 0) {
+    return zx::ok();
   }
-  auto d = fit::defer([this]() {
-    trace_release_prolonged_context(context_);
-    context_ = nullptr;
-    current_group_mask_ = 0u;
-  });
-  FX_DCHECK(current_group_mask_);
+
+  auto d = fit::defer([this]() { current_group_mask_ = 0u; });
 
   FX_LOGS(INFO) << "Stopping ktrace";
 
@@ -383,28 +289,6 @@ zx::result<> App::StopKTrace() {
     return res;
   }
 
-  // If we're streaming, we don't need to schedule a flush, we've been flushing the whole time.
-  if constexpr (kKernelStreamingSupport) {
-    return zx::ok();
-  }
-
-  // Once the trace ends, we are memcpy'ing data here and trace_manager is writing the buffer
-  // to a socket (likely shared with ffx), the cost to copy the kernel buffer to the trace buffer
-  // here pales in comparison to the cost of what trace_manager is doing. We'll poll here with a
-  // slight delay, even though all the data is ready, to allow trace_manager to keep up.
-  auto drain_context = DrainContext::Create(tracing_resource_, zx::msec(100));
-  if (!drain_context) {
-    FX_LOGS(ERROR) << "Failed to start reading kernel buffer";
-    return zx::error(ZX_ERR_NO_RESOURCES);
-  }
-  zx_status_t result = async::PostTask(async_get_default_dispatcher(),
-                                       [drain_context = std::move(drain_context)]() mutable {
-                                         DrainBuffer(std::move(drain_context));
-                                       });
-  if (result != ZX_OK) {
-    FX_PLOGS(ERROR, result) << "Failed to schedule buffer writer";
-    return zx::error(result);
-  }
   return zx::ok();
 }
 
