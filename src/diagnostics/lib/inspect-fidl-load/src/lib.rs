@@ -7,15 +7,6 @@ use fidl_fuchsia_inspect_deprecated::{InspectProxy, MetricValue, PropertyValue};
 use fuchsia_async as fasync;
 use fuchsia_inspect::reader::{DiagnosticsHierarchy, Property};
 
-/// Loads an inspect node hierarchy in the given path.
-pub async fn load_hierarchy_from_path(path: &str) -> Result<DiagnosticsHierarchy, Error> {
-    let (client, server) = zx::Channel::create();
-    fdio::service_connect(path, server)?;
-    let inspect_proxy = InspectProxy::new(fasync::Channel::from_channel(client));
-    let hierarchy = load_hierarchy(inspect_proxy).await?;
-    Ok(hierarchy)
-}
-
 /// Loads an inspect node hierarchy from the given root inspect node.
 pub async fn load_hierarchy(proxy: InspectProxy) -> Result<DiagnosticsHierarchy, Error> {
     let mut pending_nodes = vec![];

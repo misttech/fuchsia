@@ -21,7 +21,6 @@ rustc_library("inspect-fidl-load") {
     "//sdk/fidl/fuchsia.inspect.deprecated:fuchsia.inspect.deprecated_rust",
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
