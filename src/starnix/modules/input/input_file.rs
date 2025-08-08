@@ -18,7 +18,7 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     errno, error, uapi, ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_SLOT,
     ABS_MT_TRACKING_ID, BTN_MISC, BTN_TOUCH, FF_CNT, INPUT_PROP_CNT, INPUT_PROP_DIRECT, KEY_CNT,
-    KEY_POWER, LED_CNT, MSC_CNT, REL_CNT, REL_WHEEL, SW_CNT,
+    KEY_POWER, KEY_SLEEP, KEY_VOLUMEDOWN, LED_CNT, MSC_CNT, REL_CNT, REL_WHEEL, SW_CNT,
 };
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -185,6 +185,8 @@ fn keyboard_properties() -> BitSet<{ min_bytes(INPUT_PROP_CNT) }> {
 fn touch_key_attributes() -> BitSet<{ min_bytes(KEY_CNT) }> {
     let mut attrs = BitSet::new();
     attrs.set(BTN_TOUCH);
+    attrs.set(BTN_MISC); // Include BTN_MISC as a catchall key event.
+    attrs.set(KEY_SLEEP);
     attrs
 }
 
@@ -210,6 +212,7 @@ fn keyboard_key_attributes() -> BitSet<{ min_bytes(KEY_CNT) }> {
     let mut attrs = BitSet::new();
     attrs.set(BTN_MISC);
     attrs.set(KEY_POWER);
+    attrs.set(KEY_VOLUMEDOWN);
     attrs
 }
 
