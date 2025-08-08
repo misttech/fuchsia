@@ -10,6 +10,9 @@ use assembly_config_schema::platform_settings::kernel_config::{
     PlatformKernelConfig,
 };
 use assembly_constants::{BootfsDestination, FileEntry, KernelArg};
+use camino::Utf8Path;
+use serde_json::Value;
+use std::fs::File;
 pub(crate) struct KernelSubsystem;
 
 impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
@@ -200,18 +203,30 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
             builder.kernel_arg(KernelArg::KtraceBufsize(ktrace_bufsize));
         }
 
+        // Read a thread roles file as JSON5 and write it as JSON to avoid build time errors.
+        let gendir = context.get_gendir().context("Getting gendir for kernel subsystem")?;
         for thread_roles_file in &context.board_config.configuration.thread_roles {
-            let filename = thread_roles_file
-                .file_name()
-                .ok_or_else(|| {
-                    anyhow!("Thread roles file doesn't have a filename: {}", thread_roles_file)
-                })?
-                .to_owned();
+            let file = File::open(thread_roles_file).with_context(|| {
+                format!("Failed to open thread roles file: {thread_roles_file}")
+            })?;
+            let json_value: Value = serde_json5::from_reader(&file).with_context(|| {
+                format!("Thread roles file is not a json5 file: {thread_roles_file}")
+            })?;
+            let filename = thread_roles_file.file_name().ok_or_else(|| {
+                anyhow!("Thread roles file doesn't have a filename: {}", thread_roles_file)
+            })?;
+            let json_filename = Utf8Path::new(filename).with_extension("json");
+            let json_path = gendir.join(&json_filename);
+            let json_file = File::create(&json_path)
+                .with_context(|| format!("Failed to create new thread roles file: {json_path}"))?;
+            serde_json::to_writer(json_file, &json_value).with_context(|| {
+                format!("Failed to write to new thread roles file: {json_path}")
+            })?;
             builder
                 .bootfs()
                 .file(FileEntry {
-                    source: thread_roles_file.clone(),
-                    destination: BootfsDestination::ThreadRoles(filename),
+                    source: json_path,
+                    destination: BootfsDestination::ThreadRoles(json_filename.to_string()),
                 })
                 .with_context(|| format!("Adding thread roles file: {thread_roles_file}"))?;
         }
@@ -223,16 +238,28 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::subsystems::ConfigurationBuilderImpl;
+    use crate::subsystems::kernel::KernelSubsystem;
+    use crate::subsystems::{ConfigurationBuilderImpl, ConfigurationContext, FeatureSetLevel};
     use crate::CompletedConfiguration;
+    use assembly_config_schema::{BoardConfig, BoardProvidedConfig, BuildType};
+    use camino::Utf8PathBuf;
+    use std::fs;
+    use tempfile::tempdir;
 
     fn build_with_platform_kernel_config(
         platform_kernel_config: PlatformKernelConfig,
     ) -> CompletedConfiguration {
+        build_with_board_info(platform_kernel_config, Default::default())
+    }
+
+    fn build_with_board_info(
+        platform_kernel_config: PlatformKernelConfig,
+        board_config: BoardConfig,
+    ) -> CompletedConfiguration {
         let context = ConfigurationContext {
             feature_set_level: &FeatureSetLevel::Standard,
             build_type: &BuildType::Eng,
-            board_config: &Default::default(),
+            board_config: &board_config,
             gendir: Default::default(),
             resource_dir: Default::default(),
             developer_only_options: Default::default(),
@@ -272,5 +299,93 @@ mod test {
             ..Default::default()
         });
         assert!(completed_config.kernel_args.contains("kernel.memory-limit-mb=12"));
+    }
+
+    #[test]
+    fn test_thread_roles_valid_path() {
+        let temp_dir = tempdir().unwrap();
+        let roles_path =
+            Utf8PathBuf::from_path_buf(temp_dir.path().join("test_file.json5")).unwrap();
+        fs::write(&roles_path, "{ key: 'value', /* comment */ }").unwrap();
+        let board_config: BoardConfig = BoardConfig {
+            configuration: BoardProvidedConfig {
+                thread_roles: vec![roles_path],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let completed_config = build_with_board_info(Default::default(), board_config);
+        assert_eq!(completed_config.bootfs.files.map.entries.len(), 1);
+        let file_entry_key = BootfsDestination::ThreadRoles("test_file.json".to_string());
+        let source_merkle_pair = completed_config
+            .bootfs
+            .files
+            .map
+            .entries
+            .get(&file_entry_key)
+            .expect("File not found in bootfs with the expected destination key.");
+        let source_path = &source_merkle_pair.source;
+        let file_content = fs::read_to_string(source_path).unwrap();
+        let parsed_json: Value = serde_json::from_str(&file_content).unwrap();
+        let expected_json: Value = serde_json::from_str(r#"{"key":"value"}"#).unwrap();
+        assert_eq!(parsed_json, expected_json);
+    }
+
+    #[test]
+    fn test_thread_roles_file_not_found() {
+        let temp_dir = tempdir().unwrap();
+        let roles_path =
+            Utf8PathBuf::from_path_buf(temp_dir.path().join("test_file.json5")).unwrap();
+        let board_config: BoardConfig = BoardConfig {
+            configuration: BoardProvidedConfig {
+                thread_roles: vec![roles_path.clone()],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config: &board_config,
+            gendir: Default::default(),
+            resource_dir: Default::default(),
+            developer_only_options: Default::default(),
+        };
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+        let result =
+            KernelSubsystem::define_configuration(&context, &Default::default(), &mut builder);
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("Failed to open thread roles file"));
+        assert!(error_message.contains(roles_path.as_str()));
+    }
+
+    #[test]
+    fn test_thread_roles_invalid_json5() {
+        let temp_dir = tempdir().unwrap();
+        let roles_path = Utf8PathBuf::from_path_buf(temp_dir.path().join("invalid.json5")).unwrap();
+        fs::write(&roles_path, "{ invalid json file, }").unwrap();
+        let board_config: BoardConfig = BoardConfig {
+            configuration: BoardProvidedConfig {
+                thread_roles: vec![roles_path.clone()],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config: &board_config,
+            gendir: Default::default(),
+            resource_dir: Default::default(),
+            developer_only_options: Default::default(),
+        };
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+        let result =
+            KernelSubsystem::define_configuration(&context, &Default::default(), &mut builder);
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("Thread roles file is not a json5 file"));
+        assert!(error_message.contains(roles_path.as_str()));
     }
 }
