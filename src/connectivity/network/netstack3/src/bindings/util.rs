@@ -47,6 +47,7 @@ use crate::bindings::devices::BindingId;
 use crate::bindings::socket::{IntoErrno, IpSockAddrExt, SockAddr};
 use crate::bindings::{routes, BindingsCtx, LifetimeExt as _};
 
+mod data_available;
 mod result_ext;
 mod scope_ext;
 pub(crate) use result_ext::*;
@@ -959,7 +960,7 @@ impl TryFromFidlWithContext<fidl_net_stack::ForwardingEntry>
             }
             (SubnetEither::V4(_), _, Some(IpAddr::V6(_)))
             | (SubnetEither::V6(_), _, Some(IpAddr::V4(_))) => {
-                return Err(ForwardingConversionError::TypeMismatch)
+                return Err(ForwardingConversionError::TypeMismatch);
             }
         })
     }
@@ -990,7 +991,7 @@ impl<I: Ip> TryFromFidlWithContext<fnet_routes_ext::Route<I>>
         } = fidl;
         let fnet_routes_ext::RouteTarget { outbound_interface, next_hop } = match action {
             fnet_routes_ext::RouteAction::Unknown => {
-                return Err(AddableEntryFromRoutesExtError::UnknownAction)
+                return Err(AddableEntryFromRoutesExtError::UnknownAction);
             }
             fnet_routes_ext::RouteAction::Forward(target) => target,
         };
