@@ -81,8 +81,8 @@ source_set("common") {
 test("test") {
   output_name = "ram-nand-test"
   sources = [
-    "test/ram-nand-ctl.cc",
-    "test/ram-nand.cc",
+    "test/ram-nand-integration-test.cc",
+    "test/ram-nand-test.cc",
   ]
   include_dirs = [ "." ]
   deps = [

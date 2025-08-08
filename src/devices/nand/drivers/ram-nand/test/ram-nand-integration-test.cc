@@ -57,7 +57,7 @@ class NandDevice {
   ramdevice_client::RamNand ram_nand_;
 };
 
-TEST(RamNandCtlTest, TrivialLifetime) {
+TEST(RamNandIntegrationTest, TrivialLifetime) {
   std::unique_ptr<device_watcher::DirWatcher> watcher;
   fbl::unique_fd dir_fd(open(ramdevice_client::RamNand::kBasePath, O_RDONLY | O_DIRECTORY));
   ASSERT_TRUE(dir_fd);
@@ -78,7 +78,7 @@ TEST(RamNandCtlTest, TrivialLifetime) {
   ASSERT_FALSE(found);
 }
 
-TEST(RamNandCtlTest, ExportConfig) {
+TEST(RamNandIntegrationTest, ExportConfig) {
   fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
   config.export_nand_config = true;
 
@@ -86,7 +86,7 @@ TEST(RamNandCtlTest, ExportConfig) {
   ASSERT_OK(device.status_value());
 }
 
-TEST(RamNandCtlTest, ExportPartitions) {
+TEST(RamNandIntegrationTest, ExportPartitions) {
   fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
   config.export_partition_map = true;
 
@@ -94,7 +94,7 @@ TEST(RamNandCtlTest, ExportPartitions) {
   ASSERT_OK(device.status_value());
 }
 
-TEST(RamNandCtlTest, CreateFailure) {
+TEST(RamNandIntegrationTest, CreateFailure) {
   fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
   config.nand_info.num_blocks = 0;
 
