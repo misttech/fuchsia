@@ -70,6 +70,9 @@ if (current_toolchain == default_toolchain) {
       "-U_MSC_FULL_VER",
     ]
 
+    # TODO(https://fxbug.dev/435771251): Support __PE_COFF__ predefine upstream
+    defines = [ "__PE_COFF__" ]
+
     ldflags = [
       # Generate an EFI executable with EfiMain as its entry point.
       "-Wl,/subsystem:efi_application",

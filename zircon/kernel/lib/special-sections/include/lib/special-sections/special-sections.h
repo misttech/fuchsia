@@ -26,10 +26,10 @@
   alignas(type) [[gnu::used, gnu::retain, gnu::section(SPECIAL_SECTION_NAME(name)), \
                   clang::no_sanitize("address")]]
 
-#ifdef _WIN32
+#ifdef __PE_COFF__
 #define SPECIAL_SECTION_NAME(name) "." name "$M"
 #else
 #define SPECIAL_SECTION_NAME(name) name
-#endif
+#endif  // __PE_COFF__
 
 #endif  // ZIRCON_KERNEL_LIB_SPECIAL_SECTIONS_INCLUDE_LIB_SPECIAL_SECTIONS_SPECIAL_SECTIONS_H_

@@ -128,7 +128,7 @@ mov %edx, CPUID_EDX + \addr
   // Next iteration.
   lea (4 * 3)(LEAVES_START), LEAVES_START
 
-#elif defined(_WIN32)
+#elif defined(__PE_COFF__)
 
   mov 8(LEAVES_START), DATA_START // Here it's an absolute pointer.
   store_cpuid 0(DATA_START)
@@ -164,7 +164,7 @@ mov %edx, CPUID_EDX + \addr
 
 .end_function
 
-#ifdef _WIN32
+#ifdef __PE_COFF__
 
 // The equivalent of the __start/__stop magic symbols for PE-COFF is
 // to declare $A and $Z sections and symbols within.
@@ -190,4 +190,4 @@ mov %edx, CPUID_EDX + \addr
 // iterations because the start and stop addresses match.
 .section BootCpuidLeaf, "aR", %progbits
 
-#endif  // _WIN32
+#endif  // __PE_COFF__

@@ -86,22 +86,22 @@ class BootCpuidIo {
     // InitializeBootCpuid.
     int32_t offset;
 
-#elif defined(_WIN32)
+#elif defined(__PE_COFF__)
 
     // This is just a direct pointer, dynamically relocated before startup.
     CpuidIo* data;
 
-#endif  // _WIN32
+#endif  // __PE_COFF__
   };
 
   // These ensure assumptions made by the InitializeBootCpuid assembly code.
 #if defined(__ELF__)
   static_assert(alignof(BootCpuidLeaf) == alignof(uint32_t));
   static_assert(sizeof(BootCpuidLeaf) == sizeof(uint32_t[3]));
-#elif defined(_WIN32)
+#elif defined(__PE_COFF__)
   static_assert(alignof(BootCpuidLeaf) == alignof(CpuidIo*));
   static_assert(sizeof(BootCpuidLeaf) == sizeof(uint32_t[2]) + sizeof(void*));
-#endif
+#endif  // __PE_COFF__
   static_assert(alignof(CpuidIo) == alignof(uint32_t));
   static_assert(sizeof(CpuidIo) == sizeof(uint32_t[4]));
   static_assert(std::is_same_v<decltype(CpuidIo{}.values_), uint32_t[4]>);
@@ -148,8 +148,7 @@ class BootCpuidIo {
     return &gCpuidIo<Leaf, Subleaf>;
   }
 
-#elif defined(_WIN32)
-
+#elif defined(__PE_COFF__)
   // We don't know how to do the same trick for other formats.  PE-COFF (for
   // UEFI) has equivalent COMDAT-like features but there is no assembler
   // syntax like .pushsection, only .section, so it can't really be used
@@ -171,7 +170,7 @@ class BootCpuidIo {
   static inline const BootCpuidLeaf kBootCpuidLeaf = {
       .leaf = Leaf, .subleaf = Subleaf, .data = &gCpuidIo<Leaf, Subleaf>};
 
-#endif  // _WIN32
+#endif  // __PE_COFF__
 };
 
 // Call this once early in startup, before any uses of arch::BootCpuIdIo.  It

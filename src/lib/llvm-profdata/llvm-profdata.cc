@@ -106,9 +106,10 @@ extern const int INSTR_PROF_PROFILE_RUNTIME_VAR = 0;
 
 }  // extern "C"
 
-// Here _WIN32 really means EFI.  At link-time, it's Windows/x64 essentially.
-// InstrProfData.inc uses #ifdef _WIN32, so match that.
-#if defined(_WIN32)
+// Here __PE_COFF__ really means EFI.  At link-time, it's Windows/x64 essentially.
+// TODO(https://fxbug.dev/435771251): InstrProfData.inc uses #ifdef _WIN32 in upstream LLVM.
+// Add __PE_COFF__ defined check when support for __PE_COFF__ lands.
+#ifdef __PE_COFF__
 
 // These magic section names don't have macros in InstrProfData.inc,
 // though their ".blah$M" counterparts do.
@@ -192,7 +193,7 @@ extern "C" {
 
 }  // extern "C"
 
-#else  // Not _WIN32 or __APPLE__.
+#else  // Not __PE_COFF__ or __APPLE__.
 
 #ifndef __ELF__
 #error "unsupported object file format???"
@@ -239,7 +240,7 @@ PROFDATA_SECTION(char, BitmapBegin, BitmapEnd, INSTR_PROF_BITS_COMMON, "w");
 
 }  // extern "C"
 
-#endif  // Not _WIN32 or __APPLE__.
+#endif  // Not __PE_COFF__ or __APPLE__.
 
 struct ProfRawHeader {
   size_t binary_ids_size() const {
