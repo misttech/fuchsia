@@ -91,59 +91,66 @@ fn parse_mmap_record(record: &str) -> Result<MappingDetails, SymbolizeError> {
             reason: "Failed to strip the prefix or suffix".to_string(),
         })?
         .to_string();
-    let parts: Vec<&str> = naked_record.split(':').collect();
-    Ok(MappingDetails {
-        start_addr: u64::from_str_radix(&parts[1][2..], 16).map_err(|e| {
-            SymbolizeError::ParseError {
-                record_type: "mmap".to_string(),
-                reason: format!("Failed to parse start address: {}", e),
-            }
-        })?,
-        size: u64::from_str_radix(&parts[2][2..], 16).map_err(|e| SymbolizeError::ParseError {
+    let mut parts = naked_record.split(':');
+
+    let invalid_record_err = || SymbolizeError::ParseError {
+        record_type: "mmap".to_string(),
+        reason: format!("Invalid mmap record {}", record),
+    };
+
+    let start_addr = u64::from_str_radix(&parts.nth(1).ok_or_else(invalid_record_err)?[2..], 16)
+        .map_err(|e| SymbolizeError::ParseError {
+            record_type: "mmap".to_string(),
+            reason: format!("Failed to parse start address: {}", e),
+        })?;
+    let size = u64::from_str_radix(&parts.nth(0).ok_or_else(invalid_record_err)?[2..], 16)
+        .map_err(|e| SymbolizeError::ParseError {
             record_type: "mmap".to_string(),
             reason: format!("Failed to parse size: {}", e),
-        })?,
-        vaddr: u64::from_str_radix(&parts[6][2..], 16).map_err(|e| SymbolizeError::ParseError {
+        })?;
+    let flags =
+        MappingFlags::from_str(parts.nth(2).ok_or_else(invalid_record_err)?).map_err(|e| {
+            SymbolizeError::ParseError {
+                record_type: "mmap".to_string(),
+                reason: format!("Failed to parse flags: {}", e),
+            }
+        })?;
+    let vaddr = u64::from_str_radix(&parts.nth(0).ok_or_else(invalid_record_err)?[2..], 16)
+        .map_err(|e| SymbolizeError::ParseError {
             record_type: "mmap".to_string(),
             reason: format!("Failed to parse vaddr: {}", e),
-        })?,
-        flags: MappingFlags::from_str(parts[5]).map_err(|e| SymbolizeError::ParseError {
-            record_type: "mmap".to_string(),
-            reason: format!("Failed to parse flags: {}", e),
-        })?,
-    })
+        })?;
+
+    Ok(MappingDetails { start_addr, size, flags, vaddr })
 }
 
 fn parse_module_record(record: &str) -> Result<ModuleDetails, SymbolizeError> {
     // example: {{{module:0:libtrace-engine.so:elf:333e89f0c175000cee9b7e201fedcd6f9b4ba8ae}}}
     // -> 333e89f0c175000cee9b7e201fedcd6f9b4ba8ae
+    let invalid_record_err = || SymbolizeError::ParseError {
+        record_type: "module".to_string(),
+        reason: format!("Invalid module record {}", record),
+    };
     let naked_record = record
         .strip_prefix("{{{")
         .and_then(|record| record.strip_suffix("}}}"))
-        .ok_or_else(|| SymbolizeError::ParseError {
-            record_type: "module".to_string(),
-            reason: "Failed to strip the prefix or suffix".to_string(),
-        })?
+        .ok_or_else(invalid_record_err)?
         .to_string();
-    let parts: Vec<&str> = naked_record.split(':').collect();
-    let build_id = parts
-        .last()
-        .ok_or_else(|| SymbolizeError::ParseError {
-            record_type: "module".to_string(),
-            reason: "Failed to get the build id due to it doesn't exist".to_string(),
-        })?
-        .to_string();
-    Ok(ModuleDetails { name: parts[2].to_string(), build_id })
+    let mut parts = naked_record.split(':');
+    let name = parts.nth(2).ok_or_else(invalid_record_err)?.to_string();
+    let build_id = parts.next_back().ok_or_else(invalid_record_err)?.to_string();
+    Ok(ModuleDetails { name, build_id })
 }
 
 fn parse_backtrace_record(record: &str) -> Result<BacktraceDetails, SymbolizeError> {
     // example: {{{bt:0:0x401c0cd1dcea:pc}}} -> u64::from_str_radix(401c0cd1dcea, 16)
-    let parts: Vec<&str> = record.split(':').collect();
-    Ok(BacktraceDetails(u64::from_str_radix(&parts[2][2..], 16).map_err(|e| {
-        SymbolizeError::ParseError {
-            record_type: "backtrace".to_string(),
-            reason: format!("Failed to get address: {}", e),
-        }
+    let addr: &str = &record.split(':').nth(2).ok_or_else(|| SymbolizeError::ParseError {
+        record_type: "backtrace".to_string(),
+        reason: format!("Invalid backtrace record {}", record),
+    })?[2..];
+    Ok(BacktraceDetails(u64::from_str_radix(addr, 16).map_err(|e| SymbolizeError::ParseError {
+        record_type: "backtrace".to_string(),
+        reason: format!("Failed to get address: {}", e),
     })?))
 }
 
