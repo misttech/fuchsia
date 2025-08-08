@@ -104,7 +104,7 @@ rust_library(
         "//third_party/rust_crates/forks/tracing-core:tracing_core",
         "//third_party/rust_crates/vendor/matchers-0.1.0:matchers",
         "//third_party/rust_crates/vendor/nu-ansi-term-0.46.0:nu_ansi_term",
-        "//third_party/rust_crates/vendor/once_cell-1.20.2:once_cell",
+        "//third_party/rust_crates/vendor/once_cell-1.21.3:once_cell",
         "//third_party/rust_crates/vendor/regex-1.7.3:regex",
         "//third_party/rust_crates/vendor/sharded-slab-0.1.4:sharded_slab",
         "//third_party/rust_crates/vendor/thread_local-1.1.7:thread_local",

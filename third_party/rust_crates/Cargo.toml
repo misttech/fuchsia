@@ -167,7 +167,7 @@ num = { version = "0.4.3", features = ["rand"] }
 num-derive = "0.4.2"
 num-traits = "0.2.19"
 omaha_client = "0.2"
-once_cell = "1.20.2"
+once_cell = "1.21.3"
 overload = "0.1.1"
 p256 = { version = "0.11.1", features = ["pem", "serde"] }
 paste = "1.0.15"
@@ -789,7 +789,7 @@ rustflags = [
   "--cfg=has_total_cmp",
 ]
 
-[gn.package.once_cell."1.20.2"]
+[gn.package.once_cell."1.21.3"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "once_cell_visibility" }
 
 [gn.package.openssl."0.10.71"]

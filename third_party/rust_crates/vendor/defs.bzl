@@ -410,7 +410,7 @@ _NORMAL_DEPENDENCIES = {
             "num": Label("//third_party/rust_crates/vendor/num-0.4.3:num"),
             "num-traits": Label("//third_party/rust_crates/vendor/num-traits-0.2.19:num_traits"),
             "omaha_client": Label("//third_party/rust_crates/vendor/omaha_client-0.2.2:omaha_client"),
-            "once_cell": Label("//third_party/rust_crates/vendor/once_cell-1.20.2:once_cell"),
+            "once_cell": Label("//third_party/rust_crates/vendor/once_cell-1.21.3:once_cell"),
             "overload": Label("//third_party/rust_crates/vendor/overload-0.1.1:overload"),
             "p256": Label("//third_party/rust_crates/vendor/p256-0.11.1:p256"),
             "pathdiff": Label("//third_party/rust_crates/vendor/pathdiff-0.2.3:pathdiff"),
