@@ -9,6 +9,7 @@
                 "paths": [
                     "build/secondary/third_party/acpica",
                     "build/secondary/third_party/glog",
+                    "build/secondary/third_party/grpc",
                     "build/secondary/third_party/mesa"
                 ]
             },
@@ -371,7 +372,7 @@
                     "prebuilt/third_party/vpython/3.8/lib/python3.8/idlelib/CREDITS.txt",
                     "prebuilt/third_party/vpython/2.7/lib/python2.7/idlelib/CREDITS.txt",
                     "third_party/libpcap/src/CREDITS",
-                    "third_party/grpc/src/php/ext/grpc/CREDITS",
+                    "third_party/grpc-migrating/src/php/ext/grpc/CREDITS",
                     "third_party/tcpdump/src/CREDITS",
                     "prebuilt/third_party/vpython/3.11/lib/python3.11/idlelib/CREDITS.txt"
                 ],

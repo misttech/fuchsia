@@ -166,6 +166,8 @@ tables_generator_tests_*.txt
 /third_party/gflags/src
 !/third_party/glog
 /third_party/glog/src
+!/third_party/grpc-migrating
+/third_party/grpc-migrating/src
 !/third_party/mesa
 /third_party/mesa/src
 !/third_party/mesa-migrating
