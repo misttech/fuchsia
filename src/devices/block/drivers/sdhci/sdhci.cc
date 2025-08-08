@@ -3,9 +3,7 @@
 // found in the LICENSE file.
 
 // Notes and limitations:
-// 1. This driver only uses PIO mode.
-//
-// 2. This driver only supports SDHCv3 and above. Lower versions of SD are not
+// 1. This driver only supports SDHCv3 and above. Lower versions of SD are not
 //    currently supported. The driver should fail gracefully if a lower version
 //    card is detected.
 
@@ -13,16 +11,13 @@
 
 #include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.sdmmc/cpp/driver/fidl.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/ddk/metadata.h>
-#include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/pmt.h>
 #include <lib/zx/time.h>
 
-#include <bind/fuchsia/hardware/sdmmc/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 
@@ -48,7 +43,7 @@ constexpr uint32_t Hi32(zx_paddr_t val) { return static_cast<uint32_t>((val >> 3
 constexpr uint32_t Lo32(zx_paddr_t val) { return val & 0xffffffff; }
 
 // for 2M max transfer size for fully discontiguous
-// also see SDMMC_PAGES_COUNT in fuchsia/hardware/sdmmc/c/banjo.h
+// also see SDMMC_PAGES_COUNT in fuchsia.hardware.sdmmc
 constexpr int kDmaDescCount = 512;
 
 uint16_t GetClockDividerValue(const uint32_t base_clock, const uint32_t target_rate) {
@@ -76,7 +71,8 @@ uint16_t GetClockDividerValue(const uint32_t base_clock, const uint32_t target_r
 
 namespace sdhci {
 
-void Sdhci::PrepareCmd(const sdmmc_req_t& req, TransferMode* transfer_mode, Command* command) {
+void Sdhci::PrepareCmd(const fuchsia_hardware_sdmmc::wire::SdmmcReq& req,
+                       TransferMode* transfer_mode, Command* command) {
   command->set_command_index(static_cast<uint16_t>(req.cmd_idx));
 
   if (req.cmd_flags & SDMMC_RESP_LEN_EMPTY) {
@@ -328,7 +324,20 @@ void Sdhci::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_st
         .WriteTo(&*regs_mmio_buffer_);
     card_interrupt_masked_ = true;
     if (interrupt_cb_.is_valid()) {
-      interrupt_cb_.Callback();
+      fdf::Arena arena('SDHC');
+      // TODO(436824088): Clean this up after changes to the in-band interrupt.
+      interrupt_cb_.buffer(arena)->Callback().Then(
+          [this](
+              fdf::WireUnownedResult<fuchsia_hardware_sdmmc::InBandInterrupt::Callback>& result) {
+            if (!result.ok()) {
+              // This could be called synchronously during teardown, so post a task to prevent
+              // double locking.
+              async::PostTask(fdf::Dispatcher::GetCurrent()->async_dispatcher(), [this]() {
+                std::lock_guard<std::mutex> lock(mtx_);
+                interrupt_cb_ = {};
+              });
+            }
+          });
     }
   }
 
@@ -359,73 +368,114 @@ void Sdhci::HandleTransferInterrupt(const InterruptStatus status) {
   }
 }
 
-zx_status_t Sdhci::SdmmcRegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo,
-                                    uint64_t offset, uint64_t size, uint32_t vmo_rights) {
-  if (client_id >= std::size(registered_vmo_stores_)) {
-    return ZX_ERR_OUT_OF_RANGE;
+void Sdhci::RegisterVmo(RegisterVmoRequestView request, fdf::Arena& arena,
+                        RegisterVmoCompleter::Sync& completer) {
+  if (request->client_id >= std::size(registered_vmo_stores_)) {
+    completer.buffer(arena).ReplyError(ZX_ERR_OUT_OF_RANGE);
+    return;
   }
-  if (vmo_rights == 0) {
-    return ZX_ERR_INVALID_ARGS;
+  if (!(request->vmo_rights & (fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead |
+                               fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite))) {
+    completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+    return;
   }
 
-  vmo_store::StoredVmo<OwnedVmoInfo> stored_vmo(std::move(vmo), OwnedVmoInfo{
-                                                                    .offset = offset,
-                                                                    .size = size,
-                                                                    .rights = vmo_rights,
-                                                                });
+  vmo_store::StoredVmo<OwnedVmoInfo> stored_vmo(std::move(request->vmo),
+                                                OwnedVmoInfo{
+                                                    .offset = request->offset,
+                                                    .size = request->size,
+                                                    .rights = request->vmo_rights,
+                                                });
+
+  const uint32_t write_perm =
+      (request->vmo_rights & fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite) ? ZX_BTI_PERM_WRITE : 0;
 
   if (SupportsAdma2()) {
-    const uint32_t read_perm = (vmo_rights & SDMMC_VMO_RIGHT_READ) ? ZX_BTI_PERM_READ : 0;
-    const uint32_t write_perm = (vmo_rights & SDMMC_VMO_RIGHT_WRITE) ? ZX_BTI_PERM_WRITE : 0;
+    const uint32_t read_perm =
+        (request->vmo_rights & fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead) ? ZX_BTI_PERM_READ : 0;
+
     zx_status_t status = stored_vmo.Pin(bti_, read_perm | write_perm, true);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to pin VMO %u for client %u: %s", vmo_id, client_id,
+      FDF_LOG(ERROR, "Failed to pin VMO %u for client %u: %s", request->vmo_id, request->client_id,
               zx_status_get_string(status));
-      return status;
+      completer.buffer(arena).ReplyError(status);
+      return;
     }
   } else {
-    const uint32_t write_perm = (vmo_rights & SDMMC_VMO_RIGHT_WRITE) ? ZX_VM_PERM_WRITE : 0;
     zx_status_t status = stored_vmo.Map(ZX_VM_PERM_READ | write_perm);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to map VMO %u for client %u: %s", vmo_id, client_id,
+      FDF_LOG(ERROR, "Failed to map VMO %u for client %u: %s", request->vmo_id, request->client_id,
               zx_status_get_string(status));
-      return status;
+      completer.buffer(arena).ReplyError(status);
+      return;
     }
-    if (offset > stored_vmo.data().size() || size > (stored_vmo.data().size() - offset)) {
-      FDF_LOG(ERROR, "Invalid size or offset for VMO %u for client %u: %s", vmo_id, client_id,
-              zx_status_get_string(status));
-      return ZX_ERR_OUT_OF_RANGE;
+    if (request->offset > stored_vmo.data().size() ||
+        request->size > (stored_vmo.data().size() - request->offset)) {
+      FDF_LOG(ERROR, "Invalid size or offset for VMO %u for client %u: %s", request->vmo_id,
+              request->client_id, zx_status_get_string(status));
+      completer.buffer(arena).ReplyError(ZX_ERR_OUT_OF_RANGE);
+      return;
     }
   }
 
-  return registered_vmo_stores_[client_id].RegisterWithKey(vmo_id, std::move(stored_vmo));
+  completer.buffer(arena).Reply(
+      zx::make_result(registered_vmo_stores_[request->client_id].RegisterWithKey(
+          request->vmo_id, std::move(stored_vmo))));
 }
 
-zx_status_t Sdhci::SdmmcUnregisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo* out_vmo) {
-  if (client_id >= std::size(registered_vmo_stores_)) {
-    return ZX_ERR_OUT_OF_RANGE;
+void Sdhci::UnregisterVmo(UnregisterVmoRequestView request, fdf::Arena& arena,
+                          UnregisterVmoCompleter::Sync& completer) {
+  if (request->client_id >= std::size(registered_vmo_stores_)) {
+    completer.buffer(arena).ReplyError(ZX_ERR_OUT_OF_RANGE);
+    return;
   }
 
   vmo_store::StoredVmo<OwnedVmoInfo>* const vmo_info =
-      registered_vmo_stores_[client_id].GetVmo(vmo_id);
+      registered_vmo_stores_[request->client_id].GetVmo(request->vmo_id);
   if (!vmo_info) {
-    return ZX_ERR_NOT_FOUND;
+    completer.buffer(arena).ReplyError(ZX_ERR_NOT_FOUND);
+    return;
   }
 
-  const zx_status_t status = vmo_info->vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, out_vmo);
+  zx::vmo out_vmo;
+  zx_status_t status = vmo_info->vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &out_vmo);
   if (status != ZX_OK) {
-    return status;
+    completer.buffer(arena).ReplyError(status);
+    return;
   }
 
-  return registered_vmo_stores_[client_id].Unregister(vmo_id).status_value();
+  status = registered_vmo_stores_[request->client_id].Unregister(request->vmo_id).status_value();
+  if (status != ZX_OK) {
+    completer.buffer(arena).ReplyError(status);
+    return;
+  }
+
+  completer.buffer(arena).ReplySuccess(std::move(out_vmo));
 }
 
-zx_status_t Sdhci::SdmmcRequest(const sdmmc_req_t* req, uint32_t out_response[4]) {
-  if (req->client_id >= std::size(registered_vmo_stores_)) {
-    return ZX_ERR_OUT_OF_RANGE;
+void Sdhci::Request(RequestRequestView request, fdf::Arena& arena,
+                    RequestCompleter::Sync& completer) {
+  fidl::Array<uint32_t, 4> out_response;
+  for (const fuchsia_hardware_sdmmc::wire::SdmmcReq& request : request->reqs) {
+    out_response = {};
+    if (zx::result<fidl::Array<uint32_t, 4>> result = Request(request); result.is_ok()) {
+      out_response = result.value();
+    } else {
+      completer.buffer(arena).Reply(result.take_error());
+      return;
+    }
   }
 
-  DmaDescriptorBuilder<OwnedVmoInfo> builder(*req, registered_vmo_stores_[req->client_id],
+  completer.buffer(arena).ReplySuccess(out_response);
+}
+
+zx::result<fidl::Array<uint32_t, 4>> Sdhci::Request(
+    const fuchsia_hardware_sdmmc::wire::SdmmcReq& request) {
+  if (request.client_id >= std::size(registered_vmo_stores_)) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+
+  DmaDescriptorBuilder<OwnedVmoInfo> builder(request, registered_vmo_stores_[request.client_id],
                                              dma_boundary_alignment_, bti_.borrow());
 
   {
@@ -433,13 +483,13 @@ zx_status_t Sdhci::SdmmcRequest(const sdmmc_req_t* req, uint32_t out_response[4]
 
     // one command at a time
     if (pending_request_) {
-      return ZX_ERR_SHOULD_WAIT;
+      return zx::error(ZX_ERR_SHOULD_WAIT);
     }
 
-    if (zx::result pending_request = StartRequest(*req, builder); pending_request.is_ok()) {
+    if (zx::result pending_request = StartRequest(request, builder); pending_request.is_ok()) {
       pending_request_.emplace(*std::move(pending_request));
     } else {
-      return pending_request.status_value();
+      return pending_request.take_error();
     }
   }
 
@@ -450,11 +500,13 @@ zx_status_t Sdhci::SdmmcRequest(const sdmmc_req_t* req, uint32_t out_response[4]
 
   PendingRequest pending_request = *std::move(pending_request_);
   pending_request_.reset();
-  return FinishRequest(*req, out_response, pending_request);
+
+  return FinishRequest(request, pending_request);
 }
 
-zx::result<Sdhci::PendingRequest> Sdhci::StartRequest(const sdmmc_req_t& request,
-                                                      DmaDescriptorBuilder<OwnedVmoInfo>& builder) {
+zx::result<Sdhci::PendingRequest> Sdhci::StartRequest(
+    const fuchsia_hardware_sdmmc::wire::SdmmcReq& request,
+    DmaDescriptorBuilder<OwnedVmoInfo>& builder) {
   // Every command requires that the Command Inhibit is unset.
   auto inhibit_mask = PresentState::Get().FromValue(0).set_command_inhibit_cmd(1);
 
@@ -545,11 +597,10 @@ zx::result<Sdhci::PendingRequest> Sdhci::StartRequest(const sdmmc_req_t& request
   return zx::ok(std::move(pending_request));
 }
 
-zx_status_t Sdhci::SetUpDma(const sdmmc_req_t& request,
+zx_status_t Sdhci::SetUpDma(const fuchsia_hardware_sdmmc::wire::SdmmcReq& request,
                             DmaDescriptorBuilder<OwnedVmoInfo>& builder) {
-  const cpp20::span buffers{request.buffers_list, request.buffers_count};
   zx_status_t status;
-  for (const auto& buffer : buffers) {
+  for (const auto& buffer : request.buffers) {
     if (status = builder.ProcessBuffer(buffer); status != ZX_OK) {
       return status;
     }
@@ -584,12 +635,13 @@ zx_status_t Sdhci::SetUpDma(const sdmmc_req_t& request,
   return ZX_OK;
 }
 
-zx_status_t Sdhci::SetUpBuffer(const sdmmc_req_t& request, PendingRequest* const pending_request) {
-  if (request.buffers_count != 1) {
+zx_status_t Sdhci::SetUpBuffer(const fuchsia_hardware_sdmmc::wire::SdmmcReq& request,
+                               PendingRequest* const pending_request) {
+  if (request.buffers.size() != 1) {
     FDF_LOG(ERROR, "Only one buffer is supported without DMA");
     return ZX_ERR_NOT_SUPPORTED;
   }
-  auto& buffer = request.buffers_list[0];
+  auto& buffer = request.buffers[0];
   if (buffer.size % request.blocksize != 0) {
     FDF_LOG(ERROR, "Total buffer size (%lu) is not a multiple of the request block size (%u)",
             buffer.size, request.blocksize);
@@ -600,10 +652,10 @@ zx_status_t Sdhci::SetUpBuffer(const sdmmc_req_t& request, PendingRequest* const
     return ZX_ERR_INVALID_ARGS;
   }
 
-  if (buffer.type == SDMMC_BUFFER_TYPE_VMO_HANDLE) {
+  if (buffer.buffer.is_vmo()) {
     const uint32_t write_perm = (request.cmd_flags & SDMMC_CMD_READ) ? ZX_VM_PERM_WRITE : 0;
 
-    zx::unowned_vmo buffer_vmo(buffer.buffer.vmo);
+    zx::unowned_vmo buffer_vmo(buffer.buffer.vmo());
     zx_status_t status =
         pending_request->vmo_mapper.Map(*buffer_vmo, 0, 0, ZX_VM_PERM_READ | write_perm);
     if (status != ZX_OK) {
@@ -620,11 +672,11 @@ zx_status_t Sdhci::SetUpBuffer(const sdmmc_req_t& request, PendingRequest* const
     pending_request->data = {
         reinterpret_cast<uint8_t*>(pending_request->vmo_mapper.start()) + buffer.offset,
         buffer.size};
-  } else if (buffer.type == SDMMC_BUFFER_TYPE_VMO_ID) {
+  } else if (buffer.buffer.is_vmo_id()) {
     vmo_store::StoredVmo<OwnedVmoInfo>* vmo =
-        registered_vmo_stores_[request.client_id].GetVmo(buffer.buffer.vmo_id);
+        registered_vmo_stores_[request.client_id].GetVmo(buffer.buffer.vmo_id());
     if (vmo == nullptr) {
-      FDF_LOG(ERROR, "Unknown VMO ID %u for client %u", buffer.buffer.vmo_id, request.client_id);
+      FDF_LOG(ERROR, "Unknown VMO ID %u for client %u", buffer.buffer.vmo_id(), request.client_id);
       return ZX_ERR_NOT_FOUND;
     }
 
@@ -636,18 +688,19 @@ zx_status_t Sdhci::SetUpBuffer(const sdmmc_req_t& request, PendingRequest* const
     }
     pending_request->data = data.subspan(buffer.offset, buffer.size);
   } else {
-    FDF_LOG(ERROR, "Unknown buffer type %u", buffer.type);
+    FDF_LOG(ERROR, "Unknown buffer type");
     return ZX_ERR_INVALID_ARGS;
   }
 
   return ZX_OK;
 }
 
-zx_status_t Sdhci::FinishRequest(const sdmmc_req_t& request, uint32_t out_response[4],
-                                 const PendingRequest& pending_request) {
+zx::result<fidl::Array<uint32_t, 4>> Sdhci::FinishRequest(
+    const fuchsia_hardware_sdmmc::wire::SdmmcReq& request, const PendingRequest& pending_request) {
+  fidl::Array<uint32_t, 4> out_response;
   constexpr uint32_t kResponseMask = SDMMC_RESP_LEN_136 | SDMMC_RESP_LEN_48 | SDMMC_RESP_LEN_48B;
   if (pending_request.cmd_complete && request.cmd_flags & kResponseMask) {
-    memcpy(out_response, pending_request.response, sizeof(uint32_t) * 4);
+    memcpy(out_response.data(), pending_request.response, sizeof(uint32_t) * 4);
   }
 
   if (request.cmd_flags & SDMMC_CMD_TYPE_ABORT) {
@@ -658,20 +711,18 @@ zx_status_t Sdhci::FinishRequest(const sdmmc_req_t& request, uint32_t out_respon
 
   if ((request.cmd_flags & SDMMC_RESP_DATA_PRESENT) && (request.cmd_flags & SDMMC_CMD_READ) &&
       SupportsAdma2()) {
-    const cpp20::span<const sdmmc_buffer_region_t> regions{request.buffers_list,
-                                                           request.buffers_count};
-    for (const auto& region : regions) {
-      if (region.type != SDMMC_BUFFER_TYPE_VMO_HANDLE) {
+    for (const auto& region : request.buffers) {
+      if (region.buffer.is_vmo_id()) {
         continue;
       }
 
       // Invalidate the cache so that the next CPU read will pick up data that was written to main
       // memory by the controller.
-      zx_status_t status = zx_vmo_op_range(region.buffer.vmo, ZX_VMO_OP_CACHE_CLEAN_INVALIDATE,
-                                           region.offset, region.size, nullptr, 0);
+      zx_status_t status = region.buffer.vmo().op_range(ZX_VMO_OP_CACHE_CLEAN_INVALIDATE,
+                                                        region.offset, region.size, nullptr, 0);
       if (status != ZX_OK) {
         FDF_LOG(ERROR, "Failed to clean/invalidate cache: %s", zx_status_get_string(status));
-        return status;
+        return zx::error(status);
       }
     }
   }
@@ -679,7 +730,7 @@ zx_status_t Sdhci::FinishRequest(const sdmmc_req_t& request, uint32_t out_respon
   const InterruptStatus interrupt_status = pending_request.status;
 
   if (!interrupt_status.error()) {
-    return ZX_OK;
+    return zx::ok(out_response);
   }
 
   if (interrupt_status.tuning_error()) {
@@ -706,7 +757,7 @@ zx_status_t Sdhci::FinishRequest(const sdmmc_req_t& request, uint32_t out_respon
   }
   if (interrupt_status.data_timeout_error()) {
     FDF_LOG(ERROR, "Data timeout error cmd%u (%zu buffers)", request.cmd_idx,
-            request.buffers_count);
+            request.buffers.size());
   }
   if (interrupt_status.command_index_error()) {
     FDF_LOG(ERROR, "Command index error cmd%u", request.cmd_idx);
@@ -734,37 +785,40 @@ zx_status_t Sdhci::FinishRequest(const sdmmc_req_t& request, uint32_t out_respon
     FDF_LOG(ERROR, "Unknown error cmd%u", request.cmd_idx);
   }
 
-  return ZX_ERR_IO;
+  return zx::error(ZX_ERR_IO);
 }
 
-zx_status_t Sdhci::SdmmcHostInfo(sdmmc_host_info_t* out_info) {
-  memcpy(out_info, &info_, sizeof(info_));
-  return ZX_OK;
+void Sdhci::HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) {
+  completer.buffer(arena).ReplySuccess(info_);
 }
 
-zx_status_t Sdhci::SdmmcSetSignalVoltage(sdmmc_voltage_t voltage) {
+void Sdhci::SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& arena,
+                             SetSignalVoltageCompleter::Sync& completer) {
   std::lock_guard<std::mutex> lock(mtx_);
 
   // Validate the controller supports the requested voltage
-  if ((voltage == SDMMC_VOLTAGE_V330) && !(info_.caps & SDMMC_HOST_CAP_VOLTAGE_330)) {
+  if ((request->voltage == fuchsia_hardware_sdmmc::SdmmcVoltage::kV330) &&
+      !(info_.caps & fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330)) {
     FDF_LOG(DEBUG, "sdhci: 3.3V signal voltage not supported");
-    return ZX_ERR_NOT_SUPPORTED;
+    completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+    return;
   }
 
   auto ctrl2 = HostControl2::Get().ReadFrom(&*regs_mmio_buffer_);
   uint16_t voltage_1v8_value = 0;
-  switch (voltage) {
-    case SDMMC_VOLTAGE_V180: {
+  switch (request->voltage) {
+    case fuchsia_hardware_sdmmc::SdmmcVoltage::kV180: {
       voltage_1v8_value = 1;
       break;
     }
-    case SDMMC_VOLTAGE_V330: {
+    case fuchsia_hardware_sdmmc::SdmmcVoltage::kV330: {
       voltage_1v8_value = 0;
       break;
     }
     default:
-      FDF_LOG(ERROR, "sdhci: unknown signal voltage value %u", voltage);
-      return ZX_ERR_INVALID_ARGS;
+      FDF_LOG(ERROR, "sdhci: unknown signal voltage value %u", request->voltage);
+      completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+      return;
   }
 
   // Note: the SDHCI spec indicates that the data lines should be checked to see if the card is
@@ -782,56 +836,63 @@ zx_status_t Sdhci::SdmmcSetSignalVoltage(sdmmc_voltage_t voltage) {
         .ReadFrom(&*regs_mmio_buffer_)
         .set_sd_bus_power_vdd1(0)
         .WriteTo(&*regs_mmio_buffer_);
-    return ZX_ERR_INTERNAL;
+    completer.buffer(arena).ReplyError(ZX_ERR_INTERNAL);
+    return;
   }
 
-  FDF_LOG(DEBUG, "sdhci: switch signal voltage to %d", voltage);
+  FDF_LOG(DEBUG, "sdhci: switch signal voltage to %d", request->voltage);
 
-  return ZX_OK;
+  completer.buffer(arena).ReplySuccess();
 }
 
-zx_status_t Sdhci::SdmmcSetBusWidth(sdmmc_bus_width_t bus_width) {
+void Sdhci::SetBusWidth(SetBusWidthRequestView request, fdf::Arena& arena,
+                        SetBusWidthCompleter::Sync& completer) {
   std::lock_guard<std::mutex> lock(mtx_);
 
-  if ((bus_width == SDMMC_BUS_WIDTH_EIGHT) && !(info_.caps & SDMMC_HOST_CAP_BUS_WIDTH_8)) {
+  if ((request->bus_width == fuchsia_hardware_sdmmc::SdmmcBusWidth::kEight) &&
+      !(info_.caps & fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8)) {
     FDF_LOG(DEBUG, "sdhci: 8-bit bus width not supported");
-    return ZX_ERR_NOT_SUPPORTED;
+    completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+    return;
   }
 
   auto ctrl1 = HostControl1::Get().ReadFrom(&*regs_mmio_buffer_);
 
-  switch (bus_width) {
-    case SDMMC_BUS_WIDTH_ONE:
+  switch (request->bus_width) {
+    case fuchsia_hardware_sdmmc::SdmmcBusWidth::kOne:
       ctrl1.set_extended_data_transfer_width(0).set_data_transfer_width_4bit(0);
       break;
-    case SDMMC_BUS_WIDTH_FOUR:
+    case fuchsia_hardware_sdmmc::SdmmcBusWidth::kFour:
       ctrl1.set_extended_data_transfer_width(0).set_data_transfer_width_4bit(1);
       break;
-    case SDMMC_BUS_WIDTH_EIGHT:
+    case fuchsia_hardware_sdmmc::SdmmcBusWidth::kEight:
       ctrl1.set_extended_data_transfer_width(1).set_data_transfer_width_4bit(0);
       break;
     default:
-      FDF_LOG(ERROR, "sdhci: unknown bus width value %u", bus_width);
-      return ZX_ERR_INVALID_ARGS;
+      FDF_LOG(ERROR, "sdhci: unknown bus width value %u", request->bus_width);
+      completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+      return;
   }
 
   ctrl1.WriteTo(&*regs_mmio_buffer_);
 
-  FDF_LOG(DEBUG, "sdhci: set bus width to %d", bus_width);
+  FDF_LOG(DEBUG, "sdhci: set bus width to %d", request->bus_width);
 
-  return ZX_OK;
+  completer.buffer(arena).ReplySuccess();
 }
 
-zx_status_t Sdhci::SdmmcSetBusFreq(uint32_t bus_freq) {
+void Sdhci::SetBusFreq(SetBusFreqRequestView request, fdf::Arena& arena,
+                       SetBusFreqCompleter::Sync& completer) {
   std::lock_guard<std::mutex> lock(mtx_);
 
   zx_status_t st = WaitForInhibit(
       PresentState::Get().FromValue(0).set_command_inhibit_cmd(1).set_command_inhibit_dat(1));
   if (st != ZX_OK) {
-    return st;
+    completer.buffer(arena).ReplyError(st);
+    return;
   }
 
-  return SetBusClock(bus_freq);
+  completer.buffer(arena).Reply(zx::make_result(SetBusClock(request->bus_freq)));
 }
 
 zx_status_t Sdhci::SetBusClock(uint32_t frequency_hz) {
@@ -874,63 +935,66 @@ zx_status_t Sdhci::SetBusClock(uint32_t frequency_hz) {
   return ZX_OK;
 }
 
-zx_status_t Sdhci::SdmmcSetTiming(sdmmc_timing_t timing) {
+void Sdhci::SetTiming(SetTimingRequestView request, fdf::Arena& arena,
+                      SetTimingCompleter::Sync& completer) {
   std::lock_guard<std::mutex> lock(mtx_);
 
   auto ctrl1 = HostControl1::Get().ReadFrom(&*regs_mmio_buffer_);
 
   // Toggle high-speed
-  if (timing != SDMMC_TIMING_LEGACY) {
+  if (request->timing != fuchsia_hardware_sdmmc::SdmmcTiming::kLegacy) {
     ctrl1.set_high_speed_enable(1).WriteTo(&*regs_mmio_buffer_);
   } else {
     ctrl1.set_high_speed_enable(0).WriteTo(&*regs_mmio_buffer_);
   }
 
   auto ctrl2 = HostControl2::Get().ReadFrom(&*regs_mmio_buffer_);
-  switch (timing) {
-    case SDMMC_TIMING_LEGACY:
-    case SDMMC_TIMING_SDR12:
+  switch (request->timing) {
+    case fuchsia_hardware_sdmmc::SdmmcTiming::kLegacy:
+    case fuchsia_hardware_sdmmc::SdmmcTiming::kSdr12:
       ctrl2.set_uhs_mode_select(HostControl2::kUhsModeSdr12);
       break;
-    case SDMMC_TIMING_HS:
-    case SDMMC_TIMING_SDR25:
+    case fuchsia_hardware_sdmmc::SdmmcTiming::kHs:
+    case fuchsia_hardware_sdmmc::SdmmcTiming::kSdr25:
       ctrl2.set_uhs_mode_select(HostControl2::kUhsModeSdr25);
       break;
-    case SDMMC_TIMING_HSDDR:
-    case SDMMC_TIMING_DDR50:
+    case fuchsia_hardware_sdmmc::SdmmcTiming::kHsddr:
+    case fuchsia_hardware_sdmmc::SdmmcTiming::kDdr50:
       ctrl2.set_uhs_mode_select(HostControl2::kUhsModeDdr50);
       break;
-    case SDMMC_TIMING_HS200:
-    case SDMMC_TIMING_SDR104:
+    case fuchsia_hardware_sdmmc::SdmmcTiming::kHs200:
+    case fuchsia_hardware_sdmmc::SdmmcTiming::kSdr104:
       ctrl2.set_uhs_mode_select(HostControl2::kUhsModeSdr104);
       break;
-    case SDMMC_TIMING_HS400:
+    case fuchsia_hardware_sdmmc::SdmmcTiming::kHs400:
       ctrl2.set_uhs_mode_select(HostControl2::kUhsModeHs400);
       break;
-    case SDMMC_TIMING_SDR50:
+    case fuchsia_hardware_sdmmc::SdmmcTiming::kSdr50:
       ctrl2.set_uhs_mode_select(HostControl2::kUhsModeSdr50);
       break;
     default:
-      FDF_LOG(ERROR, "sdhci: unknown timing value %u", timing);
-      return ZX_ERR_INVALID_ARGS;
+      FDF_LOG(ERROR, "sdhci: unknown timing value %u", request->timing);
+      completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+      return;
   }
   ctrl2.WriteTo(&*regs_mmio_buffer_);
 
-  FDF_LOG(DEBUG, "sdhci: set bus timing to %d", timing);
+  FDF_LOG(DEBUG, "sdhci: set bus timing to %d", request->timing);
 
-  return ZX_OK;
+  completer.buffer(arena).ReplySuccess();
 }
 
-zx_status_t Sdhci::SdmmcHwReset() {
+void Sdhci::HwReset(fdf::Arena& arena, HwResetCompleter::Sync& completer) {
   std::lock_guard<std::mutex> lock(mtx_);
 
   fdf::WireUnownedResult result = sdhci_.buffer(arena_)->HwReset();
   if (!result.ok()) {
     FDF_LOG(ERROR, "Failed to send HwReset request: %s", result.status_string());
-    return result.status();
+    completer.buffer(arena).ReplyError(result.status());
+    return;
   }
 
-  return ZX_OK;
+  completer.buffer(arena).ReplySuccess();
 }
 
 zx_status_t Sdhci::PerformVendorTuningIfNeeded(uint32_t cmd_idx) {
@@ -973,11 +1037,13 @@ zx_status_t Sdhci::PerformVendorTuningIfNeeded(uint32_t cmd_idx) {
   return result->error_value();
 }
 
-zx_status_t Sdhci::SdmmcPerformTuning(uint32_t cmd_idx) {
+void Sdhci::PerformTuning(PerformTuningRequestView request, fdf::Arena& arena,
+                          PerformTuningCompleter::Sync& completer) {
   FDF_LOG(DEBUG, "sdhci: perform tuning");
 
-  if (zx_status_t status = PerformVendorTuningIfNeeded(cmd_idx); status != ZX_ERR_STOP) {
-    return status;
+  if (zx_status_t status = PerformVendorTuningIfNeeded(request->cmd_idx); status != ZX_ERR_STOP) {
+    completer.buffer(arena).Reply(zx::make_result(status));
+    return;
   }
 
   uint16_t blocksize;
@@ -991,22 +1057,20 @@ zx_status_t Sdhci::SdmmcPerformTuning(uint32_t cmd_idx) {
     ctrl2.ReadFrom(&*regs_mmio_buffer_).set_execute_tuning(1).WriteTo(&*regs_mmio_buffer_);
   }
 
-  const sdmmc_req_t req = {
-      .cmd_idx = cmd_idx,
+  const fuchsia_hardware_sdmmc::wire::SdmmcReq req = {
+      .cmd_idx = request->cmd_idx,
       .cmd_flags = MMC_SEND_TUNING_BLOCK_FLAGS,
       .arg = 0,
       .blocksize = blocksize,
       .suppress_error_messages = true,
       .client_id = 0,
-      .buffers_count = 0,
+      .buffers = {},
   };
-  uint32_t unused_response[4];
-
   for (int count = 0; (count < kMaxTuningCount) && ctrl2.execute_tuning(); count++) {
-    zx_status_t st = SdmmcRequest(&req, unused_response);
-    if (st != ZX_OK) {
-      FDF_LOG(ERROR, "sdhci: MMC_SEND_TUNING_BLOCK error, retcode = %d", st);
-      return st;
+    if (zx::result result = Request(req); result.is_error()) {
+      FDF_LOG(ERROR, "Tuning transfer error: %s", result.status_string());
+      completer.buffer(arena).Reply(result.take_error());
+      return;
     }
 
     std::lock_guard<std::mutex> lock(mtx_);
@@ -1022,13 +1086,15 @@ zx_status_t Sdhci::SdmmcPerformTuning(uint32_t cmd_idx) {
 
   FDF_LOG(DEBUG, "sdhci: tuning fail %d", fail);
 
-  return fail ? ZX_ERR_IO : ZX_OK;
+  completer.buffer(arena).Reply(zx::make_result(fail ? ZX_ERR_IO : ZX_OK));
 }
 
-zx_status_t Sdhci::SdmmcRegisterInBandInterrupt(const in_band_interrupt_protocol_t* interrupt_cb) {
+void Sdhci::RegisterInBandInterrupt(RegisterInBandInterruptRequestView request, fdf::Arena& arena,
+                                    RegisterInBandInterruptCompleter::Sync& completer) {
   std::lock_guard<std::mutex> lock(mtx_);
 
-  interrupt_cb_ = ddk::InBandInterruptProtocolClient(interrupt_cb);
+  interrupt_cb_ = fdf::WireSharedClient<fuchsia_hardware_sdmmc::InBandInterrupt>(
+      std::move(request->interrupt_cb), fdf::Dispatcher::GetCurrent()->get());
 
   InterruptSignalEnable::Get()
       .ReadFrom(&*regs_mmio_buffer_)
@@ -1039,15 +1105,28 @@ zx_status_t Sdhci::SdmmcRegisterInBandInterrupt(const in_band_interrupt_protocol
       .set_card_interrupt(card_interrupt_masked_ ? 0 : 1)
       .WriteTo(&*regs_mmio_buffer_);
 
-  // Call the callback if an interrupt was raised before it was registered.
-  if (card_interrupt_masked_) {
-    interrupt_cb_.Callback();
+  if (!card_interrupt_masked_) {
+    completer.buffer(arena).ReplySuccess();
+    return;
   }
 
-  return ZX_OK;
+  // Call the callback if an interrupt was raised before it was registered.
+  interrupt_cb_.buffer(arena)->Callback().Then(
+      [this, completer = completer.ToAsync()](
+          fdf::WireUnownedResult<fuchsia_hardware_sdmmc::InBandInterrupt::Callback>&
+              result) mutable {
+        fdf::Arena arena('SDHC');
+        if (result.ok()) {
+          completer.buffer(arena).ReplySuccess();
+        } else {
+          completer.buffer(arena).ReplyError(result.status());
+          std::lock_guard<std::mutex> lock(mtx_);
+          interrupt_cb_ = {};
+        }
+      });
 }
 
-void Sdhci::SdmmcAckInBandInterrupt() {
+void Sdhci::AckInBandInterrupt(fdf::Arena& arena, AckInBandInterruptCompleter::Sync& completer) {
   std::lock_guard<std::mutex> lock(mtx_);
   InterruptStatusEnable::Get()
       .ReadFrom(&*regs_mmio_buffer_)
@@ -1112,27 +1191,27 @@ zx_status_t Sdhci::Init() {
 
   // Get controller capabilities
   if (caps0.bus_width_8_support()) {
-    info_.caps |= SDMMC_HOST_CAP_BUS_WIDTH_8;
+    info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8;
   }
   if (caps0.adma2_support() && !(quirks_ & fuchsia_hardware_sdhci::Quirk::kNoDma)) {
-    info_.caps |= SDMMC_HOST_CAP_DMA;
+    info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kDma;
   }
   if (caps0.voltage_3v3_support()) {
-    info_.caps |= SDMMC_HOST_CAP_VOLTAGE_330;
+    info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330;
   }
   if (caps1.sdr50_support() && (!non_standard_tuning || !tuning_for_sdr50)) {
-    info_.caps |= SDMMC_HOST_CAP_SDR50;
+    info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50;
   }
   if (caps1.ddr50_support() && !(quirks_ & fuchsia_hardware_sdhci::Quirk::kNoDdr)) {
-    info_.caps |= SDMMC_HOST_CAP_DDR50;
+    info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kDdr50;
   }
   if (caps1.sdr104_support() && !non_standard_tuning) {
-    info_.caps |= SDMMC_HOST_CAP_SDR104;
+    info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr104;
   }
   if (!tuning_for_sdr50) {
-    info_.caps |= SDMMC_HOST_CAP_NO_TUNING_SDR50;
+    info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kNoTuningSdr50;
   }
-  info_.caps |= SDMMC_HOST_CAP_AUTO_CMD12;
+  info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12;
 
   // allocate and setup DMA descriptor
   if (SupportsAdma2()) {
@@ -1177,7 +1256,7 @@ zx_status_t Sdhci::Init() {
 
   // Set SD bus voltage to maximum supported by the host controller
   auto power = PowerControl::Get().ReadFrom(&*regs_mmio_buffer_).set_sd_bus_power_vdd1(1);
-  if (info_.caps & SDMMC_HOST_CAP_VOLTAGE_330) {
+  if (info_.caps & fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330) {
     power.set_sd_bus_voltage_vdd1(PowerControl::kBusVoltage3V3);
   } else {
     power.set_sd_bus_voltage_vdd1(PowerControl::kBusVoltage1V8);
@@ -1227,7 +1306,7 @@ zx_status_t Sdhci::Init() {
 
   fuchsia_hardware_sdmmc::SdmmcMetadata metadata{{
       .speed_capabilities = default_speed_capabilities,
-      .use_fidl = false,
+      .use_fidl = true,
   }};
 
   zx::result existing_metadata =
@@ -1236,6 +1315,7 @@ zx_status_t Sdhci::Init() {
     FDF_LOG(ERROR, "Failed to get metadata: %s", existing_metadata.status_string());
     return existing_metadata.status_value();
   }
+
   if (existing_metadata.value().has_value()) {
     metadata.max_frequency() = existing_metadata->max_frequency();
     metadata.enable_cache() = existing_metadata->enable_cache();
@@ -1358,17 +1438,6 @@ zx::result<> Sdhci::Start() {
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
-  {
-    compat::DeviceServer::BanjoConfig banjo_config;
-    banjo_config.callbacks[ZX_PROTOCOL_SDMMC] = sdmmc_server_.callback();
-    zx::result<> result =
-        compat_server_.Initialize(incoming(), outgoing(), node_name(), name(),
-                                  compat::ForwardMetadata::None(), std::move(banjo_config));
-    if (result.is_error()) {
-      return result.take_error();
-    }
-  }
-
   // initialize the controller
   status = Init();
   if (status != ZX_OK) {
@@ -1376,8 +1445,21 @@ zx::result<> Sdhci::Start() {
     return zx::error(status);
   }
 
-  std::vector<fuchsia_driver_framework::Offer> offers = compat_server_.CreateOffers2();
-  offers.emplace_back(metadata_server_.MakeOffer());
+  fuchsia_hardware_sdmmc::SdmmcService::InstanceHandler handler({
+      .sdmmc = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->get(),
+                                       fidl::kIgnoreBindingClosure),
+  });
+  if (zx::result<> result =
+          outgoing()->AddService<fuchsia_hardware_sdmmc::SdmmcService>(std::move(handler));
+      result.is_error()) {
+    FDF_LOG(ERROR, "Failed to add service: %s", result.status_string());
+    return result;
+  }
+
+  std::vector<fuchsia_driver_framework::Offer> offers{
+      metadata_server_.MakeOffer(),
+      fdf::MakeOffer2<fuchsia_hardware_sdmmc::SdmmcService>(),
+  };
 
   // The SDHCI core driver does not have to take any action when the SDMMC device or controller
   // power elements change state. Therefore we can simply forward PowerTokenService from our parent
@@ -1407,10 +1489,8 @@ zx::result<> Sdhci::Start() {
   }
 
   const auto kChildNodeName = name();
-  const std::vector<fuchsia_driver_framework::NodeProperty> kProperties{
-      fdf::MakeProperty(bind_fuchsia_hardware_sdmmc::SDMMCSERVICE,
-                        bind_fuchsia_hardware_sdmmc::SDMMCSERVICE_DRIVERTRANSPORT)};
-  zx::result result = AddChild(kChildNodeName, kProperties, offers);
+  zx::result result =
+      AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty>{}, offers);
   if (result.is_error()) {
     FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
     return result.take_error();

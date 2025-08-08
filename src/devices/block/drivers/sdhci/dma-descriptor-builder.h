@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_SDHCI_DMA_DESCRIPTOR_BUILDER_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_SDHCI_DMA_DESCRIPTOR_BUILDER_H_
 
-#include <fuchsia/hardware/sdmmc/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.sdmmc/cpp/driver/wire.h>
 #include <lib/fzl/pinned-vmo.h>
 #include <lib/sdmmc/hw.h>
 #include <lib/zx/bti.h>
@@ -34,8 +34,9 @@ class DmaDescriptorBuilder {
  public:
   using VmoStore = vmo_store::VmoStore<vmo_store::HashTableStorage<uint32_t, VmoInfoType>>;
 
-  DmaDescriptorBuilder(const sdmmc_req_t& request, VmoStore& registered_vmos,
-                       uint64_t dma_boundary_alignment, zx::unowned_bti bti)
+  DmaDescriptorBuilder(const fuchsia_hardware_sdmmc::wire::SdmmcReq& request,
+                       VmoStore& registered_vmos, uint64_t dma_boundary_alignment,
+                       zx::unowned_bti bti)
       : request_(request),
         registered_vmos_(registered_vmos),
         dma_boundary_alignment_(dma_boundary_alignment),
@@ -47,7 +48,7 @@ class DmaDescriptorBuilder {
   }
 
   // Appends the physical memory regions for this buffer to the end of the list.
-  zx_status_t ProcessBuffer(const sdmmc_buffer_region_t& buffer);
+  zx_status_t ProcessBuffer(const fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion& buffer);
 
   // Builds DMA descriptors of the template type in the array provided.
   template <typename DescriptorType>
@@ -71,23 +72,25 @@ class DmaDescriptorBuilder {
   // Pins the buffer if needed, and fills out_regions with the physical addresses corresponding to
   // the (owned or unowned) input buffer. Contiguous runs of pages are condensed into single
   // regions so that the minimum number of DMA descriptors are required.
-  zx::result<size_t> GetPinnedRegions(uint32_t vmo_id, const sdmmc_buffer_region_t& buffer,
+  zx::result<size_t> GetPinnedRegions(uint32_t vmo_id,
+                                      const fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion& buffer,
                                       cpp20::span<fzl::PinnedVmo::Region> out_regions);
-  zx::result<size_t> GetPinnedRegions(zx::unowned_vmo vmo, const sdmmc_buffer_region_t& buffer,
+  zx::result<size_t> GetPinnedRegions(const zx::vmo& vmo,
+                                      const fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion& buffer,
                                       cpp20::span<fzl::PinnedVmo::Region> out_regions);
 
   // Appends the regions to the current list of regions being tracked by this object. Regions are
   // split if needed according to hardware restrictions on size or alignment.
   zx_status_t AppendRegions(cpp20::span<const fzl::PinnedVmo::Region> regions);
 
-  const sdmmc_req_t& request_;
+  const fuchsia_hardware_sdmmc::wire::SdmmcReq& request_;
   VmoStore& registered_vmos_;
   const uint64_t dma_boundary_alignment_;
-  std::array<fzl::PinnedVmo::Region, SDMMC_PAGES_COUNT> regions_ = {};
+  std::array<fzl::PinnedVmo::Region, fuchsia_hardware_sdmmc::wire::kSdmmcPagesCount> regions_ = {};
   size_t region_count_ = 0;
   size_t total_size_ = 0;
   size_t descriptor_count_ = 0;
-  std::array<zx::pmt, SDMMC_PAGES_COUNT> pmts_ = {};
+  std::array<zx::pmt, fuchsia_hardware_sdmmc::wire::kSdmmcPagesCount> pmts_ = {};
   size_t pmt_count_ = 0;
   const zx::unowned_bti bti_;
 };
@@ -164,17 +167,18 @@ zx_status_t DmaDescriptorBuilder<VmoInfoType>::BuildDmaDescriptors(
 }
 
 template <typename VmoInfoType>
-zx_status_t DmaDescriptorBuilder<VmoInfoType>::ProcessBuffer(const sdmmc_buffer_region_t& buffer) {
+zx_status_t DmaDescriptorBuilder<VmoInfoType>::ProcessBuffer(
+    const fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion& buffer) {
   total_size_ += buffer.size;
 
-  fzl::PinnedVmo::Region region_buffer[SDMMC_PAGES_COUNT];
+  fzl::PinnedVmo::Region region_buffer[fuchsia_hardware_sdmmc::wire::kSdmmcPagesCount];
   zx::result<size_t> region_count;
-  if (buffer.type == SDMMC_BUFFER_TYPE_VMO_HANDLE) {
-    region_count = GetPinnedRegions(zx::unowned_vmo(buffer.buffer.vmo), buffer,
-                                    {region_buffer, std::size(region_buffer)});
-  } else if (buffer.type == SDMMC_BUFFER_TYPE_VMO_ID) {
+  if (buffer.buffer.is_vmo()) {
     region_count =
-        GetPinnedRegions(buffer.buffer.vmo_id, buffer, {region_buffer, std::size(region_buffer)});
+        GetPinnedRegions(buffer.buffer.vmo(), buffer, {region_buffer, std::size(region_buffer)});
+  } else if (buffer.buffer.is_vmo_id()) {
+    region_count =
+        GetPinnedRegions(buffer.buffer.vmo_id(), buffer, {region_buffer, std::size(region_buffer)});
   } else {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -188,25 +192,25 @@ zx_status_t DmaDescriptorBuilder<VmoInfoType>::ProcessBuffer(const sdmmc_buffer_
 
 template <typename VmoInfoType>
 zx::result<size_t> DmaDescriptorBuilder<VmoInfoType>::GetPinnedRegions(
-    uint32_t vmo_id, const sdmmc_buffer_region_t& buffer,
+    uint32_t vmo_id, const fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion& buffer,
     cpp20::span<fzl::PinnedVmo::Region> out_regions) {
   vmo_store::StoredVmo<VmoInfoType>* const stored_vmo =
-      registered_vmos_.GetVmo(buffer.buffer.vmo_id);
+      registered_vmos_.GetVmo(buffer.buffer.vmo_id());
   if (stored_vmo == nullptr) {
-    FDF_LOG(ERROR, "No VMO %u for client %u", buffer.buffer.vmo_id, request_.client_id);
+    FDF_LOG(ERROR, "No VMO %u for client %u", buffer.buffer.vmo_id(), request_.client_id);
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
   // Make sure that this request would not cause the controller to violate the rights of the VMO,
   // as we may not have an IOMMU to otherwise prevent it.
   if (!(request_.cmd_flags & SDMMC_CMD_READ) &&
-      !(stored_vmo->meta().rights & SDMMC_VMO_RIGHT_READ)) {
+      !(stored_vmo->meta().rights & fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead)) {
     // Write request, controller reads from this VMO and writes to the card.
     FDF_LOG(ERROR, "Request would cause controller to read from write-only VMO");
     return zx::error(ZX_ERR_ACCESS_DENIED);
   }
   if ((request_.cmd_flags & SDMMC_CMD_READ) &&
-      !(stored_vmo->meta().rights & SDMMC_VMO_RIGHT_WRITE)) {
+      !(stored_vmo->meta().rights & fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite)) {
     // Read request, controller reads from the card and writes to this VMO.
     FDF_LOG(ERROR, "Request would cause controller to write to read-only VMO");
     return zx::error(ZX_ERR_ACCESS_DENIED);
@@ -226,7 +230,7 @@ zx::result<size_t> DmaDescriptorBuilder<VmoInfoType>::GetPinnedRegions(
 
 template <typename VmoInfoType>
 zx::result<size_t> DmaDescriptorBuilder<VmoInfoType>::GetPinnedRegions(
-    zx::unowned_vmo vmo, const sdmmc_buffer_region_t& buffer,
+    const zx::vmo& vmo, const fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion& buffer,
     cpp20::span<fzl::PinnedVmo::Region> out_regions) {
   const uint64_t kPageSize = zx_system_get_page_size();
   const uint64_t kPageMask = kPageSize - 1;
@@ -242,7 +246,7 @@ zx::result<size_t> DmaDescriptorBuilder<VmoInfoType>::GetPinnedRegions(
   const uint32_t options =
       (request_.cmd_flags & SDMMC_CMD_READ) ? ZX_BTI_PERM_WRITE : ZX_BTI_PERM_READ;
 
-  zx_paddr_t phys[SDMMC_PAGES_COUNT];
+  zx_paddr_t phys[fuchsia_hardware_sdmmc::wire::kSdmmcPagesCount];
 
   if (page_count == 0) {
     FDF_LOG(ERROR, "Buffer has no pages");
@@ -253,7 +257,7 @@ zx::result<size_t> DmaDescriptorBuilder<VmoInfoType>::GetPinnedRegions(
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
-  zx_status_t status = bti_->pin(options, *vmo, buffer.offset - page_offset, page_count * kPageSize,
+  zx_status_t status = bti_->pin(options, vmo, buffer.offset - page_offset, page_count * kPageSize,
                                  phys, page_count, &pmts_[pmt_count_]);
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "Failed to pin unowned VMO: %s", zx_status_get_string(status));
@@ -267,10 +271,9 @@ zx::result<size_t> DmaDescriptorBuilder<VmoInfoType>::GetPinnedRegions(
   // doesn't overwrite main memory with stale data from the cache, and must be clean for writes so
   // that main memory has the latest data.
   if (request_.cmd_flags & SDMMC_CMD_READ) {
-    status =
-        vmo->op_range(ZX_VMO_OP_CACHE_CLEAN_INVALIDATE, buffer.offset, buffer.size, nullptr, 0);
+    status = vmo.op_range(ZX_VMO_OP_CACHE_CLEAN_INVALIDATE, buffer.offset, buffer.size, nullptr, 0);
   } else {
-    status = vmo->op_range(ZX_VMO_OP_CACHE_CLEAN, buffer.offset, buffer.size, nullptr, 0);
+    status = vmo.op_range(ZX_VMO_OP_CACHE_CLEAN, buffer.offset, buffer.size, nullptr, 0);
   }
 
   if (status != ZX_OK) {
@@ -317,7 +320,7 @@ zx_status_t DmaDescriptorBuilder<VmoInfoType>::AppendRegions(
     return ZX_ERR_INVALID_ARGS;
   }
 
-  fzl::PinnedVmo::Region current_region{0, 0};
+  fzl::PinnedVmo::Region current_region{.phys_addr = 0, .size = 0};
   auto vmo_regions_it = regions.begin();
   for (; region_count_ < regions_.size(); region_count_++) {
     // Current region is invalid, fetch a new one from the input list.
@@ -336,7 +339,7 @@ zx_status_t DmaDescriptorBuilder<VmoInfoType>::AppendRegions(
     // Default to an invalid region so that the next iteration fetches another one from the input
     // list. If this region is divided due to a boundary or size restriction, the next region will
     // remain valid so that processing of the original region will continue.
-    fzl::PinnedVmo::Region next_region{0, 0};
+    fzl::PinnedVmo::Region next_region{.phys_addr = 0, .size = 0};
 
     if (dma_boundary_alignment_) {
       const zx_paddr_t aligned_start =

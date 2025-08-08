@@ -6,11 +6,10 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_SDHCI_SDHCI_H_
 
 #include <fidl/fuchsia.hardware.sdhci/cpp/driver/fidl.h>
-#include <fidl/fuchsia.hardware.sdmmc/cpp/fidl.h>
-#include <fuchsia/hardware/sdmmc/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.sdmmc/cpp/driver/fidl.h>
+#include <fidl/fuchsia.hardware.sdmmc/cpp/driver/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/dma-buffer/buffer.h>
-#include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/mmio/mmio.h>
@@ -29,7 +28,7 @@
 
 namespace sdhci {
 
-class Sdhci : public fdf::DriverBase, public ddk::SdmmcProtocol<Sdhci> {
+class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sdmmc::Sdmmc> {
  public:
   // Visible for testing.
   struct AdmaDescriptor96 {
@@ -74,21 +73,29 @@ class Sdhci : public fdf::DriverBase, public ddk::SdmmcProtocol<Sdhci> {
 
   zx::result<> Start() override;
 
-  zx_status_t SdmmcHostInfo(sdmmc_host_info_t* out_info);
-  zx_status_t SdmmcSetSignalVoltage(sdmmc_voltage_t voltage) TA_EXCL(mtx_);
-  zx_status_t SdmmcSetBusWidth(sdmmc_bus_width_t bus_width) TA_EXCL(mtx_);
-  zx_status_t SdmmcSetBusFreq(uint32_t bus_freq) TA_EXCL(mtx_);
-  zx_status_t SdmmcSetTiming(sdmmc_timing_t timing) TA_EXCL(mtx_);
-  zx_status_t SdmmcHwReset() TA_EXCL(mtx_);
-  zx_status_t SdmmcPerformTuning(uint32_t cmd_idx) TA_EXCL(mtx_);
-  zx_status_t SdmmcRequest(sdmmc_req_t* req) { return ZX_ERR_NOT_SUPPORTED; }
-  zx_status_t SdmmcRegisterInBandInterrupt(const in_band_interrupt_protocol_t* interrupt_cb)
-      TA_EXCL(mtx_);
-  void SdmmcAckInBandInterrupt() TA_EXCL(mtx_);
-  zx_status_t SdmmcRegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo, uint64_t offset,
-                               uint64_t size, uint32_t vmo_rights);
-  zx_status_t SdmmcUnregisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo* out_vmo);
-  zx_status_t SdmmcRequest(const sdmmc_req_t* req, uint32_t out_response[4]) TA_EXCL(mtx_);
+  void HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) override;
+  void SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& arena,
+                        SetSignalVoltageCompleter::Sync& completer) TA_EXCL(mtx_) override;
+  void SetBusWidth(SetBusWidthRequestView request, fdf::Arena& arena,
+                   SetBusWidthCompleter::Sync& completer) TA_EXCL(mtx_) override;
+  void SetBusFreq(SetBusFreqRequestView request, fdf::Arena& arena,
+                  SetBusFreqCompleter::Sync& completer) TA_EXCL(mtx_) override;
+  void SetTiming(SetTimingRequestView request, fdf::Arena& arena,
+                 SetTimingCompleter::Sync& completer) TA_EXCL(mtx_) override;
+  void HwReset(fdf::Arena& arena, HwResetCompleter::Sync& completer) TA_EXCL(mtx_) override;
+  void PerformTuning(PerformTuningRequestView request, fdf::Arena& arena,
+                     PerformTuningCompleter::Sync& completer) TA_EXCL(mtx_) override;
+  void RegisterInBandInterrupt(RegisterInBandInterruptRequestView request, fdf::Arena& arena,
+                               RegisterInBandInterruptCompleter::Sync& completer)
+      TA_EXCL(mtx_) override;
+  void AckInBandInterrupt(fdf::Arena& arena, AckInBandInterruptCompleter::Sync& completer)
+      TA_EXCL(mtx_) override;
+  void RegisterVmo(RegisterVmoRequestView request, fdf::Arena& arena,
+                   RegisterVmoCompleter::Sync& completer) override;
+  void UnregisterVmo(UnregisterVmoRequestView request, fdf::Arena& arena,
+                     UnregisterVmoCompleter::Sync& completer) override;
+  void Request(RequestRequestView request, fdf::Arena& arena, RequestCompleter::Sync& completer)
+      TA_EXCL(mtx_) override;
 
   // Visible for testing.
   uint32_t base_clock() const { return base_clock_; }
@@ -143,13 +150,13 @@ class Sdhci : public fdf::DriverBase, public ddk::SdmmcProtocol<Sdhci> {
   struct OwnedVmoInfo {
     uint64_t offset;
     uint64_t size;
-    uint32_t rights;
+    fuchsia_hardware_sdmmc::SdmmcVmoRight rights;
   };
 
   // Used to synchronize the request thread(s) with the interrupt thread for requests through
   // SdmmcRequest. See above for SdmmcRequest requests.
   struct PendingRequest {
-    explicit PendingRequest(const sdmmc_req_t& request)
+    explicit PendingRequest(const fuchsia_hardware_sdmmc::wire::SdmmcReq& request)
         : cmd_idx(request.cmd_idx),
           cmd_flags(request.cmd_flags),
           blocksize(request.blocksize),
@@ -189,12 +196,14 @@ class Sdhci : public fdf::DriverBase, public ddk::SdmmcProtocol<Sdhci> {
   using BlockCountType = decltype(BlockCount::Get().FromValue(0).reg_value());
   using SdmmcVmoStore = DmaDescriptorBuilder<OwnedVmoInfo>::VmoStore;
 
-  static void PrepareCmd(const sdmmc_req_t& req, TransferMode* transfer_mode, Command* command);
+  static void PrepareCmd(const fuchsia_hardware_sdmmc::wire::SdmmcReq& req,
+                         TransferMode* transfer_mode, Command* command);
 
   zx_status_t Init();
 
   bool SupportsAdma2() const {
-    return (info_.caps & SDMMC_HOST_CAP_DMA) && !(quirks_ & fuchsia_hardware_sdhci::Quirk::kNoDma);
+    return (info_.caps & fuchsia_hardware_sdmmc::SdmmcHostCap::kDma) &&
+           !(quirks_ & fuchsia_hardware_sdhci::Quirk::kNoDma);
   }
 
   void EnableInterrupts() TA_REQ(mtx_);
@@ -207,13 +216,18 @@ class Sdhci : public fdf::DriverBase, public ddk::SdmmcProtocol<Sdhci> {
                  const zx_packet_interrupt_t* interrupt) TA_EXCL(mtx_);
   void HandleTransferInterrupt(InterruptStatus status) TA_REQ(mtx_);
 
-  zx::result<PendingRequest> StartRequest(const sdmmc_req_t& request,
+  zx::result<fidl::Array<uint32_t, 4>> Request(
+      const fuchsia_hardware_sdmmc::wire::SdmmcReq& request);
+
+  zx::result<PendingRequest> StartRequest(const fuchsia_hardware_sdmmc::wire::SdmmcReq& request,
                                           DmaDescriptorBuilder<OwnedVmoInfo>& builder) TA_REQ(mtx_);
-  zx_status_t SetUpDma(const sdmmc_req_t& request, DmaDescriptorBuilder<OwnedVmoInfo>& builder)
+  zx_status_t SetUpDma(const fuchsia_hardware_sdmmc::wire::SdmmcReq& request,
+                       DmaDescriptorBuilder<OwnedVmoInfo>& builder) TA_REQ(mtx_);
+  zx_status_t SetUpBuffer(const fuchsia_hardware_sdmmc::wire::SdmmcReq& request,
+                          PendingRequest* pending_request) TA_REQ(mtx_);
+  zx::result<fidl::Array<uint32_t, 4>> FinishRequest(
+      const fuchsia_hardware_sdmmc::wire::SdmmcReq& request, const PendingRequest& pending_request)
       TA_REQ(mtx_);
-  zx_status_t SetUpBuffer(const sdmmc_req_t& request, PendingRequest* pending_request) TA_REQ(mtx_);
-  zx_status_t FinishRequest(const sdmmc_req_t& request, uint32_t out_response[4],
-                            const PendingRequest& pending_request) TA_REQ(mtx_);
 
   void CompleteRequest() TA_REQ(mtx_);
 
@@ -245,7 +259,7 @@ class Sdhci : public fdf::DriverBase, public ddk::SdmmcProtocol<Sdhci> {
   sync_completion_t req_completion_;
 
   // Controller info
-  sdmmc_host_info_t info_ = {};
+  fuchsia_hardware_sdmmc::wire::SdmmcHostInfo info_ = {};
 
   // Controller specific quirks
   fuchsia_hardware_sdhci::Quirk quirks_;
@@ -254,21 +268,23 @@ class Sdhci : public fdf::DriverBase, public ddk::SdmmcProtocol<Sdhci> {
   // Base clock rate
   uint32_t base_clock_ = 0;
 
-  ddk::InBandInterruptProtocolClient interrupt_cb_;
+  fdf::WireSharedClient<fuchsia_hardware_sdmmc::InBandInterrupt> interrupt_cb_;
   bool card_interrupt_masked_ TA_GUARDED(mtx_) = false;
 
-  // Keep one SdmmcVmoStore for each possible client ID (IDs are in [0, SDMMC_MAX_CLIENT_ID]).
-  std::array<SdmmcVmoStore, SDMMC_MAX_CLIENT_ID + 1> registered_vmo_stores_;
+  // Keep one SdmmcVmoStore for each possible client ID (IDs are in [0,
+  // fuchsia_hardware_sdmmc::wire::kSdmmcMaxClientId]).
+  std::array<SdmmcVmoStore, fuchsia_hardware_sdmmc::wire::kSdmmcMaxClientId + 1>
+      registered_vmo_stores_;
 
   std::optional<PendingRequest> pending_request_ TA_GUARDED(mtx_);
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
 
-  compat::BanjoServer sdmmc_server_{ZX_PROTOCOL_SDMMC, this, &sdmmc_protocol_ops_};
-  compat::SyncInitializedDeviceServer compat_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_sdmmc::SdmmcMetadata> metadata_server_;
 
   fdf::Dispatcher irq_dispatcher_;
+
+  fdf::ServerBindingGroup<fuchsia_hardware_sdmmc::Sdmmc> bindings_;
 };
 
 }  // namespace sdhci

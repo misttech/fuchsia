@@ -9,6 +9,7 @@
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/fake-bti/cpp/fake-bti.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/fit/function.h>
 #include <lib/mmio-ptr/fake.h>
 #include <lib/sync/completion.h>
 
@@ -48,17 +49,17 @@ class TestSdhci : public Sdhci {
         irq_ack_wait_(this, ZX_HANDLE_INVALID, ZX_VIRTUAL_INTERRUPT_UNTRIGGERED,
                       ZX_WAIT_ASYNC_EDGE) {}
 
-  zx_status_t SdmmcRequest(sdmmc_req_t* req) { return ZX_ERR_NOT_SUPPORTED; }
-
-  zx_status_t SdmmcRequest(const sdmmc_req_t* req, uint32_t out_response[4]) {
-    cpp20::span<const sdmmc_buffer_region_t> buffers(req->buffers_list, req->buffers_count);
+  void Request(RequestRequestView request, fdf::Arena& arena,
+               RequestCompleter::Sync& completer) override {
+    ASSERT_EQ(request->reqs.size(), 1u);
     size_t bytes = 0;
-    for (const sdmmc_buffer_region_t& buffer : buffers) {
+    for (fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion& buffer : request->reqs[0].buffers) {
       bytes += buffer.size;
     }
-    blocks_remaining_ = req->blocksize ? static_cast<uint16_t>(bytes / req->blocksize) : 0;
+    blocks_remaining_ =
+        request->reqs[0].blocksize ? static_cast<uint16_t>(bytes / request->reqs[0].blocksize) : 0;
     current_block_ = 0;
-    return Sdhci::SdmmcRequest(req, out_response);
+    return Sdhci::Request(request, arena, completer);
   }
 
   uint8_t reset_mask() {
@@ -308,6 +309,12 @@ class SdhciTest : public ::testing::Test {
       return result;
     }
 
+    zx::result client = driver_test().Connect<fuchsia_hardware_sdmmc::SdmmcService::Sdmmc>();
+    if (client.is_error()) {
+      return client.take_error();
+    }
+    client_.Bind(*std::move(client), fdf::Dispatcher::GetCurrent()->get());
+
     zx::unowned_interrupt irq = driver_test().RunInEnvironmentTypeContext(
         fit::callback<zx::unowned_interrupt(Environment&)>(
             [](Environment& env) { return env.sdhci().irq(); }));
@@ -339,6 +346,7 @@ class SdhciTest : public ::testing::Test {
   }
 
   fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
+  fdf::WireClient<fuchsia_hardware_sdmmc::Sdmmc> client_;
 };
 
 TEST_F(SdhciTest, DriverLifecycle) {
@@ -396,11 +404,17 @@ TEST_F(SdhciTest, HostInfo) {
 
   ASSERT_OK(StartDriver());
 
-  sdmmc_host_info_t host_info = {};
-  EXPECT_OK(driver_test().driver()->SdmmcHostInfo(&host_info));
-  EXPECT_EQ(host_info.caps, SDMMC_HOST_CAP_BUS_WIDTH_8 | SDMMC_HOST_CAP_VOLTAGE_330 |
-                                SDMMC_HOST_CAP_AUTO_CMD12 | SDMMC_HOST_CAP_SDR50 |
-                                SDMMC_HOST_CAP_SDR104);
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)->HostInfo().ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->info.caps, fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8 |
+                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330 |
+                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
+                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50 |
+                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr104);
+  });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 }
@@ -420,11 +434,18 @@ TEST_F(SdhciTest, HostInfoNoDma) {
 
   ASSERT_OK(StartDriver(fuchsia_hardware_sdhci::Quirk::kNoDma));
 
-  sdmmc_host_info_t host_info = {};
-  EXPECT_OK(driver_test().driver()->SdmmcHostInfo(&host_info));
-  EXPECT_EQ(host_info.caps, SDMMC_HOST_CAP_BUS_WIDTH_8 | SDMMC_HOST_CAP_VOLTAGE_330 |
-                                SDMMC_HOST_CAP_AUTO_CMD12 | SDMMC_HOST_CAP_DDR50 |
-                                SDMMC_HOST_CAP_SDR50 | SDMMC_HOST_CAP_NO_TUNING_SDR50);
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)->HostInfo().ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->info.caps, fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8 |
+                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330 |
+                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
+                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kDdr50 |
+                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50 |
+                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kNoTuningSdr50);
+  });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 }
@@ -437,9 +458,14 @@ TEST_F(SdhciTest, HostInfoNoTuning) {
 
   ASSERT_OK(StartDriver(fuchsia_hardware_sdhci::Quirk::kNonStandardTuning));
 
-  sdmmc_host_info_t host_info = {};
-  EXPECT_OK(driver_test().driver()->SdmmcHostInfo(&host_info));
-  EXPECT_EQ(host_info.caps, SDMMC_HOST_CAP_AUTO_CMD12 | SDMMC_HOST_CAP_NO_TUNING_SDR50);
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)->HostInfo().ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->info.caps, fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
+                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kNoTuningSdr50);
+  });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 }
@@ -459,7 +485,16 @@ TEST_F(SdhciTest, SetSignalVoltage) {
       .set_sd_bus_voltage_vdd1(PowerControl::kBusVoltage1V8)
       .set_sd_bus_power_vdd1(1)
       .WriteTo(driver_test().driver()->mmio_);
-  EXPECT_OK(driver_test().driver()->SdmmcSetSignalVoltage(SDMMC_VOLTAGE_V180));
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->SetSignalVoltage(fuchsia_hardware_sdmmc::SdmmcVoltage::kV180)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_TRUE(
       HostControl2::Get().ReadFrom(driver_test().driver()->mmio_).voltage_1v8_signalling_enable());
 
@@ -468,7 +503,15 @@ TEST_F(SdhciTest, SetSignalVoltage) {
       .set_sd_bus_voltage_vdd1(PowerControl::kBusVoltage3V3)
       .set_sd_bus_power_vdd1(1)
       .WriteTo(driver_test().driver()->mmio_);
-  EXPECT_OK(driver_test().driver()->SdmmcSetSignalVoltage(SDMMC_VOLTAGE_V330));
+
+  client_.buffer(arena)
+      ->SetSignalVoltage(fuchsia_hardware_sdmmc::SdmmcVoltage::kV330)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_FALSE(
       HostControl2::Get().ReadFrom(driver_test().driver()->mmio_).voltage_1v8_signalling_enable());
 
@@ -478,7 +521,14 @@ TEST_F(SdhciTest, SetSignalVoltage) {
 TEST_F(SdhciTest, SetSignalVoltageUnsupported) {
   ASSERT_OK(StartDriver());
 
-  EXPECT_NE(ZX_OK, driver_test().driver()->SdmmcSetSignalVoltage(SDMMC_VOLTAGE_V330));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->SetSignalVoltage(fuchsia_hardware_sdmmc::SdmmcVoltage::kV330)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_error());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 }
@@ -492,15 +542,37 @@ TEST_F(SdhciTest, SetBusWidth) {
 
   auto ctrl1 = HostControl1::Get().FromValue(0);
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusWidth(SDMMC_BUS_WIDTH_EIGHT));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->SetBusWidth(fuchsia_hardware_sdmmc::SdmmcBusWidth::kEight)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_TRUE(ctrl1.ReadFrom(driver_test().driver()->mmio_).extended_data_transfer_width());
   EXPECT_FALSE(ctrl1.ReadFrom(driver_test().driver()->mmio_).data_transfer_width_4bit());
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusWidth(SDMMC_BUS_WIDTH_ONE));
+  client_.buffer(arena)
+      ->SetBusWidth(fuchsia_hardware_sdmmc::SdmmcBusWidth::kOne)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_FALSE(ctrl1.ReadFrom(driver_test().driver()->mmio_).extended_data_transfer_width());
   EXPECT_FALSE(ctrl1.ReadFrom(driver_test().driver()->mmio_).data_transfer_width_4bit());
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusWidth(SDMMC_BUS_WIDTH_FOUR));
+  client_.buffer(arena)
+      ->SetBusWidth(fuchsia_hardware_sdmmc::SdmmcBusWidth::kFour)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_FALSE(ctrl1.ReadFrom(driver_test().driver()->mmio_).extended_data_transfer_width());
   EXPECT_TRUE(ctrl1.ReadFrom(driver_test().driver()->mmio_).data_transfer_width_4bit());
 
@@ -510,7 +582,14 @@ TEST_F(SdhciTest, SetBusWidth) {
 TEST_F(SdhciTest, SetBusWidthNotSupported) {
   ASSERT_OK(StartDriver());
 
-  EXPECT_NE(ZX_OK, driver_test().driver()->SdmmcSetBusWidth(SDMMC_BUS_WIDTH_EIGHT));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->SetBusWidth(fuchsia_hardware_sdmmc::SdmmcBusWidth::kEight)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_error());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 }
@@ -520,30 +599,61 @@ TEST_F(SdhciTest, SetBusFreq) {
 
   auto clock = ClockControl::Get().FromValue(0);
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(0));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)->SetBusFreq(0).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_TRUE(clock.ReadFrom(driver_test().driver()->mmio_).internal_clock_enable());
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(12'500'000));
+  client_.buffer(arena)->SetBusFreq(12'500'000).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_EQ(clock.ReadFrom(driver_test().driver()->mmio_).frequency_select(), 4);
   EXPECT_TRUE(clock.sd_clock_enable());
   EXPECT_TRUE(clock.internal_clock_enable());
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(65'190));
+  client_.buffer(arena)->SetBusFreq(65'190).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_EQ(clock.ReadFrom(driver_test().driver()->mmio_).frequency_select(), 767);
   EXPECT_TRUE(clock.sd_clock_enable());
   EXPECT_TRUE(clock.internal_clock_enable());
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(100'000'000));
+  client_.buffer(arena)->SetBusFreq(100'000'000).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_EQ(clock.ReadFrom(driver_test().driver()->mmio_).frequency_select(), 0);
   EXPECT_TRUE(clock.sd_clock_enable());
   EXPECT_TRUE(clock.internal_clock_enable());
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(26'000'000));
+  client_.buffer(arena)->SetBusFreq(26'000'000).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_EQ(clock.ReadFrom(driver_test().driver()->mmio_).frequency_select(), 2);
   EXPECT_TRUE(clock.sd_clock_enable());
   EXPECT_TRUE(clock.internal_clock_enable());
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(0));
+  client_.buffer(arena)->SetBusFreq(0).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_FALSE(clock.ReadFrom(driver_test().driver()->mmio_).sd_clock_enable());
   EXPECT_TRUE(clock.internal_clock_enable());
 
@@ -560,22 +670,44 @@ TEST_F(SdhciTest, SetBusFreqVendorSpecific) {
 
   const uint32_t initial_value = clock_control();
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(0));
-  EXPECT_EQ(clock_control(), initial_value);
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)->SetBusFreq(0).ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+    EXPECT_EQ(clock_control(), initial_value);
+  });
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(12'500'000));
-  EXPECT_EQ(clock_control(), initial_value);
+  client_.buffer(arena)->SetBusFreq(12'500'000).ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+    EXPECT_EQ(clock_control(), initial_value);
+  });
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(65'190));
-  EXPECT_EQ(clock_control(), initial_value);
+  client_.buffer(arena)->SetBusFreq(65'190).ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+    EXPECT_EQ(clock_control(), initial_value);
+  });
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(100'000'000));
-  EXPECT_EQ(clock_control(), initial_value);
+  client_.buffer(arena)->SetBusFreq(100'000'000).ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+    EXPECT_EQ(clock_control(), initial_value);
+  });
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(26'000'000));
-  EXPECT_EQ(clock_control(), initial_value);
+  client_.buffer(arena)->SetBusFreq(26'000'000).ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+    EXPECT_EQ(clock_control(), initial_value);
+  });
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(0));
+  client_.buffer(arena)->SetBusFreq(0).ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+    driver_test().runtime().Quit();
+  });
+  driver_test().runtime().Run();
+
   EXPECT_EQ(clock_control(), initial_value);
 
   ASSERT_OK(StopDriver());
@@ -587,7 +719,13 @@ TEST_F(SdhciTest, PerformTuningVendorSpecific) {
 
   ASSERT_OK(StartDriver());
 
-  EXPECT_OK(driver_test().driver()->SdmmcPerformTuning(MMC_SEND_TUNING_BLOCK));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)->PerformTuning(MMC_SEND_TUNING_BLOCK).ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+    driver_test().runtime().Quit();
+  });
+  driver_test().runtime().Run();
 
   ASSERT_OK(StopDriver());
 }
@@ -597,10 +735,21 @@ TEST_F(SdhciTest, SetBusFreqTimeout) {
 
   ClockControl::Get().FromValue(0).set_internal_clock_stable(1).WriteTo(
       driver_test().driver()->mmio_);
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(12'500'000));
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)->SetBusFreq(12'500'000).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  driver_test().runtime().RunUntilIdle();
 
   ClockControl::Get().FromValue(0).WriteTo(driver_test().driver()->mmio_);
-  EXPECT_NE(ZX_OK, driver_test().driver()->SdmmcSetBusFreq(12'500'000));
+
+  client_.buffer(arena)->SetBusFreq(12'500'000).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_error());
+  });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 }
@@ -613,7 +762,14 @@ TEST_F(SdhciTest, SetBusFreqInternalClockEnable) {
       .set_internal_clock_stable(1)
       .set_internal_clock_enable(0)
       .WriteTo(driver_test().driver()->mmio_);
-  EXPECT_OK(driver_test().driver()->SdmmcSetBusFreq(12'500'000));
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)->SetBusFreq(12'500'000).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_TRUE(ClockControl::Get().ReadFrom(driver_test().driver()->mmio_).internal_clock_enable());
 
   ASSERT_OK(StopDriver());
@@ -622,32 +778,75 @@ TEST_F(SdhciTest, SetBusFreqInternalClockEnable) {
 TEST_F(SdhciTest, SetTiming) {
   ASSERT_OK(StartDriver());
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetTiming(SDMMC_TIMING_HS));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->SetTiming(fuchsia_hardware_sdmmc::SdmmcTiming::kHs)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_TRUE(HostControl1::Get().ReadFrom(driver_test().driver()->mmio_).high_speed_enable());
   EXPECT_EQ(HostControl2::Get().ReadFrom(driver_test().driver()->mmio_).uhs_mode_select(),
             HostControl2::kUhsModeSdr25);
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetTiming(SDMMC_TIMING_LEGACY));
+  client_.buffer(arena)
+      ->SetTiming(fuchsia_hardware_sdmmc::SdmmcTiming::kLegacy)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_FALSE(HostControl1::Get().ReadFrom(driver_test().driver()->mmio_).high_speed_enable());
   EXPECT_EQ(HostControl2::Get().ReadFrom(driver_test().driver()->mmio_).uhs_mode_select(),
             HostControl2::kUhsModeSdr12);
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetTiming(SDMMC_TIMING_HSDDR));
+  client_.buffer(arena)
+      ->SetTiming(fuchsia_hardware_sdmmc::SdmmcTiming::kHsddr)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_TRUE(HostControl1::Get().ReadFrom(driver_test().driver()->mmio_).high_speed_enable());
   EXPECT_EQ(HostControl2::Get().ReadFrom(driver_test().driver()->mmio_).uhs_mode_select(),
             HostControl2::kUhsModeDdr50);
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetTiming(SDMMC_TIMING_SDR25));
+  client_.buffer(arena)
+      ->SetTiming(fuchsia_hardware_sdmmc::SdmmcTiming::kSdr25)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_TRUE(HostControl1::Get().ReadFrom(driver_test().driver()->mmio_).high_speed_enable());
   EXPECT_EQ(HostControl2::Get().ReadFrom(driver_test().driver()->mmio_).uhs_mode_select(),
             HostControl2::kUhsModeSdr25);
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetTiming(SDMMC_TIMING_SDR12));
+  client_.buffer(arena)
+      ->SetTiming(fuchsia_hardware_sdmmc::SdmmcTiming::kSdr12)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_TRUE(HostControl1::Get().ReadFrom(driver_test().driver()->mmio_).high_speed_enable());
   EXPECT_EQ(HostControl2::Get().ReadFrom(driver_test().driver()->mmio_).uhs_mode_select(),
             HostControl2::kUhsModeSdr12);
 
-  EXPECT_OK(driver_test().driver()->SdmmcSetTiming(SDMMC_TIMING_HS400));
+  client_.buffer(arena)
+      ->SetTiming(fuchsia_hardware_sdmmc::SdmmcTiming::kHs400)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_TRUE(HostControl1::Get().ReadFrom(driver_test().driver()->mmio_).high_speed_enable());
   EXPECT_EQ(HostControl2::Get().ReadFrom(driver_test().driver()->mmio_).uhs_mode_select(),
             HostControl2::kUhsModeHs400);
@@ -658,7 +857,14 @@ TEST_F(SdhciTest, SetTiming) {
 TEST_F(SdhciTest, HwReset) {
   ASSERT_OK(StartDriver());
 
-  driver_test().driver()->SdmmcHwReset();
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)->HwReset().ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+    driver_test().runtime().Quit();
+  });
+  driver_test().runtime().Run();
+
   driver_test().RunInEnvironmentTypeContext(
       [&](Environment& env) { EXPECT_TRUE(env.sdhci().hw_reset_invoked()); });
 
@@ -672,16 +878,24 @@ TEST_F(SdhciTest, RequestCommandOnly) {
 
   ASSERT_OK(StartDriver());
 
-  sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_SEND_STATUS,
       .cmd_flags = SDMMC_SEND_STATUS_FLAGS,
       .arg = 0x7b7d9fbd,
-      .buffers_count = 0,
+      .buffers = {},
   };
 
   Response::Get(0).FromValue(0xf3bbf2c0).WriteTo(driver_test().driver()->mmio_);
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_ok());
+        EXPECT_EQ(result->value()->response[0], 0xf3bbf2c0u);
+      });
+  driver_test().runtime().RunUntilIdle();
 
   auto command = Command::Get().FromValue(0);
 
@@ -693,20 +907,29 @@ TEST_F(SdhciTest, RequestCommandOnly) {
   EXPECT_TRUE(command.command_crc_check());
   EXPECT_EQ(command.response_type(), Command::kResponseType48Bits);
 
-  EXPECT_EQ(response[0], 0xf3bbf2c0u);
-
   request = {
       .cmd_idx = SDMMC_SEND_CSD,
       .cmd_flags = SDMMC_SEND_CSD_FLAGS,
       .arg = 0x9c1dc1ed,
-      .buffers_count = 0,
+      .buffers = {},
   };
 
   Response::Get(0).FromValue(0x9f93b17d).WriteTo(driver_test().driver()->mmio_);
   Response::Get(1).FromValue(0x89aaba9e).WriteTo(driver_test().driver()->mmio_);
   Response::Get(2).FromValue(0xc14b059e).WriteTo(driver_test().driver()->mmio_);
   Response::Get(3).FromValue(0x7329a9e3).WriteTo(driver_test().driver()->mmio_);
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_ok());
+        EXPECT_EQ(result->value()->response[0], 0x9f93b17du);
+        EXPECT_EQ(result->value()->response[1], 0x89aaba9eu);
+        EXPECT_EQ(result->value()->response[2], 0xc14b059eu);
+        EXPECT_EQ(result->value()->response[3], 0x7329a9e3u);
+      });
+  driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(Argument::Get().ReadFrom(driver_test().driver()->mmio_).reg_value(), 0x9c1dc1edu);
   EXPECT_EQ(command.ReadFrom(driver_test().driver()->mmio_).command_index(), SDMMC_SEND_CSD);
@@ -714,11 +937,6 @@ TEST_F(SdhciTest, RequestCommandOnly) {
   EXPECT_FALSE(command.data_present());
   EXPECT_TRUE(command.command_crc_check());
   EXPECT_EQ(command.response_type(), Command::kResponseType136Bits);
-
-  EXPECT_EQ(response[0], 0x9f93b17du);
-  EXPECT_EQ(response[1], 0x89aaba9eu);
-  EXPECT_EQ(response[2], 0xc14b059eu);
-  EXPECT_EQ(response[3], 0x7329a9e3u);
 
   ASSERT_OK(StopDriver());
 }
@@ -733,37 +951,50 @@ TEST_F(SdhciTest, RequestAbort) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo = vmo.get(),
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo)),
       .offset = 0,
       .size = 1024,
   };
 
-  sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0,
       .blocksize = 4,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
 
   driver_test().driver()->reset_mask();
 
-  uint32_t unused_response[4];
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, unused_response));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_EQ(driver_test().driver()->reset_mask(), 0);
 
-  request.cmd_idx = SDMMC_STOP_TRANSMISSION;
-  request.cmd_flags = SDMMC_STOP_TRANSMISSION_FLAGS;
-  request.blocksize = 0;
-  request.buffers_list = nullptr;
-  request.buffers_count = 0;
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, unused_response));
+  fuchsia_hardware_sdmmc::wire::SdmmcReq stop_request = {
+      .cmd_idx = SDMMC_STOP_TRANSMISSION,
+      .cmd_flags = SDMMC_STOP_TRANSMISSION_FLAGS,
+      .blocksize = 0,
+      .buffers = {},
+  };
+
+  client_.buffer(arena)
+      ->Request(
+          fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&stop_request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
   EXPECT_EQ(driver_test().driver()->reset_mask(),
             SoftwareReset::Get().FromValue(0).set_reset_dat(1).set_reset_cmd(1).reg_value());
 
@@ -777,39 +1008,66 @@ TEST_F(SdhciTest, SdioInBandInterrupt) {
 
   ASSERT_OK(StartDriver());
 
-  in_band_interrupt_protocol_ops_t callback_ops = {
-      .callback = [](void* ctx) -> void {
-        sync_completion_signal(reinterpret_cast<sync_completion_t*>(ctx));
-      },
+  struct InterruptHandler : fdf::WireServer<fuchsia_hardware_sdmmc::InBandInterrupt> {
+    explicit InterruptHandler(fdf::ServerEnd<fuchsia_hardware_sdmmc::InBandInterrupt> server_end)
+        : binding(fdf::Dispatcher::GetCurrent()->get(), std::move(server_end), this,
+                  fidl::kIgnoreBindingClosure) {}
+
+    void Callback(fdf::Arena& arena, CallbackCompleter::Sync& completer) override {
+      interrupt_count++;
+      if (callback) {
+        callback();
+      }
+      completer.buffer(arena).Reply();
+    }
+
+    uint32_t interrupt_count = 0;
+    fit::callback<void(void)> callback;
+    fdf::ServerBinding<fuchsia_hardware_sdmmc::InBandInterrupt> binding;
   };
 
-  sync_completion_t callback_called;
-  in_band_interrupt_protocol_t callback = {
-      .ops = &callback_ops,
-      .ctx = &callback_called,
-  };
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_sdmmc::InBandInterrupt>::Create();
+  InterruptHandler handler(std::move(server));
 
-  EXPECT_OK(driver_test().driver()->SdmmcRegisterInBandInterrupt(&callback));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->RegisterInBandInterrupt(std::move(client))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
+  handler.callback = [&]() { driver_test().runtime().Quit(); };
   driver_test().driver()->TriggerCardInterrupt();
-  sync_completion_wait(&callback_called, ZX_TIME_INFINITE);
-  sync_completion_reset(&callback_called);
+  driver_test().runtime().Run();
+  driver_test().runtime().ResetQuit();
+  EXPECT_EQ(handler.interrupt_count, 1u);
 
-  sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_SEND_CSD,
       .cmd_flags = SDMMC_SEND_CSD_FLAGS,
       .arg = 0x9c1dc1ed,
-      .buffers_count = 0,
+      .buffers = {},
   };
-  uint32_t unused_response[4];
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, unused_response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
-  driver_test().driver()->SdmmcAckInBandInterrupt();
+  EXPECT_TRUE(client_.buffer(arena)->AckInBandInterrupt().ok());
+  driver_test().runtime().RunUntilIdle();
 
   // Verify that the card interrupt remains enabled after other interrupts have been disabled, such
   // as after a commend.
+  handler.callback = [&]() { driver_test().runtime().Quit(); };
   driver_test().driver()->TriggerCardInterrupt();
-  sync_completion_wait(&callback_called, ZX_TIME_INFINITE);
+  driver_test().runtime().Run();
+  // Request() may have triggered an interrupt by clearing the interrupt status register.
+  EXPECT_GE(handler.interrupt_count, 2u);
 
   ASSERT_OK(StopDriver());
 }
@@ -825,64 +1083,60 @@ TEST_F(SdhciTest, DmaRequest64Bit) {
 
   ASSERT_OK(StartDriver());
 
+  fdf::Arena arena('TEST');
   for (int i = 0; i < 4; i++) {
     zx::vmo vmo;
     ASSERT_OK(zx::vmo::create(512 * 16, 0, &vmo));
-    EXPECT_OK(driver_test().driver()->SdmmcRegisterVmo(i, 3, std::move(vmo), 64 * i, 512 * 12,
-                                                       SDMMC_VMO_RIGHT_READ));
+    client_.buffer(arena)
+        ->RegisterVmo(i, 3, std::move(vmo), 64 * i, 512 * 12,
+                      fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead)
+        .ThenExactlyOnce([](auto& result) {
+          ASSERT_TRUE(result.ok());
+          EXPECT_TRUE(result->is_ok());
+        });
+    driver_test().runtime().RunUntilIdle();
   }
 
-  const sdmmc_buffer_region_t buffers[4] = {
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffers[4] = {
       {
-          .buffer =
-              {
-                  .vmo_id = 1,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(1),
           .offset = 16,
           .size = 512,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 0,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(0),
           .offset = 32,
           .size = 512 * 3,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 3,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(3),
           .offset = 48,
           .size = 512 * 10,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 2,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(2),
           .offset = 80,
           .size = 512 * 7,
       },
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 3,
-      .buffers_list = buffers,
-      .buffers_count = std::size(buffers),
+      .buffers =
+          fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(buffers),
   };
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(AdmaSystemAddress::Get(0).ReadFrom(driver_test().driver()->mmio_).reg_value(),
             zx_system_get_page_size());
@@ -932,64 +1186,60 @@ TEST_F(SdhciTest, DmaRequest32Bit) {
 
   ASSERT_OK(StartDriver());
 
+  fdf::Arena arena('TEST');
   for (int i = 0; i < 4; i++) {
     zx::vmo vmo;
     ASSERT_OK(zx::vmo::create(512 * 16, 0, &vmo));
-    EXPECT_OK(driver_test().driver()->SdmmcRegisterVmo(i, 3, std::move(vmo), 64 * i, 512 * 12,
-                                                       SDMMC_VMO_RIGHT_WRITE));
+    client_.buffer(arena)
+        ->RegisterVmo(i, 3, std::move(vmo), 64 * i, 512 * 12,
+                      fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite)
+        .ThenExactlyOnce([](auto& result) {
+          ASSERT_TRUE(result.ok());
+          EXPECT_TRUE(result->is_ok());
+        });
+    driver_test().runtime().RunUntilIdle();
   }
 
-  const sdmmc_buffer_region_t buffers[4] = {
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffers[4] = {
       {
-          .buffer =
-              {
-                  .vmo_id = 1,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(1),
           .offset = 16,
           .size = 512,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 0,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(0),
           .offset = 32,
           .size = 512 * 3,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 3,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(3),
           .offset = 48,
           .size = 512 * 10,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 2,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(2),
           .offset = 80,
           .size = 512 * 7,
       },
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_READ_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_READ_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 3,
-      .buffers_list = buffers,
-      .buffers_count = std::size(buffers),
+      .buffers =
+          fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(buffers),
   };
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(AdmaSystemAddress::Get(0).ReadFrom(driver_test().driver()->mmio_).reg_value(),
             zx_system_get_page_size());
@@ -1046,33 +1296,41 @@ TEST_F(SdhciTest, DmaSplitOneBoundary) {
 
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size() * 4, 0, &vmo));
-  ASSERT_OK(driver_test().driver()->SdmmcRegisterVmo(
-      0, 0, std::move(vmo), 0, zx_system_get_page_size() * 4, SDMMC_VMO_RIGHT_WRITE));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->RegisterVmo(0, 0, std::move(vmo), 0, zx_system_get_page_size() * 4,
+                    fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo_id = 0,
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_ID,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(0),
       // The first buffer should be split across the 128M boundary.
       .offset = zx_system_get_page_size() - 4,
       // Two pages plus 256 bytes.
       .size = (zx_system_get_page_size() * 2) + 256,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_READ_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_READ_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 16,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(AdmaSystemAddress::Get(0).ReadFrom(driver_test().driver()->mmio_).reg_value(),
             kDescriptorAddress);
@@ -1115,31 +1373,39 @@ TEST_F(SdhciTest, DmaSplitManyBoundaries) {
 
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
-  ASSERT_OK(driver_test().driver()->SdmmcRegisterVmo(
-      0, 0, std::move(vmo), 0, zx_system_get_page_size(), SDMMC_VMO_RIGHT_WRITE));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->RegisterVmo(0, 0, std::move(vmo), 0, zx_system_get_page_size(),
+                    fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo_id = 0,
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_ID,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(0),
       .offset = 128,
       .size = 16 * 64,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_READ_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_READ_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 16,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(AdmaSystemAddress::Get(0).ReadFrom(driver_test().driver()->mmio_).reg_value(),
             kDescriptorAddress);
@@ -1193,31 +1459,39 @@ TEST_F(SdhciTest, DmaNoBoundaries) {
 
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size() * 4, 0, &vmo));
-  ASSERT_OK(driver_test().driver()->SdmmcRegisterVmo(
-      0, 0, std::move(vmo), 0, zx_system_get_page_size() * 4, SDMMC_VMO_RIGHT_WRITE));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->RegisterVmo(0, 0, std::move(vmo), 0, zx_system_get_page_size() * 4,
+                    fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo_id = 0,
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_ID,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(0),
       .offset = zx_system_get_page_size() - 4,
       .size = (zx_system_get_page_size() * 2) + 256,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_READ_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_READ_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 16,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(AdmaSystemAddress::Get(0).ReadFrom(driver_test().driver()->mmio_).reg_value(),
             kDescriptorAddress);
@@ -1250,28 +1524,31 @@ TEST_F(SdhciTest, CommandSettingsMultiBlock) {
 
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
-  EXPECT_OK(driver_test().driver()->SdmmcRegisterVmo(
-      0, 0, std::move(vmo), 0, zx_system_get_page_size(), SDMMC_VMO_RIGHT_READ));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->RegisterVmo(0, 0, std::move(vmo), 0, zx_system_get_page_size(),
+                    fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo_id = 0,
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_ID,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(0),
       .offset = 0,
       .size = 1024,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234'abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
 
   Response::Get(0).FromValue(0).set_reg_value(0xabcd'1234).WriteTo(driver_test().driver()->mmio_);
@@ -1279,13 +1556,17 @@ TEST_F(SdhciTest, CommandSettingsMultiBlock) {
   Response::Get(2).FromValue(0).set_reg_value(0x1122'3344).WriteTo(driver_test().driver()->mmio_);
   Response::Get(3).FromValue(0).set_reg_value(0xaabb'ccdd).WriteTo(driver_test().driver()->mmio_);
 
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
-
-  EXPECT_EQ(response[0], 0xabcd'1234u);
-  EXPECT_EQ(response[1], 0u);
-  EXPECT_EQ(response[2], 0u);
-  EXPECT_EQ(response[3], 0u);
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_ok());
+        EXPECT_EQ(result->value()->response[0], 0xabcd'1234u);
+        EXPECT_EQ(result->value()->response[1], 0u);
+        EXPECT_EQ(result->value()->response[2], 0u);
+        EXPECT_EQ(result->value()->response[3], 0u);
+      });
+  driver_test().runtime().RunUntilIdle();
 
   const Command command = Command::Get().ReadFrom(driver_test().driver()->mmio_);
   EXPECT_EQ(command.response_type(), Command::kResponseType48Bits);
@@ -1322,28 +1603,31 @@ TEST_F(SdhciTest, CommandSettingsSingleBlock) {
 
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
-  EXPECT_OK(driver_test().driver()->SdmmcRegisterVmo(
-      0, 0, std::move(vmo), 0, zx_system_get_page_size(), SDMMC_VMO_RIGHT_WRITE));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->RegisterVmo(0, 0, std::move(vmo), 0, zx_system_get_page_size(),
+                    fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo_id = 0,
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_ID,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(0),
       .offset = 0,
       .size = 128,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_READ_BLOCK,
       .cmd_flags = SDMMC_READ_BLOCK_FLAGS,
       .arg = 0x1234'abcd,
       .blocksize = 128,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
 
   Response::Get(0).FromValue(0).set_reg_value(0xabcd'1234).WriteTo(driver_test().driver()->mmio_);
@@ -1351,13 +1635,17 @@ TEST_F(SdhciTest, CommandSettingsSingleBlock) {
   Response::Get(2).FromValue(0).set_reg_value(0x1122'3344).WriteTo(driver_test().driver()->mmio_);
   Response::Get(3).FromValue(0).set_reg_value(0xaabb'ccdd).WriteTo(driver_test().driver()->mmio_);
 
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
-
-  EXPECT_EQ(response[0], 0xabcd'1234u);
-  EXPECT_EQ(response[1], 0u);
-  EXPECT_EQ(response[2], 0u);
-  EXPECT_EQ(response[3], 0u);
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_ok());
+        EXPECT_EQ(result->value()->response[0], 0xabcd'1234u);
+        EXPECT_EQ(result->value()->response[1], 0u);
+        EXPECT_EQ(result->value()->response[2], 0u);
+        EXPECT_EQ(result->value()->response[3], 0u);
+      });
+  driver_test().runtime().RunUntilIdle();
 
   const Command command = Command::Get().ReadFrom(driver_test().driver()->mmio_);
   EXPECT_EQ(command.response_type(), Command::kResponseType48Bits);
@@ -1392,7 +1680,7 @@ TEST_F(SdhciTest, CommandSettingsBusyResponse) {
 
   ASSERT_OK(StartDriver(fuchsia_hardware_sdhci::Quirk::kStripResponseCrcPreserveOrder));
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = 55,
       .cmd_flags = SDMMC_RESP_LEN_48B | SDMMC_CMD_TYPE_NORMAL | SDMMC_RESP_CRC_CHECK |
                    SDMMC_RESP_CMD_IDX_CHECK,
@@ -1400,8 +1688,7 @@ TEST_F(SdhciTest, CommandSettingsBusyResponse) {
       .blocksize = 0,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = nullptr,
-      .buffers_count = 0,
+      .buffers = {},
   };
 
   Response::Get(0).FromValue(0).set_reg_value(0xabcd'1234).WriteTo(driver_test().driver()->mmio_);
@@ -1409,13 +1696,18 @@ TEST_F(SdhciTest, CommandSettingsBusyResponse) {
   Response::Get(2).FromValue(0).set_reg_value(0x1122'3344).WriteTo(driver_test().driver()->mmio_);
   Response::Get(3).FromValue(0).set_reg_value(0xaabb'ccdd).WriteTo(driver_test().driver()->mmio_);
 
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
-
-  EXPECT_EQ(response[0], 0xabcd'1234u);
-  EXPECT_EQ(response[1], 0u);
-  EXPECT_EQ(response[2], 0u);
-  EXPECT_EQ(response[3], 0u);
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_ok());
+        EXPECT_EQ(result->value()->response[0], 0xabcd'1234u);
+        EXPECT_EQ(result->value()->response[1], 0u);
+        EXPECT_EQ(result->value()->response[2], 0u);
+        EXPECT_EQ(result->value()->response[3], 0u);
+      });
+  driver_test().runtime().RunUntilIdle();
 
   const Command command = Command::Get().ReadFrom(driver_test().driver()->mmio_);
   EXPECT_EQ(command.response_type(), Command::kResponseType48BitsWithBusy);
@@ -1450,64 +1742,60 @@ TEST_F(SdhciTest, ZeroBlockSize) {
 
   ASSERT_OK(StartDriver());
 
+  fdf::Arena arena('TEST');
   for (int i = 0; i < 4; i++) {
     zx::vmo vmo;
     ASSERT_OK(zx::vmo::create(512 * 16, 0, &vmo));
-    EXPECT_OK(driver_test().driver()->SdmmcRegisterVmo(i, 3, std::move(vmo), 64 * i, 512 * 12,
-                                                       SDMMC_VMO_RIGHT_READ));
+    client_.buffer(arena)
+        ->RegisterVmo(i, 3, std::move(vmo), 64 * i, 512 * 12,
+                      fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead)
+        .ThenExactlyOnce([](auto& result) {
+          ASSERT_TRUE(result.ok());
+          EXPECT_TRUE(result->is_ok());
+        });
+    driver_test().runtime().RunUntilIdle();
   }
 
-  const sdmmc_buffer_region_t buffers[4] = {
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffers[4] = {
       {
-          .buffer =
-              {
-                  .vmo_id = 1,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(1),
           .offset = 16,
           .size = 512,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 0,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(0),
           .offset = 32,
           .size = 512 * 3,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 3,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(3),
           .offset = 48,
           .size = 512 * 10,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 2,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(2),
           .offset = 80,
           .size = 512 * 7,
       },
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 0,
       .suppress_error_messages = false,
       .client_id = 3,
-      .buffers_list = buffers,
-      .buffers_count = std::size(buffers),
+      .buffers =
+          fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(buffers),
   };
-  uint32_t response[4] = {};
-  EXPECT_NE(ZX_OK, driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_error());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 }
@@ -1525,31 +1813,40 @@ TEST_F(SdhciTest, NoBuffers) {
 
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(512 * 16, 0, &vmo));
-  EXPECT_OK(driver_test().driver()->SdmmcRegisterVmo(1, 3, std::move(vmo), 0, 1024,
-                                                     SDMMC_VMO_RIGHT_READ | SDMMC_VMO_RIGHT_WRITE));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->RegisterVmo(1, 3, std::move(vmo), 0, 1024,
+                    fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead |
+                        fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo_id = 1,
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_ID,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(1),
       .offset = 0,
       .size = 512,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 0,
       .suppress_error_messages = false,
       .client_id = 3,
-      .buffers_list = &buffer,
-      .buffers_count = 0,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
-  uint32_t response[4] = {};
-  EXPECT_NE(ZX_OK, driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_error());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 }
@@ -1566,68 +1863,64 @@ TEST_F(SdhciTest, OwnedAndUnownedBuffers) {
   ASSERT_OK(StartDriver());
 
   zx::vmo vmos[4];
+  fdf::Arena arena('TEST');
   for (int i = 0; i < 4; i++) {
     ASSERT_OK(zx::vmo::create(512 * 16, 0, &vmos[i]));
     if (i % 2 == 0) {
-      EXPECT_OK(driver_test().driver()->SdmmcRegisterVmo(i, 3, std::move(vmos[i]), 64 * i, 512 * 12,
-                                                         SDMMC_VMO_RIGHT_READ));
+      client_.buffer(arena)
+          ->RegisterVmo(i, 3, std::move(vmos[i]), 64 * i, 512 * 12,
+                        fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead)
+          .ThenExactlyOnce([](auto& result) {
+            ASSERT_TRUE(result.ok());
+            EXPECT_TRUE(result->is_ok());
+          });
+      driver_test().runtime().RunUntilIdle();
     }
   }
 
-  const sdmmc_buffer_region_t buffers[4] = {
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffers[4] = {
       {
-          .buffer =
-              {
-                  .vmo = vmos[1].get(),
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmos[1])),
           .offset = 16,
           .size = 512,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 0,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(0),
           .offset = 32,
           .size = 512 * 3,
       },
       {
-          .buffer =
-              {
-                  .vmo = vmos[3].get(),
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmos[3])),
           .offset = 48,
           .size = 512 * 10,
       },
       {
-          .buffer =
-              {
-                  .vmo_id = 2,
-              },
-          .type = SDMMC_BUFFER_TYPE_VMO_ID,
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(2),
           .offset = 80,
           .size = 512 * 7,
       },
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 3,
-      .buffers_list = buffers,
-      .buffers_count = std::size(buffers),
+      .buffers =
+          fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(buffers),
   };
 
   ExpectPmoCount(3);
 
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   // Unowned buffers should have been unpinned.
   ExpectPmoCount(3);
@@ -1693,31 +1986,33 @@ TEST_F(SdhciTest, CombineContiguousRegions) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create((zx_system_get_page_size() * 4) + 512, 0, &vmo));
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo = vmo.get(),
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo)),
       .offset = 512,
       .size = zx_system_get_page_size() * 4,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
 
   ExpectPmoCount(1);
 
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   ExpectPmoCount(1);
 
@@ -1771,31 +2066,33 @@ TEST_F(SdhciTest, DiscontiguousRegions) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size() * 12, 0, &vmo));
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo = vmo.get(),
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo)),
       .offset = 512,
       .size = (zx_system_get_page_size() * 12) - 512 - 1024,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
 
   ExpectPmoCount(1);
 
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   ExpectPmoCount(1);
 
@@ -1868,29 +2165,31 @@ TEST_F(SdhciTest, RegionStartAndEndOffsets) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create((zx_system_get_page_size() * 4), 0, &vmo));
 
-  sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo = vmo.get(),
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo)),
       .offset = 0,
       .size = zx_system_get_page_size(),
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
 
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   const Sdhci::AdmaDescriptor64* const descriptors =
       reinterpret_cast<Sdhci::AdmaDescriptor64*>(driver_test().driver()->iobuf_virt());
@@ -1899,28 +2198,52 @@ TEST_F(SdhciTest, RegionStartAndEndOffsets) {
   EXPECT_EQ(descriptors[0].address, kStartAddress);
   EXPECT_EQ(descriptors[0].length, zx_system_get_page_size());
 
+  ASSERT_OK(zx::vmo::create((zx_system_get_page_size() * 4), 0, &vmo));
+  buffer.buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo));
   buffer.offset = 512;
   buffer.size = zx_system_get_page_size() - 512;
 
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(descriptors[0].attr, 0b100'011);
   EXPECT_EQ(descriptors[0].address, kStartAddress + zx_system_get_page_size() + 512);
   EXPECT_EQ(descriptors[0].length, zx_system_get_page_size() - 512);
 
+  ASSERT_OK(zx::vmo::create((zx_system_get_page_size() * 4), 0, &vmo));
+  buffer.buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo));
   buffer.offset = 0;
   buffer.size = zx_system_get_page_size() - 512;
 
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(descriptors[0].attr, 0b100'011);
   EXPECT_EQ(descriptors[0].address, kStartAddress + (zx_system_get_page_size() * 2));
   EXPECT_EQ(descriptors[0].length, zx_system_get_page_size() - 512);
 
+  ASSERT_OK(zx::vmo::create((zx_system_get_page_size() * 4), 0, &vmo));
+  buffer.buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo));
   buffer.offset = 512;
   buffer.size = zx_system_get_page_size() - 1024;
 
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(descriptors[0].attr, 0b100'011);
   EXPECT_EQ(descriptors[0].address, kStartAddress + (zx_system_get_page_size() * 3) + 512);
@@ -1940,106 +2263,107 @@ TEST_F(SdhciTest, BufferZeroSize) {
 
   ASSERT_OK(StartDriver());
 
+  fdf::Arena arena('TEST');
   {
     zx::vmo vmo;
     ASSERT_OK(zx::vmo::create(zx_system_get_page_size() * 4, 0, &vmo));
-    EXPECT_OK(driver_test().driver()->SdmmcRegisterVmo(
-        1, 0, std::move(vmo), 0, zx_system_get_page_size() * 4, SDMMC_VMO_RIGHT_READ));
+    client_.buffer(arena)
+        ->RegisterVmo(1, 0, std::move(vmo), 0, zx_system_get_page_size() * 4,
+                      fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead)
+        .ThenExactlyOnce([](auto& result) {
+          ASSERT_TRUE(result.ok());
+          EXPECT_TRUE(result->is_ok());
+        });
+    driver_test().runtime().RunUntilIdle();
   }
 
-  zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(zx_system_get_page_size() * 4, 0, &vmo));
-
   {
-    const sdmmc_buffer_region_t buffers[3] = {
+    zx::vmo vmo;
+    ASSERT_OK(zx::vmo::create(zx_system_get_page_size() * 4, 0, &vmo));
+
+    fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffers[3] = {
         {
-            .buffer =
-                {
-                    .vmo_id = 1,
-                },
-            .type = SDMMC_BUFFER_TYPE_VMO_ID,
+            .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(1),
             .offset = 0,
             .size = 512,
         },
         {
-            .buffer =
-                {
-                    .vmo = vmo.get(),
-                },
-            .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+            .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo)),
             .offset = 0,
             .size = 0,
         },
         {
-            .buffer =
-                {
-                    .vmo_id = 1,
-                },
-            .type = SDMMC_BUFFER_TYPE_VMO_ID,
+            .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(1),
             .offset = 512,
             .size = 512,
         },
     };
 
-    const sdmmc_req_t request = {
+    fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
         .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
         .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
         .arg = 0x1234abcd,
         .blocksize = 512,
         .suppress_error_messages = false,
         .client_id = 0,
-        .buffers_list = buffers,
-        .buffers_count = std::size(buffers),
+        .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+            buffers),
     };
 
-    uint32_t response[4] = {};
-    EXPECT_NE(ZX_OK, driver_test().driver()->SdmmcRequest(&request, response));
+    fdf::Arena arena('TEST');
+    client_.buffer(arena)
+        ->Request(
+            fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+        .ThenExactlyOnce([](auto& result) {
+          ASSERT_TRUE(result.ok());
+          EXPECT_TRUE(result->is_error());
+        });
+    driver_test().runtime().RunUntilIdle();
   }
 
   {
-    const sdmmc_buffer_region_t buffers[3] = {
+    zx::vmo vmo1, vmo2;
+    ASSERT_OK(zx::vmo::create(zx_system_get_page_size() * 4, 0, &vmo1));
+    ASSERT_OK(vmo1.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo2));
+
+    fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffers[3] = {
         {
-            .buffer =
-                {
-                    .vmo = vmo.get(),
-                },
-            .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+            .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo1)),
             .offset = 0,
             .size = 512,
         },
         {
-            .buffer =
-                {
-                    .vmo_id = 1,
-                },
-            .type = SDMMC_BUFFER_TYPE_VMO_ID,
+            .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(1),
             .offset = 0,
             .size = 0,
         },
         {
-            .buffer =
-                {
-                    .vmo = vmo.get(),
-                },
-            .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+            .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo2)),
             .offset = 512,
             .size = 512,
         },
     };
 
-    const sdmmc_req_t request = {
+    fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
         .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
         .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
         .arg = 0x1234abcd,
         .blocksize = 512,
         .suppress_error_messages = false,
         .client_id = 0,
-        .buffers_list = buffers,
-        .buffers_count = std::size(buffers),
+        .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+            buffers),
     };
 
-    uint32_t response[4] = {};
-    EXPECT_NE(ZX_OK, driver_test().driver()->SdmmcRequest(&request, response));
+    fdf::Arena arena('TEST');
+    client_.buffer(arena)
+        ->Request(
+            fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+        .ThenExactlyOnce([](auto& result) {
+          ASSERT_TRUE(result.ok());
+          EXPECT_TRUE(result->is_error());
+        });
+    driver_test().runtime().RunUntilIdle();
   }
 
   ASSERT_OK(StopDriver());
@@ -2059,29 +2383,32 @@ TEST_F(SdhciTest, TransferError) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(512, 0, &vmo));
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo = vmo.get(),
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo)),
       .offset = 0,
       .size = 512,
   };
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
 
   driver_test().driver()->InjectTransferError();
-  uint32_t response[4] = {};
-  EXPECT_NE(ZX_OK, driver_test().driver()->SdmmcRequest(&request, response));
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_error());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 }
@@ -2108,28 +2435,30 @@ TEST_F(SdhciTest, MaxTransferSize) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(512, 0, &vmo));
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo = vmo.get(),
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo)),
       .offset = 0,
       .size = 512 * zx_system_get_page_size(),
   };
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
 
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   const Sdhci::AdmaDescriptor96* const descriptors =
       reinterpret_cast<Sdhci::AdmaDescriptor96*>(driver_test().driver()->iobuf_virt());
@@ -2166,28 +2495,30 @@ TEST_F(SdhciTest, TransferSizeExceeded) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(512, 0, &vmo));
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo = vmo.get(),
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo)),
       .offset = 0,
       .size = 513 * zx_system_get_page_size(),
   };
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
 
-  uint32_t response[4] = {};
-  EXPECT_NE(ZX_OK, driver_test().driver()->SdmmcRequest(&request, response));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_error());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 }
@@ -2215,28 +2546,31 @@ TEST_F(SdhciTest, DmaSplitSizeAndAligntmentBoundaries) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer =
-          {
-              .vmo = vmo.get(),
-          },
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo)),
       .offset = 0x1'8000,
       .size = 0x4'0000,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_READ_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_READ_MULTIPLE_BLOCK_FLAGS,
       .arg = 0x1234abcd,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(AdmaSystemAddress::Get(0).ReadFrom(driver_test().driver()->mmio_).reg_value(),
             kDescriptorAddress);
@@ -2277,28 +2611,35 @@ TEST_F(SdhciTest, BufferedRead) {
   constexpr uint32_t kTestWord = 0x1234'5678;
   BufferData::Get().FromValue(kTestWord).WriteTo(driver_test().driver()->mmio_);
 
-  zx::vmo vmo;
+  zx::vmo vmo, vmo_dup;
   ASSERT_OK(zx::vmo::create(512 * 8, 0, &vmo));
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo_dup));
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer = {.vmo = vmo.get()},
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo_dup)),
       .offset = 512,
       .size = 512 * 6,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_READ_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_READ_MULTIPLE_BLOCK_FLAGS,
       .arg = 0,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   ASSERT_OK(StopDriver());
 
@@ -2329,25 +2670,31 @@ TEST_F(SdhciTest, BufferedWrite) {
   ASSERT_OK(zx::vmo::create(512 * 8, 0, &vmo));
   EXPECT_OK(vmo.write(&kTestWord, (512 * 7) - sizeof(kTestWord), sizeof(kTestWord)));
 
-  const sdmmc_buffer_region_t buffer = {
-      .buffer = {.vmo = vmo.get()},
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+  fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+      .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(vmo)),
       .offset = 512,
       .size = 512 * 6,
   };
 
-  const sdmmc_req_t request = {
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
       .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
       .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
       .arg = 0,
       .blocksize = 512,
       .suppress_error_messages = false,
       .client_id = 0,
-      .buffers_list = &buffer,
-      .buffers_count = 1,
+      .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+          &buffer, 1),
   };
-  uint32_t response[4] = {};
-  EXPECT_OK(driver_test().driver()->SdmmcRequest(&request, response));
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
 
   // The data port should hold the last word from the buffer.
   EXPECT_EQ(BufferData::Get().ReadFrom(driver_test().driver()->mmio_).reg_value(), kTestWord);

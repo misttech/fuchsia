@@ -11,7 +11,7 @@ import("//build/test.gni")
 source_set("dma-descriptor-builder") {
   public = [ "dma-descriptor-builder.h" ]
   public_deps = [
-    "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp",
     "//sdk/lib/driver/logging/cpp",
     "//src/devices/block/lib/sdmmc",
     "//src/lib/vmo_store",
@@ -52,7 +52,6 @@ source_set("sdhci-driver-source") {
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
-    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_bindlib_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//src/devices/lib/driver:driver_runtime",
@@ -61,10 +60,8 @@ source_set("sdhci-driver-source") {
   public_deps = [
     ":dma-descriptor-builder",
     ":sdhci-config",
-    "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.sdhci:fuchsia.hardware.sdhci_cpp",
     "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp",
-    "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//src/devices/block/lib/sdmmc",
     "//src/devices/lib/dma-buffer",
@@ -106,6 +103,7 @@ test("sdhci-test-bin") {
     "//sdk/lib/async-default",
     "//sdk/lib/driver/fake-bti/cpp",
     "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/fit",
     "//src/devices/lib/mmio",
     "//src/devices/lib/mmio:test_helper",
     "//src/lib/fxl/test:gtest_main",

@@ -139,7 +139,6 @@ static_library("ddk") {
     "//src/devices/block/drivers/mbr:*",
     "//src/devices/block/drivers/pci-sdhci:*",
     "//src/devices/block/drivers/ramdisk:*",
-    "//src/devices/block/drivers/sdhci:*",
     "//src/devices/block/drivers/ums-function:*",
     "//src/devices/block/drivers/usb-mass-storage:*",
     "//src/devices/block/drivers/zxcrypt:*",
