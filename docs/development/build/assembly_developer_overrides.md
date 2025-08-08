@@ -88,15 +88,15 @@ To do this, define a `shell_commands` list within your
 `assembly_developer_overrides`. Each entry in this list is an object with the
 following keys:
 
-* `package_name`: The name of the package that contains the shell command. This
-  must match the `package_name` defined in the package's `BUILD.gn` file.
+* `package`: The name of the package that contains the shell command (for
+  example, `cp`). This is the package name, not a GN target label.
 * `components`: A list of the CLI binaries within the package that you want to
   register as shell commands. Assembly automatically adds the `meta/` prefix and
   `.cm` suffix to these names when looking for their component manifests.
   For example, `foo` becomes `meta/foo.cm`.
 
-For example, to add the `cp` command from the `//third_party/sbase` package,
-your `//local/BUILD.gn` may look like:
+For example, to add the `cp` command from the `cp` package, your
+`//local/BUILD.gn` may look like:
 
 ```gn
 import("//build/assembly/developer_overrides.gni")
@@ -104,8 +104,28 @@ import("//build/assembly/developer_overrides.gni")
 assembly_developer_overrides("my_custom_shell_commands") {
   shell_commands = [
     {
-      package_name = "//third_party/sbase"
+      package = "cp"
       components = [ "cp" ]
+    }
+  ]
+}
+```
+
+And for adding multiple entries to the `shell_commands` list, see the following
+example:
+
+```gn
+import("//build/assembly/developer_overrides.gni")
+
+assembly_developer_overrides("my_multiple_shell_commands") {
+  shell_commands = [
+    {
+      package = "foo"
+      components = [ "foo_comp" ]
+    },
+    {
+      package = "bar"
+      components = [ "bar_comp1", "bar_comp2" ]
     }
   ]
 }
@@ -124,7 +144,7 @@ import("//build/assembly/developer_overrides.gni")
 assembly_developer_overrides("my_custom_shell_commands") {
   shell_commands = [
     {
-      package_name = "//third_party/sbase"
+      package = "cp"
       components = [ "cp" ]
     }
   ]
@@ -175,6 +195,31 @@ inside a ramdisk, to allow the netbooting of the product.
 
 This is a replacement for the `netboot` assembly that was previously generated
 with `//build/images/fuchsia:netboot`.
+
+## Override multiple platform configurations {:#override-multiple-platform-configurations}
+
+You can also override multiple platform configuration areas within the same
+`assembly_developer_overrides` definition.
+
+For example, the following override customizes both development SSH keys and
+USB peripheral functions:
+
+```gn
+import("//build/assembly/developer_overrides.gni")
+
+assembly_developer_overrides("my_multi_overrides") {
+  platform = {
+    development_support = {
+      authorized_ssh_keys_path = "//local/fuchsia_authorized_keys"
+    }
+    usb = {
+      peripheral = {
+        functions = [ "cdc" ]
+      }
+    }
+  }
+}
+```
 
 [platform-assembly-ref]: /reference/assembly/PlatformConfig/index.md
 [product-config-ref]: /reference/assembly/index.md
