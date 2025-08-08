@@ -40,7 +40,6 @@ class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_clock::Clock> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 
-  fdf::Arena arena_{'CLOC'};
   fdf::WireClient<fuchsia_hardware_clockimpl::ClockImpl> clock_impl_;
   const uint32_t id_;
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_node_;
