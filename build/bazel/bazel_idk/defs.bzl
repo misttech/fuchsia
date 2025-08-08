@@ -65,6 +65,13 @@ FuchsiaIdkMoleculeInfo = provider(
     },
 )
 
+def _json_encode_dict_values(dict):
+    """Returns the dictionary with each top-level value encoded as a JSON string.
+
+This allows the dictionary to be passed to a `string_dict` attribute.
+    """
+    return {k: json.encode(v) for k, v in dict.items()}
+
 def _get_idk_label(label_str):
     # Ensure the label is relative to the `BUILD` file, not this `.bzl` file
     # in cases where `label_str` omits the package (e.g., ":target_name").
@@ -251,9 +258,8 @@ Possible values, from most restrictive to least restrictive:
                   "Mostly useful for code generation and validation.",
             mandatory = False,
         ),
-        "additional_prebuild_info": attr.string_list_dict(
-            doc = "A dictionary of type-specific prebuild info for the atom. " +
-                  "All values are lists, even if there is only one value.",
+        "additional_prebuild_info": attr.string_dict(
+            doc = "A dictionary of type-specific prebuild info for the atom, with values encoded as JSON strings.",
             mandatory = False,
             default = {},
         ),
@@ -642,12 +648,12 @@ def idk_cc_source_library(
         files_map = idk_files_map,
         idk_deps = idk_deps,
         atom_build_deps = atom_build_deps,
-        additional_prebuild_info = {
-            "include_dir": [include_dest],
+        additional_prebuild_info = _json_encode_dict_values({
+            "include_dir": include_dest,
             "sources": idk_metadata_sources,
             "headers": idk_metadata_headers,
-            "file_base": [idk_root_path],
-        },
+            "file_base": idk_root_path,
+        }),
         testonly = testonly,
         visibility = atom_visibility,
     )
