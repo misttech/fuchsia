@@ -84,6 +84,24 @@ saving between 6 and 12 minutes of build time. Because these require launching
 24+ Ninja sub-builds from the top-level build, which can leverage the protocol
 to better coordinate how they each spawn multiple parallel commands.
 
+## Feature: Generating build traces in Chrome Trace JSON array format
+
+The `--chrome_trace FILENAME` option can be used to tell Ninja to generate
+a trace of build events after the build completes (even in case of failure).
+
+It is recommended to use a `.gz` suffix in the output `FILENAME` to
+generate a gzip-compressed trace file directly, as these are typically 20 times
+smaller.
+
+The file follows the [Chrome Trace JSON Array][chrome-trace-json] format
+and can be loaded directly into the `chrome://tracing` tab of any
+Chromium-based browser, and more interestingly by [`https://ui.perfetto.dev`][perfetto-dev]
+which also supports reading compressed traces as input.
+
+Note that the generated trace file also contains flow events that help
+visualize the build's critical path. The corresponding build events have
+`critical_path` in the value of their `cat` field.
+
 ## Feature: Persistent mode for faster startup times
 
 Note: This feature is currently experimental. We welcome any feedback!
@@ -154,3 +172,5 @@ Known bugs / caveats, that will be worked out:
 [rfc-strategy]: /docs/contribute/governance/rfcs/0153_ninja_customization.md#branch-strategy
 [fuchsia-mirror]: https://fuchsia.googlesource.com/third_party/github.com/ninja-build/ninja/
 [gnu-jobserver]: https://www.gnu.org/software/make/manual/html_node/Job-Slots.html
+[perfetto-dev]: https://ui.perfetto.dev
+[chrome-trace-json]: https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
