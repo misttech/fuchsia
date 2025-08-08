@@ -62,12 +62,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
             # of time. If that proves brittle, we should fallback on a larger value.
             time.sleep(4)
 
-        json_trace_file: str = trace_importing.convert_trace_file_to_json(
-            trace_path
-        )
-        model: trace_model.Model = trace_importing.create_model_from_file_path(
-            json_trace_file
-        )
+        model = trace_importing.create_model_from_trace_file_path(trace_path)
         event_names = {
             event.name
             for event in trace_utils.filter_events(
