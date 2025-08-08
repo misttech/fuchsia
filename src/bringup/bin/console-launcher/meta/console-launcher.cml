@@ -200,6 +200,10 @@
             availability: "optional",
         },
         {
+            service: "fuchsia.hardware.display.Service",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.gpu.magma.Service",
             availability: "optional",
         },

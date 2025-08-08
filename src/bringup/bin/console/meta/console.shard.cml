@@ -281,6 +281,11 @@
             to: "#console-launcher",
         },
         {
+            service: "fuchsia.hardware.display.Service",
+            from: "#boot-drivers",
+            to: "#console-launcher",
+        },
+        {
             service: "fuchsia.hardware.usb.peripheral.Service",
             from: "#boot-drivers",
             to: "#console-launcher",

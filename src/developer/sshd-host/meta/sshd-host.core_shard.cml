@@ -581,6 +581,7 @@
         {
             service: [
                 "fuchsia.hardware.backlight.Service",
+                "fuchsia.hardware.display.Service",
                 "fuchsia.hardware.nfc.Service",
                 "fuchsia.hardware.usb.peripheral.Service",
             ],
