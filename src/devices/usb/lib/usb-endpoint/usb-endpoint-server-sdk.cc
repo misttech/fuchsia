@@ -57,7 +57,7 @@ void EndpointServer::OnUnbound(
     // Return all already completed events.
     auto status = fidl::SendEvent(server_end)->OnCompletion(std::move(completions_));
     if (status.is_error()) {
-      zxlogf(ERROR, "Error sending event: %s", status.error_value().status_string());
+      FDF_LOG(ERROR, "Error sending event: %s", status.error_value().status_string());
     }
   }
 
