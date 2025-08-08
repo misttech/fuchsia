@@ -109,9 +109,15 @@ impl TryConvert for String {
 
 impl ValueStrategy for Option<String> {}
 
+// The reason for these specific `TryConvert for Option<T>` implementations is because
+// making an overall `impl<T: TryConvert> TryConvert for Option<T>` is because there's
+// a conflicting definition for `impl<T> TryConvert for T where T: From<ConfigValue>`
+// and it is unclear where this implementation is used or why it's necessary. This could
+// likely be fixed in a follow-up change, but it seems like this might be more time to
+// sink into fixing than it's worth.
 impl TryConvert for Option<String> {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        Ok(value.0.and_then(|v| v.as_str().map(|s| s.to_string())))
+        Ok(String::try_convert(value).ok())
     }
 }
 
@@ -153,9 +159,7 @@ impl ValueStrategy for Option<u64> {}
 
 impl TryConvert for Option<u64> {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        Ok(value.0.and_then(|v| {
-            v.as_u64().or_else(|| if let Value::String(s) = v { s.parse().ok() } else { None })
-        }))
+        Ok(u64::try_convert(value).ok())
     }
 }
 
@@ -211,9 +215,7 @@ impl ValueStrategy for Option<bool> {}
 
 impl TryConvert for Option<bool> {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        Ok(value.0.and_then(|v| {
-            v.as_bool().or_else(|| if let Value::String(s) = v { s.parse().ok() } else { None })
-        }))
+        Ok(bool::try_convert(value).ok())
     }
 }
 
@@ -233,7 +235,7 @@ impl ValueStrategy for Option<PathBuf> {}
 
 impl TryConvert for Option<PathBuf> {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        Ok(value.0.and_then(|v| v.as_str().map(|s| PathBuf::from(s.to_string()))))
+        Ok(PathBuf::try_convert(value).ok())
     }
 }
 
@@ -290,9 +292,7 @@ impl ValueStrategy for Option<f64> {}
 
 impl TryConvert for Option<f64> {
     fn try_convert(value: ConfigValue) -> Result<Self, ConfigError> {
-        Ok(value.0.and_then(|v| {
-            v.as_f64().or_else(|| if let Value::String(s) = v { s.parse().ok() } else { None })
-        }))
+        Ok(f64::try_convert(value).ok())
     }
 }
 
