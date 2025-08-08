@@ -111,7 +111,7 @@ function get-ninja-log-timestamp {
 }
 
 function main {
-  local switches=() fuchsia_targets=() ninja_switches=()
+  local switches=() fuchsia_targets=() fx_gen_switches=() ninja_switches=()
   local log_file is_logging fint_params_path
   local no_checks
   local verbose
@@ -220,6 +220,7 @@ function main {
   done
 
   if [[ -n "${quiet}" ]]; then
+    fx_gen_switches+=("--quiet")
     ninja_switches+=("--quiet")
     export FX_BUILD_QUIET=1
   fi
@@ -337,7 +338,7 @@ function main {
           printf >&2 "  %s\n" "$reason"
         done
       fi
-      fx-gen || return "$?"
+      fx-gen "${fx_gen_switches[@]}" || return "$?"
     fi
   fi
 

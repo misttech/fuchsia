@@ -233,7 +233,8 @@ def main() -> int:
         default=[],
         help="Pass value to GN --json-ide-script option.",
     )
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "-v",
         "--verbose",
         action="count",
@@ -243,6 +244,12 @@ def main() -> int:
             "during `fx build`, run `fx gen` with the desired instances of "
             "this argument.)"
         ),
+    )
+    group.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Do not print time profile. Conflicts with --verbose.",
     )
     args = parser.parse_args()
 
@@ -328,6 +335,9 @@ def main() -> int:
 
         for gn_json_ide_script in args.gn_json_ide_script:
             gn_cmd_args += [f"--json-ide-script={gn_json_ide_script}"]
+
+        if args.quiet:
+            gn_cmd_args += ["-q"]
 
         time_profile = TimeProfile(log=log)
 
@@ -608,7 +618,9 @@ def main() -> int:
         log2("- Updating build.ninja.stamp timestamp")
         build_ninja_stamp_path.touch()
 
-        time_profile.print(0.0 if verbose >= 1 else 0.5)
+        if not args.quiet:
+            time_profile.print(0.0 if verbose >= 1 else 0.5)
+
         return 0
 
     def ensure_regenerator_will_run_again() -> None:
