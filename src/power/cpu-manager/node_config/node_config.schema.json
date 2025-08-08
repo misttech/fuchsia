@@ -233,6 +233,10 @@
                                 "type": "number",
                                 "minimum": 0
                             },
+                            "min_power_for_boost": {
+                                "type": "number",
+                                "minimum": 0
+                            },
                             "clusters": {
                                 "type": "array",
                                 "minItems": 1,

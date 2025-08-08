@@ -32,6 +32,8 @@
         config: {
             sustainable_power: 6.22,
             power_gain: 0.0622046,
+            // Set to the max to prevent boost
+            min_power_for_boost: 6.22,
             clusters: [
                 {
                     name: "big_cluster",
