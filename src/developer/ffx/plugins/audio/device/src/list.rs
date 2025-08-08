@@ -113,6 +113,7 @@ pub struct ListResult {
 #[derive(Debug, Clone, Serialize)]
 pub struct ListResultDevice {
     device_name: String,
+    token_id: Option<fadevice::TokenId>,
     is_input: Option<bool>,
     #[serde(serialize_with = "serialize_hw_device_type")]
     device_type: HardwareDeviceType,
@@ -150,6 +151,7 @@ impl From<DevfsSelector> for ListResultDevice {
                 _ => None,
             },
             path: Some(value.path().to_string()),
+            token_id: None,
         }
     }
 }
@@ -161,6 +163,7 @@ impl From<DeviceInfo> for ListResultDevice {
             device_name: value.0.device_name.expect("missing 'device_name'"),
             is_input: value.0.is_input,
             path: None,
+            token_id: value.0.token_id,
         }
     }
 }
@@ -177,6 +180,10 @@ impl Display for ListResult {
             } else {
                 writeln!(f)?;
             }
+            let token_id = match device.token_id {
+                Some(id) => id.to_string(),
+                None => "none".to_string(),
+            };
             let in_out = match device.is_input {
                 Some(is_input) => {
                     if is_input {
@@ -192,8 +199,8 @@ impl Display for ListResult {
             }
             write!(
                 f,
-                "Device name: {:?}, Device type: {}, {in_out}",
-                device.device_name, device.device_type
+                "TokenID: {}, Device name: {:?}, Device type: {}, {in_out}",
+                token_id, device.device_name, device.device_type
             )?;
         }
         Ok(())

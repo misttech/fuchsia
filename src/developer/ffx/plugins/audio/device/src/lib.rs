@@ -577,7 +577,41 @@ mod tests {
     }
 
     #[fuchsia::test]
-    pub async fn test_device_list() -> Result<()> {
+    pub async fn test_registry_list() -> Result<()> {
+        let test_buffers = TestBuffers::default();
+        let writer: MachineWriter<DeviceResult> = MachineWriter::new_test(None, &test_buffers);
+
+        let devices = list::Devices::Registry(vec![
+            fuchsia_audio::device::Info(fadevice::Info {
+                token_id: Some(42),
+                device_type: Some(fadevice::DeviceType::Codec),
+                is_input: Some(true),
+                device_name: Some("Test Device Name 1".to_string()),
+                ..Default::default()
+            }),
+            fuchsia_audio::device::Info(fadevice::Info {
+                token_id: Some(68),
+                device_type: Some(fadevice::DeviceType::Composite),
+                device_name: Some("Test Device Name 2".to_string()),
+                ..Default::default()
+            }),
+        ]);
+
+        device_list(devices, writer).unwrap();
+
+        let stdout = test_buffers.into_stdout_str();
+        let stdout_expected = format!(
+            "TokenID: 42, Device name: \"Test Device Name 1\", Device type: Codec, Input\n\
+            TokenID: 68, Device name: \"Test Device Name 2\", Device type: Composite, Input/Output not specified\n"
+        );
+
+        assert_eq!(stdout, stdout_expected);
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    pub async fn test_devfs_list() -> Result<()> {
         let test_buffers = TestBuffers::default();
         let writer: MachineWriter<DeviceResult> = MachineWriter::new_test(None, &test_buffers);
 
@@ -596,8 +630,8 @@ mod tests {
 
         let stdout = test_buffers.into_stdout_str();
         let stdout_expected = format!(
-            "\"/dev/class/audio-input/abc123\" Device name: \"abc123\", Device type: StreamConfig, Input\n\
-            \"/dev/class/audio-output/abc123\" Device name: \"abc123\", Device type: StreamConfig, Output\n"
+            "\"/dev/class/audio-input/abc123\" TokenID: none, Device name: \"abc123\", Device type: StreamConfig, Input\n\
+            \"/dev/class/audio-output/abc123\" TokenID: none, Device name: \"abc123\", Device type: StreamConfig, Output\n"
         );
 
         assert_eq!(stdout, stdout_expected);
@@ -606,7 +640,56 @@ mod tests {
     }
 
     #[fuchsia::test]
-    pub async fn test_device_list_machine() -> Result<()> {
+    pub async fn test_registry_list_machine() -> Result<()> {
+        let test_buffers = TestBuffers::default();
+        let writer: MachineWriter<list::ListResult> =
+            MachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
+
+        let devices = list::Devices::Registry(vec![
+            fuchsia_audio::device::Info(fadevice::Info {
+                token_id: Some(42),
+                device_type: Some(fadevice::DeviceType::Codec),
+                is_input: Some(true),
+                device_name: Some("Test Device Name 1".to_string()),
+                ..Default::default()
+            }),
+            fuchsia_audio::device::Info(fadevice::Info {
+                token_id: Some(68),
+                device_type: Some(fadevice::DeviceType::Composite),
+                device_name: Some("Test Device Name 2".to_string()),
+                ..Default::default()
+            }),
+        ]);
+
+        device_list_untagged(devices, writer).unwrap();
+
+        let stdout = test_buffers.into_stdout_str();
+        let stdout_expected = format!(
+            "{{\"devices\":[\
+                {{\
+                    \"device_name\":\"Test Device Name 1\",\
+                    \"token_id\":42,\
+                    \"is_input\":true,\
+                    \"device_type\":\"CODEC\",\
+                    \"path\":null\
+                }},\
+                {{\
+                    \"device_name\":\"Test Device Name 2\",\
+                    \"token_id\":68,\
+                    \"is_input\":null,\
+                    \"device_type\":\"COMPOSITE\",\
+                    \"path\":null\
+                }}\
+            ]}}\n"
+        );
+
+        assert_eq!(stdout, stdout_expected);
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    pub async fn test_devfs_list_machine() -> Result<()> {
         let test_buffers = TestBuffers::default();
         let writer: MachineWriter<list::ListResult> =
             MachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
@@ -629,12 +712,14 @@ mod tests {
             "{{\"devices\":[\
                 {{\
                     \"device_name\":\"abc123\",\
+                    \"token_id\":null,\
                     \"is_input\":true,\
                     \"device_type\":\"STREAMCONFIG\",\
                     \"path\":\"/dev/class/audio-input/abc123\"\
                 }},\
                 {{\
                     \"device_name\":\"abc123\",\
+                    \"token_id\":null,\
                     \"is_input\":false,\
                     \"device_type\":\"STREAMCONFIG\",\
                     \"path\":\"/dev/class/audio-output/abc123\"\
@@ -647,3 +732,5 @@ mod tests {
         Ok(())
     }
 }
+
+// list::Devices::Registry(infos)

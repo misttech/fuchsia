@@ -1077,6 +1077,8 @@ where
 
 #[derive(Default, Debug, Serialize, PartialEq, Clone)]
 pub struct InfoResult {
+    pub token_id: Option<u64>,
+
     pub device_path: Option<Utf8PathBuf>,
 
     #[serde(serialize_with = "serde_ext::serialize_option_tostring")]
@@ -1120,6 +1122,7 @@ impl Display for InfoResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut table = Table::new();
         table.set_format(*TABLE_FORMAT_NORMAL);
+        table.add_row(row!("Token ID:", or_unknown(&self.token_id)));
         table.add_row(row!("Path:", or_unknown(&self.device_path)));
         table.add_row(row!("Unique ID:", or_unknown(&self.unique_id)));
         table.add_row(row!("Manufacturer:", or_unknown(&self.manufacturer)));
@@ -1209,6 +1212,7 @@ impl From<(Info, Selector)> for InfoResult {
         };
 
         Self {
+            token_id: info.token_id(),
             device_path,
             unique_id: info.unique_instance_id(),
             manufacturer: info.manufacturer(),
@@ -1489,6 +1493,13 @@ pub enum Info {
 }
 
 impl Info {
+    pub fn token_id(&self) -> Option<fadevice::TokenId> {
+        match self {
+            Info::Hardware(_) => None,
+            Info::Registry(registry_info) => Some(registry_info.device_info.token_id()),
+        }
+    }
+
     pub fn unique_instance_id(&self) -> Option<UniqueInstanceId> {
         match self {
             Info::Hardware(hw_info) => hw_info.unique_instance_id(),
@@ -1775,6 +1786,7 @@ mod test {
     use serde_json::json;
     use {fidl_fuchsia_audio_device as fadevice, fidl_fuchsia_hardware_audio as fhaudio};
 
+    const TOKEN_ID: fadevice::TokenId = 68;
     const SOURCE_DAI_ELEMENT_ID: fhaudio_sigproc::ElementId = 0;
     const DEST_DAI_ELEMENT_ID: fhaudio_sigproc::ElementId = 1;
     const DEST_RB_ELEMENT_ID: fhaudio_sigproc::ElementId = 2;
@@ -1821,6 +1833,7 @@ mod test {
 
     lazy_static! {
         pub static ref TEST_INFO_RESULT: InfoResult = InfoResult {
+            token_id: Some(TOKEN_ID),
             device_path: Some(Utf8PathBuf::from("/dev/class/audio-input/0c8301e0")),
             unique_id: Some(UniqueInstanceId([
                 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
@@ -2260,6 +2273,7 @@ mod test {
         let output = TEST_INFO_RESULT.to_string();
 
         let expected = r#"
+  Token ID:                    68
   Path:                        /dev/class/audio-input/0c8301e0
   Unique ID:                   000102030405060708090a0b0c0d0e0f
   Manufacturer:                Test manufacturer
@@ -2553,6 +2567,7 @@ mod test {
         let output = serde_json::to_value(&*TEST_INFO_RESULT).unwrap();
 
         let expected = json!({
+            "token_id": 68,
             "device_path": "/dev/class/audio-input/0c8301e0",
             "unique_id": "000102030405060708090a0b0c0d0e0f",
             "manufacturer": "Test manufacturer",
