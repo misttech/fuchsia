@@ -426,6 +426,7 @@ pub struct SignalInfo {
     pub code: i32,
     pub detail: SignalDetail,
     pub force: bool,
+    pub source: SignalSource,
 }
 
 macro_rules! make_siginfo {
@@ -518,12 +519,14 @@ macro_rules! signal_info_as_siginfo_bytes {
 }
 
 impl SignalInfo {
+    #[track_caller]
     pub fn default(signal: Signal) -> Self {
         Self::new(signal, SI_KERNEL as i32, SignalDetail::default())
     }
 
+    #[track_caller]
     pub fn new(signal: Signal, code: i32, detail: SignalDetail) -> Self {
-        Self { signal, errno: 0, code, detail, force: false }
+        Self { signal, errno: 0, code, detail, force: false, source: SignalSource::capture() }
     }
 
     pub fn write<MA: MemoryAccessor>(
@@ -708,6 +711,44 @@ impl From<sigval_t> for SignalEventValue {
 impl From<SignalEventValue> for sigval_t {
     fn from(value: SignalEventValue) -> Self {
         Self { _bindgen_opaque_blob: value.0 }
+    }
+}
+
+#[cfg(not(feature = "debug_and_trace_logs_enabled"))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignalSource {}
+
+#[cfg(not(feature = "debug_and_trace_logs_enabled"))]
+impl SignalSource {
+    pub fn capture() -> Self {
+        Self {}
+    }
+}
+
+#[cfg(feature = "debug_and_trace_logs_enabled")]
+#[derive(Clone, PartialEq, Eq)]
+pub struct SignalSource {
+    location: &'static std::panic::Location<'static>,
+    task: String,
+}
+
+#[cfg(feature = "debug_and_trace_logs_enabled")]
+impl std::fmt::Debug for SignalSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignalSource")
+            .field("location", &format_args!("{}", self.location))
+            .field("task", &self.task)
+            .finish()
+    }
+}
+
+#[cfg(feature = "debug_and_trace_logs_enabled")]
+impl SignalSource {
+    #[track_caller]
+    pub fn capture() -> Self {
+        let location = std::panic::Location::caller();
+        let task = starnix_logging::with_current_task_info(|info| info.to_string());
+        Self { location, task }
     }
 }
 

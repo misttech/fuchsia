@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::mm::MemoryAccessorExt;
-use crate::signals::{send_standard_signal, SignalDetail, SignalInfo};
+use crate::signals::{send_standard_signal, SignalDetail, SignalInfo, SignalSource};
 use crate::task::{
     CurrentTask, EventHandler, ExitStatus, Kernel, Task, TaskFlags, WaitCanceler, WaitQueue, Waiter,
 };
@@ -470,6 +470,7 @@ impl SeccompState {
                         arch: arch_val,
                     },
                     force: true,
+                    source: SignalSource::capture(),
                 };
 
                 send_standard_signal(locked, current_task, siginfo);

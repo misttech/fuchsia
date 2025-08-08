@@ -465,6 +465,15 @@ rustc_library("starnix_core") {
   if (starnix_enable_alternate_anon_allocs) {
     features += [ "alternate_anon_allocs" ]
   }
+
+  # This is normally controlled on the starnix_logging crate, but controlling the features here also
+  # allows the kernel to store debug-log-only information on structs without paying any overhead in
+  # release.
+  if (compilation_mode != "release" ||
+      starnix_enable_trace_and_debug_logs_in_release) {
+    features += [ "debug_and_trace_logs_enabled" ]
+  }
+
   inputs = [
     "//src/starnix/lib/selinux/testdata/micro_policies/hooks_tests_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy.pp",

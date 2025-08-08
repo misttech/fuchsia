@@ -1631,6 +1631,7 @@ impl ThreadGroup {
     /// # Returns
     /// Returns Ok(()) if the signal was sent, or the permission checks passed with a 0 signal, otherwise
     /// the error that was encountered.
+    #[track_caller]
     pub fn send_signal_unchecked_with_info(
         &self,
         current_task: &CurrentTask,
@@ -1740,6 +1741,10 @@ impl ThreadGroup {
     }
 }
 
+#[cfg_attr(
+    feature = "debug_and_trace_logs_enabled",
+    allow(clippy::large_enum_variant, reason = "no need to optimize enum size in debug builds")
+)]
 pub enum WaitableChildResult {
     ReadyNow(WaitResult),
     ShouldWait,

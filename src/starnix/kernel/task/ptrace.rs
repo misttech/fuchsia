@@ -9,7 +9,7 @@ use crate::security;
 use crate::signals::syscalls::WaitingOptions;
 use crate::signals::{
     send_signal_first, send_standard_signal, SignalDetail, SignalInfo, SignalInfoHeader,
-    SI_HEADER_SIZE,
+    SignalSource, SI_HEADER_SIZE,
 };
 use crate::task::waiter::WaitQueue;
 use crate::task::{
@@ -984,6 +984,7 @@ where
                 code: header.code,
                 detail: details,
                 force: false,
+                source: SignalSource::capture(),
             };
             if let Some(ref mut ptrace) = &mut state.ptrace {
                 ptrace.last_signal = Some(siginfo);

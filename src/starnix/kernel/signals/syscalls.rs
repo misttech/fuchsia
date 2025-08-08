@@ -8,7 +8,7 @@ use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::signals::{
     restore_from_signal_handler, send_signal, SignalDetail, SignalInfo, SignalInfoHeader,
-    SI_HEADER_SIZE,
+    SignalSource, SI_HEADER_SIZE,
 };
 use crate::task::{
     CurrentTask, PidTable, ProcessEntryRef, ProcessSelector, Task, TaskMutableState, ThreadGroup,
@@ -339,6 +339,7 @@ pub fn sys_signalfd4(
     }
 }
 
+#[track_caller]
 fn send_unchecked_signal<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
@@ -373,6 +374,7 @@ where
     )
 }
 
+#[track_caller]
 fn send_unchecked_signal_info<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
@@ -540,6 +542,7 @@ pub fn sys_rt_sigreturn(
     Ok(current_task.thread_state.registers.return_register().into())
 }
 
+#[track_caller]
 pub fn read_siginfo(
     current_task: &CurrentTask,
     signal: Signal,
@@ -556,7 +559,14 @@ pub fn read_siginfo(
     bytes.copy_from_slice(&siginfo_mem[SI_HEADER_SIZE..SI_MAX_SIZE as usize]);
     let details = SignalDetail::Raw { data: bytes };
 
-    Ok(SignalInfo { signal, errno: header.errno, code: header.code, detail: details, force: false })
+    Ok(SignalInfo {
+        signal,
+        errno: header.errno,
+        code: header.code,
+        detail: details,
+        force: false,
+        source: SignalSource::capture(),
+    })
 }
 
 pub fn sys_rt_sigqueueinfo(
@@ -621,6 +631,7 @@ pub fn sys_pidfd_send_signal(
 ///
 /// # Returns
 /// Returns Ok(()) if at least one signal was sent, otherwise the last error that was encountered.
+#[track_caller]
 fn signal_thread_groups<F>(
     current_task: &CurrentTask,
     unchecked_signal: UncheckedSignal,
