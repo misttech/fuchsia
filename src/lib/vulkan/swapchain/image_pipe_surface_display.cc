@@ -14,6 +14,7 @@
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/directory.h>
 #include <limits.h>
@@ -41,6 +42,17 @@ const char* const kTag = "ImagePipeSurfaceDisplay";
 
 using DisplayCoordinator = fuchsia_hardware_display::Coordinator;
 using OneWayResult = fit::result<fidl::OneWayStatus>;
+
+zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> ConnectToDisplayProvider() {
+  component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
+  zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> watch_result =
+      watcher.GetNextInstance(/*stop_at_idle=*/true);
+  if (watch_result.status_value() == ZX_ERR_STOP) {
+    fprintf(stderr, "fuchsia.hardware.display.Service is not available");
+    return zx::error(ZX_ERR_UNAVAILABLE);
+  }
+  return watch_result;
+}
 
 }  // namespace
 
@@ -73,94 +85,47 @@ bool ImagePipeSurfaceDisplay::Init() {
     }
   }
 
-  // Probe /dev/class/display-coordinator/ for a display coordinator name.
-  // When the display driver restarts it comes up with a new one (e.g. '001'
-  // instead of '000'). For now, simply take the first file found in the
-  // directory.
-  const char kDir[] = "/dev/class/display-coordinator";
-  std::string filename;
-
-  {
-    DIR* dir = opendir(kDir);
-    if (!dir) {
-      fprintf(stderr, "%s: Can't open directory: %s: %s\n", kTag, kDir, strerror(errno));
-      return false;
-    }
-
-    errno = 0;
-    for (;;) {
-      dirent* entry = readdir(dir);
-      if (!entry) {
-        if (errno != 0) {
-          // An error occurred while reading the directory.
-          fprintf(stderr, "%s: Warning: error while reading %s: %s\n", kTag, kDir, strerror(errno));
-        }
-        break;
-      }
-      // Skip over '.' and '..' if present.
-      if (entry->d_name[0] == '.' && (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")))
-        continue;
-
-      filename = std::string(kDir) + "/" + entry->d_name;
-      break;
-    }
-    closedir(dir);
-
-    if (filename.empty()) {
-      fprintf(stderr, "%s: No display controller.\n", kTag);
-      return false;
-    }
-
-    zx::result provider = fidl::CreateEndpoints<fuchsia_hardware_display::Provider>();
-    if (provider.is_error()) {
-      fprintf(stderr, "%s: Failed to create provider channel %d (%s)\n", kTag,
-              provider.error_value(), provider.status_string());
-    }
-
-    // TODO(https://fxbug.dev/373759212): we would prefer to use `Component::Connect<>()` here,
-    // but it's not routed everywhere that we need it.  All of the directory-reading code above
-    // could also be deleted, along with the fdio dependency.
-    zx_status_t status =
-        fdio_service_connect(filename.c_str(), provider->server.TakeChannel().release());
-    if (status != ZX_OK) {
-      fprintf(stderr, "%s: Could not open display coordinator: %s\n", kTag,
-              zx_status_get_string(status));
-      return false;
-    }
-
-    auto [coordinator_client, coordinator_server] =
-        fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
-    auto [listener_client, listener_server] =
-        fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
-
-    fidl::Arena arena;
-    auto open_coordinator_request =
-        fuchsia_hardware_display::wire::ProviderOpenCoordinatorWithListenerForPrimaryRequest::
-            Builder(arena)
-                .coordinator(std::move(coordinator_server))
-                .coordinator_listener(std::move(listener_client))
-                .Build();
-    fidl::WireResult result =
-        fidl::WireCall(provider->client)
-            ->OpenCoordinatorWithListenerForPrimary(std::move(open_coordinator_request));
-    if (!result.ok()) {
-      fprintf(stderr, "%s: Failed to call display.Provider handle %d (%s)\n", kTag, result.status(),
-              result.FormatDescription().c_str());
-      return false;
-    }
-    if (result.value().is_error()) {
-      fprintf(stderr, "%s: Failed to open display.Coordinator %d (%s)\n", kTag,
-              result.value().error_value(), zx_status_get_string(result.value().error_value()));
-      return false;
-    }
-
-    display_coordinator_.Bind(std::move(coordinator_client), client_loop_.dispatcher(), this);
-    display_coordinator_listener_ = std::make_unique<DisplayCoordinatorListener>(
-        std::move(listener_server),
-        fit::bind_member(this, &ImagePipeSurfaceDisplay::ControllerOnDisplaysChanged),
-        fit::bind_member(this, &ImagePipeSurfaceDisplay::ControllerOnVsync),
-        /* on_client_ownership_change= */ nullptr, *listener_loop_.dispatcher());
+  zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
+      ConnectToDisplayProvider();
+  if (provider_result.is_error()) {
+    fprintf(stderr, "%s: Failed to create provider channel %d (%s)\n", kTag,
+            provider_result.error_value(), provider_result.status_string());
   }
+  fidl::ClientEnd<fuchsia_hardware_display::Provider> provider = std::move(provider_result).value();
+
+  auto [coordinator_client, coordinator_server] =
+      fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
+  auto [listener_client, listener_server] =
+      fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
+
+  fidl::Arena arena;
+  auto open_coordinator_request =
+      fuchsia_hardware_display::wire::ProviderOpenCoordinatorWithListenerForPrimaryRequest::Builder(
+          arena)
+          .coordinator(std::move(coordinator_server))
+          .coordinator_listener(std::move(listener_client))
+          .Build();
+  fidl::WireResult open_coordinator_result =
+      fidl::WireCall(provider)->OpenCoordinatorWithListenerForPrimary(
+          std::move(open_coordinator_request));
+  if (!open_coordinator_result.ok()) {
+    fprintf(stderr, "%s: Failed to call display.Provider handle %d (%s)\n", kTag,
+            open_coordinator_result.status(), open_coordinator_result.FormatDescription().c_str());
+    return false;
+  }
+  if (open_coordinator_result.value().is_error()) {
+    fprintf(stderr, "%s: Failed to open display.Coordinator %d (%s)\n", kTag,
+            open_coordinator_result.value().error_value(),
+            zx_status_get_string(open_coordinator_result.value().error_value()));
+    return false;
+  }
+
+  display_coordinator_.Bind(std::move(coordinator_client), client_loop_.dispatcher(), this);
+  display_coordinator_listener_ = std::make_unique<DisplayCoordinatorListener>(
+      std::move(listener_server),
+      fit::bind_member(this, &ImagePipeSurfaceDisplay::ControllerOnDisplaysChanged),
+      fit::bind_member(this, &ImagePipeSurfaceDisplay::ControllerOnVsync),
+      /* on_client_ownership_change= */ nullptr, *listener_loop_.dispatcher());
 
   while (!have_display_) {
     listener_loop_.Run(zx::time::infinite(), true);
