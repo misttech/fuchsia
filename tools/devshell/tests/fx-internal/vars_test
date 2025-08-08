@@ -290,7 +290,18 @@ TEST_fx-get-device-addr-url() {
 # `ffx target default get` gives stderr when no default target is set.
 # This stderr should be suppressed.
 TEST_fx-unset-device-stderr() {
-  echo "No default target set." > "${ffx}.mock_stderr"
+    cat >"${ffx}.mock_side_effects" <<INPUT
+      case "\$@" in
+        *"target list --format a"*)
+          echo '[fe80::dd57:127d:366d:28bb%5]:22'
+          echo '127.0.0.1:34715'
+        ;;
+        *)
+          echo "No default target set." >&2
+          exit 1
+        ;;
+      esac
+INPUT
   BT_EXPECT_EQ "$(get-device-raw 2>&1)" ""
   BT_EXPECT_EQ "$(get-device-name 2>&1)" ""
   BT_EXPECT_EQ "$(get-device-ssh-port 2>&1)" ""
@@ -315,7 +326,7 @@ TEST_fx-export-device-address() {
 
   unset -f fx-target-finder-resolve
   fx-target-finder-resolve() {
-    echo "::3%lo0"
+    echo "::3%lo0:1234"
   }
 
   export FUCHSIA_NODENAME="foo-bar-baz-quux:1234"

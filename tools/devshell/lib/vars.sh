@@ -511,10 +511,15 @@ function fx-export-device-address {
 function get-device-ssh-port {
   local device
   device="$(get-device-raw)" || exit $?
+  local addr_port="$(fx-target-finder-resolve "${device}")"
   local port=""
-  # extract port, if present
-  if [[ "${device}" =~ :([0-9]+)$ ]]; then
-    port="${BASH_REMATCH[1]}"
+  # If there's more than one device returned by `ffx target list`,
+  # return an empty port
+  if [[ "$addr_port" != *$'\n'* ]] ;  then
+    # extract port, if present
+    if [[ "${addr_port}" =~ :([0-9]+)$ ]]; then
+      port="${BASH_REMATCH[1]}"
+    fi
   fi
   echo "${port}"
 }
@@ -681,11 +686,11 @@ function fx-target-finder-resolve {
     fx-error "Invalid arguments to fx-target-finder-resolve: [$*]"
     return 1
   fi
-  ffx target list --format a "$1"
+  ffx target list --format addresses "$1"
 }
 
 function fx-target-finder-list {
-  ffx target list --format a
+  ffx target list --format addresses
 }
 
 function fx-target-finder-info {
