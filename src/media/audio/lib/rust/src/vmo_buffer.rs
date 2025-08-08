@@ -114,11 +114,12 @@ impl VmoBuffer {
             // Flush cache so that hardware reads most recent write.
             self.flush_cache(byte_offset, buf.len()).map_err(VmoBufferError::VmoFlushCache)?;
             log::debug!(
-                "Wrote {} bytes ({} frames) from buf, to ring_buf frame {} (running frame {})",
-                buf.len(),
+                "At {} wrote {} frames at ring_buf pos {} (running frame {}-{})",
+                zx::MonotonicInstant::get().into_nanos(),
                 num_frames_in_buf,
                 frame_offset,
-                running_frame
+                running_frame,
+                running_frame + num_frames_in_buf
             );
             fuchsia_trace::instant!(
                 c"audio-streaming",
@@ -145,9 +146,12 @@ impl VmoBuffer {
             self.flush_cache(byte_offset, bytes_until_buffer_end)
                 .map_err(VmoBufferError::VmoFlushCache)?;
             log::debug!(
-                "First wrote {} bytes ({} frames) from buf, to ring_buf frame {} (running frame {})",
-                bytes_until_buffer_end, frames_to_write_until_end,
-                frame_offset, running_frame
+                "At {} first {} frames at ring_buf pos {} (running frame {}-{})",
+                zx::MonotonicInstant::get().into_nanos(),
+                frames_to_write_until_end,
+                frame_offset,
+                running_frame,
+                running_frame + frames_to_write_until_end
             );
 
             if buf[bytes_until_buffer_end..].len() > self.vmo_size_bytes as usize {
@@ -174,10 +178,11 @@ impl VmoBuffer {
                 "second vmo write len (bytes)" => buf.len() - bytes_until_buffer_end
             );
             log::debug!(
-                "Then wrote {} bytes ({} frames) from buf, to ring_buf frame 0 (running frame {})",
-                buf.len() - bytes_until_buffer_end,
+                "At {}, then {} frames at ring_buf frame 0 (running frame {}-{})",
+                zx::MonotonicInstant::get().into_nanos(),
                 num_frames_in_buf - frames_to_write_until_end,
-                running_frame + frames_to_write_until_end
+                running_frame + frames_to_write_until_end,
+                running_frame + num_frames_in_buf
             );
         }
 
