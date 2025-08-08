@@ -6,7 +6,7 @@
 import copy
 import enum
 from functools import total_ordering
-from typing import Any, Iterator, Optional, Self, TypeVar
+from typing import Any, Iterator, Self, TypeVar
 
 from trace_processing import trace_time
 
@@ -51,9 +51,9 @@ class Event:
         # Any extra arguments that the event contains.
         self.args: dict[str, Any] = args.copy()
 
-    @staticmethod
-    # from_dict should not be called on an instance
-    def from_dict(event_dict: dict[str, Any]) -> "Event":
+    @classmethod
+    # from_dict must not be called on an instance
+    def _from_dict(cls, event_dict: dict[str, Any]) -> Self:
         category: str = event_dict["cat"]
         name: str = event_dict["name"]
         start: trace_time.TimePoint = trace_time.TimePoint.from_epoch_delta(
@@ -63,9 +63,9 @@ class Event:
         tid: int = event_dict["tid"]
         args: dict[str, Any] = event_dict.get("args", {})
 
-        return Event(category, name, start, pid, tid, args)
+        return cls(category, name, start, pid, tid, args)
 
-    def end_time(self) -> Optional[trace_time.TimePoint]:
+    def end_time(self) -> trace_time.TimePoint | None:
         """Get the ending time for this Event
 
         Returns:
@@ -90,8 +90,9 @@ class InstantEvent(Event):
         )
         self.scope: InstantEventScope = scope
 
-    @staticmethod
-    def from_dict(event_dict: dict[str, Any]) -> "InstantEvent":
+    @classmethod
+    # from_dict must not be called on an instance
+    def from_dict(cls, event_dict: dict[str, Any]) -> Self:
         scope_key: str = "s"
         if scope_key not in event_dict:
             raise TypeError(
@@ -113,22 +114,23 @@ class InstantEvent(Event):
             scope_str
         ]
 
-        return InstantEvent(scope, base=Event.from_dict(event_dict))
+        return cls(scope, base=Event._from_dict(event_dict))
 
 
 class CounterEvent(Event):
     """An event that tracks the count of some quantity."""
 
-    def __init__(self, id: Optional[int], base: Event) -> None:
+    def __init__(self, id: int | None, base: Event) -> None:
         super().__init__(
             base.category, base.name, base.start, base.pid, base.tid, base.args
         )
-        self.id: Optional[int] = id
+        self.id: int | None = id
 
-    @staticmethod
-    def from_dict(event_dict: dict[str, Any]) -> "CounterEvent":
+    @classmethod
+    # from_dict must not be called on an instance
+    def from_dict(cls, event_dict: dict[str, Any]) -> Self:
         id_key: str = "id"
-        id: Optional[int] = None
+        id: int | None = None
         if id_key in event_dict:
             try:
                 id = int(event_dict[id_key], 0)
@@ -138,7 +140,7 @@ class CounterEvent(Event):
                     f"parses as int: {event_dict}"
                 ) from t
 
-        return CounterEvent(id, base=Event.from_dict(event_dict))
+        return cls(id, base=Event._from_dict(event_dict))
 
 
 class DurationEvent(Event):
@@ -151,15 +153,15 @@ class DurationEvent(Event):
     (i.e. they don't have a matching end/begin event) are dropped.
     """
 
-    duration: Optional[trace_time.TimeDelta]
-    parent: Optional[Self]
+    duration: trace_time.TimeDelta | None
+    parent: Self | None
     child_durations: list[Self]
     child_flows: list["FlowEvent"]
 
     def __init__(
         self,
-        duration: Optional[trace_time.TimeDelta],
-        parent: Optional[Self],
+        duration: trace_time.TimeDelta | None,
+        parent: Self | None,
         child_durations: list[Self],
         child_flows: list["FlowEvent"],
         base: Event,
@@ -172,11 +174,11 @@ class DurationEvent(Event):
         self.child_durations = child_durations
         self.child_flows = child_flows
 
-    @staticmethod
-    def from_dict(event_dict: dict[str, Any]) -> "DurationEvent":
+    @classmethod
+    def from_dict(cls, event_dict: dict[str, Any]) -> Self:
         duration_key: str = "dur"
-        duration: Optional[trace_time.TimeDelta] = None
-        microseconds: Optional[float | int] = event_dict.get(duration_key, None)
+        duration: trace_time.TimeDelta | None = None
+        microseconds: float | int | None = event_dict.get(duration_key, None)
         if microseconds is not None:
             if not isinstance(microseconds, (int, float)):
                 raise TypeError(
@@ -187,15 +189,15 @@ class DurationEvent(Event):
                 float(microseconds)
             )
 
-        return DurationEvent(
+        return cls(
             duration=duration,
             parent=None,
             child_durations=[],
             child_flows=[],
-            base=Event.from_dict(event_dict),
+            base=Event._from_dict(event_dict),
         )
 
-    def end_time(self) -> Optional[trace_time.TimePoint]:
+    def end_time(self) -> trace_time.TimePoint | None:
         if self.duration:
             return self.start + self.duration
         else:
@@ -210,21 +212,20 @@ class AsyncEvent(Event):
     """
 
     def __init__(
-        self, id: int, duration: Optional[trace_time.TimeDelta], base: Event
+        self, id: int, duration: trace_time.TimeDelta | None, base: Event
     ) -> None:
         super().__init__(
             base.category, base.name, base.start, base.pid, base.tid, base.args
         )
         self.id: int = id
-        self.duration: Optional[trace_time.TimeDelta] = duration
+        self.duration: trace_time.TimeDelta | None = duration
 
-    @staticmethod
+    @classmethod
     # from_dict should not be called on an instance
-    # type: ignore[override]
-    def from_dict(id: int, event_dict: dict[str, Any]) -> "AsyncEvent":
-        return AsyncEvent(id, duration=None, base=Event.from_dict(event_dict))
+    def from_dict(cls, id: int, event_dict: dict[str, Any]) -> Self:
+        return cls(id, duration=None, base=Event._from_dict(event_dict))
 
-    def end_time(self) -> Optional[trace_time.TimePoint]:
+    def end_time(self) -> trace_time.TimePoint | None:
         if self.duration:
             return self.start + self.duration
         else:
@@ -252,9 +253,9 @@ class FlowEvent(Event):
         self,
         id: str,
         phase: FlowEventPhase,
-        enclosing_duration: Optional[DurationEvent],
-        previous_flow: Optional[Self],
-        next_flow: Optional[Self],
+        enclosing_duration: DurationEvent | None,
+        previous_flow: Self | None,
+        next_flow: Self | None,
         base: Event,
     ) -> None:
         super().__init__(
@@ -262,18 +263,18 @@ class FlowEvent(Event):
         )
         self.id: str = id
         self.phase: FlowEventPhase = phase
-        self.enclosing_duration: Optional[DurationEvent] = enclosing_duration
-        self.previous_flow: Optional[Self] = previous_flow
-        self.next_flow: Optional[Self] = next_flow
+        self.enclosing_duration: DurationEvent | None = enclosing_duration
+        self.previous_flow: Self | None = previous_flow
+        self.next_flow: Self | None = next_flow
 
-    @staticmethod
+    @classmethod
     # from_dict should not be called on an instance
-    # type: ignore[override]
     def from_dict(
+        cls,
         id: str,
-        enclosing_duration: Optional[DurationEvent],
+        enclosing_duration: DurationEvent | None,
         event_dict: dict[str, Any],
-    ) -> "FlowEvent":
+    ) -> Self:
         phase_key: str = "ph"
         if phase_key not in event_dict:
             raise TypeError(
@@ -293,13 +294,13 @@ class FlowEvent(Event):
             )
         phase: FlowEventPhase = FlowEvent.FLOW_EVENT_PHASE_MAP[phase_str]
 
-        return FlowEvent(
+        return cls(
             id,
             phase,
             enclosing_duration,
             previous_flow=None,
             next_flow=None,
-            base=Event.from_dict(event_dict),
+            base=Event._from_dict(event_dict),
         )
 
 
@@ -395,8 +396,8 @@ class Thread:
     def __init__(
         self,
         tid: int,
-        name: Optional[str] = None,
-        events: Optional[list[Event]] = None,
+        name: str | None = None,
+        events: list[Event] | None = None,
     ) -> None:
         self.tid: int = tid
         self.name: str = "" if name is None else name
@@ -409,8 +410,8 @@ class Process:
     def __init__(
         self,
         pid: int,
-        name: Optional[str] = None,
-        threads: Optional[list[Thread]] = None,
+        name: str | None = None,
+        threads: list[Thread] | None = None,
     ) -> None:
         self.pid: int = pid
         self.name: str = "" if name is None else name
@@ -432,9 +433,9 @@ class Model:
 
     def slice(
         self,
-        start: Optional[trace_time.TimePoint] = None,
-        end: Optional[trace_time.TimePoint] = None,
-    ) -> "Model":
+        start: trace_time.TimePoint | None = None,
+        end: trace_time.TimePoint | None = None,
+    ) -> Self:
         """Extract a sub-Model defined by a time interval.
 
         Args:
@@ -445,7 +446,7 @@ class Model:
                 Model is used.  Only trace events that end at or before `end`
                 will be included in the sub-model.
         """
-        result = Model()
+        result = self.__class__()
 
         # The various event types have references to other events, which we will
         # need to update so that all the relations in the new model stay within
