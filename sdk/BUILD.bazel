@@ -1,0 +1,31 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/bazel_idk:defs.bzl", "idk_molecule")
+
+# All atoms to be produced by the main build for inclusion in the IDK.
+# For now, there is no distinction between the in-tree and real IDK.
+idk_molecule(
+    name = "fuchsia_idk_atoms_produced_by_main_platform_build",
+    visibility = [
+        "//build/bazel/bazel_idk/tests:__subpackages__",
+    ],
+    deps = ["cc_source_libraries"],
+)
+
+# C/C++ code that is provided as source in the IDK.
+# Prefer providing source code if all dependencies are available in the IDK.
+# All source files must be buildable at each supported API level.
+# There is currently no mechanism to ensure this, even at "PLATFORM" because
+# this target does not cause the source files to be compiled. It only generates
+# the SDK atoms TODO(https://fxbug.dev/42083950): Ensure the libraries build and
+# are complete at all API levels.
+idk_molecule(
+    name = "cc_source_libraries",
+    deps = [
+        "//sdk/lib/magma_common:magma_common_idk",
+        "//sdk/lib/media/cpp:no_converters_idk",
+        "//sdk/lib/memory_barriers:memory_barriers_idk",
+    ],
+)

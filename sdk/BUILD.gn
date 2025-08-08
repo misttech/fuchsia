@@ -773,9 +773,9 @@ sdk_molecule("core_cc_prebuilt_libraries") {
 # C/C++ code that is provided as source in the SDK.
 # Prefer providing source code if all dependencies are available in the SDK.
 # All source files must be buildable at each supported API level.
-# There is currently not mechanism to ensure this, even at "PLATFORM" because
+# There is currently no mechanism to ensure this, even at "PLATFORM" because
 # it does not cause the source files to be compiled. It only generates the SDK
-# atoms
+# atoms.
 # TODO(https://fxbug.dev/42083950): Ensure the libraries build and are
 # complete at all API levels.
 sdk_molecule("core_cc_source_libraries") {

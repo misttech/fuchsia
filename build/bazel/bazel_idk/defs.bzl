@@ -628,9 +628,9 @@ def idk_cc_source_library(
     if "//visibility:public" in visibility:
         atom_visibility = visibility
     else:
-        # TODO(https://fxbug.dev/42073212): Add the path to where the IDK
-        # contents are defined.
-        atom_visibility = []
+        # All atoms must be visible to the targets defining the IDK.
+        atom_visibility = ["//sdk:__pkg__"]
+
         if "//visibility:private" not in visibility:
             atom_visibility += visibility
 
