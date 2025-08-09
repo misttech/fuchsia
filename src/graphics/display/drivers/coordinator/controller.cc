@@ -62,6 +62,8 @@ namespace fidl_display = fuchsia_hardware_display;
 namespace display_coordinator {
 
 void Controller::PopulateDisplayTimings(DisplayInfo& display_info) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+
   if (!display_info.edid_info.has_value()) {
     return;
   }
@@ -411,6 +413,8 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id, zx::time_mon
 
 void Controller::ApplyConfig(DisplayConfig& display_config,
                              display::ConfigStamp client_config_stamp, ClientId client_id) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+
   zx_instant_mono_t timestamp = zx_clock_get_monotonic();
   last_valid_apply_config_timestamp_ns_property_.Set(timestamp);
   last_valid_apply_config_interval_ns_property_.Set(timestamp - last_valid_apply_config_timestamp_);
@@ -517,6 +521,7 @@ void Controller::ImageWillBeDestroyed(display::DriverImageId driver_image_id) {
 }
 
 void Controller::ReleaseCaptureImage(display::DriverCaptureImageId driver_capture_image_id) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT_MSG(engine_info_.has_value(),
                       "CaptureImage created before engine connection completed");
   ZX_DEBUG_ASSERT_MSG(engine_info_->is_capture_supported(),
@@ -536,12 +541,16 @@ void Controller::ReleaseCaptureImage(display::DriverCaptureImageId driver_captur
 }
 
 void Controller::SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+
   fbl::AutoLock lock(mtx());
   virtcon_mode_ = virtcon_mode;
   HandleClientOwnershipChanges();
 }
 
 void Controller::HandleClientOwnershipChanges() {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+
   ClientProxy* new_client_owning_displays;
   if (virtcon_mode_ == fidl_display::wire::VirtconMode::kForced ||
       (virtcon_mode_ == fidl_display::wire::VirtconMode::kFallback && primary_client_ == nullptr)) {
@@ -562,6 +571,8 @@ void Controller::HandleClientOwnershipChanges() {
 }
 
 void Controller::OnClientDead(ClientProxy* client) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+
   fdf::info("Client {} dead", client->client_id().value());
   fbl::AutoLock lock(mtx());
   if (unbinding_) {
@@ -585,6 +596,8 @@ void Controller::OnClientDead(ClientProxy* client) {
 
 zx::result<std::span<const display::ModeAndId>> Controller::GetDisplayPreferredModes(
     display::DisplayId display_id) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+
   if (unbinding_) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
@@ -599,6 +612,8 @@ zx::result<std::span<const display::ModeAndId>> Controller::GetDisplayPreferredM
 
 zx::result<std::span<const display::DisplayTiming>> Controller::GetDisplayTimings(
     display::DisplayId display_id) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+
   if (unbinding_) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
@@ -613,6 +628,8 @@ zx::result<std::span<const display::DisplayTiming>> Controller::GetDisplayTiming
 
 zx::result<fbl::Vector<display::PixelFormat>> Controller::GetSupportedPixelFormats(
     display::DisplayId display_id) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+
   auto displays_it = displays_.find(display_id);
   if (!displays_it.IsValid()) {
     return zx::error(ZX_ERR_NOT_FOUND);
@@ -653,6 +670,7 @@ zx_status_t Controller::CreateClient(
     fidl::ServerEnd<fidl_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_client_end,
     fit::function<void()> on_client_disconnected) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(on_client_disconnected);
 
   PrintChannelKoids(client_priority, coordinator_server_end.channel());
@@ -750,6 +768,8 @@ zx_status_t Controller::CreateClient(
 }
 
 display::DriverBufferCollectionId Controller::GetNextDriverBufferCollectionId() {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+
   fbl::AutoLock lock(mtx());
   return next_driver_buffer_collection_id_++;
 }
@@ -757,8 +777,10 @@ display::DriverBufferCollectionId Controller::GetNextDriverBufferCollectionId() 
 void Controller::OpenCoordinatorWithListenerForVirtcon(
     OpenCoordinatorWithListenerForVirtconRequestView request,
     OpenCoordinatorWithListenerForVirtconCompleter::Sync& completer) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(request->has_coordinator());
   ZX_DEBUG_ASSERT(request->has_coordinator_listener());
+
   zx_status_t create_status =
       CreateClient(ClientPriority::kVirtcon, std::move(request->coordinator()),
                    std::move(request->coordinator_listener()),
@@ -773,8 +795,10 @@ void Controller::OpenCoordinatorWithListenerForVirtcon(
 void Controller::OpenCoordinatorWithListenerForPrimary(
     OpenCoordinatorWithListenerForPrimaryRequestView request,
     OpenCoordinatorWithListenerForPrimaryCompleter::Sync& completer) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(request->has_coordinator());
   ZX_DEBUG_ASSERT(request->has_coordinator_listener());
+
   zx_status_t create_status =
       CreateClient(ClientPriority::kPrimary, std::move(request->coordinator()),
                    std::move(request->coordinator_listener()),
@@ -849,6 +873,7 @@ zx::result<> Controller::Initialize() {
 }
 
 void Controller::PrepareStop() {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   fdf::info("Controller::PrepareStop started");
 
   {
@@ -878,8 +903,6 @@ void Controller::PrepareStop() {
   fdf::info("Controller::PrepareStop finished");
 }
 
-void Controller::Stop() { fdf::info("Controller::Stop"); }
-
 Controller::Controller(std::unique_ptr<EngineDriverClient> engine_driver_client,
                        fdf::UnownedSynchronizedDispatcher driver_dispatcher,
                        fdf::UnownedSynchronizedDispatcher engine_listener_dispatcher)
@@ -889,6 +912,7 @@ Controller::Controller(std::unique_ptr<EngineDriverClient> engine_driver_client,
       engine_listener_fidl_adapter_(this, engine_listener_dispatcher_->borrow()),
       vsync_monitor_(root_.CreateChild("vsync_monitor"), driver_dispatcher_->async_dispatcher()),
       engine_driver_client_(std::move(engine_driver_client)) {
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(engine_driver_client_ != nullptr);
 
   last_valid_apply_config_timestamp_ns_property_ =

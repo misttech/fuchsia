@@ -91,7 +91,11 @@ void CoordinatorDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
   completer(zx::ok());
 }
 
-void CoordinatorDriver::Stop() { controller_->Stop(); }
+void CoordinatorDriver::Stop() {
+  // Stop() should get called right before the destructor. Logging helps us
+  // verify this assumption when debugging controller hangs.
+  fdf::info("CoordinatorDriver::Stop");
+}
 
 void CoordinatorDriver::ConnectProvider(
     fidl::ServerEnd<fuchsia_hardware_display::Provider> provider_request) {

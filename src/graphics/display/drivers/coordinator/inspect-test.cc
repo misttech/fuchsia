@@ -19,23 +19,6 @@ namespace display_coordinator {
 
 namespace {
 
-struct EngineDriverClientAndServer {
-  static EngineDriverClientAndServer Create();
-
-  std::unique_ptr<EngineDriverClient> engine_driver_client;
-  fdf::ServerEnd<fuchsia_hardware_display_engine::Engine> engine_server;
-};
-
-// static
-EngineDriverClientAndServer EngineDriverClientAndServer::Create() {
-  auto [engine_client, engine_server] =
-      fdf::Endpoints<fuchsia_hardware_display_engine::Engine>::Create();
-  return {
-      .engine_driver_client = std::make_unique<EngineDriverClientFidl>(std::move(engine_client)),
-      .engine_server = std::move(engine_server),
-  };
-}
-
 inspect::Hierarchy GetInspectHierarchy(const inspect::Inspector& inspector) {
   fpromise::result<inspect::Hierarchy> hierarchy_maybe =
       fpromise::run_single_threaded(inspect::ReadFromInspector(inspector));
@@ -45,24 +28,36 @@ inspect::Hierarchy GetInspectHierarchy(const inspect::Inspector& inspector) {
 
 class InspectTest : public ::testing::Test {
  public:
-  InspectTest()
-      : engine_driver_client_and_server_(EngineDriverClientAndServer::Create()),
-        controller_(std::move(engine_driver_client_and_server_.engine_driver_client),
-                    /*dispatcher=*/driver_runtime_.StartBackgroundDispatcher(),
-                    /*engine_listener_dispatcher=*/driver_runtime_.StartBackgroundDispatcher()) {}
+  void SetUp() override {
+    auto [engine_client_end, engine_server_end] =
+        fdf::Endpoints<fuchsia_hardware_display_engine::Engine>::Create();
+    std::unique_ptr<EngineDriverClient> engine_driver_client =
+        std::make_unique<EngineDriverClientFidl>(std::move(engine_client_end));
+
+    auto [coordinator_client_end, coordinator_server_end] =
+        fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
+
+    controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow(),
+                        engine_listener_dispatcher_->borrow());
+  }
+
+  void TearDown() override {
+    driver_runtime_.ShutdownAllDispatchers(/*dut_initial_dispatcher=*/nullptr);
+  }
 
  protected:
-  // `logger_` must outlive `driver_runtime_` to allow for any
-  // logging in driver de-initialization code.
   fdf_testing::ScopedGlobalLogger logger_;
   fdf_testing::DriverRuntime driver_runtime_;
 
-  EngineDriverClientAndServer engine_driver_client_and_server_;
-  Controller controller_;
+  fdf::UnownedSynchronizedDispatcher driver_dispatcher_ = driver_runtime_.GetForegroundDispatcher();
+  fdf::UnownedSynchronizedDispatcher engine_listener_dispatcher_ =
+      driver_runtime_.StartBackgroundDispatcher();
+
+  std::optional<Controller> controller_;
 };
 
 TEST_F(InspectTest, ApplyConfigHierarchy) {
-  inspect::Hierarchy hierarchy = GetInspectHierarchy(controller_.inspector());
+  inspect::Hierarchy hierarchy = GetInspectHierarchy(controller_->inspector());
   const inspect::Hierarchy* display = hierarchy.GetByPath({"display"});
   ASSERT_NE(display, nullptr);
   const inspect::NodeValue& display_node = display->node();
@@ -79,7 +74,7 @@ TEST_F(InspectTest, ApplyConfigHierarchy) {
 }
 
 TEST_F(InspectTest, VsyncMonitorHierarchy) {
-  inspect::Hierarchy hierarchy = GetInspectHierarchy(controller_.inspector());
+  inspect::Hierarchy hierarchy = GetInspectHierarchy(controller_->inspector());
   const inspect::Hierarchy* vsync_monitor = hierarchy.GetByPath({"display", "vsync_monitor"});
   ASSERT_NE(vsync_monitor, nullptr);
   const inspect::NodeValue& vsync_monitor_node = vsync_monitor->node();

@@ -186,7 +186,6 @@ void FakeDisplayStack::SyncShutdown() {
   coordinator_driver_dispatcher_.ShutdownAsync();
   coordinator_driver_dispatcher_is_shut_down_.Wait();
 
-  coordinator_controller_->Stop();
   coordinator_controller_.reset();
 
   engine_driver_dispatcher_.ShutdownAsync();

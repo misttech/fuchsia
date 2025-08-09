@@ -92,12 +92,6 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   // lifecycle.
   void PrepareStop();
 
-  // References the `Stop()` method in the DFv2 (fdf::DriverBase) driver
-  // lifecycle.
-  //
-  // Must be called after `driver_dispatcher_` is shut down.
-  void Stop();
-
   // `EngineListener`:
   // Must run on `engine_listener_dispatcher_`.
   void OnDisplayAdded(std::unique_ptr<AddedDisplayInfo> added_display_info) override;
