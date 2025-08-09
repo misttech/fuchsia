@@ -31,7 +31,7 @@ namespace sdmmc {
 
 class SdmmcRootDevice;
 
-class SdioControllerDevice : public ddk::InBandInterruptProtocol<SdioControllerDevice> {
+class SdioControllerDevice : public fdf::WireServer<fuchsia_hardware_sdmmc::InBandInterrupt> {
  public:
   static constexpr char kDeviceName[] = "sdmmc-sdio";
 
@@ -85,7 +85,7 @@ class SdioControllerDevice : public ddk::InBandInterruptProtocol<SdioControllerD
   zx_status_t SdioRequestCardReset();
   zx_status_t SdioPerformTuning();
 
-  void InBandInterruptCallback();
+  void Callback(fdf::Arena& arena, CallbackCompleter::Sync& completer) override;
 
   zx_status_t SdioDoRwTxn(uint8_t fn_idx, const sdio_rw_txn_t* txn) {
     return SdioDoRwTxn(fn_idx, SdioRwTxn<sdmmc_buffer_region_t>{
@@ -213,6 +213,9 @@ class SdioControllerDevice : public ddk::InBandInterruptProtocol<SdioControllerD
   // This value comes from metadata. If true, the device must be re-initialized after leaving the
   // OFF state.
   bool vccq_off_with_controller_off_ = false;
+
+  std::optional<fdf::ServerBinding<fuchsia_hardware_sdmmc::InBandInterrupt>>
+      in_band_interrupt_binding_;
 };
 
 }  // namespace sdmmc

@@ -159,10 +159,6 @@ zx_status_t FakeSdmmcDevice::SdmmcRequestInternal(const sdmmc_req_t& req, uint32
 
 zx_status_t FakeSdmmcDevice::SdmmcRegisterInBandInterrupt(
     const in_band_interrupt_protocol_t* interrupt_cb) {
-  if (in_band_interrupt_supported_) {
-    interrupt_cb_ = *interrupt_cb;
-    return ZX_OK;
-  }
   return ZX_ERR_NOT_SUPPORTED;
 }
 
@@ -299,8 +295,13 @@ void FakeSdmmcDevice::Erase(size_t address, size_t size, uint8_t func) {
   }
 }
 
-void FakeSdmmcDevice::TriggerInBandInterrupt() const {
-  interrupt_cb_.ops->callback(interrupt_cb_.ctx);
+zx_status_t FakeSdmmcDevice::TriggerInBandInterrupt() const {
+  fdf::Arena arena('TEST');
+  auto result = interrupt_cb_.buffer(arena)->Callback();
+  if (!result.ok()) {
+    return result.status();
+  }
+  return ZX_OK;
 }
 
 zx_status_t FakeSdmmcDevice::CopySdmmcRegions(cpp20::span<const sdmmc_buffer_region_t> regions,
@@ -417,13 +418,21 @@ void FakeSdmmcDevice::SetBusFreq(SetBusFreqRequestView request, fdf::Arena& aren
 void FakeSdmmcDevice::SetTiming(SetTimingRequestView request, fdf::Arena& arena,
                                 SetTimingCompleter::Sync& completer) {
   sdmmc_timing_t timing;
-  // Only handling the cases for SdmmcBlockDeviceTest to work correctly.
   switch (request->timing) {
     case fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHs:
       timing = SDMMC_TIMING_HS;
       break;
     case fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHsddr:
       timing = SDMMC_TIMING_HSDDR;
+      break;
+    case fuchsia_hardware_sdmmc::wire::SdmmcTiming::kSdr50:
+      timing = SDMMC_TIMING_SDR50;
+      break;
+    case fuchsia_hardware_sdmmc::wire::SdmmcTiming::kSdr104:
+      timing = SDMMC_TIMING_SDR104;
+      break;
+    case fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHs200:
+      timing = SDMMC_TIMING_HS200;
       break;
     case fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHs400:
       timing = SDMMC_TIMING_HS400;
@@ -463,7 +472,11 @@ void FakeSdmmcDevice::PerformTuning(PerformTuningRequestView request, fdf::Arena
 void FakeSdmmcDevice::RegisterInBandInterrupt(RegisterInBandInterruptRequestView request,
                                               fdf::Arena& arena,
                                               RegisterInBandInterruptCompleter::Sync& completer) {
-  // TODO(fxbug.dev/134787): Support RegisterInBandInterrupt.
+  if (in_band_interrupt_supported_) {
+    interrupt_cb_.Bind(std::move(request->interrupt_cb));
+    completer.buffer(arena).ReplySuccess();
+    return;
+  }
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 

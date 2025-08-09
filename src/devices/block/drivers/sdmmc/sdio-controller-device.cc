@@ -211,8 +211,8 @@ zx_status_t SdioControllerDevice::StartSdioIrqDispatcherIfNeeded() {
   }
   irq_dispatcher_ = *std::move(dispatcher);
 
-  // Do this last, as we may be called at any time on any thread after registering the callback.
-  zx_status_t status = sdmmc_->RegisterInBandInterrupt(this, &in_band_interrupt_protocol_ops_);
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_sdmmc::InBandInterrupt>::Create();
+  zx_status_t status = sdmmc_->RegisterInBandInterrupt(std::move(client));
   if (status != ZX_OK) {
     in_band_interrupt_supported_ = false;
 
@@ -223,6 +223,10 @@ zx_status_t SdioControllerDevice::StartSdioIrqDispatcherIfNeeded() {
     return status;
   }
 
+  async::PostTask(irq_dispatcher_.async_dispatcher(), [this, server = std::move(server)]() mutable {
+    in_band_interrupt_binding_.emplace(irq_dispatcher_.get(), std::move(server), this,
+                                       fidl::kIgnoreBindingClosure);
+  });
   return ZX_OK;
 }
 
@@ -600,8 +604,38 @@ void SdioControllerDevice::SdioAckInBandIntr(uint8_t fn_idx) {
   }
 }
 
-void SdioControllerDevice::InBandInterruptCallback() {
-  async::PostTask(irq_dispatcher_.async_dispatcher(), [this] { SdioIrqHandler(); });
+void SdioControllerDevice::Callback(fdf::Arena& arena, CallbackCompleter::Sync& completer) {
+  const zx::time_boot irq_time = zx::clock::get_boot();
+
+  if (shutdown_) {
+    completer.buffer(arena).Reply();
+    return;
+  }
+
+  uint8_t intr_byte;
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+
+    zx_status_t st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_INTx_INTR_PEN_ADDR, 0, &intr_byte);
+    if (st != ZX_OK) {
+      FDF_LOGL(ERROR, logger(), "Failed reading intr pending reg. status: %d", st);
+      completer.buffer(arena).Reply();
+      return;
+    }
+
+    // Only trigger interrupts for functions that have ack'd the previous interrupt. Clear the
+    // enabled bits for these functions.
+    intr_byte &= interrupt_enabled_mask_;
+    interrupt_enabled_mask_ &= ~intr_byte;
+  }
+
+  for (uint8_t i = 1; SdioFnIdxValid(i); i++) {
+    if (intr_byte & (1 << i)) {
+      sdio_irqs_[i].trigger(0, irq_time);
+    }
+  }
+
+  completer.buffer(arena).Reply();
 }
 
 void SdioControllerDevice::FunctionPowerOn(uint8_t fn_idx) {
@@ -632,36 +666,6 @@ void SdioControllerDevice::FunctionPowerOff(uint8_t fn_idx) {
   // Clear the bit for function 0 if the last I/O function just powered down.
   if (function_power_on_ == 1) {
     function_power_on_.reset();
-  }
-}
-
-void SdioControllerDevice::SdioIrqHandler() {
-  const zx::time_boot irq_time = zx::clock::get_boot();
-
-  if (shutdown_) {
-    return;
-  }
-
-  uint8_t intr_byte;
-  {
-    std::lock_guard<std::mutex> lock(lock_);
-
-    zx_status_t st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_INTx_INTR_PEN_ADDR, 0, &intr_byte);
-    if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed reading intr pending reg. status: %d", st);
-      return;
-    }
-
-    // Only trigger interrupts for functions that have ack'd the previous interrupt. Clear the
-    // enabled bits for these functions.
-    intr_byte &= interrupt_enabled_mask_;
-    interrupt_enabled_mask_ &= ~intr_byte;
-  }
-
-  for (uint8_t i = 1; SdioFnIdxValid(i); i++) {
-    if (intr_byte & (1 << i)) {
-      sdio_irqs_[i].trigger(0, irq_time);
-    }
   }
 }
 

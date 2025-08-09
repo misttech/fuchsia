@@ -162,7 +162,7 @@ class FakeSdmmcDevice : public ddk::SdmmcProtocol<FakeSdmmcDevice>,
   }
   void Erase(size_t address, size_t size, uint8_t func = 0);
 
-  void TriggerInBandInterrupt() const;
+  zx_status_t TriggerInBandInterrupt() const;
 
   void set_command_callback(Command command, CommandCallback callback) {
     command_callbacks_[command] = std::move(callback);
@@ -200,7 +200,7 @@ class FakeSdmmcDevice : public ddk::SdmmcProtocol<FakeSdmmcDevice>,
   std::map<Command, uint32_t> command_counts_;
   std::map<Command, CommandCallback> command_callbacks_;
   std::vector<sdmmc_req_t> requests_;
-  in_band_interrupt_protocol_t interrupt_cb_ = {};
+  fdf::WireSyncClient<fuchsia_hardware_sdmmc::InBandInterrupt> interrupt_cb_;
   zx_status_t set_signal_voltage_status_ = ZX_OK;
   zx_status_t set_bus_width_status_ = ZX_OK;
   zx_status_t set_bus_freq_status_ = ZX_OK;

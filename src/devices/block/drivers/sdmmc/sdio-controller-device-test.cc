@@ -51,8 +51,20 @@ class TestSdmmcRootDevice : public SdmmcRootDevice {
 
  protected:
   zx_status_t Init(const fuchsia_hardware_sdmmc::SdmmcMetadata& metadata) override {
+    const bool use_fidl = metadata.use_fidl().value_or(true);
+
+    std::unique_ptr<SdmmcDevice> sdmmc;
+    if (use_fidl) {
+      zx::result client_end = sdmmc_.GetFidlClientEnd();
+      if (client_end.is_error()) {
+        return client_end.error_value();
+      }
+      sdmmc = std::make_unique<SdmmcDevice>(this, std::move(*client_end));
+    } else {
+      sdmmc = std::make_unique<SdmmcDevice>(this, sdmmc_.GetClient());
+    }
+
     zx_status_t status;
-    auto sdmmc = std::make_unique<SdmmcDevice>(this, sdmmc_.GetClient());
     if (status = sdmmc->RefreshHostInfo(); status != ZX_OK) {
       return status;
     }
@@ -529,7 +541,7 @@ TEST_F(SdioControllerDeviceTest, MultiplexInterrupts) {
   ASSERT_OK(interrupt7.bind(port, 7, 0));
 
   sdmmc_.Write(SDIO_CIA_CCCR_INTx_INTR_PEN_ADDR, std::vector<uint8_t>{0b0000'0010}, 0);
-  sdmmc_.TriggerInBandInterrupt();
+  EXPECT_OK(sdmmc_.TriggerInBandInterrupt());
 
   zx_port_packet_t packet;
   EXPECT_OK(port.wait(zx::time::infinite(), &packet));
@@ -539,7 +551,7 @@ TEST_F(SdioControllerDeviceTest, MultiplexInterrupts) {
   driver_test().runtime().RunUntilIdle();
 
   sdmmc_.Write(SDIO_CIA_CCCR_INTx_INTR_PEN_ADDR, std::vector<uint8_t>{0b1111'1110}, 0);
-  sdmmc_.TriggerInBandInterrupt();
+  EXPECT_OK(sdmmc_.TriggerInBandInterrupt());
 
   EXPECT_OK(port.wait(zx::time::infinite(), &packet));
   EXPECT_EQ(packet.key, uint64_t{1});
@@ -566,7 +578,7 @@ TEST_F(SdioControllerDeviceTest, MultiplexInterrupts) {
   driver_test().runtime().RunUntilIdle();
 
   sdmmc_.Write(SDIO_CIA_CCCR_INTx_INTR_PEN_ADDR, std::vector<uint8_t>{0b1010'0010}, 0);
-  sdmmc_.TriggerInBandInterrupt();
+  EXPECT_OK(sdmmc_.TriggerInBandInterrupt());
 
   EXPECT_OK(port.wait(zx::time::infinite(), &packet));
   EXPECT_EQ(packet.key, uint64_t{1});
@@ -581,7 +593,7 @@ TEST_F(SdioControllerDeviceTest, MultiplexInterrupts) {
   driver_test().runtime().RunUntilIdle();
 
   sdmmc_.Write(SDIO_CIA_CCCR_INTx_INTR_PEN_ADDR, std::vector<uint8_t>{0b0011'0110}, 0);
-  sdmmc_.TriggerInBandInterrupt();
+  EXPECT_OK(sdmmc_.TriggerInBandInterrupt());
 
   EXPECT_OK(port.wait(zx::time::infinite(), &packet));
   EXPECT_EQ(packet.key, uint64_t{1});

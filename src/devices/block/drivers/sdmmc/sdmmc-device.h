@@ -107,8 +107,8 @@ class SdmmcDevice {
   zx_status_t SetTiming(sdmmc_timing_t timing);
   zx_status_t HwReset();
   zx_status_t PerformTuning(uint32_t cmd_idx);
-  zx_status_t RegisterInBandInterrupt(void* interrupt_cb_ctx,
-                                      const in_band_interrupt_protocol_ops_t* interrupt_cb_ops);
+  zx_status_t RegisterInBandInterrupt(
+      fdf::ClientEnd<fuchsia_hardware_sdmmc::InBandInterrupt> client_end);
   void AckInBandInterrupt();
   zx_status_t RegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo, uint64_t offset,
                           uint64_t size, uint32_t vmo_rights);

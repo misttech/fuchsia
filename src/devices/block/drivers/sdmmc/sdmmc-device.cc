@@ -895,6 +895,9 @@ zx_status_t SdmmcDevice::SetTiming(sdmmc_timing_t timing) {
     case SDMMC_TIMING_SDR25:
       wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kSdr25;
       break;
+    case SDMMC_TIMING_SDR50:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kSdr50;
+      break;
     case SDMMC_TIMING_SDR104:
       wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kSdr104;
       break;
@@ -956,13 +959,21 @@ zx_status_t SdmmcDevice::PerformTuning(uint32_t cmd_idx) {
 }
 
 zx_status_t SdmmcDevice::RegisterInBandInterrupt(
-    void* interrupt_cb_ctx, const in_band_interrupt_protocol_ops_t* interrupt_cb_ops) {
+    fdf::ClientEnd<fuchsia_hardware_sdmmc::InBandInterrupt> client_end) {
   if (!using_fidl_) {
-    return host_.RegisterInBandInterrupt(interrupt_cb_ctx, interrupt_cb_ops);
+    // Not supported by Banjo.
+    return ZX_ERR_NOT_SUPPORTED;
   }
 
-  // TODO(b/300145353): For now, not supported by aml-sdmmc.
-  return ZX_ERR_NOT_SUPPORTED;
+  fdf::Arena arena('SDMC');
+  auto result = client_.sync().buffer(arena)->RegisterInBandInterrupt(std::move(client_end));
+  if (!result.ok()) {
+    return result.status();
+  }
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
 }
 
 void SdmmcDevice::AckInBandInterrupt() {
