@@ -157,11 +157,6 @@ zx_status_t FakeSdmmcDevice::SdmmcRequestInternal(const sdmmc_req_t& req, uint32
   return status;
 }
 
-zx_status_t FakeSdmmcDevice::SdmmcRegisterInBandInterrupt(
-    const in_band_interrupt_protocol_t* interrupt_cb) {
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
 zx_status_t FakeSdmmcDevice::SdmmcRegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo,
                                               uint64_t offset, uint64_t size, uint32_t vmo_rights) {
   if (client_id >= std::size(registered_vmos_)) {
@@ -481,9 +476,7 @@ void FakeSdmmcDevice::RegisterInBandInterrupt(RegisterInBandInterruptRequestView
 }
 
 void FakeSdmmcDevice::AckInBandInterrupt(fdf::Arena& arena,
-                                         AckInBandInterruptCompleter::Sync& completer) {
-  // Mirroring FakeSdmmcDevice::SdmmcAckInBandInterrupt().
-}
+                                         AckInBandInterruptCompleter::Sync& completer) {}
 
 void FakeSdmmcDevice::RegisterVmo(RegisterVmoRequestView request, fdf::Arena& arena,
                                   RegisterVmoCompleter::Sync& completer) {

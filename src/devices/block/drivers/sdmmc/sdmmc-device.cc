@@ -977,14 +977,12 @@ zx_status_t SdmmcDevice::RegisterInBandInterrupt(
 }
 
 void SdmmcDevice::AckInBandInterrupt() {
-  if (!using_fidl_) {
-    return host_.AckInBandInterrupt();
-  }
-
-  fdf::Arena arena('SDMC');
-  auto result = client_.sync().buffer(arena)->AckInBandInterrupt();
-  if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "AckInBandInterrupt request failed: %s", result.status_string());
+  if (using_fidl_) {
+    fdf::Arena arena('SDMC');
+    auto result = client_.sync().buffer(arena)->AckInBandInterrupt();
+    if (!result.ok()) {
+      FDF_LOGL(ERROR, logger(), "AckInBandInterrupt request failed: %s", result.status_string());
+    }
   }
 }
 

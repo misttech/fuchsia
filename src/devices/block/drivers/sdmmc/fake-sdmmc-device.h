@@ -124,8 +124,6 @@ class FakeSdmmcDevice : public ddk::SdmmcProtocol<FakeSdmmcDevice>,
   zx_status_t SdmmcHwReset() { return ZX_OK; }
   zx_status_t SdmmcPerformTuning(uint32_t cmd_idx) { return perform_tuning_status_; }
 
-  zx_status_t SdmmcRegisterInBandInterrupt(const in_band_interrupt_protocol_t* interrupt_cb);
-  void SdmmcAckInBandInterrupt() {}
   zx_status_t SdmmcRegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo, uint64_t offset,
                                uint64_t size, uint32_t vmo_rights);
   zx_status_t SdmmcUnregisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo* out_vmo);

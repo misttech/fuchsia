@@ -147,12 +147,6 @@ zx_status_t AmlSdmmcWithBanjo::SdmmcPerformTuning(uint32_t tuning_cmd_idx) {
   return PerformTuningImpl(tuning_cmd_idx);
 }
 
-zx_status_t AmlSdmmcWithBanjo::SdmmcRegisterInBandInterrupt(
-    const in_band_interrupt_protocol_t* interrupt_cb) {
-  // Mirroring AmlSdmmc::RegisterInBandInterrupt().
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
 zx_status_t AmlSdmmcWithBanjo::SdmmcRegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo,
                                                 uint64_t offset, uint64_t size,
                                                 uint32_t vmo_rights) {

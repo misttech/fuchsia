@@ -25,10 +25,6 @@ class AmlSdmmcWithBanjo : public AmlSdmmc, public ddk::SdmmcProtocol<AmlSdmmcWit
   zx_status_t SdmmcSetTiming(sdmmc_timing_t timing) __TA_EXCLUDES(lock_);
   zx_status_t SdmmcHwReset() __TA_EXCLUDES(lock_);
   zx_status_t SdmmcPerformTuning(uint32_t cmd_idx) __TA_EXCLUDES(tuning_lock_);
-  zx_status_t SdmmcRegisterInBandInterrupt(const in_band_interrupt_protocol_t* interrupt_cb);
-  void SdmmcAckInBandInterrupt() {
-    // Mirroring AmlSdmmc::AckInBandInterrupt().
-  }
   zx_status_t SdmmcRegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo, uint64_t offset,
                                uint64_t size, uint32_t vmo_rights) __TA_EXCLUDES(lock_);
   zx_status_t SdmmcUnregisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo* out_vmo)
