@@ -72,6 +72,7 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
         } {}
 
   zx::result<> Start() override;
+  void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
   void HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) override;
   void SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& arena,
@@ -285,6 +286,9 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
   fdf::Dispatcher irq_dispatcher_;
 
   fdf::ServerBindingGroup<fuchsia_hardware_sdmmc::Sdmmc> bindings_;
+
+  std::optional<fdf::PrepareStopCompleter> stop_completer_ TA_GUARDED(mtx_);
+  bool shutdown_ TA_GUARDED(mtx_) = false;
 };
 
 }  // namespace sdhci

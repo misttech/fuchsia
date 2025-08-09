@@ -481,6 +481,9 @@ zx::result<fidl::Array<uint32_t, 4>> Sdhci::Request(
   {
     std::lock_guard<std::mutex> lock(mtx_);
 
+    if (shutdown_) {
+      return zx::error(ZX_ERR_CANCELED);
+    }
     // one command at a time
     if (pending_request_) {
       return zx::error(ZX_ERR_SHOULD_WAIT);
@@ -501,7 +504,14 @@ zx::result<fidl::Array<uint32_t, 4>> Sdhci::Request(
   PendingRequest pending_request = *std::move(pending_request_);
   pending_request_.reset();
 
-  return FinishRequest(request, pending_request);
+  zx::result<fidl::Array<uint32_t, 4>> response = FinishRequest(request, pending_request);
+
+  if (stop_completer_) {
+    (*stop_completer_)(zx::ok());
+    stop_completer_.reset();
+  }
+
+  return response;
 }
 
 zx::result<Sdhci::PendingRequest> Sdhci::StartRequest(
@@ -1498,6 +1508,17 @@ zx::result<> Sdhci::Start() {
   node_controller_.Bind(std::move(result.value()));
 
   return zx::ok();
+}
+
+void Sdhci::PrepareStop(fdf::PrepareStopCompleter completer) {
+  std::lock_guard<std::mutex> lock(mtx_);
+  shutdown_ = true;
+  if (pending_request_) {
+    // Wait for the in-flight request to finish before completing PrepareStop().
+    stop_completer_.emplace(std::move(completer));
+  } else {
+    completer(zx::ok());
+  }
 }
 
 }  // namespace sdhci

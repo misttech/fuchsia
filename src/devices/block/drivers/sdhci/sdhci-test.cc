@@ -2702,6 +2702,43 @@ TEST_F(SdhciTest, BufferedWrite) {
   ASSERT_OK(StopDriver());
 }
 
+TEST_F(SdhciTest, PrepareStop) {
+  ASSERT_OK(StartDriver());
+
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
+      .cmd_idx = SDMMC_SET_BLOCK_COUNT,
+      .cmd_flags = SDMMC_SET_BLOCK_COUNT_FLAGS,
+      .arg = 1,
+      .blocksize = 0,
+      .suppress_error_messages = false,
+      .client_id = 0,
+      .buffers = {},
+  };
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
+  // Call PrepareStop() and make sure the next request is canceled.
+  EXPECT_TRUE(driver_test().StopDriver().is_ok());
+
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_error());
+        EXPECT_EQ(result->error_value(), ZX_ERR_CANCELED);
+      });
+  driver_test().runtime().RunUntilIdle();
+
+  driver_test().ShutdownAndDestroyDriver();
+}
+
 }  // namespace sdhci
 
 FUCHSIA_DRIVER_EXPORT(sdhci::TestSdhci);
