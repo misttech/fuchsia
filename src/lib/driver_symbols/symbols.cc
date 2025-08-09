@@ -9,6 +9,7 @@
 #include <lib/zx/vmar.h>
 #include <zircon/status.h>
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 
@@ -187,17 +188,15 @@ zx::result<std::vector<std::string>> FindRestrictedSymbols(zx::unowned_vmo drive
     }
     // |st_name| is the index into the dynamic symbols string table.
     const char* name = dynsym_strings_table->ptr() + symbol.st_name;
-    if (kRestrictedLibcSymbols.find(name) != kRestrictedLibcSymbols.end()) {
+    if (std::ranges::binary_search(kRestrictedLibcSymbols, name)) {
       matches.push_back(name);
-    } else if (kRestrictedDriverRuntimeSymbols.find(name) !=
-               kRestrictedDriverRuntimeSymbols.end()) {
-      if (kRestrictedDriverRuntimeSymbolsDriversAllowlist.find(*relative_url) ==
-          kRestrictedDriverRuntimeSymbolsDriversAllowlist.end()) {
+    } else if (std::ranges::binary_search(kRestrictedDriverRuntimeSymbols, name)) {
+      if (!std::ranges::binary_search(kRestrictedDriverRuntimeSymbolsDriversAllowlist,
+                                      *relative_url)) {
         matches.push_back(name);
       }
-    } else if (kCreateThreadSymbols.find(name) != kCreateThreadSymbols.end()) {
-      if (kCreateThreadSymbolsDriversAllowlist.find(*relative_url) ==
-          kCreateThreadSymbolsDriversAllowlist.end()) {
+    } else if (std::ranges::binary_search(kCreateThreadSymbols, name)) {
+      if (!std::ranges::binary_search(kCreateThreadSymbolsDriversAllowlist, *relative_url)) {
         matches.push_back(name);
       }
     }
