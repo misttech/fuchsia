@@ -295,11 +295,6 @@ void DisplayEngineFidlAdapter::ReleaseCapture(
   completer.buffer(arena).ReplySuccess();
 }
 
-void DisplayEngineFidlAdapter::IsAvailable(fdf::Arena& arena,
-                                           IsAvailableCompleter::Sync& completer) {
-  completer.buffer(arena).Reply();
-}
-
 void DisplayEngineFidlAdapter::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_display_engine::Engine> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {

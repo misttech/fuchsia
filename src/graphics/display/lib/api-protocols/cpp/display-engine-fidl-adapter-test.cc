@@ -1049,13 +1049,6 @@ TEST_F(DisplayEngineFidlAdapterTest, SetMinimumRgbEngineError) {
   EXPECT_STATUS(zx::error(ZX_ERR_IO_REFUSED), fidl_domain_result);
 }
 
-TEST_F(DisplayEngineFidlAdapterTest, IsAvailable) {
-  fdf::Arena arena('TEST');
-  fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::IsAvailable>
-      fidl_transport_status = fidl_client_.buffer(arena)->IsAvailable();
-  ASSERT_TRUE(fidl_transport_status.ok()) << fidl_transport_status.FormatDescription();
-}
-
 }  // namespace
 
 }  // namespace display

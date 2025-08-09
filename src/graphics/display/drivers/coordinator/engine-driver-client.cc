@@ -17,8 +17,6 @@ namespace display_coordinator {
 
 namespace {
 
-constexpr fdf_arena_tag_t kArenaTag = 'DISP';
-
 zx::result<std::unique_ptr<EngineDriverClient>> CreateFidlEngineDriverClient(
     fdf::Namespace& incoming) {
   zx::result<fdf::ClientEnd<fuchsia_hardware_display_engine::Engine>> connect_engine_client_result =
@@ -33,13 +31,6 @@ zx::result<std::unique_ptr<EngineDriverClient>> CreateFidlEngineDriverClient(
   if (!engine_client.is_valid()) {
     fdf::warn("Display engine FIDL device is invalid");
     return zx::error(ZX_ERR_BAD_HANDLE);
-  }
-
-  fdf::Arena arena(kArenaTag);
-  fdf::WireUnownedResult result = fdf::WireCall(engine_client).buffer(arena)->IsAvailable();
-  if (!result.ok()) {
-    fdf::warn("Display engine FIDL device is not available: {}", result.FormatDescription());
-    return zx::error(result.status());
   }
 
   fbl::AllocChecker alloc_checker;

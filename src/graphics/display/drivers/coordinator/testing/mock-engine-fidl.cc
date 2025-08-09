@@ -28,7 +28,6 @@ struct MockEngineFidl::Expectation {
   SetMinimumRgbChecker set_minimum_rgb_checker;
   StartCaptureChecker start_capture_checker;
   ReleaseCaptureChecker release_capture_checker;
-  IsAvailableChecker is_available_checker;
 };
 
 MockEngineFidl::MockEngineFidl() = default;
@@ -107,11 +106,6 @@ void MockEngineFidl::ExpectStartCapture(StartCaptureChecker checker) {
 void MockEngineFidl::ExpectReleaseCapture(ReleaseCaptureChecker checker) {
   std::lock_guard<std::mutex> lock(mutex_);
   expectations_.push_back({.release_capture_checker = std::move(checker)});
-}
-
-void MockEngineFidl::ExpectIsAvailable(IsAvailableChecker checker) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  expectations_.push_back({.is_available_checker = std::move(checker)});
 }
 
 void MockEngineFidl::CheckAllCallsReplayed() {
@@ -299,17 +293,6 @@ void MockEngineFidl::ReleaseCapture(
   ZX_ASSERT_MSG(call_expectation.release_capture_checker != nullptr,
                 "Received call type does not match expected call type");
   call_expectation.release_capture_checker(request, arena, completer);
-}
-
-void MockEngineFidl::IsAvailable(fdf::Arena& arena, IsAvailableCompleter::Sync& completer) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  ZX_ASSERT_MSG(call_index_ < expectations_.size(), "All expected calls were already received");
-  Expectation& call_expectation = expectations_[call_index_];
-  ++call_index_;
-
-  ZX_ASSERT_MSG(call_expectation.is_available_checker != nullptr,
-                "Received call type does not match expected call type");
-  call_expectation.is_available_checker(arena, completer);
 }
 
 void MockEngineFidl::handle_unknown_method(

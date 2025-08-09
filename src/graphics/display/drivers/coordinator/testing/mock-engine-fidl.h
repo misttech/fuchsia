@@ -65,8 +65,6 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
   using ReleaseCaptureChecker = fit::function<void(
       fuchsia_hardware_display_engine::wire::EngineReleaseCaptureRequest* request,
       fdf::Arena& arena, ReleaseCaptureCompleter::Sync& completer)>;
-  using IsAvailableChecker =
-      fit::function<void(fdf::Arena& arena, IsAvailableCompleter::Sync& completer)>;
 
   MockEngineFidl();
   MockEngineFidl(const MockEngineFidl&) = delete;
@@ -88,7 +86,6 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
   void ExpectSetMinimumRgb(SetMinimumRgbChecker checker);
   void ExpectStartCapture(StartCaptureChecker checker);
   void ExpectReleaseCapture(ReleaseCaptureChecker checker);
-  void ExpectIsAvailable(IsAvailableChecker checker);
 
   // Must be called at least once during an instance's lifetime.
   //
@@ -131,8 +128,6 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
                     fdf::Arena& arena, StartCaptureCompleter::Sync& completer) override;
   void ReleaseCapture(fuchsia_hardware_display_engine::wire::EngineReleaseCaptureRequest* request,
                       fdf::Arena& arena, ReleaseCaptureCompleter::Sync& completer) override;
-
-  void IsAvailable(fdf::Arena& arena, IsAvailableCompleter::Sync& completer) override;
 
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_display_engine::Engine> metadata,

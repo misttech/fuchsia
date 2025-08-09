@@ -614,10 +614,6 @@ open protocol Engine {
         /// [`Engine.ImportImageForCapture`].
         capture_image_id ImageId;
     }) -> () error zx.Status;
-
-    // A noop method with a response from the server that should be used
-    // by clients who optionally use this library to determine availability.
-    flexible IsAvailable() -> ();
 };
 
 service Service {
