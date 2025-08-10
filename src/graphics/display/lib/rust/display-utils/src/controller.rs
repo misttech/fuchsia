@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::Context;
 use display_types::IMAGE_TILING_TYPE_LINEAR;
 
 use fidl::endpoints::ClientEnd;
@@ -9,15 +10,12 @@ use fidl_fuchsia_hardware_display::{
     self as display, CoordinatorListenerRequest, LayerId as FidlLayerId,
 };
 use fidl_fuchsia_hardware_display_types::{self as display_types};
-use fidl_fuchsia_io as fio;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
-use fuchsia_component::client::connect_to_protocol_at_path;
-use fuchsia_fs::directory::{WatchEvent, Watcher};
+use fuchsia_component::client::Service;
 use fuchsia_sync::RwLock;
 use futures::channel::mpsc;
-use futures::{future, TryStreamExt};
+use futures::{future, TryFutureExt, TryStreamExt};
 use std::fmt;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use zx::{self as zx, HandleBased};
 
@@ -26,7 +24,6 @@ use crate::error::{ConfigError, Error, Result};
 use crate::types::{BufferCollectionId, DisplayId, DisplayInfo, Event, EventId, ImageId, LayerId};
 use crate::INVALID_EVENT_ID;
 
-const DEV_DIR_PATH: &str = "/dev/class/display-coordinator";
 const TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
 
 /// Client abstraction for the `fuchsia.hardware.display.Coordinator` protocol. Instances can be
@@ -83,12 +80,18 @@ impl Coordinator {
     // the system (or if one is not attached within `TIMEOUT`). It wouldn't be neceesary to rely on
     // a timeout if the display driver sent en event with no displays.
     pub async fn init() -> Result<Coordinator> {
-        let path = watch_first_file(DEV_DIR_PATH)
+        let service_proxy = Service::open(display::ServiceMarker)
+            .context("failed to open display Service")
+            .map_err(Error::DeviceConnectionError)?
+            .watch_for_any()
+            .map_err(Error::DeviceConnectionError)
             .on_timeout(TIMEOUT.after_now(), || Err(Error::DeviceNotFound))
             .await?;
-        let path = path.to_str().ok_or(Error::DevicePathInvalid)?;
-        let provider_proxy = connect_to_protocol_at_path::<display::ProviderMarker>(path)
-            .map_err(Error::DeviceConnectionError)?;
+
+        let provider_proxy = service_proxy
+            .connect_to_provider()
+            .context("failed to connect to FIDL provider")
+            .map_err(|x| Error::DeviceConnectionError(x.into()))?;
 
         let (coordinator_proxy, coordinator_server_end) =
             fidl::endpoints::create_proxy::<display::CoordinatorMarker>();
@@ -396,27 +399,6 @@ impl CoordinatorInner {
 
         Ok(())
     }
-}
-
-// Asynchronously returns the path to the first file found under the given directory path. The
-// returned future does not resolve until either an entry is found or there is an error while
-// watching the directory.
-async fn watch_first_file(path: &str) -> Result<PathBuf> {
-    let dir = fuchsia_fs::directory::open_in_namespace(path, fio::PERM_READABLE)?;
-
-    let mut watcher = Watcher::new(&dir).await?;
-    while let Some(msg) = watcher.try_next().await? {
-        match msg.event {
-            WatchEvent::EXISTING | WatchEvent::ADD_FILE => {
-                if msg.filename == Path::new(".") {
-                    continue;
-                }
-                return Ok(Path::new(path).join(msg.filename));
-            }
-            _ => continue,
-        }
-    }
-    Err(Error::DeviceNotFound)
 }
 
 // Waits for a single fuchsia.hardware.display.Coordinator.OnDisplaysChanged event and returns the
