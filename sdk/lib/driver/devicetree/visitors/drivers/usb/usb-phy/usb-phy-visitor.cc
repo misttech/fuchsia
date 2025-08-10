@@ -20,8 +20,10 @@ namespace usb_phy_visitor_dt {
 
 UsbPhyVisitor::UsbPhyVisitor() {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(kPhys, kPhyCells));
-  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(kPhyNames));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::ReferenceProperty>(kPhys, kPhyCells, /* required */ false));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::StringListProperty>(kPhyNames, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
@@ -44,35 +46,31 @@ zx::result<> UsbPhyVisitor::Visit(fdf_devicetree::Node& node,
     return parser_output.take_error();
   }
 
-  if (parser_output->find(kPhys) != parser_output->end()) {
-    if (!parser_output->contains(kPhyNames)) {
+  auto phys = parser_output->Get<fdf_devicetree::References>(kPhys);
+  if (phys) {
+    auto phy_names = parser_output->Get<std::vector<std::string>>(kPhyNames);
+    if (!phy_names) {
       FDF_LOG(ERROR, "Node '%s' is missing phy-names.", node.name().c_str());
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
-    size_t count = (*parser_output)[kPhys].size();
-    if ((*parser_output)[kPhyNames].size() != count) {
+    if (phy_names->size() != phys->size()) {
       FDF_LOG(ERROR,
               "Node '%s' does not have required number of phy-names. Expected (%zu), actual (%zu).",
-              node.name().c_str(), count, (*parser_output)[kPhyNames].size());
+              node.name().c_str(), phys->size(), phy_names->size());
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
-    for (uint32_t index = 0; index < count; index++) {
-      auto reference = (*parser_output)[kPhys][index].AsReference();
-      if (!reference) {
+    for (uint32_t index = 0; index < phys->size(); index++) {
+      auto& reference = (*phys)[index];
+      if (!reference.reference_node()) {
         FDF_LOG(ERROR, "Node '%s' has invalid phy reference at %d index.", node.name().c_str(),
                 index);
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
 
-      auto name = (*parser_output)[kPhyNames][index].AsString();
-      if (!name) {
-        FDF_LOG(ERROR, "Node '%s' has invalid phy-name property.", node.name().c_str());
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-
-      auto result = AddChildNodeSpec(node, *name);
+      auto& name = (*phy_names)[index];
+      auto result = AddChildNodeSpec(node, name);
       if (result.is_error()) {
         return result.take_error();
       }

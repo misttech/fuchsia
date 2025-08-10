@@ -19,15 +19,18 @@ namespace serial_port_visitor_dt {
 
 SerialPortVisitor::SerialPortVisitor() {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::Uint32ArrayProperty>(kSerialport));
-  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(kUarts, kUartCells));
-  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(kUartNames));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::Uint32ArrayProperty>(kSerialport, /* required */ false));
+  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kUarts, kUartCells, /* required */ false));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::StringListProperty>(kUartNames, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
 zx::result<> SerialPortVisitor::Visit(fdf_devicetree::Node& node,
                                       const devicetree::PropertyDecoder& decoder) {
-  zx::result parser_output = parser_->Parse(node);
+  auto parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
     FDF_LOG(ERROR, "Serial port visitor parse failed for node '%s' : %s", node.name().c_str(),
             parser_output.status_string());
@@ -43,19 +46,25 @@ zx::result<> SerialPortVisitor::Visit(fdf_devicetree::Node& node,
 }
 
 zx::result<> SerialPortVisitor::ParseSerialPort(fdf_devicetree::Node& node,
-                                                fdf_devicetree::PropertyValues& properties) {
-  if (!properties.contains(kSerialport)) {
+                                                fdf_devicetree::ParsedProperties& properties) {
+  auto serial_port = properties.Get<std::vector<uint32_t>>(kSerialport);
+  if (!serial_port) {
     return zx::ok();
   }
 
+  if (serial_port->size() != 3) {
+    FDF_LOG(ERROR, "Node '%s' has invalid serial port property size %zu, expected 3.",
+            node.name().c_str(), serial_port->size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   auto& controller = GetController(node.id());
-  controller.serial_class = properties.at(kSerialport)[0].AsUint32().value();
+  controller.serial_class = (*serial_port)[0];
 
   fuchsia_hardware_serial::SerialPortInfo serial_port_info = {};
-  serial_port_info.serial_class() =
-      static_cast<fuchsia_hardware_serial::Class>(properties.at(kSerialport)[0].AsUint32().value());
-  serial_port_info.serial_vid() = properties.at(kSerialport)[1].AsUint32().value();
-  serial_port_info.serial_pid() = properties.at(kSerialport)[2].AsUint32().value();
+  serial_port_info.serial_class() = static_cast<fuchsia_hardware_serial::Class>((*serial_port)[0]);
+  serial_port_info.serial_vid() = (*serial_port)[1];
+  serial_port_info.serial_pid() = (*serial_port)[2];
 
   fit::result encoded = fidl::Persist(serial_port_info);
   if (encoded.is_error()) {
@@ -86,33 +95,28 @@ SerialPortVisitor::UartController& SerialPortVisitor::GetController(
 }
 
 zx::result<> SerialPortVisitor::ParseReferenceChild(fdf_devicetree::Node& node,
-                                                    fdf_devicetree::PropertyValues& properties) {
-  if (!properties.contains(kUarts)) {
+                                                    fdf_devicetree::ParsedProperties& properties) {
+  auto uarts = properties.Get<fdf_devicetree::References>(kUarts);
+  if (!uarts) {
     return zx::ok();
   }
 
-  size_t count = properties[kUarts].size();
-  std::vector<std::optional<std::string>> uart_names(count);
-
-  auto names = node.GetProperty<std::vector<std::string>>(kUartNames);
-  if (names.is_ok()) {
-    if (names->size() > count) {
-      FDF_LOG(ERROR, "Node '%s' has %zu uart entries but has %zu uart names.", node.name().c_str(),
-              count, names->size());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-
-    size_t name_idx = 0;
-    for (auto& name : *names) {
-      uart_names[name_idx++] = name;
-    }
+  auto uart_names = properties.Get<std::vector<std::string>>(kUartNames);
+  if (uart_names && uart_names->size() > uarts->size()) {
+    FDF_LOG(ERROR, "Node '%s' has %zu uart entries but has %zu uart names.", node.name().c_str(),
+            uarts->size(), uart_names->size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  for (uint32_t index = 0; index < count; index++) {
-    auto reference = properties[kUarts][index].AsReference();
-    if (reference && uart_controllers_.contains(reference->first.id())) {
-      auto& controller = uart_controllers_[reference->first.id()];
-      zx::result<> result = AddChildNodeSpec(node, controller.serial_class, uart_names[index]);
+  for (uint32_t index = 0; index < uarts->size(); index++) {
+    auto& reference = (*uarts)[index];
+    if (uart_controllers_.contains(reference.reference_node().id())) {
+      auto& controller = uart_controllers_[reference.reference_node().id()];
+      std::optional<std::string> name;
+      if (uart_names && index < uart_names->size()) {
+        name = (*uart_names)[index];
+      }
+      zx::result<> result = AddChildNodeSpec(node, controller.serial_class, name);
       if (!result.is_ok()) {
         return result;
       }

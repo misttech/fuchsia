@@ -12,14 +12,14 @@ namespace thermal_zones_visitor_dt {
 ThermalZonesVisitor::ThermalZonesVisitor() {
   fdf_devicetree::Properties thermal_sensor_properties = {};
   thermal_sensor_properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
-      kThermalSensorReference, kThermalSensorCells));
+      kThermalSensorReference, kThermalSensorCells, /* required */ false));
   thermal_sensor_parser_ =
       std::make_unique<fdf_devicetree::PropertyParser>(std::move(thermal_sensor_properties));
 
   fdf_devicetree::Properties trips_properties = {};
   trips_properties.emplace_back(
       std::make_unique<fdf_devicetree::Uint32Property>(kTemperature, true));
-  trips_properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(kType, true));
+  trips_properties.emplace_back(std::make_unique<fdf_devicetree::StringProperty>(kType, true));
   trips_parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(trips_properties));
 }
 
@@ -40,28 +40,26 @@ zx::result<> ThermalZonesVisitor::Visit(fdf_devicetree::Node& node,
     return zx::ok();
   }
 
-  zx::result parser_output = thermal_sensor_parser_->Parse(node);
+  auto parser_output = thermal_sensor_parser_->Parse(node);
   if (parser_output.is_error()) {
     FDF_LOG(ERROR, "Thermal zones visitor parse failed for node '%s' : %s", node.name().c_str(),
             parser_output.status_string());
     return parser_output.take_error();
   }
 
-  if (!parser_output->contains(kThermalSensorReference)) {
+  auto thermal_sensors = parser_output->Get<fdf_devicetree::References>(kThermalSensorReference);
+  if (!thermal_sensors) {
     return zx::ok();
   }
-
-  if ((*parser_output)[kThermalSensorReference].size() != 1) {
+  if (thermal_sensors->size() != 1) {
     FDF_LOG(ERROR,
             "Thermal sensor reference in node '%s' can only reference 1 sensor, actual: %zu.",
-            node.name().c_str(), (*parser_output)[kThermalSensorReference].size());
+            node.name().c_str(), thermal_sensors->size());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-
   for (auto& child : node.children()) {
     if (child.name() == "trips") {
-      zx::result result = ParseTrips(
-          *child.GetNode(), parser_output->at(kThermalSensorReference)[0].AsReference()->first);
+      zx::result result = ParseTrips(*child.GetNode(), thermal_sensors->at(0).reference_node());
       if (result.is_error()) {
         return result.take_error();
       }
@@ -83,9 +81,9 @@ zx::result<> ThermalZonesVisitor::ParseTrips(fdf_devicetree::Node& node,
       return trips_output.take_error();
     }
 
-    if (trips_output->at(kType)[0].AsString() == "critical") {
+    if (trips_output->Get<std::string>(kType) == "critical") {
       sensor.trip_metadata->critical_temp_celsius() =
-          static_cast<float>(trips_output->at(kTemperature)[0].AsUint32().value()) / 1000.0f;
+          static_cast<float>(*trips_output->Get<uint32_t>(kTemperature)) / 1000.0f;
       FDF_LOG(DEBUG, "Set critical temperature to '%.2f' for sensor '%s'",
               sensor.trip_metadata->critical_temp_celsius(), reference.name().c_str());
     }

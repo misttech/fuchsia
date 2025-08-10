@@ -15,7 +15,8 @@ namespace display_panel_visitor_dt {
 
 DisplayPanelVisitor::DisplayPanelVisitor() {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(kPanelType));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::Uint32Property>(kPanelType, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
@@ -39,12 +40,12 @@ zx::result<> DisplayPanelVisitor::Visit(fdf_devicetree::Node& node,
     return parser_output.take_error();
   }
 
-  if (!parser_output->contains(kPanelType)) {
+  auto panel_type_prop = parser_output->Get<uint32_t>(kPanelType);
+  if (!panel_type_prop) {
     return zx::ok();
   }
 
-  display::PanelType panel_type =
-      static_cast<display::PanelType>(parser_output->at(kPanelType)[0].AsUint32().value());
+  display::PanelType panel_type = static_cast<display::PanelType>(*panel_type_prop);
 
   fuchsia_hardware_platform_bus::Metadata display_panel_metadata{{
       .id = std::to_string(DEVICE_METADATA_DISPLAY_PANEL_TYPE),

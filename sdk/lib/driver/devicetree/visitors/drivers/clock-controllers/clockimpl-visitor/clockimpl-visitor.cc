@@ -43,15 +43,17 @@ class ClockCells {
 
 ClockImplVisitor::ClockImplVisitor() {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(kClockNames));
   properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kClockReference, kClockCells));
+      std::make_unique<fdf_devicetree::StringListProperty>(kClockNames, /* required */ false));
+  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kClockReference, kClockCells, /* required */ false));
+  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kAssignedClocks, kClockCells, /* required */ false));
+  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kAssignedClockParents, kClockCells, /* required */ false));
   properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kAssignedClocks, kClockCells));
-  properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kAssignedClockParents, kClockCells));
-  properties.emplace_back(
-      std::make_unique<fdf_devicetree::Uint32ArrayProperty>(kAssignedClockRates));
+      std::make_unique<fdf_devicetree::Uint32ArrayProperty>(kAssignedClockRates,
+                                                            /* required */ false));
   clock_parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
@@ -76,8 +78,9 @@ zx::result<> ClockImplVisitor::Visit(fdf_devicetree::Node& node,
   }
 
   // Parse clocks and clock-names
-  if (parser_output->find(kClockReference) != parser_output->end()) {
-    if (!parser_output->contains(kClockNames) && (*parser_output)[kClockReference].size() != 1u) {
+  if (auto clocks = parser_output->Get<fdf_devicetree::References>(kClockReference)) {
+    auto clock_names = parser_output->Get<std::vector<std::string>>(kClockNames);
+    if (!clock_names && clocks->size() != 1u) {
       FDF_LOG(
           ERROR,
           "Clock reference '%s' does not have valid clock names property. Name is required to generate bind rules, especially when more than one clock is referenced.",
@@ -85,20 +88,15 @@ zx::result<> ClockImplVisitor::Visit(fdf_devicetree::Node& node,
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
-    size_t count = (*parser_output)[kClockReference].size();
-    std::vector<std::optional<std::string>> clock_names(count);
-    if (parser_output->find(kClockNames) != parser_output->end()) {
-      size_t name_idx = 0;
-      for (auto& names : (*parser_output)[kClockNames]) {
-        clock_names[name_idx++] = names.AsString();
-      }
-    }
-
-    for (uint32_t index = 0; index < count; index++) {
-      auto reference = (*parser_output)[kClockReference][index].AsReference();
-      if (reference && is_match(*reference->first.GetNode())) {
+    for (uint32_t index = 0; index < clocks->size(); index++) {
+      auto& reference = (*clocks)[index];
+      if (is_match(*reference.reference_node().GetNode())) {
+        std::optional<std::string_view> name;
+        if (clock_names) {
+          name = (*clock_names)[index];
+        }
         auto result =
-            ParseReferenceChild(node, reference->first, reference->second, clock_names[index]);
+            ParseReferenceChild(node, reference.reference_node(), reference.property_cells(), name);
         if (result.is_error()) {
           return result.take_error();
         }
@@ -107,55 +105,46 @@ zx::result<> ClockImplVisitor::Visit(fdf_devicetree::Node& node,
   }
 
   // Parse assigned-clocks and related properties.
-  if (parser_output->find(kAssignedClocks) != parser_output->end()) {
-    size_t count = (*parser_output)[kAssignedClocks].size();
-
-    std::vector<std::optional<fdf_devicetree::PropertyValue>> clock_parents(count);
-    if (parser_output->find(kAssignedClockParents) != parser_output->end()) {
-      if ((*parser_output)[kAssignedClockParents].size() >
-          (*parser_output)[kAssignedClocks].size()) {
-        FDF_LOG(ERROR, "Assigned clock parents in '%s' has more entries than assigned clocks.",
-                node.name().c_str());
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-
-      size_t index = 0;
-      for (auto& parent : (*parser_output)[kAssignedClockParents]) {
-        clock_parents[index++] = parent;
-      }
+  if (auto assigned_clocks = parser_output->Get<fdf_devicetree::References>(kAssignedClocks)) {
+    auto clock_parents = parser_output->Get<fdf_devicetree::References>(kAssignedClockParents);
+    if (clock_parents && clock_parents->size() > assigned_clocks->size()) {
+      FDF_LOG(ERROR, "Assigned clock parents in '%s' has more entries than assigned clocks.",
+              node.name().c_str());
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
-    std::vector<std::optional<fdf_devicetree::PropertyValue>> clock_rates(count);
-    if (parser_output->find(kAssignedClockRates) != parser_output->end()) {
-      if ((*parser_output)[kAssignedClockRates].size() > (*parser_output)[kAssignedClocks].size()) {
-        FDF_LOG(ERROR, "Assigned clock rates in '%s' has more entries than assigned clocks.",
-                node.name().c_str());
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-
-      size_t index = 0;
-      for (auto& rate : (*parser_output)[kAssignedClockRates]) {
-        clock_rates[index++] = rate;
-      }
+    auto clock_rates = parser_output->Get<std::vector<uint32_t>>(kAssignedClockRates);
+    if (clock_rates && clock_rates->size() > assigned_clocks->size()) {
+      FDF_LOG(ERROR, "Assigned clock rates in '%s' has more entries than assigned clocks.",
+              node.name().c_str());
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
     // Track the clock controllers referenced so that we can add bind rule only once per controller.
     std::set<uint32_t> init_controllers;
-    for (uint32_t index = 0; index < count; index++) {
-      auto reference = (*parser_output)[kAssignedClocks][index].AsReference();
-      if (reference && is_match(*reference->first.GetNode())) {
-        auto result = ParseInitChild(node, reference->first, reference->second, clock_rates[index],
-                                     clock_parents[index]);
+    for (uint32_t index = 0; index < assigned_clocks->size(); index++) {
+      auto& reference = (*assigned_clocks)[index];
+      if (is_match(*reference.reference_node().GetNode())) {
+        std::optional<fdf_devicetree::Reference> parent;
+        if (clock_parents && index < clock_parents->size()) {
+          parent = (*clock_parents)[index];
+        }
+        std::optional<uint32_t> rate;
+        if (clock_rates && index < clock_rates->size()) {
+          rate = (*clock_rates)[index];
+        }
+        auto result = ParseInitChild(node, reference.reference_node(), reference.property_cells(),
+                                     rate, parent);
         if (result.is_error()) {
           return result.take_error();
         }
 
-        if (init_controllers.find(reference->first.id()) == init_controllers.end()) {
+        if (init_controllers.find(reference.reference_node().id()) == init_controllers.end()) {
           result = AddInitChildNodeSpec(node);
           if (result.is_error()) {
             return result.take_error();
           }
-          init_controllers.insert(reference->first.id());
+          init_controllers.insert(reference.reference_node().id());
         }
       }
     }
@@ -249,23 +238,17 @@ zx::result<> ClockImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
 
 zx::result<> ClockImplVisitor::ParseInitChild(
     fdf_devicetree::Node& child, fdf_devicetree::ReferenceNode& parent,
-    fdf_devicetree::PropertyCells specifiers,
-    std::optional<fdf_devicetree::PropertyValue> clock_rate,
-    std::optional<fdf_devicetree::PropertyValue> clock_parent) {
+    fdf_devicetree::PropertyCells specifiers, std::optional<uint32_t> clock_rate,
+    std::optional<fdf_devicetree::Reference> clock_parent) {
   auto& controller = GetController(*parent.phandle());
   auto clock = ClockCells(specifiers);
 
-  if ((clock_rate && clock_rate->AsUint32().value()) || clock_parent) {
+  if ((clock_rate && *clock_rate != 0) || clock_parent) {
     controller.init_metadata.steps().push_back({{clock.id(), InitCall::WithDisable({})}});
   }
 
   if (clock_parent) {
-    if (!clock_parent->AsReference()) {
-      FDF_LOG(ERROR, "Assigned clock parent in '%s' is invalid", child.name().c_str());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-
-    auto parent_clock = ClockCells(clock_parent->AsReference()->second);
+    auto parent_clock = ClockCells(clock_parent->property_cells());
     controller.init_metadata.steps().push_back(
         {{clock.id(), InitCall::WithInputIdx(parent_clock.id())}});
     FDF_LOG(DEBUG, "Clock parent set to %d for clock ID %d by '%s'.", parent_clock.id(), clock.id(),
@@ -273,18 +256,12 @@ zx::result<> ClockImplVisitor::ParseInitChild(
   }
 
   if (clock_rate) {
-    if (!clock_rate->AsUint32()) {
-      FDF_LOG(ERROR, "Assigned clock rate in '%s' is invalid", child.name().c_str());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-
     // Skip setting rates for 0 as per the clock bindings.
-    if (clock_rate->AsUint32().value() != 0) {
-      controller.init_metadata.steps().push_back(
-          {{clock.id(), InitCall::WithRateHz(clock_rate->AsUint32().value())}});
+    if (*clock_rate != 0) {
+      controller.init_metadata.steps().push_back({{clock.id(), InitCall::WithRateHz(*clock_rate)}});
 
-      FDF_LOG(DEBUG, "Clock initial rate set to %d for clock ID %d by '%s'.",
-              clock_rate->AsUint32().value(), clock.id(), child.name().c_str());
+      FDF_LOG(DEBUG, "Clock initial rate set to %d for clock ID %d by '%s'.", *clock_rate,
+              clock.id(), child.name().c_str());
     }
   }
 

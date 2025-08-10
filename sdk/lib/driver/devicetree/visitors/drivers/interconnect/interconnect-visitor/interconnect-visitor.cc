@@ -46,19 +46,25 @@ class InterconnectReferenceProperty : public fdf_devicetree::Property {
   explicit InterconnectReferenceProperty(fdf_devicetree::PropertyName name)
       : Property(std::move(name), false) {}
 
-  zx::result<std::vector<fdf_devicetree::PropertyValue>> Parse(
-      fdf_devicetree::Node& node, devicetree::ByteView bytes) const override {
+  zx::result<> Parse(fdf_devicetree::Node& node,
+                     std::map<fdf_devicetree::PropertyName, std::any>& values) const override {
+    auto prop = node.properties().find(name());
+    if (prop == node.properties().end()) {
+      return zx::ok();
+    }
+
+    devicetree::ByteView bytes = prop->second.AsBytes();
     if (bytes.size() % sizeof(uint32_t) != 0) {
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
     auto cells = fdf_devicetree::Uint32Array(bytes);
 
-    std::vector<fdf_devicetree::PropertyValue> values;
+    fdf_devicetree::References references;
     for (size_t cell_offset = 0; cell_offset < cells.size();) {
       auto phandle = cells[cell_offset];
-      zx::result reference = node.GetReferenceNode(phandle);
-      if (reference.is_error()) {
+      zx::result reference_node = node.GetReferenceNode(phandle);
+      if (reference_node.is_error()) {
         fdf::error("Node '{}' has invalid reference in '{}' property to {}.", node.name(), name(),
                    phandle);
         return zx::error(ZX_ERR_INVALID_ARGS);
@@ -68,10 +74,11 @@ class InterconnectReferenceProperty : public fdf_devicetree::Property {
       cell_offset++;
       uint32_t cell_count = 0;
       constexpr char kInterconnectCells[] = "#interconnect-cells";
-      auto cell_count_prop = reference->GetProperty<uint32_t>(kInterconnectCells);
+      auto cell_count_prop = reference_node->GetProperty<uint32_t>(kInterconnectCells);
       if (cell_count_prop.is_error()) {
-        fdf::error("Reference node '{}' does not have'{}' property: {}", reference->name(),
-                   kInterconnectCells, cell_count_prop.status_string());
+        fdf::error("Reference node '{}' does not have'{}' property: {}",
+                   reference_node->name().c_str(), kInterconnectCells,
+                   cell_count_prop.status_string());
         return cell_count_prop.take_error();
       }
       cell_count = *cell_count_prop;
@@ -86,7 +93,7 @@ class InterconnectReferenceProperty : public fdf_devicetree::Property {
       if (byteview_offset > bytes.size() || (width_in_bytes > bytes.size() - byteview_offset)) {
         fdf::error(
             "Reference node '{}' has less data than expected. Expected {} bytes, remaining {} bytes",
-            reference->name(), width_in_bytes, bytes.size() - byteview_offset);
+            reference_node->name().c_str(), width_in_bytes, bytes.size() - byteview_offset);
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
 
@@ -102,10 +109,11 @@ class InterconnectReferenceProperty : public fdf_devicetree::Property {
       fdf_devicetree::PropertyCells reference_cells =
           bytes.subspan(byteview_offset, width_in_bytes);
 
-      values.emplace_back(reference_cells, *reference);
+      references.emplace_back(*reference_node, reference_cells);
     }
 
-    return zx::ok(std::move(values));
+    values[name()] = references;
+    return zx::ok();
   }
 };
 
@@ -128,54 +136,43 @@ bool InterconnectVisitor::IsMatch(std::string_view name) {
 
 zx::result<> InterconnectVisitor::Visit(fdf_devicetree::Node& node,
                                         const devicetree::PropertyDecoder& decoder) {
-  zx::result parse_result = parser_.Parse(node);
+  zx::result<fdf_devicetree::ParsedProperties> parse_result = parser_.Parse(node);
   if (parse_result.is_error()) {
-    fdf::error("Interconnect visitor failed for node '{}' : {}", node.name(), parse_result);
+    FDF_LOG(ERROR, "Interconnect visitor failed for node '%s' : %s", node.name().c_str(),
+            parse_result.status_string());
     return parse_result.take_error();
   }
 
-  const auto& node_properties = parse_result.value();
-
-  // Parse interconnects and interconnect-names
-  if (!node_properties.contains(kInterconnectReference)) {
+  auto references = parse_result->Get<fdf_devicetree::References>(kInterconnectReference);
+  if (!references) {
     return zx::ok();
   }
 
-  fdf::debug("Found node with interconnect reference: {}", node.name());
+  FDF_LOG(DEBUG, "Found node with interconnect reference: %s", node.name().c_str());
 
-  if (!node_properties.contains(kInterconnectNames)) {
-    fdf::error(
-        "Interconnect reference '{}' does not have valid interconnect names property."
-        "Name is required to generate bind rules.",
-        node.name());
+  auto names = parse_result->Get<std::vector<std::string>>(kInterconnectNames);
+  if (!names) {
+    FDF_LOG(ERROR,
+            "Interconnect reference '%s' does not have valid interconnect names property. "
+            "Name is required to generate bind rules.",
+            node.name().c_str());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  const size_t count = node_properties.at(kInterconnectReference).size();
-  if (node_properties.at(kInterconnectNames).size() != count) {
-    fdf::error(
-        "Interconnect reference '{}' does not have valid number of interconnect names."
-        "{} interconnects found, and {} interconnect names found, they must be equal.",
-        node.name(), count, node_properties.at(kInterconnectNames).size());
+  if (references->size() != names->size()) {
+    FDF_LOG(ERROR,
+            "Interconnect reference '%s' does not have valid number of interconnect names. "
+            "%zu interconnects found, and %zu interconnect names found, they must be equal.",
+            node.name().c_str(), references->size(), names->size());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-  std::vector<std::string> path_names(count);
-  size_t name_idx = 0;
-  for (const auto& name : node_properties.at(kInterconnectNames)) {
-    if (const auto& name_str = name.AsString(); name_str.has_value()) {
-      path_names[name_idx++] = name_str.value();
-    } else {
-      fdf::error("Interconnect reference '{}' has invalid interconnect name at index {}.",
-                 node.name(), name_idx);
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-  }
 
-  for (size_t index = 0; index < count; index++) {
-    const auto& reference = node_properties.at(kInterconnectReference)[index].AsReference();
-    const auto& [parent, cells] = reference.value();
+  for (size_t index = 0; index < references->size(); index++) {
+    auto& reference = (*references)[index];
+    auto& parent = reference.reference_node();
+    auto cells = reference.property_cells();
     if (IsMatch(parent.name())) {
-      zx::result result = ParseReferenceChild(node, parent, cells, path_names[index]);
+      zx::result result = ParseReferenceChild(node, parent, cells, (*names)[index]);
       if (result.is_error()) {
         return result.take_error();
       }

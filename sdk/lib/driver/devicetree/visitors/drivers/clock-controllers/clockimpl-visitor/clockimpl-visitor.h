@@ -52,8 +52,8 @@ class ClockImplVisitor : public fdf_devicetree::Visitor {
   // Helper to parse clock init hog to produce fuchsia_hardware_clockimpl::InitStep.
   zx::result<> ParseInitChild(fdf_devicetree::Node& child, fdf_devicetree::ReferenceNode& parent,
                               fdf_devicetree::PropertyCells specifiers,
-                              std::optional<fdf_devicetree::PropertyValue> clock_rate,
-                              std::optional<fdf_devicetree::PropertyValue> clock_parent);
+                              std::optional<uint32_t> clock_rate,
+                              std::optional<fdf_devicetree::Reference> clock_parent);
 
   zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t clock_id, uint32_t node_id,
                                 std::optional<std::string_view> clock_name);

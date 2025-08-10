@@ -26,7 +26,7 @@ class RegulatorVisitor : public fdf_devicetree::Visitor {
  private:
   bool is_match(const std::string& name);
   zx::result<> AddRegulatorMetadata(fdf_devicetree::Node& node,
-                                    fdf_devicetree::PropertyValues& values);
+                                    fdf_devicetree::ParsedProperties& values);
   zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, fdf_devicetree::ReferenceNode& parent);
 
   std::unique_ptr<fdf_devicetree::PropertyParser> parser_;

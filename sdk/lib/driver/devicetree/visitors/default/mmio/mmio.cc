@@ -21,16 +21,17 @@ constexpr const char kMemoryRegionNamesProp[] = "memory-region-names";
 
 MmioVisitor::MmioVisitor() {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(kMmioNamesProp));
   properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kMemoryRegionProp, 0u));
-  properties.emplace_back(
-      std::make_unique<fdf_devicetree::StringListProperty>(kMemoryRegionNamesProp));
+      std::make_unique<fdf_devicetree::StringListProperty>(kMmioNamesProp, /* required */ false));
+  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kMemoryRegionProp, 0u, /* required */ false));
+  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(
+      kMemoryRegionNamesProp, /* required */ false));
   mmio_parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
 zx::result<> MmioVisitor::RegPropertyParser(Node& node,
-                                            fdf_devicetree::PropertyValues& parsed_props,
+                                            fdf_devicetree::ParsedProperties& parsed_props,
                                             const devicetree::PropertyDecoder& decoder) {
   auto property = node.properties().find(kMmioProp);
   if (property == node.properties().end()) {
@@ -45,18 +46,11 @@ zx::result<> MmioVisitor::RegPropertyParser(Node& node,
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  std::vector<std::optional<std::string>> mmio_names(reg_props->size());
-  if (parsed_props.find(kMmioNamesProp) != parsed_props.end()) {
-    if (parsed_props[kMmioNamesProp].size() > reg_props->size()) {
-      FDF_LOG(ERROR, "Node '%s' has %zu reg entries but has %zu reg names.", node.name().c_str(),
-              reg_props->size(), parsed_props[kMmioNamesProp].size());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-
-    size_t name_idx = 0;
-    for (auto& name : parsed_props[kMmioNamesProp]) {
-      mmio_names[name_idx++] = name.AsString();
-    }
+  auto mmio_names = parsed_props.Get<std::vector<std::string>>(kMmioNamesProp);
+  if (mmio_names && mmio_names->size() > reg_props->size()) {
+    FDF_LOG(ERROR, "Node '%s' has %zu reg entries but has %zu reg names.", node.name().c_str(),
+            reg_props->size(), mmio_names->size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   for (uint32_t i = 0; i < reg_props->size(); i++) {
@@ -64,8 +58,8 @@ zx::result<> MmioVisitor::RegPropertyParser(Node& node,
       fuchsia_hardware_platform_bus::Mmio mmio;
       mmio.base() = decoder.TranslateAddress(*(*reg_props)[i].address());
       mmio.length() = (*reg_props)[i].size();
-      if (mmio_names[i]) {
-        mmio.name() = std::move(*mmio_names[i]);
+      if (mmio_names && i < mmio_names->size()) {
+        mmio.name() = (*mmio_names)[i];
       }
       node_mmios_[node.id()].push_back(std::move(mmio));
     } else {
@@ -78,41 +72,34 @@ zx::result<> MmioVisitor::RegPropertyParser(Node& node,
 }
 
 zx::result<> MmioVisitor::MemoryRegionParser(Node& node,
-                                             fdf_devicetree::PropertyValues& parsed_props) {
-  if (!parsed_props.contains(kMemoryRegionProp)) {
+                                             fdf_devicetree::ParsedProperties& parsed_props) {
+  auto memory_regions = parsed_props.Get<References>(kMemoryRegionProp);
+  if (!memory_regions) {
     return zx::ok();
   }
-  size_t count = parsed_props[kMemoryRegionProp].size();
-  std::vector<std::optional<std::string>> memory_region_names(count);
-  if (parsed_props.find(kMemoryRegionNamesProp) != parsed_props.end()) {
-    if (parsed_props[kMemoryRegionNamesProp].size() > count) {
-      FDF_LOG(ERROR, "Node '%s' has %zu memory-region entries but has %zu memory-region names.",
-              node.name().c_str(), count, parsed_props[kMemoryRegionNamesProp].size());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
 
-    size_t name_idx = 0;
-    for (auto& name : parsed_props[kMemoryRegionNamesProp]) {
-      memory_region_names[name_idx++] = name.AsString();
-    }
+  auto memory_region_names = parsed_props.Get<std::vector<std::string>>(kMemoryRegionNamesProp);
+  if (memory_region_names && memory_region_names->size() > memory_regions->size()) {
+    FDF_LOG(ERROR, "Node '%s' has %zu memory-region entries but has %zu memory-region names.",
+            node.name().c_str(), memory_regions->size(), memory_region_names->size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  for (uint32_t index = 0; index < count; index++) {
-    auto reference = parsed_props[kMemoryRegionProp][index].AsReference();
-    if (reference) {
-      std::pair<Node*, std::optional<std::string>> reference_info = {&node,
-                                                                     memory_region_names[index]};
-      memory_region_nodes_[reference->first.id()].push_back(std::move(reference_info));
-    } else {
-      FDF_LOG(ERROR, "Node '%s' has a invalid memory region property.", node.name().c_str());
+  for (uint32_t index = 0; index < memory_regions->size(); index++) {
+    auto& reference = (*memory_regions)[index];
+    std::optional<std::string> name;
+    if (memory_region_names && index < memory_region_names->size()) {
+      name = (*memory_region_names)[index];
     }
+    std::pair<Node*, std::optional<std::string>> reference_info = {&node, name};
+    memory_region_nodes_[reference.reference_node().id()].push_back(std::move(reference_info));
   }
 
   return zx::ok();
 }
 
 zx::result<> MmioVisitor::Visit(Node& node, const devicetree::PropertyDecoder& decoder) {
-  zx::result parser_output = mmio_parser_->Parse(node);
+  auto parser_output = mmio_parser_->Parse(node);
   if (parser_output.is_error()) {
     FDF_LOG(ERROR, "Mmio visitor failed for node '%s' : %s", node.name().c_str(),
             parser_output.status_string());

@@ -78,12 +78,13 @@ zx::result<> SpmiVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 }
 
 zx::result<> SpmiVisitor::ParseReferenceProperty(fdf_devicetree::Node& node) {
-  zx::result<fdf_devicetree::PropertyValues> properties = spmi_parser_->Parse(node);
+  zx::result properties = spmi_parser_->Parse(node);
   if (properties.is_error()) {
     FDF_LOG(ERROR, "Failed to parse node \"%s\"", node.name().c_str());
     return properties.take_error();
   }
-  if (!properties->contains(kSpmisPropertyName)) {
+  auto spmis = properties->Get<fdf_devicetree::References>(kSpmisPropertyName);
+  if (!spmis) {
     return zx::ok();
   }
 
@@ -92,31 +93,28 @@ zx::result<> SpmiVisitor::ParseReferenceProperty(fdf_devicetree::Node& node) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  const std::vector<fdf_devicetree::PropertyValue>& spmis = (*properties)[kSpmisPropertyName];
   std::set<uint32_t>& sub_target_references = sub_target_references_[node.id()];
-  for (const auto& spmi : spmis) {
-    std::optional<std::pair<fdf_devicetree::ReferenceNode, fdf_devicetree::PropertyCells>>
-        reference = spmi.AsReference();
-    if (!reference || !reference->first) {
+  for (auto& reference : *spmis) {
+    if (!reference.reference_node()) {
       FDF_LOG(ERROR, "Failed to parse SPMI sub-target reference for node \"%s\"",
               node.name().c_str());
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
-    SubTarget& sub_target = sub_targets_[reference->first.id()];
+    SubTarget& sub_target = sub_targets_[reference.reference_node().id()];
     if (sub_target.has_reference_property) {
-      if (sub_target_references.contains(reference->first.id())) {
+      if (sub_target_references.contains(reference.reference_node().id())) {
         // Ignore duplicate reference property entries.
         continue;
       }
 
       FDF_LOG(ERROR, "Multiple reference properties for SPMI sub-target \"%s\"",
-              reference->first.name().c_str());
+              reference.reference_node().name().c_str());
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
     sub_target.has_reference_property = true;
 
-    sub_target_references.insert(reference->first.id());
+    sub_target_references.insert(reference.reference_node().id());
   }
   return zx::ok();
 }

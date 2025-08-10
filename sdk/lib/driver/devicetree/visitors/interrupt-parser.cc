@@ -25,8 +25,8 @@ Properties MakeInterruptProperties() {
                                                          /*required=*/false));
   props.emplace_back(
       std::make_unique<StringListProperty>(InterruptParser::kInterruptNames, /*required=*/false));
-  props.emplace_back(std::make_unique<BoolProperty>(InterruptParser::kFuchsiaInterruptWakeVectors,
-                                                    /*required=*/false));
+  props.emplace_back(std::make_unique<StringListProperty>(
+      InterruptParser::kFuchsiaInterruptWakeVectors, /*required=*/false));
   return props;
 }
 
@@ -34,8 +34,8 @@ Properties MakeInterruptProperties() {
 
 InterruptParser::InterruptParser() : PropertyParser(MakeInterruptProperties()) {}
 
-zx::result<PropertyValues> InterruptParser::Parse(Node& node) {
-  zx::result<PropertyValues> interrupt_values = PropertyParser::Parse(node);
+zx::result<ParsedProperties> InterruptParser::Parse(Node& node) {
+  zx::result interrupt_values = PropertyParser::Parse(node);
   if (interrupt_values.is_error()) {
     FDF_LOG(ERROR, "Interrupts-extended parser failed for node '%s - %s", node.name().c_str(),
             interrupt_values.status_string());
@@ -44,7 +44,7 @@ zx::result<PropertyValues> InterruptParser::Parse(Node& node) {
 
   // "interrupts-extended" takes precedence over "interrupts". Return if kInterruptsExtended
   // exists.
-  if (interrupt_values->contains(kInterruptsExtended)) {
+  if (interrupt_values->Get<References>(kInterruptsExtended)) {
     return zx::ok(*interrupt_values);
   }
 
@@ -113,17 +113,19 @@ zx::result<PropertyValues> InterruptParser::Parse(Node& node) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  std::vector<PropertyValue> interrupt_references;
+  std::vector<Reference> interrupt_references;
   for (size_t offset = 0; offset < cell_count; offset += cell_width.value()) {
     PropertyCells interrupt = interrupts_property->second.AsBytes().subspan(
         offset * sizeof(uint32_t), (*cell_width) * sizeof(uint32_t));
-    interrupt_references.emplace_back(interrupt, interrupt_parent);
+    interrupt_references.emplace_back(interrupt_parent, interrupt);
   }
-  (*interrupt_values)[kInterruptsExtended] = std::move(interrupt_references);
 
-  if (interrupt_values->contains(kInterruptNames)) {
-    const size_t interrupt_count = (*interrupt_values)[kInterruptsExtended].size();
-    const size_t interrupt_name_count = (*interrupt_values)[kInterruptNames].size();
+  interrupt_values->AddProperty(kInterruptsExtended, std::move(interrupt_references));
+
+  if (interrupt_values->Get<std::vector<std::string>>(kInterruptNames)) {
+    const size_t interrupt_count = interrupt_values->Get<References>(kInterruptsExtended)->size();
+    const size_t interrupt_name_count =
+        interrupt_values->Get<std::vector<std::string>>(kInterruptNames)->size();
     if (interrupt_count != interrupt_name_count) {
       FDF_LOG(ERROR, "Number of interrupts (%zu) doesn't match number of interrupt-names (%zu)",
               interrupt_count, interrupt_name_count);

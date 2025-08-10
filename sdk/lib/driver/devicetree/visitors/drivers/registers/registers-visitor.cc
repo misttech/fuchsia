@@ -77,9 +77,10 @@ class RegisterCells {
 
 RegistersVisitor::RegistersVisitor() : DriverVisitor({"fuchsia,registers"}) {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(kRegisterNames));
   properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kRegisterReference, kRegisterCells));
+      std::make_unique<fdf_devicetree::StringListProperty>(kRegisterNames, /* required */ false));
+  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kRegisterReference, kRegisterCells, /* required */ false));
   register_parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
@@ -92,24 +93,22 @@ zx::result<> RegistersVisitor::Visit(fdf_devicetree::Node& node,
     return parser_output.take_error();
   }
 
-  if (!parser_output->contains(kRegisterReference)) {
+  auto registers = parser_output->Get<fdf_devicetree::References>(kRegisterReference);
+  if (!registers) {
     return zx::ok();
   }
 
-  size_t count = (*parser_output)[kRegisterReference].size();
-  std::vector<std::optional<std::string>> register_names(count);
-  if (parser_output->find(kRegisterNames) != parser_output->end()) {
-    size_t name_idx = 0;
-    for (auto& names : (*parser_output)[kRegisterNames]) {
-      register_names[name_idx++] = names.AsString();
-    }
-  }
+  auto register_names = parser_output->Get<std::vector<std::string>>(kRegisterNames);
 
-  for (uint32_t index = 0; index < count; index++) {
-    auto reference = (*parser_output)[kRegisterReference][index].AsReference();
-    if (reference && is_match(reference->first.properties())) {
+  for (uint32_t index = 0; index < registers->size(); index++) {
+    auto& reference = (*registers)[index];
+    if (is_match(reference.reference_node().properties())) {
+      std::optional<std::string> name;
+      if (register_names && index < register_names->size()) {
+        name = (*register_names)[index];
+      }
       auto result =
-          ParseRegisterChild(node, reference->first, reference->second, register_names[index]);
+          ParseRegisterChild(node, reference.reference_node(), reference.property_cells(), name);
       if (result.is_error()) {
         return result.take_error();
       }

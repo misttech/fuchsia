@@ -106,14 +106,20 @@ zx::result<amlogic_cpu::perf_domain_t> PerformanceDomainVisitor::ParsePerformanc
   }
 
   amlogic_cpu::perf_domain_t performance_domain;
-  performance_domain.id = parser_output->at(kDomainID)[0].AsUint32().value();
+  performance_domain.id = parser_output->Get<uint32_t>(kDomainID).value();
   performance_domain.relative_performance =
-      static_cast<uint8_t>(parser_output->at(kRelativePerformance)[0].AsUint32().value());
-  performance_domain.core_count = static_cast<uint32_t>(parser_output->at(kCpus).size());
+      static_cast<uint8_t>(parser_output->Get<uint32_t>(kRelativePerformance).value());
+  performance_domain.core_count =
+      static_cast<uint32_t>(parser_output->Get<std::vector<uint32_t>>(kCpus)->size());
+
+  auto operating_points = parser_output->Get<fdf_devicetree::References>(kOperatingPoints);
+  if (operating_points->size() > 1) {
+    FDF_LOG(WARNING, "Node '%s' has %zu operating points, but only the first will be used.",
+            node.name().c_str(), operating_points->size());
+  }
 
   auto opp_table =
-      ParseOppTable(*parser_output->at(kOperatingPoints)[0].AsReference()->first.GetNode(),
-                    performance_domain.id);
+      ParseOppTable(*operating_points->at(0).reference_node().GetNode(), performance_domain.id);
   if (opp_table.is_error()) {
     return opp_table.take_error();
   }
@@ -140,12 +146,10 @@ zx::result<std::vector<amlogic_cpu::operating_point_t>> PerformanceDomainVisitor
       return parser_output.take_error();
     }
 
-    opp_table.push_back({
-        .freq_hz =
-            static_cast<uint32_t>(parser_output->at(kOperatingFrequency)[0].AsUint64().value()),
-        .volt_uv = parser_output->at(kOperatingMicrovolt)[0].AsUint32().value(),
-        .pd_id = domain_id,
-    });
+    opp_table.push_back({.freq_hz = static_cast<uint32_t>(
+                             parser_output->Get<uint64_t>(kOperatingFrequency).value()),
+                         .volt_uv = parser_output->Get<uint32_t>(kOperatingMicrovolt).value(),
+                         .pd_id = domain_id});
   }
   return zx::ok(opp_table);
 }

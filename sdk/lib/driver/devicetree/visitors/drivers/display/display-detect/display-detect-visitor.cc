@@ -19,8 +19,8 @@ namespace display_detect_visitor_dt {
 
 DisplayDetectVisitor::DisplayDetectVisitor() {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kDisplayDetect, kDisplayDetectCells));
+  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kDisplayDetect, kDisplayDetectCells, /* required */ false));
   properties.emplace_back(
       std::make_unique<fdf_devicetree::StringListProperty>(kDisplayDetectNames));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
@@ -35,51 +35,40 @@ bool DisplayDetectVisitor::IsMatch(const std::string& node_name) {
 
 zx::result<> DisplayDetectVisitor::Visit(fdf_devicetree::Node& node,
                                          const devicetree::PropertyDecoder& decoder) {
-  zx::result<fdf_devicetree::PropertyValues> parser_output = parser_->Parse(node);
+  zx::result parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
     FDF_LOG(ERROR, "Display detect visitor parse failed for node '%s' : %s", node.name().c_str(),
             parser_output.status_string());
     return parser_output.take_error();
   }
 
-  if (!parser_output->contains(kDisplayDetect)) {
+  auto display_detects = parser_output->Get<fdf_devicetree::References>(kDisplayDetect);
+  if (!display_detects) {
     return zx::ok();
   }
 
-  auto display_detect_it = parser_output->find(kDisplayDetect);
-  if (display_detect_it == parser_output->end()) {
-    return zx::ok();
-  }
-
-  const std::vector<fdf_devicetree::PropertyValue>& display_detect_properties =
-      display_detect_it->second;
-
-  auto display_detect_names_it = parser_output->find(kDisplayDetectNames);
-  if (display_detect_names_it == parser_output->end()) {
+  auto display_detect_names = parser_output->Get<std::vector<std::string>>(kDisplayDetectNames);
+  if (!display_detect_names) {
     FDF_LOG(ERROR, "Node '%s' is missing display-detect-names.", node.name().c_str());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  const std::vector<fdf_devicetree::PropertyValue>& display_detect_names_properties =
-      display_detect_names_it->second;
-
-  size_t display_detect_count = display_detect_properties.size();
-  if (display_detect_count != display_detect_names_properties.size()) {
+  if (display_detects->size() != display_detect_names->size()) {
     FDF_LOG(ERROR,
             "Node '%s' has an incorrect number of display-detect-names. Expected %zu, got %zu",
-            node.name().c_str(), display_detect_count, display_detect_names_properties.size());
+            node.name().c_str(), display_detects->size(), display_detect_names->size());
   }
 
-  for (uint32_t index = 0; index < display_detect_count; index++) {
-    auto reference = display_detect_properties[index].AsReference();
+  for (uint32_t index = 0; index < display_detects->size(); index++) {
+    auto& reference = (*display_detects)[index];
 
-    if (!IsMatch(reference->first.name())) {
+    if (!IsMatch(reference.reference_node().name())) {
       continue;
     }
 
-    auto name = display_detect_names_properties[index].AsString();
+    auto& name = (*display_detect_names)[index];
 
-    auto result = AddChildNodeSpec(node, *name);
+    auto result = AddChildNodeSpec(node, name);
     if (result.is_error()) {
       return result.take_error();
     }

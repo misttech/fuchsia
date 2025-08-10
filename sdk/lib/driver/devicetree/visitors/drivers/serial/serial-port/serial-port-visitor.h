@@ -32,10 +32,10 @@ class SerialPortVisitor : public fdf_devicetree::Visitor {
   UartController& GetController(fdf_devicetree::NodeID node_id);
 
   zx::result<> ParseSerialPort(fdf_devicetree::Node& node,
-                               fdf_devicetree::PropertyValues& properties);
+                               fdf_devicetree::ParsedProperties& properties);
 
   zx::result<> ParseReferenceChild(fdf_devicetree::Node& node,
-                                   fdf_devicetree::PropertyValues& properties);
+                                   fdf_devicetree::ParsedProperties& properties);
 
   zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t serial_class,
                                 std::optional<std::string> uart_name);

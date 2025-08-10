@@ -22,20 +22,20 @@ namespace regulator_visitor_dt {
 
 RegulatorVisitor::RegulatorVisitor() {
   fdf_devicetree::Properties reference_properties = {};
-  reference_properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kRegulatorReference, kRegulatorCells));
+  reference_properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kRegulatorReference, kRegulatorCells, /* required */ false));
   reference_parser_ =
       std::make_unique<fdf_devicetree::PropertyParser>(std::move(reference_properties));
 
   fdf_devicetree::Properties regulator_properties = {};
   regulator_properties.emplace_back(
-      std::make_unique<fdf_devicetree::StringListProperty>(kRegulatorName));
-  regulator_properties.emplace_back(
-      std::make_unique<fdf_devicetree::Uint32Property>(kRegulatorMaxMicrovolt));
-  regulator_properties.emplace_back(
-      std::make_unique<fdf_devicetree::Uint32Property>(kRegulatorMinMicrovolt));
-  regulator_properties.emplace_back(
-      std::make_unique<fdf_devicetree::Uint32Property>(kRegulatorStepMicrovolt));
+      std::make_unique<fdf_devicetree::StringProperty>(kRegulatorName));
+  regulator_properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(
+      kRegulatorMaxMicrovolt, /* required */ false));
+  regulator_properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(
+      kRegulatorMinMicrovolt, /* required */ false));
+  regulator_properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(
+      kRegulatorStepMicrovolt, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(regulator_properties));
 }
 
@@ -54,7 +54,7 @@ zx::result<> RegulatorVisitor::Visit(fdf_devicetree::Node& node,
       return parser_output.take_error();
     }
 
-    auto status = AddRegulatorMetadata(node, parser_output.value());
+    auto status = AddRegulatorMetadata(node, *parser_output);
     if (status.is_error()) {
       FDF_LOG(ERROR, "Failed to add regulator metadata '%s' : %s", node.name().c_str(),
               status.status_string());
@@ -69,16 +69,17 @@ zx::result<> RegulatorVisitor::Visit(fdf_devicetree::Node& node,
     return reference_output.take_error();
   }
 
-  if (reference_output->empty()) {
+  auto references = reference_output->Get<fdf_devicetree::References>(kRegulatorReference);
+  if (!references) {
     return zx::ok();
   }
 
-  for (auto& reference : reference_output->at(kRegulatorReference)) {
-    auto reference_node = reference.AsReference()->first;
-    auto status = AddChildNodeSpec(node, reference_node);
+  for (auto& reference : *references) {
+    auto status = AddChildNodeSpec(node, reference.reference_node());
     if (status.is_error()) {
       FDF_LOG(ERROR, "Failed to add regulator '%s' node spec to '%s' : %s",
-              reference_node.name().c_str(), node.name().c_str(), status.status_string());
+              reference.reference_node().name().c_str(), node.name().c_str(),
+              status.status_string());
       return status.take_error();
     }
   }
@@ -87,34 +88,35 @@ zx::result<> RegulatorVisitor::Visit(fdf_devicetree::Node& node,
 }
 
 zx::result<> RegulatorVisitor::AddRegulatorMetadata(fdf_devicetree::Node& node,
-                                                    fdf_devicetree::PropertyValues& values) {
-  if (!values.contains(kRegulatorName)) {
+                                                    fdf_devicetree::ParsedProperties& properties) {
+  auto name = properties.Get<std::string>(kRegulatorName);
+  if (!name) {
     FDF_LOG(ERROR, "Regulator node '%s' does not have a name.", node.name().c_str());
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
   fuchsia_hardware_vreg::VregMetadata metadata;
-  metadata.name() = values.at(kRegulatorName)[0].AsString();
+  metadata.name() = *name;
 
-  if (values.find(kRegulatorMinMicrovolt) != values.end()) {
-    metadata.min_voltage_uv() = values.at(kRegulatorMinMicrovolt)[0].AsUint32();
+  auto min_uv = properties.Get<uint32_t>(kRegulatorMinMicrovolt);
+  if (min_uv) {
+    metadata.min_voltage_uv() = *min_uv;
   }
 
-  if (values.find(kRegulatorStepMicrovolt) != values.end()) {
-    metadata.voltage_step_uv() = values.at(kRegulatorStepMicrovolt)[0].AsUint32();
+  auto step_uv = properties.Get<uint32_t>(kRegulatorStepMicrovolt);
+  if (step_uv) {
+    metadata.voltage_step_uv() = *step_uv;
   }
 
-  if (values.find(kRegulatorMaxMicrovolt) != values.end() && metadata.voltage_step_uv() &&
-      metadata.min_voltage_uv()) {
-    if (values.at(kRegulatorMaxMicrovolt)[0].AsUint32().value() < *metadata.min_voltage_uv()) {
+  auto max_uv = properties.Get<uint32_t>(kRegulatorMaxMicrovolt);
+  if (max_uv && metadata.voltage_step_uv() && metadata.min_voltage_uv()) {
+    if (*max_uv < *metadata.min_voltage_uv()) {
       FDF_LOG(ERROR, "Regulator max voltage (%d) is not more than min voltage (%d) in node '%s'",
-              values.at(kRegulatorMaxMicrovolt)[0].AsUint32().value(), *metadata.min_voltage_uv(),
-              node.name().c_str());
+              *max_uv, *metadata.min_voltage_uv(), node.name().c_str());
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
-    auto voltage_range =
-        (values.at(kRegulatorMaxMicrovolt)[0].AsUint32().value() - *metadata.min_voltage_uv());
+    auto voltage_range = (*max_uv - *metadata.min_voltage_uv());
 
     if (voltage_range % (*metadata.voltage_step_uv()) != 0) {
       FDF_LOG(ERROR, "Voltage range (%d) is not a multiple of step size (%d) for node '%s'",

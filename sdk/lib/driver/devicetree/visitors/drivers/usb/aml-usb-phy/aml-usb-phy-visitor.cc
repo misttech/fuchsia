@@ -19,15 +19,18 @@ namespace aml_usb_phy_visitor_dt {
 AmlUsbPhyVisitor::AmlUsbPhyVisitor()
     : fdf_devicetree::DriverVisitor({"amlogic,g12a-usb-phy", "amlogic,g12b-usb-phy"}) {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(kDrModes, true));
-  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(kRegNames, true));
-  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(kCompatible, true));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::StringListProperty>(kDrModes, /* required */ true));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::StringListProperty>(kRegNames, /* required */ true));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::StringListProperty>(kCompatible, /* required */ true));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
 zx::result<> AmlUsbPhyVisitor::DriverVisit(fdf_devicetree::Node& node,
                                            const devicetree::PropertyDecoder& decoder) {
-  zx::result parser_output = parser_->Parse(node);
+  auto parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
     FDF_LOG(ERROR, "Aml usb phy visitor parse failed for node '%s' : %s", node.name().c_str(),
             parser_output.status_string());
@@ -35,10 +38,10 @@ zx::result<> AmlUsbPhyVisitor::DriverVisit(fdf_devicetree::Node& node,
   }
 
   fuchsia_hardware_usb_phy::AmlogicPhyType phy_type;
-  if (*parser_output->at(kCompatible)[0].AsStringList().value().begin() == "amlogic,g12a-usb-phy") {
+  auto compatible = parser_output->Get<std::vector<std::string>>(kCompatible);
+  if ((*compatible)[0] == "amlogic,g12a-usb-phy") {
     phy_type = fuchsia_hardware_usb_phy::AmlogicPhyType::kG12A;
-  }
-  if (*parser_output->at(kCompatible)[0].AsStringList().value().begin() == "amlogic,g12b-usb-phy") {
+  } else if ((*compatible)[0] == "amlogic,g12b-usb-phy") {
     phy_type = fuchsia_hardware_usb_phy::AmlogicPhyType::kG12B;
   } else {
     FDF_LOG(ERROR, "Node '%s' has invalid compatible string. Cannot determine PHY type. ",
@@ -46,40 +49,37 @@ zx::result<> AmlUsbPhyVisitor::DriverVisit(fdf_devicetree::Node& node,
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  if (parser_output->at(kRegNames).size() - 1 != parser_output->at(kDrModes).size()) {
-    FDF_LOG(
-        ERROR,
-        "Node '%s' does not have entries in dr_modes for each PHY device. Expected - %zu, Actual - %zu.",
-        node.name().c_str(), parser_output->at(kRegNames).size() - 1,
-        parser_output->at(kDrModes).size());
+  auto reg_names = parser_output->Get<std::vector<std::string>>(kRegNames);
+  auto dr_modes = parser_output->Get<std::vector<std::string>>(kDrModes);
+
+  if (reg_names->size() - 1 != dr_modes->size()) {
+    FDF_LOG(ERROR,
+            "Node '%s' does not have entries in dr_modes for each PHY device. Expected - %zu, "
+            "Actual - %zu.",
+            node.name().c_str(), reg_names->size() - 1, dr_modes->size());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   uint32_t reg_name_index = 1;
   std::vector<fuchsia_hardware_usb_phy::UsbPhyMode> phy_modes;
-  for (auto& mode : parser_output->at(kDrModes)) {
+  for (auto& mode : *dr_modes) {
     fuchsia_hardware_usb_phy::UsbPhyMode phy_mode{};
-    auto mode_string = mode.AsString();
-    // TODO:: Return error in property parse if the output is not what is expected. Maybe best to
-    // never return optional value as it is confusing as to whether the caller should check it or
-    // not.
-
-    if (*mode_string == "host") {
+    if (mode == "host") {
       phy_mode.dr_mode() = fuchsia_hardware_usb_phy::Mode::kHost;
-    } else if (*mode_string == "peripheral") {
+    } else if (mode == "peripheral") {
       phy_mode.dr_mode() = fuchsia_hardware_usb_phy::Mode::kPeripheral;
-    } else if (*mode_string == "otg") {
+    } else if (mode == "otg") {
       phy_mode.dr_mode() = fuchsia_hardware_usb_phy::Mode::kOtg;
     }
 
-    auto phy_name = parser_output->at(kRegNames)[reg_name_index++].AsString();
-    if (*phy_name == "usb2-phy") {
+    auto& phy_name = (*reg_names)[reg_name_index++];
+    if (phy_name == "usb2-phy") {
       phy_mode.protocol() = fuchsia_hardware_usb_phy::ProtocolVersion::kUsb20;
       phy_mode.is_otg_capable() = false;
-    } else if (*phy_name == "usb2-otg-phy") {
+    } else if (phy_name == "usb2-otg-phy") {
       phy_mode.protocol() = fuchsia_hardware_usb_phy::ProtocolVersion::kUsb20;
       phy_mode.is_otg_capable() = true;
-    } else if (*phy_name == "usb3-phy") {
+    } else if (phy_name == "usb3-phy") {
       phy_mode.protocol() = fuchsia_hardware_usb_phy::ProtocolVersion::kUsb30;
       phy_mode.is_otg_capable() = false;
     }

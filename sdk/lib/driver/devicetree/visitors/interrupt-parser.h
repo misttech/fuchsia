@@ -18,7 +18,7 @@ class InterruptParser : public PropertyParser {
   static constexpr char kFuchsiaInterruptWakeVectors[] = "fuchsia,interrupt-wake-vectors";
 
   explicit InterruptParser();
-  zx::result<PropertyValues> Parse(Node& node) override;
+  zx::result<ParsedProperties> Parse(Node& node) override;
 };
 
 }  // namespace fdf_devicetree

@@ -22,9 +22,9 @@ class MmioVisitor : public Visitor {
   zx::result<> FinalizeNode(Node& node) override;
 
  private:
-  zx::result<> RegPropertyParser(Node& node, fdf_devicetree::PropertyValues& parsed_props,
+  zx::result<> RegPropertyParser(Node& node, fdf_devicetree::ParsedProperties& parsed_props,
                                  const devicetree::PropertyDecoder& decoder);
-  zx::result<> MemoryRegionParser(Node& node, fdf_devicetree::PropertyValues& parsed_props);
+  zx::result<> MemoryRegionParser(Node& node, fdf_devicetree::ParsedProperties& parsed_props);
 
   std::unique_ptr<fdf_devicetree::PropertyParser> mmio_parser_;
   // Map of nodes and their mmios derived from reg property.

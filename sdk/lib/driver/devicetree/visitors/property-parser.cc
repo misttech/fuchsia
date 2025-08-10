@@ -12,76 +12,103 @@
 
 namespace fdf_devicetree {
 
-zx::result<PropertyValues> PropertyParser::Parse(Node& node) {
-  PropertyValues all_values;
+zx::result<ParsedProperties> PropertyParser::Parse(Node& node) {
+  std::map<PropertyName, std::any> all_values;
 
   for (auto& property : properties_) {
-    auto raw_value = node.properties().find(property->name());
-    if (raw_value != node.properties().end()) {
-      auto property_values = property->Parse(node, raw_value->second.AsBytes());
-      if (property_values.is_error()) {
-        FDF_LOG(ERROR, "Node '%s' has an invalid property '%s'", node.name().c_str(),
-                property->name().c_str());
-        return property_values.take_error();
+    auto status = property->Parse(node, all_values);
+    if (status.is_error()) {
+      if (status.status_value() == ZX_ERR_NOT_FOUND) {
+        if (property->required()) {
+          FDF_LOG(ERROR, "Node '%s' does not include the required property '%s'",
+                  node.name().c_str(), property->name().c_str());
+          return status.take_error();
+        }
+        continue;
       }
-      all_values[property->name()] = std::move(*property_values);
-    } else {
-      if (property->required()) {
-        FDF_LOG(ERROR, "Node '%s' does not include the required property '%s'",
-                node.name().c_str(), property->name().c_str());
-        return zx::error(ZX_ERR_NOT_FOUND);
-      }
+      FDF_LOG(ERROR, "Node '%s' has an invalid property '%s': %s", node.name().c_str(),
+              property->name().c_str(), status.status_string());
+      return status.take_error();
     }
   }
-  return zx::ok(std::move(all_values));
+  return zx::ok(ParsedProperties(std::move(all_values)));
 }
 
-zx::result<std::vector<PropertyValue>> Property::Parse(Node& node,
-                                                       devicetree::ByteView bytes) const {
-  std::vector<PropertyValue> value = {PropertyValue(bytes)};
-  return zx::ok(std::move(value));
+void ParsedProperties::AddProperty(const PropertyName& name, std::any value) {
+  auto [it, inserted] = properties_.emplace(name, std::move(value));
+  if (!inserted) {
+    FDF_LOG(WARNING, "Property '%s' is being overwritten.", name.c_str());
+    it->second = std::move(value);
+  }
 }
 
-zx::result<std::vector<PropertyValue>> Uint32ArrayProperty::Parse(
-    Node& node, devicetree::ByteView bytes) const {
-  if (bytes.size() % sizeof(uint32_t) != 0) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
+zx::result<> BoolProperty::Parse(Node& node, std::map<PropertyName, std::any>& values) const {
+  if (node.GetProperty<bool>(name())) {
+    values[name()] = true;
+    return zx::ok();
   }
-  std::vector<PropertyValue> values = {};
-  for (size_t i = 0; i < bytes.size(); i += sizeof(uint32_t)) {
-    auto entry = bytes.subspan(i, sizeof(uint32_t));
-    values.emplace_back(entry);
-  }
-  return zx::ok(std::move(values));
+  return zx::error(ZX_ERR_NOT_FOUND);
 }
 
-zx::result<std::vector<PropertyValue>> StringListProperty::Parse(Node& node,
-                                                                 devicetree::ByteView bytes) const {
-  auto list = devicetree::PropertyValue(bytes).AsStringList();
-  if (!list) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
+zx::result<> Uint32Property::Parse(Node& node, std::map<PropertyName, std::any>& values) const {
+  auto property = node.GetProperty<uint32_t>(name());
+  if (property.is_error()) {
+    return property.take_error();
   }
-
-  std::vector<PropertyValue> values = {};
-  uint32_t offset = 0;
-  for (auto entry : *list) {
-    size_t length = entry.length() + 1;
-    devicetree::ByteView entry_bytes = bytes.subspan(offset, length);
-    offset += length;
-    values.emplace_back(entry_bytes);
-  }
-  return zx::ok(std::move(values));
+  values[name()] = *property;
+  return zx::ok();
 }
 
-zx::result<std::vector<PropertyValue>> ReferenceProperty::Parse(Node& node,
-                                                                devicetree::ByteView bytes) const {
+zx::result<> Uint64Property::Parse(Node& node, std::map<PropertyName, std::any>& values) const {
+  auto property = node.GetProperty<uint64_t>(name());
+  if (property.is_error()) {
+    return property.take_error();
+  }
+  values[name()] = *property;
+  return zx::ok();
+}
+
+zx::result<> StringProperty::Parse(Node& node, std::map<PropertyName, std::any>& values) const {
+  auto property = node.GetProperty<std::string>(name());
+  if (property.is_error()) {
+    return property.take_error();
+  }
+  values[name()] = *property;
+  return zx::ok();
+}
+
+zx::result<> Uint32ArrayProperty::Parse(Node& node,
+                                        std::map<PropertyName, std::any>& values) const {
+  auto property = node.GetProperty<std::vector<uint32_t>>(name());
+  if (property.is_error()) {
+    return property.take_error();
+  }
+  values[name()] = *property;
+  return zx::ok();
+}
+
+zx::result<> StringListProperty::Parse(Node& node, std::map<PropertyName, std::any>& values) const {
+  auto property = node.GetProperty<std::vector<std::string>>(name());
+  if (property.is_error()) {
+    return property.take_error();
+  }
+  values[name()] = *property;
+  return zx::ok();
+}
+
+zx::result<> ReferenceProperty::Parse(Node& node, std::map<PropertyName, std::any>& values) const {
+  auto prop_value = node.properties().find(name());
+  if (prop_value == node.properties().end()) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  auto bytes = prop_value->second.AsBytes();
   if (bytes.size() % sizeof(uint32_t) != 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   auto cells = Uint32Array(bytes);
-
-  std::vector<PropertyValue> values = {};
+  std::vector<Reference> references;
   for (size_t cell_offset = 0; cell_offset < cells.size();) {
     auto phandle = cells[cell_offset];
     auto reference = node.GetReferenceNode(phandle);
@@ -120,18 +147,11 @@ zx::result<std::vector<PropertyValue>> ReferenceProperty::Parse(Node& node,
     }
 
     PropertyCells reference_cells = bytes.subspan(byteview_offset, width_in_bytes);
-
-    values.emplace_back(reference_cells, *reference);
+    references.emplace_back(*reference, reference_cells);
   }
 
-  return zx::ok(std::move(values));
-}
-
-std::optional<std::pair<ReferenceNode, PropertyCells>> PropertyValue::AsReference() const {
-  if (!parent_) {
-    return std::nullopt;
-  }
-  return {{*parent_, devicetree::PropertyValue::AsBytes()}};
+  values[name()] = references;
+  return zx::ok();
 }
 
 }  // namespace fdf_devicetree

@@ -49,7 +49,8 @@ class SmcElement : public devicetree::PropEncodedArrayElement<kSmcCellSize> {
 
 SmcVisitor::SmcVisitor() {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(KSmcNamesProp));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::StringListProperty>(KSmcNamesProp, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
@@ -64,7 +65,6 @@ zx::result<> SmcVisitor::Visit(Node& node, const devicetree::PropertyDecoder& de
       kSmcFlagsCellSize);
 
   size_t count = smc_array.size();
-  std::vector<std::optional<std::string>> smc_names(count);
 
   zx::result parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
@@ -73,17 +73,11 @@ zx::result<> SmcVisitor::Visit(Node& node, const devicetree::PropertyDecoder& de
     return parser_output.take_error();
   }
 
-  if (parser_output->find(KSmcNamesProp) != parser_output->end()) {
-    if ((*parser_output)[KSmcNamesProp].size() != count) {
-      FDF_LOG(ERROR, "Smc names count mismatch for node '%s'. Expected %zu, got %zu.",
-              node.name().c_str(), count, (*parser_output)[KSmcNamesProp].size());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-
-    size_t name_idx = 0;
-    for (auto& names : (*parser_output)[KSmcNamesProp]) {
-      smc_names[name_idx++] = names.AsString();
-    }
+  std::optional smc_names = parser_output->Get<std::vector<std::string>>(KSmcNamesProp);
+  if (smc_names && smc_names->size() != count) {
+    FDF_LOG(ERROR, "Smc names count mismatch for node '%s'. Expected %zu, got %zu.",
+            node.name().c_str(), count, smc_names->size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   for (uint32_t index = 0; index < smc_array.size(); index++) {
@@ -97,8 +91,8 @@ zx::result<> SmcVisitor::Visit(Node& node, const devicetree::PropertyDecoder& de
       metadata.exclusive() = false;
     }
 
-    if (smc_names[index]) {
-      metadata.name(smc_names[index]);
+    if (smc_names) {
+      metadata.name((*smc_names)[index]);
     }
 
     FDF_LOG(DEBUG, "SMC (0x%0x, 0x%0x) added to node '%s'.", *metadata.service_call_num_base(),

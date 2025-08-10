@@ -64,14 +64,15 @@ class GpioCells {
 // TODO(b/325077980): Name of the reference property can be *-gpios.
 GpioImplVisitor::GpioImplVisitor() {
   fdf_devicetree::Properties gpio_properties = {};
+  gpio_properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kGpioReference, kGpioCells, /* required */ false));
   gpio_properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kGpioReference, kGpioCells));
-  gpio_properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(kGpioNames));
+      std::make_unique<fdf_devicetree::StringListProperty>(kGpioNames, /* required */ false));
   gpio_parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(gpio_properties));
 
   fdf_devicetree::Properties pinctrl_state_properties = {};
   pinctrl_state_properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kPinCtrl0, 0u));
+      std::make_unique<fdf_devicetree::ReferenceProperty>(kPinCtrl0, 0u, /* required */ false));
   pinctrl_state_parser_ =
       std::make_unique<fdf_devicetree::PropertyParser>(std::move(pinctrl_state_properties));
 }
@@ -88,21 +89,25 @@ zx::result<> GpioImplVisitor::Visit(fdf_devicetree::Node& node,
     }
   } else {
     auto gpio_props = gpio_parser_->Parse(node);
+    if (gpio_props.is_error()) {
+      return gpio_props.take_error();
+    }
 
-    if (gpio_props->contains(kGpioReference)) {
-      if (!gpio_props->contains(kGpioNames) ||
-          (*gpio_props)[kGpioNames].size() != (*gpio_props)[kGpioReference].size()) {
+    auto gpios = gpio_props->Get<fdf_devicetree::References>(kGpioReference);
+    if (gpios) {
+      auto gpio_names = gpio_props->Get<std::vector<std::string>>(kGpioNames);
+      if (!gpio_names || gpio_names->size() != gpios->size()) {
         // We need a gpio names to generate bind rules.
         FDF_LOG(ERROR, "Gpio reference '%s' does not have valid gpio names field.",
                 node.name().c_str());
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
 
-      for (uint32_t index = 0; index < (*gpio_props)[kGpioReference].size(); index++) {
-        auto reference = (*gpio_props)[kGpioReference][index].AsReference();
-        if (reference && is_match(reference->first.properties())) {
-          auto result = ParseReferenceChild(node, reference->first, reference->second,
-                                            (*gpio_props)[kGpioNames][index].AsString());
+      for (uint32_t index = 0; index < gpios->size(); index++) {
+        auto& reference = (*gpios)[index];
+        if (is_match(reference.reference_node().properties())) {
+          auto result = ParseReferenceChild(node, reference.reference_node(),
+                                            reference.property_cells(), (*gpio_names)[index]);
           if (result.is_error()) {
             return result.take_error();
           }
@@ -111,21 +116,23 @@ zx::result<> GpioImplVisitor::Visit(fdf_devicetree::Node& node,
     }
 
     auto pinctrl_props = pinctrl_state_parser_->Parse(node);
-    if (pinctrl_props->contains(kPinCtrl0)) {
+    if (pinctrl_props.is_error()) {
+      return pinctrl_props.take_error();
+    }
+
+    if (auto pinctrl_configs = pinctrl_props->Get<fdf_devicetree::References>(kPinCtrl0)) {
       // Names of gpio controllers used in this pin control state. This is used to add gpio init
       // bind rule only once per controller.
       std::vector<uint32_t> controllers;
 
       uint32_t controller_index = 0;
-      for (auto& pinctrl_cfg : (*pinctrl_props)[kPinCtrl0]) {
-        auto reference = pinctrl_cfg.AsReference();
-
-        auto gpio_node = GetGpioNodeForPinConfig(reference->first);
+      for (auto& pinctrl_cfg : *pinctrl_configs) {
+        auto gpio_node = GetGpioNodeForPinConfig(pinctrl_cfg.reference_node());
         if (gpio_node.is_error()) {
           return gpio_node.take_error();
         }
 
-        auto result = ParsePinCtrlCfg(node, reference->first, *gpio_node);
+        auto result = ParsePinCtrlCfg(node, pinctrl_cfg.reference_node(), *gpio_node);
         if (result.is_error()) {
           return result.take_error();
         }

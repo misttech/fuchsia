@@ -17,20 +17,13 @@ constexpr char kMailboxesProperty[] = "mboxes";
 constexpr char kMailboxNamesProperty[] = "mbox-names";
 constexpr char kMailboxCellsProperty[] = "#mbox-cells";
 
-zx::result<std::pair<fdf_devicetree::ReferenceNode, uint32_t>> ParseChannel(
-    const fdf_devicetree::PropertyValue& property) {
-  const auto reference = property.AsReference();
-  if (!reference || !reference->first) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-
+zx::result<uint32_t> ParseChannel(fdf_devicetree::Reference& reference) {
   const std::optional<uint32_t> channel =
-      fdf_devicetree::PropertyValue(reference->second).AsUint32();
+      devicetree::PropertyValue(reference.property_cells()).AsUint32();
   if (!channel) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-
-  return zx::ok(std::pair{reference->first, *channel});
+  return zx::ok(*channel);
 }
 
 }  // namespace
@@ -46,12 +39,13 @@ MailboxVisitor::MailboxVisitor() {
 
 zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
                                    const devicetree::PropertyDecoder& decoder) {
-  zx::result<fdf_devicetree::PropertyValues> properties = mailbox_parser_->Parse(node);
+  auto properties = mailbox_parser_->Parse(node);
   if (properties.is_error()) {
     FDF_LOG(ERROR, "Failed to parse node \"%s\"", node.name().c_str());
     return properties.take_error();
   }
-  if (!properties->contains(kMailboxesProperty)) {
+  auto channels = properties->Get<fdf_devicetree::References>(kMailboxesProperty);
+  if (!channels) {
     return zx::ok();
   }
 
@@ -68,8 +62,7 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
     return channel_names_property.take_error();
   }
 
-  const std::vector<fdf_devicetree::PropertyValue>& channels = (*properties)[kMailboxesProperty];
-  if (!channel_names.empty() && channels.size() != channel_names.size()) {
+  if (!channel_names.empty() && channels->size() != channel_names.size()) {
     FDF_LOG(ERROR, "mboxes and mbox-names mismatch for node \"%s\"", node.name().c_str());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
@@ -79,8 +72,8 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
   std::map<uint32_t, uint32_t> controller_ids;
   uint32_t current_controller_id = 0;
 
-  for (const auto& property : channels) {
-    zx::result<std::pair<fdf_devicetree::ReferenceNode, uint32_t>> channel = ParseChannel(property);
+  for (auto& reference : *channels) {
+    zx::result<uint32_t> channel = ParseChannel(reference);
     if (channel.is_error()) {
       FDF_LOG(ERROR, "Failed to parse mailbox channel reference for node \"%s\"",
               node.name().c_str());
@@ -89,27 +82,28 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
 
     // Map the node ID to a controller index to be used only in the node properties. This way
     // clients with multiple mailbox parents don't need to know the actual controller ID.
-    if (!controller_ids.contains(channel->first.id())) {
-      controller_ids[channel->first.id()] = current_controller_id++;
+    if (!controller_ids.contains(reference.reference_node().id())) {
+      controller_ids[reference.reference_node().id()] = current_controller_id++;
     }
-    const uint32_t local_controller_id = controller_ids[channel->first.id()];
+    const uint32_t local_controller_id = controller_ids[reference.reference_node().id()];
 
-    controller_info_[channel->first.id()].push_back({{.channel = channel->second}});
+    controller_info_[reference.reference_node().id()].push_back({{.channel = *channel}});
 
     fuchsia_driver_framework::ParentSpec2 parent_spec{{
         .bind_rules =
             {
                 fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_mailbox::SERVICE,
                                          bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
-                fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID, channel->first.id()),
-                fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, channel->second),
+                fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID,
+                                         reference.reference_node().id()),
+                fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, *channel),
             },
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia_hardware_mailbox::SERVICE,
                                    bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
                 fdf::MakeProperty2(bind_fuchsia_mailbox::CONTROLLER_ID, local_controller_id),
-                fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL, channel->second),
+                fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL, *channel),
             },
     }};
 

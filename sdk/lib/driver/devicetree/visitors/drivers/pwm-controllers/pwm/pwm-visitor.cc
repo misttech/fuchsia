@@ -27,9 +27,10 @@ namespace pwm_visitor_dt {
 
 PwmVisitor::PwmVisitor() {
   fdf_devicetree::Properties pwm_properties = {};
+  pwm_properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kPwmReference, kPwmCells, /* required */ false));
   pwm_properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kPwmReference, kPwmCells));
-  pwm_properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(kPwmNames));
+      std::make_unique<fdf_devicetree::StringListProperty>(kPwmNames, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(pwm_properties));
 }
 
@@ -47,11 +48,13 @@ zx::result<> PwmVisitor::Visit(fdf_devicetree::Node& node,
     return parser_output.take_error();
   }
 
-  if (!parser_output->contains(kPwmReference)) {
+  auto pwms = parser_output->Get<fdf_devicetree::References>(kPwmReference);
+  if (!pwms) {
     return zx::ok();
   }
 
-  if (!parser_output->contains(kPwmNames) && (*parser_output)[kPwmReference].size() != 1u) {
+  auto pwm_names = parser_output->Get<std::vector<std::string>>(kPwmNames);
+  if (!pwm_names && pwms->size() != 1u) {
     FDF_LOG(
         ERROR,
         "PWM reference '%s' does not have valid pwm names property. Name is required to generate bind rules, especially when more than one pwm is referenced.",
@@ -59,28 +62,23 @@ zx::result<> PwmVisitor::Visit(fdf_devicetree::Node& node,
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  const size_t reference_count = (*parser_output)[kPwmReference].size();
-  std::vector<std::optional<std::string>> pwm_names(reference_count);
-  if (parser_output->find(kPwmNames) != parser_output->end()) {
-    if (parser_output->at(kPwmNames).size() != reference_count) {
-      FDF_LOG(
-          ERROR,
-          "PWM reference '%s' does not expected number of pwm names property. Expected: %lu actual: %lu.",
-          node.name().c_str(), reference_count, parser_output->at(kPwmNames).size());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-
-    size_t name_idx = 0;
-    for (auto& names : (*parser_output)[kPwmNames]) {
-      pwm_names[name_idx++] = names.AsString();
-    }
+  if (pwm_names && pwm_names->size() != pwms->size()) {
+    FDF_LOG(ERROR,
+            "PWM reference '%s' does not expected number of pwm names property. Expected: %lu "
+            "actual: %lu.",
+            node.name().c_str(), pwms->size(), pwm_names->size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  for (uint32_t index = 0; index < reference_count; index++) {
-    auto reference = (*parser_output)[kPwmReference][index].AsReference();
-    if (reference && is_match(reference->first.name())) {
+  for (uint32_t index = 0; index < pwms->size(); index++) {
+    auto& reference = (*pwms)[index];
+    if (is_match(reference.reference_node().name())) {
+      std::optional<std::string_view> name;
+      if (pwm_names) {
+        name = (*pwm_names)[index];
+      }
       auto result =
-          ParseReferenceChild(node, reference->first, reference->second, pwm_names[index]);
+          ParseReferenceChild(node, reference.reference_node(), reference.property_cells(), name);
       if (result.is_error()) {
         return result.take_error();
       }

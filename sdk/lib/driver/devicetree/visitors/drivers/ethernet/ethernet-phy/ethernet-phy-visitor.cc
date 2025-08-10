@@ -16,7 +16,8 @@ namespace eth_phy_visitor_dt {
 
 EthPhyVisitor::EthPhyVisitor() {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(kPhys, kPhyCells));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::ReferenceProperty>(kPhys, kPhyCells, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
@@ -26,7 +27,7 @@ bool EthPhyVisitor::is_match(const std::string& name) {
 
 zx::result<> EthPhyVisitor::Visit(fdf_devicetree::Node& node,
                                   const devicetree::PropertyDecoder& decoder) {
-  zx::result parser_output = parser_->Parse(node);
+  auto parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
     FDF_LOG(ERROR, "Ethernet phy visitor parse failed for node '%s' : %s", node.name().c_str(),
             parser_output.status_string());
@@ -34,17 +35,12 @@ zx::result<> EthPhyVisitor::Visit(fdf_devicetree::Node& node,
   }
 
   // ethernet-phy references only have one entry.
-  if (!parser_output->contains(kPhys) || (*parser_output)[kPhys].size() != 1u) {
+  auto references = parser_output->Get<fdf_devicetree::References>(kPhys);
+  if (!references || references->size() != 1u) {
     return zx::ok();
   }
 
-  auto reference = (*parser_output)[kPhys][0].AsReference();
-  if (!reference) {
-    FDF_LOG(ERROR, "Node '%s' has invalid phy reference.", node.name().c_str());
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-
-  if (!is_match(reference->first.name())) {
+  if (!is_match(references->at(0).reference_node().name())) {
     // This reference is not to a ethernet-phy.
     return zx::ok();
   }

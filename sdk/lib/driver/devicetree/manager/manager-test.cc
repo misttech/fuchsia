@@ -201,36 +201,36 @@ TEST_F(ManagerTest, TestReferences) {
       Properties props = {};
       props.emplace_back(std::make_unique<ReferenceProperty>("property1", "#property1-cells"));
       props.emplace_back(std::make_unique<ReferenceProperty>("property2", "#property2-cells"));
-      props.emplace_back(std::make_unique<StringListProperty>("property2-names"));
+      props.emplace_back(
+          std::make_unique<StringListProperty>("property2-names", /* required */ false));
       parser_ = std::make_unique<PropertyParser>(std::move(props));
     }
 
     zx::result<> Visit(Node& node, const devicetree::PropertyDecoder& decoder) override {
-      zx::result<PropertyValues> parser_output = parser_->Parse(node);
+      auto parser_output = parser_->Parse(node);
       if (parser_output.is_error()) {
         return parser_output.take_error();
       }
 
-      if (auto iter = parser_output->find("property1"); iter != parser_output->end()) {
-        for (auto& value : iter->second) {
-          auto reference = value.AsReference();
-          if (reference && is_match(reference->first.properties())) {
+      if (auto property1 = parser_output->Get<References>("property1"); property1) {
+        for (auto& reference : *property1) {
+          if (is_match(reference.reference_node().properties())) {
             reference1_specifier() =
-                devicetree::PropEncodedArray<Property1Specifier>(reference->second, 1);
+                devicetree::PropEncodedArray<Property1Specifier>(reference.property_cells(), 1);
             reference1_count()++;
           }
         }
       }
 
-      if (auto iter = parser_output->find("property2");
-          iter != parser_output->end() && parser_output->contains("property2-names")) {
+      auto property2 = parser_output->Get<References>("property2");
+      auto property2_names = parser_output->Get<std::vector<std::string>>("property2-names");
+      if (property2 && property2_names) {
         size_t index = 0;
-        for (auto& value : iter->second) {
-          auto reference = value.AsReference();
-          if (reference && is_match(reference->first.properties())) {
-            auto name = (*parser_output)["property2-names"][index].AsString().value();
+        for (auto& reference : *property2) {
+          if (is_match(reference.reference_node().properties())) {
+            auto name = (*property2_names)[index];
             reference2_names().emplace_back(name);
-            reference2_parent_names().push_back(reference->first.name());
+            reference2_parent_names().push_back(reference.reference_node().name());
             reference2_count()++;
           }
           index++;

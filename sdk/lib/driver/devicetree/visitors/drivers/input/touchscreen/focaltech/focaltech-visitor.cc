@@ -15,8 +15,10 @@ FocaltechVisitor::FocaltechVisitor()
     : DriverVisitor(
           {"focaltech,ft3x27", "focaltech,ft6336", "focaltech,ft5726", "focaltech,ft5336"}) {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::StringProperty>(kCompatible, true));
-  properties.emplace_back(std::make_unique<fdf_devicetree::BoolProperty>(kNeedsFirmware));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::StringProperty>(kCompatible, /* required */ true));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::BoolProperty>(kNeedsFirmware, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
@@ -30,22 +32,22 @@ zx::result<> FocaltechVisitor::DriverVisit(fdf_devicetree::Node& node,
   }
 
   FocaltechMetadata device_info;
-  std::string compatible = std::string(parser_output->at(kCompatible)[0].AsString().value());
-  if (compatible == "focaltech,ft3x27") {
+  auto compatible = parser_output->Get<std::string>(kCompatible);
+  if (*compatible == "focaltech,ft3x27") {
     device_info.device_id = FOCALTECH_DEVICE_FT3X27;
-  } else if (compatible == "focaltech,ft6336") {
+  } else if (*compatible == "focaltech,ft6336") {
     device_info.device_id = FOCALTECH_DEVICE_FT6336;
-  } else if (compatible == "focaltech,ft5726") {
+  } else if (*compatible == "focaltech,ft5726") {
     device_info.device_id = FOCALTECH_DEVICE_FT5726;
-  } else if (compatible == "focaltech,ft5336") {
+  } else if (*compatible == "focaltech,ft5336") {
     device_info.device_id = FOCALTECH_DEVICE_FT5336;
   } else {
     FDF_LOG(INFO, "Unsupported device type '%s' in node '%s'. Not adding focaltech metadata.",
-            compatible.c_str(), node.name().c_str());
+            compatible->c_str(), node.name().c_str());
     return zx::ok();
   }
 
-  device_info.needs_firmware = parser_output->find(kNeedsFirmware) != parser_output->end();
+  device_info.needs_firmware = parser_output->Get<bool>(kNeedsFirmware);
 
   fuchsia_hardware_platform_bus::Metadata focaltech_metadata = {
       {.id = std::to_string(DEVICE_METADATA_PRIVATE),

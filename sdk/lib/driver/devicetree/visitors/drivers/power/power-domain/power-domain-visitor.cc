@@ -33,8 +33,8 @@ class PowerDomainCells {
 
 PowerDomainVisitor::PowerDomainVisitor() {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kPowerDomains, kPowerDomainCells));
+  properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kPowerDomains, kPowerDomainCells, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
@@ -47,13 +47,14 @@ zx::result<> PowerDomainVisitor::Visit(fdf_devicetree::Node& node,
     return parser_output.take_error();
   }
 
-  if (!parser_output->contains(kPowerDomains)) {
+  auto power_domains = parser_output->Get<fdf_devicetree::References>(kPowerDomains);
+  if (!power_domains) {
     return zx::ok();
   }
 
-  for (auto& domain_reference : parser_output->at(kPowerDomains)) {
-    if (zx::result result = ParseReferenceChild(node, domain_reference.AsReference()->first,
-                                                domain_reference.AsReference()->second);
+  for (auto& domain_reference : *power_domains) {
+    if (zx::result result = ParseReferenceChild(node, domain_reference.reference_node(),
+                                                domain_reference.property_cells());
         result.is_error()) {
       return result;
     }

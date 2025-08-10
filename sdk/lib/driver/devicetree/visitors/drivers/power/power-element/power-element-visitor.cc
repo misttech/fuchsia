@@ -46,14 +46,16 @@ class PowerDependencyCell {
 
 PowerElementVisitor::PowerElementVisitor() {
   fdf_devicetree::Properties level_properties = {};
-  level_properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(kLevel, true));
   level_properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kLevelDependencies, 1u));
+      std::make_unique<fdf_devicetree::Uint32Property>(kLevel, /* required */ true));
+  level_properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+      kLevelDependencies, 1u, /* required */ false));
   level_parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(level_properties));
   fdf_devicetree::Properties transition_properties = {};
   transition_properties.emplace_back(
       std::make_unique<fdf_devicetree::Uint32Property>(kTargetLevel, true));
-  transition_properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(kLatencyUs));
+  transition_properties.emplace_back(
+      std::make_unique<fdf_devicetree::Uint32Property>(kLatencyUs, /* required */ false));
   transition_parser_ =
       std::make_unique<fdf_devicetree::PropertyParser>(std::move(transition_properties));
 }
@@ -229,18 +231,18 @@ zx::result<> PowerElementVisitor::ParseLevel(fdf_devicetree::Node& node,
     return parser_output.take_error();
   }
 
-  level.level() = parser_output->at(kLevel)[0].AsUint32();
+  level.level() = *parser_output->Get<uint32_t>(kLevel);
 
   // Parse level dependencies if exists.
-  if (parser_output->find(kLevelDependencies) != parser_output->end()) {
-    for (auto& entry : parser_output->at(kLevelDependencies)) {
-      auto parent_level_ref = entry.AsReference()->first;
+  if (auto dependencies = parser_output->Get<fdf_devicetree::References>(kLevelDependencies)) {
+    for (auto& entry : *dependencies) {
+      auto parent_level_ref = entry.reference_node();
       auto parent_element = GetParentElementFromLevelRef(parent_level_ref);
       if (!parent_element) {
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
 
-      auto type = PowerDependencyCell(entry.AsReference()->second).type();
+      auto type = PowerDependencyCell(entry.property_cells()).type();
 
       PowerDependency& dependency = GetPowerDependency(
           element_config, *element_config.element()->name(), *parent_element, type);
@@ -248,12 +250,13 @@ zx::result<> PowerElementVisitor::ParseLevel(fdf_devicetree::Node& node,
       LevelTuple level_tuple;
       level_tuple.child_level() = level.level();
 
-      if (parent_level_ref.properties().find(kLevel) == parent_level_ref.properties().end()) {
-        FDF_LOG(ERROR, "Power level reference node '%s' has no level property.",
-                parent_level_ref.name().c_str());
-        return zx::error(ZX_ERR_INVALID_ARGS);
+      auto parent_level = parent_level_ref.GetProperty<uint32_t>(kLevel);
+      if (parent_level.is_error()) {
+        FDF_LOG(ERROR, "Power level reference node '%s' has no level property: %s",
+                parent_level_ref.name().c_str(), parent_level.status_string());
+        return parent_level.take_error();
       }
-      level_tuple.parent_level() = parent_level_ref.properties().at(kLevel).AsUint32();
+      level_tuple.parent_level() = *parent_level;
 
       dependency.level_deps()->push_back(level_tuple);
     }
@@ -289,9 +292,9 @@ zx::result<> PowerElementVisitor::ParseTransitionTable(fdf_devicetree::Node& nod
       return parser_output.take_error();
     }
     Transition transition;
-    transition.target_level() = parser_output->at(kTargetLevel)[0].AsUint32();
-    if (parser_output->find(kLatencyUs) != parser_output->end()) {
-      transition.latency_us() = parser_output->at(kLatencyUs)[0].AsUint32();
+    transition.target_level() = *parser_output->Get<uint32_t>(kTargetLevel);
+    if (auto latency = parser_output->Get<uint32_t>(kLatencyUs)) {
+      transition.latency_us() = *latency;
     }
     level.transitions()->push_back(transition);
   }

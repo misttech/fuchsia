@@ -16,11 +16,16 @@ namespace dwc2_visitor_dt {
 
 Dwc2Visitor::Dwc2Visitor() : fdf_devicetree::DriverVisitor({"snps,dwc2"}) {
   fdf_devicetree::Properties properties = {};
-  properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(kGRxFifoSize));
-  properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(kGNpTxFifoSize));
-  properties.emplace_back(std::make_unique<fdf_devicetree::Uint32ArrayProperty>(kGTxFifoSize));
-  properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(kGTurnaroundTime));
-  properties.emplace_back(std::make_unique<fdf_devicetree::Uint32Property>(kDmaBurstLen));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::Uint32Property>(kGRxFifoSize, /* required */ false));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::Uint32Property>(kGNpTxFifoSize, /* required */ false));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::Uint32ArrayProperty>(kGTxFifoSize, /* required */ false));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::Uint32Property>(kGTurnaroundTime, /* required */ false));
+  properties.emplace_back(
+      std::make_unique<fdf_devicetree::Uint32Property>(kDmaBurstLen, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
@@ -33,67 +38,44 @@ zx::result<> Dwc2Visitor::DriverVisit(fdf_devicetree::Node& node,
     return parser_output.take_error();
   }
 
-  if (parser_output->size() != 0) {
-    dwc2_metadata_t dwc2_metadata = {};
+  dwc2_metadata_t dwc2_metadata = {};
+  bool metadata_found = false;
 
-    if (parser_output->find(kGRxFifoSize) != parser_output->end()) {
-      auto value = parser_output->at(kGRxFifoSize)[0].AsUint32();
-      if (!value) {
-        FDF_LOG(ERROR, "Node '%s' has invalid '%s'.", node.name().c_str(), kGRxFifoSize);
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-      dwc2_metadata.rx_fifo_size = *value;
+  if (auto value = parser_output->Get<uint32_t>(kGRxFifoSize)) {
+    dwc2_metadata.rx_fifo_size = *value;
+    metadata_found = true;
+  }
+
+  if (auto value = parser_output->Get<uint32_t>(kGNpTxFifoSize)) {
+    dwc2_metadata.nptx_fifo_size = *value;
+    metadata_found = true;
+  }
+
+  if (auto value = parser_output->Get<uint32_t>(kGTurnaroundTime)) {
+    dwc2_metadata.usb_turnaround_time = *value;
+    metadata_found = true;
+  }
+
+  if (auto value = parser_output->Get<uint32_t>(kDmaBurstLen)) {
+    dwc2_metadata.dma_burst_len = *value;
+    metadata_found = true;
+  }
+
+  if (auto tx_fifo_sizes = parser_output->Get<std::vector<uint32_t>>(kGTxFifoSize)) {
+    if (tx_fifo_sizes->size() > (sizeof(dwc2_metadata.tx_fifo_sizes) / sizeof(uint32_t))) {
+      FDF_LOG(ERROR, "Node '%s' has invalid '%s'. Expected size to be <= %lu, actual: %zu.",
+              node.name().c_str(), kGTxFifoSize,
+              (sizeof(dwc2_metadata.tx_fifo_sizes) / sizeof(uint32_t)), tx_fifo_sizes->size());
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
-    if (parser_output->find(kGNpTxFifoSize) != parser_output->end()) {
-      auto value = parser_output->at(kGNpTxFifoSize)[0].AsUint32();
-      if (!value) {
-        FDF_LOG(ERROR, "Node '%s' has invalid '%s'.", node.name().c_str(), kGNpTxFifoSize);
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-      dwc2_metadata.nptx_fifo_size = *value;
+    for (size_t i = 0; i < tx_fifo_sizes->size(); ++i) {
+      dwc2_metadata.tx_fifo_sizes[i] = (*tx_fifo_sizes)[i];
     }
+    metadata_found = true;
+  }
 
-    if (parser_output->find(kGTurnaroundTime) != parser_output->end()) {
-      auto value = parser_output->at(kGTurnaroundTime)[0].AsUint32();
-      if (!value) {
-        FDF_LOG(ERROR, "Node '%s' has invalid '%s'.", node.name().c_str(), kGTurnaroundTime);
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-      dwc2_metadata.usb_turnaround_time = *value;
-    }
-
-    if (parser_output->find(kDmaBurstLen) != parser_output->end()) {
-      auto value = parser_output->at(kDmaBurstLen)[0].AsUint32();
-      if (!value) {
-        FDF_LOG(ERROR, "Node '%s' has invalid '%s'.", node.name().c_str(), kDmaBurstLen);
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-      dwc2_metadata.dma_burst_len = *value;
-    }
-
-    if (parser_output->find(kGTxFifoSize) != parser_output->end()) {
-      if (parser_output->at(kGTxFifoSize).size() >
-          (sizeof(dwc2_metadata.tx_fifo_sizes) / sizeof(uint32_t))) {
-        FDF_LOG(ERROR, "Node '%s' has invalid '%s'. Expected size to be <= %lu, actual: %zu.",
-                node.name().c_str(), kGTxFifoSize,
-                (sizeof(dwc2_metadata.tx_fifo_sizes) / sizeof(uint32_t)),
-                parser_output->at(kGTxFifoSize).size());
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-
-      auto index = 0;
-      for (auto tx_fifo : parser_output->at(kGTxFifoSize)) {
-        auto value = tx_fifo.AsUint32();
-        if (!value) {
-          FDF_LOG(ERROR, "Node '%s' has invalid '%s' at index %d.", node.name().c_str(),
-                  kGTxFifoSize, index);
-          return zx::error(ZX_ERR_INVALID_ARGS);
-        }
-        dwc2_metadata.tx_fifo_sizes[index++] = *value;
-      }
-    }
-
+  if (metadata_found) {
     fuchsia_hardware_platform_bus::Metadata metadata = {{
         .id = std::to_string(DEVICE_METADATA_PRIVATE),
         .data = std::vector<uint8_t>(

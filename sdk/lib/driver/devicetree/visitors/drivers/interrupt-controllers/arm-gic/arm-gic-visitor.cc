@@ -136,52 +136,46 @@ ArmGicVisitor::ArmGicVisitor() : fdf_devicetree::DriverVisitor(GetCompatibleList
 
 zx::result<> ArmGicVisitor::Visit(fdf_devicetree::Node& node,
                                   const devicetree::PropertyDecoder& decoder) {
-  zx::result<fdf_devicetree::PropertyValues> properties = interrupt_parser_.Parse(node);
+  zx::result<fdf_devicetree::ParsedProperties> properties = interrupt_parser_.Parse(node);
   if (properties.is_error()) {
     return properties.take_error();
   }
 
   // Interrupt parser converts all interrupts into kInterruptsExtended. No need to look for
   // kInterrupts property.
-  auto interrupts_it = properties->find(fdf_devicetree::InterruptParser::kInterruptsExtended);
-  if (interrupts_it == properties->end()) {
+  auto interrupts = properties->Get<fdf_devicetree::References>(
+      fdf_devicetree::InterruptParser::kInterruptsExtended);
+  if (!interrupts) {
     return zx::ok();
   }
 
-  std::vector<fdf_devicetree::PropertyValue> interrupts(std::move(interrupts_it->second));
-  std::vector<fdf_devicetree::PropertyValue> interrupt_names{};
-  std::vector<fdf_devicetree::PropertyValue> wake_vectors{};
-  if (const auto names_it = properties->find(fdf_devicetree::InterruptParser::kInterruptNames);
-      names_it != properties->end()) {
-    interrupt_names.swap(names_it->second);
+  auto interrupt_names =
+      properties->Get<std::vector<std::string>>(fdf_devicetree::InterruptParser::kInterruptNames);
+  auto wake_vector_names = properties->Get<std::vector<std::string>>(
+      fdf_devicetree::InterruptParser::kFuchsiaInterruptWakeVectors);
+
+  if (interrupt_names && (interrupts->size() != interrupt_names->size())) {
     // If `interrupt-names` property is present in the dts then we require that
     // it be the same size as the number of interrupts specified in the
     // `interrupts` property.
-    ZX_DEBUG_ASSERT(interrupts.size() == interrupt_names.size());
-
-    // Wake vectors are only valid if accompanying an `interrupt-names` property.
-    if (const auto wake_it =
-            properties->find(fdf_devicetree::InterruptParser::kFuchsiaInterruptWakeVectors);
-        wake_it != properties->end()) {
-      wake_vectors.swap(wake_it->second);
-    }
+    FDF_LOG(ERROR, "Node '%s' has %zu interrupts but %zu interrupt names.", node.name().c_str(),
+            interrupts->size(), interrupt_names->size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   // Verify and then add any GIC interrupts we've parsed.
-  for (uint32_t i = 0; i < interrupts.size(); i++) {
-    std::optional references = interrupts[i].AsReference();
-    if (!references) {
-      continue;
-    }
+  for (uint32_t i = 0; i < interrupts->size(); i++) {
+    auto& reference = (*interrupts)[i];
+    auto& parent = reference.reference_node();
+    auto cells = reference.property_cells();
 
-    auto& [parent, cells] = references.value();
     if (!is_match(parent.properties())) {
       continue;
     }
 
-    std::optional<std::string> name = std::nullopt;
-    if (!interrupt_names.empty()) {
-      name = interrupt_names[i].AsString();
+    std::optional<std::string> name;
+    if (interrupt_names) {
+      name = (*interrupt_names)[i];
     }
 
     zx::result result = ParseInterrupt(node.name(), parent, cells, name);
@@ -192,11 +186,11 @@ zx::result<> ArmGicVisitor::Visit(fdf_devicetree::Node& node,
     fpbus::Irq irq = std::move(result.value());
     // If the node has a property for specifying a fuchsia interrupt wake vector then set an
     // interrupts wake capability based on whether or not we find their name referenced.
-    if (name.has_value() && !wake_vectors.empty()) {
-      irq.wake_vector() =
-          std::ranges::find_if(wake_vectors, [&name](fdf_devicetree::PropertyValue v) {
-            return name == v.AsString().value();
-          }) != wake_vectors.end();
+    if (name.has_value() && wake_vector_names) {
+      auto it = std::find(wake_vector_names->begin(), wake_vector_names->end(), *name);
+      if (it != wake_vector_names->end()) {
+        irq.wake_vector() = true;
+      }
     }
 
     node.AddIrq(irq);
@@ -210,14 +204,15 @@ zx::result<fpbus::Irq> ArmGicVisitor::ParseInterrupt(const std::string& node_nam
                                                      fdf_devicetree::PropertyCells interrupt_cells,
                                                      std::optional<std::string> interrupt_name) {
   auto compatible_strings = parent.properties().at("compatible").AsStringList().value();
-  if (IsArmGicV1V2(compatible_strings) && (interrupt_cells.size() != (3 * sizeof(uint32_t)))) {
+  if (IsArmGicV1V2(compatible_strings) &&
+      (interrupt_cells.size_bytes() != (3 * sizeof(uint32_t)))) {
     // For GIC v2 3 cells are expected.
     FDF_LOG(ERROR, "Incorrect number of cells (expected %zu, found %zu) for interrupt in node '%s",
-            3 * sizeof(uint32_t), interrupt_cells.size(), node_name.c_str());
+            3 * sizeof(uint32_t), interrupt_cells.size_bytes(), node_name.c_str());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  if (IsArmGicV3(compatible_strings) && (interrupt_cells.size() < (3 * sizeof(uint32_t)))) {
+  if (IsArmGicV3(compatible_strings) && (interrupt_cells.size_bytes() < (3 * sizeof(uint32_t)))) {
     // For GIC v3 at least 3 cells are expected. 4th cell if present represents the phandle of a
     // node that defines the CPU affinity for PPIs. This is not used in Fuchsia currently to
     // configure interrupts. 5th and above cells if present are reserved for future use and should
@@ -225,7 +220,7 @@ zx::result<fpbus::Irq> ArmGicVisitor::ParseInterrupt(const std::string& node_nam
     FDF_LOG(
         ERROR,
         "Incorrect number of cells (expected at least %zu, found %zu) for interrupt in node '%s",
-        3 * sizeof(uint32_t), interrupt_cells.size(), node_name.c_str());
+        3 * sizeof(uint32_t), interrupt_cells.size_bytes(), node_name.c_str());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
