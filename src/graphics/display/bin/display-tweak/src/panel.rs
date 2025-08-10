@@ -5,33 +5,28 @@
 use core::fmt;
 
 use crate::utils::{self, on_off_to_bool};
-use anyhow::{bail, Context as _, Error};
+use anyhow::{anyhow, bail, Context as _, Error};
 use argh::FromArgs;
-use futures::prelude::*;
-use {fidl_fuchsia_hardware_display as display, fidl_fuchsia_io as fio, fuchsia_fs};
-
-async fn get_display_coordinator_path() -> anyhow::Result<String> {
-    const DEVICE_CLASS_PATH: &'static str = "/dev/class/display-coordinator";
-    let dir = fuchsia_fs::directory::open_in_namespace(DEVICE_CLASS_PATH, fio::Flags::empty())
-        .context("open directory")?;
-    let entries = fuchsia_fs::directory::readdir(&dir).await.context("read directory")?;
-    let first_entry = entries.first().context("no valid display-coordinator")?;
-    Ok(String::from(DEVICE_CLASS_PATH) + "/" + &first_entry.name)
-}
+use fidl_fuchsia_hardware_display as display;
+use fuchsia_async::{DurationExt, TimeoutExt};
+use fuchsia_component::client::Service;
+use futures::{future, TryStreamExt};
 
 /// Obtains a handle to the display entry point at the default hard-coded path.
 async fn open_display_provider() -> Result<display::ProviderProxy, Error> {
     log::trace!("Opening display coordinator");
 
-    let (proxy, server) = fidl::endpoints::create_proxy::<display::ProviderMarker>();
-    let display_coordinator_path: String =
-        get_display_coordinator_path().await.context("Failed to get display coordinator path")?;
-    println!("Display coordinator path: {}", display_coordinator_path);
+    const TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
+    let service_proxy = Service::open(display::ServiceMarker)
+        .context("failed to open display Service")?
+        .watch_for_any()
+        .on_timeout(TIMEOUT.after_now(), move || Err(anyhow!("watch timed out")))
+        .await?;
 
-    fdio::service_connect(&display_coordinator_path, server.into_channel())
-        .context("Failed to connect to default display coordinator provider")?;
+    let provider_proxy =
+        service_proxy.connect_to_provider().context("failed to connect to FIDL provider")?;
 
-    Ok(proxy)
+    Ok(provider_proxy)
 }
 
 /// The first stage in the process of connecting to the display driver system.
