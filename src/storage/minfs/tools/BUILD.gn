@@ -24,10 +24,6 @@ executable("minfs") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
-
-  if (!is_fuchsia) {
-    deps += [ "//zircon/system/ulib/zx-panic-libc" ]
-  }
 }
 
 sdk_host_tool("minfs_sdk") {

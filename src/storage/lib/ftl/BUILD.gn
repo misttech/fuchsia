@@ -33,7 +33,10 @@ source_set("ftl") {
     "utils/ftl_mc.h",
     "utils/kernel.h",
   ]
-  deps = [ "//src/lib/debug:backtrace-request" ]
+  deps = [
+    "//sdk/lib/zircon-assert",
+    "//src/lib/debug:backtrace-request",
+  ]
   friend = [ "test:*" ]
 
   if (is_fuchsia || is_mac) {

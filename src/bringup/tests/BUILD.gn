@@ -20,6 +20,7 @@ group("bootfs-tests") {
     # The devcoordinator-namespace-test assumes the root filesystem and can't
     # be migrated as packages are given their own local filesystem.
     "//sdk/lib/c:bootfs-tests",
+    "//sdk/lib/zircon-assert/test:zircon-assert-libc-test-bootfs-test",
     "//src/devices/tests/devcoordinator-namespace:devcoordinator-namespace-bootfs-test",
     "//src/devices/usb/tests/usb:usb-bootfs-test",  # HW-required.
     "//src/tests/drivers_serial_log:bringup_tests",
@@ -37,7 +38,6 @@ group("bootfs-tests") {
     "//zircon/system/ulib/elf-search/test:elf-search-bootfs-test",
     "//zircon/system/ulib/test-utils/test:test-utils-bootfs-test",
     "//zircon/system/ulib/trace-reader/test:trace-reader-test-bootfs-test",
-    "//zircon/system/ulib/zx-panic-libc/test:zx-panic-libc-test-bootfs-test",
     "//zircon/system/ulib/zx/test:zx-bootfs-test",
     "//zircon/system/ulib/zxtest/test:zxtest-bootfs-test",
     "//zircon/system/utest/channel-fatal:channel-fatal-bootfs-test",

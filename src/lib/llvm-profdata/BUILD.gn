@@ -30,7 +30,10 @@ template("profdata_library") {
     public_deps = [ ":headers" ]
     public_configs = [ ":have_llvm_profdata" ]
 
-    deps = [ "//zircon/system/public" ]
+    deps = [
+      "//sdk/lib/zircon-assert",
+      "//zircon/system/public",
+    ]
     if (is_kernel) {
       deps += [
         "//zircon/kernel/lib/ktl",

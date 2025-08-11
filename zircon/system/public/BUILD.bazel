@@ -1,0 +1,26 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# The logic in BUILD.gn is too complex for bazel2gn, manually keep these
+# files synchronized.
+# LINT.IfChange
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "public",
+    hdrs = [
+        "zircon/analyzer.h",
+        "zircon/compiler.h",
+        "zircon/errors.h",
+        "zircon/limits.h",
+        "zircon/rights.h",
+        "zircon/syscalls/iob.h",
+        "zircon/syscalls/object.h",
+        "zircon/time.h",
+        "zircon/types.h",
+    ],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.bazel)

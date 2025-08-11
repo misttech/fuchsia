@@ -3686,14 +3686,6 @@ template("executable") {
       deps += [ "//sdk/lib/fdio" ]
     }
 
-    # This ensures that non-Zircon host executables get __zx_panic.
-    #
-    # TODO(https://fxbug.dev/42109893): This will likely no longer be needed at some point.  See
-    # the bug for more info/discussion.
-    if (is_host) {
-      deps += [ "//zircon/system/ulib/zx-panic-libc" ]
-    }
-
     if (disable_syslog_backend && !is_host) {
       assert_no_deps += [ "//sdk/lib/syslog/cpp" ]
     }

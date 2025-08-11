@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# LINT.IfChange
+
 # In $default_toolchain, this is not used directly.  Instead, these headers are
 # also copied by //zircon/public/sysroot and then found implicitly.  For other
 # toolchains, this target is used in $deps (either explicitly in targets or via
@@ -18,6 +20,7 @@ basic_source_set("public") {
     "zircon/errors.h",
     "zircon/limits.h",
     "zircon/rights.h",
+    "zircon/syscalls/iob.h",
     "zircon/syscalls/object.h",
     "zircon/time.h",
     "zircon/types.h",
@@ -34,3 +37,4 @@ config("public.config") {
   visibility = [ ":*" ]
   include_dirs = [ "." ]
 }
+# LINT.ThenChange(BUILD.bazel)

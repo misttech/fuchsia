@@ -25,7 +25,7 @@ executable("blobfs-compression") {
   ]
 
   if (!is_fuchsia) {
-    deps += [ "//zircon/system/ulib/zx-panic-libc" ]
+    deps += [ "//zircon/system/public" ]
 
     # https://fxbug.dev/42056285: Optimizing for speed saves a considerable amount of
     # time when constructing blobfs images with a large number of blobs.

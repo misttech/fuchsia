@@ -111,7 +111,7 @@ template("sdk_noop_atom") {
     # NOTE: The compatibility of the `category` with targets that depend on it
     # is not verified as it is for other `sdk_` elements.
 
-    assert(target_name == "zircon_sdk",
+    assert(target_name == "zircon_sdk" || target_name == "zircon-assert_sdk",
            "Carefully consider whether adding another instance is appropriate.")
 
     generated_file(target_name) {

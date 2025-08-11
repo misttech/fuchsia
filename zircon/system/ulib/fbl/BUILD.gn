@@ -66,6 +66,7 @@ zx_library("fbl") {
   public_deps = [
     "//sdk/lib/fit",
     "//sdk/lib/stdcompat",
+    "//sdk/lib/zircon-assert",
   ]
 
   deps = []
@@ -86,10 +87,6 @@ zx_library("fbl") {
   if (toolchain_environment == "kernel") {
     # Avoid circularity.
     configs -= [ "//zircon/kernel/vm:headers.config" ]
-  }
-
-  if (!is_fuchsia && !is_kernel) {
-    deps += [ "//zircon/system/public" ]
   }
 }
 

@@ -4,7 +4,8 @@
 
 # Build a fbl library so we can move fbl library off SDK
 
-package(default_visibility = ["//visibility:public"])
+# LINT.IfChange
+load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
     name = "fbl",
@@ -61,9 +62,17 @@ cc_library(
     includes = [
         "include",
     ],
-    target_compatible_with = ["@platforms//os:fuchsia"],
-    deps = [
-        "@fuchsia_sdk//pkg/fit",
-        "@fuchsia_sdk//pkg/stdcompat",
-    ],
+    visibility = ["//visibility:public"],
+    deps = select({
+        "@platforms//os:fuchsia": [
+            "@fuchsia_sdk//pkg/fit",
+            "@fuchsia_sdk//pkg/stdcompat",
+        ],
+        "//conditions:default": [
+            "//sdk/lib/fit",
+            "//sdk/lib/stdcompat",
+            "//sdk/lib/zircon-assert",
+        ],
+    }),
 )
+# LINT.ThenChange(BUILD.gn)

@@ -23,10 +23,6 @@ executable("fvm") {
     "//zircon/system/ulib/range",
     "//zircon/third_party/ulib/safemath",
   ]
-
-  if (!is_fuchsia) {
-    deps += [ "//zircon/system/ulib/zx-panic-libc" ]
-  }
 }
 
 sdk_host_tool("fvm_sdk") {

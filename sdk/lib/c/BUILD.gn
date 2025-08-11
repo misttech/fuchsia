@@ -66,7 +66,7 @@ group("legacy-components") {
   visibility = [ ":*" ]
   deps = [
     "stubs",
-    "//zircon/system/ulib/zx-panic-libc:as_source",
+    "//sdk/lib/zircon-assert:as_libc_source_set",
   ]
 }
 

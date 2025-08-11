@@ -30,7 +30,6 @@ sysroot_uninstrumented_libc_entries = [
       include_dir = "//zircon/system/public"
       headers = [
         "zircon/analyzer.h",
-        "zircon/assert.h",
         "zircon/availability.h",
         "zircon/availability_levels.inc",
         "zircon/boot/crash-reason.h",
@@ -79,6 +78,12 @@ sysroot_uninstrumented_libc_entries = [
       if (!exclude_testonly_syscalls) {
         headers += [ "zircon/testonly-syscalls.h" ]
       }
+    }
+  },
+  {
+    sdk = {
+      include_dir = "//sdk/lib/zircon-assert"
+      headers = [ "zircon/assert.h" ]
     }
   },
   {

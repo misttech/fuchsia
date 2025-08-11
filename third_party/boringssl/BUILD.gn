@@ -212,7 +212,10 @@ if (!is_kernel) {
     # declared somewhere in test_support_sources. This is permitted by defining
     # BORINGSSL_CUSTOM_GET_TEST_DATA.
     sources = test_support_sources + [ "get_test_data.cc" ]
-    deps = [ "//third_party/googletest:gtest" ]
+    deps = [
+      "//sdk/lib/zircon-assert",
+      "//third_party/googletest:gtest",
+    ]
     configs += [ ":test_config" ]
     defines = [ "BORINGSSL_CUSTOM_GET_TEST_DATA" ]
   }

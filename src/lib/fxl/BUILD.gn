@@ -42,6 +42,7 @@ source_set("memory") {
 
   public_deps = [
     ":common",
+    "//sdk/lib/zircon-assert:headers",
     "//zircon/system/public",
   ]
 }

@@ -1,0 +1,40 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Synchronize with BUILD.gn manually, as the proper logic is too complex to
+# be handed with bazel2gn. In particular because it needs to handle kernel
+# and C library GN toolchains, which have no equivalent in Bazel.
+# LINT.IfChange
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+alias(
+    name = "zircon-assert",
+    actual = select({
+        "@platforms//os:fuchsia": ":zircon-assert-fuchsia",
+        "//conditions:default": ":zircon-assert-libc",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+# On Fuchsia, the <zircon/assert.h> header is provided by the sysroot
+# and the __zx_panic() implementation is provided by the C library so
+# an empty filegroup is adequate.
+filegroup(
+    name = "zircon-assert-fuchsia",
+    srcs = [],
+    visibility = [":__pkg__"],
+)
+
+# On host, this library provides the <zircon/assert.h> header
+# and provides an implementation that depends on the C library.
+cc_library(
+    name = "zircon-assert-libc",
+    srcs = ["zx_panic_libc.cc"],
+    hdrs = ["zircon/assert.h"],
+    includes = ["."],
+    visibility = [":__pkg__"],
+    # <zircon/assert.h> includes <zircon/compiler.h>
+    deps = ["//zircon/system/public"],
+)
+# LINT.ThenChange(BUILD.gn)

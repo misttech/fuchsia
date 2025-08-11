@@ -7,21 +7,21 @@ import("//build/testing/bootfs_test.gni")
 
 group("test") {
   testonly = true
-  deps = [ ":zx-panic-libc-test" ]
+  deps = [ ":zircon-assert-libc-test" ]
 }
 
-test("zx-panic-libc-test") {
-  output_name = "zx-panic-libc-test-test"
-  sources = [ "zx-panic-libc-test.cc" ]
+test("zircon-assert-libc-test") {
+  output_name = "zircon-assert-libc-test-test"
+  sources = [ "zircon-assert-libc-test.cc" ]
   deps = [
     "//sdk/lib/fdio",
+    "//sdk/lib/zircon-assert",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zx-panic-libc",
     "//zircon/system/ulib/zxtest",
   ]
 }
 
-bootfs_test("zx-panic-libc-test-bootfs-test") {
-  name = "zx-panic-libc-test-test"
-  deps = [ ":zx-panic-libc-test" ]
+bootfs_test("zircon-assert-libc-test-bootfs-test") {
+  name = "zircon-assert-libc-test-test"
+  deps = [ ":zircon-assert-libc-test" ]
 }
