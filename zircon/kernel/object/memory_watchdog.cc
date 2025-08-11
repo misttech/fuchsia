@@ -245,6 +245,9 @@ void MemoryWatchdog::WorkerThread() {
     // failure and therefore could have become wedged in some way.
     if (gBootOptions->oom_trigger_on_alloc_failure && PmmNode::has_alloc_failed_no_mem()) {
       PmmNode::AllocFailure first_failure = Pmm::Node().GetFirstAllocFailure();
+      // This log message is load-bearing server-side as it's used to identify the culprit of the
+      // OOM.
+      // Please notify //src/developer/forensics/OWNERS upon changing.
       printf(
           "memory-pressure: failed one or more allocations "
           "(first reported type: %s, size: %zu, free memory: %zuMB), escalating to oom...\n",
