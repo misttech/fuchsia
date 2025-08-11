@@ -30,6 +30,9 @@
 
 namespace media::audio::drivers::test {
 
+// TODO(b/437737013): remove this flag when the referenced issue is fixed.
+inline constexpr bool kEnforceI2sIsStereoOnly = false;
+
 using component_testing::ChildRef;
 using component_testing::ParentRef;
 using component_testing::Protocol;
@@ -555,26 +558,28 @@ void TestBase::ValidateDaiFormatSets(
         FAIL() << "frame_formats[" << j << "] must not equal frame_formats[" << k << "]";
         __UNREACHABLE;
       }
+      // Some DaiFrameFormats are Stereo by definition.
+      // TODO(b/437737013): remove kEnforceI2sIsStereoOnly when the referenced issue is fixed.
       if (format_1.is_frame_format_standard() &&
           (format_1.frame_format_standard() ==
-               fuchsia::hardware::audio::DaiFrameFormatStandard::I2S ||
-           format_1.frame_format_standard() ==
                fuchsia::hardware::audio::DaiFrameFormatStandard::STEREO_LEFT ||
            format_1.frame_format_standard() ==
-               fuchsia::hardware::audio::DaiFrameFormatStandard::STEREO_RIGHT)) {
+               fuchsia::hardware::audio::DaiFrameFormatStandard::STEREO_RIGHT ||
+           (format_1.frame_format_standard() ==
+                fuchsia::hardware::audio::DaiFrameFormatStandard::I2S &&
+            kEnforceI2sIsStereoOnly))) {
         must_support_stereo = true;
       } else {
         permits_non_stereo = true;
       }
     }
     if (must_support_stereo) {
-      // Some DaiFrameFormats are Stereo by definition.
-      // If one of those formats is listed, ensure that Stereo is supported.
+      // If a stereo format is listed, ensure that Stereo is supported.
       EXPECT_TRUE(supports_stereo)
           << "DaiFormatSet[" << i
           << "] contains a Stereo DaiFrameFormat but does not support Stereo";
 
-      // And if ONLY those formats are listed, ensure that ONLY Stereo is supported.
+      // And if ONLY stereo formats are listed, ensure that ONLY Stereo is supported.
       if (!permits_non_stereo) {
         EXPECT_FALSE(supports_non_stereo)
             << "DaiFormatSet[" << i
