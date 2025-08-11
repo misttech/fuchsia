@@ -1592,6 +1592,21 @@ impl FileObject {
         self.flags().contains(OpenFlags::NONBLOCK)
     }
 
+    /// Common implementation for blocking operations.
+    ///
+    /// This function is used to implement the blocking operations for file objects. FileOps
+    /// implementations should call this function to handle the blocking logic.
+    ///
+    /// The `op` parameter is a function that implements the non-blocking version of the operation.
+    /// The function is called once without registering a waiter in case no wait is needed. If the
+    /// operation returns EAGAIN and the file object is non-blocking, the function returns EAGAIN.
+    ///
+    /// If the operation returns EAGAIN and the file object is blocking, the function will block
+    /// until the given events are triggered. At that time, the operation is retried. Notice that
+    /// the `op` function can be called multiple times before the operation completes.
+    ///
+    /// The `deadline` parameter is the deadline for the operation. If the operation does not
+    /// complete before the deadline, the function will return ETIMEDOUT.
     pub fn blocking_op<L, T, Op>(
         &self,
         locked: &mut Locked<L>,
