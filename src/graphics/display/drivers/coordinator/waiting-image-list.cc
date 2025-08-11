@@ -5,6 +5,12 @@
 #include "src/graphics/display/drivers/coordinator/waiting-image-list.h"
 
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/zx/result.h>
+#include <zircon/assert.h>
+
+#include <cstddef>
+#include <utility>
+#include <vector>
 
 namespace display_coordinator {
 

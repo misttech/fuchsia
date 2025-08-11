@@ -22,7 +22,7 @@
 
 namespace display_coordinator {
 
-Image::Image(LifecycleListener* lifecycle_listener, const display::ImageMetadata& metadata,
+Image::Image(ImageLifecycleListener* lifecycle_listener, const display::ImageMetadata& metadata,
              display::ImageId id, display::DriverImageId driver_id, inspect::Node* parent_node,
              ClientId client_id)
     : IdMappable(id),

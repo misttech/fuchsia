@@ -37,7 +37,7 @@
 #include "src/graphics/display/drivers/coordinator/engine-listener-fidl-adapter.h"
 #include "src/graphics/display/drivers/coordinator/engine-listener.h"
 #include "src/graphics/display/drivers/coordinator/id-map.h"
-#include "src/graphics/display/drivers/coordinator/image.h"
+#include "src/graphics/display/drivers/coordinator/image-lifecycle-listener.h"
 #include "src/graphics/display/drivers/coordinator/vsync-monitor.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
@@ -57,7 +57,7 @@ class DisplayConfig;
 // Multiplexes between display controller clients and display engine drivers.
 class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
                    public EngineListener,
-                   public Image::LifecycleListener {
+                   public ImageLifecycleListener {
  public:
   // Factory method for production use.
   // Creates and initializes a Controller instance.

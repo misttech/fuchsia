@@ -12,16 +12,16 @@
 #include <mutex>
 #include <vector>
 
-#include "src/graphics/display/drivers/coordinator/image.h"
+#include "src/graphics/display/drivers/coordinator/image-lifecycle-listener.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 
 namespace display_coordinator::testing {
 
-// Strict mock for Image::LifecycleListener.
+// Strict mock for ImageLifecycleListener.
 //
 // This is a very rare case where strict mocking is warranted. Image destruction
 // triggers FIDL calls to engine drivers.
-class MockImageLifecycleListener : public Image::LifecycleListener {
+class MockImageLifecycleListener : public ImageLifecycleListener {
  public:
   using ImageWillBeDestroyedChecker = fit::function<void(display::DriverImageId)>;
 

@@ -5,8 +5,18 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_COORDINATOR_WAITING_IMAGE_LIST_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_COORDINATOR_WAITING_IMAGE_LIST_H_
 
+#include <lib/zx/result.h>
+#include <zircon/assert.h>
+
+#include <array>
+#include <cstddef>
+#include <vector>
+
+#include <fbl/ref_ptr.h>
+
 #include "src/graphics/display/drivers/coordinator/fence.h"
 #include "src/graphics/display/drivers/coordinator/image.h"
+#include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
 
 namespace display_coordinator {
 

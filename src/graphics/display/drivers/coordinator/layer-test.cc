@@ -18,6 +18,7 @@
 
 #include "src/graphics/display/drivers/coordinator/fence.h"
 #include "src/graphics/display/drivers/coordinator/image.h"
+#include "src/graphics/display/drivers/coordinator/image-lifecycle-listener.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/event-id.h"
 #include "src/graphics/display/lib/api-types/cpp/image-id.h"
@@ -28,7 +29,7 @@ namespace display_coordinator {
 
 namespace {
 
-class StubImageLifecycleListener : public Image::LifecycleListener {
+class StubImageLifecycleListener : public ImageLifecycleListener {
  public:
   using ImageWillBeDestroyedChecker = fit::function<void(display::DriverImageId)>;
 

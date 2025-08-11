@@ -78,6 +78,7 @@ source_set("shared") {
     "fidl-conversion.cc",
     "fidl-conversion.h",
     "id-map.h",
+    "image-lifecycle-listener.h",
     "image.cc",
     "image.h",
     "layer.cc",

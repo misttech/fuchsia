@@ -21,6 +21,7 @@
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/image-id.h"
+#include "src/graphics/display/drivers/coordinator/image-lifecycle-listener.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 
 namespace display_coordinator {
@@ -44,24 +45,6 @@ class Image : public fbl::RefCounted<Image>,
       DoublyLinkedListTraits<DoublyLinkedListPointer, fbl::DefaultObjectTag>;
 
  public:
-  class LifecycleListener {
-   public:
-    LifecycleListener() = default;
-
-    // LifecycleListener pointers must remain stable.
-    LifecycleListener(const LifecycleListener&) = delete;
-    LifecycleListener(LifecycleListener&&) = delete;
-    LifecycleListener& operator=(const LifecycleListener&) = default;
-    LifecycleListener& operator=(LifecycleListener&&) = delete;
-
-    // Called when the image is about to be destroyed.
-    virtual void ImageWillBeDestroyed(display::DriverImageId driver_image_id) = 0;
-
-   protected:
-    // LifecycleListener is not intended to be an owning pointer type.
-    ~LifecycleListener() = default;
-  };
-
   // This defines the specific type of fbl::DoublyLinkedList that an Image can
   // be placed into. Any intrusive container that can hold an Image must be of
   // type Image::DoublyLinkedList.
@@ -72,7 +55,7 @@ class Image : public fbl::RefCounted<Image>,
                                                  fbl::SizeOrder::N, DefaultDoublyLinkedListTraits>;
 
   // `lifecycle_listener` must be non-null, and must outlive the Image.
-  Image(LifecycleListener* listener, const display::ImageMetadata& metadata, display::ImageId id,
+  Image(ImageLifecycleListener* listener, const display::ImageMetadata& metadata, display::ImageId id,
         display::DriverImageId driver_id, inspect::Node* parent_node, ClientId client_id);
 
   Image(const Image&) = delete;
@@ -145,7 +128,7 @@ class Image : public fbl::RefCounted<Image>,
   const display::DriverImageId driver_id_;
   const display::ImageMetadata metadata_;
 
-  LifecycleListener& lifecycle_listener_;
+  ImageLifecycleListener& lifecycle_listener_;
   const ClientId client_id_;
 
   // Stamp of the latest applied display configuration that uses this image.
