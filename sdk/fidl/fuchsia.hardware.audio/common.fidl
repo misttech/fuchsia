@@ -24,4 +24,9 @@ type DriverError = flexible enum {
     /// The operation cannot be performed currently but potentially could succeed if
     /// the caller waits for a prerequisite to be satisfied.
     SHOULD_WAIT = 5;
+
+    /// A fatal error has occurred in the driver. The connection is no longer
+    /// usable and the client should close it.
+    @available(added=NEXT)
+    FATAL_ERROR = 6;
 };

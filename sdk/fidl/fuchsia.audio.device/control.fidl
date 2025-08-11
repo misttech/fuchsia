@@ -191,6 +191,7 @@ open protocol Control {
 };
 
 /// Errors returned by `Control/CreateRingBuffer`.
+/// The call can be retried upon any error except 'DEVICE_ERROR'.
 type ControlCreateRingBufferError = flexible enum {
     /// This device has encountered an error and can no longer be controlled.
     DEVICE_ERROR = 1;

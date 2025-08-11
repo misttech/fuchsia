@@ -906,6 +906,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.hardware.audio/DriverError.FATAL_ERROR",
+        "value": "6"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.hardware.audio/DriverError.INTERNAL_ERROR",
         "value": "1"
     },

@@ -2234,104 +2234,155 @@ bool Device::CreateRingBuffer(
     return false;
   }
 
-  ring_buffer_map_.erase(element_id);
-
-  // This method create the ring_buffer map entry, upon success.
-  if (auto status = ConnectRingBufferFidl(element_id, format);
-      status != fad::ControlCreateRingBufferError(0)) {
-    create_ring_buffer_callback(fit::error(status));
+  // Here, we detect all the error cases that we can, before calling into the driver.
+  if (!ValidateRingBufferFormat(format)) {
+    create_ring_buffer_callback(fit::error(fad::ControlCreateRingBufferError::kInvalidFormat));
     return false;
   }
 
-  auto& ring_buffer = ring_buffer_map_.find(element_id)->second;
-  ring_buffer.requested_ring_buffer_bytes = requested_ring_buffer_bytes;
-  ring_buffer.create_ring_buffer_callback = std::move(create_ring_buffer_callback);
+  auto bytes_per_sample = format.pcm_format()->bytes_per_sample();
+  auto sample_format = format.pcm_format()->sample_format();
+  if (!ValidateSampleFormatCompatibility(bytes_per_sample, sample_format)) {
+    create_ring_buffer_callback(fit::error(fad::ControlCreateRingBufferError::kInvalidFormat));
+    return false;
+  }
 
-  RetrieveRingBufferProperties(element_id);
-  RetrieveDelayInfo(element_id);
+  if (!RingBufferFormatIsSupported(element_id, element_ring_buffer_format_sets_, format)) {
+    ADR_WARN_METHOD() << "RingBuffer format not supported";
+    create_ring_buffer_callback(fit::error(fad::ControlCreateRingBufferError::kFormatMismatch));
+    return false;
+  }
+
+  ring_buffer_map_.erase(element_id);
+
+  // This method creates the ring_buffer map entry, upon success.
+  ConnectRingBufferFidl(
+      element_id, format,
+      [this, element_id, requested_ring_buffer_bytes, cb = std::move(create_ring_buffer_callback)](
+          fuchsia_audio_device::ControlCreateRingBufferError status) mutable {
+        if (status != fad::ControlCreateRingBufferError(0)) {
+          cb(fit::error(status));
+          return;
+        }
+
+        auto& ring_buffer = ring_buffer_map_.find(element_id)->second;
+        ring_buffer.requested_ring_buffer_bytes = requested_ring_buffer_bytes;
+        ring_buffer.create_ring_buffer_callback = std::move(cb);
+
+        RetrieveRingBufferProperties(element_id);
+        RetrieveDelayInfo(element_id);
+      });
 
   return true;
 }
 
-// Here, we detect all the error cases that we can, before calling into the driver. If we call into
-// the driver, we return "no error", otherwise we return an error code that can be returned to
-// clients as the reason the CreateRingBuffer call failed.
-fad::ControlCreateRingBufferError Device::ConnectRingBufferFidl(ElementId element_id,
-                                                                fha::Format driver_format) {
+void Device::ConnectRingBufferFidl(
+    ElementId element_id, fha::Format driver_format,
+    fit::callback<void(fad::ControlCreateRingBufferError status)> callback) {
   ADR_LOG_METHOD(kLogRingBufferMethods || kLogRingBufferFidlCalls);
-
-  if (has_error()) {
-    ADR_WARN_METHOD() << "device already has an error";
-    return fad::ControlCreateRingBufferError::kDeviceError;
-  }
-
-  if (!ValidateRingBufferFormat(driver_format)) {
-    return fad::ControlCreateRingBufferError::kInvalidFormat;
-  }
-
-  auto bytes_per_sample = driver_format.pcm_format()->bytes_per_sample();
-  auto sample_format = driver_format.pcm_format()->sample_format();
-  if (!ValidateSampleFormatCompatibility(bytes_per_sample, sample_format)) {
-    return fad::ControlCreateRingBufferError::kInvalidFormat;
-  }
-
-  if (!RingBufferFormatIsSupported(element_id, element_ring_buffer_format_sets_, driver_format)) {
-    ADR_WARN_METHOD() << "RingBuffer not supported";
-    return fad::ControlCreateRingBufferError::kFormatMismatch;
-  }
 
   // We use kDefaultLongCmdTimeout here, as we don't clear the timeout until CreateRingBuffer,
   // GetProperties, GetVmo and the initial WatchDelayInfo call have all completed.
   SetCommandTimeout(kDefaultLongCmdTimeout, "CreateRingBuffer (multi-command)");
 
-  auto [client, server] = fidl::Endpoints<fha::RingBuffer>::Create();
+  auto [client_end, server_end] = fidl::Endpoints<fha::RingBuffer>::Create();
 
   (*composite_client_)
-      ->CreateRingBuffer({element_id, driver_format, std::move(server)})
-      .Then([this](fidl::Result<fha::Composite::CreateRingBuffer>& result) {
+      ->CreateRingBuffer({element_id, driver_format, std::move(server_end)})
+      .Then([this, element_id, driver_format, client_end = std::move(client_end),
+             callback = std::move(callback)](
+                fidl::Result<fha::Composite::CreateRingBuffer>& result) mutable {
         std::string context{"Composite/CreateRingBuffer response"};
-        if (SetDeviceErrorOnFidlError(result, context.c_str())) {
+        if (result.is_error()) {
+          ClearCommandTimeout();
+
+          fad::ControlCreateRingBufferError error;
+          bool is_device_error = false;
+
+          // The `fuchsia.hardware.audio.DriverError` is mapped to
+          // `fuchsia.audio.device.ControlCreateRingBufferError` here.
+          // `kFatalError` is mapped to `kDeviceError`, which is not retryable.
+          // All other errors are considered retryable.
+          if (result.error_value().is_domain_error()) {
+            switch (result.error_value().domain_error()) {
+              case fha::DriverError::kInvalidArgs:
+                error = fad::ControlCreateRingBufferError::kBadRingBufferOption;
+                break;
+              case fha::DriverError::kNotSupported:
+                error = fad::ControlCreateRingBufferError::kFormatMismatch;
+                break;
+              case fha::DriverError::kWrongType:
+                error = fad::ControlCreateRingBufferError::kWrongDeviceType;
+                break;
+              case fha::DriverError::kFatalError:
+                is_device_error = SetDeviceErrorOnFidlError(result, context.c_str());
+                FX_CHECK(is_device_error)
+                    << "Invalid error interpretation. Fatal error should be considered a device error.";
+                error = fad::ControlCreateRingBufferError::kDeviceError;
+                break;
+              case fha::DriverError::kShouldWait:
+                [[fallthrough]];
+              case fha::DriverError::kInternalError:
+                [[fallthrough]];
+              default:
+                error = fad::ControlCreateRingBufferError::kOther;
+                break;
+            }
+          } else {
+            // For a framework error, let the generic handler deal with it.
+            is_device_error = SetDeviceErrorOnFidlError(result, context.c_str());
+            if (is_device_error) {
+              error = fad::ControlCreateRingBufferError::kDeviceError;
+            } else {
+              error = fad::ControlCreateRingBufferError::kOther;
+            }
+          }
+
+          ADR_WARN_METHOD() << "Failed to create ring buffer: " << result.error_value();
+          callback(error);
           return;
         }
-        ADR_LOG_OBJECT(kLogCompositeFidlResponses) << context;
+
+        // Success path
+        auto bytes_per_sample = driver_format.pcm_format()->bytes_per_sample();
+        auto sample_format = driver_format.pcm_format()->sample_format();
+        std::optional<fuchsia_audio::SampleType> client_sample_type;
+        if (bytes_per_sample == 1 && sample_format == fha::SampleFormat::kPcmUnsigned) {
+          client_sample_type = fuchsia_audio::SampleType::kUint8;
+        } else if (bytes_per_sample == 2 && sample_format == fha::SampleFormat::kPcmSigned) {
+          client_sample_type = fuchsia_audio::SampleType::kInt16;
+        } else if (bytes_per_sample == 4 && sample_format == fha::SampleFormat::kPcmSigned) {
+          client_sample_type = fuchsia_audio::SampleType::kInt32;
+        } else if (bytes_per_sample == 4 && sample_format == fha::SampleFormat::kPcmFloat) {
+          client_sample_type = fuchsia_audio::SampleType::kFloat32;
+        } else if (bytes_per_sample == 8 && sample_format == fha::SampleFormat::kPcmFloat) {
+          client_sample_type = fuchsia_audio::SampleType::kFloat64;
+        }
+        FX_CHECK(client_sample_type.has_value())
+            << "Invalid sample format was not detected in ValidateSampleFormatCompatibility";
+
+        RingBufferRecord ring_buffer_record{
+            .ring_buffer_state = RingBufferState::NotCreated,
+            .ring_buffer_handler = std::make_unique<RingBufferFidlErrorHandler<fha::RingBuffer>>(
+                this, element_id, "RingBuffer"),
+            .vmo_format = {{
+                .sample_type = *client_sample_type,
+                .channel_count = driver_format.pcm_format()->number_of_channels(),
+                .frames_per_second = driver_format.pcm_format()->frame_rate(),
+                // TODO(https://fxbug.dev/42168795): handle channel_layout when communicated from
+                // driver.
+            }},
+            .driver_format = driver_format,
+        };
+
+        ring_buffer_record.ring_buffer_client = fidl::Client<fha::RingBuffer>(
+            std::move(client_end), dispatcher_, ring_buffer_record.ring_buffer_handler.get());
+
+        ring_buffer_map_.insert_or_assign(element_id, std::move(ring_buffer_record));
+        SetRingBufferState(element_id, RingBufferState::Creating);
+
+        callback(fad::ControlCreateRingBufferError(0));
       });
-
-  std::optional<fuchsia_audio::SampleType> sample_type;
-  if (bytes_per_sample == 1 && sample_format == fha::SampleFormat::kPcmUnsigned) {
-    sample_type = fuchsia_audio::SampleType::kUint8;
-  } else if (bytes_per_sample == 2 && sample_format == fha::SampleFormat::kPcmSigned) {
-    sample_type = fuchsia_audio::SampleType::kInt16;
-  } else if (bytes_per_sample == 4 && sample_format == fha::SampleFormat::kPcmSigned) {
-    sample_type = fuchsia_audio::SampleType::kInt32;
-  } else if (bytes_per_sample == 4 && sample_format == fha::SampleFormat::kPcmFloat) {
-    sample_type = fuchsia_audio::SampleType::kFloat32;
-  } else if (bytes_per_sample == 8 && sample_format == fha::SampleFormat::kPcmFloat) {
-    sample_type = fuchsia_audio::SampleType::kFloat64;
-  }
-  FX_CHECK(sample_type.has_value())
-      << "Invalid sample format was not detected in ValidateSampleFormatCompatibility";
-
-  RingBufferRecord ring_buffer_record{
-      .ring_buffer_state = RingBufferState::NotCreated,
-      .ring_buffer_handler = std::make_unique<RingBufferFidlErrorHandler<fha::RingBuffer>>(
-          this, element_id, "RingBuffer"),
-      .vmo_format = {{
-          .sample_type = sample_type,
-          .channel_count = driver_format.pcm_format()->number_of_channels(),
-          .frames_per_second = driver_format.pcm_format()->frame_rate(),
-          // TODO(https://fxbug.dev/42168795): handle channel_layout when communicated from driver.
-      }},
-      .driver_format = driver_format,
-  };
-
-  ring_buffer_record.ring_buffer_client = fidl::Client<fha::RingBuffer>(
-      std::move(client), dispatcher_, ring_buffer_record.ring_buffer_handler.get());
-
-  ring_buffer_map_.insert_or_assign(element_id, std::move(ring_buffer_record));
-
-  SetRingBufferState(element_id, RingBufferState::Creating);
-
-  return fad::ControlCreateRingBufferError(0);
 }
 
 void Device::RetrieveRingBufferProperties(ElementId element_id) {

@@ -389,8 +389,10 @@ class Device : public std::enable_shared_from_this<Device> {
   void DeviceDroppedRingBuffer(ElementId element_id);
 
   // Create the driver RingBuffer FIDL connection.
-  fuchsia_audio_device::ControlCreateRingBufferError ConnectRingBufferFidl(
-      ElementId element_id, fuchsia_hardware_audio::Format format);
+  // `callback` is guaranteed to be called.
+  void ConnectRingBufferFidl(
+      ElementId element_id, fuchsia_hardware_audio::Format driver_format,
+      fit::callback<void(fuchsia_audio_device::ControlCreateRingBufferError status)> callback);
   // Retrieve the underlying RingBufferProperties (turn_on_delay and needs_cache_flush_...).
   void RetrieveRingBufferProperties(ElementId element_id);
   // Post a WatchDelayInfo hanging-get, for external/internal_delay.

@@ -209,27 +209,38 @@ void ControlServer::CreateRingBuffer(CreateRingBufferRequest& request,
     return;
   }
 
+  auto ring_buffer_server = parent_->CreateRingBufferServer(
+      std::move(*request.ring_buffer_server()), shared_from_this(), device_, element_id);
+  AddChildServer(ring_buffer_server);
+  ring_buffer_servers_.insert_or_assign(element_id, ring_buffer_server);
+
+  // The completer is captured so we can respond asynchronously.
   create_ring_buffer_completers_.insert_or_assign(element_id, completer.ToAsync());
+
+  // `Device::CreateRingBuffer` returns false if it fails synchronously. In that case, it has
+  // already invoked the callback, which will have replied to the client. Note that
+  // `Device::CreateRingBuffer` always invokes the callback irrespective of the return value.
   bool created = device_->CreateRingBuffer(
       element_id, *driver_format, *request.options()->ring_buffer_min_bytes(),
-      [this,
-       element_id](fit::result<fad::ControlCreateRingBufferError, Device::RingBufferInfo> result) {
+      [this, element_id](auto result) mutable {
         // If we have no async completer, maybe we're shutting down and it was cleared. Just exit.
-        if (create_ring_buffer_completers_.find(element_id) ==
-            create_ring_buffer_completers_.end()) {
+        auto completer_it = create_ring_buffer_completers_.find(element_id);
+        if (completer_it == create_ring_buffer_completers_.end()) {
           ADR_WARN_OBJECT()
               << "(element_id " << element_id
               << ") create_ring_buffer_completer_ gone by the time the CreateRingBuffer callback ran";
-          device_->DropRingBuffer(element_id);  //  Let this unwind the RingBufferServer.
+          if (result.is_ok()) {
+            device_->DropRingBuffer(element_id);
+          }
           return;
         }
 
-        auto completer = std::move(create_ring_buffer_completers_.find(element_id)->second);
+        auto completer = std::move(completer_it->second);
         create_ring_buffer_completers_.erase(element_id);
 
         if (result.is_error()) {
-          // Based on the driver response, set our ControlServer response
-          completer.Reply(fit::error(fad::ControlCreateRingBufferError::kDeviceError));
+          completer.Reply(fit::error(result.take_error()));
+          DeviceDroppedRingBuffer(element_id);
           return;
         }
 
@@ -240,17 +251,9 @@ void ControlServer::CreateRingBuffer(CreateRingBufferRequest& request,
       });
 
   if (!created) {
+    // Synchronous failure. The callback was already called, which replied to the completer.
     ADR_WARN_METHOD() << "device cannot create a ring buffer with the specified options";
-    auto completer = std::move(create_ring_buffer_completers_.find(element_id)->second);
-    create_ring_buffer_completers_.erase(element_id);
-    completer.Reply(fidl::Response<fad::Control::CreateRingBuffer>(
-        fit::error(fad::ControlCreateRingBufferError::kBadRingBufferOption)));
-    return;
   }
-  auto ring_buffer_server = parent_->CreateRingBufferServer(
-      std::move(*request.ring_buffer_server()), shared_from_this(), device_, element_id);
-  AddChildServer(ring_buffer_server);
-  ring_buffer_servers_.insert_or_assign(element_id, ring_buffer_server);
 }
 
 // This is only here because ControlNotify includes the methods from ObserverNotify. ControlServer
