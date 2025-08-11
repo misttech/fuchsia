@@ -60,7 +60,7 @@ def _fake_download_output(
         remotetool.RemoteTool,
         Path,
         bool,
-    ]
+    ],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_output_for_mp.
     # defined because multiprocessing cannot serialize mocks
@@ -75,7 +75,7 @@ def _fake_download_output_fail(
         remotetool.RemoteTool,
         Path,
         bool,
-    ]
+    ],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_output_for_mp.
     # defined because multiprocessing cannot serialize mocks
@@ -90,7 +90,7 @@ def _fake_download_input(
         remotetool.RemoteTool,
         Path,
         bool,
-    ]
+    ],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_input_for_mp.
     # defined because multiprocessing cannot serialize mocks
@@ -105,7 +105,7 @@ def _fake_download_input_fail(
         remotetool.RemoteTool,
         Path,
         bool,
-    ]
+    ],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_input_for_mp.
     # defined because multiprocessing cannot serialize mocks
@@ -418,6 +418,10 @@ class FakeReproxyLogEntry(remote_action.ReproxyLogEntry):
         # sets property attributes.
         for k, v in kwargs.items():
             setattr(self, "_" + k, v)
+        # init the dict members to empty dicts if not set.
+        for var_to_init in ["output_file_digests", "output_directory_digests"]:
+            if var_to_init not in kwargs:
+                setattr(self, "_" + var_to_init, {})
 
     @property
     def execution_id(self) -> str:
@@ -1569,6 +1573,9 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
             mock.patch.object(Path, "is_file", return_value=True),
             # Pretend comparison finds no differences
             mock.patch.object(remote_action, "_files_match", return_value=True),
+            mock.patch.object(
+                remote_action.RemoteAction, "_write_output_file_hash_xattrs"
+            ),
         ]
         with contextlib.ExitStack() as stack:
             for m in unnamed_mocks:
@@ -1625,6 +1632,9 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
                 remote_action, "_files_match", return_value=False
             ),
             mock.patch.object(remote_action, "_detail_diff"),
+            mock.patch.object(
+                remote_action.RemoteAction, "_write_output_file_hash_xattrs"
+            ),
         ]
         with contextlib.ExitStack() as stack:
             for m in unnamed_mocks:
@@ -1687,6 +1697,9 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
                 remote_action, "_files_match", return_value=False
             ),
             mock.patch.object(remote_action, "_detail_diff"),
+            mock.patch.object(
+                remote_action.RemoteAction, "_write_output_file_hash_xattrs"
+            ),
         ]
         with contextlib.ExitStack() as stack:
             for m in unnamed_mocks:
@@ -1775,6 +1788,9 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
             mock.patch.object(remote_action, "_detail_diff"),
             # in RemoteAction._compare_fsatraces:
             mock.patch.object(remote_action, "_transform_file_by_lines"),
+            mock.patch.object(
+                remote_action.RemoteAction, "_write_output_file_hash_xattrs"
+            ),
         ]
         with contextlib.ExitStack() as stack:
             for m in unnamed_mocks:
@@ -2207,7 +2223,12 @@ class RemoteActionConstructionTests(unittest.TestCase):
         self.assertEqual(action.build_subdir, Path("build_dir"))
         self.assertEqual(
             action.launch_command,
-            [str(self._rewrapper), f"--exec_root={self._PROJECT_ROOT}", "--"]
+            [
+                str(self._rewrapper),
+                f"--exec_root={self._PROJECT_ROOT}",
+                "--action_log=rbe-action-output.rrpl",
+                "--",
+            ]
             + command,
         )
         self.assertFalse(action.compare_with_local)
@@ -2321,6 +2342,7 @@ class RemoteActionConstructionTests(unittest.TestCase):
                 [
                     "/path/to/rewrapper",
                     f"--exec_root={self._PROJECT_ROOT}",
+                    "--action_log=obj/woof.txt.rrpl",
                     "--input_list_paths=obj/woof.txt.inputs",
                     "--output_files=build_dir/obj/woof.txt",
                     "--output_directories=build_dir/.debug",
@@ -2336,11 +2358,14 @@ class RemoteActionConstructionTests(unittest.TestCase):
                 return_value=cl_utils.SubprocessResult(0),
             ) as mock_call:
                 with mock.patch.object(
-                    remote_action.RemoteAction, "_cleanup"
-                ) as mock_cleanup:
-                    self.assertEqual(action.run(), 0)
-                    mock_call.assert_called_once()
-                    mock_cleanup.assert_called_once()
+                    remote_action.RemoteAction, "_write_output_file_hash_xattrs"
+                ) as mock_write_xattrs:
+                    with mock.patch.object(
+                        remote_action.RemoteAction, "_cleanup"
+                    ) as mock_cleanup:
+                        self.assertEqual(action.run(), 0)
+                        mock_call.assert_called_once()
+                        mock_cleanup.assert_called_once()
 
     def test_save_temps(self) -> None:
         command = ["echo", "hello"]
@@ -3031,10 +3056,14 @@ remote_metadata: {{
                 ) as mock_stub:
                     with mock.patch.object(
                         remote_action.RemoteAction,
-                        "_run_maybe_remotely",
-                        return_value=cl_utils.SubprocessResult(0),
-                    ) as mock_run:
-                        exit_code = action.run()
+                        "_write_output_file_hash_xattrs",
+                    ) as mock_write_xattrs:
+                        with mock.patch.object(
+                            remote_action.RemoteAction,
+                            "_run_maybe_remotely",
+                            return_value=cl_utils.SubprocessResult(0),
+                        ) as mock_run:
+                            exit_code = action.run()
             self.assertEqual(exit_code, 0)
         mock_run.assert_called()
         mock_log_dir.assert_called_once()
@@ -3044,6 +3073,7 @@ remote_metadata: {{
             dirs=[],
             build_id=Path(logdir).name,
         )
+        mock_write_xattrs.assert_called()
 
     def test_made_download_stubs_for_racing_remote_win(self) -> None:
         exec_root = Path("/home/project")
@@ -3088,10 +3118,14 @@ remote_metadata: {{
                     ) as mock_stub:
                         with mock.patch.object(
                             remote_action.RemoteAction,
-                            "_run_maybe_remotely",
-                            return_value=cl_utils.SubprocessResult(0),
-                        ) as mock_run:
-                            exit_code = action.run()
+                            "_write_output_file_hash_xattrs",
+                        ) as mock_write_xattrs:
+                            with mock.patch.object(
+                                remote_action.RemoteAction,
+                                "_run_maybe_remotely",
+                                return_value=cl_utils.SubprocessResult(0),
+                            ) as mock_run:
+                                exit_code = action.run()
                 self.assertEqual(exit_code, 0)
         mock_run.assert_called()
         mock_download_inputs.assert_called_once()
@@ -3102,6 +3136,7 @@ remote_metadata: {{
             dirs=[],
             build_id=Path(logdir).name,
         )
+        mock_stub.assert_called()
 
     def test_download_inputs_for_local_execution(self) -> None:
         exec_root = Path("/home/project")
@@ -3183,21 +3218,25 @@ remote_metadata: {{
                 remote_action.ReproxyLogEntry, "make_download_stubs"
             ) as mock_stub:
                 with mock.patch.object(
-                    remote_action.RemoteAction,
-                    "download_inputs",
-                    return_value={},
-                ) as mock_download_inputs:
+                    remote_action.RemoteAction, "_write_output_file_hash_xattrs"
+                ) as mock_write_xattrs:
                     with mock.patch.object(
                         remote_action.RemoteAction,
-                        "_run_maybe_remotely",
-                        return_value=cl_utils.SubprocessResult(0),
-                    ) as mock_run:
-                        exit_code = action.run()
+                        "download_inputs",
+                        return_value={},
+                    ) as mock_download_inputs:
+                        with mock.patch.object(
+                            remote_action.RemoteAction,
+                            "_run_maybe_remotely",
+                            return_value=cl_utils.SubprocessResult(0),
+                        ) as mock_run:
+                            exit_code = action.run()
         self.assertEqual(exit_code, 0)
         mock_run.assert_called()
         mock_download_inputs.assert_called_once()
         mock_parse_log.assert_called_with(Path(output + ".rrpl"))
         mock_stub.assert_not_called()
+        mock_write_xattrs.assert_called()
 
     def test_no_download_stubs_for_racing_local_win(self) -> None:
         exec_root = Path("/home/project")
@@ -3238,15 +3277,20 @@ remote_metadata: {{
                 ) as mock_stub:
                     with mock.patch.object(
                         remote_action.RemoteAction,
-                        "_run_maybe_remotely",
-                        return_value=cl_utils.SubprocessResult(0),
-                    ) as mock_run:
-                        exit_code = action.run()
+                        "_write_output_file_hash_xattrs",
+                    ) as mock_write_xattrs:
+                        with mock.patch.object(
+                            remote_action.RemoteAction,
+                            "_run_maybe_remotely",
+                            return_value=cl_utils.SubprocessResult(0),
+                        ) as mock_run:
+                            exit_code = action.run()
         self.assertEqual(exit_code, 0)
         mock_run.assert_called()
         mock_download_inputs.assert_called_once()
         mock_parse_log.assert_called_with(Path(output + ".rrpl"))
         mock_stub.assert_not_called()
+        mock_write_xattrs.assert_called()
 
     def test_no_download_stubs_for_local_fallback(self) -> None:
         exec_root = Path("/home/project")
@@ -3288,15 +3332,20 @@ remote_metadata: {{
                 ) as mock_stub:
                     with mock.patch.object(
                         remote_action.RemoteAction,
-                        "_run_maybe_remotely",
-                        return_value=cl_utils.SubprocessResult(0),
-                    ) as mock_run:
-                        exit_code = action.run()
+                        "_write_output_file_hash_xattrs",
+                    ) as mock_write_xattrs:
+                        with mock.patch.object(
+                            remote_action.RemoteAction,
+                            "_run_maybe_remotely",
+                            return_value=cl_utils.SubprocessResult(0),
+                        ) as mock_run:
+                            exit_code = action.run()
         self.assertEqual(exit_code, 0)
         mock_run.assert_called()
         mock_download_inputs.assert_called_once()
         mock_parse_log.assert_called_with(Path(output + ".rrpl"))
         mock_stub.assert_not_called()
+        mock_write_xattrs.assert_called()
 
     def _setup_update_stub_test(
         self, tdp: Path, output_contents: str | None = None

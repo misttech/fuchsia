@@ -129,8 +129,9 @@ def _detail_diff(
 def _detail_diff_filtered(
     file1: Path,
     file2: Path,
-    maybe_transform_pair: Callable[[Path, Path, Path, Path], bool]
-    | None = None,
+    maybe_transform_pair: (
+        Callable[[Path, Path, Path, Path], bool] | None
+    ) = None,
     project_root_rel: Path | None = None,
 ) -> cl_utils.SubprocessResult:
     """Show differences between filtered views of two files.
@@ -181,7 +182,7 @@ def _common_files_under_dirs(path1: Path, path2: Path) -> AbstractSet[Path]:
 
 
 def _expand_common_files_between_dirs(
-    path_pairs: Iterable[Tuple[Path, Path]]
+    path_pairs: Iterable[Tuple[Path, Path]],
 ) -> Iterable[Tuple[Path, Path]]:
     """Expands two directories into paths to their common files.
 
@@ -635,7 +636,16 @@ _RBE_DOWNLOAD_STUB_SUFFIX = ".dl-stub"
 
 # Filesystem extended attribute for digests.
 # This should match the 'xattr_digest' value in build/rbe/fuchsia-reproxy.cfg.
-_RBE_XATTR_NAME = "user.fuchsia.rbe.digest.sha256"
+_RBE_XATTR_HASH = "user.fuchsia.rbe.digests.sha256"
+
+# Filesystem extended attribute for stubs
+# This is a present/not-present marker that the file is actually just a download stub.
+# The hash of the file to download is stored in _RBE_XATTR_HASH.
+_RBE_XATTR_IS_STUB = "user.fuchsia.rbe.download_stub"
+
+# This was previously set on output files, and needs to be removed
+# as it's no longer the marker for a file being a download stub.
+_RBE_OLD_XATTR_HASH = "user.fuchsia.rbe.digest.sha256"
 
 
 def download_stub_backup_location(path: Path) -> Path:
@@ -741,8 +751,8 @@ class DownloadStubInfo(object):
             # exists in the CAS and does not need to be uploaded.
             os.setxattr(
                 path,
-                _RBE_XATTR_NAME,
-                self.blob_digest.encode(),
+                _RBE_XATTR_IS_STUB,
+                "true".encode(),
             )
 
     @staticmethod
@@ -834,7 +844,7 @@ def _file_starts_with(path: Path, text: str) -> bool:
 def is_download_stub_file(path: Path) -> bool:
     """Returns true if the path points to a download stub."""
     if _HAVE_XATTR:
-        return _RBE_XATTR_NAME in os.listxattr(path)
+        return _RBE_XATTR_IS_STUB in os.listxattr(path)
     else:
         return _file_starts_with(path, _RBE_DOWNLOAD_STUB_IDENTIFIER)
 
@@ -1500,11 +1510,9 @@ exec "${{cmd[@]}}"
         yield f"--exec_root={self.exec_root}"
 
         # The .rrpl contains detailed information for improved
-        # diagnostics and troubleshooting.
-        # When NOT downloading outputs, we need the .rrpl file for the
-        # output digests to be able to retrieve them from the CAS later.
-        if self.diagnose_nonzero or self.skipping_some_download:
-            yield f"--action_log={self._action_log}"
+        # diagnostics and troubleshooting, as well as the output
+        # file digests.
+        yield f"--action_log={self._action_log}"
 
         yield from self.options
 
@@ -1635,6 +1643,17 @@ exec "${{cmd[@]}}"
     def action_log_record(self) -> ReproxyLogEntry:
         self.vmsg(f"Reading remote action log from {self._action_log}.")
         return ReproxyLogEntry.parse_action_log(self._action_log)
+
+    def _write_output_file_hash_xattrs(self, output_file: Path) -> None:
+        xattr_value = self.action_log_record.output_file_digests.get(
+            output_file
+        )
+        if xattr_value:
+            os.setxattr(output_file, _RBE_XATTR_HASH, xattr_value.encode())
+
+        # Clear the old download stub marker, if present
+        if _RBE_OLD_XATTR_HASH in os.listxattr(output_file):
+            os.removexattr(output_file, _RBE_OLD_XATTR_HASH)
 
     def _process_download_stubs(self) -> None:
         """Create download stubs so artifacts can be retrieved later."""
@@ -1837,6 +1856,11 @@ exec "${{cmd[@]}}"
 
         if self.skipping_some_download:
             self._process_download_stubs()
+
+        if _HAVE_XATTR:
+            for output_file in self.output_files_relative_to_working_dir:
+                if output_file.suffix != ".d":
+                    self._write_output_file_hash_xattrs(output_file)
 
         # Possibly transform some of the remote outputs.
         # It is important that transformations are applied before
@@ -2316,7 +2340,7 @@ exec "${{cmd[@]}}"
 # Module-scope functions are serializable.
 # Arguments are packed into a tuple to be map()-able.
 def _download_input_for_mp(
-    packed_args: Tuple[Path, remotetool.RemoteTool, Path, bool]
+    packed_args: Tuple[Path, remotetool.RemoteTool, Path, bool],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
     path, downloader, working_dir_abs, verbose = packed_args
     if verbose:
@@ -2332,7 +2356,7 @@ def _download_input_for_mp(
 
 
 def _download_output_for_mp(
-    packed_args: Tuple[DownloadStubInfo, remotetool.RemoteTool, Path, bool]
+    packed_args: Tuple[DownloadStubInfo, remotetool.RemoteTool, Path, bool],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
     stub_info, downloader, working_dir_abs, verbose = packed_args
     path = stub_info.path

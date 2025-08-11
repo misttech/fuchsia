@@ -402,7 +402,11 @@ class CxxRemoteActionTests(unittest.TestCase):
             "_run_maybe_remotely",
             return_value=cl_utils.SubprocessResult(0),
         ) as mock_remote:
-            exit_code = c.run()
+            with mock.patch.object(
+                remote_action.RemoteAction,
+                "_write_output_file_hash_xattrs",
+            ) as mock_write_xattrs:
+                exit_code = c.run()
 
         self.assertEqual(exit_code, 0)
 
