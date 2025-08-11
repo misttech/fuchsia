@@ -162,6 +162,18 @@ pub enum KernelArg {
     /// This option configures the amount of memory, in MiB, that should be used
     /// to store kernel trace data.
     KtraceBufsize(u32),
+
+    /// Sets the "memory block size" parameter for jitterentropy.
+    JitterentropyBs(u32),
+
+    /// Sets the "memory block count" parameter for jitterentropy.
+    JitterentropyBc(u32),
+
+    /// Sets the "memory loops" parameter for jitterentropy.
+    JitterentropyMl(u32),
+
+    /// Sets the "LFSR loops" parameter for jitterentropy.
+    JitterentropyLl(u32),
 }
 
 /// Options for zero page scanner configuration.
@@ -284,6 +296,10 @@ impl KernelArg {
             Self::NetsvcNetboot(b) => ("netsvc.netboot", b.to_string()),
             Self::UserbootNext(s) => ("userboot.next", s.to_string()),
             Self::KtraceBufsize(s) => ("ktrace.bufsize", s.to_string()),
+            Self::JitterentropyBs(i) => ("kernel.jitterentropy.bs", i.to_string()),
+            Self::JitterentropyBc(i) => ("kernel.jitterentropy.bc", i.to_string()),
+            Self::JitterentropyMl(i) => ("kernel.jitterentropy.ml", i.to_string()),
+            Self::JitterentropyLl(i) => ("kernel.jitterentropy.ll", i.to_string()),
         };
         (key.to_string(), value)
     }
@@ -323,6 +339,10 @@ impl KernelArg {
             | Self::AslrEntropyBits(_)
             | Self::MemoryLimitMib(_)
             | Self::Arm64DebugDap(_)
+            | Self::JitterentropyBs(_)
+            | Self::JitterentropyBc(_)
+            | Self::JitterentropyMl(_)
+            | Self::JitterentropyLl(_)
             | Self::PageScannerZeroPageScanCount(_) => {
                 vec![format!("{}=*", key)]
             }

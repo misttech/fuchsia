@@ -203,6 +203,22 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
             builder.kernel_arg(KernelArg::KtraceBufsize(ktrace_bufsize));
         }
 
+        if let Some(bs) = kernel_config.jitterentropy_bs {
+            builder.kernel_arg(KernelArg::JitterentropyBs(bs));
+        }
+
+        if let Some(bc) = kernel_config.jitterentropy_bc {
+            builder.kernel_arg(KernelArg::JitterentropyBc(bc));
+        }
+
+        if let Some(ml) = kernel_config.jitterentropy_ml {
+            builder.kernel_arg(KernelArg::JitterentropyMl(ml));
+        }
+
+        if let Some(ll) = kernel_config.jitterentropy_ll {
+            builder.kernel_arg(KernelArg::JitterentropyLl(ll));
+        }
+
         // Read a thread roles file as JSON5 and write it as JSON to avoid build time errors.
         let gendir = context.get_gendir().context("Getting gendir for kernel subsystem")?;
         for thread_roles_file in &context.board_config.configuration.thread_roles {

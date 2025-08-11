@@ -21,6 +21,10 @@
 ?kernel.enable-serial-syscalls=true
 ?kernel.halt-on-panic=false
 ?kernel.halt-on-panic=true
+?kernel.jitterentropy.bc=*
+?kernel.jitterentropy.bs=*
+?kernel.jitterentropy.ll=*
+?kernel.jitterentropy.ml=*
 ?kernel.memory-limit-mb=*
 ?kernel.oom.critical-mb=*
 ?kernel.oom.debounce-mb=*

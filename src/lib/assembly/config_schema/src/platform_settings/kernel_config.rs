@@ -83,6 +83,48 @@ pub struct PlatformKernelConfig {
     // Configurations related to kernel tracing.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub ktrace: KtraceConfig,
+
+    /// Sets the "memory block size" parameter for jitterentropy. When jitterentropy is
+    /// performing memory operations (to increase variation in CPU timing), the memory
+    /// will be accessed in blocks of this size.
+    ///
+    /// Please tune to specific CPU prior to setting and provide validation data like
+    /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jitterentropy_bs: Option<u32>,
+
+    /// Sets the "memory block count" parameter for jitterentropy. When jitterentropy
+    /// is performing memory operations (to increase variation in CPU timing), this
+    /// controls how many blocks (of size `kernel.jitterentropy.bs`) are accessed.
+    ///
+    /// Please tune to specific CPU prior to setting and provide validation data like
+    /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jitterentropy_bc: Option<u32>,
+
+    /// Sets the "memory loops" parameter for jitterentropy. When jitterentropy is
+    /// performing memory operations (to increase variation in CPU timing), this
+    /// controls how many times the memory access routine is repeated. This parameter
+    /// is only used when `kernel.jitterentropy.raw` is true. If the value of this
+    /// parameter is `0` or if `kernel.jitterentropy.raw` is `false`, then
+    /// jitterentropy chooses the number of loops is a random-ish way.
+    ///
+    /// Please tune to specific CPU prior to setting and provide validation data like
+    /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jitterentropy_ml: Option<u32>,
+
+    /// Sets the "LFSR loops" parameter for jitterentropy. When
+    /// jitterentropy is performing CPU-intensive LFSR operations (to increase variation
+    /// in CPU timing), this controls how many times the LFSR routine is repeated.  This
+    /// parameter is only used when `kernel.jitterentropy.raw` is true. If the value of
+    /// this parameter is `0` or if `kernel.jitterentropy.raw` is `false`, then
+    /// jitterentropy chooses the number of loops is a random-ish way.
+    ///
+    /// Please tune to specific CPU prior to setting and provide validation data like
+    /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jitterentropy_ll: Option<u32>,
 }
 
 /// Options for ktrace behaviors.
