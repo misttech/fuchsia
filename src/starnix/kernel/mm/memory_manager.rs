@@ -8,8 +8,8 @@ use crate::mm::memory::MemoryObject;
 use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
     FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, Mapping, MappingBacking,
-    MappingFlags, MappingName, MlockPinFlavor, MlockShadowProcess, PrivateFutexKey, UserFault,
-    VmsplicePayload, VmsplicePayloadSegment, VMEX_RESOURCE,
+    MappingFlags, MappingName, MlockMapping, MlockPinFlavor, MlockShadowProcess, PrivateFutexKey,
+    UserFault, VmsplicePayload, VmsplicePayloadSegment, VMEX_RESOURCE,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -307,6 +307,12 @@ pub struct MemoryManagerState {
 
     /// UserFaults registered with this memory manager.
     userfaultfds: Vec<Weak<UserFault>>,
+
+    /// Shadow mappings for mlock()'d pages.
+    ///
+    /// Used for MlockPinFlavor::ShadowProcess to keep track of when we need to unmap
+    /// memory from the shadow process.
+    shadow_mappings_for_mlock: RangeMap<UserAddress, Arc<MlockMapping>>,
 
     forkable_state: MemoryManagerForkableState,
 }
@@ -1238,6 +1244,9 @@ impl MemoryManagerState {
         let end_addr = addr.checked_add(length).ok_or_else(|| errno!(EINVAL))?;
         let unmap_range = addr..end_addr;
 
+        // Remove any shadow mappings for mlock()'d pages that are now unmapped.
+        self.shadow_mappings_for_mlock.remove(unmap_range.clone());
+
         #[cfg(feature = "alternate_anon_allocs")]
         {
             for (range, mapping) in self.mappings.range(unmap_range.clone()) {
@@ -1689,7 +1698,7 @@ impl MemoryManagerState {
 
             if !mapping.flags().contains(MappingFlags::LOCKED) {
                 num_new_locked_bytes += (range.end - range.start) as u64;
-                let mlock_mapping = match current_task.kernel().features.mlock_pin_flavor {
+                let shadow_mapping = match current_task.kernel().features.mlock_pin_flavor {
                     // Pin the memory by mapping the backing memory into the high priority vmar.
                     MlockPinFlavor::ShadowProcess => {
                         let shadow_process = current_task
@@ -1717,8 +1726,8 @@ impl MemoryManagerState {
                     // Relying on VMAR-level operations means just flags are set per-mapping.
                     MlockPinFlavor::Noop | MlockPinFlavor::VmarAlwaysNeed => None,
                 };
-                mapping.set_mlock(mlock_mapping);
-                updates.push((range, mapping));
+                mapping.set_mlock();
+                updates.push((range, mapping, shadow_mapping));
             }
         }
 
@@ -1763,7 +1772,10 @@ impl MemoryManagerState {
             MlockPinFlavor::Noop | MlockPinFlavor::ShadowProcess => (),
         }
 
-        for (range, mapping) in updates {
+        for (range, mapping, shadow_mapping) in updates {
+            if let Some(shadow_mapping) = shadow_mapping {
+                self.shadow_mappings_for_mlock.insert(range.clone(), shadow_mapping);
+            }
             self.mappings.insert(range, mapping);
         }
 
@@ -1812,7 +1824,8 @@ impl MemoryManagerState {
         }
 
         for (range, mapping) in updates {
-            self.mappings.insert(range, mapping);
+            self.mappings.insert(range.clone(), mapping);
+            self.shadow_mappings_for_mlock.remove(range);
         }
 
         Ok(())
@@ -3252,6 +3265,7 @@ impl MemoryManager {
                 #[cfg(feature = "alternate_anon_allocs")]
                 private_anonymous: PrivateAnonymousMemoryManager::new(backing_size),
                 userfaultfds: Default::default(),
+                shadow_mappings_for_mlock: Default::default(),
                 forkable_state: Default::default(),
             }),
             // TODO(security): Reset to DISABLE, or the value in the fs.suid_dumpable sysctl, under

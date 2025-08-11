@@ -59,12 +59,12 @@ impl MlockShadowProcess {
         vmo: &zx::Vmo,
         offset: u64,
         length: usize,
-    ) -> Result<MlockMapping, Errno> {
+    ) -> Result<Arc<MlockMapping>, Errno> {
         let base = self
             .vmar
             .map(0, vmo, offset, length, zx::VmarFlags::PERM_READ)
             .map_err(|e| from_status_like_fdio!(e))?;
-        Ok(MlockMapping { vmar: Arc::downgrade(&self.vmar), base, length })
+        Ok(Arc::new(MlockMapping { vmar: Arc::downgrade(&self.vmar), base, length }))
     }
 }
 

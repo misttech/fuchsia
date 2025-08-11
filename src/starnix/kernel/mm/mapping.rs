@@ -5,8 +5,8 @@
 use crate::mm::memory::MemoryObject;
 use crate::mm::memory_manager::MemoryManagerState;
 use crate::mm::{
-    FaultRegisterMode, MappingOptions, MlockMapping, ProtectionFlags,
-    GUARD_PAGE_COUNT_FOR_GROWSDOWN_MAPPINGS, PAGE_SIZE,
+    FaultRegisterMode, MappingOptions, ProtectionFlags, GUARD_PAGE_COUNT_FOR_GROWSDOWN_MAPPINGS,
+    PAGE_SIZE,
 };
 use crate::vfs::aio::AioContext;
 use crate::vfs::{ActiveNamespaceNode, FileWriteGuardRef};
@@ -49,14 +49,12 @@ pub struct Mapping {
 
     /// Lock guard held to prevent this file from being written while it's being executed.
     file_write_guard: FileWriteGuardRef,
-
-    mlock: Option<Box<MlockMapping>>,
 }
 
 // The size of this type *heavily* influences Starnix's heap usage in common scenarios, please
 // think twice about increasing the size here.
 #[cfg(not(any(test, debug_assertions)))]
-static_assertions::assert_eq_size!(Mapping, [u8; 40]);
+static_assertions::assert_eq_size!(Mapping, [u8; 32]);
 
 impl Mapping {
     pub fn new(
@@ -75,16 +73,7 @@ impl Mapping {
         name: MappingName,
         file_write_guard: FileWriteGuardRef,
     ) -> Mapping {
-        MappingUnsplit {
-            backing,
-            flags,
-            max_access,
-            name,
-            file_write_guard,
-            // Memory locks are not inherited.
-            mlock: None,
-        }
-        .decompose()
+        MappingUnsplit { backing, flags, max_access, name, file_write_guard }.decompose()
     }
 
     pub fn flags(&self) -> MappingFlags {
@@ -122,14 +111,12 @@ impl Mapping {
         self.flags = self.flags.difference(MappingFlags::UFFD | MappingFlags::UFFD_MISSING);
     }
 
-    pub fn set_mlock(&mut self, mlock: Option<MlockMapping>) {
+    pub fn set_mlock(&mut self) {
         self.flags |= MappingFlags::LOCKED;
-        self.mlock = mlock.map(Box::new);
     }
 
     pub fn clear_mlock(&mut self) {
         self.flags = self.flags.difference(MappingFlags::LOCKED);
-        self.mlock = None;
     }
 
     #[cfg(feature = "alternate_anon_allocs")]
@@ -140,7 +127,6 @@ impl Mapping {
             max_access: Access::rwx(),
             name,
             file_write_guard: FileWriteGuardRef(None),
-            mlock: None,
         }
         .decompose()
     }
