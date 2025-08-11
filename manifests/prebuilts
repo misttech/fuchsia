@@ -440,6 +440,8 @@
              attributes="fuchsia_devtools"
              internal="true"/>
 
+    <!-- Linux images -->
+
     <!--   Linux image for performance parity testing -->
     <!-- Add with `jiri init -fetch-optional=performance_parity_image` -->
     <package name="fuchsia_internal/linux/performance_image"
@@ -448,6 +450,12 @@
              path="prebuilt/performance/linux_image"
              attributes="performance_parity_image"
              internal="true" />
+
+    <!-- AOSP GKI kernels intended for virtualization -->
+    <package name="fuchsia/third_party/aosp_gki/virt"
+             version="bid:13912520"
+             path="prebuilt/virtualization/packages/aosp_gki"
+             platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"/>
 
     <!--   Debian guest kernel images for x64 -->
     <package name="fuchsia_internal/linux/debian_guest-x64"
