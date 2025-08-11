@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use utf8_path::PathToStringExt;
 
 /// Maximum size of 200 KiB.
-const UPDATE_PACKAGE_BUDGET: u64 = 200 * 1024 * 1024;
+const UPDATE_PACKAGE_BUDGET: u64 = 200 * 1024;
 
 /// The result of the builder.
 pub struct UpdatePackage {
