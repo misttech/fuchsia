@@ -632,7 +632,7 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
       .and_then([this](std::vector<uint8_t>&) -> fpromise::promise<void, zx_status_t> {
         FDF_LOG(DEBUG, "Getting mac address");
         zx::result metadata =
-            fdf_metadata::GetMetadata<fuchsia_boot_metadata::MacAddressMetadata>(*incoming());
+            fdf_metadata::GetMetadata<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
         if (metadata.is_error()) {
           return LogControllerFallbackBdaddr().then(
               [](fpromise::result<>&) -> fpromise::result<void, zx_status_t> {

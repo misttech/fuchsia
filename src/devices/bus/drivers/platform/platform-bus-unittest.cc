@@ -230,14 +230,6 @@ class PlatformBusTest : public ::testing::Test {
         driver_test_.Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>("pt");
     ASSERT_OK(pbus);
     pbus_.Bind(std::move(pbus.value()));
-
-    // Initialize `from_driver_vfs_`.
-    std::vector<fuchsia_component_runner::ComponentNamespaceEntry> namespace_entries;
-    namespace_entries.emplace_back(fuchsia_component_runner::ComponentNamespaceEntry{
-        {.path = "/svc", .directory = driver_test_.ConnectToDriverSvcDir()}});
-    zx::result from_driver_vfs = fdf::Namespace::Create(namespace_entries);
-    ASSERT_OK(from_driver_vfs);
-    from_driver_vfs_.emplace(std::move(from_driver_vfs.value()));
   }
 
   void TearDown() override { ASSERT_OK(driver_test().StopDriver()); }
@@ -252,11 +244,9 @@ class PlatformBusTest : public ::testing::Test {
   fdf_testing::BackgroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::Iommu>& iommu() { return iommu_; }
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus>& pbus() { return pbus_; }
-  fdf::Namespace& from_driver_vfs() { return from_driver_vfs_.value(); }
 
  private:
   fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
-  std::optional<fdf::Namespace> from_driver_vfs_;
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::Iommu> iommu_;
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> pbus_;
 };
@@ -315,8 +305,8 @@ TEST_F(PlatformBusTest, EmptyPartitionMapMetadata) {
   ASSERT_TRUE(result->is_ok());
 
   // Verify that the platform device serves the partition map as metadata.
-  zx::result metadata =
-      fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(from_driver_vfs(), kNodeName);
+  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(
+      driver_test().ConnectToDriverSvcDir(), kNodeName);
   ASSERT_OK(metadata);
   const auto& partition_map = metadata.value();
   EXPECT_TRUE(partition_map.block_count().has_value());
@@ -381,8 +371,8 @@ TEST_F(PlatformBusTest, PartitionMapMetadata) {
   ASSERT_TRUE(result->is_ok());
 
   // Verify that the platform device serves the partition map as metadata.
-  zx::result metadata =
-      fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(from_driver_vfs(), kNodeName);
+  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(
+      driver_test().ConnectToDriverSvcDir(), kNodeName);
   ASSERT_OK(metadata);
   const auto& partition_map = metadata.value();
   EXPECT_TRUE(partition_map.block_count().has_value());

@@ -220,7 +220,7 @@ zx::result<std::vector<uint8_t>> SdioDevice::DeviceGetPersistedMetadata(
     std::string_view metadata_serializable_name) {
   if (metadata_serializable_name == fuchsia_boot_metadata::MacAddressMetadata::kSerializableName) {
     zx::result metadata =
-        fdf_metadata::GetMetadata<fuchsia_boot_metadata::MacAddressMetadata>(*incoming(), "pdev");
+        fdf_metadata::GetMetadata<fuchsia_boot_metadata::MacAddressMetadata>(incoming(), "pdev");
     if (metadata.is_error()) {
       BRCMF_ERR("Failed to get mac address metadata: %s", metadata.status_string());
       return metadata.take_error();

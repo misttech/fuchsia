@@ -127,7 +127,7 @@ zx::result<> UsbPeripheral::Start() {
   // We read initial value and store it in dev->usb_mode, but do not actually
   // enable it until after all of our functions have bound.
   zx::result metadata =
-      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_usb_phy::Metadata>(*incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_usb_phy::Metadata>(incoming());
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata);
     return metadata.take_error();
@@ -221,7 +221,7 @@ zx::result<> UsbPeripheral::Start() {
 
 zx::result<std::string> UsbPeripheral::GetSerialNumber() {
   zx::result serial_number_result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::SerialNumberMetadata>(*incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::SerialNumberMetadata>(incoming());
   if (serial_number_result.is_error()) {
     fdf::error("Failed to get serial number metadata: {}", serial_number_result);
     return serial_number_result.take_error();
@@ -238,7 +238,7 @@ zx::result<std::string> UsbPeripheral::GetSerialNumber() {
 
   // Use MAC address as the next option.
   zx::result mac_address_result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(*incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
   if (mac_address_result.is_error()) {
     fdf::error("Failed to get MAC address metadata: {}", mac_address_result);
     return mac_address_result.take_error();

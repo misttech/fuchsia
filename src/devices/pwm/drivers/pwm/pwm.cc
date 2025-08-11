@@ -21,7 +21,7 @@ zx::result<> Pwm::Start() {
   }
 
   zx::result metadata =
-      fdf_metadata::GetMetadata<fuchsia_hardware_pwm::PwmChannelsMetadata>(*incoming());
+      fdf_metadata::GetMetadata<fuchsia_hardware_pwm::PwmChannelsMetadata>(incoming());
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata);
     return metadata.take_error();

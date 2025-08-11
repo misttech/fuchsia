@@ -37,13 +37,6 @@ class AmlSpiTest : public ::testing::Test {
   void SetUp() override {
     zx::result<> result = driver_test().StartDriver();
     ASSERT_EQ(ZX_OK, result.status_value());
-
-    std::vector<fuchsia_component_runner::ComponentNamespaceEntry> namespace_entries;
-    namespace_entries.emplace_back(fuchsia_component_runner::ComponentNamespaceEntry{
-        {.path = "/svc", .directory = driver_test_.ConnectToDriverSvcDir()}});
-    zx::result from_driver_vfs = fdf::Namespace::Create(namespace_entries);
-    ASSERT_OK(from_driver_vfs);
-    from_driver_vfs_.emplace(std::move(from_driver_vfs.value()));
   }
   void TearDown() override {
     zx::result<> result = driver_test().StopDriver();
@@ -51,12 +44,8 @@ class AmlSpiTest : public ::testing::Test {
   }
   fdf_testing::ForegroundDriverTest<AmlSpiTestConfig>& driver_test() { return driver_test_; }
 
- protected:
-  fdf::Namespace& from_driver_vfs() { return from_driver_vfs_.value(); }
-
  private:
   fdf_testing::ForegroundDriverTest<AmlSpiTestConfig> driver_test_;
-  std::optional<fdf::Namespace> from_driver_vfs_;
 };
 
 TEST_F(AmlSpiTest, DdkLifecycle) {
@@ -979,21 +968,12 @@ TEST_F(AmlSpiNoIrqTest, InterruptRequired) {
 TEST_F(AmlSpiTest, DefaultRoleMetadata) {
   static constexpr char kExpectedRoleName[] = "fuchsia.devices.spi.drivers.aml-spi.transaction";
 
-  zx::result result = fdf_metadata::ConnectToMetadataProtocol(
-      from_driver_vfs(), fuchsia_scheduler::RoleName::kSerializableName);
-  ASSERT_EQ(ZX_OK, result.status_value());
-  fidl::WireClient<fuchsia_driver_metadata::Metadata> client{
-      std::move(result.value()), fdf::Dispatcher::GetCurrent()->async_dispatcher()};
-  fdf::Arena arena('TEST');
-  client.buffer(arena)->GetPersistedMetadata().Then([](auto& persisted_metadata) {
-    ASSERT_EQ(ZX_OK, persisted_metadata.status());
-    ASSERT_TRUE(persisted_metadata->is_ok());
-    fit::result metadata = fidl::Unpersist<fuchsia_scheduler::RoleName>(
-        persisted_metadata.value()->persisted_metadata.get());
-    ASSERT_TRUE(metadata.is_ok());
-    EXPECT_EQ(metadata->role(), kExpectedRoleName);
-  });
-  driver_test().runtime().RunUntilIdle();
+  ASSERT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() {
+    zx::result metadata = fdf_metadata::GetMetadata<fuchsia_scheduler::RoleName>(
+        driver_test().ConnectToDriverSvcDir());
+    ASSERT_OK(metadata);
+    EXPECT_EQ(metadata.value().role(), kExpectedRoleName);
+  }));
 }
 
 class AmlSpiForwardRoleMetadataEnvironment : public BaseTestEnvironment {
@@ -1027,46 +1007,29 @@ class AmlSpiForwardRoleMetadataTest : public ::testing::Test {
   void SetUp() override {
     zx::result<> result = driver_test().StartDriver();
     ASSERT_EQ(ZX_OK, result.status_value());
-
-    std::vector<fuchsia_component_runner::ComponentNamespaceEntry> namespace_entries;
-    namespace_entries.emplace_back(fuchsia_component_runner::ComponentNamespaceEntry{
-        {.path = "/svc", .directory = driver_test_.ConnectToDriverSvcDir()}});
-    zx::result from_driver_vfs = fdf::Namespace::Create(namespace_entries);
-    ASSERT_OK(from_driver_vfs);
-    from_driver_vfs_.emplace(std::move(from_driver_vfs.value()));
   }
+
   void TearDown() override {
     zx::result<> result = driver_test().StopDriver();
     ASSERT_EQ(ZX_OK, result.status_value());
   }
+
+ protected:
   fdf_testing::ForegroundDriverTest<AmlSpiForwardRoleMetadataConfig>& driver_test() {
     return driver_test_;
   }
 
- protected:
-  fdf::Namespace& from_driver_vfs() { return from_driver_vfs_.value(); }
-
  private:
   fdf_testing::ForegroundDriverTest<AmlSpiForwardRoleMetadataConfig> driver_test_;
-  std::optional<fdf::Namespace> from_driver_vfs_;
 };
 
 TEST_F(AmlSpiForwardRoleMetadataTest, Test) {
-  zx::result result = fdf_metadata::ConnectToMetadataProtocol(
-      from_driver_vfs(), fuchsia_scheduler::RoleName::kSerializableName);
-  ASSERT_EQ(ZX_OK, result.status_value());
-  fidl::WireClient<fuchsia_driver_metadata::Metadata> client{
-      std::move(result.value()), fdf::Dispatcher::GetCurrent()->async_dispatcher()};
-  fdf::Arena arena('TEST');
-  client.buffer(arena)->GetPersistedMetadata().Then([](auto& persisted_metadata) {
-    ASSERT_EQ(ZX_OK, persisted_metadata.status());
-    ASSERT_TRUE(persisted_metadata->is_ok());
-    fit::result metadata = fidl::Unpersist<fuchsia_scheduler::RoleName>(
-        persisted_metadata.value()->persisted_metadata.get());
-    ASSERT_TRUE(metadata.is_ok());
-    EXPECT_EQ(metadata->role(), AmlSpiForwardRoleMetadataEnvironment::kExpectedRoleName);
-  });
-  driver_test().runtime().RunUntilIdle();
+  ASSERT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() {
+    zx::result metadata = fdf_metadata::GetMetadata<fuchsia_scheduler::RoleName>(
+        driver_test().ConnectToDriverSvcDir());
+    ASSERT_OK(metadata);
+    EXPECT_EQ(metadata.value().role(), AmlSpiForwardRoleMetadataEnvironment::kExpectedRoleName);
+  }));
 }
 
 }  // namespace spi

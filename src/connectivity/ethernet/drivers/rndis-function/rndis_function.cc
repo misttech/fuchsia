@@ -1075,7 +1075,7 @@ zx::result<> RndisFunction::Start() {
   }
 
   zx::result metadata_result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(*incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
   if (metadata_result.is_error()) {
     fdf::error("Failed to get MAC address metadata: {}", metadata_result);
     return metadata_result.take_error();

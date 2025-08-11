@@ -138,8 +138,8 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
       std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
     fidl::WireSyncClient<fuchsia_driver_metadata::Metadata> client{};
     {
-      zx::result result =
-          ConnectToMetadataProtocol(*incoming, FidlType::kSerializableName, instance_name);
+      zx::result result = ConnectToMetadataProtocol(incoming->svc_dir(),
+                                                    FidlType::kSerializableName, instance_name);
       if (result.is_error()) {
         fdf::error("Failed to connect to metadata server: {}", result);
         return result.take_error();
@@ -174,8 +174,8 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
       std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
     fidl::WireSyncClient<fuchsia_driver_metadata::Metadata> client{};
     {
-      zx::result result =
-          ConnectToMetadataProtocol(*incoming, FidlType::kSerializableName, instance_name);
+      zx::result result = ConnectToMetadataProtocol(incoming->svc_dir(),
+                                                    FidlType::kSerializableName, instance_name);
       if (result.is_error()) {
         fdf::debug("Failed to connect to metadata server: {}", result);
         return zx::ok(false);

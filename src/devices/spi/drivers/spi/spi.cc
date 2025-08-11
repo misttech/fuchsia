@@ -21,7 +21,7 @@ namespace spi {
 
 zx::result<> SpiDriver::Start() {
   zx::result metadata_result =
-      fdf_metadata::GetMetadata<fuchsia_hardware_spi_businfo::SpiBusMetadata>(*incoming());
+      fdf_metadata::GetMetadata<fuchsia_hardware_spi_businfo::SpiBusMetadata>(incoming());
   if (metadata_result.is_error()) {
     FDF_LOG(ERROR, "Failed to get SPI metadata: %s", metadata_result.status_string());
     return metadata_result.take_error();
@@ -36,7 +36,7 @@ zx::result<> SpiDriver::Start() {
   bus_id_ = *metadata.bus_id();
 
   zx::result scheduler_role_name_result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_scheduler::RoleName>(*incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_scheduler::RoleName>(incoming());
   if (scheduler_role_name_result.is_error()) {
     FDF_LOG(ERROR, "Failed to get scheduler role name: %s",
             scheduler_role_name_result.status_string());

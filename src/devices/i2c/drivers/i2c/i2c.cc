@@ -30,7 +30,7 @@ zx::result<> I2cDriver::Start() {
 
   fidl::Arena arena;
   zx::result i2c_bus_metadata =
-      fdf_metadata::GetMetadata<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(*incoming());
+      fdf_metadata::GetMetadata<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(incoming());
   if (i2c_bus_metadata.is_error()) {
     FDF_LOG(ERROR, "Failed to get i2c_bus_metadata  %s", i2c_bus_metadata.status_string());
     return i2c_bus_metadata.take_error();

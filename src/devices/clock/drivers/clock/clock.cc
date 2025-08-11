@@ -269,7 +269,7 @@ zx::result<> ClockDriver::Start() {
   std::optional<fuchsia_hardware_clockimpl::InitMetadata> metadata;
   {
     zx::result result =
-        fdf_metadata::GetMetadataIfExists<fuchsia_hardware_clockimpl::InitMetadata>(*incoming());
+        fdf_metadata::GetMetadataIfExists<fuchsia_hardware_clockimpl::InitMetadata>(incoming());
     if (result.is_error()) {
       FDF_LOG(ERROR, "Failed to get metadata: %s", result.status_string());
       return result.take_error();
@@ -308,7 +308,7 @@ zx::result<> ClockDriver::Start() {
 zx_status_t ClockDriver::CreateClockDevices() {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   zx::result clock_nodes_metadata =
-      fdf_metadata::GetMetadata<fuchsia_hardware_clockimpl::ClockIdsMetadata>(*incoming());
+      fdf_metadata::GetMetadata<fuchsia_hardware_clockimpl::ClockIdsMetadata>(incoming());
   if (clock_nodes_metadata.is_error()) {
     FDF_LOG(ERROR, "Failed to get clock IDs: %s", clock_nodes_metadata.status_string());
     return clock_nodes_metadata.status_value();

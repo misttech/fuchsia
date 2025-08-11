@@ -14,20 +14,20 @@
 
 namespace fdf_metadata {
 
-// Connects to the fuchsia.driver.metadata/Metadata FIDL protocol found within the |incoming|
-// incoming namespace at FIDL service |service_name| and instance |instance_name|.
+// Connects to the fuchsia.driver.metadata/Metadata FIDL protocol found within the |svc_dir|
+// service directory at FIDL service |service_name| and instance |instance_name|.
 zx::result<fidl::ClientEnd<fuchsia_driver_metadata::Metadata>> ConnectToMetadataProtocol(
-    const fdf::Namespace& incoming, std::string_view service_name,
+    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir, std::string_view service_name,
     std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance);
 
-// Retrieves metadata from the fuchsia.driver.metadata/Metadata FIDL protocol within the |incoming|
-// incoming namespace found at FIDL service |service_name| and instance |instance_name|.
+// Retrieves metadata from the fuchsia.driver.metadata/Metadata FIDL protocol within the |svc_dir|
+// service directory found at FIDL service |service_name| and instance |instance_name|.
 //
 // Make sure that the component manifest specifies that it uses the `FidlType::kSerializableName`
 // FIDL service.
 template <typename FidlType>
 zx::result<FidlType> GetMetadataFromFidlService(
-    const fdf::Namespace& incoming, std::string_view service_name,
+    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir, std::string_view service_name,
     std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
   static_assert(fidl::IsFidlType<FidlType>::value, "|FidlType| must be a FIDL domain object.");
   static_assert(!fidl::IsResource<FidlType>::value,
@@ -35,7 +35,7 @@ zx::result<FidlType> GetMetadataFromFidlService(
 
   fidl::WireSyncClient<fuchsia_driver_metadata::Metadata> client{};
   {
-    zx::result result = ConnectToMetadataProtocol(incoming, service_name, instance_name);
+    zx::result result = ConnectToMetadataProtocol(svc_dir, service_name, instance_name);
     if (result.is_error()) {
       fdf::error("Failed to connect to metadata server: {}", result.status_string());
       return result.take_error();
@@ -71,17 +71,34 @@ zx::result<FidlType> GetMetadataFromFidlService(
 // to be `FidlType::kSerializableName`. Make sure that `FidlType` is annotated with `@serializable`.
 template <typename FidlType>
 zx::result<FidlType> GetMetadata(
+    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir,
+    std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
+  return GetMetadataFromFidlService<FidlType>(svc_dir, FidlType::kSerializableName, instance_name);
+}
+
+// Deprecated.
+template <typename FidlType>
+zx::result<FidlType> GetMetadata(
     const fdf::Namespace& incoming,
     std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
-  return GetMetadataFromFidlService<FidlType>(incoming, FidlType::kSerializableName, instance_name);
+  return GetMetadata<FidlType>(incoming.svc_dir(), instance_name);
+}
+
+// The same as `fdf_metadata::GetMetadataFromFidlService()` except that the service name is assumed
+// to be `FidlType::kSerializableName`. Make sure that `FidlType` is annotated with `@serializable`.
+template <typename FidlType>
+zx::result<FidlType> GetMetadata(
+    const std::shared_ptr<fdf::Namespace>& incoming,
+    std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
+  return GetMetadata<FidlType>(incoming->svc_dir(), instance_name);
 }
 
 // This function is the same as `fdf_metadata::GetMetadata<FidlType>()` except that it will return a
-// `std::nullopt` if there is no metadata FIDL protocol within |device|'s incoming namespace at
+// `std::nullopt` if there is no metadata FIDL protocol within |device|'s service directory at
 // |instance_name| or if the FIDL server does not have metadata to provide.
 template <typename FidlType>
 zx::result<std::optional<FidlType>> GetMetadataFromFidlServiceIfExists(
-    const fdf::Namespace& incoming, std::string_view service_name,
+    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir, std::string_view service_name,
     std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
   static_assert(fidl::IsFidlType<FidlType>::value, "|FidlType| must be a FIDL domain object.");
   static_assert(!fidl::IsResource<FidlType>::value,
@@ -89,7 +106,7 @@ zx::result<std::optional<FidlType>> GetMetadataFromFidlServiceIfExists(
 
   fidl::WireSyncClient<fuchsia_driver_metadata::Metadata> client{};
   {
-    zx::result result = ConnectToMetadataProtocol(incoming, service_name, instance_name);
+    zx::result result = ConnectToMetadataProtocol(svc_dir, service_name, instance_name);
     if (result.is_error()) {
       fdf::debug("Failed to connect to metadata server: {}", result);
       return zx::ok(std::nullopt);
@@ -137,10 +154,28 @@ zx::result<std::optional<FidlType>> GetMetadataFromFidlServiceIfExists(
 // `@serializable`.
 template <typename FidlType>
 zx::result<std::optional<FidlType>> GetMetadataIfExists(
+    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir,
+    std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
+  return GetMetadataFromFidlServiceIfExists<FidlType>(svc_dir, FidlType::kSerializableName,
+                                                      instance_name);
+}
+
+// Deprecated.
+template <typename FidlType>
+zx::result<std::optional<FidlType>> GetMetadataIfExists(
     const fdf::Namespace& incoming,
     std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
-  return GetMetadataFromFidlServiceIfExists<FidlType>(incoming, FidlType::kSerializableName,
-                                                      instance_name);
+  return GetMetadataIfExists<FidlType>(incoming.svc_dir(), instance_name);
+}
+
+// The same as `fdf_metadata::GetMetadataFromFidlServiceIfExists()` except that the service name is
+// assumed to be `FidlType::kSerializableName`. Make sure that `FidlType` is annotated with
+// `@serializable`.
+template <typename FidlType>
+zx::result<std::optional<FidlType>> GetMetadataIfExists(
+    const std::shared_ptr<fdf::Namespace>& incoming,
+    std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
+  return GetMetadataIfExists<FidlType>(incoming->svc_dir(), instance_name);
 }
 
 }  // namespace fdf_metadata

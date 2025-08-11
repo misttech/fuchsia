@@ -52,7 +52,7 @@ void MetadataRetrieverTestDriver::Serve(
 
 void MetadataRetrieverTestDriver::GetMetadata(GetMetadataCompleter::Sync& completer) {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_hardware_test::Metadata>(*incoming());
+  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_hardware_test::Metadata>(incoming());
 
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata);
@@ -71,7 +71,7 @@ void MetadataRetrieverTestDriver::GetMetadataIfExists(
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
     GetMetadataIfExistsCompleter::Sync& completer) {
   zx::result result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_test::Metadata>(*incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_test::Metadata>(incoming());
   if (result.is_error()) {
     fdf::error("Failed to get metadata: {}", result);
     completer.Reply(fit::error(result.status_value()));
