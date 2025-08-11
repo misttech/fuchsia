@@ -55,9 +55,9 @@ example; see the list of available examples below.
 # Running using Direct Display mode
 
 To run in direct display mode, the examples must be run in a realm that routes
-the necessary capabilities (e.g. the `dev-display-coordinator` directory).  The
-correct way to do this seems to change every month, but currently one way that
-works is to run it as a "system test", as described below.
+the necessary capabilities (e.g. the `fuchsia.hardware.display.Service`
+service).  The example component can be run as a "system test", as described
+below.
 
 The basic workflow is:
 1. If your product includes a session, you must first stop the session and

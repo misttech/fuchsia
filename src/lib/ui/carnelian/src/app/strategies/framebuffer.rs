@@ -11,56 +11,26 @@ use crate::input::{self, listen_for_user_input, DeviceId};
 use crate::view::strategies::base::{DisplayDirectParams, ViewStrategyParams, ViewStrategyPtr};
 use crate::view::strategies::display_direct::DisplayDirectViewStrategy;
 use crate::view::ViewKey;
-use anyhow::{bail, Context, Error};
+use anyhow::{anyhow, bail, Context, Error};
 use async_trait::async_trait;
 use euclid::size2;
 use fidl::endpoints::{self};
 use fidl_fuchsia_hardware_display::{
     CoordinatorListenerMarker, CoordinatorListenerRequest, CoordinatorMarker, CoordinatorProxy,
-    ProviderMarker, ProviderOpenCoordinatorWithListenerForPrimaryRequest,
-    ProviderOpenCoordinatorWithListenerForVirtconRequest, VirtconMode,
+    ProviderOpenCoordinatorWithListenerForPrimaryRequest,
+    ProviderOpenCoordinatorWithListenerForVirtconRequest, ProviderProxy,
+    ServiceMarker as DisplayServiceMarker, VirtconMode,
 };
 use fidl_fuchsia_input_report as hid_input_report;
-use fuchsia_async::{self as fasync};
+use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
+use fuchsia_component::client::Service;
 use futures::channel::mpsc::UnboundedSender;
-use futures::{StreamExt, TryFutureExt, TryStreamExt};
+use futures::{StreamExt, TryFutureExt};
 use keymaps::Keymap;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use zx::Status;
-
-async fn watch_directory_async(
-    dir: PathBuf,
-    app_sender: UnboundedSender<MessageInternal>,
-) -> Result<(), Error> {
-    let dir_proxy = fuchsia_fs::directory::open_in_namespace(
-        dir.to_str().expect("to_str"),
-        fuchsia_fs::Flags::empty(),
-    )?;
-    let mut watcher = fuchsia_fs::directory::Watcher::new(&dir_proxy).await?;
-    fasync::Task::local(async move {
-        while let Some(msg) = (watcher.try_next()).await.expect("msg") {
-            match msg.event {
-                fuchsia_fs::directory::WatchEvent::ADD_FILE
-                | fuchsia_fs::directory::WatchEvent::EXISTING => {
-                    if msg.filename == Path::new(".") {
-                        continue;
-                    }
-                    let device_path = dir.join(msg.filename);
-                    app_sender
-                        .unbounded_send(MessageInternal::NewDisplayCoordinator(device_path))
-                        .expect("unbounded_send");
-                }
-                _ => (),
-            }
-        }
-    })
-    .detach();
-    Ok(())
-}
 
 pub(crate) struct AutoRepeatContext {
     app_sender: UnboundedSender<MessageInternal>,
@@ -116,13 +86,26 @@ impl AutoRepeatTimer for AutoRepeatContext {
     }
 }
 
-const DISPLAY_COORDINATOR_PATH: &'static str = "/dev/class/display-coordinator";
-
 pub type CoordinatorProxyPtr = Rc<CoordinatorProxy>;
 
-pub fn first_display_device_path() -> Option<PathBuf> {
-    let mut entries = fs::read_dir(DISPLAY_COORDINATOR_PATH).ok()?;
-    entries.next()?.ok().map(|entry| entry.path())
+/// Connects to the coordinator Provider provided by the
+/// `fuchsia.hardware.display.Service`. Watches for any available service
+/// instance for up to `timeout` (or forever if `timeout` is None).
+pub async fn connect_to_display_provider(
+    timeout: Option<zx::MonotonicDuration>,
+) -> Result<ProviderProxy, Error> {
+    let deadline = match timeout {
+        Some(timeout) => timeout.after_now(),
+        None => zx::MonotonicInstant::INFINITE.into(),
+    };
+    Service::open(DisplayServiceMarker)
+        .context("failed to open service")?
+        .watch_for_any()
+        .on_timeout(deadline, || Err(anyhow!("timed out watching for display service")))
+        .await
+        .context("failed to watch for display device")?
+        .connect_to_provider()
+        .context("failed to connect to provider")
 }
 
 pub struct DisplayCoordinator {
@@ -131,13 +114,10 @@ pub struct DisplayCoordinator {
 
 impl DisplayCoordinator {
     pub(crate) async fn open(
-        path: &str,
+        provider: ProviderProxy,
         virtcon_mode: &Option<VirtconMode>,
         app_sender: &UnboundedSender<MessageInternal>,
     ) -> Result<Self, Error> {
-        let provider =
-            fuchsia_component::client::connect_to_protocol_at_path::<ProviderMarker>(path)
-                .context("while opening device file")?;
         let (coordinator, coordinator_server) = endpoints::create_proxy::<CoordinatorMarker>();
         let (listener_client, mut listener_requests) =
             endpoints::create_request_stream::<CoordinatorListenerMarker>();
@@ -190,9 +170,16 @@ impl DisplayCoordinator {
     }
 
     pub(crate) async fn watch_displays(app_sender: UnboundedSender<MessageInternal>) {
-        watch_directory_async(PathBuf::from(DISPLAY_COORDINATOR_PATH), app_sender)
+        let provider = Service::open(DisplayServiceMarker)
+            .expect("open service")
+            .watch_for_any()
             .await
-            .expect("watch_directory_async");
+            .expect("watch for any service instance")
+            .connect_to_provider()
+            .expect("connect to provider");
+        app_sender
+            .unbounded_send(MessageInternal::NewDisplayCoordinator(provider))
+            .expect("unbounded_send");
     }
 }
 
@@ -371,15 +358,12 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
         handler.handle_keyboard_autorepeat(device_id, &mut self.context)
     }
 
-    async fn handle_new_display_coordinator(&mut self, display_path: PathBuf) {
+    async fn handle_new_display_coordinator(&mut self, provider: ProviderProxy) {
         if self.display_coordinator.is_none() {
-            let display_coordinator = DisplayCoordinator::open(
-                display_path.to_str().unwrap(),
-                &Config::get().virtcon_mode,
-                &self.app_sender,
-            )
-            .await
-            .expect("DisplayCoordinator::open");
+            let display_coordinator =
+                DisplayCoordinator::open(provider, &Config::get().virtcon_mode, &self.app_sender)
+                    .await
+                    .expect("DisplayCoordinator::open");
             self.display_coordinator = Some(display_coordinator);
         }
     }

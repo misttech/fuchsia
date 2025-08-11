@@ -40,7 +40,6 @@
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
             // been migrated to services. The service capability has been added below.
             directory: [
-                "dev-display-coordinator",
                 "dev-input",
                 "dev-input-report",
             ],
@@ -49,7 +48,6 @@
             rights: [ "r*" ],
         },
         {
-            // These services replace the directory capabilities above.
             service: [ "fuchsia.hardware.display.Service" ],
             from: "parent",
             to: [ "#sample-app" ],

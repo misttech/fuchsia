@@ -13,7 +13,7 @@ use crate::view::strategies::base::ViewStrategyParams;
 use crate::view::{ViewAssistantPtr, ViewController, ViewKey};
 use crate::IdGenerator2;
 use anyhow::{bail, format_err, Context as _, Error};
-use fidl_fuchsia_hardware_display::{CoordinatorListenerRequest, VirtconMode};
+use fidl_fuchsia_hardware_display::{CoordinatorListenerRequest, ProviderProxy, VirtconMode};
 use fidl_fuchsia_input_report as hid_input_report;
 use fuchsia_async::{self as fasync, DurationExt, Timer};
 use fuchsia_component::{self as component};
@@ -423,7 +423,7 @@ pub(crate) enum MessageInternal {
     FlatlandOnNextFrameBegin(ViewKey, fidl_fuchsia_ui_composition::OnNextFrameBeginValues),
     FlatlandOnFramePresented(ViewKey, fidl_fuchsia_scenic_scheduling::FramePresentedInfo),
     FlatlandOnError(ViewKey, fuchsia_scenic::flatland::FlatlandError),
-    NewDisplayCoordinator(PathBuf),
+    NewDisplayCoordinator(ProviderProxy),
     DisplayCoordinatorListenerRequest(CoordinatorListenerRequest),
     SetVirtconMode(VirtconMode),
     UserInputMessage(ViewKey, UserInputMessage),
@@ -591,8 +591,8 @@ impl App {
             MessageInternal::FlatlandOnError(view_id, error) => {
                 eprintln!("flatland error view: {}, error: {:#?}", view_id, error);
             }
-            MessageInternal::NewDisplayCoordinator(display_path) => {
-                self.strategy.handle_new_display_coordinator(display_path).await;
+            MessageInternal::NewDisplayCoordinator(provider) => {
+                self.strategy.handle_new_display_coordinator(provider).await;
             }
             MessageInternal::DisplayCoordinatorListenerRequest(request) => match request {
                 CoordinatorListenerRequest::OnVsync { display_id, .. } => {

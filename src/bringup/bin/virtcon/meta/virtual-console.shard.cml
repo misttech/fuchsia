@@ -43,6 +43,11 @@
             to: "#virtual_console",
         },
         {
+            service: "fuchsia.hardware.display.Service",
+            from: "#boot-drivers",
+            to: "#virtual_console",
+        },
+        {
             protocol: "fuchsia.tracing.provider.Registry",
             from: "parent",
             to: "#virtual_console",
@@ -70,13 +75,6 @@
             as: "input-report",
             to: "#virtual_console",
             subdir: "input-report",
-        },
-        {
-            directory: "dev-class",
-            from: "#devfs-with-pkg",
-            as: "display-coordinator",
-            to: "#virtual_console",
-            subdir: "display-coordinator",
         },
         {
             protocol: "fuchsia.hardware.pty.Device",

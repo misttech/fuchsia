@@ -4,7 +4,7 @@
 
 use crate::app::strategies::flatland::FlatlandAppStrategy;
 use crate::app::strategies::framebuffer::{
-    first_display_device_path, DisplayCoordinator, DisplayDirectAppStrategy, DisplayId,
+    connect_to_display_provider, DisplayCoordinator, DisplayDirectAppStrategy, DisplayId,
 };
 use crate::app::{Config, InternalSender, MessageInternal, ViewMode};
 use crate::input::{self};
@@ -12,12 +12,11 @@ use crate::view::strategies::base::{ViewStrategyParams, ViewStrategyPtr};
 use crate::view::ViewKey;
 use anyhow::Error;
 use async_trait::async_trait;
-use fidl_fuchsia_hardware_display::VirtconMode;
+use fidl_fuchsia_hardware_display::{ProviderProxy, VirtconMode};
 use fidl_fuchsia_input_report as hid_input_report;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::channel::mpsc::UnboundedSender;
 use keymaps::select_keymap;
-use std::path::PathBuf;
 
 // This trait exists to keep the hosted implementation and the
 // direct implementations as separate as possible.
@@ -64,7 +63,7 @@ pub(crate) trait AppStrategy {
         _device_descriptor: &hid_input_report::DeviceDescriptor,
     ) {
     }
-    async fn handle_new_display_coordinator(&mut self, _display_path: PathBuf) {}
+    async fn handle_new_display_coordinator(&mut self, _provider: ProviderProxy) {}
     async fn handle_display_coordinator_event(
         &mut self,
         _event: fidl_fuchsia_hardware_display::CoordinatorListenerRequest,
@@ -107,17 +106,24 @@ pub(crate) async fn create_app_strategy(
     let app_config = Config::get();
     match app_config.view_mode {
         ViewMode::Auto => {
-            // Tries to open the display coordinator. If that fails, assume we want to run as hosted.
-            let display_coordinator = if let Some(path) = first_display_device_path() {
-                DisplayCoordinator::open(
-                    path.to_str().unwrap(),
-                    &app_config.virtcon_mode,
-                    &internal_sender,
-                )
-                .await
-                .ok()
-            } else {
-                None
+            // Tries to open the display coordinator. If a display service is not available
+            // within `TIMEOUT`, or the DisplayCoordinator creation fails, assume we want to run
+            // as hosted.
+            // TODO(https://fxbug.dev/437869025): Revisit this policy.
+            const TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
+            let display_coordinator = match connect_to_display_provider(Some(TIMEOUT)).await {
+                Ok(provider) => {
+                    DisplayCoordinator::open(provider, &app_config.virtcon_mode, &internal_sender)
+                        .await
+                        .ok()
+                }
+                Err(error) => {
+                    eprintln!(
+                        "display coordinator is not available, fall back to flatland: {}",
+                        error
+                    );
+                    None
+                }
             };
             if display_coordinator.is_none() {
                 make_flatland_app_strategy()

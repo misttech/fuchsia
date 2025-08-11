@@ -125,11 +125,6 @@
             path: "/dev/class/input-report",
         },
         {
-            directory: "display-coordinator",
-            rights: [ "r*" ],
-            path: "/dev/class/display-coordinator",
-        },
-        {
             protocol: [
                 "fuchsia.boot.ReadOnlyLog",
                 "fuchsia.boot.WriteOnlyLog",
@@ -150,6 +145,7 @@
             protocol: "fuchsia.hardware.pty.Device",
             availability: "optional",
         },
+        { service: "fuchsia.hardware.display.Service" },
     ],
     expose: [
         {
