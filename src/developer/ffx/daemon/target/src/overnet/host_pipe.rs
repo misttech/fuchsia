@@ -238,7 +238,7 @@ impl HostPipeChild {
     async fn start_ssh_connection(
         ssh_path: &str,
         addr: SocketAddr,
-        mut args: Vec<&str>,
+        args: Vec<&str>,
         stderr_buf: Rc<LogBuffer>,
         event_queue: events::Queue<TargetEvent>,
         watchdogs: bool,
@@ -247,10 +247,6 @@ impl HostPipeChild {
         node: Arc<overnet_core::Router>,
         ctx: EnvironmentContext,
     ) -> Result<(Option<HostAddr>, HostPipeChild), PipeError> {
-        if verbose_ssh {
-            args.insert(0, "-vv");
-        }
-
         let mut ssh = tokio::process::Command::from(
             build_ssh_command_with_env(
                 ssh_path,
@@ -364,7 +360,7 @@ impl HostPipeChild {
                         // know the connection is established, the error messages
                         // go to the event queue as normal.
                         if verbose_ssh {
-                            write_ssh_log("E", &line, &ctx).await;
+                            write_ssh_log("E", &line, &ctx);
                         } else {
                             // Sometimes the SSH message that comes from openssh has a carriage
                             // return at the end which messes up the flow of the info log.

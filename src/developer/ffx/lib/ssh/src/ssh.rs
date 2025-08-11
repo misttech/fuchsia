@@ -175,6 +175,10 @@ fn build_ssh_command_with_ssh_config_and_env(
         SocketAddr::V6(_) => c.arg("-o").arg("AddressFamily=inet6"),
     };
 
+    if env.map(|c| ffx_config::logging::debugging_on(c)).unwrap_or(false) {
+        c.arg("-vv");
+    }
+
     let mut addr_str = format!("{}", addr);
     let colon_port = addr_str.split_off(addr_str.rfind(':').expect("socket format includes port"));
 

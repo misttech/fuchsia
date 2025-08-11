@@ -64,6 +64,12 @@ pub async fn read_ssh_line<R: AsyncRead + Unpin>(
         if n == 0 {
             return Err(ParseSshConnectionError::UnexpectedEOF(lb.to_string()));
         }
+        if b == b'\n' {
+            let s = lb.to_string();
+            // Clear for next read
+            lb.pos = 0;
+            return Ok(s);
+        }
         lb.buffer[lb.pos] = b;
         lb.pos += 1;
         if lb.pos >= lb.buffer.len() {
@@ -71,12 +77,6 @@ pub async fn read_ssh_line<R: AsyncRead + Unpin>(
                 "Buffer full: {:?}...",
                 &lb.buffer[..64]
             )));
-        }
-        if b == b'\n' {
-            let s = lb.to_string();
-            // Clear for next read
-            lb.pos = 0;
-            return Ok(s);
         }
     }
 }
@@ -159,7 +159,7 @@ fn parse_ssh_connection_legacy(
 
     // The last part should be our anchor.
     match parts.next() {
-        Some("++\n") => {}
+        Some("++") => {}
         None | Some(_) => {
             return Err(ParseSshConnectionError::Parse(line.into()));
         }
@@ -185,7 +185,7 @@ async fn parse_ssh_connection<R: AsyncBufRead + Unpin>(
         return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
     }
     if verbose {
-        write_ssh_log("O", &line, ctx).await;
+        write_ssh_log("O", &line, ctx);
     }
     if line.starts_with("{") {
         parse_ssh_connection_with_info(&line)
@@ -268,13 +268,44 @@ pub async fn parse_ssh_output(
     }
 }
 
+pub fn ssh_stderr_to_pipe_error(line: &String) -> Option<PipeError> {
+    // If we are running with "ssh -v", the stderr will also contain the initial
+    // "OpenSSH" line.
+    if line.contains("OpenSSH") {
+        return None;
+    }
+    // It also may contain a warning about adding an address to the list of known hosts
+    if line.starts_with("Warning: Permanently added") {
+        return None;
+    }
+    // Or a warning about authentication
+    if line.starts_with("Authenticated to ") {
+        return None;
+    }
+    // Additional debugging messages will begin with "debug{1,2,3}" based on the various
+    // verbosity settings.
+    if line.starts_with("debug1:") || line.starts_with("debug2:") || line.starts_with("debug3:") {
+        return None;
+    }
+    // At this point, we just want to look at one line to see if it is the compatibility
+    // failure.
+    log::debug!("Reading stderr:  {line}");
+    if line.contains("Unrecognized argument: --abi-revision") {
+        // It is an older image, so use the legacy command.
+        log::info!("Target does not support abi compatibility check");
+        Some(PipeError::NoCompatibilityCheck)
+    } else {
+        Some(PipeError::ConnectionFailed(format!("{:?}", line)))
+    }
+}
+
 async fn parse_ssh_error<R: AsyncBufRead + Unpin>(
     stderr: &mut R,
     verbose: bool,
     ctx: &EnvironmentContext,
 ) -> PipeError {
     loop {
-        let l = match read_ssh_line_with_timeouts(stderr).await {
+        let line = match read_ssh_line_with_timeouts(stderr).await {
             Err(e) => {
                 log::error!("reading ssh stderr: {e:?}");
                 return PipeError::NoCompatibilityCheck;
@@ -284,36 +315,11 @@ async fn parse_ssh_error<R: AsyncBufRead + Unpin>(
         // Sadly, this is just reading buffered data, so timestamps in the log will be
         // incorrect
         if verbose {
-            write_ssh_log("E", &l, ctx).await;
+            write_ssh_log("E", &line, ctx);
         }
-        // If we are running with "ssh -v", the stderr will also contain the initial
-        // "OpenSSH" line.
-        if l.contains("OpenSSH") {
-            continue;
+        if let Some(e) = ssh_stderr_to_pipe_error(&line) {
+            break e;
         }
-        // It also may contain a warning about adding an address to the list of known hosts
-        if l.starts_with("Warning: Permanently added") {
-            continue;
-        }
-        // Or a warning about authentication
-        if l.starts_with("Authenticated to ") {
-            continue;
-        }
-        // Additional debugging messages will begin with "debug{1,2,3}" based on the various
-        // verbosity settings.
-        if l.starts_with("debug1:") || l.starts_with("debug2:") || l.starts_with("debug3:") {
-            continue;
-        }
-        // At this point, we just want to look at one line to see if it is the compatibility
-        // failure.
-        log::debug!("Reading stderr:  {l}");
-        return if l.contains("Unrecognized argument: --abi-revision") {
-            // It is an older image, so use the legacy command.
-            log::info!("Target does not support abi compatibility check");
-            PipeError::NoCompatibilityCheck
-        } else {
-            PipeError::ConnectionFailed(format!("{:?}", l))
-        };
     }
 }
 
@@ -333,7 +339,7 @@ fn parse_ssh_connection_with_info(
     }
 }
 
-pub async fn write_ssh_log(prefix: &str, line: &String, ctx: &EnvironmentContext) {
+pub fn write_ssh_log(prefix: &str, line: &String, ctx: &EnvironmentContext) {
     // Skip keepalives, which will show up in the steady-state
     if line.contains("keepalive") {
         return;
@@ -351,7 +357,8 @@ pub async fn write_ssh_log(prefix: &str, line: &String, ctx: &EnvironmentContext
     };
     const TIME_FORMAT: &str = "%b %d %H:%M:%S%.3f";
     let timestamp = chrono::Local::now().format(TIME_FORMAT);
-    write!(&mut f, "{timestamp}: {prefix} {line}")
+    let log_id: u64 = *ffx_config::logging::LOGGING_ID;
+    writeln!(&mut f, "{timestamp}[{log_id:0>20?}]: {prefix} {line}")
         .unwrap_or_else(|e| log::warn!("Couldn't write ssh log: {e:?}"));
 }
 
@@ -430,7 +437,7 @@ mod test {
         let mut lb = LineBuffer::new();
         let input = &"++ 192.168.1.1 1234 10.0.0.1 22 ++\n"[..];
         match read_ssh_line(&mut lb, &mut input.as_bytes()).await {
-            Ok(s) => assert_eq!(s, String::from("++ 192.168.1.1 1234 10.0.0.1 22 ++\n")),
+            Ok(s) => assert_eq!(s, String::from("++ 192.168.1.1 1234 10.0.0.1 22 ++")),
             res => panic!("unexpected result: {res:?}"),
         }
 
@@ -452,7 +459,7 @@ mod test {
         // being interrupted due to a timeout
         let input2 = &"bar\n"[..];
         match read_ssh_line(&mut lb, &mut input2.as_bytes()).await {
-            Ok(s) => assert_eq!(s, String::from("foobar\n")),
+            Ok(s) => assert_eq!(s, String::from("foobar")),
             res => panic!("unexpected result: {res:?}"),
         }
     }
@@ -493,5 +500,11 @@ mod test {
                 panic!("unexpected result for {:?}: expected {:?}, got {:?}", line, expected, res)
             }
         }
+    }
+
+    #[test]
+    fn test_empty_linebuffer() {
+        let lb = LineBuffer::new();
+        assert_eq!(lb.to_string(), "".to_owned());
     }
 }

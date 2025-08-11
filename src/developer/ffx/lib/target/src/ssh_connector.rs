@@ -8,6 +8,7 @@ use crate::target_connector::{
 };
 use crate::Resolution;
 use anyhow::Result;
+use async_channel::Sender;
 use ffx_command_error::FfxContext as _;
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
 use ffx_ssh::ssh::{build_ssh_command_with_env, SshError};
@@ -23,7 +24,7 @@ use std::net::SocketAddr;
 use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
-use tokio::process::Child;
+use tokio::process::{Child, ChildStderr};
 
 impl From<SshError> for TargetConnectionError {
     fn from(ssh_err: SshError) -> Self {
@@ -93,6 +94,30 @@ impl SshConnector {
     }
 }
 
+type StderrLineReader = tokio::io::Lines<BufReader<BufReader<ChildStderr>>>;
+
+async fn read_stderr(
+    mut stderr: StderrLineReader,
+    error_sender: Sender<anyhow::Error>,
+    ctx: &EnvironmentContext,
+) {
+    let verbose_ssh = ffx_config::logging::debugging_on(ctx);
+    while let Ok(Some(line)) = stderr.next_line().await {
+        if verbose_ssh {
+            ffx_ssh::parse::write_ssh_log("E", &line, &ctx);
+        }
+        // This abandons the structured error as this output is intended to provide debugging after
+        // an ssh connection has failed. The error sender is only here to show the verbatim error
+        // so that it can be drained in the event of the SshConnector disconnecting.
+        if ffx_ssh::parse::ssh_stderr_to_pipe_error(&line).is_some() {
+            match error_sender.send(anyhow::anyhow!("SSH stderr: {line}")).await {
+                Err(_e) => break,
+                Ok(_) => {}
+            }
+        }
+    }
+}
+
 impl SshConnector {
     async fn connect_overnet(&mut self) -> Result<OvernetConnection, TargetConnectionError> {
         self.overnet_cmd = Some(start_overnet_ssh_command(self.target.clone(), &self.env_context)?);
@@ -121,16 +146,10 @@ impl SshConnector {
                 }
             };
         let stdin = cmd.stdin.take().expect("process should have stdin");
-        let mut stderr = BufReader::new(stderr).lines();
+        let stderr = BufReader::new(stderr).lines();
         let (error_sender, errors_receiver) = async_channel::unbounded();
-        let stderr_reader = async move {
-            while let Ok(Some(line)) = stderr.next_line().await {
-                match error_sender.send(anyhow::anyhow!("SSH stderr: {line}")).await {
-                    Err(_e) => break,
-                    Ok(_) => {}
-                }
-            }
-        };
+        let stderr_ctx = self.env_context.clone();
+        let stderr_reader = async move { read_stderr(stderr, error_sender, &stderr_ctx).await };
         let main_task = Some(Task::local(stderr_reader));
         Ok(OvernetConnection {
             output: Box::new(stdout),
@@ -195,16 +214,10 @@ impl SshConnector {
             ));
         }
         let stdin = cmd.stdin.take().expect("process should have stdin");
-        let mut stderr = BufReader::new(stderr).lines();
+        let stderr = BufReader::new(stderr).lines();
         let (error_sender, errors_receiver) = async_channel::unbounded();
-        let stderr_reader = async move {
-            while let Ok(Some(line)) = stderr.next_line().await {
-                match error_sender.send(anyhow::anyhow!("SSH stderr: {line}")).await {
-                    Err(_e) => break,
-                    Ok(_) => {}
-                }
-            }
-        };
+        let stderr_ctx = self.env_context.clone();
+        let stderr_reader = async move { read_stderr(stderr, error_sender, &stderr_ctx).await };
         let main_task = Some(Task::local(stderr_reader));
         Ok(FDomainConnection {
             output: Box::new(stdout),
