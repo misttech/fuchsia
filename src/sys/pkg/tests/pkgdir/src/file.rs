@@ -12,10 +12,40 @@ use fidl::endpoints::create_proxy;
 use fidl::AsHandleRef;
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::directory::open_file;
+use fuchsia_fs::file;
+use serde_json::Value;
 use std::cmp;
+use std::collections::HashMap;
 use std::convert::TryFrom as _;
+use std::sync::LazyLock;
 
-const TEST_PKG_HASH: &str = "44e7704720706ffd287bf0d27133cec7d609581547095ab6c6fee94f83a5bcbc";
+// Some precalculated hashes for test packages to use in package tests
+static TEST_PKG_HASHES: LazyLock<HashMap<&'static str, &'static str>> = {
+    LazyLock::new(|| {
+        let mut map = HashMap::new();
+        map.insert(
+            "test-package",
+            "44e7704720706ffd287bf0d27133cec7d609581547095ab6c6fee94f83a5bcbc",
+        );
+        map.insert(
+            "test-package1",
+            "514348f471308a77d8c748716510d1f21a96decff2b750eb1da9e6b3bd85dd6b",
+        );
+        map.insert(
+            "test-package2",
+            "97888e28b6c132bdfec7c469e4575a15d230b88cc428abd3fbd430b77087ef09",
+        );
+        map
+    })
+};
+
+// Helper function to obtain the package name from the package's meta/package file
+async fn get_package_name(source: &PackageSource) -> String {
+    let file = open_file(&source.dir, "meta/package", fuchsia_fs::PERM_READABLE).await.unwrap();
+    let contents = file::read_to_string(&file).await.unwrap();
+    let meta: Value = serde_json::from_str(&contents).unwrap();
+    meta.get("name").unwrap().as_str().unwrap().to_string()
+}
 
 #[fuchsia::test]
 async fn read() {
@@ -25,10 +55,13 @@ async fn read() {
 }
 
 async fn read_per_package_source(source: PackageSource) {
+    let package_name = get_package_name(&source).await;
     let root_dir = source.dir;
-    for (path, expected_contents) in
-        [("file", "file"), ("meta/file", "meta/file"), ("meta", TEST_PKG_HASH)]
-    {
+    for (path, expected_contents) in [
+        ("file", "file"),
+        ("meta/file", "meta/file"),
+        ("meta", TEST_PKG_HASHES.get(&package_name.as_str()).unwrap()),
+    ] {
         assert_read_max_buffer_success(&root_dir, path, expected_contents).await;
         assert_read_buffer_success(&root_dir, path, expected_contents).await;
         assert_read_past_end(&root_dir, path, expected_contents).await;
@@ -77,7 +110,7 @@ async fn assert_read_past_end(root_dir: &fio::DirectoryProxy, path: &str, expect
     assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected_contents);
 
     let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    assert_eq!(bytes, &[]);
+    assert_eq!(bytes, b"");
 }
 
 async fn assert_read_exceeds_buffer_success(root_dir: &fio::DirectoryProxy, path: &str) {
@@ -96,7 +129,7 @@ async fn assert_read_exceeds_buffer_success(root_dir: &fio::DirectoryProxy, path
 
     // Since we are now at the end of the file, bytes should be empty.
     let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    assert_eq!(bytes, &[]);
+    assert_eq!(bytes, b"");
 }
 
 #[fuchsia::test]
@@ -108,7 +141,11 @@ async fn read_at() {
 
 async fn read_at_per_package_source(source: PackageSource) {
     for path in ["file", "meta/file", "meta"] {
-        let expected_contents = if path == "meta" { TEST_PKG_HASH } else { path };
+        let expected_contents = if path == "meta" {
+            TEST_PKG_HASHES.get(&get_package_name(&source).await.as_str()).unwrap()
+        } else {
+            path
+        };
         assert_read_at_max_buffer_success(&source.dir, path, expected_contents).await;
         assert_read_at_success(&source.dir, path, expected_contents).await;
 
@@ -225,7 +262,11 @@ async fn seek() {
 async fn seek_per_package_source(source: PackageSource) {
     let root_dir = &source.dir;
     for path in ["file", "meta/file", "meta"] {
-        let expected = if path == "meta" { TEST_PKG_HASH } else { path };
+        let expected = if path == "meta" {
+            TEST_PKG_HASHES.get(&get_package_name(&source).await.as_str()).unwrap()
+        } else {
+            path
+        };
         assert_seek_success(root_dir, path, expected, fio::SeekOrigin::Start).await;
         assert_seek_success(root_dir, path, expected, fio::SeekOrigin::Current).await;
 
@@ -276,7 +317,7 @@ async fn assert_seek_affects_read(root_dir: &fio::DirectoryProxy, path: &str, ex
             .unwrap()
             .map_err(zx::Status::from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
-        assert_eq!(bytes, &[]);
+        assert_eq!(bytes, b"");
 
         let expected_contents = &expected[expected.len() - seek_offset..];
         let position = file
@@ -314,7 +355,7 @@ async fn assert_seek_past_end(
     assert_eq!(expected.len() as u64 + 1, position);
 
     let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    assert_eq!(bytes, &[]);
+    assert_eq!(bytes, b"");
 }
 
 // The difference between this test and `assert_seek_past_end` is that the offset is 1
@@ -330,7 +371,7 @@ async fn assert_seek_past_end_end_origin(
     assert_eq!(expected.len() as u64 + 1, position);
 
     let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    assert_eq!(bytes, &[]);
+    assert_eq!(bytes, b"");
 }
 
 #[fuchsia::test]
@@ -456,10 +497,12 @@ async fn clone() {
 }
 
 async fn clone_per_package_source(source: PackageSource) {
+    let package_name = get_package_name(&source).await;
     let root_dir = &source.dir;
     assert_clone_success(root_dir, "file", "file").await;
     assert_clone_success(root_dir, "meta/file", "meta/file").await;
-    assert_clone_success(root_dir, "meta", TEST_PKG_HASH).await;
+    assert_clone_success(root_dir, "meta", TEST_PKG_HASHES.get(&package_name.as_str()).unwrap())
+        .await;
 }
 
 async fn assert_clone_success(
