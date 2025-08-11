@@ -91,6 +91,8 @@ zx::result<> BtTransportUart::Start() {
   acl_buffer_offset_ = 1;
   sco_buffer_[0] = kHciSco;
   sco_buffer_offset_ = 1;
+  iso_buffer_[0] = kHciIso;
+  iso_buffer_offset_ = 1;
 
   fdf::Arena arena('INIT');
   auto info_result = serial_client_.sync().buffer(arena)->GetInfo();
@@ -210,6 +212,12 @@ size_t BtTransportUart::ScoPacketLength() {
   return sco_buffer_offset_ > 3 ? (sco_buffer_[3] + 4) : 0;
 }
 
+size_t BtTransportUart::IsoPacketLength() {
+  // length is in bytes 3 and 4 of the packet
+  // add 5 bytes for packet indicator, handle, flags, and length fields
+  return iso_buffer_offset_ > 4 ? (iso_buffer_[3] | ((iso_buffer_[4] & 0x3f) << 8)) + 5 : 0;
+}
+
 void BtTransportUart::SendSnoop(fidl::VectorView<uint8_t>& packet,
                                 fuchsia_hardware_bluetooth::wire::SnoopPacket::Tag type,
                                 fhbt::wire::PacketDirection direction) {
@@ -247,8 +255,10 @@ void BtTransportUart::SendSnoop(fidl::VectorView<uint8_t>& packet,
     case fhbt::wire::SnoopPacket::Tag::kSco:
       builder.packet(fhbt::wire::SnoopPacket::WithSco(arena, packet));
       break;
+    case fhbt::wire::SnoopPacket::Tag::kIso:
+      builder.packet(fhbt::wire::SnoopPacket::WithIso(arena, packet));
+      break;
     default:
-      // TODO(b/350753924): Handle ISO packets in this driver.
       fdf::error("Unknown snoop packet type: {}", static_cast<fidl_xunion_tag_t>(type));
   }
   builder.direction(direction);
@@ -313,6 +323,9 @@ void BtTransportUart::ProcessOnePacketFromSendQueue() {
     case BtHciPacketIndicator::kHciSco:
       snoop_type = fhbt::wire::SnoopPacket::Tag::kSco;
       break;
+    case BtHciPacketIndicator::kHciIso:
+      snoop_type = fhbt::wire::SnoopPacket::Tag::kIso;
+      break;
     default:
       fdf::debug("Unsupported snoop sent packet type: {}", buffer_entry.data_[0]);
       send_queue_.pop();
@@ -370,6 +383,10 @@ void BtTransportUart::HciHandleUartReadEvents(const uint8_t* buf, size_t length)
       case kHciSco:
         ProcessNextUartPacketFromReadBuffer(sco_buffer_, sizeof(sco_buffer_), &sco_buffer_offset_,
                                             &buf, end, &BtTransportUart::ScoPacketLength, kHciSco);
+        break;
+      case kHciIso:
+        ProcessNextUartPacketFromReadBuffer(iso_buffer_, sizeof(iso_buffer_), &iso_buffer_offset_,
+                                            &buf, end, &BtTransportUart::IsoPacketLength, kHciIso);
         break;
       default:
         fdf::error("unsupported HCI packet type {} received. We may be out of sync",
@@ -489,6 +506,21 @@ void BtTransportUart::ProcessNextUartPacketFromReadBuffer(uint8_t* buffer, size_
       // other end of this FIDL connection.
       fdf::info("No HciTransport bindings available for sending up event packets.");
     }
+  } else if (packet_ind == kHciIso) {
+    auto received_packet = fhbt::wire::ReceivedPacket::WithIso(arena, fidl_vec);
+    if (hci_transport_binding_.has_value()) {
+      fidl::OneWayStatus result =
+          fidl::WireSendEvent(hci_transport_binding_.value())->OnReceive(received_packet);
+      if (!result.ok()) {
+        fdf::error("Failed to send ISO packet to host: {}", result.error());
+      }
+    } else {
+      // Note that this likely happens during system shutdown, when the other end of the channel
+      // has been shutdown but this driver haven't gotten into the PrepareStop() step. If it
+      // doesn't happen during shutdown, this might indicate a bug in either the driver or the
+      // other end of this FIDL connection.
+      fdf::info("No HciTransport bindings available for sending up event packets.");
+    }
   } else {
     fdf::error("Unsupported packet type received");
   }
@@ -502,8 +534,9 @@ void BtTransportUart::ProcessNextUartPacketFromReadBuffer(uint8_t* buffer, size_
     type = fhbt::wire::SnoopPacket::Tag::kEvent;
   } else if (packet_ind == kHciSco) {
     type = fhbt::wire::SnoopPacket::Tag::kSco;
+  } else if (packet_ind == kHciIso) {
+    type = fhbt::wire::SnoopPacket::Tag::kIso;
   } else {
-    // TODO(b/350753924): Handle ISO packets in this driver.
     fdf::error("Unsupported packet type for snoop.");
   }
 
@@ -579,9 +612,10 @@ void BtTransportUart::Send(fidl::Server<fhbt::HciTransport>::SendRequest& reques
   // along with it.
   switch (request.Which()) {
     case fhbt::SentPacket::Tag::kIso:
-      // TODO(b/350753924): Handle ISO packets in this driver.
-      fdf::error("Unexpected ISO data packet.");
-      return;
+      buffer.push_back(kHciIso);
+      buffer.insert(buffer.end(), request.iso().value().begin(), request.iso().value().end());
+      data_type_name = "ISO";
+      break;
     case fhbt::SentPacket::Tag::kAcl:
       buffer.push_back(kHciAclData);
       buffer.insert(buffer.end(), request.acl().value().begin(), request.acl().value().end());

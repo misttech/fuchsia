@@ -33,12 +33,14 @@
 namespace bt_transport_uart {
 
 // HCI UART packet indicators
+// Core Spec v6.0, Vol 4, Part A, Sec. 2
 enum BtHciPacketIndicator : uint8_t {
   kHciNone = 0,
   kHciCommand = 1,
   kHciAclData = 2,
   kHciSco = 3,
   kHciEvent = 4,
+  kHciIso = 5,
 };
 
 class BtTransportUart;
@@ -130,6 +132,10 @@ class BtTransportUart : public fdf::DriverBase,
   // Must only be called in the read callback (HciHandleUartReadEvents).
   size_t ScoPacketLength();
 
+  // Returns length of current ISO data packet being received
+  // Must only be called in the read callback (HciHandleUartReadEvents).
+  size_t IsoPacketLength();
+
   void SendSnoop(fidl::VectorView<uint8_t>& packet,
                  fuchsia_hardware_bluetooth::wire::SnoopPacket::Tag type,
                  fuchsia_hardware_bluetooth::wire::PacketDirection direction);
@@ -196,6 +202,12 @@ class BtTransportUart : public fdf::DriverBase,
   uint8_t sco_buffer_[fuchsia_hardware_bluetooth::kScoPacketMax];
   // Must only be used in the UART read callback (HciHandleUartReadEvents).
   size_t sco_buffer_offset_ = 0;
+
+  // For accumulating ISO packets
+  // Must only be used in the UART read callback (HciHandleUartReadEvents).
+  uint8_t iso_buffer_[fuchsia_hardware_bluetooth::kIsoPacketMax];
+  // Must only be used in the UART read callback (HciHandleUartReadEvents).
+  size_t iso_buffer_offset_ = 0;
 
   static constexpr size_t kUnackedReceivePacketLimit = 20;
   // Mark the read state of the driver, when the value is set to true, it means that the driver has

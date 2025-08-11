@@ -24,6 +24,7 @@ enum BtHciPacketIndicator {
   kHciAclData = 2,
   kHciSco = 3,
   kHciEvent = 4,
+  kHciIso = 5,
 };
 
 class FakeSerialDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::Device> {
@@ -270,9 +271,8 @@ class BtTransportUartHciTransportProtocolTest
           snoop_sent_sco_packets_.push_back(event.packet()->sco().value());
           break;
         case fhbt::SnoopPacket::Tag::kIso:
-          // No Iso data should be sent.
-          // TODO(b/350753924): Handle ISO packets in this driver.
-          FAIL();
+          snoop_sent_iso_packets_.push_back(event.packet()->iso().value());
+          break;
         default:
           // Unknown packet type sent.
           FAIL();
@@ -289,9 +289,8 @@ class BtTransportUartHciTransportProtocolTest
           snoop_received_sco_packets_.push_back(event.packet()->sco().value());
           break;
         case fhbt::SnoopPacket::Tag::kIso:
-          // No Iso data should be received.
-          // TODO(b/350753924): Handle ISO packets in this driver.
-          FAIL();
+          snoop_received_iso_packets_.push_back(event.packet()->iso().value());
+          break;
         default:
           // Unknown packet type received.
           FAIL();
@@ -324,8 +323,9 @@ class BtTransportUartHciTransportProtocolTest
         received_acl_packets_.push_back(received);
         break;
       case fhbt::wire::ReceivedPacket::Tag::kIso:
-        // No Iso data should be received.
-        FAIL();
+        received.assign(packet->iso().get().begin(), packet->iso().get().end());
+        received_iso_packets_.push_back(received);
+        break;
       default:
         // Unknown packet type received.
         FAIL();
@@ -368,6 +368,10 @@ class BtTransportUartHciTransportProtocolTest
     return snoop_sent_sco_packets_;
   }
 
+  const std::vector<std::vector<uint8_t>>& snoop_sent_iso_packets() const {
+    return snoop_sent_iso_packets_;
+  }
+
   const std::vector<std::vector<uint8_t>>& snoop_received_acl_packets() const {
     return snoop_received_acl_packets_;
   }
@@ -380,6 +384,10 @@ class BtTransportUartHciTransportProtocolTest
     return snoop_received_sco_packets_;
   }
 
+  const std::vector<std::vector<uint8_t>>& snoop_received_iso_packets() const {
+    return snoop_received_iso_packets_;
+  }
+
   const std::vector<std::vector<uint8_t>>& received_event_packets() const {
     return received_event_packets_;
   }
@@ -390,6 +398,10 @@ class BtTransportUartHciTransportProtocolTest
 
   const std::vector<std::vector<uint8_t>>& received_sco_packets() const {
     return received_sco_packets_;
+  }
+
+  const std::vector<std::vector<uint8_t>>& received_iso_packets() const {
+    return received_iso_packets_;
   }
 
   const uint64_t& snoop_seq() { return current_snoop_seq_; }
@@ -405,13 +417,16 @@ class BtTransportUartHciTransportProtocolTest
   std::vector<std::vector<uint8_t>> received_event_packets_;
   std::vector<std::vector<uint8_t>> received_acl_packets_;
   std::vector<std::vector<uint8_t>> received_sco_packets_;
+  std::vector<std::vector<uint8_t>> received_iso_packets_;
 
   std::vector<std::vector<uint8_t>> snoop_sent_acl_packets_;
   std::vector<std::vector<uint8_t>> snoop_sent_command_packets_;
   std::vector<std::vector<uint8_t>> snoop_sent_sco_packets_;
+  std::vector<std::vector<uint8_t>> snoop_sent_iso_packets_;
   std::vector<std::vector<uint8_t>> snoop_received_acl_packets_;
   std::vector<std::vector<uint8_t>> snoop_received_event_packets_;
   std::vector<std::vector<uint8_t>> snoop_received_sco_packets_;
+  std::vector<std::vector<uint8_t>> snoop_received_iso_packets_;
 };
 
 TEST_F(BtTransportUartHciTransportProtocolTest, SendAclPackets) {
@@ -978,6 +993,131 @@ TEST_F(BtTransportUartHciTransportProtocolTest, ReceiveScoPacketsIn2Parts) {
 
   for (uint8_t i = 0; i < kNumPackets; i++) {
     EXPECT_EQ(snoop_received_sco_packets()[i], kScoBuffer);
+  }
+}
+
+TEST_F(BtTransportUartHciTransportProtocolTest, SendIsoPackets) {
+  const size_t kNumPackets = 20;
+  fidl::Arena arena;
+  for (size_t i = 0; i < kNumPackets; i++) {
+    std::vector<uint8_t> kIsoPacket = {static_cast<uint8_t>(i)};
+
+    auto packet_view = fidl::VectorView<uint8_t>::FromExternal(kIsoPacket);
+    auto send_result =
+        hci_transport_client_.sync()->Send(fhbt::wire::SentPacket::WithIso(arena, packet_view));
+    ASSERT_EQ(send_result.status(), ZX_OK);
+  }
+  // Allow ISO packets to be processed and sent to the serial device.
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInEnvironmentTypeContext<size_t>([](FixtureBasedTestEnvironment& env) {
+      return env.serial_device_.writes().size();
+    }) == kNumPackets;
+  });
+
+  const std::vector<std::vector<uint8_t>> packets =
+      driver_test().RunInEnvironmentTypeContext<const std::vector<std::vector<uint8_t>>>(
+          [](FixtureBasedTestEnvironment& env) { return env.serial_device_.writes(); });
+  for (uint8_t i = 0; i < kNumPackets; i++) {
+    // A packet indicator should be prepended.
+    std::vector<uint8_t> expected = {BtHciPacketIndicator::kHciIso, i};
+    EXPECT_EQ(packets[i], expected);
+  }
+
+  driver_test().runtime().RunUntil(
+      [&]() { return snoop_sent_iso_packets().size() == kNumPackets; });
+  for (uint8_t i = 0; i < kNumPackets; i++) {
+    const std::vector<uint8_t> kExpectedSnoopPacket = {i};
+    EXPECT_EQ(snoop_sent_iso_packets()[i], kExpectedSnoopPacket);
+  }
+}
+
+TEST_F(BtTransportUartHciTransportProtocolTest, IsoReadableSignalIgnoredUntilFirstWriteCompletes) {
+  // Delay completion of first write.
+  driver_test().RunInEnvironmentTypeContext(
+      [](FixtureBasedTestEnvironment& env) { return env.serial_device_.set_writes_paused(true); });
+
+  const uint8_t kNumPackets = 2;
+  fidl::Arena arena;
+  for (uint8_t i = 0; i < kNumPackets; i++) {
+    std::vector<uint8_t> kIsoPacket = {i};
+
+    auto packet_view = fidl::VectorView<uint8_t>::FromExternal(kIsoPacket);
+
+    hci_transport_client_->Send(fhbt::wire::SentPacket::WithIso(arena, packet_view))
+        .Then([](fidl::WireUnownedResult<fhbt::HciTransport::Send>& result) {
+          ASSERT_EQ(result.status(), ZX_OK);
+        });
+  }
+
+  // Wait until the first packet has been received by fake serial device.
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInEnvironmentTypeContext<size_t>([](FixtureBasedTestEnvironment& env) {
+      return env.serial_device_.writes().size();
+    }) == 1u;
+  });
+
+  // Call the first packet's completion callback. This should resume waiting for signals.
+  driver_test().RunInEnvironmentTypeContext(
+      [](FixtureBasedTestEnvironment& env) { return env.serial_device_.set_writes_paused(false); });
+
+  // Wait for the readable signal to be processed, and both packets has been received by fake
+  // serial device.
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInEnvironmentTypeContext<size_t>([](FixtureBasedTestEnvironment& env) {
+      return env.serial_device_.writes().size();
+    }) == kNumPackets;
+  });
+
+  const std::vector<std::vector<uint8_t>> packets =
+      driver_test().RunInEnvironmentTypeContext<const std::vector<std::vector<uint8_t>>>(
+          [](FixtureBasedTestEnvironment& env) { return env.serial_device_.writes(); });
+  ASSERT_EQ(packets.size(), kNumPackets);
+  for (uint8_t i = 0; i < kNumPackets; i++) {
+    // A packet indicator should be prepended.
+    std::vector<uint8_t> expected = {BtHciPacketIndicator::kHciIso, i};
+    EXPECT_EQ(packets[i], expected);
+  }
+}
+
+TEST_F(BtTransportUartHciTransportProtocolTest, ReceiveIsoPacketsIn2Parts) {
+  const std::vector<uint8_t> kSerialIsoBuffer = {
+      BtHciPacketIndicator::kHciIso,  // Snoop packet flag
+      0x09,
+      0x0a,  // arbitrary header fields
+      0x03,  // 2-byte payload length in little endian
+      0x00,
+      0x0b,  // arbitrary payload
+      0x0c,
+      0x0d,
+  };
+  const std::vector<uint8_t> kIsoBuffer(kSerialIsoBuffer.begin() + 1, kSerialIsoBuffer.end());
+  // Split the packet before length field to test corner case.
+  const std::vector<uint8_t> kPart1(kSerialIsoBuffer.begin(), kSerialIsoBuffer.begin() + 3);
+  const std::vector<uint8_t> kPart2(kSerialIsoBuffer.begin() + 3, kSerialIsoBuffer.end());
+
+  const size_t kNumPackets = 20;
+  for (size_t i = 0; i < kNumPackets; i++) {
+    driver_test().RunInEnvironmentTypeContext([&](FixtureBasedTestEnvironment& env) {
+      return env.serial_device_.QueueReadValue(kPart1);
+    });
+    driver_test().RunInEnvironmentTypeContext([&](FixtureBasedTestEnvironment& env) {
+      return env.serial_device_.QueueReadValue(kPart2);
+    });
+  }
+
+  // Wait for all the packets to be received.
+  driver_test().runtime().RunUntil([&]() { return received_iso_packets().size() == kNumPackets; });
+
+  for (const std::vector<uint8_t>& packet : received_iso_packets()) {
+    EXPECT_EQ(packet.size(), kIsoBuffer.size());
+    EXPECT_EQ(packet, kIsoBuffer);
+  }
+
+  driver_test().runtime().RunUntil(
+      [&]() { return snoop_received_iso_packets().size() == kNumPackets; });
+
+  for (uint8_t i = 0; i < kNumPackets; i++) {
+    EXPECT_EQ(snoop_received_iso_packets()[i], kIsoBuffer);
   }
 }
 
