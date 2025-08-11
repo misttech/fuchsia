@@ -247,7 +247,10 @@ def create_power_sampler(
     measurepower_path = config.measurepower_path or os.environ.get(
         _MEASUREPOWER_PATH_ENV_VARIABLE
     )
-    if not measurepower_path:
+    if config.disabled:
+        _LOGGER.info("Using no-op power sampler due to disabled configuration.")
+        return _NoopPowerSampler(config)
+    elif not measurepower_path:
         if not fallback_to_stub:
             raise RuntimeError(
                 f"{_MEASUREPOWER_PATH_ENV_VARIABLE} env variable must be set"

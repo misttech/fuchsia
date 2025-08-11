@@ -21,6 +21,8 @@ class PowerSamplerConfig:
     output_dir: str
     # Unique metric name, used in output file names.
     metric_name: str
+    # Causes a no-op power sampler to be used.
+    disabled: bool = False
     # Path of the measurepower tool (Optional)
     measurepower_path: str | None = None
 
