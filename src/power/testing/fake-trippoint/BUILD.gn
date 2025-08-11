@@ -26,9 +26,9 @@ fuchsia_cc_driver("driver") {
     ":bind",
     ":test.trippoint_cpp",
     "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_cpp",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/component/cpp:cpp",
     "//sdk/lib/driver/devfs/cpp",
-    "//sdk/lib/driver/logging/cpp",
+    "//sdk/lib/driver/logging/cpp:cpp",
     "//src/devices/lib/driver:driver_runtime",
     "//zircon/system/ulib/zx",
   ]

@@ -82,7 +82,7 @@ test("aml-nna-test-bin") {
     "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/registers/testing/mock-registers",
-    "//src/devices/testing/mock-mmio-reg",
+    "//src/devices/testing/mock-mmio-reg:mock-mmio-reg",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
     "//zircon/system/ulib/ddk-platform-defs",

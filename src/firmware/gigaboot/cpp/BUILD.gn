@@ -93,7 +93,7 @@ if (is_efi_toolchain) {
     deps = [
       "legacy_c_gigaboot",
       "//zircon/system/public",
-      "//zircon/system/ulib/fbl",
+      "//zircon/system/ulib/fbl:fbl",
     ]
   }
 }

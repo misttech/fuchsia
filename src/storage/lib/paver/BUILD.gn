@@ -52,7 +52,7 @@ source_set("paver-core") {
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/fidl",
-    "//sdk/lib/syslog/cpp",
+    "//sdk/lib/syslog/cpp:cpp",
     "//src/security/lib/zxcrypt:zxcrypt-client",
     "//src/storage/gpt",
     "//src/storage/lib/fs_management",

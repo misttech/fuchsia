@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/icu/icu_group.gni")
 
 icu_group("lib") {
-  icu_public_deps = [ "screen_reader" ]
+  icu_public_deps = [ "screen_reader:screen_reader" ]
   public_deps = [
     "annotation",
     "configuration",

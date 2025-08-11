@@ -14,7 +14,7 @@ group("drivers") {
     "drivers/nelson/post-init",
     "drivers/qemu-arm64",
     "drivers/qemu-riscv64",
-    "drivers/sherlock",
+    "drivers/sherlock:sherlock",
     "drivers/sherlock:sherlock-factory",
     "drivers/sherlock/post-init",
     "drivers/vim3-devicetree:bazel_package",

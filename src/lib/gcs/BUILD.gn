@@ -11,7 +11,7 @@ rustc_library("lib") {
 
   deps = [
     "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-hyper",
+    "//src/lib/fuchsia-hyper:fuchsia-hyper",
     "//src/lib/structured_ui",
     "//src/sys/lib/fuchsia_backoff",
     "//third_party/rust_crates:anyhow",

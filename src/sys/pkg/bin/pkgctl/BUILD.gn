@@ -25,7 +25,7 @@ rustc_library("lib") {
     "//src/lib/fuchsia-url",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
     "//src/sys/lib/fidl-fuchsia-pkg-rewrite-ext",
-    "//src/sys/pkg/lib/fetch-url",
+    "//src/sys/pkg/lib/fetch-url:fetch-url",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:futures",

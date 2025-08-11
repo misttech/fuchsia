@@ -88,6 +88,6 @@ group("tests") {
   testonly = true
   deps = [
     ":diagnostics-persistence-unittests",
-    "tests",
+    "tests:tests",
   ]
 }

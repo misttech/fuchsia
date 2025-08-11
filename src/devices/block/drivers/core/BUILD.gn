@@ -28,7 +28,7 @@ fuchsia_driver_component("core") {
     "//src/bringup/bin/netsvc:*",
     "//src/devices/block:drivers",
     "//src/devices/block/drivers/block-verity:*",
-    "//src/devices/block/drivers/core",
+    "//src/devices/block/drivers/core:core",
     "//src/devices/block/drivers/ftl/tests:ftl-integration",
     "//src/devices/block/drivers/usb-mass-storage:ums-integration",
     "//src/devices/block/drivers/zxcrypt:*",

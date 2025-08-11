@@ -21,7 +21,7 @@ rustc_binary("bin") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
-    "//src/sys/lib/library_loader",
+    "//src/sys/lib/library_loader:library_loader",
     "//src/sys/test_runners/fidl/fuchsia.test.runner:fuchsia.test.runner_rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",

@@ -12,7 +12,7 @@ rustc_library("crypto") {
   deps = [
     "//sdk/rust/zx-status",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
-    "//src/storage/fxfs/trace",
+    "//src/storage/fxfs/trace:trace",
     "//src/storage/fxfs/unicode",
     "//src/storage/lib/fscrypt",
     "//src/storage/type-fprint:fprint",

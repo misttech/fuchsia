@@ -27,7 +27,7 @@ executable("bin") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/syslog/cpp",
-    "//src/lib/files",
+    "//src/lib/files:files",
     "//src/lib/fxl",
   ]
 }

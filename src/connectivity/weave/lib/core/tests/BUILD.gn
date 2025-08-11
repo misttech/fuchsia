@@ -11,7 +11,7 @@ test("weave_trait_updater_unittests") {
     "//sdk/lib/sys/cpp/testing:unit",
     "//src/connectivity/weave/adaptation",
     "//src/connectivity/weave/lib/applets_loader",
-    "//src/connectivity/weave/lib/core",
+    "//src/connectivity/weave/lib/core:core",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
     "//third_party/googletest:gtest",
@@ -21,7 +21,7 @@ test("weave_trait_updater_unittests") {
 fuchsia_unittest_package("weave-trait-updater-unittests") {
   deps = [
     ":weave_trait_updater_unittests",
-    "//src/connectivity/weave/applets/test_applets",
+    "//src/connectivity/weave/applets/test_applets:test_applets",
   ]
   test_specs = {
     log_settings = {

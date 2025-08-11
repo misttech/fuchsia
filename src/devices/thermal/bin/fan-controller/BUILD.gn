@@ -13,8 +13,8 @@ source_set("common") {
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/sys/cpp",
+    "//sdk/lib/component/incoming/cpp:cpp",
+    "//sdk/lib/sys/cpp:cpp",
     "//sdk/lib/syslog/cpp",
   ]
 }

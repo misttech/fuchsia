@@ -77,7 +77,7 @@ source_set("common") {
     "//src/lib/ddk",
     "//src/lib/ddktl",
     "//src/storage/lib/ftl",
-    "//zircon/system/public",
+    "//zircon/system/public:public",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/inspect",

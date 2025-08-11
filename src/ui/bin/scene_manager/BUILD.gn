@@ -14,9 +14,9 @@ icu_rustc_binary("scene_manager_bin") {
   edition = "2021"
 
   icu_deps = [
-    "//src/lib/icu_data/rust/icu_data",
-    "//src/ui/lib/input_pipeline",
-    "//src/ui/lib/scene_management",
+    "//src/lib/icu_data/rust/icu_data:icu_data",
+    "//src/ui/lib/input_pipeline:input_pipeline",
+    "//src/ui/lib/scene_management:scene_management",
   ]
 
   deps = [

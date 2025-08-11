@@ -11,7 +11,7 @@ test("wlan_drivers_timer_test") {
     "//src/connectivity/wlan/drivers/lib/timer:cpp",
     "//src/devices/testing/no_ddk",
     "//zircon/system/ulib/mock-function",
-    "//zircon/system/ulib/zxtest",
+    "//zircon/system/ulib/zxtest:zxtest",
   ]
 }
 

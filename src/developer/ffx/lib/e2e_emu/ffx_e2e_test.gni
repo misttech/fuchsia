@@ -39,7 +39,7 @@ template("ffx_e2e_test") {
   _product_bundle = "$_pb_outdir/product_bundle"
 
   rustc_test(target_name) {
-    deps = [ "//src/developer/ffx/lib/e2e_emu" ]
+    deps = [ "//src/developer/ffx/lib/e2e_emu:e2e_emu" ]
     if (defined(invoker.deps)) {
       deps += invoker.deps
     }

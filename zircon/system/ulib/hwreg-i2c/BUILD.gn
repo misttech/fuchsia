@@ -15,6 +15,6 @@ zx_library("hwreg-i2c") {
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
 
     # <hwreg/i2c.h> has #include <hwreg/bitfields.h>
-    "//zircon/system/ulib/hwreg",
+    "//zircon/system/ulib/hwreg:hwreg",
   ]
 }

@@ -130,8 +130,8 @@ _test_sources = [
 _test_deps = [
   ":helpers",
   "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
-  "//sdk/lib/syslog/cpp",
-  "//src/diagnostics/lib/cpp-log-tester",
+  "//sdk/lib/syslog/cpp:cpp",
+  "//src/diagnostics/lib/cpp-log-tester:cpp-log-tester",
   "//zircon/system/ulib/fbl",
   "//zircon/system/ulib/zx",
   "//zircon/system/ulib/zxtest",

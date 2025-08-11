@@ -31,7 +31,7 @@ cc_test_executable("focus_manager_tests") {
     "//src/ui/a11y/lib/screen_reader/focus/tests/mocks",
     "//src/ui/a11y/lib/semantics/tests/mocks",
     "//src/ui/a11y/lib/testing",
-    "//src/ui/a11y/lib/view/tests/mocks",
+    "//src/ui/a11y/lib/view/tests/mocks:mocks",
     "//src/ui/a11y/lib/virtual_keyboard/tests/mocks",
   ]
 }

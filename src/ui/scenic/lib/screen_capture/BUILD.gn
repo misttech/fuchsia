@@ -15,7 +15,7 @@ source_set("screen_capture") {
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp_hlcpp_conversion",
     "//sdk/lib/fit",
-    "//src/lib/fsl",
+    "//src/lib/fsl:fsl",
     "//src/ui/lib/escher",
     "//src/ui/scenic/lib/allocation",
     "//src/ui/scenic/lib/flatland/engine",

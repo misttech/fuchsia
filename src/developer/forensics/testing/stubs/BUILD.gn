@@ -288,7 +288,7 @@ source_set("system_activity_governor") {
   public_deps = [
     ":fidl_server",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
-    "//sdk/lib/syslog/cpp",
+    "//sdk/lib/syslog/cpp:cpp",
   ]
 
   deps = [

@@ -52,7 +52,7 @@ executable("agis-bin") {
     "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
-    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/fbl:fbl",
   ]
 }
 

@@ -33,7 +33,7 @@ fuchsia_cc_driver("root_driver") {
     ":root_bind",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/compat/cpp:symbols",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.test:fuchsia.test_cpp",
     "//src/devices/lib/driver:driver_runtime",
@@ -96,7 +96,7 @@ fuchsia_cc_driver("leaf_driver") {
   deps = [
     ":fuchsia.interop.test_cpp",
     ":interop_leaf_bind",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/lib/driver:driver_runtime",
   ]
 }

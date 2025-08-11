@@ -41,7 +41,7 @@ fuchsia_test_package("examples_fidl_canvas_addlinemetered_cpp_wire_tests") {
     ":client",
     ":server",
     "//examples/fidl/new/canvas/add_line_metered:client_config_values",
-    "//examples/fidl/new/canvas/add_line_metered/realm",
+    "//examples/fidl/new/canvas/add_line_metered/realm:realm",
   ]
   test_components = [ ":test" ]
 }

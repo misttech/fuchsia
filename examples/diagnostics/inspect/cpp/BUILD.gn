@@ -74,7 +74,7 @@ executable("test_bin") {
   sources = [ "example_unittests.cc" ]
   deps = [
     ":lib",
-    "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/async_patterns/testing/cpp:cpp",
     "//sdk/lib/inspect/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",

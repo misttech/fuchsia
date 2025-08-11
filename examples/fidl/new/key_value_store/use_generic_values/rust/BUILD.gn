@@ -47,7 +47,7 @@ fuchsia_test_package(
     ":client",
     ":server",
     "//examples/fidl/new/key_value_store/use_generic_values:client_config_values",
-    "//examples/fidl/new/key_value_store/use_generic_values/realm",
+    "//examples/fidl/new/key_value_store/use_generic_values/realm:realm",
   ]
   test_components = [ ":test" ]
 }

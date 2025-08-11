@@ -97,7 +97,7 @@ group("minimal") {
     deps += [
       # Run a subset of the network tests until https://fxbug.dev/42073578 is addressed
       # and all tests (removed above) can be built and run.
-      "//src/connectivity/network/tests",
+      "//src/connectivity/network/tests:tests",
     ]
   } else if (current_cpu == "x64") {
     deps -= [

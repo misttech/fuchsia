@@ -33,7 +33,7 @@ source_set("cpp") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/async-helpers/cpp",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
   ]
   public_configs = [ ":includes" ]

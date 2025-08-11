@@ -260,9 +260,9 @@ group("non_hermetic_deps") {
   # GN rule, which has unspecified outputs.
   # bt-host tests will be migrated out-of-tree.
   visibility += [
-    "//src/connectivity/bluetooth/core/bt-host",
     "//src/connectivity/bluetooth/core/bt-host:bazel_test_pkg",
     "//src/connectivity/bluetooth/core/bt-host:bazel_test_pkg.bazel_build",
+    "//src/connectivity/bluetooth/core/bt-host:bt-host",
     "//src/connectivity/bluetooth/core/bt-host:bt-host.bazel_build",
     "//src/connectivity/bluetooth/core/bt-host:bt-host.package",
     "//src/connectivity/bluetooth/core/bt-host:test_pkg",
@@ -336,11 +336,11 @@ group("non_hermetic_deps") {
     "//src/chromium:web_engine_pkg.package",
     "//src/chromium:web_engine_shell_pkg",
     "//src/chromium:web_engine_shell_pkg.package",
-    "//src/connectivity/bluetooth/core/bt-host",
+    "//src/connectivity/bluetooth/core/bt-host:bt-host",
     "//src/connectivity/bluetooth/core/bt-host:bt-host.package",
-    "//src/connectivity/bluetooth/hci/virtual",
+    "//src/connectivity/bluetooth/hci/virtual:virtual",
     "//src/connectivity/bluetooth/hci/virtual:virtual.package",
-    "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi",
+    "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:iwlwifi",
     "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:iwlwifi.package",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg.package",
@@ -552,7 +552,7 @@ group("config_data_template_allowlist") {
     "//src/developer/memory/monitor:userdebug_config",
     "//src/developer/sshd-host:authorized_ssh_keys_config_data",
     "//src/developer/sshd-host:config",
-    "//src/diagnostics/config/persistence",
+    "//src/diagnostics/config/persistence:persistence",
     "//src/diagnostics/config/pipelines/all:all_selectors",
     "//src/diagnostics/config/triage:brcmfmac-detect",
     "//src/diagnostics/config/triage:mali-detect",
@@ -587,7 +587,7 @@ group("config_data_template_allowlist") {
     "//src/ui/scenic/config:chromebook",
     "//third_party/network-conformance/*",
     "//vendor/google/*",
-    "//vendor/third_party/cobalt_registry",
+    "//vendor/third_party/cobalt_registry:cobalt_registry",
     "//zircon/kernel/lib/userabi/userboot/tests:*",
   ]
 }

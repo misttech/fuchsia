@@ -12,7 +12,7 @@ executable("tracee_bin") {
   deps = [
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/syslog/cpp",
+    "//sdk/lib/syslog/cpp:cpp",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/trace-provider",
   ]
@@ -34,7 +34,7 @@ executable("trace_system_benchmarks_bin") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/syslog/cpp",
+    "//sdk/lib/syslog/cpp:cpp",
     "//zircon/system/ulib/perftest",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/zx",
@@ -51,7 +51,7 @@ executable("trace_system_benchmarks_many_providers_bin") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/syslog/cpp",
+    "//sdk/lib/syslog/cpp:cpp",
     "//zircon/system/ulib/perftest",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/zx",

@@ -9,9 +9,9 @@ group("weave") {
 group("tests") {
   testonly = true
   public_deps = [
-    "adaptation/tests",
-    "lib/core/tests",
+    "adaptation/tests:tests",
+    "lib/core/tests:tests",
     "tests",
-    "weavestack/tests",
+    "weavestack/tests:tests",
   ]
 }

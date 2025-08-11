@@ -21,7 +21,7 @@ if (is_host) {
     sources = [ source_root ]
     deps = [
       "//src/developer/ffx/lib/e2e_emu",
-      "//src/developer/ffx/lib/profiler",
+      "//src/developer/ffx/lib/profiler:profiler",
       "//src/lib/fuchsia",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:serde_json",

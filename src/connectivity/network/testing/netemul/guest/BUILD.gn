@@ -19,7 +19,7 @@ source_set("controller") {
     "//sdk/lib/fdio",
     "//sdk/lib/syslog/cpp",
     "//src/connectivity/network/testing/netemul/network-context/fidl:network_cpp",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl",
     "//src/virtualization/tests/lib:guest_console",
     "//zircon/system/ulib/fbl",
   ]
@@ -41,7 +41,7 @@ source_set("guest") {
     "//sdk/lib/fdio",
     "//sdk/lib/syslog/cpp",
     "//src/connectivity/network/testing/netemul/network-context/fidl:network_cpp",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl",
     "//src/virtualization/lib/guest_interaction:common",
     "//src/virtualization/lib/guest_interaction:guest_interaction_client",
     "//src/virtualization/lib/guest_interaction:platform_interface_posix",

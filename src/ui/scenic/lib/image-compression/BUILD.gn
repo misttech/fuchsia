@@ -8,7 +8,7 @@ group("image-compression") {
   testonly = true
   deps = [
     ":package",
-    "tests",
+    "tests:tests",
   ]
 }
 

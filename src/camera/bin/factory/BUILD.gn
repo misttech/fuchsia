@@ -25,7 +25,7 @@ source_set("lib") {
   deps = [
     "//sdk/lib/fdio",
     "//sdk/lib/sys/cpp",
-    "//src/lib/files",
+    "//src/lib/files:files",
   ]
 
   public_deps = [

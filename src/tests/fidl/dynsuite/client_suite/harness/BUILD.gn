@@ -28,7 +28,7 @@ executable("bin") {
     "//src/lib/fxl",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
-    "//src/lib/testing/predicates",
+    "//src/lib/testing/predicates:predicates",
     "//src/tests/fidl/dynsuite/channel_util",
     "//src/tests/fidl/dynsuite/client_suite/fidl:fidl.clientsuite_cpp",
   ]

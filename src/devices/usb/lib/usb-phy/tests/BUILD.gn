@@ -15,7 +15,7 @@ test("usb-phy-test-bin") {
   sources = [ "usb-phy-test.cc" ]
   deps = [
     "//sdk/lib/async_patterns/testing/cpp",
-    "//src/devices/testing/mock-ddk",
+    "//src/devices/testing/mock-ddk:mock-ddk",
     "//src/devices/usb/lib/usb-phy",
     "//zircon/system/ulib/zxtest",
   ]

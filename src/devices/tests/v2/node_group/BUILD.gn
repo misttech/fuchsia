@@ -44,7 +44,7 @@ fuchsia_cc_driver("root_driver") {
     ":root_bind",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
     "//sdk/lib/driver/compat/cpp",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/lib/driver:driver_runtime",
   ]
 }
@@ -70,7 +70,7 @@ fuchsia_cc_driver("leaf_driver") {
     ":fuchsia.nodegroup.test_cpp",
     ":nodegroup_leaf_bind",
     "//sdk/lib/async:async-cpp",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/lib/driver:driver_runtime",
   ]
 }

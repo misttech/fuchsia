@@ -31,7 +31,7 @@ rustc_library("lib") {
     "//src/lib/fuchsia-runtime",
     "//src/lib/trace/rust:trace",
     "//src/storage/lib/vfs/rust:vfs",
-    "//src/sys/lib/library_loader",
+    "//src/sys/lib/library_loader:library_loader",
     "//src/sys/lib/namespace",
     "//src/sys/lib/runner",
     "//src/sys/test_runners/fidl/fuchsia.test.runner:fuchsia.test.runner_rust",

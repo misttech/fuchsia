@@ -78,7 +78,6 @@ template("_common") {
       }
 
       foreach(icu_dep, invoker.icu_deps) {
-        icu_dep = get_label_info(icu_dep, "label_no_toolchain")
         deps += [ "${icu_dep}.icu_${icu_flavor.name}_${icu_flavor.commit_id}(${current_toolchain})" ]
       }
     }

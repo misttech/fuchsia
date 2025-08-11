@@ -47,7 +47,7 @@ source_set("usb-endpoint-server") {
   public_deps = [
     "//src/devices/lib/driver",
     "//src/devices/lib/io-buffer",
-    "//src/devices/usb/lib/usb",
+    "//src/devices/usb/lib/usb:usb",
     "//src/devices/usb/lib/usb:usb-fidl",
   ]
   deps = [ "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp" ]

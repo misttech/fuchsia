@@ -41,7 +41,7 @@ fuchsia_test_package("examples_fidl_canvas_baseline_cpp_natural_tests") {
     ":client",
     ":server",
     "//examples/fidl/new/canvas/baseline:client_config_values",
-    "//examples/fidl/new/canvas/baseline/realm",
+    "//examples/fidl/new/canvas/baseline/realm:realm",
   ]
   test_components = [ ":test" ]
 }

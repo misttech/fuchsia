@@ -23,7 +23,7 @@ common_deps = [
   "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_cpp",
   "//src/devices/lib/acpi",
   "//src/devices/lib/driver",
-  "//src/devices/rtc/lib/rtc",
+  "//src/devices/rtc/lib/rtc:rtc",
   "//src/devices/rtc/lib/rtc:rtc_llcpp",
   "//src/lib/ddk",
   "//src/lib/ddktl",

@@ -43,7 +43,7 @@ cc_test_executable("metrics_buffer_unittests") {
     ":metrics_buffer",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_cpp",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_hlcpp",
-    "//sdk/lib/fdio",
+    "//sdk/lib/fdio:fdio",
     "//sdk/lib/vfs/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",

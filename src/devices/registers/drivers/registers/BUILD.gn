@@ -58,7 +58,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
     "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
     "//sdk/lib/driver/compat/cpp",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/component/cpp:cpp",
     "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/platform-device/cpp",
     "//src/devices/bind/fuchsia.register:fuchsia.register_cpp",

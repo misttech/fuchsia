@@ -34,7 +34,7 @@ source_set("mixer") {
 
   deps = [
     "//sdk/lib/syslog/cpp",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl",
     "//src/media/audio/lib/format",
     "//src/media/audio/lib/processing",
     "//src/media/audio/lib/timeline",

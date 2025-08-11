@@ -26,7 +26,7 @@ cc_test_executable("injector_tests") {
     "//src/lib/testing/loop_fixture",
     "//src/lib/testing/loop_fixture",
     "//src/ui/input/lib/injector",
-    "//src/ui/input/lib/injector/tests/mocks",
+    "//src/ui/input/lib/injector/tests/mocks:mocks",
     "//third_party/googletest:gmock",
   ]
 }

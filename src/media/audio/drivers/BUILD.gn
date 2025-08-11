@@ -25,7 +25,7 @@ group("drivers") {
   ]
   if (target_cpu == "arm64") {
     deps += [
-      "aml-g12-pdm",
+      "aml-g12-pdm:aml-g12-pdm",
       "aml-g12-tdm",
       "aml-g12-tdm:aml-g12-composite-bazel-package",
       "aml-g12-tdm:aml-g12-tdm-dai",

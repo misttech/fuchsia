@@ -88,7 +88,7 @@ fuchsia_cc_driver("usb-audio-driver") {
 fuchsia_driver_component("usb-audio") {
   visibility = [
     ":*",
-    "//src/media/audio/drivers",
+    "//src/media/audio/drivers:drivers",
   ]
   component_name = "usb-audio"
   deps = [ ":usb-audio-driver" ]

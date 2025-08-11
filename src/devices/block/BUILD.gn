@@ -34,7 +34,7 @@ group("tests") {
     "bin:tests",
     "drivers:tests",
     "lib:tests",
-    "tests",
+    "tests:tests",
   ]
 }
 

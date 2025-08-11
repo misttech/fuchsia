@@ -12,7 +12,7 @@ group("tests") {
   testonly = true
   deps = [
     ":diagnostics-reader-tests",
-    "tests",
+    "tests:tests",
   ]
 }
 

@@ -364,7 +364,7 @@ config("fidl-wire-deprecated-mutable-tables") {
 
     #------------------
     #------------------
-    "//zircon/system/ulib/image-format",
+    "//zircon/system/ulib/image-format:image-format",
 
     #------------------
     #------------------
@@ -372,7 +372,7 @@ config("fidl-wire-deprecated-mutable-tables") {
 
     #------------------
     #------------------
-    "//zircon/system/ulib/sysmem-version",
+    "//zircon/system/ulib/sysmem-version:sysmem-version",
 
     #------------------
     #------------------

@@ -15,7 +15,7 @@ test("e1000_test") {
   ]
 
   deps = [
-    "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/async_patterns/testing/cpp:cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/pci/testing:pci-protocol-fake",

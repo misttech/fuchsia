@@ -16,7 +16,7 @@ rustc_library("profiler") {
   deps = [
     ":profile_rust_proto",
     "//src/developer/ffx/config:lib",
-    "//src/developer/ffx/lib/symbolize",
+    "//src/developer/ffx/lib/symbolize:symbolize",
     "//src/lib/diagnostics/log/rust_cpp_bridge",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:hex",

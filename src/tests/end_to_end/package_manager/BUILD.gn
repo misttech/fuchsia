@@ -17,8 +17,8 @@ dart_test("package_manager_test") {
 
   deps = [
     "//sdk/testing/sl4f/client",
-    "//src/tests/end_to_end/package_manager/util/pkg",
-    "//src/tests/end_to_end/package_manager/util/pm",
+    "//src/tests/end_to_end/package_manager/util/pkg:pkg",
+    "//src/tests/end_to_end/package_manager/util/pm:pm",
     "//third_party/dart-pkg/pub/archive",
     "//third_party/dart-pkg/pub/logging",
     "//third_party/dart-pkg/pub/path",

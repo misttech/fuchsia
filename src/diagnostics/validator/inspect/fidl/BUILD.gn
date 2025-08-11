@@ -10,7 +10,7 @@ fidl("validate") {
   sources = [ "inspect_puppet.fidl" ]
 
   public_deps = [
-    "//sdk/fidl/fuchsia.inspect",
+    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect",
     "//zircon/vdso/zx",
   ]
 

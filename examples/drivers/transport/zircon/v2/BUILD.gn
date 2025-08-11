@@ -19,7 +19,7 @@ fuchsia_cc_driver("parent_driver") {
   deps = [
     ":parent_bind",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/lib/driver:driver_runtime",
   ]
 }
@@ -43,7 +43,7 @@ fuchsia_cc_driver("child_driver") {
   deps = [
     ":child_bind",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/lib/driver:driver_runtime",
   ]
 }

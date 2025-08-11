@@ -25,7 +25,7 @@ rustc_library("runner") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
     "//src/sys/lib/cm_types",
-    "//src/sys/lib/library_loader",
+    "//src/sys/lib/library_loader:library_loader",
     "//src/sys/lib/namespace",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",

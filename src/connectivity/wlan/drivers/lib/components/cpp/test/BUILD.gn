@@ -17,7 +17,7 @@ source_set("support") {
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/lib/async_patterns/testing/cpp",
-    "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/driver/testing/cpp:cpp",
     "//sdk/lib/fidl",
   ]
 }

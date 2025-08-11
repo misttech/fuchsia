@@ -11,7 +11,7 @@ source_set("blobfs_creator") {
     "blobfs_creator.h",
   ]
   public_deps = [
-    "//src/lib/chunked-compression",
+    "//src/lib/chunked-compression:chunked-compression",
     "//src/lib/digest",
     "//src/storage/blobfs",
     "//src/storage/lib/host",

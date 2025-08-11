@@ -47,7 +47,7 @@ fuchsia_test_package("examples_fidl_keyvaluestore_supportexports_rust_tests") {
     ":client",
     ":server",
     "//examples/fidl/new/key_value_store/support_exports:client_config_values",
-    "//examples/fidl/new/key_value_store/support_exports/realm",
+    "//examples/fidl/new/key_value_store/support_exports/realm:realm",
   ]
   test_components = [ ":test" ]
 }

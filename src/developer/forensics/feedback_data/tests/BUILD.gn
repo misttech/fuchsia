@@ -40,7 +40,7 @@ cc_test_executable("data_provider_unittest_exe") {
     "//src/lib/fsl",
     "//src/lib/fxl",
     "//src/lib/timekeeper:testing",
-    "//src/lib/uuid",
+    "//src/lib/uuid:uuid",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
     "//third_party/rapidjson",

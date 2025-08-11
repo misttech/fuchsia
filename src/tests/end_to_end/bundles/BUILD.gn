@@ -18,7 +18,7 @@ group("end_to_end_deps") {
     "//src/ui/tools:input",
 
     # SL4F to translate JSON-RPC to calls.
-    "//src/testing/sl4f",
+    "//src/testing/sl4f:sl4f",
 
     # Needed for performance testing.
     "//src/performance/trace",

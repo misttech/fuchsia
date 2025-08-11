@@ -721,7 +721,7 @@ sdk_molecule("core_data") {
   category = "partner"
   deps = [
     # TODO(ddorwin): Rename these to make it clear that they are data (e.g., _shards).
-    "//sdk/lib/driver_component",
+    "//sdk/lib/driver_component:driver_component",
     "//sdk/lib/heapdump_instrumentation:heapdump_instrumentation_shard",
     "//sdk/lib/inspect/shards:inspect_sdk",
     "//sdk/lib/sys/component:realm_builder_shard_sdk",

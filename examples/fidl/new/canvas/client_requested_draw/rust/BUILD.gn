@@ -42,7 +42,7 @@ fuchsia_test_package("examples_fidl_canvas_clientrequesteddraw_rust_tests") {
     ":client",
     ":server",
     "//examples/fidl/new/canvas/client_requested_draw:client_config_values",
-    "//examples/fidl/new/canvas/client_requested_draw/realm",
+    "//examples/fidl/new/canvas/client_requested_draw/realm:realm",
   ]
   test_components = [ ":test" ]
 }

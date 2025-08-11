@@ -43,7 +43,7 @@ fuchsia_test_package(
     ":client",
     ":server",
     "//examples/fidl/new/canvas/client_requested_draw:client_config_values",
-    "//examples/fidl/new/canvas/client_requested_draw/realm",
+    "//examples/fidl/new/canvas/client_requested_draw/realm:realm",
   ]
   test_components = [ ":test" ]
 }

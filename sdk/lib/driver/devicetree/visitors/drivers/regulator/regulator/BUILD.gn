@@ -28,7 +28,7 @@ source_set("regulator-visitor-impl") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_cpp",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/component/cpp:cpp",
     "//sdk/lib/driver/devicetree/manager",
     "//sdk/lib/driver/devicetree/visitors:property-parser",
     "//sdk/lib/driver/devicetree/visitors:registration",
