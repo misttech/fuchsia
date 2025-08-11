@@ -93,7 +93,6 @@ source_set("lib") {
     "//sdk/fidl/fuchsia.device:fuchsia.device_hlcpp",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_hlcpp",
     "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_hlcpp",
-    "//sdk/fidl/fuchsia.ui.scenic:fuchsia.ui.scenic_hlcpp",
     "//sdk/fidl/fuchsia.virtualization:fuchsia.virtualization_hlcpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",

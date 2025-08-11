@@ -8,7 +8,6 @@
 #include <fuchsia/sysmem2/cpp/fidl.h>
 #include <fuchsia/tracing/provider/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
-#include <fuchsia/ui/scenic/cpp/fidl_test_base.h>
 #include <fuchsia/virtualization/hardware/cpp/fidl.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/sys/component/cpp/testing/realm_builder_types.h>
@@ -117,7 +116,6 @@ class VirtioGpuTest : public TestWithDevice,
                                 Protocol{fuchsia::sysmem2::Allocator::Name_},
                                 Protocol{fuchsia::tracing::provider::Registry::Name_},
                                 Protocol{fuchsia::ui::composition::Allocator::Name_},
-                                Protocol{fuchsia::ui::scenic::Scenic::Name_},
                             },
                         .source = ParentRef(),
                         .targets = {ChildRef{kComponentName}}})

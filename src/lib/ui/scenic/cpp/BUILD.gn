@@ -11,7 +11,6 @@ source_set("cpp") {
   public_deps = [
     "//sdk/fidl/fuchsia.images:fuchsia.images_hlcpp",
     "//sdk/fidl/fuchsia.ui.gfx:fuchsia.ui.gfx_hlcpp",
-    "//sdk/fidl/fuchsia.ui.scenic:fuchsia.ui.scenic_hlcpp",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp",
     "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/fit",

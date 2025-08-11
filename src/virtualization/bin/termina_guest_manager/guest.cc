@@ -7,7 +7,6 @@
 #include <arpa/inet.h>
 #include <fuchsia/device/cpp/fidl.h>
 #include <fuchsia/hardware/block/volume/cpp/fidl.h>
-#include <fuchsia/ui/scenic/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/result.h>
