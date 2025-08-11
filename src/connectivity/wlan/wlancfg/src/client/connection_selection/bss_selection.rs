@@ -157,9 +157,8 @@ mod test {
         let test_values = test_setup();
         let mut candidates = vec![];
 
-        candidates.push(generate_candidate_for_scoring(-30, 30, generate_channel(36)));
+        candidates.push(generate_candidate_for_scoring(-35, 30, generate_channel(36)));
         candidates.push(generate_candidate_for_scoring(-30, 30, generate_channel(1)));
-        candidates.push(generate_candidate_for_scoring(-20, 30, generate_channel(1)));
 
         // there's a network on 5G, it should get a boost and be selected
         let reason = generate_random_connect_reason();
@@ -188,7 +187,7 @@ mod test {
                 test_values.inspect_node.clone(),
                 test_values.telemetry_sender.clone()
             )),
-            Some(candidates[2].clone())
+            Some(candidates[1].clone())
         );
     }
 
@@ -199,8 +198,8 @@ mod test {
         let test_values = test_setup();
         let mut candidates = vec![];
 
-        candidates.push(generate_candidate_for_scoring(-25, 30, generate_channel(1)));
         candidates.push(generate_candidate_for_scoring(-30, 30, generate_channel(1)));
+        candidates.push(generate_candidate_for_scoring(-35, 30, generate_channel(1)));
 
         // stronger network returned
         assert_eq!(
@@ -307,7 +306,7 @@ mod test {
 
         candidates.push(generate_candidate_for_scoring(-50, 30, generate_channel(1)));
         candidates.push(generate_candidate_for_scoring(-60, 30, generate_channel(3)));
-        candidates.push(generate_candidate_for_scoring(-20, 30, generate_channel(6)));
+        candidates.push(generate_candidate_for_scoring(-30, 30, generate_channel(6)));
 
         // stronger network returned
         assert_eq!(

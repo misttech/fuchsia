@@ -8,28 +8,25 @@ use crate::client::types;
 use crate::config_management::FailureReason::CredentialRejected;
 use crate::util::pseudo_energy::*;
 
+/// Weighting constants
 const RSSI_AND_VELOCITY_SCORE_WEIGHT: f32 = 0.6;
 const SNR_SCORE_WEIGHT: f32 = 0.4;
 
-/// Above or at this RSSI, we'll give 5G networks a preference
-const RSSI_CUTOFF_5G_PREFERENCE: i16 = -64;
-/// The score boost for 5G networks that we are giving preference to.
+/// 5GHz score bonus constants
+const LOWER_RSSI_BOUND_FOR_5G_BONUS: i16 = -64; // Bonus tapers below this RSSI
+const UPPER_RSSI_BOUND_FOR_5G_BONUS: i16 = -25; // Bonus tapers above this RSSI
 const MAX_5G_PREFERENCE_BOOST: i16 = 20;
-/// The amount to decrease the score by for each failed connection attempt.
+const TAPER_AMOUNT_FOR_5G_BONUS_PER_DBM_OUTSIDE_RANGE: i16 = 2;
+
+/// Score penalty constants
 const SCORE_PENALTY_FOR_RECENT_CONNECT_FAILURE: i16 = 5;
-/// Excessive recent connect failures warrant a higher penalty.
-const THRESHOLD_EXCESSIVE_RECENT_CONNECT_FAILURES: usize = 5;
+const THRESHOLD_EXCESSIVE_RECENT_CONNECT_FAILURES: usize = 5; // Excessive failures warrant higher penalty
 const SCORE_PENALTY_FOR_EXCESSIVE_RECENT_CONNECT_FAILURES: i16 = 10;
-/// This penalty is much higher than for a general failure because we are not likely to succeed
-/// on a retry.
-const SCORE_PENALTY_FOR_RECENT_CREDENTIAL_REJECTED: i16 = 30;
-/// The amount to decrease the score for each time we are connected for only a short amount
-/// of time before disconncting. This amount is the same as the penalty for 4 failed connect
-/// attempts to a BSS.
+const SCORE_PENALTY_FOR_RECENT_CREDENTIAL_REJECTED: i16 = 30; // Higher penalty, since future success is unlikely
 const SCORE_PENALTY_FOR_SHORT_CONNECTION: i16 = 20;
 
 pub fn score_bss_scanned_candidate(bss_candidate: types::ScannedCandidate) -> i16 {
-    let mut score = bss_candidate.bss.signal.rssi_dbm as i16;
+    let mut score = calculate_base_signal_score(bss_candidate.bss.signal.rssi_dbm as i16);
     let channel = bss_candidate.bss.channel;
 
     // If the network is 5G and has a strong enough RSSI, give it a bonus.
@@ -69,11 +66,31 @@ pub fn score_bss_scanned_candidate(bss_candidate: types::ScannedCandidate) -> i1
     score.saturating_sub(short_connection_score)
 }
 
-// Calculate a score bonus for 5GHz BSSs, based on the RSSI.
+/// Scores are based on RSSI, before any bonuses or penalties are applied, using a piecewise linear
+/// (y=mx+b) function. As signal strength increases beyond -30 dBm, connectivity gets progressively
+/// worse due to RF receiver saturation, increased noise, etc. For signals > -30 dBm, we linearly
+/// taper off the signal-based score.
+///   - For RSSI <= -30, score == RSSI.
+///   - For RSSI > -30, score == -2.7735 * RSSI - 113.2 (based on go/fuchsia-wlan:penalizing-high-rssi)
+fn calculate_base_signal_score(rssi: i16) -> i16 {
+    if rssi <= -30 {
+        rssi
+    } else {
+        let m = -2.7735;
+        let b = -113.2;
+        let y = m * rssi as f64 + b;
+        y as i16
+    }
+}
+
 fn calculate_5g_bonus(rssi: i16) -> i16 {
-    // Cap bonus at the maximum for RSSI >= RSSI_CUTOFF_5G_PREFERENCE. Reduce bonus by 2 for each
-    // dB/m below RSSI_CUTOFF_5G_PREFERENCE.
-    max(MAX_5G_PREFERENCE_BOOST - max(RSSI_CUTOFF_5G_PREFERENCE - rssi, 0) * 2, 0)
+    // Determine "distance" (in dBm) the RSSI falls outside of the bonus range.
+    let taper_rate = max(
+        max(LOWER_RSSI_BOUND_FOR_5G_BONUS - rssi, 0),
+        max(rssi - UPPER_RSSI_BOUND_FOR_5G_BONUS, 0),
+    );
+    // For each dBm outside bonus range, reduce bonus by the taper amount, down to a minimum of 0.
+    max(0, MAX_5G_PREFERENCE_BOOST - (taper_rate * TAPER_AMOUNT_FOR_5G_BONUS_PER_DBM_OUTSIDE_RANGE))
 }
 
 pub fn score_current_connection_signal_data(
@@ -428,16 +445,49 @@ mod test {
     }
 
     #[fuchsia::test]
-    fn test_calculate_5g_bonus_max_bonus_above_cutoff() {
-        assert_eq!(calculate_5g_bonus(RSSI_CUTOFF_5G_PREFERENCE), MAX_5G_PREFERENCE_BOOST);
-        assert_eq!(calculate_5g_bonus(RSSI_CUTOFF_5G_PREFERENCE + 1), MAX_5G_PREFERENCE_BOOST);
+    fn test_calculate_5g_bonus_max_bonus_between_cutoffs() {
+        assert_eq!(calculate_5g_bonus(LOWER_RSSI_BOUND_FOR_5G_BONUS), MAX_5G_PREFERENCE_BOOST);
+        assert_eq!(calculate_5g_bonus(LOWER_RSSI_BOUND_FOR_5G_BONUS + 1), MAX_5G_PREFERENCE_BOOST);
+        assert_eq!(calculate_5g_bonus(UPPER_RSSI_BOUND_FOR_5G_BONUS - 1), MAX_5G_PREFERENCE_BOOST);
+        assert_eq!(calculate_5g_bonus(UPPER_RSSI_BOUND_FOR_5G_BONUS), MAX_5G_PREFERENCE_BOOST);
     }
 
     #[fuchsia::test]
-    fn test_calculate_5g_bonus_linear_decrease_below_cutoff() {
-        assert_eq!(calculate_5g_bonus(RSSI_CUTOFF_5G_PREFERENCE - 1), MAX_5G_PREFERENCE_BOOST - 2);
-        assert_eq!(calculate_5g_bonus(RSSI_CUTOFF_5G_PREFERENCE - 2), MAX_5G_PREFERENCE_BOOST - 4);
-        assert_eq!(calculate_5g_bonus(RSSI_CUTOFF_5G_PREFERENCE - 10), 0);
-        assert_eq!(calculate_5g_bonus(RSSI_CUTOFF_5G_PREFERENCE - 20), 0);
+    fn test_calculate_5g_bonus_linear_decrease_below_lower_cutoff() {
+        assert_eq!(
+            calculate_5g_bonus(LOWER_RSSI_BOUND_FOR_5G_BONUS - 1),
+            MAX_5G_PREFERENCE_BOOST - TAPER_AMOUNT_FOR_5G_BONUS_PER_DBM_OUTSIDE_RANGE
+        );
+        assert_eq!(
+            calculate_5g_bonus(LOWER_RSSI_BOUND_FOR_5G_BONUS - 2),
+            MAX_5G_PREFERENCE_BOOST - (2 * TAPER_AMOUNT_FOR_5G_BONUS_PER_DBM_OUTSIDE_RANGE)
+        );
+        assert_eq!(calculate_5g_bonus(LOWER_RSSI_BOUND_FOR_5G_BONUS - 10), 0);
+        assert_eq!(calculate_5g_bonus(LOWER_RSSI_BOUND_FOR_5G_BONUS - 20), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_calculate_5g_bonus_linear_decrease_above_upper_cutoff() {
+        assert_eq!(
+            calculate_5g_bonus(UPPER_RSSI_BOUND_FOR_5G_BONUS + 1),
+            MAX_5G_PREFERENCE_BOOST - TAPER_AMOUNT_FOR_5G_BONUS_PER_DBM_OUTSIDE_RANGE
+        );
+        assert_eq!(
+            calculate_5g_bonus(UPPER_RSSI_BOUND_FOR_5G_BONUS + 2),
+            MAX_5G_PREFERENCE_BOOST - (2 * TAPER_AMOUNT_FOR_5G_BONUS_PER_DBM_OUTSIDE_RANGE)
+        );
+        assert_eq!(calculate_5g_bonus(UPPER_RSSI_BOUND_FOR_5G_BONUS + 10), 0);
+        assert_eq!(calculate_5g_bonus(UPPER_RSSI_BOUND_FOR_5G_BONUS + 20), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_calculate_base_signal_score() {
+        // For RSSI <= -30, score == RSSI
+        assert_eq!(calculate_base_signal_score(-30), -30);
+        assert_eq!(calculate_base_signal_score(-50), -50);
+
+        // For RSSI > -30, score is follows a negative slope line.
+        assert_eq!(calculate_base_signal_score(-25), -43);
+        assert_eq!(calculate_base_signal_score(-20), -57);
     }
 }

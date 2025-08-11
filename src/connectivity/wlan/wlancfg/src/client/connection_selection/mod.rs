@@ -1452,7 +1452,7 @@ mod tests {
                     bssid: bssid_1,
                     channel: channel_1,
                     signal: types::Signal {
-                        rssi_dbm: 20, // much higher than other result
+                        rssi_dbm: -30, // much higher than other result
                         snr_db: 0,
                     },
                     observation: types::ScanObservation::Passive,
