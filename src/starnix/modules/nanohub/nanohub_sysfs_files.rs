@@ -38,6 +38,12 @@ impl SysfsOps<fnanohub::DeviceSynchronousProxy> for FirmwareVersionSysFsOps {
 #[derive(Default)]
 pub struct TimeSyncSysFsOps {}
 
+impl TimeSyncSysFsOps {
+    fn format_time_sync(ap: i64, mcu: i64) -> String {
+        format!("ap time: {} mcu time: {}\n", ap, mcu)
+    }
+}
+
 impl SysfsOps<fnanohub::DeviceSynchronousProxy> for TimeSyncSysFsOps {
     fn show(
         &self,
@@ -46,7 +52,7 @@ impl SysfsOps<fnanohub::DeviceSynchronousProxy> for TimeSyncSysFsOps {
         let response = service.get_time_sync(zx::MonotonicInstant::INFINITE)??;
         let ap = try_get(response.ap_boot_time)?;
         let mcu = try_get(response.mcu_boot_time)?;
-        Ok(format!("{ap} {mcu}\n"))
+        Ok(Self::format_time_sync(ap, mcu))
     }
 }
 
@@ -279,5 +285,13 @@ mod tests {
         let ops = HardwareResetSysFsOps::default();
         let request = "foo".to_string();
         assert_eq!(ops.parse_hardware_reset_request(&request).is_err(), true);
+    }
+
+    #[::fuchsia::test]
+    fn test_format_time_sync() {
+        let ap_time: i64 = 123;
+        let mcu_time: i64 = 456;
+        let value = TimeSyncSysFsOps::format_time_sync(ap_time, mcu_time);
+        assert_eq!(value, "ap time: 123 mcu time: 456\n");
     }
 }
