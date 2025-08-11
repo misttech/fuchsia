@@ -9,14 +9,12 @@ use crate::lsm_tree::types::{
     SortByU64, Value,
 };
 use crate::object_store::extent_record::{
-    ExtentKey, ExtentKeyPartitionIterator, ExtentKeyV32, ExtentValue, ExtentValueV32,
-    ExtentValueV37, ExtentValueV38,
+    ExtentKey, ExtentKeyPartitionIterator, ExtentKeyV32, ExtentValue, ExtentValueV38,
 };
 use crate::serialized_types::{migrate_nodefault, migrate_to_version, Migrate, Versioned};
 use fprint::TypeFingerprint;
 use fxfs_crypto::{
-    FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, FxfsKeyV40, WrappedKey, WrappedKeysV32,
-    WrappedKeysV40,
+    FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, FxfsKeyV40, WrappedKey, WrappedKeysV40,
 };
 use fxfs_unicode::CasefoldString;
 use serde::{Deserialize, Serialize};
@@ -131,19 +129,6 @@ pub enum ObjectKeyDataV40 {
     CasefoldChild { name: CasefoldString },
 }
 
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint)]
-#[migrate_to_version(ObjectKeyDataV40)]
-pub enum ObjectKeyDataV32 {
-    Object,
-    Keys,
-    Attribute(u64, AttributeKeyV32),
-    Child { name: String },
-    GraveyardEntry { object_id: u64 },
-    Project { project_id: u64, property: ProjectPropertyV32 },
-    ExtendedAttribute { name: Vec<u8> },
-    GraveyardAttributeEntry { object_id: u64, attribute_id: u64 },
-}
-
 pub type AttributeKey = AttributeKeyV32;
 
 #[derive(
@@ -186,13 +171,6 @@ pub struct ObjectKeyV43 {
 pub struct ObjectKeyV40 {
     pub object_id: u64,
     pub data: ObjectKeyDataV40,
-}
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(ObjectKeyV40)]
-#[migrate_nodefault]
-pub struct ObjectKeyV32 {
-    pub object_id: u64,
-    pub data: ObjectKeyDataV32,
 }
 
 impl SortByU64 for ObjectKey {
@@ -544,7 +522,7 @@ pub enum ObjectKindV46 {
     },
 }
 
-#[derive(Migrate, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint)]
 #[migrate_to_version(ObjectKindV46)]
 pub enum ObjectKindV41 {
     File { refs: u64 },
@@ -553,7 +531,7 @@ pub enum ObjectKindV41 {
     Symlink { refs: u64, link: Vec<u8> },
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
+#[derive(Serialize, Deserialize, TypeFingerprint)]
 pub enum ObjectKindV40 {
     File { refs: u64, has_overwrite_extents: bool },
     Directory { sub_dirs: u64, wrapping_key_id: Option<u128>, casefold: bool },
@@ -575,84 +553,11 @@ impl From<ObjectKindV40> for ObjectKindV41 {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
-pub enum ObjectKindV38 {
-    File { refs: u64, has_overwrite_extents: bool },
-    Directory { sub_dirs: u64 },
-    Graveyard,
-    Symlink { refs: u64, link: Vec<u8> },
-}
-
-impl From<ObjectKindV38> for ObjectKindV40 {
-    fn from(value: ObjectKindV38) -> Self {
-        match value {
-            ObjectKindV38::File { refs, has_overwrite_extents } => {
-                ObjectKindV40::File { refs, has_overwrite_extents }
-            }
-            ObjectKindV38::Directory { sub_dirs } => {
-                ObjectKindV40::Directory { sub_dirs, wrapping_key_id: None, casefold: false }
-            }
-            ObjectKindV38::Graveyard => ObjectKindV40::Graveyard,
-            ObjectKindV38::Symlink { refs, link } => ObjectKindV40::Symlink { refs, link },
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, TypeFingerprint)]
-pub enum ObjectKindV32 {
-    File { refs: u64 },
-    Directory { sub_dirs: u64 },
-    Graveyard,
-    Symlink { refs: u64, link: Vec<u8> },
-}
-
-impl From<ObjectKindV32> for ObjectKindV38 {
-    fn from(value: ObjectKindV32) -> Self {
-        match value {
-            // Overwrite extents are introduced in the same version as this flag, so nothing before
-            // it has these extents.
-            ObjectKindV32::File { refs } => {
-                ObjectKindV38::File { refs, has_overwrite_extents: false }
-            }
-            ObjectKindV32::Directory { sub_dirs } => ObjectKindV38::Directory { sub_dirs },
-            ObjectKindV32::Graveyard => ObjectKindV38::Graveyard,
-            ObjectKindV32::Symlink { refs, link } => ObjectKindV38::Symlink { refs, link },
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
+#[derive(Serialize, Deserialize, TypeFingerprint)]
 pub enum EncryptionKeysV40 {
     AES256XTS(WrappedKeysV40),
 }
 
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint)]
-#[migrate_to_version(EncryptionKeysV40)]
-pub enum EncryptionKeysV32 {
-    AES256XTS(WrappedKeysV32),
-}
-
-#[cfg(fuzz)]
-impl<'a> arbitrary::Arbitrary<'a> for EncryptionKeysV40 {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        <u8>::arbitrary(u).and_then(|count| {
-            let mut keys = vec![];
-            for _ in 0..count {
-                keys.push(<(u64, u128)>::arbitrary(u).map(|(id, wrapping_key_id)| {
-                    (
-                        id,
-                        fxfs_crypto::FxfsKey {
-                            wrapping_key_id,
-                            // There doesn't seem to be much point to randomly generate crypto keys.
-                            key: fxfs_crypto::WrappedKeyBytes::default(),
-                        },
-                    )
-                })?);
-            }
-            Ok(EncryptionKeysV40::AES256XTS(WrappedKeysV40::from(keys)))
-        })
-    }
-}
 /// This consists of POSIX attributes that are not used in Fxfs but it may be meaningful to some
 /// clients to have the ability to to set and retrieve these values.
 pub type PosixAttributes = PosixAttributesV32;
@@ -856,7 +761,7 @@ pub enum ObjectValueV47 {
     /// in bytes. |fsverity_metadata| holds the descriptor for the fsverity-enabled file.
     VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV33 },
 }
-#[derive(Migrate, Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint, Versioned)]
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(ObjectValueV47)]
 pub enum ObjectValueV46 {
     None,
@@ -927,69 +832,6 @@ pub enum ObjectValueV40 {
     BytesAndNodes { bytes: i64, nodes: i64 },
     ExtendedAttribute(ExtendedAttributeValueV32),
     VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV33 },
-}
-
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(ObjectValueV40)]
-pub enum ObjectValueV38 {
-    None,
-    Some,
-    Object { kind: ObjectKindV38, attributes: ObjectAttributesV32 },
-    Keys(EncryptionKeysV32),
-    Attribute { size: u64 },
-    Extent(ExtentValueV38),
-    Child(ChildValueV32),
-    Trim,
-    BytesAndNodes { bytes: i64, nodes: i64 },
-    ExtendedAttribute(ExtendedAttributeValueV32),
-    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV33 },
-}
-
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(ObjectValueV38)]
-pub enum ObjectValueV37 {
-    None,
-    Some,
-    Object { kind: ObjectKindV32, attributes: ObjectAttributesV32 },
-    Keys(EncryptionKeysV32),
-    Attribute { size: u64 },
-    Extent(ExtentValueV37),
-    Child(ChildValueV32),
-    Trim,
-    BytesAndNodes { bytes: i64, nodes: i64 },
-    ExtendedAttribute(ExtendedAttributeValueV32),
-    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV33 },
-}
-
-#[derive(Serialize, Deserialize, Migrate, TypeFingerprint, Versioned)]
-#[migrate_to_version(ObjectValueV37)]
-pub enum ObjectValueV33 {
-    None,
-    Some,
-    Object { kind: ObjectKindV32, attributes: ObjectAttributesV32 },
-    Keys(EncryptionKeysV32),
-    Attribute { size: u64 },
-    Extent(ExtentValueV32),
-    Child(ChildValueV32),
-    Trim,
-    BytesAndNodes { bytes: i64, nodes: i64 },
-    ExtendedAttribute(ExtendedAttributeValueV32),
-    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV33 },
-}
-
-#[derive(Deserialize, Migrate, Serialize, Versioned, TypeFingerprint)]
-#[migrate_to_version(ObjectValueV33)]
-pub enum ObjectValueV32 {
-    None,
-    Some,
-    Object { kind: ObjectKindV32, attributes: ObjectAttributesV32 },
-    Keys(EncryptionKeysV32),
-    Attribute { size: u64 },
-    Extent(ExtentValueV32),
-    Child(ChildValueV32),
-    Trim,
-    BytesAndNodes { bytes: i64, nodes: i64 },
-    ExtendedAttribute(ExtendedAttributeValueV32),
 }
 
 impl ObjectValue {

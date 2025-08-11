@@ -65,42 +65,6 @@ impl Checksums {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, TypeFingerprint)]
-pub enum ChecksumsV37 {
-    None,
-    Fletcher(Vec<u8>),
-}
-
-impl ChecksumsV37 {
-    pub fn fletcher(checksums: Vec<Checksum>) -> Self {
-        assert_cfg!(target_endian = "little");
-        let checksums_as_u8: &[u8] = &*checksums.as_bytes();
-        Self::Fletcher(checksums_as_u8.to_owned())
-    }
-
-    pub fn migrate(self) -> Option<Checksums> {
-        match self {
-            Self::None => None,
-            Self::Fletcher(sums) => Some(Checksums { sums }),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, TypeFingerprint)]
-pub enum ChecksumsV32 {
-    None,
-    Fletcher(Vec<u64>),
-}
-
-impl From<ChecksumsV32> for ChecksumsV37 {
-    fn from(checksums: ChecksumsV32) -> Self {
-        match checksums {
-            ChecksumsV32::None => Self::None,
-            ChecksumsV32::Fletcher(sums) => Self::fletcher(sums),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::checksum::Checksums;

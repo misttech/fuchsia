@@ -51,7 +51,7 @@ use crate::object_store::transaction::{
 };
 use crate::range::RangeExt;
 use crate::round::round_up;
-use crate::serialized_types::{migrate_to_version, Migrate, Version, Versioned, VersionedLatest};
+use crate::serialized_types::{Version, Versioned, VersionedLatest};
 use anyhow::{anyhow, bail, ensure, Context, Error};
 use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
@@ -59,8 +59,7 @@ use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::ff1::Ff1;
 use fxfs_crypto::{
-    Cipher, Crypt, FxfsCipher, FxfsKey, FxfsKeyV32, FxfsKeyV40, KeyPurpose, StreamCipher,
-    UnwrappedKey,
+    Cipher, Crypt, FxfsCipher, FxfsKey, FxfsKeyV40, KeyPurpose, StreamCipher, UnwrappedKey,
 };
 use once_cell::sync::OnceCell;
 use scopeguard::ScopeGuard;
@@ -166,37 +165,6 @@ pub struct StoreInfoV40 {
     /// A directory for storing internal files in a directory structure. Holds INVALID_OBJECT_ID
     /// when the directory doesn't yet exist.
     internal_directory_object_id: u64,
-}
-
-#[derive(Default, Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(StoreInfoV40)]
-pub struct StoreInfoV36 {
-    guid: [u8; 16],
-    last_object_id: u64,
-    pub layers: Vec<u64>,
-    root_directory_object_id: u64,
-    graveyard_directory_object_id: u64,
-    object_count: u64,
-    mutations_key: Option<FxfsKeyV32>,
-    mutations_cipher_offset: u64,
-    pub encrypted_mutations_object_id: u64,
-    object_id_key: Option<FxfsKeyV32>,
-    internal_directory_object_id: u64,
-}
-
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(StoreInfoV36)]
-pub struct StoreInfoV32 {
-    guid: [u8; 16],
-    last_object_id: u64,
-    pub layers: Vec<u64>,
-    root_directory_object_id: u64,
-    graveyard_directory_object_id: u64,
-    object_count: u64,
-    mutations_key: Option<FxfsKeyV32>,
-    mutations_cipher_offset: u64,
-    pub encrypted_mutations_object_id: u64,
-    object_id_key: Option<FxfsKeyV32>,
 }
 
 impl StoreInfo {

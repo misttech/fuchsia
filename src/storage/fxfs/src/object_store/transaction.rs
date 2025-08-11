@@ -22,7 +22,7 @@ use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
 use futures::future::poll_fn;
 use futures::pin_mut;
-use fxfs_crypto::{FxfsKey, FxfsKeyV32, FxfsKeyV40};
+use fxfs_crypto::{FxfsKey, FxfsKeyV40};
 use rustc_hash::FxHashMap as HashMap;
 use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
@@ -353,15 +353,6 @@ pub type UpdateMutationsKey = UpdateMutationsKeyV40;
 
 #[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint)]
 pub struct UpdateMutationsKeyV40(pub FxfsKeyV40);
-
-#[derive(Serialize, Deserialize, TypeFingerprint)]
-pub struct UpdateMutationsKeyV32(pub FxfsKeyV32);
-
-impl From<UpdateMutationsKeyV32> for UpdateMutationsKeyV40 {
-    fn from(value: UpdateMutationsKeyV32) -> Self {
-        Self(value.0.into())
-    }
-}
 
 impl From<UpdateMutationsKey> for FxfsKey {
     fn from(outer: UpdateMutationsKey) -> Self {

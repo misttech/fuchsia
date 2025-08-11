@@ -4,10 +4,9 @@
 
 // TODO(https://fxbug.dev/42178223): need validation after deserialization.
 
-use crate::checksum::{Checksums, ChecksumsV32, ChecksumsV37, ChecksumsV38};
+use crate::checksum::{Checksums, ChecksumsV38};
 use crate::lsm_tree::types::{OrdLowerBound, OrdUpperBound};
 use crate::round::{round_down, round_up};
-use crate::serialized_types::{migrate_to_version, Migrate};
 use bit_vec::BitVec;
 use fprint::TypeFingerprint;
 use serde::{Deserialize, Serialize};
@@ -298,35 +297,6 @@ impl ExtentValue {
                     }
                 };
                 ExtentValue::Some { device_offset: *device_offset, mode, key_id: *key_id }
-            }
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, TypeFingerprint)]
-#[migrate_to_version(ExtentValueV38)]
-pub enum ExtentValueV37 {
-    None,
-    Some { device_offset: u64, checksums: ChecksumsV37, key_id: u64 },
-}
-
-#[derive(Debug, Serialize, Deserialize, Migrate, TypeFingerprint)]
-#[migrate_to_version(ExtentValueV37)]
-pub enum ExtentValueV32 {
-    None,
-    Some { device_offset: u64, checksums: ChecksumsV32, key_id: u64 },
-}
-
-impl From<ExtentValueV37> for ExtentValueV38 {
-    fn from(value: ExtentValueV37) -> Self {
-        match value {
-            ExtentValueV37::None => ExtentValue::None,
-            ExtentValueV37::Some { device_offset, checksums, key_id } => {
-                let mode = match checksums.migrate() {
-                    None => ExtentMode::Raw,
-                    Some(checksums) => ExtentMode::Cow(checksums),
-                };
-                ExtentValue::Some { device_offset, mode, key_id }
             }
         }
     }

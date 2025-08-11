@@ -4,13 +4,11 @@
 
 use aes::cipher::{KeyIvInit, StreamCipher as _, StreamCipherSeek};
 use anyhow::anyhow;
-use arbitrary::Arbitrary;
 use async_trait::async_trait;
 use chacha20::{self, ChaCha20};
 use fprint::TypeFingerprint;
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt as _;
-use fxfs_macros::{migrate_nodefault, Migrate};
 use serde::de::{Error as SerdeError, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
@@ -160,13 +158,6 @@ impl Into<fidl_fuchsia_fxfs::FxfsKey> for FxfsKey {
     }
 }
 
-#[derive(Default, Clone, Migrate, Debug, Serialize, Deserialize, TypeFingerprint)]
-#[migrate_nodefault]
-pub struct FxfsKeyV32 {
-    pub wrapping_key_id: u64,
-    pub key: WrappedKeyBytesV32,
-}
-
 impl<'a> arbitrary::Arbitrary<'a> for FxfsKey {
     fn arbitrary(_u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         // There doesn't seem to be much point to randomly generate crypto keys.
@@ -174,26 +165,8 @@ impl<'a> arbitrary::Arbitrary<'a> for FxfsKey {
     }
 }
 
-#[derive(Arbitrary, Clone, Debug, Default, Serialize, Deserialize, PartialEq, TypeFingerprint)]
+#[derive(Serialize, Deserialize, TypeFingerprint)]
 pub struct WrappedKeysV40(pub Vec<(u64, FxfsKeyV40)>);
-impl From<WrappedKeysV32> for WrappedKeysV40 {
-    fn from(value: WrappedKeysV32) -> Self {
-        Self(value.0.into_iter().map(|(id, key)| (id, key.into())).collect())
-    }
-}
-#[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint)]
-pub struct WrappedKeysV32(pub Vec<(u64, FxfsKeyV32)>);
-impl From<Vec<(u64, FxfsKeyV40)>> for WrappedKeysV40 {
-    fn from(buf: Vec<(u64, FxfsKeyV40)>) -> Self {
-        Self(buf)
-    }
-}
-impl std::ops::Deref for WrappedKeysV40 {
-    type Target = Vec<(u64, FxfsKeyV40)>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
 
 /// A thin wrapper around a ChaCha20 stream cipher.  This will use a zero nonce. **NOTE**: Great
 /// care must be taken not to encrypt different plaintext with the same key and offset (even across
