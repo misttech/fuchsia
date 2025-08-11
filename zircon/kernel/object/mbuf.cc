@@ -15,6 +15,8 @@
 #include <fbl/alloc_checker.h>
 #include <ktl/algorithm.h>
 #include <ktl/type_traits.h>
+#include <vm/physmap.h>
+#include <vm/pmm.h>
 
 #include <ktl/enforce.h>
 
@@ -23,18 +25,7 @@
 // Total amount of memory occupied by MBuf objects.
 KCOUNTER(mbuf_total_bytes_count, "mbuf.total_bytes")
 
-// Amount of memory occupied by MBuf objects on free lists.
-KCOUNTER(mbuf_free_list_bytes_count, "mbuf.free_list_bytes")
-
-MBufChain::~MBufChain() {
-  while (!buffers_.is_empty()) {
-    delete buffers_.pop_front();
-  }
-  while (!freelist_.is_empty()) {
-    kcounter_add(mbuf_free_list_bytes_count, -static_cast<int64_t>(sizeof(MBufChain::MBuf)));
-    delete freelist_.pop_front();
-  }
-}
+MBufChain::~MBufChain() { FreeMBufs(ktl::move(buffers_)); }
 
 zx_status_t MBufChain::Read(user_out_ptr<char> dst, size_t len, bool datagram, size_t* actual) {
   return ReadHelper(this, dst, len, datagram, actual);
@@ -65,6 +56,7 @@ zx_status_t MBufChain::ReadHelper(T* chain, user_out_ptr<char> dst, size_t len, 
       chain->read_cursor_off_ = read_off;
     }
   });
+  MBufList free_list;
 
   zx_status_t status = ZX_OK;
   while (pos < len && iter != chain->buffers_.end() && status == ZX_OK) {
@@ -89,10 +81,7 @@ zx_status_t MBufChain::ReadHelper(T* chain, user_out_ptr<char> dst, size_t len, 
         if (datagram) {
           chain->size_ -= (iter->len_ - read_off);
         }
-        if (chain->write_cursor_ == &(*iter)) {
-          chain->write_cursor_ = nullptr;
-        }
-        chain->FreeMBuf(chain->buffers_.pop_front());
+        free_list.push_front(chain->buffers_.pop_front());
         iter = chain->buffers_.begin();
         // Start the next buffer at the beginning.
         read_off = 0;
@@ -107,13 +96,14 @@ zx_status_t MBufChain::ReadHelper(T* chain, user_out_ptr<char> dst, size_t len, 
       while (!chain->buffers_.is_empty() && chain->buffers_.front().pkt_len_ == 0) {
         MBuf* cur = chain->buffers_.pop_front();
         chain->size_ -= (cur->len_ - read_off);
-        if (chain->write_cursor_ == cur) {
-          DEBUG_ASSERT(chain->buffers_.is_empty());
-          chain->write_cursor_ = nullptr;
-        }
-        chain->FreeMBuf(cur);
+        free_list.push_front(cur);
         read_off = 0;
       }
+    }
+  }
+  if constexpr (!ktl::is_const_v<T>) {
+    if (!free_list.is_empty()) {
+      chain->FreeMBufs(ktl::move(free_list));
     }
   }
 
@@ -137,26 +127,18 @@ zx_status_t MBufChain::WriteDatagram(user_in_ptr<const char> src, size_t len, si
     return ZX_ERR_SHOULD_WAIT;
   }
 
-  fbl::SinglyLinkedList<MBuf*> bufs;
-  for (size_t need = 1 + ((len - 1) / MBuf::kPayloadSize); need != 0; need--) {
-    auto buf = AllocMBuf();
-    if (buf == nullptr) {
-      while (!bufs.is_empty()) {
-        FreeMBuf(bufs.pop_front());
-      }
-      *written = 0;
-      return ZX_ERR_SHOULD_WAIT;
-    }
-    bufs.push_front(buf);
+  ktl::optional<MBufList> alloc_bufs = AllocMBufs(MBuf::NumBuffersForPayload(len));
+  if (!alloc_bufs.has_value()) {
+    *written = 0;
+    return ZX_ERR_SHOULD_WAIT;
   }
+  MBufList& bufs = *alloc_bufs;
 
   size_t pos = 0;
   for (auto& buf : bufs) {
     size_t copy_len = ktl::min(MBuf::kPayloadSize, len - pos);
     if (src.byte_offset(pos).copy_array_from_user(buf.data_, copy_len) != ZX_OK) {
-      while (!bufs.is_empty()) {
-        FreeMBuf(bufs.pop_front());
-      }
+      FreeMBufs(ktl::move(bufs));
       *written = 0;
       return ZX_ERR_INVALID_ARGS;  // Bad user buffer.
     }
@@ -167,16 +149,7 @@ zx_status_t MBufChain::WriteDatagram(user_in_ptr<const char> src, size_t len, si
   bufs.front().pkt_len_ = static_cast<uint32_t>(len);
 
   // Successfully built the packet mbufs. Put it on the socket.
-  while (!bufs.is_empty()) {
-    auto next = bufs.pop_front();
-    if (write_cursor_ == nullptr) {
-      DEBUG_ASSERT(buffers_.is_empty());
-      buffers_.push_front(next);
-    } else {
-      buffers_.insert_after(buffers_.make_iterator(*write_cursor_), next);
-    }
-    write_cursor_ = next;
-  }
+  buffers_.splice(buffers_.end(), bufs);
 
   *written = len;
   size_ += len;
@@ -184,32 +157,15 @@ zx_status_t MBufChain::WriteDatagram(user_in_ptr<const char> src, size_t len, si
 }
 
 zx_status_t MBufChain::WriteStream(user_in_ptr<const char> src, size_t len, size_t* written) {
-  if (write_cursor_ == nullptr) {
-    DEBUG_ASSERT(buffers_.is_empty());
-    write_cursor_ = AllocMBuf();
-    if (write_cursor_ == nullptr) {
-      *written = 0;
-      return ZX_ERR_SHOULD_WAIT;
-    }
-    buffers_.push_front(write_cursor_);
-  }
+  // Cap len by the max we are allowed to write.
+  len = ktl::min(kSizeMax - size_, len);
 
   size_t pos = 0;
-  while (pos < len) {
-    if (write_cursor_->rem() == 0) {
-      auto next = AllocMBuf();
-      if (next == nullptr)
-        break;
-      buffers_.insert_after(buffers_.make_iterator(*write_cursor_), next);
-      write_cursor_ = next;
-    }
-    char* dst = write_cursor_->data_ + write_cursor_->len_;
-    size_t copy_len = ktl::min(write_cursor_->rem(), len - pos);
-    if (size_ + copy_len > kSizeMax) {
-      copy_len = kSizeMax - size_;
-      if (copy_len == 0)
-        break;
-    }
+
+  auto write_buffer = [&](MBuf& buf) -> zx_status_t {
+    char* dst = buf.data_ + buf.len_;
+    size_t copy_len = ktl::min(buf.rem(), len - pos);
+
     zx_status_t status = src.byte_offset(pos).copy_array_from_user(dst, copy_len);
     if (status != ZX_OK) {
       // TODO(https://fxbug.dev/42109418): Note that although we set |written| for the benefit of
@@ -224,36 +180,72 @@ zx_status_t MBufChain::WriteStream(user_in_ptr<const char> src, size_t len, size
     }
 
     pos += copy_len;
-    write_cursor_->len_ += static_cast<uint32_t>(copy_len);
+    buf.len_ += static_cast<uint32_t>(copy_len);
     size_ += copy_len;
+    return ZX_OK;
+  };
+
+  // If there's space available in the write buffer, go there first.
+  if (!buffers_.is_empty() && buffers_.back().rem() > 0) {
+    zx_status_t status = write_buffer(buffers_.back());
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+
+  // See if we need to allocate additional buffers.
+  if (pos != len) {
+    if (ktl::optional<MBufList> bufs = AllocMBufs(MBuf::NumBuffersForPayload(len - pos))) {
+      while (!bufs->is_empty()) {
+        zx_status_t status = write_buffer(bufs->front());
+        if (status != ZX_OK) {
+          FreeMBufs(ktl::move(*bufs));
+          return status;
+        }
+        buffers_.push_back(bufs->pop_front());
+      }
+    }
   }
 
   *written = pos;
-
-  if (pos == 0)
+  if (pos == 0) {
     return ZX_ERR_SHOULD_WAIT;
-
+  }
   return ZX_OK;
 }
 
-MBufChain::MBuf* MBufChain::AllocMBuf() {
-  if (freelist_.is_empty()) {
-    fbl::AllocChecker ac;
-    MBuf* buf = new (&ac) MBuf();
-    return (!ac.check()) ? nullptr : buf;
+ktl::optional<fbl::DoublyLinkedList<MBufChain::MBuf*>> MBufChain::AllocMBufs(size_t num) {
+  list_node_t pages = LIST_INITIAL_VALUE(pages);
+  zx_status_t status = Pmm::Node().AllocPages(num, 0, &pages);
+  if (status != ZX_OK) {
+    return ktl::nullopt;
   }
-  kcounter_add(mbuf_free_list_bytes_count, -static_cast<int64_t>(sizeof(MBufChain::MBuf)));
-  return freelist_.pop_front();
+  MBufList ret;
+  while (!list_is_empty(&pages)) {
+    vm_page_t* page = list_remove_head_type(&pages, vm_page_t, queue_node);
+    MBuf* buf = reinterpret_cast<MBuf*>(paddr_to_physmap(page->paddr()));
+    new (buf) MBuf(page);
+    ret.push_front(buf);
+  }
+  return ret;
 }
 
-void MBufChain::FreeMBuf(MBuf* buf) {
-  buf->len_ = 0u;
-  buf->pkt_len_ = 0u;
-  freelist_.push_front(buf);
-  kcounter_add(mbuf_free_list_bytes_count, sizeof(MBufChain::MBuf));
+void MBufChain::FreeMBufs(MBufList&& bufs) {
+  list_node_t pages = LIST_INITIAL_VALUE(pages);
+
+  while (!bufs.is_empty()) {
+    MBuf* buf = bufs.pop_front();
+    vm_page_t* page = buf->page_;
+    buf->~MBuf();
+    list_add_head(&pages, &page->queue_node);
+  }
+  Pmm::Node().FreeList(&pages);
 }
 
-MBufChain::MBuf::MBuf() { kcounter_add(mbuf_total_bytes_count, sizeof(MBufChain::MBuf)); }
+MBufChain::MBuf::MBuf(vm_page_t* page) : page_(page) {
+  page->set_state(vm_page_state::IPC);
+  kcounter_add(mbuf_total_bytes_count, sizeof(MBufChain::MBuf));
+}
 
 MBufChain::MBuf::~MBuf() {
   kcounter_add(mbuf_total_bytes_count, -static_cast<int64_t>(sizeof(MBufChain::MBuf)));
