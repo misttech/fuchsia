@@ -76,6 +76,13 @@
           },
           {
             "projects": [
+              "prebuilt/virtualization/packages/aosp_gki"
+            ],
+            "bug": "https://fxbug.dev/436919814",
+            "notes": ["It's Linux"]
+          },
+          {
+            "projects": [
               "third_party/pylibs/pylint"
             ],
             "bug": "fxbug.dev/42084613",
