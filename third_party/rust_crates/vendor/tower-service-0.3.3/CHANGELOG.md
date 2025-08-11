@@ -1,3 +1,19 @@
+# 0.3.2
+
+- **all**: new functions const when possible ([#760])
+- **documentation**: Clarify subtlety around cloning and readiness in the `Service` docs. ([#622])
+- **documentation**: service: Call inner.poll_ready() in docs when cloning inner ([#679])
+
+[#760]: https://github.com/tower-rs/tower/pull/760
+[#622]: https://github.com/tower-rs/tower/pull/662
+[#679]: https://github.com/tower-rs/tower/pull/679
+
+# 0.3.1 (November 29, 2019)
+
+- Improve example in `Service` docs. ([#510])
+
+[#510]: https://github.com/tower-rs/tower/pull/510
+
 # 0.3.0 (November 29, 2019)
 
 - Update to `futures 0.3`.

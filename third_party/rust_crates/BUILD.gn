@@ -8255,7 +8255,7 @@ rustc_library("hyper-v0_14_19") {
   deps += [ ":itoa-v1_0_15" ]
   deps += [ ":pin-project-lite-v0_2_13" ]
   deps += [ ":tokio-v1_38_1" ]
-  deps += [ ":tower-service-v0_3_0" ]
+  deps += [ ":tower-service-v0_3_3" ]
   deps += [ ":tracing-v0_1_40" ]
   deps += [ ":want-v0_3_1" ]
 
@@ -18498,17 +18498,17 @@ rustc_library("toml_edit-v0_2_1") {
   applicable_licenses = [ ":toml_edit-v0_2_1.license" ]
 }
 
-license("tower-service-v0_3_0.license") {
+license("tower-service-v0_3_3.license") {
   public_package_name = "tower_service"
   license_files =
-      [ "//third_party/rust_crates/vendor/tower-service-0.3.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/tower-service-0.3.3/LICENSE" ]
 }
 
-rustc_library("tower-service-v0_3_0") {
+rustc_library("tower-service-v0_3_3") {
   crate_name = "tower_service"
   source_root =
-      "//third_party/rust_crates/vendor/tower-service-0.3.0/src/lib.rs"
-  output_name = "tower_service-2289a8e10b994b8a"
+      "//third_party/rust_crates/vendor/tower-service-0.3.3/src/lib.rs"
+  output_name = "tower_service-51fbc2b731b07ba7"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -18520,13 +18520,13 @@ rustc_library("tower-service-v0_3_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2289a8e10b994b8a",
-    "-Cextra-filename=-2289a8e10b994b8a",
+    "-Cmetadata=51fbc2b731b07ba7",
+    "-Cextra-filename=-51fbc2b731b07ba7",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tower-service-v0_3_0.license" ]
+  applicable_licenses = [ ":tower-service-v0_3_3.license" ]
 }
 
 license("tracing-v0_1_40.license") {
