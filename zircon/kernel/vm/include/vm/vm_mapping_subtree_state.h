@@ -225,7 +225,7 @@ class VmMappingSubtreeState::Observer {
   }
 
  private:
-  template <typename, typename, typename, typename, typename, typename>
+  template <typename, typename, typename, typename, fbl::SizeOrder, typename, typename>
   friend class fbl::WAVLTree;
 
   // Mutable accessor. This accessor bypasses lock analysis for simplicity, since it is called

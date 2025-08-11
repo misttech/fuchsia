@@ -112,7 +112,7 @@ struct WAVLTreeNodeStateBase
   }
 
  protected:
-  template <typename, typename, typename, typename, typename, typename>
+  template <typename, typename, typename, typename, SizeOrder, typename, typename>
   friend class WAVLTree;
   friend class tests::intrusive_containers::WAVLTreeChecker;
   friend class tests::intrusive_containers::WAVLBalanceTestObserver;
@@ -186,7 +186,7 @@ struct WAVLTreeContainable {
 template <typename KeyType_, typename PtrType_,
           typename KeyTraits_ = DefaultKeyedObjectTraits<
               KeyType_, typename internal::ContainerPtrTraits<PtrType_>::ValueType>,
-          typename TagType_ = DefaultObjectTag,
+          typename TagType_ = DefaultObjectTag, SizeOrder ListSizeOrder_ = SizeOrder::Constant,
           typename NodeTraits_ = DefaultWAVLTreeTraits<PtrType_, TagType_>,
           typename Observer_ = tests::intrusive_containers::DefaultWAVLTreeObserver>
 class __POINTER(KeyType_) WAVLTree {
@@ -199,6 +199,7 @@ class __POINTER(KeyType_) WAVLTree {
 
  public:
   // Aliases used to reduce verbosity and expose types/traits to tests
+  static constexpr SizeOrder ListSizeOrder = ListSizeOrder_;
   using KeyType = KeyType_;
   using PtrType = PtrType_;
   using KeyTraits = KeyTraits_;
@@ -210,7 +211,8 @@ class __POINTER(KeyType_) WAVLTree {
   using RawPtrType = typename PtrTraits::RawPtrType;
   using ValueType = typename PtrTraits::ValueType;
   using RefType = typename PtrTraits::RefType;
-  using ContainerType = WAVLTree<KeyType_, PtrType_, KeyTraits_, TagType_, NodeTraits_, Observer_>;
+  using ContainerType =
+      WAVLTree<KeyType_, PtrType_, KeyTraits_, TagType_, ListSizeOrder_, NodeTraits_, Observer_>;
   using CheckerType = ::fbl::tests::intrusive_containers::WAVLTreeChecker;
 
   // Declarations of the standard iterator types.
@@ -224,7 +226,7 @@ class __POINTER(KeyType_) WAVLTree {
   // the amortized constant erase time.
   //
   static constexpr bool SupportsConstantOrderErase = true;
-  static constexpr bool SupportsConstantOrderSize = true;
+  static constexpr bool SupportsConstantOrderSize = (ListSizeOrder == SizeOrder::Constant);
   static constexpr bool IsAssociative = true;
   static constexpr bool IsSequenced = false;
 
@@ -554,7 +556,7 @@ class __POINTER(KeyType_) WAVLTree {
     ZX_DEBUG_ASSERT(root_ == nullptr);
     left_most_ = sentinel();
     right_most_ = sentinel();
-    count_ = 0;
+    size_tracker_.Reset();
   }
 
   // clear_unsafe
@@ -571,7 +573,7 @@ class __POINTER(KeyType_) WAVLTree {
     root_ = nullptr;
     left_most_ = sentinel();
     right_most_ = sentinel();
-    count_ = 0;
+    size_tracker_.Reset();
   }
 
   // swap : swaps the contents of two trees.
@@ -579,15 +581,39 @@ class __POINTER(KeyType_) WAVLTree {
     internal::Swap(root_, other.root_);
     internal::Swap(left_most_, other.left_most_);
     internal::Swap(right_most_, other.right_most_);
-    internal::Swap(count_, other.count_);
+    size_tracker_.Swap(other.size_tracker_);
 
     // Fix up the sentinel values.
     FixSentinelsAfterSwap();
     other.FixSentinelsAfterSwap();
   }
 
-  // size : return the current number of elements in the tree.
-  size_t size() const { return count_; }
+  // size_slow
+  //
+  // count the elements in the list in O(n) fashion
+  size_t size_slow() const {
+    // It is illegal to call this if the user requested constant order size
+    // operations.
+    static_assert(
+        ListSizeOrder == SizeOrder::N,
+        "size_slow is only allowed when using a list which has O(N) size!  Use size() instead.");
+
+    size_t size = 0;
+
+    for (auto iter = cbegin(); iter != cend(); ++iter) {
+      size++;
+    }
+
+    return size;
+  }
+
+  // size : Only allowed when the user has selected an SizeOrder::Constant for this list.
+  size_t size() const {
+    static_assert(
+        ListSizeOrder == SizeOrder::Constant,
+        "size is only allowed when using a list which has O(1) size!  Use size_slow() instead.");
+    return size_tracker_.Count();
+  }
 
   // erase_if
   //
@@ -870,7 +896,7 @@ class __POINTER(KeyType_) WAVLTree {
       right_most_ = PtrTraits::GetRaw(ptr);
 
       root_ = PtrTraits::Leak(ptr);
-      ++count_;
+      size_tracker_.Inc(1);
       Observer::RecordInsert(root());
       return;
     }
@@ -947,7 +973,7 @@ class __POINTER(KeyType_) WAVLTree {
     ns.parent_ = parent;
 
     *owner = PtrTraits::Leak(ptr);
-    ++count_;
+    size_tracker_.Inc(1);
 
     Observer::RecordInsert(iterator(*owner));
 
@@ -1047,7 +1073,9 @@ class __POINTER(KeyType_) WAVLTree {
       if (internal::is_sentinel_ptr(ns.left_)) {
         if (internal::is_sentinel_ptr(ns.right_)) {
           // Target is both left and right most.
-          ZX_DEBUG_ASSERT(count_ == 1);
+          if constexpr (ListSizeOrder == SizeOrder::Constant) {
+            ZX_DEBUG_ASSERT(size_tracker_.Count() == 1);
+          }
           ZX_DEBUG_ASSERT(internal::is_sentinel_ptr(ns.parent_));
           left_most_ = sentinel();
           right_most_ = sentinel();
@@ -1080,7 +1108,7 @@ class __POINTER(KeyType_) WAVLTree {
     ZX_DEBUG_ASSERT(ns.IsValid() && !ns.InContainer());
 
     // Update the count bookkeeping.
-    --count_;
+    size_tracker_.Dec(1);
     Observer::RecordErase(target, iterator(parent));
 
     // Time to rebalance.  We know that we don't need to rebalance if we
@@ -1956,7 +1984,7 @@ class __POINTER(KeyType_) WAVLTree {
   RawPtrType root_ = nullptr;
   RawPtrType left_most_ = sentinel();
   RawPtrType right_most_ = sentinel();
-  size_t count_ = 0;
+  __NO_UNIQUE_ADDRESS internal::SizeTracker<ListSizeOrder_> size_tracker_;
 };
 
 // TaggedWAVLTree<> is intended for use with ContainableBaseClasses<>.
@@ -1973,8 +2001,9 @@ class __POINTER(KeyType_) WAVLTree {
 template <typename KeyType, typename PtrType, typename TagType,
           typename KeyTraits = DefaultKeyedObjectTraits<
               KeyType, typename internal::ContainerPtrTraits<PtrType>::ValueType>,
+          SizeOrder ListSizeOrder = SizeOrder::Constant,
           typename Observer = tests::intrusive_containers::DefaultWAVLTreeObserver>
-using TaggedWAVLTree = WAVLTree<KeyType, PtrType, KeyTraits, TagType,
+using TaggedWAVLTree = WAVLTree<KeyType, PtrType, KeyTraits, TagType, ListSizeOrder,
                                 DefaultWAVLTreeTraits<PtrType, TagType>, Observer>;
 
 template <typename PtrType, typename TagType, NodeOptions Options = NodeOptions::None>

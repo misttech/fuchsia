@@ -66,9 +66,10 @@ struct AugmentedNodeTraits {
   static void ResetSubtreeValue(TestNode& node) { node.subtree_invariants.reset(); }
 };
 
-using TestTree =
-    fbl::WAVLTree<uint32_t, TestNode*, TestNodeTraits, fbl::DefaultObjectTag, TestNodeTraits,
-                  fbl::WAVLTreeAugmentedInvariantObserver<AugmentedNodeTraits>>;
+using TestTree = fbl::WAVLTree<uint32_t, TestNode*, TestNodeTraits, fbl::DefaultObjectTag,
+                               fbl::SizeOrder::Constant, TestNodeTraits,
+
+                               fbl::WAVLTreeAugmentedInvariantObserver<AugmentedNodeTraits>>;
 
 template <typename NodeCollection>
 void ValidateTree(const TestTree& tree, const NodeCollection& nodes,

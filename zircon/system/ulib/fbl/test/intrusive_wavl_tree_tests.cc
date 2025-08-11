@@ -74,6 +74,7 @@ class WAVLTraits {
                                              PtrType,
                                              OtherContainerTraits,
                                              DefaultObjectTag,
+                                             SizeOrder::Constant,
                                              OtherContainerTraits>;
 
     struct Tag1 {};
@@ -353,7 +354,8 @@ using BalanceTestObjPtr = std::unique_ptr<BalanceTestObj>;
 using BalanceTestTree =
     WAVLTree<BalanceTestKeyType, BalanceTestObjPtr,
              DefaultKeyedObjectTraits<BalanceTestKeyType, BalanceTestObj>, DefaultObjectTag,
-             DefaultWAVLTreeTraits<BalanceTestObjPtr, DefaultObjectTag>, WAVLBalanceTestObserver>;
+             SizeOrder::Constant, DefaultWAVLTreeTraits<BalanceTestObjPtr, DefaultObjectTag>,
+             WAVLBalanceTestObserver>;
 
 class BalanceTestObj {
  public:

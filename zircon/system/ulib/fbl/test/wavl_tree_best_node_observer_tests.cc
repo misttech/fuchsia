@@ -46,7 +46,8 @@ struct BestNodeTraits {
 };
 
 using TestTree = fbl::WAVLTree<uint32_t, TestNode*, TestNodeTraits, fbl::DefaultObjectTag,
-                               TestNodeTraits, fbl::WAVLTreeBestNodeObserver<BestNodeTraits>>;
+                               fbl::SizeOrder::Constant, TestNodeTraits,
+                               fbl::WAVLTreeBestNodeObserver<BestNodeTraits>>;
 
 template <typename NodeCollection>
 void ValidateTree(const TestTree& tree, const NodeCollection& nodes,

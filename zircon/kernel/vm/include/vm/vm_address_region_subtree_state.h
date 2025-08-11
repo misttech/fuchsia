@@ -292,7 +292,7 @@ class VmAddressRegionSubtreeState::Observer {
   }
 
  private:
-  template <typename, typename, typename, typename, typename, typename>
+  template <typename, typename, typename, typename, fbl::SizeOrder, typename, typename>
   friend class fbl::WAVLTree;
 
   // Mutable accessors. These accessors bypass lock analysis for simplicity, since they are called

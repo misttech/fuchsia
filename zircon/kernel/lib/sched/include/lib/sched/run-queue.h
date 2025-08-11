@@ -34,7 +34,7 @@ class RunQueue {
   struct SubtreeMinFinishObserverTraits;
 
   using ReadyTree = fbl::WAVLTree<typename ReadyNodeTraits::KeyType, Thread*, ReadyNodeTraits,
-                                  fbl::DefaultObjectTag, ReadyNodeTraits,
+                                  fbl::DefaultObjectTag, fbl::SizeOrder::Constant, ReadyNodeTraits,
                                   fbl::WAVLTreeBestNodeObserver<SubtreeMinFinishObserverTraits>>;
 
  public:
@@ -278,7 +278,7 @@ class RunQueue {
   // See actively_blocked_ below.
   using ActivelyBlockedTree =
       fbl::WAVLTree<typename ActivelyBlockedNodeTraits::KeyType, Thread*, ActivelyBlockedNodeTraits,
-                    fbl::DefaultObjectTag, ActivelyBlockedNodeTraits>;
+                    fbl::DefaultObjectTag, fbl::SizeOrder::Constant, ActivelyBlockedNodeTraits>;
 
   // Provided both threads are active, this gives whether the first should be
   // scheduled before the second, which is a simple lexicographic order on

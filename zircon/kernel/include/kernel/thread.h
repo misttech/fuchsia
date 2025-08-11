@@ -370,9 +370,10 @@ class WaitQueueCollection {
       TA_REQ_SHARED(ChainLockable::GetLock(t));
 #endif
 
-  using BlockedThreadTree = fbl::WAVLTree<Key, Thread*, BlockedThreadTreeTraits,
-                                          fbl::DefaultObjectTag, BlockedThreadTreeTraits,
-                                          fbl::WAVLTreeBestNodeObserver<MinRelativeDeadlineTraits>>;
+  using BlockedThreadTree =
+      fbl::WAVLTree<Key, Thread*, BlockedThreadTreeTraits, fbl::DefaultObjectTag,
+                    fbl::SizeOrder::Constant, BlockedThreadTreeTraits,
+                    fbl::WAVLTreeBestNodeObserver<MinRelativeDeadlineTraits>>;
   BlockedThreadTree threads_;
 };
 

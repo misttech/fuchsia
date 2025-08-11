@@ -1034,7 +1034,7 @@ class Scheduler {
 
   // Alias of the WAVLTree type for the run queue.
   using RunQueue = fbl::WAVLTree<TaskTraits::KeyType, Thread*, TaskTraits, fbl::DefaultObjectTag,
-                                 TaskTraits, SubtreeObserver>;
+                                 fbl::SizeOrder::Constant, TaskTraits, SubtreeObserver>;
 
   // Finds the next eligible thread in the given run queue.
   //
