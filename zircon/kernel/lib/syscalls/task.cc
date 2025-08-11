@@ -448,12 +448,11 @@ zx_status_t sys_process_read_memory(zx_handle_t handle, zx_vaddr_t vaddr, user_o
   uint64_t offset;
   {
     Guard<CriticalMutex> guard{vm_mapping->lock()};
-    offset = vaddr - vm_mapping->base_locked() + vm_mapping->object_offset_locked();
+    offset = vaddr - vm_mapping->base() + vm_mapping->object_offset_locked();
     // TODO(https://fxbug.dev/42106495): While this limits reading to the mapped address space of
     // this VMO, it should be reading from multiple VMOs, not a single one.
     // Additionally, it is racy with the mapping going away.
-    buffer_size =
-        ktl::min(buffer_size, vm_mapping->size_locked() - (vaddr - vm_mapping->base_locked()));
+    buffer_size = ktl::min(buffer_size, vm_mapping->size() - (vaddr - vm_mapping->base()));
   }
   auto [st, out_actual] = vmo->ReadUser(buffer.reinterpret<char>(), offset, buffer_size,
                                         VmObjectReadWriteOptions::TrimLength);
@@ -525,12 +524,11 @@ zx_status_t sys_process_write_memory(zx_handle_t handle, zx_vaddr_t vaddr,
     }
     // |ForceWritableLocked| may have changed vmo, so re-query it.
     vmo = vm_mapping->vmo_locked();
-    offset = vaddr - vm_mapping->base_locked() + vm_mapping->object_offset_locked();
+    offset = vaddr - vm_mapping->base() + vm_mapping->object_offset_locked();
     // TODO(https://fxbug.dev/42106495): While this limits writing to the mapped address space of
     // this VMO, it should be writing to multiple VMOs, not a single one.
     // Additionally, it is racy with the mapping going away.
-    buffer_size =
-        ktl::min(buffer_size, vm_mapping->size_locked() - (vaddr - vm_mapping->base_locked()));
+    buffer_size = ktl::min(buffer_size, vm_mapping->size() - (vaddr - vm_mapping->base()));
   }
   auto [st, out_actual] = vmo->WriteUser(buffer.reinterpret<const char>(), offset, buffer_size,
                                          VmObjectReadWriteOptions::TrimLength,

@@ -75,7 +75,7 @@ RestrictedState::RestrictedState(fbl::RefPtr<VmObjectPaged> state_vmo,
                                  fbl::RefPtr<VmMapping> state_mapping)
     : state_vmo_(ktl::move(state_vmo)),
       state_mapping_(ktl::move(state_mapping)),
-      state_mapping_ptr_(reinterpret_cast<void*>(state_mapping_->base_locking())) {
+      state_mapping_ptr_(reinterpret_cast<void*>(state_mapping_->base())) {
   DEBUG_ASSERT(is_kernel_address(reinterpret_cast<vaddr_t>(state_mapping_ptr_)));
 }
 

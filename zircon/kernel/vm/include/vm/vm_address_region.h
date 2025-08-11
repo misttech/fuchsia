@@ -108,16 +108,8 @@ class VmAddressRegionOrMapping
   virtual zx_status_t Destroy();
 
   // accessors
-  vaddr_t base_locked() const TA_REQ(lock()) { return base_; }
-  size_t size_locked() const TA_REQ(lock()) { return size_; }
-  vaddr_t base_locking() const TA_EXCL(lock()) {
-    Guard<CriticalMutex> guard{lock()};
-    return base_;
-  }
-  size_t size_locking() const TA_EXCL(lock()) {
-    Guard<CriticalMutex> guard{lock()};
-    return size_;
-  }
+  vaddr_t base() const { return base_; }
+  size_t size() const { return size_; }
   uint32_t flags() const { return flags_; }
   const fbl::RefPtr<VmAspace>& aspace() const { return aspace_; }
 
@@ -267,8 +259,8 @@ class VmAddressRegionOrMapping
   const uint32_t flags_;
 
   // address/size within the container address space
-  vaddr_t base_ TA_GUARDED(lock());
-  size_t size_ TA_GUARDED(lock());
+  const vaddr_t base_;
+  const size_t size_;
 
   // pointer back to our member address space.  The aspace's lock is used
   // to serialize all modifications.
@@ -316,12 +308,11 @@ class RegionList final {
     }
     // Subregion size should never be zero unless during unmapping which should never overlap with
     // this operation.
-    AssertHeld(itr->lock_ref());
-    DEBUG_ASSERT(itr->size_locked() > 0);
+    DEBUG_ASSERT(itr->size() > 0);
     vaddr_t region_end;
-    bool overflowed = add_overflow(itr->base_locked(), itr->size_locked() - 1, &region_end);
+    bool overflowed = add_overflow(itr->base(), itr->size() - 1, &region_end);
     ASSERT(!overflowed);
-    if (itr->base_locked() > addr || addr > region_end) {
+    if (itr->base() > addr || addr > region_end) {
       return nullptr;
     }
 
@@ -344,8 +335,7 @@ class RegionList final {
     if (!itr.IsValid()) {
       itr = regions_.begin();
     } else {
-      AssertHeld(itr->lock_ref());
-      if (base >= itr->base_locked() && base - itr->base_locked() >= itr->size_locked()) {
+      if (base >= itr->base() && base - itr->base() >= itr->size()) {
         // If *base* isn't in this region, ignore it.
         ++itr;
       }
@@ -368,8 +358,7 @@ class RegionList final {
 
     if (prev.IsValid()) {
       vaddr_t prev_last_byte;
-      AssertHeld(prev->lock_ref());
-      if (add_overflow(prev->base_locked(), prev->size_locked() - 1, &prev_last_byte)) {
+      if (add_overflow(prev->base(), prev->size() - 1, &prev_last_byte)) {
         return false;
       }
       if (prev_last_byte >= base) {
@@ -382,8 +371,7 @@ class RegionList final {
       if (add_overflow(base, size - 1, &last_byte)) {
         return false;
       }
-      AssertHeld(next->lock_ref());
-      if (next->base_locked() <= last_byte) {
+      if (next->base() <= last_byte) {
         return false;
       }
     }
@@ -652,11 +640,6 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   // returns nullptr.  This is a non-recursive search.
   fbl::RefPtr<VmAddressRegionOrMapping> FindRegion(vaddr_t addr);
   fbl::RefPtr<VmAddressRegionOrMapping> FindRegionLocked(vaddr_t addr) TA_REQ(lock());
-
-  // Base & size accessors
-  // Lock not required as base & size will never change in VmAddressRegion
-  vaddr_t base() const TA_NO_THREAD_SAFETY_ANALYSIS { return base_; }
-  size_t size() const TA_NO_THREAD_SAFETY_ANALYSIS { return size_; }
 
   enum class RangeOpType {
     Commit,
@@ -1019,12 +1002,6 @@ class VmMapping final : public VmAddressRegionOrMapping {
       TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return object_offset_;
   }
-  vaddr_t base_locked_object() const TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return base_;
-  }
-  size_t size_locked_object() const TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return size_;
-  }
 
   Lock<CriticalMutex>* object_lock() const TA_RET_CAP(object_->lock()) TA_REQ(lock()) {
     return object_->lock();
@@ -1239,31 +1216,6 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // last reference when removing from the parent vmar. If merging is successfully the newly created
   // and installed mapping is returned, otherwise a nullptr is returned.
   fbl::RefPtr<VmMapping> TryMergeRightNeighborLocked(VmMapping* right_candidate) TA_REQ(lock());
-
-  // Helper function that updates the |size_| to |new_size| and also increments the mapping
-  // generation count. Requires both the aspace lock and the object lock to be held, since |size_|
-  // can be read under either of those locks.
-  void set_size_locked(size_t new_size) TA_REQ(lock()) TA_REQ(object_->lock()) {
-    // Mappings cannot be zero sized while the mapping is in the region list.
-    DEBUG_ASSERT(new_size > 0 || !in_subregion_tree());
-    // Check that if we have additional protection regions that they have already been constrained
-    // to the range of the new size.
-    DEBUG_ASSERT(protection_ranges_.DebugNodesWithinRange(base_, new_size));
-
-    const bool size_changed = size_ != new_size;
-    size_ = new_size;
-
-    // Restore the invalidated subtree invariants when the size changes while the node is in the
-    // subregion tree.
-    if (size_changed && in_subregion_tree()) {
-      auto iter = RegionList<>::ChildList::materialize_iterator(*this);
-      RegionList<>::Observer::RestoreInvariants(iter);
-    }
-    if (size_changed && vmo_mapping_node_.InContainer()) {
-      auto iter = VmObject::MappingTree::materialize_iterator(*this);
-      VmMappingSubtreeState::Observer<VmMapping>::RestoreInvariants(iter);
-    }
-  }
 
   // For a VmMapping |state_| is only modified either with the object_ lock held, or if there is no
   // |object_|. Therefore it is safe to read state if just the object lock is held.

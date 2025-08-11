@@ -762,8 +762,8 @@ static bool vmaspace_merge_mapping_test() {
               ASSERT_NONNULL(map);
               AssertHeld(map->lock_ref());
               if (expected_size[j] != 0) {
-                EXPECT_EQ(map->size_locked(), expected_size[j]);
-                EXPECT_EQ(map->base_locked(), vmar->base_locked() + test.mappings[j].vmar_offset);
+                EXPECT_EQ(map->size(), expected_size[j]);
+                EXPECT_EQ(map->base(), vmar->base() + test.mappings[j].vmar_offset);
               }
             }
           }
@@ -939,9 +939,9 @@ static bool vmaspace_priority_mapping_overwrite_test() {
   status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, PAGE_SIZE, &vmo2);
   ASSERT_OK(status);
 
-  mapping_result = vmar->CreateVmMapping(mapping->base_locking() - vmar->base(),
-                                         mapping->size_locking(), 0, VMAR_FLAG_SPECIFIC_OVERWRITE,
-                                         vmo2, 0, kArchRwUserFlags, "test-mapping2");
+  mapping_result = vmar->CreateVmMapping(mapping->base() - vmar->base(), mapping->size(), 0,
+                                         VMAR_FLAG_SPECIFIC_OVERWRITE, vmo2, 0, kArchRwUserFlags,
+                                         "test-mapping2");
   ASSERT_OK(mapping_result.status_value());
 
   // Original VMO should have lost its priority, and the VMO for our new mapping should have gained.
@@ -995,7 +995,7 @@ static bool vmaspace_priority_merged_mapping_test() {
   ASSERT(region);
   fbl::RefPtr<VmMapping> map = region->as_vm_mapping();
   ASSERT(map);
-  EXPECT_EQ(static_cast<size_t>(PAGE_SIZE * 2u), map->size_locking());
+  EXPECT_EQ(static_cast<size_t>(PAGE_SIZE * 2u), map->size());
 
   // Now destroy the mapping and check the VMO loses priority.
   EXPECT_OK(map->Destroy());
@@ -1362,7 +1362,7 @@ static bool vm_mapping_attribution_commit_decommit_test() {
               make_private_attribution_counts(8ul * PAGE_SIZE, 0));
 
   // Decommit pages in the vmo via the mapping.
-  status = mapping->DecommitRange(0, mapping->size_locking());
+  status = mapping->DecommitRange(0, mapping->size());
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(2ul * PAGE_SIZE, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() == AttributionCounts{});
@@ -1370,7 +1370,6 @@ static bool vm_mapping_attribution_commit_decommit_test() {
   // Destroy the mapping.
   status = mapping->Destroy();
   ASSERT_EQ(ZX_OK, status);
-  EXPECT_EQ(0ul, mapping->size_locking());
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(2ul * PAGE_SIZE, 0));
   EXPECT_TRUE((vm::AttributionCounts{}) == mapping->GetAttributedMemory());
 
@@ -1411,43 +1410,42 @@ static bool vm_mapping_attribution_map_unmap_test() {
   EXPECT_TRUE(mapping->GetAttributedMemory() == AttributionCounts{});
 
   // Commit pages in the vmo via the mapping.
-  status = mapping->MapRange(0, mapping->size_locking(), true);
+  status = mapping->MapRange(0, mapping->size(), true);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
               make_private_attribution_counts(8ul * PAGE_SIZE, 0));
 
   // Unmap from the right end of the mapping.
-  auto old_base = mapping->base_locking();
-  status =
-      mapping->DebugUnmap(mapping->base_locking() + mapping->size_locking() - PAGE_SIZE, PAGE_SIZE);
+  auto old_base = mapping->base();
+  status = mapping->DebugUnmap(mapping->base() + mapping->size() - PAGE_SIZE, PAGE_SIZE);
   ASSERT_EQ(ZX_OK, status);
   mapping = aspace->FindRegion(old_base)->as_vm_mapping();
   ASSERT_TRUE(mapping);
-  EXPECT_EQ(old_base, mapping->base_locking());
-  EXPECT_EQ(7ul * PAGE_SIZE, mapping->size_locking());
+  EXPECT_EQ(old_base, mapping->base());
+  EXPECT_EQ(7ul * PAGE_SIZE, mapping->size());
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
               make_private_attribution_counts(7ul * PAGE_SIZE, 0));
 
   // Unmap from the center of the mapping.
-  status = mapping->DebugUnmap(mapping->base_locking() + 4 * PAGE_SIZE, PAGE_SIZE);
+  status = mapping->DebugUnmap(mapping->base() + 4 * PAGE_SIZE, PAGE_SIZE);
   ASSERT_EQ(ZX_OK, status);
   mapping = aspace->FindRegion(old_base)->as_vm_mapping();
   ASSERT_TRUE(mapping);
-  EXPECT_EQ(old_base, mapping->base_locking());
-  EXPECT_EQ(4ul * PAGE_SIZE, mapping->size_locking());
+  EXPECT_EQ(old_base, mapping->base());
+  EXPECT_EQ(4ul * PAGE_SIZE, mapping->size());
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
               make_private_attribution_counts(4ul * PAGE_SIZE, 0));
 
   // Unmap from the left end of the mapping.
-  status = mapping->DebugUnmap(mapping->base_locking(), PAGE_SIZE);
+  status = mapping->DebugUnmap(mapping->base(), PAGE_SIZE);
   ASSERT_EQ(ZX_OK, status);
   mapping = aspace->FindRegion(old_base + PAGE_SIZE)->as_vm_mapping();
   ASSERT_TRUE(mapping);
-  EXPECT_NE(old_base, mapping->base_locking());
-  EXPECT_EQ(3ul * PAGE_SIZE, mapping->size_locking());
+  EXPECT_NE(old_base, mapping->base());
+  EXPECT_EQ(3ul * PAGE_SIZE, mapping->size());
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * PAGE_SIZE, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
               make_private_attribution_counts(3ul * PAGE_SIZE, 0));
@@ -2585,11 +2583,11 @@ class EnumeratorTestHelper {
       if (region.mapping != next->region_or_mapping->is_mapping()) {
         return false;
       }
-      if (next->region_or_mapping->base_locked() !=
+      if (next->region_or_mapping->base() !=
           test_vmar_->base() + region.page_offset_begin * PAGE_SIZE) {
         return false;
       }
-      if (next->region_or_mapping->size_locked() !=
+      if (next->region_or_mapping->size() !=
           (region.page_offset_end - region.page_offset_begin) * PAGE_SIZE) {
         return false;
       }

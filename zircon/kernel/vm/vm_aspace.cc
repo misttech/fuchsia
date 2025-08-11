@@ -529,7 +529,7 @@ zx_status_t VmAspace::FreeRegion(vaddr_t va) {
   {
     Guard<CriticalMutex> guard{mapping->lock()};
     vmo_offset = mapping->object_offset_locked();
-    unpin_size = mapping->size_locked();
+    unpin_size = mapping->size();
   }
   zx_status_t status = mapping->Destroy();
   vmo->Unpin(vmo_offset, unpin_size);
@@ -757,8 +757,7 @@ uintptr_t VmAspace::vdso_base_address() const {
 uintptr_t VmAspace::vdso_code_address() const {
   Guard<CriticalMutex> guard{&lock_};
   if (vdso_code_mapping_) {
-    AssertHeld(vdso_code_mapping_->lock_ref());
-    return vdso_code_mapping_->base_locked();
+    return vdso_code_mapping_->base();
   }
   return 0;
 }
@@ -780,9 +779,7 @@ void VmAspace::DropUserPageTables() {
 
 bool VmAspace::IntersectsVdsoCodeLocked(vaddr_t base, size_t size) const {
   if (vdso_code_mapping_) {
-    AssertHeld(vdso_code_mapping_->lock_ref());
-    return Intersects(vdso_code_mapping_->base_locked(), vdso_code_mapping_->size_locked(), base,
-                      size);
+    return Intersects(vdso_code_mapping_->base(), vdso_code_mapping_->size(), base, size);
   }
 
   return false;

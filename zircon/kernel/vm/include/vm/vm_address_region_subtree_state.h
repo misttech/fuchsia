@@ -235,11 +235,10 @@ class VmAddressRegionSubtreeState::Observer {
   template <typename T, typename = void>
   struct CheckMethods : ktl::false_type {};
   template <typename T>
-  struct CheckMethods<T, ktl::void_t<decltype(ktl::declval<Node>().lock_ref()),
-                                     decltype(ktl::declval<Node>().base_locked()),
-                                     decltype(ktl::declval<Node>().size_locked()),
-                                     decltype(ktl::declval<Node>().subtree_state_locked())>>
-      : ktl::true_type {};
+  struct CheckMethods<
+      T, ktl::void_t<decltype(ktl::declval<Node>().lock_ref()),
+                     decltype(ktl::declval<Node>().base()), decltype(ktl::declval<Node>().size()),
+                     decltype(ktl::declval<Node>().subtree_state_locked())>> : ktl::true_type {};
   static_assert(CheckMethods<Node>::value, "Node type does not implement the required interface.");
 
   // Evaluates to the const or non-const state type returned by Iter::subtree_state_locked().
@@ -266,12 +265,12 @@ class VmAddressRegionSubtreeState::Observer {
   // internally by the fbl::WAVLTree instance and the RegionList, which are collectively protected
   // by the same lock.
   template <typename Iter>
-  static vaddr_t FirstByte(Iter node) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return node->base_locked();
+  static vaddr_t FirstByte(Iter node) {
+    return node->base();
   }
   template <typename Iter>
-  static vaddr_t LastByte(Iter node) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return node->base_locked() + node->size_locked() - 1;
+  static vaddr_t LastByte(Iter node) {
+    return node->base() + node->size() - 1;
   }
   template <typename Iter, RequiresConstIter<Iter> = 0>
   static vaddr_t MinFirstByte(Iter node) TA_NO_THREAD_SAFETY_ANALYSIS {

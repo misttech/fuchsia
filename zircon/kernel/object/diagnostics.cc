@@ -804,11 +804,11 @@ class VmCounter final : public VmEnumerator {
  public:
   zx_status_t OnVmMapping(VmMapping* map, VmAddressRegion* vmar, uint depth, Guard<CriticalMutex>&)
       TA_REQ(map->lock()) TA_REQ(vmar->lock()) override {
-    usage.mapped_bytes += map->size_locked();
+    usage.mapped_bytes += map->size();
 
     auto vmo = map->vmo_locked();
     const VmObject::AttributionCounts counts =
-        vmo->GetAttributedMemoryInRange(map->object_offset_locked(), map->size_locked());
+        vmo->GetAttributedMemoryInRange(map->object_offset_locked(), map->size());
     const uint32_t share_count = vmo->share_count();
     // Portions of the VMO itself may have sharing via copy-on-write and so, regardless of how
     // many aspaces it is mapped into (represented by share_count), it may have a mix of reported
@@ -878,8 +878,8 @@ class AspaceEnumerator final : public VmEnumerator {
       TA_REQ(vmar->lock()) override {
     fbl::RefPtr<VmMapping> map(raw_map);
     AssertHeld(map->lock_ref());
-    const vaddr_t map_base = map->base_locked();
-    const size_t map_size = map->size_locked();
+    const vaddr_t map_base = map->base();
+    const size_t map_size = map->size();
     size_t enumeration_offset = 0;
 
     zx_info_maps_t entry = {};
@@ -933,7 +933,7 @@ class AspaceEnumerator final : public VmEnumerator {
         return ZX_ERR_INVALID_ARGS;
       }
       available_++;
-      if (map->base_locked() != map_base || map->size_locked() != map_size) {
+      if (map->base() != map_base || map->size() != map_size) {
         return ZX_ERR_NEXT;
       }
     }

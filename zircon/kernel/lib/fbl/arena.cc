@@ -159,13 +159,10 @@ void Arena::Pool::Init(const char* name, fbl::RefPtr<VmObject> vmo, fbl::RefPtr<
   slot_size_ = slot_size;
   mapping_ = ktl::move(mapping);
   vmo_ = ktl::move(vmo);
-  {
-    Guard<CriticalMutex> guard{mapping_->lock()};
-    committed_max_ = committed_ = top_ = start_ = reinterpret_cast<char*>(mapping_->base_locked());
-    end_ = start_ + mapping_->size_locked();
-    mapping_base = mapping_->base_locked();
-    mapping_size = mapping_->size_locked();
-  }
+  committed_max_ = committed_ = top_ = start_ = reinterpret_cast<char*>(mapping_->base());
+  end_ = start_ + mapping_->size();
+  mapping_base = mapping_->base();
+  mapping_size = mapping_->size();
 
   DEBUG_ASSERT(IS_PAGE_ROUNDED(start_));
   DEBUG_ASSERT(IS_PAGE_ROUNDED(end_));

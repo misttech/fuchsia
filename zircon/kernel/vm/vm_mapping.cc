@@ -353,8 +353,8 @@ bool VmMapping::ObjectRangeToVaddrRange(uint64_t offset, uint64_t len, vaddr_t* 
 
   // compute the intersection of the passed in vmo range and our mapping
   uint64_t offset_new;
-  if (!GetIntersect(object_offset_locked_object(), static_cast<uint64_t>(size_locked_object()),
-                    offset, len, &offset_new, virtual_len)) {
+  if (!GetIntersect(object_offset_locked_object(), static_cast<uint64_t>(size()), offset, len,
+                    &offset_new, virtual_len)) {
     return false;
   }
 
@@ -365,13 +365,12 @@ bool VmMapping::ObjectRangeToVaddrRange(uint64_t offset, uint64_t len, vaddr_t* 
 
   // make sure the base + offset is within our address space
   // should be, according to the range stored in base_ + size_
-  bool overflowed =
-      add_overflow(base_locked_object(), offset_new - object_offset_locked_object(), base);
+  bool overflowed = add_overflow(this->base(), offset_new - object_offset_locked_object(), base);
   ASSERT(!overflowed);
 
   // make sure we're only operating within our window
-  ASSERT(*base >= base_locked_object());
-  ASSERT((*base + *virtual_len - 1) <= (base_locked_object() + size_locked_object() - 1));
+  ASSERT(*base >= this->base());
+  ASSERT((*base + *virtual_len - 1) <= (this->base() + size() - 1));
 
   return true;
 }
@@ -467,10 +466,10 @@ void VmMapping::AspaceRemoveWriteLockedObject(uint64_t offset, uint64_t len) con
                        flags_ & VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING,
                    "region %p obj_offset %#" PRIx64 " size %zu, offset %#" PRIx64 " len %#" PRIx64
                    "\n",
-                   this, object_offset_locked_object(), size_locked_object(), offset, len);
+                   this, object_offset_locked_object(), size(), offset, len);
 
   zx_status_t status = ProtectRangesLockedObject().EnumerateProtectionRanges(
-      base_locked_object(), size_locked_object(), base, new_len,
+      this->base(), size(), base, new_len,
       [this](vaddr_t region_base, size_t region_len, uint mmu_flags) {
         // If this range doesn't currently support being writable then we can skip.
         if (!(mmu_flags & ARCH_MMU_FLAG_PERM_WRITE)) {
@@ -878,9 +877,6 @@ zx_status_t VmMapping::DestroyLockedObject(bool unmap) {
     parent_->subregions_.RemoveRegion(this);
   }
 
-  // The size may only be set to zero when not in the subregion tree.
-  set_size_locked(0);
-
   // detach from any object we have mapped. Note that we are holding the aspace_->lock() so we
   // will not race with other threads calling vmo()
   object_.reset();
@@ -1258,7 +1254,6 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
         ASSERT(status == ZX_OK);
         status = right_candidate->DestroyLockedObject(false);
         ASSERT(status == ZX_OK);
-
         new_mapping->ActivateLocked();
         return false;
       }();
@@ -1358,7 +1353,7 @@ void VmMapping::CommitHighMemoryPriority() {
     }
     vmo = object_;
     offset = object_offset_locked();
-    len = size_locked();
+    len = size();
   }
   DEBUG_ASSERT(vmo);
   vmo->CommitHighPriorityPages(offset, len);
@@ -1388,7 +1383,7 @@ zx_status_t VmMapping::ForceWritableLocked() {
   // Create a clone of our VMO that covers the size of our mapping.
   fbl::RefPtr<VmObject> clone;
   zx_status_t status = object_->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite,
-                                            object_offset_locked(), size_locked(), true, &clone);
+                                            object_offset_locked(), size(), true, &clone);
   if (status != ZX_OK) {
     return status;
   }

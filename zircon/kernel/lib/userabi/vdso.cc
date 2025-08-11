@@ -426,7 +426,7 @@ const VDso* VDso::Create(
 }
 
 uintptr_t VDso::base_address(const fbl::RefPtr<VmMapping>& code_mapping) {
-  return code_mapping->base_locked() - VDSO_CODE_START;
+  return code_mapping->base() - VDSO_CODE_START;
 }
 
 // The time_values_vmo is a child slice of the read-only section of the vDSO that contains just the

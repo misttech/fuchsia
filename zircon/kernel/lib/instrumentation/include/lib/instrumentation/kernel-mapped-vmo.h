@@ -33,8 +33,8 @@ class KernelMappedVmo {
   }
 
   // Return the bounds of the mapping in the kernel address space.
-  vaddr_t base_locking() const { return mapping_->base_locking(); }
-  size_t size_locking() const { return mapping_->size_locking(); }
+  vaddr_t base_locking() const { return mapping_->base(); }
+  size_t size_locking() const { return mapping_->size(); }
 
  private:
   PinnedVmObject pinned_vmo_;

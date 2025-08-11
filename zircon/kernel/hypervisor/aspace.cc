@@ -154,8 +154,8 @@ zx::result<GuestPtr> GuestPhysicalAspace::CreateGuestPtr(zx_gpaddr_t guest_paddr
       return zx::error(ZX_ERR_NOT_FOUND);
     }
     AssertHeld(guest_mapping->lock_ref());
-    intra_mapping_offset = begin - guest_mapping->base_locked();
-    if (!InRange(intra_mapping_offset, mapping_len, guest_mapping->size_locked())) {
+    intra_mapping_offset = begin - guest_mapping->base();
+    if (!InRange(intra_mapping_offset, mapping_len, guest_mapping->size())) {
       // The address range is not contained within a single mapping.
       return zx::error(ZX_ERR_OUT_OF_RANGE);
     }

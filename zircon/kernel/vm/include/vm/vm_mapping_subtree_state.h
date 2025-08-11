@@ -197,8 +197,7 @@ class VmMappingSubtreeState::Observer {
   template <typename T>
   struct CheckMethods<T, ktl::void_t<decltype(ktl::declval<Node>().lock_ref()),
                                      decltype(ktl::declval<Node>().object_offset_locked_object()),
-                                     decltype(ktl::declval<Node>().size_locked_object())>>
-      : ktl::true_type {};
+                                     decltype(ktl::declval<Node>().size())>> : ktl::true_type {};
   static_assert(CheckMethods<Node>::value, "Node type does not implement the required interface.");
 
  public:
@@ -218,7 +217,7 @@ class VmMappingSubtreeState::Observer {
   }
   template <typename Iter>
   static uint64_t LastOffset(Iter node) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return node->object_offset_locked_object() + (node->size_locked_object() - 1);
+    return node->object_offset_locked_object() + (node->size() - 1);
   }
   template <typename Iter>
   static uint64_t MaxLastOffset(Iter node) TA_NO_THREAD_SAFETY_ANALYSIS {

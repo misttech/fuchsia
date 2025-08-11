@@ -57,8 +57,7 @@ class VmAddressRegionEnumerator {
       // because the vmars were modified while paused or because we need to resume at a
       // mapping part way into a vmar.
       ASSERT(!itr_.IsValid() || itr_->is_mapping() ||
-             (itr_->base_locked() >= min_addr &&
-              itr_->base_locked() + itr_->size_locked() <= max_addr));
+             (itr_->base() >= min_addr && itr_->base() + itr_->size() <= max_addr));
     }
   }
 
@@ -76,7 +75,7 @@ class VmAddressRegionEnumerator {
     ktl::optional<NextResult> ret = ktl::nullopt;
     while (!ret && itr_.IsValid()) {
       AssertHeld(itr_->lock_ref());
-      if (itr_->base_locked() >= max_addr_)
+      if (itr_->base() >= max_addr_)
         break;
 
       auto curr = itr_++;
@@ -90,9 +89,8 @@ class VmAddressRegionEnumerator {
         // If the mapping is entirely before |min_addr| or entirely after |max_addr| do not run
         // on_mapping. This can happen when a vmar contains min_addr but has mappings entirely
         // below it, for example.
-        if ((mapping->base_locked() < min_addr_ &&
-             mapping->base_locked() + mapping->size_locked() <= min_addr_) ||
-            mapping->base_locked() > max_addr_) {
+        if ((mapping->base() < min_addr_ && mapping->base() + mapping->size() <= min_addr_) ||
+            mapping->base() > max_addr_) {
           continue;
         }
         ret = NextResult{mapping, depth_};
@@ -120,7 +118,7 @@ class VmAddressRegionEnumerator {
         // If we are at a depth greater than the minimum, and have reached
         // the end of a sub-VMAR range, we ascend and continue iteration.
         do {
-          itr_ = up->subregions_.UpperBound(curr->base_locked());
+          itr_ = up->subregions_.UpperBound(curr->base());
           if (itr_.IsValid()) {
             break;
           }
@@ -155,7 +153,7 @@ class VmAddressRegionEnumerator {
       //     obligated to return it and can skip.
       // For these reasons we prepare our |next_offset_| to be the end of the current |itr_|,
       // meaning that if itr_ is deleted the next object to be yielded is whatever starts after it.
-      state_.next_offset_ = itr_->base_locked() + itr_->size_locked();
+      state_.next_offset_ = itr_->base() + itr_->size();
       state_.region_or_mapping_ = itr_.CopyPointer();
     } else {
       state_.next_offset_ = max_addr_;

@@ -41,8 +41,7 @@ class UserMemory {
   virtual ~UserMemory();
 
   vaddr_t base() const {
-    Guard<CriticalMutex> guard{mapping_->lock()};
-    vaddr_t base = mapping_->base_locked();
+    vaddr_t base = mapping_->base();
 #if defined(__aarch64__)
     base |= static_cast<vaddr_t>(tag_) << kTbiBit;
 #endif
@@ -93,9 +92,8 @@ class UserMemory {
   }
 
   zx_status_t Protect(uint flags, uint64_t offset = 0) {
-    ASSERT(offset < mapping_->size_locking());
-    return mapping_->DebugProtect(mapping_->base_locking() + offset,
-                                  mapping_->size_locking() - offset,
+    ASSERT(offset < mapping_->size());
+    return mapping_->DebugProtect(mapping_->base() + offset, mapping_->size() - offset,
                                   ARCH_MMU_FLAG_PERM_USER | flags);
   }
 
