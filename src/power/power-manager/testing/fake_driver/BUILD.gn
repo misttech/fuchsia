@@ -17,7 +17,7 @@ source_set("lib") {
     "../fuchsia.powermanager.driver.fidl:fuchsia.powermanager.driver.temperaturecontrol_cpp",
     "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_cpp",
     "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature_cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
   ]
 }

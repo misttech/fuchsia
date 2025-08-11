@@ -13,7 +13,7 @@ source_set("screen_capture2") {
 
   deps = [
     "//sdk/lib/sys/cpp",
-    "//src/lib/fsl:fsl",
+    "//src/lib/fsl",
     "//src/lib/fxl",
     "//src/ui/scenic/lib/allocation",
     "//src/ui/scenic/lib/flatland/engine",

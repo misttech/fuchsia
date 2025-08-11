@@ -31,7 +31,7 @@ source_set("errors") {
 
   public_deps = [
     "//sdk/lib/syslog/cpp",
-    "//sdk/lib/utf-utils:utf-utils",
+    "//sdk/lib/utf-utils",
   ]
 }
 

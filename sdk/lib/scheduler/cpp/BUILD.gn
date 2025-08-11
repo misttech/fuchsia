@@ -13,7 +13,7 @@ source_set("cpp") {
   public_deps = [
     ":headers",
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
-    "//sdk/lib/component/incoming/cpp:cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//zircon/system/ulib/zx",
   ]
 }

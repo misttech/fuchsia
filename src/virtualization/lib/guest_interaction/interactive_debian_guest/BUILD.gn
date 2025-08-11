@@ -23,7 +23,7 @@ executable("interactive_debian_guest_impl") {
   public_deps = [
     "//sdk/fidl/fuchsia.virtualization:fuchsia.virtualization_cpp",
     "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/component/outgoing/cpp:cpp",
+    "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/syslog/cpp",
     "//sdk/lib/zxio",
     "//src/lib/fuchsia-async",
@@ -34,7 +34,7 @@ executable("interactive_debian_guest_impl") {
 
   deps = [
     "//sdk/lib/fdio",
-    "//src/virtualization/lib/grpc:grpc",
+    "//src/virtualization/lib/grpc",
     "//src/virtualization/lib/guest_interaction:common",
     "//src/virtualization/tests/lib:guest_console",
     "//zircon/system/ulib/fbl",

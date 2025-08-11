@@ -29,7 +29,7 @@ source_set("cobalt_logger") {
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_hlcpp",
     "//sdk/lib/sys/cpp",
     "//src/cobalt/bin/utils:error_utils",
-    "//src/lib/backoff:backoff",
+    "//src/lib/backoff",
     "//src/lib/timekeeper",
     "//src/lib/timekeeper:system",
   ]

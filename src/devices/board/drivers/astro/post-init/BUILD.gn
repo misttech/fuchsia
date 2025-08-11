@@ -52,7 +52,7 @@ fuchsia_cc_driver("post-init-driver") {
     "//src/devices/lib/driver:driver_runtime",
     "//src/devices/lib/focaltech",
     "//src/graphics/display/lib/device-protocol-display",
-    "//src/lib/ddk:ddk",
+    "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
     "//src/ui/backlight/drivers/ti-lp8556:metadata",
     "//zircon/system/ulib/ddk-platform-defs",

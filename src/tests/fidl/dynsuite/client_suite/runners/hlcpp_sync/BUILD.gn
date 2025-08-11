@@ -14,7 +14,7 @@ executable("bin") {
     "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//src/tests/fidl/dynsuite/client_suite/fidl:fidl.clientsuite_hlcpp",
-    "//src/tests/fidl/dynsuite/client_suite/runners/hlcpp_util:hlcpp_util",
+    "//src/tests/fidl/dynsuite/client_suite/runners/hlcpp_util",
   ]
 }
 

@@ -90,7 +90,7 @@ source_set("lib") {
     "//third_party/cobalt/src/system_data:configuration_data",
   ]
   deps = [
-    "//sdk/lib/component/incoming/cpp:cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fit-promise",
   ]
 }

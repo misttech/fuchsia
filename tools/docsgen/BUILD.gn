@@ -332,7 +332,7 @@ build_api_module("generated_docs") {
     ":invoke_cmldoc",
     ":invoke_fidldoc",
     ":invoke_helpdoc",
-    "//build/bazel/bazel_sdk/docs:docs",
+    "//build/bazel/bazel_sdk/docs",
     "//bundles/drivers:create_all_drivers_doc",
   ]
 }
@@ -398,7 +398,7 @@ if (current_toolchain == default_toolchain) {
       ":invoke_cmldoc",
       ":invoke_fidldoc",
       ":invoke_helpdoc",
-      "//build/bazel/bazel_sdk/docs:docs",
+      "//build/bazel/bazel_sdk/docs",
       "//bundles/drivers:create_all_drivers_doc",
       "//tools/doc_checker:doc_checker_host_tool($host_toolchain)",
     ]

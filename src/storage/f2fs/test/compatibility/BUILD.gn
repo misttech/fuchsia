@@ -18,7 +18,7 @@ test_sources = [
 ]
 
 test_deps = [
-  "//src/storage/f2fs:f2fs",
+  "//src/storage/f2fs",
   "//src/virtualization/tests/lib",
   "//src/virtualization/tests/lib:test_main",
   "//third_party/googletest:gtest",

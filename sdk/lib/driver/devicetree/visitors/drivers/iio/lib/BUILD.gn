@@ -12,7 +12,7 @@ source_set("iio") {
     "iio-visitor.h",
   ]
   public_deps = [
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devicetree/manager",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",

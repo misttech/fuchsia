@@ -49,7 +49,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_cpp",
     "//sdk/fidl/fuchsia.hardware.serialimpl:fuchsia.hardware.serialimpl_cpp",
     "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devfs/cpp:cpp",
+    "//sdk/lib/driver/devfs/cpp",
     "//src/lib/ddk",
     "//src/lib/ddktl",
   ]
@@ -114,7 +114,7 @@ cc_test_executable("tests_executable") {
   deps = [
     ":common",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
-    "//sdk/lib/async_patterns/testing/cpp:cpp",
+    "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/testing/cpp",

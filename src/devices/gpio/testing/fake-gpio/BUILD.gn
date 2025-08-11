@@ -11,7 +11,7 @@ static_library("fake-gpio") {
   public_deps =
       [ "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_testing" ]
   deps = [
-    "//sdk/lib/async-default:async-default",
+    "//sdk/lib/async-default",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//src/devices/bin/driver_runtime",
   ]

@@ -30,7 +30,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_cpp",
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
     "//sdk/lib/driver/compat/cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//src/devices/i2c/lib/i2c-channel-legacy",
     "//zircon/system/ulib/zx",

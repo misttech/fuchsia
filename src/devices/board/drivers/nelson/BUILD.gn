@@ -14,7 +14,7 @@ if (internal_access) {
 group("nelson") {
   deps = [
     ":nelson-module",
-    "post-init:post-init",
+    "post-init",
   ]
 
   if (internal_access) {
@@ -112,7 +112,7 @@ fuchsia_cc_driver("nelson-module-driver") {
     "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_cpp",
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/outgoing/cpp",
     "//src/connectivity/openthread/lib/ot-radio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",

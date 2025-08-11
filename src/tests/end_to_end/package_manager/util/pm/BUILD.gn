@@ -12,8 +12,8 @@ dart_library("pm") {
   sources = [ "pm.dart" ]
 
   deps = [
-    "//src/tests/end_to_end/package_manager/util/net:net",
-    "//src/tests/end_to_end/package_manager/util/pkg:pkg",
+    "//src/tests/end_to_end/package_manager/util/net",
+    "//src/tests/end_to_end/package_manager/util/pkg",
     "//third_party/dart-pkg/pub/async",
     "//third_party/dart-pkg/pub/file",
     "//third_party/dart-pkg/pub/logging",

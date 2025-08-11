@@ -31,7 +31,7 @@ group("_packages_common") {
 group("packages") {
   deps = [
     ":_packages_common",
-    "wlandevicemonitor:wlandevicemonitor",
+    "wlandevicemonitor",
   ]
 }
 

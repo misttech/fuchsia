@@ -40,7 +40,7 @@ executable("validate-fars") {
   include_dirs = [ "." ]
   deps = [
     ":far",
-    "//src/lib/files:files",
+    "//src/lib/files",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/fbl",

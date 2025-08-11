@@ -25,8 +25,8 @@ source_set("lib") {
     "pressure_observer.h",
   ]
   deps = [
-           "//sdk/lib/component/incoming/cpp:cpp",
-           "//sdk/lib/sys/cpp:cpp",
+           "//sdk/lib/component/incoming/cpp",
+           "//sdk/lib/sys/cpp",
            "//sdk/lib/syslog/cpp",
          ] + _common_deps
   public_deps = [
@@ -42,8 +42,8 @@ executable("bin") {
   sources = [ "main.cc" ]
   deps = [
            ":lib",
-           "//sdk/lib/component/incoming/cpp:cpp",
-           "//sdk/lib/component/outgoing/cpp:cpp",
+           "//sdk/lib/component/incoming/cpp",
+           "//sdk/lib/component/outgoing/cpp",
            "//sdk/lib/syslog/cpp",
          ] + _common_deps
 }

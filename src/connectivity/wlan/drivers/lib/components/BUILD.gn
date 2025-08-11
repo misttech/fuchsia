@@ -15,7 +15,7 @@ source_set("cpp") {
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/lib/driver/compat/cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/fit",
     "//sdk/lib/stdcompat",
     "//zircon/system/ulib/sync:sync-cpp",

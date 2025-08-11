@@ -102,7 +102,7 @@ test("usb-device") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/driver/runtime/testing/cpp",
     "//src/devices/testing/fake-bti",
-    "//src/devices/testing/mock-ddk:mock-ddk",
+    "//src/devices/testing/mock-ddk",
     "//src/lib/utf_conversion",
     "//zircon/system/ulib/zxtest",
   ]

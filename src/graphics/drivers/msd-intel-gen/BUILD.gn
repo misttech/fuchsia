@@ -74,7 +74,7 @@ source_set("msd_intel_entry") {
     "src",
     "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp",
     "//sdk/lib/driver/compat/cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//src/devices/lib/driver:driver_runtime",
     "//src/graphics/magma/lib/magma/platform:bus_mapper_header",
     "//src/graphics/magma/lib/magma/platform:trace",

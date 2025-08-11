@@ -88,7 +88,7 @@ source_set("vk") {
   include_dirs = [ "${graphics_compute_dir}/spinel" ]
   public_deps = [
     ":headers",
-    "${graphics_compute_dir}/spinel:spinel",
+    "${graphics_compute_dir}/spinel",
     graphics_compute_vulkan_loader_target,
   ]
   deps = [

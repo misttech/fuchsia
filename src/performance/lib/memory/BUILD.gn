@@ -14,7 +14,7 @@ python_library("memory") {
   library_deps = [
     "//src/developer/ffx/plugins/profile:ffx_profile_tool_test_data",
     "//src/performance/lib/trace_processing",
-    "//src/testing/end_to_end/honeydew:honeydew",
+    "//src/testing/end_to_end/honeydew",
   ]
 }
 

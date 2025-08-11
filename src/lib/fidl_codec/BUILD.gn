@@ -103,7 +103,7 @@ cc_test_executable("fidl_codec_test_bin") {
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
     "//third_party/rapidjson",
-    "//zircon/system/public:public",
+    "//zircon/system/public",
   ]
 }
 

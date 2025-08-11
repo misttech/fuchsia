@@ -58,7 +58,7 @@ test("driver_runner_test") {
 
   deps = [
     ":driver_runner_test_fixture",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
   ]
 }
 
@@ -109,7 +109,7 @@ cc_test_executable("bind_manager_test") {
     ":driver_manager_test_base",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/fidl/fuchsia.driver.index:fuchsia.driver.index_cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/lib/testing/loop_fixture",
   ]
@@ -138,7 +138,7 @@ cc_test_executable("node_test") {
     ":driver_manager_test_base",
     "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
     "//sdk/lib/async_patterns/testing/cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
   ]
 }
@@ -202,7 +202,7 @@ test("driver_manager_devfs_test") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
-    "//src/devices/bin/driver_manager/devfs:devfs",
+    "//src/devices/bin/driver_manager/devfs",
     "//src/storage/lib/vfs/cpp:test_support",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/sync:sync-cpp",
@@ -235,7 +235,7 @@ test("driver_host_runner_test") {
     ":driver_runner_test_fixture",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//src/devices/bin/driver_loader:driver_loader",
+    "//src/devices/bin/driver_loader",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
   ]
@@ -252,7 +252,7 @@ test("composite_node_spec_manager_test") {
 
   deps = [
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/fdio",
     "//src/devices/bin/driver_manager:driver_runner",
     "//src/devices/bin/driver_manager/composite_node_spec:lib",
@@ -275,7 +275,7 @@ test("bootup_tracker_test") {
     ":driver_manager_test_base",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/fidl/fuchsia.driver.index:fuchsia.driver.index_cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/lib/testing/loop_fixture",
   ]

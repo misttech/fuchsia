@@ -17,7 +17,7 @@ cc_test_executable("igc_interface_tests") {
   defines = [ "IGC_TEST" ]
 
   deps = [
-    "//sdk/lib/async_patterns/testing/cpp:cpp",
+    "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/connectivity/ethernet/drivers/third_party/igc:igc_core",

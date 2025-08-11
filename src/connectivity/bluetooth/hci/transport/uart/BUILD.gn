@@ -37,7 +37,7 @@ source_set("common") {
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/metadata/cpp",
-    "//sdk/lib/driver/outgoing/cpp:cpp",
+    "//sdk/lib/driver/outgoing/cpp",
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddk",
     "//zircon/system/ulib/sync",
@@ -79,7 +79,7 @@ cc_test_executable("tests_executable") {
 
   deps = [
     ":common",
-    "//sdk/lib/async_patterns/testing/cpp:cpp",
+    "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",

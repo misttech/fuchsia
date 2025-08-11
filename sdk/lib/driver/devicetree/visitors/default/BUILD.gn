@@ -31,7 +31,7 @@ sdk_source_set("default") {
     "mmio",
     "smc",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree",
+    "//src/devices/bind/fuchsia.devicetree",
   ]
 
   public_deps = [
