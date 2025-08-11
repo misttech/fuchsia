@@ -111,7 +111,7 @@ static_library("minfs") {
       "//src/storage/lib/vfs/cpp",
 
       # Used by the MinfsInspectTree class
-      "//sdk/lib/inspect/component/cpp:cpp",
+      "//sdk/lib/inspect/component/cpp",
       "//zircon/system/ulib/zx",
 
       # runner.h includes lib/async-loop/cpp/loop.h
@@ -128,7 +128,7 @@ static_library("minfs") {
       "//sdk/lib/async-loop",
       "//sdk/lib/async-loop:async-loop-default",
       "//sdk/lib/fidl",
-      "//sdk/lib/sys/cpp:cpp",
+      "//sdk/lib/sys/cpp",
       "//sdk/lib/syslog/cpp",
       "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp",
       "//src/storage/fvm",

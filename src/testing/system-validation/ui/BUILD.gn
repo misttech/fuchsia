@@ -60,7 +60,7 @@ fuchsia_test_package("system_validation_test_pkg") {
   ]
   deps = [
     "//src/lib/ui/carnelian:spinning-square-rs_v2",
-    "//src/ui/examples/flatland-rainbow:flatland-rainbow",
+    "//src/ui/examples/flatland-rainbow",
     "//src/ui/examples/simplest_sysmem:simplest_sysmem_component",
   ]
 }

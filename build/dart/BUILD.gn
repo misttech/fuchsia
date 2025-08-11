@@ -31,7 +31,7 @@ group("dart_allowlist") {
 
   # SL4F dart client library and tests which use it.
   visibility += [
-    "//sdk/testing/gcloud_lib:gcloud_lib",
+    "//sdk/testing/gcloud_lib",
     "//sdk/testing/sl4f/client:*",
     "//src/tests/end_to_end/package_manager:*",
     "//src/tests/end_to_end/package_manager/util/net:*",

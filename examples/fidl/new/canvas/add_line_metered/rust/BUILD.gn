@@ -41,7 +41,7 @@ fuchsia_test_package("examples_fidl_canvas_addlinemetered_rust_tests") {
     ":client",
     ":server",
     "//examples/fidl/new/canvas/add_line_metered:client_config_values",
-    "//examples/fidl/new/canvas/add_line_metered/realm:realm",
+    "//examples/fidl/new/canvas/add_line_metered/realm",
   ]
   test_components = [ ":test" ]
 }

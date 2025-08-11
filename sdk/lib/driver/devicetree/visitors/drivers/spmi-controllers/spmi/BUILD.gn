@@ -24,7 +24,7 @@ source_set("spmi-visitor") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi_cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devicetree/manager",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",

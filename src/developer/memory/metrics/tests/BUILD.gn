@@ -20,7 +20,7 @@ source_set("utils") {
     "//src/developer/memory/metrics",
     "//src/lib/fxl",
     "//src/lib/testing/loop_fixture",
-    "//zircon/system/public:public",
+    "//zircon/system/public",
     "//zircon/system/ulib/zx",
   ]
 }
@@ -47,7 +47,7 @@ cc_test_executable("memory_metrics_unittests") {
     "//src/lib/testing/loop_fixture",
     "//third_party/googletest:gmock",
     "//third_party/rapidjson",
-    "//zircon/system/public:public",
+    "//zircon/system/public",
   ]
 }
 

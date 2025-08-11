@@ -13,7 +13,7 @@ rustc_library("fuchsia-repo") {
   deps = [
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-url",
-    "//src/lib/mundane:mundane",
+    "//src/lib/mundane",
     "//src/lib/versioning/version-history/rust",
     "//src/storage/lib/delivery_blob",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",

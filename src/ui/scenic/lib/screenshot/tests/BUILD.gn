@@ -26,7 +26,7 @@ cc_test_executable("unittests") {
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
     "//sdk/lib/sys/cpp/testing:unit",
-    "//src/lib/fsl:fsl",
+    "//src/lib/fsl",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture:gtest",
     "//src/ui/scenic/lib/allocation",

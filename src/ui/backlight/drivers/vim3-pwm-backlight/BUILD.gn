@@ -81,7 +81,7 @@ test("vim3-pwm-backlight-test") {
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/inspect/testing/cpp",
     "//src/devices/gpio/testing/fake-gpio",
-    "//src/devices/lib/amlogic:amlogic",
+    "//src/devices/lib/amlogic",
     "//src/devices/lib/mmio",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",

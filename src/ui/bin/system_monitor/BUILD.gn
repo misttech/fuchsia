@@ -18,7 +18,7 @@ source_set("lib") {
     "//sdk/fidl/fuchsia.element:fuchsia.element_cpp",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_cpp",
-    "//sdk/lib/async:async",
+    "//sdk/lib/async",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",

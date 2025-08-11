@@ -49,7 +49,7 @@ group("tests") {
 
 group("tools") {
   testonly = true
-  deps = [ "tools:tools" ]
+  deps = [ "tools" ]
 }
 
 # Depend on this library instead of //third_party/icu directly.

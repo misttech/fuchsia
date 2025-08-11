@@ -53,7 +53,7 @@ source_set("client") {
 }
 
 cc_test_executable("vsh_unittest") {
-  visibility = [ "*:*" ]
+  visibility = [ "*" ]
   testonly = true
 
   sources = [

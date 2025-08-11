@@ -15,7 +15,7 @@ group("tests") {
 test("node-group-test") {
   sources = [ "test.cc" ]
   deps = [
-    "drivers:drivers",
+    "drivers",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm/simple",
     "//src/lib/fxl/test:gtest_main",

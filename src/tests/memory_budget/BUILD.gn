@@ -19,7 +19,7 @@ if (is_linux) {
   host_test_data("host_fvm") {
     visibility = [ ":*" ]
 
-    deps = [ "//src/storage/bin/fvm:fvm" ]
+    deps = [ "//src/storage/bin/fvm" ]
 
     sources = [ "$root_out_dir/fvm" ]
     outputs = [ "$root_out_dir/test_data/tools/{{source_file_part}}" ]

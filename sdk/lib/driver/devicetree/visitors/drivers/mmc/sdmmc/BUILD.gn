@@ -23,7 +23,7 @@ source_set("sdmmc") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devicetree/manager",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",

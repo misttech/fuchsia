@@ -34,7 +34,7 @@ group("tests") {
 }
 
 proto_library("test_proto") {
-  visibility = [ "*:*" ]
+  visibility = [ "*" ]
 
   sources = [ "test_server.proto" ]
 

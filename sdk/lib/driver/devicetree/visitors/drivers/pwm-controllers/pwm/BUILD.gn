@@ -23,7 +23,7 @@ source_set("pwm-visitor-impl") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_bindlib_cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devicetree/manager",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",
@@ -43,7 +43,7 @@ test("pwm-visitor-test-bin") {
   deps = [
     ":pwm-visitor-impl",
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_bindlib_cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",

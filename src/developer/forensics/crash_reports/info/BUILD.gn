@@ -58,6 +58,6 @@ source_set("inspect_manager") {
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/crash_reports:constants",
     "//src/developer/forensics/utils:time",
-    "//src/lib/files:files",
+    "//src/lib/files",
   ]
 }

@@ -12,7 +12,7 @@ icu_fixup_deps_no_testonly = [
   "//src/lib/icu:icudtl",
   "//src/lib/icu:lib",
 ]
-icu_fixup_deps = icu_fixup_deps_no_testonly + [ "//src/lib/icu:icu" ]
+icu_fixup_deps = icu_fixup_deps_no_testonly + [ "//src/lib/icu" ]
 
 # These can not be directly inserted in the assignments of
 # `icu_flavor_major_versions` below, that is a GN limitation.

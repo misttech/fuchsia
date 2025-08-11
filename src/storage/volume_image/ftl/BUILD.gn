@@ -128,9 +128,9 @@ executable("ftl-volume-extractor") {
   sources = [ "ftl_volume_extractor.cc" ]
   deps = [
     "//src/devices/block/drivers/ftl/tests:shared",
-    "//src/storage/lib/ftl:ftl",
+    "//src/storage/lib/ftl",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/zx:zx",
+    "//zircon/system/ulib/zx",
     "//zircon/third_party/ulib/safemath",
   ]
 }

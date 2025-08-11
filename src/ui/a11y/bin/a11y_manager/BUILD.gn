@@ -168,7 +168,7 @@ icu_source_set("lib") {
     "app.h",
   ]
 
-  icu_public_deps = [ "//src/ui/a11y/lib:lib" ]
+  icu_public_deps = [ "//src/ui/a11y/lib" ]
 
   public_deps = [
     "//sdk/fidl/fuchsia.accessibility:fuchsia.accessibility_cpp_hlcpp_conversion",

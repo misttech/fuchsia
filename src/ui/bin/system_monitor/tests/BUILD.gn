@@ -20,7 +20,7 @@ cc_test_executable("system_monitor_integration_test_bin") {
   sources = [ "system_monitor_integration_test.cc" ]
 
   deps = [
-    "//sdk/lib/async:async",
+    "//sdk/lib/async",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/sys/cpp",

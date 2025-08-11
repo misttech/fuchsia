@@ -66,7 +66,7 @@ cc_test_executable("text-input-test-bin") {
     "//src/lib/fsl",
     "//src/lib/fxl",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/json_parser:json_parser",
+    "//src/lib/json_parser",
     "//src/lib/testing/loop_fixture",
     "//src/ui/input/testing/fake_input_report_device",
     "//src/ui/testing/util:fidl_cpp_helpers",

@@ -23,7 +23,7 @@ group("common") {
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
     "//sdk/fidl/fuchsia.hardware.powersource:fuchsia.hardware.powersource_cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/hwreg-i2c",
     "//zircon/system/ulib/inspect",

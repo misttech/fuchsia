@@ -13,7 +13,7 @@ executable("bin") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/outgoing/cpp",
     "//src/tests/fidl/dynsuite/client_suite/fidl:fidl.clientsuite_cpp",
-    "//src/tests/fidl/dynsuite/client_suite/runners/cpp_util:cpp_util",
+    "//src/tests/fidl/dynsuite/client_suite/runners/cpp_util",
   ]
 }
 

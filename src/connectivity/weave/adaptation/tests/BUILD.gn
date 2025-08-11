@@ -103,7 +103,7 @@ test("weave_config_manager_unittests") {
   sources = [ "weave_config_manager_unittests.cpp" ]
   deps = [
     ":common_test_deps",
-    "//src/lib/files:files",
+    "//src/lib/files",
   ]
 }
 

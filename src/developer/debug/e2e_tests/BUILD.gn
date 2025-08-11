@@ -31,7 +31,7 @@ if (is_host && has_board) {
     package_deps = [
       "inferiors:zxdb_e2e_inferiors",
       "//src/developer/debug/debug_agent",
-      "//src/developer/forensics/crasher:crasher",
+      "//src/developer/forensics/crasher",
       "//src/developer/forensics/crasher:crasher_test",
     ]
     deps = [

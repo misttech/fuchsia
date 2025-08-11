@@ -34,7 +34,7 @@ source_set("source_set") {
     "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/driver/compat/cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//sdk/lib/fidl_driver",
     "//src/connectivity/wlan/drivers/lib/fidl-bridge/cpp:dfv2",

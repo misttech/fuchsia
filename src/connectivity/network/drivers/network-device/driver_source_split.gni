@@ -28,7 +28,7 @@ template("driver_source_split") {
       configs += invoker.configs
     }
     defines += [ "NETDEV_DRIVER" ]
-    public_deps += [ "//sdk/lib/driver/logging/cpp:cpp" ]
+    public_deps += [ "//sdk/lib/driver/logging/cpp" ]
     if (defined(invoker.driver_deps)) {
       public_deps += invoker.driver_deps
     }
@@ -47,7 +47,7 @@ template("driver_source_split") {
       configs += invoker.configs
     }
     public_deps += [
-      "//sdk/lib/driver/logging/cpp:cpp",
+      "//sdk/lib/driver/logging/cpp",
       "//sdk/lib/syslog/cpp",
     ]
     if (defined(invoker.non_driver_deps)) {

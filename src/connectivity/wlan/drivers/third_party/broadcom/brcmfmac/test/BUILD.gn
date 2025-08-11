@@ -168,7 +168,7 @@ cc_test_executable("timer_test") {
   sources = [ "timer_test.cc" ]
   deps = [
     "//sdk/lib/async:async-cpp",
-    "//sdk/lib/driver/testing/cpp:cpp",
+    "//sdk/lib/driver/testing/cpp",
     "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:timer",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/public",
@@ -180,7 +180,7 @@ cc_test_executable("workqueue_test") {
   testonly = true
   sources = [ "workqueue_test.cc" ]
   deps = [
-    "//sdk/lib/driver/testing/cpp:cpp",
+    "//sdk/lib/driver/testing/cpp",
     "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:linuxisms",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/sync",

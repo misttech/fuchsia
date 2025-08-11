@@ -37,7 +37,7 @@ fuchsia_test_package("fidl_example_tester_cpp_wire_tests") {
     ":proxy",
     ":server",
     "//tools/fidl/example-tester/example:client_config_values",
-    "//tools/fidl/example-tester/example/realm:realm",
+    "//tools/fidl/example-tester/example/realm",
   ]
   test_components = [ ":test" ]
 }

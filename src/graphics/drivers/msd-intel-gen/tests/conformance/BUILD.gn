@@ -12,7 +12,7 @@ executable("vendor-helper-intel") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/syslog/cpp",
-    "//src/graphics/drivers/msd-intel-gen/include:include",
+    "//src/graphics/drivers/msd-intel-gen/include",
     "//src/graphics/magma/tests/integration:vendor_helper_interface",
   ]
 }

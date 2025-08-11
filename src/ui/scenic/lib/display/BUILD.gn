@@ -30,7 +30,7 @@ source_set("display") {
     "//sdk/lib/sys/cpp",
     "//src/lib/fsl",
     "//src/lib/fxl",
-    "//src/ui/scenic/lib/utils:utils",
+    "//src/ui/scenic/lib/utils",
     "//third_party/glm",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/inspect",

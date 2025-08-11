@@ -5,9 +5,9 @@
 group("drivers") {
   testonly = true
   deps = [
-    "//src/devices/temperature/drivers/aml-trip:aml-trip",
-    "//src/devices/temperature/drivers/shtv3:shtv3",
-    "//src/devices/temperature/drivers/tmp112:tmp112",
+    "//src/devices/temperature/drivers/aml-trip",
+    "//src/devices/temperature/drivers/shtv3",
+    "//src/devices/temperature/drivers/tmp112",
   ]
 }
 

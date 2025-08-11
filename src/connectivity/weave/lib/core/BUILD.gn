@@ -13,6 +13,6 @@ source_set("core") {
   public_deps = [
     "//sdk/lib/sys/cpp",
     "//src/connectivity/weave/adaptation:adaptation.shared",
-    "//src/connectivity/weave/lib/applets_loader:applets_loader",
+    "//src/connectivity/weave/lib/applets_loader",
   ]
 }

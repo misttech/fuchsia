@@ -5,7 +5,7 @@
 # Group depending on all test project by a mix of paths and targets.
 group("dep") {
   deps = [
-    "//third_party/bar:bar",
+    "//third_party/bar",
     "//third_party/foo",
     "//third_party/rust_crates:bar-v0_0_1",
     "//third_party/rust_crates:foo",

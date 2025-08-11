@@ -64,8 +64,8 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
-    "//sdk/lib/driver/compat/cpp:cpp",
-    "//sdk/lib/driver/component/cpp:cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/power/cpp",
     "//src/devices/lib/driver:driver_runtime",
@@ -83,7 +83,7 @@ test("buttons-test") {
   sources = [ "buttons-test.cc" ]
   deps = [
     ":common",
-    "//sdk/lib/driver/testing/cpp:cpp",
+    "//sdk/lib/driver/testing/cpp",
     "//src/devices/gpio/testing/fake-gpio",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",

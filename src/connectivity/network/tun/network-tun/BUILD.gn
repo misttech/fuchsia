@@ -35,8 +35,8 @@ source_set("src") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp",
+    "//src/connectivity/network/drivers/network-device/device",
     "//src/connectivity/network/drivers/network-device/device:banjo_shims",
-    "//src/connectivity/network/drivers/network-device/device:device",
     "//src/connectivity/network/drivers/network-device/mac",
     "//src/lib/fsl",
     "//src/lib/vmo_store",
@@ -81,7 +81,7 @@ test("network_tun_unittest") {
 
   deps = [
     ":src",
-    "//sdk/lib/driver/testing/cpp:cpp",
+    "//sdk/lib/driver/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
     "//src/lib/testing/predicates",

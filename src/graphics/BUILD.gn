@@ -18,6 +18,6 @@ group("tests") {
     "drivers:tests",
     "lib/compute:tests",
     "magma/tests",
-    "tests:tests",
+    "tests",
   ]
 }

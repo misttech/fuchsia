@@ -83,7 +83,7 @@ test("pmem_tests_bin") {
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/driver/testing/cpp:minimal_compat_environment",
     "//sdk/lib/driver/testing/cpp:scoped_global_logger",
-    "//src/devices/bus/lib/virtio:virtio",
+    "//src/devices/bus/lib/virtio",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/fake-resource",
     "//src/lib/fxl/test:gtest_main",
