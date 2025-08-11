@@ -4,12 +4,13 @@
 
 mod convert;
 mod inspect;
-mod processors;
+pub mod processors;
 
 use self::inspect::{inspect_record_stats, Stats};
-use crate::{IpVersions, State};
+use crate::{IpVersions, LinkState, State};
 use processors::link_properties_state::{
-    InterfaceTimeSeriesGrouping, InterfaceType, LinkPropertiesStateLogger,
+    InterfaceIdentifier, InterfaceTimeSeriesGrouping, InterfaceType, LinkProperties,
+    LinkPropertiesStateLogger,
 };
 
 use anyhow::{format_err, Context, Error};
@@ -141,6 +142,18 @@ pub enum TelemetryEvent {
         gateway_discoverable: bool,
         gateway_pingable: bool,
     },
+    // The LinkProperties update corresponding to the interface described by
+    // the vector of interface identifiers.
+    LinkPropertiesUpdate {
+        interface_identifiers: Vec<InterfaceIdentifier>,
+        link_properties: IpVersions<LinkProperties>,
+    },
+    // The LinkState update corresponding to the interface described by the
+    // vector of interface identifiers.
+    LinkStateUpdate {
+        interface_identifiers: Vec<InterfaceIdentifier>,
+        link_state: IpVersions<LinkState>,
+    },
     /// Get the TimeSeries held by telemetry loop. Intended for test only.
     GetTimeSeries {
         sender: oneshot::Sender<Arc<Mutex<Stats>>>,
@@ -152,36 +165,46 @@ pub enum TelemetryEvent {
 const TELEMETRY_EVENT_BUFFER_SIZE: usize = 100;
 
 const TELEMETRY_QUERY_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(10);
+const METADATA_NODE_NAME: &str = "metadata";
 
-// Add in inputs for Vec of time series groupings.
 pub fn serve_telemetry(
     cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
     inspect_node: InspectNode,
 ) -> (TelemetrySender, impl Future<Output = Result<(), Error>>) {
-    let (sender, mut receiver) = mpsc::channel::<TelemetryEvent>(TELEMETRY_EVENT_BUFFER_SIZE);
-    let sender = TelemetrySender::new(sender);
-    let cloned_sender = sender.clone();
-
     // Inspect nodes to hold time series and metadata for other nodes.
-    const METADATA_NODE_NAME: &str = "metadata";
-    let inspect_metadata_node = inspect_node.create_child(METADATA_NODE_NAME);
     let inspect_time_series_node = inspect_node.create_child("time_series");
     let link_properties_state_time_series_node =
         inspect_time_series_node.create_child("link_properties_state");
-    let (time_matrix_client, time_series_fut) =
+    let (time_matrix_client, time_matrix_fut) =
         serve_time_matrix_inspection(link_properties_state_time_series_node);
 
-    let link_properties_state = LinkPropertiesStateLogger::new(
+    inspect_node.record(inspect_time_series_node);
+    let inspect_metadata_node = inspect_node.create_child(METADATA_NODE_NAME);
+    let link_properties_state_logger = LinkPropertiesStateLogger::new(
         &inspect_metadata_node,
         &format!("root/telemetry/{METADATA_NODE_NAME}"),
         InterfaceTimeSeriesGrouping::Type(vec![InterfaceType::Ethernet, InterfaceType::WlanClient]),
         &time_matrix_client,
     );
+    // Record the metadata node so it does not get dropped.
+    inspect_node.record(inspect_metadata_node);
+
+    let (sender, fut) =
+        serve_telemetry_inner(cobalt_proxy, inspect_node, link_properties_state_logger);
+    (sender, future::try_join(fut, time_matrix_fut).map_ok(|((), ())| ()))
+}
+
+fn serve_telemetry_inner(
+    cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
+    inspect_node: InspectNode,
+    link_properties_state_logger: LinkPropertiesStateLogger,
+) -> (TelemetrySender, impl Future<Output = Result<(), Error>>) {
+    let (sender, mut receiver) = mpsc::channel::<TelemetryEvent>(TELEMETRY_EVENT_BUFFER_SIZE);
+    let sender = TelemetrySender::new(sender);
+    let cloned_sender = sender.clone();
+
     let fut = async move {
-        // Prevent the inspect nodes from being dropped while the loop is running.
-        let _inspect_metadata_node = inspect_metadata_node;
-        let _inspect_time_series_node = inspect_time_series_node;
-        let _link_properties_state = link_properties_state;
+        let link_properties_state_logger = link_properties_state_logger;
 
         let mut report_interval_stream = fasync::Interval::new(TELEMETRY_QUERY_INTERVAL);
         const ONE_MINUTE: zx::MonotonicDuration = zx::MonotonicDuration::from_minutes(1);
@@ -190,7 +213,8 @@ pub fn serve_telemetry(
             (ONE_MINUTE.into_nanos() / TELEMETRY_QUERY_INTERVAL.into_nanos()) as u64;
         const INTERVAL_TICKS_PER_HR: u64 = INTERVAL_TICKS_PER_MINUTE * 60;
         let mut interval_tick = 0u64;
-        let mut telemetry = Telemetry::new(cloned_sender, cobalt_proxy, inspect_node);
+        let mut telemetry =
+            Telemetry::new(cloned_sender, cobalt_proxy, link_properties_state_logger, inspect_node);
         loop {
             select! {
                 event = receiver.next() => {
@@ -209,7 +233,6 @@ pub fn serve_telemetry(
             }
         }
     };
-    let fut = future::try_join(fut, time_series_fut).map_ok(|((), ())| ());
     (sender, fut)
 }
 
@@ -257,6 +280,7 @@ struct Telemetry {
     )>,
     network_config: Option<NetworkConfig>,
     network_config_last_refreshed: fasync::MonotonicInstant,
+    link_properties_state_logger: LinkPropertiesStateLogger,
 
     _inspect_node: InspectNode,
     stats: Arc<Mutex<Stats>>,
@@ -266,6 +290,7 @@ impl Telemetry {
     pub fn new(
         _telemetry_sender: TelemetrySender,
         cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
+        link_properties_state_logger: LinkPropertiesStateLogger,
         inspect_node: InspectNode,
     ) -> Self {
         let stats = Arc::new(Mutex::new(Stats::new()));
@@ -278,6 +303,7 @@ impl Telemetry {
             reachability_lost_at: None,
             network_config: None,
             network_config_last_refreshed: fasync::MonotonicInstant::now(),
+            link_properties_state_logger,
             _inspect_node: inspect_node,
             stats,
         }
@@ -332,6 +358,14 @@ impl Telemetry {
                         log_cobalt!(self.cobalt_proxy, log_occurrence, metric_id, 1, &[]);
                     }
                 }
+            }
+            TelemetryEvent::LinkPropertiesUpdate { interface_identifiers, link_properties } => {
+                self.link_properties_state_logger
+                    .update_link_properties(interface_identifiers, &link_properties);
+            }
+            TelemetryEvent::LinkStateUpdate { interface_identifiers, link_state } => {
+                self.link_properties_state_logger
+                    .update_link_state(interface_identifiers, &link_state);
             }
             TelemetryEvent::GetTimeSeries { sender } => {
                 let _result = sender.send(Arc::clone(&self.stats));
@@ -541,10 +575,13 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_metrics::MetricEventPayload;
     use fuchsia_inspect::Inspector;
+    use fuchsia_inspect_contrib::id_enum::IdEnum;
 
     use futures::task::Poll;
     use std::pin::Pin;
     use test_case::test_case;
+    use windowed_stats::experimental::clock::Timed;
+    use windowed_stats::experimental::testing::{MockTimeMatrixClient, TimeMatrixCall};
 
     const STEP_INCREMENT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(1);
 
@@ -982,6 +1019,120 @@ mod tests {
         assert_eq!(ipv6_state, vec![SumAndCount { sum: 55, count: 2 }]);
     }
 
+    #[test]
+    fn test_link_properties_update() {
+        let (mut test_helper, mut test_fut) = setup_test();
+
+        // Iterate through all of the different combinations of booleans in the
+        // LinkProperties struct. There are 4 different booleans, so 2^4
+        // different combinations.
+        for i in 0..=15 {
+            let link_properties = LinkProperties::from(i);
+            let mut expected_data_vec = vec![];
+            // Index 0 indicates that all the booleans are false which is the
+            // same as the default value of LinkProperties. In this case no
+            // data is reported, so expected_data_vec should be empty.
+            if i != 0 {
+                expected_data_vec.push(TimeMatrixCall::Fold(Timed::now(i)));
+            }
+
+            //  There should be no calls to the `TYPE_ethernet` or `TYPE_wlanclient`
+            // time series since nothing has been logged yet.
+            let mut time_matrix_calls = test_helper.mock_time_matrix_client.fold_buffered_samples();
+            assert_eq!(
+                &time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_ethernet")[..],
+                &[]
+            );
+            assert_eq!(
+                &time_matrix_calls.drain::<u64>("link_properties_v6_TYPE_ethernet")[..],
+                &[]
+            );
+            assert_eq!(
+                &time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_wlanclient")[..],
+                &[]
+            );
+            assert_eq!(
+                &time_matrix_calls.drain::<u64>("link_properties_v6_TYPE_wlanclient")[..],
+                &[]
+            );
+
+            test_helper.telemetry_sender.send(TelemetryEvent::LinkPropertiesUpdate {
+                interface_identifiers: vec![InterfaceIdentifier::Type(InterfaceType::Ethernet)],
+                link_properties: IpVersions {
+                    ipv4: link_properties.clone(),
+                    ipv6: link_properties,
+                },
+            });
+            test_helper.advance_test_fut(&mut test_fut);
+
+            time_matrix_calls = test_helper.mock_time_matrix_client.fold_buffered_samples();
+            assert_eq!(
+                &time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_ethernet")[..],
+                expected_data_vec
+            );
+            assert_eq!(
+                &time_matrix_calls.drain::<u64>("link_properties_v6_TYPE_ethernet")[..],
+                expected_data_vec
+            );
+            // There should be no calls to the `TYPE_wlanclient` time series since the
+            // update above was for `Ethernet`.
+            assert_eq!(
+                &time_matrix_calls.drain::<u64>("link_properties_v4_TYPE_wlanclient")[..],
+                &[]
+            );
+            assert_eq!(
+                &time_matrix_calls.drain::<u64>("link_properties_v6_TYPE_wlanclient")[..],
+                &[]
+            );
+        }
+    }
+
+    #[test]
+    fn test_link_state_update() {
+        let (mut test_helper, mut test_fut) = setup_test();
+
+        // Iterate through all of the different variants in the LinkState enum.
+        // LinkState::None is the default so there should be no data recorded
+        // for that value.
+        let initial_value = LinkState::None.to_id() as u64;
+        let final_value = LinkState::Internet.to_id() as u64;
+        for i in initial_value..=final_value {
+            let link_state = i.into();
+            let mut expected_data_vec = vec![];
+            if i != initial_value {
+                expected_data_vec.push(TimeMatrixCall::Fold(Timed::now(1 << i)));
+            }
+
+            //  There should be no calls to the `TYPE_ethernet` or `TYPE_wlanclient`
+            // time series since nothing has been logged yet.
+            let mut time_matrix_calls = test_helper.mock_time_matrix_client.fold_buffered_samples();
+            assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v4_TYPE_ethernet")[..], &[]);
+            assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v6_TYPE_ethernet")[..], &[]);
+            assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v4_TYPE_wlanclient")[..], &[]);
+            assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v6_TYPE_wlanclient")[..], &[]);
+
+            test_helper.telemetry_sender.send(TelemetryEvent::LinkStateUpdate {
+                interface_identifiers: vec![InterfaceIdentifier::Type(InterfaceType::Ethernet)],
+                link_state: IpVersions { ipv4: link_state, ipv6: link_state },
+            });
+            test_helper.advance_test_fut(&mut test_fut);
+
+            time_matrix_calls = test_helper.mock_time_matrix_client.fold_buffered_samples();
+            assert_eq!(
+                &time_matrix_calls.drain::<u64>("link_state_v4_TYPE_ethernet")[..],
+                expected_data_vec
+            );
+            assert_eq!(
+                &time_matrix_calls.drain::<u64>("link_state_v6_TYPE_ethernet")[..],
+                expected_data_vec
+            );
+            // There should be no calls to the `TYPE_wlanclient` time series since the
+            // update above was for `Ethernet`.
+            assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v4_TYPE_wlanclient")[..], &[]);
+            assert_eq!(&time_matrix_calls.drain::<u64>("link_state_v6_TYPE_wlanclient")[..], &[]);
+        }
+    }
+
     struct TestHelper {
         telemetry_sender: TelemetrySender,
         _inspector: Inspector,
@@ -989,6 +1140,7 @@ mod tests {
         /// As requests to Cobalt are responded to via `self.drain_cobalt_events()`,
         /// their payloads are drained to this HashMap.
         cobalt_events: Vec<MetricEvent>,
+        mock_time_matrix_client: MockTimeMatrixClient,
 
         // Note: keep the executor field last in the struct so it gets dropped last.
         exec: fasync::TestExecutor,
@@ -1123,9 +1275,22 @@ mod tests {
             create_proxy_and_stream::<fidl_fuchsia_metrics::MetricEventLoggerMarker>();
 
         let inspector = Inspector::default();
-        let inspect_node = inspector.root().create_child("telemetry");
+        let inspect_node = inspector.root().create_child("telemetrytest");
+        let inspect_metadata_node = inspect_node.create_child(METADATA_NODE_NAME);
+        let mock_time_matrix_client = MockTimeMatrixClient::new();
 
-        let (telemetry_sender, test_fut) = serve_telemetry(cobalt_proxy, inspect_node);
+        let link_properties_state_logger = LinkPropertiesStateLogger::new(
+            &inspect_metadata_node,
+            &format!("root/telemetrytest/{METADATA_NODE_NAME}"),
+            InterfaceTimeSeriesGrouping::Type(vec![
+                InterfaceType::Ethernet,
+                InterfaceType::WlanClient,
+            ]),
+            &mock_time_matrix_client,
+        );
+
+        let (telemetry_sender, test_fut) =
+            serve_telemetry_inner(cobalt_proxy, inspect_node, link_properties_state_logger);
         let mut test_fut = Box::pin(test_fut);
 
         assert_matches::assert_matches!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
@@ -1135,6 +1300,7 @@ mod tests {
             _inspector: inspector,
             cobalt_stream,
             cobalt_events: vec![],
+            mock_time_matrix_client,
             exec,
         };
         (test_helper, test_fut)

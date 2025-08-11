@@ -6,6 +6,7 @@
 // starts reporting LinkProperties and LinkState time series data.
 #![allow(unused)]
 
+use fidl_fuchsia_net_interfaces_ext::PortClass;
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_inspect_contrib::id_enum::IdEnum;
 use fuchsia_sync::Mutex;
@@ -25,12 +26,13 @@ use crate::{IpVersions, LinkState};
 // The classification of the interface. This is not necessarily the same
 // as the PortClass of the interface.
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub(crate) enum InterfaceType {
+pub enum InterfaceType {
     Ethernet,
     WlanClient,
     WlanAp,
     Blackhole,
     Bluetooth,
+    Virtual,
 }
 
 impl std::fmt::Display for InterfaceType {
@@ -47,7 +49,7 @@ impl std::fmt::Display for InterfaceType {
 // is specified with Ethernet and WlanClient, then there will be a separate
 // time series for Ethernet and WlanClient updates, further broken down by
 // v4 and v6 protocols.
-pub(crate) enum InterfaceTimeSeriesGrouping {
+pub enum InterfaceTimeSeriesGrouping {
     Type(Vec<InterfaceType>),
 }
 
@@ -56,7 +58,7 @@ pub(crate) enum InterfaceTimeSeriesGrouping {
 // The identifier for the interface. Used to determine which time series should
 // have updates applied.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum InterfaceIdentifier {
+pub enum InterfaceIdentifier {
     // An interface is expected to only have a single type.
     Type(InterfaceType),
 }
@@ -68,6 +70,22 @@ impl std::fmt::Display for InterfaceIdentifier {
         };
         write!(f, "{}", name)
     }
+}
+
+pub fn identifiers_from_port_class(port_class: PortClass) -> Vec<InterfaceIdentifier> {
+    match port_class {
+        PortClass::Ethernet => vec![InterfaceType::Ethernet],
+        PortClass::WlanClient => vec![InterfaceType::WlanClient],
+        PortClass::WlanAp => vec![InterfaceType::WlanAp],
+        PortClass::Blackhole => vec![InterfaceType::Blackhole],
+        PortClass::Loopback => vec![InterfaceType::Bluetooth, InterfaceType::Virtual],
+        PortClass::Virtual | PortClass::Ppp | PortClass::Bridge | PortClass::Lowpan => {
+            vec![InterfaceType::Virtual]
+        }
+    }
+    .into_iter()
+    .map(|port_class| InterfaceIdentifier::Type(port_class))
+    .collect()
 }
 
 #[derive(Debug)]
@@ -91,23 +109,23 @@ impl std::fmt::Display for TimeSeriesType {
 }
 
 // A representation of an interface's provisioning status.
-#[derive(Clone, Copy, Default, Eq, PartialEq)]
-struct LinkProperties {
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LinkProperties {
     // For IPv4, indicates the acquisition of an IPv4 address. For IPv6,
     // indicates the acquisition of a non-link local IPv6 address.
-    has_address: bool,
-    has_default_route: bool,
+    pub has_address: bool,
+    pub has_default_route: bool,
     // TODO(https://fxbug.dev/42175016): Perform DNS lookups across the
     // specified network.
     //
     // This is currently a system-wide check. For example, if one interface
     // can perform DNS resolution, then all of them will report `has_dns` true.
-    has_dns: bool,
+    pub has_dns: bool,
     // TODO(https://fxbug.dev/432303907): Separate the HTTP check from DNS.
     // HTTP can succeed without requiring DNS to be enabled and functional.
     //
     // Whether a device can successfully use the HTTP protocol.
-    has_http_reachability: bool,
+    pub has_http_reachability: bool,
 }
 
 impl LinkProperties {
@@ -136,19 +154,50 @@ impl LinkProperties {
     }
 }
 
+#[cfg(test)]
+impl From<u64> for LinkProperties {
+    fn from(data: u64) -> Self {
+        Self {
+            has_address: (data & 1) == 1,
+            has_default_route: (data & 1 << 1) >= 1,
+            has_dns: (data & 1 << 2) >= 1,
+            has_http_reachability: (data & 1 << 3) >= 1,
+        }
+    }
+}
+
 impl IdEnum for LinkState {
     type Id = u8;
     // This function must maintain ordered alignment with `link_state_metadata`
     // in `InspectMetadataNode`.
     fn to_id(&self) -> Self::Id {
         match self {
-            Self::None => 0,
-            Self::Removed => 1,
-            Self::Down => 2,
-            Self::Up => 3,
-            Self::Local => 4,
-            Self::Gateway => 5,
-            Self::Internet => 6,
+            LinkState::None => 0,
+            LinkState::Removed => 1,
+            LinkState::Down => 2,
+            LinkState::Up => 3,
+            LinkState::Local => 4,
+            LinkState::Gateway => 5,
+            LinkState::Internet => 6,
+        }
+    }
+}
+
+#[cfg(test)]
+impl From<u64> for LinkState {
+    fn from(data: u64) -> Self {
+        match data {
+            0 => Self::None,
+            1 => Self::Removed,
+            2 => Self::Down,
+            3 => Self::Up,
+            4 => Self::Local,
+            5 => Self::Gateway,
+            6 => Self::Internet,
+            unknown => {
+                log::info!("invalid ordinal provided: {data:?}");
+                Self::None
+            }
         }
     }
 }
@@ -166,8 +215,7 @@ fn ip_versions_time_series<S: InspectSender>(
         TimeSeriesType::LinkProperties => InspectMetadataNode::LINK_PROPERTIES,
         TimeSeriesType::LinkState => InspectMetadataNode::LINK_STATE,
     };
-    let bitset_node =
-        BitSetNode::from_path(format!("{}/{}/index", inspect_metadata_path, metadata_node));
+    let bitset_node = BitSetNode::from_path(format!("{}/{}", inspect_metadata_path, metadata_node));
     // A separate time matrix is created for IPv4 and IPv6.
     IpVersions {
         ipv4: single_time_matrix(
@@ -333,7 +381,7 @@ impl LinkPropertiesStateLogger {
     // represent the various ways that an interface can be identified. When an
     // identifier matches an attribute that is being tracked in
     // `time_series_stats`, attempt to log that `LinkProperties` update.
-    fn update_link_properties(
+    pub fn update_link_properties(
         &self,
         interface_identifiers: Vec<InterfaceIdentifier>,
         link_properties: &IpVersions<LinkProperties>,
@@ -349,7 +397,7 @@ impl LinkPropertiesStateLogger {
     // various ways that an interface can be identified. When an identifier
     // matches an attribute that is being tracked in `time_series_stats`,
     // attempt to log that `LinkState` update.
-    fn update_link_state(
+    pub fn update_link_state(
         &self,
         interface_identifiers: Vec<InterfaceIdentifier>,
         link_state: &IpVersions<LinkState>,
@@ -449,28 +497,28 @@ mod tests {
                             "type": "bitset",
                             "data": AnyBytesProperty,
                             metadata: {
-                                index_node_path: "root/test_stats/metadata/link_properties/index",
+                                index_node_path: "root/test_stats/metadata/link_properties",
                             }
                         },
                         link_properties_v6_TYPE_ethernet: {
                             "type": "bitset",
                             "data": AnyBytesProperty,
                             metadata: {
-                                index_node_path: "root/test_stats/metadata/link_properties/index",
+                                index_node_path: "root/test_stats/metadata/link_properties",
                             }
                         },
                         link_state_v4_TYPE_ethernet: {
                             "type": "bitset",
                             "data": AnyBytesProperty,
                             metadata: {
-                                index_node_path: "root/test_stats/metadata/link_state/index",
+                                index_node_path: "root/test_stats/metadata/link_state",
                             }
                         },
                         link_state_v6_TYPE_ethernet: {
                             "type": "bitset",
                             "data": AnyBytesProperty,
                             metadata: {
-                                index_node_path: "root/test_stats/metadata/link_state/index",
+                                index_node_path: "root/test_stats/metadata/link_state",
                             }
                         }
                     }

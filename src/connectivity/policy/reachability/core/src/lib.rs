@@ -17,8 +17,10 @@ pub mod watchdog;
 mod testutil;
 
 use crate::route_table::{Route, RouteTable};
+use crate::telemetry::processors::link_properties_state::{self, LinkProperties};
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use anyhow::anyhow;
+use fidl_fuchsia_net_ext::{self as fnet_ext, IpExt};
 use fuchsia_inspect::{Inspector, Node as InspectNode};
 use futures::channel::mpsc;
 use inspect::InspectInfo;
@@ -30,7 +32,7 @@ use net_types::ScopeableAddress as _;
 use num_derive::FromPrimitive;
 use std::collections::hash_map::{Entry, HashMap};
 use {
-    fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
     fuchsia_async as fasync,
 };
 
@@ -268,7 +270,7 @@ struct StateDelta {
 }
 
 #[derive(Clone, Default, Debug, PartialEq)]
-struct IpVersions<T> {
+pub struct IpVersions<T> {
     ipv4: T,
     ipv6: T,
 }
@@ -570,6 +572,8 @@ struct PersistentNetworkCheckContext {
     resolved_addrs: HashMap<String, ResolvedIps>,
     // Dns Resolve Time
     resolved_time: zx::MonotonicInstant,
+    // Context about the interface, that enables telemetry.
+    telemetry: TelemetryContext,
 }
 
 impl Default for PersistentNetworkCheckContext {
@@ -577,6 +581,63 @@ impl Default for PersistentNetworkCheckContext {
         Self {
             resolved_addrs: Default::default(),
             resolved_time: zx::MonotonicInstant::INFINITE_PAST,
+            telemetry: Default::default(),
+        }
+    }
+}
+
+impl From<TelemetryContext> for PersistentNetworkCheckContext {
+    fn from(value: TelemetryContext) -> Self {
+        Self {
+            resolved_addrs: Default::default(),
+            resolved_time: zx::MonotonicInstant::INFINITE_PAST,
+            telemetry: value,
+        }
+    }
+}
+
+// Information about the interface that is important for telemetry,
+// and is not tied to a specific instance of a network check.
+#[derive(Clone, Default)]
+struct TelemetryContext {
+    // The interface identifiers derived from the interface's PortClass. Used
+    // to determine which TimeSeries are applicable to the current interface.
+    interface_identifiers: Vec<link_properties_state::InterfaceIdentifier>,
+    has_v4_address: bool,
+    has_default_ipv4_route: bool,
+    has_v6_address: bool,
+    has_default_ipv6_route: bool,
+}
+
+impl TelemetryContext {
+    fn new(
+        port_class: fnet_interfaces_ext::PortClass,
+        addresses: &Vec<fnet_interfaces_ext::Address<fnet_interfaces_ext::DefaultInterest>>,
+        has_default_ipv4_route: bool,
+        has_default_ipv6_route: bool,
+    ) -> Self {
+        let interface_identifiers = link_properties_state::identifiers_from_port_class(port_class);
+        // Whether the interface has a globally routable v4 / v6 address.
+        // v6 address must not be link local.
+        let (has_v4_address, has_v6_address) = {
+            addresses.iter().fold((false, false), |(mut has_v4, mut has_v6), addr| {
+                match addr.addr.addr {
+                    fnet::IpAddress::Ipv4(_) => {
+                        has_v4 = true;
+                    }
+                    fnet::IpAddress::Ipv6(v6) => {
+                        has_v6 = has_v6 || !v6.is_unicast_link_local();
+                    }
+                };
+                (has_v4, has_v6)
+            })
+        };
+        Self {
+            interface_identifiers,
+            has_v4_address,
+            has_default_ipv4_route,
+            has_v6_address,
+            has_default_ipv6_route,
         }
     }
 }
@@ -665,6 +726,15 @@ impl Default for NetworkCheckContext {
             router_discoverable: false,
             gateway_pingable: false,
             persistent_context: Default::default(),
+        }
+    }
+}
+
+impl From<TelemetryContext> for NetworkCheckContext {
+    fn from(value: TelemetryContext) -> Self {
+        NetworkCheckContext {
+            persistent_context: PersistentNetworkCheckContext::from(value),
+            ..Default::default()
         }
     }
 }
@@ -903,6 +973,32 @@ impl<Time: TimeProvider> Monitor<Time> {
                     system_state: self.state.get_system().state(),
                 },
             });
+            let telemetry_context = &ctx.persistent_context.telemetry;
+            let interface_identifiers = &telemetry_context.interface_identifiers;
+            telemetry_sender.send(TelemetryEvent::LinkPropertiesUpdate {
+                interface_identifiers: interface_identifiers.clone(),
+                link_properties: IpVersions {
+                    ipv4: LinkProperties {
+                        has_address: telemetry_context.has_v4_address,
+                        has_default_route: telemetry_context.has_default_ipv4_route,
+                        has_dns: ctx.discovered_state_v4.has_dns(),
+                        has_http_reachability: ctx.discovered_state_v4.has_http(),
+                    },
+                    ipv6: LinkProperties {
+                        has_address: telemetry_context.has_v6_address,
+                        has_default_route: telemetry_context.has_default_ipv6_route,
+                        has_dns: ctx.discovered_state_v6.has_dns(),
+                        has_http_reachability: ctx.discovered_state_v6.has_http(),
+                    },
+                },
+            });
+            telemetry_sender.send(TelemetryEvent::LinkStateUpdate {
+                interface_identifiers: interface_identifiers.clone(),
+                link_state: IpVersions {
+                    ipv4: ctx.discovered_state_v4.link,
+                    ipv6: ctx.discovered_state_v6.link,
+                },
+            });
         }
 
         let () = self.update_state(id, &name, info);
@@ -1025,11 +1121,11 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                 &fnet_interfaces_ext::Properties {
                     id,
                     ref name,
-                    port_class: _,
+                    port_class,
                     online,
-                    addresses: _,
-                    has_default_ipv4_route: _,
-                    has_default_ipv6_route: _,
+                    ref addresses,
+                    has_default_ipv4_route,
+                    has_default_ipv6_route,
                 },
             routes,
             neighbors,
@@ -1043,7 +1139,16 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
         // short period of time, for example changing between online and offline multiple times
         // over the span of a few seconds. It is safe that this happens, as the system is
         // eventually consistent.
-        let ctx = self.interface_context.entry(id).or_insert(Default::default());
+        let telemetry_context = TelemetryContext::new(
+            port_class,
+            &addresses,
+            has_default_ipv4_route,
+            has_default_ipv6_route,
+        );
+        let ctx = self
+            .interface_context
+            .entry(id)
+            .or_insert_with(|| NetworkCheckContext::from(telemetry_context.clone()));
 
         match ctx.checker_state {
             NetworkCheckState::Begin => {}
@@ -1051,12 +1156,17 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                 let mut new_ctx = NetworkCheckContext::default();
                 // Copy persistent context context between passes
                 std::mem::swap(&mut new_ctx.persistent_context, &mut ctx.persistent_context);
+                // The telemetry should be updated based on the Properties passed into `begin`.
+                new_ctx.persistent_context.telemetry = telemetry_context;
                 *ctx = new_ctx;
             }
             NetworkCheckState::PingGateway
             | NetworkCheckState::PingInternet
             | NetworkCheckState::FetchHttp
             | NetworkCheckState::ResolveDns => {
+                // Update the Properties for the TelemetryContext so that the LinkProperties can
+                // be reported properly.
+                ctx.persistent_context.telemetry = telemetry_context;
                 return Err(anyhow!("skipped, non-idle state found on interface {id}"));
             }
         }
