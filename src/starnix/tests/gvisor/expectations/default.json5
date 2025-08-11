@@ -297,6 +297,7 @@
                 "TaggedAddressesTest.MemoryFault",
 
                 // fcntl_test
+                "FcntlTest.RegularFileOAsync",
                 "FcntlTest.SetSig",
                 "FcntlTest.SetSigDefaultsToZero",
                 "FcntlTest.SetSigToDefault",
