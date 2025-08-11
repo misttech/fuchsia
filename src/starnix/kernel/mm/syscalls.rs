@@ -21,7 +21,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::SyscallArg;
 use starnix_types::time::{duration_from_timespec, time_from_timespec, timespec_from_time};
 use starnix_uapi::auth::{CAP_SYS_PTRACE, PTRACE_MODE_ATTACH_REALCREDS};
-use starnix_uapi::errors::{Errno, EINTR, ENOMEM};
+use starnix_uapi::errors::{Errno, EINTR};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::user_value::UserValue;
@@ -255,7 +255,7 @@ pub fn sys_msync(
     // use msync as a way to probe whether a page is mapped or not.
     mm.ensure_mapped(addr, length)?;
 
-    let addr_end = (addr + length).map_err(|_| Errno::new(ENOMEM))?;
+    let addr_end = (addr + length).map_err(|_| errno!(ENOMEM))?;
     if flags & MS_INVALIDATE != 0 && mm.state.read().num_locked_bytes(addr..addr_end) > 0 {
         // gvisor mlock tests rely on returning EBUSY from msync on locked ranges.
         return error!(EBUSY);

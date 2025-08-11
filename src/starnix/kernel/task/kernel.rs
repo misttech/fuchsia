@@ -49,7 +49,7 @@ use starnix_sync::{
 };
 use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_uapi::device_type::DeviceType;
-use starnix_uapi::errors::Errno;
+use starnix_uapi::errors::{errno, Errno};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{from_status_like_fdio, VMADDR_CID_HOST};
 use std::borrow::Cow;
@@ -706,7 +706,7 @@ impl Kernel {
             }
             Err(err) => {
                 log_error!("Unable to get /svc namespace channel! {}", err);
-                Err(Errno::new(starnix_uapi::errors::ENOENT))
+                Err(errno!(ENOENT))
             }
         }
     }
@@ -822,7 +822,7 @@ impl Kernel {
                 )
                 .map_err(|e| {
                     log_error!("Failed to intialize the subdirs: {}", e);
-                    Errno::new(starnix_uapi::errors::EIO)
+                    errno!(EIO)
                 })?;
 
                 Ok((fio::DirectorySynchronousProxy::new(root_channel), remaining_subdir))
@@ -833,7 +833,7 @@ impl Kernel {
                     ns_path.display(),
                     err
                 );
-                Err(Errno::new(starnix_uapi::errors::ENOENT))
+                Err(errno!(ENOENT))
             }
         }
     }

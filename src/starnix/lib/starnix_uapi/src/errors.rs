@@ -15,6 +15,9 @@ pub struct Errno {
 }
 
 impl Errno {
+    /// Creates a new `Errno` with the given `ErrnoCode` and the location of the caller.
+    ///
+    /// Callers should use the `errno!` macro instead of calling this function directly.
     #[track_caller]
     pub fn new(code: ErrnoCode) -> Self {
         Errno { code, location: std::panic::Location::caller(), context: None }

@@ -23,7 +23,7 @@ use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_core::vfs::FsNodeOps;
 use starnix_logging::{log_error, log_warn};
 use starnix_sync::{Locked, Unlocked};
-use starnix_uapi::errors::Errno;
+use starnix_uapi::errors::{errno, Errno};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -73,11 +73,11 @@ impl BytesFileOps for TemperatureFile {
             .get_temperature_celsius(MonotonicInstant::INFINITE)
             .map_err(|e| {
                 log_error!("get_temperature_celsius failed: {}", e);
-                Errno::new(starnix_uapi::errors::ENOENT)
+                errno!(ENOENT)
             })?;
         let _ = zx::Status::ok(zx_status).map_err(|e| {
             log_error!("get_temperature_celsius driver returned error: {}", e);
-            Errno::new(starnix_uapi::errors::ENOENT)
+            errno!(ENOENT)
         })?;
 
         let out = format!("{}\n", celsius_to_millicelsius(temp) as i32);
