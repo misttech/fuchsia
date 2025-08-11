@@ -1371,7 +1371,11 @@ impl CurrentTask {
     }
 
     /// Processes a Zircon exception associated with this task.
-    pub fn process_exception(&self, report: &zx::sys::zx_exception_report_t) -> ExceptionResult {
+    pub fn process_exception(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        report: &zx::sys::zx_exception_report_t,
+    ) -> ExceptionResult {
         match report.header.type_ {
             zx::sys::ZX_EXCP_GENERAL => match get_signal_for_general_exception(&report.context) {
                 Some(sig) => ExceptionResult::Signal(SignalInfo::default(sig)),
@@ -1385,7 +1389,7 @@ impl CurrentTask {
                     zx::Status::from_raw(report.context.synth_code as zx::sys::zx_status_t);
                 let report = decode_page_fault_exception_report(report);
                 if let Some(mm) = self.mm() {
-                    mm.handle_page_fault(report, status)
+                    mm.handle_page_fault(locked, report, status)
                 } else {
                     panic!(
                         "system task is handling a major page fault status={:?}, report={:?}",

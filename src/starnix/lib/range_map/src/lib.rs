@@ -1428,6 +1428,13 @@ where
         self.get_if_contains_key(&key, self.find(&key, CursorPosition::Left))
     }
 
+    /// Searches the map for all keys that overlap the given range.
+    ///
+    /// Returns an iterator over the keys.
+    pub fn get_keys(&self, range: Range<K>) -> impl Iterator<Item = &Range<K>> {
+        self.range(range).map(|(key, _)| key)
+    }
+
     /// The last range stored in this map.
     pub fn last_range(&self) -> Option<&Range<K>> {
         self.node.last_key_value().map(|(key, _)| key)

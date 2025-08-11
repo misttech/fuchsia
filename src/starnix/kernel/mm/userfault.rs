@@ -40,22 +40,36 @@ impl UserFault {
         Self { mm, state: OrderedMutex::new(UserFaultState::new()) }
     }
 
-    pub fn userfault_pages_insert<L>(
-        &self,
-        locked: &mut Locked<L>,
-        range: Range<UserAddress>,
-        value: bool,
-    ) where
+    pub fn insert_pages<L>(&self, locked: &mut Locked<L>, range: Range<UserAddress>, value: bool)
+    where
         L: LockBefore<UserFaultInner>,
     {
         self.state.lock(locked).userfault_pages.insert(range, value);
     }
 
-    pub fn userfault_pages_remove<L>(&self, locked: &mut Locked<L>, range: Range<UserAddress>)
+    pub fn remove_pages<L>(&self, locked: &mut Locked<L>, range: Range<UserAddress>) -> bool
     where
         L: LockBefore<UserFaultInner>,
     {
-        self.state.lock(locked).userfault_pages.remove(range);
+        !self.state.lock(locked).userfault_pages.remove(range).is_empty()
+    }
+
+    pub fn get_registered_pages_overlapping_range<L>(
+        &self,
+        locked: &mut Locked<L>,
+        range: Range<UserAddress>,
+    ) -> Vec<Range<UserAddress>>
+    where
+        L: LockBefore<UserFaultInner>,
+    {
+        self.state.lock(locked).userfault_pages.get_keys(range).cloned().collect()
+    }
+
+    pub fn contains_addr<L>(&self, locked: &mut Locked<L>, addr: UserAddress) -> bool
+    where
+        L: LockBefore<UserFaultInner>,
+    {
+        self.state.lock(locked).userfault_pages.get(addr).is_some()
     }
 
     pub fn get_first_populated_page_after<L>(
@@ -134,7 +148,7 @@ impl UserFault {
         }
         check_op_range(start, len)?;
         let mm = self.mm.upgrade().ok_or_else(|| errno!(EINVAL))?;
-        mm.unregister_range_from_uffd(locked, start, len as usize)
+        mm.unregister_range_from_uffd(locked, self, start, len as usize)
     }
 
     pub fn op_copy<L>(
@@ -190,7 +204,7 @@ impl UserFault {
         L: LockBefore<UserFaultInner>,
     {
         if let Some(mm) = self.mm.upgrade() {
-            mm.unregister_all_from_uffd(locked, self);
+            mm.unregister_uffd(locked, self);
         }
     }
 }

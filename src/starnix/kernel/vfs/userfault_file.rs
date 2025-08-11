@@ -100,13 +100,20 @@ impl UserFaultFile {
         current_task: &CurrentTask,
         open_flags: OpenFlags,
         _user_mode_only: bool,
-    ) -> FileHandle
+    ) -> Result<FileHandle, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let mm = current_task.mm().unwrap();
+        let mm = current_task.mm().ok_or_else(|| errno!(EINVAL))?;
         let inner = Arc::new(UserFault::new(Arc::downgrade(&mm)));
-        Anon::new_file(locked, current_task, Box::new(Self { inner }), open_flags, "[userfaultfd]")
+        mm.register_uffd(&inner);
+        Ok(Anon::new_file(
+            locked,
+            current_task,
+            Box::new(Self { inner }),
+            open_flags,
+            "[userfaultfd]",
+        ))
     }
 
     fn api_handshake<L>(

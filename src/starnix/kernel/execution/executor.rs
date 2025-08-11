@@ -352,7 +352,8 @@ fn process_restricted_exit(
 
             current_task.thread_state.registers =
                 zx::sys::zx_thread_state_general_regs_t::from(&restricted_exception.state).into();
-            let exception_result = current_task.process_exception(&restricted_exception.exception);
+            let exception_result =
+                current_task.process_exception(locked, &restricted_exception.exception);
             process_completed_exception(
                 locked,
                 current_task,

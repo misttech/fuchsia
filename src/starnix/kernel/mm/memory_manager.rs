@@ -9,7 +9,7 @@ use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
     FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, Mapping, MappingBacking,
     MappingFlags, MappingName, MlockPinFlavor, MlockShadowProcess, PrivateFutexKey, UserFault,
-    UserFaultRegistration, VmsplicePayload, VmsplicePayloadSegment, VMEX_RESOURCE,
+    VmsplicePayload, VmsplicePayloadSegment, VMEX_RESOURCE,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -33,7 +33,7 @@ use starnix_logging::{
 };
 use starnix_sync::{
     LockBefore, Locked, MmDumpable, OrderedMutex, RwLock, RwLockWriteGuard, ThreadGroupLimits,
-    UserFaultInner,
+    Unlocked, UserFaultInner,
 };
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
@@ -68,7 +68,7 @@ use std::collections::HashMap;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut, Range, RangeBounds};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Weak};
 use syncio::zxio::zxio_default_maybe_faultable_copy;
 use usercopy::slice_to_maybe_uninit_mut;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -304,6 +304,9 @@ pub struct MemoryManagerState {
     /// Memory object backing private, anonymous memory allocations in this address space.
     #[cfg(feature = "alternate_anon_allocs")]
     private_anonymous: PrivateAnonymousMemoryManager,
+
+    /// UserFaults registered with this memory manager.
+    userfaultfds: Vec<Weak<UserFault>>,
 
     forkable_state: MemoryManagerForkableState,
 }
@@ -1434,7 +1437,7 @@ impl MemoryManagerState {
         // Update the flags on each mapping in the range.
         let mut updates = vec![];
         for (range, mapping) in self.mappings.range(prot_range.clone()) {
-            if mapping.userfault().is_some() {
+            if mapping.flags().contains(MappingFlags::UFFD) {
                 track_stub!(
                     TODO("https://fxbug.dev/297375964"),
                     "mprotect on uffd-registered range should not alter protections"
@@ -2253,6 +2256,20 @@ impl MemoryManagerState {
             return None;
         }
         Some((range.clone(), aio_context.clone()))
+    }
+
+    fn find_uffd<L>(&self, locked: &mut Locked<L>, addr: UserAddress) -> Option<Arc<UserFault>>
+    where
+        L: LockBefore<UserFaultInner>,
+    {
+        for userfault in self.userfaultfds.iter() {
+            if let Some(userfault) = userfault.upgrade() {
+                if userfault.contains_addr(locked, addr) {
+                    return Some(userfault);
+                }
+            }
+        }
+        None
     }
 
     pub fn mrelease(&self) -> Result<(), Errno> {
@@ -3234,6 +3251,7 @@ impl MemoryManager {
                 mappings: Default::default(),
                 #[cfg(feature = "alternate_anon_allocs")]
                 private_anonymous: PrivateAnonymousMemoryManager::new(backing_size),
+                userfaultfds: Default::default(),
                 forkable_state: Default::default(),
             }),
             // TODO(security): Reset to DISABLE, or the value in the fs.suid_dumpable sysctl, under
@@ -3392,6 +3410,11 @@ impl MemoryManager {
             .is_ok()
     }
 
+    pub fn register_uffd(&self, userfault: &Arc<UserFault>) {
+        let mut state = self.state.write();
+        state.userfaultfds.push(Arc::downgrade(userfault));
+    }
+
     // Register a given memory range with a userfault object.
     pub fn register_with_uffd<L>(
         self: &Arc<Self>,
@@ -3414,13 +3437,12 @@ impl MemoryManager {
                 track_stub!(TODO("https://fxbug.dev/391599171"), "uffd for shmem and hugetlbfs");
                 return error!(EINVAL);
             }
-            if mapping.userfault().is_some() {
+            if mapping.flags().contains(MappingFlags::UFFD) {
                 return error!(EBUSY);
             }
             let range = range.intersect(&range_for_op);
             let mut mapping = mapping.clone();
-            let registration = UserFaultRegistration::new(Arc::downgrade(userfault), mode);
-            mapping.set_userfault(Box::new(registration));
+            mapping.set_uffd(mode);
             updates.push((range, mapping));
         }
         if updates.is_empty() {
@@ -3436,7 +3458,7 @@ impl MemoryManager {
             state.mappings.insert(range, mapping);
         }
 
-        userfault.userfault_pages_insert(locked, range_for_op, false);
+        userfault.insert_pages(locked, range_for_op, false);
 
         Ok(())
     }
@@ -3445,6 +3467,7 @@ impl MemoryManager {
     pub fn unregister_range_from_uffd<L>(
         &self,
         locked: &mut Locked<L>,
+        userfault: &Arc<UserFault>,
         addr: UserAddress,
         length: usize,
     ) -> Result<(), Errno>
@@ -3461,14 +3484,12 @@ impl MemoryManager {
                 track_stub!(TODO("https://fxbug.dev/391599171"), "uffd for shmem and hugetlbfs");
                 return error!(EINVAL);
             }
-            if let Some(uf_registration) = mapping.userfault() {
+            if mapping.flags().contains(MappingFlags::UFFD) {
                 let range = range.intersect(&range_for_op);
-                let mut mapping = mapping.clone();
-                mapping.clear_userfault();
-                updates.push((range.clone(), mapping));
-
-                if let Some(userfault) = uf_registration.userfault.upgrade() {
-                    userfault.userfault_pages_remove(locked, range);
+                if userfault.remove_pages(locked, range.clone()) {
+                    let mut mapping = mapping.clone();
+                    mapping.clear_uffd();
+                    updates.push((range, mapping));
                 }
             }
         }
@@ -3482,13 +3503,12 @@ impl MemoryManager {
                 .protect_vmar_range(range.start, length, restored_flags)
                 .expect("Failed to restore original protection bits on uffd-registered range");
         }
-
         Ok(())
     }
 
     // Unregister any mappings registered with a given userfault object. Used when closing the last
     // file descriptor associated to it.
-    pub fn unregister_all_from_uffd<L>(&self, locked: &mut Locked<L>, userfault: &Arc<UserFault>)
+    pub fn unregister_uffd<L>(&self, locked: &mut Locked<L>, userfault: &Arc<UserFault>)
     where
         L: LockBefore<UserFaultInner>,
     {
@@ -3496,10 +3516,11 @@ impl MemoryManager {
 
         let mut state = self.state.write();
         for (range, mapping) in state.mappings.iter() {
-            if let Some(uf_registration) = mapping.userfault() {
-                if uf_registration.userfault.ptr_eq(&Arc::downgrade(userfault)) {
+            if mapping.flags().contains(MappingFlags::UFFD) {
+                for range in userfault.get_registered_pages_overlapping_range(locked, range.clone())
+                {
                     let mut mapping = mapping.clone();
-                    mapping.clear_userfault();
+                    mapping.clear_uffd();
                     updates.push((range.clone(), mapping));
                 }
             }
@@ -3515,11 +3536,14 @@ impl MemoryManager {
                 .expect("Failed to restore original protection bits on uffd-registered range");
         }
 
-        userfault.userfault_pages_remove(
+        userfault.remove_pages(
             locked,
             UserAddress::from_ptr(RESTRICTED_ASPACE_BASE)
                 ..UserAddress::from_ptr(RESTRICTED_ASPACE_HIGHEST_ADDRESS),
         );
+
+        let weak_userfault = Arc::downgrade(userfault);
+        state.userfaultfds.retain(|uf| !Weak::ptr_eq(uf, &weak_userfault));
     }
 
     /// Populate a range of pages registered with an userfaulfd according to a `populate` function.
@@ -3545,10 +3569,10 @@ impl MemoryManager {
         // registered with an userfault object.
         let mut bytes_registered_with_uffd = 0;
         for (mapping, len) in state.get_contiguous_mappings_at(addr, length)? {
-            if let Some(uf_registration) = mapping.userfault() {
+            if mapping.flags().contains(MappingFlags::UFFD) {
                 // Check that the mapping is registered with the same uffd. This is not required,
                 // but we don't support cross-uffd operations yet.
-                if !uf_registration.userfault.ptr_eq(&Arc::downgrade(userfault)) {
+                if !userfault.contains_addr(locked, addr) {
                     track_stub!(
                         TODO("https://fxbug.dev/391599171"),
                         "operations across different uffds"
@@ -3579,7 +3603,7 @@ impl MemoryManager {
         let effective_length = trimmed_end - addr;
 
         populate(&state, effective_length)?;
-        userfault.userfault_pages_insert(locked, addr..trimmed_end, true);
+        userfault.insert_pages(locked, addr..trimmed_end, true);
 
         // Since we used protection bits to force pagefaults, we now need to reverse this change by
         // restoring the protections on the underlying Zircon mappings to the "real" protection bits
@@ -4019,6 +4043,7 @@ impl MemoryManager {
 
     pub fn handle_page_fault(
         self: &Arc<Self>,
+        locked: &mut Locked<Unlocked>,
         decoded: PageFaultExceptionReport,
         error_code: zx::Status,
     ) -> ExceptionResult {
@@ -4027,11 +4052,11 @@ impl MemoryManager {
         if error_code == zx::Status::ACCESS_DENIED {
             let state = self.state.write();
             if let Some((_, mapping)) = state.mappings.get(addr) {
-                if let Some(userfault_reg) = &mapping.userfault() {
+                if mapping.flags().contains(MappingFlags::UFFD) {
                     // TODO(https://fxbug.dev/391599171): Support other modes
-                    assert_eq!(userfault_reg.mode, FaultRegisterMode::MISSING);
+                    assert!(mapping.flags().contains(MappingFlags::UFFD_MISSING));
 
-                    if let Some(_uffd) = userfault_reg.userfault.upgrade() {
+                    if let Some(_uffd) = state.find_uffd(locked, addr) {
                         // If the SIGBUS feature was set, no event will be sent to the file.
                         // Instead, SIGBUS is delivered to the process that triggered the fault.
                         // TODO(https://fxbug.dev/391599171): For now we only support this feature,
