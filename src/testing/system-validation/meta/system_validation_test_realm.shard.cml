@@ -90,15 +90,6 @@
         //
         // TODO: Find a better way to force carnelian apps to use scenic.
         // {
-        //     // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-        //     // been migrated to services. The service capability has been added below.
-        //     directory: "dev-display-coordinator",
-        //     from: "parent",
-        //     to: "#system-validation-tests",
-        //     rights: [ "r*" ],
-        // },
-        // {
-        //     // This service replaces the directory capability above.
         //     service: "fuchsia.hardware.display.Service",
         //     to: "#system-validation-tests",
         //     from: "parent",
@@ -107,11 +98,6 @@
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
             // been migrated to services. The service capability has been added below.
             directory: [
-                "dev-goldfish-address-space",
-                "dev-goldfish-control",
-                "dev-goldfish-pipe",
-                "dev-goldfish-sync",
-                "dev-gpu",
                 "dev-input-report",
                 "dev-mediacodec",
             ],
@@ -122,12 +108,8 @@
         {
             // These services replace the directory capabilities above.
             service: [
-                "fuchsia.gpu.magma.Service",
-                "fuchsia.hardware.goldfish.AddressSpaceService",
-                "fuchsia.hardware.goldfish.ControllerService",
-                "fuchsia.hardware.goldfish.ControlService",
-                "fuchsia.hardware.goldfish.SyncService",
                 "fuchsia.hardware.mediacodec.Service",
+                "fuchsia.input.report.Service",
             ],
             from: "parent",
             to: "#system-validation-tests",
