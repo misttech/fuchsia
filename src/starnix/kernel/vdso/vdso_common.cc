@@ -126,9 +126,7 @@ int gettimeofday_impl(timeval* tv, struct timezone* tz) {
   if (utc_nsec != kUtcInvalid) {
     // TODO(https://fxbug.dev/380431929): Are we going to lose any necessary precision?
     to_nanoseconds(utc_nsec, &tv->tv_sec, &tv->tv_usec);
-    // Perform the division unsigned to reuse the same helpers (arm).
-    uint64_t usec = tv->tv_usec / 1'000;
-    tv->tv_usec = static_cast<long>(usec);
+    tv->tv_usec = static_cast<long>(static_cast<unsigned long>(tv->tv_usec) / 1'000);
     return 0;
   }
 

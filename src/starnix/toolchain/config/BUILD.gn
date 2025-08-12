@@ -15,6 +15,7 @@ config("bionic") {
     clang_target = "${clang_arch}-unknown-linux-gnu"
   } else if (target_cpu == "arm64") {
     if (current_cpu == "arm") {
+      configs = [ "//build/config/arm" ]
       clang_target = "armv7-unknown-linux-gnueabihf"
       bionic_arch = "arm"
       cflags += [ "-fasynchronous-unwind-tables" ]

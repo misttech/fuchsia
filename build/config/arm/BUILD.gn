@@ -8,6 +8,7 @@
 config("arm") {
   cflags = [
     "-march=armv7-a",
+    "-mhwdiv=arm,thumb",
     "-mfloat-abi=hard",
     "-mtune=generic",
   ]
