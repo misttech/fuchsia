@@ -15,7 +15,7 @@
         {
             config: [
                 "fuchsia.power.SuspendEnabled",
-                "fuchsia.starnix.ExpectMcuReady",
+                "fuchsia.starnix.mcu.ExpectReady",
             ],
             from: "parent",
             to: "#base-drivers",

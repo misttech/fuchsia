@@ -80,7 +80,7 @@
                 "fuchsia.power.SuspendEnabled",
                 "fuchsia.power.UseSuspender",
                 "fuchsia.power.WaitForSuspendingToken",
-                "fuchsia.starnix.ExpectMcuReady",
+                "fuchsia.starnix.mcu.ExpectReady",
                 "fuchsia.usb.PeripheralConfig.Functions",
             ],
             from: "#config",

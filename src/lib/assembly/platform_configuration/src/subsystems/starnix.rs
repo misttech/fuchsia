@@ -56,7 +56,7 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
                 )?;
             }
             builder.set_config_capability(
-                "fuchsia.starnix.ExpectMcuReady",
+                "fuchsia.starnix.mcu.ExpectReady",
                 Config::new(ConfigValueType::Bool, (*enable_android_support).into()),
             )?;
             builder.set_config_capability(
@@ -91,7 +91,7 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
             )?;
         } else {
             builder.set_config_capability(
-                "fuchsia.starnix.ExpectMcuReady",
+                "fuchsia.starnix.mcu.ExpectReady",
                 Config::new(ConfigValueType::Bool, false.into()),
             )?;
         }
