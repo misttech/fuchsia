@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use super::super::timer::Timers;
+use super::atomic_future::hooks::HooksMap;
 use super::atomic_future::{AtomicFutureHandle, AttemptPollResult};
 use super::packets::{
     PacketReceiver, PacketReceiverMap, RawReceiverRegistration, ReceiverRegistration,
@@ -108,6 +109,7 @@ pub(crate) struct Executor {
     // Data that belongs to the user that can be accessed via EHandle::local(). See
     // `TestExecutor::poll_until_stalled`.
     pub(super) owner_data: Mutex<Option<Box<dyn Any + Send>>>,
+    pub(super) hooks_map: HooksMap,
 }
 
 impl Executor {
@@ -144,6 +146,7 @@ impl Executor {
             num_threads,
             polled: AtomicU64::new(0),
             owner_data: Mutex::new(None),
+            hooks_map: HooksMap::default(),
         }
     }
 

@@ -114,6 +114,7 @@ rustc_library("fuchsia-async") {
       "src/net/fuchsia/tcp.rs",
       "src/net/fuchsia/udp.rs",
       "src/runtime/fuchsia/executor/atomic_future.rs",
+      "src/runtime/fuchsia/executor/atomic_future/hooks.rs",
       "src/runtime/fuchsia/executor/atomic_future/spawnable_future.rs",
       "src/runtime/fuchsia/executor/common.rs",
       "src/runtime/fuchsia/executor/local.rs",
