@@ -13,7 +13,7 @@ use valico::json_schema::validators::ValidationState;
 /// Error encountered while executing test binary
 #[derive(Debug, Error)]
 pub enum TestRunError {
-    #[error("Error launching test binary '{path:?}'")]
+    #[error("Error launching test binary '{path:?}': {source}")]
     Spawn {
         path: std::ffi::OsString,
         #[source]
@@ -46,21 +46,21 @@ pub enum TestRunError {
 /// Error encountered validating config
 #[derive(Debug, Error)]
 pub enum BuildError {
-    #[error("Schema file {path} could not be opened for reading")]
+    #[error("Schema file {path} could not be opened for reading: {source}")]
     FailedToOpenSchema {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
 
-    #[error("Failure attempting to read schema {path}")]
+    #[error("Failure attempting to read schema {path}: {source}")]
     FailedToReadSchema {
         path: PathBuf,
         #[source]
         source: serde_json5::Error,
     },
 
-    #[error("Failure attempting to parse schema {path}")]
+    #[error("Failure attempting to parse schema {path}: {source}")]
     FailedToParseSchema {
         path: PathBuf,
         #[source]
@@ -70,24 +70,24 @@ pub enum BuildError {
     #[error("Schema not well-formed: {0}")]
     InvalidSchema(String),
 
-    #[error("Failed to parse test configuration as aggregated JSON value")]
+    #[error("Failed to parse test configuration as aggregated JSON value: {0}")]
     FailedToParse(#[from] serde_json::Error),
 
-    #[error("Include file {path} could not be opened for reading")]
+    #[error("Include file {path} could not be opened for reading: {source}")]
     FailedToOpenInclude {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
 
-    #[error("Failure attempting to parse include {path}")]
+    #[error("Failure attempting to parse include {path}: {source}")]
     FailedToParseInclude {
         path: PathBuf,
         #[source]
         source: serde_json5::Error,
     },
 
-    #[error("Incorrect usage")]
+    #[error("Incorrect usage: {0}")]
     IncorrectUsage(#[from] UsageError),
 
     #[error("Multiple validation errors: {0:?}")]
@@ -130,9 +130,6 @@ pub enum UsageError {
 
     #[error("Included path {0} is not a file")]
     IncludedPathIsNotAFile(PathBuf),
-
-    #[error("Parameter '{0}' is specified in 'env' option, but was not in the schema")]
-    UnknownEnvParameter(Name),
 
     #[error("Parameter '{0}' is required, but was not in the schema")]
     UnknownRequiredParameter(Name),
@@ -186,4 +183,10 @@ pub enum UsageError {
 
     #[error("Expected executable file path for option '{option}', got unreadable {path:?}")]
     BinaryUnreadable { option: Name, path: PathBuf },
+
+    #[error("Assignment to parameter '{parameter}' references undefined environment variable {var_name_value:?}")]
+    FromEnvUndefined { parameter: Name, var_name_value: Value },
+
+    #[error("Assignment to parameter '{parameter}' uses non-string value {var_name_value:?} in from_env/try_from_env")]
+    FromEnvNotString { parameter: Name, var_name_value: Value },
 }

@@ -70,7 +70,7 @@ pub fn parser_for_parameter(
     schema: &Schema,
 ) -> Result<Box<dyn Parser + Send + Sync>, UsageError> {
     match parameter_name {
-        Name::Schema | Name::Debug | Name::Env => {
+        Name::Schema | Name::Debug => {
             Err(UsageError::UnrecognizedParameter(parameter_name.clone()))
         }
         Name::Strict => Ok(parser_for_boolean()),

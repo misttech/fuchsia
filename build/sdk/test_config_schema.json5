@@ -23,7 +23,6 @@
         // as options that influence its behavior.
         //     schema
         //     debug
-        //     env
         //     strict
         //     include
         //     require

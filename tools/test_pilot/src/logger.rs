@@ -14,8 +14,6 @@ pub trait Logger {
 
     fn start_command_line(&mut self);
 
-    fn start_environment_variables(&mut self);
-
     fn start_include(&mut self, path: &PathBuf);
 
     fn add_include(&mut self, path: &PathBuf);
@@ -34,10 +32,6 @@ pub trait Logger {
 
     fn debug_option(&mut self);
 
-    fn add_some_to_env(&mut self, value: &str);
-
-    fn add_all_to_env(&mut self);
-
     fn add_parameter_non_strict(&mut self, name: &Name, value: &Value);
 
     fn add_parameter_strict(&mut self, name: &Name, value: &Value);
@@ -45,6 +39,12 @@ pub trait Logger {
     fn overridden_add_parameter_strict_ignored(&mut self, name: &Name, value: &Value);
 
     fn add_to_array(&mut self, name: &Name, value: &Value);
+
+    fn from_env(&mut self, var_name_value: &Value, value: &Value);
+
+    fn try_from_env(&mut self, var_name_value: &Value, value: &Value);
+
+    fn try_from_env_undefined(&mut self, name: &Name, var_name_value: &Value);
 }
 
 #[allow(dead_code)] // TODO(https://fxbug.dev/421409143)
@@ -55,8 +55,6 @@ impl Logger for NullLogger {
     fn strict(&mut self) {}
 
     fn start_command_line(&mut self) {}
-
-    fn start_environment_variables(&mut self) {}
 
     fn start_include(&mut self, _path: &PathBuf) {}
 
@@ -76,10 +74,6 @@ impl Logger for NullLogger {
 
     fn debug_option(&mut self) {}
 
-    fn add_some_to_env(&mut self, _value: &str) {}
-
-    fn add_all_to_env(&mut self) {}
-
     fn add_parameter_non_strict(&mut self, _name: &Name, _value: &Value) {}
 
     fn add_parameter_strict(&mut self, _name: &Name, _value: &Value) {}
@@ -87,6 +81,12 @@ impl Logger for NullLogger {
     fn overridden_add_parameter_strict_ignored(&mut self, _name: &Name, _value: &Value) {}
 
     fn add_to_array(&mut self, _name: &Name, _value: &Value) {}
+
+    fn from_env(&mut self, _var_name_value: &Value, _value: &Value) {}
+
+    fn try_from_env(&mut self, _var_name_value: &Value, _value: &Value) {}
+
+    fn try_from_env_undefined(&mut self, _name: &Name, _var_name_value: &Value) {}
 }
 
 /// Logger that prints messages to stderr.
@@ -99,10 +99,6 @@ impl Logger for StderrLogger {
 
     fn start_command_line(&mut self) {
         eprintln!("from command line:");
-    }
-
-    fn start_environment_variables(&mut self) {
-        eprintln!("from environment variables:");
     }
 
     fn start_include(&mut self, path: &PathBuf) {
@@ -139,14 +135,6 @@ impl Logger for StderrLogger {
 
     fn debug_option(&mut self) {}
 
-    fn add_some_to_env(&mut self, value: &str) {
-        eprintln!("    env = {}", value);
-    }
-
-    fn add_all_to_env(&mut self) {
-        eprintln!("    env (all qualified vars)");
-    }
-
     fn add_parameter_non_strict(&mut self, name: &Name, value: &Value) {
         eprintln!("    set {} = {:?}", name, value);
     }
@@ -161,6 +149,30 @@ impl Logger for StderrLogger {
 
     fn add_to_array(&mut self, name: &Name, value: &Value) {
         eprintln!("    add to {} {:?}", name, value.as_array().expect("value is array"));
+    }
+
+    fn from_env(&mut self, var_name_value: &Value, value: &Value) {
+        eprintln!(
+            "     from env var {} got value {:?}",
+            var_name_value.as_str().expect("var_name_value is string"),
+            value
+        );
+    }
+
+    fn try_from_env(&mut self, var_name_value: &Value, value: &Value) {
+        eprintln!(
+            "     try from env var {} got value {:?}",
+            var_name_value.as_str().expect("var_name_value is string"),
+            value
+        );
+    }
+
+    fn try_from_env_undefined(&mut self, name: &Name, var_name_value: &Value) {
+        eprintln!(
+            "     try from env var {} undefined, skipping assignment to {}",
+            var_name_value.as_str().expect("var_name_value is string"),
+            name
+        );
     }
 }
 
@@ -187,10 +199,6 @@ impl Logger for RetainingLogger {
 
     fn start_command_line(&mut self) {
         self.messages.push(format!("from command line:"));
-    }
-
-    fn start_environment_variables(&mut self) {
-        self.messages.push(format!("from environment variables:"));
     }
 
     fn start_include(&mut self, path: &PathBuf) {
@@ -227,14 +235,6 @@ impl Logger for RetainingLogger {
 
     fn debug_option(&mut self) {}
 
-    fn add_some_to_env(&mut self, value: &str) {
-        self.messages.push(format!("    env = {}", value));
-    }
-
-    fn add_all_to_env(&mut self) {
-        self.messages.push(format!("    env (all qualified vars)"));
-    }
-
     fn add_parameter_non_strict(&mut self, name: &Name, value: &Value) {
         self.messages.push(format!("    set {} = {:?}", name, value));
     }
@@ -252,6 +252,30 @@ impl Logger for RetainingLogger {
             "    add to {} {:?}",
             name,
             value.as_array().expect("value is array")
+        ));
+    }
+
+    fn from_env(&mut self, var_name_value: &Value, value: &Value) {
+        self.messages.push(format!(
+            "    from env var {} got value {:?}",
+            var_name_value.as_str().expect("var_name_value is string"),
+            value
+        ));
+    }
+
+    fn try_from_env(&mut self, var_name_value: &Value, value: &Value) {
+        self.messages.push(format!(
+            "    try from env var {} got value {:?}",
+            var_name_value.as_str().expect("var_name_value is string"),
+            value
+        ));
+    }
+
+    fn try_from_env_undefined(&mut self, name: &Name, var_name_value: &Value) {
+        self.messages.push(format!(
+            "    try from env var {} undefined, skipping assignment to {}",
+            var_name_value.as_str().expect("var_name_value is string"),
+            name
         ));
     }
 }

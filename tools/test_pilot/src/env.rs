@@ -11,11 +11,6 @@ pub trait EnvLike {
     /// by `std::env::args`` (the program name).
     fn args(&self) -> impl Iterator<Item = String>;
 
-    /// Returns an iterator over the process's environment variables and their respective values.
-    /// Unlike `std::env::vars``, this method filters non-unicode names and values rather than
-    /// panicking.
-    fn vars(&self) -> impl Iterator<Item = (String, String)>;
-
     /// Returns the value of the environment variable identified by `key`. This is a wrapper for
     /// `std::env::var` and has the same behavior.
     fn var(&self, key: &str) -> Result<String, std::env::VarError>;
@@ -32,14 +27,6 @@ pub struct ActualEnv;
 impl EnvLike for ActualEnv {
     fn args(&self) -> impl Iterator<Item = String> {
         std::env::args_os().skip(1).filter_map(|os_string| os_string.into_string().ok())
-    }
-
-    fn vars(&self) -> impl Iterator<Item = (String, String)> {
-        std::env::vars_os().filter_map(|(os_name, os_value)| {
-            let name = os_name.into_string().ok()?;
-            let value = os_value.into_string().ok()?;
-            Some((name, value))
-        })
     }
 
     fn var(&self, key: &str) -> Result<String, std::env::VarError> {
@@ -72,10 +59,6 @@ pub mod testutils {
     impl EnvLike for FakeEnv {
         fn args(&self) -> impl Iterator<Item = String> {
             self.args.clone().into_iter()
-        }
-
-        fn vars(&self) -> impl Iterator<Item = (String, String)> {
-            self.vars.clone().into_iter()
         }
 
         fn var(&self, key: &str) -> Result<String, std::env::VarError> {

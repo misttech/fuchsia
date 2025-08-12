@@ -3,14 +3,11 @@
 // found in the LICENSE file.
 
 use crate::schema::Schema;
-use heck::{ToShoutySnakeCase, ToSnakeCase};
+use heck::ToSnakeCase;
 use serde::Deserialize;
-
-const VAR_PREFIX: &str = "FUCHSIA_";
 
 /// Represents an option or parameter name.
 #[derive(Debug, PartialEq, Eq, Hash, Deserialize, Clone, PartialOrd, Ord)]
-
 pub enum Name {
     // Options
     #[serde(rename = "schema")]
@@ -18,9 +15,6 @@ pub enum Name {
 
     #[serde(rename = "debug")]
     Debug,
-
-    #[serde(rename = "env")]
-    Env,
 
     #[serde(rename = "strict")]
     Strict,
@@ -45,7 +39,6 @@ impl Name {
         match s {
             "schema" => Self::Schema,
             "debug" => Self::Debug,
-            "env" => Self::Env,
             "strict" => Self::Strict,
             "include" => Self::Include,
             "require" => Self::Require,
@@ -59,7 +52,6 @@ impl Name {
         match self {
             Self::Schema => "schema",
             Self::Debug => "debug",
-            Self::Env => "env",
             Self::Strict => "strict",
             Self::Include => "include",
             Self::Require => "require",
@@ -77,7 +69,6 @@ impl Name {
         match self {
             Self::Schema
             | Self::Debug
-            | Self::Env
             | Self::Strict
             | Self::Include
             | Self::Require
@@ -94,7 +85,7 @@ impl Name {
     /// Determines whether this `Name` is handled by `add_name_and_value`.
     pub fn can_be_added(&self, schema: &Schema) -> bool {
         match self {
-            Self::Schema | Self::Debug | Self::Env => false,
+            Self::Schema | Self::Debug => false,
             Self::Strict | Self::Include | Self::Require | Self::Prohibit => true,
             Self::Parameter(_) => schema.properties.contains_key(self),
         }
@@ -125,26 +116,6 @@ impl Name {
     pub fn from_arg_name(arg_name: &str) -> Self {
         Self::from(arg_name.to_snake_case())
     }
-
-    /// Converts a valid environment variable name to the equivalent `Name``. Specifically, the
-    /// 'FUCHSIA_' prefix is stripped, and the result is converted to lower-snake-case. Returns
-    /// `None`` if 'var_name' is not a viable variable name for a parameter. Does not check that
-    /// the parameter is in the schema.
-    pub fn from_var_name(var_name: &str) -> Option<Self> {
-        if var_name.starts_with(VAR_PREFIX) && (var_name.to_shouty_snake_case() == var_name) {
-            Some(Self::from(var_name.strip_prefix(VAR_PREFIX).unwrap().to_snake_case()))
-        } else {
-            None
-        }
-    }
-
-    /// Produces a environment variable name from this name. Specifically, it converts this
-    /// name to SHOUTY_SNAKE_CASE and adds a 'FUCHSIA_' prefix.
-    pub fn to_var_name(&self) -> String {
-        let mut result = String::from(VAR_PREFIX);
-        result.push_str(self.as_str().to_shouty_snake_case().as_ref());
-        result
-    }
 }
 
 impl From<String> for Name {
@@ -152,7 +123,6 @@ impl From<String> for Name {
         match s.as_str() {
             "schema" => Self::Schema,
             "debug" => Self::Debug,
-            "env" => Self::Env,
             "strict" => Self::Strict,
             "include" => Self::Include,
             "require" => Self::Require,
@@ -176,7 +146,6 @@ mod tests {
     fn test_is_viable_parameter_name() {
         assert_eq!(false, Name::from_str("schema").is_viable_parameter_name());
         assert_eq!(false, Name::from_str("debug").is_viable_parameter_name());
-        assert_eq!(false, Name::from_str("env").is_viable_parameter_name());
         assert_eq!(false, Name::from_str("strict").is_viable_parameter_name());
         assert_eq!(false, Name::from_str("include").is_viable_parameter_name());
         assert_eq!(false, Name::from_str("require").is_viable_parameter_name());
@@ -194,20 +163,5 @@ mod tests {
         assert_eq!(true, Name::from_str("foo_").is_viable_parameter_name());
         assert_eq!(true, Name::from_str("foo_bar").is_viable_parameter_name());
         assert_eq!(true, Name::from_str("foo_3").is_viable_parameter_name());
-    }
-
-    #[test]
-    fn test_from_var_name() {
-        assert_eq!(None, Name::from_var_name("geese"));
-        assert_eq!(None, Name::from_var_name("fuchsia_geese"));
-        assert_eq!(None, Name::from_var_name("FUCHSIA_geese"));
-        assert_eq!(Some(Name::from_str("geese")), Name::from_var_name("FUCHSIA_GEESE"));
-        assert_eq!(Some(Name::from_str("geese_etc")), Name::from_var_name("FUCHSIA_GEESE_ETC"));
-    }
-
-    #[test]
-    fn test_to_var_name() {
-        assert_eq!(String::from("FUCHSIA_GEESE"), Name::from_str("geese").to_var_name());
-        assert_eq!(String::from("FUCHSIA_GEESE_ETC"), Name::from_str("geese_etc").to_var_name());
     }
 }

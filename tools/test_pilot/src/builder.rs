@@ -44,6 +44,8 @@ use valico::json_schema::validators::ValidationState;
 
 const NO_STRICT_OPTION: &str = "no_strict";
 const NO_OPTION_PREFIX: &str = "no_";
+const FROM_ENV_KEYWORD: &str = "from_env";
+const TRY_FROM_ENV_KEYWORD: &str = "try_from_env";
 
 /// Builds a configuration from an `EnvLike`, an abstraction of `std::env`, and returns it.
 pub fn build_from_env_like<T: for<'a> Deserialize<'a>, E: EnvLike, L: Logger>(
@@ -76,9 +78,6 @@ struct TestConfigBuilder {
     /// have not yet been assigned in strict mode. This collection is used to allow non-strict
     /// assignments to override a single strict assignment.
     overrides: HashSet<Name>,
-
-    /// Indicates which environment variables should be merged into `param_values_by_name`.
-    env_arg: EnvArg,
 
     /// JSON files that have been included.
     include: Vec<PathBuf>,
@@ -114,9 +113,8 @@ impl TestConfigBuilder {
         logger: &mut L,
     ) -> Result<Self, BuildError> {
         let mut to_return = Self::from_arg_iter(env_like.args(), schema, logger)?;
-        to_return.process_vars(env_like, logger)?;
         while let Some(include) = to_return.unprocessed_includes.pop_front() {
-            to_return.process_include(include, logger)?;
+            to_return.process_include(include, env_like, logger)?;
         }
         to_return.validate()?;
 
@@ -147,10 +145,6 @@ impl TestConfigBuilder {
                                 got: Value::from(value),
                             });
                         }
-                        Name::Env => {
-                            logger.add_some_to_env(&value);
-                            to_return.env_arg = to_return.env_arg.add(value.split(','));
-                        }
                         Name::Strict
                         | Name::Include
                         | Name::Require
@@ -169,10 +163,6 @@ impl TestConfigBuilder {
                         Name::Debug => {
                             logger.debug_option();
                         }
-                        Name::Env => {
-                            logger.add_all_to_env();
-                            to_return.env_arg = EnvArg::All;
-                        }
                         Name::Strict
                         | Name::Include
                         | Name::Require
@@ -190,64 +180,12 @@ impl TestConfigBuilder {
         Ok(to_return)
     }
 
-    /// Processes environment variables. This function sets `self.env_arg` to `EnvArg::None`.
-    fn process_vars<E: EnvLike, L: Logger>(
-        &mut self,
-        env_like: &E,
-        logger: &mut L,
-    ) -> Result<(), UsageError> {
-        logger.start_environment_variables();
-
-        let mut to_add = vec![];
-        let mut env_arg = EnvArg::None;
-        std::mem::swap(&mut self.env_arg, &mut env_arg);
-
-        match env_arg {
-            EnvArg::None => {}
-            EnvArg::All => {
-                for (var_name, value) in env_like.vars() {
-                    match Name::from_var_name(var_name.as_ref()) {
-                        Some(name) => {
-                            if name.can_be_added(&self.schema) {
-                                to_add.push((name, value.clone()));
-                            }
-                        }
-                        None => {
-                            // Ignore variables that are not viable test parameters.
-                        }
-                    }
-                }
-            }
-            EnvArg::Some(names) => {
-                for name in names {
-                    if !self.schema.properties.contains_key(&name) {
-                        return Err(UsageError::UnknownEnvParameter(name));
-                    }
-                    match env_like.var(&name.to_var_name()) {
-                        Ok(value) => {
-                            to_add.push((name, value.clone()));
-                        }
-                        Err(_) => {
-                            // The value is not present, and we do nothing.
-                        }
-                    }
-                }
-            }
-        }
-
-        // Add the name/value pairs in a separate step to satisfy the borrow checker.
-        for (name, value) in to_add {
-            self.add_name_and_text_value(name, value.as_str(), logger)?;
-        }
-
-        Ok(())
-    }
-
     /// Process a single JSON file. If new includes are encountered, they will get pushed to the
     /// back of `unprocessed_includes` and processed later.
-    fn process_include<L: Logger>(
+    fn process_include<E: EnvLike, L: Logger>(
         &mut self,
         path: PathBuf,
+        env_like: &E,
         logger: &mut L,
     ) -> Result<(), BuildError> {
         logger.start_include(&path);
@@ -262,7 +200,9 @@ impl TestConfigBuilder {
             // Strictly speaking, we could leave this check to validation by schema, but the
             // errors produced by the validator are less useful than we get this way.
             if name.can_be_added(&self.schema) {
-                self.add_name_and_value(name, value, logger)?;
+                if let Some(value) = self.maybe_subst_from_env(&name, value, env_like, logger)? {
+                    self.add_name_and_value(name, value, logger)?;
+                }
             } else {
                 return Err(UsageError::UnrecognizedParameter(name).into());
             }
@@ -273,7 +213,7 @@ impl TestConfigBuilder {
 
     /// Adds a name/value pair to `param_values_by_name`. The name must be in lower_snake_case. The value
     /// is parsed as appropriate. This function is used for parameters given on the command
-    /// line with a value (e.g. --foo=bar) and parameters given as environment variables.
+    /// line with a value (e.g. --foo=bar).
     fn add_name_and_text_value<L: Logger>(
         &mut self,
         name: Name,
@@ -303,7 +243,7 @@ impl TestConfigBuilder {
                 // These options require values.
                 return Err(UsageError::MissingValue(name));
             }
-            Name::Debug | Name::Env | Name::Schema | Name::Parameter(_) => {}
+            Name::Debug | Name::Schema | Name::Parameter(_) => {}
         }
 
         if let Some(scheme) = self.schema.properties.get(&name) {
@@ -452,6 +392,76 @@ impl TestConfigBuilder {
         Ok(())
     }
 
+    // Determines if `value` calls for substitution from the environment and produces the
+    // substitute value. Returns `Ok(Some(value))` if no substitution should occur. Returns
+    // Ok(Some(env_value)) if a substitution should occur (env_value is the value to substitute).
+    // Returns Ok(None) if a try_from_env substitution referenced an undefined environment
+    // variable.
+    fn maybe_subst_from_env<E: EnvLike, L: Logger>(
+        &self,
+        name: &Name,
+        value: Value,
+        env_like: &E,
+        logger: &mut L,
+    ) -> Result<Option<Value>, UsageError> {
+        if let Some(obj) = value.as_object() {
+            if obj.len() == 1 {
+                match (obj.get(FROM_ENV_KEYWORD), obj.get(TRY_FROM_ENV_KEYWORD)) {
+                    (Some(var_name_value), None) => {
+                        if let Some(value) = self.get_subst_value(name, var_name_value, env_like)? {
+                            logger.from_env(var_name_value, &value);
+                            return Ok(Some(value));
+                        } else {
+                            return Err(UsageError::FromEnvUndefined {
+                                parameter: name.clone(),
+                                var_name_value: var_name_value.clone(),
+                            });
+                        }
+                    }
+                    (None, Some(var_name_value)) => {
+                        if let Some(value) = self.get_subst_value(name, var_name_value, env_like)? {
+                            logger.try_from_env(var_name_value, &value);
+                            return Ok(Some(value));
+                        } else {
+                            logger.try_from_env_undefined(name, var_name_value);
+                            return Ok(None);
+                        }
+                    }
+                    (Some(_), Some(_)) => {}
+                    (None, None) => {}
+                }
+            }
+        }
+
+        Ok(Some(value))
+    }
+
+    // Gets the value for a from_env/try_from_env construct where `name` is the property being
+    // defined and `var_name_value` is the value of the from_env/try_from_env property. If
+    // `var_name_value` is not a string, an error is returned.
+    fn get_subst_value<E: EnvLike>(
+        &self,
+        name: &Name,
+        var_name_value: &Value,
+        env_like: &E,
+    ) -> Result<Option<Value>, UsageError> {
+        if let Some(var_name_string) = var_name_value.as_str() {
+            if let Ok(var_value_string) = env_like.var(var_name_string) {
+                Ok(Some(
+                    parser_for_parameter(name, &self.schema)?
+                        .parse(&name, var_value_string.as_str())?,
+                ))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Err(UsageError::FromEnvNotString {
+                parameter: name.clone(),
+                var_name_value: var_name_value.clone(),
+            })
+        }
+    }
+
     /// Validates `self`.
     fn validate(&self) -> Result<(), BuildError> {
         assert!(
@@ -506,47 +516,6 @@ impl TestConfigBuilder {
             Err(errors.remove(0))
         } else {
             Err(BuildError::ValidationMultiple(errors))
-        }
-    }
-}
-
-/// Represents a set of environment variables as expressed in --env arguments.
-#[derive(Default, Debug, PartialEq)]
-enum EnvArg {
-    /// Indicates an empty set.
-    #[default]
-    None,
-
-    /// Indicates all 'valid' environment variables in std::env. An environment variable name
-    /// is considered valid if it has a 'FUCHSIA_' prefix and is in SHOUTY_SNAKE_CASE.
-    All,
-
-    /// Specific environment variables identified by name in json format (snake_case without
-    /// the 'FUCHSIA_' prefix). Always sorted in ascending alphabetical order.
-    Some(Vec<Name>),
-}
-
-impl EnvArg {
-    /// Returns a `EnvArg::Some` with the specified variable names. `names` may contain
-    /// duplicates and may be in any order.
-    fn some(mut names: Vec<Name>) -> Self {
-        names.sort();
-        names.dedup();
-        EnvArg::Some(names)
-    }
-
-    /// Returns an `EnvArg` that merges self and the names in `to_add`. `to_add` may contain
-    /// duplicates and may be in any order.
-    fn add<'a>(self, to_add: impl IntoIterator<Item = &'a str>) -> Self {
-        match self {
-            EnvArg::None => Self::some(to_add.into_iter().map(|s| Name::from_str(s)).collect()),
-            EnvArg::All => self,
-            EnvArg::Some(mut self_args) => {
-                for a in to_add {
-                    self_args.push(Name::from_str(a));
-                }
-                Self::some(self_args)
-            }
         }
     }
 }
@@ -648,7 +617,7 @@ mod tests {
     use crate::logger::NullLogger;
     use crate::schema::tests::fake_schema;
     use assert_matches::assert_matches;
-    use serde_json::{json, Number};
+    use serde_json::{json, Map, Number};
     use std::fs;
     use std::str::FromStr;
     use tempfile::{tempdir, NamedTempFile};
@@ -751,7 +720,6 @@ mod tests {
     fn test_is_viable_parameter_name() {
         assert!(!Name::Schema.is_viable_parameter_name());
         assert!(!Name::Debug.is_viable_parameter_name());
-        assert!(!Name::Env.is_viable_parameter_name());
         assert!(!Name::Strict.is_viable_parameter_name());
         assert!(!Name::Include.is_viable_parameter_name());
         assert!(!Name::Require.is_viable_parameter_name());
@@ -760,38 +728,6 @@ mod tests {
         assert!(!Name::from_str("1_thing").is_viable_parameter_name());
         assert!(Name::from_str("_one_thing").is_viable_parameter_name());
         assert!(Name::from_str("snorkel").is_viable_parameter_name());
-    }
-
-    #[test]
-    fn test_env_arg() {
-        let env_arg =
-            EnvArg::some(vec![Name::from_str("e"), Name::from_str("a"), Name::from_str("c")]);
-        assert_eq!(
-            env_arg,
-            EnvArg::Some(vec![Name::from_str("a"), Name::from_str("c"), Name::from_str("e")])
-        );
-
-        let env_arg =
-            EnvArg::some(vec![Name::from_str("e"), Name::from_str("a"), Name::from_str("c")]);
-        let env_arg = env_arg.add(vec!["d", "b"]);
-        assert_eq!(
-            env_arg,
-            EnvArg::Some(vec![
-                Name::from_str("a"),
-                Name::from_str("b"),
-                Name::from_str("c"),
-                Name::from_str("d"),
-                Name::from_str("e")
-            ])
-        );
-
-        let env_arg = EnvArg::None;
-        let env_arg = env_arg.add(vec!["d", "b"]);
-        assert_eq!(env_arg, EnvArg::Some(vec![Name::from_str("b"), Name::from_str("d")]));
-
-        let env_arg = EnvArg::All;
-        let env_arg = env_arg.add(vec!["d", "b"]);
-        assert_eq!(env_arg, EnvArg::All);
     }
 
     #[test]
@@ -815,47 +751,6 @@ mod tests {
         assert_usage_error(
             under_test,
             UsageError::UnexpectedPositionalArgument(String::from("foo")),
-        );
-    }
-
-    #[test]
-    // Tests processing of all environment variables.
-    fn test_env_all() {
-        let fake_env = FakeEnv::new("--env", "FUCHSIA_A=b FUCHSIA_C=d FUCHSIA_E=f");
-
-        let under_test =
-            TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger)
-                .expect("Ok result");
-        assert_eq!(
-            under_test.param_values_by_name,
-            HashMap::from_iter(
-                [
-                    (Name::from_str("a"), Value::String(String::from("b"))),
-                    (Name::from_str("c"), Value::String(String::from("d"))),
-                    (Name::from_str("e"), Value::String(String::from("f"))),
-                ]
-                .into_iter()
-            )
-        );
-    }
-
-    #[test]
-    // Tests processing of specified environment variables.
-    fn test_env_some() {
-        let fake_env = FakeEnv::new("--env=a,d,e", "FUCHSIA_A=b FUCHSIA_C=d FUCHSIA_E=f");
-
-        let under_test =
-            TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger)
-                .expect("Ok result");
-        assert_eq!(
-            under_test.param_values_by_name,
-            HashMap::from_iter(
-                [
-                    (Name::from_str("a"), Value::String(String::from("b"))),
-                    (Name::from_str("e"), Value::String(String::from("f"))),
-                ]
-                .into_iter()
-            )
         );
     }
 
@@ -1092,64 +987,7 @@ mod tests {
     }
 
     #[test]
-    // Tests the processing of unknown parameters as vars.
-    fn test_unknown_vars() {
-        let fake_env = FakeEnv::new(
-            "--env",
-            "FUCHSIA_TRUE=true FUCHSIA_FALSE=false FUCHSIA_ZERO=0 \
-                 FUCHSIA_STRING=foo FUCHSIA_ARRAY_OF_NUMBER=1,2,3,4",
-        );
-        let under_test =
-            TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger)
-                .expect("Ok result");
-        assert_eq!(
-            under_test.param_values_by_name,
-            HashMap::from_iter(vec![
-                (Name::from_str("true"), Value::Bool(true)),
-                (Name::from_str("false"), Value::Bool(false)),
-                (Name::from_str("zero"), Value::Number(Number::from(0))),
-                (Name::from_str("string"), Value::String(String::from("foo"))),
-                (
-                    Name::from_str("array_of_number"),
-                    Value::Array(vec![
-                        Value::Number(Number::from(1)),
-                        Value::Number(Number::from(2)),
-                        Value::Number(Number::from(3)),
-                        Value::Number(Number::from(4))
-                    ])
-                ),
-            ]),
-        );
-
-        let fake_env = FakeEnv::new(
-            "--env",
-            "FUCHSIA_ZERO_POINT_ONE=0.1 FUCHSIA_NEGATIVE_ZERO_POINT_ONE=-0.1",
-        );
-        let under_test =
-            TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger)
-                .expect("Ok result");
-        assert_eq!(
-            under_test
-                .param_values_by_name
-                .get(&Name::from_str("zero_point_one"))
-                .unwrap()
-                .as_f64()
-                .unwrap(),
-            0.1
-        );
-        assert_eq!(
-            under_test
-                .param_values_by_name
-                .get(&Name::from_str("negative_zero_point_one"))
-                .unwrap()
-                .as_f64()
-                .unwrap(),
-            -0.1
-        );
-    }
-
-    #[test]
-    // Tests the processing of include parameter in args and vars.
+    // Tests the processing of include parameter in args.
     fn test_include() {
         // Successful reference from a command line.
         let temp_file = NamedTempFile::new().expect("Failed to create temporary file");
@@ -1162,16 +1000,6 @@ mod tests {
             TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger)
                 .expect("Ok result");
         assert_eq!(under_test.include, vec![PathBuf::from_str(temp_file_path).unwrap(),]);
-
-        // Successful reference from an environment variable.
-        let fake_env =
-            FakeEnv::new("--env", format!("FUCHSIA_INCLUDE={}", temp_file_path).as_str());
-        let under_test =
-            TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger)
-                .expect("Ok result");
-        assert_eq!(under_test.include, vec![PathBuf::from_str(temp_file_path).unwrap()],);
-
-        temp_file.close().expect("Failed to close temporary file");
 
         // Non-existent file.
         let fake_env = FakeEnv::new("--include=/non_existent_file", "");
@@ -1197,12 +1025,9 @@ mod tests {
     }
 
     #[test]
-    // Tests the processing of require parameter in args and vars.
+    // Tests the processing of require parameter in args.
     fn test_require() {
-        let fake_env = FakeEnv::new(
-            "--env --require=a,b,c --a=a --b=b --c=c --d=d --e=e",
-            "FUCHSIA_REQUIRE=c,d,e",
-        );
+        let fake_env = FakeEnv::new("--require=a,b,c,d,e --a=a --b=b --c=c --d=d --e=e", "");
         let under_test =
             TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger)
                 .expect("Ok result");
@@ -1221,9 +1046,9 @@ mod tests {
     }
 
     #[test]
-    // Tests the processing of prohibit parameter in args and vars.
+    // Tests the processing of prohibit parameter in args.
     fn test_prohibit() {
-        let fake_env = FakeEnv::new("--env --prohibit=a,b,c", "FUCHSIA_PROHIBIT=c,d,e");
+        let fake_env = FakeEnv::new("--prohibit=a,b,c,d,e", "");
         let under_test =
             TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger)
                 .expect("Ok result");
@@ -1468,5 +1293,159 @@ mod tests {
         );
 
         temp_file.close().expect("Failed to close temporary file");
+    }
+
+    #[test]
+    // Tests TestConfigBuilder::maybe_subst_from_env.
+    fn test_maybe_subst_from_env() {
+        let fake_env = FakeEnv::new("", "BOOL=false NUMBER=123 STRING=foo ARRAY=1,2");
+
+        let under_test =
+            TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger)
+                .expect("Ok result");
+
+        let name = Name::Parameter(String::from("test_name"));
+
+        // No substitution.
+        let result =
+            under_test.maybe_subst_from_env(&name, json!(false), &fake_env, &mut NullLogger);
+        assert_matches!(result, Ok(Some(Value::Bool(false))));
+        let result = under_test.maybe_subst_from_env(&name, json!(123), &fake_env, &mut NullLogger);
+        assert_matches!(result, Ok(Some(v)) if v == Value::Number(Number::from(123)));
+        let result =
+            under_test.maybe_subst_from_env(&name, json!("foo"), &fake_env, &mut NullLogger);
+        assert_matches!(result, Ok(Some(v)) if v == Value::String(String::from("foo")));
+        let result =
+            under_test.maybe_subst_from_env(&name, json!([1, 2]), &fake_env, &mut NullLogger);
+        assert_matches!(result,Ok(Some(v))
+            if v == Value::Array(vec![Value::Number(Number::from(1)),
+                                      Value::Number(Number::from(2))]));
+        let result = under_test.maybe_subst_from_env(&name, json!({}), &fake_env, &mut NullLogger);
+        assert_matches!(result, Ok(Some(v)) if v == Value::Object(Map::new()));
+
+        // Env var name not a string
+        let result = under_test.maybe_subst_from_env(
+            &name,
+            json!({ "from_env": 123 }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result, Err(e)
+            if e == UsageError::FromEnvNotString {
+                parameter: name.clone(),
+                var_name_value: Value::Number(Number::from(123))
+            } );
+        let result = under_test.maybe_subst_from_env(
+            &name,
+            json!({ "try_from_env": 123 }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result, Err(e)
+            if e == UsageError::FromEnvNotString {
+                parameter: name.clone(),
+                var_name_value: Value::Number(Number::from(123))
+            } );
+
+        // Udefined env var.
+        let result = under_test.maybe_subst_from_env(
+            &name,
+            json!({ "from_env": "undefined" }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result, Err(e)if e == UsageError::FromEnvUndefined {
+                parameter: name.clone(),
+                var_name_value: Value::String(String::from("undefined"))
+            } );
+        let result = under_test.maybe_subst_from_env(
+            &name,
+            json!({ "try_from_env": "undefined" }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result, Ok(None));
+
+        // Successful substitution.
+        let result = under_test.maybe_subst_from_env(
+            &Name::Parameter(String::from("true")), // Declared in schema as bool
+            json!({ "from_env": "BOOL" }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result, Ok(Some(Value::Bool(false))));
+        let result = under_test.maybe_subst_from_env(
+            &Name::Parameter(String::from("zero")), // Declared in schema as number
+            json!({ "from_env": "NUMBER" }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result, Ok(Some(v)) if v == Value::Number(Number::from(123)));
+        let result = under_test.maybe_subst_from_env(
+            &Name::Parameter(String::from("string")), // Declared in schema as number
+            json!({ "from_env": "STRING" }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result, Ok(Some(v)) if v == Value::String(String::from("foo")));
+        let result = under_test.maybe_subst_from_env(
+            &Name::Parameter(String::from("array_of_number")), // Declared in schema as array of numbers
+            json!({ "from_env": "ARRAY" }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result,Ok(Some(v))
+            if v == Value::Array(vec![Value::Number(Number::from(1)),
+                                      Value::Number(Number::from(2))]));
+        let result = under_test.maybe_subst_from_env(
+            &Name::Parameter(String::from("true")), // Declared in schema as bool
+            json!({ "try_from_env": "BOOL" }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result, Ok(Some(Value::Bool(false))));
+        let result = under_test.maybe_subst_from_env(
+            &Name::Parameter(String::from("zero")), // Declared in schema as number
+            json!({ "try_from_env": "NUMBER" }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result, Ok(Some(v)) if v == Value::Number(Number::from(123)));
+        let result = under_test.maybe_subst_from_env(
+            &Name::Parameter(String::from("string")), // Declared in schema as number
+            json!({ "try_from_env": "STRING" }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result, Ok(Some(v)) if v == Value::String(String::from("foo")));
+        let result = under_test.maybe_subst_from_env(
+            &Name::Parameter(String::from("array_of_number")), // Declared in schema as array of numbers
+            json!({ "try_from_env": "ARRAY" }),
+            &fake_env,
+            &mut NullLogger,
+        );
+        assert_matches!(result,Ok(Some(v))
+            if v == Value::Array(vec![Value::Number(Number::from(1)),
+                                      Value::Number(Number::from(2))]));
+    }
+
+    #[test]
+    // Tests that from_env object works in a JSON file.
+    fn test_from_env() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temporary file");
+        let temp_file_path = temp_file.path().to_str().unwrap();
+
+        let json = json!({"true": {"from_env": "BOOL"}});
+        fs::write(temp_file_path, serde_json::to_string(&json).expect("JSON can be serialized"))
+            .expect("Failed to write to temporary file");
+
+        let fake_env = FakeEnv::new(format!("--include={}", temp_file_path).as_str(), "BOOL=false");
+        let under_test =
+            TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger)
+                .expect("Ok result");
+        assert_matches!(
+            under_test.param_values_by_name.get(&Name::Parameter(String::from("true"))),
+            Some(&Value::Bool(false))
+        );
     }
 }
