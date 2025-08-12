@@ -18,6 +18,8 @@
 
 namespace usb_virtual_bus {
 
+void UsbVirtualHost::on_fidl_error(fidl::UnbindInfo error) { bus_->FinishRemove<UsbVirtualHost>(); }
+
 void UsbVirtualHost::UsbHciRequestQueue(usb_request_t* req,
                                         const usb_request_complete_callback_t* complete_cb) {
   Request request(req, *complete_cb, sizeof(usb_request_t));

@@ -26,8 +26,10 @@ class UsbVirtualBus;
 class UsbVirtualHost;
 
 // This class implements the virtual USB host controller protocol.
-class UsbVirtualHost : public ddk::UsbHciProtocol<UsbVirtualHost>,
-                       public fidl::Server<fuchsia_hardware_usb_hci::UsbHci> {
+class UsbVirtualHost
+    : public ddk::UsbHciProtocol<UsbVirtualHost>,
+      public fidl::Server<fuchsia_hardware_usb_hci::UsbHci>,
+      public fidl::WireAsyncEventHandler<fuchsia_driver_framework::NodeController> {
  public:
   using Service = fuchsia_hardware_usb_hci::UsbHciService;
   static constexpr std::string kName = "usb-virtual-host";
@@ -80,6 +82,11 @@ class UsbVirtualHost : public ddk::UsbHciProtocol<UsbVirtualHost>,
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbVirtualHost);
+
+  // fidl::WireAsyncEventHandler<fuchsia_driver_framework::NodeController>
+  void on_fidl_error(fidl::UnbindInfo error) override;
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
 
   UsbVirtualBus* bus_;
 

@@ -76,26 +76,15 @@ zx::result<> UsbVirtualBus::RemoveChild(std::unique_ptr<T>& child) {
     return zx::ok();
   }
 
-  zx::result<> return_value = zx::ok();
   if (child->controller()) {
     auto result = child->controller()->Remove();
     if (!result.ok()) {
       FDF_LOG(ERROR, "Failed to remove child: %s", result.FormatDescription().c_str());
-      // Continue despite failure.
-      return_value = zx::error(result.status());
+      return zx::error(result.status());
     }
+    removed_ = true;
   }
-  child->compat_server().reset();
-  {
-    zx::result result = outgoing()->RemoveService<typename T::Service>();
-    if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to remove device service: %s", result.status_string());
-      // Continue despite failure.
-      return_value = result;
-    }
-  }
-  child.reset();
-  return return_value;
+  return zx::ok();
 }
 
 void UsbVirtualBus::Serve(fidl::ServerEnd<fuchsia_hardware_usb_virtual_bus::Bus> request) {

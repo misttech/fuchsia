@@ -79,13 +79,28 @@ class UsbVirtualBus : public fdf::DriverBase,
 
   // Public for unit tests.
   void SetConnected(bool connected);
-  std::unique_ptr<UsbVirtualDevice>& device() { return device_; }
-  std::unique_ptr<UsbVirtualHost>& host() { return host_; }
+  std::unique_ptr<UsbVirtualDevice>& device() { return get<UsbVirtualDevice>(); }
+  std::unique_ptr<UsbVirtualHost>& host() { return get<UsbVirtualHost>(); }
 
   UsbVirtualEp& ep(uint8_t index) { return eps_[index]; }
 
   void FinishConnect();
   async_dispatcher_t* async_dispatcher() { return dispatcher(); }
+
+  template <typename T>
+  void FinishRemove() {
+    if (!removed_) {
+      return;
+    }
+
+    get<T>()->compat_server().reset();
+    zx::result result = outgoing()->RemoveService<typename T::Service>();
+    if (result.is_error()) {
+      FDF_LOG(ERROR, "Failed to remove device service: %s", result.status_string());
+      // Continue despite failure.
+    }
+    get<T>().reset();
+  }
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbVirtualBus);
@@ -93,11 +108,23 @@ class UsbVirtualBus : public fdf::DriverBase,
   friend class UsbVirtualEp;
 
   void Serve(fidl::ServerEnd<fuchsia_hardware_usb_virtual_bus::Bus> request);
+  zx_status_t Disable();
+
   template <typename T>
   zx::result<std::unique_ptr<T>> CreateChild();
   template <typename T>
   zx::result<> RemoveChild(std::unique_ptr<T>& child);
-  zx_status_t Disable();
+
+  template <typename T>
+  std::unique_ptr<T>& get();
+  template <>
+  std::unique_ptr<UsbVirtualHost>& get() {
+    return host_;
+  }
+  template <>
+  std::unique_ptr<UsbVirtualDevice>& get() {
+    return device_;
+  }
 
   // fuchsia_hardware_usb_virtual_bus::Bus Methods
   void Enable(EnableCompleter::Sync& completer) override;
@@ -129,6 +156,8 @@ class UsbVirtualBus : public fdf::DriverBase,
     kConnected = 2,
   };
   ConnectedState connected_ = ConnectedState::kDisconnected;
+
+  std::atomic_bool removed_ = false;
 };
 
 }  // namespace usb_virtual_bus

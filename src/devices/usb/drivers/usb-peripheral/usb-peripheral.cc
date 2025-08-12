@@ -84,38 +84,33 @@ void UsbPeripheral::UsbPeripheralRequestQueue(usb_request_t* usb_request,
 }
 
 zx::result<> UsbPeripheral::Start() {
-  zx::result client = incoming()->Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
-  if (client.is_error()) {
-    fdf::error("Failed to connect dci fidl protocol: {}", client);
-    return client.take_error();
-  }
-  dci_new_.Bind(std::move(*client));
-  // Try to set DciIntf over FIDL. We don't do this for Banjo because SetInterface is used to
-  // indicate that all functions have been attached/un-attached. This is a separate method in
-  // FIDL, so we set DciIntf here for FIDL.
-  fidl::Arena arena;
-  auto client_end = intf_srv_.AddBinding();
-  auto result = dci_new_.buffer(arena)->SetInterface(std::move(client_end));
-  // DCI FIDL is not available. Return OK because we could be using Banjo DCI instead.
-  // In the future when we remove banjo. This should be an error.
-  if (!result.ok()) {
-    fdf::debug("Failed to send SetInterface request: {}", result.status_string());
-    return zx::ok();
-  }
-  if (result->is_error()) {
-    if (result->error_value() == ZX_ERR_NOT_SUPPORTED) {
-      return zx::ok();
+  zx::result dci_fidl = incoming()->Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  if (dci_fidl.is_error()) {
+    fdf::error("Failed to connect dci fidl protocol: {}", dci_fidl);
+  } else {
+    // Try to set DciIntf over FIDL. We don't do this for Banjo because SetInterface is used to
+    // indicate that all functions have been attached/un-attached. This is a separate method in
+    // FIDL, so we set DciIntf here for FIDL.
+    fidl::Arena arena;
+    auto client_end = intf_srv_.AddBinding();
+    auto result = fidl::WireCall(*dci_fidl)->SetInterface(std::move(client_end));
+    // DCI FIDL is not available. Return OK because we could be using Banjo DCI instead.
+    // In the future when we remove banjo. This should be an error.
+    if (!result.ok()) {
+      fdf::info("Failed to send SetInterface request: {}", result.status_string());
+    } else if (result->is_error()) {
+      fdf::error("Failed to set interface: {}", zx_status_get_string(result->error_value()));
+    } else {
+      dci_new_.Bind(std::move(*dci_fidl));
     }
-    fdf::error("Failed to set interface: {}", zx_status_get_string(result->error_value()));
-    return zx::error(result->error_value());
   }
-  dci_new_valid_ = true;
 
   zx::result dci_banjo = compat::ConnectBanjo<ddk::UsbDciProtocolClient>(incoming());
   if (dci_banjo.is_error()) {
     fdf::info("Failed to connect to dci banjo protocol: {}", dci_banjo);
   } else {
     dci_ = dci_banjo.value();
+    parent_request_size_ = usb::BorrowedRequest<void>::RequestSize(dci_.GetRequestSize());
   }
 
   if (!dci_.is_valid() && !dci_new_.is_valid()) {
@@ -136,11 +131,6 @@ zx::result<> UsbPeripheral::Start() {
     fbl::AutoLock lock(&lock_);
     // Assume peripheral mode by default.
     parent_usb_mode_ = USB_MODE_PERIPHERAL;
-  }
-
-  if (dci_.is_valid()) {
-    // This field is only applicable to the banjo protocol.
-    parent_request_size_ = usb::BorrowedRequest<void>::RequestSize(dci_.GetRequestSize());
   }
 
   // Create child.
@@ -413,7 +403,7 @@ zx_status_t UsbPeripheral::FunctionRegistered() {
 }
 
 zx_status_t UsbPeripheral::StartController() {
-  if (dci_new_valid_) {
+  if (dci_new_.is_valid()) {
     fidl::Arena arena;
     auto result = dci_new_.buffer(arena)->StartController();
     if (!result.ok()) {
@@ -442,7 +432,7 @@ zx_status_t UsbPeripheral::StartController() {
 zx_status_t UsbPeripheral::StopController() {
   CommonSetConnected(false);
 
-  if (dci_new_valid_) {
+  if (dci_new_.is_valid()) {
     fidl::Arena arena;
     auto result = dci_new_.buffer(arena)->StopController();
     if (!result.ok()) {
@@ -682,7 +672,7 @@ void UsbPeripheral::ClearFunctions() {
   auto status = StopController();
   if (status != ZX_OK) {
     fdf::info("Failed to stop controller: {}", zx_status_get_string(status));
-    return;
+    // Continue despite failure.
   }
   for (size_t i = 0; i < 256; i++) {
     UsbDciCancelAll(static_cast<uint8_t>(i));

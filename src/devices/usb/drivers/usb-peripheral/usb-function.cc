@@ -182,7 +182,7 @@ zx_status_t UsbFunction::UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep
     fss_comp_desc.w_bytes_per_interval = ss_comp_desc->w_bytes_per_interval;
   }
 
-  if (peripheral_->dci_new_valid()) {
+  if (peripheral_->dci_new().is_valid()) {
     auto result = peripheral_->dci_new().buffer(arena)->ConfigureEndpoint(fep_desc, fss_comp_desc);
 
     if (!result.ok()) {

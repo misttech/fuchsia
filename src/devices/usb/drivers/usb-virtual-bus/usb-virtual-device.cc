@@ -8,6 +8,10 @@
 
 namespace usb_virtual_bus {
 
+void UsbVirtualDevice::on_fidl_error(fidl::UnbindInfo error) {
+  bus_->FinishRemove<UsbVirtualDevice>();
+}
+
 void UsbVirtualDevice::UsbDciRequestQueue(usb_request_t* usb_request,
                                           const usb_request_complete_callback_t* complete_cb) {
   Request request(usb_request, *complete_cb, sizeof(usb_request_t));

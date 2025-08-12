@@ -21,8 +21,10 @@ namespace usb_virtual_bus {
 class UsbVirtualBus;
 
 // This class implements the virtual USB device controller protocol.
-class UsbVirtualDevice : public ddk::UsbDciProtocol<UsbVirtualDevice>,
-                         public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
+class UsbVirtualDevice
+    : public ddk::UsbDciProtocol<UsbVirtualDevice>,
+      public fidl::Server<fuchsia_hardware_usb_dci::UsbDci>,
+      public fidl::WireAsyncEventHandler<fuchsia_driver_framework::NodeController> {
  public:
   using Service = fuchsia_hardware_usb_dci::UsbDciService;
   static constexpr std::string kName = "usb-virtual-device";
@@ -63,6 +65,11 @@ class UsbVirtualDevice : public ddk::UsbDciProtocol<UsbVirtualDevice>,
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbVirtualDevice);
+
+  // fidl::WireAsyncEventHandler<fuchsia_driver_framework::NodeController>
+  void on_fidl_error(fidl::UnbindInfo error) override;
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
 
   // fuchsia_hardware_usb.UsbDci protocol implementation.
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
