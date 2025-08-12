@@ -638,6 +638,11 @@ _RBE_DOWNLOAD_STUB_SUFFIX = ".dl-stub"
 # This should match the 'xattr_digest' value in build/rbe/fuchsia-reproxy.cfg.
 _RBE_XATTR_HASH = "user.fuchsia.rbe.digests.sha256"
 
+# Filesystem extended attribute for digests.
+# This should match the value passed via '--unix_digest_hash_attribute_name' in
+# build/bazel/templates/template.bazelrc.
+_BAZEL_XATTR_HASH = "user.fuchsia.bazel.digest.sha256"
+
 # Filesystem extended attribute for stubs
 # This is a present/not-present marker that the file is actually just a download stub.
 # The hash of the file to download is stored in _RBE_XATTR_HASH.
@@ -1648,23 +1653,29 @@ exec "${{cmd[@]}}"
         xattr_value = self.action_log_record.output_file_digests.get(
             output_file
         )
-        if not xattr_value:
-            # Hash the locally-compiled file ourselves, to seed it for use in
-            # future compilations with RBE.
-            #
-            # The format of this xattr is:
-            #   "<sha256 hex string>/<file len>"
-            #  e.g.
-            #   "abcd...456f/12345"
+        if xattr_value:
+            # The xattr value from RBE is in the format:
+            # 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/112233
+            # where the first hex string is the digest, and the second is the file's
+            # length.
+            digest = xattr_value[:64]
+        else:
+            # RBE ran the action locally, so we'll need to hash it ourselves to produce
+            # the above string.
             with open(output_file, "rb") as f:
                 digest = hashlib.file_digest(f, "sha256").hexdigest()
                 size = os.lstat(output_file).st_size
                 xattr_value = f"{digest}/{size}"
-        os.setxattr(output_file, _RBE_XATTR_HASH, xattr_value.encode())
 
         # Clear the old download stub marker, if present
         if _RBE_OLD_XATTR_HASH in os.listxattr(output_file):
             os.removexattr(output_file, _RBE_OLD_XATTR_HASH)
+
+        # Write the xattr used by RBE
+        os.setxattr(output_file, _RBE_XATTR_HASH, xattr_value.encode())
+
+        # Write the xattr used by Bazel (which is the raw bytes of only the digest value)
+        os.setxattr(output_file, _BAZEL_XATTR_HASH, bytes.fromhex(digest))
 
     def _process_download_stubs(self) -> None:
         """Create download stubs so artifacts can be retrieved later."""

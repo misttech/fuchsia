@@ -127,3 +127,7 @@ common --@rules_fuchsia//fuchsia:assembly_developer_overrides_list=@assembly_dev
 # Set the release repository for assembly config artifacts to "fuchsia".
 # This is necessary so MOS knows where a given assembly artifact came from.
 common --@rules_fuchsia//fuchsia/flags:fuchsia_release_repository="fuchsia"
+
+# Set the xattr written by the RBE remote wrapper, which can be read by bazel to reduce the time
+# spent calculating hashes of inputs.
+startup --unix_digest_hash_attribute_name="user.fuchsia.bazel.digest.sha256"
