@@ -58,15 +58,20 @@ pub struct SegmentHeader {
 pub enum Options {
     /// Options present in a handshake segment.
     Handshake(HandshakeOptions),
-    /// Options present in a regular segment.
+    /// Options present in a data/ack segment.
     Segment(SegmentOptions),
+    /// Options present in a reset segment.
+    Reset(ResetOptions),
 }
 
-impl Default for Options {
-    fn default() -> Self {
-        // Default to a non handshake options value, since those are more
-        // common.
-        Self::Segment(SegmentOptions::default())
+impl Options {
+    /// Creates a new [`Options`] with default values based on the control flag.
+    fn new(control: Option<&Control>) -> Self {
+        match control {
+            None | Some(Control::FIN) => Options::Segment(Default::default()),
+            Some(Control::SYN) => Options::Handshake(Default::default()),
+            Some(Control::RST) => Options::Reset(Default::default()),
+        }
     }
 }
 
@@ -82,59 +87,57 @@ impl From<SegmentOptions> for Options {
     }
 }
 
+impl From<ResetOptions> for Options {
+    fn from(value: ResetOptions) -> Self {
+        Self::Reset(value)
+    }
+}
+
 impl Options {
     /// Returns an iterator over the contained options.
     pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
+        // NB: Use nested `Either` to ensure each arm returns the same type.
         match self {
-            Options::Handshake(o) => either::Either::Left(o.iter()),
-            Options::Segment(o) => either::Either::Right(o.iter()),
+            Options::Handshake(o) => either::Either::Left(either::Either::Left(o.iter())),
+            Options::Segment(o) => either::Either::Left(either::Either::Right(o.iter())),
+            Options::Reset(o) => either::Either::Right(o.iter()),
         }
     }
 
     fn as_handshake(&self) -> Option<&HandshakeOptions> {
         match self {
             Self::Handshake(h) => Some(h),
-            Self::Segment(_) => None,
+            Self::Segment(_) | Self::Reset(_) => None,
         }
     }
 
     fn as_handshake_mut(&mut self) -> Option<&mut HandshakeOptions> {
         match self {
             Self::Handshake(h) => Some(h),
-            Self::Segment(_) => None,
+            Self::Segment(_) | Self::Reset(_) => None,
         }
     }
 
     fn as_segment(&self) -> Option<&SegmentOptions> {
         match self {
-            Self::Handshake(_) => None,
+            Self::Handshake(_) | Self::Reset(_) => None,
             Self::Segment(s) => Some(s),
         }
     }
 
     fn as_segment_mut(&mut self) -> Option<&mut SegmentOptions> {
         match self {
-            Self::Handshake(_) => None,
+            Self::Handshake(_) | Self::Reset(_) => None,
             Self::Segment(s) => Some(s),
         }
     }
 
-    /// Returns a new empty [`Options`] with the variant dictated by
-    /// `handshake`.
-    pub fn new_with_handshake(handshake: bool) -> Self {
-        if handshake {
-            Self::Handshake(Default::default())
-        } else {
-            Self::Segment(Default::default())
-        }
-    }
-
     /// Creates a new [`Options`] from an iterator of TcpOption.
-    ///
-    /// If `handshake` is `true`, only the handshake options will be parsed.
-    /// Otherwise only the non-handshake options are parsed.
-    pub fn from_iter<'a>(handshake: bool, iter: impl IntoIterator<Item = TcpOption<'a>>) -> Self {
-        let mut options = Self::new_with_handshake(handshake);
+    pub fn from_iter<'a>(
+        control: Option<&Control>,
+        iter: impl IntoIterator<Item = TcpOption<'a>>,
+    ) -> Self {
+        let mut options = Options::new(control);
         for option in iter {
             match option {
                 TcpOption::Mss(mss) => {
@@ -175,6 +178,17 @@ impl Options {
         options
     }
 
+    /// Creates a new [`Options`] from an iterator of TcpOption.
+    pub fn try_from_iter<'a, A: IpAddress>(
+        builder: &TcpSegmentBuilder<A>,
+        iter: impl IntoIterator<Item = TcpOption<'a>>,
+    ) -> Result<Self, MalformedFlags> {
+        let control =
+            Flags { syn: builder.syn_set(), fin: builder.fin_set(), rst: builder.rst_set() }
+                .control()?;
+        Ok(Options::from_iter(control.as_ref(), iter))
+    }
+
     /// Reads the window scale if this is an [`Options::Handshake`].
     pub fn window_scale(&self) -> Option<WindowScale> {
         self.as_handshake().and_then(|h| h.window_scale)
@@ -200,7 +214,7 @@ impl Options {
     }
 }
 
-/// Segment options only set on handshake.
+/// Segment options available on handshake segments.
 #[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
 pub struct HandshakeOptions {
     /// The MSS option.
@@ -224,7 +238,7 @@ impl HandshakeOptions {
     }
 }
 
-/// Segment options set on non-handshake segments.
+/// Segment options available on data segments.
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct SegmentOptions {
     /// The SACK option.
@@ -236,6 +250,19 @@ impl SegmentOptions {
     pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
         let Self { sack_blocks } = self;
         sack_blocks.as_option().into_iter()
+    }
+}
+
+/// Segment options available on reset segments.
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct ResetOptions {
+    // TODO(https://fxbug.dev/360401604): Add the timestamp option.
+}
+
+impl ResetOptions {
+    /// Returns an iterator over the contained options.
+    pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
+        core::iter::empty()
     }
 }
 
@@ -645,26 +672,26 @@ impl<P: Payload> Segment<P> {
     }
 
     /// Creates a RST segment.
-    pub fn rst(seq: SeqNum) -> Self {
+    pub fn rst(seq: SeqNum, options: ResetOptions) -> Self {
         Segment::new_empty(SegmentHeader {
             seq,
             ack: None,
             wnd: UnscaledWindowSize::from(0),
             control: Some(Control::RST),
             push: false,
-            options: Options::default(),
+            options: options.into(),
         })
     }
 
     /// Creates a RST-ACK segment.
-    pub fn rst_ack(seq: SeqNum, ack: SeqNum) -> Self {
+    pub fn rst_ack(seq: SeqNum, ack: SeqNum, options: ResetOptions) -> Self {
         Segment::new_empty(SegmentHeader {
             seq,
             ack: Some(ack),
             wnd: UnscaledWindowSize::from(0),
             control: Some(Control::RST),
             push: false,
-            options: Options::default(),
+            options: options.into(),
         })
     }
 }
@@ -696,7 +723,11 @@ impl SegmentHeader {
     pub fn from_builder<A: IpAddress>(
         builder: &TcpSegmentBuilder<A>,
     ) -> Result<Self, MalformedFlags> {
-        Self::from_builder_options(builder, Options::new_with_handshake(builder.syn_set()))
+        let control =
+            Flags { syn: builder.syn_set(), fin: builder.fin_set(), rst: builder.rst_set() }
+                .control()?;
+        let options = Options::new(control.as_ref());
+        Self::from_builder_options(builder, options)
     }
 
     /// Create a `SegmentHeader` from the provided builder, options, and data length.
@@ -902,14 +933,15 @@ impl<'a> TryFrom<TcpSegment<&'a [u8]>> for VerifiedTcpSegment<'a> {
 
 impl<'a> From<&'a VerifiedTcpSegment<'a>> for Segment<&'a [u8]> {
     fn from(from: &'a VerifiedTcpSegment<'a>) -> Segment<&'a [u8]> {
-        let options = Options::from_iter(from.segment.syn(), from.segment.iter_options());
+        let VerifiedTcpSegment { segment, control } = from;
+        let options = Options::from_iter(control.as_ref(), segment.iter_options());
         let (to, discarded) = Segment::new(
             SegmentHeader {
-                seq: from.segment.seq_num().into(),
-                ack: from.segment.ack_num().map(Into::into),
-                wnd: UnscaledWindowSize::from(from.segment.window_size()),
-                control: from.control,
-                push: from.segment.psh(),
+                seq: segment.seq_num().into(),
+                ack: segment.ack_num().map(Into::into),
+                wnd: UnscaledWindowSize::from(segment.window_size()),
+                control: *control,
+                push: segment.psh(),
                 options,
             },
             from.segment.body(),
@@ -943,13 +975,12 @@ where
         from: &TcpSegmentBuilderWithOptions<A, OptionSequenceBuilder<TcpOption<'a>, I>>,
     ) -> Result<Self, Self::Error> {
         let prefix_builder = from.prefix_builder();
-        let handshake = prefix_builder.syn_set();
         Self::from_builder_options(
             prefix_builder,
-            Options::from_iter(
-                handshake,
+            Options::try_from_iter(
+                &prefix_builder,
                 from.iter_options().map(|option| option.borrow().to_owned()),
-            ),
+            )?,
         )
     }
 }
@@ -966,7 +997,7 @@ mod testutils {
                 ack: None,
                 control: None,
                 wnd: UnscaledWindowSize::from(0),
-                options: Options::default(),
+                options: Options::new(None),
                 push: false,
             }
         }
@@ -992,7 +1023,7 @@ mod testutils {
                     ack: Some(ack),
                     control: None,
                     wnd: UnscaledWindowSize::from(u16::MAX),
-                    options: Options::default(),
+                    options: Options::new(None),
                     push: false,
                 },
                 data,
@@ -1010,7 +1041,7 @@ mod testutils {
                     control: None,
                     wnd,
                     push: false,
-                    options: Options::default(),
+                    options: Options::new(None),
                 },
                 data,
             )
@@ -1030,7 +1061,7 @@ mod testutils {
                     control: Some(Control::FIN),
                     wnd,
                     push: false,
-                    options: Options::default(),
+                    options: Options::new(None),
                 },
                 data,
             )
@@ -1044,7 +1075,7 @@ mod testutils {
                 control: Some(Control::FIN),
                 wnd,
                 push: false,
-                options: Options::default(),
+                options: Options::new(None),
             })
         }
     }
@@ -1077,7 +1108,7 @@ mod test {
                 wnd: UnscaledWindowSize::from(0),
                 control,
                 push: false,
-                options: Options::default(),
+                options: Options::new(None),
             },
             data,
         );
@@ -1167,7 +1198,7 @@ mod test {
                 wnd: UnscaledWindowSize::from(0),
                 control,
                 push: false,
-                options: Options::default(),
+                options: Options::new(None),
             },
             TestPayload::new(len),
         );
@@ -1373,7 +1404,7 @@ mod test {
                 control,
                 wnd: UnscaledWindowSize::from(0),
                 push: false,
-                options: Options::default(),
+                options: Options::new(None),
             },
             TestPayload(0..data_len),
         );

@@ -18,8 +18,8 @@ use derivative::Derivative;
 use explicit::ResultExt as _;
 use netstack3_base::{
     Control, HandshakeOptions, IcmpErrorCode, Instant, Mss, Options, Payload, PayloadLen as _,
-    SackBlocks, Segment, SegmentHeader, SegmentOptions, SeqNum, UnscaledWindowSize, WindowScale,
-    WindowSize,
+    ResetOptions, SackBlocks, Segment, SegmentHeader, SegmentOptions, SeqNum, UnscaledWindowSize,
+    WindowScale, WindowSize,
 };
 use netstack3_trace::{trace_instant, TraceResourceId};
 use packet_formats::utils::NonZeroDuration;
@@ -201,8 +201,10 @@ impl<Error> Closed<Error> {
             return None;
         }
         Some(match seg_ack {
-            Some(seg_ack) => Segment::rst(*seg_ack),
-            None => Segment::rst_ack(SeqNum::from(0), *seg_seq + segment_len),
+            Some(seg_ack) => Segment::rst(*seg_ack, ResetOptions::default()),
+            None => {
+                Segment::rst_ack(SeqNum::from(0), *seg_seq + segment_len, ResetOptions::default())
+            }
         })
     }
 }
@@ -263,7 +265,7 @@ impl Listen {
             //   formatted as follows:
             //     <SEQ=SEG.ACK><CTL=RST>
             //   Return.
-            return ListenOnSegmentDisposition::SendRst(Segment::rst(ack));
+            return ListenOnSegmentDisposition::SendRst(Segment::rst(ack, ResetOptions::default()));
         }
         if control == Some(Control::SYN) {
             let sack_permitted = options.sack_permitted();
@@ -402,7 +404,10 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                     return if control == Some(Control::RST) {
                         SynSentOnSegmentDisposition::Ignore
                     } else {
-                        SynSentOnSegmentDisposition::SendRst(Segment::rst(ack))
+                        SynSentOnSegmentDisposition::SendRst(Segment::rst(
+                            ack,
+                            ResetOptions::default(),
+                        ))
                     };
                 }
                 true
@@ -2449,7 +2454,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             // and the receiver has been shut down.
             if rst_on_new_data && (incoming.header().seq + incoming.data().len()).after(rcv.nxt()) {
                 return (
-                    Some(Segment::rst(snd_max)),
+                    Some(Segment::rst(snd_max, ResetOptions::default())),
                     self.transition_to_state(
                         counters,
                         State::Closed(Closed { reason: Some(ConnectionError::ConnectionReset) }),
@@ -2529,7 +2534,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             //   number check).
             if control == Some(Control::SYN) {
                 return (
-                    Some(Segment::rst(snd_max)),
+                    Some(Segment::rst(snd_max, ResetOptions::default())),
                     self.transition_to_state(
                         counters,
                         State::Closed(Closed { reason: Some(ConnectionError::ConnectionReset) }),
@@ -2570,7 +2575,10 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         // from ISS: SND.UNA=ISS and SND.NXT=ISS+1.
                         let next = *iss + 1;
                         if seg_ack != next {
-                            return (Some(Segment::rst(seg_ack)), NewlyClosed::No);
+                            return (
+                                Some(Segment::rst(seg_ack, ResetOptions::default())),
+                                NewlyClosed::No,
+                            );
                         } else {
                             let mut rtt_estimator = Estimator::default();
                             if let Some(syn_rcvd_ts) = syn_rcvd_ts {
@@ -3441,17 +3449,19 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             }) => {
                 // When we're in SynRcvd we already sent out SYN-ACK with iss,
                 // so a RST must have iss+1.
-                Some(Segment::rst_ack(*iss + 1, *irs + 1))
+                Some(Segment::rst_ack(*iss + 1, *irs + 1, ResetOptions::default()))
             }
             State::Established(Established { snd, rcv }) => {
-                Some(Segment::rst_ack(snd.nxt, rcv.nxt()))
+                Some(Segment::rst_ack(snd.nxt, rcv.nxt(), ResetOptions::default()))
             }
-            State::FinWait1(FinWait1 { snd, rcv }) => Some(Segment::rst_ack(snd.nxt, rcv.nxt())),
+            State::FinWait1(FinWait1 { snd, rcv }) => {
+                Some(Segment::rst_ack(snd.nxt, rcv.nxt(), ResetOptions::default()))
+            }
             State::FinWait2(FinWait2 { rcv, last_seq, timeout_at: _ }) => {
-                Some(Segment::rst_ack(*last_seq, rcv.nxt()))
+                Some(Segment::rst_ack(*last_seq, rcv.nxt(), ResetOptions::default()))
             }
             State::CloseWait(CloseWait { snd, closed_rcv }) => {
-                Some(Segment::rst_ack(snd.nxt, closed_rcv.ack))
+                Some(Segment::rst_ack(snd.nxt, closed_rcv.ack, ResetOptions::default()))
             }
         };
         (
@@ -3960,11 +3970,11 @@ mod test {
         }
     }
 
-    #[test_case(Segment::rst(TEST_IRS) => None; "drop RST")]
-    #[test_case(Segment::rst_ack(TEST_IRS, TEST_ISS) => None; "drop RST|ACK")]
-    #[test_case(Segment::syn(TEST_IRS, UnscaledWindowSize::from(0), HandshakeOptions::default()) => Some(Segment::rst_ack(SeqNum::new(0), TEST_IRS + 1)); "reset SYN")]
-    #[test_case(Segment::syn_ack(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(0), HandshakeOptions::default()) => Some(Segment::rst(TEST_ISS)); "reset SYN|ACK")]
-    #[test_case(Segment::with_data(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(0), &[0, 1, 2][..]) => Some(Segment::rst(TEST_ISS)); "reset data segment")]
+    #[test_case(Segment::rst(TEST_IRS, ResetOptions::default()) => None; "drop RST")]
+    #[test_case(Segment::rst_ack(TEST_IRS, TEST_ISS, ResetOptions::default()) => None; "drop RST|ACK")]
+    #[test_case(Segment::syn(TEST_IRS, UnscaledWindowSize::from(0), HandshakeOptions::default()) => Some(Segment::rst_ack(SeqNum::new(0), TEST_IRS + 1, ResetOptions::default())); "reset SYN")]
+    #[test_case(Segment::syn_ack(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(0), HandshakeOptions::default()) => Some(Segment::rst(TEST_ISS, ResetOptions::default())); "reset SYN|ACK")]
+    #[test_case(Segment::with_data(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(0), &[0, 1, 2][..]) => Some(Segment::rst(TEST_ISS, ResetOptions::default())); "reset data segment")]
     fn segment_arrives_when_closed(
         incoming: impl Into<Segment<&'static [u8]>>,
     ) -> Option<Segment<()>> {
@@ -3973,25 +3983,25 @@ mod test {
     }
 
     #[test_case(
-        Segment::rst_ack(TEST_ISS, TEST_IRS - 1), RTT
+        Segment::rst_ack(TEST_ISS, TEST_IRS - 1, ResetOptions::default()), RTT
     => SynSentOnSegmentDisposition::Ignore; "unacceptable ACK with RST")]
     #[test_case(
         Segment::ack(TEST_ISS, TEST_IRS - 1, UnscaledWindowSize::from(u16::MAX)), RTT
     => SynSentOnSegmentDisposition::SendRst(
-        Segment::rst(TEST_IRS-1),
+        Segment::rst(TEST_IRS-1, ResetOptions::default()),
     ); "unacceptable ACK without RST")]
     #[test_case(
-        Segment::rst_ack(TEST_ISS, TEST_IRS), RTT
+        Segment::rst_ack(TEST_ISS, TEST_IRS, ResetOptions::default()), RTT
     => SynSentOnSegmentDisposition::EnterClosed(
         Closed { reason: Some(ConnectionError::ConnectionRefused) },
     ); "acceptable ACK(ISS) with RST")]
     #[test_case(
-        Segment::rst_ack(TEST_ISS, TEST_IRS + 1), RTT
+        Segment::rst_ack(TEST_ISS, TEST_IRS + 1, ResetOptions::default()), RTT
     => SynSentOnSegmentDisposition::EnterClosed(
         Closed { reason: Some(ConnectionError::ConnectionRefused) },
     ); "acceptable ACK(ISS+1) with RST")]
     #[test_case(
-        Segment::rst(TEST_ISS), RTT
+        Segment::rst(TEST_ISS, ResetOptions::default()), RTT
     => SynSentOnSegmentDisposition::Ignore; "RST without ack")]
     #[test_case(
         Segment::syn(
@@ -4067,9 +4077,9 @@ mod test {
         syn_sent.on_segment(incoming, FakeInstant::from(delay))
     }
 
-    #[test_case(Segment::rst(TEST_ISS) => ListenOnSegmentDisposition::Ignore; "ignore RST")]
+    #[test_case(Segment::rst(TEST_ISS, ResetOptions::default()) => ListenOnSegmentDisposition::Ignore; "ignore RST")]
     #[test_case(Segment::ack(TEST_ISS, TEST_IRS, UnscaledWindowSize::from(u16::MAX)) =>
-        ListenOnSegmentDisposition::SendRst(Segment::rst(TEST_IRS)); "reject ACK")]
+        ListenOnSegmentDisposition::SendRst(Segment::rst(TEST_IRS, ResetOptions::default())); "reject ACK")]
     #[test_case(Segment::syn(TEST_ISS, UnscaledWindowSize::from(u16::MAX),
         HandshakeOptions {
             window_scale: Some(WindowScale::default()),
@@ -4123,11 +4133,11 @@ mod test {
         Segment::ack(TEST_ISS + 1, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX))
     ); "OTW segment")]
     #[test_case(
-        Segment::rst_ack(TEST_IRS, TEST_ISS),
+        Segment::rst_ack(TEST_IRS, TEST_ISS, ResetOptions::default()),
         None
     => None; "OTW RST")]
     #[test_case(
-        Segment::rst_ack(TEST_IRS + 1, TEST_ISS),
+        Segment::rst_ack(TEST_IRS + 1, TEST_ISS, ResetOptions::default()),
         Some(State::Closed(Closed { reason: Some(ConnectionError::ConnectionReset) }))
     => None; "acceptable RST")]
     #[test_case(
@@ -4135,13 +4145,13 @@ mod test {
         HandshakeOptions { window_scale: Some(WindowScale::default()), ..Default::default() }),
         Some(State::Closed(Closed { reason: Some(ConnectionError::ConnectionReset) }))
     => Some(
-        Segment::rst(TEST_ISS + 1)
+        Segment::rst(TEST_ISS + 1, ResetOptions::default())
     ); "duplicate syn")]
     #[test_case(
         Segment::ack(TEST_IRS + 1, TEST_ISS, UnscaledWindowSize::from(u16::MAX)),
         None
     => Some(
-        Segment::rst(TEST_ISS)
+        Segment::rst(TEST_ISS, ResetOptions::default())
     ); "unacceptable ack (ISS)")]
     #[test_case(
         Segment::ack(TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX)),
@@ -4168,13 +4178,13 @@ mod test {
         Segment::ack(TEST_IRS + 1, TEST_ISS + 2, UnscaledWindowSize::from(u16::MAX)),
         None
     => Some(
-        Segment::rst(TEST_ISS + 2)
+        Segment::rst(TEST_ISS + 2, ResetOptions::default())
     ); "unacceptable ack (ISS + 2)")]
     #[test_case(
         Segment::ack(TEST_IRS + 1, TEST_ISS - 1, UnscaledWindowSize::from(u16::MAX)),
         None
     => Some(
-        Segment::rst(TEST_ISS - 1)
+        Segment::rst(TEST_ISS - 1, ResetOptions::default())
     ); "unacceptable ack (ISS - 1)")]
     #[test_case(
         Segment::new_empty(
@@ -4245,9 +4255,9 @@ mod test {
         Some(State::Closed (
             Closed { reason: Some(ConnectionError::ConnectionReset) },
         ))
-    => Some(Segment::rst(TEST_ISS + 1)); "duplicate syn")]
+    => Some(Segment::rst(TEST_ISS + 1, ResetOptions::default())); "duplicate syn")]
     #[test_case(
-        Segment::rst(TEST_IRS + 1),
+        Segment::rst(TEST_IRS + 1, ResetOptions::default()),
         Some(State::Closed (
             Closed { reason: Some(ConnectionError::ConnectionReset) },
         ))
@@ -4451,9 +4461,9 @@ mod test {
         Some(State::Closed (
             Closed { reason: Some(ConnectionError::ConnectionReset) },
         ))
-    => Some(Segment::rst(TEST_ISS + 1)); "syn")]
+    => Some(Segment::rst(TEST_ISS + 1, ResetOptions::default())); "syn")]
     #[test_case(
-        Segment::rst(TEST_IRS + 2),
+        Segment::rst(TEST_IRS + 2, ResetOptions::default()),
         Some(State::Closed (
             Closed { reason: Some(ConnectionError::ConnectionReset) },
         ))
@@ -4471,7 +4481,7 @@ mod test {
         Some(State::Closed (
             Closed { reason: Some(ConnectionError::ConnectionReset) },
         ))
-    => Some(Segment::rst(TEST_ISS + 1)); "reset on new data")]
+    => Some(Segment::rst(TEST_ISS + 1, ResetOptions::default())); "reset on new data")]
     fn segment_arrives_when_close_wait(
         incoming: Segment<&[u8]>,
         expected: Option<State<FakeInstant, RingBuffer, NullBuffer, ()>>,

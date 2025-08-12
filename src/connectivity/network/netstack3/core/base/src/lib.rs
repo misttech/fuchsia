@@ -84,8 +84,8 @@ pub use rng::RngContext;
 pub use settings::{BufferSizeSettings, SettingsContext};
 pub use tcp::base::{Control, FragmentedPayload, Mss};
 pub use tcp::segment::{
-    HandshakeOptions, Options, Payload, PayloadLen, SackBlock, SackBlocks, Segment, SegmentHeader,
-    SegmentOptions, VerifiedTcpSegment,
+    HandshakeOptions, Options, Payload, PayloadLen, ResetOptions, SackBlock, SackBlocks, Segment,
+    SegmentHeader, SegmentOptions, VerifiedTcpSegment,
 };
 pub use tcp::seqnum::{SeqNum, UnscaledWindowSize, WindowScale, WindowSize};
 pub use test_only::TestOnlyPartialEq;

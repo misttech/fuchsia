@@ -2437,7 +2437,7 @@ fn parse_tcp_header<B: ParseBuffer, I: IpExt>(
     let packet = body.parse::<TcpSegmentRaw<_>>().ok()?;
 
     let (builder, options, body) = packet.into_builder_options(src_ip, dst_ip)?;
-    let options = Options::from_iter(builder.syn_set(), options.iter());
+    let options = Options::try_from_iter(&builder, options.iter()).ok()?;
 
     let segment = SegmentHeader::from_builder_options(&builder, options).ok()?;
 
