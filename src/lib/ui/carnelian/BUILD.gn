@@ -198,26 +198,6 @@ rustc_binary("font_metrics") {
   ]
 }
 
-rustc_binary("ink") {
-  version = "0.1.0"
-  edition = "2021"
-  source_root = "examples/ink.rs"
-  sources = [ "examples/ink.rs" ]
-  deps = [
-    "//sdk/fidl/fuchsia.hardware.hidbus:fuchsia.hardware.hidbus_rust",
-    "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_rust",
-    "//sdk/rust/zx",
-    "//src/lib/fdio/rust:fdio",
-    "//src/lib/trace/rust:trace",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:euclid",
-    "//third_party/rust_crates:itertools",
-    "//third_party/rust_crates:rand",
-  ]
-}
-
 rustc_binary("shapes") {
   version = "0.1.0"
   edition = "2021"
@@ -577,9 +557,6 @@ carnelian_examples = [
   },
   {
     name = "gamma"
-  },
-  {
-    name = "ink"
   },
   {
     name = "layout_gallery"
