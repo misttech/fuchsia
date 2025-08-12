@@ -231,7 +231,7 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
             let filename = thread_roles_file.file_name().ok_or_else(|| {
                 anyhow!("Thread roles file doesn't have a filename: {}", thread_roles_file)
             })?;
-            let json_filename = Utf8Path::new(filename).with_extension("json");
+            let json_filename = Utf8Path::new(filename).with_extension("profiles");
             let json_path = gendir.join(&json_filename);
             let json_file = File::create(&json_path)
                 .with_context(|| format!("Failed to create new thread roles file: {json_path}"))?;
@@ -332,7 +332,7 @@ mod test {
         };
         let completed_config = build_with_board_info(Default::default(), board_config);
         assert_eq!(completed_config.bootfs.files.map.entries.len(), 1);
-        let file_entry_key = BootfsDestination::ThreadRoles("test_file.json".to_string());
+        let file_entry_key = BootfsDestination::ThreadRoles("test_file.profiles".to_string());
         let source_merkle_pair = completed_config
             .bootfs
             .files
