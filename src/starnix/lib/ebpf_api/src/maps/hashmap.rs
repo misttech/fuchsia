@@ -77,7 +77,7 @@
 //! properly each data entry contains a reference counter. The counter is set
 //! to 0 for all entries in Unused or Free states.
 
-use super::buffer::MapBuffer;
+use super::buffer::{MapBuffer, VmoOrName};
 use super::lock::RwMapLock;
 use super::{MapError, MapImpl, MapKey, MapValueRef};
 use ebpf::MapSchema;
@@ -576,9 +576,9 @@ pub struct HashMap {
 }
 
 impl HashMap {
-    pub fn new(schema: &MapSchema, vmo: Option<zx::Vmo>) -> Result<Self, MapError> {
+    pub fn new(schema: &MapSchema, vmo: impl Into<VmoOrName>) -> Result<Self, MapError> {
         let layout = Layout::new(schema)?;
-        let buffer = MapBuffer::new(layout.total_size(), vmo)?;
+        let buffer = MapBuffer::new(layout.total_size(), vmo.into().with_name_prefix("ebpf:hashmap"))?;
 
         // Generate a random key to be used for the hash function and store it
         // in the buffer.

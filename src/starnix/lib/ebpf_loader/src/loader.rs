@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bstr::{BStr, BString};
+use bstr::{BStr, BString, ByteSlice};
 use ebpf::{EbpfInstruction, EbpfMapType, MapFlags, MapSchema};
 use num_derive::FromPrimitive;
 use starnix_ext::map_ext::EntryExt;
@@ -106,6 +106,12 @@ pub struct MapDefinition {
     // The name is missing for array maps that are defined in the bss section.
     pub name: Option<BString>,
     pub schema: MapSchema,
+}
+
+impl MapDefinition {
+    pub fn name(&self) -> String {
+        self.name.as_ref().map(|s| s.to_str_lossy().to_string()).unwrap_or("<unnamed>".to_owned())
+    }
 }
 
 #[derive(Debug)]

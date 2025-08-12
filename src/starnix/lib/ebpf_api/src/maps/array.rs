@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::buffer::MapBuffer;
+use super::buffer::{MapBuffer, VmoOrName};
 use super::{MapError, MapImpl, MapKey, MapValueRef};
 use ebpf::{EbpfBufferPtr, MapSchema};
 use linux_uapi::BPF_NOEXIST;
@@ -32,7 +32,7 @@ pub struct Array {
 impl Array {
     const MAX_ARRAY_SIZE: usize = u32::MAX as usize;
 
-    pub fn new(schema: &MapSchema, vmo: Option<zx::Vmo>) -> Result<Self, MapError> {
+    pub fn new(schema: &MapSchema, vmo: impl Into<VmoOrName>) -> Result<Self, MapError> {
         // From <https://man7.org/linux/man-pages/man2/bpf.2.html>:
         //   The key is an array index, and must be exactly four
         //   bytes.
@@ -52,7 +52,7 @@ impl Array {
             return Err(MapError::NoMemory);
         }
 
-        let buffer = MapBuffer::new(size, vmo)?;
+        let buffer = MapBuffer::new(size, vmo.into().with_name_prefix("ebpf:array"))?;
         Ok(Array {
             buffer,
             num_entries: schema.max_entries as usize,
@@ -126,7 +126,7 @@ mod test {
             flags: MapFlags::empty(),
         };
 
-        let array = Array::new(&schema, None).unwrap();
+        let array = Array::new(&schema, "test").unwrap();
         assert_eq!(array.lookup(&[0, 0, 0, 0]).unwrap().ptr().raw_ptr() as usize % 8, 0);
         assert_eq!(array.lookup(&[1, 0, 0, 0]).unwrap().ptr().raw_ptr() as usize % 8, 0);
 
@@ -138,7 +138,7 @@ mod test {
             flags: MapFlags::empty(),
         };
 
-        let array = Array::new(&schema, None).unwrap();
+        let array = Array::new(&schema, "test").unwrap();
         assert_eq!(array.lookup(&[0, 0, 0, 0]).unwrap().ptr().raw_ptr() as usize % 8, 0);
         assert_eq!(array.lookup(&[1, 0, 0, 0]).unwrap().ptr().raw_ptr() as usize % 8, 0);
     }

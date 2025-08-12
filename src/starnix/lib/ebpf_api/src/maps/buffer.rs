@@ -6,6 +6,7 @@ use super::MapError;
 use ebpf::EbpfBufferPtr;
 use std::fmt::Debug;
 use std::sync::{Arc, LazyLock};
+use zx::AsHandleRef as _;
 
 #[derive(Debug)]
 pub(super) struct MapBuffer {
@@ -19,6 +20,38 @@ fn round_up_to_page_size(size: usize) -> usize {
     (size + page_size - 1) & !(page_size - 1)
 }
 
+pub(crate) enum VmoOrName {
+    Vmo(zx::Vmo),
+    Name(String),
+}
+
+impl VmoOrName {
+    pub fn with_name_prefix(self, prefix: &str) -> Self {
+        match self {
+            Self::Vmo(vmo) => Self::Vmo(vmo),
+            Self::Name(name) => Self::Name(format!("{prefix}:{name}")),
+        }
+    }
+}
+
+impl From<zx::Vmo> for VmoOrName {
+    fn from(vmo: zx::Vmo) -> Self {
+        Self::Vmo(vmo)
+    }
+}
+
+impl From<&str> for VmoOrName {
+    fn from(name: &str) -> Self {
+        Self::Name(name.to_string())
+    }
+}
+
+impl From<String> for VmoOrName {
+    fn from(name: String) -> Self {
+        Self::Name(name)
+    }
+}
+
 /// Memory buffer used to store data for eBPF maps. The data is stored in a VMO
 /// which may be shared with other processes. Read and write operations are
 /// allowed from any thread. They are performed as a sequence of 64-bit atomic
@@ -29,20 +62,26 @@ impl MapBuffer {
     /// Alignment required for `read()` and `write()` operations.
     pub const ALIGNMENT: usize = EbpfBufferPtr::ALIGNMENT;
 
-    pub fn new(size: usize, vmo: Option<zx::Vmo>) -> Result<Self, MapError> {
+    /// Creates a new buffer. If `vmo_or_name` is a VMO then it's used for this
+    /// map. Otherwise a new map with the specified name is allocated.
+    pub fn new(size: usize, vmo_or_name: impl Into<VmoOrName>) -> Result<Self, MapError> {
         let vmo_size = round_up_to_page_size(size);
-        let vmo = match vmo {
-            Some(vmo) => {
+        let vmo = match vmo_or_name.into() {
+            VmoOrName::Vmo(vmo) => {
                 let actual_vmo_size = vmo.get_size().map_err(|_| MapError::InvalidVmo)? as usize;
                 if vmo_size != actual_vmo_size {
                     return Err(MapError::InvalidVmo);
                 }
                 vmo
             }
-            None => zx::Vmo::create(vmo_size as u64).map_err(|e| match e {
-                zx::Status::NO_MEMORY | zx::Status::OUT_OF_RANGE => MapError::NoMemory,
-                _ => MapError::Internal,
-            })?,
+            VmoOrName::Name(name) => {
+                let vmo = zx::Vmo::create(vmo_size as u64).map_err(|e| match e {
+                    zx::Status::NO_MEMORY | zx::Status::OUT_OF_RANGE => MapError::NoMemory,
+                    _ => MapError::Internal,
+                })?;
+                vmo.set_name(&zx::Name::new_lossy(&name)).map_err(|_| MapError::Internal)?;
+                vmo
+            }
         };
 
         let addr = fuchsia_runtime::vmar_root_self()

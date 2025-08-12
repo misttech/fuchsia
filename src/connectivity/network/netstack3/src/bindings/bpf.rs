@@ -9,9 +9,9 @@ use ebpf::{
     StructMapping, Type, VerifiedEbpfProgram,
 };
 use ebpf_api::{
-    Map, MapError, PinnedMap, __sk_buff, uid_t, MapValueRef, CGROUP_SKB_ARGS,
-    CGROUP_SKB_SK_BUF_TYPE, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF, SK_BUF_ID,
-    SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE,
+    __sk_buff, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, Map, MapError, MapValueRef, PinnedMap,
+    SK_BUF_ID, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF, SOCKET_FILTER_CBPF_CONFIG,
+    SOCKET_FILTER_SK_BUF_TYPE, uid_t,
 };
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
@@ -27,7 +27,7 @@ use netstack3_core::sync::{Mutex, RwLock};
 use netstack3_core::trace::trace_duration;
 use packet::{FragmentedByteSlice, PacketConstraints, PartialSerializer};
 use packet_formats::ethernet::EtherType;
-use std::collections::{hash_map, HashMap};
+use std::collections::{HashMap, hash_map};
 use std::mem::offset_of;
 use std::sync::{Arc, LazyLock, Weak};
 use zerocopy::FromBytes;
@@ -854,7 +854,7 @@ mod tests {
         assert_eq!(num_cached(), 0);
 
         // Create a map and insert it to the cache.
-        let map1 = Map::new(schema).unwrap();
+        let map1 = Map::new(schema, "test").unwrap();
         let fidl_map = map1.share().unwrap();
         let cache_ref1 = cache.init_map(fidl_map).unwrap();
 
@@ -862,7 +862,7 @@ mod tests {
         assert_eq!(num_cached(), 1);
 
         // Import second map.
-        let map2 = Map::new(schema).unwrap();
+        let map2 = Map::new(schema, "test").unwrap();
         let fidl_map = map2.share().unwrap();
         let cache_ref2 = cache.init_map(fidl_map).unwrap();
 
@@ -918,7 +918,7 @@ mod tests {
         let maps: Vec<_> = prog
             .maps
             .iter()
-            .map(|def| ebpf_api::Map::new(def.schema).expect("Failed to create a map"))
+            .map(|def| ebpf_api::Map::new(def.schema, &def.name()).expect("Failed to create a map"))
             .collect();
         let shared_maps =
             maps.iter().map(|map| map.share().expect("Failed to share a map")).collect();

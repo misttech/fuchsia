@@ -137,6 +137,19 @@ fn map_error_to_errno(e: MapError) -> Errno {
     }
 }
 
+fn read_map_name(attr: &bpf_attr__bindgen_ty_1) -> Result<&str, Errno> {
+    let name = std::ffi::CStr::from_bytes_until_nul(attr.map_name.as_bytes())
+        .map_err(|_| errno!(EINVAL))?
+        .to_str()
+        .map_err(|_| errno!(EINVAL))?;
+    // Only alphanumeric characters, '_' and '.' are allowed in map names (see
+    // https://docs.kernel.org/bpf/maps.html).
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.') {
+        return error!(EINVAL);
+    }
+    Ok(name)
+}
+
 pub fn sys_bpf(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -182,12 +195,8 @@ pub fn sys_bpf(
                 flags,
             };
 
-            let map = BpfMap::new(
-                locked,
-                current_task,
-                Map::new(schema).map_err(map_error_to_errno)?,
-                security::bpf_map_alloc(current_task),
-            );
+            let map = Map::new(schema, read_map_name(&map_attr)?).map_err(map_error_to_errno)?;
+            let map = BpfMap::new(locked, current_task, map, security::bpf_map_alloc(current_task));
             install_bpf_fd(locked, current_task, map)
         }
 

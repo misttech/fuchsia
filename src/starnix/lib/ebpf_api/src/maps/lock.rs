@@ -395,7 +395,7 @@ mod test {
     /// releases the lock.
     #[fuchsia::test]
     fn test_multiple_reader_waiters() {
-        let buf = MapBuffer::new(32, None).unwrap();
+        let buf = MapBuffer::new(32, "name").unwrap();
         let state = AtomicU32::new(0);
 
         // Returns a new lock that stores the state in `state` and uses VMO
@@ -454,7 +454,7 @@ mod test {
     impl State {
         fn new(num_threads: usize) -> Self {
             Self {
-                buf: MapBuffer::new(32, None).unwrap(),
+                buf: MapBuffer::new(32, "name").unwrap(),
                 start_barrier: Barrier::new(num_threads),
                 writer_count: Default::default(),
                 reader_count: Default::default(),

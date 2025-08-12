@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::buffer::MapBuffer;
+use super::buffer::{MapBuffer, VmoOrName};
 use super::lock::RwMapLock;
 use super::vmar::AllocatedVmar;
 use super::{MapError, MapImpl, MapKey, MapValueRef};
@@ -83,7 +83,7 @@ impl RingBufferState {
 }
 
 #[derive(Debug)]
-pub struct RingBuffer {
+pub(crate) struct RingBuffer {
     /// VMO used to store the map content. Reference-counted to make it possible to share the
     /// handle with Starnix kernel, particularly for the case when a process needs to wait for
     /// signals from the VMO (see RINGBUF_SIGNAL).
@@ -121,7 +121,7 @@ impl RingBuffer {
     ///
     /// The returns value is a `Pin<Box>`, because the structure is self referencing and is
     /// required never to move in memory.
-    pub fn new(schema: &MapSchema, vmo: Option<zx::Vmo>) -> Result<Pin<Box<Self>>, MapError> {
+    pub fn new(schema: &MapSchema, vmo: impl Into<VmoOrName>) -> Result<Pin<Box<Self>>, MapError> {
         if schema.key_size != 0 || schema.value_size != 0 {
             return Err(MapError::InvalidParam);
         }
@@ -163,7 +163,7 @@ impl RingBuffer {
         };
         let technical_vmo =
             zx::Vmo::create(technical_vmo_size as u64).map_err(|_| MapError::Internal)?;
-        technical_vmo.set_name(&zx::Name::new_lossy("starnix:bpf")).unwrap();
+        technical_vmo.set_name(&zx::Name::new_lossy("ebpf:ring_buffer_technical_vmo")).unwrap();
         vmar.map(
             0,
             &technical_vmo,
@@ -173,20 +173,21 @@ impl RingBuffer {
         )
         .map_err(|_| MapError::Internal)?;
 
-        let vmo = match vmo {
-            Some(vmo) => {
+        let vmo = match vmo.into() {
+            VmoOrName::Vmo(vmo) => {
                 let actual_vmo_size = vmo.get_size().map_err(|_| MapError::InvalidVmo)? as usize;
                 if vmo_size != actual_vmo_size {
                     return Err(MapError::InvalidVmo);
                 }
                 vmo
             }
-            None => {
+            VmoOrName::Name(name) => {
                 let vmo = zx::Vmo::create(vmo_size as u64).map_err(|e| match e {
                     zx::Status::NO_MEMORY | zx::Status::OUT_OF_RANGE => MapError::NoMemory,
                     _ => MapError::Internal,
                 })?;
-                vmo.set_name(&zx::Name::new_lossy("starnix:bpf")).unwrap();
+                let name = format!("ebpf:ring_buffer:{name}");
+                vmo.set_name(&zx::Name::new_lossy(&name)).unwrap();
                 vmo
             }
         };
@@ -395,7 +396,7 @@ impl MapImpl for RingBuffer {
 
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RingBufferWakeupPolicy {
+pub(crate) enum RingBufferWakeupPolicy {
     DefaultWakeup = 0,
     NoWakeup = BPF_RB_NO_WAKEUP,
     ForceWakeup = BPF_RB_FORCE_WAKEUP,

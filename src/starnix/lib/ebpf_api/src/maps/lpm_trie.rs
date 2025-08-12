@@ -52,7 +52,7 @@
 //! header. One lock is used for the trie itself, while the second lock
 //! controls access to the heap.
 
-use super::buffer::MapBuffer;
+use super::buffer::{MapBuffer, VmoOrName};
 use super::{MapError, MapImpl, MapKey, MapValueRef};
 use ebpf::{EbpfBufferPtr, MapFlags, MapSchema};
 use linux_uapi::{BPF_EXIST, BPF_NOEXIST};
@@ -764,7 +764,7 @@ fn trim_node(
 }
 
 impl LpmTrie {
-    pub fn new(schema: &MapSchema, vmo: Option<zx::Vmo>) -> Result<Self, MapError> {
+    pub fn new(schema: &MapSchema, vmo: impl Into<VmoOrName>) -> Result<Self, MapError> {
         if schema.key_size <= LPM_KEY_PREFIX_SIZE as u32 {
             return Err(MapError::InvalidParam);
         }
@@ -775,7 +775,8 @@ impl LpmTrie {
         }
 
         let layout = Layout::new(schema)?;
-        let buffer = MapBuffer::new(layout.total_size(), vmo)?;
+        let buffer =
+            MapBuffer::new(layout.total_size(), vmo.into().with_name_prefix("ebpf:lpm_trie"))?;
 
         Ok(Self { buffer, layout })
     }
@@ -1077,7 +1078,7 @@ mod test {
                 max_entries: 10,
                 flags: MapFlags::NoPrealloc,
             },
-            None,
+            "test",
         )
         .unwrap();
 
@@ -1121,7 +1122,7 @@ mod test {
                 max_entries: 10,
                 flags: MapFlags::NoPrealloc,
             },
-            None,
+            "test",
         )
         .unwrap();
         for i in 0..10 {
@@ -1214,7 +1215,7 @@ mod test {
                 max_entries: NUM_ENTRIES.into(),
                 flags: MapFlags::NoPrealloc,
             },
-            None,
+            "test",
         )
         .unwrap();
         let mut ids: Vec<u8> = (0..NUM_ENTRIES).collect();

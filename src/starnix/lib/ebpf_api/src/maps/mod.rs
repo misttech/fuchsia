@@ -12,7 +12,8 @@ mod lpm_trie;
 mod ring_buffer;
 mod vmar;
 
-pub use ring_buffer::{RingBuffer, RingBufferWakeupPolicy, RINGBUF_SIGNAL};
+pub use ring_buffer::RINGBUF_SIGNAL;
+pub(crate) use ring_buffer::{RingBuffer, RingBufferWakeupPolicy};
 
 use ebpf::{BpfValue, EbpfBufferPtr, MapFlags, MapReference, MapSchema};
 use fidl_fuchsia_ebpf as febpf;
@@ -41,6 +42,8 @@ use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
 use zx::{AsHandleRef, HandleBased};
+
+use crate::maps::buffer::VmoOrName;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum MapError {
@@ -205,9 +208,9 @@ const BASE_MAP_RIGHTS: zx::Rights = zx::Rights::READ
 const SHARED_MAP_RIGHTS: zx::Rights = BASE_MAP_RIGHTS.union(zx::Rights::TRANSFER);
 
 impl Map {
-    pub fn new(schema: MapSchema) -> Result<PinnedMap, MapError> {
+    pub fn new(schema: MapSchema, name: &str) -> Result<PinnedMap, MapError> {
         validate_map_flags(&schema)?;
-        let map_impl = create_map_impl(&schema, None)?;
+        let map_impl = create_map_impl(&schema, name.to_string())?;
         Ok(PinnedMap(Arc::pin(Self { schema, map_impl })))
     }
 
@@ -230,7 +233,7 @@ impl Map {
             flags: map_flags_from_fidl(fidl_schema.flags),
         };
 
-        let map_impl = create_map_impl(&schema, Some(vmo))?;
+        let map_impl = create_map_impl(&schema, vmo)?;
         Ok(PinnedMap(Arc::pin(Self { schema, map_impl })))
     }
 
@@ -334,10 +337,7 @@ impl<'a> MapValueRef<'a> {
     }
 }
 
-fn create_map_impl(
-    schema: &MapSchema,
-    vmo: Option<zx::Vmo>,
-) -> Result<Pin<Box<dyn MapImpl>>, MapError> {
+fn create_map_impl(schema: &MapSchema, vmo: impl Into<VmoOrName>) -> Result<Pin<Box<dyn MapImpl>>, MapError> {
     match schema.map_type {
         bpf_map_type_BPF_MAP_TYPE_ARRAY => Ok(Box::pin(array::Array::new(schema, vmo)?)),
         bpf_map_type_BPF_MAP_TYPE_HASH => Ok(Box::pin(hashmap::HashMap::new(schema, vmo)?)),
@@ -525,7 +525,7 @@ mod test {
         };
 
         // Create two array maps sharing the content.
-        let map1 = Map::new(schema).unwrap();
+        let map1 = Map::new(schema, "test").unwrap();
         let map2 = Map::new_shared(map1.share().unwrap()).unwrap();
 
         // Set a value in one map and check that it's updated in the other.
@@ -546,7 +546,7 @@ mod test {
         };
 
         // Create two array maps sharing the content.
-        let map1 = Map::new(schema).unwrap();
+        let map1 = Map::new(schema, "test").unwrap();
         let map2 = Map::new_shared(map1.share().unwrap()).unwrap();
 
         // Set a value in one map and check that it's updated in the other.
@@ -577,7 +577,7 @@ mod test {
         };
         let get_value = |i, v| format!("--{:010} {:010}--", i, v).into_bytes();
 
-        let map = Map::new(schema).unwrap();
+        let map = Map::new(schema, "test").unwrap();
 
         for i in 0..10000 {
             assert!(map.update(get_key(i), &get_value(i, 0), 0).is_ok());
@@ -629,7 +629,7 @@ mod test {
             flags: MapFlags::empty(),
         };
 
-        let map = Map::new(schema).unwrap();
+        let map = Map::new(schema, "test").unwrap();
         let key = MapKey::from_vec("12345".to_string().into_bytes());
         let value = (0..11).collect::<Vec<u8>>();
         assert!(map.update(key.clone(), &value, 0).is_ok());
@@ -653,7 +653,7 @@ mod test {
             flags: MapFlags::empty(),
         };
 
-        let map = Map::new(schema).unwrap();
+        let map = Map::new(schema, "test").unwrap();
         let key = MapKey::from_vec("12345".to_string().into_bytes());
         let key2 = MapKey::from_vec("24122".to_string().into_bytes());
         let value = (0..11).collect::<Vec<u8>>();
@@ -680,7 +680,7 @@ mod test {
             flags: MapFlags::empty(),
         };
 
-        let map = Map::new(schema).unwrap();
+        let map = Map::new(schema, "test").unwrap();
         map.ringbuf_reserve(8000, 0).expect("ringbuf_reserve failed");
 
         let map2 = Map::new_shared(map.share().unwrap()).unwrap();

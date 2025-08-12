@@ -59,6 +59,15 @@ mod tests {
         create_map_attr.max_entries = map_def.schema.max_entries;
         create_map_attr.map_flags = map_def.schema.flags.bits();
 
+        // If we have a name then copy it to the 0-terminated buffer, cropping
+        // it to fit if necessary.
+        if let Some(name) = map_def.name.as_ref() {
+            let name_len = std::cmp::min(name.len(), create_map_attr.map_name.len() - 1);
+            let name_bytes = create_map_attr.map_name.as_mut_bytes();
+            name_bytes[..name_len].copy_from_slice(&name[..name_len]);
+            name_bytes[name_len] = 0;
+        }
+
         // SAFETY: `bpf()` syscall with valid arguments.
         let result = unsafe { bpf(linux_uapi::bpf_cmd_BPF_MAP_CREATE, &attr) };
 
