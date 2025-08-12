@@ -35,19 +35,18 @@ pub use crate::repository_url::RepositoryUrl;
 pub use crate::unpinned_absolute_package_url::UnpinnedAbsolutePackageUrl;
 
 use crate::host::Host;
-use lazy_static::lazy_static;
 use percent_encoding::{AsciiSet, CONTROLS};
+use std::sync::LazyLock;
 
 /// https://url.spec.whatwg.org/#fragment-percent-encode-set
 const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'<').add(b'>').add(b'`');
 
-const RELATIVE_SCHEME: &'static str = "relative";
+const RELATIVE_SCHEME: &str = "relative";
 
-lazy_static! {
-    /// A default base URL from which to parse relative component URL
-    /// components.
-    static ref RELATIVE_BASE: url::Url = url::Url::parse(&format!("{RELATIVE_SCHEME}:///")).unwrap();
-}
+/// A default base URL from which to parse relative component URL
+/// components.
+static RELATIVE_BASE: LazyLock<url::Url> =
+    LazyLock::new(|| url::Url::parse(&format!("{RELATIVE_SCHEME}:///")).unwrap());
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Scheme {

@@ -278,12 +278,11 @@ pub mod test_check_for_system_update_impl {
     };
     use fuchsia_sync::Mutex;
     use futures::{future, TryFutureExt, TryStreamExt};
-    use lazy_static::lazy_static;
     use maplit::hashmap;
     use mock_paver::MockPaverServiceBuilder;
     use std::collections::hash_map::HashMap;
     use std::fs;
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const ACTIVE_SYSTEM_IMAGE_MERKLE: &str =
@@ -306,9 +305,7 @@ pub mod test_check_for_system_update_impl {
     ]);
     const NEW_ZBI_HASH: fuchsia_hash::Sha256 = fuchsia_hash::Sha256::from_array([6u8; 32]);
 
-    lazy_static! {
-        static ref UPDATE_PACKAGE_MERKLE: Hash = [0x22; 32].into();
-    }
+    static UPDATE_PACKAGE_MERKLE: LazyLock<Hash> = LazyLock::new(|| [0x22; 32].into());
 
     struct FakeFileSystem {
         contents: HashMap<String, String>,

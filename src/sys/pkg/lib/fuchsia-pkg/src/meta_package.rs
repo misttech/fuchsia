@@ -106,9 +106,9 @@ struct MetaPackageV0Serialize<'a> {
 mod tests {
     use super::*;
     use crate::test::*;
-    use lazy_static::lazy_static;
     use proptest::prelude::*;
     use regex::Regex;
+    use std::sync::LazyLock;
 
     #[test]
     fn test_accessors() {
@@ -157,9 +157,8 @@ mod tests {
         fn test_serialized_contains_no_whitespace(
             meta_package in random_meta_package(),
         ) {
-            lazy_static! {
-                static ref RE: Regex = Regex::new(r"(\p{White_Space})").unwrap();
-            }
+            static RE: LazyLock<Regex> =
+                LazyLock::new(|| Regex::new(r"(\p{White_Space})").unwrap());
             let mut v: Vec<u8> = Vec::new();
             meta_package.serialize(&mut v).unwrap();
             assert!(!RE.is_match(std::str::from_utf8(v.as_slice()).unwrap()));
