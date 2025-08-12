@@ -664,6 +664,17 @@ class QueryIfaceResponse:
         )
 
 
+@dataclass(frozen=True)
+class WlanInterfaces:
+    """WLAN interfaces separated by device type and keyed by MAC address."""
+
+    client: dict[str, QueryIfaceResponse]
+    """Client WLAN interfaces keyed by MAC address."""
+
+    ap: dict[str, QueryIfaceResponse]
+    """AP WLAN interfaces keyed by MAC address."""
+
+
 class InformationElementType(enum.IntEnum):
     """Information Element type.
 

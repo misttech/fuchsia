@@ -14,6 +14,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusResponse,
     CountryCode,
     QueryIfaceResponse,
+    WlanInterfaces,
     WlanMacRole,
 )
 
@@ -121,6 +122,18 @@ class WlanCore(affordance.Affordance):
 
         Raises:
             HoneydewWlanError: DeviceMonitor.ListPhys error
+        """
+
+    @abc.abstractmethod
+    def query_interfaces(self) -> WlanInterfaces:
+        """Retrieves a QueryIfaceResponse for every WLAN interface on the device.
+
+        Returns:
+            WlanInterfaces containing a QueryIfaceResponse for every WLAN interface
+            on the device.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.ListIfaces or DeviceMonitor.QueryIface error
         """
 
     @abc.abstractmethod
