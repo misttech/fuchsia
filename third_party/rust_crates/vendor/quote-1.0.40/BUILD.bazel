@@ -78,6 +78,6 @@ rust_library(
     }),
     version = "1.0.40",
     deps = [
-        "//third_party/rust_crates/vendor/proc-macro2-1.0.94:proc_macro2",
+        "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
     ],
 )

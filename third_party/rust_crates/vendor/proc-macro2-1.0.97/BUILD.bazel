@@ -23,7 +23,7 @@ package_info(
     name = "package_info",
     package_name = "proc-macro2",
     package_url = "https://github.com/dtolnay/proc-macro2",
-    package_version = "1.0.94",
+    package_version = "1.0.97",
 )
 
 license(
@@ -90,9 +90,9 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.0.94",
+    version = "1.0.97",
     deps = [
-        "//third_party/rust_crates/vendor/proc-macro2-1.0.94:build_script_build",
+        "//third_party/rust_crates/vendor/proc-macro2-1.0.97:build_script_build",
         "//third_party/rust_crates/vendor/unicode-ident-1.0.1:unicode_ident",
     ],
 )
@@ -157,7 +157,7 @@ cargo_build_script(
         "noclippy",
         "norustfmt",
     ],
-    version = "1.0.94",
+    version = "1.0.97",
     visibility = ["//visibility:private"],
 )
 

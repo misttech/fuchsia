@@ -71,7 +71,7 @@ rust_proc_macro(
     }),
     version = "3.3.1",
     deps = [
-        "//third_party/rust_crates/vendor/proc-macro2-1.0.94:proc_macro2",
+        "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.40:quote",
         "//third_party/rust_crates/vendor/syn-2.0.103:syn",
         "//third_party/rust_crates/vendor/test-case-core-3.3.1:test_case_core",
