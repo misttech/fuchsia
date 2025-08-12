@@ -173,7 +173,7 @@ class Dispatcher : public async_dispatcher_t,
       return ZX_OK;
     }
 
-    bool ScanThreadsForStalls();
+    void ScanThreadsForStalls();
 
     uint32_t num_dispatchers() const {
       fbl::AutoLock al(&lock_);
@@ -271,10 +271,6 @@ class Dispatcher : public async_dispatcher_t,
     // A unique_ptr to each active thread's task entry time slot, used to tell when we've run
     // out of un-stalled threads and should spawn another.
     std::vector<std::atomic_int64_t*> thread_entry_time_slots_ __TA_GUARDED(&lock_);
-
-    // Total number of threads which have entered a driver. When this number matches num_threads_,
-    // we start polling.
-    std::atomic<uint32_t> threads_entered_ = 0;
 
     uint32_t num_dispatchers_ __TA_GUARDED(&lock_) = 0;
 
@@ -878,8 +874,6 @@ class DispatcherCoordinator {
   static uint32_t GetThreadLimit(std::string_view scheduler_role);
   static zx_status_t SetThreadLimit(std::string_view scheduler_role, uint32_t max_threads);
   zx_duration_mono_t ScanThreadsForStalls();
-  void RegisterStallScanner(fdf_env_stall_scanner_t* stall_scanner);
-  void TriggerStallScanner();
 
   // Returns ZX_OK if |dispatcher| was added successfully.
   // Returns ZX_ERR_BAD_STATE if the driver is currently shutting down.
@@ -1041,8 +1035,6 @@ class DispatcherCoordinator {
   // Number of threads that are in the process of handling |NotifyDispatcherShutdown| events.
   uint32_t num_notify_shutdown_threads_ = 0;
   TokenManager token_manager_;
-
-  std::atomic<fdf_env_stall_scanner_t*> stall_scanner_ = nullptr;
 };
 
 // Returns the currently active dispatcher coordinator

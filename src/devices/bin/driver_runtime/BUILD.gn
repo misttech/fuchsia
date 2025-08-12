@@ -40,7 +40,6 @@ source_set("driver_runtime_impl") {
     "//sdk/lib/driver/runtime:driver_runtime",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.driver.host:fuchsia.driver.host_cpp",
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_env",

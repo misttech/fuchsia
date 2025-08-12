@@ -337,12 +337,8 @@ __EXPORT void fdf_env_scan_threads_for_stalls(void) {
 #endif
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
-__EXPORT zx_duration_mono_t fdf_env_scan_threads_for_stalls2(void) {
+__EXPORT zx_duration_mono_t fdf_env_scan_threads_for_stalls_wait_time(void) {
   return driver_runtime::GetDispatcherCoordinator().ScanThreadsForStalls();
-}
-
-__EXPORT void fdf_env_register_stall_scanner(fdf_env_stall_scanner_t* stall_scanner) {
-  driver_runtime::GetDispatcherCoordinator().RegisterStallScanner(stall_scanner);
 }
 #endif
 

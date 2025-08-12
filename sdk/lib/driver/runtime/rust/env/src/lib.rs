@@ -251,61 +251,6 @@ impl Default for DriverRefTypeErased<'_> {
 /// A lifetime-bound reference to a driver handle.
 pub struct DriverRef<'a, T>(pub *const T, PhantomData<&'a Driver<T>>);
 
-/// A marker trait for a function type that can be used as a stall scanner.
-pub trait StallScannerFn: Fn(zx_duration_mono_t) + Send + Sync + 'static {}
-impl<T> StallScannerFn for T where T: Fn(zx_duration_mono_t) + Send + Sync + 'static {}
-
-/// A stall scanner for [`fdf_env_register_stall_scanner`] that can call any kind of callback instead of
-/// just a C-compatible function when a dispatcher is shutdown.
-///
-/// # Safety
-///
-/// This object relies on a specific layout to allow it to be cast between a
-/// `*mut fdf_env_stall_scanner` and a `*mut StallScanner`. To that end,
-/// it is important that this struct stay both `#[repr(C)]` and that `scanner` be its first member.
-#[repr(C)]
-#[doc(hidden)]
-pub struct StallScanner {
-    scanner: fdf_env_stall_scanner,
-    begin_fn: Box<dyn StallScannerFn>,
-}
-
-impl StallScanner {
-    /// Creates a new [`StallScanner`] with `f` as the callback to run when a dispatcher
-    /// finishes shutting down.
-    pub fn new<F: StallScannerFn>(f: F) -> Self {
-        let begin_fn = Box::new(f);
-        Self { scanner: fdf_env_stall_scanner { handler: Some(Self::handler) }, begin_fn }
-    }
-
-    /// Turns this object into a stable pointer suitable for passing to
-    /// [`fdf_env_register_stall_scanner`] by wrapping it in a [`Box`] and leaking it to be reconstituded
-    /// by [`Self::handler`] when the scanner is triggered.
-    pub fn into_ptr(self) -> *mut fdf_env_stall_scanner {
-        // Note: this relies on the assumption that `self.scanner` is at the beginning of the
-        // struct.
-        Box::leak(Box::new(self)) as *mut _ as *mut _
-    }
-
-    /// The callback that is registered with the dispatcher that will be called when the stall
-    /// scanner should begin a scan.
-    ///
-    /// # Safety
-    ///
-    /// The [`StallScanner`] object must have previously been made into a pointer by
-    /// [`Self::into_ptr`].
-    unsafe extern "C" fn handler(
-        scanner: *mut fdf_env_stall_scanner,
-        duration: zx_duration_mono_t,
-    ) {
-        let scanner = scanner as *mut StallScanner;
-
-        unsafe {
-            ((*scanner).begin_fn)(duration);
-        }
-    }
-}
-
 /// The driver runtime environment
 pub struct Environment;
 
@@ -420,13 +365,6 @@ impl Environment {
             None
         } else {
             Some(UnownedDriver { inner: driver })
-        }
-    }
-
-    /// Registers a callback which is triggered whenever the stall scanner should run.
-    pub fn register_stall_scanner(&self, scanner: StallScanner) {
-        unsafe {
-            fdf_env_register_stall_scanner(scanner.into_ptr());
         }
     }
 }

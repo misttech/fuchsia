@@ -731,23 +731,6 @@ const _: () = {
     ["Offset of field: fdf_env_driver_shutdown_observer::handler"]
         [::core::mem::offset_of!(fdf_env_driver_shutdown_observer, handler) - 0usize];
 };
-pub type fdf_env_stall_scanner_t = fdf_env_stall_scanner;
-pub type fdf_env_stall_scan_begin = ::core::option::Option<
-    unsafe extern "C" fn(scanner: *mut fdf_env_stall_scanner_t, duration: zx_duration_mono_t),
->;
-#[repr(C)]
-#[derive(Debug, Default, Copy, Clone)]
-pub struct fdf_env_stall_scanner {
-    pub handler: fdf_env_stall_scan_begin,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of fdf_env_stall_scanner"][::core::mem::size_of::<fdf_env_stall_scanner>() - 8usize];
-    ["Alignment of fdf_env_stall_scanner"]
-        [::core::mem::align_of::<fdf_env_stall_scanner>() - 8usize];
-    ["Offset of field: fdf_env_stall_scanner::handler"]
-        [::core::mem::offset_of!(fdf_env_stall_scanner, handler) - 0usize];
-};
 unsafe extern "C" {
     pub fn fdf_env_start(options: u32) -> zx_status_t;
 }
@@ -826,10 +809,7 @@ unsafe extern "C" {
     pub fn fdf_env_scan_threads_for_stalls();
 }
 unsafe extern "C" {
-    pub fn fdf_env_scan_threads_for_stalls2() -> zx_duration_mono_t;
-}
-unsafe extern "C" {
-    pub fn fdf_env_register_stall_scanner(scanner: *mut fdf_env_stall_scanner_t);
+    pub fn fdf_env_scan_threads_for_stalls_wait_time() -> zx_duration_mono_t;
 }
 unsafe extern "C" {
     pub fn fdf_testing_create_unmanaged_dispatcher(

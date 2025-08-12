@@ -1745,31 +1745,17 @@ zx_status_t DispatcherCoordinator::SetThreadLimit(std::string_view scheduler_rol
 
 zx_duration_mono_t DispatcherCoordinator::ScanThreadsForStalls() {
   fbl::AutoLock lock(&lock_);
-  bool scan_again = default_thread_pool_.ScanThreadsForStalls();
+  default_thread_pool_.ScanThreadsForStalls();
   // Thread safety note: It is important that thread pools be removed from this list before
   // the threads in them stop so that this function won't try to access memory tied to the lifetime
   // of the thread. If ASAN triggers anywhere in here, that means this invariant has been broken.
   // See the comment in `ThreadWakeupPrologue` for more information.
   for (auto& thread_pool : role_to_thread_pool_) {
-    scan_again = thread_pool.ScanThreadsForStalls() || scan_again;
+    thread_pool.ScanThreadsForStalls();
   }
   // tell the caller to check again in half the stall time, so we worst-case to finding stalled
   // threads in (stalltime*1.5).
-  if (!scan_again) {
-    return 0;
-  }
   return zx::msec(kStallTimeMs / 2).get();
-}
-
-void DispatcherCoordinator::RegisterStallScanner(fdf_env_stall_scanner_t* stall_scanner) {
-  stall_scanner_.store(stall_scanner);
-}
-
-void DispatcherCoordinator::TriggerStallScanner() {
-  auto* stall_scanner = stall_scanner_.load();
-  if (stall_scanner != nullptr) {
-    stall_scanner->handler(stall_scanner, zx::msec(kStallTimeMs / 2).get());
-  }
 }
 
 void DispatcherCoordinator::NotifyDispatcherShutdown(
@@ -1959,9 +1945,6 @@ void Dispatcher::ThreadPool::ThreadWakeupPrologue() {
     thread_entry_time_slots_.push_back(task_entry_slot);
   }
   task_entry_slot->store(entry_time);
-  if (++threads_entered_ == num_threads()) {
-    driver_runtime::GetDispatcherCoordinator().TriggerStallScanner();
-  }
   if (scheduler_role_ != kNoSchedulerRole) {
     if (thread_context::GetRoleProfileStatus().has_value()) {
       // We have already attempted to set the role profile for the current thread.
@@ -1978,10 +1961,9 @@ void Dispatcher::ThreadPool::ThreadWakeupPrologue() {
 
 void Dispatcher::ThreadPool::ThreadWakeupEpilogue() {
   thread_context::GetTaskEntryTimeSlot()->store(0);
-  --threads_entered_;
 }
 
-bool Dispatcher::ThreadPool::ScanThreadsForStalls() {
+void Dispatcher::ThreadPool::ScanThreadsForStalls() {
   fbl::AutoLock lock(&lock_);
   zx::time current_time = zx::time(zx_clock_get_monotonic());
   zx::time stalled_time = current_time - zx::msec(kStallTimeMs);
@@ -2004,9 +1986,7 @@ bool Dispatcher::ThreadPool::ScanThreadsForStalls() {
         scheduler_role_.c_str(), stalled_threads, num_threads_, max_threads_);
     lock.release();
     AddThread();
-    return false;
   }
-  return num_threads_ == threads_entered_.load();
 }
 
 zx_status_t Dispatcher::ThreadPool::SetRoleProfile() {
