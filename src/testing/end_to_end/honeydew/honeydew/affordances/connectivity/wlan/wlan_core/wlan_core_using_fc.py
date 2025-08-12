@@ -27,6 +27,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     MacAddress,
     QueryIfaceResponse,
     WlanInterfaces,
+    WlanInterfaces2,
     WlanMacRole,
 )
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core
@@ -165,7 +166,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                 "authentication is required for the WLAN FC affordance"
             )
 
-        iface_id = await self._get_first_sme(WlanMacRole.CLIENT)
+        iface_id = await self._get_first_sme(f_wlan_common.WlanMacRole.CLIENT)
         sme = await self._get_client_sme(iface_id)
 
         client, server = Channel.create()
@@ -213,8 +214,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         if result.code != f_wlan_ieee80211.StatusCode.SUCCESS:
             code = f_wlan_ieee80211.StatusCode(result.code)
             raise wlan_errors.HoneydewWlanError(
-                f'Failed to connect to "{ssid}", received {code.name}'
-                f"({code.value})"
+                f'Failed to connect to "{ssid}", received {code.name}({code.value})'
             )
         if result.is_credential_rejected:
             raise wlan_errors.HoneydewWlanError(
@@ -226,8 +226,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             got_ssid = bytes(client_status.ssid).decode("utf-8")
             if got_ssid != ssid:
                 raise wlan_errors.HoneydewWlanError(
-                    "Connected to wrong network. "
-                    f'Expected "{ssid}", got "{got_ssid}".'
+                    f'Connected to wrong network. Expected "{ssid}", got "{got_ssid}".'
                 )
         else:
             raise wlan_errors.HoneydewWlanError(
@@ -266,6 +265,52 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                 await self._device_monitor_proxy.create_iface(
                     phy_id=phy_id,
                     role=role.to_fidl(),
+                    sta_address=MacAddress(sta_addr).bytes(),
+                )
+            ).unwrap()
+        except (ZxStatus, AssertionError) as e:
+            raise wlan_errors.HoneydewWlanError(
+                "DeviceMonitor.CreateIface() error"
+            ) from e
+
+        assert (
+            create_iface_response.iface_id is not None
+        ), f"{create_iface_response!r} missing iface_id"
+        return create_iface_response.iface_id
+
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
+    async def create_iface2(
+        self,
+        phy_id: int,
+        role: f_wlan_common.WlanMacRole,
+        sta_addr: str | None = None,
+    ) -> int:
+        """Create a new WLAN interface.
+
+        Args:
+            phy_id: The iface ID.
+            role: The role of the new iface.
+            sta_addr: MAC address for softAP iface.
+
+        Returns:
+            Iface id of newly created interface.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+            ValueError: Invalid MAC address
+        """
+        if sta_addr is None:
+            sta_addr = "00:00:00:00:00:00"
+            _LOGGER.warning(
+                "No MAC provided in args of create_iface, using %s", sta_addr
+            )
+
+        try:
+            create_iface_response = (
+                await self._device_monitor_proxy.create_iface(
+                    phy_id=phy_id,
+                    role=role,
                     sta_address=MacAddress(sta_addr).bytes(),
                 )
             ).unwrap()
@@ -426,6 +471,39 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
+    async def query_interfaces2(self) -> WlanInterfaces2:
+        """Retrieves a QueryIfaceResponse for every WLAN interface on the device.
+
+        Returns:
+            WlanInterfaces containing a QueryIfaceResponse for every WLAN interface
+            on the device.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.ListIfaces or DeviceMonitor.QueryIface error
+        """
+        wlan_iface_ids = await self._get_iface_id_list()
+        if not wlan_iface_ids:
+            return WlanInterfaces2(client={}, ap={})
+
+        client: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse] = {}
+        ap: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse] = {}
+        for id in wlan_iface_ids:
+            result = await self._query_iface2(id)
+            mac = MacAddress.from_bytes(bytes(result.sta_addr))
+            match result.role:
+                case f_wlan_common.WlanMacRole.CLIENT:
+                    client[mac] = result
+                case f_wlan_common.WlanMacRole.AP:
+                    ap[mac] = result
+                case _:
+                    raise wlan_errors.HoneydewWlanError(
+                        f'Unexpected WlanMacRole "{result.role}" for iface {id}'
+                    )
+
+        return WlanInterfaces2(client=client, ap=ap)
+
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
     async def query_iface(self, iface_id: int) -> QueryIfaceResponse:
         """Retrieves interface info for given wlan iface id.
 
@@ -453,6 +531,42 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
+    async def query_iface2(
+        self, iface_id: int
+    ) -> f_wlan_device_service.QueryIfaceResponse:
+        """Retrieves interface info for given wlan iface id.
+
+        Args:
+            iface_id: The wlan interface id to get info from.
+
+        Returns:
+            QueryIfaceResponseWrapper from the SL4F server.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.QueryIface error
+        """
+        return await self._query_iface2(iface_id)
+
+    async def _query_iface2(
+        self, iface_id: int
+    ) -> f_wlan_device_service.QueryIfaceResponse:
+        try:
+            return (
+                (
+                    await self._device_monitor_proxy.query_iface(
+                        iface_id=iface_id
+                    )
+                )
+                .unwrap()
+                .resp
+            )
+        except (ZxStatus, AssertionError) as e:
+            raise wlan_errors.HoneydewWlanError(
+                "DeviceMonitor.QueryIface() error"
+            ) from e
+
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
     async def scan_for_bss_info(
         self,
     ) -> dict[str, list[f_wlan_common.BssDescription]]:
@@ -466,7 +580,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             HoneydewWlanError: Error from WLAN stack
             NetworkInterfaceNotFoundError: No client WLAN interface found.
         """
-        iface_id = await self._get_first_sme(WlanMacRole.CLIENT)
+        iface_id = await self._get_first_sme(f_wlan_common.WlanMacRole.CLIENT)
         client_sme = await self._get_client_sme(iface_id)
 
         # Perform a passive scan
@@ -498,7 +612,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
         return results
 
-    async def _get_first_sme(self, role: WlanMacRole) -> int:
+    async def _get_first_sme(self, role: f_wlan_common.WlanMacRole) -> int:
         """Find a WLAN interface running with the specified role.
 
         Args:
@@ -519,7 +633,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             )
 
         for iface_id in iface_ids:
-            info = await self._query_iface(iface_id)
+            info = await self._query_iface2(iface_id)
             if info.role == role:
                 return iface_id
 
@@ -601,7 +715,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             NetworkInterfaceNotFoundError: No client WLAN interface found.
             TypeError: If any of the return values are not of the expected type.
         """
-        iface_id = await self._get_first_sme(WlanMacRole.CLIENT)
+        iface_id = await self._get_first_sme(f_wlan_common.WlanMacRole.CLIENT)
         sme = await self._get_client_sme(iface_id)
         return await self._status(sme)
 

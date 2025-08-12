@@ -675,6 +675,16 @@ class WlanInterfaces:
     """AP WLAN interfaces keyed by MAC address."""
 
 
+@dataclass(frozen=True)
+class WlanInterfaces2:
+    """WLAN interfaces separated by device type and keyed by MAC address."""
+
+    client: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse]
+    """Client WLAN interfaces keyed by MAC address."""
+    ap: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse]
+    """AP WLAN interfaces keyed by MAC address."""
+
+
 class InformationElementType(enum.IntEnum):
     """Information Element type.
 
@@ -700,7 +710,7 @@ class BssDescriptionParser:
             if not len(ies) > i + 1:
                 raise TypeError(
                     "Invalid information element; requires at least 2 bytes for "
-                    f"Element ID and Length, got {len(ies)-i}"
+                    f"Element ID and Length, got {len(ies) - i}"
                 )
 
             element = int(ies[i])
