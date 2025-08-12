@@ -1321,11 +1321,6 @@
     },
     {
         "kind": "enum/member",
-        "name": "fuchsia.hardware.pci/InterruptMode.LEGACY_NOACK",
-        "value": "2"
-    },
-    {
-        "kind": "enum/member",
         "name": "fuchsia.hardware.pci/InterruptMode.MSI",
         "value": "3"
     },
