@@ -595,7 +595,7 @@ def main() -> int:
                 f"Could not find Fuchsia build directory, please use --build-dir=DIR option."
             )
 
-    bazel_launcher = workspace_utils.find_bazel_launcher_path(
+    bazel_launcher = build_utils.find_bazel_launcher_path(
         fuchsia_dir, build_dir
     )
     if not bazel_launcher:

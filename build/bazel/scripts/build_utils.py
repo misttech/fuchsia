@@ -117,6 +117,55 @@ def find_host_binary_path(program: str) -> T.Optional[Path]:
     return None
 
 
+def get_bazel_relative_topdir(fuchsia_dir: FilePath) -> tuple[str, set[Path]]:
+    """Return Bazel topdir, relative to Ninja output dir.
+
+    Args:
+        fuchsia_dir: Fuchsia source directory path.
+    Returns:
+        A (topdir, input_files) pair, where input_files is a set of Path
+        values corresponding to the file(s) read by this function.
+    """
+    input_file = Path(fuchsia_dir) / "build/bazel/config/bazel_top_dir"
+    assert input_file.exists(), f"Missing input file: {input_file}"
+    return input_file.read_text().strip(), {input_file}
+
+
+def find_bazel_launcher_path(
+    fuchsia_dir: FilePath, build_dir: FilePath
+) -> T.Optional[Path]:
+    """Find the path of the Bazel launcher script.
+
+    Args:
+        fuchsia_dir: Path to Fuchsia checkout directory.
+        build_dir: Path to Fuchsia build directory.
+
+    Returns:
+        Path to bazel launcher script, or empty Path() value if the file
+        does not exist.
+    """
+    bazel_topdir, _ = get_bazel_relative_topdir(fuchsia_dir)
+    result = Path(build_dir) / bazel_topdir / "bazel"
+    return result if result.exists() else None
+
+
+def find_bazel_workspace_path(
+    fuchsia_dir: FilePath, build_dir: FilePath
+) -> T.Optional[Path]:
+    """Find the path of the Bazel workspace.
+
+    Args:
+        fuchsia_dir: Path to Fuchsia checkout directory.
+        build_dir: Path to Fuchsia build directory.
+
+    Returns:
+        Path to bazel workspace, or None if the directory does not exists.
+    """
+    bazel_topdir, _ = get_bazel_relative_topdir(fuchsia_dir)
+    result = Path(build_dir) / bazel_topdir / "workspace"
+    return result if result.exists() else None
+
+
 _HEXADECIMAL_SET = set("0123456789ABCDEFabcdef")
 
 

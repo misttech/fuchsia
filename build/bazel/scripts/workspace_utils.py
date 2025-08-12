@@ -26,62 +26,6 @@ GN_TARGETS_DIR_SYMLINK = "fuchsia_build_generated/gn_targets_dir"
 _BAZEL_REPO_NAME_SEPARATOR = "+"
 
 
-def get_bazel_relative_topdir(fuchsia_dir: str | Path) -> tuple[str, set[Path]]:
-    """Return Bazel topdir, relative to Ninja output dir.
-
-    Args:
-        fuchsia_dir: Fuchsia source directory path.
-    Returns:
-        A (topdir, input_files) pair, where input_files is a set of Path
-        values corresponding to the file(s) read by this function.
-    """
-    input_file = os.path.join(
-        fuchsia_dir,
-        "build",
-        "bazel",
-        "config",
-        "bazel_top_dir",
-    )
-    assert os.path.exists(input_file), "Missing input file: " + input_file
-    with open(input_file) as f:
-        return f.read().strip(), {Path(input_file)}
-
-
-def find_bazel_launcher_path(
-    fuchsia_dir: Path, build_dir: Path
-) -> T.Optional[Path]:
-    """Find the path of the Bazel launcher script.
-
-    Args:
-        fuchsia_dir: Path to Fuchsia checkout directory.
-        build_dir: Path to Fuchsia build directory.
-
-    Returns:
-        Path to bazel launcher script, or empty Path() value if the file
-        does not exist.
-    """
-    bazel_topdir, _ = get_bazel_relative_topdir(fuchsia_dir)
-    result = build_dir / bazel_topdir / "bazel"
-    return result if result.exists() else None
-
-
-def find_bazel_workspace_path(
-    fuchsia_dir: Path, build_dir: Path
-) -> T.Optional[Path]:
-    """Find the path of the Bazel workspace.
-
-    Args:
-        fuchsia_dir: Path to Fuchsia checkout directory.
-        build_dir: Path to Fuchsia build directory.
-
-    Returns:
-        Path to bazel workspace, or None if the directory does not exists.
-    """
-    bazel_topdir, _ = get_bazel_relative_topdir(fuchsia_dir)
-    result = build_dir / bazel_topdir / "workspace"
-    return result if result.exists() else None
-
-
 def workspace_should_exclude_file(path: str) -> bool:
     """Return true if a file path must be excluded from the symlink list.
 
@@ -716,7 +660,9 @@ def generate_fuchsia_workspace(
 
     # Find the location of the Bazel top-dir relative to the Ninja
     # build directory.
-    bazel_top_dir, input_files = get_bazel_relative_topdir(fuchsia_dir)
+    bazel_top_dir, input_files = build_utils.get_bazel_relative_topdir(
+        fuchsia_dir
+    )
 
     # Generate the bazel launcher and Bazel workspace files.
     generated = GeneratedWorkspaceFiles()

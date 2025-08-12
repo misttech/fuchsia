@@ -162,7 +162,7 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
     if args.bazel:
         bazel_args = [args.bazel]
     else:
-        bazel_launcher = workspace_utils.find_bazel_launcher_path(
+        bazel_launcher = build_utils.find_bazel_launcher_path(
             args.fuchsia_dir, build_dir
         )
         if not bazel_launcher:
