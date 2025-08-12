@@ -19,7 +19,6 @@
                 "fuchsia.net.dhcpv6.PrefixProvider",
                 "fuchsia.net.masquerade.Factory",
                 "fuchsia.net.name.DnsServerWatcher",
-                "fuchsia.net.policy.properties.DefaultNetwork",
                 "fuchsia.net.policy.properties.Networks",
             ],
         },
@@ -66,6 +65,10 @@
             availability: "optional",
         },
         {
+            protocol: "fuchsia.net.policy.properties.DefaultNetworkWatcher",
+            availability: "optional",
+        },
+        {
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
             // been migrated to services. The service capability has been added below.
             directory: "dev-class-network",
@@ -89,7 +92,6 @@
                 "fuchsia.net.dhcpv6.PrefixProvider",
                 "fuchsia.net.masquerade.Factory",
                 "fuchsia.net.name.DnsServerWatcher",
-                "fuchsia.net.policy.properties.DefaultNetwork",
                 "fuchsia.net.policy.properties.Networks",
             ],
             from: "self",

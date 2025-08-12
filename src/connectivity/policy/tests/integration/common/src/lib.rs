@@ -11,7 +11,8 @@ use futures::future::{FutureExt as _, LocalBoxFuture};
 use net_types::ip::{self as net_types_ip, Ip};
 use netemul::{TestEndpoint, TestNetwork, TestRealm};
 use netstack_testing_common::realms::{
-    constants, KnownServiceProvider, Manager, ManagerConfig, Netstack, TestRealmExt, TestSandboxExt,
+    constants, KnownServiceProvider, Manager, ManagerConfig, Netstack, SocketProxyType,
+    TestRealmExt, TestSandboxExt,
 };
 use netstack_testing_common::{
     interfaces, wait_for_component_stopped, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
@@ -27,7 +28,7 @@ pub struct NetcfgOwnedDeviceArgs {
     // Whether to use the out of stack DHCP client.
     pub use_out_of_stack_dhcp_client: bool,
     // Whether to include the socketproxy protocols in netcfg.
-    pub use_socket_proxy: bool,
+    pub socket_proxy_type: SocketProxyType,
     // Additional service providers to include in the realm.
     pub extra_known_service_providers: Vec<KnownServiceProvider>,
 }
@@ -55,7 +56,7 @@ pub async fn with_netcfg_owned_device<
 ) -> String {
     let NetcfgOwnedDeviceArgs {
         use_out_of_stack_dhcp_client,
-        use_socket_proxy,
+        socket_proxy_type,
         extra_known_service_providers,
     } = additional_args;
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
@@ -67,7 +68,7 @@ pub async fn with_netcfg_owned_device<
                     agent: M::MANAGEMENT_AGENT,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client,
-                    use_socket_proxy,
+                    socket_proxy_type,
                     config: manager_config,
                 },
                 KnownServiceProvider::DnsResolver,
@@ -82,7 +83,7 @@ pub async fn with_netcfg_owned_device<
                     .then_some(KnownServiceProvider::DhcpClient)
                     .into_iter(),
             )
-            .chain(use_socket_proxy.then_some(KnownServiceProvider::SocketProxy).into_iter()),
+            .chain(socket_proxy_type.known_service_provider().into_iter()),
         )
         .expect("create netstack realm");
     // Add a device to the realm.

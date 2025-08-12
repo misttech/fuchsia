@@ -31,7 +31,7 @@ use netstack_testing_common::constants::ipv6 as ipv6_consts;
 use netstack_testing_common::ndp::send_ra_with_router_lifetime;
 use netstack_testing_common::realms::{
     constants, KnownServiceProvider, Manager, ManagerConfig, Netstack, NetstackExt,
-    TestSandboxExt as _,
+    SocketProxyType, TestSandboxExt as _,
 };
 use netstack_testing_common::{
     pause_fake_clock, wait_for_component_stopped, Result, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
@@ -282,7 +282,7 @@ async fn discovered_ndp_dns<M: Manager, N: Netstack>(name: &str, check_type: Dns
         ManagerConfig::Empty,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-            use_socket_proxy: false,
+            socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![],
         },
         |_, network, _, client_realm, _sandbox| {
@@ -346,7 +346,7 @@ async fn discovered_dhcpv4_dns<M: Manager, N: Netstack>(name: &str, check_type: 
         ManagerConfig::Empty,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-            use_socket_proxy: false,
+            socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![],
         },
         |_, network, _, client_realm, sandbox| {
@@ -482,7 +482,7 @@ async fn discovered_dhcpv6_dns<M: Manager, N: Netstack>(name: &str, check_type: 
         ManagerConfig::Dhcpv6,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-            use_socket_proxy: false,
+            socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![KnownServiceProvider::Dhcpv6Client],
         },
         |_, network, _, client_realm, _sandbox| {
@@ -653,7 +653,7 @@ async fn discovered_starnix_networks_dns<M: Manager, N: Netstack>(
                     config: ManagerConfig::EnableSocketProxy,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                    use_socket_proxy: true,
+                    socket_proxy_type: SocketProxyType::Real,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
@@ -773,7 +773,7 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager, N: Netstack>(
                     config: ManagerConfig::EnableSocketProxy,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                    use_socket_proxy: true,
+                    socket_proxy_type: SocketProxyType::Real,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,

@@ -34,6 +34,8 @@ rustc_test("management") {
     "//src/connectivity/network/tests/integration/common:netstack_testing_common",
     "//src/connectivity/network/tests/integration/macros:netstack_testing_macros",
     "//src/connectivity/policy/netcfg:lib",
+    "//src/connectivity/policy/socket-proxy/integration/fidl:fidl_rust",
+    "//src/connectivity/policy/tests/integration:netcfg-netemul-configs",
     "//src/connectivity/policy/tests/integration/common:policy_testing_common",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
@@ -52,7 +54,6 @@ rustc_test("management") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:test-case",
-    "//third_party/rust_crates:thiserror",
   ]
   sources = [
     "src/lib.rs",

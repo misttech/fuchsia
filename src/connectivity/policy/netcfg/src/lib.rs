@@ -25,7 +25,7 @@ use std::pin::{pin, Pin};
 use std::str::FromStr;
 use std::{fs, io, path};
 
-use fidl::endpoints::{ControlHandle as _, RequestStream as _, Responder as _};
+use fidl::endpoints::{RequestStream as _, Responder as _};
 use fidl_fuchsia_net_ext::{self as fnet_ext, DisplayExt as _, IpExt as _};
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext, Update as _};
 use fuchsia_component::client::{clone_namespace_svc, new_protocol_connector_in_dir};
@@ -836,7 +836,6 @@ enum RequestStream {
     Masquerade(fnet_masquerade::FactoryRequestStream),
     DnsServerWatcher(fnet_name::DnsServerWatcherRequestStream),
     NetworkAttributes(fnp_properties::NetworksRequestStream),
-    DefaultNetwork(fnp_properties::DefaultNetworkRequestStream),
 }
 
 impl std::fmt::Debug for RequestStream {
@@ -847,7 +846,6 @@ impl std::fmt::Debug for RequestStream {
             RequestStream::Masquerade(_) => write!(f, "Masquerade"),
             RequestStream::DnsServerWatcher(_) => write!(f, "DnsServerWatcher"),
             RequestStream::NetworkAttributes(_) => write!(f, "NetworkAttributes"),
-            RequestStream::DefaultNetwork(_) => write!(f, "DefaultNetwork"),
         }
     }
 }
@@ -1189,6 +1187,14 @@ impl<'a> NetCfg<'a> {
         // `netstack_dns_server_stream` is not expected to end so we can fuse the
         // `StreamMap` without issue.
         let mut dns_watchers = dns_watchers.fuse();
+        let default_network_updates: Pin<
+            Box<
+                dyn futures::Stream<
+                    Item = Result<fnp_properties::DefaultNetworkUpdate, fidl::Error>,
+                >,
+            >,
+        >;
+
         assert!(
             dns_watchers
                 .get_mut()
@@ -1215,7 +1221,20 @@ impl<'a> NetCfg<'a> {
                     .is_none(),
                 "dns watchers should be empty"
             );
+            default_network_updates = Box::pin(futures::stream::try_unfold(
+                fuchsia_component::client::connect_to_protocol::<
+                    fnp_properties::DefaultNetworkWatcherMarker,
+                >()
+                .context(
+                    "failed to connect to fuchsia.network.policy.properties/DefaultNetworkWatcher",
+                )?,
+                move |proxy| proxy.watch().map_ok(move |s| Some((s, proxy))),
+            ));
+        } else {
+            default_network_updates =
+                Box::pin(futures::stream::try_unfold((), |_| async { Ok(None) }));
         }
+        let mut default_network_updates = default_network_updates.fuse();
 
         let mut masquerade_handler = MasqueradeHandler::default();
 
@@ -1227,8 +1246,7 @@ impl<'a> NetCfg<'a> {
             .add_fidl_service(RequestStream::Dhcpv6PrefixProvider)
             .add_fidl_service(RequestStream::Masquerade)
             .add_fidl_service(RequestStream::DnsServerWatcher)
-            .add_fidl_service(RequestStream::NetworkAttributes)
-            .add_fidl_service(RequestStream::DefaultNetwork);
+            .add_fidl_service(RequestStream::NetworkAttributes);
         let _: &mut ServiceFs<_> =
             fs.take_and_serve_directory_handle().context("take and serve directory handle")?;
         let mut fs = fs.fuse();
@@ -1247,8 +1265,6 @@ impl<'a> NetCfg<'a> {
             dns::DnsServerWatcherRequestStreams::default();
 
         let mut networks_request_streams = network::NetworksRequestStreams::default();
-        let mut default_network_request_streams =
-            futures::stream::SelectAll::<fnp_properties::DefaultNetworkRequestStream>::new();
 
         // Lifecycle handle takes no args, must be set to zero.
         // See zircon/processargs.h.
@@ -1273,7 +1289,7 @@ impl<'a> NetCfg<'a> {
             NetworkAttributesRequest(
                 (network::ConnectionId, Result<fnp_properties::NetworksRequest, fidl::Error>),
             ),
-            DefaultNetworkRequest(Result<fnp_properties::DefaultNetworkRequest, fidl::Error>),
+            DefaultNetworkUpdate(Result<fnp_properties::DefaultNetworkUpdate, fidl::Error>),
             ProvisioningEvent(ProvisioningEvent),
         }
 
@@ -1367,8 +1383,8 @@ impl<'a> NetCfg<'a> {
                 net_attr_req = networks_request_streams.select_next_some() => {
                     Event::NetworkAttributesRequest(net_attr_req)
                 }
-                default_network_event = default_network_request_streams.select_next_some() => {
-                    Event::DefaultNetworkRequest(default_network_event)
+                default_network_update = default_network_updates.select_next_some() => {
+                    Event::DefaultNetworkUpdate(default_network_update)
                 }
                 complete => return Err(anyhow::anyhow!("eventloop ended unexpectedly")),
             };
@@ -1422,63 +1438,48 @@ impl<'a> NetCfg<'a> {
                 Event::NetworkAttributesRequest((id, req)) => {
                     self.netpol_networks_service.handle_network_attributes_request(id, req).await?
                 }
-                Event::DefaultNetworkRequest(req) => {
-                    let req = req.context("default network request")?;
-                    match req {
-                        fnp_properties::DefaultNetworkRequest::Update {
-                            payload:
-                                fnp_properties::DefaultNetworkUpdateRequest {
-                                    interface_id,
-                                    socket_marks,
-                                    ..
-                                },
-                            responder,
-                        } => match (interface_id, socket_marks) {
-                            (None, Some(_)) | (Some(_), None) => responder.send(Err(
-                                fnp_properties::UpdateDefaultNetworkError::MissingRequiredArgument,
-                            ))?,
-                            (None, None) => responder.send({
+                Event::DefaultNetworkUpdate(update) => match update {
+                    Err(e) => error!("Encountered error watching for network updates: {e:?}"),
+                    Ok(fnp_properties::DefaultNetworkUpdate {
+                        interface_id, socket_marks, ..
+                    }) => match (interface_id, socket_marks) {
+                        (None, Some(sm)) => {
+                            error!(
+                                "Default network update malformed: missing interface_id, while \
+                                 socket_marks are present {sm:?}"
+                            )
+                        }
+                        (Some(ii), None) => {
+                            error!(
+                                "Default network update malformed: missing socket_marks, while \
+                                 interface_id is present {ii:?}"
+                            )
+                        }
+                        (None, None) => {
+                            self.netpol_networks_service
+                                .update(network::PropertyUpdate::default().default_network_lost())
+                                .await
+                        }
+                        (Some(interface_id), Some(socket_marks)) => {
+                            if let Err(e) = (async || {
                                 self.netpol_networks_service
                                     .update(
-                                        network::PropertyUpdate::default().default_network_lost(),
+                                        network::PropertyUpdate::default()
+                                            .default_network(interface_id)
+                                            .context("while setting default network")?
+                                            .socket_marks(interface_id, socket_marks)
+                                            .context("while setting socket_marks")?,
                                     )
                                     .await;
-                                Ok(())
-                            })?,
-                            (Some(interface_id), Some(socket_marks)) => {
-                                responder.send(
-                                    (async || {
-                                        use fnp_properties::UpdateDefaultNetworkError::*;
-                                        self.netpol_networks_service
-                                            .update(
-                                                network::PropertyUpdate::default()
-                                                    .default_network(interface_id)
-                                                    .map_err(|e| {
-                                                        warn!(
-                                                            "Failed to parse default network {e:?}"
-                                                        );
-                                                        InvalidInterfaceId
-                                                    })?
-                                                    .socket_marks(interface_id, socket_marks)
-                                                    .map_err(|e| {
-                                                        warn!(
-                                                            "Failed to update socket marks {e:?}"
-                                                        );
-                                                        InvalidSocketMarks
-                                                    })?,
-                                            )
-                                            .await;
-                                        Ok(())
-                                    })()
-                                    .await,
-                                )?;
+                                Ok::<(), anyhow::Error>(())
+                            })()
+                            .await
+                            {
+                                error!("Could not handle default network update: {e:?}");
                             }
-                        },
-                        _ => {
-                            warn!("Received unexpected request {req:?}");
                         }
-                    }
-                }
+                    },
+                },
                 Event::ProvisioningEvent(event) => {
                     self.handle_provisioning_event(
                         event,
@@ -1490,7 +1491,6 @@ impl<'a> NetCfg<'a> {
                         &mut masquerade_handler,
                         &mut masquerade_events,
                         &mut networks_request_streams,
-                        &mut default_network_request_streams,
                     )
                     .await?
                 }
@@ -1511,9 +1511,6 @@ impl<'a> NetCfg<'a> {
         masquerade_handler: &mut MasqueradeHandler,
         masquerade_events: &mut futures::stream::SelectAll<masquerade::EventStream>,
         networks_request_streams: &mut network::NetworksRequestStreams,
-        default_network_streams: &mut futures::stream::SelectAll<
-            fnp_properties::DefaultNetworkRequestStream,
-        >,
     ) -> Result<(), anyhow::Error> {
         match event {
             ProvisioningEvent::InterfaceWatcherResult(if_watcher_res) => {
@@ -1586,18 +1583,6 @@ impl<'a> NetCfg<'a> {
                     }
                     RequestStream::NetworkAttributes(req_stream) => {
                         networks_request_streams.push(req_stream)
-                    }
-                    RequestStream::DefaultNetwork(req_stream) => {
-                        if default_network_streams.is_empty() {
-                            default_network_streams.push(req_stream)
-                        } else {
-                            // Only one connection to
-                            // fuchsia.net.policy.properties/DefaultNetwork
-                            // allowed at a time.
-                            req_stream
-                                .control_handle()
-                                .shutdown_with_epitaph(zx::Status::CONNECTION_ABORTED);
-                        }
                     }
                 };
             }

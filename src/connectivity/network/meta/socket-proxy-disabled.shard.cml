@@ -17,6 +17,7 @@
         },
         {
             protocol: [
+                "fuchsia.net.policy.properties.DefaultNetworkWatcher",
                 "fuchsia.net.policy.socketproxy.DnsServerWatcher",
                 "fuchsia.net.policy.socketproxy.FuchsiaNetworks",
             ],
@@ -28,6 +29,7 @@
     expose: [
         {
             protocol: [
+                "fuchsia.net.policy.properties.DefaultNetworkWatcher",
                 "fuchsia.net.policy.socketproxy.DnsServerWatcher",
                 "fuchsia.net.policy.socketproxy.FuchsiaNetworks",
                 "fuchsia.net.policy.socketproxy.StarnixNetworks",

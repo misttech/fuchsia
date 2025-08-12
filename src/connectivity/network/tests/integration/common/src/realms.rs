@@ -22,6 +22,7 @@ use {
     fidl_fuchsia_net_ndp as fnet_ndp, fidl_fuchsia_net_neighbor as fnet_neighbor,
     fidl_fuchsia_net_policy_properties as fnp_properties,
     fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
+    fidl_fuchsia_net_policy_testing as fnp_testing,
     fidl_fuchsia_net_reachability as fnet_reachability, fidl_fuchsia_net_root as fnet_root,
     fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_settings as fnet_settings, fidl_fuchsia_net_stack as fnet_stack,
@@ -172,7 +173,6 @@ impl ManagementAgent {
                 fnet_dhcpv6::PrefixProviderMarker::PROTOCOL_NAME,
                 fnet_masquerade::FactoryMarker::PROTOCOL_NAME,
                 fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
-                fnp_properties::DefaultNetworkMarker::PROTOCOL_NAME,
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
             ],
             Self::NetCfg(NetCfgVersion::Advanced) => &[
@@ -180,7 +180,6 @@ impl ManagementAgent {
                 fnet_masquerade::FactoryMarker::PROTOCOL_NAME,
                 fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
                 fnet_virtualization::ControlMarker::PROTOCOL_NAME,
-                fnp_properties::DefaultNetworkMarker::PROTOCOL_NAME,
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
             ],
         }
@@ -228,6 +227,37 @@ impl ManagerConfig {
     }
 }
 
+#[derive(Copy, Clone, Default, Eq, PartialEq, Debug)]
+/// The type of `socket-proxy` implementation to use.
+pub enum SocketProxyType {
+    #[default]
+    /// No socket proxy is present.
+    None,
+    /// Use the real socket proxy implementation.
+    Real,
+    /// Use the fake socket proxy implementation to allow mocking behavior.
+    Fake,
+}
+
+impl SocketProxyType {
+    /// Returns the appropriate `KnownServiceProvider` variant for this type.
+    pub fn known_service_provider(&self) -> Option<KnownServiceProvider> {
+        match self {
+            SocketProxyType::None => None,
+            SocketProxyType::Real => Some(KnownServiceProvider::SocketProxy),
+            SocketProxyType::Fake => Some(KnownServiceProvider::FakeSocketProxy),
+        }
+    }
+
+    fn component_name(&self) -> Option<&'static str> {
+        match self {
+            SocketProxyType::None => None,
+            SocketProxyType::Real => Some(constants::socket_proxy::COMPONENT_NAME),
+            SocketProxyType::Fake => Some(constants::fake_socket_proxy::COMPONENT_NAME),
+        }
+    }
+}
+
 /// Components that provide known services used in tests.
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[allow(missing_docs)]
@@ -238,7 +268,7 @@ pub enum KnownServiceProvider {
         config: ManagerConfig,
         use_dhcp_server: bool,
         use_out_of_stack_dhcp_client: bool,
-        use_socket_proxy: bool,
+        socket_proxy_type: SocketProxyType,
     },
     SecureStash,
     DhcpServer {
@@ -255,6 +285,7 @@ pub enum KnownServiceProvider {
         require_outer_netstack: bool,
     },
     FakeClock,
+    FakeSocketProxy,
 }
 
 /// Constant properties of components used in networking integration tests, such
@@ -313,16 +344,9 @@ pub mod constants {
         pub const COMPONENT_NAME: &str = "fake_clock";
         pub const COMPONENT_URL: &str = "#meta/fake_clock.cm";
     }
-}
-
-fn weak_protocol_dep<P>(component_name: &'static str) -> fnetemul::ChildDep
-where
-    P: fidl::endpoints::DiscoverableProtocolMarker,
-{
-    fnetemul::ChildDep {
-        name: Some(component_name.into()),
-        capability: Some(fnetemul::ExposedCapability::WeakProtocol(P::PROTOCOL_NAME.to_string())),
-        ..Default::default()
+    pub mod fake_socket_proxy {
+        pub const COMPONENT_NAME: &str = "fake_socket_proxy";
+        pub const COMPONENT_URL: &str = "#meta/fake_socket_proxy.cm";
     }
 }
 
@@ -390,7 +414,7 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                 use_dhcp_server,
                 config,
                 use_out_of_stack_dhcp_client,
-                use_socket_proxy,
+                socket_proxy_type,
             } => {
                 let enable_dhcpv6 = match config {
                     ManagerConfig::Dhcpv6 => true,
@@ -452,18 +476,24 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                                 ))
                             }))
                             .chain(
-                                use_socket_proxy
-                                    .then(|| {
+                                socket_proxy_type
+                                    .component_name()
+                                    .map(|component_name| {
                                         [
                                             fnetemul::Capability::ChildDep(protocol_dep::<
                                                 fnp_socketproxy::FuchsiaNetworksMarker,
                                             >(
-                                                constants::socket_proxy::COMPONENT_NAME,
+                                                component_name
                                             )),
                                             fnetemul::Capability::ChildDep(protocol_dep::<
                                                 fnp_socketproxy::DnsServerWatcherMarker,
                                             >(
-                                                constants::socket_proxy::COMPONENT_NAME,
+                                                component_name
+                                            )),
+                                            fnetemul::Capability::ChildDep(protocol_dep::<
+                                                fnp_properties::DefaultNetworkWatcherMarker,
+                                            >(
+                                                component_name
                                             )),
                                         ]
                                     })
@@ -716,6 +746,7 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     fnp_socketproxy::StarnixNetworksMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::FuchsiaNetworksMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::DnsServerWatcherMarker::PROTOCOL_NAME.to_string(),
+                    fnp_properties::DefaultNetworkWatcherMarker::PROTOCOL_NAME.to_string(),
                 ]),
                 uses: Some(fnetemul::ChildUses::Capabilities(vec![
                     fnetemul::Capability::ChildDep(protocol_dep::<fposix_socket::ProviderMarker>(
@@ -726,11 +757,6 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                             constants::netstack::COMPONENT_NAME,
                         ),
                     ),
-                    fnetemul::Capability::ChildDep(weak_protocol_dep::<
-                        fnp_properties::DefaultNetworkMarker,
-                    >(
-                        constants::netcfg::COMPONENT_NAME
-                    )),
                 ])),
                 ..Default::default()
             },
@@ -790,6 +816,19 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                 uses: Some(fnetemul::ChildUses::Capabilities(vec![fnetemul::Capability::LogSink(
                     fnetemul::Empty {},
                 )])),
+                ..Default::default()
+            },
+            KnownServiceProvider::FakeSocketProxy => fnetemul::ChildDef {
+                name: Some(constants::fake_socket_proxy::COMPONENT_NAME.to_string()),
+                source: Some(fnetemul::ChildSource::Component(
+                    constants::fake_socket_proxy::COMPONENT_URL.to_string(),
+                )),
+                exposes: Some(vec![
+                    fnp_properties::DefaultNetworkWatcherMarker::PROTOCOL_NAME.to_string(),
+                    fnp_socketproxy::DnsServerWatcherMarker::PROTOCOL_NAME.to_string(),
+                    fnp_socketproxy::FuchsiaNetworksMarker::PROTOCOL_NAME.to_string(),
+                    fnp_testing::FakeSocketProxy_Marker::PROTOCOL_NAME.to_string(),
+                ]),
                 ..Default::default()
             },
         }

@@ -4,7 +4,6 @@
 
 #![cfg(test)]
 
-use assert_matches::assert_matches;
 use fuchsia_async::DurationExt as _;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
@@ -14,7 +13,9 @@ use net_declare::fidl_ip_v6;
 use netcfg::NetworkTokenExt;
 use netstack_testing_common::constants::ipv6 as ipv6_consts;
 use netstack_testing_common::ndp::send_ra_with_router_lifetime;
-use netstack_testing_common::realms::{self, Manager, ManagerConfig, Netstack, NetstackExt};
+use netstack_testing_common::realms::{
+    self, Manager, ManagerConfig, Netstack, NetstackExt, SocketProxyType,
+};
 use netstack_testing_common::{wait_for_component_stopped, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT};
 use netstack_testing_macros::netstack_test;
 use packet_formats::icmp::ndp::options::{NdpOptionBuilder, RecursiveDnsServer};
@@ -23,7 +24,10 @@ use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 use std::pin::pin;
 use std::sync::Arc;
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_policy_properties as fnp_properties};
+use {
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_policy_properties as fnp_properties,
+    fidl_fuchsia_net_policy_testing as fnp_testing,
+};
 
 trait TakeNetwork {
     fn take_network(self) -> Option<fnp_properties::NetworkToken>;
@@ -41,11 +45,8 @@ impl TakeNetwork for fnp_properties::NetworksWatchDefaultResponse {
     }
 }
 
-fn network_update(
-    network_id: u64,
-    marks: fnet::Marks,
-) -> fnp_properties::DefaultNetworkUpdateRequest {
-    fnp_properties::DefaultNetworkUpdateRequest {
+fn network_update(network_id: u64, marks: fnet::Marks) -> fnp_properties::DefaultNetworkUpdate {
+    fnp_properties::DefaultNetworkUpdate {
         interface_id: Some(network_id),
         socket_marks: Some(marks),
         ..Default::default()
@@ -105,9 +106,10 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
 
     let _if_name = with_netcfg_owned_device::<M, N, _>(
         name,
-        ManagerConfig::Empty,
+        ManagerConfig::EnableSocketProxy,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
+            socket_proxy_type: SocketProxyType::Fake,
             ..Default::default()
         },
         |_if_id, _network, _interface_state, realm, _sandbox| {
@@ -220,79 +222,40 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
                 };
 
                 let test = async move {
-                    let default_network = realm
-                        .connect_to_protocol::<fnp_properties::DefaultNetworkMarker>()
-                        .expect("couldn't connect to fuchsia.net.policy.properties/DefaultNetwork");
+                    let socket_proxy = realm
+                        .connect_to_protocol_from_child::<fnp_testing::FakeSocketProxy_Marker>(
+                            realms::constants::fake_socket_proxy::COMPONENT_NAME,
+                        )
+                        .expect("failed to connect to FakeSocketProxy");
 
-                    default_network
-                        .update(&network_update(1, marks(Some(1), None)))
+                    socket_proxy
+                        .update_default_network(&network_update(1, marks(Some(1), None)))
                         .await
-                        .expect("fidl error")
-                        .map_err(|e| anyhow::anyhow!("err {e:?}"))
-                        .expect("protocol error");
-
-                    // Verify that a second call to update will fail.
-                    #[derive(Debug, thiserror::Error)]
-                    enum UpdateErrType {
-                        #[error("Error while connecting {0}")]
-                        Connect(#[from] anyhow::Error),
-                        #[error("Error while calling update {0}")]
-                        UpdateError(#[from] fidl::Error),
-                        #[error("Protocol error: {0:?}")]
-                        ProtocolError(fnp_properties::UpdateDefaultNetworkError),
-                    }
-                    let do_update_again =
-                        async |realm: &netemul::TestRealm<'_>| -> Result<(), UpdateErrType> {
-                            let default_network2 = realm
-                                .connect_to_protocol::<fnp_properties::DefaultNetworkMarker>()?;
-                            default_network2
-                                .update(&network_update(2, marks(Some(2), None)))
-                                .await?
-                                .map_err(UpdateErrType::ProtocolError)?;
-
-                            Ok(())
-                        };
-                    assert_matches!(
-                        do_update_again(&realm).await,
-                        Err(UpdateErrType::UpdateError(fidl::Error::ClientChannelClosed {
-                            status: zx::Status::CONNECTION_ABORTED,
-                            protocol_name: _,
-                            epitaph: _,
-                        }))
-                    );
-
+                        .expect("fidl error");
                     let _ = rx.next().await;
 
-                    default_network
-                        .update(&network_update(1, marks(Some(2), Some(10))))
+                    socket_proxy
+                        .update_default_network(&network_update(1, marks(Some(2), Some(10))))
                         .await
-                        .expect("fidl error")
-                        .map_err(|e| anyhow::anyhow!("err {e:?}"))
-                        .expect("protocol error");
+                        .expect("fidl error");
                     let _ = rx.next().await;
 
-                    default_network
-                        .update(&network_update(1, marks(Some(4), None)))
+                    socket_proxy
+                        .update_default_network(&network_update(1, marks(Some(4), None)))
                         .await
-                        .expect("fidl error")
-                        .map_err(|e| anyhow::anyhow!("err {e:?}"))
-                        .expect("protocol error");
+                        .expect("fidl error");
                     let _ = rx.next().await;
 
-                    default_network
-                        .update(&Default::default())
+                    socket_proxy
+                        .update_default_network(&Default::default())
                         .await
-                        .expect("fidl error")
-                        .map_err(|e| anyhow::anyhow!("err {e:?}"))
-                        .expect("protocol error");
+                        .expect("fidl error");
                     let _ = rx.next().await;
 
-                    default_network
-                        .update(&network_update(1, marks(Some(8), None)))
+                    socket_proxy
+                        .update_default_network(&network_update(1, marks(Some(8), None)))
                         .await
-                        .expect("fidl error")
-                        .map_err(|e| anyhow::anyhow!("err {e:?}"))
-                        .expect("protocol error");
+                        .expect("fidl error");
                     let _ = rx.next().await;
 
                     let updates = last_updates.lock().await.clone();
@@ -349,9 +312,10 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
 
     let _if_name = with_netcfg_owned_device::<M, N, _>(
         name,
-        ManagerConfig::Empty,
+        ManagerConfig::EnableSocketProxy,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
+            socket_proxy_type: SocketProxyType::Fake,
             ..Default::default()
         },
         |_if_id, network, _interface_state, realm, _sandbox| {
@@ -384,16 +348,15 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                 )
                 .fuse();
                 let mut wait_for_netmgr = pin!(wait_for_netmgr);
-                let default_network = realm
-                    .connect_to_protocol_from_child::<fnp_properties::DefaultNetworkMarker>(
-                        realms::constants::netcfg::COMPONENT_NAME,
+                let socket_proxy = realm
+                    .connect_to_protocol_from_child::<fnp_testing::FakeSocketProxy_Marker>(
+                        realms::constants::fake_socket_proxy::COMPONENT_NAME,
                     )
-                    .expect("failed to connect to DefaultNetwork");
-                default_network
-                    .update(&network_update(2, Default::default()))
+                    .expect("failed to connect to FakeSocketProxy");
+                socket_proxy
+                    .update_default_network(&network_update(2, Default::default()))
                     .await
-                    .expect("fidl error")
-                    .expect("protocol error");
+                    .expect("fidl error");
                 let networks = realm
                     .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
                         realms::constants::netcfg::COMPONENT_NAME,

@@ -15,31 +15,27 @@ type NetworkToken = resource table {
     1: value zx.Handle:EVENTPAIR;
 };
 
-/// Protocol to allow `socket-proxy` to report changes in default network and
-/// its associated socket marks. Only one connection to this protocol is
-/// supported at once. If a second connection is made it will be shut down with
-/// a `CONNECTION_ABORTED` error
+type DefaultNetworkUpdate = table {
+    /// The value of the new interface id.
+    /// NOTE: Required if `socket_marks` is set.
+    1: interface_id fuchsia.net.InterfaceId;
+
+    /// The socket marks associated with that interface.
+    /// NOTE: Required if `interface_id` is set.
+    2: socket_marks fuchsia.net.Marks;
+};
+
+/// Protocol to allow `netcfg` to watch `socket-proxy` for changes in default
+/// network and its associated socket marks. Only one connection to this
+/// protocol is supported at once. If a second connection is made it will be
+/// shut down with a `CONNECTION_ABORTED` error.
 @discoverable
-open protocol DefaultNetwork {
-    /// Update the current default network. An empty update signifies that the
-    /// default network has been lost.
-    flexible Update(table {
-        /// The value of the new interface id.
-        /// NOTE: Required if `socket_marks` is set.
-        1: interface_id fuchsia.net.InterfaceId;
-
-        /// The socket marks associated with that interface.
-        /// NOTE: Required if `interface_id` is set.
-        2: socket_marks fuchsia.net.Marks;
-    }) -> () error @generated_name("UpdateDefaultNetworkError") flexible enum : uint32 {
-        /// The provided `interface_id` was invalid.
-        INVALID_INTERFACE_ID = 1;
-        /// The provided `socket_marks` were invalid.
-        INVALID_SOCKET_MARKS = 2;
-
-        /// An argument marked above as REQUIRED was not provided.
-        MISSING_REQUIRED_ARGUMENT = 99;
-    };
+open protocol DefaultNetworkWatcher {
+    /// Watch the current default network. On first call, an update will be
+    /// immediately be sent. Subsequent calls will return only when a change
+    /// occurs.
+    /// NOTE: An empty update signifies that the default network has been lost.
+    strict Watch() -> (DefaultNetworkUpdate);
 };
 
 // TODO(https://fxbug.dev/42159332): Use built-in empty struct when available.

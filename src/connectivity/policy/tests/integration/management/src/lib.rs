@@ -48,7 +48,8 @@ use netstack_testing_common::interfaces::{self, TestInterfaceExt as _};
 use netstack_testing_common::nud::apply_nud_flake_workaround;
 use netstack_testing_common::realms::{
     self, KnownServiceProvider, ManagementAgent, Manager, ManagerConfig, NetCfgBasic,
-    NetCfgVersion, Netstack, Netstack3, NetstackExt, TestRealmExt as _, TestSandboxExt,
+    NetCfgVersion, Netstack, Netstack3, NetstackExt, SocketProxyType, TestRealmExt as _,
+    TestSandboxExt,
 };
 use netstack_testing_common::{
     dhcpv4 as dhcpv4_helper, try_all, try_any, wait_for_component_stopped, Result,
@@ -84,8 +85,9 @@ async fn test_oir<M: Manager, N: Netstack>(name: &str, config: ManagerConfig, pr
         config,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-            use_socket_proxy: false,
+            socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![],
+            ..Default::default()
         },
         |_if_id: u64,
          _: &netemul::TestNetwork<'_>,
@@ -259,7 +261,7 @@ async fn test_filtering_udp<M: Manager, N: Netstack>(
                     use_dhcp_server: true,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
                     config: realm1_manager,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 // Include the DHCP server because we bring up a WLAN_AP device
                 // in some test cases.
@@ -293,7 +295,7 @@ async fn test_filtering_udp<M: Manager, N: Netstack>(
                     use_dhcp_server: true,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
                     config: realm2_manager,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 // Include the DHCP server because we bring up a WLAN_AP device
                 // in some test cases.
@@ -383,7 +385,7 @@ async fn test_install_only_no_provisioning<M: Manager, N: Netstack>(name: &str) 
         ManagerConfig::AllDelegated,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-            use_socket_proxy: false,
+            socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![KnownServiceProvider::Dhcpv6Client],
         },
         |_if_id: u64,
@@ -509,7 +511,7 @@ async fn test_install_with_local_table<M: Manager>(name: &str) {
         ManagerConfig::AllInterfaceLocalDelegated,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: true,
-            use_socket_proxy: false,
+            socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![],
         },
         |if_id: u64,
@@ -557,7 +559,7 @@ async fn test_oir_interface_name_conflict_uninstall_existing<M: Manager, N: Nets
                     config: ManagerConfig::Empty,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
@@ -705,7 +707,7 @@ async fn test_oir_interface_name_conflict_reject<M: Manager, N: Netstack>(
                     config: ManagerConfig::DuplicateNames,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
@@ -1133,7 +1135,7 @@ async fn test_wlan_ap_dhcp_server<M: Manager, N: Netstack>(name: &str) {
                     config: ManagerConfig::Empty,
                     use_dhcp_server: true,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::DhcpServer { persistent: false },
@@ -1187,7 +1189,7 @@ async fn observes_stop_events<M: Manager, N: Netstack>(name: &str) {
                     config: ManagerConfig::Empty,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
@@ -1241,8 +1243,9 @@ async fn test_forwarding<M: Manager, N: Netstack>(name: &str) {
         ManagerConfig::Forwarding,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-            use_socket_proxy: false,
+            socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![],
+            ..Default::default()
         },
         |if_id,
          _: &netemul::TestNetwork<'_>,
@@ -1291,7 +1294,7 @@ async fn test_prefix_provider_not_supported<M: Manager, N: Netstack>(name: &str)
                     config: ManagerConfig::Empty,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
@@ -1342,7 +1345,7 @@ async fn test_prefix_provider_already_acquiring<M: Manager, N: Netstack>(name: &
                     config: ManagerConfig::Dhcpv6,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
@@ -1452,7 +1455,7 @@ async fn test_prefix_provider_config_error<M: Manager, N: Netstack>(
                     config: ManagerConfig::Dhcpv6,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
@@ -1496,7 +1499,7 @@ async fn test_prefix_provider_double_watch<M: Manager, N: Netstack>(name: &str) 
                     config: ManagerConfig::Dhcpv6,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
@@ -1725,8 +1728,9 @@ async fn test_prefix_provider_full_integration<M: Manager, N: Netstack>(name: &s
         ManagerConfig::Dhcpv6,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-            use_socket_proxy: false,
+            socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![KnownServiceProvider::Dhcpv6Client],
+            ..Default::default()
         },
         |if_id, network, interface_state, realm, _sandbox| {
             async move {
@@ -1853,8 +1857,9 @@ async fn disable_interface_while_having_dhcpv6_prefix<M: Manager, N: Netstack>(n
         ManagerConfig::Dhcpv6,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-            use_socket_proxy: false,
+            socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![KnownServiceProvider::Dhcpv6Client],
+            ..Default::default()
         },
         |if_id, network, interface_state, realm, _sandbox| {
             async move {
@@ -2047,7 +2052,7 @@ async fn fuchsia_networks_default_network<M: Manager>(name: &str, manager_config
                     config: manager_config.clone(),
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: true,
-                    use_socket_proxy: true,
+                    socket_proxy_type: SocketProxyType::Real,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
@@ -2312,7 +2317,7 @@ impl MasqueradeTestSetup {
                         config: ManagerConfig::Empty,
                         use_dhcp_server: false,
                         use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
-                        use_socket_proxy: false,
+                        socket_proxy_type: SocketProxyType::None,
                     },
                     KnownServiceProvider::DnsResolver,
                     KnownServiceProvider::FakeClock,
@@ -2766,8 +2771,9 @@ async fn dhcpv4_client_restarts_after_delay() {
         ManagerConfig::Empty,
         NetcfgOwnedDeviceArgs {
             use_out_of_stack_dhcp_client: true,
-            use_socket_proxy: false,
+            socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![KnownServiceProvider::Dhcpv6Client],
+            ..Default::default()
         },
         |client_interface_id, network, client_state, client_realm, sandbox| {
             async move {
@@ -3062,7 +3068,7 @@ async fn add_blackhole_interface<M: Manager>(name: &str) {
                     config: ManagerConfig::WithBlackhole,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: true,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,

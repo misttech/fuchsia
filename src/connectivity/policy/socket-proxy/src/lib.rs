@@ -17,10 +17,14 @@ use fuchsia_inspect_derive::{Inspect, WithInspect as _};
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::StreamExt as _;
-use log::{error, warn};
+use log::error;
 use std::sync::Arc;
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy};
+use {
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_policy_properties as fnp_properties,
+    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
+};
 
+mod default_network_watcher;
 mod dns_watcher;
 mod registry;
 mod socket_provider;
@@ -70,6 +74,7 @@ impl Default for SocketMarks {
 struct SocketProxy {
     registry: registry::Registry,
     dns_watcher: dns_watcher::DnsServerWatcher,
+    default_network_watcher: default_network_watcher::Watcher,
     socket_provider: socket_provider::SocketProvider,
 }
 
@@ -77,10 +82,14 @@ impl SocketProxy {
     fn new() -> Result<Self, anyhow::Error> {
         let mark = Arc::new(Mutex::new(SocketMarks::default()));
         let (dns_tx, dns_rx) = mpsc::channel(1);
+        let (default_network_tx, default_network_rx) = mpsc::channel(1);
         Ok(Self {
-            registry: registry::Registry::new(mark.clone(), dns_tx)
+            registry: registry::Registry::new(mark.clone(), dns_tx, default_network_tx)
                 .context("while creating registry")?,
             dns_watcher: dns_watcher::DnsServerWatcher::new(Arc::new(Mutex::new(dns_rx))),
+            default_network_watcher: default_network_watcher::Watcher::new(Arc::new(Mutex::new(
+                default_network_rx,
+            ))),
             socket_provider: socket_provider::SocketProvider::new(mark),
         })
     }
@@ -92,10 +101,7 @@ enum IncomingService {
     DnsServerWatcher(fnp_socketproxy::DnsServerWatcherRequestStream),
     PosixSocket(fidl_fuchsia_posix_socket::ProviderRequestStream),
     PosixSocketRaw(fidl_fuchsia_posix_socket_raw::ProviderRequestStream),
-}
-
-enum BackgroundTask {
-    UpdateDefaultNetworks,
+    DefaultNetworkWatcher(fnp_properties::DefaultNetworkWatcherRequestStream),
 }
 
 /// Main entry point for the network socket proxy.
@@ -115,46 +121,27 @@ pub async fn run() -> Result<(), anyhow::Error> {
         .add_fidl_service(IncomingService::FuchsiaNetworks)
         .add_fidl_service(IncomingService::DnsServerWatcher)
         .add_fidl_service(IncomingService::PosixSocket)
-        .add_fidl_service(IncomingService::PosixSocketRaw);
+        .add_fidl_service(IncomingService::PosixSocketRaw)
+        .add_fidl_service(IncomingService::DefaultNetworkWatcher);
 
     let _: &mut ServiceFs<_> = fs.take_and_serve_directory_handle()?;
 
     fuchsia_inspect::component::health().set_ok();
 
-    let (task_tx, task_rx) = mpsc::channel(1);
-
-    let fidl = fs.for_each_concurrent(100, |service| {
-        let task_tx = task_tx.clone();
-        let proxy = &proxy;
-        async move {
-            match service {
-                IncomingService::StarnixNetworks(stream) => {
-                    proxy.registry.run_starnix(stream, task_tx).await
-                }
-                IncomingService::FuchsiaNetworks(stream) => {
-                    proxy.registry.run_fuchsia(stream, task_tx).await
-                }
-                IncomingService::DnsServerWatcher(stream) => proxy.dns_watcher.run(stream).await,
-                IncomingService::PosixSocket(stream) => proxy.socket_provider.run(stream).await,
-                IncomingService::PosixSocketRaw(stream) => {
-                    proxy.socket_provider.run_raw(stream).await
-                }
+    fs.for_each_concurrent(100, |service| async {
+        match service {
+            IncomingService::StarnixNetworks(stream) => proxy.registry.run_starnix(stream).await,
+            IncomingService::FuchsiaNetworks(stream) => proxy.registry.run_fuchsia(stream).await,
+            IncomingService::DnsServerWatcher(stream) => proxy.dns_watcher.run(stream).await,
+            IncomingService::PosixSocket(stream) => proxy.socket_provider.run(stream).await,
+            IncomingService::PosixSocketRaw(stream) => proxy.socket_provider.run_raw(stream).await,
+            IncomingService::DefaultNetworkWatcher(stream) => {
+                proxy.default_network_watcher.run(stream).await
             }
-            .unwrap_or_else(|e| error!("{e:?}"))
         }
-    });
-
-    let background_tasks = task_rx.for_each(|task| async {
-        match task {
-            BackgroundTask::UpdateDefaultNetworks => proxy.registry.update_default_network().await,
-        }
-        .unwrap_or_else(|e|
-            // TODO(https://fxbug.dev/434963253): Upgrade to error once clean
-            // shutdown in tests is implemented.
-            warn!("{e:?}"))
-    });
-
-    futures::future::join(fidl, background_tasks).await;
+        .unwrap_or_else(|e| error!("{e:?}"))
+    })
+    .await;
 
     Ok(())
 }

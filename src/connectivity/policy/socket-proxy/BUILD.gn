@@ -42,6 +42,7 @@ rustc_library("lib") {
   ]
 
   sources = [
+    "src/default_network_watcher.rs",
     "src/dns_watcher.rs",
     "src/lib.rs",
     "src/registry.rs",

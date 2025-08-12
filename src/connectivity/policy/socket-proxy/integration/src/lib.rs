@@ -31,7 +31,6 @@ use {
 enum IncomingService {
     Provider(fposix_socket::ProviderRequestStream),
     RawProvider(fposix_socket_raw::ProviderRequestStream),
-    DefaultNetwork(fnp_properties::DefaultNetworkRequestStream),
 }
 
 trait SetMarkRespond {
@@ -167,14 +166,12 @@ where
 async fn inner_provider_mock(
     handles: LocalComponentHandles,
     marks: Arc<Mutex<Vec<(Arc<Mutex<OptionalUint32>>, Arc<Mutex<OptionalUint32>>)>>>,
-    default_network_updates: Arc<Mutex<Vec<fnp_properties::DefaultNetworkUpdateRequest>>>,
 ) -> Result<(), Error> {
     let mut fs = ServiceFs::new();
     let _ = fs
         .dir("svc")
         .add_fidl_service(IncomingService::Provider)
-        .add_fidl_service(IncomingService::RawProvider)
-        .add_fidl_service(IncomingService::DefaultNetwork);
+        .add_fidl_service(IncomingService::RawProvider);
     let _ = fs.serve_connection(handles.outgoing_dir)?;
 
     fn into_marks(
@@ -192,7 +189,6 @@ async fn inner_provider_mock(
 
     fs.for_each_concurrent(0, |service| {
         let marks = marks.clone();
-        let default_network_updates = default_network_updates.clone();
         async move {
             match service {
                 IncomingService::Provider(stream) => stream
@@ -409,33 +405,25 @@ async fn inner_provider_mock(
                     .await
                     .context("Failed to serve request stream")
                     .unwrap_or_else(|e| eprintln!("Error encountered: {e:?}")),
-                IncomingService::DefaultNetwork(stream) => stream
-                    .map(|result| result.context("Result came with error"))
-                    .try_for_each(|request| {
-                        let default_network_updates = default_network_updates.clone();
-                        async move {
-                            match request {
-                                fnp_properties::DefaultNetworkRequest::Update {
-                                    payload,
-                                    responder
-                                } => {
-                                    default_network_updates.lock().await.push(payload);
-                                    responder.send(Ok(())).expect("could not reply to update");
-                                }
-                                _ => panic!("Unknown method!")
-                            }
-                            Ok(())
-                        }
-                    })
-                    .await
-                    .context("Failed to serve request stream")
-                    .unwrap_or_else(|e| eprintln!("Error encountered: {e:?}")),
             }
         }
-    })
-    .await;
+    }).await;
 
     Ok(())
+}
+
+async fn netcfg_mock(
+    handles: LocalComponentHandles,
+    default_network_updates: Arc<Mutex<Vec<fnp_properties::DefaultNetworkUpdate>>>,
+) -> Result<(), Error> {
+    let watcher = handles
+        .connect_to_protocol::<fnp_properties::DefaultNetworkWatcherProxy>()
+        .expect("could not connect to DefaultNetworkWatcher");
+
+    loop {
+        let update = watcher.watch().await.expect("watcher failed");
+        default_network_updates.lock().await.push(update);
+    }
 }
 
 fn create_starnix_network(id: u32, mark: u32) -> fnp_socketproxy::Network {
@@ -493,16 +481,23 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
             "inner_provider",
             {
                 let marks = marks.clone();
-                let default_network_updates = default_network_updates.clone();
                 move |handles: LocalComponentHandles| {
-                    Box::pin(inner_provider_mock(
-                        handles,
-                        marks.clone(),
-                        default_network_updates.clone(),
-                    ))
+                    Box::pin(inner_provider_mock(handles, marks.clone()))
                 }
             },
             ChildOptions::new(),
+        )
+        .await?;
+    let netcfg = builder
+        .add_local_child(
+            "netcfg",
+            {
+                let default_network_updates = default_network_updates.clone();
+                move |handles: LocalComponentHandles| {
+                    Box::pin(netcfg_mock(handles, default_network_updates.clone()))
+                }
+            },
+            ChildOptions::new().eager(),
         )
         .await?;
     let socket_proxy = builder
@@ -513,9 +508,17 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
             Route::new()
                 .capability(Capability::protocol::<fposix_socket::ProviderMarker>())
                 .capability(Capability::protocol::<fposix_socket_raw::ProviderMarker>())
-                .capability(Capability::protocol::<fnp_properties::DefaultNetworkMarker>())
                 .from(&inner_provider)
                 .to(&socket_proxy),
+        )
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fnp_properties::DefaultNetworkWatcherMarker>())
+                .from(&socket_proxy)
+                .to(&netcfg),
         )
         .await?;
 
@@ -715,8 +718,10 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
             5,
             || async { default_network_updates.lock().await.clone() },
             vec![
+                // Initial default
+                Default::default(),
                 // Default network 1 with mark 123 added
-                fnp_properties::DefaultNetworkUpdateRequest {
+                fnp_properties::DefaultNetworkUpdate {
                     interface_id: Some(1),
                     socket_marks: Some(fnet::Marks { mark_1: Some(123), ..Default::default() }),
                     ..Default::default()
@@ -728,7 +733,15 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
         .await;
     } else {
         // If no default is set, no updates are expected.
-        repeat_check(5, || async { default_network_updates.lock().await.clone() }, vec![]).await;
+        repeat_check(
+            5,
+            || async { default_network_updates.lock().await.clone() },
+            vec![
+                // Initial default
+                Default::default(),
+            ],
+        )
+        .await;
     }
 
     Ok(())
@@ -748,16 +761,23 @@ async fn integration_across_registries() -> Result<(), Error> {
             "inner_provider",
             {
                 let marks = marks.clone();
-                let default_network_updates = default_network_updates.clone();
                 move |handles: LocalComponentHandles| {
-                    Box::pin(inner_provider_mock(
-                        handles,
-                        marks.clone(),
-                        default_network_updates.clone(),
-                    ))
+                    Box::pin(inner_provider_mock(handles, marks.clone()))
                 }
             },
             ChildOptions::new(),
+        )
+        .await?;
+    let netcfg = builder
+        .add_local_child(
+            "netcfg",
+            {
+                let default_network_updates = default_network_updates.clone();
+                move |handles: LocalComponentHandles| {
+                    Box::pin(netcfg_mock(handles, default_network_updates.clone()))
+                }
+            },
+            ChildOptions::new().eager(),
         )
         .await?;
     let socket_proxy = builder
@@ -767,9 +787,17 @@ async fn integration_across_registries() -> Result<(), Error> {
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<fposix_socket::ProviderMarker>())
-                .capability(Capability::protocol::<fnp_properties::DefaultNetworkMarker>())
                 .from(&inner_provider)
                 .to(&socket_proxy),
+        )
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fnp_properties::DefaultNetworkWatcherMarker>())
+                .from(&socket_proxy)
+                .to(&netcfg),
         )
         .await?;
 
@@ -908,8 +936,10 @@ async fn integration_across_registries() -> Result<(), Error> {
         5,
         || async { default_network_updates.lock().await.clone() },
         vec![
+            // Initial default
+            Default::default(),
             // Set starnix as default network.
-            fnp_properties::DefaultNetworkUpdateRequest {
+            fnp_properties::DefaultNetworkUpdate {
                 interface_id: Some(STARNIX_NETWORK_ID.into()),
                 socket_marks: Some(fnet::Marks {
                     mark_1: Some(STARNIX_NETWORK_MARK),
@@ -918,13 +948,13 @@ async fn integration_across_registries() -> Result<(), Error> {
                 ..Default::default()
             },
             // Fuchsia network comes up, becomes the new default.
-            fnp_properties::DefaultNetworkUpdateRequest {
+            fnp_properties::DefaultNetworkUpdate {
                 interface_id: Some(FUCHSIA_NETWORK_ID.into()),
                 socket_marks: Some(fnet::Marks::default()),
                 ..Default::default()
             },
             // Fuchsia network deleted, fall back to starnix.
-            fnp_properties::DefaultNetworkUpdateRequest {
+            fnp_properties::DefaultNetworkUpdate {
                 interface_id: Some(STARNIX_NETWORK_ID.into()),
                 socket_marks: Some(fnet::Marks {
                     mark_1: Some(STARNIX_NETWORK_MARK),
@@ -1138,23 +1168,17 @@ async fn watch_dns_with_registry() -> Result<(), Error> {
 #[fuchsia::test]
 async fn watch_dns_across_registries() -> Result<(), Error> {
     let default_network_updates = Arc::new(Mutex::new(Vec::new()));
-    let marks = Arc::new(Mutex::new(Vec::new()));
     let builder = RealmBuilder::new().await?;
-    let inner_provider = builder
+    let netcfg = builder
         .add_local_child(
-            "inner_provider",
+            "netcfg",
             {
-                let marks = marks.clone();
                 let default_network_updates = default_network_updates.clone();
                 move |handles: LocalComponentHandles| {
-                    Box::pin(inner_provider_mock(
-                        handles,
-                        marks.clone(),
-                        default_network_updates.clone(),
-                    ))
+                    Box::pin(netcfg_mock(handles, default_network_updates.clone()))
                 }
             },
-            ChildOptions::new(),
+            ChildOptions::new().eager(),
         )
         .await?;
     let socket_proxy = builder
@@ -1164,9 +1188,9 @@ async fn watch_dns_across_registries() -> Result<(), Error> {
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol::<fnp_properties::DefaultNetworkMarker>())
-                .from(&inner_provider)
-                .to(&socket_proxy),
+                .capability(Capability::protocol::<fnp_properties::DefaultNetworkWatcherMarker>())
+                .from(&socket_proxy)
+                .to(&netcfg),
         )
         .await?;
     builder
@@ -1279,8 +1303,10 @@ async fn watch_dns_across_registries() -> Result<(), Error> {
         5,
         || async { default_network_updates.lock().await.clone() },
         vec![
+            // Initial call, empty update.
+            Default::default(),
             // Network id 3 with no marks.
-            fnp_properties::DefaultNetworkUpdateRequest {
+            fnp_properties::DefaultNetworkUpdate {
                 interface_id: Some(3),
                 socket_marks: Some(Default::default()),
                 ..Default::default()

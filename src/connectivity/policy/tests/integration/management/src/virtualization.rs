@@ -13,7 +13,7 @@ use futures::StreamExt as _;
 use log::info;
 use net_declare::fidl_subnet;
 use netstack_testing_common::realms::{
-    KnownServiceProvider, ManagementAgent, ManagerConfig, NetCfgVersion, Netstack,
+    KnownServiceProvider, ManagementAgent, ManagerConfig, NetCfgVersion, Netstack, SocketProxyType,
     TestSandboxExt as _,
 };
 use netstack_testing_common::{interfaces, ping};
@@ -287,7 +287,7 @@ async fn virtualization<N: Netstack>(name: &str, sub_name: &str, steps: &[Step])
                     config: ManagerConfig::Empty,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: false,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
@@ -537,7 +537,7 @@ async fn dhcpv4_client_started<N: Netstack>(name: &str) {
                     config: ManagerConfig::Empty,
                     use_dhcp_server: false,
                     use_out_of_stack_dhcp_client: false,
-                    use_socket_proxy: false,
+                    socket_proxy_type: SocketProxyType::None,
                 },
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
