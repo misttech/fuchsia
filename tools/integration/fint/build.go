@@ -250,6 +250,13 @@ func buildImpl(
 		return artifacts, err
 	}
 	jobCount := int(contextSpec.JobCount)
+	jobserverPool := false
+	for _, arg := range staticSpec.GnArgs {
+		if strings.ReplaceAll(arg, " ", "") == "enable_jobserver=true" {
+			jobserverPool = true
+			break
+		}
+	}
 	r := ninjaRunner{
 		runner:    runner,
 		ninjaPath: ninjaPath,
@@ -269,7 +276,11 @@ func buildImpl(
 		[]byte(strings.Join(targets, " ")))
 
 	// Tell Ninja to generate a compressed Chrome trace after the build completes.
-	ninjaTraceArgs := []string{"--chrome_trace", ninjaBuildTraceName}
+	ninjaExtraArgs := []string{"--chrome_trace", ninjaBuildTraceName}
+
+	if jobserverPool {
+		ninjaExtraArgs = append(ninjaExtraArgs, "--jobserver")
+	}
 
 	ninjaStartTime := time.Now()
 	var ninjaErr error
@@ -279,7 +290,7 @@ func buildImpl(
 		// stdout to get the failure message. So let Ninja print directly to
 		// stdout, so it will nicely buffer output when running in a terminal
 		// instead of printing each log on a new line.
-		ninjaErr = r.run(ctx, append(append(staticSpec.NinjaArgs, ninjaTraceArgs...), targets...), os.Stdout, os.Stderr)
+		ninjaErr = r.run(ctx, append(append(staticSpec.NinjaArgs, ninjaExtraArgs...), targets...), os.Stdout, os.Stderr)
 	} else {
 		var explainSink io.Writer
 		if staticSpec.Incremental {
@@ -294,7 +305,7 @@ func buildImpl(
 		artifacts.FailureSummary, artifacts.NinjaActionMetrics, ninjaErr = runNinja(
 			ctx,
 			r,
-			append(staticSpec.NinjaArgs, ninjaTraceArgs...),
+			append(staticSpec.NinjaArgs, ninjaExtraArgs...),
 			targets,
 			// Add -d explain to incremental builds.
 			staticSpec.Incremental,

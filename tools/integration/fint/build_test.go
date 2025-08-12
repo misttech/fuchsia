@@ -162,6 +162,14 @@ func TestBuild(t *testing.T) {
 			mustRun:           []string{`ninja -C .*out/default --chrome_trace ninja_build_trace\.json\.gz$`},
 		},
 		{
+			name: "enable_jobserver flag support",
+			staticSpec: &fintpb.Static{
+				GnArgs: []string{"enable_jobserver = true"},
+			},
+			expectedArtifacts: &fintpb.BuildArtifacts{},
+			mustRun:           []string{`ninja -C .*out/default --chrome_trace ninja_build_trace\.json\.gz --jobserver$`},
+		},
+		{
 			name:       "artifact dir set",
 			staticSpec: &fintpb.Static{},
 			contextSpec: &fintpb.Context{
