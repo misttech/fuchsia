@@ -2,21 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#[cfg(fuchsia_api_level_at_least = "20")]
-use {
-    crate::common::load_manifest,
-    anyhow::anyhow,
-    anyhow::{Context as _, Error},
-    argh::FromArgs,
-    cm_rust::NativeIntoFidl,
-    fidl::persist,
-    std::{collections::BTreeMap, fs, io::Write, path::PathBuf},
-};
+use crate::common::load_manifest;
+use anyhow::{anyhow, Context as _, Error};
+use argh::FromArgs;
+use cm_rust::NativeIntoFidl;
+use fidl::persist;
+use std::collections::BTreeMap;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
 
 #[derive(FromArgs, PartialEq, Debug)]
 /// Generates a Configuration Value Manifest (cvm) from a given manifest and JSON value file.
 #[argh(subcommand, name = "cvm")]
-#[cfg(fuchsia_api_level_at_least = "20")]
 pub struct GenerateValueManifest {
     /// compiled manifest containing the config declaration
     #[argh(option)]
@@ -32,7 +30,6 @@ pub struct GenerateValueManifest {
     output: PathBuf,
 }
 
-#[cfg(fuchsia_api_level_at_least = "20")]
 impl GenerateValueManifest {
     fn find_config_use(
         name: &str,

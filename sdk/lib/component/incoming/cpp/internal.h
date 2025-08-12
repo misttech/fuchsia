@@ -106,11 +106,8 @@ template <typename Protocol>
 constexpr void EnsureCanConnectToProtocol() {
   constexpr bool is_directory_protocol = std::is_same_v<Protocol, fuchsia_io::Directory>;
   constexpr bool is_other_node_protocol = std::is_same_v<Protocol, fuchsia_io::Node> ||
-                                          std::is_same_v<Protocol, fuchsia_io::File>
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
-                                          || std::is_same_v<Protocol, fuchsia_io::Symlink>
-#endif
-      ;
+                                          std::is_same_v<Protocol, fuchsia_io::File> ||
+                                          std::is_same_v<Protocol, fuchsia_io::Symlink>;
   static_assert(!is_directory_protocol,
                 "Use component::OpenDirectory or component::OpenDirectoryAt to open a directory.");
   static_assert(!is_other_node_protocol, "Use std::filesystem or fdio to open a file/symlink.");

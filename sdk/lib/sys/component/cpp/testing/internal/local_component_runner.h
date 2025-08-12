@@ -62,10 +62,8 @@ class LocalComponentInstance final : public fuchsia::component::runner::Componen
   // fuchsia::component::runner::ComponentController
   void Kill() override;
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
   // fuchsia::component::runner::ComponentController
   void handle_unknown_method(uint64_t ordinal, bool has_response) override;
-#endif
 
   // If on_exit is set, close the ComponentController and call the given on_exit
   // function.
@@ -129,10 +127,8 @@ class LocalComponentInstance final : public fuchsia::component::runner::Componen
   // fuchsia::component::runner::ComponentController
   void Kill() override { Exit(ZX_ERR_CANCELED); }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
   // fuchsia::component::runner::ComponentController
   void handle_unknown_method(uint64_t ordinal, bool has_response) override;
-#endif
 
   // Close the ComponentController and call the given on_exit function.
   void Exit(zx_status_t);
@@ -184,9 +180,7 @@ class LocalComponentRunner final : fuchsia::component::runner::ComponentRunner {
   class Builder;
 
  private:
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
   void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {}
-#endif
 
   // Returns true if the runner has a component with the given name that is
   // ready to be started (either it has not started, or it has stopped and

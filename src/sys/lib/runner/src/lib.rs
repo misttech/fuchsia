@@ -8,13 +8,12 @@ pub mod serde;
 use fidl::endpoints::ServerEnd;
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
 use fidl_fuchsia_component_sandbox as fsandbox;
-#[cfg(fuchsia_api_level_at_least = "23")]
-use fidl_fuchsia_component_sandbox as _;
 use std::path::Path;
 use thiserror::Error;
 use {
-    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio,
-    fidl_fuchsia_mem as fmem, fidl_fuchsia_process as fprocess,
+    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_component_sandbox as _,
+    fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
+    fidl_fuchsia_process as fprocess,
 };
 
 const ARGS_KEY: &str = "args";

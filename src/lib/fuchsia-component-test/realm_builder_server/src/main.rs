@@ -37,14 +37,12 @@ mod builtin;
 mod resolver;
 mod runner;
 
-#[cfg(fuchsia_api_level_at_least = "25")]
 const DIAGNOSTICS_DICT_NAME: &str = "diagnostics";
 
 static BINDER_EXPOSE_DECL: LazyLock<cm_rust::ExposeDecl> = LazyLock::new(|| {
     cm_rust::ExposeDecl::Protocol(cm_rust::ExposeProtocolDecl {
         source: cm_rust::ExposeSource::Framework,
         source_name: fcomponent::BinderMarker::DEBUG_NAME.parse().unwrap(),
-        #[cfg(fuchsia_api_level_at_least = "25")]
         source_dictionary: Default::default(),
         target: cm_rust::ExposeTarget::Parent,
         target_name: fcomponent::BinderMarker::DEBUG_NAME.parse().unwrap(),
@@ -53,7 +51,6 @@ static BINDER_EXPOSE_DECL: LazyLock<cm_rust::ExposeDecl> = LazyLock::new(|| {
     })
 });
 
-#[cfg(fuchsia_api_level_at_least = "25")]
 static CAPABILITIES_ROUTED_TO_ALL: LazyLock<[(CapabilityTypeName, cm_types::Name); 3]> =
     LazyLock::new(|| {
         [
@@ -647,7 +644,6 @@ impl Realm {
 
                     responder.send(Ok(()))?;
                 }
-                #[cfg(fuchsia_api_level_at_least = "20")]
                 ftest::RealmRequest::AddCapability { capability, responder } => {
                     if self.realm_has_been_built.load(Ordering::Relaxed) {
                         responder.send(Err(ftest::RealmBuilderError::BuildAlreadyCalled))?;
@@ -664,7 +660,6 @@ impl Realm {
                         }
                     }
                 }
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 ftest::RealmRequest::AddCollection { collection, responder } => {
                     if self.realm_has_been_built.load(Ordering::Relaxed) {
                         responder.send(Err(ftest::RealmBuilderError::BuildAlreadyCalled))?;
@@ -681,7 +676,6 @@ impl Realm {
                         }
                     }
                 }
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 ftest::RealmRequest::AddEnvironment { environment, responder } => {
                     if self.realm_has_been_built.load(Ordering::Relaxed) {
                         responder.send(Err(ftest::RealmBuilderError::BuildAlreadyCalled))?;
@@ -1128,14 +1122,12 @@ impl RealmNodeState {
                                 collection: None,
                             }),
                             source_name: capability_name.clone(),
-                            #[cfg(fuchsia_api_level_at_least = "25")]
                             source_dictionary: Default::default(),
                             target_name: capability_name.clone(),
                             dependency_type: cm_rust::DependencyType::Strong,
                             availability: cm_rust::Availability::Required,
                         })
                     }
-                    #[cfg(fuchsia_api_level_at_least = "25")]
                     CapabilityTypeName::Dictionary => {
                         cm_rust::OfferDecl::Dictionary(cm_rust::OfferDictionaryDecl {
                             source: cm_rust::OfferSource::Parent,
@@ -1375,7 +1367,6 @@ impl RealmNode2 {
             .ok_or_else(|| RealmBuilderError::NoSuchChild(child_name.into()))
     }
 
-    #[cfg(fuchsia_api_level_at_least = "20")]
     async fn add_capability(
         &self,
         capability: fcdecl::Capability,
@@ -1392,7 +1383,6 @@ impl RealmNode2 {
         Ok(())
     }
 
-    #[cfg(fuchsia_api_level_at_least = "25")]
     async fn add_collection(
         &self,
         collection: fcdecl::Collection,
@@ -1402,7 +1392,6 @@ impl RealmNode2 {
         Ok(())
     }
 
-    #[cfg(fuchsia_api_level_at_least = "25")]
     async fn add_environment(
         &self,
         environment: fcdecl::Environment,
@@ -1437,7 +1426,6 @@ impl RealmNode2 {
                     return Err(RealmBuilderError::NoSuchTarget(ref_to_string(&target)));
                 }
 
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 if let fcdecl::Ref::Capability(fcdecl::CapabilityRef { name: target_name }) = target
                 {
                     if !state_guard.decl.capabilities.iter().any(|c| {
@@ -1473,17 +1461,14 @@ impl RealmNode2 {
                         | ftest::Capability::Service(ftest::Service { availability, .. }) => {
                             check_for_parent_target_error(availability)?;
                         }
-                        #[cfg(fuchsia_api_level_at_least = "20")]
                         ftest::Capability::Config(ftest::Config { availability, .. }) => {
                             check_for_parent_target_error(availability)?;
                         }
-                        #[cfg(fuchsia_api_level_at_least = "25")]
                         ftest::Capability::Dictionary(ftest::Dictionary {
                             availability, ..
                         }) => {
                             check_for_parent_target_error(availability)?;
                         }
-                        #[cfg(fuchsia_api_level_at_least = "24")]
                         ftest::Capability::Resolver(ftest::Resolver { .. })
                         | ftest::Capability::Runner(ftest::Runner { .. }) => {
                             // Resolver and Runner capabilities are always required so we do not
@@ -1635,7 +1620,6 @@ async fn nested_component_manager_decl(
                 let expose = ExposeProtocolDecl {
                     source: ExposeSource::Self_,
                     source_name: decl.target_name.clone(),
-                    #[cfg(fuchsia_api_level_at_least = "25")]
                     source_dictionary: Default::default(),
                     target: ExposeTarget::Parent,
                     target_name: decl.target_name.clone(),
@@ -1656,7 +1640,6 @@ async fn nested_component_manager_decl(
                 let expose = ExposeDirectoryDecl {
                     source: ExposeSource::Self_,
                     source_name: decl.target_name.clone(),
-                    #[cfg(fuchsia_api_level_at_least = "25")]
                     source_dictionary: Default::default(),
                     target: ExposeTarget::Parent,
                     target_name: decl.target_name.clone(),
@@ -1676,7 +1659,6 @@ async fn nested_component_manager_decl(
                 );
                 None
             }
-            #[cfg(fuchsia_api_level_at_least = "25")]
             d @ ExposeDecl::Dictionary(_) => {
                 warn!(
                     "capability type not supported for nested component manager passthrough: {:?}",
@@ -1723,7 +1705,6 @@ async fn nested_component_manager_decl(
                 .unwrap(),
                 dependency_type: DependencyType::Strong,
                 availability: Availability::default(),
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary: decl.source_dictionary,
             }),
             o => {
@@ -1769,10 +1750,8 @@ async fn nested_component_manager_decl(
 async fn add_use_decl_if_needed(
     realm: &mut RealmNodeState,
     ref_: fcdecl::Ref,
-    #[cfg(fuchsia_api_level_at_least = "25")] mut capability: ftest::Capability,
-    #[cfg(not(fuchsia_api_level_at_least = "25"))] capability: ftest::Capability,
+    mut capability: ftest::Capability,
 ) -> Result<(), RealmBuilderError> {
-    #[cfg(fuchsia_api_level_at_least = "25")]
     match capability {
         // Dictionaries and resolvers don't support Use.
         ftest::Capability::Dictionary(_) | ftest::Capability::Resolver(_) => return Ok(()),
@@ -1784,7 +1763,6 @@ async fn add_use_decl_if_needed(
             // If the original `Capability` contained a source dictionary path, the effect
             // is to extract the capability from that dictionary. So we should not copy the
             // dictionary path to the child's autogenerated `use` declaration.
-            #[cfg(fuchsia_api_level_at_least = "25")]
             match &mut capability {
                 ftest::Capability::Protocol(c) => {
                     c.from_dictionary = None;
@@ -1841,28 +1819,25 @@ async fn add_expose_decl_if_needed(
             let mut decl = child.get_decl().await;
             // If the `Capability` contains a source dictionary path, just skip it. We don't
             // support autogenerating dictionaries.
-            #[cfg(fuchsia_api_level_at_least = "25")]
-            {
-                let is_from_dictionary = match &capability {
-                    ftest::Capability::Protocol(c) => c.from_dictionary.is_some(),
-                    ftest::Capability::Directory(c) => c.from_dictionary.is_some(),
-                    ftest::Capability::Storage(_) => false,
-                    ftest::Capability::Service(c) => c.from_dictionary.is_some(),
-                    ftest::Capability::EventStream(_) => false,
-                    ftest::Capability::Config(_) => false,
-                    ftest::Capability::Dictionary(c) => c.from_dictionary.is_some(),
-                    ftest::Capability::Resolver(c) => c.from_dictionary.is_some(),
-                    ftest::Capability::Runner(c) => c.from_dictionary.is_some(),
-                    _ => {
-                        return Err(RealmBuilderError::CapabilityInvalid(anyhow::format_err!(
-                            "Unrecognized capability variant: {:?}.",
-                            capability
-                        )));
-                    }
-                };
-                if is_from_dictionary {
-                    return Ok(());
+            let is_from_dictionary = match &capability {
+                ftest::Capability::Protocol(c) => c.from_dictionary.is_some(),
+                ftest::Capability::Directory(c) => c.from_dictionary.is_some(),
+                ftest::Capability::Storage(_) => false,
+                ftest::Capability::Service(c) => c.from_dictionary.is_some(),
+                ftest::Capability::EventStream(_) => false,
+                ftest::Capability::Config(_) => false,
+                ftest::Capability::Dictionary(c) => c.from_dictionary.is_some(),
+                ftest::Capability::Resolver(c) => c.from_dictionary.is_some(),
+                ftest::Capability::Runner(c) => c.from_dictionary.is_some(),
+                _ => {
+                    return Err(RealmBuilderError::CapabilityInvalid(anyhow::format_err!(
+                        "Unrecognized capability variant: {:?}.",
+                        capability
+                    )));
                 }
+            };
+            if is_from_dictionary {
+                return Ok(());
             }
             // If the `Capability` is already something we expose we don't want to add
             // a capability and expose entry.
@@ -1874,11 +1849,8 @@ async fn add_expose_decl_if_needed(
                     ftest::Capability::Service(c) => c.name.clone(),
                     ftest::Capability::EventStream(c) => c.name.clone(),
                     ftest::Capability::Config(c) => c.name.clone(),
-                    #[cfg(fuchsia_api_level_at_least = "25")]
                     ftest::Capability::Dictionary(c) => c.name.clone(),
-                    #[cfg(fuchsia_api_level_at_least = "24")]
                     ftest::Capability::Resolver(c) => c.name.clone(),
-                    #[cfg(fuchsia_api_level_at_least = "24")]
                     ftest::Capability::Runner(c) => c.name.clone(),
                     _ => {
                         return Err(RealmBuilderError::CapabilityInvalid(anyhow::format_err!(
@@ -1915,7 +1887,6 @@ async fn add_expose_decl_if_needed(
     Ok(())
 }
 
-#[cfg(fuchsia_api_level_at_least = "25")]
 fn parse_relative_path(path: Option<String>) -> Result<RelativePath, RealmBuilderError> {
     path.map(|p| {
         RelativePath::new(&p).map_err(|_| RealmBuilderError::InvalidRelativePath(p.clone()))
@@ -2049,18 +2020,15 @@ fn create_capability_decl(
             let name = try_into_source_name(&event.name)?;
             cm_rust::CapabilityDecl::EventStream(cm_rust::EventStreamDecl { name })
         }
-        #[cfg(fuchsia_api_level_at_least = "25")]
         ftest::Capability::Dictionary(dictionary) => {
             let name = try_into_source_name(&dictionary.name)?;
             cm_rust::CapabilityDecl::Dictionary(cm_rust::DictionaryDecl { name, source_path: None })
         }
-        #[cfg(fuchsia_api_level_at_least = "24")]
         ftest::Capability::Resolver(resolver) => {
             let name = try_into_source_name(&resolver.name)?;
             let source_path = Some(try_into_service_path(&resolver.name, &resolver.path)?);
             cm_rust::CapabilityDecl::Resolver(cm_rust::ResolverDecl { name, source_path })
         }
-        #[cfg(fuchsia_api_level_at_least = "24")]
         ftest::Capability::Runner(runner) => {
             let name = try_into_source_name(&runner.name)?;
             let source_path = Some(try_into_service_path(&runner.name, &runner.path)?);
@@ -2099,7 +2067,6 @@ fn create_offer_decl(
     Ok(match capability {
         ftest::Capability::Protocol(protocol) => {
             let source_name = try_into_source_name(&protocol.name)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(protocol.from_dictionary)?;
             let target_name = try_into_target_name(&protocol.name, &protocol.as_)?;
             let dependency_type = into_dependency_type(&protocol.type_);
@@ -2107,7 +2074,6 @@ fn create_offer_decl(
             cm_rust::OfferDecl::Protocol(cm_rust::OfferProtocolDecl {
                 source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target,
                 target_name,
@@ -2117,7 +2083,6 @@ fn create_offer_decl(
         }
         ftest::Capability::Directory(directory) => {
             let source_name = try_into_source_name(&directory.name)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(directory.from_dictionary)?;
             let target_name = try_into_target_name(&directory.name, &directory.as_)?;
             let dependency_type = into_dependency_type(&directory.type_);
@@ -2125,7 +2090,6 @@ fn create_offer_decl(
             cm_rust::OfferDecl::Directory(cm_rust::OfferDirectoryDecl {
                 source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target,
                 target_name,
@@ -2149,14 +2113,12 @@ fn create_offer_decl(
         }
         ftest::Capability::Service(service) => {
             let source_name = try_into_source_name(&service.name)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(service.from_dictionary)?;
             let target_name = try_into_target_name(&service.name, &service.as_)?;
             let availability = get_offer_availability(&service.availability);
             cm_rust::OfferDecl::Service(cm_rust::OfferServiceDecl {
                 source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target,
                 target_name,
@@ -2179,7 +2141,6 @@ fn create_offer_decl(
                 availability: cm_rust::Availability::Required,
             })
         }
-        #[cfg(fuchsia_api_level_at_least = "20")]
         ftest::Capability::Config(config) => {
             let availability = match source {
                 cm_rust::OfferSource::Void => cm_rust::Availability::Optional,
@@ -2191,11 +2152,9 @@ fn create_offer_decl(
                 target,
                 target_name: try_into_target_name(&config.name, &config.as_)?,
                 availability,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary: ".".parse().unwrap(),
             })
         }
-        #[cfg(fuchsia_api_level_at_least = "25")]
         ftest::Capability::Dictionary(dictionary) => {
             let source_dictionary = parse_relative_path(dictionary.from_dictionary)?;
             let dependency_type = into_dependency_type(&dictionary.type_);
@@ -2210,31 +2169,25 @@ fn create_offer_decl(
                 availability,
             })
         }
-        #[cfg(fuchsia_api_level_at_least = "24")]
         ftest::Capability::Resolver(resolver) => {
             let source_name = try_into_source_name(&resolver.name)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(resolver.from_dictionary)?;
             let target_name = try_into_target_name(&resolver.name, &resolver.as_)?;
             cm_rust::OfferDecl::Resolver(cm_rust::OfferResolverDecl {
                 source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target,
                 target_name,
             })
         }
-        #[cfg(fuchsia_api_level_at_least = "24")]
         ftest::Capability::Runner(runner) => {
             let source_name = try_into_source_name(&runner.name)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(runner.from_dictionary)?;
             let target_name = try_into_target_name(&runner.name, &runner.as_)?;
             cm_rust::OfferDecl::Runner(cm_rust::OfferRunnerDecl {
                 source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target,
                 target_name,
@@ -2269,7 +2222,6 @@ fn create_expose_decl(
     Ok(match capability {
         ftest::Capability::Protocol(protocol) => {
             let source_name = try_into_source_name(&protocol.name)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(protocol.from_dictionary)?;
             let target_name = match exposing_in {
                 ExposingIn::Child => try_into_source_name(&protocol.name)?,
@@ -2278,7 +2230,6 @@ fn create_expose_decl(
             cm_rust::ExposeDecl::Protocol(cm_rust::ExposeProtocolDecl {
                 source: source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target: cm_rust::ExposeTarget::Parent,
                 target_name,
@@ -2288,7 +2239,6 @@ fn create_expose_decl(
         }
         ftest::Capability::Directory(directory) => {
             let source_name = try_into_source_name(&directory.name)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(directory.from_dictionary)?;
             let target_name = match exposing_in {
                 ExposingIn::Child => try_into_source_name(&directory.name)?,
@@ -2304,7 +2254,6 @@ fn create_expose_decl(
             cm_rust::ExposeDecl::Directory(cm_rust::ExposeDirectoryDecl {
                 source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target: cm_rust::ExposeTarget::Parent,
                 target_name,
@@ -2322,7 +2271,6 @@ fn create_expose_decl(
         }
         ftest::Capability::Service(service) => {
             let source_name = try_into_source_name(&service.name)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(service.from_dictionary)?;
             let target_name = match exposing_in {
                 ExposingIn::Child => try_into_source_name(&service.name)?,
@@ -2331,7 +2279,6 @@ fn create_expose_decl(
             cm_rust::ExposeDecl::Service(cm_rust::ExposeServiceDecl {
                 source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target: cm_rust::ExposeTarget::Parent,
                 target_name,
@@ -2339,7 +2286,6 @@ fn create_expose_decl(
                 availability: cm_rust::Availability::Required,
             })
         }
-        #[cfg(fuchsia_api_level_at_least = "25")]
         ftest::Capability::Dictionary(dictionary) => {
             let source_name = try_into_source_name(&dictionary.name)?;
             let source_dictionary = parse_relative_path(dictionary.from_dictionary)?;
@@ -2356,10 +2302,8 @@ fn create_expose_decl(
                 availability: cm_rust::Availability::Required,
             })
         }
-        #[cfg(fuchsia_api_level_at_least = "24")]
         ftest::Capability::Resolver(resolver) => {
             let source_name = try_into_source_name(&resolver.name)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(resolver.from_dictionary)?;
             let target_name = match exposing_in {
                 ExposingIn::Child => try_into_source_name(&resolver.name)?,
@@ -2368,16 +2312,13 @@ fn create_expose_decl(
             cm_rust::ExposeDecl::Resolver(cm_rust::ExposeResolverDecl {
                 source: source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target: cm_rust::ExposeTarget::Parent,
                 target_name,
             })
         }
-        #[cfg(fuchsia_api_level_at_least = "24")]
         ftest::Capability::Runner(runner) => {
             let source_name = try_into_source_name(&runner.name)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(runner.from_dictionary)?;
             let target_name = match exposing_in {
                 ExposingIn::Child => try_into_source_name(&runner.name)?,
@@ -2386,7 +2327,6 @@ fn create_expose_decl(
             cm_rust::ExposeDecl::Runner(cm_rust::ExposeRunnerDecl {
                 source: source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target: cm_rust::ExposeTarget::Parent,
                 target_name,
@@ -2425,7 +2365,6 @@ fn create_use_decl(
             // If the capability was renamed in the parent's offer declaration, we want to use the
             // post-rename version of it here.
             let source_name = try_into_target_name(&protocol.name, &protocol.as_)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(protocol.from_dictionary)?;
             let target_path = try_into_service_path(
                 &Some(source_name.clone().native_into_fidl()),
@@ -2438,7 +2377,6 @@ fn create_use_decl(
             cm_rust::UseDecl::Protocol(cm_rust::UseProtocolDecl {
                 source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target_path,
                 dependency_type,
@@ -2449,7 +2387,6 @@ fn create_use_decl(
             // If the capability was renamed in the parent's offer declaration, we want to use the
             // post-rename version of it here.
             let source_name = try_into_target_name(&directory.name, &directory.as_)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(directory.from_dictionary)?;
             let target_path = try_into_capability_path(&directory.path)?;
             let rights = directory.rights.ok_or_else(|| RealmBuilderError::CapabilityInvalid(
@@ -2464,7 +2401,6 @@ fn create_use_decl(
             cm_rust::UseDecl::Directory(cm_rust::UseDirectoryDecl {
                 source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target_path,
                 rights,
@@ -2494,7 +2430,6 @@ fn create_use_decl(
             // If the capability was renamed in the parent's offer declaration, we want to use the
             // post-rename version of it here.
             let source_name = try_into_target_name(&service.name, &service.as_)?;
-            #[cfg(fuchsia_api_level_at_least = "25")]
             let source_dictionary = parse_relative_path(service.from_dictionary)?;
             let target_path = try_into_service_path(
                 &Some(source_name.clone().native_into_fidl()),
@@ -2503,7 +2438,6 @@ fn create_use_decl(
             cm_rust::UseDecl::Service(cm_rust::UseServiceDecl {
                 source,
                 source_name,
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 source_dictionary,
                 target_path,
                 dependency_type: cm_rust::DependencyType::Strong,
@@ -2877,7 +2811,6 @@ mod tests {
                         .source(cm_rust::OfferSource::Parent)
                         .target_static_child(child_name)
                         .build(),
-                    #[cfg(fuchsia_api_level_at_least = "25")]
                     CapabilityTypeName::Dictionary => OfferBuilder::dictionary()
                         .name(name.as_str())
                         .source(cm_rust::OfferSource::Parent)
@@ -3965,7 +3898,6 @@ mod tests {
                         name: Some("fuchsia.examples.Hippo".to_owned()),
                         as_: Some("fuchsia.examples.Elephant".to_owned()),
                         type_: Some(fcdecl::DependencyType::Strong),
-                        #[cfg(fuchsia_api_level_at_least = "25")]
                         from_dictionary: Some("source/dict1".into()),
                         ..Default::default()
                     }),
@@ -3973,7 +3905,6 @@ mod tests {
                         name: Some("config-data".to_owned()),
                         rights: Some(fio::RW_STAR_DIR),
                         subdir: Some("component".to_owned()),
-                        #[cfg(fuchsia_api_level_at_least = "25")]
                         from_dictionary: Some("source/dict2".into()),
                         ..Default::default()
                     }),
@@ -3985,7 +3916,6 @@ mod tests {
                     ftest::Capability::Service(ftest::Service {
                         name: Some("fuchsia.examples.Whale".to_string()),
                         as_: Some("fuchsia.examples.Orca".to_string()),
-                        #[cfg(fuchsia_api_level_at_least = "25")]
                         from_dictionary: Some("source/dict3".into()),
                         ..Default::default()
                     }),
@@ -3998,7 +3928,6 @@ mod tests {
                         name: Some("dict".to_string()),
                         as_: Some("dict2".to_string()),
                         type_: Some(fcdecl::DependencyType::Weak),
-                        #[cfg(fuchsia_api_level_at_least = "25")]
                         from_dictionary: Some("source/dict4".into()),
                         ..Default::default()
                     }),
@@ -4050,7 +3979,6 @@ mod tests {
                     ftest::Capability::Protocol(ftest::Protocol {
                         name: Some("fuchsia.examples.Echo".to_owned()),
                         type_: Some(fcdecl::DependencyType::Weak),
-                        #[cfg(fuchsia_api_level_at_least = "25")]
                         from_dictionary: Some("source/dict1".into()),
                         ..Default::default()
                     }),

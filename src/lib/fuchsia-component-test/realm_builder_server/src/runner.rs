@@ -140,7 +140,6 @@ impl Runner {
                         }
                     }
                 }
-                #[cfg(fuchsia_api_level_at_least = "24")]
                 fcrunner::ComponentRunnerRequest::_UnknownMethod { ordinal, .. } => {
                     warn!(ordinal:%; "Unknown ComponentRunner request");
                 }
@@ -231,7 +230,6 @@ async fn run_builtin_controller(
                 // when a stop or kill command is received.
                 drop(builtin_task);
             }
-            #[cfg(fuchsia_api_level_at_least = "24")]
             fcrunner::ComponentControllerRequest::_UnknownMethod { .. } => (),
         }
     }

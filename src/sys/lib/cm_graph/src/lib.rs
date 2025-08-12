@@ -7,19 +7,6 @@ use fidl_fuchsia_component_decl as fdecl;
 use flyweights::FlyStr;
 use std::fmt;
 
-#[cfg(fuchsia_api_level_at_least = "25")]
-macro_rules! get_source_dictionary {
-    ($decl:ident) => {
-        $decl.source_dictionary.as_ref()
-    };
-}
-#[cfg(fuchsia_api_level_less_than = "25")]
-macro_rules! get_source_dictionary {
-    ($decl:ident) => {
-        None
-    };
-}
-
 /// A node in the DependencyGraph. The first string describes the type of node and the second
 /// string is the name of the node.
 #[derive(Clone, Hash, Ord, Debug, PartialOrd, PartialEq, Eq)]
@@ -79,13 +66,13 @@ fn add_dependencies_from_uses(
             #[allow(unused_variables)]
             let (dependency_type, source, source_name, dict) = match use_ {
                 fdecl::Use::Service(u) => {
-                    (u.dependency_type, &u.source, &u.source_name, get_source_dictionary!(u))
+                    (u.dependency_type, &u.source, &u.source_name, u.source_dictionary.as_ref())
                 }
                 fdecl::Use::Protocol(u) => {
-                    (u.dependency_type, &u.source, &u.source_name, get_source_dictionary!(u))
+                    (u.dependency_type, &u.source, &u.source_name, u.source_dictionary.as_ref())
                 }
                 fdecl::Use::Directory(u) => {
-                    (u.dependency_type, &u.source, &u.source_name, get_source_dictionary!(u))
+                    (u.dependency_type, &u.source, &u.source_name, u.source_dictionary.as_ref())
                 }
                 fdecl::Use::EventStream(u) => (
                     Some(fdecl::DependencyType::Strong),
@@ -98,14 +85,14 @@ fn add_dependencies_from_uses(
                     Some(fdecl::DependencyType::Strong),
                     &u.source,
                     &u.source_name,
-                    get_source_dictionary!(u),
+                    u.source_dictionary.as_ref(),
                 ),
                 #[cfg(fuchsia_api_level_at_least = "HEAD")]
                 fdecl::Use::Config(u) => (
                     Some(fdecl::DependencyType::Strong),
                     &u.source,
                     &u.source_name,
-                    get_source_dictionary!(u),
+                    u.source_dictionary.as_ref(),
                 ),
                 // Storage can only be used from parent, which we don't track.
                 fdecl::Use::Storage(_) => continue,
@@ -120,7 +107,6 @@ fn add_dependencies_from_uses(
                     vec![DependencyNode::Child(name.into(), collection.as_ref().map(|s| s.into()))]
                 }
                 Some(fdecl::Ref::Self_(_)) => {
-                    #[cfg(fuchsia_api_level_at_least = "25")]
                     if dict.as_ref().is_some() {
                         if let Some(source_name) = source_name.as_ref() {
                             vec![DependencyNode::Capability(source_name.into())]
@@ -130,9 +116,6 @@ fn add_dependencies_from_uses(
                     } else {
                         vec![]
                     }
-
-                    #[cfg(fuchsia_api_level_less_than = "25")]
-                    vec![]
                 }
                 Some(fdecl::Ref::Collection(fdecl::CollectionRef { name })) => {
                     let mut nodes = vec![];
@@ -158,7 +141,6 @@ fn add_dependencies_from_capabilities(
     if let Some(capabilities) = decl.capabilities.as_ref() {
         for cap in capabilities {
             match cap {
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 fdecl::Capability::Dictionary(dictionary) => {
                     if dictionary.source_path.as_ref().is_some() {
                         if let Some(name) = dictionary.name.as_ref() {
@@ -280,14 +262,12 @@ fn find_offer_node(
         fdecl::Ref::Child(fdecl::ChildRef { name, collection }) => {
             Some(DependencyNode::Child(name.into(), collection.as_ref().map(|s| s.into())))
         }
-        #[cfg(fuchsia_api_level_at_least = "25")]
         fdecl::Ref::Self_(_) if _dictionary.is_some() => {
             let root_dict = _dictionary.unwrap().split('/').next().unwrap();
             return Some(DependencyNode::Capability(root_dict.into()));
         }
         fdecl::Ref::Self_(_) => {
             if let Some(source_name) = source_name {
-                #[cfg(fuchsia_api_level_at_least = "25")]
                 if matches!(offer, fdecl::Offer::Dictionary(_)) {
                     return Some(DependencyNode::Capability(source_name.into()));
                 }
@@ -385,7 +365,7 @@ pub fn get_dependency_from_offer(
                 offer,
                 o.source.as_ref(),
                 &o.source_name,
-                get_source_dictionary!(o),
+                o.source_dictionary.as_ref(),
             );
 
             if let Some(fdecl::DependencyType::Strong) = o.dependency_type.as_ref() {
@@ -402,7 +382,7 @@ pub fn get_dependency_from_offer(
                 offer,
                 o.source.as_ref(),
                 &o.source_name,
-                get_source_dictionary!(o),
+                o.source_dictionary.as_ref(),
             );
 
             if let Some(fdecl::DependencyType::Strong) = o.dependency_type.as_ref() {
@@ -418,7 +398,7 @@ pub fn get_dependency_from_offer(
                 offer,
                 o.source.as_ref(),
                 &o.source_name,
-                get_source_dictionary!(o),
+                o.source_dictionary.as_ref(),
             );
             if let Some(fdecl::DependencyType::Strong) = o.dependency_type.as_ref() {
                 let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
@@ -433,7 +413,7 @@ pub fn get_dependency_from_offer(
                 offer,
                 o.source.as_ref(),
                 &o.source_name,
-                get_source_dictionary!(o),
+                o.source_dictionary.as_ref(),
             );
 
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
@@ -468,7 +448,7 @@ pub fn get_dependency_from_offer(
                 offer,
                 o.source.as_ref(),
                 &o.source_name,
-                get_source_dictionary!(o),
+                o.source_dictionary.as_ref(),
             );
 
             let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
@@ -480,7 +460,7 @@ pub fn get_dependency_from_offer(
                 offer,
                 o.source.as_ref(),
                 &o.source_name,
-                get_source_dictionary!(o),
+                o.source_dictionary.as_ref(),
             );
 
             let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);
@@ -492,7 +472,7 @@ pub fn get_dependency_from_offer(
                 offer,
                 o.source.as_ref(),
                 &o.source_name,
-                get_source_dictionary!(o),
+                o.source_dictionary.as_ref(),
             );
 
             let target_node = find_offer_node(offer, o.target.as_ref(), &None, None);

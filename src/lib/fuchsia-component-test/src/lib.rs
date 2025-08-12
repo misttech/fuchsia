@@ -686,7 +686,6 @@ impl DictionaryCapability {
     }
 }
 
-#[cfg(fuchsia_api_level_at_least = "25")]
 impl Into<ftest::Capability> for DictionaryCapability {
     fn into(self) -> ftest::Capability {
         ftest::Capability::Dictionary(ftest::Dictionary {
@@ -723,7 +722,6 @@ impl ResolverCapability {
     }
 }
 
-#[cfg(fuchsia_api_level_at_least = "24")]
 impl Into<ftest::Capability> for ResolverCapability {
     fn into(self) -> ftest::Capability {
         ftest::Capability::Resolver(ftest::Resolver {
@@ -760,7 +758,6 @@ impl RunnerCapability {
     }
 }
 
-#[cfg(fuchsia_api_level_at_least = "24")]
 impl Into<ftest::Capability> for RunnerCapability {
     fn into(self) -> ftest::Capability {
         ftest::Capability::Runner(ftest::Runner {
@@ -1323,7 +1320,6 @@ impl RealmBuilder {
         self.root_realm.add_capability(capability).await
     }
 
-    #[cfg(fuchsia_api_level_at_least = "25")]
     /// Adds a Collection to the root realm.
     pub async fn add_collection(
         &self,
@@ -1332,7 +1328,6 @@ impl RealmBuilder {
         self.root_realm.add_collection(collection).await
     }
 
-    #[cfg(fuchsia_api_level_at_least = "25")]
     /// Adds a Environment to the root realm.
     pub async fn add_environment(
         &self,
@@ -1559,7 +1554,6 @@ impl SubRealmBuilder {
         for target in &route.to {
             target.check_scope(&self.realm_path)?;
         }
-        #[cfg(fuchsia_api_level_at_least = "25")]
         if let Some(from_dictionary) = route.from_dictionary {
             for c in &mut capabilities {
                 match c {
@@ -1636,7 +1630,6 @@ impl SubRealmBuilder {
         Ok(())
     }
 
-    #[cfg(fuchsia_api_level_at_least = "25")]
     /// Adds a Collection to the root realm.
     pub async fn add_collection(
         &self,
@@ -1647,7 +1640,6 @@ impl SubRealmBuilder {
         Ok(CollectionRef::new(name, self.realm_path.clone()))
     }
 
-    #[cfg(fuchsia_api_level_at_least = "25")]
     /// Adds a Environment to the root realm.
     pub async fn add_environment(
         &self,

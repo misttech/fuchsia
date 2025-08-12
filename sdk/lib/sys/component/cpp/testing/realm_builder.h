@@ -176,20 +176,14 @@ class Realm final {
   // Replaces the value of a given configuration field
   Realm& SetConfigValue(const std::string& name, const std::string& key, ConfigValue value);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(20)
   // Adds Configuration Capabilities to the root realm.
   Realm& AddConfiguration(std::vector<ConfigCapability> configurations);
-#endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(20)
   // Adds a capability to the root realm.
   Realm& AddCapability(fuchsia::component::decl::Capability capability);
-#endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(25)
   Realm& AddCollection(fuchsia::component::decl::Collection collection);
   Realm& AddEnvironment(fuchsia::component::decl::Environment environment);
-#endif
 
   // Fetches the Component decl of the given child. This operation is only
   // supported for:
@@ -316,15 +310,11 @@ class RealmBuilder final {
   // Allow setting configuration values without loading packaged configuration.
   RealmBuilder& InitMutableConfigToEmpty(const std::string& name);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(20)
   // Adds Configuration Capabilities to the root realm.
   RealmBuilder& AddConfiguration(std::vector<ConfigCapability> configurations);
-#endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(20)
   // Adds a capability to the root realm.
   RealmBuilder& AddCapability(fuchsia::component::decl::Capability capability);
-#endif
 
   // Replaces the value of a given configuration field for the root realm.
   RealmBuilder& SetConfigValue(const std::string& name, const std::string& key, ConfigValue value);

@@ -19,7 +19,6 @@ use client_cpp::GenerateCppSource;
 use client_fidl::GenerateFidlSource;
 use client_rust::GenerateRustSource;
 use cvf::GenerateValueFile;
-#[cfg(fuchsia_api_level_at_least = "20")]
 use cvm::GenerateValueManifest;
 use dump_values::DumpValues;
 use validate_package::ValidatePackage;
@@ -35,7 +34,6 @@ struct Command {
 #[argh(subcommand)]
 enum Subcommand {
     GenerateValueFile(GenerateValueFile),
-    #[cfg(fuchsia_api_level_at_least = "20")]
     GenerateValueManifest(GenerateValueManifest),
     GenerateFidlSource(GenerateFidlSource),
     GenerateRustSource(GenerateRustSource),
@@ -49,7 +47,6 @@ fn main() -> Result<(), Error> {
 
     match command.sub {
         Subcommand::GenerateValueFile(cmd) => cmd.generate(),
-        #[cfg(fuchsia_api_level_at_least = "20")]
         Subcommand::GenerateValueManifest(cmd) => cmd.generate(),
         Subcommand::GenerateFidlSource(cmd) => cmd.generate(),
         Subcommand::GenerateRustSource(cmd) => cmd.generate(),

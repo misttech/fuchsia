@@ -41,121 +41,6 @@ std::string ExtractLocalComponentName(const fuchsia::data::Dictionary& program) 
 
 }  // namespace
 
-// TODO(https://fxbug.dev/296292544): Remove when build support for API level 16 is removed.
-#if FUCHSIA_API_LEVEL_LESS_THAN(17)
-
-namespace {
-std::unique_ptr<LocalComponentHandles> CreateHandlesFromStartInfo(
-    fuchsia::component::runner::ComponentStartInfo start_info, async_dispatcher_t* dispatcher) {
-  fdio_ns_t* ns;
-  ZX_COMPONENT_ASSERT_STATUS_OK("CreateHandlesFromStartInfo", fdio_ns_create(&ns));
-  for (auto& entry : *start_info.mutable_ns()) {
-    ZX_COMPONENT_ASSERT_STATUS_OK(
-        "CreateHandlesFromStartInfo",
-        fdio_ns_bind(ns, entry.path().c_str(), entry.mutable_directory()->TakeChannel().release()));
-  }
-
-  sys::OutgoingDirectory outgoing_dir;
-  outgoing_dir.Serve(std::move(*start_info.mutable_outgoing_dir()), dispatcher);
-  return std::make_unique<LocalComponentHandles>(ns, std::move(outgoing_dir));
-}
-
-}  // namespace
-
-LocalComponentInstance::LocalComponentInstance(
-    fidl::InterfaceRequest<fuchsia::component::runner::ComponentController> controller,
-    async_dispatcher_t* dispatcher,
-    fit::function<void(LocalComponentInstance*, std::unique_ptr<LocalComponentHandles>)> on_start,
-    fit::closure on_exit)
-    : binding_(this),
-      starting_(false),
-      started_(false),
-      on_start_(std::move(on_start)),
-      on_exit_(std::move(on_exit)) {
-  ZX_COMPONENT_ASSERT_STATUS_OK("Bind ComponentController",
-                                binding_.Bind(std::move(controller), dispatcher));
-}
-
-void LocalComponentInstance::SetOnStop(fit::closure on_stop) { on_stop_ = std::move(on_stop); }
-
-void LocalComponentInstance::Start(std::unique_ptr<LocalComponentHandles> handles) {
-  starting_ = true;
-  handles->on_exit_ = [this](zx_status_t status) {
-    if (started_) {
-      Exit(status);
-      // `this` may now be invalid
-    } else {
-      // Delay `Exit` (delay calling `on_exit_`, if set) until after `on_start_`
-      // completes.
-      pending_exit_status_ = status;
-    }
-  };
-  // The `on_start_` callback calls LocalComponent->Start() or
-  // LocalComponentImpl->OnStart() (among other things).
-  on_start_(this, std::move(handles));
-  if (pending_exit_status_) {
-    // `ComponentInstance::Exit()` (which calls the
-    // `ComponentInstance::on_exit_` callback) must not be called before the
-    // `on_start_` callback completes.
-    //
-    // A LocalComponentImpl may call `Exit()` during the
-    // `LocalComponentImpl::OnStart()` method. This is a legitimate use case, if
-    // the component can complete its work via synchronous calls. See the
-    // `RoutesProtocolToLocalComponentSync` test in `realm_builder_test.cc`, for
-    // example. This test's component uses an `EchoSyncPtr` to invoke a client
-    // request and get a response, before the `OnStart()` method completes.
-    // Since the work is done, the client component is safe to terminate, by
-    // calling `Exit()`.
-    //
-    // Note that calling `Exit()` before `on_start_` saves the provided status
-    // (see above), but delays the call to `LocalComponentInstance::Exit()`
-    // until here, after `on_start_` has completed.
-    Exit(*pending_exit_status_);
-    // `this` may now be invalid
-  } else {
-    started_ = true;
-    starting_ = false;
-  }
-}
-
-bool LocalComponentInstance::IsRunning() {
-  return (starting_ || started_) && !pending_exit_status_ && binding_.is_bound();
-}
-
-void LocalComponentInstance::Stop() {
-  if (on_stop_) {
-    on_stop_();
-  }
-  Exit(ZX_OK);
-  // The component should exit the loop, if any, or should have already
-  // terminated. When it terminates, it should close the ComponentController.
-  // If it doesn't, component manager will call Kill(), which can force close
-  // the ComponentController.
-}
-
-void LocalComponentInstance::Kill() {
-  // Close the ComponentController immediately.
-  Exit(ZX_ERR_CANCELED);
-}
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
-void LocalComponentInstance::handle_unknown_method(uint64_t ordinal, bool has_response) {}
-#endif
-void LocalComponentInstance::Exit(zx_status_t epitaph_value) {
-  if (binding_.is_bound()) {
-    binding_.Close(epitaph_value);
-  }
-  if (on_exit_) {
-    // If on_exit is not set, this is a LocalComponent* type, which does not
-    // support exiting. Don't close the binding while the component is still
-    // running.
-    auto on_exit = std::move(on_exit_);
-    on_exit_ = nullptr;
-    on_exit();
-  }
-}
-#else
-
 LocalComponentInstance::LocalComponentInstance(
     fidl::InterfaceRequest<fuchsia::component::runner::ComponentController> controller,
     async_dispatcher_t* dispatcher, LocalComponentFactory local_component_factory,
@@ -220,9 +105,7 @@ void LocalComponentInstance::Stop() {
   // the ComponentController.
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
 void LocalComponentInstance::handle_unknown_method(uint64_t ordinal, bool has_response) {}
-#endif
 void LocalComponentInstance::Exit(zx_status_t epitaph_value) {
   // Don't actually exit during Start.  Start will check pending_exit_status_ at the end.
   if (!started_) {
@@ -242,7 +125,6 @@ void LocalComponentInstance::Exit(zx_status_t epitaph_value) {
     on_exit();
   }
 }
-#endif  // #if FUCHSIA_API_LEVEL_LESS_THAN(17)
 
 LocalComponentRunner::LocalComponentRunner(LocalComponents components,
                                            async_dispatcher_t* dispatcher)
@@ -253,74 +135,6 @@ LocalComponentRunner::NewBinding() {
   return binding_.NewBinding(dispatcher_);
 }
 
-// TODO(https://fxbug.dev/296292544): Remove when build support for API level 16 is removed.
-#if FUCHSIA_API_LEVEL_LESS_THAN(17)
-void LocalComponentRunner::Start(
-    fuchsia::component::runner::ComponentStartInfo start_info,
-    fidl::InterfaceRequest<fuchsia::component::runner::ComponentController> controller) {
-  ZX_ASSERT_MSG(start_info.has_program(), "Component manager sent start_info without program");
-  std::string const name = ExtractLocalComponentName(start_info.program());
-  ZX_ASSERT_MSG(ContainsReadyComponent(name),
-                "Component manager requested a named LocalComponent that is unregistered, already "
-                "running, or not restartable. Component name: %s",
-                name.c_str());
-  auto handles = CreateHandlesFromStartInfo(std::move(start_info), dispatcher_);
-  // take the component from the ready_components_ list
-  auto component = std::move(ready_components_[name]);
-  ZX_ASSERT_MSG(ready_components_.erase(name) == 1, "ready component not erased");
-
-// Ignore warnings caused by the use of the deprecated `LocalComponent` type as it is part of the
-// implementation that supports the deprecated type.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-  if (std::holds_alternative<LocalComponent*>(component)) {
-    auto local_component_ptr = std::get<LocalComponent*>(component);
-#pragma clang diagnostic pop
-    auto on_start = [local_component_ptr](LocalComponentInstance*,
-                                          std::unique_ptr<LocalComponentHandles> handles) {
-      local_component_ptr->Start(std::move(handles));
-      // Do not call instance->SetOnStop() for components added by
-      // LocalComponent* (raw pointer). RealmBuilder does not manage the
-      // lifecycle of these components, so the LocalComponent pointer may not
-      // be valid, once started.
-    };
-    auto on_exit = [this, name]() mutable {
-      // Drop the ComponentInstance. This also causes the ComponentController to
-      // be dropped.
-      ZX_ASSERT_MSG(running_component_instances_.erase(name) == 1, "running component not erased");
-      // Components added by LocalComponent* are not restartable, so they will
-      // not be added back to the ready_components_.
-    };
-    running_component_instances_[name] = std::make_unique<LocalComponentInstance>(
-        std::move(controller), dispatcher_, std::move(on_start), std::move(on_exit));
-  } else {
-    auto local_component_factory = std::move(std::get<LocalComponentFactory>(component));
-    auto local_component = local_component_factory();
-    auto on_start = [name, local_component = std::move(local_component)](
-                        LocalComponentInstance* instance,
-                        std::unique_ptr<LocalComponentHandles> handles) mutable {
-      local_component->handles_ = std::move(handles);
-      local_component->OnStart();
-      // Drop the `LocalComponentImpl` on `ComponentController::Stop()`.
-      instance->SetOnStop(
-          [local_component = std::move(local_component)]() { local_component->OnStop(); });
-    };
-    auto on_exit = [this, local_component_factory = std::move(local_component_factory),
-                    name]() mutable {
-      // Drop the ComponentInstance. This also causes the ComponentController
-      // and LocalComponentImpl to be dropped. Dropping the LocalComponentImpl
-      // drops the handles.
-      ZX_ASSERT_MSG(running_component_instances_.erase(name) == 1, "running component not erased");
-      // return the factory back to the list of components that can be restarted
-      ready_components_[name] = std::move(local_component_factory);
-    };
-    running_component_instances_[name] = std::make_unique<LocalComponentInstance>(
-        std::move(controller), dispatcher_, std::move(on_start), std::move(on_exit));
-  }
-  running_component_instances_[name]->Start(std::move(handles));
-}
-
-#else
 void LocalComponentRunner::Start(
     fuchsia::component::runner::ComponentStartInfo start_info,
     fidl::InterfaceRequest<fuchsia::component::runner::ComponentController> controller) {
@@ -336,7 +150,6 @@ void LocalComponentRunner::Start(
   // Start the component instance.
   running_component_instances_[name]->Start();
 }
-#endif
 
 std::unique_ptr<LocalComponentImplBase> LocalComponentRunner::SetComponentToRunning(
     std::string name) {
