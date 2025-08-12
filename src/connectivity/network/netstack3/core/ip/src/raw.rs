@@ -401,7 +401,7 @@ where
                             icmp_filter,
                             hop_limits: _,
                             multicast_loop: _,
-                            marks: _,
+                            marks,
                             system_checksums: _,
                         } = state;
                         if let Some(bound_device) = bound_device {
@@ -414,6 +414,7 @@ where
                         } else {
                             node.record_str("IcmpFilter", "None");
                         }
+                        node.delegate_inspectable(marks);
                     });
                     node.record_child("Counters", |node| {
                         node.delegate_inspectable(socket.state().counters())

@@ -224,7 +224,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> SocketState<I, D,
             multicast_memberships: MulticastMemberships(multicast_memberships),
             socket_options: _,
             other_stack: _,
-            common: _,
+            common,
         } = self.as_ref();
         inspector.record_child("MulticastGroupMemberships", |node| {
             for (index, (multicast_addr, device)) in multicast_memberships.iter().enumerate() {
@@ -234,6 +234,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> SocketState<I, D,
                 })
             }
         });
+        inspector.delegate_inspectable(&common.marks);
     }
 
     /// Gets the [`IpOptions`] and bound device for the socket state.

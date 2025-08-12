@@ -4467,8 +4467,8 @@ where
                         IpVersion::V6 => "IPv6",
                     },
                 );
-                let TcpSocketState { socket_state, ip_options: _, socket_options: _ } =
-                    socket_state;
+                let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+                node.delegate_inspectable(&socket_options.ip_options.marks);
                 match socket_state {
                     TcpSocketStateInner::Unbound(_) => {
                         node.record_local_socket_addr::<N, I::Addr, _, NonZeroU16>(None);

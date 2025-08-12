@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom as _;
 use std::mem::MaybeUninit;
 use std::num::{NonZeroU16, NonZeroU64};
+use std::os::fd::AsFd;
 use std::time::Duration;
 
 use assert_matches::assert_matches;
@@ -63,6 +64,24 @@ enum TcpSocketState {
     Bound,
     Listener,
     Connected,
+}
+
+const MARK_1: u32 = 100;
+const MARK_2: u32 = 200;
+
+async fn set_marks(socket: &impl AsFd) {
+    let channel = fdio::clone_channel(socket).expect("failed to clone channel");
+    let proxy = fposix_socket::BaseSocketProxy::new(fidl::AsyncChannel::from_channel(channel));
+    proxy
+        .set_mark(fnet::MarkDomain::Mark1, &fposix_socket::OptionalUint32::Value(MARK_1))
+        .await
+        .expect("fidl error")
+        .expect("set mark");
+    proxy
+        .set_mark(fnet::MarkDomain::Mark2, &fposix_socket::OptionalUint32::Value(MARK_2))
+        .await
+        .expect("fidl error")
+        .expect("set mark");
 }
 
 #[netstack_test]
@@ -136,6 +155,8 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
         tcp_socket.bind(&local_addr.into()).expect("bind");
     }
 
+    set_marks(&tcp_socket).await;
+
     match socket_state {
         TcpSocketState::Unbound | TcpSocketState::Bound => {}
         TcpSocketState::Listener => tcp_socket.listen(BACKLOG.try_into().unwrap()).expect("listen"),
@@ -189,6 +210,8 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                     sock_name => {
                         LocalAddress: "[NOT BOUND]",
                         RemoteAddress: "[NOT CONNECTED]",
+                        Mark1: MARK_1,
+                        Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv4",
                         Counters: {
@@ -241,6 +264,8 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                     sock_name => {
                         LocalAddress: format!("0.0.0.0:{LOCAL_PORT}"),
                         RemoteAddress: "[NOT CONNECTED]",
+                        Mark1: MARK_1,
+                        Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv4",
                         Counters: {
@@ -293,6 +318,8 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                     sock_name => {
                         LocalAddress: format!("192.0.2.1:{LOCAL_PORT}"),
                         RemoteAddress: "[NOT CONNECTED]",
+                        Mark1: MARK_1,
+                        Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv4",
                         AcceptQueue: {
@@ -351,6 +378,8 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                     sock_name => {
                         LocalAddress: format!("192.0.2.1:{LOCAL_PORT}"),
                         RemoteAddress: format!("192.0.2.2:{REMOTE_PORT}"),
+                        Mark1: MARK_1,
+                        Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv4",
                         State: "SynSent",
@@ -404,6 +433,8 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                     sock_name => {
                         LocalAddress: "[NOT BOUND]",
                         RemoteAddress: "[NOT CONNECTED]",
+                        Mark1: MARK_1,
+                        Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv6",
                         Counters: {
@@ -456,6 +487,8 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                     sock_name => {
                         LocalAddress: format!("[::]:{LOCAL_PORT}"),
                         RemoteAddress: "[NOT CONNECTED]",
+                        Mark1: MARK_1,
+                        Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv6",
                         Counters: {
@@ -508,6 +541,8 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                     sock_name => {
                         LocalAddress: format!("[{link_local}%{scope}]:{LOCAL_PORT}"),
                         RemoteAddress: "[NOT CONNECTED]",
+                        Mark1: MARK_1,
+                        Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv6",
                         AcceptQueue: {
@@ -566,6 +601,8 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                     sock_name => {
                         LocalAddress: format!("[{link_local}%{scope}]:{LOCAL_PORT}"),
                         RemoteAddress: format!("[2001:db8::2]:{REMOTE_PORT}"),
+                        Mark1: MARK_1,
+                        Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv6",
                         State: "SynSent",
@@ -662,6 +699,7 @@ async fn inspect_datagram_sockets<I: TestIpExt>(
 
     // Ensure ns3 has started and that there is a Socket to collect inspect data about.
     let socket = realm.datagram_socket(I::DOMAIN, proto).await.expect("create datagram socket");
+    set_marks(&socket).await;
     const SRC_PORT: u16 = 1234;
     const DST_PORT: u16 = 5678;
     let addr = std::net::IpAddr::from(
@@ -705,6 +743,8 @@ async fn inspect_datagram_sockets<I: TestIpExt>(
                     sock_name => {
                         LocalAddress: want_local,
                         RemoteAddress: want_remote,
+                        Mark1: MARK_1,
+                        Mark2: MARK_2,
                         TransportProtocol: want_proto,
                         NetworkProtocol: I::NAME,
                         MulticastGroupMemberships: {},
@@ -730,6 +770,8 @@ async fn inspect_datagram_sockets<I: TestIpExt>(
                     sock_name => {
                         LocalAddress: want_local,
                         RemoteAddress: want_remote,
+                        Mark1: MARK_1,
+                        Mark2: MARK_2,
                         TransportProtocol: want_proto,
                         NetworkProtocol: I::NAME,
                         MulticastGroupMemberships: {},
@@ -811,13 +853,14 @@ async fn inspect_raw_ip_sockets<I: TestIpExt>(name: &str) {
         sandbox.create_netstack_realm::<Netstack3, _>(name).expect("failed to create realm");
 
     // Ensure ns3 has started and that there is a Socket to collect inspect data about.
-    let _raw_socket = realm
+    let raw_socket = realm
         .raw_socket(
             I::DOMAIN,
             fposix_socket_raw::ProtocolAssociation::Associated(u8::from(IpProto::Tcp)),
         )
         .await
         .expect("create raw socket");
+    set_marks(&raw_socket).await;
 
     let data =
         get_inspect_data(&realm, "netstack", "root").await.expect("inspect data should be present");
@@ -832,6 +875,8 @@ async fn inspect_raw_ip_sockets<I: TestIpExt>(name: &str) {
             sock_name => {
                 LocalAddress: "[NOT BOUND]",
                 RemoteAddress: "[NOT CONNECTED]",
+                Mark1: MARK_1,
+                Mark2: MARK_2,
                 TransportProtocol: "TCP",
                 NetworkProtocol: I::NAME,
                 BoundDevice: "None",

@@ -6,6 +6,7 @@ use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::num::NonZeroU32;
 
+use diagnostics_traits::{Inspectable, Inspector};
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv4SourceAddr, Ipv6, Ipv6SourceAddr, Mtu};
 use net_types::Witness;
 use packet_formats::icmp::{
@@ -265,4 +266,18 @@ pub type Marks = MarkStorage<Mark>;
 impl Marks {
     /// Unmarked marks.
     pub const UNMARKED: Self = MarkStorage([Mark(None), Mark(None)]);
+}
+
+impl Inspectable for Marks {
+    fn record<I: Inspector>(&self, inspector: &mut I) {
+        for (domain, Mark(mark)) in self.iter() {
+            if let Some(mark) = mark {
+                let domain_name = match domain {
+                    MarkDomain::Mark1 => "Mark1",
+                    MarkDomain::Mark2 => "Mark2",
+                };
+                inspector.record_uint(domain_name, *mark);
+            }
+        }
+    }
 }

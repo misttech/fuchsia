@@ -72,6 +72,8 @@ rustc_test("netstack3_inspect_tests") {
     "//src/diagnostics/lib/sampler-config",
     "//src/lib/diagnostics/hierarchy/rust",
     "//src/lib/diagnostics/selectors",
+    "//src/lib/fdio/rust:fdio",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/network/fidl_fuchsia_net_filter_ext",
