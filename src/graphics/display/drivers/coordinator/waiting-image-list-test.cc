@@ -12,8 +12,8 @@
 #include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
 
-#include "src/graphics/display/drivers/coordinator/image.h"
 #include "src/graphics/display/drivers/coordinator/image-lifecycle-listener.h"
+#include "src/graphics/display/drivers/coordinator/image.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
@@ -26,8 +26,6 @@ namespace {
 
 class StubImageLifecycleListener : public ImageLifecycleListener {
  public:
-  using ImageWillBeDestroyedChecker = fit::function<void(display::DriverImageId)>;
-
   StubImageLifecycleListener() = default;
   ~StubImageLifecycleListener() = default;
 
@@ -38,11 +36,31 @@ class StubImageLifecycleListener : public ImageLifecycleListener {
   void ImageWillBeDestroyed(display::DriverImageId driver_image_id) override {}
 };
 
+class FakeFenceCollectionListener : public FenceCollectionListener {
+ public:
+  // `waiting_images` must not be null and must outlive this instance.
+  explicit FakeFenceCollectionListener(WaitingImageList* waiting_images)
+      : waiting_images_(*waiting_images) {
+    ZX_DEBUG_ASSERT(waiting_images != nullptr);
+  }
+  ~FakeFenceCollectionListener() = default;
+
+  FakeFenceCollectionListener(const FakeFenceCollectionListener&) = delete;
+  FakeFenceCollectionListener& operator=(const FakeFenceCollectionListener&) = delete;
+
+  // FenceCollectionListener:
+  void OnFenceSignaled(FenceReference* fence_reference) override {
+    waiting_images_.MarkFenceReady(fence_reference);
+  }
+
+ private:
+  WaitingImageList& waiting_images_;
+};
+
 class WaitingImageListTest : public ::testing::Test {
  public:
   WaitingImageListTest()
-      : fences_(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                [this](FenceReference* fence_ref) { waiting_images_.MarkFenceReady(fence_ref); }) {}
+      : fences_(&fence_collection_listener_, driver_runtime_.GetForegroundDispatcher()->borrow()) {}
 
   ~WaitingImageListTest() override = default;
 
@@ -76,6 +94,7 @@ class WaitingImageListTest : public ::testing::Test {
   display::DriverImageId next_driver_image_id_ = display::DriverImageId(2000);
 
   StubImageLifecycleListener image_lifecycle_listener_;
+  FakeFenceCollectionListener fence_collection_listener_{&waiting_images_};
   WaitingImageList waiting_images_;
 
   FenceCollection fences_;
@@ -226,11 +245,11 @@ TEST_F(WaitingImageListTest, ReadyImages) {
   constexpr display::EventId kWaitFenceId_3(3);
   zx::event event;
   ASSERT_OK(zx::event::create(0, &event));
-  fences().ImportEvent(std::move(event), kWaitFenceId_1);
+  ASSERT_OK(fences().ImportEvent(std::move(event), kWaitFenceId_1));
   ASSERT_OK(zx::event::create(0, &event));
-  fences().ImportEvent(std::move(event), kWaitFenceId_2);
+  ASSERT_OK(fences().ImportEvent(std::move(event), kWaitFenceId_2));
   ASSERT_OK(zx::event::create(0, &event));
-  fences().ImportEvent(std::move(event), kWaitFenceId_3);
+  ASSERT_OK(fences().ImportEvent(std::move(event), kWaitFenceId_3));
   auto fence_release = fit::defer([&]() mutable {
     fences().ReleaseEvent(kWaitFenceId_1);
     fences().ReleaseEvent(kWaitFenceId_2);
@@ -310,11 +329,11 @@ TEST_F(WaitingImageListTest, AddSameImage) {
   constexpr display::EventId kWaitFenceId_3(3);
   zx::event event;
   ASSERT_OK(zx::event::create(0, &event));
-  fences().ImportEvent(std::move(event), kWaitFenceId_1);
+  ASSERT_OK(fences().ImportEvent(std::move(event), kWaitFenceId_1));
   ASSERT_OK(zx::event::create(0, &event));
-  fences().ImportEvent(std::move(event), kWaitFenceId_2);
+  ASSERT_OK(fences().ImportEvent(std::move(event), kWaitFenceId_2));
   ASSERT_OK(zx::event::create(0, &event));
-  fences().ImportEvent(std::move(event), kWaitFenceId_3);
+  ASSERT_OK(fences().ImportEvent(std::move(event), kWaitFenceId_3));
   auto fence_release = fit::defer([&]() mutable {
     fences().ReleaseEvent(kWaitFenceId_1);
     fences().ReleaseEvent(kWaitFenceId_2);
@@ -361,7 +380,7 @@ TEST_F(WaitingImageListTest, CannotReuseBusyFence) {
   constexpr display::EventId kWaitFenceId(999);
   zx::event event;
   ASSERT_OK(zx::event::create(0, &event));
-  fences().ImportEvent(std::move(event), kWaitFenceId);
+  ASSERT_OK(fences().ImportEvent(std::move(event), kWaitFenceId));
   auto fence_release = fit::defer([&]() mutable { fences().ReleaseEvent(kWaitFenceId); });
 
   // Adding image succeeds with non-busy fence; afterward the fence is busy.

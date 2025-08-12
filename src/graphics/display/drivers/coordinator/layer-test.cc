@@ -17,8 +17,8 @@
 #include <gtest/gtest.h>
 
 #include "src/graphics/display/drivers/coordinator/fence.h"
-#include "src/graphics/display/drivers/coordinator/image.h"
 #include "src/graphics/display/drivers/coordinator/image-lifecycle-listener.h"
+#include "src/graphics/display/drivers/coordinator/image.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/event-id.h"
 #include "src/graphics/display/lib/api-types/cpp/image-id.h"
@@ -43,13 +43,24 @@ class StubImageLifecycleListener : public ImageLifecycleListener {
   void ImageWillBeDestroyed(display::DriverImageId driver_image_id) override {}
 };
 
+class StubFenceCollectionListener : public FenceCollectionListener {
+ public:
+  StubFenceCollectionListener() = default;
+  ~StubFenceCollectionListener() = default;
+
+  StubFenceCollectionListener(const StubFenceCollectionListener&) = delete;
+  StubFenceCollectionListener& operator=(const StubFenceCollectionListener&) = delete;
+
+  // FenceCollectionListener:
+  void OnFenceSignaled(FenceReference* fence_reference) override {}
+};
+
 }  // namespace
 
 class LayerTest : public ::testing::Test {
  public:
   LayerTest()
-      : fences_(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                [](FenceReference* fence_ref) {}) {}
+      : fences_(&fence_collection_listener_, driver_runtime_.GetForegroundDispatcher()->borrow()) {}
 
   fbl::RefPtr<Image> CreateReadyImage() {
     static constexpr ClientId kClientId(1);
@@ -86,7 +97,7 @@ class LayerTest : public ::testing::Test {
   display::DriverImageId next_driver_image_id_ = display::DriverImageId(2000);
 
   StubImageLifecycleListener image_lifecycle_listener_;
-
+  StubFenceCollectionListener fence_collection_listener_;
   FenceCollection fences_;
 };
 
@@ -129,7 +140,7 @@ TEST_F(LayerTest, CleanUpImage) {
   zx::event event;
   ASSERT_OK(zx::event::create(0, &event));
   constexpr display::EventId kWaitFenceId(1);
-  fences_.ImportEvent(std::move(event), kWaitFenceId);
+  ASSERT_OK(fences_.ImportEvent(std::move(event), kWaitFenceId));
   auto fence_release = fit::defer([&] { fences_.ReleaseEvent(kWaitFenceId); });
 
   auto waiting_image = CreateReadyImage();
@@ -236,7 +247,7 @@ TEST_F(LayerTest, CleanUpAllImages) {
   zx::event event;
   ASSERT_OK(zx::event::create(0, &event));
   constexpr display::EventId kWaitFenceId(1);
-  fences_.ImportEvent(std::move(event), kWaitFenceId);
+  ASSERT_OK(fences_.ImportEvent(std::move(event), kWaitFenceId));
   auto fence_release = fit::defer([&] { fences_.ReleaseEvent(kWaitFenceId); });
 
   auto waiting_image = CreateReadyImage();

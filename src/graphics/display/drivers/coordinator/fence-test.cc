@@ -8,15 +8,22 @@
 #include <lib/async/default.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
+#include <lib/zx/event.h>
+#include <lib/zx/result.h>
 
-#include <fbl/vector.h>
+#include <vector>
+
+#include <fbl/ref_ptr.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include "src/lib/testing/predicates/status.h"
 
 namespace display_coordinator {
 
-class TestCallback : public FenceCallback {
+class FakeFenceOwner : public FenceOwner {
  public:
-  void OnFenceFired(FenceReference* f) override { fired_.push_back(f); }
+  void OnFenceSignaled(FenceReference* fence) override { signaled_fences_.push_back(fence); }
 
   void OnRefForFenceDead(Fence* fence) override {
     // TODO(https://fxbug.dev/394422104): it is not ideal to require implementors of `FenceCallback`
@@ -25,59 +32,63 @@ class TestCallback : public FenceCallback {
     fence->OnRefDead();
   }
 
-  fbl::Vector<FenceReference*> fired_;
+  const std::vector<FenceReference*>& signaled_fences() { return signaled_fences_; }
+
+ private:
+  std::vector<FenceReference*> signaled_fences_;
 };
 
 class FenceTest : public testing::Test {
  public:
   void SetUp() override {
-    zx::event ev;
-    zx::event::create(0, &ev);
-    constexpr display::EventId kEventId(1);
-    fence_ = fbl::AdoptRef(new Fence(&cb_, loop_.dispatcher(), kEventId, std::move(ev)));
+    static constexpr display::EventId kEventId(1);
+
+    zx::event event;
+    ASSERT_OK(zx::event::create(/*options=*/0, &event));
+
+    fence_ = fbl::AdoptRef(
+        new Fence(&fence_owner_, driver_dispatcher_->borrow(), kEventId, std::move(event)));
   }
 
   void TearDown() override { fence_->ClearRef(); }
 
-  async::TestLoop& loop() { return loop_; }
   fbl::RefPtr<Fence> fence() { return fence_; }
-  TestCallback& cb() { return cb_; }
+  FakeFenceOwner& fence_owner() { return fence_owner_; }
 
  protected:
-  // `logger_` must outlive `driver_runtime_` to allow for any
-  // logging in driver de-initialization code.
   fdf_testing::ScopedGlobalLogger logger_;
-  fdf_testing::DriverRuntime runtime_;
-  async::TestLoop loop_;
+  fdf_testing::DriverRuntime driver_runtime_;
+
+  fdf::UnownedSynchronizedDispatcher driver_dispatcher_ = driver_runtime_.GetForegroundDispatcher();
+
   fbl::RefPtr<Fence> fence_;
-  TestCallback cb_;
+  FakeFenceOwner fence_owner_;
 };
 
 TEST_F(FenceTest, MultipleRefs_OnePurpose) {
   fence()->CreateRef();
-  auto one = fence()->GetReference();
-  auto two = fence()->GetReference();
+  fbl::RefPtr<FenceReference> reference_one = fence()->GetReference();
+  fbl::RefPtr<FenceReference> reference_two = fence()->GetReference();
 }
 
 TEST_F(FenceTest, MultipleRefs_MultiplePurposes) {
   fence()->CreateRef();
-  auto one = fence()->GetReference();
+  fbl::RefPtr<FenceReference> reference_one = fence()->GetReference();
   fence()->CreateRef();
-  auto two = fence()->GetReference();
+  fbl::RefPtr<FenceReference> reference_two = fence()->GetReference();
   fence()->CreateRef();
-  auto three = fence()->GetReference();
-  two->StartReadyWait();
-  one->StartReadyWait();
+  fbl::RefPtr<FenceReference> reference_three = fence()->GetReference();
+  ASSERT_OK(reference_two->StartReadyWait());
+  ASSERT_OK(reference_one->StartReadyWait());
 
-  three->Signal();
-  loop().RunUntilIdle();
+  reference_three->Signal();
+  driver_runtime_.RunUntilIdle();
 
-  three->Signal();
-  loop().RunUntilIdle();
+  reference_three->Signal();
+  driver_runtime_.RunUntilIdle();
 
-  ASSERT_EQ(cb().fired_.size(), 2u);
-  EXPECT_EQ(cb().fired_[0], two.get());
-  EXPECT_EQ(cb().fired_[1], one.get());
+  EXPECT_THAT(fence_owner().signaled_fences(),
+              testing::ElementsAre(reference_two.get(), reference_one.get()));
 }
 
 }  // namespace display_coordinator

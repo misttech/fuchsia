@@ -85,7 +85,7 @@ bool TestBase::PollUntilOnLoop(fit::function<bool()> predicate, zx::duration pol
     }
 
     // Retaining `predicate_eval_state` by reference is safe because this method
-    // will block on a ConditionVariable::Wait() call, which is only fired at
+    // will block on a ConditionVariable::Wait() call, which is only issued at
     // the end of the task handler.
     zx::result post_task_result = display::PostTask(
         std::move(post_task_state), *loop_.dispatcher(), [&predicate_eval_state]() {

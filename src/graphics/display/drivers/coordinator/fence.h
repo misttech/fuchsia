@@ -6,16 +6,14 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_COORDINATOR_FENCE_H_
 
 #include <lib/async/cpp/wait.h>
+#include <lib/async/dispatcher.h>
 #include <lib/fdf/cpp/dispatcher.h>
-#include <lib/fit/function.h>
 #include <lib/zx/event.h>
-#include <threads.h>
-#include <zircon/compiler.h>
+#include <zircon/syscalls/port.h>
+#include <zircon/types.h>
 
 #include <fbl/intrusive_double_list.h>
 #include <fbl/intrusive_single_list.h>
-#include <fbl/macros.h>
-#include <fbl/mutex.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 
@@ -27,36 +25,54 @@ namespace display_coordinator {
 class FenceReference;
 class Fence;
 
-class FenceCallback {
+// Interface between a Fence and the FenceCollection that owns it.
+class FenceOwner {
  public:
-  virtual void OnFenceFired(FenceReference* ref) = 0;
+  FenceOwner() = default;
+
+  // FenceOwner pointers must remain stable.
+  FenceOwner(const FenceOwner&) = delete;
+  FenceOwner(FenceOwner&&) = delete;
+  FenceOwner& operator=(const FenceOwner&) = default;
+  FenceOwner& operator=(FenceOwner&&) = delete;
+
+  virtual void OnFenceSignaled(FenceReference* fence_reference) = 0;
+
   // TODO(https://fxbug.dev/394422104): implementors must call `Fence::OnRefDead()`,
   // but they shouldn't have to.
   virtual void OnRefForFenceDead(Fence* fence) = 0;
+
+ protected:
+  // FenceOwner is not intended to be an owning pointer type.
+  virtual ~FenceOwner() = default;
 };
 
-// Class which wraps an event into a fence. A single Fence can have multiple FenceReference
-// objects, which allows an event to be treated as a semaphore independently of it being
+// Manages an event imported by a Coordinator client.
+//
+// The class currently uses Vulkan terminology, rather than Fuchsia event
+// terminology.
+//
+// A single Fence can have multiple FenceReference objects, which allows an
+// event to be treated as a semaphore independently of it being
 // imported/released (i.e. can be released while still in use).
 //
-// Fence is not thread-safe (but thread-compatible). For the sake of simplicity,
-// in order to avoid data races, we require `Fence`s and its `FenceReference`s
-// be created and destroyed on the same fdf::Dispatcher where the Fence is
-// created.
+// Instances are not thread-safe and must be accessed on a single synchronized
+// dispatcher.
 class Fence : public fbl::RefCounted<Fence>,
               public IdMappable<fbl::RefPtr<Fence>, display::EventId>,
               public fbl::SinglyLinkedListable<fbl::RefPtr<Fence>> {
  public:
-  // `Fence` must be created on a dispatcher managed by the driver framework.
-  // The dispatcher must be valid throughout the lifetime of the `Fence`.
+  // Fence state changes will be processed on `dispatcher`.
   //
-  // `event_dispatcher` is where the asynchronous events regarding this Fence
-  // are dispatched. It may be the same as the dispatcher where the Fence is
-  // created.
+  // `owner` must not be null and must outlive the newly created instance.
   //
-  // `event_dispatcher` must not be null and must outlive Fence.
-  Fence(FenceCallback* cb, async_dispatcher_t* event_dispatcher, display::EventId id,
+  // `dispatcher` must not be null and must outlive the newly created instance.
+  // The instance must be accessed exclusively on the dispatcher.
+  //
+  // `id` and `event` must be valid.
+  Fence(FenceOwner* owner, fdf::UnownedSynchronizedDispatcher dispatcher, display::EventId id,
         zx::event event);
+
   ~Fence();
 
   Fence(const Fence& other) = delete;
@@ -84,8 +100,8 @@ class Fence : public fbl::RefCounted<Fence>,
 
  private:
   void Signal() const;
-  zx_status_t OnRefArmed(fbl::RefPtr<FenceReference>&& ref);
-  void OnRefDisarmed(FenceReference* ref);
+  zx::result<> OnRefArmed(fbl::RefPtr<FenceReference> fence_reference);
+  void OnRefDisarmed(FenceReference* fence_reference);
 
   // The fence reference corresponding to the current event import.
   fbl::RefPtr<FenceReference> cur_ref_;
@@ -98,12 +114,10 @@ class Fence : public fbl::RefCounted<Fence>,
                const zx_packet_signal_t* signal);
   async::WaitMethod<Fence, &Fence::OnReady> ready_wait_{this};
 
-  FenceCallback* cb_;
+  FenceOwner& owner_;
+  const fdf::UnownedSynchronizedDispatcher dispatcher_;
 
-  async_dispatcher_t& event_dispatcher_;
-  fdf::UnownedDispatcher const fence_creation_dispatcher_;
-
-  zx::event event_;
+  const zx::event event_;
   int ref_count_ = 0;
   zx_koid_t koid_ = 0;
 
@@ -114,51 +128,68 @@ class Fence : public fbl::RefCounted<Fence>,
 // Fence it refers to, regardless of the Fence it refers to being imported
 // or released by the Client.
 //
-// FenceReference is not thread-safe (but thread-compatible). For the sake of
-// simplicity, we require `FenceReference`s be created and destroyed on the same
-// fdf::Dispatcher where the Fence is created.
+// Instances are not thread-safe and must be accessed on a single synchronized
+// dispatcher.
 class FenceReference : public fbl::RefCounted<FenceReference>,
                        public fbl::DoublyLinkedListable<fbl::RefPtr<FenceReference>> {
  public:
-  // `FenceReference` must be created on `fence_creation_dispatcher`, which is
-  // the dispatcher where `fence` is created.
-  explicit FenceReference(fbl::RefPtr<Fence> fence,
-                          fdf::UnownedDispatcher fence_creation_dispatcher);
-  ~FenceReference();
+  // `fence` must not be null.
+  //
+  // `dispatcher` must not be null and must outlive the newly created instance.
+  // The instance must be accessed exclusively on the dispatcher.
+  explicit FenceReference(fbl::RefPtr<Fence> fence, fdf::UnownedSynchronizedDispatcher dispatcher);
 
   FenceReference(const FenceReference& other) = delete;
   FenceReference(FenceReference&& other) = delete;
   FenceReference& operator=(const FenceReference& other) = delete;
   FenceReference& operator=(FenceReference&& other) = delete;
 
+  ~FenceReference();
+
   void Signal() const;
 
   // The first of these two calls must be to `StartReadyWait()` and the next must be to
   // `ResetReadyWait()`. Subsequent calls must continue to alternate in the same way.
-  zx_status_t StartReadyWait();
+  zx::result<> StartReadyWait();
   void ResetReadyWait();
 
  private:
-  fbl::RefPtr<Fence> fence_;
-
-  fdf::UnownedDispatcher const fence_creation_dispatcher_;
+  const fbl::RefPtr<Fence> fence_;
+  const fdf::UnownedSynchronizedDispatcher dispatcher_;
 };
 
-// FenceCollection controls the access and lifecycles for several display::Fences.
-class FenceCollection : private FenceCallback {
+// Interface between a FenceCollection and the fencer.
+class FenceCollectionListener {
+ public:
+  FenceCollectionListener() = default;
+
+  // FenceCollectionListener pointers must remain stable.
+  FenceCollectionListener(const FenceCollectionListener&) = delete;
+  FenceCollectionListener(FenceCollectionListener&&) = delete;
+  FenceCollectionListener& operator=(const FenceCollectionListener&) = default;
+  FenceCollectionListener& operator=(FenceCollectionListener&&) = delete;
+
+  virtual void OnFenceSignaled(FenceReference* fence_reference) = 0;
+
+ protected:
+  // FenceCollectionListener is not intended to be an owning pointer type.
+  virtual ~FenceCollectionListener() = default;
+};
+
+// Manages the events (Fences) imported by a Coordinator client.
+//
+// Instances are not thread-safe and must be accessed on a single synchronized
+// dispatcher.
+class FenceCollection : public FenceOwner {
  public:
   // Creates an empty collection.
   //
-  // Fence events are dispatched on `dispatcher`.
-  // `dispatcher` must be non-null and must outlive the newly created instance.
+  // `listener` methods are called on `dispatcher`. `listener` must not be null
+  // and must outlive the newly created instance.
   //
-  // `on_fence_fired` must be callable while the newly created instance is
-  // alive.
-  //
-  // `on_fence_fired` will be called when one of the fences fires. The call
-  // will be done from an async task processed using `dispatcher`.
-  FenceCollection(async_dispatcher_t* dispatcher,
-                  fit::function<void(FenceReference*)> on_fence_fired);
+  // `dispatcher` must not be null and must outlive the newly created instance.
+  // The instance must be accessed exclusively on the dispatcher.
+  FenceCollection(FenceCollectionListener* listener, fdf::UnownedSynchronizedDispatcher dispatcher);
 
   FenceCollection(const FenceCollection&) = delete;
   FenceCollection(FenceCollection&&) = delete;
@@ -168,30 +199,27 @@ class FenceCollection : private FenceCallback {
   virtual ~FenceCollection() = default;
 
   // Explicit destruction step. Use this to control when fences are destroyed.
-  void Clear() __TA_EXCLUDES(mtx_);
+  void Clear();
 
   // Imports `event` so that it can subsequently be referenced by passing `id` to `GetFence()`.
   // `id` must not already be registered by a previous call to `ImportEvent()`, unless it was
   // subsequently unregistered by calling `ReleaseEvent()`.
-  zx_status_t ImportEvent(zx::event event, display::EventId id) __TA_EXCLUDES(mtx_);
+  zx::result<> ImportEvent(zx::event event, display::EventId id);
 
   // Unregisters a fence that was previously registered by `ImportEvent()`.
-  void ReleaseEvent(display::EventId id) __TA_EXCLUDES(mtx_);
+  void ReleaseEvent(display::EventId id);
 
   // Gets reference to existing fence by its ID, or nullptr if no fence is found.
-  fbl::RefPtr<FenceReference> GetFence(display::EventId id) __TA_EXCLUDES(mtx_);
+  fbl::RefPtr<FenceReference> GetFence(display::EventId id);
+
+  // `FenceOwner`:
+  void OnFenceSignaled(FenceReference* fence) override;
+  void OnRefForFenceDead(Fence* fence) override;
 
  private:
-  // |FenceCallback|
-  void OnFenceFired(FenceReference* fence) override;
-
-  // |FenceCallback|
-  void OnRefForFenceDead(Fence* fence) __TA_EXCLUDES(mtx_) override;
-
-  fbl::Mutex mtx_;
-  Fence::Map fences_ __TA_GUARDED(mtx_);
-  async_dispatcher_t* const dispatcher_;
-  fit::function<void(FenceReference*)> on_fence_fired_;
+  Fence::Map fences_;
+  FenceCollectionListener& listener_;
+  const fdf::UnownedSynchronizedDispatcher dispatcher_;
 };
 
 }  // namespace display_coordinator

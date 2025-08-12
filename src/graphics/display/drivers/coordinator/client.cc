@@ -220,10 +220,10 @@ void Client::ImportEvent(ImportEventRequestView request,
     return;
   }
 
-  if (zx_status_t status = fences_.ImportEvent(std::move(request->event), event_id);
-      status != ZX_OK) {
-    fdf::error("Failed to import event: {}", zx::make_result(status));
-    TearDown(status);
+  zx::result<> import_result = fences_.ImportEvent(std::move(request->event), event_id);
+  if (import_result.is_error()) {
+    fdf::error("Failed to import event: {}", import_result);
+    TearDown(import_result.error_value());
     return;
   }
 }
@@ -1518,7 +1518,7 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
   }
 }
 
-void Client::OnFenceFired(FenceReference* fence) {
+void Client::OnFenceSignaled(FenceReference* fence) {
   bool new_image_ready = false;
   for (auto& layer : layers_) {
     new_image_ready |= layer.MarkFenceReady(fence);
@@ -1720,8 +1720,7 @@ Client::Client(Controller* controller, ClientProxy* proxy, ClientPriority priori
       proxy_(proxy),
       priority_(priority),
       id_(client_id),
-      fences_(controller->driver_dispatcher()->async_dispatcher(),
-              fit::bind_member<&Client::OnFenceFired>(this)) {
+      fences_(this, controller->driver_dispatcher()->borrow()) {
   ZX_DEBUG_ASSERT(controller);
   ZX_DEBUG_ASSERT(proxy);
   ZX_DEBUG_ASSERT(client_id != kInvalidClientId);

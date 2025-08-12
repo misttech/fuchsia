@@ -116,7 +116,7 @@ class ClientProxy {
 
   fit::function<void()> on_client_disconnected_;
 
-  // Fired when the FIDL connection is unbound.
+  // Signaled when the FIDL connection is unbound.
   //
   // This member is thread-safe.
   sync_completion_t fidl_unbound_completion_;

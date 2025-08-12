@@ -48,7 +48,8 @@ class ClientProxy;
 //
 // This class is not thread-safe. The constructor, destructor and all methods
 // must run on the coordinator driver dispatcher.
-class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinator> {
+class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinator>,
+                     public FenceCollectionListener {
  public:
   // `controller` must outlive both this client and `proxy`.
   Client(Controller* controller, ClientProxy* proxy, ClientPriority priority, ClientId client_id);
@@ -87,7 +88,8 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   // This method is a no-op if the client has not applied any configuration.
   void ReapplyConfig();
 
-  void OnFenceFired(FenceReference* fence);
+  // `FenceCollectionListener`:
+  void OnFenceSignaled(FenceReference* fence) override;
 
   void TearDown(zx_status_t epitaph);
 

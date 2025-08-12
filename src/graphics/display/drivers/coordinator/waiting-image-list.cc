@@ -102,9 +102,9 @@ zx::result<> WaitingImageList::PushImage(fbl::RefPtr<Image> image,
       fdf::error("Tried to wait with a busy event");
       return zx::error_result(ZX_ERR_BAD_STATE);
     }
-    zx_status_t status = wait_fence->StartReadyWait();
-    if (status != ZX_OK) {
-      fdf::error("Failed to start waiting for image. Status: {}", zx::make_result(status));
+    zx::result status = wait_fence->StartReadyWait();
+    if (status.is_error()) {
+      fdf::error("Failed to start waiting for image: {}", status);
       // Mark the image as ready. Displaying garbage is better than hanging or crashing.
       wait_fence = nullptr;
     }
