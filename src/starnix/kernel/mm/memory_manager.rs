@@ -9,7 +9,7 @@ use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
     FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, Mapping, MappingBacking,
     MappingFlags, MappingName, MlockMapping, MlockPinFlavor, MlockShadowProcess, PrivateFutexKey,
-    UserFault, VmsplicePayload, VmsplicePayloadSegment, VMEX_RESOURCE,
+    ProtectionFlags, UserFault, VmsplicePayload, VmsplicePayloadSegment, VMEX_RESOURCE,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -61,8 +61,7 @@ use starnix_uapi::{
     MADV_KEEPONFORK, MADV_MERGEABLE, MADV_NOHUGEPAGE, MADV_NORMAL, MADV_PAGEOUT,
     MADV_POPULATE_READ, MADV_RANDOM, MADV_REMOVE, MADV_SEQUENTIAL, MADV_SOFT_OFFLINE,
     MADV_UNMERGEABLE, MADV_WILLNEED, MADV_WIPEONFORK, MREMAP_DONTUNMAP, MREMAP_FIXED,
-    MREMAP_MAYMOVE, PATH_MAX, PROT_EXEC, PROT_GROWSDOWN, PROT_READ, PROT_WRITE, SI_KERNEL,
-    UIO_MAXIOV,
+    MREMAP_MAYMOVE, PATH_MAX, SI_KERNEL, UIO_MAXIOV,
 };
 use std::collections::HashMap;
 use std::ffi::CStr;
@@ -172,79 +171,6 @@ bitflags! {
       const DONT_SPLIT  = 1 << 7;
       const DONT_EXPAND = 1 << 8;
       const POPULATE    = 1 << 9;
-    }
-}
-
-bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct ProtectionFlags: u32 {
-      const READ = PROT_READ;
-      const WRITE = PROT_WRITE;
-      const EXEC = PROT_EXEC;
-      const GROWSDOWN = PROT_GROWSDOWN;
-    }
-}
-
-impl ProtectionFlags {
-    pub const ACCESS_FLAGS: Self =
-        Self::from_bits_truncate(Self::READ.bits() | Self::WRITE.bits() | Self::EXEC.bits());
-
-    pub fn to_vmar_flags(self) -> zx::VmarFlags {
-        let mut vmar_flags = zx::VmarFlags::empty();
-        if self.contains(ProtectionFlags::READ) {
-            vmar_flags |= zx::VmarFlags::PERM_READ;
-        }
-        if self.contains(ProtectionFlags::WRITE) {
-            vmar_flags |= zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE;
-        }
-        if self.contains(ProtectionFlags::EXEC) {
-            vmar_flags |= zx::VmarFlags::PERM_EXECUTE | zx::VmarFlags::PERM_READ_IF_XOM_UNSUPPORTED;
-        }
-        vmar_flags
-    }
-
-    pub fn from_vmar_flags(vmar_flags: zx::VmarFlags) -> ProtectionFlags {
-        let mut prot_flags = ProtectionFlags::empty();
-        if vmar_flags.contains(zx::VmarFlags::PERM_READ) {
-            prot_flags |= ProtectionFlags::READ;
-        }
-        if vmar_flags.contains(zx::VmarFlags::PERM_WRITE) {
-            prot_flags |= ProtectionFlags::WRITE;
-        }
-        if vmar_flags.contains(zx::VmarFlags::PERM_EXECUTE) {
-            prot_flags |= ProtectionFlags::EXEC;
-        }
-        prot_flags
-    }
-
-    pub fn from_access_bits(prot: u32) -> Option<Self> {
-        if let Some(flags) = ProtectionFlags::from_bits(prot) {
-            if flags.contains(Self::ACCESS_FLAGS.complement()) {
-                None
-            } else {
-                Some(flags)
-            }
-        } else {
-            None
-        }
-    }
-
-    pub fn access_flags(&self) -> Self {
-        *self & Self::ACCESS_FLAGS
-    }
-
-    pub fn to_access(&self) -> Access {
-        let mut access = Access::empty();
-        if self.contains(ProtectionFlags::READ) {
-            access |= Access::READ;
-        }
-        if self.contains(ProtectionFlags::WRITE) {
-            access |= Access::WRITE;
-        }
-        if self.contains(ProtectionFlags::EXEC) {
-            access |= Access::EXEC;
-        }
-        access
     }
 }
 
@@ -4871,7 +4797,7 @@ mod tests {
     use itertools::assert_equal;
     use starnix_sync::{FileOpsCore, LockEqualOrBefore};
     use starnix_uapi::{
-        MAP_ANONYMOUS, MAP_FIXED, MAP_GROWSDOWN, MAP_PRIVATE, PROT_NONE, PR_SET_VMA,
+        MAP_ANONYMOUS, MAP_FIXED, MAP_GROWSDOWN, MAP_PRIVATE, PROT_NONE, PROT_READ, PR_SET_VMA,
         PR_SET_VMA_ANON_NAME,
     };
     use std::ffi::CString;

@@ -167,6 +167,7 @@ rustc_library("starnix_core") {
     "mm/mlock.rs",
     "mm/mod.rs",
     "mm/private_anonymous_memory_manager.rs",
+    "mm/protection_flags.rs",
     "mm/syscalls.rs",
     "mm/userfault.rs",
     "mm/vmex_resource.rs",
