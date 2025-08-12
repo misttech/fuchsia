@@ -74,6 +74,12 @@ type StartOptions = table {
     /// support; at the time of writing, only Fxfs uses this argument.
     /// Must be set to true if `inline_crypto_enabled` is true.
     9: barriers_enabled bool;
+
+    /// Only valid for GPT.
+    /// Configures the GPT to merge the `super` and `userdata` partitions into an overlay partition
+    /// `fxfs` when possible.  The partitions must be physically contiguous.  See
+    /// fuchsia.storage.partitions.OverlayPartition for more details.
+    10: merge_super_and_userdata bool;
 };
 // LINT.ThenChange(//src/storage/lib/fs_management/cpp/options_test.cc)
 

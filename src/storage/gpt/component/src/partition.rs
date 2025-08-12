@@ -57,7 +57,7 @@ impl block_server::async_interface::Interface for PartitionBackend {
     }
 
     async fn get_info(&self) -> Result<Cow<'_, block_server::DeviceInfo>, zx::Status> {
-        Ok(Cow::Owned(self.partition.get_info().await?))
+        Ok(Cow::Owned(self.partition.get_info()))
     }
 
     fn barrier(&self) -> Result<(), zx::Status> {
@@ -111,6 +111,11 @@ impl block_server::async_interface::Interface for PartitionBackend {
 impl PartitionBackend {
     pub fn new(partition: Arc<GptPartition>) -> Arc<Self> {
         Arc::new(Self { partition, vmo_keys_to_vmoids_map: Mutex::new(BTreeMap::new()) })
+    }
+
+    /// Returns the old info.
+    pub fn update_info(&self, info: gpt::PartitionInfo) -> gpt::PartitionInfo {
+        self.partition.update_info(info)
     }
 
     fn get_vmoid(&self, vmo: &zx::Vmo) -> Result<Arc<VmoId>, zx::Status> {

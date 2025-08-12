@@ -185,6 +185,10 @@ impl<I: Interface + ?Sized> SessionManager<I> {
         Self { interface, active_requests: ActiveRequests::default() }
     }
 
+    pub fn interface(&self) -> &I {
+        self.interface.as_ref()
+    }
+
     /// Runs `stream` until completion.
     pub async fn serve_session(
         self: Arc<Self>,

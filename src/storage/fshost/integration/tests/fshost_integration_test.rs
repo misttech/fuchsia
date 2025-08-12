@@ -1686,9 +1686,9 @@ async fn device_config() {
     let mut disk = DiskBuilder::new();
     disk.with_gpt()
         .format_volumes(volumes_spec())
-        .with_extra_gpt_partition("fts")
-        .with_extra_gpt_partition("boot_a")
-        .with_extra_gpt_partition("boot_b");
+        .with_extra_gpt_partition("fts", 1)
+        .with_extra_gpt_partition("boot_a", 1)
+        .with_extra_gpt_partition("boot_b", 1);
     fixture.add_main_disk(Disk::Builder(disk)).await;
 
     fixture.check_fs_type("blob", blob_fs_type()).await;
@@ -1728,7 +1728,7 @@ async fn gpt_all_binds_multiple_disks() {
         .with_extra_disk()
         .with_gpt()
         .with_unformatted_volume_manager()
-        .with_extra_gpt_partition("test_part");
+        .with_extra_gpt_partition("test_part", 1);
     let fixture = builder.build().await;
 
     fixture.check_fs_type("blob", blob_fs_type()).await;
@@ -1748,6 +1748,102 @@ async fn gpt_all_binds_multiple_disks() {
     // storage-host. We double check that happened how we expect. On storage-host, this function
     // goes through the PartitionService, confirming that works as well.
     assert_eq!(gpt_num_partitions(&fixture).await, 2);
+
+    fixture.tear_down().await;
+}
+
+// This test exercises merging super and userdata into a single logical "fxfs" partition.  The GPT
+// will be formatted "super" (which contains Fxfs) and "userdata" (which is unformatted), and it is
+// expected that fshost sees a merged "fxfs" partition.
+// The test only works on fxfs, because fxfs supports mounting on a larger partition than it was
+// formatted with.
+#[fuchsia::test]
+#[cfg(all(feature = "storage-host", feature = "fxblob"))]
+async fn merge_super_and_userdata() {
+    use fidl_fuchsia_storage_partitions::{OverlayPartitionMarker, PartitionInfo};
+    use fs_management::FVM_TYPE_GUID;
+    use fshost_test_fixture::disk_builder::{DEFAULT_TEST_TYPE_GUID, FVM_PART_INSTANCE_GUID};
+
+    // fxfs will ignore blocks that are not aligned to a page, so make sure that we give at least
+    // this many blocks to super, so we can exercise Fxfs claiming the additional space.
+    const USERDATA_NUM_BLOCKS: u64 = 4096 / TEST_DISK_BLOCK_SIZE as u64;
+
+    let mut builder = new_builder();
+    builder.fshost().set_config_value("merge_super_and_userdata", true);
+    let mut fixture = builder.build().await;
+
+    let mut disk = DiskBuilder::new();
+    disk.with_gpt()
+        .format_volumes(volumes_spec())
+        .with_system_partition_label("super")
+        // NOTE: The "userdata" partition will be physically contiguous with the "super" partition.
+        .with_extra_gpt_partition("userdata", USERDATA_NUM_BLOCKS)
+        .with_extra_gpt_partition("other", 1);
+    fixture.add_main_disk(Disk::Builder(disk)).await;
+
+    fixture.check_fs_type("blob", blob_fs_type()).await;
+    fixture.check_fs_type("data", data_fs_type()).await;
+    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+
+    let partitions = fixture.dir(
+        fidl_fuchsia_storage_partitions::PartitionServiceMarker::SERVICE_NAME,
+        fuchsia_fs::PERM_READABLE,
+    );
+    let instances = fuchsia_fs::directory::readdir(&partitions)
+        .await
+        .expect("readdir failed")
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect::<Vec<_>>();
+    assert_eq!(instances.len(), 2);
+    let mut found_merged_partition = false;
+    for instance in instances {
+        let dir = fuchsia_fs::directory::open_directory(&partitions, &instance, fio::PERM_READABLE)
+            .await
+            .expect("open dir failed");
+        let volume = connect_to_named_protocol_at_dir_root::<VolumeMarker>(&dir, "volume").unwrap();
+        let metadata =
+            volume.get_metadata().await.expect("FIDL error").expect("Failed to get metadata");
+        assert_ne!(metadata.name.as_ref().unwrap(), "super");
+        assert_ne!(metadata.name.as_ref().unwrap(), "userdata");
+        if metadata.name.as_ref().unwrap() == "super_and_userdata" {
+            found_merged_partition = true;
+            assert_eq!(metadata.start_block_offset, Some(64));
+            assert_eq!(metadata.num_blocks, Some(221789));
+            assert_eq!(metadata.type_guid, Some(fpartition::Guid { value: FVM_TYPE_GUID }));
+            assert_eq!(
+                metadata.instance_guid,
+                Some(fpartition::Guid { value: FVM_PART_INSTANCE_GUID })
+            );
+            let overlay =
+                connect_to_named_protocol_at_dir_root::<OverlayPartitionMarker>(&dir, "overlay")
+                    .unwrap();
+            let infos =
+                overlay.get_partitions().await.expect("FIDL error").expect("Failed to get parts");
+            assert_eq!(
+                infos,
+                vec![
+                    PartitionInfo {
+                        name: "super".to_string(),
+                        type_guid: fpartition::Guid { value: FVM_TYPE_GUID },
+                        instance_guid: fpartition::Guid { value: FVM_PART_INSTANCE_GUID },
+                        start_block: 64,
+                        num_blocks: 221781,
+                        flags: 0,
+                    },
+                    PartitionInfo {
+                        name: "userdata".to_string(),
+                        type_guid: fpartition::Guid { value: DEFAULT_TEST_TYPE_GUID },
+                        instance_guid: fpartition::Guid { value: FVM_PART_INSTANCE_GUID },
+                        start_block: 221845,
+                        num_blocks: USERDATA_NUM_BLOCKS,
+                        flags: 0,
+                    },
+                ]
+            )
+        }
+    }
+    assert!(found_merged_partition, "No super+userdata found");
 
     fixture.tear_down().await;
 }

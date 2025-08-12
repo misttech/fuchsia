@@ -25,6 +25,7 @@ pub fn default_test_config() -> fshost_config::Config {
         gpt: true,
         gpt_all: false,
         mbr: false,
+        merge_super_and_userdata: false,
         nand: false,
         no_zxcrypt: false,
         storage_host: false,

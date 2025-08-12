@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::config::Config;
 use crate::gpt::GptManager;
 use anyhow::{Context as _, Error};
 use block_client::RemoteBlockClient;
@@ -37,7 +38,7 @@ enum State {
     Stopped,
     /// The GPT is malformed and needs to be reformatted with ResetPartitionTables before it can be
     /// used.  The component will publish an empty partitions directory.
-    NeedsFormatting(fblock::BlockProxy),
+    NeedsFormatting(Config, fblock::BlockProxy),
     Running(Arc<GptManager>),
 }
 
@@ -162,10 +163,10 @@ impl StorageHostService {
         while let Some(request) = stream.try_next().await.context("Reading request")? {
             log::debug!(request:?; "");
             match request {
-                fstartup::StartupRequest::Start { device, options: _, responder } => {
+                fstartup::StartupRequest::Start { device, options, responder } => {
                     responder
                         .send(
-                            self.start(device.into_proxy())
+                            self.start(device.into_proxy(), options.into())
                                 .await
                                 .map_err(|status| status.into_raw()),
                         )
@@ -186,7 +187,12 @@ impl StorageHostService {
         Ok(())
     }
 
-    async fn start(self: &Arc<Self>, device: fblock::BlockProxy) -> Result<(), zx::Status> {
+    async fn start(
+        self: &Arc<Self>,
+        device: fblock::BlockProxy,
+        config: Config,
+    ) -> Result<(), zx::Status> {
+        log::info!(config:?; "GPT starting");
         let mut state = self.state.lock().await;
         if !state.is_stopped() {
             log::warn!("Device already bound");
@@ -201,14 +207,20 @@ impl StorageHostService {
         // fshost to better support this case, which might require changing how queueing works so
         // there's more flexibility to either resolve queueing when the component starts up (what we
         // need here), or when `Start` is successful (what a filesystem like Fxfs needs).
-        *state = match GptManager::new(device.clone(), self.partitions_dir.clone()).await {
+        *state = match GptManager::new_with_config(
+            device.clone(),
+            self.partitions_dir.clone(),
+            config.clone(),
+        )
+        .await
+        {
             Ok(runner) => State::Running(runner),
             Err(err) => {
                 // This is a warning because, as described above, we can't return an error from
                 // here, so there are normal flows that can print this error message that don't
                 // indicate a bug or incorrect behavior.
                 log::warn!(err:?; "Failed to load GPT.  Reformatting may be required.");
-                State::NeedsFormatting(device)
+                State::NeedsFormatting(config, device)
             }
         };
         Ok(())
@@ -265,7 +277,7 @@ impl StorageHostService {
         let state = self.state.lock().await;
         match &*state {
             State::Stopped => return Err(zx::Status::BAD_STATE),
-            State::NeedsFormatting(block) => {
+            State::NeedsFormatting(_, block) => {
                 let info = block
                     .get_info()
                     .await
@@ -341,7 +353,7 @@ impl StorageHostService {
         let mut state = self.state.lock().await;
         match &mut *state {
             State::Stopped => return Err(zx::Status::BAD_STATE),
-            State::NeedsFormatting(block) => {
+            State::NeedsFormatting(config, block) => {
                 log::info!("reset_partition_table: Reformatting GPT.");
                 let client = Arc::new(RemoteBlockClient::new(&*block).await?);
 
@@ -351,12 +363,16 @@ impl StorageHostService {
                     zx::Status::IO
                 })?;
                 *state = State::Running(
-                    GptManager::new(block.clone(), self.partitions_dir.clone()).await.map_err(
-                        |err| {
-                            log::error!(err:?; "reset_partition_table: failed to re-launch GPT");
-                            zx::Status::BAD_STATE
-                        },
-                    )?,
+                    GptManager::new_with_config(
+                        block.clone(),
+                        self.partitions_dir.clone(),
+                        config.clone(),
+                    )
+                    .await
+                    .map_err(|err| {
+                        log::error!(err:?; "reset_partition_table: failed to re-launch GPT");
+                        zx::Status::BAD_STATE
+                    })?,
                 );
             }
             State::Running(gpt) => {
@@ -403,7 +419,7 @@ impl StorageHostService {
 
     async fn gpt_manager(&self) -> Result<Arc<GptManager>, zx::Status> {
         match &*self.state.lock().await {
-            State::Stopped | State::NeedsFormatting(_) => Err(zx::Status::BAD_STATE),
+            State::Stopped | State::NeedsFormatting(_, _) => Err(zx::Status::BAD_STATE),
             State::Running(gpt) => Ok(gpt.clone()),
         }
     }

@@ -447,11 +447,12 @@ impl FSConfig for Fvm {
 #[derive(Clone)]
 pub struct Gpt {
     pub component_type: ComponentType,
+    pub merge_super_and_userdata: bool,
 }
 
 impl Default for Gpt {
     fn default() -> Self {
-        Self { component_type: Default::default() }
+        Self { component_type: Default::default(), merge_super_and_userdata: false }
     }
 }
 
@@ -478,7 +479,10 @@ impl FSConfig for Gpt {
             component_name: "gpt2",
             reuse_component_after_serving: true,
             format_options: FormatOptions::default(),
-            start_options: StartOptions::default(),
+            start_options: StartOptions {
+                merge_super_and_userdata: Some(self.merge_super_and_userdata),
+                ..Default::default()
+            },
             component_type: self.component_type.clone(),
         }
     }

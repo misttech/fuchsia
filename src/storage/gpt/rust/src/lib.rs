@@ -98,7 +98,7 @@ impl PartitionInfo {
         }
     }
 
-    fn is_nil(&self) -> bool {
+    pub fn is_nil(&self) -> bool {
         self.label == ""
             && self.type_guid.0.is_nil()
             && self.instance_guid.0.is_nil()
@@ -383,11 +383,11 @@ impl Gpt {
         // Per section 5.3.2 of the UEFI spec, the backup metadata must be written first.  The spec
         // permits the partition table entries and header to be written in either order.
         self.write_metadata(&backup_header, &partition_table_raw[..]).await.map_err(|err| {
-            log::error!(err:?; "Failed to write metadata");
+            log::warn!(err:?; "Failed to write metadata");
             TransactionCommitError::Io
         })?;
         self.write_metadata(&new_header, &partition_table_raw[..]).await.map_err(|err| {
-            log::error!(err:?; "Failed to write metadata");
+            log::warn!(err:?; "Failed to write metadata");
             TransactionCommitError::Io
         })?;
 

@@ -66,7 +66,7 @@ async fn test_provision_fxfs_with_fxfs_partition() {
     let mut fixture = builder.build().await;
 
     let mut disk = DiskBuilder::new();
-    disk.with_gpt().format_volumes(volumes_spec()).with_extra_gpt_partition("fxfs");
+    disk.with_gpt().format_volumes(volumes_spec()).with_extra_gpt_partition("fxfs", 1);
     fixture.add_main_disk(Disk::Builder(disk)).await;
 
     let partitions =

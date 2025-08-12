@@ -117,6 +117,7 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
       Config{.name = "fuchsia.fshost.Gpt"},
       Config{.name = "fuchsia.fshost.GptAll"},
       Config{.name = "fuchsia.fshost.Mbr"},
+      Config{.name = "fuchsia.fshost.MergeSuperAndUserdata"},
       Config{.name = "fuchsia.fshost.Nand"},
       Config{.name = "fuchsia.fshost.NoZxcrypt"},
       Config{.name = "fuchsia.fshost.RamdiskImage"},

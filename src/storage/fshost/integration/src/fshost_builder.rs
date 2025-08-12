@@ -108,6 +108,7 @@ impl FshostBuilder {
             ("fvm", "fuchsia.fshost.Fvm"),
             ("gpt", "fuchsia.fshost.Gpt"),
             ("mbr", "fuchsia.fshost.Mbr"),
+            ("merge_super_and_userdata", "fuchsia.fshost.MergeSuperAndUserdata"),
             ("data", "fuchsia.fshost.Data"),
             ("use_disk_migration", "fuchsia.fshost.UseDiskMigration"),
             ("disable_block_watcher", "fuchsia.fshost.DisableBlockWatcher"),

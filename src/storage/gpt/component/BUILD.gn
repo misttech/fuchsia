@@ -12,6 +12,7 @@ rustc_library("lib") {
   deps = [
     "//sdk/fidl/fuchsia.fs:fuchsia.fs_rust",
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
+    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
@@ -37,6 +38,7 @@ rustc_library("lib") {
     "//src/storage/lib/block_server:vmo_backed_block_server",
   ]
   sources = [
+    "src/config.rs",
     "src/gpt.rs",
     "src/lib.rs",
     "src/partition.rs",
@@ -49,10 +51,6 @@ rustc_library("lib") {
 
 fuchsia_unittest_component("gpt-component-test") {
   deps = [ ":lib_test" ]
-}
-
-fuchsia_test_package("gpt-component-tests") {
-  test_components = [ ":gpt-component-test" ]
 }
 
 rustc_binary("gpt2") {
@@ -84,6 +82,43 @@ fuchsia_component("component") {
 fuchsia_package("package") {
   package_name = "gpt2"
   deps = [ ":component" ]
+}
+
+rustc_test("gpt_integration_test") {
+  edition = "2021"
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_rust",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
+    "//src/storage/lib/block_client/rust:block-client",
+    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/fs_management/rust:fs_management",
+    "//third_party/rust_crates:test-case",
+  ]
+  sources = [ "src/integration_test.rs" ]
+  source_root = "src/integration_test.rs"
+}
+
+fuchsia_unittest_component("gpt-component-integration-test") {
+  manifest = "meta/gpt_integration_test.cml"
+  deps = [
+    ":gpt_integration_test",
+    "//src/storage/lib/fs_management:fs_management_shard",
+  ]
+}
+
+fuchsia_test_package("gpt-component-tests") {
+  deps = [ ":component" ]
+  test_components = [
+    ":gpt-component-test",
+    ":gpt-component-integration-test",
+  ]
 }
 
 group("tests") {

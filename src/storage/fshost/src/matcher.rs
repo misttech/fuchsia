@@ -12,7 +12,7 @@ use anyhow::{bail, Context, Error};
 use async_trait::async_trait;
 use fidl_fuchsia_hardware_block::Flag as BlockFlag;
 use fs_management::format::constants::{
-    ALL_FVM_LABELS, FVM_PARTITION_LABEL, SUPER_PARTITION_LABEL,
+    ALL_FVM_LABELS, FVM_PARTITION_LABEL, SUPER_AND_USERDATA_PARTITION_LABEL, SUPER_PARTITION_LABEL,
 };
 use fs_management::format::DiskFormat;
 use fs_management::FVM_TYPE_GUID;
@@ -447,6 +447,7 @@ impl Matcher for GptAllMatcher {
                 if self.system_gpt_path.is_none()
                     && partitions.iter().any(|p| {
                         p.label == SUPER_PARTITION_LABEL
+                            || p.label == SUPER_AND_USERDATA_PARTITION_LABEL
                             || (p.label == FVM_PARTITION_LABEL && p.type_guid == FVM_TYPE_GUID)
                             || p.type_guid == LEGACY_FVM_TYPE_GUID
                     })

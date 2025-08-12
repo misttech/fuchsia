@@ -104,6 +104,13 @@
             type: "bool",
         },
         {
+            // If set, the GPT component will merge `super` and `userdata` into an overlay `fxfs`
+            // partition.
+            config: "fuchsia.fshost.MergeSuperAndUserdata",
+            key: "merge_super_and_userdata",
+            type: "bool",
+        },
+        {
             // Enables data partitions.
             config: "fuchsia.fshost.Data",
             key: "data",

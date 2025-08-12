@@ -728,7 +728,10 @@ impl Environment for FshostEnvironment {
     ) -> Result<(Filesystem, Vec<PartitionInfo>), Error> {
         let mut filesystem = fs_management::filesystem::Filesystem::from_boxed_config(
             device.block_connector()?,
-            Box::new(fs_management::Gpt::dynamic_child()),
+            Box::new(fs_management::Gpt {
+                merge_super_and_userdata: self.config.merge_super_and_userdata,
+                ..fs_management::Gpt::dynamic_child()
+            }),
         );
         let serving = filesystem.serve_multi_volume().await.context("Failed to start GPT")?;
         let exposed_dir = serving.exposed_dir();

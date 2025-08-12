@@ -31,14 +31,28 @@ impl PartitionsDirectory {
         self.entries.lock().clear();
     }
 
-    pub fn add_entry<SM: SessionManager + Send + Sync + 'static>(
+    /// Adds an entry for a GPT partition.  Serves the "volume" and "partition" protocols.
+    pub fn add_partition<SM: SessionManager + Send + Sync + 'static>(
         &self,
         name: &str,
         block_server: Weak<BlockServer<SM>>,
         gpt_manager: Weak<GptManager>,
         gpt_index: usize,
     ) {
-        let entry = PartitionsDirectoryEntry::new(block_server, gpt_manager, gpt_index);
+        let entry = PartitionsDirectoryEntry::new_partition(block_server, gpt_manager, gpt_index);
+        self.node.add_entry(name, entry.node.clone()).expect("Added an entry twice");
+        self.entries.lock().insert(name.to_string(), entry);
+    }
+
+    /// Adds an entry for an overlay partition.  Serves the "volume" and "overlay" protocols.
+    pub fn add_overlay<SM: SessionManager + Send + Sync + 'static>(
+        &self,
+        name: &str,
+        block_server: Weak<BlockServer<SM>>,
+        gpt_manager: Weak<GptManager>,
+        gpt_indexes: Vec<usize>,
+    ) {
+        let entry = PartitionsDirectoryEntry::new_overlay(block_server, gpt_manager, gpt_indexes);
         self.node.add_entry(name, entry.node.clone()).expect("Added an entry twice");
         self.entries.lock().insert(name.to_string(), entry);
     }
@@ -56,7 +70,7 @@ impl std::fmt::Debug for PartitionsDirectoryEntry {
 }
 
 impl PartitionsDirectoryEntry {
-    pub fn new<SM: SessionManager + Send + Sync + 'static>(
+    fn new_partition<SM: SessionManager + Send + Sync + 'static>(
         block_server: Weak<BlockServer<SM>>,
         gpt_manager: Weak<GptManager>,
         gpt_index: usize,
@@ -84,6 +98,47 @@ impl PartitionsDirectoryEntry {
                     if let Some(manager) = manager.upgrade() {
                         if let Err(err) =
                             manager.handle_partitions_requests(gpt_index, requests).await
+                        {
+                            log::error!(err:?; "Error handling requests");
+                        }
+                    }
+                }
+            }),
+        )
+        .unwrap();
+
+        Self { node }
+    }
+
+    fn new_overlay<SM: SessionManager + Send + Sync + 'static>(
+        block_server: Weak<BlockServer<SM>>,
+        gpt_manager: Weak<GptManager>,
+        gpt_indexes: Vec<usize>,
+    ) -> Self {
+        let node = vfs::directory::immutable::simple();
+        node.add_entry(
+            "volume",
+            vfs::service::host(move |requests| {
+                let server = block_server.clone();
+                async move {
+                    if let Some(server) = server.upgrade() {
+                        if let Err(err) = server.handle_requests(requests).await {
+                            log::error!(err:?; "Error handling requests");
+                        }
+                    }
+                }
+            }),
+        )
+        .unwrap();
+        node.add_entry(
+            "overlay",
+            vfs::service::host(move |requests| {
+                let manager = gpt_manager.clone();
+                let gpt_indexes = gpt_indexes.clone();
+                async move {
+                    if let Some(manager) = manager.upgrade() {
+                        if let Err(err) =
+                            manager.handle_overlay_partitions_requests(gpt_indexes, requests).await
                         {
                             log::error!(err:?; "Error handling requests");
                         }

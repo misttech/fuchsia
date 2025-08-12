@@ -321,6 +321,10 @@ impl<SM: SessionManager> BlockServer<SM> {
         Self { block_size, session_manager: session_manager.into_session_manager() }
     }
 
+    pub fn session_manager(&self) -> &SM {
+        self.session_manager.as_ref()
+    }
+
     /// Called to process requests for fuchsia.hardware.block.volume/Volume.
     pub async fn handle_requests(
         &self,

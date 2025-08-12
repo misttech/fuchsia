@@ -8,6 +8,11 @@ using fuchsia.hardware.block.partition;
 using fuchsia.hardware.block.volume;
 using zx;
 
+/// Exposes per-partition operations.
+/// Note that this protocol is only exposed for GPT partitions which are not included in an overlay
+/// (and are actual partitions; i.e. not overlays themselves).  It follows that partitions involved
+/// in an overlay cannot be modified, as the `UpdateMetadata` method is the only means for a client
+/// to modify a partition.
 @discoverable
 closed protocol Partition {
     /// Appends an update to `transaction` (see `PartitionManager.CreateTransaction`)
@@ -18,6 +23,18 @@ closed protocol Partition {
         2: type_guid fuchsia.hardware.block.partition.Guid;
         3: flags uint64;
     }) -> () error zx.Status;
+};
+
+// This limit is arbitrary and can change as needed.
+const MAX_PARTITIONS_PER_OVERLAY uint32 = 2;
+
+/// An overlay is created from merging several contiguous GPT partitions into one logical partition.
+@discoverable
+closed protocol OverlayPartition {
+    /// Returns the set of underlying GPT partitions which the overlay contains.
+    strict GetPartitions() -> (struct {
+        partitions vector<PartitionInfo>:MAX_PARTITIONS_PER_OVERLAY;
+    }) error zx.Status;
 };
 
 @discoverable
@@ -95,6 +112,11 @@ closed protocol PartitionsAdmin {
 /// Each partition exposes this service.  The instance names are unique for each partition but
 /// otherwise have no special meaning.  In practice they correspond to the index in the GPT.
 service PartitionService {
+    /// Always present.
     volume client_end:fuchsia.hardware.block.volume.Volume;
+    /// Present for partitions which are actual GPT partitions.
     partition client_end:Partition;
+    /// Present for partitions which are overlays (i.e. a logical merge of several contiguous
+    /// partitions).
+    overlay client_end:OverlayPartition;
 };
