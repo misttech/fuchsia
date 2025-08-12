@@ -294,14 +294,35 @@ class PrebuildMap(object):
         Verifies atom dependencies are of allowed types.
         TODO(https://fxbug.dev/419105478): Add category validation.
 
+        Note: Unlike the old .sdk build manifest-based verification, which
+        relied on a flat manifest containing all direct and indirect
+        dependencies, this method checks each atom and its direct dependencies
+        and relies on the fact that each of those dependencies will also be
+        checked. This approach also means that violations from only one atom
+        will be reported at a time.
         """
+        assert self._fuchsia_source_dir
+        validator = _get_validator(self._fuchsia_source_dir)
+
         for atom_info in self._labels_map.values():
             atom_type = atom_info["atom_type"]
+            if atom_type == "collection":
+                # Collections will fail the atom type and API area checks, and
+                # their relationships are checked separately.
+                continue
+
             all_deps = self.resolve_unique_labels(
                 atom_info.get("atom_deps", [])
             )
+
+            # Always check the current atom. detect_violations() has checks
+            # in addition to those useful for dependencies.
+            all_dep_atoms = [_make_minimal_atom(atom_info)]
+
             for dep_label in all_deps:
                 dep_atom = self._labels_map[self.resolve_label(dep_label)]
+
+                all_dep_atoms.append(_make_minimal_atom(dep_atom))
 
                 # Verify the atom type of the dependency is valid for the
                 # current atom type.
@@ -316,6 +337,22 @@ class PrebuildMap(object):
                         dep_atom["atom_type"],
                     )
                 )
+
+            # Some of the checks are redundant or inefficient for this use case.
+            # For example, the type of deps atoms does not need to be checked
+            # each time. Also, ID collision detection is ineffective since not
+            # all atoms are being passed at once.
+            # TODO(https://fxbug.dev/407083737): Improve this once violation
+            # detection is only being used here.
+            violations = [
+                *validator.detect_violations(
+                    atom_info["category"], all_dep_atoms
+                )
+            ]
+            assert not violations, (
+                f"Violations detected in atom `{atom_info['atom_label']}`:\n"
+                + "\n".join(violations)
+            )
 
     class GetMetaResult(T.NamedTuple):
         """The result of a call to `get_meta()`.
@@ -947,10 +984,13 @@ class IdkGenerator(object):
         )
 
         # Relationships are verified for all atoms, not just those that are
-        # included in the collection.
-        # TODO(https://fxbug.dev/419105478): Rationalize this with the fact that
-        # other atom properties are only validated for atoms in the collection
-        # (in `_verify_collection()`).
+        # included in the collection. This covers dependency checks, including
+        # category compatibility, for all atoms reachable from the target for
+        # which the prebuild data was generated. However, not all atoms in the
+        # build tree are covered.
+        # TODO(https://fxbug.dev/419105478): Determine how to validate all such
+        # atoms and consider restricting this check to atoms in the IDK
+        # (i.e., in `_verify_collection()`).
         self._prebuild_map.verify_dependency_relationships()
 
         # Note: Due to the way the prebuild manifest is currently generated,

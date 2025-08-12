@@ -51,7 +51,7 @@ template("sdk_noop_atom") {
     atom_type = "none"
     meta_dest = ""
     atom_files = []
-    is_stable = false
+    is_stable = true  # Atoms are stable except for types supporting unstable.
     category = invoker.category
   }
 

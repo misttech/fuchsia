@@ -143,7 +143,9 @@ class IdkGeneratorTest(unittest.TestCase):
 
         generator = IdkGenerator(manifest, self.build_dir, self.source_dir)
         with self.assertRaisesRegex(
-            AssertionError, "ERROR: Unhandled labels:\n//sdk/unhandled\n"
+            AssertionError,
+            "Atom type `unhandled_type` for `sdk://pkg/unhandled` is unsupported. Valid types are: \\['bind_library', .*, 'version_history'\\]"
+            "",
         ):
             generator.GenerateMetaFileContents()
 
@@ -546,23 +548,19 @@ class IdkGeneratorTest(unittest.TestCase):
                 "idk_name": "test_cc_source",
                 "prebuild_info": {
                     "file_base": "pkg/test_cc_source",
-                    "deps": [simple_fidl_with_internal_category["atom_label"]],
                     "headers": [],
                     "include_dir": "include",
                     "sources": [],
                 },
+                "atom_deps": [simple_fidl_with_internal_category["atom_label"]],
                 "atom_files": [],
                 "is_stable": True,
             },
         ]
         generator = IdkGenerator(manifest, self.build_dir, self.source_dir)
-        # The error is essentially the same as
-        # `test_verify_dependency_relationships_category_collection_incompatible`
-        # because only the entire collection - and not individual atom
-        # dependencies - is being checked.
         with self.assertRaisesRegex(
             AssertionError,
-            """Violations detected in collection `//test_idk:collection`:
+            """Violations detected in atom `//sdk/lib/test:test_cc_sdk`:
 "sdk://pkg/fuchsia.simple" has publication level "internal", which is incompatible with "partner".""",
         ):
             generator.GenerateMetaFileContents(include_internal_atoms=True)
@@ -651,7 +649,7 @@ class IdkGeneratorTest(unittest.TestCase):
         generator = IdkGenerator(manifest, self.build_dir, self.source_dir)
         with self.assertRaisesRegex(
             AssertionError,
-            """Violations detected in collection `//test_idk:collection`:
+            """Violations detected in atom `//sdk/bind/fuchsia.test:fuchsia.test_bind_sdk`:
 sdk://pkg/test_bind must specify an API area. Valid areas: \\['Bluetooth', 'Component Framework', .*, 'WLAN', 'Unknown'\\]""",
         ):
             generator.GenerateMetaFileContents()
@@ -765,8 +763,8 @@ sdk://pkg/test_bind must specify an API area. Valid areas: \\['Bluetooth', 'Comp
                 "idk_name": "fuchsia.test",
                 "prebuild_info": {
                     "file_base": "fidl/fuchsia.test",
-                    "deps": [self._SIMPLE_FIDL_LIBRARY_INFO["atom_label"]],
                 },
+                "atom_deps": [self._SIMPLE_FIDL_LIBRARY_INFO["atom_label"]],
                 "atom_files": [],
                 "is_stable": True,
             },
@@ -775,7 +773,7 @@ sdk://pkg/test_bind must specify an API area. Valid areas: \\['Bluetooth', 'Comp
         generator = IdkGenerator(manifest, self.build_dir, self.source_dir)
         with self.assertRaisesRegex(
             AssertionError,
-            """Violations detected in collection `//test_idk:collection`:
+            """Violations detected in atom `//sdk/fidl/fuchsia.test:fuchsia.test_fidl_sdk`:
 sdk://pkg/test_fidl must specify an API area. Valid areas: \\['Bluetooth', 'Component Framework', .*, 'WLAN', 'Unknown'\\]
 sdk://pkg/fuchsia.simple must specify an API area. Valid areas: \\['Bluetooth', 'Component Framework', .*, 'WLAN', 'Unknown'\\]""",
         ):
