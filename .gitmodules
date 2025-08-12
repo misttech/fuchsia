@@ -18,11 +18,6 @@
 	url = https://fuchsia.googlesource.com/third_party/abseil-cpp
 	name = third_party/abseil-cpp
 	ignore = all
-[submodule "third_party/alacritty"]
-	path = third_party/alacritty
-	url = https://fuchsia.googlesource.com/third_party/github.com/alacritty/alacritty
-	name = third_party/alacritty
-	ignore = all
 [submodule "third_party/android/device/generic/goldfish-opengl"]
 	path = third_party/android/device/generic/goldfish-opengl
 	url = https://fuchsia.googlesource.com/third_party/android/device/generic/goldfish-opengl
@@ -707,4 +702,9 @@
 	path = third_party/grpc-migrating/src
 	url = https://fuchsia.googlesource.com/third_party/grpc
 	name = third_party/grpc
+	ignore = all
+[submodule "third_party/alacritty-migrating/src"]
+	path = third_party/alacritty-migrating/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/alacritty/alacritty
+	name = third_party/alacritty
 	ignore = all
