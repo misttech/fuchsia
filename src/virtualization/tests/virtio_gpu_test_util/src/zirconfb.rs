@@ -7,23 +7,20 @@ use anyhow::{Context, Error};
 use fidl::endpoints;
 use fidl_fuchsia_hardware_display::{
     CoordinatorListenerMarker, CoordinatorMarker, Info, ProviderSynchronousProxy,
+    ServiceMarker as DisplayServiceMarker,
 };
-
+use fuchsia_component::client::Service;
 use futures::executor::block_on;
 use futures::{future, TryStreamExt};
 use serde_json::json;
 
-fn get_display_coordinator_path() -> anyhow::Result<String> {
-    // TODO(liyl): This assumes that a display-coordinator device is ready before the test binary
-    // starts. Consider switching to `fuchsia_fs::directory::Watcher` if this flakes.
-    const DEVICE_CLASS_PATH: &'static str = "/dev/class/display-coordinator";
-    let entries = std::fs::read_dir(DEVICE_CLASS_PATH).context("read directory")?;
-    let entry = entries
-        .into_iter()
-        .next()
-        .context("no valid display-coordinator")?
-        .context("entry invalid")?;
-    Ok(String::from(entry.path().to_string_lossy()))
+async fn connect_to_display_provider() -> Result<ProviderSynchronousProxy, Error> {
+    Service::open(DisplayServiceMarker)
+        .context("failed to open display Service")?
+        .watch_for_any()
+        .await?
+        .connect_to_provider_sync()
+        .context("failed to connect to FIDL provider")
 }
 
 fn convert_info(info: &Info) -> DisplayInfo {
@@ -36,16 +33,7 @@ fn convert_info(info: &Info) -> DisplayInfo {
 
 async fn read_info() -> Result<DetectResult, Error> {
     // Connect to the display coordinator.
-    let provider = {
-        let (client_end, server_end) = zx::Channel::create();
-        let display_coordinator_path =
-            get_display_coordinator_path().context("get display coordinator path")?;
-        fuchsia_component::client::connect_channel_to_protocol_at_path(
-            server_end,
-            &display_coordinator_path,
-        )?;
-        ProviderSynchronousProxy::new(client_end)
-    };
+    let provider = connect_to_display_provider().await?;
 
     let (_coordinator, listener_requests) = {
         let (dc_proxy, dc_server) = endpoints::create_sync_proxy::<CoordinatorMarker>();
