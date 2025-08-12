@@ -38,64 +38,39 @@ FakeDisplayCoordinatorConnector::~FakeDisplayCoordinatorConnector() {
 void FakeDisplayCoordinatorConnector::OpenCoordinatorWithListenerForPrimary(
     OpenCoordinatorWithListenerForPrimaryRequest& request,
     OpenCoordinatorWithListenerForPrimaryCompleter::Sync& completer) {
-  ConnectOrDeferClient(OpenCoordinatorRequest{
-      .is_virtcon = false,
-      .coordinator_request = std::move(*request.coordinator()),
-      .coordinator_listener_client_end = std::move(*request.coordinator_listener()),
-      .on_coordinator_opened = [async_completer = completer.ToAsync()](
-                                   zx::result<> result) mutable { async_completer.Reply(result); },
-  });
+  ConnectClient(
+      OpenCoordinatorRequest{
+          .is_virtcon = false,
+          .coordinator_request = std::move(*request.coordinator()),
+          .coordinator_listener_client_end = std::move(*request.coordinator_listener()),
+          .on_coordinator_opened =
+              [async_completer = completer.ToAsync()](zx::result<> result) mutable {
+                async_completer.Reply(result);
+              },
+      },
+      state_);
 }
 
 void FakeDisplayCoordinatorConnector::OpenCoordinatorWithListenerForVirtcon(
     OpenCoordinatorWithListenerForVirtconRequest& request,
     OpenCoordinatorWithListenerForVirtconCompleter::Sync& completer) {
-  ConnectOrDeferClient(OpenCoordinatorRequest{
-      .is_virtcon = true,
-      .coordinator_request = std::move(*request.coordinator()),
-      .coordinator_listener_client_end = std::move(*request.coordinator_listener()),
-      .on_coordinator_opened = [async_completer = completer.ToAsync()](
-                                   zx::result<> result) mutable { async_completer.Reply(result); },
-  });
-}
-
-void FakeDisplayCoordinatorConnector::ConnectOrDeferClient(OpenCoordinatorRequest req) {
-  bool claimed =
-      req.is_virtcon ? state_->virtcon_coordinator_claimed : state_->primary_coordinator_claimed;
-  if (claimed) {
-    auto& queue =
-        req.is_virtcon ? state_->queued_virtcon_requests : state_->queued_primary_requests;
-    queue.push(std::move(req));
-  } else {
-    ConnectClient(std::move(req), state_);
-  }
-}
-
-// static
-void FakeDisplayCoordinatorConnector::ReleaseCoordinatorAndConnectToNextQueuedClient(
-    bool use_virtcon_coordinator, std::shared_ptr<State> state) {
-  state->MarkCoordinatorUnclaimed(use_virtcon_coordinator);
-  std::queue<OpenCoordinatorRequest>& queued_requests =
-      state->GetQueuedRequests(use_virtcon_coordinator);
-
-  // If there is a queued connection request of the same type (i.e.
-  // virtcon or not virtcon), then establish a connection.
-  if (!queued_requests.empty()) {
-    OpenCoordinatorRequest request = std::move(queued_requests.front());
-    queued_requests.pop();
-    ConnectClient(std::move(request), state);
-  }
+  ConnectClient(
+      OpenCoordinatorRequest{
+          .is_virtcon = true,
+          .coordinator_request = std::move(*request.coordinator()),
+          .coordinator_listener_client_end = std::move(*request.coordinator_listener()),
+          .on_coordinator_opened =
+              [async_completer = completer.ToAsync()](zx::result<> result) mutable {
+                async_completer.Reply(result);
+              },
+      },
+      state_);
 }
 
 // static
 void FakeDisplayCoordinatorConnector::ConnectClient(OpenCoordinatorRequest request,
                                                     const std::shared_ptr<State>& state) {
   FX_DCHECK(state);
-
-  bool use_virtcon_coordinator = request.is_virtcon;
-  state->MarkCoordinatorClaimed(use_virtcon_coordinator);
-  std::weak_ptr<State> state_weak_ptr = state;
-
   display_coordinator::ClientPriority client_priority =
       request.is_virtcon ? display_coordinator::ClientPriority::kVirtcon
                          : display_coordinator::ClientPriority::kPrimary;
@@ -103,22 +78,7 @@ void FakeDisplayCoordinatorConnector::ConnectClient(OpenCoordinatorRequest reque
       client_priority, std::move(request.coordinator_request),
       std::move(request.coordinator_listener_client_end),
       /*on_client_disconnected=*/
-      [state_weak_ptr, use_virtcon_coordinator]() mutable {
-        std::shared_ptr<State> state = state_weak_ptr.lock();
-        if (!state) {
-          return;
-        }
-        // Redispatch `ReleaseCoordinatorAndConnectToNextQueuedClient()` back
-        // to the state async dispatcher (where it is only allowed to run),
-        // since the `on_client_disconnected` callback may not be expected to
-        // run on that dispatcher.
-        async::PostTask(state->dispatcher, [state_weak_ptr, use_virtcon_coordinator]() mutable {
-          if (std::shared_ptr<State> state = state_weak_ptr.lock(); state) {
-            ReleaseCoordinatorAndConnectToNextQueuedClient(use_virtcon_coordinator,
-                                                           std::move(state));
-          }
-        });
-      });
+      []() {});
   request.on_coordinator_opened(result);
 }
 

@@ -50,11 +50,6 @@ class FakeDisplayCoordinatorConnector : public fidl::Server<fuchsia_hardware_dis
       OpenCoordinatorWithListenerForPrimaryRequest& request,
       OpenCoordinatorWithListenerForPrimaryCompleter::Sync& completer) override;
 
-  // Check coordinator clients' connection status for tests only.
-  int GetNumQueuedPrimaryRequestsTestOnly() const {
-    return static_cast<int>(state_->queued_primary_requests.size());
-  }
-
  private:
   struct OpenCoordinatorRequest {
     bool is_virtcon;
@@ -73,58 +68,11 @@ class FakeDisplayCoordinatorConnector : public fidl::Server<fuchsia_hardware_dis
     async_dispatcher_t* const dispatcher;
 
     const std::unique_ptr<fake_display::FakeDisplayStack> fake_display_stack;
-
-    bool primary_coordinator_claimed = false;
-    bool virtcon_coordinator_claimed = false;
-    std::queue<OpenCoordinatorRequest> queued_primary_requests;
-    std::queue<OpenCoordinatorRequest> queued_virtcon_requests;
-
-    bool IsCoordinatorClaimed(bool use_virtcon_coordinator) const {
-      return use_virtcon_coordinator ? virtcon_coordinator_claimed : primary_coordinator_claimed;
-    }
-    // Claim the coordinator of the specified connection type, which must not
-    // already be claimed.
-    void MarkCoordinatorClaimed(bool use_virtcon_coordinator) {
-      bool& claimed =
-          use_virtcon_coordinator ? virtcon_coordinator_claimed : primary_coordinator_claimed;
-      ZX_ASSERT_MSG(!claimed, "%s coordinator already claimed",
-                    use_virtcon_coordinator ? "virtcon" : "primary");
-      claimed = true;
-    }
-    // Unclaim the coordinator of the specified connection type, which must
-    // already be claimed.
-    void MarkCoordinatorUnclaimed(bool use_virtcon_coordinator) {
-      bool& claimed =
-          use_virtcon_coordinator ? virtcon_coordinator_claimed : primary_coordinator_claimed;
-      ZX_ASSERT_MSG(claimed, "%s coordinator not claimed",
-                    use_virtcon_coordinator ? "virtcon" : "primary");
-      claimed = false;
-    }
-    std::queue<OpenCoordinatorRequest>& GetQueuedRequests(bool use_virtcon_coordinator) {
-      return use_virtcon_coordinator ? queued_virtcon_requests : queued_primary_requests;
-    }
   };
-
-  // Connects `request` to the fake display coordinator if the coordinator is
-  // available, or queue `request` and defer it until the coordinator is
-  // available.
-  //
-  // Must be called from `state_->dispatcher` thread.
-  void ConnectOrDeferClient(OpenCoordinatorRequest request);
-
-  // Release the current coordinator and connects it to the next queued request
-  // of the same request type specified by `use_virtcon_coordinator` if there
-  // exists any queued request.
-  //
-  // The fake coordinator must be valid and claimed by the client about to
-  // release the coordinator.
-  // Must be called from `state->dispatcher` thread.
-  static void ReleaseCoordinatorAndConnectToNextQueuedClient(bool use_virtcon_coordinator,
-                                                             std::shared_ptr<State> state);
 
   // Connects `request` to the fake display coordinator.
   //
-  // The fake coordinator must be valid and not yet claimed by other clients.
+  // The fake coordinator must be valid.
   // Must be called from `state->dispatcher` thread.
   static void ConnectClient(OpenCoordinatorRequest request, const std::shared_ptr<State>& state);
 
