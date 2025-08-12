@@ -453,7 +453,7 @@
 
     <!-- AOSP GKI kernels intended for virtualization -->
     <package name="fuchsia/third_party/aosp_gki/virt"
-             version="bid:13912520"
+             version="bid:13906628"
              path="prebuilt/virtualization/packages/aosp_gki"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"/>
 
