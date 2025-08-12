@@ -4,7 +4,7 @@
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/fit/defer.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/zircon-internal/align.h>
@@ -74,8 +74,12 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
 
     display_manager_ = std::make_unique<scenic_impl::display::DisplayManager>([]() {});
 
+    fidl::ClientEnd<fuchsia_io::Directory> svc_root(
+        realm_root_->component().CloneExposedDir().TakeChannel());
+    component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher(
+        svc_root.borrow());
     zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
-        realm_root_->component().Connect<fuchsia_hardware_display::Provider>();
+        watcher.GetNextInstance(/*stop_at_idle=*/false);
     ASSERT_OK(provider_result);
     fidl::ClientEnd<fuchsia_hardware_display::Provider> provider =
         std::move(provider_result).value();

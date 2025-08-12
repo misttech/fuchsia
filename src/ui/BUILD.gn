@@ -51,7 +51,7 @@ fuchsia_component("ui_with_synthetic_device_support_component") {
   manifest = "meta/ui_with_synthetic_device_support.cml"
   deps = [
     # `display-coordinator-connector` lets components connect to the
-    # `fuchsia.hardware.display.Coordinator` service, provided by the display
+    # `fuchsia.hardware.display.Coordinator` protocol, provided by the display
     # coordinator driver so that components can present contents to the display
     # hardware.
     "//src/graphics/display/bin/coordinator-connector:shard-includes",

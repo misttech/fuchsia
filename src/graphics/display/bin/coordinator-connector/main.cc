@@ -8,8 +8,6 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-provider/provider.h>
 
-#include <memory>
-
 #include "src/graphics/display/bin/coordinator-connector/service-factory.h"
 
 int main(int argc, const char** argv) {
@@ -25,13 +23,18 @@ int main(int argc, const char** argv) {
     return -1;
   }
 
-  FX_LOGS(INFO) << "Starting standalone fuchsia.hardware.display.Provider service.";
+  FX_LOGS(INFO) << "Starting standalone fuchsia.hardware.display.Service service.";
 
-  zx::result<> add_protocol_result = outgoing.AddProtocol<fuchsia_hardware_display::Provider>(
-      std::make_unique<display::ServiceCoordinatorFactory>());
-  if (add_protocol_result.is_error()) {
-    FX_LOGS(ERROR) << "Cannot start display Provider server and serve protocol: "
-                   << add_protocol_result.status_string();
+  display::ServiceCoordinatorFactory service_coordinator_factory;
+
+  fuchsia_hardware_display::Service::InstanceHandler display_service_handler({
+      .provider = service_coordinator_factory.bind_handler(loop.dispatcher()),
+  });
+  zx::result<> publish_service_result =
+      outgoing.AddService<fuchsia_hardware_display::Service>(std::move(display_service_handler));
+  if (publish_service_result.is_error()) {
+    FX_LOGS(ERROR) << "Cannot publish display Service to default service directory: "
+                   << publish_service_result.status_string();
     return -1;
   }
 

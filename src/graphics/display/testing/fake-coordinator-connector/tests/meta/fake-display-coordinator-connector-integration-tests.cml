@@ -19,10 +19,6 @@
     ],
     use: [
         {
-            protocol: [ "fuchsia.hardware.display.Provider" ],
-            from: "#display-coordinator-connector",
-        },
-        {
             service: "fuchsia.hardware.display.Service",
             from: "#display-coordinator-connector",
         },

@@ -11,14 +11,14 @@
         binary: "bin/display_coordinator_connector",
     },
     capabilities: [
-        { protocol: "fuchsia.hardware.display.Provider" },
+        { service: "fuchsia.hardware.display.Service" },
     ],
     use: [
         { service: "fuchsia.hardware.display.Service" },
     ],
     expose: [
         {
-            protocol: "fuchsia.hardware.display.Provider",
+            service: "fuchsia.hardware.display.Service",
             from: "self",
         },
     ],

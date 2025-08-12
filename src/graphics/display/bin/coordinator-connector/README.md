@@ -3,7 +3,7 @@
 The `BUILD.gn` in this directory generates a component package named
 `display-coordinator-connector`
 
-It publishes the `fuchsia.hardware.display.Provider` service used for production
+It publishes the `fuchsia.hardware.display.Service` service used for production
 environments which contents are displayed on the display hardware.
 
 ## Introduction
@@ -35,13 +35,13 @@ They should also include the corresponding shard component manifest file
 `display_coordinator_connector.shard.cml` to route required capabilities to the
 `display-coordinator-connector` child.
 
-They should also explicitly offer the `fuchsia.hardware.display.Provider`
+They should also explicitly offer the `fuchsia.hardware.display.Service`
 service from `display-coordinator-connector` to clients (for example, Scenic).
 
 For example, here is an excerpt of the `ui` component manifest defined in
 `//src/ui/meta/ui.cml` declaring a real display coordinator connector from the
 global package URL, offering parent capabilities to the display coordinator
-connector, and providing the `fuchsia.hardware.display.Provider` service to
+connector, and providing the `fuchsia.hardware.display.Service` service to
 Scenic:
 
 ```json5
@@ -57,7 +57,7 @@ Scenic:
   ],
   offer: [
     {
-      protocol: ["fuchsia.hardware.display.Provider"],
+      service: "fuchsia.hardware.display.Service",
       from: "#display-coordinator-connector",
       to: ["#scenic"],
     },

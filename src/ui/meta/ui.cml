@@ -35,7 +35,7 @@
             availability: "same_as_target",
         },
         {
-            protocol: [ "fuchsia.hardware.display.Provider" ],
+            service: "fuchsia.hardware.display.Service",
             from: "#display-coordinator-connector",
             to: [ "#scenic" ],
         },

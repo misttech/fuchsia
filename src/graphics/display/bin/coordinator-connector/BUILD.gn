@@ -5,7 +5,7 @@
 import("//build/components.gni")
 import("//tools/cmc/build/expect_includes.gni")
 
-# Provides a C++ implementation of fuchsia.hardware.display.Provider, which returns a connection to
+# Provides a C++ implementation of fuchsia.hardware.display.Service, which returns a connection to
 # the default display controller (via a proxied connection to the driver-provided version).  This
 # makes it easy for a component to use and implement this service.
 #

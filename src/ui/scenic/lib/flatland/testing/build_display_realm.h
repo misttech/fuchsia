@@ -10,14 +10,14 @@
 
 namespace flatland::testing {
 
-// Returns a realm that serves the `fuchsia.hardware.display.Provider` protocol
+// Returns a realm that serves the `fuchsia.hardware.display.Service` service
 // provided by the component to the test.
 //
 // `dispatcher` must be non-null outlive the lifetime of the constructed
 // `RealmRoot`.
 component_testing::RealmRoot BuildDisplayRealm(async_dispatcher_t* dispatcher);
 
-// Returns a realm that serves the `fuchsia.hardware.display.Provider` protocol
+// Returns a realm that serves the `fuchsia.hardware.display.Service` service
 // provided by the fake display stack to the test.
 //
 // `dispatcher` must be non-null outlive the lifetime of the constructed

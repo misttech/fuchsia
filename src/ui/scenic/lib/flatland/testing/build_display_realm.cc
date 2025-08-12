@@ -28,7 +28,7 @@ component_testing::RealmRoot BuildDisplayRealm(async_dispatcher_t* dispatcher) {
 
   // Route capabilities from the child component to the test.
   builder.AddRoute(component_testing::Route{
-      .capabilities = {component_testing::Protocol{.name = "fuchsia.hardware.display.Provider"}},
+      .capabilities = {component_testing::Service{.name = "fuchsia.hardware.display.Service"}},
       .source = component_testing::ChildRef{.name = kCoordinatorConnectorChildName},
       .targets = {component_testing::ParentRef()},
   });
@@ -52,7 +52,7 @@ component_testing::RealmRoot BuildFakeDisplayRealm(async_dispatcher_t* dispatche
 
   // Route capabilities from the child component to the test.
   builder.AddRoute(component_testing::Route{
-      .capabilities = {component_testing::Protocol{.name = "fuchsia.hardware.display.Provider"}},
+      .capabilities = {component_testing::Service{.name = "fuchsia.hardware.display.Service"}},
       .source = component_testing::ChildRef{.name = kCoordinatorConnectorChildName},
       .targets = {component_testing::ParentRef()},
   });

@@ -4,7 +4,7 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
-#include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/scheduler/role.h>
 #include <lib/sys/cpp/component_context.h>
@@ -34,8 +34,9 @@ int main(int argc, const char** argv) {
   // Set up an inspect::Node to inject into the App.
   inspect::ComponentInspector inspector(loop.dispatcher(), {});
 
+  component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
   zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
-      component::Connect<fuchsia_hardware_display::Provider>();
+      watcher.GetNextInstance(/*stop_at_idle=*/false);
   if (provider_result.is_error()) {
     FX_CHECK(false) << "Failed to connect to display provider: " << provider_result.status_string();
   }

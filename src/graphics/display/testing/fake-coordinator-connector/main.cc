@@ -25,7 +25,7 @@ int main(int argc, const char** argv) {
     return -1;
   }
 
-  FX_LOGS(INFO) << "Starting fake fuchsia.hardware.display.Provider service.";
+  FX_LOGS(INFO) << "Starting fake fuchsia.hardware.display.Service service.";
 
   static constexpr fake_display::FakeDisplayDeviceConfig kFakeDisplayDeviceConfig = {
       // TODO(https://fxbug.dev/42079786): Populate from structured configuration.
@@ -43,15 +43,6 @@ int main(int argc, const char** argv) {
   };
 
   display::FakeDisplayCoordinatorConnector connector(loop.dispatcher(), kFakeDisplayDeviceConfig);
-
-  zx::result<> publish_protocol_result =
-      outgoing.AddUnmanagedProtocol<fuchsia_hardware_display::Provider>(
-          connector.bind_handler(loop.dispatcher()));
-  if (publish_protocol_result.is_error()) {
-    FX_LOGS(ERROR) << "Cannot publish display Provider protocol to default service directory: "
-                   << publish_protocol_result.status_string();
-    return -1;
-  }
 
   fuchsia_hardware_display::Service::InstanceHandler display_service_handler({
       .provider = connector.bind_handler(loop.dispatcher()),

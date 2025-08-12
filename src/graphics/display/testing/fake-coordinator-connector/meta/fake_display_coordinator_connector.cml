@@ -12,7 +12,6 @@
         binary: "bin/fake_display_coordinator_connector",
     },
     capabilities: [
-        { protocol: "fuchsia.hardware.display.Provider" },
         { service: "fuchsia.hardware.display.Service" },
     ],
     use: [
@@ -22,10 +21,6 @@
         },
     ],
     expose: [
-        {
-            protocol: "fuchsia.hardware.display.Provider",
-            from: "self",
-        },
         {
             service: "fuchsia.hardware.display.Service",
             from: "self",

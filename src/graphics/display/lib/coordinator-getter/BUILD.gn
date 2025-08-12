@@ -5,7 +5,7 @@ import("//build/components.gni")
 import("//build/test.gni")
 
 # Provides a C++ utility function GetCoordinator() which connects to and
-# interacts with the fuchsia.hardware.display.Provider service, found within
+# interacts with the fuchsia.hardware.display.Service service, found within
 # the component's environment.
 source_set("client") {
   sources = [

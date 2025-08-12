@@ -131,7 +131,7 @@ impl FlatlandEnvironment {
         builder
             .add_route(
                 Route::new()
-                    .capability(Capability::protocol_by_name("fuchsia.hardware.display.Provider"))
+                    .capability(Capability::service_by_name("fuchsia.hardware.display.Service"))
                     .from(&display_coordinator_connector)
                     .to(&scenic),
             )
