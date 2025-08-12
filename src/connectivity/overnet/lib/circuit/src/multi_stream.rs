@@ -504,26 +504,25 @@ pub async fn multi_stream_node_connection_to_async(
     };
 
     let write_fut = async move {
+        let mut tx = std::pin::pin!(tx);
         loop {
-            let mut buf = [0u8; 4096];
-            let len = reader
-                .read(1, |read_buf| {
-                    let read_buf = &read_buf[..std::cmp::min(buf.len(), read_buf.len())];
-                    buf[..read_buf.len()].copy_from_slice(read_buf);
-                    Ok((read_buf.len(), read_buf.len()))
+            let res = futures::future::poll_fn(|ctx| {
+                reader.poll_read(ctx, &mut 1, |ctx, read_buf| {
+                    let res = match std::task::ready!(tx.as_mut().poll_write(ctx, read_buf)) {
+                        Ok(x) => Ok(((), x)),
+                        Err(e) => Err(Error::IO(e)),
+                    };
+                    std::task::Poll::Ready(res)
                 })
-                .await?;
-            let write_res = async {
-                tx.write_all(&buf[..len]).await?;
-                tx.flush().await?;
-                Result::<_, Error>::Ok(())
-            }
+            })
             .await;
 
-            if let Err(e) = write_res {
+            if let Err(Error::IO(e)) = &res {
                 reader.close(format!("{remote_name} connection failed (write): {e:?}"));
-                return Err(e.into());
+                return res;
             }
+
+            res?;
         }
     };
 
