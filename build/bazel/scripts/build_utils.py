@@ -12,6 +12,7 @@ should stay in workspace_utils.bzl instead.
 """
 
 import dataclasses
+import errno
 import hashlib
 import json
 import os
@@ -164,6 +165,43 @@ def find_bazel_workspace_path(
     bazel_topdir, _ = get_bazel_relative_topdir(fuchsia_dir)
     result = Path(build_dir) / bazel_topdir / "workspace"
     return result if result.exists() else None
+
+
+def force_symlink(dst_path: FilePath, target_path: FilePath) -> None:
+    """Create a symlink at |dst_path| that points to |target_path|.
+
+    The generated symlink target will always be a relative path.
+
+    Args:
+        dst_path: path to symlink file to write or update.
+        target_path: path to actual symlink target.
+    """
+    dst_dir = os.path.dirname(dst_path)
+    target_path = os.path.relpath(target_path, dst_dir)
+    return force_raw_symlink(dst_path, target_path)
+
+
+def force_raw_symlink(dst_path: FilePath, target_path: FilePath) -> None:
+    """Create a symlink at |dst_path| that points to |target_path|.
+
+    The generated symlink target will always be the unmodified |target_path|
+    value, which can be absolute or relative, and/or point to a
+    non-existing file.
+
+    Args:
+        dst_path: path to symlink file to write or update.
+        target_path: raw symlink target path.
+    """
+    dst_dir = os.path.dirname(dst_path)
+    os.makedirs(dst_dir, exist_ok=True)
+    try:
+        os.symlink(target_path, dst_path)
+    except OSError as e:
+        if e.errno == errno.EEXIST:
+            os.remove(dst_path)
+            os.symlink(target_path, dst_path)
+        else:
+            raise
 
 
 _HEXADECIMAL_SET = set("0123456789ABCDEFabcdef")

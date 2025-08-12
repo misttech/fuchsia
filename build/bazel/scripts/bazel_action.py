@@ -471,20 +471,6 @@ def write_file_if_changed(dst_path: str, content: str) -> None:
         f.write(content)
 
 
-def force_symlink(target_path: str, link_path: str) -> None:
-    link_dir = os.path.dirname(link_path)
-    os.makedirs(link_dir, exist_ok=True)
-    target_path = os.path.relpath(target_path, link_dir)
-    try:
-        os.symlink(target_path, link_path)
-    except OSError as e:
-        if e.errno == errno.EEXIST:
-            os.remove(link_path)
-            os.symlink(target_path, link_path)
-        else:
-            raise
-
-
 def depfile_quote(path: str) -> str:
     """Quote a path properly for depfiles, if necessary.
 
@@ -1172,14 +1158,14 @@ def main() -> int:
         # Update fuchsia_build_generated/gn_targets_dir to point
         # to a new location that matches the content of @gn_target
         # for the current bazel_action() target.
-        # LINT.IfChange
-        force_symlink(
-            os.path.realpath(args.gn_targets_repository_dir),
+        # LINT.IfChange(gn_targets_dir)
+        build_utils.force_symlink(
             os.path.join(
                 args.workspace_dir, "fuchsia_build_generated/gn_targets_dir"
             ),
+            os.path.realpath(args.gn_targets_repository_dir),
         )
-        # LINT.ThenChange(//build/bazel/toplevel.WORKSPACE.bzlmod)
+        # LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel:gn_targets_dir)
 
     bazel_launcher = build_utils.BazelLauncher(
         args.bazel_launcher,
@@ -1470,7 +1456,7 @@ def main() -> int:
         copy_file_if_changed(src_path, dst_path, bazel_output_base_dir)
 
     for target_path, link_path in final_symlinks:
-        force_symlink(target_path, link_path)
+        build_utils.force_symlink(link_path, target_path)
 
     dir_copies = []
     missing_directories = []

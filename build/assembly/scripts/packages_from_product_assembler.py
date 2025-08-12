@@ -50,7 +50,9 @@ def _rebase_bazel_path(path: str, rebase_prefix: str) -> str:
     if os.path.islink(rebased_path):
         path = os.readlink(rebased_path)
 
+    # LINT.IfChange(gn_targets_dir)
     _, external_gn_targets, suffix = path.partition("external/gn_targets+/")
+    # LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel:gn_targets_dir)
     if external_gn_targets:
         _, files, ninja_path = suffix.partition("/_files/")
         assert files, f"Unexpected @gn_targets path: {path}"

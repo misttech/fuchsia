@@ -196,6 +196,29 @@ class TestGetBazelRelativeTopDir(unittest.TestCase):
             self.assertListEqual(list(input_files), [main_config])
 
 
+class TestForceSymlink(unittest.TestCase):
+    def test_force_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir).resolve()
+
+            # Create a new symlink, then ensure its embedded target is relative.
+            # The target doesn't need to exist.
+            target_path = tmp_path / "target" / "file"
+            link_path = tmp_path / "links" / "dir" / "symlink"
+
+            build_utils.force_symlink(link_path, target_path)
+
+            self.assertTrue(link_path.is_symlink())
+            self.assertEqual(str(link_path.readlink()), "../../target/file")
+
+            # Update the target to a new path, verify the symlink was updated.
+            target_path = tmp_path / "target" / "new_file"
+
+            build_utils.force_symlink(link_path, target_path)
+            self.assertTrue(link_path.is_symlink())
+            self.assertEqual(str(link_path.readlink()), "../../target/new_file")
+
+
 class IsHexadecimalStringTest(unittest.TestCase):
     def test_is_hexadecimal_string(self) -> None:
         TEST_CASES = [

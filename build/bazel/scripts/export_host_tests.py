@@ -20,7 +20,6 @@ _SCRIPT_DIR_PATH = Path(_SCRIPT_DIR)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_utils
 import runfiles_utils
-import workspace_utils
 
 # The main workspace name as it appears in the runfiles directory.
 # For the Fuchsia build, which is still using Bazel 7.x and WORKSPACE
@@ -433,7 +432,7 @@ class HostTestInfo(object):
             else:
                 if not os.path.isabs(target_path):
                     target_path = f"{execroot}/{target_path}"
-                workspace_utils.force_symlink(dest_path, target_path)
+                build_utils.force_symlink(dest_path, target_path)
 
             runtime_deps.append(runtime_path)
             output_manifest_entries[source_path] = runtime_path
@@ -450,7 +449,7 @@ class HostTestInfo(object):
         output_manifest_link_path = (
             build_dir / f"{self._entry_path}.runfiles_manifest"
         )
-        workspace_utils.force_symlink(
+        build_utils.force_symlink(
             output_manifest_link_path, output_manifest_path
         )
         runtime_deps.append(
@@ -460,7 +459,7 @@ class HostTestInfo(object):
         output_repo_mapping_link_path = (
             build_dir / f"{self._entry_path}.repo_mapping"
         )
-        workspace_utils.force_symlink(
+        build_utils.force_symlink(
             output_repo_mapping_link_path, output_runfiles_dir / "_repo_mapping"
         )
         runtime_deps.append(

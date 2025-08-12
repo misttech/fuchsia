@@ -122,7 +122,6 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
     sys.path.insert(0, str(Path(__file__).parent))
     import build_utils
     import gn_targets_utils
-    import workspace_utils
 
     verbosity = args.verbose - args.quiet
 
@@ -221,7 +220,7 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
 
     gn_targets_dest = build_dir / gn_action.gn_targets_dir
 
-    workspace_utils.force_symlink(
+    build_utils.force_symlink(
         Path(args.workspace) / workspace_utils.GN_TARGETS_DIR_SYMLINK,
         gn_targets_dest,
     )

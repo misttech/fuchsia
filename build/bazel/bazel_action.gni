@@ -620,6 +620,7 @@ template("bazel_action") {
       _gn_targets_repository_manifest,
 
       # Imported by create_gn_targets_dir.py
+      "//build/bazel/scripts/build_utils.py",
       "//build/bazel/scripts/workspace_utils.py",
     ]
 

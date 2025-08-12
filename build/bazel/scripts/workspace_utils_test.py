@@ -46,29 +46,6 @@ class TestWorkspaceShouldExcludeFile(unittest.TestCase):
             )
 
 
-class TestForceSymlink(unittest.TestCase):
-    def test_force_symlink(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir).resolve()
-
-            # Create a new symlink, then ensure its embedded target is relative.
-            # The target doesn't need to exist.
-            target_path = tmp_path / "target" / "file"
-            link_path = tmp_path / "links" / "dir" / "symlink"
-
-            workspace_utils.force_symlink(link_path, target_path)
-
-            self.assertTrue(link_path.is_symlink())
-            self.assertEqual(str(link_path.readlink()), "../../target/file")
-
-            # Update the target to a new path, verify the symlink was updated.
-            target_path = tmp_path / "target" / "new_file"
-
-            workspace_utils.force_symlink(link_path, target_path)
-            self.assertTrue(link_path.is_symlink())
-            self.assertEqual(str(link_path.readlink()), "../../target/new_file")
-
-
 class TestGeneratedWorkspaceFiles(unittest.TestCase):
     def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()

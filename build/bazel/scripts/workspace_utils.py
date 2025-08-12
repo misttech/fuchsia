@@ -4,7 +4,6 @@
 
 """Misc utility functions related to the Bazel workspace."""
 
-import errno
 import json
 import os
 import stat
@@ -46,33 +45,6 @@ def workspace_should_exclude_file(path: str) -> bool:
     if path in ("bazel-bin", "bazel-out", "bazel-repos", "bazel-workspace"):
         return True
     return False
-
-
-def force_symlink(dst_path: str | Path, target_path: str | Path) -> None:
-    """Create a symlink at |dst_path| that points to |target_path|.
-
-    The generated symlink target will always be a relative path.
-
-    Args:
-        dst_path: path to symlink file to write or update.
-        target_path: path to actual symlink target.
-    """
-    dst_dir = os.path.dirname(dst_path)
-    target_path = os.path.relpath(target_path, dst_dir)
-    return force_raw_symlink(dst_path, target_path)
-
-
-def force_raw_symlink(dst_path: str | Path, target_path: str | Path) -> None:
-    dst_dir = os.path.dirname(dst_path)
-    os.makedirs(dst_dir, exist_ok=True)
-    try:
-        os.symlink(target_path, dst_path)
-    except OSError as e:
-        if e.errno == errno.EEXIST:
-            os.remove(dst_path)
-            os.symlink(target_path, dst_path)
-        else:
-            raise
 
 
 def make_removable(path: str) -> None:
@@ -289,11 +261,11 @@ class GeneratedWorkspaceFiles(object):
             if type == "symlink":
                 target_path = entry["target"]
                 link_path = os.path.join(out_dir, path)
-                force_symlink(link_path, target_path)
+                build_utils.force_symlink(link_path, target_path)
             elif type == "raw_symlink":
                 target_path = entry["target"]
                 link_path = os.path.join(out_dir, path)
-                force_raw_symlink(link_path, target_path)
+                build_utils.force_raw_symlink(link_path, target_path)
             elif type == "file":
                 file_path = os.path.join(out_dir, path)
                 os.makedirs(os.path.dirname(file_path), exist_ok=True)
