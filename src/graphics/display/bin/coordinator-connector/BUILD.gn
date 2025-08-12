@@ -12,11 +12,7 @@ import("//tools/cmc/build/expect_includes.gni")
 # NOTE: the component must contain the following statement in its manifest:
 # ```
 # use: [
-#     {
-#         directory: "dev-display-coordinator",
-#         rights: [ "r*" ],
-#         path: "/dev/class/display-coordinator",
-#     },
+#     { service: "fuchsia.hardware.display.Service" },
 # ]
 # ```
 source_set("devfs_factory") {

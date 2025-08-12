@@ -83,9 +83,7 @@ def main(argv):
                     "rights": ["w*"],
                 },
                 {
-                    "directory": "dev-display-coordinator",
-                    "path": "/dev/class/display-coordinator",
-                    "rights": ["rw*"],
+                    "service": "fuchsia.hardware.display.Service",
                 },
                 {
                     "directory": "dev-input-report",

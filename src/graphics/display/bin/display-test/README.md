@@ -57,9 +57,6 @@ fx shell "display-test --bundle 1"  # should show an animated checkerboard
 ```
 display-test [OPTIONS]
 
-    --controller path        : Open the display coordinator device at <path>
-                               If not specified, open the first available device at
-                               /dev/class/display-coordinator
     --dump                   : print properties of attached display
     --mode-set D N           : Set Display D to mode N (use dump option for choices)
     --format-set D N         : Set Display D to format N (use dump option for choices)

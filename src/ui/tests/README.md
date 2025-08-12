@@ -174,7 +174,7 @@ All components in the test should not be exposed to the actual root environment.
 For FIDL protocols, this is not so much an issue. However, there are other types
 of capabilities that have leaks. A good example is access to device
 capabilities, such as `/dev/class/input-report` and
-`/dev/class/display-coordinator`. Components that declare access to device
+`fuchsia.hardware.display.Service`. Components that declare access to device
 capabilities will actually access these capabilities, on the real device, in a
 test environment.
 

@@ -10,11 +10,11 @@ environments which contents are displayed on the display hardware.
 
 The goal of `display-coordinator-connector` is to let components connect to the
 `fuchsia.hardware.display.Coordinator` service, provided by the display
-coordinator driver (available in `/dev/class/display-coordinator`) so that
+coordinator driver (available in `fuchsia.hardware.display.Service`) so that
 components can present contents to the display hardware.
 
 It serves as a bridge to allow components to access the Coordinator service
-without having direct access to the `/dev/class/display-coordinator` directory.
+without having direct access to the `fuchsia.hardware.display.Service`.
 
 `display-coordinator-connector` only supports a single client connection at any
 given time. Consequently, two instances of Scenic (or any other display clients)

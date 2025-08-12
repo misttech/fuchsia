@@ -64,15 +64,6 @@ int main(int argc, const char** argv) {
     return -1;
   }
 
-  zx::result<> publish_devfs_result =
-      outgoing.AddUnmanagedProtocolAt<fuchsia_hardware_display::Provider>(
-          "dev-display-coordinator", connector.bind_handler(loop.dispatcher()));
-  if (publish_devfs_result.is_error()) {
-    FX_LOGS(ERROR) << "Cannot publish display Provider service to devfs: "
-                   << publish_devfs_result.status_string();
-    return -1;
-  }
-
   loop.Run();
 
   FX_LOGS(INFO) << "Quit fake Display Coordinator Connector main loop.";
