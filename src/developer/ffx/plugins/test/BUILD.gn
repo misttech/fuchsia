@@ -23,12 +23,12 @@ ffx_plugin("ffx_test") {
     "//src/developer/ffx/lib/testing:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/component/common:ffx_component",
+    "//src/lib/diagnostics/data/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/testing/test_list",
     "//src/sys/run_test_suite:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
-    "//third_party/rust_crates:either",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:log",
@@ -36,10 +36,10 @@ ffx_plugin("ffx_test") {
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:signal-hook",
+    "//tools/test_pilot/test_pilot_lib",
   ]
 
   test_deps = [
-    "//src/lib/diagnostics/data/rust",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:tempfile",
@@ -60,6 +60,7 @@ ffx_plugin("ffx_test") {
   sources = [
     "src/connector.rs",
     "src/lib.rs",
+    "src/pilot.rs",
     "src/suite_definition.rs",
   ]
 

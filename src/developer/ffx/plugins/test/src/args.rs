@@ -28,7 +28,7 @@ pub enum TestSubCommand {
     EarlyBootProfile(EarlyBootProfileCommand),
 }
 
-#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone, Default)]
 #[argh(
     subcommand,
     name = "run",
@@ -67,6 +67,11 @@ When multiple test suites are run, either through the --count option or through
     suites."
 )]
 pub struct RunCommand {
+    /// read test parameters from the specified file instead of from the command line.
+    /// This is intended to be used by test_pilot.
+    #[argh(option)]
+    pub pilot: Option<String>,
+
     /// test suite url, and any arguments passed to tests, following `--`.
     /// When --test-file is specified test_args should not be specified.
     #[argh(positional)]

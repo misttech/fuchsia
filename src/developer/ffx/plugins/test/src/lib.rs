@@ -3,19 +3,22 @@
 // found in the LICENSE file.
 
 mod connector;
+mod pilot;
 mod suite_definition;
 
 use crate::connector::RunConnector;
-use crate::suite_definition::TestParamsOptions;
+use crate::pilot::convert_output_for_test_pilot;
+use crate::suite_definition::{
+    combined_params_from_pilot_reader, test_params_from_reader, CombinedParams,
+};
 use anyhow::{format_err, Context, Result};
 use async_trait::async_trait;
-use either::Either;
-use errors::{ffx_bail, ffx_bail_with_code, ffx_error, ffx_error_with_code, FfxError};
+use errors::{ffx_bail, ffx_bail_with_code, ffx_error, ffx_error_with_code};
 use ffx_test_args::{
     EarlyBootProfileCommand, ListCommand, RunCommand, TestCommand, TestSubCommand,
 };
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
-use fho::{return_bug, return_user_error, FfxContext, FfxMain, FfxTool};
+use fho::{return_user_error, FfxContext, FfxMain, FfxTool};
 use fidl::endpoints::create_proxy;
 use futures::FutureExt;
 use itertools::Itertools;
@@ -27,6 +30,7 @@ use signal_hook::iterator::Signals;
 use std::fmt::Debug;
 use std::io::{stdout, Write};
 use std::ops::Deref as _;
+use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
 use target_holders::RemoteControlProxyHolder;
 use {
@@ -219,11 +223,20 @@ async fn run_test<W: 'static + Write + Send + Sync>(
     cmd: RunCommand,
 ) -> fho::Result<()> {
     let experiments = Experiments::from_env().await;
-
-    let min_log_severity = cmd.min_severity_logs.clone();
     let hermetic_test = cmd.realm.is_none();
 
-    let output_directory = match (cmd.disable_output_directory, &cmd.output_directory) {
+    let no_cases_equals_success = cmd.no_cases_equals_success;
+    let disable_output_directory = cmd.disable_output_directory;
+    let filter_ansi = cmd.filter_ansi;
+    let called_by_test_pilot = cmd.pilot.is_some();
+
+    let params = if called_by_test_pilot {
+        params_from_pilot(&remote_control, cmd).await?
+    } else {
+        params_from_args(&remote_control, cmd, experiments.json_input.enabled).await?
+    };
+
+    let output_directory = match (disable_output_directory, &params.output_directory) {
         (true, maybe_dir) => {
             eprintln!(
                 "WARN: --disable-output-directory is now a no-op and will soon be \
@@ -235,33 +248,10 @@ async fn run_test<W: 'static + Write + Send + Sync>(
         (false, None) => None,
     };
     let output_directory_options = output_directory
+        .clone()
         .map(|root_path| run_test_suite_lib::DirectoryReporterOptions { root_path });
     let reporter =
-        run_test_suite_lib::create_reporter(cmd.filter_ansi, output_directory_options, writer)?;
-
-    let timeout_key = "test.timeout_grace_seconds";
-    let run_params = run_test_suite_lib::RunParams {
-        timeout_behavior: match cmd.continue_on_timeout {
-            false => run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
-            true => run_test_suite_lib::TimeoutBehavior::Continue,
-        },
-        timeout_grace_seconds: ffx_config::get::<u64, _>(timeout_key)
-            .user_message(format!("Could not load timeout from config at {timeout_key}"))?
-            as u32,
-        stop_after_failures: match cmd.stop_after_failures.map(std::num::NonZeroU32::new) {
-            None => None,
-            Some(None) => return_user_error!("--stop-after-failures should be greater than zero."),
-            Some(Some(stop_after)) => Some(stop_after),
-        },
-        accumulate_debug_data: false, // ffx never accumulates.
-        log_protocol: None,
-        min_severity_logs: min_log_severity,
-        show_full_moniker: cmd.show_full_moniker_in_logs,
-    };
-
-    let no_cases_equals_success = cmd.no_cases_equals_success;
-    let test_definitions =
-        test_params_from_args(&remote_control, cmd, experiments.json_input.enabled).await?;
+        run_test_suite_lib::create_reporter(filter_ansi, output_directory_options, writer)?;
 
     let (cancel_sender, cancel_receiver) = futures::channel::oneshot::channel::<()>();
     let mut signals = Signals::new(&[SIGINT, SIGTERM]).unwrap();
@@ -277,24 +267,22 @@ async fn run_test<W: 'static + Write + Send + Sync>(
         }
     });
 
-    let test_definitions = test_definitions.collect::<Vec<_>>();
-    if test_definitions.len() != 1 {
-        return_bug!(
-            "Expected only a single test run per invocation, got {}",
-            test_definitions.len()
-        );
-    }
-    let test_definition = test_definitions.into_iter().next().unwrap();
-
     let start_time = std::time::Instant::now();
     let outcome = run_test_suite_lib::run_test_and_get_outcome(
         RunConnector::new(remote_control, SUITE_BATCH_SIZE),
-        test_definition,
-        run_params,
+        params.test_params,
+        params.run_params,
         reporter,
         cancel_receiver.map(|_| ()),
     )
     .await;
+
+    if called_by_test_pilot {
+        if let Some(outdir) = output_directory {
+            convert_output_for_test_pilot(outdir.as_path())?;
+        }
+    }
+
     let show_realm_warning = outcome == run_test_suite_lib::Outcome::Timedout
         || outcome == run_test_suite_lib::Outcome::Failed
         || outcome == run_test_suite_lib::Outcome::DidNotFinish;
@@ -361,46 +349,105 @@ capabilities, pass in correct realm. See https://fuchsia.dev/go/components/non-h
 /// Generate TestParams from |cmd|.
 /// |stdin_handle_fn| is a function that generates a handle to stdin and is a parameter to enable
 /// testing.
-async fn test_params_from_args(
+async fn params_from_pilot(
     remote_control: &fremotecontrol::RemoteControlProxy,
     cmd: RunCommand,
-    json_input_experiment_enabled: bool,
-) -> Result<impl ExactSizeIterator<Item = run_test_suite_lib::TestParams> + Debug, FfxError> {
+) -> fho::Result<CombinedParams> {
+    let filename = cmd.pilot.expect("test-pilot config file is supplied");
+    if !cmd.test_args.is_empty() {
+        return Err(ffx_error!("Tests may not be specified in both args and by file").into());
+    }
+    let file = std::fs::File::open(&filename).map_err(|e| {
+        Into::<fho::Error>::into(ffx_error!("Failed to open file {}: {:?}", &filename, e))
+    })?;
+
     let lifecycle_controller = ffx_component::rcs::connect_to_lifecycle_controller(&remote_control)
         .await
         .map_err(|e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e))?;
     let realm_query = ffx_component::rcs::connect_to_realm_query(&remote_control)
         .await
         .map_err(|e| ffx_error!("Parsing realm: Cannot connect to realm query: {}", e))?;
+
+    let timeout_key = "test.timeout_grace_seconds";
+    let timeout_grace_seconds = ffx_config::get::<u64, _>(timeout_key)
+        .user_message(format!("Could not load timeout from config at {timeout_key}"))?
+        as u32;
+
+    combined_params_from_pilot_reader(
+        file,
+        &lifecycle_controller,
+        &realm_query,
+        timeout_grace_seconds,
+    )
+    .await
+}
+
+/// Generate TestParams from |cmd|.
+/// |stdin_handle_fn| is a function that generates a handle to stdin and is a parameter to enable
+/// testing.
+async fn params_from_args(
+    remote_control: &fremotecontrol::RemoteControlProxy,
+    cmd: RunCommand,
+    json_input_experiment_enabled: bool,
+) -> fho::Result<CombinedParams> {
+    let timeout_key = "test.timeout_grace_seconds";
+    let run_params = run_test_suite_lib::RunParams {
+        timeout_behavior: match cmd.continue_on_timeout {
+            false => run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
+            true => run_test_suite_lib::TimeoutBehavior::Continue,
+        },
+        timeout_grace_seconds: ffx_config::get::<u64, _>(timeout_key)
+            .user_message(format!("Could not load timeout from config at {timeout_key}"))?
+            as u32,
+        stop_after_failures: match cmd.stop_after_failures.map(std::num::NonZeroU32::new) {
+            None => None,
+            Some(None) => return_user_error!("--stop-after-failures should be greater than zero."),
+            Some(Some(stop_after)) => Some(stop_after),
+        },
+        accumulate_debug_data: false, // ffx never accumulates.
+        log_protocol: None,
+        min_severity_logs: cmd.min_severity_logs.clone(),
+        show_full_moniker: cmd.show_full_moniker_in_logs,
+    };
+
+    let lifecycle_controller = ffx_component::rcs::connect_to_lifecycle_controller(&remote_control)
+        .await
+        .map_err(|e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e))?;
+    let realm_query = ffx_component::rcs::connect_to_realm_query(&remote_control)
+        .await
+        .map_err(|e| ffx_error!("Parsing realm: Cannot connect to realm query: {}", e))?;
+
     match &cmd.test_file {
         Some(_) if !json_input_experiment_enabled => {
             return Err(ffx_error!(
                 "The --test-file option is experimental, and the input format is \
                 subject to breaking changes. To enable using --test-file, run \
                 'ffx config set test.experimental_json_input true'"
-            ))
+            )
+            .into())
         }
         Some(filename) => {
             if !cmd.test_args.is_empty() {
-                return Err(ffx_error!("Tests may not be specified in both args and by file"));
+                return Err(
+                    ffx_error!("Tests may not be specified in both args and by file").into()
+                );
             } else {
                 let file = std::fs::File::open(filename)
                     .map_err(|e| ffx_error!("Failed to open file {}: {:?}", filename, e))?;
-                suite_definition::test_params_from_reader(
-                    file,
-                    &lifecycle_controller,
-                    &realm_query,
-                    TestParamsOptions { ignore_test_without_known_execution: false },
-                )
-                .await
-                .map_err(|e| ffx_error!("Failed to read test definitions: {:?}", e))
+                test_params_from_reader(file, &lifecycle_controller, &realm_query)
+                    .await
+                    .map_err(|e| ffx_error!("Failed to read test definitions: {:?}", e).into())
             }
         }
-        .map(|file_params| Either::Left(file_params.into_iter())),
+        .map(|test_params| CombinedParams {
+            run_params,
+            test_params,
+            output_directory: cmd.output_directory.map(|d| PathBuf::from(d)),
+        }),
         None => {
             let mut test_args_iter = cmd.test_args.iter();
             let (test_url, test_args) = match test_args_iter.next() {
-                None => return Err(ffx_error!("No tests specified!")),
+                None => return Err(ffx_error!("No tests specified!").into()),
                 Some(test_url) => {
                     (test_url.clone(), test_args_iter.map(String::clone).collect::<Vec<_>>())
                 }
@@ -436,13 +483,12 @@ async fn test_params_from_args(
                 no_exception_channel: cmd.no_exception_channel,
             };
 
-            let count = cmd.count.unwrap_or(1);
-            let count = std::num::NonZeroU32::new(count)
-                .ok_or_else(|| ffx_error!("--count should be greater than zero."))?;
-            let repeated = (0..count.get()).map(move |_: u32| test_params.clone());
-            Ok(repeated)
+            Ok(CombinedParams {
+                run_params,
+                test_params,
+                output_directory: cmd.output_directory.map(|d| PathBuf::from(d)),
+            })
         }
-        .map(Either::Right),
     }
 }
 
@@ -542,16 +588,16 @@ mod test {
         DebugData, DebugDataIteratorMarker, EarlyBootProfileMarker, EarlyBootProfileRequestStream,
     };
     use futures::prelude::*;
+    use serde_json::{json, to_string};
     use std::io::Read;
     use std::num::NonZeroU32;
     use std::sync::Arc;
-    use test_list::TestTag;
 
     const VALID_INPUT_FILENAME: &str = "valid_defs.json";
     const INVALID_INPUT_FILENAME: &str = "invalid_defs.json";
 
     static VALID_INPUT_FORMAT: LazyLock<String> = LazyLock::new(|| {
-        serde_json::to_string(&serde_json::json!({
+        to_string(&json!({
           "schema_id": "experimental",
           "data": [
             {
@@ -562,33 +608,6 @@ mod test {
                     "component_url": "{}-test-url-1",
                 },
                 "tags": [],
-            },
-            {
-                "name": "{}-test-2",
-                "labels": ["{}-label"],
-                "execution": {
-                    "type": "fuchsia_component",
-                    "component_url": "{}-test-url-2",
-                    "timeout_seconds": 60,
-                },
-                "tags": [],
-            },
-            {
-                "name": "{}-test-3",
-                "labels": ["{}-label"],
-                "execution": {
-                    "type": "fuchsia_component",
-                    "component_url": "{}-test-url-3",
-                    "test_args": ["--flag"],
-                    "test_filters": ["Unit"],
-                    "also_run_disabled_tests": true,
-                    "parallel": 4,
-                    "max_severity_logs": "INFO",
-                },
-                "tags": [{
-                    "key": "hermetic",
-                    "value": "true",
-                }],
             }
         ]}))
         .expect("serialize json")
@@ -643,13 +662,14 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_get_test_params() {
+    async fn test_params_from_args() {
         let dir = tempfile::tempdir().expect("Create temp dir");
         std::fs::write(dir.path().join("test_defs.json"), &*VALID_FILE_INPUT).expect("write file");
 
         let cases = vec![
             (
                 RunCommand {
+                    pilot: None,
                     timeout: None,
                     test_args: vec!["my-test-url".to_string()],
                     test_file: None,
@@ -671,24 +691,37 @@ mod test {
                     no_exception_channel: false,
                     no_cases_equals_success: false,
                 },
-                vec![run_test_suite_lib::TestParams {
-                    test_url: "my-test-url".to_string(),
-                    realm: None.into(),
-                    timeout_seconds: None,
-                    test_filters: None,
-                    no_cases_equals_success: None,
-                    also_run_disabled_tests: false,
-                    parallel: None,
-                    test_args: vec![],
-                    max_severity_logs: None,
-                    min_severity_logs: vec![],
-                    tags: vec![],
-                    break_on_failure: false,
-                    no_exception_channel: false,
-                }],
+                CombinedParams {
+                    run_params: run_test_suite_lib::RunParams {
+                        timeout_behavior: run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
+                        timeout_grace_seconds: 10,
+                        stop_after_failures: None,
+                        accumulate_debug_data: false,
+                        log_protocol: None,
+                        min_severity_logs: vec![],
+                        show_full_moniker: false,
+                    },
+                    test_params: run_test_suite_lib::TestParams {
+                        test_url: "my-test-url".to_string(),
+                        realm: None.into(),
+                        timeout_seconds: None,
+                        test_filters: None,
+                        no_cases_equals_success: None,
+                        also_run_disabled_tests: false,
+                        parallel: None,
+                        test_args: vec![],
+                        max_severity_logs: None,
+                        min_severity_logs: vec![],
+                        tags: vec![],
+                        break_on_failure: false,
+                        no_exception_channel: false,
+                    },
+                    output_directory: None,
+                },
             ),
             (
                 RunCommand {
+                    pilot: None,
                     timeout: None,
                     test_args: vec!["my-test-url".to_string()],
                     test_file: None,
@@ -710,24 +743,37 @@ mod test {
                     no_exception_channel: true,
                     no_cases_equals_success: false,
                 },
-                vec![run_test_suite_lib::TestParams {
-                    test_url: "my-test-url".to_string(),
-                    realm: None.into(),
-                    timeout_seconds: None,
-                    test_filters: None,
-                    no_cases_equals_success: None,
-                    also_run_disabled_tests: false,
-                    parallel: None,
-                    test_args: vec![],
-                    max_severity_logs: None,
-                    min_severity_logs: vec![],
-                    tags: vec![],
-                    break_on_failure: false,
-                    no_exception_channel: true,
-                }],
+                CombinedParams {
+                    run_params: run_test_suite_lib::RunParams {
+                        timeout_behavior: run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
+                        timeout_grace_seconds: 10,
+                        stop_after_failures: None,
+                        accumulate_debug_data: false,
+                        log_protocol: None,
+                        min_severity_logs: vec![],
+                        show_full_moniker: false,
+                    },
+                    test_params: run_test_suite_lib::TestParams {
+                        test_url: "my-test-url".to_string(),
+                        realm: None.into(),
+                        timeout_seconds: None,
+                        test_filters: None,
+                        no_cases_equals_success: None,
+                        also_run_disabled_tests: false,
+                        parallel: None,
+                        test_args: vec![],
+                        max_severity_logs: None,
+                        min_severity_logs: vec![],
+                        tags: vec![],
+                        break_on_failure: false,
+                        no_exception_channel: true,
+                    },
+                    output_directory: None,
+                },
             ),
             (
                 RunCommand {
+                    pilot: None,
                     timeout: None,
                     test_args: vec!["my-test-url".to_string()],
                     test_file: None,
@@ -736,7 +782,7 @@ mod test {
                     run_disabled: false,
                     filter_ansi: false,
                     parallel: None,
-                    count: Some(10),
+                    count: None,
                     min_severity_logs: vec![],
                     show_full_moniker_in_logs: false,
                     max_severity_logs: Some(diagnostics_data::Severity::Warn),
@@ -749,8 +795,17 @@ mod test {
                     no_exception_channel: false,
                     no_cases_equals_success: false,
                 },
-                vec![
-                    run_test_suite_lib::TestParams {
+                CombinedParams {
+                    run_params: run_test_suite_lib::RunParams {
+                        timeout_behavior: run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
+                        timeout_grace_seconds: 10,
+                        stop_after_failures: None,
+                        accumulate_debug_data: false,
+                        log_protocol: None,
+                        min_severity_logs: vec![],
+                        show_full_moniker: false,
+                    },
+                    test_params: run_test_suite_lib::TestParams {
                         test_url: "my-test-url".to_string(),
                         realm: None.into(),
                         timeout_seconds: None,
@@ -764,12 +819,13 @@ mod test {
                         tags: vec![],
                         break_on_failure: false,
                         no_exception_channel: false,
-                    };
-                    10
-                ],
+                    },
+                    output_directory: None,
+                },
             ),
             (
                 RunCommand {
+                    pilot: None,
                     timeout: Some(10),
                     test_args: vec!["my-test-url".to_string(), "--".to_string(), "arg".to_string()],
                     test_file: None,
@@ -791,24 +847,37 @@ mod test {
                     no_exception_channel: false,
                     no_cases_equals_success: false,
                 },
-                vec![run_test_suite_lib::TestParams {
-                    test_url: "my-test-url".to_string(),
-                    realm: None.into(),
-                    timeout_seconds: Some(NonZeroU32::new(10).unwrap()),
-                    test_filters: Some(vec!["filter".to_string()]),
-                    no_cases_equals_success: None,
-                    also_run_disabled_tests: true,
-                    max_severity_logs: None,
-                    min_severity_logs: vec![],
-                    parallel: Some(20),
-                    test_args: vec!["--".to_string(), "arg".to_string()],
-                    tags: vec![],
-                    break_on_failure: false,
-                    no_exception_channel: false,
-                }],
+                CombinedParams {
+                    run_params: run_test_suite_lib::RunParams {
+                        timeout_behavior: run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
+                        timeout_grace_seconds: 10,
+                        stop_after_failures: None,
+                        accumulate_debug_data: false,
+                        log_protocol: None,
+                        min_severity_logs: vec![],
+                        show_full_moniker: false,
+                    },
+                    test_params: run_test_suite_lib::TestParams {
+                        test_url: "my-test-url".to_string(),
+                        realm: None.into(),
+                        timeout_seconds: Some(NonZeroU32::new(10).unwrap()),
+                        test_filters: Some(vec!["filter".to_string()]),
+                        no_cases_equals_success: None,
+                        also_run_disabled_tests: true,
+                        max_severity_logs: None,
+                        min_severity_logs: vec![],
+                        parallel: Some(20),
+                        test_args: vec!["--".to_string(), "arg".to_string()],
+                        tags: vec![],
+                        break_on_failure: false,
+                        no_exception_channel: false,
+                    },
+                    output_directory: None,
+                },
             ),
             (
                 RunCommand {
+                    pilot: None,
                     timeout: None,
                     test_args: vec![],
                     test_file: Some(
@@ -832,8 +901,17 @@ mod test {
                     no_exception_channel: false,
                     no_cases_equals_success: false,
                 },
-                vec![
-                    run_test_suite_lib::TestParams {
+                CombinedParams {
+                    run_params: run_test_suite_lib::RunParams {
+                        timeout_behavior: run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
+                        timeout_grace_seconds: 10,
+                        stop_after_failures: None,
+                        accumulate_debug_data: false,
+                        log_protocol: None,
+                        min_severity_logs: vec![],
+                        show_full_moniker: false,
+                    },
+                    test_params: run_test_suite_lib::TestParams {
                         test_url: "file-test-url-1".to_string(),
                         realm: None.into(),
                         timeout_seconds: None,
@@ -848,100 +926,28 @@ mod test {
                         break_on_failure: false,
                         no_exception_channel: false,
                     },
-                    run_test_suite_lib::TestParams {
-                        test_url: "file-test-url-2".to_string(),
-                        realm: None.into(),
-                        timeout_seconds: Some(NonZeroU32::new(60).unwrap()),
-                        test_filters: None,
-                        no_cases_equals_success: None,
-                        also_run_disabled_tests: false,
-                        max_severity_logs: None,
-                        min_severity_logs: vec![],
-                        parallel: None,
-                        test_args: vec![],
-                        tags: vec![],
-                        break_on_failure: false,
-                        no_exception_channel: false,
-                    },
-                    run_test_suite_lib::TestParams {
-                        test_url: "file-test-url-3".to_string(),
-                        realm: None.into(),
-                        timeout_seconds: None,
-                        test_filters: Some(vec!["Unit".to_string()]),
-                        no_cases_equals_success: None,
-                        also_run_disabled_tests: true,
-                        max_severity_logs: Some(diagnostics_data::Severity::Info),
-                        min_severity_logs: vec![],
-                        parallel: Some(4),
-                        test_args: vec!["--flag".to_string()],
-                        tags: vec![TestTag {
-                            key: "hermetic".to_string(),
-                            value: "true".to_string(),
-                        }],
-                        break_on_failure: false,
-                        no_exception_channel: false,
-                    },
-                ],
+                    output_directory: None,
+                },
             ),
         ];
+        let _test_env = ffx_config::test_init().await.expect("ffx_config::test_init() succeeds");
         let fake_contoller = FakeRemoteControllerProvider::new();
         for (run_command, expected_test_params) in cases.into_iter() {
-            let result = test_params_from_args(
-                fake_contoller.remote_controller(),
-                run_command.clone(),
-                true,
-            )
-            .await;
+            let result =
+                params_from_args(fake_contoller.remote_controller(), run_command.clone(), true)
+                    .await;
             assert!(
                 result.is_ok(),
-                "Error getting test params from {:?}: {:?}",
+                "Error getting params from {:?}: {:?}",
                 run_command,
-                result.unwrap_err()
+                result.err().unwrap()
             );
-            assert_eq!(result.unwrap().into_iter().collect::<Vec<_>>(), expected_test_params);
+            assert_eq!(result.unwrap(), expected_test_params);
         }
     }
 
     #[fuchsia::test]
-    async fn test_get_test_params_count() {
-        // Regression test for https://fxbug.dev/42062444: using an extremely
-        // large test count should result in a modest memory allocation. If
-        // that wasn't the case, this test would fail.
-        const COUNT: u32 = u32::MAX;
-        let fake_contoller = FakeRemoteControllerProvider::new();
-        let params = test_params_from_args(
-            fake_contoller.remote_controller(),
-            RunCommand {
-                test_args: vec!["my-test-url".to_string()],
-                count: Some(COUNT),
-                timeout: None,
-                test_file: None,
-                test_filter: vec![],
-                realm: None,
-                run_disabled: false,
-                filter_ansi: false,
-                parallel: None,
-                min_severity_logs: vec![],
-                show_full_moniker_in_logs: false,
-                max_severity_logs: Some(diagnostics_data::Severity::Warn),
-                output_directory: None,
-                disable_output_directory: false,
-                continue_on_timeout: false,
-                stop_after_failures: None,
-                experimental_parallel_execution: None,
-                break_on_failure: false,
-                no_exception_channel: false,
-                no_cases_equals_success: false,
-            },
-            true,
-        )
-        .await
-        .expect("should succeed");
-        assert_eq!(params.len(), usize::try_from(COUNT).unwrap());
-    }
-
-    #[fuchsia::test]
-    async fn test_get_test_params_invalid_args() {
+    async fn test_params_from_args_invalid_args() {
         let dir = tempfile::tempdir().expect("Create temp dir");
         std::fs::write(dir.path().join(VALID_INPUT_FILENAME), &*VALID_FILE_INPUT)
             .expect("write file");
@@ -951,6 +957,7 @@ mod test {
             (
                 "no tests specified",
                 RunCommand {
+                    pilot: None,
                     timeout: None,
                     test_args: vec![],
                     test_file: None,
@@ -976,6 +983,7 @@ mod test {
             (
                 "tests specified in both args and file",
                 RunCommand {
+                    pilot: None,
                     timeout: None,
                     test_args: vec!["my-test".to_string()],
                     test_file: Some(
@@ -1003,6 +1011,7 @@ mod test {
             (
                 "read invalid input from file",
                 RunCommand {
+                    pilot: None,
                     timeout: None,
                     test_args: vec![],
                     test_file: Some(
@@ -1030,17 +1039,192 @@ mod test {
         ];
         let fake_contoller = FakeRemoteControllerProvider::new();
         for (case_name, invalid_run_command) in cases.into_iter() {
-            let result = test_params_from_args(
-                fake_contoller.remote_controller(),
-                invalid_run_command,
-                true,
-            )
-            .await;
+            let result =
+                params_from_args(fake_contoller.remote_controller(), invalid_run_command, true)
+                    .await;
             assert!(
                 result.is_err(),
                 "Getting test params for case '{}' unexpectedly succeeded",
                 case_name
             );
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_params_from_pilot() {
+        let cases = vec![
+            (
+                json!({
+                    "output_directory": "test_out_dir",
+                    "target_test_url": "my-test-url",
+                    "sdk_tool_path": "test_sdk_tool_path",
+                    "target": "test_target",
+                }),
+                CombinedParams {
+                    run_params: run_test_suite_lib::RunParams {
+                        timeout_behavior: run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
+                        timeout_grace_seconds: 10,
+                        stop_after_failures: None,
+                        accumulate_debug_data: false,
+                        log_protocol: None,
+                        min_severity_logs: vec![],
+                        show_full_moniker: false,
+                    },
+                    test_params: run_test_suite_lib::TestParams {
+                        test_url: "my-test-url".to_string(),
+                        realm: None.into(),
+                        timeout_seconds: None,
+                        test_filters: None,
+                        no_cases_equals_success: None,
+                        also_run_disabled_tests: false,
+                        parallel: None,
+                        test_args: vec![],
+                        max_severity_logs: None,
+                        min_severity_logs: vec![],
+                        tags: vec![],
+                        break_on_failure: false,
+                        no_exception_channel: false,
+                    },
+                    output_directory: Some(PathBuf::from("test_out_dir")),
+                },
+            ),
+            (
+                json!({
+                    "output_directory": "test_out_dir",
+                    "target_test_url": "my-test-url",
+                    "sdk_tool_path": "test_sdk_tool_path",
+                    "target": "test_target",
+                    "no_exception_channel": true,
+                }),
+                CombinedParams {
+                    run_params: run_test_suite_lib::RunParams {
+                        timeout_behavior: run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
+                        timeout_grace_seconds: 10,
+                        stop_after_failures: None,
+                        accumulate_debug_data: false,
+                        log_protocol: None,
+                        min_severity_logs: vec![],
+                        show_full_moniker: false,
+                    },
+                    test_params: run_test_suite_lib::TestParams {
+                        test_url: "my-test-url".to_string(),
+                        realm: None.into(),
+                        timeout_seconds: None,
+                        test_filters: None,
+                        no_cases_equals_success: None,
+                        also_run_disabled_tests: false,
+                        parallel: None,
+                        test_args: vec![],
+                        max_severity_logs: None,
+                        min_severity_logs: vec![],
+                        tags: vec![],
+                        break_on_failure: false,
+                        no_exception_channel: true,
+                    },
+                    output_directory: Some(PathBuf::from("test_out_dir")),
+                },
+            ),
+            (
+                json!({
+                    "output_directory": "test_out_dir",
+                    "target_test_url": "my-test-url",
+                    "max_severity_logs": "WARN",
+                    "sdk_tool_path": "test_sdk_tool_path",
+                    "target": "test_target",
+                }),
+                CombinedParams {
+                    run_params: run_test_suite_lib::RunParams {
+                        timeout_behavior: run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
+                        timeout_grace_seconds: 10,
+                        stop_after_failures: None,
+                        accumulate_debug_data: false,
+                        log_protocol: None,
+                        min_severity_logs: vec![],
+                        show_full_moniker: false,
+                    },
+                    test_params: run_test_suite_lib::TestParams {
+                        test_url: "my-test-url".to_string(),
+                        realm: None.into(),
+                        timeout_seconds: None,
+                        test_filters: None,
+                        no_cases_equals_success: None,
+                        also_run_disabled_tests: false,
+                        max_severity_logs: Some(diagnostics_data::Severity::Warn),
+                        min_severity_logs: vec![],
+                        parallel: None,
+                        test_args: vec![],
+                        tags: vec![],
+                        break_on_failure: false,
+                        no_exception_channel: false,
+                    },
+                    output_directory: Some(PathBuf::from("test_out_dir")),
+                },
+            ),
+            (
+                json!({
+                    "output_directory": "test_out_dir",
+                    "target_test_url": "my-test-url",
+                    "target_test_args": [ "--", "arg" ],
+                    "sdk_tool_path": "test_sdk_tool_path",
+                    "target": "test_target",
+                    "test_case_filter": [ "filter" ],
+                    "timeout": 10,
+                    "max_concurrent_test_case_runs": 20,
+                    "run_disabled_cases": true
+                }),
+                CombinedParams {
+                    run_params: run_test_suite_lib::RunParams {
+                        timeout_behavior: run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
+                        timeout_grace_seconds: 10,
+                        stop_after_failures: None,
+                        accumulate_debug_data: false,
+                        log_protocol: None,
+                        min_severity_logs: vec![],
+                        show_full_moniker: false,
+                    },
+                    test_params: run_test_suite_lib::TestParams {
+                        test_url: "my-test-url".to_string(),
+                        realm: None.into(),
+                        timeout_seconds: Some(NonZeroU32::new(10).unwrap()),
+                        test_filters: Some(vec!["filter".to_string()]),
+                        no_cases_equals_success: None,
+                        also_run_disabled_tests: true,
+                        max_severity_logs: None,
+                        min_severity_logs: vec![],
+                        parallel: Some(20),
+                        test_args: vec!["--".to_string(), "arg".to_string()],
+                        tags: vec![],
+                        break_on_failure: false,
+                        no_exception_channel: false,
+                    },
+                    output_directory: Some(PathBuf::from("test_out_dir")),
+                },
+            ),
+        ];
+        let _test_env = ffx_config::test_init().await.expect("ffx_config::test_init() succeeds");
+        let fake_contoller = FakeRemoteControllerProvider::new();
+        let dir = tempfile::tempdir().expect("Create temp dir");
+
+        for (pilot_json, expected_test_params) in cases.into_iter() {
+            std::fs::write(
+                dir.path().join("pilot_params.json"),
+                to_string(&pilot_json).unwrap().into_bytes(),
+            )
+            .expect("write file");
+            let run_command = RunCommand {
+                pilot: Some(dir.path().join("pilot_params.json").to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+            let result =
+                params_from_pilot(fake_contoller.remote_controller(), run_command.clone()).await;
+            assert!(
+                result.is_ok(),
+                "Error getting params from {:?}: {:?}",
+                run_command,
+                result.err().unwrap()
+            );
+            assert_eq!(result.unwrap(), expected_test_params);
+            let _ = std::fs::remove_file(dir.path().join("pilot_params.json"));
         }
     }
 

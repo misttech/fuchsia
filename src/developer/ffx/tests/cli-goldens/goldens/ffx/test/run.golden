@@ -16,6 +16,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "pilot"
+        }
+      },
+      "optionality": "optional",
+      "long": "--pilot",
+      "short": null,
+      "description": "read test parameters from the specified file instead of from the command line. This is intended to be used by test_pilot.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "test-file"
         }
       },

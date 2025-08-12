@@ -53,6 +53,7 @@ pub struct TestParams {
 }
 
 /// Parameters that specify how the overall test run should be executed.
+#[derive(Debug, PartialEq)]
 pub struct RunParams {
     /// The behavior of the test run if a suite times out.
     pub timeout_behavior: TimeoutBehavior,
@@ -80,7 +81,7 @@ pub struct RunParams {
 }
 
 /// Sets the behavior of the overall run if a suite terminates with a timeout.
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum TimeoutBehavior {
     /// Immediately terminate any suites that haven't started.
     TerminateRemaining,
