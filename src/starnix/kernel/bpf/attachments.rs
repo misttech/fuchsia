@@ -192,11 +192,12 @@ pub enum SockAddrProgramResult {
 impl SockAddrProgram {
     fn run<'a>(
         &self,
+        locked: &'a mut Locked<EbpfStateLock>,
         current_task: &'a CurrentTask,
         addr: &'a mut BpfSockAddr<'a>,
         can_block: bool,
     ) -> SockAddrProgramResult {
-        let mut run_context = EbpfRunContextImpl::new(current_task);
+        let mut run_context = EbpfRunContextImpl::new(locked, current_task);
         match self.0.run_with_1_argument(&mut run_context, addr) {
             // UDP_RECVMSG programs are not allowed to block the packet.
             0 if can_block => SockAddrProgramResult::Block,
@@ -273,8 +274,13 @@ pub enum SockProgramResult {
 }
 
 impl SockProgram {
-    fn run<'a>(&self, current_task: &'a CurrentTask, sock: &'a BpfSock<'a>) -> SockProgramResult {
-        let mut run_context = EbpfRunContextImpl::new(current_task);
+    fn run<'a>(
+        &self,
+        locked: &mut Locked<EbpfStateLock>,
+        current_task: &'a CurrentTask,
+        sock: &'a BpfSock<'a>,
+    ) -> SockProgramResult {
+        let mut run_context = EbpfRunContextImpl::new(locked, current_task);
         if self.0.run_with_1_argument(&mut run_context, sock) == 0 {
             SockProgramResult::Block
         } else {
@@ -382,8 +388,13 @@ pub enum SetSockOptProgramResult {
 }
 
 impl SockOptProgram {
-    fn run<'a>(&self, current_task: &'a CurrentTask, sockopt: &'a mut BpfSockOpt) -> u64 {
-        let mut run_context = EbpfRunContextImpl::new(current_task);
+    fn run<'a>(
+        &self,
+        locked: &mut Locked<EbpfStateLock>,
+        current_task: &'a CurrentTask,
+        sockopt: &'a mut BpfSockOpt,
+    ) -> u64 {
+        let mut run_context = EbpfRunContextImpl::new(locked, current_task);
         self.0.run_with_1_argument(&mut run_context, sockopt)
     }
 }
@@ -477,18 +488,19 @@ impl CgroupEbpfProgramSet {
         socket: &ZxioBackedSocket,
     ) -> Result<SockAddrProgramResult, Errno> {
         let prog_cell = match (domain, op) {
-            (SocketDomain::Inet, SockAddrOp::Bind) => Some(&self.inet4_bind),
-            (SocketDomain::Inet6, SockAddrOp::Bind) => Some(&self.inet6_bind),
-            (SocketDomain::Inet, SockAddrOp::Connect) => Some(&self.inet4_connect),
-            (SocketDomain::Inet6, SockAddrOp::Connect) => Some(&self.inet6_connect),
-            (SocketDomain::Inet, SockAddrOp::UdpSendMsg) => Some(&self.udp4_sendmsg),
-            (SocketDomain::Inet6, SockAddrOp::UdpSendMsg) => Some(&self.udp6_sendmsg),
-            (SocketDomain::Inet, SockAddrOp::UdpRecvMsg) => Some(&self.udp4_recvmsg),
-            (SocketDomain::Inet6, SockAddrOp::UdpRecvMsg) => Some(&self.udp6_recvmsg),
-            _ => None,
+            (SocketDomain::Inet, SockAddrOp::Bind) => &self.inet4_bind,
+            (SocketDomain::Inet6, SockAddrOp::Bind) => &self.inet6_bind,
+            (SocketDomain::Inet, SockAddrOp::Connect) => &self.inet4_connect,
+            (SocketDomain::Inet6, SockAddrOp::Connect) => &self.inet6_connect,
+            (SocketDomain::Inet, SockAddrOp::UdpSendMsg) => &self.udp4_sendmsg,
+            (SocketDomain::Inet6, SockAddrOp::UdpSendMsg) => &self.udp6_sendmsg,
+            (SocketDomain::Inet, SockAddrOp::UdpRecvMsg) => &self.udp4_recvmsg,
+            (SocketDomain::Inet6, SockAddrOp::UdpRecvMsg) => &self.udp6_recvmsg,
+            _ => return Ok(SockAddrProgramResult::Allow),
         };
-        let prog_guard = prog_cell.map(|cell| cell.read(locked));
-        let Some(prog) = prog_guard.as_ref().and_then(|guard| guard.as_ref()) else {
+
+        let (prog_guard, locked) = prog_cell.read_and(locked);
+        let Some(prog) = prog_guard.as_ref() else {
             return Ok(SockAddrProgramResult::Allow);
         };
 
@@ -524,8 +536,7 @@ impl CgroupEbpfProgramSet {
 
         // UDP recvmsg programs are not allowed to filter packets.
         let can_block = op != SockAddrOp::UdpRecvMsg;
-
-        Ok(prog.run(current_task, &mut bpf_sockaddr, can_block))
+        Ok(prog.run(locked, current_task, &mut bpf_sockaddr, can_block))
     }
 
     pub fn run_sock_prog(
@@ -542,7 +553,7 @@ impl CgroupEbpfProgramSet {
             SockOp::Create => &self.sock_create,
             SockOp::Release => &self.sock_release,
         };
-        let prog_guard = prog_cell.read(locked);
+        let (prog_guard, locked) = prog_cell.read_and(locked);
         let Some(prog) = prog_guard.as_ref() else {
             return SockProgramResult::Allow;
         };
@@ -557,7 +568,7 @@ impl CgroupEbpfProgramSet {
             socket,
         };
 
-        prog.run(current_task, &bpf_sock)
+        prog.run(locked, current_task, &bpf_sock)
     }
 
     pub fn run_getsockopt_prog(
@@ -570,7 +581,7 @@ impl CgroupEbpfProgramSet {
         optlen: usize,
         error: Option<Errno>,
     ) -> Result<(Vec<u8>, usize), Errno> {
-        let prog_guard = self.get_sockopt.read(locked);
+        let (prog_guard, locked) = self.get_sockopt.read_and(locked);
         let Some(prog) = prog_guard.as_ref() else {
             return error.map(|e| Err(e)).unwrap_or_else(|| Ok((optval, optlen)));
         };
@@ -580,7 +591,7 @@ impl CgroupEbpfProgramSet {
             BpfSockOpt::new(level, optname, optval.clone(), optlen as u32, retval);
 
         // Run the program.
-        let result = prog.run(current_task, &mut bpf_sockopt);
+        let result = prog.run(locked, current_task, &mut bpf_sockopt);
 
         if bpf_sockopt.retval < 0 {
             return Err(Errno::new(ErrnoCode::from_return_value(bpf_sockopt.retval as u64)));
@@ -620,7 +631,7 @@ impl CgroupEbpfProgramSet {
         optname: u32,
         value: SockOptValue,
     ) -> SetSockOptProgramResult {
-        let prog_guard = self.set_sockopt.read(locked);
+        let (prog_guard, locked) = self.set_sockopt.read_and(locked);
         let Some(prog) = prog_guard.as_ref() else {
             return SetSockOptProgramResult::Allow(value);
         };
@@ -637,7 +648,7 @@ impl CgroupEbpfProgramSet {
         let buffer_len = buffer.len();
         let optlen = value.len();
         let mut bpf_sockopt = BpfSockOpt::new(level, optname, buffer, optlen as u32, 0);
-        let result = prog.run(current_task, &mut bpf_sockopt);
+        let result = prog.run(locked.cast_locked(), current_task, &mut bpf_sockopt);
 
         match (result, bpf_sockopt.optlen) {
             // Reject the call if the program returned 0.

@@ -39,8 +39,6 @@ lock_ordering! {
     // ProcessGroup.mutable_state. Artificial locks above need to be before it because of
     // dependencies in DevPtsFile.{read, write, ioctl}.
     FileOpsCore => ProcessGroupState,
-    // eBPF locks
-    UninterruptibleLock => EbpfStateLock,
     // Userfaultfd
     FileOpsCore => UserFaultInner,
     UninterruptibleLock => UserFaultInner,
@@ -52,8 +50,6 @@ lock_ordering! {
     UninterruptibleLock => FastrpcInnerState,
     // MemoryXattrStorage
     UninterruptibleLock => MemoryXattrStorageLevel,
-    // Bpf Map State objects
-    UninterruptibleLock => BpfMapStateLevel,
     // DeviceRegistty
     UninterruptibleLock => DeviceRegistryState,
     FileOpsCore => DeviceRegistryState,
@@ -62,4 +58,10 @@ lock_ordering! {
     // that is never acquired before any other lock.
     UninterruptibleLock => TerminalLock,
     FileOpsCore => TerminalLock,
+
+    // eBPF locks
+    UninterruptibleLock => EbpfStateLock,
+    UninterruptibleLock => EbpfMapStateLevel,
+    EbpfStateLock => EbpfSuspendLock,
+    EbpfMapStateLevel => EbpfSuspendLock,
 }

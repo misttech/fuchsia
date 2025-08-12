@@ -16,7 +16,10 @@ use fuchsia_inspect::{ArrayProperty, NumericProperty, StringArrayProperty, UintP
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use itertools::Itertools;
 use starnix_logging::{log_info, log_warn};
-use starnix_sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard};
+use starnix_sync::{
+    EbpfSuspendLock, FileOpsCore, LockBefore, Locked, Mutex, MutexGuard, OrderedRwLock,
+    RwLockReadGuard,
+};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::fmt;
@@ -33,7 +36,7 @@ pub struct SuspendResumeManager {
     inner: Mutex<SuspendResumeManagerInner>,
 
     // The lock used to to avoid suspension while holding eBPF locks.
-    ebpf_suspend_lock: RwLock<()>,
+    ebpf_suspend_lock: OrderedRwLock<(), EbpfSuspendLock>,
 }
 
 /// Manager for suspend and resume.
@@ -64,7 +67,7 @@ pub struct SuspendResumeManagerInner {
     active_lock_writer: zx::EventPair,
 }
 
-pub type EbpfSuspendLock<'a> = RwLockReadGuard<'a, ()>;
+pub type EbpfSuspendGuard<'a> = RwLockReadGuard<'a, ()>;
 
 /// State associated with logging wake lock information in Inspect.
 struct WakeLocksInspect {
@@ -289,7 +292,11 @@ impl SuspendResumeManager {
         HashSet::from([SuspendState::Idle])
     }
 
-    pub fn suspend(&self, state: SuspendState) -> Result<(), Errno> {
+    pub fn suspend(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        state: SuspendState,
+    ) -> Result<(), Errno> {
         let suspend_start_time = zx::BootInstant::get();
 
         self.lock().suspend_events_node.add_entry(|node| {
@@ -297,7 +304,7 @@ impl SuspendResumeManager {
             node.record_string(fobs::SUSPEND_REQUESTED_STATE, state.to_string());
         });
 
-        let ebpf_lock = self.ebpf_suspend_lock.write();
+        let ebpf_lock = self.ebpf_suspend_lock.write(locked);
 
         let manager = connect_to_protocol_sync::<frunner::ManagerMarker>()
             .expect("Failed to connect to manager");
@@ -392,8 +399,14 @@ impl SuspendResumeManager {
         Ok(())
     }
 
-    pub fn acquire_ebpf_suspend_lock<'a>(&'a self) -> EbpfSuspendLock<'a> {
-        self.ebpf_suspend_lock.read()
+    pub fn acquire_ebpf_suspend_lock<'a, L>(
+        &'a self,
+        locked: &'a mut Locked<L>,
+    ) -> EbpfSuspendGuard<'a>
+    where
+        L: LockBefore<EbpfSuspendLock>,
+    {
+        self.ebpf_suspend_lock.read(locked)
     }
 }
 

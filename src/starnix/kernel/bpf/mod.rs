@@ -22,7 +22,9 @@ use crate::security;
 use crate::task::{register_delayed_release, CurrentTask, CurrentTaskAndLocked};
 use ebpf_api::PinnedMap;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
-use starnix_sync::{BpfMapStateLevel, EbpfStateLock, LockBefore, Locked, MutexGuard, OrderedMutex};
+use starnix_sync::{
+    EbpfMapStateLevel, EbpfStateLock, LockBefore, Locked, MutexGuard, OrderedMutex,
+};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -52,7 +54,7 @@ pub struct BpfMap {
     map: PinnedMap,
 
     /// The internal state of the map object.
-    state: OrderedMutex<BpfMapState, BpfMapStateLevel>,
+    state: OrderedMutex<BpfMapState, EbpfMapStateLevel>,
 
     /// The security state associated with this bpf Map.
     pub security_state: security::BpfMapState,
@@ -97,16 +99,20 @@ impl BpfMap {
         self.id
     }
 
-    fn frozen<'a, L>(&'a self, locked: &'a mut Locked<L>) -> impl Deref<Target = bool> + 'a
+    fn frozen<'a, L>(
+        &'a self,
+        locked: &'a mut Locked<L>,
+    ) -> (impl Deref<Target = bool> + 'a, &'a mut Locked<EbpfMapStateLevel>)
     where
-        L: LockBefore<BpfMapStateLevel>,
+        L: LockBefore<EbpfMapStateLevel>,
     {
-        MutexGuard::map(self.state.lock(locked), |s| &mut s.is_frozen)
+        let (guard, locked) = self.state.lock_and(locked);
+        (MutexGuard::map(guard, |s| &mut s.is_frozen), locked)
     }
 
     fn freeze<L>(&self, locked: &mut Locked<L>) -> Result<(), Errno>
     where
-        L: LockBefore<BpfMapStateLevel>,
+        L: LockBefore<EbpfMapStateLevel>,
     {
         let mut state = self.state.lock(locked);
         if state.is_frozen {
@@ -130,7 +136,7 @@ impl BpfMap {
         factory: F,
     ) -> Result<Arc<MemoryObject>, Errno>
     where
-        L: LockBefore<BpfMapStateLevel>,
+        L: LockBefore<EbpfMapStateLevel>,
         F: FnOnce() -> Result<Arc<MemoryObject>, Errno>,
     {
         let mut state = self.state.lock(locked);

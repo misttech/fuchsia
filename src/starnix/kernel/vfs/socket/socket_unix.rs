@@ -1014,7 +1014,7 @@ impl UnixSocketInner {
     /// Returns the number of bytes that were written to the socket.
     fn write(
         &mut self,
-        _locked: &mut Locked<FileOpsCore>,
+        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
         address: Option<SocketAddress>,
@@ -1032,7 +1032,7 @@ impl UnixSocketInner {
             // TODO(https://fxbug.dev/385015056): Fill in SkBuf.
             let mut sk_buf = SkBuf::default();
 
-            let mut context = EbpfRunContextImpl::<'_>::new(current_task);
+            let mut context = EbpfRunContextImpl::<'_>::new(locked.cast_locked(), current_task);
             let s = bpf_program.run(&mut context, &mut sk_buf);
             if s == 0 {
                 None
