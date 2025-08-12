@@ -363,84 +363,12 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
   if ((st = MmcDecodeExtCsd()) != ZX_OK) {
     return st;
   }
+
   bus_width_ = SDMMC_BUS_WIDTH_ONE;
+  timing_ = SDMMC_TIMING_LEGACY;
 
-  // Switch to high-speed timing
-  if (MmcSupportsHs() || MmcSupportsHsDdr() || MmcSupportsHs200()) {
-    // Switch to 1.8V signal voltage
-    sdmmc_voltage_t new_voltage = SDMMC_VOLTAGE_V180;
-    if ((st = sdmmc_->SetSignalVoltage(new_voltage)) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "failed to switch to 1.8V signalling: %s",
-               zx_status_get_string(st));
-      return st;
-    }
-
-    MmcSelectBusWidth();
-
-    // Must perform tuning at HS200 first if HS400 is supported
-    fuchsia_hardware_sdmmc::SdmmcHostPrefs speed_capabilities =
-        metadata_.speed_capabilities().value();
-    if (MmcSupportsHs200() && bus_width_ != SDMMC_BUS_WIDTH_ONE &&
-        !(speed_capabilities & fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHs200)) {
-      if ((st = MmcSwitchTiming(SDMMC_TIMING_HS200)) != ZX_OK) {
-        return st;
-      }
-
-      if ((st = MmcSwitchFreq(kFreq200MHz)) != ZX_OK) {
-        return st;
-      }
-
-      if ((st = sdmmc_->PerformTuning(MMC_SEND_TUNING_BLOCK)) != ZX_OK) {
-        FDF_LOGL(ERROR, logger(), "tuning failed: %s", zx_status_get_string(st));
-        return st;
-      }
-
-      if (MmcSupportsHs400() && bus_width_ == SDMMC_BUS_WIDTH_EIGHT &&
-          !(speed_capabilities & fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHs400)) {
-        if ((st = MmcSwitchTimingHs200ToHs()) != ZX_OK) {
-          return st;
-        }
-
-        if ((st = MmcSetBusWidth(SDMMC_BUS_WIDTH_EIGHT, MMC_EXT_CSD_BUS_WIDTH_8_DDR)) != ZX_OK) {
-          return st;
-        }
-
-        if ((st = MmcSwitchTiming(SDMMC_TIMING_HS400)) != ZX_OK) {
-          return st;
-        }
-
-        if ((st = MmcSwitchFreq(kFreq200MHz)) != ZX_OK) {
-          return st;
-        }
-      }
-    } else {
-      if ((st = MmcSwitchTiming(SDMMC_TIMING_HS)) != ZX_OK) {
-        return st;
-      }
-
-      if (MmcSupportsHsDdr() && (bus_width_ != SDMMC_BUS_WIDTH_ONE) &&
-          !(speed_capabilities & fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHsddr)) {
-        if ((st = MmcSwitchTiming(SDMMC_TIMING_HSDDR)) != ZX_OK) {
-          return st;
-        }
-
-        uint8_t mmc_bus_width = (bus_width_ == SDMMC_BUS_WIDTH_FOUR) ? MMC_EXT_CSD_BUS_WIDTH_4_DDR
-                                                                     : MMC_EXT_CSD_BUS_WIDTH_8_DDR;
-        if ((st = MmcSetBusWidth(bus_width_, mmc_bus_width)) != ZX_OK) {
-          return st;
-        }
-      }
-
-      if ((st = MmcSwitchFreq(kFreq52MHz)) != ZX_OK) {
-        return st;
-      }
-    }
-  } else {
-    // Set the bus frequency to legacy timing
-    if ((st = MmcSwitchFreq(kFreq26MHz)) != ZX_OK) {
-      return st;
-    }
-    timing_ = SDMMC_TIMING_LEGACY;
+  if ((st = MmcConfigureBus()) != ZX_OK) {
+    return st;
   }
 
   FDF_LOGL(INFO, logger(), "initialized mmc @ %u MHz, bus width %d, timing %d",
@@ -536,6 +464,86 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
 
   if (metadata_.vccq_off_with_controller_off()) {
     vccq_off_with_controller_off_ = *metadata_.vccq_off_with_controller_off();
+  }
+
+  return ZX_OK;
+}
+
+zx_status_t SdmmcBlockDevice::MmcConfigureBus() {
+  if (!MmcSupportsHs() && !MmcSupportsHsDdr() && !MmcSupportsHs200()) {
+    // Set the bus frequency to legacy timing if nothing else is supported.
+    return MmcSwitchFreq(kFreq26MHz);
+  }
+
+  // Switch to 1.8V signal voltage before configuring high-speed timing.
+  if (zx_status_t status = sdmmc_->SetSignalVoltage(SDMMC_VOLTAGE_V180); status != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "Failed to switch to 1.8V signalling: %s",
+             zx_status_get_string(status));
+    return status;
+  }
+
+  MmcSelectBusWidth();
+
+  const fuchsia_hardware_sdmmc::SdmmcHostPrefs speed_capabilities =
+      metadata_.speed_capabilities().value();
+
+  // HS400 support requires HS200 support. Use High Speed or DDR52 mode if HS200 is not supported.
+  if (!MmcSupportsHs200() || bus_width_ == SDMMC_BUS_WIDTH_ONE ||
+      speed_capabilities & fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHs200) {
+    if (zx_status_t status = MmcSwitchTiming(SDMMC_TIMING_HS); status != ZX_OK) {
+      return status;
+    }
+
+    if (MmcSupportsHsDdr() && (bus_width_ != SDMMC_BUS_WIDTH_ONE) &&
+        !(speed_capabilities & fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHsddr)) {
+      if (zx_status_t status = MmcSwitchTiming(SDMMC_TIMING_HSDDR); status != ZX_OK) {
+        return status;
+      }
+
+      // Select the DDR version of the current bus width.
+      const uint8_t mmc_bus_width = bus_width_ == SDMMC_BUS_WIDTH_FOUR
+                                        ? MMC_EXT_CSD_BUS_WIDTH_4_DDR
+                                        : MMC_EXT_CSD_BUS_WIDTH_8_DDR;
+      if (zx_status_t status = MmcSetBusWidth(bus_width_, mmc_bus_width); status != ZX_OK) {
+        return status;
+      }
+    }
+
+    return MmcSwitchFreq(kFreq52MHz);
+  }
+
+  // Must perform tuning at HS200 first if HS400 is supported
+  if (zx_status_t status = MmcSwitchTiming(SDMMC_TIMING_HS200); status != ZX_OK) {
+    return status;
+  }
+
+  if (zx_status_t status = MmcSwitchFreq(kFreq200MHz); status != ZX_OK) {
+    return status;
+  }
+
+  if (zx_status_t status = sdmmc_->PerformTuning(MMC_SEND_TUNING_BLOCK); status != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "Tuning failed: %s", zx_status_get_string(status));
+    return status;
+  }
+
+  if (MmcSupportsHs400() && bus_width_ == SDMMC_BUS_WIDTH_EIGHT &&
+      !(speed_capabilities & fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHs400)) {
+    if (zx_status_t status = MmcSwitchTimingHs200ToHs(); status != ZX_OK) {
+      return status;
+    }
+
+    if (zx_status_t status = MmcSetBusWidth(SDMMC_BUS_WIDTH_EIGHT, MMC_EXT_CSD_BUS_WIDTH_8_DDR);
+        status != ZX_OK) {
+      return status;
+    }
+
+    if (zx_status_t status = MmcSwitchTiming(SDMMC_TIMING_HS400); status != ZX_OK) {
+      return status;
+    }
+
+    if (zx_status_t status = MmcSwitchFreq(kFreq200MHz); status != ZX_OK) {
+      return status;
+    }
   }
 
   return ZX_OK;
