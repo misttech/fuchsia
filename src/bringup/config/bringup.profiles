@@ -24,7 +24,7 @@
     "fuchsia.devices.usb.drivers.dwc3.interrupt": { "capacity": "125us", "deadline": "1ms", "period": "1ms" },
     "fuchsia.devices.usb.drivers.crg-udc.interrupt": { "capacity": "125us", "deadline": "1ms", "period": "1ms" },
     "fuchsia.devices.usb.audio": { "capacity": "250us", "deadline": "1ms", "period": "1ms" },
-    "fuchsia.graphics.display.drivers.display.coordinator": { "capacity": "500us", "deadline": "8ms", "period": "8ms" },
+    "fuchsia.graphics.display.drivers.display.coordinator": { "capacity": "800us", "deadline": "8ms", "period": "8ms" },
 
     // TODO(https://fxbug.dev/434005850): We use a dedicated scheduler role as a
     // workaround to avoid the driver runtime from triggering false wakeups on
