@@ -907,7 +907,6 @@ func infraToolLogChecks() []FailureModeCheck {
 			String:             "Restarts have not restored connectivity. Giving up.",
 			Type:               swarmingOutputType,
 			SkipAllPassedTests: true,
-			AttributeToTest:    true,
 		},
 	}
 }
