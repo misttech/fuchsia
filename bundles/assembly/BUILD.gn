@@ -4429,7 +4429,6 @@ icu_assembly_input_bundle("ui_eng") {
     "//src/ui/bin/scene_manager:scene_manager",
   ]
   cache_packages = [
-    "//src/graphics/display/bin/coordinator-connector",
     "//src/ui/bin/text:text_manager",
     "//src/ui/scenic:scenic_pkg",
     "//src/ui/bin/virtual_keyboard_manager",
@@ -4448,7 +4447,6 @@ icu_assembly_input_bundle("ui_user_and_userdebug") {
     "//src/ui/bin/scene_manager:scene_manager",
   ]
   base_packages = [
-    "//src/graphics/display/bin/coordinator-connector",
     "//src/ui/bin/text:text_manager",
     "//src/ui/scenic:scenic_pkg",
     "//src/ui/bin/virtual_keyboard_manager",

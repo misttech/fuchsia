@@ -1,10 +1,8 @@
 # Fake Display Coordinator Connector
 
 The `BUILD.gn` in this directory a component package named
-`fake-display-coordinator-connector`. It's a testing double of the
-[`display-coordinator-connector`][display-coordinator-connector] package.
-
-It publishes the `fuchsia.hardware.display.Service` service that can be used
+`fake-display-coordinator-connector`. It publishes the
+`fuchsia.hardware.display.Service` service that can be used
 for hermetic testing without real hardware dependency.
 
 ## Introduction
@@ -54,6 +52,3 @@ to the display coordinator connector, and providing the
   ],
 }
 ```
-
-[display-coordinator-connector]:
-  /src/graphics/display/bin/coordinator-connector/

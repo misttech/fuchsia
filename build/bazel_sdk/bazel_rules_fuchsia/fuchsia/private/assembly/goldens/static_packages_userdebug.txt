@@ -28,7 +28,6 @@ build-info-service
 ?dhcpv6-client
 ?diagnostics
 ?diagnostics-persistence
-?display-coordinator-connector
 ?dns-resolver
 ?donut
 ?element_manager
