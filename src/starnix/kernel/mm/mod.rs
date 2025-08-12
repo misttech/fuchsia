@@ -6,6 +6,7 @@ mod debugger;
 mod futex_table;
 mod mapping;
 pub mod memory;
+mod memory_accessor;
 mod memory_manager;
 mod mlock;
 mod private_anonymous_memory_manager;
@@ -17,6 +18,7 @@ mod vmsplice;
 
 pub use futex_table::*;
 pub use mapping::*;
+pub use memory_accessor::*;
 pub use memory_manager::*;
 pub use mlock::*;
 pub use protection_flags::*;

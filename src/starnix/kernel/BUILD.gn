@@ -163,6 +163,7 @@ rustc_library("starnix_core") {
     "mm/futex_table.rs",
     "mm/mapping.rs",
     "mm/memory.rs",
+    "mm/memory_accessor.rs",
     "mm/memory_manager.rs",
     "mm/mlock.rs",
     "mm/mod.rs",
