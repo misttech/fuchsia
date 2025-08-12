@@ -4,35 +4,20 @@
 
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/peripheral.h"
 
-#include <assert.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/zircon-internal/thread_annotations.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <zircon/process.h>
-#include <zircon/syscalls.h>
+#include <lib/driver/compat/cpp/compat.h>
+#include <lib/driver/component/cpp/driver_export.h>
 
-#include <atomic>
-#include <memory>
-#include <vector>
-
-#include <usb/peripheral.h>
+#include <usb/request-cpp.h>
 
 namespace virtualbus {
 
-void TestFunction::CompletionCallback(usb_request_t* req) {
-  usb::Request<> request(req, parent_req_size_);
-}
-
-size_t TestFunction::UsbFunctionInterfaceGetDescriptorsSize() { return descriptor_size_; }
+size_t TestFunction::UsbFunctionInterfaceGetDescriptorsSize() { return sizeof(descriptor_); }
 
 void TestFunction::UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer,
                                                       size_t descriptors_size,
                                                       size_t* out_descriptors_actual) {
-  memcpy(out_descriptors_buffer, &descriptor_, std::min(descriptors_size, descriptor_size_));
-  *out_descriptors_actual = descriptor_size_;
+  memcpy(out_descriptors_buffer, &descriptor_, std::min(descriptors_size, sizeof(descriptor_)));
+  *out_descriptors_actual = sizeof(descriptor_);
 }
 
 zx_status_t TestFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup,
@@ -57,12 +42,13 @@ zx_status_t TestFunction::UsbFunctionInterfaceSetConfigured(bool configured, usb
     usb_request_complete_callback_t complete = {
         .callback =
             [](void* ctx, usb_request_t* req) {
-              return static_cast<TestFunction*>(ctx)->CompletionCallback(req);
+              usb::Request<> request(req, static_cast<TestFunction*>(ctx)->parent_req_size_);
             },
         .ctx = this,
     };
     std::optional<usb::Request<>> data_out_req;
-    usb::Request<>::Alloc(&data_out_req, kMaxPacketSize, bulk_out_addr_, parent_req_size_);
+    usb::Request<>::Alloc(&data_out_req, kMaxPacketSize, descriptor_.bulk_out.b_endpoint_address,
+                          parent_req_size_);
     function_.RequestQueue(data_out_req->take(), &complete);
   } else {
     configured_ = false;
@@ -74,72 +60,40 @@ zx_status_t TestFunction::UsbFunctionInterfaceSetInterface(uint8_t interface, ui
   return ZX_OK;
 }
 
-zx_status_t TestFunction::Bind() {
-  descriptor_size_ = sizeof(descriptor_);
-  descriptor_.interface = {
-      .b_length = sizeof(usb_interface_descriptor_t),
-      .b_descriptor_type = USB_DT_INTERFACE,
-      .b_interface_number = 0,
-      .b_alternate_setting = 0,
-      .b_num_endpoints = 1,
-      .b_interface_class = 0xFF,
-      .b_interface_sub_class = 0xFF,
-      .b_interface_protocol = 0xFF,
-      .i_interface = 0,
-  };
-  descriptor_.bulk_out = {
-      .b_length = sizeof(usb_endpoint_descriptor_t),
-      .b_descriptor_type = USB_DT_ENDPOINT,
-      .b_endpoint_address = USB_ENDPOINT_OUT,
-      .bm_attributes = USB_ENDPOINT_BULK,
-      .w_max_packet_size = 512,
-      .b_interval = 0,
-  };
-
-  active_ = true;
+zx::result<> TestFunction::Start() {
+  zx::result<ddk::UsbFunctionProtocolClient> function =
+      compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
+  if (function.is_error()) {
+    FDF_LOG(ERROR, "Failed to connect function %s", function.status_string());
+    return function.take_error();
+  }
+  function_ = *function;
 
   parent_req_size_ = function_.GetRequestSize();
 
   zx_status_t status = function_.AllocInterface(&descriptor_.interface.b_interface_number);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "usb_function_alloc_interface failed");
-    return status;
+    FDF_LOG(ERROR, "usb_function_alloc_interface failed");
+    return zx::error(status);
   }
   status = function_.AllocEp(USB_DIR_OUT, &descriptor_.bulk_out.b_endpoint_address);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "usb_function_alloc_ep failed");
-    return status;
+    FDF_LOG(ERROR, "usb_function_alloc_ep failed");
+    return zx::error(status);
   }
 
-  bulk_out_addr_ = descriptor_.bulk_out.b_endpoint_address;
-
-  status = DdkAdd("virtual-bus-test-peripheral");
-  if (status != ZX_OK) {
-    return status;
+  zx::result child = AddOwnedChild(kName);
+  if (child.is_error()) {
+    FDF_LOG(ERROR, "Failed to add child %s", child.status_string());
+    return child.take_error();
   }
+  child_ = std::move(*child);
+
   function_.SetInterface(this, &usb_function_interface_protocol_ops_);
 
-  return ZX_OK;
+  return zx::ok();
 }
-
-void TestFunction::DdkRelease() { delete this; }
-
-zx_status_t Bind(void* ctx, zx_device_t* parent) {
-  auto dev = std::make_unique<TestFunction>(parent);
-  zx_status_t status = dev->Bind();
-  if (status == ZX_OK) {
-    // devmgr is now in charge of the memory for dev
-    dev.release();
-  }
-  return ZX_OK;
-}
-static constexpr zx_driver_ops_t driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = Bind;
-  return ops;
-}();
 
 }  // namespace virtualbus
 
-ZIRCON_DRIVER(usb_virtual_bus_tester, virtualbus::driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT(virtualbus::TestFunction);
