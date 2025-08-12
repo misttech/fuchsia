@@ -82,4 +82,6 @@ optional node "regulator-vdd18" {
   fuchsia.regulator.NAME == "pm5100_l14";
 }
 
-// TODO(b/424561696): enable vdd33 (at pm5100_l25) when the multi-bind issue is fixed.
+optional node "regulator-vdd33" {
+  fuchsia.regulator.NAME == "pm5100_l25";
+}
