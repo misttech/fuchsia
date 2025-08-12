@@ -16,11 +16,11 @@
         fallback: "false",
     },
     capabilities: [
-        { service: "fuchsia.hardware.usb.virtualbustest.Service" },
+        { service: "fuchsia.hardware.usb.virtualbustest.BusTestService" },
     ],
     expose: [
         {
-            service: "fuchsia.hardware.usb.virtualbustest.Service",
+            service: "fuchsia.hardware.usb.virtualbustest.BusTestService",
             from: "self",
         },
     ],

@@ -24,16 +24,20 @@ class Device : public fdf::DriverBase,
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
  private:
-  void RunShortPacketTest(RunShortPacketTestCompleter::Sync& completer) override;
-
+  void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
+  void Out(OutRequest& request, OutCompleter::Sync& completer) override;
+  void In(InRequest& request, InCompleter::Sync& completer) override;
   fdf::OwnedChildNode child_;
   fidl::ServerBindingGroup<fuchsia_hardware_usb_virtualbustest::BusTest> bindings_;
 
   ddk::UsbProtocolClient usb_client_ = {};
-  std::optional<RunShortPacketTestCompleter::Async> completer_;
+
+  std::optional<OutCompleter::Async> out_completer_;
+  std::optional<InCompleter::Async> in_completer_;
 
   size_t parent_req_size_ = 0;
   uint8_t bulk_out_addr_ = 0;
+  uint8_t bulk_in_addr_ = 0;
 };
 
 }  // namespace virtualbus

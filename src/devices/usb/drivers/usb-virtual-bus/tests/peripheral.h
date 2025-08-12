@@ -5,8 +5,11 @@
 #ifndef SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_PERIPHERAL_H_
 #define SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_PERIPHERAL_H_
 
+#include <fidl/fuchsia.hardware.usb.virtualbustest/cpp/fidl.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
 #include <lib/driver/component/cpp/driver_base.h>
+
+#include <queue>
 
 #include <usb/descriptors.h>
 
@@ -15,7 +18,8 @@ namespace virtualbus {
 constexpr auto kMaxPacketSize = 20;
 
 class TestFunction : public fdf::DriverBase,
-                     public ddk::UsbFunctionInterfaceProtocol<TestFunction> {
+                     public ddk::UsbFunctionInterfaceProtocol<TestFunction>,
+                     public fidl::Server<fuchsia_hardware_usb_virtualbustest::ExpectBusTest> {
  private:
   static constexpr std::string_view kName = "virtual-bus-test-peripheral";
 
@@ -35,13 +39,20 @@ class TestFunction : public fdf::DriverBase,
   zx_status_t UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting);
 
  private:
-  fdf::OwnedChildNode child_;
+  void ExpectControl(ExpectControlRequest& request,
+                     ExpectControlCompleter::Sync& completer) override;
+  void ExpectOut(ExpectOutCompleter::Sync& completer) override;
+  void ExpectIn(ExpectInRequest& request, ExpectInCompleter::Sync& completer) override;
+  void Sync(SyncCompleter::Sync& completer) override { completer.Reply(); }
 
+  fdf::OwnedChildNode child_;
+  fidl::ServerBindingGroup<fuchsia_hardware_usb_virtualbustest::ExpectBusTest> bindings_;
   ddk::UsbFunctionProtocolClient function_;
 
   struct VirtualBusTestDescriptor {
     usb_interface_descriptor_t interface;
     usb_endpoint_descriptor_t bulk_out;
+    usb_endpoint_descriptor_t bulk_in;
   } __PACKED descriptor_ = {
       .interface =
           {
@@ -64,10 +75,24 @@ class TestFunction : public fdf::DriverBase,
               .w_max_packet_size = 512,
               .b_interval = 0,
           },
+      .bulk_in =
+          {
+              .b_length = sizeof(usb_endpoint_descriptor_t),
+              .b_descriptor_type = USB_DT_ENDPOINT,
+              .b_endpoint_address = USB_ENDPOINT_IN,
+              .bm_attributes = USB_ENDPOINT_BULK,
+              .w_max_packet_size = 512,
+              .b_interval = 0,
+          },
   };
 
   size_t parent_req_size_ = 0;
   bool configured_ = false;
+
+  std::vector<uint8_t> expect_control_data_;
+  std::optional<ExpectControlCompleter::Async> expect_control_;
+  std::optional<ExpectOutCompleter::Async> expect_out_;
+  std::optional<ExpectInCompleter::Async> expect_in_;
 };
 }  // namespace virtualbus
 

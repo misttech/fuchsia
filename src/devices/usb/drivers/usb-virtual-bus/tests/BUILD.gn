@@ -24,6 +24,7 @@ driver_bind_rules("usb-virtual-bus-tester-bind") {
 fidl("fuchsia.hardware.usb.virtualbustest") {
   testonly = true
   sources = [ "usb-virtualbustest.test.fidl" ]
+  public_deps = [ "//zircon/vdso/zx" ]
 }
 
 fuchsia_cc_driver("virtual-bus-tester-driver") {
@@ -64,6 +65,7 @@ fuchsia_cc_driver("virtual-bus-tester-function-driver") {
   output_name = "virtual-bus-tester-function"
   sources = [ "peripheral.cc" ]
   deps = [
+    ":fuchsia.hardware.usb.virtualbustest_cpp",
     ":usb-virtual-bus-tester-function-bind",
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp",
@@ -93,7 +95,7 @@ test("usb-virtual-bus-test-bin") {
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
     "//src/devices/usb/testing/usb-virtual-bus-launcher:usb-virtual-bus-launcher-dfv2-compat-logging",
-    "//zircon/system/ulib/zxtest",
+    "//src/lib/fxl/test:gtest_main",
   ]
 }
 
