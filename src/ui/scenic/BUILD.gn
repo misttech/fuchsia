@@ -99,7 +99,7 @@ fuchsia_unittest_package("flatland_display_compositor_pixeltests") {
   manifest = "meta/flatland_display_compositor_pixeltests.cml"
   deps = [
            "lib/flatland/engine/tests/pixeltests:pixeltests_with_real_display",
-           "//src/graphics/display/bin/coordinator-connector:child-component",
+           "//src/graphics/display/bin/coordinator-connector:component",
          ] + scenic_test_deps
   test_specs = {
     log_settings = {
@@ -121,10 +121,11 @@ fuchsia_unittest_package("flatland_display_compositor_pixeltests") {
 fuchsia_unittest_package(
     "flatland_display_compositor_pixeltests_with_fake_display") {
   manifest = "meta/flatland_display_compositor_pixeltests_with_fake_display.cml"
-  deps = [
-           "lib/flatland/engine/tests/pixeltests:pixeltests_with_fake_display",
-           "//src/graphics/display/testing/fake-coordinator-connector:child-component",
-         ] + scenic_test_deps
+  deps =
+      [
+        "lib/flatland/engine/tests/pixeltests:pixeltests_with_fake_display",
+        "//src/graphics/display/testing/fake-coordinator-connector:component",
+      ] + scenic_test_deps
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -141,10 +142,11 @@ fuchsia_unittest_package(
 
 fuchsia_unittest_package("flatland_display_compositor_smoketests") {
   manifest = "meta/flatland_display_compositor_smoketests.cml"
-  deps = [
-           "lib/flatland/engine/tests/smoketests:smoketests_with_fake_display",
-           "//src/graphics/display/testing/fake-coordinator-connector:child-component",
-         ] + scenic_test_deps
+  deps =
+      [
+        "lib/flatland/engine/tests/smoketests:smoketests_with_fake_display",
+        "//src/graphics/display/testing/fake-coordinator-connector:component",
+      ] + scenic_test_deps
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -195,10 +197,11 @@ fuchsia_unittest_package("flatland_renderer_unittests_vulkanrenderertest") {
 
 fuchsia_unittest_package("flatland_renderer_display_unittests") {
   manifest = "meta/flatland_renderer_display_unittests.cml"
-  deps = [
-           "lib/flatland/renderer/tests:display_unittests",
-           "//src/graphics/display/testing/fake-coordinator-connector:child-component",
-         ] + scenic_test_deps
+  deps =
+      [
+        "lib/flatland/renderer/tests:display_unittests",
+        "//src/graphics/display/testing/fake-coordinator-connector:component",
+      ] + scenic_test_deps
   test_specs = {
     log_settings = {
       max_severity = "ERROR"

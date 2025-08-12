@@ -6,6 +6,7 @@
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/defer.h>
+#include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/zircon-internal/align.h>
 
 #include "src/graphics/display/lib/coordinator-getter/client.h"
@@ -23,6 +24,7 @@
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
 #include "src/ui/scenic/lib/flatland/engine/tests/common.h"
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
+#include "src/ui/scenic/lib/flatland/testing/build_display_realm.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
 using ::testing::_;
@@ -57,6 +59,8 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
   void SetUp() override {
     DisplayCompositorTestBase::SetUp();
 
+    realm_root_ = testing::BuildFakeDisplayRealm(dispatcher());
+
     // Create the SysmemAllocator.
     zx_status_t status = fdio_service_connect(
         "/svc/fuchsia.sysmem2.Allocator", sysmem_allocator_.NewRequest().TakeChannel().release());
@@ -70,13 +74,8 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
 
     display_manager_ = std::make_unique<scenic_impl::display::DisplayManager>([]() {});
 
-    // TODO(https://fxbug.dev/42073120): This reuses the display coordinator from previous
-    // test cases in the same test component, so the display coordinator may be
-    // in a dirty state. Tests should request a reset of display coordinator
-    // here.
-
     zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
-        component::Connect<fuchsia_hardware_display::Provider>();
+        realm_root_->component().Connect<fuchsia_hardware_display::Provider>();
     ASSERT_OK(provider_result);
     fidl::ClientEnd<fuchsia_hardware_display::Provider> provider =
         std::move(provider_result).value();
@@ -112,6 +111,7 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
   static constexpr fuchsia_images2::PixelFormat kPixelFormat =
       fuchsia_images2::PixelFormat::kB8G8R8A8;
 
+  std::optional<component_testing::RealmRoot> realm_root_;
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
   std::unique_ptr<async::Executor> executor_;
   std::unique_ptr<scenic_impl::display::DisplayManager> display_manager_;

@@ -3,25 +3,25 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/graphics/display/bin/coordinator-connector/meta/display_coordinator_connector.shard.cml",
         "//src/sys/test_runners/gtest/default.shard.cml",
         "inspect/client.shard.cml",
+        "sys/component/realm_builder.shard.cml",
         "syslog/client.shard.cml",
         "vulkan/client.shard.cml",
     ],
     program: {
         binary: "bin/flatland_display_compositor_pixeltests",
     },
-    children: [
+    offer: [
         {
-            name: "display-coordinator-connector",
-            url: "#meta/display-coordinator-connector.cm",
+            service: "fuchsia.hardware.display.Service",
+            from: "parent",
+            to: "#realm_builder",
         },
-    ],
-    use: [
         {
-            protocol: [ "fuchsia.hardware.display.Provider" ],
-            from: "#display-coordinator-connector",
+            protocol: [ "fuchsia.tracing.provider.Registry" ],
+            from: "parent",
+            to: "#realm_builder",
         },
     ],
 }

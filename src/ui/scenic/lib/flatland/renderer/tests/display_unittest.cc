@@ -12,6 +12,7 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
 #include <lib/fit/defer.h>
+#include <lib/sys/component/cpp/testing/realm_builder.h>
 
 #include <thread>
 
@@ -29,6 +30,7 @@
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
 #include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
+#include "src/ui/scenic/lib/flatland/testing/build_display_realm.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
 #include <glm/gtc/constants.hpp>
@@ -44,6 +46,8 @@ class DisplayTest : public gtest::RealLoopFixture {
     }
     gtest::RealLoopFixture::SetUp();
 
+    realm_root_ = flatland::testing::BuildFakeDisplayRealm(dispatcher());
+
     sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("display_unittest::Setup");
 
     async_set_default_dispatcher(dispatcher());
@@ -51,13 +55,8 @@ class DisplayTest : public gtest::RealLoopFixture {
 
     display_manager_ = std::make_unique<scenic_impl::display::DisplayManager>([]() {});
 
-    // TODO(https://fxbug.dev/42073120): This reuses the display coordinator from previous
-    // test cases in the same test component, so the display coordinator may be
-    // in a dirty state. Tests should request a reset of display coordinator
-    // here.
-
     zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
-        component::Connect<fuchsia_hardware_display::Provider>();
+        realm_root_->component().Connect<fuchsia_hardware_display::Provider>();
     ASSERT_OK(provider_result);
     fidl::ClientEnd<fuchsia_hardware_display::Provider> provider =
         std::move(provider_result).value();
@@ -133,6 +132,7 @@ class DisplayTest : public gtest::RealLoopFixture {
     return zx::error(ZX_ERR_TIMED_OUT);
   }
 
+  std::optional<component_testing::RealmRoot> realm_root_;
   std::unique_ptr<async::Executor> executor_;
   std::unique_ptr<scenic_impl::display::DisplayManager> display_manager_;
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;

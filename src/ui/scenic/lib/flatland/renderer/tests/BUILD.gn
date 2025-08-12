@@ -83,6 +83,7 @@ cc_test_executable("display_unittests") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/async-testing",
     "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/sys/component/cpp/testing:cpp",
     "//src/graphics/display/lib/coordinator-getter:client",
     "//src/lib/fsl",
     "//src/lib/testing/loop_fixture:gtest",
@@ -92,6 +93,7 @@ cc_test_executable("display_unittests") {
     "//src/ui/scenic/lib/display",
     "//src/ui/scenic/lib/flatland:flatland_types",
     "//src/ui/scenic/lib/flatland/renderer",
+    "//src/ui/scenic/lib/flatland/testing:build_display_realm",
     "//src/ui/scenic/lib/utils",
     "//third_party/googletest:gtest",
   ]

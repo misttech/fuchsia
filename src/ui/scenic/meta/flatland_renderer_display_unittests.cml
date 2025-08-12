@@ -3,10 +3,8 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/graphics/display/testing/fake-coordinator-connector/meta/fake_display_coordinator_connector.shard.cml",
         "inspect/client.shard.cml",
-
-        // Using the ELF runner instead of GTest runner allows us to pass the `gtest_filter` flag.
+        "sys/component/realm_builder.shard.cml",
         "sys/testing/elf_test_runner.shard.cml",
         "syslog/client.shard.cml",
         "vulkan/client.shard.cml",
@@ -14,19 +12,19 @@
     program: {
         binary: "bin/flatland_renderer_display_unittests",
     },
-    children: [
-        {
-            name: "display-coordinator-connector",
-            url: "#meta/display-coordinator-connector.cm",
-        },
-    ],
     use: [
         {
             protocol: [ "fuchsia.scheduler.RoleManager" ],
         },
+    ],
+    offer: [
         {
-            protocol: [ "fuchsia.hardware.display.Provider" ],
-            from: "#display-coordinator-connector",
+            protocol: [
+                "fuchsia.sysmem2.Allocator",
+                "fuchsia.tracing.provider.Registry",
+            ],
+            from: "parent",
+            to: "#realm_builder",
         },
     ],
 }
