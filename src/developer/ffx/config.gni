@@ -58,6 +58,7 @@ dual_mode_plugins = [
   "//src/developer/ffx/plugins/debug:ffx_debug_plugin",
   "//src/developer/ffx/plugins/emulator:ffx_emulator",
   "//src/developer/ffx/plugins/repository:ffx_repository",
+  "//src/developer/ffx/plugins/product_bundle:ffx_product_bundle",
 ]
 
 # Config default files from tools listed above so they can be included in

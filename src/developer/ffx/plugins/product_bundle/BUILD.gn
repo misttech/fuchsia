@@ -9,7 +9,6 @@ ffx_plugin("ffx_product_bundle") {
   sdk_category = "partner"
   version = "0.1.0"
   edition = "2021"
-  config_data = [ "data/config.json" ]
 
   plugin_deps = [
     "//src/developer/ffx/plugins/product/create:ffx_product_create",
