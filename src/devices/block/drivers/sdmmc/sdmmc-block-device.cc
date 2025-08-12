@@ -693,24 +693,7 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
   for (auto& req : reqs) {
     req.suppress_error_messages = suppress_error_messages;
   }
-
-  zx_status_t status =
-      sdmmc_->SdmmcIoRequest(std::move(arena), reqs, readwrite_metadata_.buffer_regions.get());
-  if (!command_packing) {
-    return status;
-  }
-
-  // Ignore any errors after this point to maintain the old behavior.
-  std::array<uint8_t, MMC_EXT_CSD_SIZE> ext_csd;
-  zx_status_t ext_csd_status = sdmmc_->MmcSendExtCsd(ext_csd);
-  if (ext_csd_status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to read EXT_CSD after packed command: %s",
-             zx_status_get_string(ext_csd_status));
-  } else if (ext_csd[MMC_EXT_CSD_PACKED_COMMAND_STATUS] != 0) {
-    FDF_LOGL(ERROR, logger(), "Packed command status: 0x%02x Packed failure index: %u",
-             ext_csd[MMC_EXT_CSD_PACKED_COMMAND_STATUS], ext_csd[MMC_EXT_CSD_PACKED_FAILURE_INDEX]);
-  }
-  return ZX_OK;
+  return sdmmc_->SdmmcIoRequest(std::move(arena), reqs, readwrite_metadata_.buffer_regions.get());
 }
 
 zx_status_t SdmmcBlockDevice::Flush() {
