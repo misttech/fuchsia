@@ -1185,6 +1185,9 @@
 
                 // TODO(https://fxbug.dev/429143932): Investigate and re-enable
                 "PreadvTest.MMConcurrencyStress",
+
+                // TODO(https://fxbug.dev/437995606): Investigate and re-enable
+                "ExecTest.ReadProcMemAfterExecFromChild",
             ],
         },
     ],
