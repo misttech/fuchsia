@@ -12,16 +12,7 @@
     program: {
         binary: "bin/flatland_display_compositor_pixeltests",
     },
-    offer: [
-        {
-            service: "fuchsia.hardware.display.Service",
-            from: "parent",
-            to: "#realm_builder",
-        },
-        {
-            protocol: [ "fuchsia.tracing.provider.Registry" ],
-            from: "parent",
-            to: "#realm_builder",
-        },
+    use: [
+        { service: "fuchsia.hardware.display.Service" },
     ],
 }

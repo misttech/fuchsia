@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/graphics/display/bin/coordinator-connector/meta/display_coordinator_connector.shard.cml",
         "//src/ui/meta/a11y_routes.shard.cml",
         "//src/ui/meta/scene_manager_routes.shard.cml",
         "//src/ui/meta/scenic_routes.shard.cml",
@@ -11,12 +10,6 @@
         "//src/ui/meta/virtual_keyboard_manager_routes.shard.cml",
         "inspect/offer.shard.cml",
         "syslog/client.shard.cml",
-    ],
-    children: [
-        {
-            name: "display-coordinator-connector",
-            url: "fuchsia-pkg://fuchsia.com/display-coordinator-connector#meta/display-coordinator-connector.cm",
-        },
     ],
     offer: [
         {
@@ -36,7 +29,7 @@
         },
         {
             service: "fuchsia.hardware.display.Service",
-            from: "#display-coordinator-connector",
+            from: "parent",
             to: [ "#scenic" ],
         },
         {

@@ -294,7 +294,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
 #ifdef FAKE_DISPLAY
     realm_root_ = testing::BuildFakeDisplayRealm(dispatcher());
 #else
-    realm_root_ = testing::BuildDisplayRealm(dispatcher());
+    realm_root_ = std::nullopt;
 #endif  // FAKE_DISPLAY
 
     // Create the SysmemAllocator.
@@ -310,8 +310,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
 
     display_manager_ = std::make_unique<scenic_impl::display::DisplayManager>([]() {});
 
-    fidl::ClientEnd<fuchsia_io::Directory> svc_root(
-        realm_root_->component().CloneExposedDir().TakeChannel());
+    fidl::ClientEnd<fuchsia_io::Directory> svc_root = OpenServiceRoot();
     component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher(
         svc_root.borrow());
     zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
@@ -372,6 +371,17 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
 
   static std::shared_ptr<flatland::NullRenderer> NewNullRenderer() {
     return std::make_shared<flatland::NullRenderer>();
+  }
+
+  fidl::ClientEnd<fuchsia_io::Directory> OpenServiceRoot() {
+    if (realm_root_) {
+      return fidl::ClientEnd<fuchsia_io::Directory>(
+          realm_root_->component().CloneExposedDir().TakeChannel());
+    }
+    zx::result<fidl::ClientEnd<fuchsia_io::Directory>> open_service_root_result =
+        component::OpenServiceRoot();
+    ZX_ASSERT(open_service_root_result.is_ok());
+    return std::move(open_service_root_result).value();
   }
 
   // To avoid flakes, tests call this function to ensure that config stamps applied by
