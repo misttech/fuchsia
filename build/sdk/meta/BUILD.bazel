@@ -31,5 +31,5 @@ _idk_schema_files = [
 filegroup(
     name = "idk_schema_files",
     srcs = _idk_schema_files,
-    visibility = ["//build/bazel/bazel_sdk:__subpackages__"],
+    visibility = ["//build/bazel/bazel_sdk:__pkg__"],
 )
