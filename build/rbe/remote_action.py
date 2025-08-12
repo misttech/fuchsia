@@ -1648,8 +1648,19 @@ exec "${{cmd[@]}}"
         xattr_value = self.action_log_record.output_file_digests.get(
             output_file
         )
-        if xattr_value:
-            os.setxattr(output_file, _RBE_XATTR_HASH, xattr_value.encode())
+        if not xattr_value:
+            # Hash the locally-compiled file ourselves, to seed it for use in
+            # future compilations with RBE.
+            #
+            # The format of this xattr is:
+            #   "<sha256 hex string>/<file len>"
+            #  e.g.
+            #   "abcd...456f/12345"
+            with open(output_file, "rb") as f:
+                digest = hashlib.file_digest(f, "sha256").hexdigest()
+                size = os.lstat(output_file).st_size
+                xattr_value = f"{digest}/{size}"
+        os.setxattr(output_file, _RBE_XATTR_HASH, xattr_value.encode())
 
         # Clear the old download stub marker, if present
         if _RBE_OLD_XATTR_HASH in os.listxattr(output_file):
