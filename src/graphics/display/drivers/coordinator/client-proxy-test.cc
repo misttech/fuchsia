@@ -106,8 +106,7 @@ class ClientProxyTest : public ::testing::Test {
     controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow(),
                         engine_listener_dispatcher_->borrow());
 
-    client_proxy_.emplace(&controller_.value(), ClientPriority::kPrimary, ClientId(1),
-                          /*on_client_disconnected=*/[] {});
+    client_proxy_.emplace(&controller_.value(), ClientPriority::kPrimary, ClientId(1));
     ASSERT_OK(client_proxy_->InitForTesting(std::move(coordinator_server_end),
                                             std::move(listener_client_end)));
   }

@@ -46,8 +46,7 @@ class FakeDisplayStack {
       display_coordinator::ClientPriority client_priority,
       fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
       fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
-          coordinator_listener_client_end,
-      fit::function<void()> on_client_disconnected);
+          coordinator_listener_client_end);
 
   // Must not be called after SyncShutdown().
   //

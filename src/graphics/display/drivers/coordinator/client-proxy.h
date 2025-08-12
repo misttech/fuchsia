@@ -36,8 +36,7 @@ class ClientProxy {
  public:
   // `client_id` is assigned by the Controller to distinguish clients.
   // `controller` must outlive ClientProxy.
-  ClientProxy(Controller* controller, ClientPriority client_priority, ClientId client_id,
-              fit::function<void()> on_client_disconnected);
+  ClientProxy(Controller* controller, ClientPriority client_priority, ClientId client_id);
 
   ~ClientProxy();
 
@@ -113,8 +112,6 @@ class ClientProxy {
   std::vector<std::unique_ptr<async::Task>> client_scheduled_tasks_;
 
   ClientVsyncQueue vsync_queue_;
-
-  fit::function<void()> on_client_disconnected_;
 
   // Signaled when the FIDL connection is unbound.
   //

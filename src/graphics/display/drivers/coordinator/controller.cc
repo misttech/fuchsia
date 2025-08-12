@@ -668,10 +668,9 @@ void PrintChannelKoids(ClientPriority client_priority, const zx::channel& channe
 zx_status_t Controller::CreateClient(
     ClientPriority client_priority,
     fidl::ServerEnd<fidl_display::Coordinator> coordinator_server_end,
-    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_client_end,
-    fit::function<void()> on_client_disconnected) {
+    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
+        coordinator_listener_client_end) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
-  ZX_DEBUG_ASSERT(on_client_disconnected);
 
   PrintChannelKoids(client_priority, coordinator_server_end.channel());
 
@@ -696,8 +695,7 @@ zx_status_t Controller::CreateClient(
 
   ClientId client_id = next_client_id_;
   ++next_client_id_;
-  auto client = std::make_unique<ClientProxy>(this, client_priority, client_id,
-                                              std::move(on_client_disconnected));
+  auto client = std::make_unique<ClientProxy>(this, client_priority, client_id);
 
   zx_status_t status = client->Init(&root_, std::move(coordinator_server_end),
                                     std::move(coordinator_listener_client_end));
@@ -783,8 +781,7 @@ void Controller::OpenCoordinatorWithListenerForVirtcon(
 
   zx_status_t create_status =
       CreateClient(ClientPriority::kVirtcon, std::move(request->coordinator()),
-                   std::move(request->coordinator_listener()),
-                   /*on_client_disconnected=*/[] {});
+                   std::move(request->coordinator_listener()));
   if (create_status == ZX_OK) {
     completer.ReplySuccess();
   } else {
@@ -801,8 +798,7 @@ void Controller::OpenCoordinatorWithListenerForPrimary(
 
   zx_status_t create_status =
       CreateClient(ClientPriority::kPrimary, std::move(request->coordinator()),
-                   std::move(request->coordinator_listener()),
-                   /*on_client_disconnected=*/[] {});
+                   std::move(request->coordinator_listener()));
   if (create_status == ZX_OK) {
     completer.ReplySuccess();
   } else {

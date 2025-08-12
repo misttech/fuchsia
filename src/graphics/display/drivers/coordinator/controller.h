@@ -167,8 +167,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
       ClientPriority client_priority,
       fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
       fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
-          coordinator_listener_client_end,
-      fit::function<void()> on_client_disconnected);
+          coordinator_listener_client_end);
 
   display::DriverBufferCollectionId GetNextDriverBufferCollectionId();
 

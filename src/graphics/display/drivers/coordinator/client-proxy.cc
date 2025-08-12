@@ -165,15 +165,9 @@ void ClientProxy::EnableCapture(bool enable) {
 
 void ClientProxy::OnClientDead() {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-  ZX_DEBUG_ASSERT_MSG(on_client_disconnected_, "OnClientDead() called twice");
-
-  // Stash any data members we need to access after the ClientProxy is deleted.
-  fit::function<void()> on_client_disconnected = std::move(on_client_disconnected_);
 
   // Deletes `this`.
   controller_.OnClientDead(this);
-
-  on_client_disconnected();
 }
 
 void ClientProxy::UpdateConfigStampMapping(ConfigStampPair stamps) {
@@ -241,13 +235,9 @@ zx::result<> ClientProxy::InitForTesting(
   return zx::ok();
 }
 
-ClientProxy::ClientProxy(Controller* controller, ClientPriority client_priority, ClientId client_id,
-                         fit::function<void()> on_client_disconnected)
-    : controller_(*controller),
-      handler_(&controller_, this, client_priority, client_id),
-      on_client_disconnected_(std::move(on_client_disconnected)) {
-  ZX_DEBUG_ASSERT(controller);
-  ZX_DEBUG_ASSERT(on_client_disconnected_);
+ClientProxy::ClientProxy(Controller* controller, ClientPriority client_priority, ClientId client_id)
+    : controller_(*controller), handler_(&controller_, this, client_priority, client_id) {
+  ZX_DEBUG_ASSERT(controller != nullptr);
 }
 
 ClientProxy::~ClientProxy() = default;

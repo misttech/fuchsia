@@ -76,9 +76,7 @@ void FakeDisplayCoordinatorConnector::ConnectClient(OpenCoordinatorRequest reque
                          : display_coordinator::ClientPriority::kPrimary;
   zx::result<> result = state->fake_display_stack->ConnectCoordinatorClient(
       client_priority, std::move(request.coordinator_request),
-      std::move(request.coordinator_listener_client_end),
-      /*on_client_disconnected=*/
-      []() {});
+      std::move(request.coordinator_listener_client_end));
   request.on_coordinator_opened(result);
 }
 

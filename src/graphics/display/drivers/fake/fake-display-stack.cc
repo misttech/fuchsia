@@ -125,14 +125,14 @@ FakeDisplayStack::~FakeDisplayStack() {
 zx::result<> FakeDisplayStack::ConnectCoordinatorClient(
     display_coordinator::ClientPriority client_priority,
     fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
-    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_client_end,
-    fit::function<void()> on_client_disconnected) {
+    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
+        coordinator_listener_client_end) {
   libsync::Completion completion;
   zx::result<> result = zx::ok();
   async::PostTask(coordinator_controller_->driver_dispatcher()->async_dispatcher(), [&]() mutable {
-    zx_status_t status = coordinator_controller_->CreateClient(
-        client_priority, std::move(coordinator_server_end),
-        std::move(coordinator_listener_client_end), std::move(on_client_disconnected));
+    zx_status_t status =
+        coordinator_controller_->CreateClient(client_priority, std::move(coordinator_server_end),
+                                              std::move(coordinator_listener_client_end));
     result = zx::make_result(status);
     completion.Signal();
   });
