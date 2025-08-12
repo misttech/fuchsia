@@ -26,7 +26,7 @@
              gerrithost="https://fuchsia-review.googlesource.com"
              revision="087633dc3bdf106d1ae68c994e94c74d05fff863"/>
     <project name="third_party/alacritty"
-             path="third_party/alacritty"
+             path="third_party/alacritty-migrating/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/alacritty/alacritty"
              gerrithost="https://fuchsia-review.googlesource.com"
              revision="a334c65a5b362d6ea5f1d2fc55243ab1e4e36e70"/>

@@ -87,7 +87,7 @@ src/lib/mundane/` * `git restore --source HEAD^
 third_party/rust_crates/compat/rustyline` * `git -C
 third_party/rust_crates/mirrors/rustyline reset --hard` * `git -C
 third_party/rust_crates/mirrors/quiche reset --hard` * `git -C
-third_party/alacritty reset --hard`
+third_party/alacritty-migrating/src reset --hard`
 
 `fx build` (fails due to TryInto)
 

@@ -280,7 +280,7 @@
       // updates don't clobber your change.
       "third_party/abseil-cpp/**": true,
       "third_party/acpica/**": true,
-      "third_party/alacritty/**": true,
+      "third_party/alacritty-migrating/src/**": true,
       "third_party/android/**": true,
       // antlion hosts connectivity end-to-end Python tests.
       "third_party/antlion/**": false,

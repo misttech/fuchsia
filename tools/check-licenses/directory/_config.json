@@ -8,6 +8,7 @@
                 ],
                 "paths": [
                     "build/secondary/third_party/acpica",
+                    "build/secondary/third_party/alacritty",
                     "build/secondary/third_party/glog",
                     "build/secondary/third_party/grpc",
                     "build/secondary/third_party/mesa"
