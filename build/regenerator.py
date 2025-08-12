@@ -31,6 +31,7 @@ sys.path.insert(0, str(_BUILD_BAZEL_SCRIPTS))
 sys.path.insert(0, str(_BUILD_BAZEL_DIR))
 sys.path.insert(0, str(_BUILD_SDK_SCRIPTS))
 
+import build_utils
 import compute_content_hash
 import remote_services_utils
 import workspace_utils
@@ -274,13 +275,13 @@ def main() -> int:
     if fuchsia_dir:
         fuchsia_dir = fuchsia_dir.resolve()
     else:
-        fuchsia_dir = workspace_utils.find_fuchsia_dir(_SCRIPT_DIR)
+        fuchsia_dir = build_utils.find_fuchsia_dir(_SCRIPT_DIR)
 
     build_dir = args.fuchsia_build_dir
     if build_dir:
         build_dir = build_dir.resolve()
     else:
-        build_dir = workspace_utils.find_fx_build_dir(fuchsia_dir)
+        build_dir = build_utils.find_fx_build_dir(fuchsia_dir)
         if not build_dir:
             parser.error(
                 "Cannot auto-detect build directory, please use --fuchsia-build-dir=DIR option!"

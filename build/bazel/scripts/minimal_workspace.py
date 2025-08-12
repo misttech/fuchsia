@@ -26,8 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any, Sequence
 
+import build_utils
 import remote_services_utils
-import workspace_utils
 
 _THIS_SCRIPT = Path(__file__)
 _SCRIPT_DIR = _THIS_SCRIPT.resolve().parent
@@ -94,7 +94,7 @@ def main(argv: Sequence[str]) -> int:
 
     logs_dir = topdir / "logs"
 
-    host_tag = workspace_utils.get_host_tag()
+    host_tag = build_utils.get_host_tag()
 
     workspace_dir = topdir / "workspace"
     workspace_dir.mkdir(parents=True, exist_ok=True)

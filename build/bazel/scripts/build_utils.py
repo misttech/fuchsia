@@ -2,7 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Common utilities supporting build actions."""
+"""Common utilities supporting Bazel query and build actions.
+
+This module will be imported directly from other scripts, including some in
+this directory, as well as ones in //build/api/. Its purpose is to provide
+utility functions to perform Bazel operations in the Fuchsia workspace. It should
+not depend on any other non-standard module, and the logic to create that workspace
+should stay in workspace_utils.bzl instead.
+"""
 
 import dataclasses
 import hashlib
@@ -13,6 +20,102 @@ import subprocess
 import sys
 import time
 import typing as T
+from pathlib import Path
+
+# A type that describes either a path string of a Path instance.
+FilePath: T.TypeAlias = str | os.PathLike[T.Any]
+
+
+def get_host_platform() -> str:
+    """Return host platform name, following Fuchsia conventions."""
+    if sys.platform == "linux":
+        return "linux"
+    elif sys.platform == "darwin":
+        return "mac"
+    else:
+        return os.uname().sysname
+
+
+def get_host_arch() -> str:
+    """Return host CPU architecture, following Fuchsia conventions."""
+    host_arch = os.uname().machine
+    if host_arch == "x86_64":
+        return "x64"
+    elif host_arch.startswith(("armv8", "aarch64")):
+        return "arm64"
+    else:
+        return host_arch
+
+
+def get_host_tag() -> str:
+    """Return host tag, following Fuchsia conventions."""
+    return "%s-%s" % (get_host_platform(), get_host_arch())
+
+
+def find_fuchsia_dir(from_path: T.Optional[FilePath] = None) -> Path:
+    """Find the Fuchsia checkout from a specific path.
+
+    Args:
+        from_path: Optional starting path for search. Defaults to the current directory.
+    Returns:
+        Path to the Fuchsia checkout directory (absolute).
+    Raises:
+        ValueError if the path could not be found.
+    """
+    start_path = Path(from_path).resolve() if from_path else Path.cwd()
+    cur_path = start_path
+    while True:
+        if (cur_path / ".jiri_manifest").exists():
+            return cur_path
+        prev_path = cur_path
+        cur_path = cur_path.parent
+        if cur_path == prev_path:
+            raise ValueError(
+                f"Could not find Fuchsia checkout directory from: {start_path}"
+            )
+
+
+def find_fx_build_dir(fuchsia_dir: FilePath) -> T.Optional[Path]:
+    """Find the build directory set through 'fx set' or 'fx use'.
+
+    Args:
+       fuchsia_dir: Path to Fuchsia checkout directory.
+    Returns:
+       Path to build directory if found, of None if none
+       is available (e.g. fresh checkout or infra build).
+    """
+    fuchsia_dir_path = Path(fuchsia_dir)
+    fx_build_dir_file = fuchsia_dir_path / ".fx-build-dir"
+    if fx_build_dir_file.exists():
+        build_dir_relative = fx_build_dir_file.read_text().strip()
+        if build_dir_relative:
+            build_dir = fuchsia_dir_path / build_dir_relative
+            if build_dir.exists():
+                return build_dir
+    return None
+
+
+def find_host_binary_path(program: str) -> T.Optional[Path]:
+    """Find the absolute path of a given program. Like the UNIX `which` command.
+
+    Args:
+        program: Program name.
+    Returns:
+        program's absolute path, found by parsing the content of $PATH.
+        Or None if nothing is found.
+    """
+    for path in os.environ.get("PATH", "").split(":"):
+        # According to Posix, an empty path component is equivalent to ´.'.
+        if path == "" or path == ".":
+            path = os.getcwd()
+        candidate = os.path.realpath(os.path.join(path, program))
+        if os.path.isfile(candidate) and os.access(
+            candidate, os.R_OK | os.X_OK
+        ):
+            return Path(candidate)
+
+    return None
+
 
 _HEXADECIMAL_SET = set("0123456789ABCDEFabcdef")
 

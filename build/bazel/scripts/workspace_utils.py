@@ -12,6 +12,10 @@ import sys
 import typing as T
 from pathlib import Path
 
+_SCRIPT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, _SCRIPT_DIR)
+import build_utils
+
 # Location of the @gn_targets redirection symlink, relative
 # to the Bazel workspace.
 GN_TARGETS_DIR_SYMLINK = "fuchsia_build_generated/gn_targets_dir"
@@ -20,74 +24,6 @@ GN_TARGETS_DIR_SYMLINK = "fuchsia_build_generated/gn_targets_dir"
 #
 # See https://bazel.build/external/extension#repository_names_and_visibility
 _BAZEL_REPO_NAME_SEPARATOR = "+"
-
-
-def get_host_platform() -> str:
-    """Return host platform name, following Fuchsia conventions."""
-    if sys.platform == "linux":
-        return "linux"
-    elif sys.platform == "darwin":
-        return "mac"
-    else:
-        return os.uname().sysname
-
-
-def get_host_arch() -> str:
-    """Return host CPU architecture, following Fuchsia conventions."""
-    host_arch = os.uname().machine
-    if host_arch == "x86_64":
-        return "x64"
-    elif host_arch.startswith(("armv8", "aarch64")):
-        return "arm64"
-    else:
-        return host_arch
-
-
-def get_host_tag() -> str:
-    """Return host tag, following Fuchsia conventions."""
-    return "%s-%s" % (get_host_platform(), get_host_arch())
-
-
-def find_fuchsia_dir(from_path: T.Optional[Path] = None) -> Path:
-    """Find the Fuchsia checkout from a specific path.
-
-    Args:
-        from_path: Optional starting path for search. Defaults to the current directory.
-    Returns:
-        Path to the Fuchsia checkout directory (absolute).
-    Raises:
-        ValueError if the path could not be found.
-    """
-    start_path = from_path.resolve() if from_path else Path(os.getcwd())
-    cur_path = start_path
-    while True:
-        if (cur_path / ".jiri_manifest").exists():
-            return cur_path
-        prev_path = cur_path
-        cur_path = cur_path.parent
-        if cur_path == prev_path:
-            raise ValueError(
-                f"Could not find Fuchsia checkout directory from: {start_path}"
-            )
-
-
-def find_fx_build_dir(fuchsia_dir: Path) -> T.Optional[Path]:
-    """Find the build directory set through 'fx set' or 'fx use'.
-
-    Args:
-       fuchsia_dir: Path to Fuchsia checkout directory.
-    Returns:
-       Path to build directory if found, of None if none
-       is available (e.g. fresh checkout or infra build).
-    """
-    fx_build_dir_file = fuchsia_dir / ".fx-build-dir"
-    if fx_build_dir_file.exists():
-        build_dir_relative = fx_build_dir_file.read_text().strip()
-        if build_dir_relative:
-            build_dir = fuchsia_dir / build_dir_relative
-            if build_dir.exists():
-                return build_dir
-    return None
 
 
 def get_bazel_relative_topdir(fuchsia_dir: str | Path) -> tuple[str, set[Path]]:
@@ -264,28 +200,6 @@ def create_clean_dir(path: str) -> None:
     if os.path.exists(path):
         remove_dir(path)
     os.makedirs(path)
-
-
-def find_host_binary_path(program: str) -> str:
-    """Find the absolute path of a given program. Like the UNIX `which` command.
-
-    Args:
-        program: Program name.
-    Returns:
-        program's absolute path, found by parsing the content of $PATH.
-        An empty string is returned if nothing is found.
-    """
-    for path in os.environ.get("PATH", "").split(":"):
-        # According to Posix, an empty path component is equivalent to ´.'.
-        if path == "" or path == ".":
-            path = os.getcwd()
-        candidate = os.path.realpath(os.path.join(path, program))
-        if os.path.isfile(candidate) and os.access(
-            candidate, os.R_OK | os.X_OK
-        ):
-            return candidate
-
-    return ""
 
 
 # Type describing a callable that takes a file path as input and
@@ -503,9 +417,9 @@ def record_fuchsia_workspace(
             string as argument.
     """
 
-    host_os = get_host_platform()
-    host_cpu = get_host_arch()
-    host_tag = get_host_tag()
+    host_os = build_utils.get_host_platform()
+    host_cpu = build_utils.get_host_arch()
+    host_tag = build_utils.get_host_tag()
 
     templates_dir = fuchsia_dir / "build" / "bazel" / "templates"
 
@@ -608,9 +522,9 @@ def record_fuchsia_workspace(
     # also sets --cpu properly, as required by the Bazel SDK rules. See comments
     # in template file for more details.
     _BAZEL_CPU_MAP = {"x64": "k8", "arm64": "aarch64"}
-    host_os = get_host_platform()
-    host_cpu = get_host_arch()
-    host_tag = get_host_tag()
+    host_os = build_utils.get_host_platform()
+    host_cpu = build_utils.get_host_arch()
+    host_tag = build_utils.get_host_tag()
 
     record_expanded_template(
         generated,
@@ -787,7 +701,7 @@ def generate_fuchsia_workspace(
        A set of input file paths that were read by this function.
     """
     # Find path of host git tool
-    git_bin_path = find_host_binary_path("git")
+    git_bin_path = build_utils.find_host_binary_path("git")
     assert git_bin_path, f"Could not find 'git' in current PATH!"
 
     # # Extract target_cpu from args.json. This file is GN-generated
@@ -814,7 +728,7 @@ def generate_fuchsia_workspace(
         top_dir=top_dir,
         fuchsia_dir=fuchsia_dir,
         gn_output_dir=build_dir,
-        git_bin_path=Path(git_bin_path),
+        git_bin_path=git_bin_path,
         log=log,
     )
 

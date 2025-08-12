@@ -15,96 +15,6 @@ import workspace_utils
 from workspace_utils import GnBuildArgs
 
 
-class TestFindFuchsiaDir(unittest.TestCase):
-    def test_find_fuchsia_dir(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            not_fuchsia_dir = Path(tmp_dir) / "this_is_not_fuchsia"
-            not_fuchsia_dir.mkdir()
-            fuchsia_dir = Path(tmp_dir) / "this_is_fuchsia"
-            fuchsia_dir.mkdir()
-            (fuchsia_dir / ".jiri_manifest").write_text("")
-            (fuchsia_dir / "src" / "foo").mkdir(parents=True)
-
-            # Check function when searching from the current path.
-            saved_cwd = os.getcwd()
-            try:
-                os.chdir(not_fuchsia_dir)
-                with self.assertRaises(ValueError):
-                    workspace_utils.find_fuchsia_dir()
-
-                for path in (
-                    fuchsia_dir,
-                    fuchsia_dir / "src",
-                    fuchsia_dir / "src" / "foo",
-                ):
-                    os.chdir(path)
-                    self.assertEqual(
-                        workspace_utils.find_fuchsia_dir(),
-                        fuchsia_dir,
-                        f"From {path}",
-                    )
-
-                # Ensure the result is absolute even if the starting path is relative.
-                os.chdir(fuchsia_dir)
-                for path in (Path("."), Path("src"), Path("src/foo")):
-                    self.assertEqual(
-                        workspace_utils.find_fuchsia_dir(path),
-                        fuchsia_dir,
-                        f"From {path}",
-                    )
-
-            finally:
-                os.chdir(saved_cwd)
-
-            # Check function when searching from a given path.
-            with self.assertRaises(ValueError):
-                workspace_utils.find_fuchsia_dir(not_fuchsia_dir)
-
-            for path in (
-                fuchsia_dir,
-                fuchsia_dir / "src",
-                fuchsia_dir / "src" / "foo",
-            ):
-                self.assertEqual(
-                    workspace_utils.find_fuchsia_dir(path),
-                    fuchsia_dir,
-                    f"From {path}",
-                )
-
-
-class TestFindFxBuildDir(unittest.TestCase):
-    def test_find_fx_build_dir(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            fuchsia_dir = Path(tmp_dir)
-
-            # No .fx-build-dir present -> Path()
-            self.assertEqual(
-                workspace_utils.find_fx_build_dir(fuchsia_dir), None
-            )
-
-            # Empty .fx-build-dir content -> Path()
-            fx_build_dir_path = fuchsia_dir / ".fx-build-dir"
-            fx_build_dir_path.write_text("")
-            self.assertEqual(
-                workspace_utils.find_fx_build_dir(fuchsia_dir), None
-            )
-
-            # Invalid .fx-build-dir content -> Path()
-            fx_build_dir_path.write_text("does/not/exist\n")
-            self.assertEqual(
-                workspace_utils.find_fx_build_dir(fuchsia_dir), None
-            )
-
-            # Valid build directory.
-            build_dir = fuchsia_dir / "some" / "build_dir"
-            build_dir.mkdir(parents=True)
-
-            fx_build_dir_path.write_text("some/build_dir\n")
-            self.assertEqual(
-                workspace_utils.find_fx_build_dir(fuchsia_dir), build_dir
-            )
-
-
 class TestFindBazelPaths(unittest.TestCase):
     def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
@@ -918,7 +828,7 @@ class CheckRegeneratorInputsUpdatesTest(unittest.TestCase):
 
 
 class RepositoryNameTest(unittest.TestCase):
-    def test_repository_name(self):
+    def test_repository_name(self) -> None:
         for label, expected_repo_name in [
             ("@foo//path/to:target", "foo"),
             ("@@bar//:root", "bar"),
@@ -930,7 +840,7 @@ class RepositoryNameTest(unittest.TestCase):
                 workspace_utils.repository_name(label), expected_repo_name
             )
 
-    def test_innermost_repository_name(self):
+    def test_innermost_repository_name(self) -> None:
         for label, expected_repo_name in [
             ("@foo//path/to:target", "foo"),
             ("@@bar//:root", "bar"),

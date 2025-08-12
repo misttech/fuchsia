@@ -120,6 +120,7 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
 
     # Lazy import of workspace_utils.py and gn_targets_utils.py
     sys.path.insert(0, str(Path(__file__).parent))
+    import build_utils
     import gn_targets_utils
     import workspace_utils
 
@@ -133,7 +134,7 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
     if args.build_dir:
         build_dir = Path(args.build_dir).resolve()
     else:
-        build_dir = workspace_utils.find_fx_build_dir(args.fuchsia_dir)
+        build_dir = build_utils.find_fx_build_dir(args.fuchsia_dir)
         if not build_dir:
             return error_message(
                 "Could not find Fuchsia build directory, use --build-dir=BUILD_DIR."

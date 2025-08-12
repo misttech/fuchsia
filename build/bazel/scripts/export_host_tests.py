@@ -18,6 +18,7 @@ from pathlib import Path
 _SCRIPT_DIR = os.path.dirname(__file__)
 _SCRIPT_DIR_PATH = Path(_SCRIPT_DIR)
 sys.path.insert(0, _SCRIPT_DIR)
+import build_utils
 import runfiles_utils
 import workspace_utils
 
@@ -119,8 +120,8 @@ class HostInfo(object):
     """Convenience class to expose host-specific information."""
 
     def __init__(self) -> None:
-        self._os = workspace_utils.get_host_platform()
-        self._cpu = workspace_utils.get_host_arch()
+        self._os = build_utils.get_host_platform()
+        self._cpu = build_utils.get_host_arch()
 
     @property
     def os(self) -> str:
@@ -582,13 +583,13 @@ def main() -> int:
     if fuchsia_dir:
         fuchsia_dir = fuchsia_dir.resolve()
     else:
-        fuchsia_dir = workspace_utils.find_fuchsia_dir(_SCRIPT_DIR_PATH)
+        fuchsia_dir = build_utils.find_fuchsia_dir(_SCRIPT_DIR_PATH)
 
     build_dir = args.build_dir
     if build_dir:
         build_dir = build_dir.resolve()
     else:
-        build_dir = workspace_utils.find_fx_build_dir(fuchsia_dir)
+        build_dir = build_utils.find_fx_build_dir(fuchsia_dir)
         if not build_dir:
             parser.error(
                 f"Could not find Fuchsia build directory, please use --build-dir=DIR option."

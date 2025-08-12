@@ -16,6 +16,90 @@ import build_utils
 from build_utils import BazelCommandResult, BazelLauncher, BazelQueryCache
 
 
+class TestFindFuchsiaDir(unittest.TestCase):
+    def test_find_fuchsia_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            not_fuchsia_dir = Path(tmp_dir) / "this_is_not_fuchsia"
+            not_fuchsia_dir.mkdir()
+            fuchsia_dir = Path(tmp_dir) / "this_is_fuchsia"
+            fuchsia_dir.mkdir()
+            (fuchsia_dir / ".jiri_manifest").write_text("")
+            (fuchsia_dir / "src" / "foo").mkdir(parents=True)
+
+            # Check function when searching from the current path.
+            saved_cwd = os.getcwd()
+            try:
+                os.chdir(not_fuchsia_dir)
+                with self.assertRaises(ValueError):
+                    build_utils.find_fuchsia_dir()
+
+                for path in (
+                    fuchsia_dir,
+                    fuchsia_dir / "src",
+                    fuchsia_dir / "src" / "foo",
+                ):
+                    os.chdir(path)
+                    self.assertEqual(
+                        build_utils.find_fuchsia_dir(),
+                        fuchsia_dir,
+                        f"From {path}",
+                    )
+
+                # Ensure the result is absolute even if the starting path is relative.
+                os.chdir(fuchsia_dir)
+                for path in (Path("."), Path("src"), Path("src/foo")):
+                    self.assertEqual(
+                        build_utils.find_fuchsia_dir(path),
+                        fuchsia_dir,
+                        f"From {path}",
+                    )
+
+            finally:
+                os.chdir(saved_cwd)
+
+            # Check function when searching from a given path.
+            with self.assertRaises(ValueError):
+                build_utils.find_fuchsia_dir(not_fuchsia_dir)
+
+            for path in (
+                fuchsia_dir,
+                fuchsia_dir / "src",
+                fuchsia_dir / "src" / "foo",
+            ):
+                self.assertEqual(
+                    build_utils.find_fuchsia_dir(path),
+                    fuchsia_dir,
+                    f"From {path}",
+                )
+
+
+class TestFindFxBuildDir(unittest.TestCase):
+    def test_find_fx_build_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            fuchsia_dir = Path(tmp_dir)
+
+            # No .fx-build-dir present -> Path()
+            self.assertEqual(build_utils.find_fx_build_dir(fuchsia_dir), None)
+
+            # Empty .fx-build-dir content -> Path()
+            fx_build_dir_path = fuchsia_dir / ".fx-build-dir"
+            fx_build_dir_path.write_text("")
+            self.assertEqual(build_utils.find_fx_build_dir(fuchsia_dir), None)
+
+            # Invalid .fx-build-dir content -> Path()
+            fx_build_dir_path.write_text("does/not/exist\n")
+            self.assertEqual(build_utils.find_fx_build_dir(fuchsia_dir), None)
+
+            # Valid build directory.
+            build_dir = fuchsia_dir / "some" / "build_dir"
+            build_dir.mkdir(parents=True)
+
+            fx_build_dir_path.write_text("some/build_dir\n")
+            self.assertEqual(
+                build_utils.find_fx_build_dir(fuchsia_dir), build_dir
+            )
+
+
 class IsHexadecimalStringTest(unittest.TestCase):
     def test_is_hexadecimal_string(self) -> None:
         TEST_CASES = [

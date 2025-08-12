@@ -15,80 +15,7 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 _FUCHSIA_DIR = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", "..", ".."))
 
 sys.path.insert(0, _SCRIPT_DIR)
-import workspace_utils
-
-
-def get_host_platform() -> str:
-    """Return host platform name, following Fuchsia conventions."""
-    if sys.platform == "linux":
-        return "linux"
-    elif sys.platform == "darwin":
-        return "mac"
-    else:
-        return os.uname().sysname
-
-
-def get_host_arch() -> str:
-    """Return host CPU architecture, following Fuchsia conventions."""
-    host_arch = os.uname().machine
-    if host_arch == "x86_64":
-        return "x64"
-    elif host_arch.startswith(("armv8", "aarch64")):
-        return "arm64"
-    else:
-        return host_arch
-
-
-def get_host_tag() -> str:
-    """Return host tag, following Fuchsia conventions."""
-    return "%s-%s" % (get_host_platform(), get_host_arch())
-
-
-def find_fuchsia_dir(from_dir: Optional[str] = None) -> Optional[str]:
-    """Return Fuchsia directory path.
-
-    Args:
-        from_dir: Optional starting directory for the search. If None,
-            uses the current directory.
-
-    Returns:
-        Fuchsia directory path, or None if it could not be found.
-    """
-    if from_dir is None:
-        from_dir = os.getcwd()
-    while True:
-        if os.path.exists(os.path.join(from_dir, ".jiri_root")):
-            return from_dir
-        new_dir = os.path.dirname(from_dir)
-        if new_dir == from_dir:
-            # The top-level path was reached.
-            return None
-        from_dir = new_dir
-
-
-def find_ninja_build_dir(fuchsia_dir: str) -> Optional[str]:
-    """Find Ninja build directory.
-
-    Args:
-        fuchsia_dir: Fuchsia directory path.
-
-    Returns:
-        The Ninja build directory, or None if it could not be determined,
-        which happens if `fx set` was not called previously.
-    """
-    fx_build_dir = os.path.join(fuchsia_dir, ".fx-build-dir")
-    if not os.path.exists(fx_build_dir):
-        print("ERROR: Could not find %s" % fx_build_dir, file=sys.stderr)
-        return None
-
-    with open(fx_build_dir) as f:
-        build_dir = f.read().strip()
-
-    if not build_dir:
-        print("ERROR: Empty .fx-build-dir!", file=sys.stderr)
-        return None
-
-    return os.path.join(fuchsia_dir, build_dir)
+import build_utils
 
 
 def find_default_log_file() -> Optional[str]:
@@ -97,22 +24,20 @@ def find_default_log_file() -> Optional[str]:
     Returns:
         Path to the default log file, or None if it could not be determined.
     """
-    fuchsia_dir = find_fuchsia_dir()
+    fuchsia_dir = build_utils.find_fuchsia_dir()
     if not fuchsia_dir:
         return None
 
-    build_dir = find_ninja_build_dir(fuchsia_dir)
+    build_dir = build_utils.find_fx_build_dir(fuchsia_dir)
     if not build_dir:
         return None
 
-    top_dir = os.path.join(
-        build_dir, workspace_utils.get_bazel_topdir(fuchsia_dir)
-    )
+    top_dir = os.path.join(build_dir, build_utils.get_bazel_topdir(fuchsia_dir))
     log_file = os.path.join(top_dir, "logs", "workspace-events.log")
     return log_file
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--jre",
@@ -159,7 +84,7 @@ def main():
             "prebuilt",
             "third_party",
             "bazel",
-            get_host_tag(),
+            build_utils.get_host_tag(),
             "install_base",
             "embedded_tools",
             "jdk",
@@ -173,7 +98,7 @@ def main():
             )
             return 1
 
-    def verbose(msg):
+    def verbose(msg: str) -> None:
         if args.verbose:
             print("DEBUG: " + msg, file=sys.stderr)
 
