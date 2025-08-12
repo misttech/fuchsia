@@ -109,25 +109,6 @@ enum {
   MMIO_COUNT,
 };
 
-fpromise::promise<void, zx_status_t> AmlGpioDriver::InitCompatServer() {
-  fpromise::bridge<void, zx_status_t> bridge;
-
-  compat_server_.Begin(
-      incoming(), outgoing(), node_name(), name(),
-      [completer = std::move(bridge.completer)](zx::result<> result) mutable {
-        if (result.is_error()) {
-          FDF_LOG(ERROR, "Failed to initialize compat server: %s", result.status_string());
-          completer.complete_error(result.status_value());
-          return;
-        }
-
-        completer.complete_ok();
-      },
-      compat::ForwardMetadata::None());
-
-  return bridge.consumer.promise_or(fpromise::error(ZX_ERR_INTERNAL));
-}
-
 void AmlGpioDriver::Start(fdf::StartCompleter completer) {
   parent_.Bind(std::move(node()), dispatcher());
 
@@ -143,14 +124,12 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
 
   auto task =
       fpromise::join_promises(
-          InitCompatServer(), InitResources(),
-          InitMetadataServer(pin_metadata_server_, pdev_, *outgoing()),
+          InitResources(), InitMetadataServer(pin_metadata_server_, pdev_, *outgoing()),
           InitMetadataServer(scheduler_role_name_metadata_server_, pdev_, *outgoing()))
           .then([this, completer = std::move(completer)](
                     fpromise::result<std::tuple<
                         fpromise::result<void, zx_status_t>, fpromise::result<void, zx_status_t>,
-                        fpromise::result<void, zx_status_t>, fpromise::result<void, zx_status_t>>>&
-                        results) mutable {
+                        fpromise::result<void, zx_status_t>>>& results) mutable {
             if (results.is_error()) {
               FDF_LOG(ERROR, "One of the promises abandoned its completer");
               return completer(zx::error(ZX_ERR_INTERNAL));
@@ -159,7 +138,7 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
             {
               fpromise::result result = std::get<0>(results.value());
               if (result.is_error()) {
-                FDF_LOG(ERROR, "Failed to initialize compat server: %s",
+                FDF_LOG(ERROR, "Failed to initialize resources: %s",
                         zx_status_get_string(result.error()));
                 return completer(zx::error(result.error()));
               }
@@ -168,15 +147,6 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
             {
               fpromise::result result = std::get<1>(results.value());
               if (result.is_error()) {
-                FDF_LOG(ERROR, "Failed to initialize resources: %s",
-                        zx_status_get_string(result.error()));
-                return completer(zx::error(result.error()));
-              }
-            }
-
-            {
-              fpromise::result result = std::get<2>(results.value());
-              if (result.is_error()) {
                 FDF_LOG(ERROR, "Failed to initialize pin metadata server: %s",
                         zx_status_get_string(result.error()));
                 return completer(zx::error(result.error()));
@@ -184,7 +154,7 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
             }
 
             {
-              fpromise::result result = std::get<3>(results.value());
+              fpromise::result result = std::get<2>(results.value());
               if (result.is_error()) {
                 FDF_LOG(ERROR, "Failed to initialize scheduler role name metadata server: %s",
                         zx_status_get_string(result.error()));
@@ -403,11 +373,11 @@ void AmlGpioDriver::AddNode(fdf::StartCompleter completer) {
   properties[0] = fdf::MakeProperty(arena, bind_fuchsia_hardware_pinimpl::SERVICE,
                                     bind_fuchsia_hardware_pinimpl::SERVICE_DRIVERTRANSPORT);
 
-  std::vector offers = compat_server_.CreateOffers2(arena);
-  offers.push_back(
-      fdf::MakeOffer2<fuchsia_hardware_pinimpl::Service>(arena, component::kDefaultInstance));
-  offers.push_back(pin_metadata_server_.MakeOffer(arena));
-  offers.push_back(scheduler_role_name_metadata_server_.MakeOffer(arena));
+  fidl::VectorView<fuchsia_driver_framework::wire::Offer> offers(arena, 3);
+  offers[0] =
+      fdf::MakeOffer2<fuchsia_hardware_pinimpl::Service>(arena, component::kDefaultInstance);
+  offers[1] = pin_metadata_server_.MakeOffer(arena);
+  offers[2] = scheduler_role_name_metadata_server_.MakeOffer(arena);
 
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, name())

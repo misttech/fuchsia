@@ -5,7 +5,6 @@
 #include "ti-tca6408a.h"
 
 #include <lib/ddk/metadata.h>
-#include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
@@ -35,11 +34,6 @@ zx::result<> TiTca6408aDevice::Start() {
                                   0};
     i2c.WriteSyncRetries(write_buf, sizeof(write_buf), kI2cRetries, kI2cRetryDelay);
   }
-
-  ZX_ASSERT(compat_server_
-                .Initialize(incoming(), outgoing(), node_name(), kDeviceName,
-                            compat::ForwardMetadata::None())
-                .is_ok());
 
   device_ = std::make_unique<TiTca6408a>(std::move(i2c));
 
@@ -94,10 +88,9 @@ void TiTca6408aDevice::Stop() {
 }
 
 zx::result<> TiTca6408aDevice::CreateNode() {
-  std::vector offers = compat_server_.CreateOffers2();
-  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_pinimpl::Service>());
-  offers.push_back(pin_metadata_server_.MakeOffer());
-  offers.push_back(scheduler_role_name_metadata_server_.MakeOffer());
+  fuchsia_driver_framework::Offer offers[]{fdf::MakeOffer2<fuchsia_hardware_pinimpl::Service>(),
+                                           pin_metadata_server_.MakeOffer(),
+                                           scheduler_role_name_metadata_server_.MakeOffer()};
 
   zx::result child =
       AddChild(kDeviceName, std::vector<fuchsia_driver_framework::NodeProperty>{}, offers);

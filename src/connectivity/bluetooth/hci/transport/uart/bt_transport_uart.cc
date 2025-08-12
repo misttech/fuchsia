@@ -131,14 +131,6 @@ zx::result<> BtTransportUart::Start() {
     return zx::error(status);
   }
 
-  // Start compat device server to forward metadata.
-  zx::result compat_server_result = compat_server_.Initialize(
-      incoming(), outgoing(), node_name(), "bt-transport-uart", compat::ForwardMetadata::None());
-  if (compat_server_result.is_error()) {
-    fdf::error("Failed to initialize device server: {}", compat_server_result);
-    return compat_server_result.take_error();
-  }
-
   if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming());
       result.is_error()) {
     fdf::error("Failed to forward mac address metadata: {}", result);
@@ -152,10 +144,11 @@ zx::result<> BtTransportUart::Start() {
 
   // Add child node for the vendor driver to bind.
   // Build offers
-  std::vector offers = compat_server_.CreateOffers2();
-  offers.push_back(fdf::MakeOffer2<fhbt::HciService>());
-  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>());
-  offers.push_back(mac_address_metadata_server_.MakeOffer());
+  fuchsia_driver_framework::Offer offers[]{
+      fdf::MakeOffer2<fhbt::HciService>(),
+      fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>(),
+      mac_address_metadata_server_.MakeOffer(),
+  };
 
   // Properties are automatically added for each offer, no need to specify any.
   std::array<fuchsia_driver_framework::NodeProperty, 0> properties{};

@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.hardware.i2c.businfo/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/wire.h>
 #include <lib/async/cpp/irq.h>
-#include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -44,7 +43,6 @@ class AmlI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i
 
  private:
   zx_status_t ServeI2cImpl();
-  compat::DeviceServer::BanjoConfig CreateBanjoConfig();
   zx_status_t CreateChildNode();
 
   void SetTargetAddr(uint16_t addr) const;
@@ -66,7 +64,6 @@ class AmlI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i
   zx::duration timeout_ = zx::sec(1);
   fdf::ServerBindingGroup<fuchsia_hardware_i2cimpl::Device> i2cimpl_bindings_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> child_controller_;
-  compat::SyncInitializedDeviceServer device_server_;
   // Only needed in order to set the role name for the code that waits for irq's.
   std::optional<fdf::Dispatcher> irq_dispatcher_;
   std::optional<fdf::PrepareStopCompleter> completer_;

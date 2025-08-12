@@ -206,9 +206,12 @@ zx_status_t AddMetadata(Device* device,
 
 promise<void, zx_status_t> GetAndAddMetadata(
     fidl::WireClient<fuchsia_driver_compat::Device>& client, Device* device) {
-  ZX_ASSERT_MSG(
-      client, "Attempted to access metadata from an invalid fuchsia.driver.compat.Device client.");
   bridge<void, zx_status_t> bridge;
+  if (!client) {
+    bridge.completer.complete_ok();
+    return bridge.consumer.promise();
+  }
+
   client->GetMetadata().Then(
       [device, completer = std::move(bridge.completer)](
           fidl::WireUnownedResult<fuchsia_driver_compat::Device::GetMetadata>& result) mutable {
@@ -785,10 +788,6 @@ fpromise::promise<void, zx_status_t> Driver::ConnectToParentDevices() {
 }
 
 promise<void, zx_status_t> Driver::GetDeviceInfo() {
-  if (!parent_client_) {
-    return fpromise::make_result_promise<void, zx_status_t>(error(ZX_ERR_PEER_CLOSED));
-  }
-
   std::vector<promise<void, zx_status_t>> promises;
 
   // Get our metadata from our fragments if we are a composite,

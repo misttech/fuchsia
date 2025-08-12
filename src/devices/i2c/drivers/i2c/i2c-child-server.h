@@ -7,9 +7,9 @@
 
 #include <fidl/fuchsia.hardware.i2c.businfo/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2c/cpp/fidl.h>
-#include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 
 namespace i2c {
 
@@ -20,13 +20,8 @@ class I2cChildServer : public fidl::WireServer<fidl_i2c::Device> {
   using OnTransact = fit::function<void(uint16_t address, TransferRequestView request,
                                         TransferCompleter::Sync& completer)>;
 
-  I2cChildServer(OnTransact on_transact,
-                 std::unique_ptr<compat::SyncInitializedDeviceServer> compat_server,
-                 uint16_t address, const std::string& name)
-      : on_transact_(std::move(on_transact)),
-        address_(address),
-        name_(name),
-        compat_server_(std::move(compat_server)) {}
+  I2cChildServer(OnTransact on_transact, uint16_t address, const std::string& name)
+      : on_transact_(std::move(on_transact)), address_(address), name_(name) {}
 
   static zx::result<std::unique_ptr<I2cChildServer>> CreateAndAddChild(
       OnTransact on_transact, fidl::ClientEnd<fuchsia_driver_framework::Node>& node_client,
@@ -48,7 +43,6 @@ class I2cChildServer : public fidl::WireServer<fidl_i2c::Device> {
   const uint16_t address_;
   const std::string name_;
 
-  std::unique_ptr<compat::SyncInitializedDeviceServer> compat_server_;
   driver_devfs::Connector<fidl_i2c::Device> devfs_connector_{
       fit::bind_member<&I2cChildServer::Serve>(this)};
   fidl::ServerBindingGroup<fidl_i2c::Device> bindings_;

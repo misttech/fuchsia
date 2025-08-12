@@ -4,8 +4,8 @@
 
 #include "aml-i2c.h"
 
+#include <fidl/fuchsia.driver.compat/cpp/wire_messaging.h>
 #include <lib/ddk/metadata.h>
-#include <lib/driver/compat/cpp/logging.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/mmio/mmio-buffer.h>
 #include <lib/trace/event.h>
@@ -73,7 +73,7 @@ zx::result<aml_i2c_delay_values> GetDelay(
 zx_status_t SetClockDelay(const aml_i2c_delay_values& delay, const fdf::MmioBuffer& regs_iobuff) {
   if (delay.quarter_clock_delay > aml_i2c::Control::kQtrClkDlyMax ||
       delay.clock_low_delay > aml_i2c::TargetAddr::kSclLowDelayMax) {
-    zxlogf(ERROR, "invalid clock delay");
+    FDF_LOG(ERROR, "invalid clock delay");
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -291,7 +291,7 @@ zx_status_t AmlI2c::StartIrqThread() {
 void AmlI2c::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_i2cimpl::Device> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  zxlogf(ERROR, "Unknown method %lu", metadata.method_ordinal);
+  FDF_LOG(ERROR, "Unknown method %lu", metadata.method_ordinal);
 }
 
 void AmlI2c::GetMaxTransferSize(fdf::Arena& arena, GetMaxTransferSizeCompleter::Sync& completer) {
@@ -347,15 +347,6 @@ void AmlI2c::Transact(TransactRequestView request, fdf::Arena& arena,
 }
 
 zx::result<> AmlI2c::Start() {
-  // Initialize our compat server.
-  {
-    zx::result<> result = device_server_.Initialize(
-        incoming(), outgoing(), node_name(), kChildNodeName, compat::ForwardMetadata::None());
-    if (result.is_error()) {
-      return result.take_error();
-    }
-  }
-
   zx::result compat_result = incoming()->Connect<fuchsia_driver_compat::Service::Device>();
   if (compat_result.is_error()) {
     FDF_LOG(ERROR, "Failed to connect to compat service: %s", compat_result.status_string());
@@ -410,7 +401,7 @@ zx::result<> AmlI2c::Start() {
 
   status = zx::event::create(0, &event_);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "zx_event_create failed: %s", zx_status_get_string(status));
+    FDF_LOG(ERROR, "zx_event_create failed: %s", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -468,9 +459,10 @@ zx_status_t AmlI2c::CreateChildNode() {
     return controller_endpoints.status_value();
   }
 
-  std::vector<fuchsia_driver_framework::Offer> offers = device_server_.CreateOffers2();
-  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_i2cimpl::Service>(component::kDefaultInstance));
-  offers.push_back(metadata_server_.MakeOffer());
+  fuchsia_driver_framework::Offer offers[]{
+      fdf::MakeOffer2<fuchsia_hardware_i2cimpl::Service>(component::kDefaultInstance),
+      metadata_server_.MakeOffer(),
+  };
 
   zx::result child =
       AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty2>{}, offers);

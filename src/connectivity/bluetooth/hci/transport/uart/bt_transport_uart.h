@@ -6,7 +6,6 @@
 #define SRC_CONNECTIVITY_BLUETOOTH_HCI_TRANSPORT_UART_BT_TRANSPORT_UART_H_
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
-#include <fidl/fuchsia.driver.compat/cpp/wire.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/wire.h>
@@ -15,7 +14,6 @@
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/cpp/wait.h>
-#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
@@ -276,7 +274,6 @@ class BtTransportUart : public fdf::DriverBase,
   // The task which runs to queue a uart read.
   async::TaskClosureMethod<BtTransportUart, &BtTransportUart::QueueUartRead> queue_read_task_{this};
 
-  compat::SyncInitializedDeviceServer compat_server_;
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>
       mac_address_metadata_server_;
 };

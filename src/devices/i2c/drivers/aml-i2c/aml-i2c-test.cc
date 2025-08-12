@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/wire.h>
 #include <lib/async-loop/default.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/mmio/mmio-buffer.h>

@@ -7,7 +7,6 @@
 
 #include <fidl/fuchsia.hardware.adc/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.adcimpl/cpp/driver/fidl.h>
-#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/mmio/mmio.h>
@@ -52,7 +51,6 @@ class AdcDevice : public fidl::Server<fuchsia_hardware_adc::Device> {
 
   const std::optional<uint8_t> resolution_;
 
-  compat::SyncInitializedDeviceServer compat_server_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
   fidl::ServerBindingGroup<fuchsia_hardware_adc::Device> bindings_;
   driver_devfs::Connector<fuchsia_hardware_adc::Device> devfs_connector_;

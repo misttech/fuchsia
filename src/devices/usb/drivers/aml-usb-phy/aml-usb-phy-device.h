@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/driver/fidl.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/mmio/mmio-buffer.h>
@@ -37,7 +36,6 @@ class AmlUsbPhyDevice : public fdf::DriverBase {
     std::mutex lock_;
     fidl::WireSyncClient<fuchsia_driver_framework::NodeController> child_controller_
         __TA_GUARDED(lock_);
-    compat::SyncInitializedDeviceServer compat_server_ __TA_GUARDED(lock_);
     std::atomic_uint32_t count_ __TA_GUARDED(lock_) = 0;
   };
 

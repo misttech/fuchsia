@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 {
     include: [
-        "driver_component/driver.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
@@ -24,6 +23,7 @@
         {
             service: [ "fuchsia.hardware.platform.device.Service" ],
         },
+        { service: 'fuchsia.driver.compat.Service' },
     ],
     expose: [
         {

@@ -6,7 +6,6 @@
 
 #include <fidl/fuchsia.hardware.adcimpl/cpp/driver/fidl.h>
 #include <lib/ddk/metadata.h>
-#include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
@@ -92,15 +91,6 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
   auto dev = std::make_unique<AdcDevice>(std::move(adc_impl), *channel.idx(),
                                          std::move(*channel.name()), resolution, adc);
 
-  // Initialize our compat server.
-  {
-    zx::result result = dev->compat_server_.Initialize(adc->incoming(), adc->outgoing(),
-                                                       adc->node_name(), dev->name_);
-    if (result.is_error()) {
-      return result.take_error();
-    }
-  }
-
   // Serve fuchsia_hardware_adc.
   {
     auto result = adc->outgoing()->AddService<fuchsia_hardware_adc::Service>(
@@ -127,8 +117,7 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
                    .connector(std::move(connector.value()))
                    .class_name("adc");
 
-  auto offers = dev->compat_server_.CreateOffers2(arena);
-  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_adc::Service>(arena, dev->name_));
+  auto offers = std::vector{fdf::MakeOffer2<fuchsia_hardware_adc::Service>(arena, dev->name_)};
   auto properties = std::vector{
       fdf::MakeProperty(arena, bind_fuchsia_adc::CHANNEL, dev->channel_),
   };

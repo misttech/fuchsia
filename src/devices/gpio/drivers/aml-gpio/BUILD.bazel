@@ -43,7 +43,6 @@ cc_library(
         "_ALL_SOURCE",
     ],
     deps = [
-        "//sdk/lib/driver/compat/cpp",
         "//src/devices/lib/amlogic",
         "//src/lib/ddk:ddk_metadata",
         "//zircon/system/ulib/ddk-platform-defs",

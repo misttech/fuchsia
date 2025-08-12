@@ -41,15 +41,6 @@ Device::Device(fdf::DriverStartArgs start_args,
 }
 
 zx::result<> Device::Start() {
-  // Initialize our device server.
-  {
-    zx::result<> result = compat_server_.Initialize(incoming(), outgoing(), node_name(), name(),
-                                                    compat::ForwardMetadata::None());
-    if (result.is_error()) {
-      return result.take_error();
-    }
-  }
-
   zx_status_t status;
   if ((status = ConnectToWlanPhyImpl()) != ZX_OK) {
     lerror("Connect to WlanPhyImpl failed: %s", zx_status_get_string(status));

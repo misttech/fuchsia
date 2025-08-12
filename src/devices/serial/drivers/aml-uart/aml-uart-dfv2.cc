@@ -34,30 +34,6 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
 
   parent_node_client_.Bind(std::move(node()), dispatcher());
 
-  device_server_.Begin(incoming(), outgoing(), node_name(), kChildName,
-                       fit::bind_member<&AmlUartV2::OnDeviceServerInitialized>(this),
-                       compat::ForwardMetadata::None());
-}
-
-void AmlUartV2::PrepareStop(fdf::PrepareStopCompleter completer) {
-  if (aml_uart_.has_value()) {
-    aml_uart_->Enable(false);
-  }
-
-  completer(zx::ok());
-}
-
-AmlUart& AmlUartV2::aml_uart_for_testing() {
-  ZX_ASSERT(aml_uart_.has_value());
-  return aml_uart_.value();
-}
-
-void AmlUartV2::OnDeviceServerInitialized(zx::result<> device_server_init_result) {
-  if (device_server_init_result.is_error()) {
-    CompleteStart(device_server_init_result.take_error());
-    return;
-  }
-
   auto pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>(kPdevName);
   if (pdev_client_end.is_error()) {
@@ -150,9 +126,10 @@ void AmlUartV2::OnDeviceServerInitialized(zx::result<> device_server_init_result
     return;
   }
 
-  auto offers = device_server_.CreateOffers2();
-  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>(kChildName));
-  offers.push_back(mac_address_metadata_server_.MakeOffer());
+  std::vector<fuchsia_driver_framework::Offer> offers = {
+      fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>(kChildName),
+      mac_address_metadata_server_.MakeOffer(),
+  };
 
   fuchsia_driver_framework::NodeAddArgs args{
       {
@@ -170,6 +147,19 @@ void AmlUartV2::OnDeviceServerInitialized(zx::result<> device_server_init_result
       ->AddChild(fidl::ToWire(arena, std::move(args)), std::move(node_controller_endpoints->server),
                  {})
       .Then(fit::bind_member<&AmlUartV2::OnAddChildResult>(this));
+}
+
+void AmlUartV2::PrepareStop(fdf::PrepareStopCompleter completer) {
+  if (aml_uart_.has_value()) {
+    aml_uart_->Enable(false);
+  }
+
+  completer(zx::ok());
+}
+
+AmlUart& AmlUartV2::aml_uart_for_testing() {
+  ZX_ASSERT(aml_uart_.has_value());
+  return aml_uart_.value();
 }
 
 void AmlUartV2::OnAddChildResult(

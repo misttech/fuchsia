@@ -37,17 +37,13 @@ source_set("aml-uart-source") {
     "aml-uart.h",
     "registers.h",
   ]
-  deps = [
-    "//sdk/lib/driver/compat/cpp:logging",
-    "//src/devices/lib/driver:driver_runtime",
-  ]
+  deps = [ "//src/devices/lib/driver:driver_runtime" ]
   public_deps = [
     ":aml-uart-config",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
     "//sdk/fidl/fuchsia.hardware.serialimpl:fuchsia.hardware.serialimpl_cpp",
     "//sdk/lib/async:async-cpp",
-    "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/platform-device/cpp",

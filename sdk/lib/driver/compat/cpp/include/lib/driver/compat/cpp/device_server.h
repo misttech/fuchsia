@@ -82,14 +82,10 @@ class DeviceServer : public fidl::WireServer<fuchsia_driver_compat::Device> {
   struct BanjoConfig {
     BanjoProtoId default_proto_id = 0;
     GenericGetBanjoProtoCb generic_callback = nullptr;
-    std::unordered_map<BanjoProtoId, SpecificGetBanjoProtoCb> callbacks = {};
+    std::unordered_map<BanjoProtoId, SpecificGetBanjoProtoCb> callbacks;
   };
 
   DeviceServer() = default;
-
-  void Init(std::string name, std::string topological_path = "",
-            std::optional<ServiceOffersV1> service_offers = std::nullopt,
-            std::optional<BanjoConfig> banjo_config = std::nullopt);
 
   void Initialize(std::string name, std::optional<ServiceOffersV1> service_offers = std::nullopt,
                   std::optional<BanjoConfig> banjo_config = std::nullopt);
@@ -140,8 +136,8 @@ class DeviceServer : public fidl::WireServer<fuchsia_driver_compat::Device> {
 // This class is thread-unsafe.
 class SyncInitializedDeviceServer {
  public:
-  // Synchronously initialize the DeviceServer. Will immediately query the parent(s) for topological
-  // path and forwarded metadata and serve on the outgoing directory synchronously before returning.
+  // Synchronously initialize the DeviceServer. Will immediately query the parent(s)
+  // for forwarded metadata and serve on the outgoing directory synchronously before returning.
   //
   // |incoming|, |outgoing|, |node_name| can be accessed through the
   // DriverBase methods of the same name.
@@ -209,17 +205,15 @@ class AsyncInitializedDeviceServer {
   struct AsyncInitStorage {
     std::shared_ptr<fdf::Namespace> incoming;
     std::shared_ptr<fdf::OutgoingDirectory> outgoing;
-    std::string node_name;
     std::string child_node_name;
     fit::callback<void(zx::result<>)> callback;
     ForwardMetadata forward_metadata;
     std::optional<DeviceServer::BanjoConfig> banjo_config;
-    std::string child_additional_path;
     uint32_t in_flight_metadata = 0;
   };
 
  public:
-  // Begin initialization. Will internally query the parent(s) for topological path and forwarded
+  // Begin initialization. Will internally query the parent(s) for forwarded
   // metadata and serve on the outgoing directory when it is ready. The given callback is called
   // when the async initialization has been completed.
   //
@@ -289,9 +283,8 @@ class AsyncInitializedDeviceServer {
   std::optional<compat::DeviceServer> device_server_;
 
   // Set in OnParentDevices().
-  fidl::WireClient<fuchsia_driver_compat::Device> default_parent_client_ = {};
-  std::unordered_map<std::string, fidl::WireClient<fuchsia_driver_compat::Device>> parent_clients_ =
-      {};
+  fidl::WireClient<fuchsia_driver_compat::Device> default_parent_client_;
+  std::unordered_map<std::string, fidl::WireClient<fuchsia_driver_compat::Device>> parent_clients_;
 
   fdf::async_helpers::TaskGroup async_tasks_;
 };

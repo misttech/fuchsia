@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 {
     include: [
-        "driver_component/driver.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
@@ -24,6 +23,7 @@
                 "fuchsia.hardware.usb.peripheral.Service",
             ],
         },
+        { service: 'fuchsia.driver.compat.Service' },
     ],
     use: [
         {
@@ -46,6 +46,10 @@
             },
             default: [],
         },
+        {
+            service: 'fuchsia.driver.compat.Service',
+            availability: 'optional',
+        },
     ],
     expose: [
         {
@@ -56,6 +60,10 @@
                 "fuchsia.hardware.usb.peripheral.Service",
             ],
             from: "self",
+        },
+        {
+            service: 'fuchsia.driver.compat.Service',
+            from: 'self',
         },
     ],
 }

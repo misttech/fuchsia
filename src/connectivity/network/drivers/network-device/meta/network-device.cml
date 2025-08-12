@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 {
     include: [
-        "driver_component/driver.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
@@ -21,5 +20,10 @@
     },
     use: [
         { service: "fuchsia.hardware.network.driver.Service" },
+        {
+            // Uses banjo NetworkDeviceImpl if it's available, otherwise uses the fidl.
+            service: 'fuchsia.driver.compat.Service',
+            availability: 'optional',
+        },
     ],
 }

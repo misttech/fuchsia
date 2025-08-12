@@ -20,10 +20,8 @@ source_set("common") {
   deps = [ "//sdk/lib/driver/metadata/cpp" ]
   public_deps = [
     ":adc_bind",
-    "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
     "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_cpp",
     "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_cpp",
-    "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//src/devices/bind/fuchsia.adc:fuchsia.adc_cpp",
     "//src/devices/lib/amlogic",

@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.hardware.gpio/cpp/wire_test_base.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire_test_base.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/fake-bti/cpp/fake-bti.h>
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
@@ -154,12 +155,12 @@ class BaseTestEnvironment : public fdf_testing::Environment,
     }
 
     SetMetadata(compat_);
-    compat_.Init("pdev", {});
+    compat_.Initialize("pdev");
     EXPECT_OK(compat_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), &to_driver_vfs));
 
     // Serve a second compat instance at default in order to satisfy AmlSpiDriver's compat
     // server. Without this, metadata doesn't get forwarded.
-    compat_default_.Init("default", {});
+    compat_default_.Initialize("default");
     EXPECT_OK(
         compat_default_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), &to_driver_vfs));
 

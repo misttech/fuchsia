@@ -7,7 +7,6 @@
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.serialimpl/cpp/driver/fidl.h>
-#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 
@@ -29,8 +28,6 @@ class AmlUartV2 : public fdf::DriverBase {
   AmlUart& aml_uart_for_testing();
 
  private:
-  void OnDeviceServerInitialized(zx::result<> device_server_init_result);
-
   void OnAddChildResult(
       fidl::WireUnownedResult<fuchsia_driver_framework::Node::AddChild>& add_child_result);
 
@@ -41,7 +38,6 @@ class AmlUartV2 : public fdf::DriverBase {
   fuchsia_hardware_serial::wire::SerialPortInfo serial_port_info_;
   std::optional<AmlUart> aml_uart_;
   std::optional<fdf::PrepareStopCompleter> prepare_stop_completer_;
-  compat::AsyncInitializedDeviceServer device_server_;
   fdf::ServerBindingGroup<fuchsia_hardware_serialimpl::Device> serial_impl_bindings_;
 
   aml_uart_config::Config driver_config_;

@@ -4,6 +4,7 @@
 
 #include "src/devices/i2c/drivers/i2c/i2c-child-server.h"
 
+#include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/node/cpp/add_child.h>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -27,18 +28,9 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
   char child_name[32];
   snprintf(child_name, sizeof(child_name), "i2c-%u-%u", bus_id, address);
 
-  // Set up the compat server.
-  auto compat_server = std::make_unique<compat::SyncInitializedDeviceServer>();
-  {
-    zx::result<> result =
-        compat_server->Initialize(incoming, outgoing, parent_node_name, child_name);
-    if (result.is_error()) {
-      return result.take_error();
-    }
-  }
   // Create the I2cChildServer.
-  auto i2c_child_server = std::make_unique<I2cChildServer>(
-      std::move(on_transact), std::move(compat_server), address, friendly_name);
+  auto i2c_child_server =
+      std::make_unique<I2cChildServer>(std::move(on_transact), address, friendly_name);
   auto serve_result = outgoing->AddService<fuchsia_hardware_i2c::Service>(
       fuchsia_hardware_i2c::Service::InstanceHandler({
           .device = i2c_child_server->bindings_.CreateHandler(
@@ -72,8 +64,7 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
     properties.push_back(fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID, did));
   }
 
-  auto offers = i2c_child_server->compat_server_->CreateOffers2();
-  offers.push_back(fdf::MakeOffer2<fidl_i2c::Service>(child_name));
+  fuchsia_driver_framework::Offer offers[]{fdf::MakeOffer2<fidl_i2c::Service>(child_name)};
 
   fuchsia_driver_framework::DevfsAddArgs devfs_args{
       {.connector = std::move(connector.value()), .class_name = "i2c"}};

@@ -902,20 +902,6 @@ void AmlSpiDriver::OnGetSchedulerRoleName(
     return;
   }
 
-  compat_server_.Begin(
-      incoming(), outgoing(), node_name(), component::kDefaultInstance,
-      [this, completer = std::move(completer)](zx::result<> result) mutable {
-        if (result.is_error()) {
-          FDF_LOG(ERROR, "Failed to initialize compat server: %s", result.status_string());
-          return completer(result.take_error());
-        }
-
-        OnCompatServerInitialized(std::move(completer));
-      },
-      compat::ForwardMetadata::None());
-}
-
-void AmlSpiDriver::OnCompatServerInitialized(fdf::StartCompleter completer) {
   auto task =
       fpromise::join_promises(MapMmio(pdev_, 0), GetConfig(), GetInterrupt(), GetBti(),
                               GetSpiBusMetadata())
@@ -1076,11 +1062,11 @@ void AmlSpiDriver::AddNode(fdf::MmioBuffer mmio, const amlogic_spi::amlspi_confi
   properties[0] = fdf::MakeProperty(arena, bind_fuchsia_hardware_spiimpl::SERVICE,
                                     bind_fuchsia_hardware_spiimpl::SERVICE_DRIVERTRANSPORT);
 
-  std::vector offers = compat_server_.CreateOffers2(arena);
-  offers.push_back(
-      fdf::MakeOffer2<fuchsia_hardware_spiimpl::Service>(arena, component::kDefaultInstance));
-  offers.push_back(spi_metadata_server_.MakeOffer(arena));
-  offers.push_back(scheduler_role_name_metadata_server_.MakeOffer(arena));
+  std::vector<fuchsia_driver_framework::wire::Offer> offers = {
+      fdf::MakeOffer2<fuchsia_hardware_spiimpl::Service>(arena, component::kDefaultInstance),
+      spi_metadata_server_.MakeOffer(arena),
+      scheduler_role_name_metadata_server_.MakeOffer(arena),
+  };
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, devname)
                         .offers2(arena, std::move(offers))

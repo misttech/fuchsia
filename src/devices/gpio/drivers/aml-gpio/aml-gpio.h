@@ -9,7 +9,6 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
-#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/fpromise/promise.h>
@@ -144,12 +143,10 @@ class AmlGpioDriver : public fdf::DriverBase {
   void InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf::MmioBuffer> mmios,
                   fpromise::completer<void, zx_status_t> completer);
   void AddNode(fdf::StartCompleter completer);
-  fpromise::promise<void, zx_status_t> InitCompatServer();
 
   fidl::WireClient<fuchsia_driver_framework::Node> parent_;
   fidl::WireClient<fuchsia_driver_framework::NodeController> controller_;
   fidl::WireClient<fuchsia_hardware_platform_device::Device> pdev_;
-  compat::AsyncInitializedDeviceServer compat_server_;
   std::unique_ptr<AmlGpio> device_;
   async::Executor executor_;
   fdf_metadata::MetadataServer<fuchsia_hardware_pinimpl::Metadata> pin_metadata_server_;

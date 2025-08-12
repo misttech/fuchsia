@@ -7,7 +7,6 @@
 #include <fidl/fuchsia.hardware.pinimpl/cpp/driver/fidl.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/ddk/metadata.h>
-#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -82,8 +81,6 @@ class FakeTiTca6408aDevice : public fake_i2c::FakeI2c {
 class Environment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
-    device_server_.Initialize("pdev");
-
     {
       zx::result result = to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
           pdev_.GetInstanceHandler(fdf::Dispatcher::GetCurrent()->async_dispatcher()), "pdev");
@@ -106,7 +103,6 @@ class Environment : public fdf_testing::Environment {
   FakeTiTca6408aDevice& i2c() { return i2c_; }
 
  private:
-  compat::DeviceServer device_server_;
   FakeTiTca6408aDevice i2c_;
   fdf_fake::FakePDev pdev_;
 };

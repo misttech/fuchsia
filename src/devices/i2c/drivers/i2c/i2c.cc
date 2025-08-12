@@ -22,12 +22,6 @@ zx::result<> I2cDriver::Start() {
   }
   i2c_.Bind(std::move(*i2cimpl_result));
 
-  zx::result result = incoming()->Connect<fuchsia_driver_compat::Service::Device>();
-  if (result.is_error() || !result->is_valid()) {
-    FDF_LOG(ERROR, "Failed to connect to compat service: %s", result.status_string());
-    return result.take_error();
-  }
-
   fidl::Arena arena;
   zx::result i2c_bus_metadata =
       fdf_metadata::GetMetadata<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(incoming());

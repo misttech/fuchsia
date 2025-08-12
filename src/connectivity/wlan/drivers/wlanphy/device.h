@@ -5,13 +5,10 @@
 #ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_WLANPHY_DEVICE_H_
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_WLANPHY_DEVICE_H_
 
-#include <fidl/fuchsia.driver.compat/cpp/wire.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.device/cpp/wire.h>
 #include <fidl/fuchsia.wlan.phyimpl/cpp/driver/wire.h>
 #include <fidl/fuchsia.wlan.phyimpl/cpp/wire.h>
-#include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
@@ -77,7 +74,6 @@ class Device final : public fdf::DriverBase,
 
   // Dispatcher for being a FIDL client firing requests to WlanPhyImpl device.
   fdf::Dispatcher client_dispatcher_;
-  compat::SyncInitializedDeviceServer compat_server_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
   driver_devfs::Connector<fuchsia_wlan_device::Connector> devfs_connector_;

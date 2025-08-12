@@ -287,18 +287,8 @@ zx::result<> AmlUsbPhyDevice::ChildNode::Publish() {
     }
   }
 
-  {
-    auto result = compat_server_.Initialize(
-        parent_->incoming(), parent_->outgoing(), parent_->node_name(), name_,
-        compat::ForwardMetadata::None(), std::nullopt, std::string(kDeviceName) + "/");
-    if (result.is_error()) {
-      fdf::error("Failed to initialize compat server: {} for device {}", result, name_);
-      return result.take_error();
-    }
-  }
-
-  auto offers = compat_server_.CreateOffers2();
-  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_usb_phy::Service>(name_));
+  fuchsia_driver_framework::Offer offers[]{
+      fdf::MakeOffer2<fuchsia_hardware_usb_phy::Service>(name_)};
   std::vector properties = {
       fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
                         bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
@@ -338,7 +328,6 @@ zx::result<> AmlUsbPhyDevice::ChildNode::UnPublish() {
     }
     child_controller_.TakeClientEnd().reset();
   }
-  compat_server_.reset();
   {
     zx::result result =
         parent_->outgoing()->RemoveService<fuchsia_hardware_usb_phy::Service>(name_);

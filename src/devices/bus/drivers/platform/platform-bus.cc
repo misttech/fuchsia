@@ -689,7 +689,7 @@ zx::result<> PlatformBus::Start() {
       fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID, board_info_.pid()),
   };
 
-  device_server_.Init("pt");
+  device_server_.Initialize("pt");
   device_server_.Serve(dispatcher(), outgoing().get());
 
   zx::result board_data = GetBootItemArray(ZBI_TYPE_DRV_BOARD_PRIVATE, {});

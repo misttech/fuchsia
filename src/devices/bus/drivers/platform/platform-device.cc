@@ -454,7 +454,7 @@ zx::result<> PlatformDevice::Init() {
     }
   }
 
-  device_server_.Init(name_);
+  device_server_.Initialize(name_);
   device_server_.Serve(bus()->dispatcher(), bus()->outgoing().get());
 
   inspect_node_.RecordLazyValues("interrupt_vectors",

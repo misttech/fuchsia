@@ -38,8 +38,6 @@ void CollectMetadataFrom(fidl::VectorView<fuchsia_driver_compat::wire::Metadata>
 
 }  // namespace
 
-namespace fcd = fuchsia_component_decl;
-
 ForwardMetadata ForwardMetadata::All() { return ForwardMetadata(std::nullopt); }
 
 ForwardMetadata ForwardMetadata::None() {
@@ -59,14 +57,6 @@ bool ForwardMetadata::should_forward(MetadataKey key) const {
   }
 
   return filter_->find(key) != filter_->end();
-}
-
-void DeviceServer::Init(std::string name, std::string topological_path,
-                        std::optional<ServiceOffersV1> service_offers,
-                        std::optional<BanjoConfig> banjo_config) {
-  name_ = std::move(name);
-  service_offers_ = std::move(service_offers);
-  banjo_config_ = std::move(banjo_config);
 }
 
 void DeviceServer::Initialize(std::string name, std::optional<ServiceOffersV1> service_offers,
@@ -260,26 +250,19 @@ zx::result<> SyncInitializedDeviceServer::Initialize(
     const std::optional<std::string>& node_name, std::string_view child_node_name,
     const ForwardMetadata& forward_metadata, std::optional<DeviceServer::BanjoConfig> banjo_config,
     const std::optional<std::string>& child_additional_path) {
-  auto node_name_val = node_name.value_or("NA");
-  auto additional_path = child_additional_path.value_or("");
   auto child_node_name_str = std::string(child_node_name);
 
-  // Ensure formatting of the additional_path is correct. No leading '/'. With end '/'.
-  if (!additional_path.empty() && additional_path[0] == '/') {
-    additional_path.erase(0, 1);
-  }
-  if (!additional_path.empty() && additional_path[additional_path.length() - 1] != '/') {
-    additional_path += "/";
+  // We can just serve and return if no metadata is needed.
+  if (forward_metadata.empty()) {
+    return CreateAndServe(outgoing, child_node_name_str, std::move(banjo_config));
   }
 
   // First connect to all the parents.
   auto parent_devices = ConnectToParentDevices(incoming.get());
   if (parent_devices.is_error()) {
-    FDF_LOG(DEBUG, "Failed to get parent devices: %s. Assuming root.",
-            parent_devices.status_string());
+    FDF_LOG(DEBUG, "Failed to get parent devices: %s.", parent_devices.status_string());
 
-    // In case that there are no parents, assume we are the root and create
-    // the topological path from scratch.
+    // No parents if we are the root node.
     return CreateAndServe(outgoing, child_node_name_str, std::move(banjo_config));
   }
 
@@ -305,15 +288,9 @@ zx::result<> SyncInitializedDeviceServer::Initialize(
 
   // No default parent found.
   if (!default_parent_client.is_valid()) {
-    FDF_LOG(WARNING, "Failed to find the default parent. Assuming root.");
+    FDF_LOG(DEBUG, "Failed to find the default parent.");
 
-    // In case that there is no default parent, assume we are the root and create
-    // the topological path from scratch.
-    return CreateAndServe(outgoing, child_node_name_str, std::move(banjo_config));
-  }
-
-  // We can just serve and return if no metadata is needed.
-  if (forward_metadata.empty()) {
+    // No parents if we are the root node.
     return CreateAndServe(outgoing, child_node_name_str, std::move(banjo_config));
   }
 
@@ -385,32 +362,24 @@ void AsyncInitializedDeviceServer::Begin(const std::shared_ptr<fdf::Namespace>& 
                                          const std::optional<std::string>& child_additional_path) {
   ZX_ASSERT_MSG(storage_ == std::nullopt,
                 "Cannot call Begin on AsyncInitializedDeviceServer more than once.");
-  auto node_name_val = node_name.value_or("NA");
-
-  // Ensure formatting of the additional_path is correct. No leading '/'. With end '/'.
-  auto additional_path = child_additional_path.value_or("");
-  if (!additional_path.empty() && additional_path[0] == '/') {
-    additional_path.erase(0, 1);
-  }
-  if (!additional_path.empty() && additional_path[additional_path.length() - 1] != '/') {
-    additional_path += "/";
-  }
-
   storage_.emplace(AsyncInitStorage{
-      incoming,
-      outgoing,
-      node_name_val,
-      std::string(child_node_name),
-      std::move(callback),
-      forward_metadata,
-      std::move(banjo_config),
-      additional_path,
+      .incoming = incoming,
+      .outgoing = outgoing,
+      .child_node_name = std::string(child_node_name),
+      .callback = std::move(callback),
+      .forward_metadata = forward_metadata,
+      .banjo_config = std::move(banjo_config),
   });
   BeginAsyncInit();
 }
 
 void AsyncInitializedDeviceServer::BeginAsyncInit() {
   ZX_ASSERT(storage_);
+  if (storage_->forward_metadata.empty()) {
+    OnParentDevices(zx::ok(std::vector<ParentDevice>{}));
+    return;
+  }
+
   auto task = ConnectToParentDevices(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                      storage_->incoming.get(),
                                      [this](zx::result<std::vector<ParentDevice>> parents) {
@@ -426,11 +395,9 @@ void AsyncInitializedDeviceServer::OnParentDevices(
   }
 
   if (parent_devices.is_error()) {
-    FDF_LOG(DEBUG, "Failed to get parent devices: %s. Assuming root.",
-            parent_devices.status_string());
+    FDF_LOG(DEBUG, "Failed to get parent devices: %s.", parent_devices.status_string());
 
-    // In case that there are no parents, assume we are the root and create
-    // the topological path from scratch.
+    // No parents if we are the root node.
     zx::result result = CreateAndServe();
     if (result.is_error()) {
       CompleteInitialization(result.take_error());
@@ -459,10 +426,9 @@ void AsyncInitializedDeviceServer::OnParentDevices(
   }
 
   if (!default_parent_client_.is_valid()) {
-    FDF_LOG(WARNING, "Failed to find the default parent. Assuming root.");
+    FDF_LOG(DEBUG, "Failed to find the default parent.");
 
-    // In case that there is no default parent, assume we are the root and create
-    // the topological path from scratch.
+    // No parents if we are the root node.
     zx::result result = CreateAndServe();
     if (result.is_error()) {
       CompleteInitialization(result.take_error());

@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef SRC_DEVICES_SPI_DRIVERS_AML_SPI_AML_SPI_H_
+#define SRC_DEVICES_SPI_DRIVERS_AML_SPI_AML_SPI_H_
+
+#include <fidl/fuchsia.driver.compat/cpp/wire.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
@@ -9,7 +13,6 @@
 #include <fidl/fuchsia.hardware.spiimpl/cpp/driver/wire.h>
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
-#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/fit/function.h>
@@ -292,7 +295,6 @@ class AmlSpiDriver : public fdf::DriverBase {
   void OnGetSchedulerRoleName(
       fdf::StartCompleter completer,
       const std::optional<fuchsia_scheduler::RoleName>& scheduler_role_name);
-  void OnCompatServerInitialized(fdf::StartCompleter completer);
   void AddNode(fdf::MmioBuffer mmio, const amlogic_spi::amlspi_config_t& config,
                zx::interrupt interrupt, zx::bti bti,
                std::optional<std::vector<uint8_t>> encoded_spi_bus_metadata,
@@ -304,13 +306,11 @@ class AmlSpiDriver : public fdf::DriverBase {
   fpromise::promise<std::optional<std::vector<uint8_t>>, zx_status_t> GetSpiBusMetadata();
 
   fbl::Array<AmlSpi::ChipInfo> InitChips(const amlogic_spi::amlspi_config_t& config);
-  zx::result<compat::DeviceServer::GenericProtocol> GetBanjoProto(compat::BanjoProtoId id);
 
   fidl::WireClient<fuchsia_driver_framework::Node> parent_;
   fidl::WireClient<fuchsia_driver_framework::NodeController> controller_;
   fidl::WireClient<fuchsia_hardware_platform_device::Device> pdev_;
   fidl::WireClient<fuchsia_driver_compat::Device> compat_;
-  compat::AsyncInitializedDeviceServer compat_server_;
   std::unique_ptr<AmlSpi> device_;
   async::Executor executor_;
   fdf_metadata::MetadataServer<fuchsia_hardware_spi_businfo::SpiBusMetadata> spi_metadata_server_;
@@ -318,3 +318,5 @@ class AmlSpiDriver : public fdf::DriverBase {
 };
 
 }  // namespace spi
+
+#endif  // SRC_DEVICES_SPI_DRIVERS_AML_SPI_AML_SPI_H_
