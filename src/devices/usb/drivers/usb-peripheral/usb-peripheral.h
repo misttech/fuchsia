@@ -102,7 +102,6 @@ class UsbPeripheral : public fdf::DriverBase,
   // fdf::DriverBase implementation.
   zx::result<> Start() override;
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
-  void Stop() override;
 
   // UsbDciInterface implementation.
   zx_status_t UsbDciInterfaceControl(const usb_setup_t* setup, const uint8_t* write_buffer,
@@ -197,7 +196,6 @@ class UsbPeripheral : public fdf::DriverBase,
   zx_status_t SetConfiguration(uint8_t configuration);
   zx_status_t SetInterface(uint8_t interface, uint8_t alt_setting);
   zx_status_t SetDefaultConfig(std::vector<FunctionDescriptor>& functions);
-  int ListenerCleanupThread();
   void RequestComplete(usb_request_t* req);
 
   bool AllFunctionsRegistered() const __TA_REQUIRES(lock_);
@@ -254,8 +252,6 @@ class UsbPeripheral : public fdf::DriverBase,
   // Registered listener
   fidl::ClientEnd<fuchsia_hardware_usb_peripheral::Events> listener_;
 
-  thrd_t thread_ = 0;
-
   bool cache_enabled_ = true;
   bool cache_report_enabled_ = true;
 
@@ -270,7 +266,6 @@ class UsbPeripheral : public fdf::DriverBase,
   fdf::OwnedChildNode child_;
   driver_devfs::Connector<fuchsia_hardware_usb_peripheral::Device> devfs_connector_{
       fit::bind_member<&UsbPeripheral::Connect>(this)};
-  std::optional<fdf::PrepareStopCompleter> prepare_stop_completer_;
 };
 
 }  // namespace usb_peripheral

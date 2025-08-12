@@ -275,11 +275,10 @@ zx_status_t Asix88179Ethernet::Receive(usb::Request<>& request) {
 }
 
 void Asix88179Ethernet::ReadComplete(usb_request_t* usb_request) {
+  usb::Request<> request(usb_request, parent_req_size_);
   if (usb_request->response.status == ZX_ERR_IO_NOT_PRESENT) {
     return;
   }
-
-  usb::Request<> request(usb_request, parent_req_size_);
 
   fbl::AutoLock lock(&lock_);
 
@@ -368,11 +367,11 @@ void Asix88179Ethernet::WriteComplete(usb_request_t* usb_request) {
 
 void Asix88179Ethernet::InterruptComplete(usb_request_t* usb_request) {
   fbl::AutoLock lock(&lock_);
+  usb::Request<> request(usb_request, parent_req_size_, false);
 
   if (usb_request->response.status == ZX_OK &&
       usb_request->response.actual == kInterruptRequestSize) {
     uint8_t status[kInterruptRequestSize];
-    usb::Request<> request(usb_request, parent_req_size_, false);
 
     if (request.CopyFrom(status, sizeof(status), 0) == kInterruptRequestSize) {
       bool online = (status[2] & 1) != 0;

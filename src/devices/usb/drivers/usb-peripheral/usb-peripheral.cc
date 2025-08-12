@@ -1002,88 +1002,20 @@ void UsbPeripheral::ClearFunctions(ClearFunctionsCompleter::Sync& completer) {
   completer.Reply();
 }
 
-int UsbPeripheral::ListenerCleanupThread() {
+void UsbPeripheral::SetStateChangeListener(SetStateChangeListenerRequestView request,
+                                           SetStateChangeListenerCompleter::Sync& completer) {
+  // No safety checks. Test should know when it's safe to set listener.
+  listener_ = std::move(request->listener);
+}
+
+void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
+  ClearFunctions();
+  usb_monitor_.Stop();
+
   zx_signals_t observed = 0;
   listener_.channel().wait_one(ZX_CHANNEL_PEER_CLOSED | __ZX_OBJECT_HANDLE_CLOSED,
                                zx::time::infinite(), &observed);
-  fbl::AutoLock l(&lock_);
-  listener_.reset();
-
-  if (prepare_stop_completer_.has_value()) {
-    prepare_stop_completer_.value()(zx::ok());
-    prepare_stop_completer_.reset();
-  }
-  return 0;
-}
-
-void UsbPeripheral::SetStateChangeListener(SetStateChangeListenerRequestView request,
-                                           SetStateChangeListenerCompleter::Sync& completer) {
-  // This code is wrapped in a loop
-  // to prevent a race condition in the event that multiple
-  // clients try to set the handle at once.
-  while (1) {
-    fbl::AutoLock lock(&lock_);
-    if (listener_.is_valid() && thread_) {
-      thrd_t thread = thread_;
-      thread_ = 0;
-      lock.release();
-      int output;
-      thrd_join(thread, &output);
-      continue;
-    }
-    if (listener_.is_valid()) {
-      completer.Close(ZX_ERR_BAD_STATE);
-      return;
-    }
-    if (thread_) {
-      int output;
-      thrd_t thread = thread_;
-      thread_ = 0;
-      lock.release();
-      // We now own the thread, but not the listener.
-      thrd_join(thread, &output);
-      // Go back and try to re-set the listener_.
-      // another caller may have tried to do this while we were blocked on thrd_join.
-      continue;
-    }
-    listener_ = std::move(request->listener);
-    if (thrd_create(
-            &thread_,
-            [](void* arg) -> int {
-              return reinterpret_cast<UsbPeripheral*>(arg)->ListenerCleanupThread();
-            },
-            reinterpret_cast<void*>(this)) != thrd_success) {
-      listener_.reset();
-      completer.Close(ZX_ERR_INTERNAL);
-      return;
-    }
-    return;
-  }
-}
-void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
-  if (thread_) {
-    prepare_stop_completer_.emplace(std::move(completer));
-  } else {
-    completer(zx::ok());
-  }
-
-  {
-    fbl::AutoLock l(&lock_);
-    if (listener_) {
-      listener_.reset();
-    }
-  }
-
-  ClearFunctions();
-  usb_monitor_.Stop();
-}
-
-void UsbPeripheral::Stop() {
-  if (thread_) {
-    int output;
-    thrd_join(thread_, &output);
-    thread_ = 0;
-  }
+  completer(zx::ok());
 }
 
 zx_status_t UsbPeripheral::SetDefaultConfig(std::vector<FunctionDescriptor>& functions) {
