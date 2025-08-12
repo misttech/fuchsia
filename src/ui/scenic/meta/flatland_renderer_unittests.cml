@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/graphics/display/testing/fake-coordinator-connector/meta/fake_display_coordinator_connector.shard.cml",
         "inspect/client.shard.cml",
 
         // Using the ELF runner instead of GTest runner allows us to pass the `gtest_filter` flag.
@@ -16,21 +15,11 @@
 
         // Only run some tests so that this test component can run within the test timeout.
         // In particular, run all the tests that aren't run by the other sharded components.
-        args: [ "--gtest_filter=-*DisplayTest*:*VulkanRendererTest*" ],
+        args: [ "--gtest_filter=-*VulkanRendererTest*" ],
     },
-    children: [
-        {
-            name: "display-coordinator-connector",
-            url: "#meta/display-coordinator-connector.cm",
-        },
-    ],
     use: [
         {
             protocol: [ "fuchsia.scheduler.RoleManager" ],
-        },
-        {
-            protocol: [ "fuchsia.hardware.display.Provider" ],
-            from: "#display-coordinator-connector",
         },
     ],
 }

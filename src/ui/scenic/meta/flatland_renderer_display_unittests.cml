@@ -12,10 +12,7 @@
         "vulkan/client.shard.cml",
     ],
     program: {
-        binary: "bin/flatland_renderer_unittests",
-
-        // Only run some tests so that this test component can run within the test timeout.
-        args: [ "--gtest_filter=*DisplayTest*" ],
+        binary: "bin/flatland_renderer_display_unittests",
     },
     children: [
         {

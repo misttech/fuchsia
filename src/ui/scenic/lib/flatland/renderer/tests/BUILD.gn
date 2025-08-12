@@ -31,7 +31,6 @@ cc_test_executable("unittests") {
   testonly = true
   sources = [
     "//src/ui/lib/escher/test/flatland/rectangle_compositor_unittest.cc",
-    "display_unittest.cc",
     "renderer_unittest.cc",
 
     # Registers a global Escher environment for testing.
@@ -40,7 +39,6 @@ cc_test_executable("unittests") {
 
   public_deps = [
     ":testing_deps",
-    "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_cpp",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
@@ -56,7 +54,6 @@ cc_test_executable("unittests") {
     "//src/lib/testing/loop_fixture:gtest",
     "//src/ui/lib/escher/test/common:gtest_escher",
     "//src/ui/lib/escher/test/common:readback_fixtures",
-    "//src/ui/scenic/lib/display",
     "//src/ui/scenic/lib/flatland/renderer",
     "//src/ui/scenic/lib/screen_capture",
     "//src/ui/scenic/lib/utils",
@@ -65,4 +62,35 @@ cc_test_executable("unittests") {
 
   # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-vla-cxx-extension" ]
+}
+
+cc_test_executable("display_unittests") {
+  output_name = "flatland_renderer_display_unittests"
+  testonly = true
+  sources = [
+    "display_unittest.cc",
+
+    # Registers a global Escher environment for testing.
+    "run_all_unittests.cc",
+  ]
+
+  deps = [
+    ":testing_deps",
+    "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_cpp",
+    "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_cpp",
+    "//sdk/lib/async-default",
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/async-testing",
+    "//src/graphics/display/lib/coordinator-getter:client",
+    "//src/lib/fsl",
+    "//src/lib/testing/loop_fixture:gtest",
+    "//src/ui/lib/escher/test/common:gtest_escher",
+    "//src/ui/lib/escher/test/common:readback_fixtures",
+    "//src/ui/scenic/lib/display",
+    "//src/ui/scenic/lib/flatland:flatland_types",
+    "//src/ui/scenic/lib/flatland/renderer",
+    "//src/ui/scenic/lib/utils",
+    "//third_party/googletest:gtest",
+  ]
 }
