@@ -2,28 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <dirent.h>
-#include <endian.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.virtual.bus/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.virtualbustest/cpp/wire.h>
-#include <lib/component/incoming/cpp/protocol.h>
-#include <lib/ddk/platform-defs.h>
-#include <lib/fdio/cpp/caller.h>
-#include <lib/fdio/directory.h>
-#include <lib/fdio/watcher.h>
-#include <lib/fzl/vmo-mapper.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/usb-virtual-bus-launcher/usb-virtual-bus-launcher.h>
-#include <lib/zx/clock.h>
-#include <lib/zx/fifo.h>
-#include <lib/zx/vmo.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <zircon/syscalls.h>
 
-#include <fbl/string.h>
-#include <usb/cdc.h>
-#include <usb/usb.h>
+#include <usb/descriptors.h>
 #include <zxtest/zxtest.h>
 
 namespace usb_virtual_bus {
@@ -37,30 +22,22 @@ constexpr const char kManufacturer[] = "Google";
 constexpr const char kProduct[] = "USB Virtual Bus Virtual Device";
 constexpr const char kSerial[] = "ebfd5ad49d2a";
 
-zx_status_t WaitForDevice(int dirfd, int event, const char* name, void* cookie) {
-  if (std::string_view{name} == ".") {
-    return ZX_OK;
-  }
-  if (event != WATCH_EVENT_ADD_FILE) {
-    return ZX_OK;
-  }
-  const fdio_cpp::UnownedFdioCaller caller{dirfd};
-  zx::result channel = component::ConnectAt<virtualbustest::BusTest>(caller.directory(), name);
-  if (channel.is_error()) {
-    return channel.status_value();
-  }
-  static_cast<fidl::WireSyncClient<virtualbustest::BusTest>*>(cookie)->Bind(
-      std::move(channel.value()));
-  return ZX_ERR_STOP;
-}
-
 class VirtualBusTest : public zxtest::Test {
  public:
   void SetUp() override {
-    auto bus = BusLauncher::Create();
+    auto bus = BusLauncher::Create({
+        fuchsia_component_test::Capability::WithService(fuchsia_component_test::Service{
+            {.name = fuchsia_hardware_usb_virtualbustest::Service::Name}}),
+    });
     ASSERT_OK(bus.status_value());
     bus_ = std::move(bus.value());
-    ASSERT_NO_FATAL_FAILURE(InitUsbVirtualBus(test_));
+    ASSERT_NO_FATAL_FAILURE(InitUsbVirtualBus());
+
+    component::SyncServiceMemberWatcher<virtualbustest::Service::Device> watcher(
+        bus_->GetExposedDir());
+    zx::result result = watcher.GetNextInstance(false);
+    ASSERT_TRUE(result.is_ok());
+    test_.Bind(std::move(result.value()));
   }
 
   void TearDown() override {
@@ -69,13 +46,13 @@ class VirtualBusTest : public zxtest::Test {
   }
 
  protected:
-  void InitUsbVirtualBus(fidl::WireSyncClient<virtualbustest::BusTest>& test);
+  void InitUsbVirtualBus();
 
   std::optional<BusLauncher> bus_;
   fidl::WireSyncClient<virtualbustest::BusTest> test_;
 };
 
-void VirtualBusTest::InitUsbVirtualBus(fidl::WireSyncClient<virtualbustest::BusTest>& test) {
+void VirtualBusTest::InitUsbVirtualBus() {
   namespace usb_peripheral = fuchsia_hardware_usb_peripheral;
   using ConfigurationDescriptor =
       ::fidl::VectorView<fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor>;
@@ -109,12 +86,6 @@ void VirtualBusTest::InitUsbVirtualBus(fidl::WireSyncClient<virtualbustest::BusT
       fidl::VectorView<usb_peripheral::wire::FunctionDescriptor>::FromExternal(function_descs));
 
   ASSERT_OK(bus_->SetupPeripheralDevice(std::move(device_desc), std::move(config_descs)));
-
-  fbl::unique_fd fd;
-  ASSERT_OK(
-      fdio_open3_fd_at(bus_->GetRootFd(), "class/virtual-bus-test", 0, fd.reset_and_get_address()));
-  ASSERT_STATUS(fdio_watch_directory(fd.get(), WaitForDevice, ZX_TIME_INFINITE, &test),
-                ZX_ERR_STOP);
 }
 
 TEST_F(VirtualBusTest, ShortTransfer) {
