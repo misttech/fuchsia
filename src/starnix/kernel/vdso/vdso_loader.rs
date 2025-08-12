@@ -150,7 +150,7 @@ fn create_vvar_and_handles() -> (Arc<MemoryMappedVvar>, Arc<MemoryObject>) {
         MemoryObject::from(
             zx::Vmo::create(*VVAR_SIZE as u64).expect("Couldn't create vvar memory"),
         )
-        .with_zx_name(b"starnix:vsdo"),
+        .with_zx_name(b"starnix:vvar"),
     );
     // Map the writeable vvar_memory to a region of Starnix kernel VMAR and write initial vvar_data
     let vvar_memory_mapped =
