@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::common::{Boot, Flash, Unlock};
-use crate::file_resolver::resolvers::{Resolver, ZipArchiveResolver};
+use crate::file_resolver::resolvers::Resolver;
 use crate::file_resolver::FileResolver;
 use crate::manifest::resolvers::{
     ArchiveResolver, FlashManifestResolver, FlashManifestTarResolver, ManifestResolver,
@@ -131,14 +131,41 @@ pub async fn from_local_product_bundle<F: FastbootInterface>(
 ) -> Result<()> {
     log::debug!("fastboot manifest from_local_product_bundle");
     let path = Utf8Path::from_path(&*path).ok_or_else(|| anyhow!("Error getting path"))?;
-    let product_bundle = ProductBundle::try_load_from(path)?;
-
-    let flash_manifest_version = FlashManifestVersion::from_product_bundle(&product_bundle)?;
 
     match (path.is_file(), path.extension()) {
         (true, Some("zip")) => {
+            // This is an awkward hack we've had to introduce thanks to
+            // dtbo partition verifying in our image assembly.
+            // When we load the product bundle `try_load_from` we call the
+            // ImageMapper's verify functions, this requires the files to be
+            // on disk to SHA them.
+            let temp_dir = tempfile::tempdir()?;
+            let tdir_path = temp_dir.path().to_owned();
+            let file = File::open(path)?;
+            let mut archive = zip::read::ZipArchive::new(file)?;
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i)?;
+                if file.is_file() {
+                    let ofile_path = tdir_path.join(file.name());
+                    if let Some(parent) = ofile_path.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    let mut o_file = File::create(ofile_path)?;
+                    std::io::copy(&mut file, &mut o_file)?;
+                }
+            }
+            let tdir_path =
+                Utf8Path::from_path(&*tdir_path).ok_or_else(|| anyhow!("Error getting path"))?;
+            let pb_path = if std::fs::exists(tdir_path.join("product_bundle"))? {
+                tdir_path.join("product_bundle")
+            } else {
+                tdir_path.to_owned()
+            };
+            let product_bundle = ProductBundle::try_load_from(&pb_path)?;
+            let flash_manifest_version =
+                FlashManifestVersion::from_product_bundle(&product_bundle)?;
             FlashManifest {
-                resolver: ZipArchiveResolver::new(path.into())?,
+                resolver: Resolver::new(tdir_path.into())?,
                 version: flash_manifest_version,
             }
             .flash(messenger, fastboot_interface, cmd)
@@ -149,6 +176,9 @@ pub async fn from_local_product_bundle<F: FastbootInterface>(
             extension
         )),
         (false, _) => {
+            let product_bundle = ProductBundle::try_load_from(path)?;
+            let flash_manifest_version =
+                FlashManifestVersion::from_product_bundle(&product_bundle)?;
             FlashManifest { resolver: Resolver::new(path.into())?, version: flash_manifest_version }
                 .flash(messenger, fastboot_interface, cmd)
                 .await
