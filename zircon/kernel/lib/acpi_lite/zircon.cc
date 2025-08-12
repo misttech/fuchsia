@@ -11,6 +11,7 @@
 #include <zircon/compiler.h>
 
 #include <vm/physmap.h>
+#include <vm/vm_address_region.h>
 #include <vm/vm_aspace.h>
 
 namespace {
@@ -21,6 +22,8 @@ acpi_lite::ZirconPhysmemReader g_physmem_reader;
 
 namespace acpi_lite {
 
+// TODO(https://fxbug.dev/438036525): This translation is 'misusing' the physmap and should be
+// re-designed to create its own separate mappings.
 zx::result<const void *> ZirconPhysmemReader::PhysToPtr(uintptr_t phys, size_t length) {
   // We don't support the 0 physical address or 0-length ranges.
   if (length == 0 || phys == 0) {
@@ -46,6 +49,7 @@ zx::result<const void *> ZirconPhysmemReader::PhysToPtr(uintptr_t phys, size_t l
   // back in if they are ACPI regions.
   const paddr_t paddr_base = ROUNDDOWN_PAGE_SIZE(phys);
   const vaddr_t vaddr_base = reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr_base));
+  const size_t size = ROUNDUP_PAGE_SIZE(phys_end) - paddr_base;
   if (vaddr_base == 0) {
     return zx::error(ZX_ERR_INTERNAL);
   }
@@ -59,9 +63,21 @@ zx::result<const void *> ZirconPhysmemReader::PhysToPtr(uintptr_t phys, size_t l
     return zx::success(paddr_to_physmap(phys));
   }
 
+  fbl::RefPtr<VmAddressRegion> root_vmar = VmAspace::kernel_aspace()->RootVmar();
+  // Check if this region is already reserved or not. If the address is within the RAM portion of
+  // the physmap then the region will already exist, even if the the page itself may not be present
+  // in the arch aspace. If the region is not within the RAM portion of the physmap then the physmap
+  // VMAR will not cover it and so we must reserve the virtual address range prior to mapping.
+  if (!root_vmar->FindRegion(vaddr_base)) {
+    zx_status_t status = VmAspace::kernel_aspace()->RootVmar()->ReserveSpace(
+        "acpi", vaddr_base, size, ARCH_MMU_FLAG_PERM_READ);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+  }
+
   zx_status_t status = VmAspace::kernel_aspace()->arch_aspace().MapContiguous(
-      vaddr_base, paddr_base, (ROUNDUP_PAGE_SIZE(phys_end) - paddr_base) / PAGE_SIZE,
-      ARCH_MMU_FLAG_PERM_READ);
+      vaddr_base, paddr_base, size / PAGE_SIZE, ARCH_MMU_FLAG_PERM_READ);
   if (status != ZX_OK) {
     return zx::error(status);
   }
