@@ -28,17 +28,15 @@ source_set("client") {
   ]
 }
 
-# Test the client getting display Coordinator without access to display.Provider
+# Test the client getting display Coordinator with access to display.Provider
 # service.
-test("get_hardware_display_coordinator_without_provider_service_test_bin") {
-  sources = [
-    "tests/get_hardware_display_coordinator_without_provider_service_test.cc",
-  ]
+test("get_hardware_display_coordinator_test_bin") {
+  sources = [ "tests/get_hardware_display_coordinator_test.cc" ]
 
   deps = [
     ":client",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fit-promise",
-    "//sdk/lib/sys/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
     "//src/lib/testing/predicates",
@@ -46,40 +44,12 @@ test("get_hardware_display_coordinator_without_provider_service_test_bin") {
   ]
 }
 
-fuchsia_unittest_package(
-    "get_hardware_display_coordinator_without_provider_service_test") {
-  deps =
-      [ ":get_hardware_display_coordinator_without_provider_service_test_bin" ]
-  manifest = "tests/meta/get_hardware_display_coordinator_without_provider_service_test.cml"
-  test_specs = {
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
-}
-
-# Test the client getting display Coordinator with access to display.Provider
-# service.
-test("get_hardware_display_coordinator_with_provider_service_test_bin") {
-  sources =
-      [ "tests/get_hardware_display_coordinator_with_provider_service_test.cc" ]
-
+fuchsia_unittest_package("get_hardware_display_coordinator_test") {
   deps = [
-    ":client",
-    "//sdk/lib/fit-promise",
-    "//src/lib/fxl/test:gtest_main",
-    "//src/lib/testing/loop_fixture",
-    "//third_party/googletest:gtest",
-  ]
-}
-
-fuchsia_unittest_package(
-    "get_hardware_display_coordinator_with_provider_service_test") {
-  deps = [
-    ":get_hardware_display_coordinator_with_provider_service_test_bin",
+    ":get_hardware_display_coordinator_test_bin",
     "//src/graphics/display/testing/fake-coordinator-connector:child-component",
   ]
-  manifest = "tests/meta/get_hardware_display_coordinator_with_provider_service_test.cml"
+  manifest = "tests/meta/get_hardware_display_coordinator_test.cml"
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -90,8 +60,5 @@ fuchsia_unittest_package(
 
 group("tests") {
   testonly = true
-  deps = [
-    ":get_hardware_display_coordinator_with_provider_service_test",
-    ":get_hardware_display_coordinator_without_provider_service_test",
-  ]
+  deps = [ ":get_hardware_display_coordinator_test" ]
 }

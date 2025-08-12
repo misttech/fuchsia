@@ -16,6 +16,7 @@ executable("bin") {
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_hlcpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fit-promise",
     "//sdk/lib/inspect/component/cpp",
     "//sdk/lib/scheduler/cpp",

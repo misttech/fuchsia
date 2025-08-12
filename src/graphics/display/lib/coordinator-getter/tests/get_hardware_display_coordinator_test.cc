@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/async-loop/loop.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fpromise/promise.h>
 #include <lib/fpromise/single_threaded_executor.h>
 
@@ -10,21 +11,27 @@
 
 #include "src/graphics/display/lib/coordinator-getter/client.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
+#include "src/lib/testing/predicates/status.h"
 
 namespace display {
 
 namespace {
 
 // Tests the code path when the service routing is available.
-class GetHardwareDisplayCoordinatorWithProviderServiceTest : public gtest::RealLoopFixture {};
+class GetHardwareDisplayCoordinatorTest : public gtest::RealLoopFixture {};
 
 // FIDL and Async executor should be able to run on a single dispatcher.
-TEST_F(GetHardwareDisplayCoordinatorWithProviderServiceTest, SingleDispatcher) {
+TEST_F(GetHardwareDisplayCoordinatorTest, SingleDispatcher) {
   std::optional<fpromise::result<CoordinatorClientChannels, zx_status_t>> coordinator;
   async::Executor executor(dispatcher());
 
+  zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
+      component::Connect<fuchsia_hardware_display::Provider>();
+  ASSERT_OK(provider_result);
+  fidl::ClientEnd<fuchsia_hardware_display::Provider> provider = std::move(provider_result).value();
+
   executor.schedule_task(
-      GetCoordinator(dispatcher())
+      GetCoordinator(std::move(provider), dispatcher())
           .then([&coordinator](fpromise::result<CoordinatorClientChannels, zx_status_t>& result) {
             coordinator = std::move(result);
           }));
@@ -40,15 +47,20 @@ TEST_F(GetHardwareDisplayCoordinatorWithProviderServiceTest, SingleDispatcher) {
 }
 
 // FIDL and Async executor should be able to run on separate dispatchers.
-TEST_F(GetHardwareDisplayCoordinatorWithProviderServiceTest, SeparateDispatchers) {
+TEST_F(GetHardwareDisplayCoordinatorTest, SeparateDispatchers) {
   async::Loop fidl_loop(&kAsyncLoopConfigNeverAttachToThread);
   fidl_loop.StartThread("fidl-loop");
 
   std::optional<fpromise::result<CoordinatorClientChannels, zx_status_t>> coordinator;
   async::Executor executor(dispatcher());
 
+  zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
+      component::Connect<fuchsia_hardware_display::Provider>();
+  ASSERT_OK(provider_result);
+  fidl::ClientEnd<fuchsia_hardware_display::Provider> provider = std::move(provider_result).value();
+
   executor.schedule_task(
-      GetCoordinator(fidl_loop.dispatcher())
+      GetCoordinator(std::move(provider), fidl_loop.dispatcher())
           .then([&coordinator](fpromise::result<CoordinatorClientChannels, zx_status_t>& result) {
             coordinator = std::move(result);
           }));

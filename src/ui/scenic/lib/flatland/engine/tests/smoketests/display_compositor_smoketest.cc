@@ -4,11 +4,13 @@
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/defer.h>
 #include <lib/zircon-internal/align.h>
 
 #include "src/graphics/display/lib/coordinator-getter/client.h"
 #include "src/lib/fsl/handles/object_info.h"
+#include "src/lib/testing/predicates/status.h"
 #include "src/ui/lib/escher/flatland/rectangle_compositor.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
 #include "src/ui/lib/escher/renderer/batch_gpu_downloader.h"
@@ -72,8 +74,16 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
     // test cases in the same test component, so the display coordinator may be
     // in a dirty state. Tests should request a reset of display coordinator
     // here.
-    auto hdc_promise = display::GetCoordinator();
-    executor_->schedule_task(hdc_promise.then(
+
+    zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
+        component::Connect<fuchsia_hardware_display::Provider>();
+    ASSERT_OK(provider_result);
+    fidl::ClientEnd<fuchsia_hardware_display::Provider> provider =
+        std::move(provider_result).value();
+
+    fpromise::promise<display::CoordinatorClientChannels, zx_status_t> display_coordinator_promise =
+        display::GetCoordinator(std::move(provider));
+    executor_->schedule_task(display_coordinator_promise.then(
         [this](fpromise::result<display::CoordinatorClientChannels, zx_status_t>& client_channels) {
           ASSERT_TRUE(client_channels.is_ok()) << "Failed to get display coordinator:"
                                                << zx_status_get_string(client_channels.error());

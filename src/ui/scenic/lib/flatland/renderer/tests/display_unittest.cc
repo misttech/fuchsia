@@ -9,6 +9,7 @@
 #include <lib/async/cpp/executor.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/async/default.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
 #include <lib/fit/defer.h>
 
@@ -17,6 +18,7 @@
 #include "src/graphics/display/lib/coordinator-getter/client.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
+#include "src/lib/testing/predicates/status.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/test/common/gtest_vulkan.h"
 #include "src/ui/lib/escher/vk/vulkan_device_queues.h"
@@ -53,8 +55,16 @@ class DisplayTest : public gtest::RealLoopFixture {
     // test cases in the same test component, so the display coordinator may be
     // in a dirty state. Tests should request a reset of display coordinator
     // here.
-    auto hdc_promise = display::GetCoordinator();
-    executor_->schedule_task(hdc_promise.then(
+
+    zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
+        component::Connect<fuchsia_hardware_display::Provider>();
+    ASSERT_OK(provider_result);
+    fidl::ClientEnd<fuchsia_hardware_display::Provider> provider =
+        std::move(provider_result).value();
+
+    fpromise::promise<display::CoordinatorClientChannels, zx_status_t> display_coordinator_promise =
+        display::GetCoordinator(std::move(provider));
+    executor_->schedule_task(display_coordinator_promise.then(
         [this](fpromise::result<display::CoordinatorClientChannels, zx_status_t>& client_channels) {
           ASSERT_TRUE(client_channels.is_ok()) << "Failed to get display coordinator:"
                                                << zx_status_get_string(client_channels.error());

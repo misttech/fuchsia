@@ -10,7 +10,7 @@
         "vulkan/client.shard.cml",
     ],
     program: {
-        binary: "test/get_hardware_display_coordinator_with_provider_service_test_bin",
+        binary: "test/get_hardware_display_coordinator_test_bin",
     },
     children: [
         {
