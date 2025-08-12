@@ -25,7 +25,7 @@ from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
 from core_testing.ies import Ie, read_ssid
 from fuchsia_controller_py.wrappers import asyncmethod
-from mobly import test_runner
+from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true, fail
 
 
@@ -103,6 +103,8 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
             if security.security_mode == SecurityMode.OPEN:
                 pass
             elif security.security_mode == SecurityMode.WPA2:
+                if security.password is None:
+                    raise signals.TestError("Password is required for WPA2")
                 protocol = fidl_security.Protocol.WPA2_PERSONAL
                 credentials = fidl_security.Credentials(
                     wpa=fidl_security.WpaCredentials(
