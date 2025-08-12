@@ -167,7 +167,7 @@ zx_status_t Client::ImportImageForDisplay(const display::ImageMetadata& image_me
 
   fbl::AllocChecker alloc_checker;
   fbl::RefPtr<Image> image = fbl::AdoptRef(new (&alloc_checker) Image(
-      &controller_, image_metadata, image_id, driver_image_id, &proxy_->node(), id_));
+      &controller_, image_metadata, image_id, driver_image_id, &proxy_.node(), id_));
   if (!alloc_checker.check()) {
     fdf::debug("Alloc checker failed while constructing Image.\n");
     return ZX_ERR_NO_MEMORY;
@@ -984,7 +984,7 @@ zx_status_t Client::ImportImageForCapture(const display::ImageMetadata& image_me
 
   fbl::AllocChecker alloc_checker;
   fbl::RefPtr<CaptureImage> capture_image = fbl::AdoptRef(new (&alloc_checker) CaptureImage(
-      &controller_, image_id, driver_capture_image_id, &proxy_->node(), id_));
+      &controller_, image_id, driver_capture_image_id, &proxy_.node(), id_));
   if (!alloc_checker.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -1035,7 +1035,7 @@ void Client::StartCapture(StartCaptureRequestView request, StartCaptureCompleter
   }
 
   fbl::AutoLock lock(controller_.mtx());
-  proxy_->EnableCapture(true);
+  proxy_.EnableCapture(true);
   completer.ReplySuccess();
 
   // Keep track of currently active capture image.
@@ -1398,7 +1398,7 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
     };
     display_config->draft_ = display_config->applied_;
 
-    display_config->InitializeInspect(&proxy_->node());
+    display_config->InitializeInspect(&proxy_.node());
 
     display_configs_.insert(std::move(display_config));
   }
@@ -1693,7 +1693,7 @@ void Client::AcknowledgeVsync(AcknowledgeVsyncRequestView request,
     return;
   }
 
-  proxy_->AcknowledgeVsync(ack_cookie);
+  proxy_.AcknowledgeVsync(ack_cookie);
   fdf::trace("Cookie {} Acked\n", ack_cookie.value());
 }
 
@@ -1717,12 +1717,12 @@ void Client::Bind(
 Client::Client(Controller* controller, ClientProxy* proxy, ClientPriority priority,
                ClientId client_id)
     : controller_(*controller),
-      proxy_(proxy),
+      proxy_(*proxy),
       priority_(priority),
       id_(client_id),
       fences_(this, controller->driver_dispatcher()->borrow()) {
-  ZX_DEBUG_ASSERT(controller);
-  ZX_DEBUG_ASSERT(proxy);
+  ZX_DEBUG_ASSERT(controller != nullptr);
+  ZX_DEBUG_ASSERT(proxy != nullptr);
   ZX_DEBUG_ASSERT(client_id != kInvalidClientId);
 }
 

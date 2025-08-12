@@ -206,7 +206,7 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
                          display::EventId wait_event_id);
 
   Controller& controller_;
-  ClientProxy* const proxy_;
+  ClientProxy& proxy_;
   const ClientPriority priority_;
   const ClientId id_;
   bool valid_ = false;
