@@ -167,6 +167,10 @@ template("sdk_source_set") {
     }
 
     configs += [ "//build/config:sdk_extra_warnings" ]
+
+    if (defined(visibility) && generate_plasa_artifacts) {
+      visibility += [ ":${main_target_name}_cc_stub" ]
+    }
   }
 
   # Walk over dependencies (deps and public_deps) and collect labels (all_deps)
@@ -269,11 +273,15 @@ template("sdk_source_set") {
       forward_variables_from(invoker,
                              [
                                "testonly",
-                               "all_headers",
-                               "all_deps",
                                "sdk_headers_for_internal_use",
                              ])
       file_base = sdk_root_path
+
+      # Other variables used from the local scope:
+      #   all_deps
+      #   all_headers
+      #   include_base
+      #   main_target_name
     }
   } else {
     not_needed(invoker, [ "sdk_headers_for_internal_use" ])

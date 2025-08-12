@@ -250,6 +250,10 @@ template("sdk_shared_library") {
         invoker.category == "partner",
         "Create a separate allowlist when adding support for other categories.")
     deps += [ "//build/sdk:partner_idk_shared_libraries_allowlist" ]
+
+    if (defined(visibility) && generate_plasa_artifacts) {
+      visibility += [ ":${main_target_name}_cc_stub" ]
+    }
   }
 
   # Identify dependencies.
@@ -415,13 +419,16 @@ template("sdk_shared_library") {
     plasa_fragment_cc(_plasa_artifacts_target_name) {
       forward_variables_from(invoker,
                              [
-                               "source_dir",
                                "testonly",
-                               "all_headers",
-                               "all_deps",
                                "sdk_headers_for_internal_use",
                              ])
       file_base = sdk_root_path
+
+      # Other variables used from the local scope:
+      #   all_deps
+      #   all_headers
+      #   include_base
+      #   main_target_name
     }
   } else {
     not_needed([

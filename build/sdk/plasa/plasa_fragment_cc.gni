@@ -21,14 +21,20 @@ import("//build/sdk/plasa/clang_doc.gni")
 #   testonly (optional)
 #     Set to true if the artifacts are generated for a test-only target.
 #
-#   all_deps
+#   all_headers
+#     All headers exposed by the library, including those for internal use.
+#
+#   all_deps (optional)
 #     All dependencies to be used in generating the build artifact.
 #
-#   sdk_headers_for_internal_use
+#   sdk_headers_for_internal_use (optional)
 #     Headers that should not be included in the stub generation.
 #
 #   file_base
 #     The base path to which the files should be packaged.
+#
+#   main_target_name
+#     The target name of the underlying library.
 
 template("plasa_fragment_cc") {
   forward_variables_from(invoker,
@@ -42,7 +48,11 @@ template("plasa_fragment_cc") {
                            "source_dir",
                          ])
 
-  assert(defined(invoker.file_base), "file_base is required")
+  # Note: Headers can be empty for sdk_shared_library() with `no_headers=true`.
+  assert(defined(all_headers), "all_headers is required")
+
+  assert(defined(file_base), "file_base is required")
+  assert(defined(main_target_name), "main_target_name is required")
 
   _cc_stub_file = "$target_gen_dir/${main_target_name}.api_stub.cc"
 
