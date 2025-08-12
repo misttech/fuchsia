@@ -245,6 +245,7 @@ fidl_library://fidl/fuchsia.hardware.qualcomm.fastrpc (unstable)
 fidl_library://fidl/fuchsia.hardware.qualcomm.router (unstable)
 fidl_library://fidl/fuchsia.hardware.radar
 fidl_library://fidl/fuchsia.hardware.registers (unstable)
+fidl_library://fidl/fuchsia.hardware.reset (unstable)
 fidl_library://fidl/fuchsia.hardware.rtc
 fidl_library://fidl/fuchsia.hardware.sdhci (unstable)
 fidl_library://fidl/fuchsia.hardware.sdio (unstable)
