@@ -122,7 +122,7 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
             builder.kernel_arg(KernelArg::SchedulerPreferLittleCpus(true));
         }
 
-        if context.board_config.kernel.scheduler_enable_new_wakeup_accounting {
+        if kernel_config.scheduler_enable_new_wakeup_accounting {
             builder.kernel_arg(KernelArg::SchedulerEnableNewWakeupAccounting(true));
         }
 

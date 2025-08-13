@@ -125,6 +125,15 @@ pub struct PlatformKernelConfig {
     /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jitterentropy_ll: Option<u32>,
+
+    /// Disable emulation of the previous thread wakeup accounting behavior when
+    /// unified bookkeeping is enabled. The previous wakeup behavior makes it
+    /// less likely that a newly woken thread will preempt a currently running
+    /// thread. This behavior is less fair to newly woken threads than the new
+    /// behavior implemented by unified bookkeeping, but is desirable because it
+    /// makes latent race conditions less likely to cause problems.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub scheduler_enable_new_wakeup_accounting: bool,
 }
 
 /// Options for ktrace behaviors.

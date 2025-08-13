@@ -385,15 +385,6 @@ pub struct BoardKernelConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub scheduler_prefer_little_cpus: bool,
 
-    /// Disable emulation of the previous thread wakeup accounting behavior when
-    /// unified bookkeeping is enabled. The previous wakeup behavior makes it
-    /// less likely that a newly woken thread will preempt a currently running
-    /// thread. This behavior is less fair to newly woken threads than the new
-    /// behavior implemented by unified bookkeeping, but is desirable because it
-    /// makes latent race conditions less likely to cause problems.
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub scheduler_enable_new_wakeup_accounting: bool,
-
     /// The system will halt on a kernel panic instead of rebooting.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub halt_on_panic: bool,
@@ -408,7 +399,6 @@ impl Default for BoardKernelConfig {
             arm64_event_stream_enable: true,
             serial: None,
             scheduler_prefer_little_cpus: false,
-            scheduler_enable_new_wakeup_accounting: false,
             halt_on_panic: false,
         }
     }
@@ -571,7 +561,6 @@ mod test {
             "kernel": {
                 "contiguous_physical_pages": true,
                 "scheduler_prefer_little_cpus": true,
-                "scheduler_enable_new_wakeup_accounting": true,
                 "arm64_event_stream_enable": false,
             },
             "platform": {
@@ -609,7 +598,6 @@ mod test {
                 quiet_early_boot: false,
                 serial: None,
                 scheduler_prefer_little_cpus: true,
-                scheduler_enable_new_wakeup_accounting: true,
                 halt_on_panic: false,
                 arm64_event_stream_enable: false,
             },
