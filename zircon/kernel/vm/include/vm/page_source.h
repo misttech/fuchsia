@@ -342,8 +342,9 @@ class PageSource final : public PageRequestInterface {
   // transactions will be aborted and all future calls will fail.
   void Close();
 
-  // The returned properties will last at least until Detach() or Close().
-  const PageSourceProperties& properties() const { return page_provider_properties_; }
+  // The returned properties can assumed to be const and never change. As such the caller may cache
+  // them.
+  PageSourceProperties properties() const { return page_provider_properties_; }
 
   // Prints state of the page source and any pending requests. The maximum number of requests
   // printed is capped by |max_items|.
