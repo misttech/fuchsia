@@ -17,56 +17,57 @@ use fuchsia_async::emulated_handle::MessageBuf;
 #[cfg(target_os = "fuchsia")]
 use zx::MessageBuf;
 
-/// `done` is not guaranteed to be called if the task failed to start.  It should only happen
-/// in case the return value is an `Err`.  Unfortunately, there is no way to return the `done`
-/// object itself, as the [`futures::Spawn::spawn_obj`] does not return the ownership in case
-/// of a failure.
-pub(crate) fn new(
-    scope: ExecutionScope,
-    mask: fio::WatchMask,
-    watcher: DirectoryWatcher,
-    done: impl FnOnce() + Send + 'static,
-) -> Controller {
-    use futures::StreamExt as _;
-
-    let (sender, mut receiver) = mpsc::unbounded::<Vec<u8>>();
-
-    let task = async move {
-        let _done = CallOnDrop(Some(done));
-        let mut buf = MessageBuf::new();
-        let mut recv_msg = watcher.channel().recv_msg(&mut buf).fuse();
-        loop {
-            select! {
-                command = receiver.next() => match command {
-                    Some(message) => {
-                        let result = watcher.channel().write(&*message, &mut []);
-                        if result.is_err() {
-                            break;
-                        }
-                    },
-                    None => break,
-                },
-                _ = recv_msg => {
-                    // We do not expect any messages to be received over the watcher connection.
-                    // Should we receive a message we will close the connection to indicate an
-                    // error.  If any error occurs, we also close the connection.  And if the
-                    // connection is closed, we just stop the command processing as well.
-                    break;
-                },
-            }
-        }
-    };
-
-    scope.spawn(task);
-    Controller { mask, messages: sender }
-}
-
+#[derive(Clone)]
 pub struct Controller {
     mask: fio::WatchMask,
     messages: UnboundedSender<Vec<u8>>,
 }
 
 impl Controller {
+    /// `done` is not guaranteed to be called if the task failed to start.  It should only happen
+    /// in case the return value is an `Err`.  Unfortunately, there is no way to return the `done`
+    /// object itself, as the [`futures::Spawn::spawn_obj`] does not return the ownership in case
+    /// of a failure.
+    pub(crate) fn new(
+        scope: ExecutionScope,
+        mask: fio::WatchMask,
+        watcher: DirectoryWatcher,
+        done: impl FnOnce() + Send + 'static,
+    ) -> Controller {
+        use futures::StreamExt as _;
+
+        let (sender, mut receiver) = mpsc::unbounded::<Vec<u8>>();
+
+        let task = async move {
+            let _done = CallOnDrop(Some(done));
+            let mut buf = MessageBuf::new();
+            let mut recv_msg = watcher.channel().recv_msg(&mut buf).fuse();
+            loop {
+                select! {
+                    command = receiver.next() => match command {
+                        Some(message) => {
+                            let result = watcher.channel().write(&*message, &mut []);
+                            if result.is_err() {
+                                break;
+                            }
+                        },
+                        None => break,
+                    },
+                    _ = recv_msg => {
+                        // We do not expect any messages to be received over the watcher connection.
+                        // Should we receive a message we will close the connection to indicate an
+                        // error.  If any error occurs, we also close the connection.  And if the
+                        // connection is closed, we just stop the command processing as well.
+                        break;
+                    },
+                }
+            }
+        };
+
+        scope.spawn(task);
+        Controller { mask, messages: sender }
+    }
+
     /// Sends a buffer to the connected watcher.  `mask` specifies the type of the event the buffer
     /// is for.  If the watcher mask does not include the event specified by the `mask` then the
     /// buffer is not sent and `buffer` is not even invoked.

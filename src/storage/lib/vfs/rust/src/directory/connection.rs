@@ -15,7 +15,6 @@ use crate::path::Path;
 use anyhow::Error;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
-use std::convert::TryInto as _;
 use storage_trace::{self as trace, TraceFutureExt};
 use zx_status::Status;
 
@@ -252,8 +251,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 let status = if options != 0 {
                     Status::INVALID_ARGS
                 } else {
-                    let watcher = watcher.try_into()?;
-                    self.handle_watch(mask, watcher).into()
+                    self.handle_watch(mask, watcher.into()).into()
                 };
                 responder.send(status.into_raw())?;
             }

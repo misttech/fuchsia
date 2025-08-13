@@ -1099,7 +1099,8 @@ impl VfsDirectory for FxDirectory {
         mask: fio::WatchMask,
         watcher: DirectoryWatcher,
     ) -> Result<(), zx::Status> {
-        let controller = self.watchers.lock().add(scope.clone(), self.clone(), mask, watcher);
+        let controller =
+            self.watchers.lock().add(scope.clone(), self.clone(), mask, watcher).clone();
         if mask.contains(fio::WatchMask::EXISTING) && !self.is_deleted() {
             scope.spawn(async move {
                 let layer_set = self.store().tree().layer_set();

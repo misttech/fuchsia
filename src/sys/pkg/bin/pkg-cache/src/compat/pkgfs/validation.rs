@@ -166,7 +166,6 @@ mod tests {
     use blobfs_ramdisk::BlobfsRamdisk;
     use futures::prelude::*;
     use std::collections::HashSet;
-    use std::convert::TryInto as _;
     use vfs::directory::entry::GetEntryInfo;
     use vfs::directory::entry_container::Directory;
     use vfs::node::Node;
@@ -365,7 +364,7 @@ mod tests {
                 validation,
                 ExecutionScope::new(),
                 fio::WatchMask::empty(),
-                server.try_into().unwrap(),
+                server.into(),
             ),
             Err(zx::Status::NOT_SUPPORTED)
         );

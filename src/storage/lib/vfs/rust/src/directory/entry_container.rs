@@ -36,14 +36,10 @@ mod private {
         }
     }
 
-    impl TryFrom<fidl::endpoints::ServerEnd<fio::DirectoryWatcherMarker>> for DirectoryWatcher {
-        type Error = zx_status::Status;
-
-        fn try_from(
-            server_end: fidl::endpoints::ServerEnd<fio::DirectoryWatcherMarker>,
-        ) -> Result<Self, Self::Error> {
+    impl From<fidl::endpoints::ServerEnd<fio::DirectoryWatcherMarker>> for DirectoryWatcher {
+        fn from(server_end: fidl::endpoints::ServerEnd<fio::DirectoryWatcherMarker>) -> Self {
             let channel = fuchsia_async::Channel::from_channel(server_end.into_channel());
-            Ok(Self { channel })
+            Self { channel }
         }
     }
 }

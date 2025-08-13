@@ -13,16 +13,14 @@ pub use watcher::Controller;
 use crate::directory::entry_container::{Directory, DirectoryWatcher};
 use crate::directory::watchers::event_producers::EventProducer;
 use crate::execution_scope::ExecutionScope;
-
 use fidl_fuchsia_io as fio;
-
 use slab::Slab;
 use std::sync::Arc;
 
 /// Wraps all watcher connections observing one directory.  The directory is responsible for
 /// calling [`Self::add()`] and [`Self::send_event()`] method when appropriate to make sure
 /// watchers are observing a consistent view.
-pub struct Watchers(Slab<Arc<Controller>>);
+pub struct Watchers(Slab<Controller>);
 
 impl Watchers {
     /// Constructs a new Watchers instance with no connected watchers.
@@ -52,18 +50,12 @@ impl Watchers {
         directory: Arc<dyn Directory>,
         mask: fio::WatchMask,
         watcher: DirectoryWatcher,
-    ) -> Arc<Controller> {
+    ) -> &Controller {
         let entry = self.0.vacant_entry();
         let key = entry.key();
+        let done = move || directory.unregister_watcher(key);
 
-        let done = move || {
-            // Add tests.
-            // TODO(72292)
-            directory.unregister_watcher(key);
-        };
-
-        let controller = Arc::new(watcher::new(scope, mask, watcher, done));
-        entry.insert(controller).clone()
+        entry.insert(Controller::new(scope, mask, watcher, done))
     }
 
     /// Informs all the connected watchers about the specified event.  While `mask` and `event`
@@ -96,5 +88,124 @@ impl Watchers {
     /// `unregister_watcher` call.
     pub fn remove(&mut self, key: usize) {
         self.0.remove(key);
+    }
+}
+
+#[cfg(all(test, target_os = "fuchsia"))]
+mod tests {
+    use super::*;
+    use crate::directory::dirents_sink::Sealed;
+    use crate::directory::entry::{EntryInfo, GetEntryInfo};
+    use crate::directory::traversal_position::TraversalPosition;
+    use crate::node::Node;
+    use fuchsia_async as fasync;
+    use fuchsia_sync::Mutex;
+    use zx_status::Status;
+
+    struct FakeDirectory(Mutex<Inner>);
+
+    impl FakeDirectory {
+        fn new() -> Arc<Self> {
+            Arc::new(FakeDirectory(Mutex::new(Inner {
+                remove_called: false,
+                watchers: Watchers::new(),
+            })))
+        }
+    }
+    struct Inner {
+        remove_called: bool,
+        watchers: Watchers,
+    }
+
+    impl Directory for FakeDirectory {
+        fn open(
+            self: Arc<Self>,
+            _scope: ExecutionScope,
+            _path: crate::Path,
+            _flags: fio::Flags,
+            _object_request: crate::ObjectRequestRef<'_>,
+        ) -> Result<(), Status> {
+            unimplemented!()
+        }
+
+        async fn read_dirents<'a>(
+            &'a self,
+            _pos: &'a TraversalPosition,
+            _sink: Box<dyn crate::directory::dirents_sink::Sink>,
+        ) -> Result<(TraversalPosition, Box<dyn Sealed>), Status> {
+            unimplemented!()
+        }
+
+        fn register_watcher(
+            self: Arc<Self>,
+            scope: ExecutionScope,
+            mask: fio::WatchMask,
+            watcher: DirectoryWatcher,
+        ) -> Result<(), Status> {
+            let _ = self.0.lock().watchers.add(scope, self.clone(), mask, watcher);
+            Ok(())
+        }
+
+        fn unregister_watcher(self: Arc<Self>, key: usize) {
+            let mut this = self.0.lock();
+            this.remove_called = true;
+            this.watchers.remove(key);
+        }
+    }
+
+    impl Node for FakeDirectory {
+        async fn get_attributes(
+            &self,
+            _requested_attributes: fio::NodeAttributesQuery,
+        ) -> Result<fio::NodeAttributes2, Status> {
+            unimplemented!()
+        }
+    }
+
+    impl GetEntryInfo for FakeDirectory {
+        fn entry_info(&self) -> EntryInfo {
+            unimplemented!()
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_unregister_watcher_on_peer_closed() {
+        let mut executor = fasync::TestExecutor::new();
+        let directory = FakeDirectory::new();
+        let (client, server) = fidl::endpoints::create_endpoints::<fio::DirectoryWatcherMarker>();
+        directory
+            .clone()
+            .register_watcher(ExecutionScope::new(), fio::WatchMask::EXISTING, server.into())
+            .expect("Failed to register watcher");
+        assert!(!directory.0.lock().remove_called);
+        assert_eq!(directory.0.lock().watchers.0.len(), 1);
+
+        // Dropping the client end will signal PEER_CLOSED on the server end.
+        std::mem::drop(client);
+        // Wait for the Controller's task to handle the PEER_CLOSED signal.
+        let _ = executor.run_until_stalled(&mut std::future::pending::<()>());
+        assert!(directory.0.lock().remove_called);
+        assert_eq!(directory.0.lock().watchers.0.len(), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_unregister_watcher_on_message() {
+        let mut executor = fasync::TestExecutor::new();
+        let directory = FakeDirectory::new();
+        let (client, server) = fidl::endpoints::create_endpoints::<fio::DirectoryWatcherMarker>();
+        directory
+            .clone()
+            .register_watcher(ExecutionScope::new(), fio::WatchMask::EXISTING, server.into())
+            .expect("Failed to register watcher");
+        assert!(!directory.0.lock().remove_called);
+        assert_eq!(directory.0.lock().watchers.0.len(), 1);
+
+        // The client shouldn't send anything over the channel. The Controller's task will terminate
+        // if it receives a message.
+        client.channel().write(&[1, 2, 3], &mut []).expect("Failed to write to channel");
+        // Wait for the Controller's task to handle the CHANNEL_READABLE signal.
+        let _ = executor.run_until_stalled(&mut std::future::pending::<()>());
+        assert!(directory.0.lock().remove_called);
+        assert_eq!(directory.0.lock().watchers.0.len(), 0);
     }
 }
