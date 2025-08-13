@@ -1528,63 +1528,6 @@ class MultiVmoTestInstance : public TestInstance {
           Printf("S");
           vmo.set_size(uniform_rand(kMaxVmoPages * zx_system_get_page_size(), rng));
           break;
-        case 81 ... 100:  // commit
-          Printf("c");
-          vmo.op_range(ZX_VMO_OP_COMMIT, op_off, op_size, nullptr, 0);
-          break;
-        case 101 ... 120:  // decommit
-          Printf("d");
-          vmo.op_range(ZX_VMO_OP_DECOMMIT, op_off, op_size, nullptr, 0);
-          break;
-        case 121 ... 130: {  // vmo_op_range (other than COMMIT/DECOMMIT which have their own cases)
-          Printf("O");
-          static const uint32_t ops[] = {ZX_VMO_OP_ZERO,
-                                         ZX_VMO_OP_LOCK,
-                                         ZX_VMO_OP_UNLOCK,
-                                         ZX_VMO_OP_CACHE_SYNC,
-                                         ZX_VMO_OP_CACHE_INVALIDATE,
-                                         ZX_VMO_OP_CACHE_CLEAN,
-                                         ZX_VMO_OP_CACHE_CLEAN_INVALIDATE,
-                                         ZX_VMO_OP_DONT_NEED,
-                                         ZX_VMO_OP_TRY_LOCK};
-          vmo.op_range(ops[uniform_rand(std::size(ops), rng)], op_off, op_size, nullptr, 0);
-          break;
-        }
-        case 131 ... 140: {  // transfer_data
-          Printf("T");
-          // Create a second VMO that will be used as either the source or the destination for a
-          // data transfer.
-          zx::vmo vmo2;
-          uint64_t vmo2_num_pages = uniform_rand(kMaxVmoPages, rng);
-          zx::vmo::create(vmo2_num_pages * zx_system_get_page_size(), 0, &vmo2);
-
-          // Compute the maximum number of pages we could transfer between these two VMOs, then
-          // pick a random number of pages below that threshold.
-          uint64_t vmo_num_pages = vmo_size / zx_system_get_page_size();
-          uint64_t max_num_transfer_pages =
-              vmo2_num_pages > vmo_num_pages ? vmo_num_pages : vmo2_num_pages;
-          uint64_t num_transfer_pages = uniform_rand(max_num_transfer_pages, rng);
-
-          // Compute possible offsets within the source and destination VMOs.
-          uint64_t max_offset_pages = max_num_transfer_pages - num_transfer_pages;
-          uint64_t src_offset_pages = uniform_rand(max_offset_pages, rng);
-          uint64_t dst_offset_pages = uniform_rand(max_offset_pages, rng);
-
-          // Translate all of our sizes and offsets, which are in units of PAGE_SIZE, to units of
-          // bytes.
-          uint64_t src_offset = src_offset_pages * zx_system_get_page_size();
-          uint64_t dst_offset = dst_offset_pages * zx_system_get_page_size();
-          uint64_t transfer_size = num_transfer_pages * zx_system_get_page_size();
-
-          // Transfer data from vmo to vmo2 on even random numbers, and from vmo2 to vmo on odd
-          // random numbers.
-          if (uniform_rand(100, rng) % 2) {
-            vmo.transfer_data(0, dst_offset, transfer_size, &vmo2, src_offset);
-          } else {
-            vmo2.transfer_data(0, dst_offset, transfer_size, &vmo, src_offset);
-          }
-          break;
-        }
         case 41 ... 50: {  // vmo_set_cache_policy
           Printf("P");
           static const uint32_t policies[] = {ZX_CACHE_POLICY_CACHED,
@@ -1675,6 +1618,63 @@ class MultiVmoTestInstance : public TestInstance {
                 pmt.unpin();
               }
             }
+          }
+          break;
+        }
+        case 81 ... 100:  // commit
+          Printf("c");
+          vmo.op_range(ZX_VMO_OP_COMMIT, op_off, op_size, nullptr, 0);
+          break;
+        case 101 ... 120:  // decommit
+          Printf("d");
+          vmo.op_range(ZX_VMO_OP_DECOMMIT, op_off, op_size, nullptr, 0);
+          break;
+        case 121 ... 130: {  // vmo_op_range (other than COMMIT/DECOMMIT which have their own cases)
+          Printf("O");
+          static const uint32_t ops[] = {ZX_VMO_OP_ZERO,
+                                         ZX_VMO_OP_LOCK,
+                                         ZX_VMO_OP_UNLOCK,
+                                         ZX_VMO_OP_CACHE_SYNC,
+                                         ZX_VMO_OP_CACHE_INVALIDATE,
+                                         ZX_VMO_OP_CACHE_CLEAN,
+                                         ZX_VMO_OP_CACHE_CLEAN_INVALIDATE,
+                                         ZX_VMO_OP_DONT_NEED,
+                                         ZX_VMO_OP_TRY_LOCK};
+          vmo.op_range(ops[uniform_rand(std::size(ops), rng)], op_off, op_size, nullptr, 0);
+          break;
+        }
+        case 131 ... 140: {  // transfer_data
+          Printf("T");
+          // Create a second VMO that will be used as either the source or the destination for a
+          // data transfer.
+          zx::vmo vmo2;
+          uint64_t vmo2_num_pages = uniform_rand(kMaxVmoPages, rng);
+          zx::vmo::create(vmo2_num_pages * zx_system_get_page_size(), 0, &vmo2);
+
+          // Compute the maximum number of pages we could transfer between these two VMOs, then
+          // pick a random number of pages below that threshold.
+          uint64_t vmo_num_pages = vmo_size / zx_system_get_page_size();
+          uint64_t max_num_transfer_pages =
+              vmo2_num_pages > vmo_num_pages ? vmo_num_pages : vmo2_num_pages;
+          uint64_t num_transfer_pages = uniform_rand(max_num_transfer_pages, rng);
+
+          // Compute possible offsets within the source and destination VMOs.
+          uint64_t max_offset_pages = max_num_transfer_pages - num_transfer_pages;
+          uint64_t src_offset_pages = uniform_rand(max_offset_pages, rng);
+          uint64_t dst_offset_pages = uniform_rand(max_offset_pages, rng);
+
+          // Translate all of our sizes and offsets, which are in units of PAGE_SIZE, to units of
+          // bytes.
+          uint64_t src_offset = src_offset_pages * zx_system_get_page_size();
+          uint64_t dst_offset = dst_offset_pages * zx_system_get_page_size();
+          uint64_t transfer_size = num_transfer_pages * zx_system_get_page_size();
+
+          // Transfer data from vmo to vmo2 on even random numbers, and from vmo2 to vmo on odd
+          // random numbers.
+          if (uniform_rand(100, rng) % 2) {
+            vmo.transfer_data(0, dst_offset, transfer_size, &vmo2, src_offset);
+          } else {
+            vmo2.transfer_data(0, dst_offset, transfer_size, &vmo, src_offset);
           }
           break;
         }
