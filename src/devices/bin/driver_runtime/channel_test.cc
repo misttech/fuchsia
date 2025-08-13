@@ -1656,10 +1656,8 @@ TEST_F(ChannelTest, CloseZirconChannel) {
     fdf::Channel fdf_local(local.release());
     fdf::Channel fdf_remote(remote.release());
   }
-  ASSERT_EQ(ZX_ERR_BAD_HANDLE,
-            zx_object_get_info(local_handle, ZX_INFO_HANDLE_VALID, nullptr, 0, nullptr, nullptr));
-  ASSERT_EQ(ZX_ERR_BAD_HANDLE,
-            zx_object_get_info(remote_handle, ZX_INFO_HANDLE_VALID, nullptr, 0, nullptr, nullptr));
+  ASSERT_EQ(ZX_ERR_NOT_FOUND, zx_handle_check_valid(local_handle));
+  ASSERT_EQ(ZX_ERR_NOT_FOUND, zx_handle_check_valid(remote_handle));
 }
 
 TEST(ChannelTest, IsValid) {

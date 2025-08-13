@@ -278,8 +278,7 @@ TEST(ClientBindingTestCase, UnbindWhileActiveChannelRefs) {
   EXPECT_OK(sync_completion_wait(&unbound, ZX_TIME_INFINITE));
 
   // Check that the channel handle is still valid.
-  EXPECT_OK(zx_object_get_info(channel->get<fidl::internal::ChannelTransport>()->get(),
-                               ZX_INFO_HANDLE_VALID, nullptr, 0, nullptr, nullptr));
+  EXPECT_OK(zx_handle_check_valid(channel->get<fidl::internal::ChannelTransport>()->get()));
 }
 
 class OnCanceledTestResponseContext : public internal::ResponseContext {

@@ -106,13 +106,12 @@ TEST_F(LoaderServiceTest, OpenConnectionsKeepLoaderAlive) {
 
   // Verify that the directory fd used to create the loader is properly closed once all connections
   // are closed.
-  ASSERT_OK(fd_channel->get_info(ZX_INFO_HANDLE_VALID, nullptr, 0, nullptr, nullptr));
+  ASSERT_OK(zx_handle_check_valid(fd_channel->get()));
   client3 = fidl::WireSyncClient<fldsvc::Loader>();
   // Must shutdown the loader_loop (which joins its thread) to ensure this is not racy. Otherwise
   // the server FIDL bindings may not have handled the client-side channel closure yet.
   loader_loop().Shutdown();
-  ASSERT_EQ(ZX_ERR_BAD_HANDLE,
-            fd_channel->get_info(ZX_INFO_HANDLE_VALID, nullptr, 0, nullptr, nullptr));
+  ASSERT_EQ(ZX_ERR_NOT_FOUND, zx_handle_check_valid(fd_channel->get()));
 }
 
 TEST_F(LoaderServiceTest, LoadObject) {
