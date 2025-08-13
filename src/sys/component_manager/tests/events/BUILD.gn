@@ -11,9 +11,17 @@ rustc_test("events_integration_test_bin") {
   edition = "2021"
   source_root = "integration_test.rs"
   deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
+    "//src/sys/lib/cm_rust",
+    "//src/sys/lib/cm_types",
     "//src/sys/lib/component-events",
+    "//third_party/rust_crates:futures",
   ]
 
   sources = [ "integration_test.rs" ]
