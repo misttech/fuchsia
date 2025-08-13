@@ -5,8 +5,39 @@
 #include "src/virtualization/lib/guest_interaction/interactive_debian_guest/running_guest.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <zircon/errors.h>
 
 #include "src/virtualization/lib/grpc/fdio_util.h"
+#include "src/virtualization/lib/guest_interaction/proto/guest_interaction.pb.h"
+
+namespace {
+
+zx_status_t ToZxStatus(int proto_status) {
+  switch (proto_status) {
+    case OperationStatus::OK:
+      return ZX_OK;
+    case OperationStatus::GRPC_FAILURE:
+      return ZX_ERR_INTERNAL;
+    case OperationStatus::CLIENT_MISSING_FILE_FAILURE:
+    case OperationStatus::SERVER_MISSING_FILE_FAILURE:
+      return ZX_ERR_NOT_FOUND;
+    case OperationStatus::CLIENT_CREATE_FILE_FAILURE:
+    case OperationStatus::SERVER_CREATE_FILE_FAILURE:
+    case OperationStatus::CLIENT_FILE_READ_FAILURE:
+    case OperationStatus::SERVER_FILE_READ_FAILURE:
+    case OperationStatus::CLIENT_FILE_WRITE_FAILURE:
+    case OperationStatus::SERVER_FILE_WRITE_FAILURE:
+      return ZX_ERR_IO;
+    case OperationStatus::SERVER_EXEC_COMMAND_PARSE_FAILURE:
+      return ZX_ERR_INVALID_ARGS;
+    case OperationStatus::SERVER_EXEC_FORK_FAILURE:
+      return ZX_ERR_NO_RESOURCES;
+    default:
+      return ZX_ERR_INTERNAL;
+  }
+}
+
+}  // namespace
 
 namespace interactive_debian_guest {
 
@@ -37,14 +68,28 @@ RunningGuest::~RunningGuest() {
 void RunningGuest::PutFile(fidl::ClientEnd<fuchsia_io::File> host_source,
                            const std::string& guest_dest, FileTransferCallback result) {
   FX_CHECK(interaction_client_ && interaction_client_->IsRunning());
-  interaction_client_->Put(std::move(host_source), guest_dest, std::move(result));
+  interaction_client_->Put(
+      std::move(host_source), guest_dest, [this, cb = std::move(result)](auto status) {
+        if (status != OperationStatus::OK) {
+          FX_LOGST(WARNING, Name())
+              << "PutFile operation failed with status: " << OperationStatus_Name(status);
+        }
+        cb(ToZxStatus(status));
+      });
 }
 
 void RunningGuest::GetFile(const std::string& guest_source,
                            fidl::ClientEnd<fuchsia_io::File> host_dest,
                            FileTransferCallback result) {
   FX_CHECK(interaction_client_ && interaction_client_->IsRunning());
-  interaction_client_->Get(guest_source, std::move(host_dest), std::move(result));
+  interaction_client_->Get(
+      guest_source, std::move(host_dest), [this, cb = std::move(result)](auto status) {
+        if (status != OperationStatus::OK) {
+          FX_LOGST(WARNING, Name())
+              << "GetFile operation failed with status: " << OperationStatus_Name(status);
+        }
+        cb(ToZxStatus(status));
+      });
 }
 
 void RunningGuest::Execute(

@@ -36,6 +36,7 @@ executable("interactive_debian_guest_impl") {
     "//sdk/lib/fdio",
     "//src/virtualization/lib/grpc",
     "//src/virtualization/lib/guest_interaction:common",
+    "//src/virtualization/lib/guest_interaction:proto",
     "//src/virtualization/tests/lib:guest_console",
     "//zircon/system/ulib/fbl",
   ]
