@@ -243,11 +243,6 @@
 	url = https://fuchsia.googlesource.com/third_party/nlio
 	name = third_party/nlio
 	ignore = all
-[submodule "third_party/ogg"]
-	path = third_party/ogg
-	url = https://fuchsia.googlesource.com/third_party/ogg
-	name = third_party/ogg
-	ignore = all
 [submodule "third_party/openssh-portable"]
 	path = third_party/openssh-portable
 	url = https://fuchsia.googlesource.com/third_party/openssh-portable
@@ -707,4 +702,9 @@
 	path = third_party/alacritty-migrating/src
 	url = https://fuchsia.googlesource.com/third_party/github.com/alacritty/alacritty
 	name = third_party/alacritty
+	ignore = all
+[submodule "third_party/ogg-migrating/src"]
+	path = third_party/ogg-migrating/src
+	url = https://fuchsia.googlesource.com/third_party/ogg
+	name = third_party/ogg
 	ignore = all
