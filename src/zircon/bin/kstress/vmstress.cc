@@ -1459,7 +1459,7 @@ class MultiVmoTestInstance : public TestInstance {
       // Produce a random offset and size up front since many ops will need it.
       uint64_t op_off, op_size;
       random_off_size(rng, vmo_size, &op_off, &op_size);
-      switch (uniform_rand(141, rng)) {
+      switch (uniform_rand(151, rng)) {
         case 0:  // give up early
           Printf("G");
           return;
@@ -1632,14 +1632,11 @@ class MultiVmoTestInstance : public TestInstance {
         case 121 ... 130: {  // vmo_op_range (other than COMMIT/DECOMMIT which have their own cases)
           Printf("O");
           static const uint32_t ops[] = {ZX_VMO_OP_ZERO,
-                                         ZX_VMO_OP_LOCK,
-                                         ZX_VMO_OP_UNLOCK,
                                          ZX_VMO_OP_CACHE_SYNC,
                                          ZX_VMO_OP_CACHE_INVALIDATE,
                                          ZX_VMO_OP_CACHE_CLEAN,
                                          ZX_VMO_OP_CACHE_CLEAN_INVALIDATE,
-                                         ZX_VMO_OP_DONT_NEED,
-                                         ZX_VMO_OP_TRY_LOCK};
+                                         ZX_VMO_OP_DONT_NEED};
           vmo.op_range(ops[uniform_rand(std::size(ops), rng)], op_off, op_size, nullptr, 0);
           break;
         }
@@ -1675,6 +1672,18 @@ class MultiVmoTestInstance : public TestInstance {
             vmo.transfer_data(0, dst_offset, transfer_size, &vmo2, src_offset);
           } else {
             vmo2.transfer_data(0, dst_offset, transfer_size, &vmo, src_offset);
+          }
+          break;
+        }
+        case 141 ... 150: {  // lock/unlock
+          Printf("L");
+          static const uint32_t ops[] = {ZX_VMO_OP_LOCK, ZX_VMO_OP_UNLOCK, ZX_VMO_OP_TRY_LOCK};
+          uint32_t op = ops[uniform_rand(std::size(ops), rng)];
+          if (op == ZX_VMO_OP_LOCK) {
+            zx_vmo_lock_state_t lock_state;
+            vmo.op_range(op, 0, vmo_size, &lock_state, sizeof(lock_state));
+          } else {
+            vmo.op_range(op, 0, vmo_size, nullptr, 0);
           }
           break;
         }
