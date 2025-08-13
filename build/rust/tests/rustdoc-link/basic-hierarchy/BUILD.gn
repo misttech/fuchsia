@@ -93,24 +93,22 @@ if (is_host) {
       ":gen_rust_target_mapping",
     ]
     hermetic_deps = false
+
     script = "//tools/devshell/contrib/lib/rust/rustdoc-link.py"
     outputs = [ _rustdoc_link_output ]
-    _rebased_fuchsia_dir = rebase_path("//", root_build_dir)
-    _rebased_build_dir = rebase_path(root_build_dir, root_build_dir)
     args = [
-      "--fuchsia-dir=$_rebased_fuchsia_dir",
-      "--build-dir=$_rebased_build_dir",
       "--quiet",
       "--no-build",
-      "--no-use-xargs",  # Not all test bots have xargs.
       "--destination",
       rebase_path("$target_gen_dir/doc", root_build_dir),
       "--zip-to",
       rebase_path("$_rustdoc_link_output", root_build_dir),
       "--rust-target-mapping",
       rebase_path("$_rust_target_mapping", root_build_dir),
-      "--rustdoc-executable",
-      "$rebased_rustc_prefix/bin/rustdoc",
+      "--fuchsia-dir",  # typically provided by devshell
+      rebase_path("//", root_build_dir),
+      "--build-dir",  # typically provided by devshell
+      rebase_path(root_build_dir, root_build_dir),
     ]
   }
 

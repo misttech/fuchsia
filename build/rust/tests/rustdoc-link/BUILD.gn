@@ -5,6 +5,10 @@ group("rustdoc-link") {
   testonly = true
   deps = [
     "//build/rust/tests/rustdoc-link/basic-hierarchy",
+
+    # Test for the --dry-run flag.
+    "//build/rust/tests/rustdoc-link/basic-dry-run",
+
     # Tests for `fx rustdoc-link` on other crate types
     # and dependency structures may be added here.
   ]
