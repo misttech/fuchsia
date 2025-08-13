@@ -769,11 +769,11 @@ TEST_F(BtTransportUsbTest, Name) { EXPECT_EQ(std::string(dut()->name()), "bt-tra
 TEST_F(BtTransportUsbTest, Properties) {
   cpp20::span<const zx_device_str_prop_t> props = dut()->GetStringProperties();
   ASSERT_EQ(props.size(), 3u);
-  EXPECT_EQ(props[0].key, bind_fuchsia::PROTOCOL);
+  EXPECT_EQ(props[0].key, std::string_view(bind_fuchsia::PROTOCOL));
   EXPECT_EQ(props[0].property_value.data.int_val, bind_fuchsia_bluetooth::BIND_PROTOCOL_TRANSPORT);
-  EXPECT_EQ(props[1].key, bind_fuchsia::USB_VID);
+  EXPECT_EQ(props[1].key, std::string_view(bind_fuchsia::USB_VID));
   EXPECT_EQ(props[1].property_value.data.int_val, kVendorId);
-  EXPECT_EQ(props[2].key, bind_fuchsia::USB_PID);
+  EXPECT_EQ(props[2].key, std::string_view(bind_fuchsia::USB_PID));
   EXPECT_EQ(props[2].property_value.data.int_val, kProductId);
 }
 

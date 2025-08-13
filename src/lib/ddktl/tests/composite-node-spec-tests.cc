@@ -236,8 +236,8 @@ TEST_F(CompositeNodeSpecTest, CreateAcceptBindRuleListWithConstants) {
   ASSERT_EQ(bind_testlib::BIND_PROTOCOL_VALUE, int_val_bind_rule.get().values[0].data.int_value);
   ASSERT_EQ(bind_testlib::BIND_PROTOCOL_VALUE_2, int_val_bind_rule.get().values[1].data.int_value);
 
-  const char* str_val_bind_rule_values[] = {bind_testlib::STRING_PROP_VALUE.c_str(),
-                                            bind_testlib::STRING_PROP_VALUE_2.c_str()};
+  const char* str_val_bind_rule_values[] = {bind_testlib::STRING_PROP_VALUE,
+                                            bind_testlib::STRING_PROP_VALUE_2};
   auto str_val_bind_rule =
       ddk::MakeAcceptBindRuleList(bind_testlib::STRING_PROP, str_val_bind_rule_values);
   ASSERT_STREQ(bind_testlib::STRING_PROP, str_val_bind_rule.get().key.data.str_key);
@@ -246,8 +246,8 @@ TEST_F(CompositeNodeSpecTest, CreateAcceptBindRuleListWithConstants) {
   ASSERT_STREQ(bind_testlib::STRING_PROP_VALUE, str_val_bind_rule.get().values[0].data.str_value);
   ASSERT_STREQ(bind_testlib::STRING_PROP_VALUE_2, str_val_bind_rule.get().values[1].data.str_value);
 
-  const char* enum_val_bind_rule_values[] = {bind_testlib::ENUM_PROP_VALUE.c_str(),
-                                             bind_testlib::ENUM_PROP_VALUE_2.c_str()};
+  const char* enum_val_bind_rule_values[] = {bind_testlib::ENUM_PROP_VALUE,
+                                             bind_testlib::ENUM_PROP_VALUE_2};
   auto enum_val_bind_rule =
       ddk::MakeAcceptBindRuleList(bind_testlib::ENUM_PROP, enum_val_bind_rule_values);
   ASSERT_STREQ(bind_testlib::ENUM_PROP, enum_val_bind_rule.get().key.data.str_key);
@@ -308,8 +308,8 @@ TEST_F(CompositeNodeSpecTest, CreateRejectBindRuleListWithConstants) {
   ASSERT_EQ(bind_testlib::BIND_PROTOCOL_VALUE, int_val_bind_rule.get().values[0].data.int_value);
   ASSERT_EQ(bind_testlib::BIND_PROTOCOL_VALUE_2, int_val_bind_rule.get().values[1].data.int_value);
 
-  const char* str_val_bind_rule_values[] = {bind_testlib::STRING_PROP_VALUE.c_str(),
-                                            bind_testlib::STRING_PROP_VALUE_2.c_str()};
+  const char* str_val_bind_rule_values[] = {bind_testlib::STRING_PROP_VALUE,
+                                            bind_testlib::STRING_PROP_VALUE_2};
   auto str_val_bind_rule =
       ddk::MakeRejectBindRuleList(bind_testlib::STRING_PROP, str_val_bind_rule_values);
   ASSERT_STREQ(bind_testlib::STRING_PROP, str_val_bind_rule.get().key.data.str_key);
@@ -318,8 +318,8 @@ TEST_F(CompositeNodeSpecTest, CreateRejectBindRuleListWithConstants) {
   ASSERT_STREQ(bind_testlib::STRING_PROP_VALUE, str_val_bind_rule.get().values[0].data.str_value);
   ASSERT_STREQ(bind_testlib::STRING_PROP_VALUE_2, str_val_bind_rule.get().values[1].data.str_value);
 
-  const char* enum_val_bind_rule_values[] = {bind_testlib::ENUM_PROP_VALUE.c_str(),
-                                             bind_testlib::ENUM_PROP_VALUE_2.c_str()};
+  const char* enum_val_bind_rule_values[] = {bind_testlib::ENUM_PROP_VALUE,
+                                             bind_testlib::ENUM_PROP_VALUE_2};
   auto enum_val_bind_rule =
       ddk::MakeRejectBindRuleList(bind_testlib::ENUM_PROP, enum_val_bind_rule_values);
   ASSERT_STREQ(bind_testlib::ENUM_PROP, enum_val_bind_rule.get().key.data.str_key);

@@ -75,8 +75,8 @@ void MetadataSenderTestDevice::SetMetadata(SetMetadataRequestView request,
 void MetadataSenderTestDevice::AddMetadataRetrieverDevice(
     AddMetadataRetrieverDeviceRequestView request,
     AddMetadataRetrieverDeviceCompleter::Sync& completer) {
-  zx::result device_name = AddMetadataDevice(
-      bind_metadata_server_test::PURPOSE_RETRIEVE_METADATA.c_str(), request->expose_metadata);
+  zx::result device_name = AddMetadataDevice(bind_metadata_server_test::PURPOSE_RETRIEVE_METADATA,
+                                             request->expose_metadata);
   if (device_name.is_error()) {
     zxlogf(ERROR, "Failed to add metadata device: %s", device_name.status_string());
     completer.ReplyError(device_name.status_value());
@@ -88,7 +88,7 @@ void MetadataSenderTestDevice::AddMetadataRetrieverDevice(
 void MetadataSenderTestDevice::AddMetadataForwarderDevice(
     AddMetadataForwarderDeviceCompleter::Sync& completer) {
   zx::result device_name =
-      AddMetadataDevice(bind_metadata_server_test::PURPOSE_FORWARD_METADATA.c_str(), true);
+      AddMetadataDevice(bind_metadata_server_test::PURPOSE_FORWARD_METADATA, true);
   if (device_name.is_error()) {
     zxlogf(ERROR, "Failed to add metadata device: %s", device_name.status_string());
     completer.ReplyError(device_name.status_value());

@@ -15,8 +15,8 @@ namespace parent_driver {
 zx_status_t ParentDriver::Bind(void* ctx, zx_device_t* dev) {
   zx_device_str_prop_t props[] = {
       ddk::MakeStrProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_test::BIND_PROTOCOL_DEVICE),
-      {bind_fuchsia_tools_bindc_test::ECHO.c_str(),
-       str_prop_enum_val(bind_fuchsia_tools_bindc_test::ECHO_BANJO.c_str())}};
+      {bind_fuchsia_tools_bindc_test::ECHO,
+       str_prop_enum_val(bind_fuchsia_tools_bindc_test::ECHO_BANJO)}};
 
   auto device = std::make_unique<ParentDriver>(dev);
   device->is_bound.Set(true);

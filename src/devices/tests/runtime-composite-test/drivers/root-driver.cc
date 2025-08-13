@@ -28,7 +28,7 @@ zx_status_t RootDriver::Bind(void* ctx, zx_device_t* dev) {
 
   // Add 2 children that matches the first composite node spec node.
   zx_device_str_prop_t str_fragment_props[] = {
-      {bind_test::FLAG.c_str(), str_prop_bool_val(true)},
+      {bind_test::FLAG, str_prop_bool_val(true)},
   };
 
   auto dispatcher = fdf::Dispatcher::GetCurrent();
@@ -67,7 +67,7 @@ zx_status_t RootDriver::Bind(void* ctx, zx_device_t* dev) {
 
   // Add 2 devices that matches the other composite node spec node.
   zx_device_str_prop_t str_fragment_props_2[] = {
-      {bind_test::TEST_PROP.c_str(), str_prop_str_val(bind_test::TEST_PROP_VALUE_2.c_str())},
+      {bind_test::TEST_PROP, str_prop_str_val(bind_test::TEST_PROP_VALUE_2)},
   };
 
   auto fragment_dev_b = std::make_unique<RootDriver>(dev);

@@ -94,9 +94,9 @@ acpi::status<> DeviceBuilder::GatherResources(acpi::Acpi* acpi, acpi::Manager* m
             return result.take_error();
           }
           entry = result.value();
-          bus_id_prop = bind_fuchsia::SPI_BUS_ID.c_str();
+          bus_id_prop = bind_fuchsia::SPI_BUS_ID;
           str_props_.emplace_back(
-              OwnedStringProp(bind_fuchsia::SPI_CHIP_SELECT.c_str(), result.value().cs().value()));
+              OwnedStringProp(bind_fuchsia::SPI_CHIP_SELECT, result.value().cs().value()));
         } else if (resource_is_i2c(res)) {
           type = BusType::kI2c;
           auto result = resource_parse_i2c(acpi, handle_, res, &bus_parent);
@@ -105,10 +105,10 @@ acpi::status<> DeviceBuilder::GatherResources(acpi::Acpi* acpi, acpi::Manager* m
             return result.take_error();
           }
           entry = result.value();
-          bus_id_prop = bind_fuchsia::I2C_BUS_ID.c_str();
+          bus_id_prop = bind_fuchsia::I2C_BUS_ID;
           ;
           str_props_.emplace_back(
-              OwnedStringProp(bind_fuchsia::I2C_ADDRESS.c_str(), result.value().address().value()));
+              OwnedStringProp(bind_fuchsia::I2C_ADDRESS, result.value().address().value()));
         } else if (resource_is_irq(res)) {
           irq_count_++;
         }
@@ -142,8 +142,8 @@ acpi::status<> DeviceBuilder::GatherResources(acpi::Acpi* acpi, acpi::Manager* m
       uint32_t bus_id = parent_->GetBusId();
       uint32_t device = (info->Address & (0xffff0000)) >> 16;
       uint32_t func = info->Address & 0x0000ffff;
-      str_props_.emplace_back(OwnedStringProp(bind_fuchsia::PCI_TOPO.c_str(),
-                                              BIND_PCI_TOPO_PACK(bus_id, device, func)));
+      str_props_.emplace_back(
+          OwnedStringProp(bind_fuchsia::PCI_TOPO, BIND_PCI_TOPO_PACK(bus_id, device, func)));
       // Should we buses_.emplace_back() here? The PCI bus driver currently publishes PCI
       // composites, so having a device on a PCI bus that uses other buses resources can't be
       // represented. Such devices don't seem to exist, but if we ever encounter one, it will need
@@ -158,8 +158,7 @@ acpi::status<> DeviceBuilder::GatherResources(acpi::Acpi* acpi, acpi::Manager* m
     if (!strcmp(info->HardwareId.String, kDeviceTreeLinkID)) {
       has_devicetree_cid = CheckForDeviceTreeCompatible(acpi);
     } else {
-      str_props_.emplace_back(
-          OwnedStringProp(bind_fuchsia_acpi::HID.c_str(), info->HardwareId.String));
+      str_props_.emplace_back(OwnedStringProp(bind_fuchsia_acpi::HID, info->HardwareId.String));
     }
   }
 
@@ -169,15 +168,14 @@ acpi::status<> DeviceBuilder::GatherResources(acpi::Acpi* acpi, acpi::Manager* m
       has_devicetree_cid = CheckForDeviceTreeCompatible(acpi);
     } else {
       // We only expose the first CID.
-      str_props_.emplace_back(OwnedStringProp(bind_fuchsia_acpi::FIRST_CID.c_str(), first.String));
+      str_props_.emplace_back(OwnedStringProp(bind_fuchsia_acpi::FIRST_CID, first.String));
     }
   }
 
   // If our parent has a bus type, and we have an address on that bus, then we'll expose it in our
   // bind properties.
   if (parent_->GetBusType() != BusType::kUnknown && has_address_) {
-    str_props_.emplace_back(
-        OwnedStringProp(bind_fuchsia::ACPI_BUS_TYPE.c_str(), parent_->GetBusType()));
+    str_props_.emplace_back(OwnedStringProp(bind_fuchsia::ACPI_BUS_TYPE, parent_->GetBusType()));
   }
   if (result.status_value() == AE_NOT_FOUND) {
     return acpi::ok();

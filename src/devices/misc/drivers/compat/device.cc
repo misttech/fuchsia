@@ -114,7 +114,7 @@ std::vector<fuchsia_driver_framework::wire::NodeProperty2> CreateProperties(
   properties.reserve(zx_args->str_prop_count + zx_args->fidl_service_offer_count + 1);
   bool has_protocol = false;
   for (auto [key, value] : cpp20::span(zx_args->str_props, zx_args->str_prop_count)) {
-    if (key == bind_fuchsia::PROTOCOL) {
+    if (key == std::string_view(bind_fuchsia::PROTOCOL)) {
       has_protocol = true;
     }
     switch (value.data_type) {

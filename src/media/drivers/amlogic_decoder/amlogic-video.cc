@@ -887,17 +887,17 @@ zx_status_t AmlogicVideo::SetDeviceType(zx_device_t* parent) {
 
   std::string compatible;
   for (uint32_t i = 0; i < prop_out_args.actual_str_prop_count; i++) {
-    if (!strcmp(str_props[i].key, bind_fuchsia::PLATFORM_DEV_VID.c_str())) {
+    if (!strcmp(str_props[i].key, bind_fuchsia::PLATFORM_DEV_VID)) {
       vid = str_props[i].property_value.data.int_val;
     }
-    if (!strcmp(str_props[i].key, bind_fuchsia::PLATFORM_DEV_PID.c_str())) {
+    if (!strcmp(str_props[i].key, bind_fuchsia::PLATFORM_DEV_PID)) {
       pid = str_props[i].property_value.data.int_val;
     }
-    if (!strcmp(str_props[i].key, bind_fuchsia::PLATFORM_DEV_DID.c_str())) {
+    if (!strcmp(str_props[i].key, bind_fuchsia::PLATFORM_DEV_DID)) {
       did = str_props[i].property_value.data.int_val;
     }
 
-    if (!strcmp(str_props[i].key, bind_fuchsia_devicetree::FIRST_COMPATIBLE.c_str())) {
+    if (!strcmp(str_props[i].key, bind_fuchsia_devicetree::FIRST_COMPATIBLE)) {
       ZX_ASSERT(str_props[i].property_value.data_type == ZX_DEVICE_PROPERTY_VALUE_STRING);
       compatible = std::string(str_props[i].property_value.data.str_val);
     }

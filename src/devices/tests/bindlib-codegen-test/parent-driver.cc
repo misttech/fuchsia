@@ -33,23 +33,17 @@ static zx_status_t bind_func(void* ctx, zx_device_t* parent) {
   args.ops = &dev_ops;
 
   zx_device_str_prop_t str_props[] = {
-      zx_device_str_prop_t{.key = bind_fuchsia::PROTOCOL.c_str(),
-                           .property_value = str_prop_int_val(3)},
-      zx_device_str_prop_t{.key = bind_fuchsia::PCI_VID.c_str(),
+      zx_device_str_prop_t{.key = bind_fuchsia::PROTOCOL, .property_value = str_prop_int_val(3)},
+      zx_device_str_prop_t{.key = bind_fuchsia::PCI_VID,
                            .property_value = str_prop_int_val(lib::BIND_PCI_VID_PIE)},
-      zx_device_str_prop_t{.key = bind_fuchsia::PCI_DID.c_str(),
-                           .property_value = str_prop_int_val(1234)},
-      zx_device_str_prop_t{.key = lib::KINGLET.c_str(),
-                           .property_value = str_prop_str_val("firecrest")},
-      zx_device_str_prop_t{.key = lib::MOON.c_str(),
-                           .property_value = str_prop_enum_val(lib::MOON_HALF.c_str())},
-      zx_device_str_prop_t{.key = lib::BOBOLINK.c_str(), .property_value = str_prop_int_val(10)},
-      zx_device_str_prop_t{.key = lib::FLAG.c_str(),
-                           .property_value = str_prop_bool_val(lib::FLAG_ENABLE)},
-      zx_device_str_prop_t{.key = parent::PIZZA.c_str(),
-                           .property_value = str_prop_str_val(parent::PIZZA_PEPPERONI.c_str())},
-      zx_device_str_prop_t{.key = parent::GRIT.c_str(),
-                           .property_value = str_prop_int_val(lib::GRIT_FINE)},
+      zx_device_str_prop_t{.key = bind_fuchsia::PCI_DID, .property_value = str_prop_int_val(1234)},
+      zx_device_str_prop_t{.key = lib::KINGLET, .property_value = str_prop_str_val("firecrest")},
+      zx_device_str_prop_t{.key = lib::MOON, .property_value = str_prop_enum_val(lib::MOON_HALF)},
+      zx_device_str_prop_t{.key = lib::BOBOLINK, .property_value = str_prop_int_val(10)},
+      zx_device_str_prop_t{.key = lib::FLAG, .property_value = str_prop_bool_val(lib::FLAG_ENABLE)},
+      zx_device_str_prop_t{.key = parent::PIZZA,
+                           .property_value = str_prop_str_val(parent::PIZZA_PEPPERONI)},
+      zx_device_str_prop_t{.key = parent::GRIT, .property_value = str_prop_int_val(lib::GRIT_FINE)},
   };
 
   args.str_props = str_props;

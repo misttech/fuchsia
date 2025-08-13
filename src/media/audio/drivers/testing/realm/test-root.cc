@@ -17,7 +17,7 @@ class Child : public ddk::Device<Child> {
   static zx_status_t Create(zx_device_t* parent, const char* name, const char* bind_name) {
     std::unique_ptr<Child> child = std::make_unique<Child>(parent);
     zx_device_str_prop_t str_props[] = {
-        {bind_fuchsia_test::TEST_CHILD.c_str(), str_prop_str_val(bind_name)},
+        {bind_fuchsia_test::TEST_CHILD, str_prop_str_val(bind_name)},
     };
     zx_status_t status = child->DdkAdd(ddk::DeviceAddArgs(name).set_str_props(str_props));
     if (status != ZX_OK) {
@@ -42,20 +42,19 @@ class Test : public ddk::Device<Test> {
       return status;
     }
 
-    status = Child::Create(test->zxdev(), "codec-parent",
-                           bind_fuchsia_test_audio::TEST_CHILD_CODEC.c_str());
-    if (status != ZX_OK) {
-      return status;
-    }
-
-    status = Child::Create(test->zxdev(), "codec2-parent",
-                           bind_fuchsia_test_audio::TEST_CHILD_CODEC2.c_str());
+    status =
+        Child::Create(test->zxdev(), "codec-parent", bind_fuchsia_test_audio::TEST_CHILD_CODEC);
     if (status != ZX_OK) {
       return status;
     }
 
     status =
-        Child::Create(test->zxdev(), "dai-parent", bind_fuchsia_test_audio::TEST_CHILD_DAI.c_str());
+        Child::Create(test->zxdev(), "codec2-parent", bind_fuchsia_test_audio::TEST_CHILD_CODEC2);
+    if (status != ZX_OK) {
+      return status;
+    }
+
+    status = Child::Create(test->zxdev(), "dai-parent", bind_fuchsia_test_audio::TEST_CHILD_DAI);
     if (status != ZX_OK) {
       return status;
     }

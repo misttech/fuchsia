@@ -90,7 +90,7 @@ zx_status_t RootDriver::Bind(void* ctx, zx_device_t* dev) {
 
   // Add a third device that matches the optional node group node.
   zx_device_str_prop_t str_fragment_props_3[] = {
-      {bind_test::TEST_PROP.c_str(), str_prop_str_val(bind_test::TEST_PROP_VALUE_3.c_str())},
+      {bind_test::TEST_PROP, str_prop_str_val(bind_test::TEST_PROP_VALUE_3)},
   };
 
   auto fragment_dev_c_2 = std::make_unique<RootDriver>(dev);

@@ -390,7 +390,7 @@ zx_status_t PowerDomain::Create(void* ctx, zx_device_t* parent,
     return ZX_ERR_NO_MEMORY;
   }
   zx_device_str_prop_t props[] = {
-      {bind_fuchsia_power::POWER_DOMAIN.c_str(), str_prop_int_val(index)},
+      {bind_fuchsia_power::POWER_DOMAIN, str_prop_int_val(index)},
   };
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();

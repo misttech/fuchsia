@@ -177,8 +177,8 @@ zx_status_t PartitionDevice::Add(uint32_t partition_number) {
   uint8_to_guid_string(partition_type_guid_, gpt_entry_.type);
 
   const zx_device_str_prop_t str_props[]{
-      {bind_fuchsia_block_gpt::PARTITION_NAME.c_str(), str_prop_str_val(partition_name_)},
-      {bind_fuchsia_block_gpt::PARTITION_TYPE_GUID.c_str(), str_prop_str_val(partition_type_guid_)},
+      {bind_fuchsia_block_gpt::PARTITION_NAME, str_prop_str_val(partition_name_)},
+      {bind_fuchsia_block_gpt::PARTITION_TYPE_GUID, str_prop_str_val(partition_type_guid_)},
   };
 
   zx_status_t status =

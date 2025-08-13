@@ -13,31 +13,31 @@
 
 namespace bind_test_lib {
 
-static const std::string KINGFISHER = "test.lib.KINGFISHER";
-static const std::string KINGFISHER_BELTED = "test.lib.KINGFISHER.BELTED";
+static const char KINGFISHER[] = "test.lib.KINGFISHER";
+static const char KINGFISHER_BELTED[] = "test.lib.KINGFISHER.BELTED";
 
-static const std::string MIMID = "test.lib.Mimid";
-static const std::string MIMID_CATBIRD = "test.lib.Mimid.Catbird";
-static const std::string MIMID_THRASHER = "test.lib.Mimid.Thrasher";
-static const std::string MIMID_TREMBLER = "test.lib.Mimid.Trembler";
-static const std::string MIMID_MOCKINGBIRD = "test.lib.Mimid.Mockingbird";
+static const char MIMID[] = "test.lib.Mimid";
+static const char MIMID_CATBIRD[] = "test.lib.Mimid.Catbird";
+static const char MIMID_THRASHER[] = "test.lib.Mimid.Thrasher";
+static const char MIMID_TREMBLER[] = "test.lib.Mimid.Trembler";
+static const char MIMID_MOCKINGBIRD[] = "test.lib.Mimid.Mockingbird";
 
-static const std::string PHAINOPEPLA = "test.lib.Phainopepla";
+static const char PHAINOPEPLA[] = "test.lib.Phainopepla";
 
-static const std::string THRUSH = "test.lib.THRUSH";
-static const std::string THRUSH_HERMIT = "hermit_thrush";
-static const std::string THRUSH_ROBIN = "robin";
-static const std::string THRUSH_SOLITAIRE = "solitaire";
+static const char THRUSH[] = "test.lib.THRUSH";
+static const char THRUSH_HERMIT[] = "hermit_thrush";
+static const char THRUSH_ROBIN[] = "robin";
+static const char THRUSH_SOLITAIRE[] = "solitaire";
 
-static const std::string WAXWING = "test.lib.WAXWING";
+static const char WAXWING[] = "test.lib.WAXWING";
 
-static const std::string PICIDAE = "test.lib.PICIDAE";
+static const char PICIDAE[] = "test.lib.PICIDAE";
 static constexpr uint32_t PICIDAE_FLICKER = 16;
 static constexpr uint32_t PICIDAE_SAPSUCKER = 200;
 
-static const std::string NUTHATCH = "test.lib.NUTHATCH";
+static const char NUTHATCH[] = "test.lib.NUTHATCH";
 
-static const std::string FLYCATCHER = "test.lib.FLYCATCHER";
+static const char FLYCATCHER[] = "test.lib.FLYCATCHER";
 static constexpr bool FLYCATCHER_PHOEBE = true;
 static constexpr bool FLYCATCHER_KESTREL = false;
 

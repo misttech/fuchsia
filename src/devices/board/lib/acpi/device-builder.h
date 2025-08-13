@@ -101,7 +101,7 @@ class DeviceBuilder {
         parent_(parent),
         state_(state),
         device_id_(device_id) {
-    str_props_.emplace_back(OwnedStringProp(bind_fuchsia::ACPI_ID.c_str(), device_id_));
+    str_props_.emplace_back(OwnedStringProp(bind_fuchsia::ACPI_ID, device_id_));
   }
 
   static DeviceBuilder MakeRootDevice(ACPI_HANDLE handle, zx_device_t* acpi_root) {

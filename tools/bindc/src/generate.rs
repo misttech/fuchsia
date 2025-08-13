@@ -231,8 +231,8 @@ mod tests {
             "#define BIND_FUCHSIA_PLATFORM_BINDLIB_".to_string(),
             "#include <string>".to_string(),
             "namespace bind_fuchsia_platform {".to_string(),
-            "static const std::string A_KEY = \"fuchsia.platform.A_KEY\";".to_string(),
-            "static const std::string A_KEY_A_VALUE = \"a string value\";".to_string(),
+            "static const char A_KEY[] = \"fuchsia.platform.A_KEY\";".to_string(),
+            "static const char A_KEY_A_VALUE[] = \"a string value\";".to_string(),
             "}  // namespace bind_fuchsia_platform".to_string(),
             "#endif  // BIND_FUCHSIA_PLATFORM_BINDLIB_".to_string(),
         ];
@@ -336,8 +336,8 @@ mod tests {
             "#define BIND_FUCHSIA_PLATFORM_BINDLIB_".to_string(),
             "#include <string>".to_string(),
             "namespace bind_fuchsia_platform {".to_string(),
-            "static const std::string A_KEY = \"fuchsia.platform.a_key\";".to_string(),
-            "static const std::string A_KEY_A_VALUE = \"a string value\";".to_string(),
+            "static const char A_KEY[] = \"fuchsia.platform.a_key\";".to_string(),
+            "static const char A_KEY_A_VALUE[] = \"a string value\";".to_string(),
             "}  // namespace bind_fuchsia_platform".to_string(),
             "#endif  // BIND_FUCHSIA_PLATFORM_BINDLIB_".to_string(),
         ];
