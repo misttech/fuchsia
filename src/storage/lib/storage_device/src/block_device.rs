@@ -12,18 +12,18 @@ use std::ops::Range;
 use zx::Status;
 
 /// BlockDevice is an implementation of Device backed by a real block device behind a FIFO.
-pub struct BlockDevice {
+pub struct BlockDevice<T> {
     allocator: BufferAllocator,
-    remote: Box<dyn BlockClient>,
+    remote: T,
     read_only: bool,
     vmoid: VmoId,
 }
 
 const TRANSFER_VMO_SIZE: usize = 128 * 1024 * 1024;
 
-impl BlockDevice {
+impl<T: BlockClient> BlockDevice<T> {
     /// Creates a new BlockDevice over |remote|.
-    pub async fn new(remote: Box<dyn BlockClient>, read_only: bool) -> Result<Self, Error> {
+    pub async fn new(remote: T, read_only: bool) -> Result<Self, Error> {
         let buffer_source = BufferSource::new(TRANSFER_VMO_SIZE);
         let vmoid = remote.attach_vmo(buffer_source.vmo()).await?;
         let allocator = BufferAllocator::new(remote.block_size() as usize, buffer_source);
@@ -32,7 +32,7 @@ impl BlockDevice {
 }
 
 #[async_trait]
-impl Device for BlockDevice {
+impl<T: BlockClient> Device for BlockDevice<T> {
     fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
         self.allocator.allocate_buffer(size)
     }
@@ -128,7 +128,7 @@ impl Device for BlockDevice {
     }
 }
 
-impl Drop for BlockDevice {
+impl<T> Drop for BlockDevice<T> {
     fn drop(&mut self) {
         // We can't detach the VmoId because we're not async here, but we are tearing down the
         // connection to the block device so we don't really need to.
@@ -145,9 +145,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_lifecycle() {
-        let device = BlockDevice::new(Box::new(FakeBlockClient::new(1024, 1024)), false)
-            .await
-            .expect("new failed");
+        let device =
+            BlockDevice::new(FakeBlockClient::new(1024, 1024), false).await.expect("new failed");
 
         {
             let _buf = device.allocate_buffer(8192).await;
@@ -158,9 +157,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_read_write_buffer() {
-        let device = BlockDevice::new(Box::new(FakeBlockClient::new(1024, 1024)), false)
-            .await
-            .expect("new failed");
+        let device =
+            BlockDevice::new(FakeBlockClient::new(1024, 1024), false).await.expect("new failed");
 
         {
             let mut buf1 = device.allocate_buffer(8192).await;
@@ -182,9 +180,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_read_only() {
-        let device = BlockDevice::new(Box::new(FakeBlockClient::new(1024, 1024)), true)
-            .await
-            .expect("new failed");
+        let device =
+            BlockDevice::new(FakeBlockClient::new(1024, 1024), true).await.expect("new failed");
         let mut buf1 = device.allocate_buffer(8192).await;
         buf1.as_mut_slice().fill(0xaa as u8);
         let err = device.write(65536, buf1.as_ref()).await.expect_err("Write succeeded");
@@ -193,9 +190,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_unaligned_access() {
-        let device = BlockDevice::new(Box::new(FakeBlockClient::new(1024, 1024)), false)
-            .await
-            .expect("new failed");
+        let device =
+            BlockDevice::new(FakeBlockClient::new(1024, 1024), false).await.expect("new failed");
         let mut buf1 = device.allocate_buffer(device.block_size() as usize * 2).await;
         buf1.as_mut_slice().fill(0xaa as u8);
 

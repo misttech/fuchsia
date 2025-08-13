@@ -415,11 +415,9 @@ mod tests {
             ));
             let device = DeviceHolder::new(
                 BlockDevice::new(
-                    Box::new(
-                        crate::component::new_block_client(block_server.connect())
-                            .await
-                            .expect("Unable to create block client"),
-                    ),
+                    crate::component::new_block_client(block_server.connect())
+                        .await
+                        .expect("Unable to create block client"),
                     false,
                 )
                 .await

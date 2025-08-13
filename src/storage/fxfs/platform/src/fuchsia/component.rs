@@ -268,7 +268,7 @@ impl Component {
             .inline_crypto_enabled(options.inline_crypto_enabled.unwrap_or(false))
             .barriers_enabled(options.barriers_enabled.unwrap_or(false))
             .open(DeviceHolder::new(
-                BlockDevice::new(Box::new(client), options.read_only.unwrap_or(false)).await?,
+                BlockDevice::new(client, options.read_only.unwrap_or(false)).await?,
             ))
             .await?;
         let root_volume = root_volume(fs.clone()).await?;
@@ -333,11 +333,7 @@ impl Component {
 
     async fn handle_format(&self, device: ClientEnd<BlockMarker>) -> Result<(), Error> {
         let device = DeviceHolder::new(
-            BlockDevice::new(
-                Box::new(new_block_client(device).await?),
-                /* read_only: */ false,
-            )
-            .await?,
+            BlockDevice::new(new_block_client(device).await?, /* read_only: */ false).await?,
         );
         mkfs(device).await?;
         info!("Formatted filesystem");
@@ -355,9 +351,7 @@ impl Component {
                 let client = new_block_client(device).await?;
                 let fs_container = FxFilesystemBuilder::new()
                     .read_only(true)
-                    .open(DeviceHolder::new(
-                        BlockDevice::new(Box::new(client), /* read_only: */ true).await?,
-                    ))
+                    .open(DeviceHolder::new(BlockDevice::new(client, /* read_only: */ true).await?))
                     .await?;
                 let fs = fs_container.clone();
                 (Some(fs_container), fs)
@@ -525,11 +519,9 @@ mod tests {
         {
             let fs = FxFilesystem::new_empty(DeviceHolder::new(
                 BlockDevice::new(
-                    Box::new(
-                        new_block_client(block_server.connect())
-                            .await
-                            .expect("Unable to create block client"),
-                    ),
+                    new_block_client(block_server.connect())
+                        .await
+                        .expect("Unable to create block client"),
                     false,
                 )
                 .await

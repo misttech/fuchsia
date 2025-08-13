@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, VmoId, WriteOptions};
 use fidl_fuchsia_hardware_block as block;
 use fuchsia_sync::Mutex;
@@ -42,7 +41,6 @@ impl FakeBlockClient {
     }
 }
 
-#[async_trait]
 impl BlockClient for FakeBlockClient {
     async fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status> {
         let len = vmo.get_size()?;

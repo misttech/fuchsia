@@ -9,7 +9,6 @@
 //!
 //! See the [`BlockClient`] trait.
 
-use async_trait::async_trait;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_hardware_block::{BlockProxy, MAX_TRANSFER_UNBOUNDED};
 use fidl_fuchsia_hardware_block_partition::PartitionProxy;
@@ -274,72 +273,73 @@ impl Hash for VmoId {
 /// Represents a client connection to a block device. This is a simplified version of the block.fidl
 /// interface.
 /// Most users will use the RemoteBlockClient instantiation of this trait.
-#[async_trait]
 pub trait BlockClient: Send + Sync {
     /// Wraps AttachVmo from fuchsia.hardware.block::Block.
-    async fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status>;
+    fn attach_vmo(&self, vmo: &zx::Vmo) -> impl Future<Output = Result<VmoId, zx::Status>> + Send;
 
     /// Detaches the given vmo-id from the device.
-    async fn detach_vmo(&self, vmo_id: VmoId) -> Result<(), zx::Status>;
+    fn detach_vmo(&self, vmo_id: VmoId) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
     /// Reads from the device at |device_offset| into the given buffer slice.
-    async fn read_at(
+    fn read_at(
         &self,
         buffer_slice: MutableBufferSlice<'_>,
         device_offset: u64,
-    ) -> Result<(), zx::Status> {
-        self.read_at_traced(buffer_slice, device_offset, 0).await
+    ) -> impl Future<Output = Result<(), zx::Status>> + Send {
+        self.read_at_traced(buffer_slice, device_offset, 0)
     }
 
-    async fn read_at_traced(
+    fn read_at_traced(
         &self,
         buffer_slice: MutableBufferSlice<'_>,
         device_offset: u64,
         trace_flow_id: u64,
-    ) -> Result<(), zx::Status>;
+    ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
     /// Writes the data in |buffer_slice| to the device.
-    async fn write_at(
+    fn write_at(
         &self,
         buffer_slice: BufferSlice<'_>,
         device_offset: u64,
-    ) -> Result<(), zx::Status> {
+    ) -> impl Future<Output = Result<(), zx::Status>> + Send {
         self.write_at_with_opts_traced(
             buffer_slice,
             device_offset,
             WriteOptions::empty(),
             NO_TRACE_ID,
         )
-        .await
     }
 
-    async fn write_at_with_opts(
+    fn write_at_with_opts(
         &self,
         buffer_slice: BufferSlice<'_>,
         device_offset: u64,
         opts: WriteOptions,
-    ) -> Result<(), zx::Status> {
-        self.write_at_with_opts_traced(buffer_slice, device_offset, opts, NO_TRACE_ID).await
+    ) -> impl Future<Output = Result<(), zx::Status>> + Send {
+        self.write_at_with_opts_traced(buffer_slice, device_offset, opts, NO_TRACE_ID)
     }
 
-    async fn write_at_with_opts_traced(
+    fn write_at_with_opts_traced(
         &self,
         buffer_slice: BufferSlice<'_>,
         device_offset: u64,
         opts: WriteOptions,
         trace_flow_id: u64,
-    ) -> Result<(), zx::Status>;
+    ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
     /// Trims the given range on the block device.
-    async fn trim(&self, device_range: Range<u64>) -> Result<(), zx::Status> {
-        self.trim_traced(device_range, NO_TRACE_ID).await
+    fn trim(
+        &self,
+        device_range: Range<u64>,
+    ) -> impl Future<Output = Result<(), zx::Status>> + Send {
+        self.trim_traced(device_range, NO_TRACE_ID)
     }
 
-    async fn trim_traced(
+    fn trim_traced(
         &self,
         device_range: Range<u64>,
         trace_flow_id: u64,
-    ) -> Result<(), zx::Status>;
+    ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
     /// Attaches a barrier to the next write sent to the underlying block device. This barrier
     /// method is an alternative to setting the WriteOption::PRE_BARRIER on `write_at_with_opts`.
@@ -347,15 +347,18 @@ pub trait BlockClient: Send + Sync {
     /// write operation when subsequent write operations can get reordered.
     fn barrier(&self);
 
-    async fn flush(&self) -> Result<(), zx::Status> {
-        self.flush_traced(NO_TRACE_ID).await
+    fn flush(&self) -> impl Future<Output = Result<(), zx::Status>> + Send {
+        self.flush_traced(NO_TRACE_ID)
     }
 
     /// Sends a flush request to the underlying block device.
-    async fn flush_traced(&self, trace_flow_id: u64) -> Result<(), zx::Status>;
+    fn flush_traced(
+        &self,
+        trace_flow_id: u64,
+    ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
     /// Closes the fifo.
-    async fn close(&self) -> Result<(), zx::Status>;
+    fn close(&self) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
     /// Returns the block size of the device.
     fn block_size(&self) -> u32;
@@ -739,7 +742,6 @@ impl RemoteBlockClient {
     }
 }
 
-#[async_trait]
 impl BlockClient for RemoteBlockClient {
     async fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status> {
         let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
