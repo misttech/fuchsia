@@ -40,11 +40,8 @@ class PerfTestTraceEventsTest(fuchsia_base_test.FuchsiaBaseTest):
                 capture_output=False,
             )
 
-        json_trace_file: str = trace_importing.convert_trace_file_to_json(
+        model = trace_importing.create_model_from_trace_file_path(
             os.path.join(self.log_path, "trace.fxt")
-        )
-        model: trace_model.Model = trace_importing.create_model_from_file_path(
-            json_trace_file
         )
         event_names = [
             event.name

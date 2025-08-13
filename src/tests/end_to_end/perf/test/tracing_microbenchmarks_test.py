@@ -64,11 +64,8 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
                     i, ["kernel", "benchmark"], ".tracing"
                 )
             )
-            json_trace_file: str = trace_importing.convert_trace_file_to_json(
+            model = trace_importing.create_model_from_trace_file_path(
                 os.path.join(self.test_case_path, "trace.fxt")
-            )
-            model: trace_model.Model = (
-                trace_importing.create_model_from_file_path(json_trace_file)
             )
 
             events = list(
@@ -122,11 +119,8 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
                     i, ["nonexistent_category"], ".tracing_categories_disabled"
                 )
             )
-            json_trace_file: str = trace_importing.convert_trace_file_to_json(
+            model = trace_importing.create_model_from_trace_file_path(
                 os.path.join(self.test_case_path, "trace.fxt")
-            )
-            model: trace_model.Model = (
-                trace_importing.create_model_from_file_path(json_trace_file)
             )
             # All the real tracing categories are disabled, so we should get no trace events.
             asserts.assert_equal(list(model.all_events()), [])
