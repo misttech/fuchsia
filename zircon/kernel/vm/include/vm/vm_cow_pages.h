@@ -110,9 +110,9 @@ class ScopedPageFreedList;
 // explicitly transitioned to the Dead state prior to being destructed. The explicit transition
 // ensures that a VmCowPages does not own any pages whilst in its destructor, and hence while the
 // object is unreachable due to having a ref count of 0.
-class VmCowPages final : public VmHierarchyBase,
-                         public fbl::ContainableBaseClasses<
-                             fbl::TaggedDoublyLinkedListable<VmCowPages*, internal::ChildListTag>> {
+class VmCowPages final : public fbl::ContainableBaseClasses<
+                             fbl::TaggedDoublyLinkedListable<VmCowPages*, internal::ChildListTag>>,
+                         public fbl::RefCountedUpgradeable<VmCowPages> {
  public:
   static zx_status_t Create(VmCowPagesOptions options, uint32_t pmm_alloc_flags, uint64_t size,
                             ktl::unique_ptr<DiscardableVmoTracker> discardable_tracker,
@@ -887,7 +887,7 @@ class VmCowPages final : public VmHierarchyBase,
              fbl::RefPtr<PageSource> page_source,
              ktl::unique_ptr<DiscardableVmoTracker> discardable_tracker, uint64_t lock_order);
 
-  ~VmCowPages() override;
+  ~VmCowPages();
 
   friend class fbl::RefPtr<VmCowPages>;
   friend class LockedParentWalker;

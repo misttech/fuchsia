@@ -144,23 +144,6 @@ template <typename T>
 fbl::SinglyLinkedListCustomTraits<fbl::RefPtr<T>, typename VmDeferredDeleter<T>::ListTraits>
     VmDeferredDeleter<T>::delete_list_;
 
-// Base class for any objects that want to be part of the VMO hierarchy and share some state,
-// including a lock. Additionally all objects in the hierarchy can become part of the same
-// deferred deletion mechanism to avoid unbounded chained destructors.
-class VmHierarchyBase : public fbl::RefCountedUpgradeable<VmHierarchyBase> {
- public:
-  VmHierarchyBase() = default;
-
- protected:
-  // private destructor, only called from refptr
-  virtual ~VmHierarchyBase() = default;
-  friend fbl::RefPtr<VmHierarchyBase>;
-  friend class fbl::Recyclable<VmHierarchyBase>;
-
- private:
-  DISALLOW_COPY_ASSIGN_AND_MOVE(VmHierarchyBase);
-};
-
 // Cursor to allow for walking global vmo lists without needing to hold the lock protecting them all
 // the time. This can be required to enforce order of acquisition with another lock (as in the case
 // of |discardable_reclaim_candidates_|), or it can be desirable for performance reasons (as in the
@@ -263,10 +246,10 @@ FBL_ENABLE_ENUM_BITS(VmObjectReadWriteOptions)
 //
 // Can be created without mapping and used as a container of data, or mappable
 // into an address space via VmAddressRegion::CreateVmMapping
-class VmObject : public VmHierarchyBase,
-                 public fbl::ContainableBaseClasses<
+class VmObject : public fbl::ContainableBaseClasses<
                      fbl::TaggedDoublyLinkedListable<VmObject*, internal::ChildListTag>,
-                     fbl::TaggedDoublyLinkedListable<VmObject*, internal::GlobalListTag>> {
+                     fbl::TaggedDoublyLinkedListable<VmObject*, internal::GlobalListTag>>,
+                 public fbl::RefCountedUpgradeable<VmObject> {
  public:
   // public API
   virtual zx_status_t Resize(uint64_t size) { return ZX_ERR_NOT_SUPPORTED; }
