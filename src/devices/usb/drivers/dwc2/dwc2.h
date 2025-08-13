@@ -18,11 +18,11 @@
 #include <threads.h>
 
 #include <atomic>
+#include <mutex>
 #include <queue>
 
 #include <ddktl/device.h>
 #include <ddktl/metadata_server.h>
-#include <fbl/mutex.h>
 #include <usb/dwc2/metadata.h>
 
 #include "src/devices/usb/drivers/dwc2/dwc2_config.h"
@@ -38,6 +38,12 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
  public:
   explicit Dwc2(zx_device_t* parent, async_dispatcher_t* dispatcher)
       : Dwc2Type(parent), dispatcher_(dispatcher), outgoing_(dispatcher) {}
+
+  // Neither copyable nor movable.
+  Dwc2(Dwc2&&) = delete;
+  Dwc2(const Dwc2&) = delete;
+  Dwc2& operator=(Dwc2&&) = delete;
+  Dwc2& operator=(const Dwc2&) = delete;
 
   static zx_status_t Create(void* ctx, zx_device_t* parent);
   zx_status_t Init(const dwc2_config::Config& config);
@@ -145,7 +151,7 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
 
     // Used for synchronizing endpoint state and ep specific hardware registers.
     // This should be acquired before Dwc2.lock_ if acquiring both locks.
-    fbl::Mutex lock;
+    std::mutex lock;
 
     uint16_t max_packet_size = 0;
     bool enabled = false;
@@ -155,8 +161,6 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
 
     Dwc2* dwc2_;
   };
-
-  DISALLOW_COPY_ASSIGN_AND_MOVE(Dwc2);
 
   void FlushTxFifo(uint32_t fifo_num);
   void FlushRxFifo();
@@ -198,7 +202,7 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
   // and non ep specific hardware registers.
   // Endpoint.lock should be acquired first
   // when acquiring both locks.
-  fbl::Mutex lock_;
+  std::mutex lock_;
 
   zx::bti bti_;
   // DMA buffer for endpoint zero requests

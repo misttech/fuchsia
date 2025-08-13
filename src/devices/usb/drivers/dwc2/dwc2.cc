@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/driver/fidl.h>
 #include <lib/ddk/binding_driver.h>
-#include <lib/ddk/hw/arch_ops.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -23,11 +22,10 @@
 #include <zircon/threads.h>
 
 #include <cstdlib>
+#include <mutex>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
-#include <fbl/algorithm.h>
-#include <fbl/auto_lock.h>
 
 #include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
 
@@ -444,10 +442,8 @@ void Dwc2::StartEp0() {
       .set_pktcnt(1)
       .set_xfersize(ep->req_xfersize)
       .WriteTo(mmio);
-  hw_wmb();
 
   DEPCTL::Get(DWC_EP0_OUT).ReadFrom(mmio).set_epena(1).WriteTo(mmio);
-  hw_wmb();
 }
 
 // Queues the next USB request for the specified endpoint
@@ -509,10 +505,8 @@ void Dwc2::StartTransfer(Endpoint* ep, uint32_t length) {
   deptsiz.set_mc(is_in ? 1 : 0);
   ep->req_xfersize = deptsiz.xfersize();
   deptsiz.WriteTo(mmio);
-  hw_wmb();
 
   DEPCTL::Get(ep_num).ReadFrom(mmio).set_cnak(1).set_epena(1).WriteTo(mmio);
-  hw_wmb();
 }
 
 void Dwc2::FlushTxFifo(uint32_t fifo_num) {
@@ -576,7 +570,7 @@ void Dwc2::StartEndpoints() {
     if (ep->enabled) {
       EnableEp(ep_num, true);
 
-      fbl::AutoLock lock(&ep->lock);
+      std::lock_guard<std::mutex> _(ep->lock);
       QueueNextRequest(&*ep);
     }
   }
@@ -585,7 +579,7 @@ void Dwc2::StartEndpoints() {
 void Dwc2::EnableEp(uint8_t ep_num, bool enable) {
   auto* mmio = get_mmio();
 
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard<std::mutex> _(lock_);
 
   uint32_t bit = 1 << ep_num;
 
@@ -619,11 +613,11 @@ void Dwc2::HandleEp0Setup() {
 
     if (is_in) {
       ep->req_length = static_cast<uint32_t>(actual);
-      fbl::AutoLock al(&ep->lock);
+      std::lock_guard<std::mutex> _(ep->lock);
       StartTransfer(&*ep, (ep->req_length > 127 ? ep->max_packet_size : ep->req_length));
     } else {
       ep->req_length = length;
-      fbl::AutoLock al(&ep->lock);
+      std::lock_guard<std::mutex> _(ep->lock);
       StartTransfer(&*ep, (length > 127 ? ep->max_packet_size : length));
     }
   } else {
@@ -638,7 +632,7 @@ void Dwc2::HandleEp0Status(bool is_in) {
   ep0_state_ = Ep0State::STATUS;
   uint8_t ep_num = (is_in ? DWC_EP0_IN : DWC_EP0_OUT);
   auto& ep = endpoints_[ep_num];
-  fbl::AutoLock al(&ep->lock);
+  std::lock_guard<std::mutex> _(ep->lock);
   StartTransfer(&*ep, 0);
 
   if (is_in) {
@@ -670,7 +664,7 @@ void Dwc2::HandleEp0TransferComplete(bool is_in) {
           // (potentially) retransmit data, the last transmission's size is recorded.
           last_transmission_len_ = length;
 
-          fbl::AutoLock al(&ep->lock);
+          std::lock_guard<std::mutex> _(ep->lock);
           StartTransfer(&*ep, length);
         }
       } else {  // data direction is OUT-type (from the host).
@@ -689,7 +683,7 @@ void Dwc2::HandleEp0TransferComplete(bool is_in) {
           if (length > 127) {
             length = 64;
           }
-          fbl::AutoLock al(&ep->lock);
+          std::lock_guard<std::mutex> _(ep->lock);
           StartTransfer(&*ep, length);
         }
       }
@@ -739,7 +733,7 @@ void Dwc2::SoftDisconnect() {
 // being, the recovery logic involves a soft port disconnect and controller reset. This appears to
 // the host as a unplug-replug event.
 void Dwc2::HandleEp0TimeoutRecovery() {
-  fbl::AutoLock _(&lock_);
+  std::lock_guard<std::mutex> _(lock_);
   SetConnected(false);
   SoftDisconnect();
   ep0_state_ = Ep0State::DISCONNECTED;
@@ -753,7 +747,7 @@ void Dwc2::HandleTransferComplete(uint8_t ep_num) {
   ZX_DEBUG_ASSERT(ep_num != DWC_EP0_IN && ep_num != DWC_EP0_OUT);
   auto& ep = endpoints_[ep_num];
 
-  ep->lock.Acquire();
+  ep->lock.lock();
 
   ep->req_offset += ReadTransfered(&*ep);
   // Make a copy since this is used outside the critical section.
@@ -767,13 +761,13 @@ void Dwc2::HandleTransferComplete(uint8_t ep_num) {
     // if it is already in current_req it could be completed twice (since QueueNextRequest
     // would attempt to re-queue it, or CancelAll could take the lock on a separate thread and
     // forcefully complete it after we've already completed it).
-    ep->lock.Release();
+    ep->lock.unlock();
     ep->RequestComplete(ZX_OK, actual, std::move(req));
-    ep->lock.Acquire();
+    ep->lock.lock();
 
     QueueNextRequest(&*ep);
   }
-  ep->lock.Release();
+  ep->lock.unlock();
 }
 
 zx_status_t Dwc2::InitController() {
@@ -935,7 +929,7 @@ void Dwc2::SetConnected(bool connected) {
 
       std::queue<usb::RequestVariant> complete_reqs;
       {
-        fbl::AutoLock lock(&ep->lock);
+        std::lock_guard<std::mutex> _(ep->lock);
         complete_reqs.swap(ep->queued_reqs);
 
         if (ep->current_req) {
@@ -1189,23 +1183,25 @@ void Dwc2::DdkUnbind(ddk::UnbindTxn txn) {
 void Dwc2::DdkRelease() { delete this; }
 
 void Dwc2::DdkSuspend(ddk::SuspendTxn txn) {
-  fbl::AutoLock lock(&lock_);
-  irq_.destroy();
-  shutting_down_ = true;
-  // Disconnect from host to prevent DMA from being started
-  DCTL::Get().ReadFrom(&mmio_.value()).set_sftdiscon(1).WriteTo(&mmio_.value());
-  auto grstctl = GRSTCTL::Get();
-  auto mmio = &mmio_.value();
-  // Start soft reset sequence -- I think this should clear the DMA FIFOs
-  grstctl.FromValue(0).set_csftrst(1).WriteTo(mmio);
+  {
+    std::lock_guard<std::mutex> lock(lock_);
 
-  // Wait for reset to complete
-  while (grstctl.ReadFrom(mmio).csftrst()) {
-    // Arbitrary sleep to yield our timeslice while we wait for
-    // hardware to complete its reset.
-    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    irq_.destroy();
+    shutting_down_ = true;
+    // Disconnect from host to prevent DMA from being started
+    DCTL::Get().ReadFrom(&mmio_.value()).set_sftdiscon(1).WriteTo(&mmio_.value());
+    auto grstctl = GRSTCTL::Get();
+    auto mmio = &mmio_.value();
+    // Start soft reset sequence -- I think this should clear the DMA FIFOs
+    grstctl.FromValue(0).set_csftrst(1).WriteTo(mmio);
+
+    // Wait for reset to complete
+    while (grstctl.ReadFrom(mmio).csftrst()) {
+      // Arbitrary sleep to yield our timeslice while we wait for
+      // hardware to complete its reset.
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
   }
-  lock.release();
 
   if (irq_thread_started_) {
     irq_thread_started_ = false;
@@ -1283,7 +1279,7 @@ void Dwc2::StartController(StartControllerCompleter::Sync& completer) {
 }
 
 void Dwc2::StopController(StopControllerCompleter::Sync& completer) {
-  fbl::AutoLock _(&lock_);
+  std::lock_guard<std::mutex> _(lock_);
   SetConnected(false);
   SoftDisconnect();
   ep0_state_ = Ep0State::DISCONNECTED;
@@ -1316,7 +1312,7 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
   }
 
   auto& ep = endpoints_[ep_num];
-  fbl::AutoLock lock(&ep->lock);
+  std::lock_guard<std::mutex> _(ep->lock);
 
   ep->max_packet_size = max_packet_size;
   ep->enabled = true;
@@ -1352,7 +1348,7 @@ void Dwc2::DisableEndpoint(DisableEndpointRequest& request,
 
   auto& ep = endpoints_[ep_num];
 
-  fbl::AutoLock lock(&ep->lock);
+  std::lock_guard<std::mutex> _(ep->lock);
 
   DEPCTL::Get(ep_num).ReadFrom(mmio).set_usbactep(0).WriteTo(mmio);
   ep->enabled = false;
@@ -1383,14 +1379,13 @@ void Dwc2::Endpoint::QueueRequests(QueueRequestsRequest& request,
 }
 
 void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
-  {
-    fbl::AutoLock l(&dwc2_->lock_);
-    if (dwc2_->shutting_down_) {
-      l.release();
-      RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(request));
-      return;
-    }
+  dwc2_->lock_.lock();
+  if (dwc2_->shutting_down_) {
+    dwc2_->lock_.unlock();
+    RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(request));
+    return;
   }
+  dwc2_->lock_.unlock();
 
   // OUT transactions must have length > 0 and multiple of max packet size
   if (DWC_EP_IS_OUT(ep_addr())) {
@@ -1402,7 +1397,7 @@ void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
     }
   }
 
-  fbl::AutoLock _(&lock);
+  std::lock_guard<std::mutex> _(lock);
 
   if (!enabled) {
     zxlogf(ERROR, "dwc_ep_queue ep not enabled!");
@@ -1423,7 +1418,7 @@ void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
 void Dwc2::Endpoint::CancelAll() {
   std::queue<usb::RequestVariant> queue;
   {
-    fbl::AutoLock _(&lock);
+    std::lock_guard<std::mutex> _(lock);
     if (DWC_EP_IS_OUT(ep_addr())) {
       dwc2_->FlushRxFifoRetryIndefinite();
     } else {
