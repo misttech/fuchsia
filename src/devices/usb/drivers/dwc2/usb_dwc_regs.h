@@ -6,7 +6,7 @@
 #define SRC_DEVICES_USB_DRIVERS_DWC2_USB_DWC_REGS_H_
 
 #include <hwreg/bitfields.h>
-#include <usb/usb.h>
+#include <usb/descriptors.h>
 
 #define DUMP_REG(reg, mmio) __DUMP_REG(reg, mmio, false)
 #define DUMP_REG_W_IDX(reg, idx, mmio) __DUMP_REG_W_IDX(reg, idx, mmio, false)

@@ -36,9 +36,6 @@ source_set("common") {
     "//src/devices/bind/fuchsia.designware.platform:fuchsia.designware.platform_cpp",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/pretty",
-    "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
@@ -51,11 +48,12 @@ source_set("common") {
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fit",
     "//src/devices/lib/mmio",
-    "//src/devices/usb/lib/usb",
+    "//src/devices/usb/lib/usb:descriptors",
     "//src/devices/usb/lib/usb:dwc2",
     "//src/devices/usb/lib/usb-endpoint:usb-endpoint-server",
     "//src/lib/ddk",
     "//src/lib/ddktl",
+    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/hwreg",
   ]
 }

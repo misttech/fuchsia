@@ -13,7 +13,6 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/stdcompat/span.h>
-#include <lib/sync/completion.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/profile.h>
 #include <lib/zx/time.h>
@@ -29,14 +28,10 @@
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <fbl/auto_lock.h>
-#include <usb/usb-request.h>
-#include <usb/usb.h>
 
 #include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
 
 namespace dwc2 {
-
-using Request = usb::BorrowedRequest<void>;
 
 namespace fdci = fuchsia_hardware_usb_dci;
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;

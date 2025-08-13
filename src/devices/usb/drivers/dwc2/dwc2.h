@@ -14,20 +14,16 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
 #include <lib/mmio/mmio.h>
-#include <lib/sync/completion.h>
 #include <lib/zx/interrupt.h>
 #include <threads.h>
 
 #include <atomic>
 #include <queue>
-#include <variant>
 
 #include <ddktl/device.h>
 #include <ddktl/metadata_server.h>
 #include <fbl/mutex.h>
 #include <usb/dwc2/metadata.h>
-#include <usb/request-cpp.h>
-#include <usb/usb.h>
 
 #include "src/devices/usb/drivers/dwc2/dwc2_config.h"
 #include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
