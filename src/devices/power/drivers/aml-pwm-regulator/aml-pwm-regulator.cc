@@ -138,7 +138,10 @@ zx::result<std::unique_ptr<AmlPwmRegulator>> AmlPwmRegulator::Create(
 
   std::vector offers = {fdf::MakeOffer2<fuchsia_hardware_vreg::Service>(name)};
 
-  std::vector properties = {fdf::MakeProperty(bind_fuchsia_regulator::NAME, name)};
+  std::vector properties = {
+      fdf::MakeProperty(bind_fuchsia_regulator::NAME, name),
+      // TODO(https://fxbug.dev/425738863) Remove hard-coded value.
+      fdf::MakeProperty(bind_fuchsia::REGULATOR_NODE_ID, static_cast<uint32_t>(0))};
 
   zx::result child = fdf::AddChild(driver.node(), driver.logger(), name, properties, offers);
   if (child.is_error()) {
