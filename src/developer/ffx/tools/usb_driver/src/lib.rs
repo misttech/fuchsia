@@ -25,6 +25,10 @@ pub struct UsbDriverCommand {
     #[argh(switch)]
     /// whether to fork the driver process into the background rather than run
     background: bool,
+
+    #[argh(option)]
+    /// directory where log file should be placed
+    log_dir: Option<String>,
 }
 // [END command_struct]
 
@@ -94,13 +98,18 @@ async fn implementation(
         StandaloneFhoHandler::Standalone(cmd) => cmd,
     };
 
-    let sink = if command.background {
-        let mut path = match ffx_config::get_state_base_path() {
-            Ok(p) => p,
-            Err(e) => return Err(ffx_command::Error::Config(e.into())),
-        };
+    let sink = if command.background || command.log_dir.is_some() {
+        let mut path = if let Some(log_dir) = &command.log_dir {
+            PathBuf::from(log_dir)
+        } else {
+            let mut path = match ffx_config::get_state_base_path() {
+                Ok(p) => p,
+                Err(e) => return Err(ffx_command::Error::Config(e.into())),
+            };
 
-        path.push("ffx_usb");
+            path.push("ffx_usb");
+            path
+        };
         path.push(format!("ffx_usb.{log_id:x}.log"));
 
         let file = match OpenOptions::new().write(true).append(true).create(true).open(path) {
