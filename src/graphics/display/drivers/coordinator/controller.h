@@ -25,7 +25,6 @@
 #include <memory>
 #include <span>
 
-#include <fbl/mutex.h>
 #include <fbl/vector.h>
 
 #include "src/graphics/display/drivers/coordinator/added-display-info.h"
@@ -55,6 +54,9 @@ class ClientProxy;
 class DisplayConfig;
 
 // Multiplexes between display controller clients and display engine drivers.
+//
+// Instances are not thread-safe, and must only be used on the driver
+// dispatcher.
 class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
                    public EngineListener,
                    public ImageLifecycleListener {
@@ -102,7 +104,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   void SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode);
 
   void ApplyConfig(DisplayConfig& display_config, display::ConfigStamp client_config_stamp,
-                   ClientId client_id) __TA_EXCLUDES(mtx());
+                   ClientId client_id);
 
   // ImageLifecycleListener:
   void ImageWillBeDestroyed(display::DriverImageId driver_image_id) override;
@@ -114,20 +116,16 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   //
   // For a valid display, it's guaranteed that at least one of
   // `GetDisplayPreferredModes()` and `GetDisplayTimings()` is non-empty.
-  //
-  // `mtx()` must be held for as long as the return value is retained.
   zx::result<std::span<const display::ModeAndId>> GetDisplayPreferredModes(
-      display::DisplayId display_id) __TA_REQUIRES(mtx());
+      display::DisplayId display_id);
 
   // The display timings are guaranteed to be valid as long as the display with
   // `display_id` is valid.
-  //
-  // `mtx()` must be held for as long as the return value is retained.
   zx::result<std::span<const display::DisplayTiming>> GetDisplayTimings(
-      display::DisplayId display_id) __TA_REQUIRES(mtx());
+      display::DisplayId display_id);
 
   zx::result<fbl::Vector<display::PixelFormat>> GetSupportedPixelFormats(
-      display::DisplayId display_id) __TA_REQUIRES(mtx());
+      display::DisplayId display_id);
 
   // Calls `callback` with a const DisplayInfo& matching the given `display_id`.
   //
@@ -136,7 +134,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   //
   // The controller mutex is guaranteed to be held while `callback` is called.
   template <typename Callback>
-  bool FindDisplayInfo(display::DisplayId display_id, Callback callback) __TA_REQUIRES(mtx());
+  bool FindDisplayInfo(display::DisplayId display_id, Callback callback);
 
   EngineDriverClient* engine_driver_client() { return engine_driver_client_.get(); }
 
@@ -153,10 +151,6 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
     return fdf::Dispatcher::GetCurrent()->get() == driver_dispatcher_->get();
   }
 
-  // Thread-safety annotations currently don't deal with pointer aliases. Use this to document
-  // places where we believe a mutex aliases mtx()
-  void AssertMtxAliasHeld(fbl::Mutex& m) __TA_ASSERT(m) { ZX_DEBUG_ASSERT(&m == mtx()); }
-  fbl::Mutex* mtx() const { return &mtx_; }
   const inspect::Inspector& inspector() const { return inspector_; }
 
   // Typically called by OpenController/OpenVirtconController. However, this is made public
@@ -181,7 +175,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   // Initializes logic that is not suitable for the constructor.
   zx::result<> Initialize();
 
-  void HandleClientOwnershipChanges() __TA_REQUIRES(mtx());
+  void HandleClientOwnershipChanges();
 
   // Processes a display addition notification from an engine driver.
   //
@@ -194,7 +188,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   void RemoveDisplay(display::DisplayId removed_display_id);
 
   // Must be called on the driver dispatcher.
-  void PopulateDisplayTimings(DisplayInfo& info) __TA_EXCLUDES(mtx());
+  void PopulateDisplayTimings(DisplayInfo& info);
 
   // Processes a VSync signal from an engine driver.
   //
@@ -212,11 +206,9 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
 
   VsyncMonitor vsync_monitor_;
 
-  // mtx_ is a global lock on state shared among clients.
-  mutable fbl::Mutex mtx_;
-  bool unbinding_ __TA_GUARDED(mtx()) = false;
+  bool unbinding_ = false;
 
-  DisplayInfo::Map displays_ __TA_GUARDED(mtx());
+  DisplayInfo::Map displays_;
   ClientId applied_client_id_ = kInvalidClientId;
   display::DriverCaptureImageId pending_release_capture_image_id_ =
       display::kInvalidDriverCaptureImageId;
@@ -224,22 +216,22 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   // Populated after the engine is initialized.
   std::optional<display::EngineInfo> engine_info_;
 
-  display::DriverBufferCollectionId next_driver_buffer_collection_id_ __TA_GUARDED(mtx()) =
+  display::DriverBufferCollectionId next_driver_buffer_collection_id_ =
       display::DriverBufferCollectionId(1);
 
-  std::list<std::unique_ptr<ClientProxy>> clients_ __TA_GUARDED(mtx());
-  ClientId next_client_id_ __TA_GUARDED(mtx()) = ClientId(1);
+  std::list<std::unique_ptr<ClientProxy>> clients_;
+  ClientId next_client_id_ = ClientId(1);
 
   // Pointers to instances owned by `clients_`.
-  ClientProxy* client_owning_displays_ __TA_GUARDED(mtx()) = nullptr;
-  ClientProxy* virtcon_client_ __TA_GUARDED(mtx()) = nullptr;
-  ClientProxy* primary_client_ __TA_GUARDED(mtx()) = nullptr;
+  ClientProxy* client_owning_displays_ = nullptr;
+  ClientProxy* virtcon_client_ = nullptr;
+  ClientProxy* primary_client_ = nullptr;
 
   // True iff the corresponding client can dispatch FIDL events.
-  bool virtcon_client_ready_ __TA_GUARDED(mtx()) = false;
-  bool primary_client_ready_ __TA_GUARDED(mtx()) = false;
+  bool virtcon_client_ready_ = false;
+  bool primary_client_ready_ = false;
 
-  fuchsia_hardware_display::wire::VirtconMode virtcon_mode_ __TA_GUARDED(mtx()) =
+  fuchsia_hardware_display::wire::VirtconMode virtcon_mode_ =
       fuchsia_hardware_display::wire::VirtconMode::kFallback;
 
   std::unique_ptr<EngineDriverClient> engine_driver_client_;
@@ -249,8 +241,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   inspect::UintProperty last_valid_apply_config_interval_ns_property_;
   inspect::UintProperty last_valid_apply_config_config_stamp_property_;
 
-  display::DriverConfigStamp last_issued_driver_config_stamp_ __TA_GUARDED(mtx()) =
-      display::kInvalidDriverConfigStamp;
+  display::DriverConfigStamp last_issued_driver_config_stamp_ = display::kInvalidDriverConfigStamp;
 };
 
 template <typename Callback>

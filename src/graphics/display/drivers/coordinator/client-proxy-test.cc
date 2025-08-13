@@ -21,7 +21,6 @@
 #include <optional>
 #include <utility>
 
-#include <fbl/auto_lock.h>
 #include <gtest/gtest.h>
 
 #include "src/graphics/display/drivers/coordinator/client-id.h"
@@ -134,7 +133,6 @@ TEST_F(ClientProxyTest, ClientVSyncDelivery) {
   constexpr display::DriverConfigStamp kDriverStampValue(1);
   constexpr display::ConfigStamp kClientStampValue(2);
 
-  fbl::AutoLock lock(controller_->mtx());
   client_proxy_->UpdateConfigStampMapping({
       .driver_stamp = kDriverStampValue,
       .client_stamp = kClientStampValue,
@@ -149,7 +147,6 @@ TEST_F(ClientProxyTest, ClientVSyncDelivery) {
 TEST_F(ClientProxyTest, ClientVSyncPeerClosed) {
   listener_server_binding_->Close(ZX_OK);
 
-  fbl::AutoLock lock(controller_->mtx());
   client_proxy_->OnDisplayVsync(display::kInvalidDisplayId, 0, display::kInvalidDriverConfigStamp);
 }
 
@@ -158,7 +155,6 @@ TEST_F(ClientProxyTest, ClientMustDrainUntilThrottledPendingStamps) {
   constexpr std::array<uint64_t, kNumPendingStamps> kDriverStampValues = {1u, 2u, 3u, 4u, 5u};
   constexpr std::array<uint64_t, kNumPendingStamps> kClientStampValues = {2u, 3u, 4u, 5u, 6u};
 
-  fbl::AutoLock lock(controller_->mtx());
   for (size_t i = 0; i < kNumPendingStamps; i++) {
     client_proxy_->UpdateConfigStampMapping({
         .driver_stamp = display::DriverConfigStamp(kDriverStampValues[i]),

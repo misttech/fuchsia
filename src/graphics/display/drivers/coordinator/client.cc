@@ -463,7 +463,6 @@ void Client::SetDisplayMode(SetDisplayModeRequestView request,
   }
   display::Mode target_mode = display::Mode::From(request->mode);
 
-  fbl::AutoLock lock(controller_.mtx());
   zx::result<std::span<const display::ModeAndId>> display_preferred_modes_result =
       controller_.GetDisplayPreferredModes(display_id);
   if (display_preferred_modes_result.is_error()) {
@@ -1034,7 +1033,6 @@ void Client::StartCapture(StartCaptureRequestView request, StartCaptureCompleter
     return;
   }
 
-  fbl::AutoLock lock(controller_.mtx());
   proxy_.EnableCapture(true);
   completer.ReplySuccess();
 
@@ -1097,7 +1095,7 @@ display::ConfigCheckResult Client::CheckConfigImpl() {
     }
 
     // Required to get display preferred modes.
-    fbl::AutoLock lock(controller_.mtx());
+
     zx::result<std::span<const display::ModeAndId>> preferred_modes_result =
         controller_.GetDisplayPreferredModes(display_config.id());
     if (preferred_modes_result.is_error()) {
@@ -1339,8 +1337,6 @@ void Client::NotifyVsync(display::DisplayId display_id, zx::time_monotonic times
 void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display_ids,
                                std::span<const display::DisplayId> removed_display_ids) {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-
-  controller_.AssertMtxAliasHeld(*controller_.mtx());
   for (display::DisplayId added_display_id : added_display_ids) {
     zx::result get_supported_pixel_formats_result =
         controller_.GetSupportedPixelFormats(added_display_id);

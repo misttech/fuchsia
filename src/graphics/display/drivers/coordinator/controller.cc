@@ -35,7 +35,6 @@
 
 #include <fbl/alloc_checker.h>
 #include <fbl/array.h>
-#include <fbl/auto_lock.h>
 #include <fbl/ref_ptr.h>
 #include <fbl/static_vector.h>
 #include <fbl/vector.h>
@@ -161,7 +160,6 @@ void Controller::AddDisplay(std::unique_ptr<AddedDisplayInfo> added_display_info
     added_ids = {};
   }
 
-  fbl::AutoLock<fbl::Mutex> lock(mtx());
   auto display_it = displays_.find(display_id);
   if (display_it != displays_.end()) {
     fdf::warn("Display {} is already created; add display request ignored", display_id.value());
@@ -184,7 +182,6 @@ void Controller::AddDisplay(std::unique_ptr<AddedDisplayInfo> added_display_info
 void Controller::RemoveDisplay(display::DisplayId removed_display_id) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
-  fbl::AutoLock lock(mtx());
   std::unique_ptr<DisplayInfo> removed_display = displays_.erase(removed_display_id);
   if (!removed_display) {
     fdf::warn("Display removal references unknown display ID: {}", removed_display_id.value());
@@ -257,7 +254,6 @@ void Controller::OnCaptureComplete() {
           pending_release_capture_image_id_ = display::kInvalidDriverCaptureImageId;
         }
 
-        fbl::AutoLock lock(mtx());
         if (virtcon_client_ready_) {
           ZX_DEBUG_ASSERT(virtcon_client_ != nullptr);
           virtcon_client_->OnCaptureComplete();
@@ -304,7 +300,6 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id, zx::time_mon
 
   vsync_monitor_.OnVsync(timestamp, driver_config_stamp);
 
-  fbl::AutoLock lock(mtx());
   auto displays_it = displays_.find(display_id);
   if (!displays_it.IsValid()) {
     fdf::error("Dropping VSync for unknown display ID: {}", display_id.value());
@@ -431,14 +426,11 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
   last_valid_apply_config_config_stamp_property_.Set(client_config_stamp.value());
 
   // The applied configuration's stamp.
-  //
-  // Populated from `controller_stamp_` while the mutex is held.
   display::DriverConfigStamp driver_config_stamp = {};
   fbl::static_vector<display::DriverLayer, display::EngineInfo::kMaxAllowedMaxLayerCount>
       driver_layers;
 
   {
-    fbl::AutoLock lock(mtx());
     bool switching_client = client_id != applied_client_id_;
 
     ++last_issued_driver_config_stamp_;
@@ -551,7 +543,6 @@ void Controller::ReleaseCaptureImage(display::DriverCaptureImageId driver_captur
 void Controller::SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
-  fbl::AutoLock lock(mtx());
   virtcon_mode_ = virtcon_mode;
   HandleClientOwnershipChanges();
 }
@@ -582,7 +573,7 @@ void Controller::OnClientDead(ClientProxy* client) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
   fdf::info("Client {} dead", client->client_id().value());
-  fbl::AutoLock lock(mtx());
+
   if (unbinding_) {
     return;
   }
@@ -689,7 +680,6 @@ zx_status_t Controller::CreateClient(
     return ZX_ERR_NO_MEMORY;
   }
 
-  fbl::AutoLock lock(mtx());
   if (unbinding_) {
     fdf::debug("Client connected during unbind");
     return ZX_ERR_UNAVAILABLE;
@@ -733,7 +723,6 @@ zx_status_t Controller::CreateClient(
 
   zx::result<> post_task_result = display::PostTask(
       std::move(post_task_state), *driver_dispatcher()->async_dispatcher(), [this, client_id]() {
-        fbl::AutoLock lock(mtx());
         if (unbinding_) {
           return;
         }
@@ -776,7 +765,6 @@ zx_status_t Controller::CreateClient(
 display::DriverBufferCollectionId Controller::GetNextDriverBufferCollectionId() {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
-  fbl::AutoLock lock(mtx());
   return next_driver_buffer_collection_id_++;
 }
 
@@ -863,7 +851,6 @@ void Controller::PrepareStop() {
   fdf::info("Controller::PrepareStop started");
 
   {
-    fbl::AutoLock lock(mtx());
     unbinding_ = true;
 
     // Tear down all existing clients. This ensures that all clients will not
