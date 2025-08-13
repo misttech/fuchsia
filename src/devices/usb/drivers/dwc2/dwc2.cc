@@ -10,6 +10,7 @@
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/dma-buffer/buffer.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/clock.h>
@@ -78,6 +79,24 @@ void Dwc2::dump_regs() {
   for (uint32_t i = 0; i < MAX_EPS_CHANNELS; i++) {
     DUMP_REG_W_IDX(DOEPINT, i + DWC_EP_OUT_SHIFT, mmio)
   }
+}
+
+zx_status_t CacheFlushCommon(dma_buffer::ContiguousBuffer& buffer, zx_off_t offset, size_t length,
+                             uint32_t flush_options) {
+  if (offset + length < offset || offset + length > buffer.size()) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  auto virt{reinterpret_cast<uintptr_t>(buffer.virt()) + offset};
+  return zx_cache_flush(reinterpret_cast<void*>(virt), length, flush_options);
+}
+
+zx_status_t CacheFlush(dma_buffer::ContiguousBuffer& buffer, zx_off_t offset, size_t length) {
+  return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA);
+}
+
+zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer& buffer, zx_off_t offset,
+                                 size_t length) {
+  return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
 }
 
 // Handler for usbreset interrupt.
@@ -161,8 +180,8 @@ void Dwc2::HandleEnumDone() {
 
   endpoints_[DWC_EP0_IN]->max_packet_size = 64;
   endpoints_[DWC_EP0_OUT]->max_packet_size = 64;
-  endpoints_[DWC_EP0_IN]->phys = static_cast<uint32_t>(ep0_buffer_.phys());
-  endpoints_[DWC_EP0_OUT]->phys = static_cast<uint32_t>(ep0_buffer_.phys());
+  endpoints_[DWC_EP0_IN]->phys = static_cast<uint32_t>(ep0_buffer_->phys());
+  endpoints_[DWC_EP0_OUT]->phys = static_cast<uint32_t>(ep0_buffer_->phys());
 
   DEPCTL0::Get(DWC_EP0_IN).ReadFrom(mmio).set_mps(DEPCTL0::MPS_64).WriteTo(mmio);
   DEPCTL0::Get(DWC_EP0_OUT).ReadFrom(mmio).set_mps(DEPCTL0::MPS_64).WriteTo(mmio);
@@ -303,7 +322,7 @@ void Dwc2::HandleOutEpInterrupt() {
         // received SETUP packet.
         DOEPINT::Get(ep_num).ReadFrom(mmio).set_setup(1).WriteTo(mmio);
 
-        memcpy(&cur_setup_, ep0_buffer_.virt(), sizeof(cur_setup_));
+        memcpy(&cur_setup_, ep0_buffer_->virt(), sizeof(cur_setup_));
         zxlogf(DEBUG,
                "SETUP bm_request_type: 0x%02x b_request: %u w_value: %u w_index: %u "
                "w_length: %u\n",
@@ -342,7 +361,7 @@ void Dwc2::HandleOutEpInterrupt() {
 zx_status_t Dwc2::HandleSetupRequest(size_t* out_actual) {
   zx_status_t status;
 
-  auto* buffer = ep0_buffer_.virt();
+  auto* buffer = ep0_buffer_->virt();
   zx::duration elapsed;
   zx::time_boot now;
   if (cur_setup_.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) {
@@ -429,11 +448,11 @@ void Dwc2::StartEp0() {
   ep->req_offset = 0;
   ep->req_xfersize = 3 * sizeof(usb_setup_info_t);
 
-  ep0_buffer_.CacheFlushInvalidate(0, sizeof(cur_setup_));
+  CacheFlushInvalidate(*ep0_buffer_, 0, sizeof(cur_setup_));
 
   DEPDMA::Get(DWC_EP0_OUT)
       .FromValue(0)
-      .set_addr(static_cast<uint32_t>(ep0_buffer_.phys()))
+      .set_addr(static_cast<uint32_t>(ep0_buffer_->phys()))
       .WriteTo(get_mmio());
 
   DEPTSIZ0::Get(DWC_EP0_OUT)
@@ -480,11 +499,11 @@ void Dwc2::StartTransfer(Endpoint* ep, uint32_t length) {
   if (length > 0 && !ep->current_req) {
     if (is_in) {
       if (ep_num == DWC_EP0_IN) {
-        ep0_buffer_.CacheFlush(ep->req_offset, length);
+        CacheFlush(*ep0_buffer_, ep->req_offset, length);
       }
     } else {
       if (ep_num == DWC_EP0_OUT) {
-        ep0_buffer_.CacheFlushInvalidate(ep->req_offset, length);
+        CacheFlushInvalidate(*ep0_buffer_, ep->req_offset, length);
       }
     }
   }
@@ -671,7 +690,7 @@ void Dwc2::HandleEp0TransferComplete(bool is_in) {
         if (ep->req_offset == ep->req_length) {
           if (dci_intf_.is_valid()) {
             size_t actual;
-            DoControl(cur_setup_, (uint8_t*)ep0_buffer_.virt(), ep->req_length, nullptr, 0,
+            DoControl(cur_setup_, (uint8_t*)ep0_buffer_->virt(), ep->req_length, nullptr, 0,
                       &actual);
           }
           HandleEp0Status(true);
@@ -1049,15 +1068,11 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   }
   bti_ = std::move(bti.value());
 
-  status = ep0_buffer_.Init(bti_.get(), UINT16_MAX, IO_BUFFER_RW | IO_BUFFER_CONTIG);
+  status = dma_buffer::CreateBufferFactory()->CreateContiguous(bti_, kEp0BufferSize, 12, true,
+                                                               &ep0_buffer_);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Dwc2::Init ep0_buffer_.Init failed: %d", status);
-    return status;
-  }
-
-  status = ep0_buffer_.PhysMap();
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Dwc2::Init ep0_buffer_.PhysMap failed: %d", status);
+    zxlogf(ERROR, "dma_buffer::CreateBufferFactory()->CreateContiguous(): %s",
+           zx_status_get_string(status));
     return status;
   }
 

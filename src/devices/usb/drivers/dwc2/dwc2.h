@@ -13,6 +13,7 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
+#include <lib/dma-buffer/buffer.h>
 #include <lib/mmio/mmio.h>
 #include <lib/zx/interrupt.h>
 #include <threads.h>
@@ -90,6 +91,8 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
   const zx::bti& bti() const { return bti_; }
 
  private:
+  static inline const uint32_t kEp0BufferSize = UINT16_MAX + 1;
+
   zx_status_t DoControl(const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup,
                         const uint8_t* write_buffer, size_t write_size, uint8_t* out_read_buffer,
                         size_t read_size, size_t* out_read_actual);
@@ -206,7 +209,7 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
 
   zx::bti bti_;
   // DMA buffer for endpoint zero requests
-  ddk::IoBuffer ep0_buffer_;
+  std::unique_ptr<dma_buffer::ContiguousBuffer> ep0_buffer_;
   // Current endpoint zero request
   fuchsia_hardware_usb_descriptor::wire::UsbSetup cur_setup_ = {};
   Ep0State ep0_state_ = Ep0State::DISCONNECTED;

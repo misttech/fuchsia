@@ -47,6 +47,7 @@ source_set("common") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fit",
+    "//src/devices/lib/dma-buffer",
     "//src/devices/lib/mmio",
     "//src/devices/usb/lib/usb:descriptors",
     "//src/devices/usb/lib/usb:dwc2",
