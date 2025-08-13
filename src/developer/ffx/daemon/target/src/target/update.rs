@@ -231,6 +231,20 @@ impl<'a> TargetUpdateBuilder<'a> {
         self
     }
 
+    pub fn check_serial(&self) -> Option<&str> {
+        self.0.identity.as_ref().and_then(|x| x.serial())
+    }
+
+    pub fn with_serial(mut self, serial: String) -> Self {
+        if let Some(identity) = self.identity.take() {
+            let identity = Identity::try_from_name_serial(identity.name(), Some(serial));
+            self.identity = identity.map(Into::into);
+        } else {
+            self.identity = Some(Identity::from_serial(serial).into());
+        }
+        self
+    }
+
     fn connection_mut(&mut self) -> &mut Connection<'a> {
         self.connection.get_or_insert_with(Default::default)
     }

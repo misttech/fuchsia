@@ -686,6 +686,7 @@ mod test {
         let TestConnection {
             cid,
             connection: _connection,
+            serial: _,
             incoming_requests: _,
             abort_transfer: _,
             scope: _scope,
@@ -707,8 +708,14 @@ mod test {
     async fn test_connect() {
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("test_sock");
-        let TestConnection { cid, connection, mut incoming_requests, abort_transfer: _, scope } =
-            HostDriver::new_for_test(sock_path.clone());
+        let TestConnection {
+            cid,
+            connection,
+            serial: _,
+            mut incoming_requests,
+            abort_transfer: _,
+            scope,
+        } = HostDriver::new_for_test(sock_path.clone());
 
         let driver = Arc::new(Driver::init(sock_path).await.unwrap());
 
@@ -746,8 +753,14 @@ mod test {
     async fn test_listen() {
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("test_sock");
-        let TestConnection { cid, connection, incoming_requests: _, abort_transfer: _, scope } =
-            HostDriver::new_for_test(sock_path.clone());
+        let TestConnection {
+            cid,
+            connection,
+            serial: _,
+            incoming_requests: _,
+            abort_transfer: _,
+            scope,
+        } = HostDriver::new_for_test(sock_path.clone());
 
         let driver = Driver::init(sock_path).await.unwrap();
         driver.listen(1234).await.unwrap();

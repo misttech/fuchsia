@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
-use usb_vsock_host::{IncomingConnection, UsbVsockHost, UsbVsockHostEvent};
+use usb_vsock_host::{ActiveDevice, IncomingConnection, UsbVsockHost, UsbVsockHostEvent};
 
 mod adapters;
 
@@ -424,14 +424,17 @@ impl HostDriver {
         let (event_sender, mut events) = mpsc::channel(1);
         self.new_device_listeners.lock().await.push(event_sender);
 
-        let existing = self.driver.active_conns();
-        for cid in existing.iter().copied() {
+        let existing = self.driver.active_devices();
+        for ActiveDevice { cid, serial } in existing.iter().cloned() {
             let header = fidl::encoding::TransactionHeader::new(
                 0,
                 list_devices_ordinals::ON_DEVICE_APPEARED,
                 fidl::encoding::DynamicFlags::empty(),
             );
-            let body = usb_fidl::DeviceInfo { cid, meta: usb_fidl::DeviceMeta::default() };
+            let body = usb_fidl::DeviceInfo {
+                cid,
+                meta: usb_fidl::DeviceMeta { serial, ..Default::default() },
+            };
             let data = fidl_message::encode_message(header, body)?;
             stream.write_with_length(&data).await?;
         }
@@ -440,9 +443,9 @@ impl HostDriver {
 
         while let Some(event) = events.next().await {
             let data = match event {
-                UsbVsockHostEvent::AddedCid(cid) => {
+                UsbVsockHostEvent::AddedCid { cid, serial } => {
                     if let Some(existing_ref) = &existing {
-                        if existing_ref.iter().copied().any(|x| x == cid) {
+                        if existing_ref.iter().any(|x| x.cid == cid) {
                             continue;
                         } else {
                             existing = None;
@@ -453,12 +456,15 @@ impl HostDriver {
                         list_devices_ordinals::ON_DEVICE_APPEARED,
                         fidl::encoding::DynamicFlags::empty(),
                     );
-                    let body = usb_fidl::DeviceInfo { cid, meta: usb_fidl::DeviceMeta::default() };
+                    let body = usb_fidl::DeviceInfo {
+                        cid,
+                        meta: usb_fidl::DeviceMeta { serial, ..Default::default() },
+                    };
                     fidl_message::encode_message(header, body)?
                 }
                 UsbVsockHostEvent::RemovedCid(cid) => {
                     if let Some(existing_ref) = &existing {
-                        if existing_ref.iter().copied().any(|x| x == cid) {
+                        if existing_ref.iter().any(|x| x.cid == cid) {
                             existing = None;
                         } else {
                             continue;

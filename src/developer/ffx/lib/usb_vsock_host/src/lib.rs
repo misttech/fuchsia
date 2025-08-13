@@ -213,6 +213,7 @@ enum LinkError {
 async fn run_usb_link<S: AsyncRead + AsyncWrite + Send + 'static>(
     host: Weak<UsbVsockHost<S>>,
     debug_name: String,
+    serial: Option<String>,
     interface: usb_rs::Interface,
     cid_out: &mut Option<u32>,
 ) -> Result<(), LinkError> {
@@ -248,7 +249,7 @@ async fn run_usb_link<S: AsyncRead + AsyncWrite + Send + 'static>(
     let ConnectionInfo { protocol_version, requested_cid } =
         wait_for_magic(debug_name, &out_ep, &in_ep).await?;
 
-    let (conn_state, incoming_requests) = ConnectionState::new(protocol_version);
+    let (conn_state, incoming_requests) = ConnectionState::new(protocol_version, serial.clone());
     let connection = Arc::clone(&conn_state.connection);
     let cid = if let Some(host) = host.upgrade() {
         let cid = {
@@ -271,7 +272,7 @@ async fn run_usb_link<S: AsyncRead + AsyncWrite + Send + 'static>(
 
         let mut sender = host.event_sender.clone();
         host.scope.spawn(async move {
-            let _ = sender.send(UsbVsockHostEvent::AddedCid(cid)).await;
+            let _ = sender.send(UsbVsockHostEvent::AddedCid { cid, serial: serial.clone() }).await;
         });
 
         cid
@@ -446,18 +447,20 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> PortState<S> {
 /// Holds a connection to a single USB device.
 struct ConnectionState<S> {
     connection: Arc<usb_vsock::Connection<Vec<u8>, S>>,
+    serial: Option<String>,
 }
 
 impl<S: AsyncRead + AsyncWrite + Send + 'static> ConnectionState<S> {
     /// Create a new connection state.
     fn new(
         protocol_version: ProtocolVersion,
+        serial: Option<String>,
     ) -> (Self, mpsc::Receiver<usb_vsock::ConnectionRequest>) {
         let (incoming_requests_tx, incoming_requests) = mpsc::channel(1);
         let connection =
             Arc::new(usb_vsock::Connection::new(protocol_version, None, incoming_requests_tx));
 
-        (ConnectionState { connection: Arc::clone(&connection) }, incoming_requests)
+        (ConnectionState { connection: Arc::clone(&connection), serial }, incoming_requests)
     }
 }
 
@@ -506,9 +509,9 @@ struct UsbVsockHostInner<S> {
 
 /// Events coming from the `UsbVsockHost` indicating the appearance and
 /// disappearance of CIDs.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum UsbVsockHostEvent {
-    AddedCid(u32),
+    AddedCid { cid: u32, serial: Option<String> },
     RemovedCid(u32),
 }
 
@@ -540,6 +543,13 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> IncomingConnection<S> {
             .map_err(|_| UsbVsockError::AcceptFailed(std::io::Error::other("Driver gone")))?
             .map_err(UsbVsockError::AcceptFailed)
     }
+}
+
+/// Information about an active connection to a device.
+#[derive(Clone)]
+pub struct ActiveDevice {
+    pub cid: u32,
+    pub serial: Option<String>,
 }
 
 /// A container for connections to USB devices that is responsible for assigning
@@ -599,8 +609,14 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
     }
 
     /// Get all CIDs for currently-existing connections.
-    pub fn active_conns(&self) -> Vec<u32> {
-        self.inner.lock().unwrap().conns.keys().copied().collect()
+    pub fn active_devices(&self) -> Vec<ActiveDevice> {
+        self.inner
+            .lock()
+            .unwrap()
+            .conns
+            .iter()
+            .map(|(cid, conn)| ActiveDevice { cid: *cid, serial: conn.serial.clone() })
+            .collect()
     }
 
     /// Connect to a new USB device by device path and assign it a CID. Returns
@@ -758,8 +774,14 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
         let weak_this = Arc::downgrade(self);
         self.scope.spawn(async move {
             let mut cid = None;
-            if let Err(e) =
-                run_usb_link(weak_this.clone(), device.debug_name(), interface, &mut cid).await
+            if let Err(e) = run_usb_link(
+                weak_this.clone(),
+                device.debug_name(),
+                device.serial(),
+                interface,
+                &mut cid,
+            )
+            .await
             {
                 log::warn!("USB link terminated with error: {:?}", e)
             } else {
@@ -892,15 +914,21 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
         self: &Arc<Self>,
         connection: Arc<usb_vsock::Connection<Vec<u8>, S>>,
         incoming_requests: mpsc::Receiver<usb_vsock::ConnectionRequest>,
+        serial: Option<String>,
     ) -> u32 {
         let cid = self.next_cid.fetch_add(1, Ordering::Relaxed);
-        let success =
-            self.inner.lock().unwrap().conns.insert(cid, ConnectionState { connection }).is_none();
+        let success = self
+            .inner
+            .lock()
+            .unwrap()
+            .conns
+            .insert(cid, ConnectionState { connection, serial: serial.clone() })
+            .is_none();
         assert!(success);
         self.add_incoming_request_handler(cid, incoming_requests);
         let mut sender = self.event_sender.clone();
         self.scope.spawn(async move {
-            let _ = sender.send(UsbVsockHostEvent::AddedCid(cid)).await;
+            let _ = sender.send(UsbVsockHostEvent::AddedCid { cid, serial }).await;
         });
         cid
     }
@@ -916,6 +944,7 @@ pub struct TestHost<S: AsyncRead + AsyncWrite + Send + 'static> {
 pub struct TestConnection<S: AsyncRead + AsyncWrite + Send + 'static> {
     pub cid: u32,
     pub connection: Arc<usb_vsock::Connection<Vec<u8>, S>>,
+    pub serial: String,
     pub incoming_requests: mpsc::Receiver<usb_vsock::ConnectionRequest>,
     pub abort_transfer: (AbortHandle, AbortHandle),
     pub scope: fasync::Scope,
@@ -966,15 +995,17 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> TestConnection<S> {
             );
         }
 
+        let serial = format!("{:x}", rand::random::<u64>());
         let (event_sender, event_receiver) = mpsc::channel(1);
         let host = UsbVsockHost::new_for_test(event_sender);
-        let cid = host.add_connection_for_test(a, a_incoming_requests);
+        let cid = host.add_connection_for_test(a, a_incoming_requests, Some(serial.clone()));
 
         (
             TestHost { host, event_receiver },
             TestConnection {
                 cid,
                 connection: b,
+                serial,
                 incoming_requests: b_incoming_requests,
                 abort_transfer: (abort_a, abort_b),
                 scope,
@@ -997,6 +1028,7 @@ mod test {
             TestConnection {
                 cid,
                 connection,
+                serial: _,
                 mut incoming_requests,
                 abort_transfer: _,
                 scope: _scope,
@@ -1052,6 +1084,7 @@ mod test {
             TestConnection {
                 cid,
                 connection,
+                serial: _,
                 incoming_requests: _,
                 abort_transfer: _,
                 scope: _scope,
@@ -1110,6 +1143,7 @@ mod test {
             TestConnection {
                 cid,
                 connection,
+                serial: _,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
@@ -1178,6 +1212,7 @@ mod test {
             TestConnection {
                 cid,
                 connection: _c,
+                serial: _,
                 incoming_requests: _,
                 abort_transfer: _,
                 scope: _scope,
@@ -1199,6 +1234,7 @@ mod test {
             TestConnection {
                 cid,
                 connection,
+                serial: _,
                 abort_transfer: _,
                 mut incoming_requests,
                 scope: _scope,
@@ -1226,6 +1262,7 @@ mod test {
             TestConnection {
                 cid,
                 connection,
+                serial: _,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
@@ -1256,6 +1293,7 @@ mod test {
             TestConnection {
                 cid,
                 connection,
+                serial: _,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
@@ -1288,6 +1326,7 @@ mod test {
             TestConnection {
                 cid: _,
                 connection,
+                serial: _,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
@@ -1320,6 +1359,7 @@ mod test {
             TestConnection {
                 cid: _,
                 connection: _connection,
+                serial: _,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
@@ -1340,6 +1380,7 @@ mod test {
             TestConnection {
                 cid,
                 connection,
+                serial: _,
                 abort_transfer: _,
                 mut incoming_requests,
                 scope: _scope,
@@ -1375,6 +1416,7 @@ mod test {
             TestConnection {
                 cid,
                 connection: _connection,
+                serial: _,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
@@ -1396,6 +1438,7 @@ mod test {
             TestConnection {
                 cid,
                 connection: _connection,
+                serial: _,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
@@ -1416,6 +1459,7 @@ mod test {
             TestConnection {
                 cid: _,
                 connection: _connection,
+                serial: _,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
@@ -1436,6 +1480,7 @@ mod test {
             TestConnection {
                 cid,
                 connection,
+                serial: _,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
@@ -1463,6 +1508,7 @@ mod test {
             TestConnection {
                 cid,
                 connection,
+                serial: _,
                 abort_transfer: (abort_a, abort_b),
                 mut incoming_requests,
                 scope: _scope,
@@ -1537,6 +1583,7 @@ mod test {
             TestConnection {
                 cid: _,
                 connection: _connection,
+                serial: _,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
@@ -1555,17 +1602,21 @@ mod test {
             TestConnection {
                 cid,
                 connection: _connection,
+                serial,
                 abort_transfer: _,
                 incoming_requests: _,
                 scope: _scope,
             },
         ) = TestConnection::<fasync::Socket>::new();
 
-        let Some(UsbVsockHostEvent::AddedCid(got_cid)) = event_receiver.next().await else {
+        let Some(UsbVsockHostEvent::AddedCid { cid: got_cid, serial: got_serial }) =
+            event_receiver.next().await
+        else {
             panic!();
         };
 
         assert_eq!(cid, got_cid);
+        assert_eq!(Some(serial), got_serial);
 
         host.remove_device(cid);
 

@@ -642,9 +642,9 @@ impl FidlProtocol for TargetCollectionProtocol {
             self.tasks.spawn(async move {
                 while let Some(event) = usb_events.next().await {
                     match event {
-                        UsbVsockHostEvent::AddedCid(cid) => {
-                            if let Err(error) = handle_usb_target(cid, &tc, &node).await {
-                                log::warn!(cid, error:?; "Could not connect to USB target");
+                        UsbVsockHostEvent::AddedCid { cid, serial } => {
+                            if let Err(error) = handle_usb_target(cid, &serial, &tc, &node).await {
+                                log::warn!(cid, serial:?, error:?; "Could not connect to USB target");
                             }
                         }
                         UsbVsockHostEvent::RemovedCid(cid) => {
@@ -667,17 +667,19 @@ const VSOCK_IDENTIFY_PORT: u32 = 201;
 #[cfg(not(target_os = "macos"))]
 async fn handle_usb_target(
     cid: u32,
+    serial: &Option<String>,
     tc: &Rc<TargetCollection>,
     overnet_node: &Arc<overnet_core::Router>,
 ) -> Result<()> {
     let host = Target::get_usb_vsock_host().ok_or_else(|| anyhow!("USB not initialized"))?;
 
-    handle_usb_target_impl(cid, tc, overnet_node, host).await
+    handle_usb_target_impl(cid, serial, tc, overnet_node, host).await
 }
 
 #[cfg(not(target_os = "macos"))]
 async fn handle_usb_target_impl(
     cid: u32,
+    serial: &Option<String>,
     tc: &Rc<TargetCollection>,
     overnet_node: &Arc<overnet_core::Router>,
     host: Arc<usb_vsock_host::UsbVsockHost<fuchsia_async::Socket>>,
@@ -720,6 +722,22 @@ async fn handle_usb_target_impl(
     let (update, addrs) = TargetUpdateBuilder::from_rcs_identify_no_connection(&identify);
     let update =
         update.usb_cid(cid).enable().discovered(TargetProtocol::Vsock, TargetTransport::Usb);
+    let update = if let Some(serial) = serial {
+        if let Some(have_serial) = update.check_serial() {
+            if have_serial != serial {
+                log::warn!(
+                    "RCS reported serial {} but USB reported serial {}",
+                    have_serial,
+                    serial,
+                );
+            }
+            update
+        } else {
+            update.with_serial(serial.clone())
+        }
+    } else {
+        update
+    };
     let filter = if let Some(ref name) = identify.nodename {
         &[TargetUpdateFilter::NetAddrs(&addrs), TargetUpdateFilter::LegacyNodeName(name)][..]
     } else {
@@ -1124,6 +1142,7 @@ mod tests {
             usbv::TestConnection {
                 cid,
                 connection,
+                serial,
                 mut incoming_requests,
                 abort_transfer: _,
                 scope,
@@ -1131,7 +1150,7 @@ mod tests {
         ) = usbv::TestConnection::new();
 
         let handled = scope.compute_local(async move {
-            handle_usb_target_impl(cid, &tc_clone, &local_node, host).await
+            handle_usb_target_impl(cid, &Some(serial), &tc_clone, &local_node, host).await
         });
 
         let identify_request = incoming_requests.next().await.unwrap();
