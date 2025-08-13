@@ -1,7 +1,10 @@
 {
   "name": "create",
-  "description": "Construct a product bundle using a platform, product config, and board config.\nThe inputs can be local paths or CIPD references.\n\nArtifact formats:\n  path/to/artifacts: Use local artifact with specified path\n  cipd://path/to/artifact@1.2.3.4: Use artifact from CIPD with specified url\n\nAdditional formats for the platform:\n  <omitted>: Use default local platform\n  1.2.3.4: Use platform from CIPD with specified version",
-  "examples": [],
+  "description": "Construct a product bundle using a platform, product config, and board config.",
+  "examples": [
+    "// Create a minimal.arm64 product bundle in a local fuchsia checkout.\nffx product-bundle create --product-config minimal --board-config arm64\n\n// This is shorthand for the above command.\nffx product-bundle create minimal.arm64\n    ",
+    "// Create a minimal.arm64 product bundle using prebuilts in CIPD.\nffx product-bundle create\n    --platform 29.20250812.5.1\n    --product-config cipd://fuchsia/assembly/products/minimal@version:29.20250812.5.1\n    --board-config cipd://fuchsia/assembly/boards/arm64@latest\n    "
+  ],
   "flags": [
     {
       "kind": "Switch",
@@ -20,7 +23,7 @@
       "optionality": "optional",
       "long": "--platform",
       "short": null,
-      "description": "the platform artifacts to use.",
+      "description": "the platform artifacts to use. See PLATFORM_ARTIFACT below.",
       "hidden": false
     },
     {
@@ -32,7 +35,7 @@
       "optionality": "optional",
       "long": "--product-config",
       "short": null,
-      "description": "the product config to use.",
+      "description": "the product config to use. See ARTIFACT below.",
       "hidden": false
     },
     {
@@ -44,7 +47,7 @@
       "optionality": "optional",
       "long": "--board-config",
       "short": null,
-      "description": "the board config to use.",
+      "description": "the board config to use. See ARTIFACT below.",
       "hidden": false
     },
     {
@@ -104,7 +107,10 @@
       "hidden": false
     }
   ],
-  "notes": [],
+  "notes": [
+    "PLATFORM_ARTIFACT formats:\n  <omitted>: in a fuchsia checkout, use locally built platform\n\n  latest: use latest prebuilt platform from CIPD\n\n  29.20250812.4.1: version of a prebuilt platform in\n    https://chrome-infra-packages.appspot.com/p/fuchsia/assembly/platform/\n\n  path/to/platform: local path to a platform\n    ",
+    "ARTIFACT formats:\n  <name>: in a fuchsia checkout, use locally built artifact by its name\n\n  cipd://<cipd-package>@<cipd-tag>: cipd url for a prebuilt artifact.\n    `latest` can be used as <cipd-tag> to fetch the newest artifact.\n\n  path/to/artifact: a path to a locally built artifact\n    "
+  ],
   "commands": [],
   "positionals": [
     {
