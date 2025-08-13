@@ -53,25 +53,25 @@
     {
       "kind": {
         "Option": {
-          "arg_name": "name"
+          "arg_name": "output-name"
         }
       },
       "optionality": "optional",
-      "long": "--name",
+      "long": "--output-name",
       "short": null,
-      "description": "the name to give the product bundle. Defaults to product_config.board_config.",
+      "description": "the name to add to the output product bundle. Defaults to product_config.board_config.",
       "hidden": false
     },
     {
       "kind": {
         "Option": {
-          "arg_name": "version"
+          "arg_name": "output-version"
         }
       },
       "optionality": "optional",
-      "long": "--version",
+      "long": "--output-version",
       "short": null,
-      "description": "the version of the product to use.",
+      "description": "the version to add to the output product bundle.",
       "hidden": false
     },
     {

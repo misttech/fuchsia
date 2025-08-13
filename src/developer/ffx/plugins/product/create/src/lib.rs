@@ -87,11 +87,11 @@ struct SanitizedCreateCommand {
     /// The board config to use.
     pub board_config: String,
 
-    /// The name to give the product bundle.
-    pub name: Option<String>,
+    /// The name to add to the output product bundle.
+    pub output_name: Option<String>,
 
-    /// The version of the product to use.
-    pub version: Option<String>,
+    /// The version to add to the output product bundle.
+    pub output_version: Option<String>,
 
     /// The tuf keys to use.
     pub tuf_keys: Option<Utf8PathBuf>,
@@ -141,10 +141,18 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
                 (p, b)
             };
 
-        let name = cmd.name;
-        let version = cmd.version;
+        let output_name = cmd.output_name;
+        let output_version = cmd.output_version;
         let tuf_keys = cmd.tuf_keys;
-        Ok(Self { platform, product_config, board_config, name, version, tuf_keys, result })
+        Ok(Self {
+            platform,
+            product_config,
+            board_config,
+            output_name,
+            output_version,
+            tuf_keys,
+            result,
+        })
     }
 }
 
@@ -169,7 +177,7 @@ async fn sanitized_product_bundle_create(
         Assembly::new(&cache, cmd.platform, cmd.product_config, cmd.board_config, build_dir)?;
     writer.line(format!("Staged the artifacts\n{}", assembly.version_string()))?;
 
-    let name = cmd.name.unwrap_or_else(|| {
+    let name = cmd.output_name.unwrap_or_else(|| {
         let product_name = assembly.product_config.product.release_info.info.name.clone();
         let board_name = assembly.board_config.release_info.info.name.clone();
         format!("{}.{}", product_name, board_name)
@@ -183,7 +191,7 @@ async fn sanitized_product_bundle_create(
     }?;
 
     let version = cmd
-        .version
+        .output_version
         .unwrap_or_else(|| assembly.product_config.product.release_info.info.version.clone());
     let update_version_file = tmp_path.join("update_version.txt");
     std::fs::write(&update_version_file, &version)?;

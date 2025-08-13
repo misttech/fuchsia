@@ -68,14 +68,14 @@ pub struct CreateCommand {
     #[argh(option)]
     pub board_config: Option<String>,
 
-    /// the name to give the product bundle.
+    /// the name to add to the output product bundle.
     /// Defaults to product_config.board_config.
     #[argh(option)]
-    pub name: Option<String>,
+    pub output_name: Option<String>,
 
-    /// the version of the product to use.
+    /// the version to add to the output product bundle.
     #[argh(option)]
-    pub version: Option<String>,
+    pub output_version: Option<String>,
 
     /// the tuf keys to use.
     #[argh(option)]
