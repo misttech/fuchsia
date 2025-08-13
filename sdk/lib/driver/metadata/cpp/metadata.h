@@ -76,7 +76,8 @@ zx::result<FidlType> GetMetadata(
   return GetMetadataFromFidlService<FidlType>(svc_dir, FidlType::kSerializableName, instance_name);
 }
 
-// Deprecated.
+// The same as `fdf_metadata::GetMetadataFromFidlService()` except that the service name is assumed
+// to be `FidlType::kSerializableName`. Make sure that `FidlType` is annotated with `@serializable`.
 template <typename FidlType>
 zx::result<FidlType> GetMetadata(
     const fdf::Namespace& incoming,
@@ -160,7 +161,9 @@ zx::result<std::optional<FidlType>> GetMetadataIfExists(
                                                       instance_name);
 }
 
-// Deprecated.
+// The same as `fdf_metadata::GetMetadataFromFidlServiceIfExists()` except that the service name is
+// assumed to be `FidlType::kSerializableName`. Make sure that `FidlType` is annotated with
+// `@serializable`.
 template <typename FidlType>
 zx::result<std::optional<FidlType>> GetMetadataIfExists(
     const fdf::Namespace& incoming,
