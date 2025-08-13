@@ -15,6 +15,12 @@ const SIGNAL_READABLE uint32 = 0x01000000; // ZX_USER_SIGNAL_0
 /// Signal that will be active on event handle if the Write() method
 /// will accept data.
 const SIGNAL_WRITABLE uint32 = 0x02000000; // ZX_USER_SIGNAL_1
+
+/// Signal that will be asserted when SIGNAL_READABLE is set and remains
+/// asserted until a driver-defined timeout passes after the call to Read
+/// This is primarily intended for integration with Starnix
+const SIGNAL_WAKELOCK uint32 = 0x03000000; // ZX_USER_SIGNAL_2
+
 const MAX_ID_NAME uint32 = 100;
 
 open protocol DataChannel {
