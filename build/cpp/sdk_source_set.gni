@@ -215,6 +215,15 @@ template("sdk_source_set") {
     }
   }
 
+  assert(all_headers != [], "Library does not contain any headers.")
+  if (defined(invoker.sdk_headers_for_internal_use)) {
+    assert(
+        invoker.sdk_headers_for_internal_use + all_headers - all_headers == [],
+        "Headers for internal use must also be in the list of public headers.")
+    assert(all_headers - invoker.sdk_headers_for_internal_use != [],
+           "Library does not contain any headers for external use.")
+  }
+
   # Determine destinations in the SDK for headers and sources.
   sdk_metadata_headers = []
   sdk_metadata_sources = []
@@ -272,8 +281,8 @@ template("sdk_source_set") {
     plasa_fragment_cc(_plasa_artifacts_target_name) {
       forward_variables_from(invoker,
                              [
-                               "testonly",
                                "sdk_headers_for_internal_use",
+                               "testonly",
                              ])
       file_base = sdk_root_path
 

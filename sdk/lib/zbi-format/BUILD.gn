@@ -25,16 +25,6 @@ sdk_source_set("zbi-format") {
     "include/lib/zbi-format/zbi.h",
   ]
 
-  # These are headers that are meant for internal development use and are not
-  # part of the long-term stable ZBI protocol contract with bootloaders.
-  sdk_headers_for_internal_use = [
-    "include/lib/zbi-format/internal/bootfs.h",
-    "include/lib/zbi-format/internal/deprecated-cpu.h",
-    "include/lib/zbi-format/internal/debugdata.h",
-    "include/lib/zbi-format/internal/efi.h",
-    "include/lib/zbi-format/internal/storage.h",
-  ]
-
   public_configs = [ ":include" ]
 
   # Since this doesn't actually compile any code, don't let it contribute any

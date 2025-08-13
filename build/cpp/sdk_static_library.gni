@@ -236,7 +236,14 @@ template("sdk_static_library") {
       }
     }
   }
-  assert(all_headers != [], "Library does not contain any headers or sources.")
+  assert(all_headers != [], "Library does not contain any headers.")
+  if (defined(invoker.sdk_headers_for_internal_use)) {
+    assert(
+        invoker.sdk_headers_for_internal_use + all_headers - all_headers == [],
+        "Headers for internal use must also be in the list of public headers.")
+    assert(all_headers - invoker.sdk_headers_for_internal_use != [],
+           "Library does not contain any headers for external use.")
+  }
 
   if (defined(invoker.include_base)) {
     include_base = invoker.include_base
@@ -303,6 +310,7 @@ template("sdk_static_library") {
       #   main_target_name
     }
   } else {
+    not_needed([ "build_deps" ])
     not_needed(invoker, [ "sdk_headers_for_internal_use" ])
   }
 

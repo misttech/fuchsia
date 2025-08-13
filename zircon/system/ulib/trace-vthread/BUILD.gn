@@ -40,7 +40,8 @@ zx_library("trace-vthread") {
   ]
   sdk_publishable = "partner"
   sources = [ "event_vthread.cc" ]
-  sdk_headers_for_internal_use = [ "trace-vthread/internal/event_vthread.h" ]
+  sdk_headers_for_internal_use =
+      [ "include/trace-vthread/internal/event_vthread.h" ]
   public_deps = [
     ":trace-vthread-headersonly",
     "//zircon/system/ulib/trace",

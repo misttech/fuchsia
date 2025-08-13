@@ -36,10 +36,7 @@ sdk_source_set("cpp") {
   ]
 
   sdk_headers_for_internal_use = [
-    "internal/basic_factory.h",
     "internal/driver_server.h",
-    "internal/lifecycle.cc",
-    "internal/lifecycle.h",
     "internal/start_args.h",
     "internal/symbols.h",
   ]

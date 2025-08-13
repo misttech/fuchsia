@@ -306,7 +306,20 @@ template("sdk_shared_library") {
   }
   assert(
       all_headers != [] || no_headers,
-      "Library does not contain any headers or sources. If this is intentional, set `no_headers = true`")
+      "Library does not contain any headers. If this is intentional, set `no_headers = true`")
+  if (defined(invoker.sdk_headers_for_internal_use)) {
+    assert(
+        invoker.sdk_headers_for_internal_use + all_headers - all_headers == [],
+        "Headers for internal use must also be in the list of public headers.")
+
+    # vfs_internal is a special case where the library is for internal use.
+    assert(
+        all_headers - invoker.sdk_headers_for_internal_use != [] ||
+            no_headers ||
+            get_label_info(":${target_name}", "label_no_toolchain") ==
+                "//sdk/lib/vfs/internal:vfs_internal",
+        "Library does not contain any headers for external use. If this is intentional, set `no_headers = true`")
+  }
 
   sdk_metadata_headers = []
   sdk_header_files = []
@@ -419,8 +432,8 @@ template("sdk_shared_library") {
     plasa_fragment_cc(_plasa_artifacts_target_name) {
       forward_variables_from(invoker,
                              [
-                               "testonly",
                                "sdk_headers_for_internal_use",
+                               "testonly",
                              ])
       file_base = sdk_root_path
 
@@ -431,10 +444,8 @@ template("sdk_shared_library") {
       #   main_target_name
     }
   } else {
-    not_needed([
-                 "all_deps",
-                 "sdk_headers_for_internal_use",
-               ])
+    not_needed([ "all_deps" ])
+    not_needed(invoker, [ "sdk_headers_for_internal_use" ])
   }
 
   # LINT.IfChange

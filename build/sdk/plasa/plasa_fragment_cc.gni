@@ -64,7 +64,10 @@ template("plasa_fragment_cc") {
     # Some headers published with the SDK library will error out (on purpose)
     # if included directly.  To build an API stub file, we must include all
     # headers except such headers.
-    _includable_headers += sdk_headers_for_internal_use
+    assert(
+        sdk_headers_for_internal_use + _includable_headers -
+            _includable_headers == [],
+        "Headers for internal use must also be in the list of public headers.")
     _includable_headers -= sdk_headers_for_internal_use
   }
   source_set(_stub_cc_target_name) {
