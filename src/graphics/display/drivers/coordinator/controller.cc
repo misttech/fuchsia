@@ -571,12 +571,14 @@ void Controller::HandleClientOwnershipChanges() {
 
 void Controller::OnClientDead(ClientProxy* client) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+  ZX_DEBUG_ASSERT(client != nullptr);
 
   fdf::info("Client {} dead", client->client_id().value());
 
   if (unbinding_) {
     return;
   }
+
   if (client == virtcon_client_) {
     virtcon_client_ = nullptr;
     virtcon_mode_ = fidl_display::wire::VirtconMode::kFallback;
@@ -587,10 +589,15 @@ void Controller::OnClientDead(ClientProxy* client) {
   } else {
     ZX_DEBUG_ASSERT_MSG(false, "Dead client is neither Virtcon nor Primary\n");
   }
-  HandleClientOwnershipChanges();
 
+  // Avoid trying to tell the disconnected client that it lost display ownership.
+  if (client == client_owning_displays_) {
+    client_owning_displays_ = nullptr;
+  }
   clients_.remove_if(
       [client](std::unique_ptr<ClientProxy>& list_client) { return list_client.get() == client; });
+
+  HandleClientOwnershipChanges();
 }
 
 zx::result<std::span<const display::ModeAndId>> Controller::GetDisplayPreferredModes(
