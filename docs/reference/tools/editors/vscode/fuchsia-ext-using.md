@@ -2,18 +2,14 @@
 
 # Using the Fuchsia extension for VS Code
 
-This extension adds support for working with Fuchsia targets and source code, including:
-
-* Connecting to a device.
-* Debugging C++ and Rust code (supported by `zxdb`).
-* Analyzing logs from Fuchsia devices.
+This extension adds support for working with Fuchsia targets and source code.
 
 Note: To see how to perform the initial installation and configuration of the
 extension, see [Installing the Fuchsia extension for VS Code][fuchsia-dev-ext].
 
 ## Compatibility
 
-The Fuchsia extension is compatible with ffx `9.20220803.3.1` and forward.
+The Fuchsia extension is compatible with ffx `2025-08-12T20:40:15+00:00` and forward.
 
 ## Edit code
 
@@ -30,27 +26,39 @@ warnings or errors. For more information, see
 The Fuchsia extension also provides syntax highlighting for
 [FIDL][fidl-docs] and [CML][cml-docs].
 
-## Configure and build Fuchsia
+## Core features
 
-Tip: The VS Code command palette is accessible with `Ctrl+Shift+P`
-(Linux/Windows) or `Cmd+Shift+P`(Mac).
-
-Set your Fuchsia build configuration through the command palette and select
-**Fuchsia: fx set**.
+All features are accessible via the VS Code command palette `Ctrl+Shift+P`
+(Linux/Windows) or `Cmd+Shift+P`(Mac). Type "Fuchsia" in the command palette to
+see a list of available commands.
 
 <img class="vscode-image vscode-image-center"
-     alt="This figure shows fx set and fx build in the command palette."
+     alt="This figure shows Fuchsia commands with the command palette."
      src="images/extensions/ext-command-palette-fx.png"/>
 
-You can select products and boards available from a dropdown list. The extension
-displays a message when `fx set` finishes running.
+### Building Fuchsia
+
+#### fx set
+
+This feature allows you to interactively select product, board, compilation mode,
+and packages for your Fuchsia build.
+
+The current build configuration shows at the top of the list.
 
 <img class="vscode-image vscode-image-center"
      alt="This figure shows the list of products from fx set."
-     src="images/extensions/ext-fxset-product.png"/>
+     src="images/extensions/ext-fx-set-product.png"/>
 
-To build Fuchsia through the command palette, select **Fuchsia: fx build**. The
-extension displays a progress bar while the build is in progress.
+Packages show a history of selections made within the session.
+
+<img class="vscode-image vscode-image-center"
+     alt="This figure shows the history list of packages from fx set."
+     src="images/extensions/ext-fx-set-packages.png"/>
+
+#### fx build
+
+Run Fuchsia builds within VS Code. The extension displays current build progress
+and you can see more details in `Output > Fuchsia Extension`.
 
 <img class="vscode-image vscode-image-center"
      alt="This figure shows fx build in the command palette and build progress."
@@ -60,67 +68,80 @@ Tip: Set `fx build` as the default build task to run with `Ctrl+Shift+B`
 (Linux/Windows) or `Cmd+Shift+B` (Mac). For a custom keyboard shortcut, assign
 one in Preferences:Keyboard Shortcuts.
 
-## Connect to a Fuchsia device
+File paths in the build output errors are clickable, allowing you to jump directly
+to the error in the source code.
+
+<img class="vscode-image vscode-image-center"
+     alt="This figure shows the fx build error in the output and occurrence in the file."
+     src="images/extensions/ext-fx-build-output.png"/>
+
+The extension parses build output to show C++ and Rust errors in the "Problems" panel of VS Code.
+
+<img class="vscode-image vscode-image-center"
+     alt="This figure shows the fx build error in the output and occurrence in the file."
+     src="images/extensions/ext-fx-build-problems.png"/>
+
+#### fx serve
+
+Start and stop the package server from the command palette.
+
+<img class="vscode-image vscode-image-center"
+     alt="This figure shows the commands to start and stop a package server."
+     src="images/extensions/ext-fx-package-server.png"/>
+
+#### fx ota
+
+Trigger an over-the-air update for a connected device.
+
+<img class="vscode-image vscode-image-center"
+     alt="This figure shows an ota update with details of the build."
+     src="images/extensions/ext-fx-ota.png"/>
+
+### Target management
+
+#### Connect to a Fuchsia device
 
 The Fuchsia extension allows you to connect to a Fuchsia target which
 can be a physical device or an emulator. The extension supports multiple
 target devices and allows you to easily switch between various Fuchsia devices.
 You can only connect to a single device at any given time.
 
-Note: For more information on getting started with the Fuchsia SDK and starting
-an emulator, see [Get started with the Fuchsia SDK][get-started-sdk]{:.external}.
+Note: For more information on getting started with Fuchsia and starting
+an emulator, see [Get started with Fuchsia ][get-started].
 
 If your emulator is properly configured and started, you should see a
 <span class="material-icons">computer</span> and the
 name of your Fuchsia device in the status bar of VS Code. If you are using
 the emulator and not seeing a Fuchsia device, see
-[Start the Fuchsia emulator][sdk-start-emulator].
+[Start the Fuchsia emulator][start-emulator].
+
 
 <img class="vscode-image vscode-image-center"
      alt="This figure shows the how to connect the Fuchsia VS Code extension
      to a Fuchsia device."
      src="images/extensions/ext-connect-target.png"/>
 
-### Options for a Fuchsia device
+#### Target interaction
 
-You can click the
-<span class="material-icons">computer</span> and the
+You can click the <span class="material-icons">computer</span> and the
 name of your Fuchsia device in the status bar of VS Code to see the various
-options that you have for your Fuchsia devices. These options display in the
-VS Code command palette. In most cases, you have the following options:
+options that you have for your Fuchsia devices.
 
 <img class="vscode-image vscode-image-center"
      alt="This figure shows the various options to control a connected
      Fuchsia device through the Fuchsia VS Code extension."
-     src="images/extensions/ext-command-palette.png"/>
+     src="images/extensions/ext-target-options.png"/>
 
-* **VSCode target device: `<device-name>`**: This option shows which Fuchsia
-  device is currently configured as the active target for the Fuchsia VSCode
-  extension's features. If you have additional Fuchsia devices, click the
-  `Use target device: <device-name>` to switch to that specific device.
-  This is equivalent to running `ffx target default get`.
-* **Use target device: `<device-name>`**: This options lets you connect and
-  switch to the selected Fuchsia device. This is equivalent to setting the
-  `$FUCHSIA_NODENAME` environment variable across Fuchsia Extension's ffx
-  usages.
-* **Show log for `<device-name>`**: This option opens the **Fuchsia logs** tab
-  of the Fuchsia extension. For more information, see
-  [View Fuchsia logs](#view-fuchsia-logs). This is equivalent to running
-  `ffx log`.
-* **Capture snapshot for `<device-name>`**: This option captures a snapshot of
-  the active device. This is equivalent to running `ffx target snapshot`.
-* **OTA for `<device-name>`**: This option runs an over-the-air update against
-  the active device, optionally building beforehand. OTAing is equivalent to
-  running `ffx target update`.
-* **Reboot `<device-name>`**: This options restarts your Fuchsia device. This is
-  equivalent to running `ffx target reboot`.
-* **Power off `<device-name>`**: This option powers off your Fuchsia device.
-  This is equivalent to running `ffx target off`. If you power off a Fuchsia
-  emulator, you need to use this extension or `ffx emu start <product-bundle>`
-  to start the emulator again. For more information, see
-  [Start the Fuchsia emulator][sdk-start-emulator].
+* **VSCode Target device: `<device-name>`**: Shows current Fuchsia device configured
+  as the active target for the Fuchsia VSCode extension's features.
+* **Switching between targets**: If you have additional targets, select
+  `Use target device: <device-name>` to switch to that specific target.
+* **Emulator control**: Start and stop the Fuchsia emulator (`ffx emu`).
+* **Target controls**: Reboot or power off a connected target. Reboot shows
+  <span class="material-icons">autorenew</span> until the target is available.
+* **Capturing a snapshot**: Capture a snapshot of the active device.
 
-## View Fuchsia logs {#view-fuchsia-logs}
+### Viewing Logs
 
 The Fuchsia extension allows you to view the symbolized logs
 (human-readable stack traces) for your connected Fuchsia device. This is equivalent
@@ -128,18 +149,17 @@ to running `ffx log`. For more information on `ffx log`, see
 [Monitor device logs][monitor-device-logs].
 
 Select **Fuchsia logs** from the drop-down in the **Output** tab to see the
-following:
-
-Note: When you first open the **Fuchsia logs** tab, it may take a few minutes
-to load all of the available Fuchsia logs. If no logs display, it may be an
-indication that you do not have connected a Fuchsia device or an emulator.
+device logs.
 
 <img class="vscode-image vscode-image-center"
      alt="This figure shows logs from the Fuchsia extension in the output tab."
      src="images/extensions/ext-output-logs.png"/>
 
+Note: When you first open the **Fuchsia logs** tab, it may take a few minutes
+to load all of the available Fuchsia logs. If no logs display, it may be an
+indication that you do not have connected a Fuchsia device or an emulator.
 
-### Clearing the Fuchsia logs
+#### Clear Fuchsia logs
 
 Once the Fuchsia extension has streamed the Fuchsia logs, you can
 clear the listed Fuchsia logs to see the incoming logging events for your Fuchsia
@@ -149,154 +169,51 @@ To clear the Fuchsia logs, click the <span class="material-icons">
 playlist_remove</span> in the top right corner of the **Fuchsia logs**
 tab.
 
-### Auto-scrolling Fuchsia logs
+#### Auto-scroll Fuchsia logs
 
 To toggle auto-scroll for Fuchsia logs, click the
 <span class="material-icons">lock</span> in the top right corner of the
 **Fuchsia logs** tab.
 
-## Debug code
+### Debug code
 
-The Fuchsia extension allows you to run the Fuchsia debugger,
-[zxdb][zxdb-docs]. This integrates the zxdb debugger into the VS Code IDE to
-let you set break points and other debugger settings as you are working with
-source code.
+The Fuchsia extension integrates the [zxdb][zxdb-docs] debugger into the VS Code IDE.
 
-### Configure a profile
-
-Before you start using the debug console, you need to create a debugging profile.
-You can create several debugging profiles and then easily toggle between each
-profile.
-
-To create a debugging profile:
-
-1. In VS Code, open **Run and Debug** (this option is in the left side-bar and
-   has a play and bug icon).
-
-   <img class="vscode-image vscode-image-center"
-     alt="This figure shows how to start Run and Debug in VS Code."
-     src="images/extensions/ext-start-debug.png"/>
-
-1. From the **Run and Debug: Run** panel, click **Show all automatic debug
-   configurations**. Then, from the command palette, select **Add Config (fuchsia)**.
-   The editor will open a `launch.json` file.
-1. The editor should display a list of prepopulated debugging profiles, select
-   any of the profiles that start with `zxdb`.
-
-   Modify the key/values as needed for your debugging profile. Before you edit
-   the profile, consider the following:
-
-   Note: You can save this profile file into a personal repository so that you
-   can use the same settings across multiple instances of VS Code.
-
-   * `name`: Specify a meaningful identifier for the profile.
-   * `type`: Specify `zxdb`. This is the only Fuchsia debugger.
-   * `request`: Specify `launch`. This is the only valid option.
-   * `launchcommand`: Specify the alias or path to the ffx binary and append
-     any options and parameters. In most cases, this will be a `ffx component
-     run ....`. For more information, see [Run components][run-components].
-   * `process`: Specify the name of the component that you are debugging.
-
-   Note: If you have not set a system alias for the `ffx` tool, you need to
-   specify the path of the `ffx` binary for the `launchCommand` key. If you
-   use a relative path, make sure to navigate to the correct directory from
-   your terminal. For example `cd ~/fuchsia-getting-started`.
-
-1. Once you have added the values for your profile, `launch.json` should look
-   similar to the following:
-
-       ```json5
-       {
-         "configurations": [
-         {
-          # Specify a meaningful identifier.
-          "name": "Debug examples",
-          # This is a fixed required value.
-          "type": "zxdb",
-          # This is a fixed required value.
-          "request": "launch",
-          # Specify the desired launchcommand.
-          "launchCommand": "tools/ffx component run /core/ffx-laboratory:hello_world fuchsia-pkg://fuchsiasamples.com/hello_world#meta/hello_world.cm --recreate",
-          # Specify the process that you want to debug.
-          "process": "hello_world"
-        }
-        ]
-      }
-      ```
-
-1. Save the changes that you made to the `launch.json` file.
-
-You have successfully created a debugging profile. You can repeat the instructions
-to add additional profiles.
-
-### Run and debug
-
-Once you have created a debugging profile, you can use your profile to
-run and debug a component that you are working on.
-
-Note: These steps are the default VS Code steps. For the complete VS Code
-documentation about debugging, see [Debugging][docs-debugging-vscode]{: .external}.
-
-To start the debugger:
-
-1. In VS Code, open **Run and Debug** (this option is in the left side-bar and
-   has a play and bug icon).
-1. From the **Run and Debug: Run** panel, use the drop-down list to select
-   your debugging profile. Then, click the green
-   <span class="material-icons">play_arrow</span> to the left of the drop-down
-   list to start the debugging session.
-
-   <img class="vscode-image vscode-image-center"
-        alt="This figure shows the how to change debugging profile in VS Code."
-        src="images/extensions/ext-select-debugger.png"/>
-
-Once you have started the debugger:
-
-* You can use the **Debug console** tab to run zxdb commands. For more
-  information on zxdb console commands, see
-  [Zxdb console commands and interaction model][zxdb-commands-docs].
-* You can use the VS Code debugger features to perform debugging actions, add
-  breakpoints, logpoints, etc... For more information, see
-  [Debug actions][vscode-debug-actions]{: .external}.
-
-## Fuchsia component explorer
+#### Component explorer
 
 The Fuchsia extension provides a tree view of components on your Fuchsia device.
 This is the equivalent of running [`ffx component list`][ffx-component-list].
+To view the Fuchsia component list, open **Run and Debug** in the Activity Bar
+and expand the **Fuchsia Components** section.
 
-To view the Fuchsia component list, open **Run and Debug** (this option is in
-the left side-bar and has a play and bug icon) and expand the **Fuchsia
-Components** section.
+To debug a component, click the <span class="material-icons">bug_report</span> to the
+right of the component name.
 
 <img class="vscode-image vscode-image-center"
      alt="This figure shows the Fuchsia component list in the Fuchsia extension."
-     src="images/extensions/ext-components.png"/>
+     src="images/extensions/ext-components-debug.png"/>
 
-### Component details
-
-Hover over a component in the Fuchsia component list, that displays a pop-up with
-the lifecycle information for that component.
-
-To view details of a component, click the component name in the Fuchsia
-component list. This opens a new window with details of the component and is the
+You can hover over a component to see its lifecycle information or click on it to
+view more details. This opens a new window with details of the component and is the
 equivalent of running [`ffx component show <component-name>`][ffx-component-show].
 
 <img class="vscode-image vscode-image-center"
      alt="This figure shows the details of a component in the Fuchsia extension
      either by hovering over the component name or by clicking on the component name."
-     src="images/extensions/ext-component-show.png"/>
+     src="images/extensions/ext-components-show.png"/>
 
-### Debug a component
+You can right click a component to control the component's lifecycle. For more
+information, see [Component lifecycle][ffx-component-lifecycle].
 
-To debug a component, click the <span class="material-icons">bug_report</span>
-to the right of the component name.
+<img class="vscode-image vscode-image-center"
+     alt="This figure shows component start on 'hello world' and the log response."
+     src="images/extensions/ext-components-start.png"/>
 
-## Fuchsia task explorer
+#### Task explorer
 
 The Fuchsia extension provides a tree view of all jobs, processes, and threads
 running in the Fuchsia system. To view the Fuchsia task explorer, open **Run and
-Debug** (this option is in the left side-bar and has a play and bug icon) and expand
-the **Fuchsia Jobs, Processes, and Threads** section.
+Debug** and expand the **Fuchsia Jobs, Processes, and Threads** section.
 
 To attach a debugger to a task, click the <span class="material-icons">bug_report</span>
 to the right of the process.
@@ -305,12 +222,20 @@ to the right of the process.
      alt="This figure shows the Fuchsia task explorer in the Fuchsia extension."
      src="images/extensions/ext-process-explorer.png"/>
 
+### Testing
+
+#### Test explorer
+
+Run and debug tests within the VS Code UI. You can find the Test Explorer in the activity bar.
+
+<img class="vscode-image vscode-image-center"
+     alt="This figure shows the Fuchsia tests in the extension."
+     src="images/extensions/ext-test.png"/>
+
+
 [fuchsia-dev-ext]: /docs/reference/tools/editors/vscode/fuchsia-ext-install.md
-[get-started-sdk]: https://fuchsia.googlesource.com/sdk-samples/getting-started
-[sdk-start-emulator]: /docs/development/tools/ffx/workflows/start-the-fuchsia-emulator.md
-[zx_clock_get_monotonic]: /reference/syscalls/clock_get_monotonic.md
-[add-tags-logging]: /docs/development/languages/rust/logging.md#add_tags
-[log-severity]: /docs/development/diagnostics/logs/severity.md
+[get-started]: /docs/get-started/README.md
+[start-emulator]: /docs/get-started/set_up_femu.md
 [monitor-device-logs]: /docs/development/tools/ffx/workflows/view-device-logs.md#monitor-device-logs
 [zxdb-docs]: /docs/development/debugging/debugging.md
 [run-components]: /docs/development/components/run.md#run
@@ -319,9 +244,6 @@ to the right of the process.
 [fidl-docs]: /docs/concepts/fidl/overview.md
 [cml-docs]: https://fuchsia.dev/reference/cml
 [vscode-errors]: https://code.visualstudio.com/Docs/editor/editingevolved#_errors-warnings
-[diagnostics-schema]: /docs/reference/platform-spec/diagnostics/schema.md#payload
-[docs-schema-logs]: /docs/reference/platform-spec/diagnostics/schema.md#logs
-[docs-debugging-vscode]: https://code.visualstudio.com/docs/editor/debugging
-[component-moniker]: /docs/reference/components/moniker.md
+[ffx-component-lifecycle]: /docs/concepts/components/v2/lifecycle.md
 [ffx-component-list]: https://fuchsia.dev/reference/tools/sdk/ffx#ffx_component_list
 [ffx-component-show]: https://fuchsia.dev/reference/tools/sdk/ffx#ffx_component_show
