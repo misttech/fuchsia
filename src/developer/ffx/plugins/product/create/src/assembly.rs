@@ -28,21 +28,15 @@ impl Assembly {
         board_config: String,
         build_dir: Option<Utf8PathBuf>,
     ) -> Result<Self> {
-        let product_config_artifact = Artifact::from_product_or_board_string(&product_config)
-            .context("Parsing product config");
-        let product_config_artifact = product_config_artifact
-            .or_else(|_| Artifact::from_local_product_name(&product_config, build_dir.as_ref()))
-            .context("Parsing product config as local build api")?;
+        let product_config_artifact = Artifact::from_product(&product_config, build_dir.as_ref())
+            .context("Finding product config")?;
         let product_config_path =
             cache.resolve(&product_config_artifact).context("Resolving product config")?;
         let product_config =
             ProductConfig::from_dir(&product_config_path).context("Reading product config")?;
 
-        let board_config_artifact =
-            Artifact::from_product_or_board_string(&board_config).context("Parsing board config");
-        let board_config_artifact = board_config_artifact
-            .or_else(|_| Artifact::from_local_board_name(&board_config, build_dir.as_ref()))
-            .context("Parsing board config as local build api")?;
+        let board_config_artifact = Artifact::from_board(&board_config, build_dir.as_ref())
+            .context("Finding board config")?;
         let board_config_path =
             cache.resolve(&board_config_artifact).context("Resolving board config")?;
         let board_config =

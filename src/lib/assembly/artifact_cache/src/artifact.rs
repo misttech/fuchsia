@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use assembly_config_schema::Architecture;
 use camino::Utf8PathBuf;
 use serde::Deserialize;
@@ -54,63 +54,31 @@ struct PlatformBuildApiEntry {
 }
 
 impl Artifact {
+    /// Construct a product artifact from a string.
+    pub fn from_product(s: impl AsRef<str>, build_dir: Option<&Utf8PathBuf>) -> Result<Self> {
+        Self::from_artifact(s, build_dir, "products.json")
+    }
+
+    /// Construct a board artifact from a string.
+    pub fn from_board(s: impl AsRef<str>, build_dir: Option<&Utf8PathBuf>) -> Result<Self> {
+        Self::from_artifact(s, build_dir, "boards.json")
+    }
+
     /// Construct an artifact from a string.
-    pub fn from_product_or_board_string(s: impl AsRef<str>) -> Result<Self> {
+    fn from_artifact(
+        s: impl AsRef<str>,
+        build_dir: Option<&Utf8PathBuf>,
+        build_api: impl AsRef<str>,
+    ) -> Result<Self> {
         if let Some(artifact) = parse_cipd(&s)? {
             return Ok(artifact);
         }
 
-        if let Some(artifact) = parse_local(&s)? {
+        if let Some(artifact) = parse_local_path(&s)? {
             return Ok(artifact);
         }
 
-        bail!("Artifact must be either a CIPD package or a local path: {}", s.as_ref());
-    }
-
-    /// Construct an artifact from a local board config name.
-    pub fn from_local_board_name(
-        name: impl AsRef<str>,
-        build_dir: Option<&Utf8PathBuf>,
-    ) -> Result<Self> {
-        let build_dir = build_dir.context(
-            "identifying board configs by their name can only be done in a fuchsia checkout",
-        )?;
-        let build_api = build_dir.join("boards.json");
-        let build_api_file =
-            std::fs::File::open(&build_api).with_context(|| format!("Opening: {}", &build_api))?;
-        let board_configs: Vec<BuildApiEntry> = serde_json::from_reader(build_api_file)
-            .with_context(|| format!("Parsing: {}", &build_api))?;
-        let board_config = board_configs
-            .iter()
-            .find(|b| b.name == name.as_ref())
-            .with_context(|| format!("searching for board config: {}", name.as_ref()))
-            .with_context(|| format!("searching build api: {}", &build_api))?;
-        let board_config_path = build_dir.join(&board_config.outdir);
-        Ok(Artifact::Local(board_config_path))
-    }
-
-    /// Construct an artifact from a local product config name.
-    pub fn from_local_product_name(
-        name: impl AsRef<str>,
-        build_dir: Option<&Utf8PathBuf>,
-    ) -> Result<Self> {
-        // TODO: provide nice error when local artifact is not found that
-        // indicates how to build it.
-        let build_dir = build_dir.context(
-            "identifying product configs by their name can only be done in a fuchsia checkout",
-        )?;
-        let build_api = build_dir.join("products.json");
-        let build_api_file =
-            std::fs::File::open(&build_api).with_context(|| format!("Opening: {}", &build_api))?;
-        let product_configs: Vec<BuildApiEntry> = serde_json::from_reader(build_api_file)
-            .with_context(|| format!("Parsing: {}", &build_api))?;
-        let product_config = product_configs
-            .iter()
-            .find(|p| p.name == name.as_ref())
-            .with_context(|| format!("searching for product config: {}", name.as_ref()))
-            .with_context(|| format!("searching build api: {}", &build_api))?;
-        let product_config_path = build_dir.join(&product_config.outdir);
-        Ok(Artifact::Local(product_config_path))
+        parse_local_name(&s, build_dir, build_api)
     }
 
     /// Construct an artifact from an optionally-specified platform.
@@ -126,7 +94,7 @@ impl Artifact {
                 return Ok(artifact);
             }
 
-            if let Some(artifact) = parse_local(&platform)? {
+            if let Some(artifact) = parse_local_path(&platform)? {
                 return Ok(artifact);
             }
 
@@ -155,11 +123,13 @@ impl Artifact {
     }
 }
 
+/// Find an artifact in CIPD.
 fn parse_cipd(s: impl AsRef<str>) -> Result<Option<Artifact>> {
     let s = s.as_ref();
     if let Some(cipd_path_and_version) = s.strip_prefix("cipd://") {
         let (path, version) = cipd_path_and_version
             .split_once("@")
+            .with_context(|| format!("Add the version using a CIPD tag: {}@<cipd-tag>", &s))
             .with_context(|| format!("Artifact is missing a version: {}", &s))?;
         let path = Utf8PathBuf::from_str(path)
             .with_context(|| format!("Artifact path is not utf8: {}", &s))?;
@@ -178,7 +148,8 @@ fn version_to_cipd_tag(version: impl AsRef<str>) -> String {
     version.as_ref().to_string()
 }
 
-fn parse_local(s: impl AsRef<str>) -> Result<Option<Artifact>> {
+/// Find an artifact from a local path.
+fn parse_local_path(s: impl AsRef<str>) -> Result<Option<Artifact>> {
     let s = s.as_ref();
     if s.contains("/") || std::fs::exists(s)? {
         // TODO: validate the path exists.
@@ -188,6 +159,28 @@ fn parse_local(s: impl AsRef<str>) -> Result<Option<Artifact>> {
     } else {
         Ok(None)
     }
+}
+
+/// Find an artifact with `name` in the Fuchsia `build_dir` using the `build_api`.
+fn parse_local_name(
+    name: impl AsRef<str>,
+    build_dir: Option<&Utf8PathBuf>,
+    build_api: impl AsRef<str>,
+) -> Result<Artifact> {
+    let build_dir = build_dir
+        .context("identifying artifacts by their name can only be done in a fuchsia checkout")?;
+    let build_api = build_dir.join(build_api.as_ref());
+    let build_api_file =
+        std::fs::File::open(&build_api).with_context(|| format!("Opening: {}", &build_api))?;
+    let build_api_entries: Vec<BuildApiEntry> = serde_json::from_reader(build_api_file)
+        .with_context(|| format!("Parsing: {}", &build_api))?;
+    let artifact_entry = build_api_entries
+        .iter()
+        .find(|b| b.name == name.as_ref())
+        .with_context(|| format!("searching for artifact {}", name.as_ref()))
+        .with_context(|| format!("searching build api: {}", &build_api))?;
+    let artifact_path = build_dir.join(&artifact_entry.outdir);
+    Ok(Artifact::Local(artifact_path))
 }
 
 #[cfg(test)]
@@ -263,16 +256,14 @@ mod tests {
     }
 
     #[test]
-    fn test_cipd_artifact() {
+    fn test_cipd_product() {
         assert_eq!(
             Artifact::CIPD(CIPDPackage {
                 path: "path/to/artifact".into(),
                 tag: "version:1.2.3.4".into()
             }),
-            Artifact::from_product_or_board_string(
-                "cipd://path/to/artifact@version:1.2.3.4".to_string(),
-            )
-            .unwrap(),
+            Artifact::from_product("cipd://path/to/artifact@version:1.2.3.4".to_string(), None)
+                .unwrap(),
         )
     }
 
@@ -293,7 +284,7 @@ mod tests {
 
         assert_eq!(
             Artifact::Local(tmp_path.join("path/to/local/product")),
-            Artifact::from_local_product_name("product_a", Some(&tmp_path)).unwrap()
+            Artifact::from_product("product_a", Some(&tmp_path)).unwrap()
         );
     }
 
@@ -314,7 +305,7 @@ mod tests {
 
         assert_eq!(
             Artifact::Local(tmp_path.join("path/to/local/board")),
-            Artifact::from_local_board_name("board_a", Some(&tmp_path)).unwrap()
+            Artifact::from_board("board_a", Some(&tmp_path)).unwrap()
         );
     }
 }
