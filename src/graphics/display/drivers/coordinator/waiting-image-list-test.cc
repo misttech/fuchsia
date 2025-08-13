@@ -36,22 +36,20 @@ class StubImageLifecycleListener : public ImageLifecycleListener {
   void ImageWillBeDestroyed(display::DriverImageId driver_image_id) override {}
 };
 
-class FakeFenceCollectionListener : public FenceCollectionListener {
+class FakeFenceListener : public FenceListener {
  public:
   // `waiting_images` must not be null and must outlive this instance.
-  explicit FakeFenceCollectionListener(WaitingImageList* waiting_images)
-      : waiting_images_(*waiting_images) {
+  explicit FakeFenceListener(WaitingImageList* waiting_images) : waiting_images_(*waiting_images) {
     ZX_DEBUG_ASSERT(waiting_images != nullptr);
   }
-  ~FakeFenceCollectionListener() = default;
 
-  FakeFenceCollectionListener(const FakeFenceCollectionListener&) = delete;
-  FakeFenceCollectionListener& operator=(const FakeFenceCollectionListener&) = delete;
+  FakeFenceListener(const FakeFenceListener&) = delete;
+  FakeFenceListener& operator=(const FakeFenceListener&) = delete;
 
-  // FenceCollectionListener:
-  void OnFenceSignaled(FenceReference* fence_reference) override {
-    waiting_images_.MarkFenceReady(fence_reference);
-  }
+  ~FakeFenceListener() override = default;
+
+  // `FenceListener`:
+  void OnFenceSignaled(Fence& fence) override { waiting_images_.MarkFenceReady(fence); }
 
  private:
   WaitingImageList& waiting_images_;
@@ -60,7 +58,7 @@ class FakeFenceCollectionListener : public FenceCollectionListener {
 class WaitingImageListTest : public ::testing::Test {
  public:
   WaitingImageListTest()
-      : fences_(&fence_collection_listener_, driver_runtime_.GetForegroundDispatcher()->borrow()) {}
+      : fences_(&fence_listener_, driver_runtime_.GetForegroundDispatcher()->borrow()) {}
 
   ~WaitingImageListTest() override = default;
 
@@ -94,7 +92,7 @@ class WaitingImageListTest : public ::testing::Test {
   display::DriverImageId next_driver_image_id_ = display::DriverImageId(2000);
 
   StubImageLifecycleListener image_lifecycle_listener_;
-  FakeFenceCollectionListener fence_collection_listener_{&waiting_images_};
+  FakeFenceListener fence_listener_{&waiting_images_};
   WaitingImageList waiting_images_;
 
   FenceCollection fences_;
@@ -368,77 +366,6 @@ TEST_F(WaitingImageListTest, AddSameImage) {
   EXPECT_EQ(waiting_images().PopNewestReadyImage(), image);
   EXPECT_EQ(waiting_images().PopNewestReadyImage(), nullptr);
   EXPECT_EQ(waiting_images().size(), 0U);
-}
-
-TEST_F(WaitingImageListTest, CannotReuseBusyFence) {
-  // Create images used by the test.
-  auto image1 = CreateImage();
-  auto image2 = CreateImage();
-  auto image3 = CreateImage();
-
-  // Create and import event used by the test.
-  constexpr display::EventId kWaitFenceId(999);
-  zx::event event;
-  ASSERT_OK(zx::event::create(0, &event));
-  ASSERT_OK(fences().ImportEvent(std::move(event), kWaitFenceId));
-  auto fence_release = fit::defer([&]() mutable { fences().ReleaseEvent(kWaitFenceId); });
-
-  // Adding image succeeds with non-busy fence; afterward the fence is busy.
-  ASSERT_OK(waiting_images().PushImage(image1, fences().GetFence(kWaitFenceId)));
-
-  // Cannot add image with busy fence.
-  {
-    auto result = waiting_images().PushImage(image2, fences().GetFence(kWaitFenceId));
-    ASSERT_FALSE(result.is_ok());
-    EXPECT_EQ(result.error_value(), ZX_ERR_BAD_STATE);
-    EXPECT_EQ(waiting_images().size(), 1U);
-    auto remaining = waiting_images().GetFullContentsForTesting();
-    ASSERT_EQ(remaining.size(), 1U);
-    EXPECT_EQ(remaining[0].image(), image1);
-    EXPECT_EQ(remaining[0].wait_fence(), fences().GetFence(kWaitFenceId));
-  }
-
-  // Signaling the fence is one way to make it available for use.
-  fences().GetFence(kWaitFenceId)->Signal();
-  driver_runtime_.RunUntilIdle();
-  EXPECT_OK(waiting_images().PushImage(image2, fences().GetFence(kWaitFenceId)));
-  {
-    auto remaining = waiting_images().GetFullContentsForTesting();
-    ASSERT_EQ(remaining.size(), 2U);
-    EXPECT_EQ(remaining[0].image(), image1);
-    EXPECT_EQ(remaining[0].wait_fence(), nullptr);
-    EXPECT_EQ(remaining[1].image(), image2);
-    EXPECT_EQ(remaining[1].wait_fence(), fences().GetFence(kWaitFenceId));
-  }
-
-  // Cannot add image now that fence is busy again.
-  {
-    auto result = waiting_images().PushImage(image3, fences().GetFence(kWaitFenceId));
-    ASSERT_FALSE(result.is_ok());
-    EXPECT_EQ(result.error_value(), ZX_ERR_BAD_STATE);
-    EXPECT_EQ(waiting_images().size(), 2U);
-    auto remaining = waiting_images().GetFullContentsForTesting();
-    ASSERT_EQ(remaining.size(), 2U);
-    EXPECT_EQ(remaining[0].image(), image1);
-    EXPECT_EQ(remaining[0].wait_fence(), nullptr);
-    EXPECT_EQ(remaining[1].image(), image2);
-    EXPECT_EQ(remaining[1].wait_fence(), fences().GetFence(kWaitFenceId));
-  }
-
-  // Retiring the image with the busy fence is another way to make the fence available for use.
-  waiting_images().RemoveImage(*image2);
-  EXPECT_OK(waiting_images().PushImage(image3, fences().GetFence(kWaitFenceId)));
-  {
-    auto remaining = waiting_images().GetFullContentsForTesting();
-    ASSERT_EQ(remaining.size(), 2U);
-    EXPECT_EQ(remaining[0].image(), image1);
-    EXPECT_EQ(remaining[0].wait_fence(), nullptr);
-    EXPECT_EQ(remaining[1].image(), image3);
-    EXPECT_EQ(remaining[1].wait_fence(), fences().GetFence(kWaitFenceId));
-  }
-
-  // Avoid issues upon teardown; all active fences must be disarmed.
-  waiting_images().RemoveImage(*image3);
 }
 
 TEST_F(WaitingImageListTest, UpdateLatestClientConfigStamp) {

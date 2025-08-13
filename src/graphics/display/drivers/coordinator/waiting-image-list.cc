@@ -12,43 +12,32 @@
 #include <utility>
 #include <vector>
 
+#include <fbl/ref_ptr.h>
+
+#include "src/graphics/display/drivers/coordinator/fence.h"
+#include "src/graphics/display/drivers/coordinator/image.h"
+
 namespace display_coordinator {
 
-WaitingImageList::Entry::Entry(fbl::RefPtr<Image> image, fbl::RefPtr<FenceReference> wait_fence)
+WaitingImageList::Entry::Entry(fbl::RefPtr<Image> image, fbl::RefPtr<Fence> wait_fence)
     : image_(std::move(image)), wait_fence_(std::move(wait_fence)) {
-  ZX_DEBUG_ASSERT(image_);
-}
-
-WaitingImageList::Entry::Entry(Entry&& entry)
-    : image_(std::move(entry.image_)), wait_fence_(std::move(entry.wait_fence_)) {}
-
-WaitingImageList::Entry& WaitingImageList::Entry::operator=(Entry&& entry) {
-  // Clients must explicitly reset the wait fence before stomping it with a new one.
-  ZX_DEBUG_ASSERT(!wait_fence_);
-
-  image_ = std::move(entry.image_);
-  wait_fence_ = std::move(entry.wait_fence_);
-
-  return *this;
+  ZX_DEBUG_ASSERT(image_ != nullptr);
 }
 
 fbl::RefPtr<Image> WaitingImageList::Entry::TakeImage() {
-  ZX_DEBUG_ASSERT(image_);
-  ZX_DEBUG_ASSERT(!wait_fence_);
+  ZX_DEBUG_ASSERT(image_ != nullptr);
+  ZX_DEBUG_ASSERT(wait_fence_ == nullptr);
   return std::move(image_);
 }
 
-void WaitingImageList::Entry::ResetWaitFence() {
-  if (wait_fence_) {
-    wait_fence_->ResetReadyWait();
-    wait_fence_ = nullptr;
-  }
-}
+void WaitingImageList::Entry::ResetWaitFence() { wait_fence_ = nullptr; }
 
-void WaitingImageList::Entry::MarkFenceReady(FenceReference* fence) {
-  if (wait_fence_.get() == fence) {
-    wait_fence_ = nullptr;
+void WaitingImageList::Entry::MarkFenceReady(Fence& fence) {
+  if (wait_fence_.get() != &fence) {
+    return;
   }
+
+  wait_fence_ = nullptr;
 }
 
 WaitingImageList::~WaitingImageList() {
@@ -74,7 +63,6 @@ void WaitingImageList::RemoveImage(const Image& image_to_retire) {
     const bool should_erase = &image_to_retire == read_entry.image().get();
     if (should_erase) {
       // Images match, so reset the read entry without moving it.
-      read_entry.ResetWaitFence();
       read_entry = Entry();
       ++erase_count;
     } else {
@@ -91,18 +79,13 @@ void WaitingImageList::RemoveImage(const Image& image_to_retire) {
   CheckRepresentation();
 }
 
-zx::result<> WaitingImageList::PushImage(fbl::RefPtr<Image> image,
-                                         fbl::RefPtr<FenceReference> wait_fence) {
+zx::result<> WaitingImageList::PushImage(fbl::RefPtr<Image> image, fbl::RefPtr<Fence> wait_fence) {
   if (size_ >= kMaxSize) {
     fdf::error("Failed to allocate waiting-image");
     return zx::error_result(ZX_ERR_BAD_STATE);
   }
   if (wait_fence) {
-    if (wait_fence->InContainer()) {
-      fdf::error("Tried to wait with a busy event");
-      return zx::error_result(ZX_ERR_BAD_STATE);
-    }
-    zx::result status = wait_fence->StartReadyWait();
+    zx::result status = wait_fence->Wait();
     if (status.is_error()) {
       fdf::error("Failed to start waiting for image: {}", status);
       // Mark the image as ready. Displaying garbage is better than hanging or crashing.
@@ -111,8 +94,8 @@ zx::result<> WaitingImageList::PushImage(fbl::RefPtr<Image> image,
   }
 
   Entry& new_entry = GetEntry(size_++);
-  ZX_DEBUG_ASSERT(!new_entry.image());
-  ZX_DEBUG_ASSERT(!new_entry.wait_fence());
+  ZX_DEBUG_ASSERT(new_entry.image() == nullptr);
+  ZX_DEBUG_ASSERT(new_entry.wait_fence() == nullptr);
   new_entry = Entry(std::move(image), std::move(wait_fence));
   CheckRepresentation();
 
@@ -147,7 +130,7 @@ fbl::RefPtr<Image> WaitingImageList::PopNewestReadyImage() {
   return nullptr;
 }
 
-bool WaitingImageList::MarkFenceReady(FenceReference* fence) {
+bool WaitingImageList::MarkFenceReady(Fence& fence) {
   bool any_image_ready = false;
   for (size_t i = 0; i < size(); ++i) {
     Entry& entry = GetEntry(i);

@@ -37,16 +37,20 @@ class WaitingImageList {
   // Only used internally; public for testing.
   class Entry {
    public:
-    Entry(fbl::RefPtr<Image> image, fbl::RefPtr<FenceReference> wait_fence);
-    Entry(Entry&& entry);
+    // The default constructor creates an empty entry.
     Entry() = default;
-    Entry(const Entry&) = delete;
 
-    Entry& operator=(Entry&& entry);
+    // `image` must not be null. `wait_fence` may be null.
+    explicit Entry(fbl::RefPtr<Image> image, fbl::RefPtr<Fence> wait_fence);
+
+    // Entries are move-only.
+    Entry(const Entry&) = delete;
+    Entry(Entry&& entry) noexcept = default;
     Entry& operator=(const Entry&) = delete;
+    Entry& operator=(Entry&& entry) noexcept = default;
 
     const fbl::RefPtr<Image>& image() const { return image_; }
-    const fbl::RefPtr<FenceReference>& wait_fence() const { return wait_fence_; }
+    const fbl::RefPtr<Fence>& wait_fence() const { return wait_fence_; }
 
     // Takes the image out of the entry, leaving it null afterward.
     fbl::RefPtr<Image> TakeImage();
@@ -55,15 +59,15 @@ class WaitingImageList {
     void ResetWaitFence();
 
     // Clears the entry's fence if it matches `fence`.
-    void MarkFenceReady(FenceReference* fence);
+    void MarkFenceReady(Fence& fence);
 
    private:
     friend class WaitingImageList;
 
-    fbl::RefPtr<Image> image_;
-    fbl::RefPtr<FenceReference> wait_fence_;
+    bool IsReady() const { return wait_fence_ == nullptr; }
 
-    bool IsReady() const { return !wait_fence_; }
+    fbl::RefPtr<Image> image_;
+    fbl::RefPtr<Fence> wait_fence_;
   };
 
   // Retires the oldest `count` images. `count` must be <= `size()`.
@@ -78,7 +82,7 @@ class WaitingImageList {
   // Attempts to add an entry.  The following error results are possible:
   // - ZX_ERR_BAD_STATE when there is no space available (since the client can know/avoid this).
   // - ZX_ERR_BAD_STATE if `wait_fence` is already being waited upon.
-  zx::result<> PushImage(fbl::RefPtr<Image> image, fbl::RefPtr<FenceReference> wait_fence);
+  zx::result<> PushImage(fbl::RefPtr<Image> image, fbl::RefPtr<Fence> wait_fence);
 
   // Returns the newest "ready" image (i.e. with no unsignaled wait fence), or nullptr if none
   // exists. If a ready image is found, erase it and all earlier images from the list.
@@ -86,7 +90,7 @@ class WaitingImageList {
 
   // Marks any image that was waiting on `fence` as ready. Return true if *any* image is ready
   // (i.e. not just the images that were waiting on `fence`).
-  bool MarkFenceReady(FenceReference* fence);
+  bool MarkFenceReady(Fence& fence);
 
   // Finds the most recent waiting image and, if it exists, pass `stamp` to
   // `set_latest_client_config_stamp()`. This is part of the mechanism that

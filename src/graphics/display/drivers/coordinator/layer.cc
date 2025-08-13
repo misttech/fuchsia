@@ -291,7 +291,7 @@ void Layer::SetImage(fbl::RefPtr<Image> image, display::EventId wait_event_id) {
   draft_image_wait_event_id_ = wait_event_id;
 }
 
-bool Layer::MarkFenceReady(FenceReference* fence) { return waiting_images_.MarkFenceReady(fence); }
+bool Layer::MarkFenceReady(Fence& fence) { return waiting_images_.MarkFenceReady(fence); }
 
 bool Layer::HasWaitingImages() const { return waiting_images_.size() > 0; }
 

@@ -137,7 +137,7 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
   // Called on all waiting images when any fence is signaled.
   //
   // Returns true if an image is ready for use by the display engine.
-  bool MarkFenceReady(FenceReference* fence);
+  bool MarkFenceReady(Fence& fence);
 
   // Returns true if the layer has any waiting images. An image transitions from "pending" to
   // "waiting" (in the context of a specific layer) when that layer appears in an applied config.

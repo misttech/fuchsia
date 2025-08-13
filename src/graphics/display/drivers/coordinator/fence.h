@@ -12,7 +12,6 @@
 #include <zircon/syscalls/port.h>
 #include <zircon/types.h>
 
-#include <fbl/intrusive_double_list.h>
 #include <fbl/intrusive_single_list.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
@@ -22,29 +21,31 @@
 
 namespace display_coordinator {
 
-class FenceReference;
 class Fence;
 
-// Interface between a Fence and the FenceCollection that owns it.
-class FenceOwner {
+// Interface between a Fence and the class that waits on it.
+class FenceListener {
  public:
-  FenceOwner() = default;
+  FenceListener() = default;
 
-  // FenceOwner pointers must remain stable.
-  FenceOwner(const FenceOwner&) = delete;
-  FenceOwner(FenceOwner&&) = delete;
-  FenceOwner& operator=(const FenceOwner&) = default;
-  FenceOwner& operator=(FenceOwner&&) = delete;
+  // FenceListener pointers must remain stable.
+  FenceListener(const FenceListener&) = delete;
+  FenceListener& operator=(const FenceListener&) = delete;
 
-  virtual void OnFenceSignaled(FenceReference* fence_reference) = 0;
-
-  // TODO(https://fxbug.dev/394422104): implementors must call `Fence::OnRefDead()`,
-  // but they shouldn't have to.
-  virtual void OnRefForFenceDead(Fence* fence) = 0;
+  // Called after a waited-for Fence's event was signaled.
+  //
+  // Must be called on the dispatcher used to access the Fence. The listener may
+  // cause `fence` to be destroyed, so the caller must not assume that `fence`
+  // is still valid after the method call.
+  //
+  // `fence` is no longer in the waited-for state at the time of the call. The
+  // listener may call `Fence::Wait()` to bring the fence back in the waited-for
+  // state.
+  virtual void OnFenceSignaled(Fence& fence) = 0;
 
  protected:
-  // FenceOwner is not intended to be an owning pointer type.
-  virtual ~FenceOwner() = default;
+  // FenceListener is not intended to be an owning pointer type.
+  virtual ~FenceListener() = default;
 };
 
 // Manages an event imported by a Coordinator client.
@@ -52,9 +53,8 @@ class FenceOwner {
 // The class currently uses Vulkan terminology, rather than Fuchsia event
 // terminology.
 //
-// A single Fence can have multiple FenceReference objects, which allows an
-// event to be treated as a semaphore independently of it being
-// imported/released (i.e. can be released while still in use).
+// Fences are reference-counted. When all the references are dropped, the any
+// pending wait operation is canceled, and the event is released.
 //
 // Instances are not thread-safe and must be accessed on a single synchronized
 // dispatcher.
@@ -62,163 +62,109 @@ class Fence : public fbl::RefCounted<Fence>,
               public IdMappable<fbl::RefPtr<Fence>, display::EventId>,
               public fbl::SinglyLinkedListable<fbl::RefPtr<Fence>> {
  public:
-  // Fence state changes will be processed on `dispatcher`.
-  //
-  // `owner` must not be null and must outlive the newly created instance.
+  // `listener` methods are called on `dispatcher`. `listener`
+  // must not be null and must outlive the newly created instance.
   //
   // `dispatcher` must not be null and must outlive the newly created instance.
   // The instance must be accessed exclusively on the dispatcher.
   //
   // `id` and `event` must be valid.
-  Fence(FenceOwner* owner, fdf::UnownedSynchronizedDispatcher dispatcher, display::EventId id,
+  Fence(FenceListener* listener, fdf::UnownedSynchronizedDispatcher dispatcher, display::EventId id,
         zx::event event);
+
+  Fence(const Fence&) = delete;
+  Fence& operator=(const Fence&) = delete;
 
   ~Fence();
 
-  Fence(const Fence& other) = delete;
-  Fence(Fence&& other) = delete;
-  Fence& operator=(const Fence& other) = delete;
-  Fence& operator=(Fence&& other) = delete;
+  // Brings the fence in the waited-for state.
+  //
+  // Signaling a waited-for fence's event causes a call to
+  // `FenceListener::OnFenceSignaled()`.
+  //
+  // This method is idempotent. It makes no change if the fence is already
+  // waited-for.
+  //
+  // The wait operation is automatically canceled when a waited-for fence is
+  // destroyed. This can be avoided by holding a reference to the fence while
+  // waiting for it to be signaled.
+  zx::result<> Wait();
 
-  // Creates a new FenceReference when an event is imported.
-  bool CreateRef();
-  // Clears a FenceReference when an event is released. Note that references to the cleared
-  // FenceReference might still exist within the driver.
-  void ClearRef();
-  // Decrements the reference count and returns true if the last ref died.
-  // TODO(https://fxbug.dev/394422104): Currently, the implicit contract is that this must be called
-  // by the implementor of `FenceCallback::OnRefForFenceDead()`. Instead, this should be made
-  // private so it can only be called by `FenceReference`, which is already a friend.
-  bool OnRefDead();
-
-  // Gets the fence reference for the current import. An individual fence reference cannot
-  // be used for multiple things simultaneously.
-  fbl::RefPtr<FenceReference> GetReference();
-
-  // The raw event underlying this fence. Only used for validation.
-  zx_handle_t event() const { return event_.get(); }
+  // Signals the fence's underlying event.
+  void Signal();
 
  private:
-  void Signal() const;
-  zx::result<> OnRefArmed(fbl::RefPtr<FenceReference> fence_reference);
-  void OnRefDisarmed(FenceReference* fence_reference);
+  // Called by `signal_waiter_`.
+  void OnEventSignaled(async_dispatcher_t* dispatcher, async::WaitBase* self, zx_status_t status,
+                       const zx_packet_signal_t* signal);
 
-  // The fence reference corresponding to the current event import.
-  fbl::RefPtr<FenceReference> cur_ref_;
-
-  // A queue of fence references which are being waited upon. When the event is
-  // signaled, the signal will be cleared and the first fence ref will be marked ready.
-  fbl::DoublyLinkedList<fbl::RefPtr<FenceReference>> armed_refs_;
-
-  void OnReady(async_dispatcher_t* dispatcher, async::WaitBase* self, zx_status_t status,
-               const zx_packet_signal_t* signal);
-  async::WaitMethod<Fence, &Fence::OnReady> ready_wait_{this};
-
-  FenceOwner& owner_;
+  FenceListener& listener_;
   const fdf::UnownedSynchronizedDispatcher dispatcher_;
-
   const zx::event event_;
-  int ref_count_ = 0;
   zx_koid_t koid_ = 0;
 
-  friend FenceReference;
-};
-
-// Each FenceReference represents a pending / active wait or signaling of the
-// Fence it refers to, regardless of the Fence it refers to being imported
-// or released by the Client.
-//
-// Instances are not thread-safe and must be accessed on a single synchronized
-// dispatcher.
-class FenceReference : public fbl::RefCounted<FenceReference>,
-                       public fbl::DoublyLinkedListable<fbl::RefPtr<FenceReference>> {
- public:
-  // `fence` must not be null.
-  //
-  // `dispatcher` must not be null and must outlive the newly created instance.
-  // The instance must be accessed exclusively on the dispatcher.
-  explicit FenceReference(fbl::RefPtr<Fence> fence, fdf::UnownedSynchronizedDispatcher dispatcher);
-
-  FenceReference(const FenceReference& other) = delete;
-  FenceReference(FenceReference&& other) = delete;
-  FenceReference& operator=(const FenceReference& other) = delete;
-  FenceReference& operator=(FenceReference&& other) = delete;
-
-  ~FenceReference();
-
-  void Signal() const;
-
-  // The first of these two calls must be to `StartReadyWait()` and the next must be to
-  // `ResetReadyWait()`. Subsequent calls must continue to alternate in the same way.
-  zx::result<> StartReadyWait();
-  void ResetReadyWait();
-
- private:
-  const fbl::RefPtr<Fence> fence_;
-  const fdf::UnownedSynchronizedDispatcher dispatcher_;
-};
-
-// Interface between a FenceCollection and the fencer.
-class FenceCollectionListener {
- public:
-  FenceCollectionListener() = default;
-
-  // FenceCollectionListener pointers must remain stable.
-  FenceCollectionListener(const FenceCollectionListener&) = delete;
-  FenceCollectionListener(FenceCollectionListener&&) = delete;
-  FenceCollectionListener& operator=(const FenceCollectionListener&) = default;
-  FenceCollectionListener& operator=(FenceCollectionListener&&) = delete;
-
-  virtual void OnFenceSignaled(FenceReference* fence_reference) = 0;
-
- protected:
-  // FenceCollectionListener is not intended to be an owning pointer type.
-  virtual ~FenceCollectionListener() = default;
+  // Pending when the fence is waited-for.
+  async::WaitMethod<Fence, &Fence::OnEventSignaled> signal_waiter_;
 };
 
 // Manages the events (Fences) imported by a Coordinator client.
 //
 // Instances are not thread-safe and must be accessed on a single synchronized
 // dispatcher.
-class FenceCollection : public FenceOwner {
+class FenceCollection {
  public:
   // Creates an empty collection.
   //
-  // `listener` methods are called on `dispatcher`. `listener` must not be null
-  // and must outlive the newly created instance.
+  // `listener` methods are called on `dispatcher`. `listener`
+  // must not be null and must outlive the newly created instance.
   //
   // `dispatcher` must not be null and must outlive the newly created instance.
   // The instance must be accessed exclusively on the dispatcher.
-  FenceCollection(FenceCollectionListener* listener, fdf::UnownedSynchronizedDispatcher dispatcher);
+  FenceCollection(FenceListener* listener, fdf::UnownedSynchronizedDispatcher dispatcher);
 
   FenceCollection(const FenceCollection&) = delete;
-  FenceCollection(FenceCollection&&) = delete;
   FenceCollection& operator=(const FenceCollection&) = delete;
-  FenceCollection& operator=(FenceCollection&&) = delete;
 
   virtual ~FenceCollection() = default;
 
-  // Explicit destruction step. Use this to control when fences are destroyed.
+  // Releases the FenceCollection instance's references to all imported events.
+  //
+  // Any Fence that has no reference remaining will be destroyed.
   void Clear();
 
-  // Imports `event` so that it can subsequently be referenced by passing `id` to `GetFence()`.
-  // `id` must not already be registered by a previous call to `ImportEvent()`, unless it was
-  // subsequently unregistered by calling `ReleaseEvent()`.
+  // Adds an event to the set of imported events.
+  //
+  // `id` must be valid.
+  //
+  // Errors with ZX_ERR_ALREADY_EXISTS if `id` is already assigned to an
+  // imported event. Errors with ZX_ERR_NO_MEMORY if a memory allocation fails.
+  //
+  // If successful, passing `id` to `GetFence()` will retrieve the Fence that
+  // manages `event`.
   zx::result<> ImportEvent(zx::event event, display::EventId id);
 
-  // Unregisters a fence that was previously registered by `ImportEvent()`.
+  // Removes an event from the set of imported events.
+  //
+  // The method is idempotent. It makes no change if `id` is not assigned to
+  // an imported event.
+  //
+  // The call releases the FenceCollection instance's reference to the Fence
+  // managing the imported event. If there are no references remaining, the
+  // Fence will be destroyed.
   void ReleaseEvent(display::EventId id);
 
-  // Gets reference to existing fence by its ID, or nullptr if no fence is found.
-  fbl::RefPtr<FenceReference> GetFence(display::EventId id);
-
-  // `FenceOwner`:
-  void OnFenceSignaled(FenceReference* fence) override;
-  void OnRefForFenceDead(Fence* fence) override;
+  // Retrieves the fence managing an imported event.
+  //
+  // Returns nullptr if `id` is not assigned to an imported event.
+  //
+  // The returned reference can be used to ensure that the fence is not
+  // destroyed (releasing the event and canceling any wait operation) when
+  // `ReleaseEvent()` is called with `id`.
+  fbl::RefPtr<Fence> GetFence(display::EventId id);
 
  private:
-  Fence::Map fences_;
-  FenceCollectionListener& listener_;
+  Fence::Map imported_fences_;
+  FenceListener& listener_;
   const fdf::UnownedSynchronizedDispatcher dispatcher_;
 };
 

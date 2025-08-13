@@ -1518,7 +1518,7 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
   }
 }
 
-void Client::OnFenceSignaled(FenceReference* fence) {
+void Client::OnFenceSignaled(Fence& fence) {
   bool new_image_ready = false;
   for (auto& layer : layers_) {
     new_image_ready |= layer.MarkFenceReady(fence);

@@ -43,24 +43,23 @@ class StubImageLifecycleListener : public ImageLifecycleListener {
   void ImageWillBeDestroyed(display::DriverImageId driver_image_id) override {}
 };
 
-class StubFenceCollectionListener : public FenceCollectionListener {
+class StubFenceListener : public FenceListener {
  public:
-  StubFenceCollectionListener() = default;
-  ~StubFenceCollectionListener() = default;
+  StubFenceListener() = default;
+  ~StubFenceListener() = default;
 
-  StubFenceCollectionListener(const StubFenceCollectionListener&) = delete;
-  StubFenceCollectionListener& operator=(const StubFenceCollectionListener&) = delete;
+  StubFenceListener(const StubFenceListener&) = delete;
+  StubFenceListener& operator=(const StubFenceListener&) = delete;
 
-  // FenceCollectionListener:
-  void OnFenceSignaled(FenceReference* fence_reference) override {}
+  // `FenceListener`:
+  void OnFenceSignaled(Fence& fence) override {}
 };
 
 }  // namespace
 
 class LayerTest : public ::testing::Test {
  public:
-  LayerTest()
-      : fences_(&fence_collection_listener_, driver_runtime_.GetForegroundDispatcher()->borrow()) {}
+  LayerTest() : fences_(&fence_listener_, driver_runtime_.GetForegroundDispatcher()->borrow()) {}
 
   fbl::RefPtr<Image> CreateReadyImage() {
     static constexpr ClientId kClientId(1);
@@ -97,7 +96,7 @@ class LayerTest : public ::testing::Test {
   display::DriverImageId next_driver_image_id_ = display::DriverImageId(2000);
 
   StubImageLifecycleListener image_lifecycle_listener_;
-  StubFenceCollectionListener fence_collection_listener_;
+  StubFenceListener fence_listener_;
   FenceCollection fences_;
 };
 
