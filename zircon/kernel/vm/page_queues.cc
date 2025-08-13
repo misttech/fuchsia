@@ -683,7 +683,7 @@ void PageQueues::LruThread() {
     while (needs_processing) {
       // With the lock dropped process the target. This is not racy as generations are monotonic, so
       // worst case someone else already processed this generation and this call will be a no-op.
-      ProcessLruQueue(target_gen, false);
+      ProcessLruQueue(target_gen);
 
       // Take the lock so we can calculate (race free) a target mru-gen.
       Guard<CriticalMutex> guard{&lock_};
@@ -777,7 +777,7 @@ ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolateList() {
   return ktl::nullopt;
 }
 
-void PageQueues::ProcessLruQueue(uint64_t target_gen, bool isolate) {
+void PageQueues::ProcessLruQueue(uint64_t target_gen) {
   // This assertion is <=, and not strictly <, since to evict a some queue X, the target must be
   // X+1. Hence to preserve kNumActiveQueues, we can allow target_gen to become equal to the first
   // active queue, as this will process all the non-active queues. Although we might refresh our
@@ -857,20 +857,16 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, bool isolate) {
             deferred_list.AddLoanReplacement(page, this);
           }
         } else {
-          // Force it into either our target queue or the isolate list, don't care about races. If
-          // we happened to access it at the same time then too bad.
-          PageQueue new_queue = isolate ? PageQueueReclaimIsolate : gen_to_queue(target_gen);
-          list_node_t* target_queue = isolate ? &isolate_queues_[0] : &page_queues_[new_queue];
-          PageQueue old_queue =
-              static_cast<PageQueue>(page->object.get_page_queue_ref().exchange(new_queue));
+          // Force it the isolate list, don't care about races. If we happened to access it at the
+          // same time then too bad.
+          list_node_t* target_queue = &isolate_queues_[0];
+          PageQueue old_queue = static_cast<PageQueue>(
+              page->object.get_page_queue_ref().exchange(PageQueueReclaimIsolate));
           DEBUG_ASSERT(old_queue >= PageQueueReclaimBase);
 
           page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
-          page_queue_counts_[new_queue].fetch_add(1, ktl::memory_order_relaxed);
+          page_queue_counts_[PageQueueReclaimIsolate].fetch_add(1, ktl::memory_order_relaxed);
           list_add_tail(target_queue, &page->queue_node);
-          // We should only have performed this step to move from one inactive bucket to the next,
-          // so there should be no active/inactive count changes needed.
-          DEBUG_ASSERT(!queue_is_active(new_queue, mru_queue));
           deferred_list.AddReclaimable(page, this);
         }
       }
@@ -1428,7 +1424,7 @@ ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolate(size_t lowest_que
     if (lru_target > lru_limit) {
       return PeekIsolateList();
     }
-    ProcessLruQueue(lru_target, true);
+    ProcessLruQueue(lru_target);
   }
 }
 

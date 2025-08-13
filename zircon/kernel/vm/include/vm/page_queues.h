@@ -453,11 +453,8 @@ class PageQueues {
   // achieves this by walking all the pages in the queue and doing one of the following:
   //   1. For pages that have a newest accessed time and are in the wrong queue, are moved into the
   //      correct queue.
-  //   2. For pages that are in the correct queue, and |isolate| is true, they are moved to the
-  //      Isolate queue.
-  //   3. For pages that are in the correct queue, and |isolate| is false, they are moved to
-  //      the queue of |target_gen|.
-  void ProcessLruQueue(uint64_t target_gen, bool isolate);
+  //   2. For pages that are in the correct queue, they are moved to the Isolate queue.
+  void ProcessLruQueue(uint64_t target_gen);
 
   // Peek the isolate Isolate lists and return the first page, or a nullopt if the list is empty.
   ktl::optional<VmoBacklink> PeekIsolateList() TA_EXCL(lock_);

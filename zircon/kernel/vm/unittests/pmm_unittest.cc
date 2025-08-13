@@ -1010,22 +1010,25 @@ static bool pq_rotate_queue() {
               ((PageQueues::Counts){
                   .reclaim = {0, 0, 0, 0, 0, 0, 1, 0}, .pager_backed_dirty = 1, .wired = 1}));
   pq.RotateReclaimQueues();
-  // Further rotations might cause the page to be visible in the same queue, or an older one,
+  // Further rotations might cause the page to be visible in the same queue, or the isolate,
   // depending on whether the lru processing already ran in preparation of the next aging event.
   const PageQueues::Counts counts_last = (PageQueues::Counts){
       .reclaim = {0, 0, 0, 0, 0, 0, 0, 1}, .pager_backed_dirty = 1, .wired = 1};
-  const PageQueues::Counts counts_second_last = (PageQueues::Counts){
-      .reclaim = {0, 0, 0, 0, 0, 0, 1, 0}, .pager_backed_dirty = 1, .wired = 1};
+  const PageQueues::Counts counts_isolate =
+      (PageQueues::Counts){.reclaim = {0, 0, 0, 0, 0, 0, 0, 0},
+                           .reclaim_isolate = 1,
+                           .pager_backed_dirty = 1,
+                           .wired = 1};
   PageQueues::Counts counts = pq.QueueCounts();
-  EXPECT_TRUE(counts == counts_last || counts == counts_second_last);
+  EXPECT_TRUE(counts == counts_last || counts == counts_isolate);
 
   // Further rotations should not move the page.
   pq.RotateReclaimQueues();
   EXPECT_TRUE(pq.DebugPageIsWired(&wired_page));
   EXPECT_TRUE(pq.DebugPageIsPagerBackedDirty(&dirty_pager_page));
-  EXPECT_TRUE(pq.DebugPageIsReclaim(&clean_pager_page));
+  EXPECT_TRUE(pq.DebugPageIsReclaimIsolate(&clean_pager_page));
   counts = pq.QueueCounts();
-  EXPECT_TRUE(counts == counts_last || counts == counts_second_last);
+  EXPECT_TRUE(counts == counts_isolate);
   EXPECT_TRUE(pq.GetActiveInactiveCounts() == ((PageQueues::ActiveInactiveCounts){0, 1}));
 
   // Moving the page should bring it back to the first queue.
