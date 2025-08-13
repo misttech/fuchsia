@@ -224,10 +224,10 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
     } else {
       // Admin command.
       offset = 0;
-      length = kPageSize;
+      data_vmo.value()->get_size(&length);
       option = ZX_BTI_PERM_WRITE;
     }
-    ZX_DEBUG_ASSERT(length % kPageSize == 0);
+    ZX_DEBUG_ASSERT(length > 0 && length % kPageSize == 0);
 
     data_paddrs.resize(length / kPageSize, 0);
     if (zx_status_t status =

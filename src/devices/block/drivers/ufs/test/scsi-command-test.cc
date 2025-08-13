@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/scsi/controller.h>
+
 #include <cstdint>
-#include <iostream>
 #include <memory>
-#include <vector>
 
 #include "src/devices/block/drivers/ufs/transfer_request_descriptor.h"
-#include "src/devices/block/drivers/ufs/upiu/attributes.h"
-#include "src/devices/block/drivers/ufs/upiu/descriptors.h"
+#include "src/devices/block/drivers/ufs/ufs.h"
 #include "src/devices/block/drivers/ufs/upiu/scsi_commands.h"
 #include "src/devices/block/drivers/ufs/upiu/upiu_transactions.h"
 #include "unit-lib.h"
@@ -36,10 +35,19 @@ class ScsiCommandTest : public UfsTest {
 
   uint16_t GetBlockCount() const { return block_count_; }
   uint32_t GetBlockSize() const { return block_size_; }
+  IoCommand &GetEmptyIoCommand(bool is_write) {
+    empty_io_cmd_.device_op.op.command.opcode = is_write ? BLOCK_OPCODE_WRITE : BLOCK_OPCODE_READ;
+    empty_io_cmd_.block_size_bytes = block_size_;
+    empty_io_cmd_.device_op.op.rw.offset_dev = 0;
+    empty_io_cmd_.device_op.op.rw.length = block_count_;
+    empty_io_cmd_.device_op.completion_cb = [](void *cookie, zx_status_t status, block_op_t *op) {};
+    return empty_io_cmd_;
+  }
 
  private:
   zx::vmo vmo_;
   fzl::VmoMapper mapper_;
+  IoCommand empty_io_cmd_;
 
   const uint16_t block_count_ = 1;
   const uint32_t block_size_ = kMockBlockSize;
@@ -66,8 +74,8 @@ TEST_F(ScsiCommandTest, Read10) {
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kDeviceToHost,
                        GetBlockCount() * GetBlockSize());
   ASSERT_EQ(upiu.GetOpcode(), scsi::Opcode::READ_10);
-  ASSERT_OK(
-      dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun, zx::unowned_vmo(GetVmo())));
+  ASSERT_OK(dut_->GetTransferRequestProcessor().SendScsiUpiu(
+      upiu, kTestLun, zx::unowned_vmo(GetVmo()), &GetEmptyIoCommand(/*is_write=*/false)));
 
   // Check the read data
   ASSERT_EQ(memcmp(GetVirtualAddress(), buf, kMockBlockSize), 0);
@@ -100,7 +108,7 @@ TEST_F(ScsiCommandTest, Read10Exception) {
     // The command should be failed with not-created vmo.
     zx::vmo not_created_vmo;
     auto response = dut_->GetTransferRequestProcessor().SendScsiUpiu(
-        upiu, kTestLun, zx::unowned_vmo(not_created_vmo));
+        upiu, kTestLun, zx::unowned_vmo(not_created_vmo), &GetEmptyIoCommand(/*is_write=*/false));
     ASSERT_EQ(response.status_value(), ZX_ERR_BAD_HANDLE);
   }
 
@@ -120,9 +128,13 @@ TEST_F(ScsiCommandTest, Read10Exception) {
 
     // The command should be failed with not-exist LUN.
     const uint8_t kTestFailureLun = 1;
-    auto response = dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestFailureLun,
-                                                                     zx::unowned_vmo(GetVmo()));
-    ASSERT_EQ(response.status_value(), ZX_ERR_BAD_STATE);
+    zx::result<std::unique_ptr<ResponseUpiu>> response =
+        dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestFailureLun,
+                                                         zx::unowned_vmo(GetVmo()),
+                                                         &GetEmptyIoCommand(/*is_write=*/false));
+    auto *response_sense_data =
+        reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response->GetSenseData());
+    ASSERT_EQ(response_sense_data->sense_key(), scsi::SenseKey::ILLEGAL_REQUEST);
   }
 
   {
@@ -141,9 +153,12 @@ TEST_F(ScsiCommandTest, Read10Exception) {
     ASSERT_EQ(upiu.GetOpcode(), scsi::Opcode::READ_10);
 
     // The command should be failed with address exceeding device size.
-    auto response =
-        dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun, zx::unowned_vmo(GetVmo()));
-    ASSERT_EQ(response.status_value(), ZX_ERR_BAD_STATE);
+    zx::result<std::unique_ptr<ResponseUpiu>> response =
+        dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun, zx::unowned_vmo(GetVmo()),
+                                                         &GetEmptyIoCommand(/*is_write=*/false));
+    auto *response_sense_data =
+        reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response->GetSenseData());
+    ASSERT_EQ(response_sense_data->sense_key(), scsi::SenseKey::ILLEGAL_REQUEST);
   }
 }
 
@@ -165,8 +180,8 @@ TEST_F(ScsiCommandTest, Write10) {
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kHostToDevice,
                        GetBlockCount() * GetBlockSize());
   ASSERT_EQ(upiu.GetOpcode(), scsi::Opcode::WRITE_10);
-  ASSERT_OK(
-      dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun, zx::unowned_vmo(GetVmo())));
+  ASSERT_OK(dut_->GetTransferRequestProcessor().SendScsiUpiu(
+      upiu, kTestLun, zx::unowned_vmo(GetVmo()), &GetEmptyIoCommand(/*is_write=*/true)));
 
   // Read test data form the mock device
   char buf[kMockBlockSize];
@@ -199,7 +214,7 @@ TEST_F(ScsiCommandTest, Write10Exception) {
     // The command should be failed with not-created vmo.
     zx::vmo not_created_vmo;
     auto response = dut_->GetTransferRequestProcessor().SendScsiUpiu(
-        upiu, kTestLun, zx::unowned_vmo(not_created_vmo));
+        upiu, kTestLun, zx::unowned_vmo(not_created_vmo), &GetEmptyIoCommand(/*is_write=*/true));
     ASSERT_EQ(response.status_value(), ZX_ERR_BAD_HANDLE);
   }
 
@@ -219,9 +234,13 @@ TEST_F(ScsiCommandTest, Write10Exception) {
 
     // The command should be failed with not-exist LUN.
     const uint8_t kTestFailureLun = 1;
-    auto response = dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestFailureLun,
-                                                                     zx::unowned_vmo(GetVmo()));
-    ASSERT_EQ(response.status_value(), ZX_ERR_BAD_STATE);
+    zx::result<std::unique_ptr<ResponseUpiu>> response =
+        dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestFailureLun,
+                                                         zx::unowned_vmo(GetVmo()),
+                                                         &GetEmptyIoCommand(/*is_write=*/true));
+    auto *response_sense_data =
+        reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response->GetSenseData());
+    ASSERT_EQ(response_sense_data->sense_key(), scsi::SenseKey::ILLEGAL_REQUEST);
   }
 
   {
@@ -240,9 +259,12 @@ TEST_F(ScsiCommandTest, Write10Exception) {
     ASSERT_EQ(upiu.GetOpcode(), scsi::Opcode::WRITE_10);
 
     // The command should be failed with address exceeding device size.
-    auto response =
-        dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun, zx::unowned_vmo(GetVmo()));
-    ASSERT_EQ(response.status_value(), ZX_ERR_BAD_STATE);
+    zx::result<std::unique_ptr<ResponseUpiu>> response =
+        dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun, zx::unowned_vmo(GetVmo()),
+                                                         &GetEmptyIoCommand(/*is_write=*/true));
+    auto *response_sense_data =
+        reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response->GetSenseData());
+    ASSERT_EQ(response_sense_data->sense_key(), scsi::SenseKey::ILLEGAL_REQUEST);
   }
 }
 
