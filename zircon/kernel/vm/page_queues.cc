@@ -56,6 +56,11 @@ class LruIsolate {
     DEBUG_ASSERT(!page->is_loaned());
     VmCowPages* cow = reinterpret_cast<VmCowPages*>(page->object.get_object());
     DEBUG_ASSERT(cow);
+    // If the VMO does not support borrowing then skip enqueuing the RefPtr, since the
+    // ReplacePageWithLoaned can never succeed anyway.
+    if (!cow->can_borrow()) {
+      return;
+    }
     fbl::RefPtr<VmCowPages> cow_ref = fbl::MakeRefPtrUpgradeFromRaw(cow, pq->get_lock());
     DEBUG_ASSERT(cow_ref);
     AddInternal(ktl::move(cow_ref), page, ListAction::ReplaceWithLoaned);
