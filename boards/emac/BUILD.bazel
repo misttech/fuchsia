@@ -89,6 +89,7 @@ fuchsia_board_configuration(
     },
     provided_features = [
         "fuchsia::paver",
+        "fuchsia::usb_host",
         "fuchsia::usb_peripheral_support",
     ],
     version = build_info_version,

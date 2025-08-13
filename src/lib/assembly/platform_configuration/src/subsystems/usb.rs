@@ -35,7 +35,9 @@ impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystemConfig {
         if context.board_config.provides_feature("fuchsia::xhci") {
             builder.platform_bundle("xhci_driver");
         }
-
+        if context.board_config.provides_feature("fuchsia::usb_host") {
+            builder.platform_bundle("usb_host_drivers");
+        }
         Ok(())
     }
 }

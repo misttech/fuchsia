@@ -155,6 +155,7 @@ _COMMON_PROVIDED_FEATURES = [
     "fuchsia::realtek_8211f",
     "fuchsia::suspender",
     "fuchsia::suspending_token",
+    "fuchsia::usb_host",
     "fuchsia::usb_peripheral_support",
     "fuchsia::wlan_fullmac",
     "fuchsia::xhci",

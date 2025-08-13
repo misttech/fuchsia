@@ -52,6 +52,9 @@ bootstrap_user_platform_aib_names = [
   "emulator_support",
   "paravirtualization_support",
 
+  # USB
+  "usb_host_drivers",
+
   # Storage
   "fshost_common",
   "fshost_fxfs",

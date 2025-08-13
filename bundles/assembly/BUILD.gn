@@ -377,6 +377,9 @@ assembly_input_bundle("bootstrap") {
   ]
 }
 
+assembly_input_bundle("usb_host_drivers") {
+}
+
 # The most-common, most-basic, AIB that is included in all userdebug and eng
 # systems.
 #
