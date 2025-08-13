@@ -459,10 +459,8 @@ class PageQueues {
   //      the queue of |target_gen|.
   void ProcessLruQueue(uint64_t target_gen, bool isolate);
 
-  // Processes the Isolate list with the goal to move any pages into the correct list, if their
-  // queue is no longer the Isolate list. If |peek| contains a value then only the isolate lists up
-  // to and including that value are processed, and the first page found is returned.
-  ktl::optional<VmoBacklink> ProcessIsolateList(ktl::optional<size_t> peek) TA_EXCL(lock_);
+  // Peek the isolate Isolate lists and return the first page, or a nullopt if the list is empty.
+  ktl::optional<VmoBacklink> PeekIsolateList() TA_EXCL(lock_);
 
   // Helpers for adding and removing to the queues. All of the public Set/Move/Remove operations
   // are convenience wrappers around these.
@@ -521,13 +519,6 @@ class PageQueues {
   template <typename F>
   bool DebugPageIsSpecificQueue(const vm_page_t* page, PageQueue queue, F validator) const;
 
-  void AdvanceIsolateCursorIf(vm_page_t* page) TA_REQ(list_lock_) {
-    if (page == isolate_cursor_.page) {
-      isolate_cursor_.page =
-          list_next_type(isolate_cursor_.list, &page->queue_node, vm_page_t, queue_node);
-    }
-  }
-
   // Records that |pages| have potentially changed queue impacting the active/inactive ratio, and
   // returns |true| if checking the active ratio can be skipped.
   bool RecordActiveRatioSkips(size_t pages) {
@@ -544,6 +535,11 @@ class PageQueues {
     }
     return true;
   }
+
+  // Internal helper for MarkAccessed that handles the case where the page might be in the Isolate
+  // queue. Pages in the isolate queue must actually be moved out of the list, and this requires
+  // taking the lock.
+  void MarkAccessedMaybeIsolate(vm_page_t* page);
 
   // The list_lock_ is used to protect the linked lists queues as these cannot be implemented with
   // atomics. A few related members are also protected with this lock, such as the isolate_cursor.
@@ -645,6 +641,10 @@ class PageQueues {
   // it is in, potentially one of several different, isolate_queuse_ lists. This is just an
   // implementation simplification as there's no need to 'save' the memory of the unused list_node_t
   // in the other page_queues_ array.
+  // Pages in the PageQueueReclaimIsolate state are always exactly in the isolate_queues_ list, and
+  // similarly any page in the isolate_queues_ list is exactly in the PageQueueReclaimIsoalte state.
+  // In this way the isolate_queues_ are considered reclaimable, and are part of active/inactive
+  // tracking, but do not support the MarkAccessed fastpath.
   ktl::array<list_node_t, kNumIsolateQueues> isolate_queues_ TA_GUARDED(list_lock_);
 
   // The generation counts are monotonic increasing counters and used to represent the effective age
@@ -716,23 +716,6 @@ class PageQueues {
 
   // Current active ratio multiplier.
   int64_t active_ratio_multiplier_ TA_GUARDED(lock_) = 0;
-
-  // In order to process all the items in the Isolate list, whilst still being able to periodically
-  // drop the lock to avoid a long running operation, we use a cursor to record the current page
-  // being examined. Any operation that removes a page from the Isolate list must check if its
-  // removing this page, and advance it to the next page in the list if it is. This is automated by
-  // calling AdvanceDontNeedCursorIf.
-  struct {
-    vm_page_t* page = nullptr;
-    list_node_t* list = nullptr;
-  } isolate_cursor_ TA_GUARDED(list_lock_);
-
-  // There is only a single cursor and this lock acts as a resource control for it. This process
-  // needs to be done on LRU rotation / when peeking pages for reclamation, which need to be
-  // synchronized anyway so having this additional lock does not impact parallelism.
-  // The actual object member |isolate_cursor| is not guarded by this lock, since it needs to be
-  // read, and potentially updated, specifically by other threads who do not own the logical cursor.
-  DECLARE_MUTEX(PageQueues) isolate_cursor_lock_;
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_PAGE_QUEUES_H_
