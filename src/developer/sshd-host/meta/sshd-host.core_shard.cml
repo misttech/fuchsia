@@ -31,11 +31,6 @@
             from: "parent",
             to: "#sshd-host",
         },
-        {
-            protocol: "fuchsia.posix.socket.Provider",
-            from: "#network",
-            to: "#sshd-host",
-        },
 
         // Used by both sshd-host and in shell namespace
         {
