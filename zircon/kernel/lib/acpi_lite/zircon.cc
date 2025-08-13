@@ -10,9 +10,10 @@
 #include <lib/acpi_lite/zircon.h>
 #include <zircon/compiler.h>
 
+#include <kernel/range_check.h>
 #include <vm/physmap.h>
-#include <vm/vm_address_region.h>
 #include <vm/vm_aspace.h>
+#include <vm/vm_object_physical.h>
 
 namespace {
 // AcpiParser requires a ZirconPhysmemReader instance that outlives
@@ -22,8 +23,6 @@ acpi_lite::ZirconPhysmemReader g_physmem_reader;
 
 namespace acpi_lite {
 
-// TODO(https://fxbug.dev/438036525): This translation is 'misusing' the physmap and should be
-// re-designed to create its own separate mappings.
 zx::result<const void *> ZirconPhysmemReader::PhysToPtr(uintptr_t phys, size_t length) {
   // We don't support the 0 physical address or 0-length ranges.
   if (length == 0 || phys == 0) {
@@ -37,51 +36,61 @@ zx::result<const void *> ZirconPhysmemReader::PhysToPtr(uintptr_t phys, size_t l
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
-  // Ensure that both "phys" and "phys + length - 1" have valid addresses.
-  //
-  // The Zircon physmap is contiguous, so we don't have to worry about intermediate addresses.
-  if (!is_physmap_phys_addr(phys) || !is_physmap_phys_addr(phys_end)) {
-    return zx::error(ZX_ERR_OUT_OF_RANGE);
-  }
-
-  // Aim to map this 1-1 with what this address would be in the physmap. This essentially causes
-  // pieces of the physmap that were not RAM, and may have previously been unmapped, to be mapped
-  // back in if they are ACPI regions.
+  // Convert to a page aligned base and size.
   const paddr_t paddr_base = ROUNDDOWN_PAGE_SIZE(phys);
-  const vaddr_t vaddr_base = reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr_base));
   const size_t size = ROUNDUP_PAGE_SIZE(phys_end) - paddr_base;
-  if (vaddr_base == 0) {
-    return zx::error(ZX_ERR_INTERNAL);
-  }
+
+  Guard<Mutex> guard{&lock_};
+
+  // Search existing mappings.
   ArchVmAspace &arch_aspace = VmAspace::kernel_aspace()->arch_aspace();
-
-  paddr_t paddr = 0;
-  uint mmu_flags = 0;
-  if (arch_aspace.Query(vaddr_base, &paddr, &mmu_flags) == ZX_OK) {
-    DEBUG_ASSERT(paddr == paddr_base);
-    DEBUG_ASSERT((mmu_flags & ARCH_MMU_FLAG_PERM_READ) != 0);
-    return zx::success(paddr_to_physmap(phys));
-  }
-
-  fbl::RefPtr<VmAddressRegion> root_vmar = VmAspace::kernel_aspace()->RootVmar();
-  // Check if this region is already reserved or not. If the address is within the RAM portion of
-  // the physmap then the region will already exist, even if the the page itself may not be present
-  // in the arch aspace. If the region is not within the RAM portion of the physmap then the physmap
-  // VMAR will not cover it and so we must reserve the virtual address range prior to mapping.
-  if (!root_vmar->FindRegion(vaddr_base)) {
-    zx_status_t status = VmAspace::kernel_aspace()->RootVmar()->ReserveSpace(
-        "acpi", vaddr_base, size, ARCH_MMU_FLAG_PERM_READ);
+  for (auto &mapping : mappings_) {
+    paddr_t map_paddr = 0;
+    [[maybe_unused]] uint mmu_flags = 0;
+    zx_status_t status = arch_aspace.Query(mapping.mapping->base(), &map_paddr, &mmu_flags);
     if (status != ZX_OK) {
-      return zx::error(status);
+      return zx::error{status};
+    }
+
+    DEBUG_ASSERT((mmu_flags & ARCH_MMU_FLAG_PERM_READ) != 0);
+
+    if (InRange(paddr_base, size, map_paddr, map_paddr + mapping.mapping->size())) {
+      uintptr_t offset = phys - map_paddr;
+      return zx::ok(reinterpret_cast<const void *>(mapping.mapping->base() + offset));
     }
   }
 
-  zx_status_t status = VmAspace::kernel_aspace()->arch_aspace().MapContiguous(
-      vaddr_base, paddr_base, size / PAGE_SIZE, ARCH_MMU_FLAG_PERM_READ);
+  // Need to create a new mapping to cover this range.
+  fbl::AllocChecker ac;
+  ktl::unique_ptr<Mapping> pl = ktl::unique_ptr<Mapping>(new (&ac) Mapping());
+  if (!ac.check()) {
+    return zx::error{ZX_ERR_NO_MEMORY};
+  }
+
+  fbl::RefPtr<VmObjectPhysical> vmo;
+  zx_status_t status = VmObjectPhysical::Create(paddr_base, size, &vmo);
   if (status != ZX_OK) {
+    return zx::error{status};
+  }
+
+  zx::result<VmAddressRegion::MapResult> map_result =
+      VmAspace::kernel_aspace()->RootVmar()->CreateVmMapping(
+          0, size, 0, VMAR_FLAG_CAN_MAP_READ, ktl::move(vmo), 0, ARCH_MMU_FLAG_PERM_READ, "acpi");
+  if (map_result.is_error()) {
+    return map_result.take_error();
+  }
+
+  status = map_result->mapping->MapRange(0, size, true, false);
+  if (status != ZX_OK) {
+    map_result->mapping->Destroy();
     return zx::error(status);
   }
-  return zx::success(paddr_to_physmap(phys));
+
+  pl->mapping = map_result->mapping;
+  mappings_.push_front(ktl::move(pl));
+
+  uintptr_t offset = phys - paddr_base;
+  return zx::ok(reinterpret_cast<const void *>(map_result->base + offset));
 }
 
 // Create a new AcpiParser, starting at the given Root System Description Pointer (RSDP).

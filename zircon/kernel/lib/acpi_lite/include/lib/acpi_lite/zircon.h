@@ -11,15 +11,24 @@
 #include <lib/zx/result.h>
 #include <zircon/types.h>
 
+#include <vm/vm_address_region.h>
+
 namespace acpi_lite {
 
-// Convert physical addresses to virtual addresses using Zircon's standard conversion
-// functions.
+// Convert physical addresses to virtual addresses by creating new mappings as required.
 class ZirconPhysmemReader final : public PhysMemReader {
  public:
   constexpr ZirconPhysmemReader() = default;
 
-  zx::result<const void*> PhysToPtr(uintptr_t phys, size_t length) final;
+  zx::result<const void*> PhysToPtr(uintptr_t phys, size_t length) override;
+
+ private:
+  struct Mapping : public fbl::SinglyLinkedListable<ktl::unique_ptr<Mapping>> {
+    fbl::RefPtr<VmMapping> mapping;
+  };
+
+  DECLARE_MUTEX(ZirconPhysmemReader) lock_;
+  fbl::SinglyLinkedList<ktl::unique_ptr<Mapping>> mappings_ TA_GUARDED(lock_);
 };
 
 // Create a new AcpiParser, starting at the given Root System Description Pointer (RSDP),
