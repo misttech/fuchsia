@@ -42,7 +42,7 @@ use log::{debug, error, warn};
 use scopeguard::defer;
 use std::cell::RefCell;
 use std::cmp;
-use std::collections::{BTreeMap, BinaryHeap, HashMap};
+use std::collections::{BTreeMap, BinaryHeap, HashSet};
 use std::rc::Rc;
 use std::sync::LazyLock;
 use time_pretty::{format_duration, format_timer, MSEC_IN_NANOS};
@@ -693,7 +693,7 @@ impl std::fmt::Display for TimerId {
 /// passed.
 struct Timers {
     timers: BinaryHeap<TimerNode>,
-    deadline_by_id: HashMap<TimerId, fasync::BootInstant>,
+    timer_ids: HashSet<TimerId>,
 }
 
 impl std::fmt::Display for Timers {
@@ -723,7 +723,7 @@ impl std::fmt::Display for Timers {
 impl Timers {
     /// Creates an empty [AllTimers].
     fn new() -> Self {
-        Self { timers: BinaryHeap::new(), deadline_by_id: HashMap::new() }
+        Self { timers: BinaryHeap::new(), timer_ids: HashSet::new() }
     }
 
     /// Adds a [TimerNode] to [Timers].
@@ -733,18 +733,17 @@ impl Timers {
     /// is replaced.
     fn push(&mut self, n: TimerNode) {
         let new_id = n.get_id();
-        if let Some(deadline) = self.deadline_by_id.get(&new_id) {
-            // There already is a deadline for this timer.
-            if n.deadline == *deadline {
-                return;
-            }
-            // Else replace. The deadline may be pushed out or pulled in.
-            self.deadline_by_id.insert(new_id, n.deadline.clone());
+        if let Some(_) = self.timer_ids.get(&new_id) {
+            // There already is a deadline for this timer, we need to reschedule.
+
+            // The deadline may be pushed out or pulled in, or even be
+            // unchanged.
+            self.timer_ids.insert(new_id);
             self.timers.retain(|t| t.get_id() != n.get_id());
             self.timers.push(n);
         } else {
             // New timer node.
-            self.deadline_by_id.insert(new_id, n.deadline);
+            self.timer_ids.insert(new_id);
             self.timers.push(n);
         }
     }
@@ -773,7 +772,7 @@ impl Timers {
     /// Returns true if there are no known timers.
     fn is_empty(&self) -> bool {
         let empty1 = self.timers.is_empty();
-        let empty2 = self.deadline_by_id.is_empty();
+        let empty2 = self.timer_ids.is_empty();
         assert!(empty1 == empty2, "broken invariant: empty1: {} empty2:{}", empty1, empty2);
         empty1
     }
@@ -793,7 +792,7 @@ impl Timers {
             .map(|d| {
                 if Timers::expired(now, d) {
                     self.timers.pop().map(|e| {
-                        self.deadline_by_id.remove(&e.get_id());
+                        self.timer_ids.remove(&e.get_id());
                         e
                     })
                 } else {
@@ -817,14 +816,14 @@ impl Timers {
         };
 
         self.timers.retain(|t| t.alarm_id != timer_id.alarm_id || t.cid != timer_id.cid);
-        self.deadline_by_id.remove(timer_id);
+        self.timer_ids.remove(timer_id);
         ret
     }
 
     /// Returns the number of currently pending timers.
     fn timer_count(&self) -> usize {
         let count1 = self.timers.len();
-        let count2 = self.deadline_by_id.len();
+        let count2 = self.timer_ids.len();
         assert!(count1 == count2, "broken invariant: count1: {}, count2: {}", count1, count2);
         count1
     }
@@ -1398,7 +1397,13 @@ async fn wake_timer_loop(
                     ))),
                 }
             }
-            Cmd::AlarmDriverError { expired_deadline, error, timer_config_id, resolution_nanos, ticks } => {
+            Cmd::AlarmDriverError {
+                expired_deadline,
+                error,
+                timer_config_id,
+                resolution_nanos,
+                ticks,
+            } => {
                 trace::duration!(c"alarms", c"Cmd::AlarmDriverError");
                 let (_dummy_lease, peer) = zx::EventPair::create();
                 debug!("XXX: [{}] bogus lease: {:?}", line!(), &peer.get_koid().unwrap());
@@ -2392,6 +2397,7 @@ mod tests {
     // deadline for the later call.
     #[test_case(200, 100 ; "pull in")]
     #[test_case(100, 200 ; "push out")]
+    #[test_case(100, 100 ; "replace with the same deadline")]
     #[fuchsia::test(allow_stalls = false)]
     async fn test_reschedule(initial_deadline_nanos: i64, override_deadline_nanos: i64) {
         const ALARM_ID: &str = "Hello";
@@ -2511,108 +2517,6 @@ mod tests {
         );
         assert_matches!(
             TestExecutor::poll_until_stalled(notifier_2.next()).await,
-            Poll::Ready(None)
-        );
-    }
-
-    // Rescheduling a timer with the same deadline using SetAndWait will fail
-    // with WakeAlarmsError::Dropped.
-    //
-    // TODO(http://b/430638703): Consider changing this behavior.
-    #[fuchsia::test(allow_stalls = false)]
-    async fn test_reschedule_same() {
-        const ALARM_ID: &str = "Hello";
-        const DEADLINE_NANOS: i64 = 100;
-
-        let ctx = TestContext::new().await;
-
-        let schedule = |deadline_nanos: i64| {
-            let setup_done = zx::Event::create();
-            let task = ctx.wake_proxy.set_and_wait(
-                fidl::BootInstant::from_nanos(deadline_nanos),
-                fta::SetMode::NotifySetupDone(
-                    setup_done.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-                ),
-                ALARM_ID.into(),
-            );
-            (task, setup_done)
-        };
-
-        // Schedule timer with a long timeout first. Let it wait, then
-        // try to reschedule the same timer
-        let (mut set_task_1, setup_done_1) = schedule(DEADLINE_NANOS);
-        fasync::OnSignals::new(setup_done_1, zx::Signals::EVENT_SIGNALED).await.unwrap();
-        assert_matches!(TestExecutor::poll_until_stalled(&mut set_task_1).await, Poll::Pending);
-
-        // Schedule the same timer as above, but with a shorter deadline. This
-        // should cancel the earlier call.
-        let (mut set_task_2, setup_done_2) = schedule(DEADLINE_NANOS);
-        fasync::OnSignals::new(setup_done_2, zx::Signals::EVENT_SIGNALED).await.unwrap();
-        assert_matches!(TestExecutor::poll_until_stalled(&mut set_task_1).await, Poll::Pending);
-        assert_matches!(
-            TestExecutor::poll_until_stalled(&mut set_task_2).await,
-            Poll::Ready(Ok(Err(fta::WakeAlarmsError::Dropped)))
-        );
-
-        // The later call will be fired exactly on the new shorter deadline.
-        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(DEADLINE_NANOS)).await;
-        assert_matches!(
-            TestExecutor::poll_until_stalled(&mut set_task_1).await,
-            Poll::Ready(Ok(Ok(_)))
-        );
-    }
-
-    // Rescheduling a timer with the same deadline using Set will notify with
-    // WakeAlarmsError::Dropped.
-    //
-    // TODO(http://b/430638703): Consider changing this behavior.
-    #[fuchsia::test(allow_stalls = false)]
-    async fn test_reschedule_same_notify() {
-        const ALARM_ID: &str = "Hello";
-        const DEADLINE_NANOS: i64 = 100;
-
-        let ctx = TestContext::new().await;
-
-        let schedule = async |deadline_nanos: i64| {
-            let (notifier_client, notifier_stream) =
-                fidl::endpoints::create_request_stream::<fta::NotifierMarker>();
-            assert_matches!(
-                ctx.wake_proxy
-                    .set(
-                        notifier_client,
-                        fidl::BootInstant::from_nanos(deadline_nanos),
-                        fta::SetMode::KeepAlive(fake_wake_lease()),
-                        ALARM_ID.into(),
-                    )
-                    .await,
-                Ok(Ok(()))
-            );
-            notifier_stream
-        };
-
-        let mut notifier_1 = schedule(DEADLINE_NANOS).await;
-        let mut next_task_1 = notifier_1.next();
-        assert_matches!(TestExecutor::poll_until_stalled(&mut next_task_1).await, Poll::Pending);
-
-        // Second notifier will error immediately then close the connection.
-        let mut notifier_2 = schedule(DEADLINE_NANOS).await;
-        assert_matches!(
-            TestExecutor::poll_until_stalled(notifier_2.next()).await,
-            Poll::Ready(Some(Ok(fta::NotifierRequest::NotifyError { alarm_id, error, .. }))) if alarm_id == ALARM_ID && error == fta::WakeAlarmsError::Dropped
-        );
-        assert_matches!(
-            TestExecutor::poll_until_stalled(notifier_2.next()).await,
-            Poll::Ready(None)
-        );
-
-        // First notifier is called upon the deadline then closed.
-        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(DEADLINE_NANOS)).await;
-        assert_matches!(
-            TestExecutor::poll_until_stalled(next_task_1).await,
-            Poll::Ready(Some(Ok(fta::NotifierRequest::Notify { alarm_id, .. }))) if alarm_id == ALARM_ID
-        );
-        assert_matches!(
-            TestExecutor::poll_until_stalled(notifier_1.next()).await,
             Poll::Ready(None)
         );
     }
