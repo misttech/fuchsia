@@ -183,6 +183,9 @@ group("tests") {
   if (starnix_enable_arch32) {
     deps += [ ":starnix_arch32_syscalls_cpp_tests" ]
   }
+  if (starnix_linux_syscall_tests) {
+    deps += [ ":linux_syscalls_cpp_tests" ]
+  }
   if (host_os == "linux" && host_cpu == "x64") {
     foreach(test_name, all_test_names) {
       deps += [
@@ -298,13 +301,13 @@ template("syscall_test") {
     _container_config = invoker.container_config
   }
 
-  _container_config_component = "${test_name}_config"
+  _container_config_component = "${target_name}_config"
   starnix_container_config_component(_container_config_component) {
     config = _container_config
   }
 
   _container_config_shard_label = "${_container_config_component}_shard"
-  _container_config_shard = "${target_gen_dir}/${test_name}_config.shard.cml"
+  _container_config_shard = "${target_gen_dir}/${target_name}_config.shard.cml"
   starnix_container_config_offers(_container_config_shard_label) {
     output = _container_config_shard
     offer_from = "#config"
@@ -312,19 +315,29 @@ template("syscall_test") {
   }
 
   # Generate the manifest
-  _manifest_label = "${test_name}.cml"
+  _manifest_label = "${target_name}.cml"
   _manifest_file = "$target_gen_dir/${_manifest_label}"
   generated_file(_manifest_label) {
     outputs = [ _manifest_file ]
     output_conversion = "json"
+    _program = {
+      binary = "data/tests/${test_name}_bin"
+    }
+
+    # If we're targeting a different kernel, the binary should be prefixed with the target kernel,
+    # and we'll add a field to the program to indicate the target kernel. This field will later be
+    # consumed within the Starnix test runner to handle as appropriate.
+    if (defined(invoker.test_target_kernel)) {
+      _program.binary =
+          "data/tests/${invoker.test_target_kernel}_${test_name}_bin"
+      _program.test_target_kernel = invoker.test_target_kernel
+    }
     contents = {
       include = [
         rebase_path(_container_config_shard, root_build_dir),
         "//src/starnix/tests/syscalls/cpp/meta/syscalls_cpp_test.cml",
       ]
-      program = {
-        binary = "data/tests/${test_name}_bin"
-      }
+      program = _program
       children = [
         {
           name = "config"
@@ -336,8 +349,8 @@ template("syscall_test") {
     deps = [ ":${_container_config_shard_label}" ]
   }
 
-  _target_test_label = "${test_name}_bin"
-  _host_test_label = "starnix_${test_name}_host"
+  _target_test_label = "${target_name}_bin"
+  _host_test_label = "starnix_${target_name}_host"
   if (is_linux) {
     _test_deps = [
       ":test_utils",
@@ -420,6 +433,10 @@ template("syscall_test") {
     uses_expectations = true
     generated_expectations = ":syscalls_cpp_test_expectations"
     test_type = "starnix"
+
+    if (defined(invoker.custom_expectations)) {
+      generated_expectations = invoker.custom_expectations
+    }
   }
 
   if (starnix_enable_arch32) {
@@ -443,6 +460,11 @@ template("syscall_test") {
       generated_expectations =
           ":syscalls_cpp_test_expectations($target_linux_arch32_toolchain)"
       test_type = "starnix"
+
+      if (defined(invoker.custom_expectations)) {
+        generated_expectations =
+            "($invoker.custom_expectations)($target_linux_arch32_toolchain)"
+      }
     }
   }
 }
@@ -593,10 +615,70 @@ generated_expectations_file("syscalls_cpp_test_expectations") {
   ]
 }
 
+generated_expectations_file("linux_cpp_test_expectations") {
+  includes = [ "expectations/linux_syscalls_cpp_test.json5" ]
+}
+
 starnix_linux_test_component("crash_test") {
   test_label = ":crash"
   test_binary = "crash"
   test_type = "starnix"
+}
+
+if (starnix_linux_syscall_tests) {
+  foreach(test_name, syscall_tests) {
+    syscall_test("linux_${test_name}") {
+      test_name = test_name
+      test_target_kernel = "linux"
+      custom_expectations = ":linux_cpp_test_expectations"
+    }
+  }
+
+  foreach(test_def, syscall_tests_etc) {
+    syscall_test("linux_${test_def.name}") {
+      test_name = test_def.name
+      forward_variables_from(test_def, "*", [ "name" ])
+      test_target_kernel = "linux"
+      custom_expectations = ":linux_cpp_test_expectations"
+    }
+  }
+
+  fuchsia_test_package("linux_syscalls_cpp_tests") {
+    test_components = []
+    deps = []
+    foreach(test_name, all_test_names) {
+      test_components += [ ":linux_${test_name}" ]
+      deps += [ ":linux_${test_name}_config" ]
+    }
+
+    subpackages = starnix_test_subpackages
+    subpackages += [ "//src/starnix/containers/debian:debian_package" ]
+
+    if (target_cpu == "x64") {
+      # TODO(https://fxbug.dev/42059962): arm64 emulator does not have Vulkan support yet.
+      # Without Vulkan, test-ui-stack will stuck on Scenic startup.
+      subpackages += [ "//src/ui/testing/test_ui_stack:test-ui-stack" ]
+    }
+
+    deps += [
+      ":extended_pstate_initial_state_child_resource($target_linux_toolchain)",
+      "//src/lib/testing/expectation:expectation_comparer",
+    ]
+
+    test_specs = {
+      # TODO(https://fxbug.dev/319150842): GCE doesn't support Vulkan, so, for now, just disable all
+      # of these tests on GCE.
+      _env = basic_envs
+      _env += [ gce_env ]
+      _env -= [ gce_env ]
+      environments = _env
+
+      log_settings = {
+        # Tests exercise failure cases, so ERROR logs are expected.
+        max_severity = "ERROR"
+      }
+    }
+  }
 }
 
 fuchsia_test_package("starnix_syscalls_cpp_tests") {

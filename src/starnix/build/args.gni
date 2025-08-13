@@ -48,4 +48,9 @@ declare_args() {
   # Only enable this on debug builds by default because it makes balanced/release too slow for
   # real use.
   starnix_detect_lock_cycles = compilation_mode == "debug"
+
+  # Whether or not to build Linux-based syscall tests, e.g. tests which are intended to run in
+  # an isolated Linux VM. This flag should often be used in conjunction with virtualization enabled,
+  # instructions can be found at fuchsia.dev/fuchsia-src/development/virtualization/get_started
+  starnix_linux_syscall_tests = false
 }

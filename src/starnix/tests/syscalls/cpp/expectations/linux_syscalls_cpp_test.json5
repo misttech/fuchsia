@@ -1,0 +1,176 @@
+// Copyright 2023 The Fuchsia Authors.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    actions: [
+        {
+            type: "skip",
+            matchers: [
+                // TODO(https://fxbug.dev/437183123): Virtually all are failing and/or flaking.
+                // Since the results are flakey, we'll need to skip instead of expecting failure.
+                "BpfTest.*",
+                "BpfMapTest.*",
+                "BpfCgroupTest.*",
+                "BpfIdTest.*",
+
+                // TODO(https://fxbug.dev/436916082): Crashes on Machina.
+                "CgroupTest.*",
+
+                // TODO(https://fxbug.dev/436985423): At least the /1 variant of this is flakey.
+                "FusePathWalkRefreshDirEntryTest/FusePathWalkRefreshDirEntryTest.PathWalkRefreshDirEntry/2",
+                "FusePathWalkRefreshDirEntryTest/FusePathWalkRefreshDirEntryTest.PathWalkRefreshDirEntry/3",
+                "FusePathWalkRefreshDirEntryTest/FusePathWalkRefreshDirEntryTest.PathWalkRefreshDirEntry/1",
+
+                // TODO(https://fxbug.dev/436916792): Occasionally crashes on Machina.
+                "FutexTest.*",
+
+                // TODO(https://fxbug.dev/437167254)
+                "IoctlTest.SIOCSIFADDR_Success",
+                "IoctlTest.EVIOCGNAME_Success",
+                "IoctlTest.SIOCSIFNETMASK_Success",
+                "IoctlTest.SIOCGIFNETMASK_Success",
+                "IoctlTest.SIOCGIFADDR_Success",
+                "IoctlTest.SIOCSIFADDR_WithMultipleAddressesOnInterface",
+                "IoctlTest.SIOCSIFNETMASK_WithMultipleAddressesOnInterface",
+
+                // TODO(https://fxbug.dev/436909751): Intermittently failing.
+                "IoUringTest.IoUringReadWrite",
+
+                // TODO(https://fxbug.dev/437189628): Crashes on Machina.
+                "PerfEventOpenTest.MmapMetadataPageIsValid",
+                "PerfEventOpenTest.MmapFirstRecordPageIsValid",
+
+                // TODO(https://fxbug.dev/436978535): I believe the test is wrong. Most of these
+                // fail outright, but a couple of the permutations (Write/8 and Write/20) seem to
+                // pass. Rather than clutter this file further with every permutation which fails,
+                // we'll just skip these entirely.
+                "ProcSysNetTest/ProcSysNetTest.Write/*",
+
+                // TODO(https://fxbug.dev/436914153): This is flakey.
+                "Pty.EchoFlags",
+                "Pty.EchoModes",
+
+                // TODO(https://fxbug.dev/436916082): Crashes on Machina.
+                "RobustFutexTest.*",
+
+                // TODO(https://fxbug.dev/436916785): Fails with a timeout (> 180s) while running.
+                "SysfsPowerTest.*",
+
+                // TODO(https://fxbug.dev/342416456): Not Machina-specific. Rework the test to take
+                // into account logs from the system. Skipped since it's flakey.
+                "SyslogTest.ProcKmsgPoll",
+
+                // TODO(https://fxbug.dev/437164512): I believe the test is wrong. Furthermore, they
+                // occasionally crash on Machina.
+                "SyslogAccessTestAll/SyslogAccessTest.*",
+            ],
+        },
+        {
+            type: "expect_failure",
+            matchers: [
+                // TODO(https://fxbug.dev/436980834): Tests needs to be reworked.
+                "AccessTest.FsUidIgnoredUnlessEaccess",
+                "AccessTest.EaccessChecksAgainstEffectiveCredsOwner",
+                "AccessTest.EaccessChecksAgainstEffectiveCredsNonOwner",
+
+                // TODO(https://fxbug.dev/436918865): Test needs to be reworked.
+                "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",
+
+                // TODO(https://fxbug.dev/437164575): Test needs to be reworked.
+                "InputTest.DevicePropertiesMatchKeyboardProperties",
+                "InputTest.DevicePropertiesMatchTouchProperties",
+                "InputTest.DeviceCanBeRegisteredWithEpoll",
+                "InputTest.DevicePropertiesMatchMouseWheelProperties",
+
+                // TODO(https://fxbug.dev/436908596)
+                "Mmap.FixedAddressTooLow",
+
+                // TODO(https://fxbug.dev/437150943): I believe this is a kernel version issue.
+                "MountTest.BasicSharing",
+                "MountTest.BindIgnoresSharingFlags",
+
+                // TODO(https://fxbug.dev/437149654): Missing /dev/loop-control.
+                "MountTest.Ext4ReadOnlySmokeTest",
+                "MountTest.Ext4ReadOnlyInMutableStorageSmokeTest",
+
+                // TODO(https://fxbug.dev/437153843): I believe the tests / Starnix is incorrect.
+                "NetlinkSocket.RecvMsg",
+                "NetlinkSocket.NlctrlFamily",
+
+                // TODO(https://fxbug.dev/436982276): OverlayFS is failing to mount in Machina.
+                "OverlayFsTest.*",
+                "OverlayFs/FsMountTest.ChownMinusOneOnSIDFileFails/0",
+                "OverlayFs/FsMountTest.ChownSameOwnerAndGroupFails/0",
+                "OverlayFs/FsMountTest.OpenWithTruncAndCreatOnReadOnlyFsReturnsEROFS/0",
+                "OverlayFs/FsMountTest.ChownOnSGIDFileDropsSGIDBit/0",
+                "OverlayFs/FsMountTest.OpenWithTruncAndCreatWithExistingFileSucceeds/0",
+                "OverlayFs/FsMountTest.ChownOnSUIDFileDropsSUIDBit/0",
+                "OverlayFs/FsMountTest.OpenWithTruncAndCreatWithNoPermsReturnsEACCES/0",
+                "OverlayFs/FsMountTest.ChownMinusOneSucceeds/0",
+                "OverlayFs/FsMountTest.CreateAndRenameDirectory/0",
+
+                // TODO(https://fxbug.dev/355404941): Not Machina-specific.
+                "OverlayFs/FsMountTest.CantBypassDirectoryPermissions/0",
+                "OverlayFs/FsMountTest.ChmodWithDifferentModes/0",
+                "OverlayFs/FsMountTest.CreateWithDifferentModes/0",
+
+                // TODO(https://fxbug.dev/368658840): Not Machina-specific.
+                "OverlayFs/FsMountTest.ChownMinusOneNoPathAccessFails/0",
+
+                // TODO(https://fxbug.dev/437191224)
+                "PerfEventOpenTest.SettingIoctlEnabledCallWorks",
+                "PerfEventOpenTest.SettingIoctlDisabledCallWorks",
+                "PerfEventOpenTest.ReadEventWithBufferTooSmallFails",
+                "PerfEventOpenTest.WhenEnabledEventCountShouldBeOne",
+                "PerfEventOpenTest.WhenResetAndDisabledEventCountShouldBeZero",
+                "PerfEventOpenTest.ValidInputsSucceed",
+                "PerfEventOpenTest.WhenDisabledEventCountShouldBeZero",
+
+                // TODO(https://fxbug.dev/436921256): I believe the test is wrong.
+                "ProcMountsTest.MountAdded",
+
+                // TODO(https://fxbug.dev/436979594)
+                "ProcTaskDirTest.SelfEnvironIsNotEmpty",
+
+                // TODO(https://fxbug.dev/436986890): Reliant on a missing TUN / TAP interface.
+                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v4_prefix_0",
+                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v4_prefix_32",
+                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v4_prefix_1",
+                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_1",
+                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_0",
+                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_128",
+
+                // TODO(https://fxbug.dev/437162553)
+                "SocketFault/SocketFault.Read/1",
+                "SocketFault/SocketFault.WriteV/1",
+                "SocketFault/SocketFault.SendmsgENOBUFS/1",
+                "SocketFault/SocketFault.ReadV/1",
+                "SocketFault/SocketFault.Write/1",
+
+                // TODO(https://fxbug.dev/437163361): Reliant on an Android-specific kernel feature.
+                "SysfsKernelTest.WakeupReasonsDirectoryContainDefaultsLastResumeReason",
+                "SysfsKernelTest.WakeupReasonsDirectoryContainDefaultsLastSuspendTime",
+                "SysfsKernelTest.WakeupReasonsDirectoryContainsExpectedContents",
+                "SysfsKernelTest.KernelDirectoryContainsExpectedContents",
+
+                // TODO(https://fxbug.dev/436914573): Reliant on an Android-specific kernel feature.
+                "TouchStandbyTest.WriteTouchStandbyState",
+
+                // TODO(https://fxbug.dev/436986890): Reliant on a missing TUN / TAP interface.
+                "TunTap/TunTapTest.CreateTunTapDevice/0",
+                "TunTap/TunTapTest.CreateTunTapDevice/1",
+
+                // TODO(https://fxbug.dev/437171876): Machina is missing /sys/devices/ interfaces.
+                "UdevTest.AddDevMapper",
+                "UdevTest.AddInput",
+                "UdevTest.RemoveDevMapper",
+
+                // TODO(https://fxbug.dev/436904274): Expectation relies on kernel version >= 5.13.
+                "UffdTest.NoOperationsBeforeInit",
+
+                // TODO(https://fxbug.dev/437173786): Missing a kernel module (/dev/uinput).
+                "UinputTest.*",
+            ],
+        },
+    ],
+}

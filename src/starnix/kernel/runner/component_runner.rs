@@ -82,6 +82,9 @@ struct ComponentProgram {
 
     #[serde(default)]
     seclabel: Option<CString>,
+
+    #[serde(default, rename(deserialize = "test_target_kernel"))]
+    _test_target_kernel: Option<String>,
 }
 
 impl ComponentProgram {
