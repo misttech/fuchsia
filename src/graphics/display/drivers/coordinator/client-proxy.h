@@ -113,11 +113,6 @@ class ClientProxy {
 
   ClientVsyncQueue vsync_queue_;
 
-  // Signaled when the FIDL connection is unbound.
-  //
-  // This member is thread-safe.
-  sync_completion_t fidl_unbound_completion_;
-
   // Mapping from controller_stamp to client_stamp for all configurations that
   // are already applied and pending to be presented on the display.
   // Ordered by `controller_stamp_` in increasing order.

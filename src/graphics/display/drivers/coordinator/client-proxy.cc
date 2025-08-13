@@ -203,8 +203,6 @@ zx_status_t ClientProxy::Init(
              fidl::ServerEnd<fuchsia_hardware_display::Coordinator> ch) {
         ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
 
-        sync_completion_signal(&fidl_unbound_completion_);
-
         // Make sure we `TearDown()` so that no further tasks are scheduled on
         // the driver dispatcher.
         client->TearDown(ZX_OK);
