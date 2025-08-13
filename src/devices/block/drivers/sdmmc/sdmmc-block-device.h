@@ -176,6 +176,7 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   zx_status_t ProbeSdLocked() TA_REQ(worker_lock_);
   zx_status_t ProbeMmcLocked() TA_REQ(worker_lock_);
   zx_status_t MmcConfigureBus() TA_REQ(worker_lock_);
+  zx_status_t MmcTryHs() TA_REQ(worker_lock_);
 
   template <typename Request>
   zx_status_t ReadWriteWithRetries(std::vector<Request>& requests, EmmcPartition partition)

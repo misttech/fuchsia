@@ -1613,6 +1613,30 @@ TEST_P(SdmmcBlockDeviceTest, ProbeHs400) {
   EXPECT_EQ(sdmmc_.timing(), SDMMC_TIMING_HS400);
 }
 
+TEST_P(SdmmcBlockDeviceTest, FallBackToHsIfTuningFails) {
+  sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
+    out_data[MMC_EXT_CSD_DEVICE_TYPE] = 0b0101'0110;  // Card supports HS200/400, HS/DDR.
+  });
+
+  // Make tuning fail and verify that probe still succeeds.
+  sdmmc_.set_perform_tuning_status(ZX_ERR_IO);
+
+  uint32_t timing = MMC_EXT_CSD_HS_TIMING_LEGACY;
+  sdmmc_.set_command_callback(MMC_SWITCH, [&](const sdmmc_req_t& req) {
+    const uint32_t index = (req.arg >> 16) & 0xff;
+    if (index == MMC_EXT_CSD_HS_TIMING) {
+      timing = (req.arg >> 8) & 0xff;
+      // We should never reach HS400 as it requires a transition through HS400.
+      EXPECT_NE(timing, MMC_EXT_CSD_HS_TIMING_HS400);
+    }
+  });
+
+  EXPECT_OK(StartDriverForMmc());
+
+  EXPECT_EQ(sdmmc_.timing(), SDMMC_TIMING_HSDDR);
+  EXPECT_EQ(timing, MMC_EXT_CSD_HS_TIMING_HS);
+}
+
 TEST_P(SdmmcBlockDeviceTest, ProbeSd) {
   ASSERT_OK(StartDriverForSd());
 

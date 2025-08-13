@@ -490,26 +490,7 @@ zx_status_t SdmmcBlockDevice::MmcConfigureBus() {
   // HS400 support requires HS200 support. Use High Speed or DDR52 mode if HS200 is not supported.
   if (!MmcSupportsHs200() || bus_width_ == SDMMC_BUS_WIDTH_ONE ||
       speed_capabilities & fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHs200) {
-    if (zx_status_t status = MmcSwitchTiming(SDMMC_TIMING_HS); status != ZX_OK) {
-      return status;
-    }
-
-    if (MmcSupportsHsDdr() && (bus_width_ != SDMMC_BUS_WIDTH_ONE) &&
-        !(speed_capabilities & fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHsddr)) {
-      if (zx_status_t status = MmcSwitchTiming(SDMMC_TIMING_HSDDR); status != ZX_OK) {
-        return status;
-      }
-
-      // Select the DDR version of the current bus width.
-      const uint8_t mmc_bus_width = bus_width_ == SDMMC_BUS_WIDTH_FOUR
-                                        ? MMC_EXT_CSD_BUS_WIDTH_4_DDR
-                                        : MMC_EXT_CSD_BUS_WIDTH_8_DDR;
-      if (zx_status_t status = MmcSetBusWidth(bus_width_, mmc_bus_width); status != ZX_OK) {
-        return status;
-      }
-    }
-
-    return MmcSwitchFreq(kFreq52MHz);
+    return MmcTryHs();
   }
 
   // Must perform tuning at HS200 first if HS400 is supported
@@ -522,8 +503,16 @@ zx_status_t SdmmcBlockDevice::MmcConfigureBus() {
   }
 
   if (zx_status_t status = sdmmc_->PerformTuning(MMC_SEND_TUNING_BLOCK); status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Tuning failed: %s", zx_status_get_string(status));
-    return status;
+    FDF_LOGL(ERROR, logger(), "Tuning failed (%s), falling back to HS mode",
+             zx_status_get_string(status));
+
+    // Tuning failed, but we still might be able to use High Speed/DDR52 mode instead. Reset the bus
+    // clock frequency before we try that.
+    if (zx_status_t status = MmcSwitchFreq(kInitializationFrequencyHz); status != ZX_OK) {
+      return status;
+    }
+
+    return MmcTryHs();
   }
 
   if (MmcSupportsHs400() && bus_width_ == SDMMC_BUS_WIDTH_EIGHT &&
@@ -547,6 +536,31 @@ zx_status_t SdmmcBlockDevice::MmcConfigureBus() {
   }
 
   return ZX_OK;
+}
+
+zx_status_t SdmmcBlockDevice::MmcTryHs() {
+  if (zx_status_t status = MmcSwitchTiming(SDMMC_TIMING_HS); status != ZX_OK) {
+    return status;
+  }
+
+  const fuchsia_hardware_sdmmc::SdmmcHostPrefs speed_capabilities =
+      metadata_.speed_capabilities().value();
+
+  if (MmcSupportsHsDdr() && (bus_width_ != SDMMC_BUS_WIDTH_ONE) &&
+      !(speed_capabilities & fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHsddr)) {
+    if (zx_status_t status = MmcSwitchTiming(SDMMC_TIMING_HSDDR); status != ZX_OK) {
+      return status;
+    }
+
+    // Select the DDR version of the current bus width.
+    const uint8_t mmc_bus_width = bus_width_ == SDMMC_BUS_WIDTH_FOUR ? MMC_EXT_CSD_BUS_WIDTH_4_DDR
+                                                                     : MMC_EXT_CSD_BUS_WIDTH_8_DDR;
+    if (zx_status_t status = MmcSetBusWidth(bus_width_, mmc_bus_width); status != ZX_OK) {
+      return status;
+    }
+  }
+
+  return MmcSwitchFreq(kFreq52MHz);
 }
 
 void SdmmcBlockDevice::MmcSetInspectProperties() {
