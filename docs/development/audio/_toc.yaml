@@ -4,6 +4,8 @@
 toc:
 - title: "Loudness"
   path: /docs/development/audio/loudness.md
+- title: "Ring buffers"
+  path: /docs/development/audio/ring_buffer.md
 - title: "Drivers"
   section:
   - title: "Overview"
