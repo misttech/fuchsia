@@ -33,10 +33,20 @@
                 "fuchsia.net.routes.StateV6",
                 "fuchsia.net.stack.Stack",
                 "fuchsia.posix.socket.packet.Provider",
-                "fuchsia.posix.socket.Provider",
-                "fuchsia.posix.socket.raw.Provider",
             ],
             from: "#network",
+            to: "#starnix_runner",
+        },
+        {
+            protocol: "fuchsia.posix.socket.Provider_Unproxied",
+            from: "#network",
+            as: "fuchsia.posix.socket.Provider",
+            to: "#starnix_runner",
+        },
+        {
+            protocol: "fuchsia.posix.socket.raw.Provider_Unproxied",
+            from: "#network",
+            as: "fuchsia.posix.socket.raw.Provider",
             to: "#starnix_runner",
         },
         {
