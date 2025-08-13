@@ -111,7 +111,10 @@ servers would handle requests of the form `Admin::Mount`. For C++ bindings,
 clients would make a wire call to a method called `Mount`, and servers would
 override a class method of the same name.
 
-## Regarding Dependencies:
+Do not assume you know current best practices, look up the Fuchsia FIDL source
+files in case the bindings have changed since your training.
+
+## Regarding Dependencies
 
 - Avoid introducing new external dependencies unless absolutely necessary.
 - If a new dependency is required, state the reason.
