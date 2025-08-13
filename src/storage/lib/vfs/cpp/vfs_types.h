@@ -48,9 +48,9 @@ enum class VnodeProtocol : uint8_t {
   kService = uint64_t{fuchsia_io::NodeProtocolKinds::kConnector},
   kDirectory = uint64_t{fuchsia_io::NodeProtocolKinds::kDirectory},
   kFile = uint64_t{fuchsia_io::NodeProtocolKinds::kFile},
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   kSymlink = uint64_t{fuchsia_io::NodeProtocolKinds::kSymlink},
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 };
 
 // Options specified during opening and cloning.
@@ -61,12 +61,12 @@ struct DeprecatedOptions {
   // Translates the io1 flags passed by the client into an equivalent set of io2 protocols.
   constexpr fuchsia_io::NodeProtocolKinds protocols() const {
     constexpr fuchsia_io::NodeProtocolKinds kSupportedIo1Protocols =
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
         // Symlinks are not supported via io1.
         fuchsia_io::NodeProtocolKinds::kMask ^ fuchsia_io::NodeProtocolKinds::kSymlink;
 #else
         fuchsia_io::NodeProtocolKinds::kMask;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
     if (flags & fuchsia_io::OpenFlags::kDirectory) {
       return fuchsia_io::NodeProtocolKinds::kDirectory;
     }
@@ -154,7 +154,6 @@ struct VnodeAttributesUpdate {
     if (modification_time) {
       query |= VnodeAttributesQuery::kModificationTime;
     }
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(18)
     if (mode) {
       query |= VnodeAttributesQuery::kMode;
     }
@@ -170,7 +169,6 @@ struct VnodeAttributesUpdate {
     if (access_time) {
       query |= VnodeAttributesQuery::kAccessTime;
     }
-#endif
     return query;
   }
 
@@ -195,7 +193,6 @@ struct VnodeAttributesUpdate {
     if (attrs.has_modification_time()) {
       attr_update.modification_time = attrs.modification_time();
     }
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(18)
     if (attrs.has_mode()) {
       attr_update.mode = attrs.mode();
     }
@@ -211,7 +208,6 @@ struct VnodeAttributesUpdate {
     if (attrs.has_access_time()) {
       attr_update.access_time = attrs.access_time();
     }
-#endif
     return attr_update;
   }
 };
@@ -292,7 +288,7 @@ constexpr fuchsia_io::NodeProtocolKinds GetProtocols(fuchsia_io::Flags flags) {
   if (flags & Flags::kProtocolSymlink) {
     protocols |= NodeProtocolKinds::kSymlink;
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   return protocols;
 }
 
@@ -328,7 +324,7 @@ constexpr CreationMode CreationModeFromFidl(fuchsia_io::Flags flags) {
       (flags & fuchsia_io::Flags::kFlagCreateAsUnnamedTemporary)) {
     return CreationMode::kNever;
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (flags & fuchsia_io::Flags::kFlagMustCreate) {
     return CreationMode::kAlways;
   }

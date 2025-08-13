@@ -43,7 +43,7 @@ class RemoteDir : public Vnode {
   void OpenRemote(fuchsia_io::wire::DirectoryOpenRequest request) const final;
 #else
   void OpenRemote(fuchsia_io::wire::DirectoryOpen3Request request) const final;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
  protected:
   friend fbl::internal::MakeRefCountedHelper<RemoteDir>;

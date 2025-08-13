@@ -180,11 +180,9 @@ zx::result<fio::wire::NodeAttributes2*> NodeAttributeBuilder::Build(
   if (query & fio::NodeAttributesQuery::kId && attributes->id) {
     immutable_builder.id(ExternalView(&*attributes->id));
   }
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(18)
   if (query & fio::NodeAttributesQuery::kChangeTime && attributes->change_time) {
     immutable_builder.change_time(ExternalView(&*attributes->change_time));
   }
-#endif
   // Mutable attributes:
   auto mutable_builder = MutableAttrs::ExternalBuilder(ExternalView(&mutable_frame_));
   if (query & fio::NodeAttributesQuery::kCreationTime && attributes->creation_time) {
@@ -193,7 +191,6 @@ zx::result<fio::wire::NodeAttributes2*> NodeAttributeBuilder::Build(
   if (query & fio::NodeAttributesQuery::kModificationTime && attributes->modification_time) {
     mutable_builder.modification_time(ExternalView(&*attributes->modification_time));
   }
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(18)
   if (query & fio::NodeAttributesQuery::kMode && attributes->mode) {
     mutable_builder.mode(*attributes->mode);
   }
@@ -209,7 +206,6 @@ zx::result<fio::wire::NodeAttributes2*> NodeAttributeBuilder::Build(
   if (query & fio::NodeAttributesQuery::kAccessTime && attributes->access_time) {
     mutable_builder.access_time(ExternalView(&*attributes->access_time));
   }
-#endif
 
   // Build the wire table, which is now valid as long as this object remains in scope.
   wire_table_ = NodeAttributes2{

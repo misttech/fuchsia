@@ -194,7 +194,7 @@ constexpr fio::NodeProtocolKinds FlagsToProtocols(fio::Flags flags) {
   if (flags & fio::Flags::kProtocolSymlink) {
     protocols |= fio::NodeProtocolKinds::kSymlink;
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (flags & fio::Flags::kProtocolService) {
     protocols |= fio::NodeProtocolKinds::kConnector;
   }
@@ -230,11 +230,11 @@ zx::result<VnodeProtocol> NegotiateProtocol(fio::Flags flags, fio::NodeProtocolK
     if (supported & NodeProtocolKinds::kFile) {
       return zx::ok(VnodeProtocol::kFile);
     }
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
     if (supported & NodeProtocolKinds::kSymlink) {
       return zx::ok(VnodeProtocol::kSymlink);
     }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   }
   // If we failed to resolve a protocol, we determine what error to return from a combination of the
   // type of node and the protocols which were requested.
@@ -264,11 +264,11 @@ zx::result<VnodeProtocol> NegotiateProtocol(fio::NodeProtocolKinds supported,
   if (supported & NodeProtocolKinds::kFile) {
     return zx::ok(VnodeProtocol::kFile);
   }
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (supported & NodeProtocolKinds::kSymlink) {
     return zx::ok(VnodeProtocol::kSymlink);
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   // If we failed to resolve a protocol, we determine what error to return from a combination of the
   // type of node and the protocols which were requested.
   if ((requested & NodeProtocolKinds::kDirectory) && !(supported & NodeProtocolKinds::kDirectory)) {

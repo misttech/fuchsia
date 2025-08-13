@@ -43,7 +43,7 @@ void RemoteDir::DeprecatedOpenRemote(fio::OpenFlags flags, fio::ModeType mode,
 #else
   [[maybe_unused]] auto status =
       fidl::WireCall(remote_client_)->Open(flags, mode, path, std::move(object));
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   FS_PRETTY_TRACE_DEBUG("RemoteDir::DeprecatedOpenRemote: path='", path, "', flags=", flags,
                         ", response=", status.FormatDescription());
 }
@@ -68,6 +68,6 @@ void RemoteDir::OpenRemote(fuchsia_io::wire::DirectoryOpen3Request request) cons
   FS_PRETTY_TRACE_DEBUG("RemoteDir::OpenRemote: path='", request.path, "', flags=", request.flags,
                         "', options=", request.options, ", response=", status.FormatDescription());
 }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
 }  // namespace fs

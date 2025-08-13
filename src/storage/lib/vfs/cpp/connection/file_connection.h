@@ -61,12 +61,8 @@ class FileConnection : public Connection, public fidl::WireServer<fuchsia_io::Fi
   // |fuchsia.io/Node| operations.
   //
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
   void DeprecatedClone(DeprecatedCloneRequestView request,
                        DeprecatedCloneCompleter::Sync& completer) final;
-#else
-  void Clone2(Clone2RequestView request, Clone2Completer::Sync& completer) final;
-#endif
   void Clone(CloneRequestView request, CloneCompleter::Sync& completer) final;
   void Close(CloseCompleter::Sync& completer) final;
   void Query(QueryCompleter::Sync& completer) final;
@@ -78,20 +74,19 @@ class FileConnection : public Connection, public fidl::WireServer<fuchsia_io::Fi
 #else
   void GetAttr(GetAttrCompleter::Sync& completer) final;
   void SetAttr(SetAttrRequestView request, SetAttrCompleter::Sync& completer) final;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(28)
   void GetFlags(GetFlagsCompleter::Sync& completer) final;
   void SetFlags(SetFlagsRequestView request, SetFlagsCompleter::Sync& completer) final;
 #if FUCHSIA_API_LEVEL_AT_LEAST(27)
   void DeprecatedGetFlags(DeprecatedGetFlagsCompleter::Sync& completer) final;
   void DeprecatedSetFlags(DeprecatedSetFlagsRequestView request,
                           DeprecatedSetFlagsCompleter::Sync& completer) final;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   void QueryFilesystem(QueryFilesystemCompleter::Sync& completer) final;
   void GetAttributes(fuchsia_io::wire::NodeGetAttributesRequest* request,
                      GetAttributesCompleter::Sync& completer) final;
   void UpdateAttributes(fuchsia_io::wire::MutableNodeAttributes* request,
                         UpdateAttributesCompleter::Sync& completer) final;
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   void ListExtendedAttributes(ListExtendedAttributesRequestView request,
                               ListExtendedAttributesCompleter::Sync& completer) final {
     request->iterator.Close(ZX_ERR_NOT_SUPPORTED);
@@ -112,7 +107,6 @@ class FileConnection : public Connection, public fidl::WireServer<fuchsia_io::Fi
                 LinkIntoCompleter::Sync& completer) final {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
-#endif
 
   //
   // |fuchsia.io/File| operations.
@@ -130,7 +124,7 @@ class FileConnection : public Connection, public fidl::WireServer<fuchsia_io::Fi
   void EnableVerity(EnableVerityRequestView request, EnableVerityCompleter::Sync& completer) final {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_io::File>,
                              fidl::UnknownMethodCompleter::Sync&) override;
   //

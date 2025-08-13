@@ -56,12 +56,8 @@ class DirectoryConnection final : public Connection,
   //
   // |fuchsia.io/Node| operations.
   //
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
   void DeprecatedClone(DeprecatedCloneRequestView request,
                        DeprecatedCloneCompleter::Sync& completer) final;
-#else
-  void Clone2(Clone2RequestView request, Clone2Completer::Sync& completer) final;
-#endif
   void Clone(CloneRequestView request, CloneCompleter::Sync& completer) final;
   void Close(CloseCompleter::Sync& completer) final;
   void Query(QueryCompleter::Sync& completer) final;
@@ -73,19 +69,18 @@ class DirectoryConnection final : public Connection,
 #else
   void GetAttr(GetAttrCompleter::Sync& completer) final;
   void SetAttr(SetAttrRequestView request, SetAttrCompleter::Sync& completer) final;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(28)
   void GetFlags(GetFlagsCompleter::Sync& completer) final;
   void SetFlags(SetFlagsRequestView, SetFlagsCompleter::Sync& completer) final;
 #if FUCHSIA_API_LEVEL_AT_LEAST(27)
   void DeprecatedGetFlags(DeprecatedGetFlagsCompleter::Sync& completer) final;
   void DeprecatedSetFlags(DeprecatedSetFlagsRequestView,
                           DeprecatedSetFlagsCompleter::Sync& completer) final;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   void GetAttributes(fuchsia_io::wire::NodeGetAttributesRequest* request,
                      GetAttributesCompleter::Sync& completer) final;
   void UpdateAttributes(fuchsia_io::wire::MutableNodeAttributes* request,
                         UpdateAttributesCompleter::Sync& completer) final;
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   void ListExtendedAttributes(ListExtendedAttributesRequestView request,
                               ListExtendedAttributesCompleter::Sync& completer) final {
     request->iterator.Close(ZX_ERR_NOT_SUPPORTED);
@@ -102,7 +97,6 @@ class DirectoryConnection final : public Connection,
                                RemoveExtendedAttributeCompleter::Sync& completer) final {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
-#endif
 
   //
   // |fuchsia.io/Directory| operations.
@@ -115,7 +109,7 @@ class DirectoryConnection final : public Connection,
 #else
   void Open(OpenRequestView request, OpenCompleter::Sync& completer) final;
   void Open3(Open3RequestView request, Open3Completer::Sync& completer) final;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
   void Unlink(UnlinkRequestView request, UnlinkCompleter::Sync& completer) final;
   void ReadDirents(ReadDirentsRequestView request, ReadDirentsCompleter::Sync& completer) final;
@@ -125,12 +119,10 @@ class DirectoryConnection final : public Connection,
   void Link(LinkRequestView request, LinkCompleter::Sync& completer) final;
   void Watch(WatchRequestView request, WatchCompleter::Sync& completer) final;
   void QueryFilesystem(QueryFilesystemCompleter::Sync& completer) final;
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   void CreateSymlink(fuchsia_io::wire::DirectoryCreateSymlinkRequest* request,
                      CreateSymlinkCompleter::Sync& completer) final {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
-#endif
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_io::Directory> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) final {}
   //

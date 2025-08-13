@@ -65,12 +65,8 @@ void FileConnection::Unbind() {
     binding_->Unbind();
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
 void FileConnection::DeprecatedClone(DeprecatedCloneRequestView request,
                                      DeprecatedCloneCompleter::Sync& completer) {
-#else
-void FileConnection::Clone(CloneRequestView request, CloneCompleter::Sync& completer) {
-#endif
   fio::OpenFlags inherited_flags = {};
   // The APPEND flag should be preserved when cloning a file connection.
   if (GetAppend()) {
@@ -80,11 +76,7 @@ void FileConnection::Clone(CloneRequestView request, CloneCompleter::Sync& compl
                                   std::move(request->object));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
 void FileConnection::Clone(CloneRequestView request, CloneCompleter::Sync& completer) {
-#else
-void FileConnection::Clone2(Clone2RequestView request, Clone2Completer::Sync& completer) {
-#endif
   const fio::Flags flags = fio::Flags::kProtocolFile | fs::internal::RightsToFlags(rights()) |
                            (GetAppend() ? fio::Flags::kFileAppend : fio::Flags());
   Connection::NodeClone(flags, request->request.TakeChannel());
@@ -129,7 +121,6 @@ zx::result<> FileConnection::WithRepresentation(
   auto builder = FileRepresentation::ExternalBuilder(
       fidl::ObjectView<fidl::WireTableFrame<FileRepresentation>>::FromExternal(
           &representation_frame));
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   std::optional<NodeAttributeBuilder> attributes_builder;
   if (query) {
     attributes_builder.emplace(vnode());
@@ -140,7 +131,6 @@ zx::result<> FileConnection::WithRepresentation(
     }
     builder.attributes(fidl::ObjectView<fio::wire::NodeAttributes2>::FromExternal(*attributes));
   }
-#endif
   builder.is_append(GetAppend());
   if (zx::result observer = vnode()->GetObserver(); observer.is_ok()) {
     builder.observer(std::move(*observer));
@@ -188,7 +178,7 @@ void FileConnection::Sync(SyncCompleter::Sync& completer) {
 void FileConnection::DeprecatedGetAttr(DeprecatedGetAttrCompleter::Sync& completer) {
 #else
 void FileConnection::GetAttr(GetAttrCompleter::Sync& completer) {
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(28)
   zx::result attrs = vnode()->GetAttributes();
   if (attrs.is_ok()) {
     completer.Reply(ZX_OK, attrs->ToIoV1NodeAttributes(*vnode()));
@@ -202,7 +192,7 @@ void FileConnection::DeprecatedSetAttr(DeprecatedSetAttrRequestView request,
                                        DeprecatedSetAttrCompleter::Sync& completer) {
 #else
 void FileConnection::SetAttr(SetAttrRequestView request, SetAttrCompleter::Sync& completer) {
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(28)
   VnodeAttributesUpdate update =
       VnodeAttributesUpdate::FromIo1(request->attributes, request->flags);
   completer.Reply(Connection::NodeUpdateAttributes(update).status_value());
@@ -225,7 +215,7 @@ void FileConnection::UpdateAttributes(fio::wire::MutableNodeAttributes* request,
 void FileConnection::DeprecatedGetFlags(DeprecatedGetFlagsCompleter::Sync& completer) {
 #else
 void FileConnection::GetFlags(GetFlagsCompleter::Sync& completer) {
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   fio::OpenFlags flags = {};
   if (rights() & fio::Rights::kReadBytes) {
     flags |= fio::OpenFlags::kRightReadable;
@@ -247,7 +237,7 @@ void FileConnection::DeprecatedSetFlags(DeprecatedSetFlagsRequestView request,
                                         DeprecatedSetFlagsCompleter::Sync& completer) {
 #else
 void FileConnection::SetFlags(SetFlagsRequestView request, SetFlagsCompleter::Sync& completer) {
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   const bool append = static_cast<bool>(request->flags & fio::OpenFlags::kAppend);
   completer.Reply(SetAppend(append).status_value());
 }
@@ -270,7 +260,7 @@ void FileConnection::SetFlags(SetFlagsRequestView request, SetFlagsCompleter::Sy
   const bool append = static_cast<bool>(request->flags & fio::Flags::kFileAppend);
   completer.Reply(SetAppend(append));
 }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
 void FileConnection::QueryFilesystem(QueryFilesystemCompleter::Sync& completer) {
   zx::result result = Connection::NodeQueryFilesystem();

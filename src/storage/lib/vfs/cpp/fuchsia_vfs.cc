@@ -416,7 +416,7 @@ zx_status_t FuchsiaVfs::ServeDeprecatedImpl(const fbl::RefPtr<Vnode>& vnode,
     case VnodeProtocol::kSymlink: {
       return ZX_ERR_NOT_SUPPORTED;
     }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   }
 
   // Send an |fuchsia.io/OnOpen| event if requested. At this point we know the connection is either
@@ -529,7 +529,7 @@ zx::result<> FuchsiaVfs::ServeResult(OpenResult open_result, fuchsia_io::Rights 
     case VnodeProtocol::kSymlink: {
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   }
   ZX_DEBUG_ASSERT(connection != nullptr);
 

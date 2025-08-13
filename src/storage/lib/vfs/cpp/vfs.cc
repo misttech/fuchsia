@@ -284,7 +284,7 @@ zx::result<Vfs::OpenResult> Vfs::Open(fbl::RefPtr<Vnode> vndir, std::string_view
   if (flags & fio::Flags::kFlagCreateAsUnnamedTemporary) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 
   // Determine if the protocols and rights specified in |flags| are compatible with |vn|.
   zx::result protocol = internal::NegotiateProtocol(flags, vn->GetProtocols());
