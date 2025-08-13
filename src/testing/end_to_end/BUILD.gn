@@ -92,18 +92,12 @@ group_with_no_dir_target_deps("core_x64_unstable_tests") {
 
 group("core_x64_staging_sl4f_tests") {
   testonly = true
-  public_deps = [
-    ":core_x64_stable_sl4f_tests",
-    ":core_x64_unstable_sl4f_tests",
-  ]
+  public_deps = [ ":core_x64_unstable_sl4f_tests" ]
 }
 
 group("core_x64_staging_tests") {
   testonly = true
-  public_deps = [
-    ":core_x64_stable_tests",
-    ":core_x64_unstable_tests",
-  ]
+  public_deps = [ ":core_x64_unstable_tests" ]
 }
 
 # workbench.x64
@@ -141,10 +135,7 @@ group_with_no_dir_target_deps("workbench_x64_unstable_tests") {
 
 group("workbench_x64_staging_tests") {
   testonly = true
-  public_deps = [
-    ":workbench_x64_stable_tests",
-    ":workbench_x64_unstable_tests",
-  ]
+  public_deps = [ ":workbench_x64_unstable_tests" ]
 }
 
 # core.vim3
@@ -176,10 +167,7 @@ group_with_no_dir_target_deps("core_vim3_unstable_tests") {
 
 group("core_vim3_staging_tests") {
   testonly = true
-  public_deps = [
-    ":core_vim3_stable_tests",
-    ":core_vim3_unstable_tests",
-  ]
+  public_deps = [ ":core_vim3_unstable_tests" ]
 }
 
 # workbench.vim3
@@ -224,10 +212,7 @@ group_with_no_dir_target_deps("workbench_vim3_unstable_tests") {
 
 group("workbench_vim3_staging_tests") {
   testonly = true
-  public_deps = [
-    ":workbench_vim3_stable_tests",
-    ":workbench_vim3_unstable_tests",
-  ]
+  public_deps = [ ":workbench_vim3_unstable_tests" ]
 }
 
 ############################## Test groups - End ###############################
@@ -250,9 +235,6 @@ group("wlan_core_vim3_unstable_tests") {
 
 group("wlan_core_vim3_staging_tests") {
   testonly = true
-  public_deps = [
-    ":wlan_core_vim3_stable_tests",
-    ":wlan_core_vim3_unstable_tests",
-  ]
+  public_deps = [ ":wlan_core_vim3_unstable_tests" ]
 }
 ############################## WLAN Test groups - End ###############################
