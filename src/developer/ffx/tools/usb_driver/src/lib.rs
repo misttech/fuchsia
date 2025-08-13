@@ -138,8 +138,16 @@ async fn implementation(
         .map(|()| log::set_max_level(log::LevelFilter::Trace));
     *logging_enabled = true;
 
+    if ffx.global.machine.is_some() {
+        return Err(ffx_command::Error::User(anyhow::anyhow!(
+            "The machine flag is not supported for this subcommand"
+        )));
+    }
+
     if ffx.global.schema {
-        todo!();
+        return Err(ffx_command::Error::User(anyhow::anyhow!(
+            "Schema is not defined for this subcommand"
+        )));
     }
 
     let (socket_path, found_config) = ffx_config::build()
