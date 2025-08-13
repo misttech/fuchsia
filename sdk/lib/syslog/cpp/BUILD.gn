@@ -72,13 +72,6 @@ target(target_type, "cpp") {
   public_configs = [ "//sdk/config" ]
 }
 
-# Transitional no-op target
-# TODO(https://fxbug.dev/300157652): Convert `amlogic_decoder` to DFv2 and
-# remove this target.
-group("backend") {
-  visibility = [ "//src/media/drivers/amlogic_decoder:*" ]
-}
-
 sdk_shared_library("backend_fuchsia_globals") {
   category = "partner"
   sdk_name = "backend_fuchsia_globals"

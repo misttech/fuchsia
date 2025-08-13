@@ -1,3 +1,6 @@
+FuchsiaLogAcquireState
+FuchsiaLogGetGlobalLogger
+FuchsiaLogInitGlobalLogger
 a64l
 accept
 accept4

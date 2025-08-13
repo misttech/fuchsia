@@ -614,7 +614,7 @@ zx::result<> Driver::LoadDriver(std::string_view module_name, zx::vmo driver_vmo
     logger_->log(fdf::WARN, "Driver '{}' failed to validate as ELF: {}", url_str,
                  result.status_value());
   } else if (!result->empty()) {
-    logger_->log(fdf::ERROR, "Driver '{}' referenced {} restricted libc symbols: ", url_str,
+    logger_->log(fdf::ERROR, "Driver '{}' referenced {} restricted symbols: ", url_str,
                  result->size());
     for (auto& str : *result) {
       LOGF(ERROR, str.c_str());

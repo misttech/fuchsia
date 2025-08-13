@@ -119,26 +119,12 @@ template("_fuchsia_driver") {
                  rebase_path(_version_script, root_build_dir) ]
     inputs += [ _version_script ]
 
-    has_syslog_backend = false
-
-    foreach(dep, deps) {
-      dep = get_label_info(dep, "label_no_toolchain")
-      has_syslog_backend =
-          has_syslog_backend || dep == "//sdk/lib/syslog/cpp:backend" ||
-          dep == "//sdk/lib/syslog/cpp:backend_fuchsia_compat"
-    }
-
     deps += [ ":$check_target" ]
 
     if (!defined(assert_no_deps)) {
       assert_no_deps = []
     }
     assert_no_deps += [ "//src/devices/bin/driver_runtime" ]
-
-    # If no syslog backend is found, ensure we have not included the syslog frontend.
-    if (!has_syslog_backend) {
-      assert_no_deps += [ "//sdk/lib/syslog/cpp" ]
-    }
 
     metadata = {
       # Used by the check_included_drivers template.

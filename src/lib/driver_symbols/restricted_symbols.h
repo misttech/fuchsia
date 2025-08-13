@@ -5,12 +5,9 @@
 #ifndef SRC_LIB_DRIVER_SYMBOLS_RESTRICTED_SYMBOLS_H_
 #define SRC_LIB_DRIVER_SYMBOLS_RESTRICTED_SYMBOLS_H_
 
-#include <array>
 #include <string_view>
 
 namespace driver_symbols {
-
-#define RODATA __attribute__((section(".rodata")))
 
 //  ________  _________  ________  ________
 // |\   ____\|\___   ___\\   __  \|\   __  \
@@ -31,7 +28,7 @@ namespace driver_symbols {
 //
 // To remove items from the allowlist, please send a change to one of the OWNERS of
 // this file to remove an element from the list below.
-constexpr std::string_view kCreateThreadSymbolsDriversAllowlist[] RODATA = {
+inline constexpr std::string_view kCreateThreadSymbolsDriversAllowlist[] = {
     // keep-sorted start
     "#meta/aml-g12-pdm.cm",
     "#meta/aml-g12-tdm-dai.cm",
@@ -194,7 +191,7 @@ constexpr std::string_view kCreateThreadSymbolsDriversAllowlist[] RODATA = {
 
 // The set of restricted symbols for creating custom threads which are only allowed for drivers in
 // |kCreateThreadSymbolsDriversAllowlist|.
-constexpr std::string_view kCreateThreadSymbols[] RODATA = {
+inline constexpr std::string_view kCreateThreadSymbols[] = {
     // keep-sorted start
     "pthread_create",
     "thrd_create",
@@ -203,7 +200,7 @@ constexpr std::string_view kCreateThreadSymbols[] RODATA = {
 };
 
 // LINT.IfChange
-constexpr std::string_view kRestrictedLibcSymbols[] RODATA = {
+inline constexpr std::string_view kRestrictedLibcSymbols[] = {
     // keep-sorted start
     "_Exit",
     "_IO_feof_unlocked",
@@ -1393,14 +1390,27 @@ constexpr std::string_view kRestrictedLibcSymbols[] RODATA = {
 //
 // To remove items from the allowlist, please send a change to one of the OWNERS of
 // this file to remove an element from the list below.
-constexpr std::string_view kRestrictedDriverRuntimeSymbolsDriversAllowlist[] RODATA = {
+inline constexpr std::string_view kRestrictedDriverRuntimeSymbolsDriversAllowlist[] = {
     // keep-sorted start
+
+    // TODO(https://fxbug.dev/300157652): Stop `amlogic_video_decoder` from using the the global
+    // logger.
+    "#meta/amlogic_video_decoder.cm",
+    //
     "#meta/network-device.cm",
     // keep-sorted end
 };
 
-constexpr std::string_view kRestrictedDriverRuntimeSymbols[] RODATA = {
+inline constexpr std::string_view kRestrictedDriverRuntimeSymbols[] = {
     // keep-sorted start
+
+    // Technically, these aren't driver runtime symbols, but for the time being, it's not worth
+    // adding a separate list just for these right now. We don't want drivers using the global
+    // syslog logger which is indicated with the following symbols.
+    "FuchsiaLogAcquireState",
+    "FuchsiaLogGetGlobalLogger",
+    "FuchsiaLogInitGlobalLogger",
+    //
     "fdf_env_destroy_all_dispatchers",
     "fdf_env_dispatcher_create_with_owner",
     "fdf_env_dispatcher_dump",
@@ -1414,8 +1424,6 @@ constexpr std::string_view kRestrictedDriverRuntimeSymbols[] RODATA = {
     "fdf_env_shutdown_dispatchers_async",
     // keep-sorted end
 };
-
-#undef RODATA
 
 }  // namespace driver_symbols
 

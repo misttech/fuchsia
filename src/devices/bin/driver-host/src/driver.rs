@@ -247,13 +247,7 @@ impl Driver {
         if binary != "driver/compat.so" {
             let symbols = driver_symbols::find_restricted_symbols(&vmo, &url)?;
             if symbols.len() > 0 {
-                log::error!(
-                    "Driver '{binary}' referenced {} restricted libc symbols: ",
-                    symbols.len()
-                );
-                for symbol in symbols {
-                    log::error!("{symbol}");
-                }
+                log::error!("Driver '{binary}' referenced restricted symbols: {symbols:?}");
                 return Err(Status::NOT_SUPPORTED);
             }
         }
