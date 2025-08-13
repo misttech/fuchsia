@@ -74,9 +74,6 @@ class FakeDisplayStack {
   fdf::SynchronizedDispatcher coordinator_driver_dispatcher_;
   libsync::Completion coordinator_driver_dispatcher_is_shut_down_;
 
-  fdf::SynchronizedDispatcher engine_listener_dispatcher_;
-  libsync::Completion engine_listener_dispatcher_is_shut_down_;
-
   display::DisplayEngineEventsFidl engine_events_;
   std::unique_ptr<FakeDisplay> display_engine_;
   std::unique_ptr<display::DisplayEngineFidlAdapter> fidl_adapter_;

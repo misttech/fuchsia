@@ -72,16 +72,14 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   // `driver_dispatcher` must be shut down when `Stop()` is called.
   static zx::result<std::unique_ptr<Controller>> Create(
       std::unique_ptr<EngineDriverClient> engine_driver_client,
-      fdf::UnownedSynchronizedDispatcher driver_dispatcher,
-      fdf::UnownedSynchronizedDispatcher engine_listener_dispatcher);
+      fdf::UnownedSynchronizedDispatcher driver_dispatcher);
 
   // Creates a new coordinator Controller instance. It creates a new Inspector
   // which will be solely owned by the Controller instance.
   //
   // `engine_driver_client` must not be null.
   explicit Controller(std::unique_ptr<EngineDriverClient> engine_driver_client,
-                      fdf::UnownedSynchronizedDispatcher driver_dispatcher,
-                      fdf::UnownedSynchronizedDispatcher engine_listener_dispatcher);
+                      fdf::UnownedSynchronizedDispatcher driver_dispatcher);
 
   Controller(const Controller&) = delete;
   Controller& operator=(const Controller&) = delete;
@@ -93,7 +91,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   void PrepareStop();
 
   // `EngineListener`:
-  // Must run on `engine_listener_dispatcher_`.
+  // Must run on `driver_dispatcher_`.
   void OnDisplayAdded(std::unique_ptr<AddedDisplayInfo> added_display_info) override;
   void OnDisplayRemoved(display::DisplayId removed_display_id) override;
   void OnCaptureComplete() override;
@@ -181,7 +179,6 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
 
  private:
   // Initializes logic that is not suitable for the constructor.
-  // Must not run on `engine_listener_dispatcher_`.
   zx::result<> Initialize();
 
   void HandleClientOwnershipChanges() __TA_REQUIRES(mtx());
@@ -210,7 +207,6 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   inspect::Node root_;
 
   fdf::UnownedSynchronizedDispatcher driver_dispatcher_;
-  fdf::UnownedSynchronizedDispatcher engine_listener_dispatcher_;
 
   EngineListenerFidlAdapter engine_listener_fidl_adapter_;
 

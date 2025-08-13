@@ -37,8 +37,7 @@ class InspectTest : public ::testing::Test {
     auto [coordinator_client_end, coordinator_server_end] =
         fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
 
-    controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow(),
-                        engine_listener_dispatcher_->borrow());
+    controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow());
   }
 
   void TearDown() override {
@@ -50,8 +49,6 @@ class InspectTest : public ::testing::Test {
   fdf_testing::DriverRuntime driver_runtime_;
 
   fdf::UnownedSynchronizedDispatcher driver_dispatcher_ = driver_runtime_.GetForegroundDispatcher();
-  fdf::UnownedSynchronizedDispatcher engine_listener_dispatcher_ =
-      driver_runtime_.StartBackgroundDispatcher();
 
   std::optional<Controller> controller_;
 };

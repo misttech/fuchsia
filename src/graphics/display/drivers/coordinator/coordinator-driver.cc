@@ -30,28 +30,8 @@ zx::result<> CoordinatorDriver::Start() {
     return create_engine_driver_client_result.take_error();
   }
 
-  // TODO(https://fxbug.dev/434005850): We use a dedicated scheduler role as a
-  // workaround to avoid the driver runtime from triggering false wakeups on
-  // dispatchers with no tasks posted. Remove this role when the Coordinator
-  // can use a single event dispatcher.
-  constexpr std::string_view kEngineListenerSchedulerRole =
-      "fuchsia.graphics.display.drivers.display.coordinator.engine-listener";
-  zx::result<fdf::SynchronizedDispatcher> engine_listener_dispatcher_result =
-      fdf::SynchronizedDispatcher::Create(
-          fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "engine-listener-dispatcher",
-          /*shutdown_handler=*/
-          [](fdf_dispatcher_t*) { fdf::info("Engine listener dispatcher is shut down."); },
-          kEngineListenerSchedulerRole);
-  if (engine_listener_dispatcher_result.is_error()) {
-    fdf::error("Failed to create display engine listener dispatcher: %s",
-               engine_listener_dispatcher_result.status_string());
-    return engine_listener_dispatcher_result.take_error();
-  }
-  controller_engine_listener_dispatcher_ = std::move(engine_listener_dispatcher_result).value();
-
   zx::result<std::unique_ptr<Controller>> create_controller_result = Controller::Create(
-      std::move(create_engine_driver_client_result).value(), driver_dispatcher()->borrow(),
-      controller_engine_listener_dispatcher_.borrow());
+      std::move(create_engine_driver_client_result).value(), driver_dispatcher()->borrow());
   if (create_controller_result.is_error()) {
     fdf::error("Failed to create Controller: {}", create_controller_result);
     return create_controller_result.take_error();

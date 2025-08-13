@@ -209,8 +209,10 @@ void Controller::RemoveDisplay(display::DisplayId removed_display_id) {
 }
 
 void Controller::OnDisplayAdded(std::unique_ptr<AddedDisplayInfo> added_display_info) {
-  ZX_DEBUG_ASSERT(fdf::Dispatcher::GetCurrent()->get() == engine_listener_dispatcher_->get());
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
+  // TODO(https://fxbug.dev/438325925): Remove the PostTask after this call
+  // is guaranteed not to block an engine driver thread.
   zx::result<> post_task_result = display::PostTask<kDisplayTaskTargetSize>(
       *driver_dispatcher()->async_dispatcher(),
       [this, added_display_info = std::move(added_display_info)]() mutable {
@@ -222,8 +224,10 @@ void Controller::OnDisplayAdded(std::unique_ptr<AddedDisplayInfo> added_display_
 }
 
 void Controller::OnDisplayRemoved(display::DisplayId removed_display_id) {
-  ZX_DEBUG_ASSERT(fdf::Dispatcher::GetCurrent()->get() == engine_listener_dispatcher_->get());
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
+  // TODO(https://fxbug.dev/438325925): Remove the PostTask after this call
+  // is guaranteed not to block an engine driver thread.
   zx::result<> post_task_result = display::PostTask<kDisplayTaskTargetSize>(
       *driver_dispatcher()->async_dispatcher(),
       [this, removed_display_id]() { RemoveDisplay(removed_display_id); });
@@ -233,7 +237,7 @@ void Controller::OnDisplayRemoved(display::DisplayId removed_display_id) {
 }
 
 void Controller::OnCaptureComplete() {
-  ZX_DEBUG_ASSERT(fdf::Dispatcher::GetCurrent()->get() == engine_listener_dispatcher_->get());
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
   ZX_DEBUG_ASSERT_MSG(engine_info_.has_value(),
                       "OnCaptureComplete() called before engine connection completed");
@@ -243,6 +247,8 @@ void Controller::OnCaptureComplete() {
     return;
   }
 
+  // TODO(https://fxbug.dev/438325925): Remove the PostTask after this call
+  // is guaranteed not to block an engine driver thread.
   zx::result<> post_task_result =
       display::PostTask<kDisplayTaskTargetSize>(*driver_dispatcher()->async_dispatcher(), [this]() {
         // Free an image that was previously used by the hardware.
@@ -268,8 +274,10 @@ void Controller::OnCaptureComplete() {
 
 void Controller::OnDisplayVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                                 display::DriverConfigStamp driver_config_stamp) {
-  ZX_DEBUG_ASSERT(fdf::Dispatcher::GetCurrent()->get() == engine_listener_dispatcher_->get());
+  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
+  // TODO(https://fxbug.dev/438325925): Remove the PostTask after this call
+  // is guaranteed not to block an engine driver thread.
   zx::result<> post_task_result = display::PostTask<kDisplayTaskTargetSize>(
       *driver_dispatcher()->async_dispatcher(),
       [this, display_id, timestamp, driver_config_stamp]() {
@@ -809,13 +817,11 @@ void Controller::OpenCoordinatorWithListenerForPrimary(
 // static
 zx::result<std::unique_ptr<Controller>> Controller::Create(
     std::unique_ptr<EngineDriverClient> engine_driver_client,
-    fdf::UnownedSynchronizedDispatcher driver_dispatcher,
-    fdf::UnownedSynchronizedDispatcher engine_listener_dispatcher) {
+    fdf::UnownedSynchronizedDispatcher driver_dispatcher) {
   fbl::AllocChecker alloc_checker;
 
   auto controller = fbl::make_unique_checked<Controller>(
-      &alloc_checker, std::move(engine_driver_client), std::move(driver_dispatcher),
-      std::move(engine_listener_dispatcher));
+      &alloc_checker, std::move(engine_driver_client), std::move(driver_dispatcher));
   if (!alloc_checker.check()) {
     fdf::error("Failed to allocate memory for Controller");
     return zx::error(ZX_ERR_NO_MEMORY);
@@ -841,23 +847,7 @@ zx::result<> Controller::Initialize() {
 
   auto [fidl_listener_client, fidl_listener_server] =
       fdf::Endpoints<fuchsia_hardware_display_engine::EngineListener>::Create();
-
-  // This binds `fidl_listener_server` to the EngineListenerFidlAdapter
-  // instance synchronously. This is to avoid the case where
-  // `engine_listener_dispatcher_` was shut down while the task is still
-  // running, causing the Bind call to fail and crash the coordinator.
-  libsync::Completion engine_listener_fidl_binding_completion;
-  zx::result<> post_task_result = display::PostTask<kDisplayTaskTargetSize>(
-      *engine_listener_dispatcher_->async_dispatcher(),
-      [&, fidl_listener_server = std::move(fidl_listener_server)]() mutable {
-        engine_listener_fidl_adapter_.CreateHandler()(std::move(fidl_listener_server));
-        engine_listener_fidl_binding_completion.Signal();
-      });
-  if (post_task_result.is_error()) {
-    fdf::error("Failed to dispatch EngineListener FIDL server binding task: {}", post_task_result);
-    return post_task_result.take_error();
-  }
-  engine_listener_fidl_binding_completion.Wait();
+  engine_listener_fidl_adapter_.CreateHandler()(std::move(fidl_listener_server));
 
   engine_info_ =
       engine_driver_client_->CompleteCoordinatorConnection(std::move(fidl_listener_client));
@@ -900,12 +890,10 @@ void Controller::PrepareStop() {
 }
 
 Controller::Controller(std::unique_ptr<EngineDriverClient> engine_driver_client,
-                       fdf::UnownedSynchronizedDispatcher driver_dispatcher,
-                       fdf::UnownedSynchronizedDispatcher engine_listener_dispatcher)
+                       fdf::UnownedSynchronizedDispatcher driver_dispatcher)
     : root_(inspector_.GetRoot().CreateChild("display")),
       driver_dispatcher_(std::move(driver_dispatcher)),
-      engine_listener_dispatcher_(std::move(engine_listener_dispatcher)),
-      engine_listener_fidl_adapter_(this, engine_listener_dispatcher_->borrow()),
+      engine_listener_fidl_adapter_(this, driver_dispatcher_->borrow()),
       vsync_monitor_(root_.CreateChild("vsync_monitor"), driver_dispatcher_->async_dispatcher()),
       engine_driver_client_(std::move(engine_driver_client)) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
