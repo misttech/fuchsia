@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.phy/cpp/driver/fidl.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/hw/arch_ops.h>
 #include <lib/ddk/metadata.h>
@@ -39,6 +40,7 @@ using Request = usb::BorrowedRequest<void>;
 
 namespace fdci = fuchsia_hardware_usb_dci;
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+namespace fphy = fuchsia_hardware_usb_phy;
 
 void Dwc2::dump_regs() {
   const auto& mmio = *mmio_;
@@ -920,8 +922,15 @@ void Dwc2::SetConnected(bool connected) {
     ZX_ASSERT_MSG(result.ok(), "SetConnected failed: %s",
                   result.status_string());  // Never expected to fail.
   }
-  if (usb_phy_) {
-    usb_phy_->ConnectStatusChanged(connected);
+  if (phy_.is_valid()) {
+    fdf::Arena arena('PHY0');
+    fdf::WireUnownedResult connect = phy_.buffer(arena)->ConnectStatusChanged(connected);
+    if (!connect.ok()) {
+      FDF_LOG(WARNING, "(framework) phy ConnectStatusChanged(): %s", connect.status_string());
+    } else if (connect->is_error()) {
+      FDF_LOG(WARNING, "phy ConnectStatusChanged(): %s",
+              zx_status_get_string(connect->error_value()));
+    }
   }
 
   if (!connected) {
@@ -1010,9 +1019,9 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   }
 
   // USB PHY protocol is optional.
-  auto phy = usb_phy::UsbPhyClient::Create(parent(), "dwc2-phy");
+  auto phy = DdkConnectFragmentRuntimeProtocol<fphy::Service::Device>(parent(), "dwc2-phy");
   if (phy.is_ok()) {
-    usb_phy_.emplace(std::move(phy.value()));
+    phy_.Bind(std::move(*phy));
   }
 
   for (uint8_t i = 0; i < std::size(endpoints_); i++) {

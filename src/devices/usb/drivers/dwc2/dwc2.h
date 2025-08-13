@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
-#include <fuchsia/hardware/usb/phy/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.usb.phy/cpp/driver/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/debug.h>
@@ -32,7 +32,6 @@
 #include "src/devices/usb/drivers/dwc2/dwc2_config.h"
 #include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
 #include "src/devices/usb/lib/usb-endpoint/include/usb-endpoint/usb-endpoint-server.h"
-#include "src/devices/usb/lib/usb-phy/include/usb-phy/usb-phy.h"
 
 namespace dwc2 {
 
@@ -213,8 +212,7 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
   Ep0State ep0_state_ = Ep0State::DISCONNECTED;
 
   fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDciInterface> dci_intf_;
-
-  std::optional<usb_phy::UsbPhyClient> usb_phy_;
+  fdf::WireSyncClient<fuchsia_hardware_usb_phy::UsbPhy> phy_;
 
   std::optional<fdf::MmioBuffer> mmio_;
 
