@@ -13,6 +13,7 @@
 #include <lib/async/dispatcher.h>
 #include <lib/zx/channel.h>
 #endif
+#include <zircon/availability.h>
 
 #include <string>
 
@@ -109,9 +110,12 @@ class LogSettingsBuilder {
   LogSettings settings_;
 };
 
+// Moved to log_message_impl.h.
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 /// Gets the minimum log severity for the current process. Never returns a value
 /// higher than LOG_FATAL.
 fuchsia_logging::RawLogSeverity GetMinLogSeverity();
+#endif
 
 }  // namespace fuchsia_logging
 

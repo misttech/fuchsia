@@ -5,6 +5,7 @@
 #ifndef LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_BUFFER_H_
 #define LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_BUFFER_H_
 
+#include <lib/fit/function.h>
 #include <lib/stdcompat/span.h>
 #include <lib/syslog/structured_backend/fuchsia_syslog.h>
 #include <lib/zx/socket.h>
@@ -16,6 +17,10 @@
 #include <string_view>
 
 namespace fuchsia_logging {
+
+class LogBuffer;
+struct FlushConfig;
+
 namespace internal {
 
 // Opaque structure representing the backend encode state.
@@ -35,6 +40,11 @@ struct LogBufferData {
   // for this is backend-specific.
   uint64_t data[4096];
 };
+
+using FlushCallback = fit::callback<bool(cpp20::span<const uint8_t>, FlushConfig)>;
+void SetFlushCallback(LogBuffer& buffer, FlushCallback flush_callback);
+bool FlushToSocket(zx::unowned_socket socket, cpp20::span<const uint8_t> data,
+                   FlushConfig flush_config);
 
 }  // namespace internal
 
@@ -95,9 +105,7 @@ class LogBuffer final {
 
   void BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
                    unsigned int line, std::optional<std::string_view> message,
-                   uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid) {
-    BeginRecord(severity, file_name, line, message, {}, dropped_count, pid, tid);
-  }
+                   uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid);
 
   // Writes a key/value pair to the buffer.
   void WriteKeyValue(std::string_view key, const char* value) {
@@ -192,7 +200,10 @@ class LogBuffer final {
   bool Flush() { return FlushRecord(); }
 
  private:
+  friend void internal::SetFlushCallback(LogBuffer&, internal::FlushCallback flush_callback);
+
   internal::LogBufferData data_;
+  internal::FlushCallback flush_callback_;
 };
 
 }  // namespace fuchsia_logging

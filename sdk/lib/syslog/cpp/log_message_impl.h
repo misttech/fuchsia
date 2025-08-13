@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <optional>
 #ifdef __Fuchsia__
+#include <lib/syslog/cpp/logging_backend_fuchsia_globals.h>
 #include <lib/syslog/structured_backend/cpp/fuchsia_syslog.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #else
@@ -178,9 +179,15 @@ class LogFirstNState final {
   std::atomic<uint32_t> counter_{0};
 };
 
+RawLogSeverity GetMinLogSeverity();
+
+#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+inline RawLogSeverity GetMinLogSeverity() { return internal::FuchsiaLogGetGlobalMinSeverity(); }
+#endif
+
 /// Returns true if |severity| is at or above the current minimum log level.
 /// LOG_FATAL and above is always true.
-bool IsSeverityEnabled(RawLogSeverity severity);
+inline bool IsSeverityEnabled(RawLogSeverity severity) { return severity >= GetMinLogSeverity(); }
 
 }  // namespace fuchsia_logging
 

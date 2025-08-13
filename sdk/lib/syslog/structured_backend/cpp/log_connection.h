@@ -34,6 +34,8 @@ class LogConnection {
   zx::result<> FlushBuffer(LogBuffer& buffer) const { return FlushSpan(buffer.EndRecord()); }
 
  private:
+  friend class Logger;
+
   zx::result<> FlushSpan(cpp20::span<const uint8_t> data) const;
 
   zx::socket socket_;

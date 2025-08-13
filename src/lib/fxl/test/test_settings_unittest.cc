@@ -4,6 +4,7 @@
 
 #include "src/lib/fxl/test/test_settings.h"
 
+#include <lib/syslog/cpp/log_message_impl.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <stdlib.h>
 #include <unistd.h>

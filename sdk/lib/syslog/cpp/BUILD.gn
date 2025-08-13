@@ -41,9 +41,11 @@ target(target_type, "cpp") {
     include_base = "//sdk"
 
     sources += [
+      "log_settings_internal.h",
       "logging_backend_fuchsia.cc",
-      "logging_backend_fuchsia_globals.h",
     ]
+
+    sdk_headers_for_internal_use = [ "log_settings_internal.h" ]
 
     deps = [
       ":backend_fuchsia_globals",
@@ -87,7 +89,18 @@ sdk_shared_library("backend_fuchsia_globals") {
     "logging_backend_fuchsia_globals.h",
   ]
 
-  deps = [ "//src/zircon/lib/zircon" ]
+  deps = [
+    "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+    "//sdk/lib/async-default",
+    "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/syslog/structured_backend",
+    "//src/zircon/lib/zircon",
+  ]
+
+  runtime_deps = [
+    "//sdk/lib/async-default:async-default_sdk",
+    "//sdk/lib/fdio:fdio_sdk",
+  ]
 }
 
 test("logging_cpp_unittests") {

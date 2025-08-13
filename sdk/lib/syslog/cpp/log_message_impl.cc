@@ -86,6 +86,4 @@ bool LogFirstNState::ShouldLog(uint32_t n) {
   return counter_value < n;
 }
 
-bool IsSeverityEnabled(RawLogSeverity severity) { return severity >= GetMinLogSeverity(); }
-
 }  // namespace fuchsia_logging
