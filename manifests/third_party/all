@@ -377,7 +377,7 @@
              revision="12c8b4f2dfb255f3dc83e39d52e8481b7e307a9b"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/ogg"
-             path="third_party/ogg"
+             path="third_party/ogg-migrating/src"
              remote="https://fuchsia.googlesource.com/third_party/ogg"
              revision="32acc2e0fc076b2b2fa71e8780051f645cef9bef"
              gerrithost="https://fuchsia-review.googlesource.com"/>

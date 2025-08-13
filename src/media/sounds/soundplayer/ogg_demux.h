@@ -8,7 +8,7 @@
 #include <memory>
 
 #include "src/media/sounds/soundplayer/opus_decoder.h"
-#include "third_party/ogg/include/ogg/ogg.h"
+#include "third_party/ogg-migrating/src/include/ogg/ogg.h"
 
 namespace soundplayer {
 
