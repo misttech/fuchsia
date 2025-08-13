@@ -100,7 +100,10 @@ void DeviceHost::DetectDevices(bool no_bluetooth, bool no_virtual_audio) {
 
           FX_LOGS(TRACE) << "dir handle " << dir.channel().get() << " for '" << filename << "' ("
                          << dev_type << " " << driver_type << ")";
-          device_entries().insert({dir, filename, driver_type, dev_type});
+          device_entries().insert({.dir = dir,
+                                   .filename = filename,
+                                   .driver_type = driver_type,
+                                   .device_type = dev_type});
         },
         []() { initial_enumeration_done = true; }, device_loop_.dispatcher());
 
@@ -143,7 +146,10 @@ void DeviceHost::DetectDevices(bool no_bluetooth, bool no_virtual_audio) {
   // And finally, unless expressly excluded, manually add a device entry for the Bluetooth audio
   // library, to validate admin functions even if AudioCore has connected to "real" audio drivers.
   if (!no_bluetooth) {
-    device_entries().insert({{}, "A2DP", DriverType::StreamConfigOutput, DeviceType::A2DP});
+    device_entries().insert({.dir = {},
+                             .filename = "A2DP",
+                             .driver_type = DriverType::StreamConfigOutput,
+                             .device_type = DeviceType::A2DP});
   }
 }
 
