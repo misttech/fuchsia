@@ -79,6 +79,10 @@ KCOUNTER(vm_reclaim_high_priority, "vm.reclaim.high_priority")
 KCOUNTER(vm_reclaim_pinned, "vm.reclaim.pinned")
 KCOUNTER(vm_reclaim_dirty, "vm.reclaim.dirty")
 KCOUNTER(vm_reclaim_uncached, "vm.reclaim.uncached")
+KCOUNTER(vm_reclaim_compress_success, "vm.reclaim.compress.success")
+KCOUNTER(vm_reclaim_compress_zero, "vm.reclaim.compress.zero")
+KCOUNTER(vm_reclaim_compress_fail, "vm.reclaim.compress.fail")
+KCOUNTER(vm_reclaim_compress_race, "vm.reclaim.compress.race")
 
 template <typename T>
 uint32_t GetShareCount(T p) {
@@ -6998,6 +7002,7 @@ VmCowPages::ReclaimCounts VmCowPages::ReclaimPageForCompression(vm_page_t* page,
         old_ref = VmPageOrMarkerRef(slot).SwapReferenceForReference(*ref);
         reclamation_event_count_++;
         reclaimed = true;
+        vm_reclaim_compress_success.Add(1);
       } else if (VmCompressor::FailTag* fail =
                      ktl::get_if<VmCompressor::FailTag>(&compression_result)) {
         // Compression failed, put the page back in the slot.
@@ -7016,6 +7021,7 @@ VmCowPages::ReclaimCounts VmCowPages::ReclaimPageForCompression(vm_page_t* page,
         // should consider moving the page out of this queue if it is modified.
         pmm_page_queues()->CompressFailed(page);
         // Page stays owned by the VMO.
+        vm_reclaim_compress_fail.Add(1);
         page = nullptr;
       } else {
         ASSERT(ktl::holds_alternative<VmCompressor::ZeroTag>(compression_result));
@@ -7039,10 +7045,12 @@ VmCowPages::ReclaimCounts VmCowPages::ReclaimPageForCompression(vm_page_t* page,
         }
         reclamation_event_count_++;
         reclaimed = true;
+        vm_reclaim_compress_zero.Add(1);
       }
       // Temporary reference has been replaced, can return it to the compressor.
       compressor->ReturnTempReference(old_ref);
     } else {
+      vm_reclaim_compress_race.Add(1);
       // The temporary reference is no longer there. We know nothing else about the state of the VMO
       // at this point and will just free any compression result and exit.
       if (const VmPageOrMarker::ReferenceValue* ref =
