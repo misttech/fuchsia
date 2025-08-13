@@ -55,6 +55,52 @@ impl From<BorderAgentEphemeralKeyState> for otBorderAgentEphemeralKeyState {
     }
 }
 
+#[derive(Debug, PartialEq)]
+#[allow(missing_docs)]
+pub struct BorderAgentCounters {
+    pub epskc_activations: u32,
+    pub epskc_deactivation_clears: u32,
+    pub epskc_deactivation_timeouts: u32,
+    pub epskc_deactivation_max_attempts: u32,
+    pub epskc_deactivation_disconnects: u32,
+    pub epskc_invalid_ba_state_errors: u32,
+    pub epskc_invalid_args_errors: u32,
+    pub epskc_start_secure_session_errors: u32,
+    pub epskc_secure_session_successes: u32,
+    pub epskc_secure_session_failures: u32,
+    pub epskc_commissioner_petitions: u32,
+    pub pskc_secure_session_successes: u32,
+    pub pskc_secure_session_failures: u32,
+    pub pskc_commissioner_petitions: u32,
+    pub mgmt_active_gets: u32,
+    pub mgmt_pending_gets: u32,
+}
+
+impl BorderAgentCounters {
+    unsafe fn from_ot_counters(
+        counters: *const otBorderAgentCounters,
+    ) -> Option<BorderAgentCounters> {
+        counters.as_ref().map(|&counters| BorderAgentCounters {
+            epskc_activations: counters.mEpskcActivations,
+            epskc_deactivation_clears: counters.mEpskcDeactivationClears,
+            epskc_deactivation_timeouts: counters.mEpskcDeactivationTimeouts,
+            epskc_deactivation_max_attempts: counters.mEpskcDeactivationMaxAttempts,
+            epskc_deactivation_disconnects: counters.mEpskcDeactivationDisconnects,
+            epskc_invalid_ba_state_errors: counters.mEpskcInvalidBaStateErrors,
+            epskc_invalid_args_errors: counters.mEpskcInvalidArgsErrors,
+            epskc_start_secure_session_errors: counters.mEpskcStartSecureSessionErrors,
+            epskc_secure_session_successes: counters.mEpskcSecureSessionSuccesses,
+            epskc_secure_session_failures: counters.mEpskcSecureSessionFailures,
+            epskc_commissioner_petitions: counters.mEpskcCommissionerPetitions,
+            pskc_secure_session_successes: counters.mPskcSecureSessionSuccesses,
+            pskc_secure_session_failures: counters.mPskcSecureSessionFailures,
+            pskc_commissioner_petitions: counters.mPskcCommissionerPetitions,
+            mgmt_active_gets: counters.mMgmtActiveGets,
+            mgmt_pending_gets: counters.mMgmtPendingGets,
+        })
+    }
+}
+
 /// Methods from the [OpenThread "Border Agent" Module][1].
 ///
 /// [1]: https://openthread.io/reference/group/api-border-agent
@@ -97,6 +143,10 @@ pub trait BorderAgent {
     fn border_agent_set_ephemeral_key_callback<'a, F>(&'a self, f: Option<F>)
     where
         F: FnMut() + 'a;
+
+    /// Functional equivalent of
+    /// [`otsys::otBorderAgentGetCounters`](crate::otsys::otBorderAgentGetCounters).
+    fn border_agent_get_counters(&self) -> Option<BorderAgentCounters>;
 }
 
 impl<T: BorderAgent + Boxable> BorderAgent for ot::Box<T> {
@@ -133,6 +183,10 @@ impl<T: BorderAgent + Boxable> BorderAgent for ot::Box<T> {
         F: FnMut() + 'a,
     {
         self.as_ref().border_agent_set_ephemeral_key_callback(f)
+    }
+
+    fn border_agent_get_counters(&self) -> Option<BorderAgentCounters> {
+        self.as_ref().border_agent_get_counters()
     }
 }
 
@@ -214,6 +268,10 @@ impl BorderAgent for Instance {
             >(fn_box));
         }
     }
+
+    fn border_agent_get_counters(&self) -> Option<BorderAgentCounters> {
+        unsafe { BorderAgentCounters::from_ot_counters(otBorderAgentGetCounters(self.as_ot_ptr())) }
+    }
 }
 
 /// Constructs a random key for use with ePSKc utilizing the algorithm from ot-br-posix.
@@ -250,4 +308,81 @@ pub fn create_ephemeral_key() -> Result<CString, anyhow::Error> {
 
     key.push(checksum_char as u8);
     CString::new(key).map_err(|e| format_err!("Ephemeral key is not a valid string: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_counter_conversion_succeeds() {
+        let epskc_activations = 0;
+        let epskc_deactivation_clears = 1;
+        let epskc_deactivation_timeouts = 2;
+        let epskc_deactivation_max_attempts = 3;
+        let epskc_deactivation_disconnects = 4;
+        let epskc_invalid_ba_state_errors = 5;
+        let epskc_invalid_args_errors = 6;
+        let epskc_start_secure_session_errors = 7;
+        let epskc_secure_session_successes = 8;
+        let epskc_secure_session_failures = 9;
+        let epskc_commissioner_petitions = 10;
+        let pskc_secure_session_successes = 11;
+        let pskc_secure_session_failures = 12;
+        let pskc_commissioner_petitions = 13;
+        let mgmt_active_gets = 14;
+        let mgmt_pending_gets = 15;
+
+        let ot_counters = otBorderAgentCounters {
+            mEpskcActivations: epskc_activations,
+            mEpskcDeactivationClears: epskc_deactivation_clears,
+            mEpskcDeactivationTimeouts: epskc_deactivation_timeouts,
+            mEpskcDeactivationMaxAttempts: epskc_deactivation_max_attempts,
+            mEpskcDeactivationDisconnects: epskc_deactivation_disconnects,
+            mEpskcInvalidBaStateErrors: epskc_invalid_ba_state_errors,
+            mEpskcInvalidArgsErrors: epskc_invalid_args_errors,
+            mEpskcStartSecureSessionErrors: epskc_start_secure_session_errors,
+            mEpskcSecureSessionSuccesses: epskc_secure_session_successes,
+            mEpskcSecureSessionFailures: epskc_secure_session_failures,
+            mEpskcCommissionerPetitions: epskc_commissioner_petitions,
+            mPskcSecureSessionSuccesses: pskc_secure_session_successes,
+            mPskcSecureSessionFailures: pskc_secure_session_failures,
+            mPskcCommissionerPetitions: pskc_commissioner_petitions,
+            mMgmtActiveGets: mgmt_active_gets,
+            mMgmtPendingGets: mgmt_pending_gets,
+        };
+
+        let ot_counters_ptr: *const otBorderAgentCounters = &ot_counters;
+
+        let converted_counters = unsafe { BorderAgentCounters::from_ot_counters(ot_counters_ptr) }
+            .expect("Failed to convert OT Border Agent counters");
+
+        assert_eq!(
+            converted_counters,
+            BorderAgentCounters {
+                epskc_activations,
+                epskc_deactivation_clears,
+                epskc_deactivation_timeouts,
+                epskc_deactivation_max_attempts,
+                epskc_deactivation_disconnects,
+                epskc_invalid_ba_state_errors,
+                epskc_invalid_args_errors,
+                epskc_start_secure_session_errors,
+                epskc_secure_session_successes,
+                epskc_secure_session_failures,
+                epskc_commissioner_petitions,
+                pskc_secure_session_successes,
+                pskc_secure_session_failures,
+                pskc_commissioner_petitions,
+                mgmt_active_gets,
+                mgmt_pending_gets,
+            }
+        );
+    }
+
+    #[test]
+    fn test_counter_conversion_fails() {
+        let null_ptr: *const otBorderAgentCounters = std::ptr::null();
+        assert!(unsafe { BorderAgentCounters::from_ot_counters(null_ptr) }.is_none());
+    }
 }
