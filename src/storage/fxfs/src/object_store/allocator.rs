@@ -587,7 +587,7 @@ struct Inner {
     trim_listener: Option<EventListener>,
 
     /// This controls how we allocate our free space to manage fragmentation.
-    strategy: Box<strategy::BestFit>,
+    strategy: strategy::BestFit,
 
     /// Tracks the number of allocations of size 1,2,...63,>=64.
     allocation_size_histogram: [u64; 64],
@@ -758,7 +758,7 @@ impl Allocator {
             warn!("Device size is not block aligned. Rounding down.");
         }
         let max_extent_size_bytes = max_extent_size_for_block_size(filesystem.block_size());
-        let mut strategy = Box::new(strategy::BestFit::default());
+        let mut strategy = strategy::BestFit::default();
         strategy.free(0..device_size).expect("new fs");
         Allocator {
             filesystem: Arc::downgrade(&filesystem),
@@ -849,11 +849,7 @@ impl Allocator {
         let filesystem = self.filesystem.upgrade().unwrap();
         let root_store = filesystem.root_store();
 
-        {
-            let mut inner = self.inner.lock();
-
-            inner.strategy = Box::new(strategy::BestFit::default());
-        }
+        self.inner.lock().strategy = strategy::BestFit::default();
 
         let handle =
             ObjectStore::open_object(&root_store, self.object_id, HandleOptions::default(), None)

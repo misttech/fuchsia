@@ -383,16 +383,13 @@ pub fn compact_root_parent(
 /// This encapsulates the A/B alternating super-block logic.
 /// All super-block load/save operations should be via the methods on this type.
 pub(super) struct SuperBlockManager {
-    pub next_instance: Arc<Mutex<SuperBlockInstance>>,
+    pub next_instance: Mutex<SuperBlockInstance>,
     metrics: SuperBlockMetrics,
 }
 
 impl SuperBlockManager {
     pub fn new() -> Self {
-        Self {
-            next_instance: Arc::new(Mutex::new(SuperBlockInstance::A)),
-            metrics: Default::default(),
-        }
+        Self { next_instance: Mutex::new(SuperBlockInstance::A), metrics: Default::default() }
     }
 
     /// Loads both A/B super-blocks and root_parent ObjectStores and and returns the newest valid
