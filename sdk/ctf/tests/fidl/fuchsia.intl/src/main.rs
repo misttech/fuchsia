@@ -31,6 +31,12 @@ async fn set_then_get() -> Result<()> {
     let property_provider = connect_to_protocol_at::<fintl::PropertyProviderMarker>(&test_ns)?;
     let mut event_stream = property_provider.take_event_stream();
 
+    // This OnChange corresponds to the initial update from setui-service, which sets the intl
+    // values to default.
+    match event_stream.next().await.ok_or_else(|| format_err!("No event"))?? {
+        fintl::PropertyProviderEvent::OnChange {} => {}
+    };
+
     // This warms up the intl services component and the set_ui component, avoiding potential
     // data races later.
     let _initial_profile = property_provider.get_profile().await.context("get initial profile")?;
@@ -49,6 +55,7 @@ async fn set_then_get() -> Result<()> {
         .map_err(|e| format_err!("{e:?}"))
         .context("modify settings (Settings server)")?;
 
+    // This OnChange should correspond to our call to `intl.set` just above.
     match event_stream.next().await.ok_or_else(|| format_err!("No event"))?? {
         fintl::PropertyProviderEvent::OnChange {} => {}
     };

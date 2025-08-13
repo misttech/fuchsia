@@ -64,4 +64,9 @@ fuchsia_test_package("fuchsia-intl-tests-latest") {
     "testing/realm-factory",
     ":fuchsia-intl-tests",
   ]
+  test_specs = {
+    log_settings = {
+      min_severity = "DEBUG"
+    }
+  }
 }
