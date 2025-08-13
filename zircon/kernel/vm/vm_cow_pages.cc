@@ -7504,9 +7504,8 @@ bool VmCowPages::DebugValidateVmoPageBorrowingLocked() const {
     }
     vm_page_t* page = p->Page();
     if (page->is_loaned()) {
-      if (!can_borrow_locked()) {
-        dprintf(INFO, "!can_borrow_locked() but page is loaned?? - offset: 0x%" PRIx64 "\n",
-                offset);
+      if (!can_borrow()) {
+        dprintf(INFO, "!can_borrow() but page is loaned?? - offset: 0x%" PRIx64 "\n", offset);
         result = false;
         return ZX_ERR_STOP;
       }

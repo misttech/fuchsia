@@ -236,14 +236,14 @@ class VmCowPages final : public VmHierarchyBase,
     return result;
   }
 
-  // can_borrow_locked() returns true if the VmCowPages is capable of borrowing pages, but whether
+  // can_borrow() returns true if the VmCowPages is capable of borrowing pages, but whether
   // the VmCowPages should actually borrow pages also depends on a borrowing-site-specific flag that
-  // the caller is responsible for checking (in addition to checking can_borrow_locked()).  Only if
+  // the caller is responsible for checking (in addition to checking can_borrow()).  Only if
   // both are true should the caller actually borrow at the caller's specific potential borrowing
   // site.
   // Aside from the general borrowing in the PhysicalPageBorrowingConfig being turned on and
   // off, the ability to borrow is constant over the lifetime of the VmCowPages.
-  bool can_borrow_locked() const TA_REQ(lock()) {
+  bool can_borrow() const {
     // TODO(dustingreen): Or rashaeqbal@.  We can only borrow while the page is not dirty.
     // Currently we enforce this by checking ShouldTrapDirtyTransitions() below and leaning on the
     // fact that !ShouldTrapDirtyTransitions() dirtying isn't implemented yet.  We currently evict
@@ -274,8 +274,7 @@ class VmCowPages final : public VmHierarchyBase,
   // this VmCowPages to borrow pages. In particular it's possible for this to change over the
   // lifetime of the VmCowPages.
   bool should_borrow_locked() const TA_REQ(lock()) {
-    const bool can_borrow = can_borrow_locked();
-    if (!can_borrow) {
+    if (!can_borrow()) {
       return false;
     }
     // Exclude is_latency_sensitive_ to avoid adding latency due to reclaim.
