@@ -15,7 +15,8 @@ DiscardableVmoTracker::DiscardableList DiscardableVmoTracker::discardable_non_re
 fbl::DoublyLinkedList<DiscardableVmoTracker::Cursor*>
     DiscardableVmoTracker::discardable_vmos_cursors_ = {};
 
-zx_status_t DiscardableVmoTracker::LockDiscardableLocked(bool try_lock, bool* was_discarded_out) {
+ktl::pair<zx_status_t, bool> DiscardableVmoTracker::LockDiscardableLocked(bool try_lock,
+                                                                          bool* was_discarded_out) {
   ASSERT(was_discarded_out);
   *was_discarded_out = false;
 
@@ -23,43 +24,46 @@ zx_status_t DiscardableVmoTracker::LockDiscardableLocked(bool try_lock, bool* wa
     DEBUG_ASSERT(lock_count_ == 0);
     *was_discarded_out = true;
     if (try_lock) {
-      return ZX_ERR_UNAVAILABLE;
+      return ktl::make_pair(ZX_ERR_UNAVAILABLE, false);
     }
   }
 
+  bool updated_reclaim_candidates = false;
   if (lock_count_ == 0) {
     // Lock count transition from 0 -> 1. Change state to unreclaimable.
-    UpdateDiscardableStateLocked(DiscardableState::kUnreclaimable);
+    updated_reclaim_candidates = UpdateDiscardableStateLocked(DiscardableState::kUnreclaimable);
   }
   ++lock_count_;
 
-  return ZX_OK;
+  return ktl::make_pair(ZX_OK, updated_reclaim_candidates);
 }
 
-zx_status_t DiscardableVmoTracker::UnlockDiscardableLocked() {
+ktl::pair<zx_status_t, bool> DiscardableVmoTracker::UnlockDiscardableLocked() {
   if (lock_count_ == 0) {
-    return ZX_ERR_BAD_STATE;
+    return ktl::make_pair(ZX_ERR_BAD_STATE, false);
   }
 
+  bool updated_reclaim_candidates = false;
   if (lock_count_ == 1) {
     // Lock count transition from 1 -> 0. Change state to reclaimable.
-    UpdateDiscardableStateLocked(DiscardableState::kReclaimable);
+    updated_reclaim_candidates = UpdateDiscardableStateLocked(DiscardableState::kReclaimable);
   }
   --lock_count_;
 
-  return ZX_OK;
+  return ktl::make_pair(ZX_OK, updated_reclaim_candidates);
 }
 
-void DiscardableVmoTracker::UpdateDiscardableStateLocked(DiscardableState state) {
+bool DiscardableVmoTracker::UpdateDiscardableStateLocked(DiscardableState state) {
   Guard<CriticalMutex> guard{DiscardableVmosLock::Get()};
 
   DEBUG_ASSERT(state != DiscardableState::kUnset);
   DEBUG_ASSERT(cow_);
 
   if (state == discardable_state_) {
-    return;
+    return false;
   }
 
+  bool updated_reclaim_candidates = false;
   switch (state) {
     case DiscardableState::kReclaimable:
       // The only valid transition into reclaimable is from unreclaimable (lock count 1 -> 0).
@@ -71,6 +75,7 @@ void DiscardableVmoTracker::UpdateDiscardableStateLocked(DiscardableState state)
 
       // Move to reclaim candidates list.
       MoveToReclaimCandidatesListLocked();
+      updated_reclaim_candidates = true;
 
       break;
     case DiscardableState::kUnreclaimable:
@@ -87,6 +92,7 @@ void DiscardableVmoTracker::UpdateDiscardableStateLocked(DiscardableState state)
       } else {
         // Move to non reclaim candidates list.
         MoveToNonReclaimCandidatesListLocked(discardable_state_ == DiscardableState::kUnset);
+        updated_reclaim_candidates = true;
       }
 
       break;
@@ -97,6 +103,7 @@ void DiscardableVmoTracker::UpdateDiscardableStateLocked(DiscardableState state)
 
       // Move from reclaim candidates to non reclaim candidates list.
       MoveToNonReclaimCandidatesListLocked();
+      updated_reclaim_candidates = true;
 
       break;
     default:
@@ -105,6 +112,7 @@ void DiscardableVmoTracker::UpdateDiscardableStateLocked(DiscardableState state)
 
   // Update the state.
   discardable_state_ = state;
+  return updated_reclaim_candidates;
 }
 
 void DiscardableVmoTracker::RemoveFromDiscardableListLocked() {

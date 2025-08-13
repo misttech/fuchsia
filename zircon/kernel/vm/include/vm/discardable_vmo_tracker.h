@@ -41,14 +41,18 @@ class DiscardableVmoTracker final
   // VmCowPages destructor. Also resets the cow_ back reference.
   void RemoveFromDiscardableListLocked() TA_REQ(cow_->lock()) TA_EXCL(DiscardableVmosLock::Get());
 
-  // Lock and unlock functions.
-  zx_status_t LockDiscardableLocked(bool try_lock, bool* was_discarded_out) TA_REQ(cow_->lock())
+  // Lock and unlock functions. Returns ZX_OK if the operation succeeded or an error code if it
+  // failed, along with whether the VMO was moved between the discardable reclaimable and
+  // non-reclaimable lists. The intent of this is to inform the caller if they might need to update
+  // any book-keeping depending on whether the VMO becomes reclaimable or unreclaimable.
+  ktl::pair<zx_status_t, bool> LockDiscardableLocked(bool try_lock, bool* was_discarded_out)
+      TA_REQ(cow_->lock()) TA_EXCL(DiscardableVmosLock::Get());
+  ktl::pair<zx_status_t, bool> UnlockDiscardableLocked() TA_REQ(cow_->lock())
       TA_EXCL(DiscardableVmosLock::Get());
-  zx_status_t UnlockDiscardableLocked() TA_REQ(cow_->lock()) TA_EXCL(DiscardableVmosLock::Get());
 
   // Returns whether this object qualifies for reclamation based on whether its state is
   // kReclaimable.
-  bool IsEligibleForReclamationLocked() const TA_REQ(cow_->lock());
+  bool IsEligibleForReclamationLocked() const TA_REQ(cow_->lock()) TA_ASSERT(cow_->lock());
 
   // Whether the VMO has been discarded and not locked again yet.
   bool WasDiscardedLocked() const TA_REQ(cow_->lock()) {
@@ -88,7 +92,7 @@ class DiscardableVmoTracker final
  private:
   // Updates the |discardable_state_| of a discardable vmo, and moves it from one discardable list
   // to another.
-  void UpdateDiscardableStateLocked(DiscardableState state) TA_REQ(cow_->lock())
+  bool UpdateDiscardableStateLocked(DiscardableState state) TA_REQ(cow_->lock())
       TA_EXCL(DiscardableVmosLock::Get());
 
   // Helper function to move an object from the |discardable_non_reclaim_candidates_| list to the

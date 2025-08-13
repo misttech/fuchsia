@@ -2594,6 +2594,8 @@ static bool vmo_lock_count_test() {
 static bool vmo_discardable_states_test() {
   BEGIN_TEST;
 
+  AutoVmScannerDisable scanner_disable;
+
   fbl::RefPtr<VmObjectPaged> vmo;
   constexpr uint64_t kSize = 3 * PAGE_SIZE;
   zx_status_t status =
@@ -2615,6 +2617,7 @@ static bool vmo_discardable_states_test() {
   // Cannot discard when locked.
   vm_page_t* page;
   ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  EXPECT_FALSE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
   EXPECT_EQ(0u, vmo->DebugGetCowPages()
                     ->ReclaimPage(page, 0, VmCowPages::EvictionAction::FollowHint, nullptr)
                     .Total());
@@ -2624,6 +2627,7 @@ static bool vmo_discardable_states_test() {
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsReclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsDiscarded());
+  EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
 
   // Should be able to discard now.
   EXPECT_EQ(kSize / PAGE_SIZE,
@@ -2651,18 +2655,34 @@ static bool vmo_discardable_states_test() {
   EXPECT_EQ(kSize, lock_state.discarded_size);
 
   EXPECT_EQ(ZX_OK, vmo->CommitRange(0, kSize));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  EXPECT_FALSE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+
+  // Try lock should succeed now.
+  EXPECT_OK(vmo->TryLockRange(0, kSize));
+  EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
+  EXPECT_FALSE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+
+  // Lock count 2->1. So no change in reclaimable state.
+  EXPECT_EQ(ZX_OK, vmo->UnlockRange(0, kSize));
+  EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
+  EXPECT_FALSE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
 
   // Unlock.
   EXPECT_EQ(ZX_OK, vmo->UnlockRange(0, kSize));
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsReclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsDiscarded());
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
 
   // Lock again and verify the lock state returned without a discard.
   EXPECT_EQ(ZX_OK, vmo->LockRange(0, kSize, &lock_state));
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsReclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsDiscarded());
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  EXPECT_FALSE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
 
   EXPECT_EQ(0u, lock_state.offset);
   EXPECT_EQ(kSize, lock_state.size);
@@ -2674,6 +2694,8 @@ static bool vmo_discardable_states_test() {
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsReclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsDiscarded());
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
 
   ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
   EXPECT_EQ(kSize / PAGE_SIZE,
@@ -2923,6 +2945,8 @@ static bool vmo_discard_failure_test() {
 
 static bool vmo_discardable_counts_test() {
   BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
 
   constexpr int kNumVmos = 10;
   fbl::RefPtr<VmObjectPaged> vmos[kNumVmos];

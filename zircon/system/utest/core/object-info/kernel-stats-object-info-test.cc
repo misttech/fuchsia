@@ -274,9 +274,17 @@ TEST_F(KernelStatsGetInfoTest, KmemStatsExtended) {
   EXPECT_LE(buffer.vmo_pager_oldest_bytes, buffer.vmo_pager_total_bytes);
   EXPECT_LE(buffer.vmo_pager_oldest_bytes + buffer.vmo_pager_newest_bytes,
             buffer.vmo_pager_total_bytes);
-  // We should see the locked and unlocked pages we created here. There could be more in the system.
+  // We should see the locked pages we created here. There could be more in the system.
   EXPECT_GE(buffer.vmo_discardable_locked_bytes, kLockedSize);
-  EXPECT_GE(buffer.vmo_discardable_unlocked_bytes, kUnlockedSize);
+  // We can't check unlocked pages in a similar manner since they could have been discarded already.
+  // And there could be more unlocked pages created elsewhere in the system. The only thing we can
+  // check for is if vmo_discardable_unlocked_bytes < kUnlockedSize, then we know that the unlocked
+  // pages we created have been discarded (as the entire VMO gets discarded as a whole).
+  if (buffer.vmo_discardable_unlocked_bytes < kUnlockedSize) {
+    // Try lock should fail if the VMO has been discarded.
+    EXPECT_EQ(ZX_ERR_UNAVAILABLE,
+              vmo_unlocked.op_range(ZX_VMO_OP_TRY_LOCK, 0, kUnlockedSize, nullptr, 0));
+  }
 
   ASSERT_OK(pmt.unpin());
 }

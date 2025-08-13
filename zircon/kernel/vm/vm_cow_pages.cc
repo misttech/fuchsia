@@ -4586,16 +4586,22 @@ void VmCowPages::MoveToNotPinnedLocked(vm_page_t* page, uint64_t offset) {
         // If anonymous pages are reclaimable, and this VMO is high priority, then places our pages
         // in the high priority queue instead of the anonymous one to avoid reclamation.
         pq->MoveToHighPriority(page);
-      } else if (is_discardable()) {
-        pq->MoveToReclaim(page);
       } else {
+        bool cannot_reclaim = false;
+        // If this is a discardable VMO but not currently unlocked, it cannot be reclaimed. The
+        // reclamation code is tolerant to this, but avoid wasted work.
+        if (is_discardable()) {
+          discardable_tracker_->assert_cow_pages_locked();
+          cannot_reclaim = !discardable_tracker_->IsEligibleForReclamationLocked();
+        }
         // If the VMO is mapped uncached, it cannot be reclaimed. The reclamation code is tolerant
         // to this and will skip the page anyway, but uncached memory is typically used by drivers
         // and tends to back large buffers, so avoid wasted work.
-        pq->MoveToAnonymous(page,
-                            /*skip_reclaim=*/paged_ref_ &&
-                                (paged_backlink_locked(this)->GetMappingCachePolicyLocked() &
-                                 ZX_CACHE_POLICY_MASK) != ZX_CACHE_POLICY_CACHED);
+        if (!cannot_reclaim && paged_ref_) {
+          cannot_reclaim = (paged_backlink_locked(this)->GetMappingCachePolicyLocked() &
+                            ZX_CACHE_POLICY_MASK) != ZX_CACHE_POLICY_CACHED;
+        }
+        pq->MoveToAnonymous(page, /*skip_reclaim=*/cannot_reclaim);
       }
     } else {
       pq->MoveToWired(page);
@@ -4630,16 +4636,22 @@ void VmCowPages::SetNotPinnedLocked(vm_page_t* page, uint64_t offset) {
         // If anonymous pages are reclaimable, and this VMO is high priority, then places our pages
         // in the high priority queue instead of the anonymous one to avoid reclamation.
         pq->SetHighPriority(page, this, offset);
-      } else if (is_discardable()) {
-        pq->SetReclaim(page, this, offset);
       } else {
+        bool cannot_reclaim = false;
+        // If this is a discardable VMO but not currently unlocked, it cannot be reclaimed. The
+        // reclamation code is tolerant to this, but avoid wasted work.
+        if (is_discardable()) {
+          discardable_tracker_->assert_cow_pages_locked();
+          cannot_reclaim = !discardable_tracker_->IsEligibleForReclamationLocked();
+        }
         // If the VMO is mapped uncached, it cannot be reclaimed. The reclamation code is tolerant
         // to this and will skip the page anyway, but uncached memory is typically used by drivers
         // and tends to back large buffers, so avoid wasted work.
-        pq->SetAnonymous(page, this, offset,
-                         /*skip_reclaim=*/paged_ref_ &&
-                             (paged_backlink_locked(this)->GetMappingCachePolicyLocked() &
-                              ZX_CACHE_POLICY_MASK) != ZX_CACHE_POLICY_CACHED);
+        if (!cannot_reclaim && paged_ref_) {
+          cannot_reclaim = (paged_backlink_locked(this)->GetMappingCachePolicyLocked() &
+                            ZX_CACHE_POLICY_MASK) != ZX_CACHE_POLICY_CACHED;
+        }
+        pq->SetAnonymous(page, this, offset, /*skip_reclaim=*/cannot_reclaim);
       }
     } else {
       pq->SetWired(page, this, offset);
@@ -7627,10 +7639,26 @@ zx_status_t VmCowPages::LockRangeLocked(VmCowRange range, zx_vmo_lock_state_t* l
   discardable_tracker_->assert_cow_pages_locked();
 
   bool was_discarded = false;
-  zx_status_t status =
-      discardable_tracker_->LockDiscardableLocked(/*try_lock=*/false, &was_discarded);
+  auto ret = discardable_tracker_->LockDiscardableLocked(/*try_lock=*/false, &was_discarded);
+  zx_status_t status = ret.first;
   // Locking must succeed if try_lock was false.
   DEBUG_ASSERT(status == ZX_OK);
+
+  // If the VMO just became unreclaimable as a result of this lock, refresh the page queue state of
+  // all of its pages, which will move them out of any reclaimable queue.
+  if (ret.second) {
+    page_list_.ForEveryPage([this](const VmPageOrMarker* page_or_marker, uint64_t offset) {
+      if (page_or_marker->IsPage()) {
+        vm_page_t* page = page_or_marker->Page();
+        if (page->object.pin_count == 0) {
+          AssertHeld(lock_ref());
+          MoveToNotPinnedLocked(page, offset);
+        }
+      }
+      return ZX_ERR_NEXT;
+    });
+  }
+
   lock_state_out->discarded_offset = 0;
   lock_state_out->discarded_size = was_discarded ? size_locked() : 0;
 
@@ -7647,7 +7675,28 @@ zx_status_t VmCowPages::TryLockRangeLocked(VmCowRange range) {
 
   discardable_tracker_->assert_cow_pages_locked();
   bool unused;
-  return discardable_tracker_->LockDiscardableLocked(/*try_lock=*/true, &unused);
+  auto ret = discardable_tracker_->LockDiscardableLocked(/*try_lock=*/true, &unused);
+  zx_status_t status = ret.first;
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  // If the VMO just became unreclaimable as a result of this lock, refresh the page queue state of
+  // all of its pages, which will move them out of any reclaimable queue.
+  if (ret.second) {
+    page_list_.ForEveryPage([this](const VmPageOrMarker* page_or_marker, uint64_t offset) {
+      if (page_or_marker->IsPage()) {
+        vm_page_t* page = page_or_marker->Page();
+        if (page->object.pin_count == 0) {
+          AssertHeld(lock_ref());
+          MoveToNotPinnedLocked(page, offset);
+        }
+      }
+      return ZX_ERR_NEXT;
+    });
+  }
+
+  return status;
 }
 
 zx_status_t VmCowPages::UnlockRangeLocked(VmCowRange range) {
@@ -7659,24 +7708,28 @@ zx_status_t VmCowPages::UnlockRangeLocked(VmCowRange range) {
   }
 
   discardable_tracker_->assert_cow_pages_locked();
-  zx_status_t status = discardable_tracker_->UnlockDiscardableLocked();
+  auto ret = discardable_tracker_->UnlockDiscardableLocked();
+  zx_status_t status = ret.first;
   if (status != ZX_OK) {
     return status;
   }
-  if (discardable_tracker_->IsEligibleForReclamationLocked()) {
-    // Simulate an access to the first page. We use the first page as the discardable trigger, so by
-    // simulating an access we ensure that an unlocked VMO is treated as recently accessed
-    // equivalent to all other pages. Touching just the first page, instead of all pages, is an
-    // optimization as we can simply ignore any attempts to trigger discard from those other pages.
-    page_list_.ForEveryPage([](auto* p, uint64_t offset) {
-      // Skip over any markers.
-      if (!p->IsPage()) {
-        return ZX_ERR_NEXT;
+
+  // If the VMO just became reclaimable as a result of this unlock, refresh the page queue state of
+  // all of its pages, which will move them into the reclaimable queue.
+  if (ret.second) {
+    DEBUG_ASSERT(discardable_tracker_->IsEligibleForReclamationLocked());
+    page_list_.ForEveryPage([this](const VmPageOrMarker* page_or_marker, uint64_t offset) {
+      if (page_or_marker->IsPage()) {
+        vm_page_t* page = page_or_marker->Page();
+        if (page->object.pin_count == 0) {
+          AssertHeld(lock_ref());
+          MoveToNotPinnedLocked(page, offset);
+        }
       }
-      pmm_page_queues()->MarkAccessed(p->Page());
-      return ZX_ERR_STOP;
+      return ZX_ERR_NEXT;
     });
   }
+
   return status;
 }
 
