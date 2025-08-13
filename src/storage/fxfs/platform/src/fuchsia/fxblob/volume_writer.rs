@@ -9,7 +9,6 @@ use crate::fuchsia::fxblob::BlobDirectory;
 use crate::fuchsia::node::FxNode as _;
 use crate::fuchsia::volume::{FxVolume, FxVolumeAndRoot};
 use anyhow::{Context as _, Error};
-use async_trait::async_trait;
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::FxFilesystemBuilder;
 use fxfs::object_handle::{ObjectHandle as _, ReadObjectHandle as _};
@@ -21,83 +20,16 @@ use fxfs::object_store::{
     BLOB_MERKLE_ATTRIBUTE_ID, NO_OWNER,
 };
 use fxfs::round::round_up;
+use fxfs::virtual_device::ReadOnlyDevice;
 use sparse::reader::SparseReader;
 use std::io::{Read as _, Seek as _, SeekFrom};
-use std::ops::Range;
 use std::sync::{Arc, Weak};
-use storage_device::buffer::MutableBufferRef;
-use storage_device::buffer_allocator::BufferFuture;
-use storage_device::{Device, DeviceHolder};
+use storage_device::DeviceHolder;
 use vfs::directory::entry_container::MutableDirectory as _;
 
 const CHUNK_READ_SIZE: u64 = 131_072; /* 128 KiB */
 
 const BLOB_VOLUME_NAME: &str = "blob";
-
-/// Helper type that implements a read-only [`Device`] for a [`DataObjectHandle`].
-struct ReadOnlyDevice {
-    handle: DataObjectHandle<FxVolume>,
-    block_count: u64,
-}
-
-impl ReadOnlyDevice {
-    async fn new(handle: DataObjectHandle<FxVolume>) -> Result<Self, Error> {
-        let properties = handle.get_properties().await?;
-        assert!(properties.allocated_size % handle.block_size() == 0);
-        let block_count = properties.allocated_size / handle.block_size();
-        Ok(Self { handle, block_count })
-    }
-}
-
-#[async_trait]
-impl Device for ReadOnlyDevice {
-    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
-        self.handle.allocate_buffer(size)
-    }
-
-    fn block_size(&self) -> u32 {
-        self.handle.block_size().try_into().unwrap()
-    }
-
-    fn block_count(&self) -> u64 {
-        self.block_count
-    }
-
-    async fn read(&self, offset: u64, buffer: MutableBufferRef<'_>) -> Result<(), Error> {
-        self.handle.read(offset, buffer).await.map(|_| ())
-    }
-
-    async fn close(&self) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn is_read_only(&self) -> bool {
-        true
-    }
-
-    fn supports_trim(&self) -> bool {
-        false
-    }
-    async fn write_with_opts(
-        &self,
-        _offset: u64,
-        _buffer: storage_device::buffer::BufferRef<'_>,
-        _opts: storage_device::WriteOptions,
-    ) -> Result<(), Error> {
-        unreachable!()
-    }
-
-    async fn flush(&self) -> Result<(), Error> {
-        unreachable!()
-    }
-    async fn trim(&self, _range: Range<u64>) -> Result<(), Error> {
-        unreachable!()
-    }
-
-    fn barrier(&self) {
-        unreachable!()
-    }
-}
 
 /// Creates and pre-allocates a new [`DataObjectHandle`] inside of `owner`. The object is added to
 /// the graveyard upon construction so that it will be cleaned up on next mount if we crash.

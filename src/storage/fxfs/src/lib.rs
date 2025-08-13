@@ -31,3 +31,4 @@ pub mod serialized_types;
 mod stable_hash;
 #[cfg(test)]
 mod testing;
+pub mod virtual_device;
