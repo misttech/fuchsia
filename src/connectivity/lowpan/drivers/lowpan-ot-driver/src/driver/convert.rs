@@ -338,6 +338,30 @@ impl FromExt<&ot::SrpServerResponseCounters>
     }
 }
 
+impl FromExt<&ot::BorderAgentCounters> for fidl_fuchsia_lowpan_device::BorderAgentCounters {
+    fn from_ext(data: &ot::BorderAgentCounters) -> Self {
+        fidl_fuchsia_lowpan_device::BorderAgentCounters {
+            epskc_activations: Some(data.epskc_activations),
+            epskc_deactivation_clears: Some(data.epskc_deactivation_clears),
+            epskc_deactivation_timeouts: Some(data.epskc_deactivation_timeouts),
+            epskc_deactivation_max_attempts: Some(data.epskc_deactivation_max_attempts),
+            epskc_deactivation_disconnects: Some(data.epskc_deactivation_disconnects),
+            epskc_invalid_ba_state_errors: Some(data.epskc_invalid_ba_state_errors),
+            epskc_invalid_args_errors: Some(data.epskc_invalid_args_errors),
+            epskc_start_secure_session_errors: Some(data.epskc_start_secure_session_errors),
+            epskc_secure_session_successes: Some(data.epskc_secure_session_successes),
+            epskc_secure_session_failures: Some(data.epskc_secure_session_failures),
+            epskc_commissioner_petitions: Some(data.epskc_commissioner_petitions),
+            pskc_secure_session_successes: Some(data.pskc_secure_session_successes),
+            pskc_secure_session_failures: Some(data.pskc_secure_session_failures),
+            pskc_commissioner_petitions: Some(data.pskc_commissioner_petitions),
+            mgmt_active_gets: Some(data.mgmt_active_gets),
+            mgmt_pending_gets: Some(data.mgmt_pending_gets),
+            ..Default::default()
+        }
+    }
+}
+
 pub trait UpdateOperationalDataset<T> {
     fn update_from(&mut self, data: &T) -> Result<(), anyhow::Error>;
 }
@@ -494,5 +518,81 @@ impl AllCountersUpdate<ot::IpCounters> for AllCounters {
             failure: Some(data.rx_failure()),
             ..Default::default()
         });
+    }
+}
+
+impl AllCountersUpdate<ot::BorderAgentCounters> for AllCounters {
+    fn update_from(&mut self, data: &ot::BorderAgentCounters) {
+        self.border_agent = Some(fidl_fuchsia_lowpan_device::BorderAgentCounters::from_ext(data))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_border_agent_conversion() {
+        let epskc_activations = 0;
+        let epskc_deactivation_clears = 1;
+        let epskc_deactivation_timeouts = 2;
+        let epskc_deactivation_max_attempts = 3;
+        let epskc_deactivation_disconnects = 4;
+        let epskc_invalid_ba_state_errors = 5;
+        let epskc_invalid_args_errors = 6;
+        let epskc_start_secure_session_errors = 7;
+        let epskc_secure_session_successes = 8;
+        let epskc_secure_session_failures = 9;
+        let epskc_commissioner_petitions = 10;
+        let pskc_secure_session_successes = 11;
+        let pskc_secure_session_failures = 12;
+        let pskc_commissioner_petitions = 13;
+        let mgmt_active_gets = 14;
+        let mgmt_pending_gets = 15;
+
+        let mut all_counters = AllCounters::default();
+        let update = ot::BorderAgentCounters {
+            epskc_activations,
+            epskc_deactivation_clears,
+            epskc_deactivation_timeouts,
+            epskc_deactivation_max_attempts,
+            epskc_deactivation_disconnects,
+            epskc_invalid_ba_state_errors,
+            epskc_invalid_args_errors,
+            epskc_start_secure_session_errors,
+            epskc_secure_session_successes,
+            epskc_secure_session_failures,
+            epskc_commissioner_petitions,
+            pskc_secure_session_successes,
+            pskc_secure_session_failures,
+            pskc_commissioner_petitions,
+            mgmt_active_gets,
+            mgmt_pending_gets,
+        };
+        let expected_counters = AllCounters {
+            border_agent: Some(BorderAgentCounters {
+                epskc_activations: Some(epskc_activations),
+                epskc_deactivation_clears: Some(epskc_deactivation_clears),
+                epskc_deactivation_timeouts: Some(epskc_deactivation_timeouts),
+                epskc_deactivation_max_attempts: Some(epskc_deactivation_max_attempts),
+                epskc_deactivation_disconnects: Some(epskc_deactivation_disconnects),
+                epskc_invalid_ba_state_errors: Some(epskc_invalid_ba_state_errors),
+                epskc_invalid_args_errors: Some(epskc_invalid_args_errors),
+                epskc_start_secure_session_errors: Some(epskc_start_secure_session_errors),
+                epskc_secure_session_successes: Some(epskc_secure_session_successes),
+                epskc_secure_session_failures: Some(epskc_secure_session_failures),
+                epskc_commissioner_petitions: Some(epskc_commissioner_petitions),
+                pskc_secure_session_successes: Some(pskc_secure_session_successes),
+                pskc_secure_session_failures: Some(pskc_secure_session_failures),
+                pskc_commissioner_petitions: Some(pskc_commissioner_petitions),
+                mgmt_active_gets: Some(mgmt_active_gets),
+                mgmt_pending_gets: Some(mgmt_pending_gets),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        all_counters.update_from(&update);
+        assert_eq!(all_counters, expected_counters);
     }
 }

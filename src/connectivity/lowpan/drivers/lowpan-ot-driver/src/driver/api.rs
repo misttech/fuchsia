@@ -635,6 +635,11 @@ where
         if let Ok(coex_metrics) = driver_state.ot_instance.get_coex_metrics() {
             ret.update_from(&coex_metrics);
         }
+
+        if let Some(counters) = driver_state.ot_instance.border_agent_get_counters() {
+            ret.update_from(&counters)
+        }
+
         Ok(ret)
     }
 
@@ -1031,6 +1036,12 @@ where
                 })
                 .collect::<Vec<_>>();
 
+        // Get border agent counters.
+        let border_agent_counters =
+            driver_state.ot_instance.border_agent_get_counters().as_ref().map(|counters| {
+                fidl_fuchsia_lowpan_device::BorderAgentCounters::from_ext(counters)
+            });
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1081,6 +1092,7 @@ where
                 ..Default::default()
             }),
             link_metrics_entries: Some(link_metrics_entries),
+            border_agent_counters,
             ..Default::default()
         })
     }
