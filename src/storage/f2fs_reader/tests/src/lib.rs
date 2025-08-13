@@ -51,8 +51,10 @@ fn inode_to_object_attributes(inode: &Inode, allocated_size: u64) -> ObjectAttri
 
 /// Helper to set the appropriate key type based on fscrypt context.
 /// Returns (wrapping_key_id, key_id, keys)
-fn keys_from_context(
+async fn keys_from_context(
+    object_id: u64,
     context: &Option<fscrypt::Context>,
+    owner: &Directory<ObjectStore>,
     parent_is_fscrypt: bool,
     is_file: bool,
 ) -> Result<(Option<u128>, u64, Vec<(u64, EncryptionKey)>), Error> {
@@ -83,11 +85,14 @@ fn keys_from_context(
             },
         ))
     } else {
-        // TODO(https://fxbug.dev/393449584): This should use a valid volumedata key.
+        let store = owner.store();
+        let crypt = store.crypt().unwrap();
+        let (key, _unwrapped_key) =
+            crypt.create_key(object_id, fxfs_crypto::KeyPurpose::Data).await.unwrap();
         Ok((
             if parent_is_fscrypt { Some(0) } else { None },
             VOLUME_DATA_KEY_ID,
-            vec![(VOLUME_DATA_KEY_ID, EncryptionKey::Fxfs(Default::default()))],
+            vec![(VOLUME_DATA_KEY_ID, EncryptionKey::Fxfs(key))],
         ))
     }
 }
@@ -107,7 +112,7 @@ async fn recursively_migrate(
     ino: u32,
     dir: Directory<ObjectStore>,
     existing_inodes: &mut HashSet<u32>,
-    inline_data: &mut Vec<(u64, Box<[u8]>)>,
+    files_to_copy: &mut HashSet<u64>,
     f2fs_metadata_blocks: &mut Vec<u32>,
 ) -> Result<(), Error> {
     // Any dentry blocks for this directory are f2fs metadata.
@@ -133,10 +138,21 @@ async fn recursively_migrate(
             .await?;
 
         let (wrapping_key_id, key_id, keys) = keys_from_context(
+            object_id,
             &inode.context,
+            &dir,
             dir.wrapping_key_id().is_some(),
             entry.file_type == FileType::RegularFile,
-        )?;
+        )
+        .await?;
+
+        transaction.add(
+            dir.owner().store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::keys(object_id),
+                ObjectValue::Keys(keys.into()),
+            ),
+        );
 
         if !existing_inodes.insert(entry.ino) {
             // Hard link to an existing inode.
@@ -216,16 +232,6 @@ async fn recursively_migrate(
                     );
                 }
 
-                if inode.context.is_some() {
-                    transaction.add(
-                        dir.owner().store_object_id(),
-                        Mutation::insert_object(
-                            ObjectKey::keys(object_id),
-                            ObjectValue::Keys(keys.into()),
-                        ),
-                    );
-                }
-
                 // Bump sub_dirs count in parent.
                 let mut mutation =
                     dir.store().get_object_mutation(&transaction, dir.object_id()).await?;
@@ -252,7 +258,7 @@ async fn recursively_migrate(
                     entry.ino,
                     new_dir,
                     existing_inodes,
-                    inline_data,
+                    files_to_copy,
                     f2fs_metadata_blocks,
                 ))
                 .await?;
@@ -265,14 +271,14 @@ async fn recursively_migrate(
                 let inline_flags = inode.header.inline_flags;
                 if inline_flags.contains(InlineFlags::Data) {
                     if inode.header.size > 0 {
-                        // We can't allocate until finalize() so hold in RAM and write out last.
-                        inline_data.push((object_id, inode.inline_data.as_ref().unwrap().clone()));
+                        // We have to allocate inline files.
+                        // Encrypted inline files are not possible, so this is relatively uncommon.
+                        files_to_copy.insert(object_id);
                         allocated_size = BLOCK_SIZE as u64;
                     }
-                } else {
+                } else if inode.context.is_some() {
+                    // Fscrypt file, extents are remapped.
                     for (block_offset, block_addr) in inode.data_blocks() {
-                        // TODO(b/393448875): Handle large fragmented files that
-                        // might have us hit the transaction limit.
                         let device_range = block_addr as u64 * BLOCK_SIZE as u64
                             ..(block_addr as u64 + 1) * BLOCK_SIZE as u64;
                         let logical_range = block_offset as u64 * BLOCK_SIZE as u64
@@ -300,6 +306,12 @@ async fn recursively_migrate(
                         );
                         allocated_size += BLOCK_SIZE as u64;
                     }
+                } else {
+                    // Default encrypted file, data will be copied later.
+                    files_to_copy.insert(object_id);
+                    // Max blocks per file is ~1B and block count is stored in a u32 so
+                    // there is basically no chance of this overflowing.
+                    allocated_size = inode.data_blocks().count() as u64 * BLOCK_SIZE as u64;
                 }
 
                 transaction.add(
@@ -344,14 +356,6 @@ async fn recursively_migrate(
                         ),
                     );
                 }
-                transaction.add(
-                    dir.owner().store_object_id(),
-                    Mutation::insert_object(
-                        ObjectKey::keys(object_id),
-                        ObjectValue::Keys(keys.into()),
-                    ),
-                );
-                // TODO(b/393449584): Add encryption support
                 transaction.commit().await?;
             }
             FileType::Symlink => {
@@ -389,13 +393,6 @@ async fn recursively_migrate(
                                 object_attributes.modification_time,
                                 object_attributes.project_id,
                             ),
-                        ),
-                    );
-                    transaction.add(
-                        dir.owner().store_object_id(),
-                        Mutation::insert_object(
-                            ObjectKey::keys(object_id),
-                            ObjectValue::Keys(keys.into()),
                         ),
                     );
                 } else {
@@ -540,46 +537,41 @@ async fn recursively_verify(
                     let inline_flags = inode.header.inline_flags;
                     if inline_flags.contains(InlineFlags::Data) {
                         let mut buffer = handle.allocate_buffer(BLOCK_SIZE).await;
-                        handle.read(0, 0, buffer.as_mut()).await.context("read")?;
-                        let f2fs_block = inode.inline_data.unwrap();
+                        let len = handle.read(0, 0, buffer.as_mut()).await.context("read")?;
+                        let f2fs_block = inode.inline_data.as_ref().unwrap();
                         assert_eq!(
-                            &buffer.as_slice()[..f2fs_block.len()],
+                            &buffer.as_slice()[..len],
                             f2fs_block.as_ref(),
                             "Inline data mismatch."
                         );
                     } else {
-                        for (block_offset, block_addr) in inode.data_blocks() {
-                            let mut buffer = handle.allocate_buffer(BLOCK_SIZE).await;
-                            handle
-                                .read(0, block_offset as u64 * BLOCK_SIZE as u64, buffer.as_mut())
-                                .await
-                                .context("read")?;
-                            let f2fs_block = f2fs
-                                .read_data(&inode, block_offset)
-                                .await
-                                .context("read_data")?
-                                .unwrap();
-                            // Note that the whole block should match, but fxfs won't leak us the
-                            // whole block if it's the last block.
-                            let len = std::cmp::min(
-                                BLOCK_SIZE,
-                                inode.header.size as usize - BLOCK_SIZE * block_offset as usize,
-                            );
-                            assert_eq!(
-                                buffer.as_slice()[..len],
-                                f2fs_block.as_slice()[..len],
-                                "Block mismatch at {block_offset} {block_addr} for {inode:?}"
-                            );
+                        let device = fxfs.device();
+                        let mut fxfs_buffer = device.allocate_buffer(BLOCK_SIZE).await;
+                        for i in 0..inode.header.block_size as u32 {
+                            if let Some(f2fs_block) = f2fs.read_data(&inode, i).await.unwrap() {
+                                let len = handle
+                                    .read(0, i as u64 * BLOCK_SIZE as u64, fxfs_buffer.as_mut())
+                                    .await
+                                    .unwrap();
+                                assert_eq!(
+                                    &fxfs_buffer.as_slice()[..len],
+                                    &f2fs_block.as_slice()[..len],
+                                    "File content mismatch for ino {}",
+                                    object_id
+                                );
+                            }
                         }
                     }
                 }
             }
             FileType::Symlink => {
                 if check_file_contents {
-                    // TODO(https://fxbug.dev/373995442): This won't work until we fix fscrypt
-                    // encrypted symlink compatibility.
                     let f2fs_link = f2fs.read_symlink(&inode)?;
-                    let fxfs_link = dir.store().read_symlink(object_id).await?;
+                    let fxfs_link = dir
+                        .store()
+                        .read_symlink(object_id)
+                        .await
+                        .context("failed to read fxfs symlink")?;
                     assert_eq!(
                         f2fs_link.as_ref(),
                         &fxfs_link,
@@ -596,9 +588,11 @@ async fn recursively_verify(
 
 /// Reserves disk regions in fxfs to ensure that we don't overwrite critical f2fs metadata.
 async fn reserve_f2fs_metadata(
+    f2fs: &F2fsReader,
     fxfs: &mut OpenFxFilesystem,
     f2fs_main_blkaddr: u32, // Start of the 'data' region.
     blocks: &[u32],
+    files_to_copy: &HashSet<u64>,
 ) -> Result<(), Error> {
     let handle;
     let mut transaction = fxfs
@@ -639,6 +633,28 @@ async fn reserve_f2fs_metadata(
         ),
     );
     transaction.commit().await.context("commit txn")?;
+
+    // We must add the files we intend to copy to the set of reserved data or else
+    // we might end up overwriting one of them while copying another.
+    let mut transaction = fxfs
+        .clone()
+        .new_transaction(
+            lock_keys![LockKey::object(handle.store().store_object_id(), handle.object_id())],
+            Options::default(),
+        )
+        .await
+        .expect("new reserve f2fs metadata transaction");
+    // TODO(b/394701234): We need to ensure that this works with a lot of files and very large
+    // files.
+    for ino in files_to_copy {
+        let inode = f2fs.read_inode(*ino as u32).await?;
+        for (_block_offset, block_addr) in inode.data_blocks() {
+            let byte_range =
+                block_addr as u64 * BLOCK_SIZE as u64..(block_addr as u64 + 1) * BLOCK_SIZE as u64;
+            handle.extend(&mut transaction, byte_range).await.context("extend d")?;
+        }
+    }
+    transaction.commit().await.context("commit txn")?;
     Ok(())
 }
 
@@ -647,7 +663,10 @@ async fn reserve_f2fs_metadata(
 /// read from Fxfs without requiring two copies of the data.
 /// Note that once mounted in either format, the other filesystem will become invalid
 /// and should not be used.
-async fn migrate_device(device: DeviceHolder) -> DeviceHolder {
+async fn migrate_device(
+    device: DeviceHolder,
+    crypt: &Arc<dyn Crypt>,
+) -> Result<DeviceHolder, Error> {
     let mut fxfs = FxFilesystemBuilder::new()
         .format(true)
         .trim_config(None)
@@ -664,17 +683,17 @@ async fn migrate_device(device: DeviceHolder) -> DeviceHolder {
 
         // Create a "userdata" volume in fxfs.
         let root_volume = root_volume(fxfs.clone()).await.expect("Opening root volume");
-        let insecure_crypt = InsecureCrypt::new();
-        let crypt: Option<Arc<dyn Crypt>> = Some(Arc::new(insecure_crypt));
-        let vol =
-            root_volume.new_volume("userdata", NO_OWNER, crypt).await.expect("Opening volume");
+        let vol = root_volume
+            .new_volume("userdata", NO_OWNER, Some(crypt.clone()))
+            .await
+            .expect("Opening volume");
         let root_directory =
             Directory::open_unchecked(vol.clone(), vol.root_directory_object_id(), None, false);
 
         // Copy everything from f2fs to userdata, reusing existing extents.
         let ino = f2fs.root_ino();
         let mut existing_inodes = HashSet::new();
-        let mut inline_data = Vec::new();
+        let mut files_to_copy = HashSet::new();
         let mut f2fs_metadata_blocks = Vec::new();
         recursively_migrate(
             &f2fs,
@@ -682,7 +701,7 @@ async fn migrate_device(device: DeviceHolder) -> DeviceHolder {
             ino,
             root_directory,
             &mut existing_inodes,
-            &mut inline_data,
+            &mut files_to_copy,
             &mut f2fs_metadata_blocks,
         )
         .await
@@ -697,53 +716,82 @@ async fn migrate_device(device: DeviceHolder) -> DeviceHolder {
         // find more extents. In this case we're reaching in and manipulating the in-memory
         // structure without associated LSM tree commitments so, while unlikely, there is a risk
         // that in very large filesystems we might run into this allocator 'rebuild' behavior.
-        reserve_f2fs_metadata(&mut fxfs, f2fs.superblock.main_blkaddr, &f2fs_metadata_blocks)
-            .await
-            .expect("reserve f2fs metadata");
+        reserve_f2fs_metadata(
+            &f2fs,
+            &mut fxfs,
+            f2fs.superblock.main_blkaddr,
+            &f2fs_metadata_blocks,
+            &files_to_copy,
+        )
+        .await
+        .expect("reserve f2fs metadata");
 
         // Bump last_object_id to avoid an inode collision with data we just added.
         vol.maybe_bump_last_object_id(f2fs.max_ino() as u64).expect("bump last_object_id");
 
         fxfs.finalize().await.expect("finalize");
-        // Now we're allowed to allocate, write out any inlined files.
 
-        for (object_id, data) in inline_data {
-            let mut transaction = fxfs
-                .clone()
-                .new_transaction(
-                    lock_keys![LockKey::object(vol.store_object_id(), object_id)],
-                    Options::default(),
-                )
-                .await
-                .expect("new inline data transaction");
-            let device_range = fxfs
-                .allocator()
-                .allocate(&mut transaction, vol.store_object_id(), BLOCK_SIZE as u64)
-                .await
-                .expect("allocate");
-            {
-                let device = fxfs.device();
-                let mut buffer = device.allocate_buffer(BLOCK_SIZE).await;
-                buffer.as_mut_slice()[..data.len()].copy_from_slice(data.as_ref());
-                device.write(device_range.start, buffer.as_ref()).await.expect("write");
+        for object_id in files_to_copy {
+            let inode = f2fs.read_inode(object_id as u32).await?;
+            let object = ObjectStore::open_object(
+                &vol,
+                object_id,
+                HandleOptions::default(),
+                Some(crypt.clone()),
+            )
+            .await?;
+            if inode.header.inline_flags.contains(InlineFlags::Data) {
+                let len = inode.inline_data.as_ref().unwrap().len();
+                let mut buffer = object.allocate_buffer(BLOCK_SIZE).await;
+                let mut transaction = fxfs
+                    .clone()
+                    .new_transaction(
+                        lock_keys![LockKey::object(vol.store_object_id(), object_id)],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new default encrypted file transaction");
+                buffer.as_mut_slice()[..len].copy_from_slice(&inode.inline_data.as_ref().unwrap());
+                object
+                    .raw_multi_write(
+                        &mut transaction,
+                        0,
+                        Some(VOLUME_DATA_KEY_ID),
+                        &[0..BLOCK_SIZE as u64],
+                        buffer.as_mut(),
+                    )
+                    .await
+                    .expect("write inline data");
+                transaction.commit().await.expect("commit default encrypted file");
+            } else {
+                for (block_offset, block_addr) in inode.data_blocks() {
+                    let mut buffer = object.allocate_buffer(BLOCK_SIZE).await;
+                    fxfs.device()
+                        .read(block_addr as u64 * BLOCK_SIZE as u64, buffer.as_mut())
+                        .await
+                        .expect("read f2fs data block");
+                    let mut transaction = fxfs
+                        .clone()
+                        .new_transaction(
+                            lock_keys![LockKey::object(vol.store_object_id(), object_id)],
+                            Options::default(),
+                        )
+                        .await
+                        .expect("new default encrypted file transaction");
+                    object
+                        .raw_multi_write(
+                            &mut transaction,
+                            0,
+                            Some(VOLUME_DATA_KEY_ID),
+                            &[block_offset as u64 * BLOCK_SIZE as u64
+                                ..(block_offset as u64 + 1) * BLOCK_SIZE as u64],
+                            buffer.as_mut(),
+                        )
+                        .await
+                        .expect("write data block");
+                    transaction.commit().await.expect("commit default encrypted file");
+                }
             }
-            let key_id = 0;
-            transaction.add(
-                vol.store_object_id(),
-                Mutation::insert_object(
-                    ObjectKey::keys(object_id),
-                    // TODO(https://fxbug.dev/393449584): This should use a valid volumedata key.
-                    ObjectValue::Keys(vec![(0, EncryptionKey::Fxfs(Default::default()))].into()),
-                ),
-            );
-            transaction.add(
-                vol.store_object_id(),
-                Mutation::merge_object(
-                    ObjectKey::extent(object_id, DEFAULT_DATA_ATTRIBUTE_ID, 0..BLOCK_SIZE as u64),
-                    ObjectValue::Extent(ExtentValue::new_raw(device_range.start, key_id)),
-                ),
-            );
-            transaction.commit().await.expect("commit inline data");
         }
 
         fxfs.close().await.expect("close fxfs");
@@ -751,7 +799,7 @@ async fn migrate_device(device: DeviceHolder) -> DeviceHolder {
     let actual_size = fxfs.allocator().maximum_offset();
     let device = fxfs.take_device().await;
     println!("Final filesystem size is {actual_size}.");
-    device
+    Ok(device)
 }
 
 // Migrates an f2fs device to fxfs and verifies directory tree matches.
@@ -761,12 +809,17 @@ async fn test_fxfs_migration_no_keys() {
     let device = DeviceHolder::new(open_test_image("/pkg/testdata/f2fs.img.zst"));
     let f2fs = F2fsReader::open_device(device.deref().clone()).await.expect("f2fs open ok");
     let original_superblock = f2fs.superblock;
-    let device = migrate_device(device).await;
+    let mut insecure_crypt = InsecureCrypt::new();
+    insecure_crypt.add_wrapping_key(0, [0; 64].into());
+    insecure_crypt.set_filesystem_uuid(&f2fs.superblock.uuid);
+    let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
+    let device = migrate_device(device, &crypt).await.unwrap();
 
     // Reopen RW so we can mount Fxfs normally.
     device.reopen(false);
     let fxfs = FxFilesystemBuilder::new().read_only(true).open(device).await.expect("open failed");
-    let insecure_crypt = InsecureCrypt::new();
+    let mut insecure_crypt = InsecureCrypt::new();
+    insecure_crypt.set_filesystem_uuid(&f2fs.superblock.uuid);
     let crypt: Option<Arc<dyn Crypt>> = Some(Arc::new(insecure_crypt));
 
     // Re-open as f2fs and do it all again, this time verifying.
@@ -812,29 +865,30 @@ async fn recurse_resolve_f2fs(f2fs: &F2fsReader, ino: u32, path: &str) -> u32 {
 #[fuchsia::test]
 async fn test_fxfs_read_lblk32_ino_file() {
     let device = DeviceHolder::new(open_test_image("/pkg/testdata/f2fs.img.zst"));
-    let device = migrate_device(device).await;
+    let mut f2fs = F2fsReader::open_device(device.deref().clone()).await.expect("f2fs open ok");
+    f2fs.add_key(&[0; 64]);
+
+    let mut insecure_crypt = InsecureCrypt::new();
+    insecure_crypt.set_filesystem_uuid(&f2fs.superblock.uuid);
+    insecure_crypt.add_wrapping_key(
+        u128::from_le_bytes(fscrypt::main_key_to_identifier(&[0; 64])),
+        [0; 64].into(),
+    );
+    insecure_crypt.add_wrapping_key(0, [0; 64].into());
+    let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
+
+    let device = migrate_device(device, &crypt).await.unwrap();
 
     // Reopen RW so we can mount Fxfs normally.
     device.reopen(false);
     let fxfs = FxFilesystemBuilder::new().read_only(true).open(device).await.expect("open failed");
 
-    // Re-open as f2fs and read encrypted files from both filesystems.
-    let mut f2fs = F2fsReader::open_device(fxfs.device().clone()).await.expect("f2fs open ok");
-    f2fs.add_key(&[0; 64]);
-
-    let mut insecure_crypt = InsecureCrypt::new();
-    assert_eq!(&f2fs.superblock.uuid, fxfs.super_block_header().guid.0.as_bytes());
-    insecure_crypt.set_filesystem_uuid(fxfs.super_block_header().guid.0.as_bytes());
-    insecure_crypt.add_wrapping_key(
-        u128::from_le_bytes(fscrypt::main_key_to_identifier(&[0; 64])),
-        [0; 64].into(),
-    );
-
-    let crypt: Option<Arc<dyn Crypt>> = Some(Arc::new(insecure_crypt));
     let root_volume = root_volume(fxfs.clone()).await.expect("Opening root volume");
-    let vol =
-        root_volume.volume("userdata", NO_OWNER, crypt.clone()).await.expect("Opening volume");
-    fxfs::fsck::fsck_volume(&fxfs, vol.store_object_id(), crypt.clone())
+    let vol = root_volume
+        .volume("userdata", NO_OWNER, Some(crypt.clone()))
+        .await
+        .expect("Opening volume");
+    fxfs::fsck::fsck_volume(&fxfs, vol.store_object_id(), Some(crypt.clone()))
         .await
         .expect("fsck volume");
 
@@ -860,5 +914,46 @@ async fn test_fxfs_read_lblk32_ino_file() {
     assert_eq!(fxfs_object.read(0, 0, buf.as_mut()).await.expect("read"), EXPECTED_CONTENTS.len());
     assert_eq!(&buf.as_slice()[..EXPECTED_CONTENTS.len()], EXPECTED_CONTENTS);
 
+    fxfs.close().await.expect("close ok");
+}
+
+#[fuchsia::test]
+async fn test_fxfs_verify_encrypted_data() {
+    let device = DeviceHolder::new(open_test_image("/pkg/testdata/f2fs.img.zst"));
+    let f2fs = F2fsReader::open_device(device.deref().clone()).await.expect("f2fs open ok");
+
+    let mut insecure_crypt = InsecureCrypt::new();
+    insecure_crypt.set_filesystem_uuid(&f2fs.superblock.uuid);
+    insecure_crypt.add_wrapping_key(
+        u128::from_le_bytes(fscrypt::main_key_to_identifier(&[0; 64])),
+        [0; 64].into(),
+    );
+
+    let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
+    let device = migrate_device(device, &crypt).await.unwrap();
+
+    // Reopen RW so we can mount Fxfs normally.
+    device.reopen(false);
+    let fxfs = FxFilesystemBuilder::new().read_only(true).open(device).await.expect("open failed");
+
+    // Re-open as f2fs and read encrypted files from both filesystems.
+    let mut f2fs = F2fsReader::open_device(fxfs.device().clone()).await.expect("f2fs open ok");
+    assert_eq!(&f2fs.superblock.uuid, fxfs.super_block_header().guid.0.as_bytes());
+    f2fs.add_key(&[0; 64]);
+
+    let root_volume = root_volume(fxfs.clone()).await.expect("Opening root volume");
+    let vol = root_volume
+        .volume("userdata", NO_OWNER, Some(crypt.clone()))
+        .await
+        .expect("Opening volume");
+    fxfs::fsck::fsck_volume(&fxfs, vol.store_object_id(), Some(crypt.clone()))
+        .await
+        .expect("fsck volume");
+    let root_directory =
+        Directory::open(&vol, vol.root_directory_object_id()).await.expect("open failed");
+    let ino = f2fs.root_ino();
+    recursively_verify(&f2fs, &fxfs, ino, root_directory, /*check_file_contents=*/ true)
+        .await
+        .expect("verify");
     fxfs.close().await.expect("close ok");
 }

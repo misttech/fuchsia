@@ -421,7 +421,7 @@ pub struct ObjectStore {
     // Current lock state of the store.
     // Lock ordering: This must be taken after `store_info`.
     lock_state: Mutex<LockState>,
-    key_manager: KeyManager,
+    pub key_manager: KeyManager,
 
     // Enable/disable tracing.
     trace: AtomicBool,

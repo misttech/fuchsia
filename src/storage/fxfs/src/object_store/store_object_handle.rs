@@ -1186,21 +1186,38 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         self.write_aligned(transfer_buf_ref.as_ref(), device_offset).await
     }
 
-    /// Writes to multiple ranges with data provided in `buf`.  The buffer can be modified in place
-    /// if encryption takes place.  The ranges must all be aligned and no change to content size is
-    /// applied; the caller is responsible for updating size if required.  If `key_id` is None, it
-    /// means pick the default key for the object which is the fscrypt key if present, or the volume
-    /// data key, or no key if it's an unencrypted file.
-    pub async fn multi_write(
+    /// Writes to multiple ranges with data provided in `buf`. This function is specifically
+    /// designed for migration purposes, allowing raw writes to the device without updating
+    /// object metadata like allocated size or mtime. It's essential for scenarios where
+    /// data needs to be transferred directly without triggering standard filesystem operations.
+    #[cfg(feature = "migration")]
+    pub async fn raw_multi_write(
+        &self,
+        transaction: &mut Transaction<'_>,
+        attribute_id: u64,
+        key_id: Option<u64>,
+        ranges: &[Range<u64>],
+        buf: MutableBufferRef<'_>,
+    ) -> Result<(), Error> {
+        self.multi_write_internal(transaction, attribute_id, key_id, ranges, buf).await?;
+        Ok(())
+    }
+
+    /// This is a low-level write function that writes to multiple ranges. Users should generally
+    /// use `multi_write` instead of this function as this does not update the object's allocated
+    /// size, mtime, atime, etc.
+    ///
+    /// Returns (allocated, deallocated) bytes on success.
+    async fn multi_write_internal(
         &self,
         transaction: &mut Transaction<'_>,
         attribute_id: u64,
         key_id: Option<u64>,
         ranges: &[Range<u64>],
         mut buf: MutableBufferRef<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<(u64, u64), Error> {
         if buf.is_empty() {
-            return Ok(());
+            return Ok((0, 0));
         }
         let block_size = self.block_size();
         let store = self.store();
@@ -1333,7 +1350,27 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 transaction.add_checksum(r, c, true);
             }
         }
+        Ok((allocated, deallocated))
+    }
 
+    /// Writes to multiple ranges with data provided in `buf`.  The buffer can be modified in place
+    /// if encryption takes place.  The ranges must all be aligned and no change to content size is
+    /// applied; the caller is responsible for updating size if required.  If `key_id` is None, it
+    /// means pick the default key for the object which is the fscrypt key if present, or the volume
+    /// data key, or no key if it's an unencrypted file.
+    pub async fn multi_write(
+        &self,
+        transaction: &mut Transaction<'_>,
+        attribute_id: u64,
+        key_id: Option<u64>,
+        ranges: &[Range<u64>],
+        buf: MutableBufferRef<'_>,
+    ) -> Result<(), Error> {
+        let (allocated, deallocated) =
+            self.multi_write_internal(transaction, attribute_id, key_id, ranges, buf).await?;
+        if allocated == 0 && deallocated == 0 {
+            return Ok(());
+        }
         self.update_allocated_size(transaction, allocated, deallocated).await
     }
 
