@@ -2427,14 +2427,6 @@ DEFINE_ADMIN_TEST_CLASS(CompositeProperties, {
   WaitForError();
 });
 
-// Display the DAI Format Sets, for debugging purposes only.
-DEFINE_ADMIN_TEST_CLASS(DisplayDaiFormatSets, {
-  ASSERT_NO_FAILURE_OR_SKIP(RetrieveDaiFormats());
-
-  LogDaiFormatSets(dai_formats());
-  WaitForError();
-});
-
 // Verify that a valid element list is successfully received.
 // Validate the base Element properties, for all elements.
 DEFINE_ADMIN_TEST_CLASS(GetElements, {
@@ -3128,11 +3120,7 @@ void RegisterAdminTestsForDevice(const DeviceEntry& device_entry) {
     REGISTER_ADMIN_TEST(CompositeHealth, device_entry);
     REGISTER_ADMIN_TEST(CompositeProperties, device_entry);
     REGISTER_ADMIN_TEST(CompositeRingBufferFormats, device_entry);
-
-    // Add this for debugging purposes, to show what the driver is exposing:
-    //     REGISTER_ADMIN_TEST(DisplayDaiFormatSets, device_entry);
     REGISTER_ADMIN_TEST(CompositeDaiFormats, device_entry);
-
     // TODO(https://fxbug.dev/42075676): Add Composite testing (e.g. Reset, SetDaiFormat).
     // REGISTER_ADMIN_TEST(SetDaiFormat, device_entry); // test all DAIs, not just the first.
     // Reset should close RingBuffers and revert SetTopology, SetElementState and SetDaiFormat.
