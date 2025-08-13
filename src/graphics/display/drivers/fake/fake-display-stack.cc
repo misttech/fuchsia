@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
+#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/fdio/directory.h>
 #include <lib/sync/cpp/completion.h>
@@ -26,7 +27,10 @@ namespace fake_display {
 FakeDisplayStack::FakeDisplayStack(std::unique_ptr<SysmemServiceProvider> sysmem_service_provider,
                                    const FakeDisplayDeviceConfig& device_config)
     : driver_runtime_(mock_ddk::GetDriverRuntime()),
-      sysmem_service_provider_(std::move(sysmem_service_provider)) {
+      sysmem_service_provider_(std::move(sysmem_service_provider)),
+      engine_driver_dispatcher_(driver_runtime_->StartBackgroundDispatcher()),
+      coordinator_driver_dispatcher_(driver_runtime_->StartBackgroundDispatcher()),
+      coordinator_controller_(coordinator_driver_dispatcher_->async_dispatcher(), std::in_place) {
   if (!fdf::Logger::HasGlobalInstance()) {
     logger_.emplace();
   }
@@ -37,72 +41,41 @@ FakeDisplayStack::FakeDisplayStack(std::unique_ptr<SysmemServiceProvider> sysmem
   fidl_adapter_ =
       std::make_unique<display::DisplayEngineFidlAdapter>(display_engine_.get(), &engine_events_);
 
-  zx::result<fdf::SynchronizedDispatcher> create_engine_dispatcher_result =
-      fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
-                                          "display-engine-loop",
-                                          [this](fdf_dispatcher_t* dispatcher) {
-                                            engine_driver_dispatcher_is_shut_down_.Signal();
-                                          });
-  engine_driver_dispatcher_ = std::move(create_engine_dispatcher_result).value();
-
-  zx::result<fdf::SynchronizedDispatcher> create_coordinator_dispatcher_result =
-      fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
-                                          "display-client-loop",
-                                          [this](fdf_dispatcher_t* dispatcher) {
-                                            coordinator_driver_dispatcher_is_shut_down_.Signal();
-                                          });
-  if (create_coordinator_dispatcher_result.is_error()) {
-    ZX_PANIC("Failed to create dispatcher: %s",
-             create_coordinator_dispatcher_result.status_string());
-  }
-  coordinator_driver_dispatcher_ = std::move(create_coordinator_dispatcher_result).value();
-
   auto [engine_client, engine_server] =
       fdf::Endpoints<fuchsia_hardware_display_engine::Engine>::Create();
-  fidl::ProtocolHandler<fuchsia_hardware_display_engine::Engine> fidl_handler =
-      fidl_adapter_->CreateHandler(*(engine_driver_dispatcher_.get()));
-  zx_status_t post_task_status = async::PostTask(
-      engine_driver_dispatcher_.async_dispatcher(),
-      [engine_server = std::move(engine_server), fidl_handler = std::move(fidl_handler)]() mutable {
+  zx::result<> bind_engine_result =
+      fdf::RunOnDispatcherSync(engine_driver_dispatcher_->async_dispatcher(), [&]() {
+        fidl::ProtocolHandler<fuchsia_hardware_display_engine::Engine> fidl_handler =
+            fidl_adapter_->CreateHandler(*(engine_driver_dispatcher_->get()));
         fidl_handler(std::move(engine_server));
       });
-  if (post_task_status != ZX_OK) {
-    ZX_PANIC("Failed to post task to bind FIDL adapter: %s",
-             zx_status_get_string(post_task_status));
+  if (bind_engine_result.is_error()) {
+    ZX_PANIC("Failed to handle engine protocol: %s", bind_engine_result.status_string());
   }
+
+  coordinator_controller_.SyncCall(
+      [&](std::unique_ptr<display_coordinator::Controller>* controller) {
+        auto engine_driver_client =
+            std::make_unique<display_coordinator::EngineDriverClientFidl>(std::move(engine_client));
+        zx::result<std::unique_ptr<display_coordinator::Controller>> create_result =
+            display_coordinator::Controller::Create(std::move(engine_driver_client),
+                                                    coordinator_driver_dispatcher_->borrow());
+        if (create_result.is_error()) {
+          ZX_PANIC("Failed to create display coordinator Controller device: %s",
+                   create_result.status_string());
+        }
+        *controller = std::move(create_result).value();
+      });
 
   auto [display_provider_client, display_provider_server] =
       fidl::Endpoints<fuchsia_hardware_display::Provider>::Create();
   display_provider_client_ =
       fidl::WireSyncClient<fuchsia_hardware_display::Provider>(std::move(display_provider_client));
-
-  libsync::Completion controller_create_completed;
-  zx::result<std::unique_ptr<display_coordinator::Controller>> create_controller_result;
-  post_task_status =
-      async::PostTask(coordinator_driver_dispatcher_.async_dispatcher(), [&]() mutable {
-        auto engine_driver_client =
-            std::make_unique<display_coordinator::EngineDriverClientFidl>(std::move(engine_client));
-
-        create_controller_result = display_coordinator::Controller::Create(
-            std::move(engine_driver_client), coordinator_driver_dispatcher_.borrow());
-        if (create_controller_result.is_error()) {
-          ZX_PANIC("Failed to create display coordinator Controller device: %s",
-                   create_controller_result.status_string());
-        }
-
-        fidl::BindServer(coordinator_driver_dispatcher_.async_dispatcher(),
-                         std::move(display_provider_server),
-                         create_controller_result.value().get());
-
-        controller_create_completed.Signal();
+  coordinator_controller_.SyncCall(
+      [&](std::unique_ptr<display_coordinator::Controller>* controller) {
+        fidl::BindServer(coordinator_driver_dispatcher_->async_dispatcher(),
+                         std::move(display_provider_server), controller->get());
       });
-  if (post_task_status != ZX_OK) {
-    ZX_PANIC("Failed to post task to create Controller: %s",
-             zx_status_get_string(post_task_status));
-  }
-  controller_create_completed.Wait();
-
-  coordinator_controller_ = std::move(create_controller_result).value();
 }
 
 FakeDisplayStack::~FakeDisplayStack() {
@@ -114,17 +87,13 @@ zx::result<> FakeDisplayStack::ConnectCoordinatorClient(
     fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
         coordinator_listener_client_end) {
-  libsync::Completion completion;
-  zx::result<> result = zx::ok();
-  async::PostTask(coordinator_controller_->driver_dispatcher()->async_dispatcher(), [&]() mutable {
-    zx_status_t status =
-        coordinator_controller_->CreateClient(client_priority, std::move(coordinator_server_end),
-                                              std::move(coordinator_listener_client_end));
-    result = zx::make_result(status);
-    completion.Signal();
-  });
-  completion.Wait();
-  return result;
+  zx_status_t status = coordinator_controller_.SyncCall(
+      [&](std::unique_ptr<display_coordinator::Controller>* controller) {
+        return (*controller)
+            ->CreateClient(client_priority, std::move(coordinator_server_end),
+                           std::move(coordinator_listener_client_end));
+      });
+  return zx::make_result(status);
 }
 
 FakeDisplay& FakeDisplayStack::display_engine() {
@@ -159,21 +128,28 @@ void FakeDisplayStack::SyncShutdown() {
   }
   shutdown_ = true;
 
-  libsync::Completion prepare_stop_completed;
-  zx_status_t post_status = async::PostTask(coordinator_driver_dispatcher_.async_dispatcher(), [&] {
-    coordinator_controller_->PrepareStop();
-    prepare_stop_completed.Signal();
+  coordinator_controller_.SyncCall(
+      [&](std::unique_ptr<display_coordinator::Controller>* controller) {
+        (*controller)->PrepareStop();
+      });
+
+  std::unique_ptr<display_coordinator::Controller> controller_to_reset =
+      coordinator_controller_.SyncCall(
+          [&](std::unique_ptr<display_coordinator::Controller>* controller) {
+            return std::move(*controller);
+          });
+
+  libsync::Completion coordinator_is_shut_down;
+  driver_runtime_->ShutdownBackgroundDispatcher(coordinator_driver_dispatcher_->get(), [&] {
+    controller_to_reset.reset();
+    coordinator_is_shut_down.Signal();
   });
-  ZX_ASSERT(post_status == ZX_OK);
-  prepare_stop_completed.Wait();
+  coordinator_is_shut_down.Wait();
 
-  coordinator_driver_dispatcher_.ShutdownAsync();
-  coordinator_driver_dispatcher_is_shut_down_.Wait();
-
-  coordinator_controller_.reset();
-
-  engine_driver_dispatcher_.ShutdownAsync();
-  engine_driver_dispatcher_is_shut_down_.Wait();
+  libsync::Completion engine_driver_dispatcher_is_shut_down;
+  driver_runtime_->ShutdownBackgroundDispatcher(
+      engine_driver_dispatcher_->get(), [&] { engine_driver_dispatcher_is_shut_down.Signal(); });
+  engine_driver_dispatcher_is_shut_down.Wait();
 
   display_engine_.reset();
 

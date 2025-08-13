@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/loop.h>
+#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
@@ -36,6 +37,12 @@ class FakeDisplayStack {
  public:
   FakeDisplayStack(std::unique_ptr<SysmemServiceProvider> sysmem_service_provider,
                    const FakeDisplayDeviceConfig& device_config);
+
+  FakeDisplayStack(const FakeDisplayStack&) = delete;
+  FakeDisplayStack(FakeDisplayStack&&) = delete;
+  FakeDisplayStack& operator=(const FakeDisplayStack&) = delete;
+  FakeDisplayStack& operator=(FakeDisplayStack&&) = delete;
+
   ~FakeDisplayStack();
 
   // Must not be called after SyncShutdown().
@@ -68,24 +75,17 @@ class FakeDisplayStack {
   std::shared_ptr<fdf_testing::DriverRuntime> driver_runtime_;
   std::unique_ptr<SysmemServiceProvider> sysmem_service_provider_;
 
-  fdf::SynchronizedDispatcher engine_driver_dispatcher_;
-  libsync::Completion engine_driver_dispatcher_is_shut_down_;
-
-  fdf::SynchronizedDispatcher coordinator_driver_dispatcher_;
-  libsync::Completion coordinator_driver_dispatcher_is_shut_down_;
+  fdf::UnownedSynchronizedDispatcher engine_driver_dispatcher_;
+  fdf::UnownedSynchronizedDispatcher coordinator_driver_dispatcher_;
 
   display::DisplayEngineEventsFidl engine_events_;
   std::unique_ptr<FakeDisplay> display_engine_;
   std::unique_ptr<display::DisplayEngineFidlAdapter> fidl_adapter_;
 
-  std::unique_ptr<display_coordinator::Controller> coordinator_controller_;
+  async_patterns::TestDispatcherBound<std::unique_ptr<display_coordinator::Controller>>
+      coordinator_controller_;
 
   bool shutdown_ = false;
-
-  // Runs services provided by the fake display and display coordinator driver.
-  // Must be torn down before `display_` and `coordinator_controller_` is
-  // removed.
-  async::Loop display_loop_{&kAsyncLoopConfigNeverAttachToThread};
 
   fidl::WireSyncClient<fuchsia_hardware_display::Provider> display_provider_client_;
 };
