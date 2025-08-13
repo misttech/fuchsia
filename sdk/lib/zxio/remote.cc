@@ -31,7 +31,7 @@ namespace fio = fuchsia_io;
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 // Can't import fio in the main header. Just ensure that they're equal.
 static_assert(ZXIO_SELINUX_CONTEXT_MAX_ATTR_LEN == fio::wire::kMaxSelinuxContextAttributeLen);
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 
 zx_status_t RemoteReadv(const fidl::UnownedClientEnd<fio::Readable>& client_end,
                         const zx_iovec_t* vector, size_t vector_count, zxio_flags_t flags,
@@ -155,10 +155,8 @@ constexpr zxio_object_type_t ProtocolToObjectType() {
     return ZXIO_OBJECT_TYPE_NODE;
   } else if constexpr (std::is_same_v<Protocol, fio::File>) {
     return ZXIO_OBJECT_TYPE_FILE;
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   } else if constexpr (std::is_same_v<Protocol, fio::Symlink>) {
     return ZXIO_OBJECT_TYPE_SYMLINK;
-#endif
   } else {
     static_assert(false, "Unmapped protocol type!");
   }
@@ -394,11 +392,7 @@ class Remote : public HasIo {
     // fuchsia.io/Node composes fuchsia.unknown/Cloneable. The client end below will speak whatever
     // protocol was negotiated for the current connection.
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_unknown::Cloneable>::Create();
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
     const fidl::Status result = client_->Clone(std::move(server_end));
-#else
-    const fidl::Status result = client_->Clone2(std::move(server_end));
-#endif
     if (!result.ok()) {
       return result.status();
     }
@@ -466,7 +460,6 @@ constexpr fio::NodeAttributesQuery BuildAttributeQuery(
     query |= fio::NodeAttributesQuery::kCreationTime;
   if (attr_has.modification_time)
     query |= fio::NodeAttributesQuery::kModificationTime;
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   if (attr_has.change_time)
     query |= fio::NodeAttributesQuery::kChangeTime;
   if (attr_has.access_time)
@@ -479,7 +472,6 @@ constexpr fio::NodeAttributesQuery BuildAttributeQuery(
     query |= fio::NodeAttributesQuery::kGid;
   if (attr_has.rdev)
     query |= fio::NodeAttributesQuery::kRdev;
-#endif
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (attr_has.fsverity_options)
     query |= fio::NodeAttributesQuery::kOptions;
@@ -495,7 +487,7 @@ constexpr fio::NodeAttributesQuery BuildAttributeQuery(
     query |= fio::NodeAttributesQuery::kSelinuxContext;
   if (attr_has.pending_access_time_update)
     query |= fio::NodeAttributesQuery::kPendingAccessTimeUpdate;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   return query;
 }
 
@@ -505,7 +497,7 @@ struct MutableAttributesDataHolder {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   fio::wire::SelinuxContext selinux_context_wrapper;
   fidl::VectorView<uint8_t> selinux_context_view;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 };
 
 zx::result<fio::wire::MutableNodeAttributes> BuildMutableAttributes(
@@ -522,17 +514,15 @@ zx::result<fio::wire::MutableNodeAttributes> BuildMutableAttributes(
       mutable_attrs->has.link_count) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   if (mutable_attrs->has.change_time) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-#endif
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (mutable_attrs->has.fsverity_enabled || mutable_attrs->has.fsverity_options ||
       mutable_attrs->has.fsverity_root_hash) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (mutable_attrs->has.creation_time) {
     builder.creation_time(fidl::ObjectView<uint64_t>::FromExternal(
         const_cast<uint64_t*>(&mutable_attrs->creation_time)));
@@ -541,10 +531,22 @@ zx::result<fio::wire::MutableNodeAttributes> BuildMutableAttributes(
     builder.modification_time(fidl::ObjectView<uint64_t>::FromExternal(
         const_cast<uint64_t*>(&mutable_attrs->modification_time)));
   }
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   if (mutable_attrs->has.access_time) {
     builder.access_time(fidl::ObjectView<uint64_t>::FromExternal(
         const_cast<uint64_t*>(&mutable_attrs->access_time)));
+  }
+  if (mutable_attrs->has.mode) {
+    builder.mode(mutable_attrs->mode);
+  }
+  if (mutable_attrs->has.uid) {
+    builder.uid(mutable_attrs->uid);
+  }
+  if (mutable_attrs->has.gid) {
+    builder.gid(mutable_attrs->gid);
+  }
+  if (mutable_attrs->has.rdev) {
+    builder.rdev(
+        fidl::ObjectView<uint64_t>::FromExternal(const_cast<uint64_t*>(&mutable_attrs->rdev)));
   }
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (mutable_attrs->has.selinux_context) {
@@ -563,22 +565,6 @@ zx::result<fio::wire::MutableNodeAttributes> BuildMutableAttributes(
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
   }
-#endif
-  if (mutable_attrs->has.mode) {
-    builder.mode(mutable_attrs->mode);
-  }
-  if (mutable_attrs->has.uid) {
-    builder.uid(mutable_attrs->uid);
-  }
-  if (mutable_attrs->has.gid) {
-    builder.gid(mutable_attrs->gid);
-  }
-  if (mutable_attrs->has.rdev) {
-    builder.rdev(
-        fidl::ObjectView<uint64_t>::FromExternal(const_cast<uint64_t*>(&mutable_attrs->rdev)));
-  }
-#endif
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (mutable_attrs->has.casefold) {
     builder.casefold(mutable_attrs->casefold);
   }
@@ -588,7 +574,7 @@ zx::result<fio::wire::MutableNodeAttributes> BuildMutableAttributes(
             reinterpret_cast<fidl::Array<uint8_t, ZXIO_WRAPPING_KEY_ID_LENGTH>*>(
                 const_cast<uint8_t*>(mutable_attrs->wrapping_key_id))));
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   return zx::ok(builder.Build());
 }
 
@@ -666,7 +652,7 @@ zx_status_t Remote<Protocol>::FlagsGetDeprecated(uint32_t* out_flags) {
   const fidl::WireResult result = client()->DeprecatedGetFlags();
 #else
   const fidl::WireResult result = client()->GetFlags();
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   if (!result.ok()) {
     return result.status();
   }
@@ -685,7 +671,7 @@ zx_status_t Remote<Protocol>::FlagsSetDeprecated(uint32_t flags) {
       client()->DeprecatedSetFlags(static_cast<fio::wire::OpenFlags>(flags));
 #else
   const fidl::WireResult result = client()->SetFlags(static_cast<fio::wire::OpenFlags>(flags));
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   if (!result.ok()) {
     return result.status();
   }
@@ -710,7 +696,7 @@ zx_status_t Remote<Protocol>::FlagsGet(uint64_t* out_flags) {
   // Fallback to fuchsia.io/Node.DeprecatedGetFlags if the server doesn't support GetFlags.
   // TODO(https://fxbug.dev/376509077): Remove fallback when GetFlags is supported by all
   // out-of-tree servers at all API levels.
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   // fuchsia.io servers only support setting the APPEND flag so we can ignore other flags here.
   uint32_t deprecated_flags = {};
   const zx_status_t status = FlagsGetDeprecated(&deprecated_flags);
@@ -739,7 +725,7 @@ zx_status_t Remote<Protocol>::FlagsSet(uint64_t flags) {
   // Fallback to fuchsia.io/Node.DeprecatedSetFlags if the server doesn't support SetFlags.
   // TODO(https://fxbug.dev/376509077): Remove fallback when SetFlags is supported by all
   // out-of-tree servers at all API levels.
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   // fuchsia.io servers only support setting the APPEND flag so we can ignore other flags here.
   fio::wire::OpenFlags deprecated_flags = {};
   if (fio::wire::Flags{flags} & fio::wire::Flags::kFileAppend) {
@@ -752,7 +738,6 @@ template <typename Protocol>
 zx_status_t Remote<Protocol>::LinkInto(zx_handle_t dst_token_handle, const char* dst_path,
                                        size_t dst_path_len) {
   zx::event dst_token(dst_token_handle);
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   const fidl::WireResult result = client()->LinkInto(
       std::move(dst_token), fidl::StringView::FromExternal(dst_path, dst_path_len));
   if (!result.ok()) {
@@ -763,16 +748,12 @@ zx_status_t Remote<Protocol>::LinkInto(zx_handle_t dst_token_handle, const char*
     return response.error_value();
   }
   return ZX_OK;
-#else
-  return ZX_ERR_NOT_SUPPORTED;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
 }
 
 template <typename Protocol>
 zx_status_t Remote<Protocol>::XattrList(void (*callback)(void* context, const uint8_t* name,
                                                          size_t name_len),
                                         void* context) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   if (!client().is_valid()) {
     return ZX_ERR_BAD_STATE;
   }
@@ -802,9 +783,6 @@ zx_status_t Remote<Protocol>::XattrList(void (*callback)(void* context, const ui
   }
 
   return ZX_OK;
-#else
-  return ZX_ERR_NOT_SUPPORTED;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
 }
 
 template <typename Protocol>
@@ -812,7 +790,6 @@ zx_status_t Remote<Protocol>::XattrGet(const uint8_t* name, size_t name_len,
                                        zx_status_t (*callback)(void* context,
                                                                zxio_xattr_data_t data),
                                        void* context) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   if (!client().is_valid()) {
     return ZX_ERR_BAD_STATE;
   }
@@ -851,15 +828,11 @@ zx_status_t Remote<Protocol>::XattrGet(const uint8_t* name, size_t name_len,
   }
 
   return callback(context, data);
-#else
-  return ZX_ERR_NOT_SUPPORTED;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
 }
 
 template <typename Protocol>
 zx_status_t Remote<Protocol>::XattrSet(const uint8_t* name, size_t name_len, const uint8_t* value,
                                        size_t value_len, zxio_xattr_set_mode_t mode) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   if (!client().is_valid()) {
     return ZX_ERR_BAD_STATE;
   }
@@ -907,14 +880,10 @@ zx_status_t Remote<Protocol>::XattrSet(const uint8_t* name, size_t name_len, con
   }
 
   return ZX_OK;
-#else
-  return ZX_ERR_NOT_SUPPORTED;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
 }
 
 template <typename Protocol>
 zx_status_t Remote<Protocol>::XattrRemove(const uint8_t* name, size_t name_len) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   if (!client().is_valid()) {
     return ZX_ERR_BAD_STATE;
   }
@@ -930,9 +899,6 @@ zx_status_t Remote<Protocol>::XattrRemove(const uint8_t* name, size_t name_len) 
   }
 
   return ZX_OK;
-#else
-  return ZX_ERR_NOT_SUPPORTED;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
 }
 
 class Node : public Remote<fio::Node> {
@@ -1058,7 +1024,6 @@ class Directory : public Remote<fio::Directory> {
 
   zx_status_t CreateSymlink(const char* name, size_t name_len, const uint8_t* target,
                             size_t target_len, zxio_storage_t* storage) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
     fidl::Endpoints<fio::Symlink> endpoints;
     if (storage) {
       if (auto result = fidl::CreateEndpoints<fio::Symlink>(); result.is_error()) {
@@ -1088,9 +1053,6 @@ class Directory : public Remote<fio::Directory> {
       }
     }
     return ZX_OK;
-#else
-    return ZX_ERR_NOT_SUPPORTED;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
   }
 
   zx_status_t Open(const char* path, size_t path_len, zxio_open_flags_t flags,
@@ -1146,7 +1108,7 @@ class Directory : public Remote<fio::Directory> {
         client()->Open3(fidl::StringView::FromExternal(path, path_len),
                         fio::Flags::kFlagSendRepresentation | fio::Flags{flags}, open_options,
                         std::move(server_end));
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
     if (!result.ok()) {
       return result.status();
@@ -1487,8 +1449,6 @@ constexpr zxio_ops_t File::kOps = ([]() {
   return ops;
 })();
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
-
 class Symlink : public Remote<fio::Symlink> {
  public:
   Symlink(fidl::ClientEnd<fio::Symlink> client_end, std::vector<uint8_t> target)
@@ -1514,8 +1474,6 @@ constexpr zxio_ops_t Symlink::kOps = ([]() {
   return ops;
 })();
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(18)
-
 }  // namespace
 
 zx_status_t zxio_dir_init(zxio_storage_t* storage, fidl::ClientEnd<fio::Directory> client) {
@@ -1534,13 +1492,11 @@ zx_status_t zxio_node_init(zxio_storage_t* storage, fidl::ClientEnd<fio::Node> c
   return ZX_OK;
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
 zx_status_t zxio_symlink_init(zxio_storage_t* storage, fidl::ClientEnd<fio::Symlink> client,
                               std::vector<uint8_t> target) {
   new (storage) Symlink(std::move(client), std::move(target));
   return ZX_OK;
 }
-#endif
 
 zx_status_t zxio_attr_from_wire(const fio::wire::NodeAttributes2& in, zxio_node_attributes_t* out) {
   out->has = {};
@@ -1584,7 +1540,6 @@ zx_status_t zxio_attr_from_wire(const fio::wire::NodeAttributes2& in, zxio_node_
     out->modification_time = in.mutable_attributes.modification_time();
     out->has.modification_time = true;
   }
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
   if (in.mutable_attributes.has_access_time()) {
     out->access_time = in.mutable_attributes.access_time();
     out->has.access_time = true;
@@ -1613,7 +1568,7 @@ zx_status_t zxio_attr_from_wire(const fio::wire::NodeAttributes2& in, zxio_node_
     out->change_time = in.immutable_attributes.change_time();
     out->has.change_time = true;
   }
-#endif
+
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (in.mutable_attributes.has_casefold()) {
     out->casefold = in.mutable_attributes.casefold();
@@ -1671,7 +1626,7 @@ zx_status_t zxio_attr_from_wire(const fio::wire::NodeAttributes2& in, zxio_node_
     }
     out->has.selinux_context = true;
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 
   return ZX_OK;
 }

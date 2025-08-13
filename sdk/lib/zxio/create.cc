@@ -314,7 +314,7 @@ zx_status_t zxio_create_with_info(zx_handle_t raw_handle, const zx_info_handle_b
           auto representation = fio::wire::Representation::WithNode({});
 #else
           auto representation = fio::wire::Representation::WithConnector({});
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
           return zxio_create_with_representation(
               fidl::ClientEnd<fio::Node>{queryable.TakeChannel()}, representation, nullptr,
               storage);
@@ -433,51 +433,38 @@ zx_status_t zxio_create_with_representation(fidl::ClientEnd<fio::Node> node,
 #else
     case fio::wire::Representation::Tag::kConnector: {
       if (attr) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
         fio::wire::ConnectorInfo& connector = representation.connector();
         if (!connector.has_attributes())
           return ZX_ERR_INVALID_ARGS;
         if (zx_status_t status = zxio_attr_from_wire(connector.attributes(), attr); status != ZX_OK)
           return status;
-#else
-        return ZX_ERR_NOT_SUPPORTED;
-#endif
       }
       return zxio_node_init(storage, std::move(node));
     }
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
     case fio::wire::Representation::Tag::kDirectory: {
       if (attr) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
         fio::wire::DirectoryInfo& dir = representation.directory();
         if (!dir.has_attributes())
           return ZX_ERR_INVALID_ARGS;
         if (zx_status_t status = zxio_attr_from_wire(dir.attributes(), attr); status != ZX_OK)
           return status;
-#else
-        return ZX_ERR_NOT_SUPPORTED;
-#endif
       }
       return zxio_dir_init(storage, fidl::ClientEnd<fio::Directory>(node.TakeChannel()));
     }
     case fio::wire::Representation::Tag::kFile: {
       fio::wire::FileInfo& file = representation.file();
       if (attr) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
         if (!file.has_attributes())
           return ZX_ERR_INVALID_ARGS;
         if (zx_status_t status = zxio_attr_from_wire(file.attributes(), attr); status != ZX_OK)
           return status;
-#else
-        return ZX_ERR_NOT_SUPPORTED;
-#endif
       }
       zx::event event = file.has_observer() ? std::move(file.observer()) : zx::event();
       zx::stream stream = file.has_stream() ? std::move(file.stream()) : zx::stream();
       return zxio_file_init(storage, std::move(event), std::move(stream),
                             fidl::ClientEnd<fio::File>(node.TakeChannel()));
     }
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
     case fio::wire::Representation::Tag::kSymlink: {
       fio::wire::SymlinkInfo& symlink = representation.symlink();
       if (!symlink.has_target())
@@ -492,7 +479,6 @@ zx_status_t zxio_create_with_representation(fidl::ClientEnd<fio::Node> node,
       return zxio_symlink_init(storage, fidl::ClientEnd<fio::Symlink>(node.TakeChannel()),
                                std::vector(span.begin(), span.end()));
     }
-#endif
     default:
       return ZX_ERR_NOT_SUPPORTED;
   }

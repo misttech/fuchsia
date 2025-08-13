@@ -75,14 +75,12 @@ zx_status_t zxio_create_with_allocator(fidl::ClientEnd<fuchsia_io::Node> node,
 
 #else
     case fio::wire::Representation::Tag::kConnector:
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
       type = ZXIO_OBJECT_TYPE_NODE;
       break;
-#if FUCHSIA_API_LEVEL_AT_LEAST(18)
     case fio::wire::Representation::Tag::kSymlink:
       type = ZXIO_OBJECT_TYPE_SYMLINK;
       break;
-#endif
     default:
       return ZX_ERR_NOT_SUPPORTED;
   }
