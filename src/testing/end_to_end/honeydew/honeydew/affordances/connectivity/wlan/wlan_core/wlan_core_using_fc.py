@@ -26,7 +26,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     CountryCode,
     MacAddress,
     WlanInterfaces,
-    WlanInterfaces2,
 )
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -255,38 +254,6 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             HoneydewWlanError: Error from WLAN stack
             ValueError: Invalid MAC address
         """
-        return await self._create_iface(phy_id, role, sta_addr)
-
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
-    async def create_iface2(
-        self,
-        phy_id: int,
-        role: f_wlan_common.WlanMacRole,
-        sta_addr: str | None = None,
-    ) -> int:
-        """Create a new WLAN interface.
-
-        Args:
-            phy_id: The iface ID.
-            role: The role of the new iface.
-            sta_addr: MAC address for softAP iface.
-
-        Returns:
-            Iface id of newly created interface.
-
-        Raises:
-            HoneydewWlanError: Error from WLAN stack
-            ValueError: Invalid MAC address
-        """
-        return await self._create_iface(phy_id, role, sta_addr)
-
-    async def _create_iface(
-        self,
-        phy_id: int,
-        role: f_wlan_common.WlanMacRole,
-        sta_addr: str | None = None,
-    ) -> int:
         if sta_addr is None:
             sta_addr = "00:00:00:00:00:00"
             _LOGGER.warning(
@@ -345,7 +312,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         iface_ids = await self._get_iface_id_list()
 
         for iface_id in iface_ids:
-            info = await self._query_iface2(iface_id)
+            info = await self._query_iface(iface_id)
             if info.role == f_wlan_common.WlanMacRole.CLIENT:
                 sme = await self._get_client_sme(iface_id)
                 try:
@@ -435,32 +402,14 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         Raises:
             HoneydewWlanError: DeviceMonitor.ListIfaces or DeviceMonitor.QueryIface error
         """
-        interfaces = await self._query_interfaces2()
-        return WlanInterfaces(interfaces.client, interfaces.ap)
-
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
-    async def query_interfaces2(self) -> WlanInterfaces2:
-        """Retrieves a QueryIfaceResponse for every WLAN interface on the device.
-
-        Returns:
-            WlanInterfaces containing a QueryIfaceResponse for every WLAN interface
-            on the device.
-
-        Raises:
-            HoneydewWlanError: DeviceMonitor.ListIfaces or DeviceMonitor.QueryIface error
-        """
-        return await self._query_interfaces2()
-
-    async def _query_interfaces2(self) -> WlanInterfaces2:
         wlan_iface_ids = await self._get_iface_id_list()
         if not wlan_iface_ids:
-            return WlanInterfaces2(client={}, ap={})
+            return WlanInterfaces(client={}, ap={})
 
         client: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse] = {}
         ap: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse] = {}
         for id in wlan_iface_ids:
-            result = await self._query_iface2(id)
+            result = await self._query_iface(id)
             mac = MacAddress.from_bytes(bytes(result.sta_addr))
             match result.role:
                 case f_wlan_common.WlanMacRole.CLIENT:
@@ -472,7 +421,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                         f'Unexpected WlanMacRole "{result.role}" for iface {id}'
                     )
 
-        return WlanInterfaces2(client=client, ap=ap)
+        return WlanInterfaces(client=client, ap=ap)
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
@@ -490,27 +439,9 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         Raises:
             HoneydewWlanError: DeviceMonitor.QueryIface error
         """
-        return await self._query_iface2(iface_id)
+        return await self._query_iface(iface_id)
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
-    async def query_iface2(
-        self, iface_id: int
-    ) -> f_wlan_device_service.QueryIfaceResponse:
-        """Retrieves interface info for given wlan iface id.
-
-        Args:
-            iface_id: The wlan interface id to get info from.
-
-        Returns:
-            QueryIfaceResponseWrapper from the SL4F server.
-
-        Raises:
-            HoneydewWlanError: DeviceMonitor.QueryIface error
-        """
-        return await self._query_iface2(iface_id)
-
-    async def _query_iface2(
+    async def _query_iface(
         self, iface_id: int
     ) -> f_wlan_device_service.QueryIfaceResponse:
         try:
@@ -596,7 +527,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             )
 
         for iface_id in iface_ids:
-            info = await self._query_iface2(iface_id)
+            info = await self._query_iface(iface_id)
             if info.role == role:
                 return iface_id
 

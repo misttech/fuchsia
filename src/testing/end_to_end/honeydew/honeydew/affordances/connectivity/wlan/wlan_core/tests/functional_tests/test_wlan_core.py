@@ -6,6 +6,7 @@
 import logging
 import time
 
+import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
@@ -18,7 +19,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusConnecting,
     ClientStatusIdle,
     CountryCode,
-    WlanMacRole,
 )
 from honeydew.fuchsia_device import fuchsia_device
 
@@ -80,11 +80,13 @@ class WlanCoreTests(wlan_base_test.WlanBaseTest):
             iface_ids = self.device.wlan_core.get_iface_id_list()
 
             iface_id = self.device.wlan_core.create_iface(
-                phy_id=phy_ids[0], role=WlanMacRole.CLIENT
+                phy_id=phy_ids[0], role=f_wlan_common.WlanMacRole.CLIENT
             )
 
             query_resp = self.device.wlan_core.query_iface(iface_id)
-            asserts.assert_equal(query_resp.role, WlanMacRole.CLIENT)
+            asserts.assert_equal(
+                query_resp.role, f_wlan_common.WlanMacRole.CLIENT
+            )
             asserts.assert_equal(query_resp.id_, iface_id)
             asserts.assert_equal(query_resp.phy_id, phy_ids[0])
 

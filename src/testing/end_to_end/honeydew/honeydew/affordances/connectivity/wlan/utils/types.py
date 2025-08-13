@@ -202,47 +202,6 @@ class DisconnectStatus(enum.StrEnum):
 # TODO(http://b/346424966): Only necessary because Python does not have static
 # typing for FIDL. Once these static types are available and the SL4F affordance
 # is removed, replace with the statically generated FIDL equivalent.
-class WlanMacRole(enum.StrEnum):
-    """Role of the WLAN MAC interface.
-
-    Loosely matches the fuchsia.wlan.common.WlanMacRole FIDL enum.
-    See https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/sl4f/src/wlan/types.rs
-    """
-
-    CLIENT = "Client"
-    AP = "Ap"
-    MESH = "Mesh"
-    UNKNOWN = "Unknown"
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_common.WlanMacRole) -> "WlanMacRole":
-        """Parse from a fuchsia.wlan.common/WlanMacRole."""
-        match fidl:
-            case f_wlan_common.WlanMacRole.CLIENT:
-                return WlanMacRole.CLIENT
-            case f_wlan_common.WlanMacRole.AP:
-                return WlanMacRole.AP
-            case f_wlan_common.WlanMacRole.MESH:
-                return WlanMacRole.MESH
-            case _:
-                raise TypeError(f"Unknown WlanMacRole: {fidl}")
-
-    def to_fidl(self) -> f_wlan_common.WlanMacRole:
-        """Convert to a fuchsia.wlan.common/WlanMacRole."""
-        match self:
-            case WlanMacRole.CLIENT:
-                return f_wlan_common.WlanMacRole.CLIENT
-            case WlanMacRole.AP:
-                return f_wlan_common.WlanMacRole.AP
-            case WlanMacRole.MESH:
-                return f_wlan_common.WlanMacRole.MESH
-            case WlanMacRole.UNKNOWN:
-                raise TypeError("No corresponding WlanMacRole for UNKNOWN")
-
-
-# TODO(http://b/346424966): Only necessary because Python does not have static
-# typing for FIDL. Once these static types are available and the SL4F affordance
-# is removed, replace with the statically generated FIDL equivalent.
 class BssType(enum.StrEnum):
     """BssType
 
@@ -638,44 +597,7 @@ class WlanChannel:
 
 
 @dataclass(frozen=True)
-class QueryIfaceResponse:
-    """Queryiface response
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/sl4f/src/wlan/types.rs
-    """
-
-    role: WlanMacRole
-    id_: int
-    phy_id: int
-    phy_assigned_id: int
-    sta_addr: list[int]
-
-    @staticmethod
-    def from_fidl(
-        fidl: f_wlan_device_service.QueryIfaceResponse,
-    ) -> "QueryIfaceResponse":
-        """Parse from a fuchsia.wlan.device.service/QueryIfaceResponse."""
-        return QueryIfaceResponse(
-            role=WlanMacRole.from_fidl(f_wlan_common.WlanMacRole(fidl.role)),
-            id_=fidl.id_,
-            phy_id=fidl.phy_id,
-            phy_assigned_id=fidl.phy_assigned_id,
-            sta_addr=list(fidl.sta_addr),
-        )
-
-
-@dataclass(frozen=True)
 class WlanInterfaces:
-    """WLAN interfaces separated by device type and keyed by MAC address."""
-
-    client: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse]
-    """Client WLAN interfaces keyed by MAC address."""
-    ap: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse]
-    """AP WLAN interfaces keyed by MAC address."""
-
-
-@dataclass(frozen=True)
-class WlanInterfaces2:
     """WLAN interfaces separated by device type and keyed by MAC address."""
 
     client: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse]

@@ -15,7 +15,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusResponse,
     CountryCode,
     WlanInterfaces,
-    WlanInterfaces2,
 )
 
 
@@ -52,28 +51,6 @@ class WlanCore(affordance.Affordance):
 
     @abc.abstractmethod
     def create_iface(
-        self,
-        phy_id: int,
-        role: f_wlan_common.WlanMacRole,
-        sta_addr: str | None = None,
-    ) -> int:
-        """Create a new WLAN interface.
-
-        Args:
-            phy_id: The iface ID.
-            role: The role of the new iface.
-            sta_addr: MAC address for softAP iface.
-
-        Returns:
-            Iface id of newly created interface.
-
-        Raises:
-            HoneydewWlanError: Error from WLAN stack
-            ValueError: Invalid MAC address
-        """
-
-    @abc.abstractmethod
-    def create_iface2(
         self,
         phy_id: int,
         role: f_wlan_common.WlanMacRole,
@@ -162,35 +139,7 @@ class WlanCore(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def query_interfaces2(self) -> WlanInterfaces2:
-        """Retrieves a QueryIfaceResponse for every WLAN interface on the device.
-
-        Returns:
-            WlanInterfaces containing a QueryIfaceResponse for every WLAN interface
-            on the device.
-
-        Raises:
-            HoneydewWlanError: DeviceMonitor.ListIfaces or DeviceMonitor.QueryIface error
-        """
-
-    @abc.abstractmethod
     def query_iface(
-        self, iface_id: int
-    ) -> f_wlan_device_service.QueryIfaceResponse:
-        """Retrieves interface info for given wlan iface id.
-
-        Args:
-            iface_id: The wlan interface id to get info from.
-
-        Returns:
-            QueryIfaceResponseWrapper from the SL4F server.
-
-        Raises:
-            HoneydewWlanError: DeviceMonitor.QueryIface error
-        """
-
-    @abc.abstractmethod
-    def query_iface2(
         self, iface_id: int
     ) -> f_wlan_device_service.QueryIfaceResponse:
         """Retrieves interface info for given wlan iface id.
