@@ -30,9 +30,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     CountryCode,
     InformationElementType,
     Protection,
-    QueryIfaceResponse,
     WlanChannel,
-    WlanMacRole,
 )
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
 from honeydew.errors import NotSupportedError
@@ -94,12 +92,12 @@ _TEST_QUERY_IFACE_RESP_FC = f_wlan_device_service.DeviceMonitorQueryIfaceResult(
         )
     )
 )
-_TEST_QUERY_IFACE_RESP = QueryIfaceResponse(
-    role=WlanMacRole.CLIENT,
+_TEST_QUERY_IFACE_RESP = f_wlan_device_service.QueryIfaceResponse(
+    role=f_wlan_common.WlanMacRole.CLIENT,
     id_=1,
     phy_id=1,
     phy_assigned_id=1,
-    sta_addr=[1, 2, 3, 4, 5, 6],
+    sta_addr=bytes([1, 2, 3, 4, 5, 6]),
 )
 
 _TEST_SERVING_AP_INFO = f_wlan_sme.ServingApInfo(
@@ -601,10 +599,10 @@ class WlanCoreFCTests(unittest.TestCase):
     def test_create_iface(self) -> None:
         """Test if create_iface creates WLAN interfaces successfully."""
         for phy_id, sta_addr, role in [
-            (1, "12:34:56:78:90:ab", WlanMacRole.CLIENT),
-            (2, "12:34:56:78:90:ab", WlanMacRole.AP),
-            (3, "12:34:56:78:90:ab", WlanMacRole.MESH),
-            (4, None, WlanMacRole.CLIENT),
+            (1, "12:34:56:78:90:ab", f_wlan_common.WlanMacRole.CLIENT),
+            (2, "12:34:56:78:90:ab", f_wlan_common.WlanMacRole.AP),
+            (3, "12:34:56:78:90:ab", f_wlan_common.WlanMacRole.MESH),
+            (4, None, f_wlan_common.WlanMacRole.CLIENT),
         ]:
             with self.subTest(phy_id=phy_id, sta_addr=sta_addr, role=role):
                 self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
@@ -636,7 +634,7 @@ class WlanCoreFCTests(unittest.TestCase):
             with self.subTest(msg=msg, phy_id=phy_id, sta_addr=sta_addr):
                 with self.assertRaises(ValueError):
                     self.wlan_core_obj.create_iface(
-                        phy_id, WlanMacRole.CLIENT, sta_addr
+                        phy_id, f_wlan_common.WlanMacRole.CLIENT, sta_addr
                     )
 
     def test_destroy_iface(self) -> None:

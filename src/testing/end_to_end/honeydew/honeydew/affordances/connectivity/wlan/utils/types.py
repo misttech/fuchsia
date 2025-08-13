@@ -668,10 +668,9 @@ class QueryIfaceResponse:
 class WlanInterfaces:
     """WLAN interfaces separated by device type and keyed by MAC address."""
 
-    client: dict[str, QueryIfaceResponse]
+    client: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse]
     """Client WLAN interfaces keyed by MAC address."""
-
-    ap: dict[str, QueryIfaceResponse]
+    ap: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse]
     """AP WLAN interfaces keyed by MAC address."""
 
 

@@ -25,10 +25,8 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusResponse,
     CountryCode,
     MacAddress,
-    QueryIfaceResponse,
     WlanInterfaces,
     WlanInterfaces2,
-    WlanMacRole,
 )
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -238,7 +236,10 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
     async def create_iface(
-        self, phy_id: int, role: WlanMacRole, sta_addr: str | None = None
+        self,
+        phy_id: int,
+        role: f_wlan_common.WlanMacRole,
+        sta_addr: str | None = None,
     ) -> int:
         """Create a new WLAN interface.
 
@@ -254,29 +255,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             HoneydewWlanError: Error from WLAN stack
             ValueError: Invalid MAC address
         """
-        if sta_addr is None:
-            sta_addr = "00:00:00:00:00:00"
-            _LOGGER.warning(
-                "No MAC provided in args of create_iface, using %s", sta_addr
-            )
-
-        try:
-            create_iface_response = (
-                await self._device_monitor_proxy.create_iface(
-                    phy_id=phy_id,
-                    role=role.to_fidl(),
-                    sta_address=MacAddress(sta_addr).bytes(),
-                )
-            ).unwrap()
-        except (ZxStatus, AssertionError) as e:
-            raise wlan_errors.HoneydewWlanError(
-                "DeviceMonitor.CreateIface() error"
-            ) from e
-
-        assert (
-            create_iface_response.iface_id is not None
-        ), f"{create_iface_response!r} missing iface_id"
-        return create_iface_response.iface_id
+        return await self._create_iface(phy_id, role, sta_addr)
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
@@ -300,6 +279,14 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             HoneydewWlanError: Error from WLAN stack
             ValueError: Invalid MAC address
         """
+        return await self._create_iface(phy_id, role, sta_addr)
+
+    async def _create_iface(
+        self,
+        phy_id: int,
+        role: f_wlan_common.WlanMacRole,
+        sta_addr: str | None = None,
+    ) -> int:
         if sta_addr is None:
             sta_addr = "00:00:00:00:00:00"
             _LOGGER.warning(
@@ -358,8 +345,8 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         iface_ids = await self._get_iface_id_list()
 
         for iface_id in iface_ids:
-            info = await self._query_iface(iface_id)
-            if info.role == WlanMacRole.CLIENT:
+            info = await self._query_iface2(iface_id)
+            if info.role == f_wlan_common.WlanMacRole.CLIENT:
                 sme = await self._get_client_sme(iface_id)
                 try:
                     await sme.disconnect(
@@ -448,26 +435,8 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         Raises:
             HoneydewWlanError: DeviceMonitor.ListIfaces or DeviceMonitor.QueryIface error
         """
-        wlan_iface_ids = await self._get_iface_id_list()
-        if not wlan_iface_ids:
-            return WlanInterfaces(client={}, ap={})
-
-        client: dict[str, QueryIfaceResponse] = {}
-        ap: dict[str, QueryIfaceResponse] = {}
-        for id in wlan_iface_ids:
-            result = await self._query_iface(id)
-            mac = str(MacAddress.from_bytes(bytes(result.sta_addr)))
-            match result.role:
-                case WlanMacRole.CLIENT:
-                    client[mac] = result
-                case WlanMacRole.AP:
-                    ap[mac] = result
-                case _:
-                    raise wlan_errors.HoneydewWlanError(
-                        f'Unexpected WlanMacRole "{result.role}" for iface {id}'
-                    )
-
-        return WlanInterfaces(client=client, ap=ap)
+        interfaces = await self._query_interfaces2()
+        return WlanInterfaces(interfaces.client, interfaces.ap)
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
@@ -481,6 +450,9 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         Raises:
             HoneydewWlanError: DeviceMonitor.ListIfaces or DeviceMonitor.QueryIface error
         """
+        return await self._query_interfaces2()
+
+    async def _query_interfaces2(self) -> WlanInterfaces2:
         wlan_iface_ids = await self._get_iface_id_list()
         if not wlan_iface_ids:
             return WlanInterfaces2(client={}, ap={})
@@ -504,7 +476,9 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
-    async def query_iface(self, iface_id: int) -> QueryIfaceResponse:
+    async def query_iface(
+        self, iface_id: int
+    ) -> f_wlan_device_service.QueryIfaceResponse:
         """Retrieves interface info for given wlan iface id.
 
         Args:
@@ -516,18 +490,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         Raises:
             HoneydewWlanError: DeviceMonitor.QueryIface error
         """
-        return await self._query_iface(iface_id)
-
-    async def _query_iface(self, iface_id: int) -> QueryIfaceResponse:
-        try:
-            query_iface_response = (
-                await self._device_monitor_proxy.query_iface(iface_id=iface_id)
-            ).unwrap()
-        except (ZxStatus, AssertionError) as e:
-            raise wlan_errors.HoneydewWlanError(
-                "DeviceMonitor.QueryIface() error"
-            ) from e
-        return QueryIfaceResponse.from_fidl(query_iface_response.resp)
+        return await self._query_iface2(iface_id)
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method

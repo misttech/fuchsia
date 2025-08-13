@@ -14,10 +14,8 @@ from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusResponse,
     CountryCode,
-    QueryIfaceResponse,
     WlanInterfaces,
     WlanInterfaces2,
-    WlanMacRole,
 )
 
 
@@ -54,7 +52,10 @@ class WlanCore(affordance.Affordance):
 
     @abc.abstractmethod
     def create_iface(
-        self, phy_id: int, role: WlanMacRole, sta_addr: str | None = None
+        self,
+        phy_id: int,
+        role: f_wlan_common.WlanMacRole,
+        sta_addr: str | None = None,
     ) -> int:
         """Create a new WLAN interface.
 
@@ -173,7 +174,9 @@ class WlanCore(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def query_iface(self, iface_id: int) -> QueryIfaceResponse:
+    def query_iface(
+        self, iface_id: int
+    ) -> f_wlan_device_service.QueryIfaceResponse:
         """Retrieves interface info for given wlan iface id.
 
         Args:
