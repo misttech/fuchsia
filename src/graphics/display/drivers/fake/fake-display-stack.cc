@@ -82,20 +82,6 @@ FakeDisplayStack::~FakeDisplayStack() {
   ZX_ASSERT_MSG(shutdown_, "FakeDisplayStack::SyncShutdown() not called");
 }
 
-zx::result<> FakeDisplayStack::ConnectCoordinatorClient(
-    display_coordinator::ClientPriority client_priority,
-    fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
-    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
-        coordinator_listener_client_end) {
-  zx_status_t status = coordinator_controller_.SyncCall(
-      [&](std::unique_ptr<display_coordinator::Controller>* controller) {
-        return (*controller)
-            ->CreateClient(client_priority, std::move(coordinator_server_end),
-                           std::move(coordinator_listener_client_end));
-      });
-  return zx::make_result(status);
-}
-
 FakeDisplay& FakeDisplayStack::display_engine() {
   ZX_ASSERT(!shutdown_);
   ZX_ASSERT(display_engine_ != nullptr);

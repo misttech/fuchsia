@@ -42,7 +42,7 @@ int main(int argc, const char** argv) {
       .periodic_vsync = true,
   };
 
-  display::FakeDisplayCoordinatorConnector connector(loop.dispatcher(), kFakeDisplayDeviceConfig);
+  display::FakeDisplayCoordinatorConnector connector(kFakeDisplayDeviceConfig);
 
   fuchsia_hardware_display::Service::InstanceHandler display_service_handler({
       .provider = connector.bind_handler(loop.dispatcher()),

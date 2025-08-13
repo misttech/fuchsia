@@ -17,67 +17,61 @@
 namespace display {
 
 FakeDisplayCoordinatorConnector::FakeDisplayCoordinatorConnector(
-    async_dispatcher_t* dispatcher,
     const fake_display::FakeDisplayDeviceConfig& fake_display_device_config) {
-  FX_DCHECK(dispatcher);
-
   zx::result<std::unique_ptr<fake_display::SysmemServiceForwarder>>
       sysmem_service_forwarder_result = fake_display::SysmemServiceForwarder::Create();
   FX_CHECK(sysmem_service_forwarder_result.is_ok());
 
-  auto fake_display_stack = std::make_unique<fake_display::FakeDisplayStack>(
+  fake_display_stack_ = std::make_unique<fake_display::FakeDisplayStack>(
       std::move(sysmem_service_forwarder_result).value(), fake_display_device_config);
-  state_ = std::shared_ptr<State>(
-      new State{.dispatcher = dispatcher, .fake_display_stack = std::move(fake_display_stack)});
 }
 
 FakeDisplayCoordinatorConnector::~FakeDisplayCoordinatorConnector() {
-  state_->fake_display_stack->SyncShutdown();
+  fake_display_stack_->SyncShutdown();
 }
 
 void FakeDisplayCoordinatorConnector::OpenCoordinatorWithListenerForPrimary(
     OpenCoordinatorWithListenerForPrimaryRequest& request,
     OpenCoordinatorWithListenerForPrimaryCompleter::Sync& completer) {
-  ConnectClient(
-      OpenCoordinatorRequest{
-          .is_virtcon = false,
-          .coordinator_request = std::move(*request.coordinator()),
-          .coordinator_listener_client_end = std::move(*request.coordinator_listener()),
-          .on_coordinator_opened =
-              [async_completer = completer.ToAsync()](zx::result<> result) mutable {
-                async_completer.Reply(result);
-              },
-      },
-      state_);
+  fidl::Arena arena;
+  auto provider_request =
+      fuchsia_hardware_display::wire::ProviderOpenCoordinatorWithListenerForPrimaryRequest::Builder(
+          arena)
+          .coordinator(std::move(*request.coordinator()))
+          .coordinator_listener(std::move(*request.coordinator_listener()))
+          .Build();
+  fidl::WireResult<::fuchsia_hardware_display::Provider::OpenCoordinatorWithListenerForPrimary>
+      fidl_transport_result =
+          fake_display_stack_->display_provider_client()->OpenCoordinatorWithListenerForPrimary(
+              provider_request);
+  if (!fidl_transport_result.ok()) {
+    completer.Close(fidl_transport_result.status());
+    return;
+  }
+  fit::result<zx_status_t> fidl_domain_result = fidl_transport_result.value();
+  completer.Reply(fidl_domain_result);
 }
 
 void FakeDisplayCoordinatorConnector::OpenCoordinatorWithListenerForVirtcon(
     OpenCoordinatorWithListenerForVirtconRequest& request,
     OpenCoordinatorWithListenerForVirtconCompleter::Sync& completer) {
-  ConnectClient(
-      OpenCoordinatorRequest{
-          .is_virtcon = true,
-          .coordinator_request = std::move(*request.coordinator()),
-          .coordinator_listener_client_end = std::move(*request.coordinator_listener()),
-          .on_coordinator_opened =
-              [async_completer = completer.ToAsync()](zx::result<> result) mutable {
-                async_completer.Reply(result);
-              },
-      },
-      state_);
-}
-
-// static
-void FakeDisplayCoordinatorConnector::ConnectClient(OpenCoordinatorRequest request,
-                                                    const std::shared_ptr<State>& state) {
-  FX_DCHECK(state);
-  display_coordinator::ClientPriority client_priority =
-      request.is_virtcon ? display_coordinator::ClientPriority::kVirtcon
-                         : display_coordinator::ClientPriority::kPrimary;
-  zx::result<> result = state->fake_display_stack->ConnectCoordinatorClient(
-      client_priority, std::move(request.coordinator_request),
-      std::move(request.coordinator_listener_client_end));
-  request.on_coordinator_opened(result);
+  fidl::Arena arena;
+  auto provider_request =
+      fuchsia_hardware_display::wire::ProviderOpenCoordinatorWithListenerForVirtconRequest::Builder(
+          arena)
+          .coordinator(std::move(*request.coordinator()))
+          .coordinator_listener(std::move(*request.coordinator_listener()))
+          .Build();
+  fidl::WireResult<::fuchsia_hardware_display::Provider::OpenCoordinatorWithListenerForVirtcon>
+      fidl_transport_result =
+          fake_display_stack_->display_provider_client()->OpenCoordinatorWithListenerForVirtcon(
+              provider_request);
+  if (!fidl_transport_result.ok()) {
+    completer.Close(fidl_transport_result.status());
+    return;
+  }
+  fit::result<zx_status_t> fidl_domain_result = fidl_transport_result.value();
+  completer.Reply(fidl_domain_result);
 }
 
 }  // namespace display

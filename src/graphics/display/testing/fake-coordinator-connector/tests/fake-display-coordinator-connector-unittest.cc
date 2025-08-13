@@ -34,8 +34,8 @@ class FakeDisplayCoordinatorConnectorTest : public gtest::TestLoopFixture {
         }),
         .periodic_vsync = false,
     };
-    coordinator_connector_ = std::make_unique<display::FakeDisplayCoordinatorConnector>(
-        dispatcher(), kFakeDisplayDeviceConfig);
+    coordinator_connector_ =
+        std::make_unique<display::FakeDisplayCoordinatorConnector>(kFakeDisplayDeviceConfig);
 
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_hardware_display::Provider>::Create();
 

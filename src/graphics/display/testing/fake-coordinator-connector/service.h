@@ -30,9 +30,7 @@ class FakeDisplayCoordinatorConnector : public fidl::Server<fuchsia_hardware_dis
   // Creates a FakeDisplayCoordinatorConnector where the fake display driver
   // is initialized using `fake_display_device_config`.
   // Callers are responsible for binding incoming FIDL clients to it.
-  // Callers must guarantee that all FIDL methods run on `dispatcher`.
-  FakeDisplayCoordinatorConnector(
-      async_dispatcher_t* dispatcher,
+  explicit FakeDisplayCoordinatorConnector(
       const fake_display::FakeDisplayDeviceConfig& fake_display_device_config);
   ~FakeDisplayCoordinatorConnector() override;
 
@@ -51,33 +49,8 @@ class FakeDisplayCoordinatorConnector : public fidl::Server<fuchsia_hardware_dis
       OpenCoordinatorWithListenerForPrimaryCompleter::Sync& completer) override;
 
  private:
-  struct OpenCoordinatorRequest {
-    bool is_virtcon;
-    fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_request;
-    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_client_end;
-    fit::function<void(zx::result<>)> on_coordinator_opened;
-  };
-
-  // Encapsulates state for thread safety, since
-  // `fake_display::FakeDisplayStack` invokes callbacks from other threads.
-  //
-  // TODO(https://fxbug.dev/42079944): The comments are vague since it lacks the thread-
-  // safety model of the struct. We need to rigorize the thread-safety model and
-  // make sure that the access pattern is correct.
-  struct State {
-    async_dispatcher_t* const dispatcher;
-
-    const std::unique_ptr<fake_display::FakeDisplayStack> fake_display_stack;
-  };
-
-  // Connects `request` to the fake display coordinator.
-  //
-  // The fake coordinator must be valid.
-  // Must be called from `state->dispatcher` thread.
-  static void ConnectClient(OpenCoordinatorRequest request, const std::shared_ptr<State>& state);
-
   fdf_testing::ScopedGlobalLogger logger_;
-  std::shared_ptr<State> state_;
+  std::unique_ptr<fake_display::FakeDisplayStack> fake_display_stack_;
 };
 
 }  // namespace display

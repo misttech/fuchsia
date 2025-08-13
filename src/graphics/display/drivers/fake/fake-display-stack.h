@@ -49,13 +49,6 @@ class FakeDisplayStack {
   FakeDisplay& display_engine();
 
   // Must not be called after SyncShutdown().
-  zx::result<> ConnectCoordinatorClient(
-      display_coordinator::ClientPriority client_priority,
-      fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
-      fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
-          coordinator_listener_client_end);
-
-  // Must not be called after SyncShutdown().
   //
   // The returned client is guaranteed to be valid.
   const fidl::WireSyncClient<fuchsia_hardware_display::Provider>& display_provider_client();
