@@ -22,6 +22,7 @@ board_configuration("arm64") {
     "fuchsia::paravirtualization",
     "fuchsia::real_time_clock",
     "fuchsia::usb_host",
+    "fuchsia::usb_peripheral_support",
     "fuchsia::xhci",
   ]
 

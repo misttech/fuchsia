@@ -50,10 +50,11 @@ bootstrap_user_platform_aib_names = [
 
   # Emulator Support
   "emulator_support",
-  "paravirtualization_support",
+  "vsock_service",
 
   # USB
   "usb_host_drivers",
+  "usb_peripheral_drivers",
 
   # Storage
   "fshost_common",
@@ -111,7 +112,7 @@ bootstrap_userdebug_platform_aib_names = [
   "ptysvc",
 
   # Emulator Support
-  "paravirtualization_support_bootstrap",
+  "vsock_service_bootstrap",
 
   # Power Framework
   "power_framework_broker",
@@ -507,7 +508,7 @@ experimental_aib_names = [
   "hvdcp_opti_support",
   "nanohub_support",
   "fastrpc_support",
-  "paravirtualization_support_bootstrap",
+  "vsock_service_bootstrap",
   "power_framework_broker",
   "power_framework_sag",
   "power_framework_development_support",

@@ -35,6 +35,7 @@ common_board_configuration = {
     "fuchsia::pmm_checker_auto",
     "fuchsia::real_time_clock",
     "fuchsia::usb_host",
+    "fuchsia::usb_peripheral_support",
     "fuchsia::wlan_softmac",
     "fuchsia::xhci",
     "fuchsia::sdhci",

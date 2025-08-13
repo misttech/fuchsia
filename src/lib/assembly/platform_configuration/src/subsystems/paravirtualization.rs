@@ -27,9 +27,9 @@ impl DefineSubsystemConfiguration<PlatformParavirtualizationConfig>
             (FeatureControl::Allowed, true) | (FeatureControl::Required, true) => {
                 match context.feature_set_level {
                     FeatureSetLevel::Embeddable | FeatureSetLevel::Bootstrap =>
-                builder.platform_bundle("paravirtualization_support_bootstrap"),
+                builder.platform_bundle("vsock_service_bootstrap"),
                     FeatureSetLevel::Utility | FeatureSetLevel::Standard =>
-                        builder.platform_bundle("paravirtualization_support"),
+                        builder.platform_bundle("vsock_service"),
                 };
             }
         }

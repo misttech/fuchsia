@@ -23,6 +23,8 @@ impl DefineSubsystemConfiguration<()> for RcsSubsystemConfig {
         ) && context.board_config.provides_feature("fuchsia::usb_peripheral_support")
         {
             builder.platform_bundle("core_realm_development_access_rcs_usb");
+            // Dependency of ^
+            builder.platform_bundle("vsock_service");
         }
 
         Ok(())

@@ -380,6 +380,9 @@ assembly_input_bundle("bootstrap") {
 assembly_input_bundle("usb_host_drivers") {
 }
 
+assembly_input_bundle("usb_peripheral_drivers") {
+}
+
 # The most-common, most-basic, AIB that is included in all userdebug and eng
 # systems.
 #
@@ -1771,20 +1774,6 @@ assembly_input_bundle("core_realm_development_access_rcs_usb") {
       driver_components = [
         "meta/usb-vsock-service.cm",
         "meta/overnet-usb.cm",
-      ]
-    },
-  ]
-  base_packages = [ "//src/paravirtualization/vsock:vsock_service" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/paravirtualization/vsock/meta/vsock_service.core_shard.cml",
-          ]
-        },
       ]
     },
   ]
@@ -3670,7 +3659,7 @@ assembly_input_bundle("virtualization_support") {
 # valid feature_set_levels: minimal
 # valid build-types: all
 #
-assembly_input_bundle("paravirtualization_support") {
+assembly_input_bundle("vsock_service") {
   base_packages = [ "//src/paravirtualization/vsock:vsock_service" ]
   compiled_packages = [
     {
@@ -3687,7 +3676,7 @@ assembly_input_bundle("paravirtualization_support") {
   ]
 }
 
-assembly_input_bundle("paravirtualization_support_bootstrap") {
+assembly_input_bundle("vsock_service_bootstrap") {
   bootfs_packages = [ "//src/paravirtualization/vsock:vsock_service" ]
   compiled_packages = [
     {
