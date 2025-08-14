@@ -243,7 +243,8 @@ open protocol Binder {
     }) error fuchsia.posix.Errno;
 };
 
-// TODO(https://fxbug.dev/42056856): Use a generated constant.
+// TODO(https://fxbug.dev/42056856): Migrate all usages of this constant to the generated
+// discoverable protocol identifier instead.
 const UNIX_DOMAIN_SOCKET_PROTOCOL_NAME string = "fuchsia.starnix.binder/UnixDomainSocket";
 
 // The maximum number of handles that is allowed for read/write operations.
@@ -261,6 +262,7 @@ type ReadFlags = flexible bits : uint64 {
 /// This protocol is used to implement a unix domain socket in a Fuchsia
 /// Component that will be able to communicate with a socket in Starnix. That
 /// socket will be able to transmit file descriptors.
+@discoverable
 open protocol UnixDomainSocket {
     compose fuchsia.unknown.Cloneable;
     compose fuchsia.unknown.Closeable;

@@ -21,7 +21,6 @@ use starnix_uapi::{errno, error, from_status_like_fdio, uapi, ucred};
 use zerocopy::IntoBytes;
 use zx::AsHandleRef;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_starnix_binder as fbinder};
-
 static READABLE_SIGNAL: zx::Signals =
     zx::Signals::from_bits_retain(fio::FileSignal::READABLE.bits());
 static WRITABLE_SIGNAL: zx::Signals =
@@ -325,7 +324,7 @@ mod tests {
     use crate::testing::spawn_kernel_and_run;
     use crate::vfs::socket::SocketFile;
     use crate::vfs::{VecInputBuffer, VecOutputBuffer};
-    use fidl::endpoints::RequestStream;
+    use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream};
     use futures::StreamExt;
     use starnix_sync::Mutex;
     use std::sync::Arc;
@@ -484,7 +483,7 @@ mod tests {
                         }
                         Ok(fbinder::UnixDomainSocketRequest::Query { responder }) => {
                             assert!(responder
-                                .send(fbinder::UNIX_DOMAIN_SOCKET_PROTOCOL_NAME.as_bytes())
+                                .send(fbinder::UnixDomainSocketMarker::PROTOCOL_NAME.as_bytes())
                                 .is_ok());
                         }
                         Ok(fbinder::UnixDomainSocketRequest::Clone { request, .. }) => {
