@@ -28,10 +28,7 @@
 
 namespace display {
 
-// The methods in the [`fuchsia.hardware.display.engine/Engine`] FIDL interface.
-//
-// This abstract base class only represents the methods in the FIDL interface.
-// The events are represented by `DisplayEngineEventsInterface`.
+// Equivalent to the FIDL protocol [`fuchsia.hardware.display.engine/Engine`].
 class DisplayEngineInterface {
  public:
   DisplayEngineInterface() = default;
