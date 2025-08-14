@@ -67,7 +67,9 @@ def command(args: argparse.Namespace) -> None:
         raise Exception("--threshold must be between 0 and 1")
 
     with TimingTracker("Create search locations"):
-        search_locations: SearchLocations = create_search_locations(args.remote)
+        search_locations: SearchLocations = create_search_locations(
+            args.remote, args.builder
+        )
     with TimingTracker("Create test file matcher"):
         tests_file_matcher: TestsFileMatcher = TestsFileMatcher(
             search_locations.tests_json_file, False
@@ -703,7 +705,9 @@ class TestsFileMatcher:
         return matches
 
 
-def create_search_locations(enable_remote: bool) -> SearchLocations:
+def create_search_locations(
+    enable_remote: bool, builders: list[str]
+) -> SearchLocations:
     """Parses environment variables to produce SearchLocations"""
 
     fuchsia_directory = os.getenv("FUCHSIA_DIR")
@@ -728,7 +732,9 @@ def create_search_locations(enable_remote: bool) -> SearchLocations:
         fetch_remote = enable_remote
 
     remote_tests_jsons = (
-        collect_remote_tests_jsons(fuchsia_directory) if fetch_remote else []
+        collect_remote_tests_jsons(fuchsia_directory, builders)
+        if fetch_remote
+        else []
     )
 
     return SearchLocations(
@@ -736,7 +742,9 @@ def create_search_locations(enable_remote: bool) -> SearchLocations:
     )
 
 
-def collect_remote_tests_jsons(fuchsia_directory: str) -> list[str]:
+def collect_remote_tests_jsons(
+    fuchsia_directory: str, builders: list[str]
+) -> list[str]:
     remote_tests_jsons = []
     lkg_tool = os.path.join(
         fuchsia_directory, "prebuilt", "tools", "lkg", "lkg"
@@ -757,7 +765,7 @@ def collect_remote_tests_jsons(fuchsia_directory: str) -> list[str]:
         )
         return []
 
-    for builder in DEFAULT_BUILDERS:
+    for builder in DEFAULT_BUILDERS + builders:
         # Run lkg build and get the build ID
         # This assumes lkg output will only contain the build ID and nothing else.
         build_id = subprocess.check_output(
@@ -803,6 +811,13 @@ def main(args_list: list[str] | None = None) -> int:
         action="store_true",
         default=False,
         help="Whether to use remote tests.json files for tests suggestions",
+    )
+    parser.add_argument(
+        "--builder",
+        type=str,
+        action="append",
+        help="Add additional builder to query. May be specified multiple times.",
+        default=[],
     )
     parser.add_argument(
         "--max-results",

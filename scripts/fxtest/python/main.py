@@ -898,6 +898,8 @@ class AsyncMain:
                         suggestion_args += ["--threshold", str(threshold)]
                     if flags.remote_suggestions:
                         suggestion_args += ["--remote"]
+                    for builder in flags.remote_suggestion_builder:
+                        suggestion_args += ["--builder", builder]
                     return exec_env.fx_cmd_line(*suggestion_args)
 
                 arg_threshold_pairs = []

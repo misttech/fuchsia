@@ -33,7 +33,7 @@ class TestSearchLocations(PreserveEnvAndCaptureOutputTestCase):
         del os.environ["FUCHSIA_DIR"]
 
         with self.assertRaises(Exception) as ex:
-            search_tests.create_search_locations(False)
+            search_tests.create_search_locations(False, [])
 
         self.assertEqual(
             str(ex.exception), "Environment variable FUCHSIA_DIR must be set"
@@ -47,7 +47,7 @@ class TestSearchLocations(PreserveEnvAndCaptureOutputTestCase):
             os.environ["FUCHSIA_DIR"] = str(path)
 
             with self.assertRaises(Exception) as ex:
-                search_tests.create_search_locations(False)
+                search_tests.create_search_locations(False, [])
 
             self.assertEqual(
                 str(ex.exception), f"Path {path} should be a directory"
@@ -63,7 +63,7 @@ class TestSearchLocations(PreserveEnvAndCaptureOutputTestCase):
             os.environ["FUCHSIA_DIR"] = str(dir)
 
             with self.assertRaises(Exception) as ex:
-                search_tests.create_search_locations(False)
+                search_tests.create_search_locations(False, [])
 
             expected = os.path.join(dir, "out", "other", "tests.json")
 
@@ -84,7 +84,7 @@ class TestSearchLocations(PreserveEnvAndCaptureOutputTestCase):
 
             os.environ["FUCHSIA_DIR"] = str(dir)
 
-            locations = search_tests.create_search_locations(False)
+            locations = search_tests.create_search_locations(False, [])
             self.assertEqual(locations.fuchsia_directory, dir)
             self.assertEqual(
                 locations.tests_json_file,
@@ -111,8 +111,10 @@ class TestSearchLocations(PreserveEnvAndCaptureOutputTestCase):
 
             os.environ["FUCHSIA_DIR"] = str(dir)
 
-            locations = search_tests.create_search_locations(True)
-            self.assertEqual(4, len(locations.remote_tests_jsons))
+            locations = search_tests.create_search_locations(
+                True, ["test_builder"]
+            )
+            self.assertEqual(5, len(locations.remote_tests_jsons))
 
 
 class TestTestsFileMatcher(unittest.TestCase):

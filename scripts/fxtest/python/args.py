@@ -61,6 +61,7 @@ class Flags:
     list_runtime_deps: bool
     previous: PrevOption | None
     remote_suggestions: bool
+    remote_suggestion_builder: typing.List[str]
 
     build: bool
     updateifinbase: bool
@@ -160,6 +161,11 @@ class Flags:
             self.artifact_output_directory = os.path.join(
                 self.artifact_output_directory,
                 datetime.now().strftime("%Y-%m-%d-%H:%M:%S"),
+            )
+
+        if self.remote_suggestion_builder and not self.remote_suggestions:
+            raise FlagError(
+                "--remote-suggestion-builder is only effective when --remote-suggestions is enabled"
             )
 
         # Compute environment and check it is valid.
@@ -285,6 +291,13 @@ def parse_args(
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Whether to use remote tests.json files for tests suggestions.",
+    )
+    parser.add_argument(
+        "--remote-suggestion-builder",
+        type=str,
+        action="append",
+        help="Add additional builder to query. May be specified multiple times.",
+        default=[],
     )
     utility.add_argument(
         "-pr",
