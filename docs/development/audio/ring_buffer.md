@@ -1,8 +1,8 @@
-# Ring buffer behavior
+# Ring Buffer Behavior
 
 Ring buffers are used to convey audio between parties (usually in different
 processes), allowing concurrent, asynchronous data access without requiring
-locks. This pattern works because the parties share an understanding of which
+locks. This pattern works because both parties share an understanding of which
 buffer areas are safe to access, and how those areas change over time.
 
 The descriptions below explain how audio data frames are moved from one party to
