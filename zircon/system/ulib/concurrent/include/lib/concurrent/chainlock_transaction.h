@@ -6,8 +6,6 @@
 #define LIB_CONCURRENT_CHAINLOCK_TRANSACTION_H_
 
 #include <lib/concurrent/chainlock_transaction_common.h>
-#include <lib/fxt/interned_string.h>
-#include <lib/fxt/string_ref.h>
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
 #include <zircon/time.h>
@@ -28,19 +26,19 @@
 
 namespace concurrent {
 
-// Returns a CallsiteInfo instance for the given string literal label at the current source
-// location.
-#define CONCURRENT_CHAINLOCK_TRANSACTION_CALLSITE(label) \
-  []() constexpr -> ::concurrent::CallsiteInfo {         \
-    using fxt::operator""_intern;                        \
-    return {&label##_intern, __LINE__};                  \
-  }()
-
-// Stores callsite info for the current transaction used in debugging and tracing.
-struct CallsiteInfo {
-  const fxt::InternedString* label{nullptr};
-  uint32_t line_number{0};
-};
+// A trait type that all derived classes of ChainLockTransaction must implement.
+//
+// Concretely, all derived classes must provide a nested definition for the CallsiteInfo type, which
+// should provide debugging/tracing information that identifies the code location of the
+// transaction.
+//
+// Naively, one would expect this to be a nested type within the Derived class of
+// ChainLockTransaction. However, this causes compilation failures, as CallsiteInfo is a parameter
+// for several of the methods in the base class, and making it a nested type results in an
+// incomplete definition error when inheriting from the base class. Thus, we need a separate traits
+// type that works around this problem.
+template <typename T>
+struct CallsiteTraits;
 
 // CRTP type that provides the basic environment-independent framework for chainlock transactions.
 //
@@ -85,6 +83,7 @@ class ChainLockTransaction : public ChainLockTransactionCommon {
   };
   template <typename Callable>
   using EnableIfTransactionHandler = std::enable_if_t<std::is_invocable_r_v<AnyResult, Callable>>;
+  using CallsiteInfo = CallsiteTraits<Derived>::CallsiteInfo;
 
   template <typename T>
   static Result<T> ToResult(Result<T> result) {
@@ -106,9 +105,8 @@ class ChainLockTransaction : public ChainLockTransactionCommon {
   // 1. An instance of Option<constant>: Used to pass a compile-time constant to the environment-
   //    provided StateSaver<constant> type, indicating the relevant states to save, such as IRQ
   //    enable flags, preemption flags, etc..., and restore after each transaction attempt.
-  // 2. An instance of CallsiteInfo: Used for debugging and tracing to identify the code location of
-  //    the transaction. This should be created by the CONCURRENT_CHAINLOCK_TRANSACTION_CALLSITE
-  //    macro or a wrapper thereof.
+  // 2. An instance of CallsiteTraits<Derived>::CallsiteInfo: Used for debugging and tracing to
+  //    identify the code location of the transaction.
   // 3. A callable implementing a single transaction attempt: This can be a function, lambda, or
   //    functor with an appropriate signature and static annotations.
   //

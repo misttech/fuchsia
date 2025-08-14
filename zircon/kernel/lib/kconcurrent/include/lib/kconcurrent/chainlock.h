@@ -11,6 +11,8 @@
 #include <lib/concurrent/chainlock_transaction.h>
 #include <lib/concurrent/chainlock_transaction_common.h>
 #include <lib/concurrent/chainlockable.h>
+#include <lib/fxt/interned_string.h>
+#include <lib/fxt/string_ref.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <zircon/compiler.h>
 #include <zircon/time.h>
@@ -27,7 +29,24 @@ struct percpu;
 static constexpr bool kCltTracingEnabled = kSchedulerLockSpinTracingEnabled;
 static constexpr bool kCltDebugChecksEnabled = LK_DEBUGLEVEL >= 2;
 
-#define CLT_TAG(tag) CONCURRENT_CHAINLOCK_TRANSACTION_CALLSITE(tag)
+class ChainLockTransaction;
+
+template <>
+struct concurrent::CallsiteTraits<ChainLockTransaction> {
+  // Stores callsite info for the current transaction used in debugging and tracing.
+  struct CallsiteInfo {
+    const fxt::InternedString* label{nullptr};
+    uint32_t line_number{0};
+  };
+};
+
+// Returns a CallsiteInfo instance for the given string literal label at the current source
+// location.
+#define CLT_TAG(label)                                                                 \
+  []() constexpr -> ::concurrent::CallsiteTraits<ChainLockTransaction>::CallsiteInfo { \
+    using fxt::operator""_intern;                                                      \
+    return {&label##_intern, __LINE__};                                                \
+  }()
 
 using ::concurrent::chainlock_transaction_token;
 
@@ -75,6 +94,7 @@ class ChainLockTransaction
 
   // State used by concurrent::ChainLock to store contended lock state for backoff mitigation.
   using ContentionState = ktl::atomic<cpu_mask_t>;
+  using CallsiteInfo = ::concurrent::CallsiteTraits<ChainLockTransaction>::CallsiteInfo;
 
  private:
   using Base = ::concurrent::ChainLockTransaction<ChainLockTransaction, kCltDebugChecksEnabled,
@@ -84,11 +104,9 @@ class ChainLockTransaction
   friend class SingleChainLockGuard;
   friend Base;
 
-  explicit ChainLockTransaction(::concurrent::CallsiteInfo callsite_info)
-      TA_ACQ(chainlock_transaction_token);
+  explicit ChainLockTransaction(CallsiteInfo callsite_info) TA_ACQ(chainlock_transaction_token);
 
-  ChainLockTransaction(::concurrent::CallsiteInfo callsite_info, uint32_t locks_held,
-                       bool finalized);
+  ChainLockTransaction(CallsiteInfo callsite_info, uint32_t locks_held, bool finalized);
 
   // Updates kcounters to track backoff rates.
   void OnBackoff();
@@ -116,8 +134,7 @@ class ChainLockTransaction
   static zx_instant_mono_ticks_t GetCurrentTicks();
 
   // Emits a trace event for the given contention information.
-  static void OnFinalized(zx_instant_mono_t contention_start_ticks,
-                          ::concurrent::CallsiteInfo callsite_info);
+  static void OnFinalized(zx_instant_mono_t contention_start_ticks, CallsiteInfo callsite_info);
 
   static void UpdateContentionCounters(zx_duration_mono_ticks_t contention_ticks);
 

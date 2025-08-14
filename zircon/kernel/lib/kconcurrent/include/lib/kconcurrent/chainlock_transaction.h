@@ -30,11 +30,11 @@
 
 // While not strictly necessary, the constructors and destructor are defined inline here to make it
 // easy to add trace instrumentation as needed.
-inline ChainLockTransaction::ChainLockTransaction(::concurrent::CallsiteInfo callsite_info)
+inline ChainLockTransaction::ChainLockTransaction(CallsiteInfo callsite_info)
     : Base{callsite_info} {}
 
-inline ChainLockTransaction::ChainLockTransaction(::concurrent::CallsiteInfo callsite_info,
-                                                  uint32_t locks_held, bool finalized)
+inline ChainLockTransaction::ChainLockTransaction(CallsiteInfo callsite_info, uint32_t locks_held,
+                                                  bool finalized)
     : Base{callsite_info, locks_held, finalized} {}
 
 inline ChainLockTransaction::~ChainLockTransaction() {}
@@ -117,7 +117,7 @@ inline void ChainLockTransaction::WaitForConflictResolution(percpu* percpu) {
 }
 
 inline void ChainLockTransaction::OnFinalized(zx_instant_mono_ticks_t contention_start_ticks,
-                                              ::concurrent::CallsiteInfo callsite_info) {
+                                              CallsiteInfo callsite_info) {
   KTRACE_COMPLETE("kernel:sched", "lock_spin", contention_start_ticks,
                   ("lock_id", callsite_info.line_number), ("lock_class", *callsite_info.label),
                   ("lock_type", "ChainLockTransaction"_intern),
@@ -218,7 +218,7 @@ template <ChainLockTransaction::StateOptions option>
 class TA_SCOPED_CAP SingleChainLockGuard {
  public:
   SingleChainLockGuard(ChainLockTransaction::Option<option>, ChainLock& lock,
-                       ::concurrent::CallsiteInfo callsite_info)
+                       ChainLockTransaction::CallsiteInfo callsite_info)
       TA_ACQ(chainlock_transaction_token, lock)
       : transaction_{callsite_info}, guard_(lock) {
     ChainLockTransaction::Finalize();
@@ -237,7 +237,7 @@ class TA_SCOPED_CAP SingleChainLockGuard {
 };
 
 template <ChainLockTransaction::StateOptions option>
-SingleChainLockGuard(ChainLockTransaction::Option<option>, ChainLock&, ::concurrent::CallsiteInfo)
-    -> SingleChainLockGuard<option>;
+SingleChainLockGuard(ChainLockTransaction::Option<option>, ChainLock&,
+                     ChainLockTransaction::CallsiteInfo) -> SingleChainLockGuard<option>;
 
 #endif  // ZIRCON_KERNEL_LIB_KCONCURRENT_INCLUDE_LIB_KCONCURRENT_CHAINLOCK_TRANSACTION_H_

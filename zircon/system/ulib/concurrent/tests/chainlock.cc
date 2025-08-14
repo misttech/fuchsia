@@ -22,10 +22,20 @@
 
 #include <zxtest/zxtest.h>
 
+// Provide an empty implementation of the CallsiteTraits that will allow the tests to compile
+// but doesn't actually store any debugging/tracing data.
+namespace {
+class ChainLockTransaction;
+}
+
+template <>
+struct concurrent::CallsiteTraits<ChainLockTransaction> {
+  struct CallsiteInfo {};
+};
+
 namespace {
 
 using namespace std::chrono_literals;
-using ::concurrent::CallsiteInfo;
 using ::concurrent::chainlock_transaction_token;
 
 constexpr bool DebugEnabled = true;
@@ -42,6 +52,7 @@ class ChainLockTransaction
   static void Yield() {}
 
   using ContentionState = std::atomic<uint64_t>;
+  using CallsiteInfo = concurrent::CallsiteTraits<ChainLockTransaction>::CallsiteInfo;
 
   enum class Options {
     None,
@@ -141,7 +152,8 @@ using ChainLock = ::concurrent::ChainLock<ChainLockTransaction>;
 using ChainLockable = ::concurrent::ChainLockable<ChainLockTransaction>;
 using ChainLockGuard = ::concurrent::ChainLockGuard<ChainLockTransaction>;
 
-#define CLT_TAG(tag) CONCURRENT_CHAINLOCK_TRANSACTION_CALLSITE(tag)
+#define CLT_TAG(tag) \
+  ChainLockTransaction::CallsiteInfo {}
 
 template <typename State>
 class HelperThread {

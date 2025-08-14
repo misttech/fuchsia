@@ -20,7 +20,6 @@ concurrent_base = {
 
   public_deps = [
     ":headers",
-    "//src/performance/lib/fxt:headers",
     "//zircon/kernel/lib/arch:headers",
   ]
   deps = [ "//sdk/lib/stdcompat" ]
