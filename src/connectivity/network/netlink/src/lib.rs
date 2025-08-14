@@ -27,6 +27,7 @@ pub(crate) mod util;
 
 use std::num::NonZeroU64;
 
+use derivative::Derivative;
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
@@ -82,6 +83,18 @@ pub struct Netlink<P: SenderReceiverProvider> {
     async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
 }
 
+/// Flags to enable/disable certain features to allow for convenient rollbacks.
+#[derive(Copy, Clone, Debug, Derivative)]
+#[derivative(Default)]
+pub struct FeatureFlags {
+    /// When this feature is enabled, the routes installed by netlink will also
+    /// be copied into the main table as a backup.
+    // TODO(https://fxbug.dev/410631890): Remove this once `netstack_mark` is
+    // enabled in starnix by default.
+    #[derivative(Default(value = "true"))]
+    pub copy_routes_to_main_table: bool,
+}
+
 impl<P: SenderReceiverProvider> Netlink<P> {
     /// Returns a newly instantiated [`Netlink`] and its asynchronous worker.
     ///
@@ -90,11 +103,13 @@ impl<P: SenderReceiverProvider> Netlink<P> {
     /// complete.
     pub fn new<H: interfaces::InterfacesHandler>(
         interfaces_handler: H,
+        feature_flags: FeatureFlags,
     ) -> (Self, impl Future<Output = ()> + Send) {
         Self::new_inner(
             interfaces_handler,
             NetlinkWorkerDiscoverableProtocols::from_environment,
             None,
+            feature_flags,
         )
     }
 
@@ -107,8 +122,9 @@ impl<P: SenderReceiverProvider> Netlink<P> {
         interfaces_handler: H,
         protocols: NetlinkWorkerDiscoverableProtocols,
         on_initialized: oneshot::Sender<()>,
+        feature_flags: FeatureFlags,
     ) -> (Self, impl Future<Output = ()> + Send) {
-        Self::new_inner(interfaces_handler, || protocols, Some(on_initialized))
+        Self::new_inner(interfaces_handler, || protocols, Some(on_initialized), feature_flags)
     }
 
     /// Writes the accept_ra_rt_table sysctl for the selected interface.
@@ -144,6 +160,7 @@ impl<P: SenderReceiverProvider> Netlink<P> {
         interfaces_handler: H,
         protocols: impl FnOnce() -> NetlinkWorkerDiscoverableProtocols + Send + 'static,
         on_initialized: Option<oneshot::Sender<()>>,
+        feature_flags: FeatureFlags,
     ) -> (Self, impl Future<Output = ()> + Send) {
         let (route_client_sender, route_client_receiver) = mpsc::unbounded();
         let (async_work_sink, async_work_receiver) = mpsc::unbounded();
@@ -161,6 +178,7 @@ impl<P: SenderReceiverProvider> Netlink<P> {
                 },
                 protocols,
                 on_initialized,
+                feature_flags,
             ),
         )
     }
@@ -324,6 +342,7 @@ async fn run_netlink_worker<H: interfaces::InterfacesHandler, P: SenderReceiverP
     params: NetlinkWorkerParams<H, P>,
     protocols: impl FnOnce() -> NetlinkWorkerDiscoverableProtocols + Send + 'static,
     on_initialized: Option<oneshot::Sender<()>>,
+    feature_flags: FeatureFlags,
 ) {
     let NetlinkWorkerParams { interfaces_handler, route_client_receiver, async_work_receiver } =
         params;
@@ -365,7 +384,7 @@ async fn run_netlink_worker<H: interfaces::InterfacesHandler, P: SenderReceiverP
                 async_work_receiver,
             };
 
-            event_loop.run(on_initialized).await;
+            event_loop.run(on_initialized, feature_flags).await;
         }
     });
 

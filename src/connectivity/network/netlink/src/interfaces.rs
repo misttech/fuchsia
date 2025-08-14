@@ -1691,6 +1691,7 @@ pub(crate) mod testutil {
             ndp_option_watcher_provider: EventLoopComponent::Absent(Optional),
 
             unified_request_stream: request_stream,
+            feature_flags: Default::default(),
         };
 
         let interfaces_request_stream = interfaces.into_stream();

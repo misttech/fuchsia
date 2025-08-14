@@ -239,6 +239,7 @@ pub(crate) struct RoutesWorker<
     I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
 > {
     fidl_route_map: FidlRouteMap<I>,
+    copy_routes_to_main_table: bool,
 }
 
 fn get_table_u8_and_nla_from_key(
@@ -287,6 +288,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
         main_route_table: &<I::RouteTableMarker as ProtocolMarker>::Proxy,
         routes_state_proxy: &<I::StateMarker as ProtocolMarker>::Proxy,
         route_table_provider: <I::RouteTableProviderMarker as ProtocolMarker>::Proxy,
+        copy_routes_to_main_table: bool,
     ) -> (
         Self,
         RouteTableMap<I>,
@@ -324,7 +326,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
             unmanaged_route_set_proxy,
             route_table_provider,
         );
-        (Self { fidl_route_map }, route_table_map, route_event_stream)
+        (Self { fidl_route_map, copy_routes_to_main_table }, route_table_map, route_event_stream)
     }
 
     /// Handles events observed by the route watchers by adding/removing routes
@@ -464,7 +466,10 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
                     route_set_proxy,
                     route_set_from_main_table_proxy,
                     ..
-                }) => (route_set_proxy, Some(route_set_from_main_table_proxy)),
+                }) => (
+                    route_set_proxy,
+                    self.copy_routes_to_main_table.then_some(route_set_from_main_table_proxy),
+                ),
                 RouteTable::Unmanaged(UnmanagedTable { route_set_proxy, .. }) => {
                     (route_set_proxy, None)
                 }
@@ -543,7 +548,10 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
                     route_set_proxy,
                     route_set_from_main_table_proxy,
                     ..
-                }) => (route_set_proxy, Some(route_set_from_main_table_proxy)),
+                }) => (
+                    route_set_proxy,
+                    self.copy_routes_to_main_table.then_some(route_set_from_main_table_proxy),
+                ),
                 RouteTable::Unmanaged(UnmanagedTable { route_set_proxy, .. }) => {
                     (route_set_proxy, None)
                 }
@@ -2285,6 +2293,7 @@ mod tests {
             ndp_option_watcher_provider: EventLoopComponent::Absent(Optional),
 
             unified_request_stream: request_stream,
+            feature_flags: Default::default(),
         };
 
         let (IpInvariant(inputs), server_ends) = I::map_ip_out(

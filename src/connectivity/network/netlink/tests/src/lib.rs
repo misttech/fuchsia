@@ -420,6 +420,7 @@ async fn rules_select_correct_table_for_marked_socket<I: Ip>() {
             NoopInterfacesHandler,
             protocols,
             on_initialized,
+            Default::default(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -647,6 +648,7 @@ async fn successfully_installs_rule_referencing_main_table<
             NoopInterfacesHandler,
             protocols,
             on_initialized,
+            Default::default(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -768,6 +770,7 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
             NoopInterfacesHandler,
             protocols,
             on_initialized,
+            Default::default(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -989,6 +992,7 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
             NoopInterfacesHandler,
             protocols,
             on_initialized,
+            Default::default(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1375,6 +1379,7 @@ async fn join_leave_nduseropt_multicast_group() {
             NoopInterfacesHandler,
             protocols,
             on_initialized,
+            Default::default(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1459,6 +1464,7 @@ async fn backup_route_does_not_override_interface_metric<I: Ip + FidlRouteIpExt>
             NoopInterfacesHandler,
             protocols,
             on_initialized,
+            Default::default(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1574,6 +1580,7 @@ async fn netlink_uses_local_route_table() {
             NoopInterfacesHandler,
             protocols,
             on_initialized,
+            Default::default(),
         );
     let join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1682,6 +1689,7 @@ async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpE
             NoopInterfacesHandler,
             protocols,
             on_initialized,
+            Default::default(),
         );
     let join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1783,4 +1791,52 @@ async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpE
     };
     assert!(routes.contains(&expected_route));
     assert_eq!(join_handle.abort().await, None);
+}
+
+#[ip_test(I, test = false)]
+#[fuchsia::test]
+async fn no_backup_routes<I: Ip + FidlRouteIpExt>() {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm =
+        sandbox.create_netstack_realm::<Netstack3, _>("main-netstack").expect("create realm");
+
+    let protocols = connect_to_netlink_protocols_in_realm(&realm);
+    let (on_initialized, initialized) = oneshot::channel();
+    let (netlink, worker_fut) =
+        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
+            NoopInterfacesHandler,
+            protocols,
+            on_initialized,
+            netlink::FeatureFlags { copy_routes_to_main_table: false },
+        );
+    let _join_handle = fasync::Task::spawn(worker_fut);
+    initialized.await.expect("should not be dropped");
+
+    let network = sandbox.create_network("network").await.expect("create network");
+
+    const SUBNET: TestSubnet = TestSubnet::A;
+
+    let ep = realm
+        .join_network_with_if_config(&network, "ep", Default::default())
+        .await
+        .expect("failed to create the interface");
+
+    let mut client = add_route_client(&netlink);
+    assert!(
+        client
+            .client
+            .add_membership(route_group::<I>())
+            .expect("should add membership successfully")
+            .is_noop(),
+        "should not produce blocking work"
+    );
+
+    add_route_in_table_and_await_installed_with_main_table_wanted::<I>(
+        &mut client,
+        SUBNET,
+        ep.id().try_into().unwrap(),
+        SUBNET.table_index().into(),
+        false, /* main_table_wanted */
+    )
+    .await;
 }
