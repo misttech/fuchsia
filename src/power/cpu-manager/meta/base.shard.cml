@@ -36,13 +36,13 @@
             availability: "optional",
             default: false,
         },
-    ],
-    config: {
-        // Path to a node config file for the CPU Manager to use. Typically set as a default
-        // value, but can be overridden for integration tests.
-        node_config_path: {
+        {
+            config: "fuchsia.power.cpu.NodeConfigPath",
+            key: "node_config_path",
             type: "string",
             max_size: 128,
+            availability: "optional",
+            default: "/config/node_config.json",
         },
-    },
+    ],
 }

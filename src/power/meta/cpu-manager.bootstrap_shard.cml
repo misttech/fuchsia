@@ -67,5 +67,11 @@
             from: "parent",
             to: "#cpu_manager",
         },
+        {
+            config: "fuchsia.power.cpu.NodeConfigPath",
+            from: "void",
+            to: "#cpu_manager",
+            availability: "optional",
+        },
     ],
 }

@@ -12,13 +12,6 @@
         binary: "bin/power_manager_integration_test",
         use_next_vdso: "true",
     },
-    capabilities: [
-        {
-            config: "fuchsia.power.cpu.BoostEnabled",
-            type: "bool",
-            value: false,
-        },
-    ],
     offer: [
         {
             protocol: [
@@ -28,11 +21,6 @@
             ],
             from: "parent",
             to: [ "#realm_builder" ],
-        },
-        {
-            config: "fuchsia.power.cpu.BoostEnabled",
-            from: "self",
-            to: "#realm_builder",
         },
     ],
 }

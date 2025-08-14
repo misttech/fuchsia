@@ -37,6 +37,7 @@ rustc_library("lib") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
     "//src/lib/fuchsia-runtime",
+    "//src/sys/lib/cm_rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
@@ -84,21 +85,11 @@ fuchsia_structured_config_values(
   }
 }
 
-fuchsia_structured_config_values("integration-cpu-manager-structured-config") {
-  testonly = true
-  cm_label = ":integration-cpu-manager-manifest"
-  values = {
-    cpu_boost_enabled = false
-    node_config_path = ""
-  }
-}
-
 fuchsia_component("integration-component") {
   cm_label = ":integration-power-manager-manifest"
   testonly = true
   deps = [
     ":integration-cpu-manager-manifest",
-    ":integration-cpu-manager-structured-config",
     ":integration-power-manager-manifest",
     ":integration-power-manager-structured-config",
     "//src/power/cpu-manager:bin_with_fake_time",

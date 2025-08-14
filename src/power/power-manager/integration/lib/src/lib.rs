@@ -293,8 +293,7 @@ impl TestEnvBuilder {
 
         // Set up CPU Manager's required routes
         let parent_to_cpu_manager_routes = Route::new()
-            .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"))
-            .capability(Capability::configuration("fuchsia.power.cpu.BoostEnabled"));
+            .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"));
         realm_builder
             .add_route(parent_to_cpu_manager_routes.from(Ref::parent()).to(&cpu_manager))
             .await
@@ -340,20 +339,32 @@ impl TestEnvBuilder {
             .await
             .unwrap();
 
-        // Update CPU Manager's structured config values
-        if self.cpu_manager_node_config_path.is_some() {
-            realm_builder.init_mutable_config_from_package(&cpu_manager).await.unwrap();
-            realm_builder
-                .set_config_value(
-                    &cpu_manager,
-                    "node_config_path",
-                    self.cpu_manager_node_config_path
-                        .expect("cpu_manager_node_config_path not set")
-                        .into(),
-                )
-                .await
-                .unwrap();
-        }
+        // Update CPU Manager's capability config values
+        let cpu_node_config_path = self.cpu_manager_node_config_path.unwrap_or_default();
+        realm_builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.power.cpu.BoostEnabled".parse().unwrap(),
+                value: false.into(),
+            }))
+            .await
+            .unwrap();
+        realm_builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.power.cpu.NodeConfigPath".parse().unwrap(),
+                value: cpu_node_config_path.into(),
+            }))
+            .await
+            .unwrap();
+        realm_builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration("fuchsia.power.cpu.BoostEnabled"))
+                    .capability(Capability::configuration("fuchsia.power.cpu.NodeConfigPath"))
+                    .from(Ref::self_())
+                    .to(&cpu_manager),
+            )
+            .await
+            .unwrap();
 
         // Finally, build it
         let realm_instance = realm_builder.build().await.expect("Failed to build RealmInstance");

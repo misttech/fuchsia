@@ -94,15 +94,6 @@ fuchsia_component_manifest("manifest") {
   component_name = "cpu-manager"
 }
 
-fuchsia_structured_config_values("default_component_config") {
-  cm_label = ":manifest"
-  values = {
-    # Below are default values that are only expected to be changed for integration tests.
-    node_config_path = "/config/node_config.json"
-    cpu_boost_enabled = false
-  }
-}
-
 fuchsia_structured_config_rust_lib("cpu-manager-config-lib") {
   cm_label = ":manifest"
 }
@@ -122,10 +113,7 @@ fuchsia_component("component") {
 
 fuchsia_package("package") {
   package_name = "cpu-manager"
-  deps = [
-    ":component",
-    ":default_component_config",
-  ]
+  deps = [ ":component" ]
 }
 
 group("tests") {
