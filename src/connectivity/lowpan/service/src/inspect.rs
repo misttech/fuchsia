@@ -1240,6 +1240,81 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 },
                             )
                         }
+                        if let Some(x) = telemetry_data.border_agent_counters {
+                            inspector.root().record_child(
+                                "border_agent_counters",
+                                |border_agent_counters_child| {
+                                    if let Some(y) = x.epskc_activations {
+                                        border_agent_counters_child
+                                            .record_uint("epskc_activations", y.into())
+                                    }
+                                    if let Some(y) = x.epskc_deactivation_clears {
+                                        border_agent_counters_child
+                                            .record_uint("epskc_deactivation_clears", y.into())
+                                    }
+                                    if let Some(y) = x.epskc_deactivation_timeouts {
+                                        border_agent_counters_child
+                                            .record_uint("epskc_deactivation_timeouts", y.into())
+                                    }
+                                    if let Some(y) = x.epskc_deactivation_max_attempts {
+                                        border_agent_counters_child.record_uint(
+                                            "epskc_deactivation_max_attempts",
+                                            y.into(),
+                                        )
+                                    }
+                                    if let Some(y) = x.epskc_deactivation_disconnects {
+                                        border_agent_counters_child
+                                            .record_uint("epskc_deactivation_disconnects", y.into())
+                                    }
+                                    if let Some(y) = x.epskc_invalid_ba_state_errors {
+                                        border_agent_counters_child
+                                            .record_uint("epskc_invalid_ba_state_errors", y.into())
+                                    }
+                                    if let Some(y) = x.epskc_invalid_args_errors {
+                                        border_agent_counters_child
+                                            .record_uint("epskc_invalid_args_errors", y.into())
+                                    }
+                                    if let Some(y) = x.epskc_start_secure_session_errors {
+                                        border_agent_counters_child.record_uint(
+                                            "epskc_start_secure_session_errors",
+                                            y.into(),
+                                        )
+                                    }
+                                    if let Some(y) = x.epskc_secure_session_successes {
+                                        border_agent_counters_child
+                                            .record_uint("epskc_secure_session_successes", y.into())
+                                    }
+                                    if let Some(y) = x.epskc_secure_session_failures {
+                                        border_agent_counters_child
+                                            .record_uint("epskc_secure_session_failures", y.into())
+                                    }
+                                    if let Some(y) = x.epskc_commissioner_petitions {
+                                        border_agent_counters_child
+                                            .record_uint("epskc_commissioner_petitions", y.into())
+                                    }
+                                    if let Some(y) = x.pskc_secure_session_successes {
+                                        border_agent_counters_child
+                                            .record_uint("pskc_secure_session_successes", y.into())
+                                    }
+                                    if let Some(y) = x.pskc_secure_session_failures {
+                                        border_agent_counters_child
+                                            .record_uint("pskc_secure_session_failures", y.into())
+                                    }
+                                    if let Some(y) = x.pskc_commissioner_petitions {
+                                        border_agent_counters_child
+                                            .record_uint("pskc_commissioner_petitions", y.into())
+                                    }
+                                    if let Some(y) = x.mgmt_active_gets {
+                                        border_agent_counters_child
+                                            .record_uint("mgmt_active_get_reqs", y.into())
+                                    }
+                                    if let Some(y) = x.mgmt_pending_gets {
+                                        border_agent_counters_child
+                                            .record_uint("mgmt_pending_get_reqs", y.into())
+                                    }
+                                },
+                            )
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);
