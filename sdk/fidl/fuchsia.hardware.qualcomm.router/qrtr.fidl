@@ -12,8 +12,8 @@ library fuchsia.hardware.qualcomm.router;
 
 using zx;
 
-alias PortId = int32;
-alias NodeId = int32;
+alias PortId = uint32;
+alias NodeId = uint32;
 
 /// Signal asserted on event handle when the [`QrtrClientConnection.Read`] method
 /// can return data.
@@ -81,6 +81,16 @@ protocol QrtrClientConnection {
     flexible GetSignals() -> (resource struct {
         signals zx.Handle:<EVENTPAIR, zx.Rights.TRANSFER | zx.Rights.DUPLICATE | zx.Rights.WAIT>;
     });
+
+    /// Retrieves the port id.
+    flexible GetPortId() -> (struct {
+        port_id PortId;
+    });
+
+    /// Retrieves the node id of AP.
+    flexible GetNodeId() -> (struct {
+        node_id NodeId;
+    });
 };
 
 /// Connection Options used by QrtrConnector.
@@ -147,7 +157,7 @@ protocol QrtrTransportChannel {
 protocol QrtrTransportConnector {
     /// Establishes a channel.
     ///
-    /// Child drivers should only estabilsh one connection to the QRTR driver.
+    /// Child drivers should only establish one connection to the QRTR driver.
     flexible EstablishConnection(resource struct {
         proxy client_end:QrtrTransportChannel;
     }) -> () error Error;
