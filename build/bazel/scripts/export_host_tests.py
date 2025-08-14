@@ -10,7 +10,6 @@ import dataclasses
 import json
 import os
 import shutil
-import subprocess
 import sys
 import typing as T
 from pathlib import Path
@@ -151,38 +150,6 @@ class HostInfo(object):
                 }
             }
         ]
-
-
-class BazelCommand(object):
-    """Convenience class to wrap the Bazel launcher script invocations."""
-
-    def __init__(
-        self, bazel_launcher: Path, common_args: T.Sequence[str] = []
-    ) -> None:
-        self._command_start = [
-            str(bazel_launcher),
-        ]
-        self._common_args = [
-            "--config=quiet",
-            "--platforms=//build/bazel/platforms:host",  # For now, only supports host targets.
-        ]
-
-    def run(self, command: str, args: T.Sequence[str] = []) -> str:
-        """Run a specific Bazel command with optional args, return output as string."""
-        return subprocess.check_output(
-            self._command_start + [command] + self._common_args + list(args),
-            text=True,
-        ).strip()
-
-    def get_execroot(self) -> Path:
-        """Return the absolute path to the Bazel execroot directory."""
-        execroot = self.run("info", ["execution_root"])
-        return Path(execroot)
-
-    def get_output_base(self) -> Path:
-        """Return the absolute path to the Bazel execroot directory."""
-        execroot = self.run("info", ["output_base"])
-        return Path(execroot)
 
 
 def hardlink_or_copy_file(src_path: Path, dst_path: Path) -> None:
@@ -487,7 +454,7 @@ class CommandContext(object):
     args: argparse.Namespace
     build_dir: Path
     tests_map: dict[str, HostTestInfo]
-    bazel_cmd: BazelCommand
+    bazel_cmd: build_utils.BazelCommand
 
 
 def list_command(args: argparse.Namespace, context: CommandContext) -> int:
@@ -602,7 +569,7 @@ def main() -> int:
             f"Could not find Bazel launcher script! fuchsia_dir={fuchsia_dir} build_dir={build_dir}"
         )
 
-    bazel_cmd = BazelCommand(bazel_launcher)
+    bazel_cmd = build_utils.BazelCommand(bazel_launcher)
 
     # Now query each target to get its executable and runfiles_manifest path
     # in the output base, then load the runfiles manifest.

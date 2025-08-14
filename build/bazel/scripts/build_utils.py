@@ -461,3 +461,33 @@ class BazelQueryCache(object):
         ).hexdigest()
 
         return (cache_key, cache_key_args)
+
+
+class BazelCommand(object):
+    """Convenience class to wrap the Bazel launcher script invocations."""
+
+    def __init__(self, bazel_launcher: Path) -> None:
+        self._command_start = [
+            str(bazel_launcher),
+        ]
+        self._common_args = [
+            "--config=quiet",
+            "--platforms=//build/bazel/platforms:host",  # For now, only supports host targets.
+        ]
+
+    def run(self, command: str, args: T.Sequence[str] = []) -> str:
+        """Run a specific Bazel command with optional args, return output as string."""
+        return subprocess.check_output(
+            self._command_start + [command] + self._common_args + list(args),
+            text=True,
+        ).strip()
+
+    def get_execroot(self) -> Path:
+        """Return the absolute path to the Bazel execroot directory."""
+        execroot = self.run("info", ["execution_root"])
+        return Path(execroot)
+
+    def get_output_base(self) -> Path:
+        """Return the absolute path to the Bazel execroot directory."""
+        execroot = self.run("info", ["output_base"])
+        return Path(execroot)
