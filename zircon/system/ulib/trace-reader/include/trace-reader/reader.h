@@ -61,6 +61,21 @@ class TraceReader {
 
   // Gets the current trace provider id.
   // Returns 0 if no providers have been registered yet.
+  //
+  // The stream of trace data typically looks like this:
+  //
+  //   <provider_id record>
+  //   data associated with the provider
+  //   ...
+  //   <provider_id record>
+  //   data associated with the provider
+  //   ...
+  //
+  // When tracing is run in oneshot mode, a trace reader will see one block like the above per
+  // provider.
+  // In streaming mode, however, trace readers get one <id record, data...> per provider transfer.
+  //
+  // NB: The provider records can straddle chunk boundaries, since chunk size is reader-defined.
   ProviderId current_provider_id() const;
 
   // Gets the name of the current trace provider.

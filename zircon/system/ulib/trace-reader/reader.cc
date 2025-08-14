@@ -14,6 +14,11 @@ namespace trace {
 
 namespace {
 
+// Each provider has a string table, a thread table and one or more records.
+// String and Thread records don't have a time stamp. They must be ordered in the
+// order in which the provider emitted them.
+// Trace writers must emit a string/thread record before using it as a reference.
+// docs/development/tracing/trace-format.md#string-references
 struct StringTableEntry {
   StringTableEntry(trace_string_index_t index, std::string string)
       : index(index), string(std::move(string)) {}
