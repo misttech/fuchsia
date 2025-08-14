@@ -56,8 +56,6 @@ target(target_type, "cpp") {
       "//sdk/lib/async-default",
       "//sdk/lib/async-loop:async-loop-default",
       "//sdk/lib/component/incoming/cpp",
-      "//sdk/lib/fdio",
-      "//zircon/system/ulib/sync",
     ]
 
     public_deps += [

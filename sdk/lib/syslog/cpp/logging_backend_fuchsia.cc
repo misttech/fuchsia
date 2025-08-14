@@ -11,10 +11,6 @@
 #include <lib/async-loop/loop.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/default.h>
-#include <lib/fdio/directory.h>
-#include <lib/fdio/fd.h>
-#include <lib/fdio/fdio.h>
-#include <lib/sync/completion.h>
 #include <lib/syslog/cpp/log_level.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/log_settings_internal.h>
