@@ -14,6 +14,8 @@ go_library("lib") {
     "logprocessing_test.go",
     "mass_test_failure_check.go",
     "mass_test_failure_check_test.go",
+    "nearby_string_check.go",
+    "nearby_string_check_test.go",
     "no_tests_ran_check.go",
     "no_tests_ran_check_test.go",
     "run_checks.go",

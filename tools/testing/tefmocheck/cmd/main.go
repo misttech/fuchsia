@@ -125,6 +125,7 @@ func main() {
 	// check finds a failure mode, then we skip running later checks because we assume
 	// they'll add no useful information.
 	checks := []tefmocheck.FailureModeCheck{}
+	checks = append(checks, tefmocheck.NearbyStringsChecks()...)
 	checks = append(checks, tefmocheck.StringInLogsChecks()...)
 	checks = append(checks, tefmocheck.MassTestFailureCheck{MaxFailed: 5})
 	// TaskStateChecks should go toward the end, since they're not very specific.
