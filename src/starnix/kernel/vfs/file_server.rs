@@ -25,7 +25,6 @@ use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{errno, error, ino_t, off_t};
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Weak};
-use vfs::directory::entry_container::Directory;
 use vfs::directory::mutable::connection::MutableConnection;
 use vfs::directory::{self};
 use vfs::{
@@ -78,12 +77,26 @@ pub fn serve_file_at(
                 };
                 StarnixNodeConnection::new(Arc::downgrade(&kernel), credentials, file)
             };
-            starnix_file.deprecated_open(
-                scope.clone(),
-                open_flags.into_fidl(),
-                path::Path::dot(),
-                server_end,
-            );
+            let fidl_flags: fio::OpenFlags = open_flags.into_fidl();
+            if starnix_file.is_dir() {
+                fidl_flags.to_object_request(server_end).handle(|object_request| {
+                    object_request.take().create_connection_sync::<MutableConnection<_>, _>(
+                        scope.clone(),
+                        starnix_file,
+                        fidl_flags,
+                    );
+                    Ok(())
+                });
+            } else {
+                fidl_flags.to_object_request(server_end).handle(|object_request| {
+                    object_request.take().create_connection_sync::<file::RawIoConnection<_>, _>(
+                        scope.clone(),
+                        starnix_file,
+                        fidl_flags,
+                    );
+                    Ok(())
+                });
+            }
             scope.wait().await;
         }
     });
