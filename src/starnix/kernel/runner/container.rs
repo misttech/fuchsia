@@ -914,14 +914,8 @@ fn mount_filesystems(
     // Skip the first mount, that was used to create the root filesystem.
     let _ = mounts_iter.next();
     for mount_spec in mounts_iter {
-        let action = MountAction::from_spec(
-            locked,
-            system_task,
-            Some(start_info),
-            pkg_dir_proxy,
-            mount_spec,
-        )
-        .with_source_context(|| format!("creating filesystem from spec: {}", &mount_spec))?;
+        let action = MountAction::from_spec(locked, system_task, pkg_dir_proxy, mount_spec)
+            .with_source_context(|| format!("creating filesystem from spec: {}", &mount_spec))?;
         let mount_point = system_task
             .lookup_path_from_root(locked, action.path.as_ref())
             .with_source_context(|| format!("lookup path from root: {}", action.path))?;
