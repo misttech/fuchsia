@@ -53,13 +53,6 @@ class ZxioCreateOnRepresentationEventHandler final : public fidl::WireSyncEventH
 template <typename Protocol>
 constexpr std::string_view kProtocolName = fidl::DiscoverableProtocolName<Protocol>;
 
-// TODO(https://fxbug.dev/42056856): We can't mark certain fuchsia.io protocols as @discoverable
-// so we need to hard-code these constants until they are updated.
-template <>
-constexpr std::string_view kProtocolName<fio::Directory> = "fuchsia.io.Directory";
-template <>
-constexpr std::string_view kProtocolName<fio::File> = "fuchsia.io.File";
-
 // Maps a given discoverable FIDL protocol to an equivalent ZXIO type. If the protocol is unknown,
 // it will be mapped to `ZXIO_OBJECT_TYPE_NONE`.
 constexpr zxio_object_type_t ProtocolToObjectType(std::string_view protocol) {
@@ -128,25 +121,6 @@ zx::result<zxio_object_type_t> zxio_get_object_type(
   }
   if (protocol == std::string_view{fio::wire::kDirectoryProtocolName}) {
     return zx::ok(ZXIO_OBJECT_TYPE_DIR);
-  }
-  if (protocol == std::string_view{fuchsia_hardware_pty::wire::kDeviceProtocolName}) {
-    return zx::ok(ZXIO_OBJECT_TYPE_TTY);
-  }
-  if (protocol == std::string_view{fuchsia_posix_socket::wire::kDatagramSocketProtocolName}) {
-    return zx::ok(ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET);
-  }
-  if (protocol == std::string_view{fuchsia_posix_socket::wire::kStreamSocketProtocolName}) {
-    return zx::ok(ZXIO_OBJECT_TYPE_STREAM_SOCKET);
-  }
-  if (protocol ==
-      std::string_view{fuchsia_posix_socket::wire::kSynchronousDatagramSocketProtocolName}) {
-    return zx::ok(ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET);
-  }
-  if (protocol == std::string_view{fuchsia_posix_socket_packet::wire::kSocketProtocolName}) {
-    return zx::ok(ZXIO_OBJECT_TYPE_PACKET_SOCKET);
-  }
-  if (protocol == std::string_view{fuchsia_posix_socket_raw::wire::kSocketProtocolName}) {
-    return zx::ok(ZXIO_OBJECT_TYPE_RAW_SOCKET);
   }
   return zx::ok(ZXIO_OBJECT_TYPE_NONE);
 }
