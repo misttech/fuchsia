@@ -23,6 +23,8 @@ pub struct DriverState<OT> {
     pub nat64: nat64::Nat64,
 
     pub dhcp_v6_pd: dhcpv6pd::DhcpV6Pd,
+
+    pub border_agent: border_agent::BorderAgent,
 }
 
 impl<OT: AsRef<ot::Instance>> AsRef<ot::Instance> for DriverState<OT> {
@@ -46,6 +48,12 @@ impl<OT> AsRef<Option<AdvertisingProxy>> for DriverState<OT> {
 impl<OT> AsRef<dhcpv6pd::DhcpV6Pd> for DriverState<OT> {
     fn as_ref(&self) -> &dhcpv6pd::DhcpV6Pd {
         &self.dhcp_v6_pd
+    }
+}
+
+impl<OT> AsRef<border_agent::BorderAgent> for DriverState<OT> {
+    fn as_ref(&self) -> &border_agent::BorderAgent {
+        &self.border_agent
     }
 }
 
@@ -186,6 +194,23 @@ impl<OT: AsRef<ot::Instance>> DriverState<OT> {
         }
         Ok(())
     }
+
+    pub fn setup_border_agent_callback(&mut self)
+    where
+        OT: ot::InstanceInterface,
+    {
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
+
+        *self.border_agent.update_sender.lock() = Some(sender.clone());
+        *self.border_agent.update_receiver.lock() = Some(receiver);
+
+        self.ot_instance.border_agent_set_meshcop_service_changed_fn(Some(move || {
+            trace!("Border agent MeshCoP service changed, triggering mDNS update");
+            // NOTE: DRIVER STATE IS LOCKED WHEN THIS IS CALLED!
+            // Send notification through channel (non-blocking, no reentrancy issues)
+            let _ = sender.unbounded_send(());
+        }));
+    }
 }
 
 impl<OT> DriverState<OT> {
@@ -199,6 +224,7 @@ impl<OT> DriverState<OT> {
             detailed_logging: detailed_logging::DetailedLogging::new(),
             nat64: nat64::Nat64::new(),
             dhcp_v6_pd: dhcpv6pd::DhcpV6Pd::default(),
+            border_agent: border_agent::BorderAgent::new(),
         }
     }
 }

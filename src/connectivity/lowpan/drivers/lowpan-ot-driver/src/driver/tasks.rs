@@ -202,6 +202,34 @@ where
                 Ok(())
             });
 
+        let border_agent_update_stream = futures::stream::unfold((), move |_| {
+            let receiver_opt = self.driver_state.lock().border_agent.update_receiver.lock().take();
+            if let Some(mut receiver) = receiver_opt {
+                async move {
+                    match receiver.next().await {
+                        Some(_) => {
+                            // Put the receiver back for the next iteration
+                            *self.driver_state.lock().border_agent.update_receiver.lock() =
+                                Some(receiver);
+
+                            // Process the border agent update
+                            self.update_border_agent_service().await;
+                            debug!("Border agent service updated successfully");
+
+                            Some((Result::<_, Error>::Ok(()), ()))
+                        }
+                        None => {
+                            // Channel closed, don't put receiver back
+                            None
+                        }
+                    }
+                }
+                .boxed()
+            } else {
+                futures::future::ready(None).boxed()
+            }
+        });
+
         // Openthread CLI inbound task
         let (cli_input_sender_local, mut cli_input_receiver) = futures::channel::mpsc::unbounded();
         let openthread_cli_inbound_loop = async move {
@@ -281,6 +309,7 @@ where
             discovery_proxy_stream.boxed(),
             dhcp_v6_pd_stream.boxed(),
             dhcp_v6_pd_state_changed_stream.boxed(),
+            border_agent_update_stream.boxed(),
             scan_watchdog.into_stream().boxed(),
             openthread_cli_inbound_loop.into_stream().boxed(),
             epskc_service.into_stream().boxed(),
@@ -318,6 +347,8 @@ where
         driver_state.ot_instance.border_agent_set_ephemeral_key_callback(Some(move || {
             self.handle_epskc_state_changed()
         }));
+
+        driver_state.setup_border_agent_callback();
 
         if let Err(err) = driver_state.set_discovery_proxy_enabled(true) {
             warn!("Unable to start SRP discovery proxy: {:?}", err);

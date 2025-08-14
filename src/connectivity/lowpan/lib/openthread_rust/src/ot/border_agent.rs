@@ -114,6 +114,10 @@ pub trait BorderAgent {
     fn border_agent_get_udp_port(&self) -> u16;
 
     /// Functional equivalent of
+    /// [`otsys::otBorderAgentGetMeshCoPServiceTxtData`](crate::otsys::otBorderAgentGetMeshCoPServiceTxtData).
+    fn border_agent_get_meshcop_service_txt_data(&self) -> Result<Vec<u8>>;
+
+    /// Functional equivalent of
     /// [`otsys::otBorderAgentEphemeralKeyGetState`](crate::otsys::otBorderAgentEphemeralKeyGetState).
     fn border_agent_ephemeral_key_get_state(&self) -> BorderAgentEphemeralKeyState;
 
@@ -147,6 +151,11 @@ pub trait BorderAgent {
     /// Functional equivalent of
     /// [`otsys::otBorderAgentGetCounters`](crate::otsys::otBorderAgentGetCounters).
     fn border_agent_get_counters(&self) -> Option<BorderAgentCounters>;
+
+    /// [`otsys::otBorderAgentSetMeshCoPServiceChangedCallback`](crate::otsys::otBorderAgentSetMeshCoPServiceChangedCallback).
+    fn border_agent_set_meshcop_service_changed_fn<'a, F>(&'a self, f: Option<F>)
+    where
+        F: FnMut() + 'a;
 }
 
 impl<T: BorderAgent + Boxable> BorderAgent for ot::Box<T> {
@@ -156,6 +165,10 @@ impl<T: BorderAgent + Boxable> BorderAgent for ot::Box<T> {
 
     fn border_agent_get_udp_port(&self) -> u16 {
         self.as_ref().border_agent_get_udp_port()
+    }
+
+    fn border_agent_get_meshcop_service_txt_data(&self) -> Result<Vec<u8>> {
+        self.as_ref().border_agent_get_meshcop_service_txt_data()
     }
 
     fn border_agent_ephemeral_key_get_state(&self) -> BorderAgentEphemeralKeyState {
@@ -188,6 +201,13 @@ impl<T: BorderAgent + Boxable> BorderAgent for ot::Box<T> {
     fn border_agent_get_counters(&self) -> Option<BorderAgentCounters> {
         self.as_ref().border_agent_get_counters()
     }
+
+    fn border_agent_set_meshcop_service_changed_fn<'a, F>(&'a self, f: Option<F>)
+    where
+        F: FnMut() + 'a,
+    {
+        self.as_ref().border_agent_set_meshcop_service_changed_fn(f)
+    }
 }
 
 impl BorderAgent for Instance {
@@ -197,6 +217,16 @@ impl BorderAgent for Instance {
 
     fn border_agent_get_udp_port(&self) -> u16 {
         unsafe { otBorderAgentGetUdpPort(self.as_ot_ptr()) }
+    }
+
+    fn border_agent_get_meshcop_service_txt_data(&self) -> Result<Vec<u8>> {
+        let mut txt_data = otBorderAgentMeshCoPServiceTxtData::default();
+        let result: Result = Error::from(unsafe {
+            otBorderAgentGetMeshCoPServiceTxtData(self.as_ot_ptr(), &mut txt_data)
+        })
+        .into();
+        result?;
+        Ok(txt_data.mData[..txt_data.mLength as usize].to_vec())
     }
 
     fn border_agent_ephemeral_key_get_state(&self) -> BorderAgentEphemeralKeyState {
@@ -271,6 +301,52 @@ impl BorderAgent for Instance {
 
     fn border_agent_get_counters(&self) -> Option<BorderAgentCounters> {
         unsafe { BorderAgentCounters::from_ot_counters(otBorderAgentGetCounters(self.as_ot_ptr())) }
+    }
+
+    fn border_agent_set_meshcop_service_changed_fn<'a, F>(&'a self, f: Option<F>)
+    where
+        F: FnMut() + 'a,
+    {
+        unsafe extern "C" fn _border_agent_set_meshcop_service_changed_callback<
+            'a,
+            F: FnMut() + 'a,
+        >(
+            context: *mut ::std::os::raw::c_void,
+        ) {
+            trace!("_border_agent_set_meshcop_service_changed_callback");
+
+            // Reconstitute a reference to our closure.
+            let sender = &mut *(context as *mut F);
+
+            sender()
+        }
+
+        let (fn_ptr, fn_box, cb): (_, _, otBorderAgentMeshCoPServiceChangedCallback) =
+            if let Some(f) = f {
+                let mut x = Box::new(f);
+
+                (
+                    x.as_mut() as *mut F as *mut ::std::os::raw::c_void,
+                    Some(x as Box<dyn FnMut() + 'a>),
+                    Some(_border_agent_set_meshcop_service_changed_callback::<F>),
+                )
+            } else {
+                (std::ptr::null_mut() as *mut ::std::os::raw::c_void, None, None)
+            };
+
+        unsafe {
+            otBorderAgentSetMeshCoPServiceChangedCallback(self.as_ot_ptr(), cb, fn_ptr);
+
+            // Make sure our object eventually gets cleaned up.
+            // Here we must also transmute our closure to have a 'static lifetime.
+            // We need to do this because the borrow checker cannot infer the
+            // proper lifetime for the singleton instance backing, but
+            // this is guaranteed by the API.
+            self.borrow_backing().meshcop_service_changed_callback.set(std::mem::transmute::<
+                Option<Box<dyn FnMut() + 'a>>,
+                Option<Box<dyn FnMut() + 'static>>,
+            >(fn_box));
+        }
     }
 }
 

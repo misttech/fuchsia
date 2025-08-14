@@ -44,6 +44,86 @@ pub struct BorderAgentState : u32 {
 }
 }
 
+#[derive(Debug)]
+pub struct BorderAgent {
+    pub update_sender: fuchsia_sync::Mutex<Option<futures::channel::mpsc::UnboundedSender<()>>>,
+    pub update_receiver: fuchsia_sync::Mutex<Option<futures::channel::mpsc::UnboundedReceiver<()>>>,
+}
+
+impl BorderAgent {
+    pub fn new() -> Self {
+        BorderAgent {
+            update_sender: fuchsia_sync::Mutex::new(None),
+            update_receiver: fuchsia_sync::Mutex::new(None),
+        }
+    }
+
+    /// Trigger a border agent service update from here.
+    pub fn trigger_service_update(&self) {
+        if let Some(ref sender) = *self.update_sender.lock() {
+            let _ = sender.unbounded_send(());
+        }
+    }
+}
+
+impl Default for BorderAgent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn parse_openthread_txt_data(txt_data: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let mut result = Vec::new();
+    let mut offset = 0;
+
+    while offset < txt_data.len() {
+        let len = txt_data[offset] as usize;
+        offset += 1;
+
+        if offset + len > txt_data.len() {
+            break;
+        }
+
+        let record = &txt_data[offset..offset + len];
+        offset += len;
+
+        if let Some(eq_pos) = record.iter().position(|&b| b == b'=') {
+            let key = String::from_utf8_lossy(&record[..eq_pos]).to_string();
+            let value = record[eq_pos + 1..].to_vec();
+            result.push((key, value));
+        } else if !record.is_empty() {
+            let key = String::from_utf8_lossy(record).to_string();
+            result.push((key, Vec::new()));
+        }
+    }
+
+    result
+}
+
+fn get_openthread_meshcop_txt_data<OT>(ot_instance: &OT) -> Vec<(String, Vec<u8>)>
+where
+    OT: ot::InstanceInterface,
+{
+    // Get TXT data from OpenThread
+    match ot_instance.border_agent_get_meshcop_service_txt_data() {
+        Ok(ot_txt_data) => {
+            debug!(tag = "meshcop"; "Using OpenThread core TXT data, {} bytes", ot_txt_data.len());
+            parse_openthread_txt_data(&ot_txt_data)
+        }
+        Err(err) => {
+            warn!(tag = "meshcop"; "Failed to get OpenThread TXT data: {:?}", err);
+            Vec::new()
+        }
+    }
+}
+
+fn get_vendor_meshcop_txt_data(vendor: &str, product: &str) -> Vec<(String, Vec<u8>)> {
+    vec![
+        ("vn".to_string(), vendor.as_bytes().to_vec()),
+        ("mn".to_string(), product.as_bytes().to_vec()),
+    ]
+}
+
 fn calc_meshcop_service_txt<OT>(
     ot_instance: &OT,
     vendor: &str,
@@ -52,74 +132,8 @@ fn calc_meshcop_service_txt<OT>(
 where
     OT: ot::InstanceInterface,
 {
-    let mut txt: Vec<(String, Vec<u8>)> = Vec::new();
-
-    let mut border_agent_state = BorderAgentState::HIGH_AVAILABILITY;
-
-    if ot_instance.border_agent_is_active() == true {
-        border_agent_state |= BorderAgentState::CONNECTION_MODE_PSKC;
-    }
-
-    if ot_instance.is_commissioned() {
-        match ot_instance.get_device_role() {
-            ot::DeviceRole::Disabled => {
-                border_agent_state |= BorderAgentState::THREAD_IF_STATUS_INITIALIZED
-            }
-            _ => border_agent_state |= BorderAgentState::THREAD_IF_STATUS_ACTIVE,
-        }
-    }
-
-    // `rv` - Version of TXT record format.
-    txt.push(("rv".to_string(), b"1".to_vec()));
-
-    // `tv` - Version of Thread specification in use.
-    txt.push(("tv".to_string(), ot::get_thread_version_str().as_bytes().to_vec()));
-
-    // `sb` - State bitmap
-    txt.push(("sb".to_string(), border_agent_state.bits().to_be_bytes().to_vec()));
-
-    // `nn` - Network Name
-    if ot_instance.is_commissioned() {
-        match ot_instance.get_network_name().try_as_str() {
-            Ok(nn) => txt.push(("nn".to_string(), nn.as_bytes().to_vec())),
-            Err(err) => {
-                warn!("Can't render network name: {:?}", err);
-            }
-        }
-
-        // `xp` - Extended PAN-ID
-        txt.push(("xp".to_string(), ot_instance.get_extended_pan_id().as_slice().to_vec()));
-    }
-
-    // `vn` - Vendor Name
-    txt.push(("vn".to_string(), vendor.as_bytes().to_vec()));
-
-    // `mn` - Model Name
-    txt.push(("mn".to_string(), product.as_bytes().to_vec()));
-
-    // `xa` - Extended Address
-    txt.push(("xa".to_string(), ot_instance.get_extended_address().as_slice().to_vec()));
-
-    if ot_instance.get_device_role().is_active() {
-        let mut dataset = Default::default();
-
-        match ot_instance.dataset_get_active(&mut dataset) {
-            Ok(()) => {
-                if let Some(at) = dataset.get_active_timestamp() {
-                    // `at` - Active Operational Dataset Timestamp
-                    txt.push(("at".to_string(), at.to_be_bytes().to_vec()));
-                }
-            }
-
-            Err(err) => {
-                warn!(tag = "meshcop"; "Failed to get active dataset: {:?}", err);
-            }
-        }
-
-        // `pt` - Partition ID
-        txt.push(("pt".to_string(), ot_instance.get_partition_id().to_be_bytes().to_vec()));
-    }
-
+    let mut txt = get_openthread_meshcop_txt_data(ot_instance);
+    txt.extend(get_vendor_meshcop_txt_data(vendor, product));
     txt
 }
 
@@ -377,7 +391,13 @@ impl<OT: ot::InstanceInterface, NI, BI> OtDriver<OT, NI, BI> {
 
             let driver_state = self.driver_state.lock();
             let ot_instance = &driver_state.ot_instance;
-            txt.extend(calc_meshcop_service_txt(ot_instance, &vendor, &product));
+            for (key, value) in calc_meshcop_service_txt(ot_instance, &vendor, &product) {
+                if let Some(entry) = txt.iter_mut().find(|(k, _)| k == &key) {
+                    entry.1 = value;
+                } else {
+                    txt.push((key, value));
+                }
+            }
             let port = if ot_instance.border_agent_is_active() == true {
                 ot_instance.border_agent_get_udp_port()
             } else {

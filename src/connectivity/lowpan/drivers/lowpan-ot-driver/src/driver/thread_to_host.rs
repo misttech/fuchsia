@@ -76,7 +76,7 @@ where
                 | ot::ChangedFlags::THREAD_PARTITION_ID
                 | ot::ChangedFlags::THREAD_BACKBONE_ROUTER_STATE,
         ) {
-            self.update_border_agent_service().await;
+            self.driver_state.lock().border_agent.trigger_service_update();
         }
 
         if flags.intersects(ot::ChangedFlags::NAT64_TRANSLATOR_STATE) {

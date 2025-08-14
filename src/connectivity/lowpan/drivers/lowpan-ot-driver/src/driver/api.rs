@@ -880,7 +880,7 @@ where
         );
 
         *self.border_agent_vendor_txt_entries.lock().await = txt_entries;
-        self.update_border_agent_service().await;
+        self.driver_state.lock().border_agent.trigger_service_update();
 
         Ok(())
     }

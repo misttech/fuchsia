@@ -29,6 +29,7 @@ pub(crate) struct InstanceBacking {
     pub dhcp6pd_state_change_callback_fn:
         Cell<Option<std::boxed::Box<dyn FnMut(BorderRoutingDhcp6PdState)>>>,
     pub ephemeral_key_callback: Cell<Option<std::boxed::Box<dyn FnMut()>>>,
+    pub meshcop_service_changed_callback: Cell<Option<std::boxed::Box<dyn FnMut()>>>,
 }
 
 impl InstanceBacking {
@@ -49,6 +50,7 @@ impl InstanceBacking {
             nat64_receive_fn: Cell::new(None),
             dhcp6pd_state_change_callback_fn: Cell::new(None),
             ephemeral_key_callback: Cell::new(None),
+            meshcop_service_changed_callback: Cell::new(None),
         }
     }
 }
