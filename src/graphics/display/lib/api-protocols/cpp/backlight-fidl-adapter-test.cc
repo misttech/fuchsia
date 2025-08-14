@@ -65,7 +65,7 @@ TEST_F(BacklightFidlAdapterTest, GetMaxBrightnessNitsSuccess) {
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
   fit::result<zx_status_t,
-              fuchsia_hardware_backlight::wire::DeviceGetMaxAbsoluteBrightnessResponse*>
+              fuchsia_hardware_backlight::wire::DeviceGetMaxAbsoluteBrightnessResponse*>&
       fidl_domain_result = fidl_transport_result.value();
   ASSERT_OK(fidl_domain_result);
   EXPECT_EQ(fidl_domain_result->max_brightness, 500.0);
@@ -80,7 +80,7 @@ TEST_F(BacklightFidlAdapterTest, GetMaxBrightnessNitsNotSupported) {
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
   fit::result<zx_status_t,
-              fuchsia_hardware_backlight::wire::DeviceGetMaxAbsoluteBrightnessResponse*>
+              fuchsia_hardware_backlight::wire::DeviceGetMaxAbsoluteBrightnessResponse*>&
       fidl_domain_result = fidl_transport_result.value();
   EXPECT_STATUS(fidl_domain_result, zx::error(ZX_ERR_NOT_SUPPORTED));
 }
@@ -98,7 +98,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateNormalizedOnSuccess) {
       fidl_client_->GetStateNormalized();
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateNormalizedResponse*>
+  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateNormalizedResponse*>&
       fidl_domain_result = fidl_transport_result.value();
   ASSERT_OK(fidl_domain_result);
   EXPECT_EQ(fidl_domain_result->state.backlight_on, true);
@@ -118,7 +118,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateNormalizedOffSuccess) {
       fidl_client_->GetStateNormalized();
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateNormalizedResponse*>
+  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateNormalizedResponse*>&
       fidl_domain_result = fidl_transport_result.value();
   ASSERT_OK(fidl_domain_result);
   EXPECT_EQ(fidl_domain_result->state.backlight_on, false);
@@ -131,7 +131,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateNormalizedError) {
       fidl_client_->GetStateNormalized();
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateNormalizedResponse*>
+  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateNormalizedResponse*>&
       fidl_domain_result = fidl_transport_result.value();
   EXPECT_STATUS(fidl_domain_result, zx::error(ZX_ERR_IO));
 }
@@ -151,7 +151,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateNormalizedOffSuccess) {
       });
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t> fidl_domain_result = fidl_transport_result.value();
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
   EXPECT_OK(fidl_domain_result);
 }
 
@@ -170,7 +170,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateNormalizedOnSuccess) {
       });
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t> fidl_domain_result = fidl_transport_result.value();
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
   EXPECT_OK(fidl_domain_result);
 }
 
@@ -187,7 +187,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateNormalizedHardwareError) {
       });
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t> fidl_domain_result = fidl_transport_result.value();
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
   EXPECT_STATUS(fidl_domain_result, zx::error(ZX_ERR_IO));
 }
 
@@ -215,7 +215,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOnSuccess) {
       fidl_client_->GetStateAbsolute();
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateAbsoluteResponse*>
+  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateAbsoluteResponse*>&
       fidl_domain_result = fidl_transport_result.value();
   ASSERT_OK(fidl_domain_result);
   EXPECT_EQ(fidl_domain_result->state.backlight_on, true);
@@ -232,7 +232,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOffSuccess) {
       fidl_client_->GetStateAbsolute();
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateAbsoluteResponse*>
+  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateAbsoluteResponse*>&
       fidl_domain_result = fidl_transport_result.value();
   ASSERT_OK(fidl_domain_result);
   EXPECT_EQ(fidl_domain_result->state.backlight_on, false);
@@ -252,7 +252,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOnNotSupported) {
       fidl_client_->GetStateAbsolute();
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateAbsoluteResponse*>
+  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateAbsoluteResponse*>&
       fidl_domain_result = fidl_transport_result.value();
   EXPECT_STATUS(fidl_domain_result, zx::error(ZX_ERR_NOT_SUPPORTED));
 }
@@ -270,7 +270,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOffNotSupported) {
       fidl_client_->GetStateAbsolute();
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateAbsoluteResponse*>
+  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateAbsoluteResponse*>&
       fidl_domain_result = fidl_transport_result.value();
   EXPECT_STATUS(fidl_domain_result, zx::error(ZX_ERR_NOT_SUPPORTED));
 }
@@ -281,7 +281,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteError) {
       fidl_client_->GetStateAbsolute();
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateAbsoluteResponse*>
+  fit::result<zx_status_t, fuchsia_hardware_backlight::wire::DeviceGetStateAbsoluteResponse*>&
       fidl_domain_result = fidl_transport_result.value();
   EXPECT_STATUS(fidl_domain_result, zx::error(ZX_ERR_IO));
 }
@@ -301,7 +301,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateAbsoluteOffSuccess) {
       });
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t> fidl_domain_result = fidl_transport_result.value();
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
   EXPECT_OK(fidl_domain_result);
 }
 
@@ -320,7 +320,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateAbsoluteOnSuccess) {
       });
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t> fidl_domain_result = fidl_transport_result.value();
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
   EXPECT_OK(fidl_domain_result);
 }
 
@@ -337,7 +337,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateAbsoluteHardwareError) {
       });
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 
-  fit::result<zx_status_t> fidl_domain_result = fidl_transport_result.value();
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
   EXPECT_STATUS(fidl_domain_result, zx::error(ZX_ERR_IO));
 }
 

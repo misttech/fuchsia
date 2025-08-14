@@ -84,7 +84,7 @@ void DisplayEngineEventsFidl::OnDisplayAdded(
   fidl::OneWayStatus fidl_transport_status =
       fidl_client_.buffer(arena)->OnDisplayAdded(std::move(fidl_display_info));
   if (!fidl_transport_status.ok()) {
-    FDF_LOG(ERROR, "OnDisplayAdded() FIDL failure: %s",
+    FDF_LOG(ERROR, "FIDL error calling OnDisplayAdded: %s",
             fidl_transport_status.error().FormatDescription().c_str());
   }
 }
@@ -101,7 +101,7 @@ void DisplayEngineEventsFidl::OnDisplayRemoved(display::DisplayId display_id) {
   fidl::OneWayStatus fidl_transport_status =
       fidl_client_.buffer(arena)->OnDisplayRemoved(display_id.ToFidl());
   if (!fidl_transport_status.ok()) {
-    FDF_LOG(ERROR, "OnDisplayRemoved() FIDL failure: %s",
+    FDF_LOG(ERROR, "FIDL error calling OnDisplayRemoved: %s",
             fidl_transport_status.error().FormatDescription().c_str());
   }
 }
@@ -120,7 +120,7 @@ void DisplayEngineEventsFidl::OnDisplayVsync(display::DisplayId display_id,
   fidl::OneWayStatus fidl_transport_status = fidl_client_.buffer(arena)->OnDisplayVsync(
       display_id.ToFidl(), timestamp, config_stamp.ToFidl());
   if (!fidl_transport_status.ok()) {
-    FDF_LOG(ERROR, "OnDisplayVsync() FIDL failure: %s",
+    FDF_LOG(ERROR, "FIDL error calling OnDisplayVsync: %s",
             fidl_transport_status.error().FormatDescription().c_str());
   }
 }
@@ -136,7 +136,7 @@ void DisplayEngineEventsFidl::OnCaptureComplete() {
   fdf::Arena arena(kArenaTag);
   fidl::OneWayStatus fidl_transport_status = fidl_client_.buffer(arena)->OnCaptureComplete();
   if (!fidl_transport_status.ok()) {
-    FDF_LOG(ERROR, "OnCaptureComplete() FIDL failure: %s",
+    FDF_LOG(ERROR, "FIDL error calling OnCaptureComplete: %s",
             fidl_transport_status.error().FormatDescription().c_str());
   }
 }

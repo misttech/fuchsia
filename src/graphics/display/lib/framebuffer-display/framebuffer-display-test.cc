@@ -405,7 +405,12 @@ TEST_F(FramebufferDisplayTest, ImportKernelFramebufferImage) {
   // attention to any settings, so this way if that changes, this test will fail intentionally so
   // that this test can be updated to have settings that achieve this test's goals.
   auto settings = fuchsia_sysmem2::wire::SingleBufferSettings::Builder(arena);
-  EXPECT_OK(heap->AllocateVmo(0, settings.Build(), kBufferCollectionId.value(), 0).status());
+  fidl::WireResult<fuchsia_hardware_sysmem::Heap::AllocateVmo> fidl_transport_result =
+      heap->AllocateVmo(0, settings.Build(), kBufferCollectionId.value(), 0);
+  ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
+  fit::result<zx_status_t, fuchsia_hardware_sysmem::wire::HeapAllocateVmoResponse*>&
+      fidl_domain_result = fidl_transport_result.value();
+  EXPECT_OK(fidl_domain_result);
 
   bind_ref.Unbind();
 

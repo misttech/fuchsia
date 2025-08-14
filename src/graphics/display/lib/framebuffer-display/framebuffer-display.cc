@@ -143,10 +143,11 @@ zx::result<> FramebufferDisplay::ImportBufferCollection(
           .token(std::move(buffer_collection_token))
           .buffer_collection_request(std::move(collection_server_endpoint))
           .Build();
-  auto bind_result = sysmem_client_->BindSharedCollection(std::move(bind_request));
-  if (!bind_result.ok()) {
-    fdf::error("Cannot complete FIDL call BindSharedCollection: {}", bind_result.status_string());
-    return zx::error(ZX_ERR_ALREADY_EXISTS);
+  fidl::OneWayStatus fidl_transport_status =
+      sysmem_client_->BindSharedCollection(std::move(bind_request));
+  if (!fidl_transport_status.ok()) {
+    fdf::error("FIDL error calling BindSharedCollection: {}", fidl_transport_status.error());
+    return zx::error(fidl_transport_status.status());
   }
 
   buffer_collections_[buffer_collection_id] =
@@ -177,40 +178,43 @@ zx::result<display::DriverImageId> FramebufferDisplay::ImportImage(
   }
   const fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection>& collection = it->second;
 
-  fidl::WireResult check_transport_result = collection->CheckAllBuffersAllocated();
-  // TODO(https://fxbug.dev/42072690): The sysmem FIDL error logging patterns are
-  // inconsistent across drivers. The FIDL error handling and logging should be
-  // unified.
-  if (!check_transport_result.ok()) {
-    fdf::error("failed to check buffers allocated, {}",
-               check_transport_result.FormatDescription().c_str());
-    return zx::error(check_transport_result.status());
+  fidl::WireResult<fuchsia_sysmem2::BufferCollection::CheckAllBuffersAllocated>
+      check_buffers_transport_result = collection->CheckAllBuffersAllocated();
+  if (!check_buffers_transport_result.ok()) {
+    fdf::error("FIDL error calling CheckAllBuffersAllocated: {}",
+               check_buffers_transport_result.error());
+    return zx::error(check_buffers_transport_result.status());
   }
-  fit::result<fuchsia_sysmem2::wire::Error>& check_domain_result = check_transport_result.value();
-  if (check_domain_result.is_error()) {
-    if (check_domain_result.error_value() == fuchsia_sysmem2::Error::kPending) {
+  fit::result<fuchsia_sysmem2::wire::Error>& check_buffers_domain_result =
+      check_buffers_transport_result.value();
+  if (check_buffers_domain_result.is_error()) {
+    fuchsia_sysmem2::wire::Error& check_buffers_domain_error =
+        check_buffers_domain_result.error_value();
+    fdf::warn("CheckAllBuffersAllocated failed: {}",
+              static_cast<uint32_t>(check_buffers_domain_error));
+    if (check_buffers_domain_error == fuchsia_sysmem2::Error::kPending) {
       return zx::error(ZX_ERR_SHOULD_WAIT);
     }
-    return zx::error(sysmem::V1CopyFromV2Error(check_domain_result.error_value()));
+    return zx::error(sysmem::V1CopyFromV2Error(check_buffers_domain_error));
   }
 
-  fidl::WireResult wait_transport_result = collection->WaitForAllBuffersAllocated();
-  // TODO(https://fxbug.dev/42072690): The sysmem FIDL error logging patterns are
-  // inconsistent across drivers. The FIDL error handling and logging should be
-  // unified.
-  if (!wait_transport_result.ok()) {
-    fdf::error("failed to wait for buffers allocated, {}",
-               wait_transport_result.FormatDescription().c_str());
-    return zx::error(wait_transport_result.status());
+  fidl::WireResult<fuchsia_sysmem2::BufferCollection::WaitForAllBuffersAllocated>
+      wait_for_buffers_transport_result = collection->WaitForAllBuffersAllocated();
+  if (!wait_for_buffers_transport_result.ok()) {
+    fdf::error("FIDL error calling WaitForAllBuffersAllocated: {}",
+               wait_for_buffers_transport_result.error());
+    return zx::error(wait_for_buffers_transport_result.status());
   }
-  fit::result<fuchsia_sysmem2::Error,
+  fit::result<fuchsia_sysmem2::wire::Error,
               fuchsia_sysmem2::wire::BufferCollectionWaitForAllBuffersAllocatedResponse*>&
-      wait_domain_result = wait_transport_result.value();
-  if (wait_domain_result.is_error()) {
-    return zx::error(sysmem::V1CopyFromV2Error(wait_domain_result.error_value()));
+      wait_for_buffers_domain_result = wait_for_buffers_transport_result.value();
+  if (wait_for_buffers_domain_result.is_error()) {
+    fdf::warn("WaitForAllBuffersAllocated failed: {}",
+              static_cast<uint32_t>(wait_for_buffers_domain_result.error_value()));
+    return zx::error(sysmem::V1CopyFromV2Error(wait_for_buffers_domain_result.error_value()));
   }
   fuchsia_sysmem2::wire::BufferCollectionInfo& collection_info =
-      wait_domain_result.value()->buffer_collection_info();
+      wait_for_buffers_domain_result.value()->buffer_collection_info();
 
   if (!collection_info.settings().has_image_format_constraints()) {
     fdf::error("no image format constraints");
@@ -237,17 +241,23 @@ zx::result<display::DriverImageId> FramebufferDisplay::ImportImage(
   zx::vmo vmo = std::move(collection_info.buffers()[0].vmo());
 
   fidl::Arena arena;
-  auto vmo_info_result =
+  fidl::WireResult<fuchsia_sysmem2::Allocator::GetVmoInfo> get_vmo_info_transport_result =
       sysmem_client_->GetVmoInfo(fuchsia_sysmem2::wire::AllocatorGetVmoInfoRequest::Builder(arena)
                                      .vmo(std::move(vmo))
                                      .Build());
-  if (!vmo_info_result.ok()) {
-    return zx::error(vmo_info_result.error().status());
+  if (!get_vmo_info_transport_result.ok()) {
+    fdf::error("FIDL error calling GetVmoInfo: {}", get_vmo_info_transport_result.error());
+    return zx::error(get_vmo_info_transport_result.status());
   }
-  if (!vmo_info_result->is_ok()) {
-    return zx::error(sysmem::V1CopyFromV2Error(vmo_info_result->error_value()));
+  fit::result<fuchsia_sysmem2::wire::Error, fuchsia_sysmem2::wire::AllocatorGetVmoInfoResponse*>&
+      get_vmo_info_domain_result = get_vmo_info_transport_result.value();
+  if (get_vmo_info_domain_result.is_error()) {
+    fdf::warn("GetVmoInfo failed: {}",
+              static_cast<uint32_t>(get_vmo_info_domain_result.error_value()));
+    return zx::error(sysmem::V1CopyFromV2Error(get_vmo_info_domain_result.error_value()));
   }
-  auto& vmo_info = vmo_info_result->value();
+  fuchsia_sysmem2::wire::AllocatorGetVmoInfoResponse*& vmo_info =
+      get_vmo_info_domain_result.value();
   BufferKey buffer_key(vmo_info->buffer_collection_id(), vmo_info->buffer_index());
 
   bool key_matched;
@@ -375,11 +385,12 @@ zx::result<> FramebufferDisplay::SetBufferCollectionConstraints(
 
   auto set_request = fuchsia_sysmem2::wire::BufferCollectionSetConstraintsRequest::Builder(arena);
   set_request.constraints(constraints.Build());
-  auto result = collection->SetConstraints(set_request.Build());
+  fidl::OneWayStatus set_constraints_transport_status =
+      collection->SetConstraints(set_request.Build());
 
-  if (!result.ok()) {
-    fdf::error("failed to set constraints, {}", result.FormatDescription().c_str());
-    return zx::error(result.status());
+  if (!set_constraints_transport_status.ok()) {
+    fdf::error("FIDL error calling SetConstraints: {}", set_constraints_transport_status.error());
+    return zx::error(set_constraints_transport_status.status());
   }
 
   return zx::ok();
@@ -460,11 +471,11 @@ void FramebufferDisplay::DeleteVmo(DeleteVmoRequestView request,
 zx::result<> FramebufferDisplay::Initialize() {
   auto [heap_client, heap_server] = fidl::Endpoints<fuchsia_hardware_sysmem::Heap>::Create();
 
-  auto result = sysmem_hardware_client_->RegisterHeap(
+  fidl::OneWayStatus register_heap_transport_status = sysmem_hardware_client_->RegisterHeap(
       static_cast<uint64_t>(fuchsia_sysmem::wire::HeapType::kFramebuffer), std::move(heap_client));
-  if (!result.ok()) {
-    fdf::error("Failed to register sysmem heap: {}", result.status_string());
-    return zx::error(result.status());
+  if (!register_heap_transport_status.ok()) {
+    fdf::error("FIDL error calling RegisterHeap: {}", register_heap_transport_status.error());
+    return zx::error(register_heap_transport_status.status());
   }
 
   // Start heap server.
@@ -477,9 +488,10 @@ zx::result<> FramebufferDisplay::Initialize() {
                                        fidl::ServerEnd<fuchsia_hardware_sysmem::Heap> server_end) {
                                       OnHeapServerClose(info, server_end.TakeChannel());
                                     });
-    auto result = fidl::WireSendEvent(binding)->OnRegister(std::move(heap_properties));
-    if (!result.ok()) {
-      fdf::error("OnRegister() failed: {}", result.FormatDescription().c_str());
+    fidl::OneWayStatus on_register_transport_status =
+        fidl::WireSendEvent(binding)->OnRegister(std::move(heap_properties));
+    if (!on_register_transport_status.ok()) {
+      fdf::error("FIDL error calling OnRegister: {}", on_register_transport_status.error());
     }
   });
 
@@ -518,9 +530,11 @@ FramebufferDisplay::FramebufferDisplay(
         fuchsia_sysmem2::wire::AllocatorSetDebugClientInfoRequest::Builder(arena);
     set_debug_request.name(debug_name);
     set_debug_request.id(current_process_koid);
-    auto set_debug_status = sysmem_client_->SetDebugClientInfo(set_debug_request.Build());
-    if (!set_debug_status.ok()) {
-      fdf::error("Cannot set sysmem allocator debug info: {}", set_debug_status.status_string());
+    fidl::OneWayStatus set_debug_client_info_transport_status =
+        sysmem_client_->SetDebugClientInfo(set_debug_request.Build());
+    if (!set_debug_client_info_transport_status.ok()) {
+      fdf::error("FIDL error calling SetDebugClientInfo: {}",
+                 set_debug_client_info_transport_status.error());
     }
   }
 }
