@@ -1154,15 +1154,11 @@ impl CurrentTask {
 
         // TODO: POSIX timers are not preserved.
 
-        // TODO: The file descriptor table is unshared, undoing the effect of
-        //       the CLONE_FILES flag of clone(2).
-        //
-        // To make this work, we can put the files in an RwLock and then cache
-        // a reference to the files on the CurrentTask. That will let
-        // functions that have CurrentTask access the FdTable without
-        // needing to grab the read-lock.
-        //
-        // For now, we do not implement that behavior.
+        // TODO: Ensure that the filesystem context is un-shared, undoing the effect of CLONE_FS.
+
+        // The file descriptor table is unshared, undoing the effect of the CLONE_FILES flag of
+        // clone(2).
+        self.files.unshare();
         self.files.exec();
 
         // If SELinux is enabled, enforce permissions related to inheritance of file descriptors

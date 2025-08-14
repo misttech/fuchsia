@@ -184,8 +184,10 @@ impl FdTableInner {
     fn id(&self) -> FdTableId {
         FdTableId::new(&self.store.lock().entries as *const Vec<Option<FdTableEntry>>)
     }
+}
 
-    fn unshare(&self) -> Arc<FdTableInner> {
+impl Clone for FdTableInner {
+    fn clone(&self) -> FdTableInner {
         let inner = {
             let new_store = self.store.lock().clone();
             FdTableInner { store: Mutex::new(new_store) }
@@ -196,7 +198,7 @@ impl FdTableInner {
                 entry.fd_table_id = id;
             }
         }
-        Arc::new(inner)
+        inner
     }
 }
 
@@ -221,17 +223,22 @@ impl FdTable {
         self.inner.lock().id()
     }
 
+    /// Returns new unshared FD table populated with the same FD->`FileObject` mappings as `self`.
     pub fn fork(&self) -> FdTable {
-        let inner = Mutex::new(self.inner.lock().unshare());
+        let old_inner = self.inner.lock();
+        let inner = Mutex::new(Arc::new((**old_inner).clone()));
         FdTable { inner }
     }
 
+    /// Ensures that this FD table is not shared by any other `FdTable` instance(s).
     pub fn unshare(&self) {
         let mut inner = self.inner.lock();
-        let new_inner = inner.unshare();
-        *inner = new_inner;
+        // `make_mut()` is a no-op if this is the only reference to the `FdTableInner`, otherwise
+        // the table will be `clone()`d and the reference updated to the new copy.
+        Arc::make_mut(&mut inner);
     }
 
+    /// Trims close-on-exec FDs from the table.
     pub fn exec(&self) {
         self.retain(|_fd, flags| !flags.contains(FdFlags::CLOEXEC));
     }
@@ -405,6 +412,7 @@ impl FdTable {
             .ok_or_else(|| errno!(EBADF))
     }
 
+    /// Retains only the FDs matching the predicate `f`.
     pub fn retain<F>(&self, f: F)
     where
         F: Fn(FdNumber, &mut FdFlags) -> bool,
