@@ -34,10 +34,12 @@ template("idk_prebuild_manifest") {
   #     Each 'source' path is relative to the Ninja build directory.
   #     Each 'dest' path is relative to the SDK export directory.
   #
-  #   atom_meta [object]
-  #     The value of the sdk_atom() target's original 'meta' argument.
-  #     Without 'source' or 'source_prebuild_info' values. See documentation
-  #     in //build/sdk/sdk_atom.gni for schema details.
+  #   meta_dest (string)
+  #     The path of the metadata file in the final IDK, relative to the IDK
+  #     root. It is usually something like "pkg/<idk_name>/meta.json".
+  #
+  #   meta_contents (scope)
+  #     Scope representing the metadata file contents.
   #
   #   atom_deps (list[string])
   #     List of labels to direct atom dependencies for the current atom.
