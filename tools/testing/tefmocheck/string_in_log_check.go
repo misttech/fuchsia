@@ -509,6 +509,11 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			// LINT.ThenChange(/src/devices/block/drivers/sdmmc/sdmmc-root-device.cc:failed_to_probe_irremovable_device)
 			Type: serialLogType,
 		},
+		// No particular bug, a generic capture for crashes in system_server.
+		&stringInLogCheck{
+			String: "<== BACKTRACE REQUEST: process system_server",
+			Type:   syslogType,
+		},
 	}
 
 	oopsExceptBlocks := []*logBlock{
