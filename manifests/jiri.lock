@@ -1095,8 +1095,8 @@
     },
     {
         "package": "fuchsia_internal/firmware/wlan/synaptics/synadhd",
-        "version": "version:3",
-        "instance_id": "_9j_TzDbblKHp8Bbl4jDVkAj5RFZtofsCzvkOYezz98C"
+        "version": "version:4",
+        "instance_id": "hrrTPDU3YxuHf3-YIdb-zTORS2k9eDwykifboJ-owtgC"
     },
     {
         "package": "fuchsia_internal/linux/performance_image",

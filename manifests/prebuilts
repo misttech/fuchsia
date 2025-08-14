@@ -342,7 +342,7 @@
              internal="true"/>
     <!--   Synaptics wlan firmware -->
     <package name="fuchsia_internal/firmware/wlan/synaptics/synadhd"
-             version="version:3"
+             version="version:4"
              path="prebuilt/connectivity/wlan/firmware/synaptics/synadhd"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              internal="true"/>
