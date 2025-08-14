@@ -195,12 +195,12 @@ template("sdk_static_library") {
 
   # Identify dependencies.
   sdk_deps = []
-  build_deps = []
+  all_deps = []
   if (defined(invoker.deps)) {
-    build_deps += invoker.deps
+    all_deps += invoker.deps
   }
   if (defined(invoker.public_deps)) {
-    build_deps += invoker.public_deps
+    all_deps += invoker.public_deps
 
     foreach(dep, invoker.public_deps) {
       full_label = get_label_info(dep, "label_no_toolchain")
@@ -297,16 +297,16 @@ template("sdk_static_library") {
                                "sdk_headers_for_internal_use",
                                "testonly",
                              ])
-      all_deps = build_deps
       file_base = sdk_root_path
 
       # Other variables used from the local scope:
+      #   all_deps
       #   all_headers
       #   include_base
       #   main_target_name
     }
   } else {
-    not_needed([ "build_deps" ])
+    not_needed([ "all_deps" ])
     not_needed(invoker, [ "sdk_headers_for_internal_use" ])
   }
 
