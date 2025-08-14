@@ -4,6 +4,7 @@
 
 import("//build/zircon/migrated_targets.gni")
 
+# LINT.IfChange
 zx_library("affine") {
   sdk = "source"
   sdk_headers = [
@@ -18,6 +19,8 @@ zx_library("affine") {
     "transform.cc",
   ]
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 group("tests") {
   testonly = true
