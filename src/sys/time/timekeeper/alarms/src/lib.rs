@@ -511,6 +511,8 @@ async fn handle_request(
                 responder.send(Ok(())).unwrap();
             }
         }
+        // TODO: b/422826161 - Implement.
+        fta::WakeAlarmsRequest::SetUtc { .. } => todo!(),
         fta::WakeAlarmsRequest::_UnknownMethod { .. } => {}
     };
 }

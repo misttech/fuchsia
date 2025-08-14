@@ -1,5 +1,15 @@
 [
     {
+        "kind": "struct/member",
+        "name": "fuchsia.time.alarms/InstantUtc.timestamp_utc",
+        "ordinal": "1",
+        "type": "int64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.time.alarms/InstantUtc"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.time.alarms/Notifier.Notify",
         "strictness": "flexible",
@@ -126,6 +136,29 @@
         "resourceness": "resource"
     },
     {
+        "kind": "struct/member",
+        "name": "fuchsia.time.alarms/SetUtcArgs.alarm_id",
+        "ordinal": "3",
+        "type": "string:128"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.time.alarms/SetUtcArgs.deadline",
+        "ordinal": "2",
+        "type": "fuchsia.time.alarms/InstantUtc"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.time.alarms/SetUtcArgs.notifier",
+        "ordinal": "1",
+        "type": "client_end:fuchsia.time.alarms/Notifier"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.time.alarms/SetUtcArgs",
+        "resourceness": "resource"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.time.alarms/WakeAlarms.Cancel",
         "strictness": "flexible",
@@ -154,6 +187,16 @@
         "error": "fuchsia.time.alarms/WakeAlarmsError"
     },
     {
+        "kind": "protocol/member",
+        "name": "fuchsia.time.alarms/WakeAlarms.SetUtc",
+        "strictness": "flexible",
+        "ordinal": "3749569155270746564",
+        "direction": "two_way",
+        "request": "fuchsia.time.alarms/SetUtcArgs",
+        "response": "fuchsia.time.alarms/WakeAlarms_SetUtc_Response",
+        "error": "fuchsia.time.alarms/WakeAlarmsError"
+    },
+    {
         "kind": "protocol",
         "name": "fuchsia.time.alarms/WakeAlarms",
         "openness": "open",
@@ -178,6 +221,11 @@
         "kind": "enum/member",
         "name": "fuchsia.time.alarms/WakeAlarmsError.INTERNAL",
         "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.time.alarms/WakeAlarmsError.INVALID_ARGS",
+        "value": "4"
     },
     {
         "kind": "enum/member",

@@ -1261,6 +1261,9 @@ mod tests {
 
                             log_debug!("serve_fake_wake_alarms: Cancel: {}", alarm_id);
                         }
+                        fta::WakeAlarmsRequest::SetUtc { .. } => {
+                            panic!("Not implemented: b/437984687");
+                        }
                         fta::WakeAlarmsRequest::_UnknownMethod { .. } => unreachable!(),
                     }
                 }

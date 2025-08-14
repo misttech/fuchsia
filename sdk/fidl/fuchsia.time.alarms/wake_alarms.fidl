@@ -15,6 +15,30 @@ using fuchsia.power.system;
 /// unique for all active alarms.
 alias AlarmId = string:128;
 
+/// A timestamp denoting an instant on the UTC timeline.
+@available(added=NEXT)
+type InstantUtc = struct {
+    /// `timestamp_utc` is the number of nanoseconds since the start of the Unix
+    /// epoch, relative to the UTC timezone.
+    ///
+    /// Fuchsia FIDL library `zx` does not have a core type that denotes this
+    /// (in contrast to say `zx.Time`), so we use a custom type to try and make
+    /// it harder to provide a timestamp set on the wrong timeline.
+    ///
+    /// ## Usage note
+    ///
+    /// Timestamps that reference the UTC timeline are unusual. This is because
+    /// the UTC timeline is actively adjusted to match the external notion of
+    /// accurate UTC time, and can change the rate, or can even "jump" both
+    /// forwards or backwards. Adjusting the notion of the UTC time manually
+    /// can pull in or push out deadlines tied to this timeline.
+    ///
+    /// This is why it is always recommended to use the UTC timeline only to
+    /// denote instants on the UTC timeline, and not use it to measure
+    /// durations.
+    timestamp_utc zx.Time;
+};
+
 /// Provides a mechanism for scheduling platform-wide wake alarms.
 ///
 /// An alarm is a promise made by the system to the caller of the API to notify
@@ -59,6 +83,8 @@ open protocol WakeAlarms {
     /// * `INTERNAL` is a server-side bug: an internal fallible call (which is
     ///   expected to be unlikely to fail) has failed somehow. Please report this
     ///   for investigation.
+    /// * [INVALID_ARGS]: a parameter provided by the user is not valid, such
+    ///   as an empty `alarm_id`.
     SetAndWait(@generated_name("SetAndWaitArgs") resource struct {
         /// The deadline at which the timer is supposed to fire. This
         /// corresponds to a time instant on the boot timeline.
@@ -118,6 +144,8 @@ open protocol WakeAlarms {
     /// * [INTERNAL] is a bug: an internal fallible call (which is expected
     ///   to be unlikely to fail) has failed somehow. Please report this for
     ///   investigation.
+    /// * [INVALID_ARGS]: a parameter provided by the user is not valid, such
+    ///   as an empty `alarm_id`.
     Set(@generated_name("SetArgs") resource struct {
         /// Notifier to call when the alarm fires. When the server_end to
         /// this channel is dropped, the alarm will be canceled.
@@ -129,6 +157,61 @@ open protocol WakeAlarms {
 
         /// Optional mode that allows the API to support a number of use cases.
         mode SetMode;
+
+        /// Set to a nonempty value to identify the alarm. A unique value
+        /// of [AlarmId] must be picked per each unique alarm within a
+        /// single FIDL connection's scope.
+        ///
+        /// Supplying an alarm_id for an already scheduled alarm reschedules
+        /// that alarm.
+        alarm_id AlarmId;
+    }) -> () error WakeAlarmsError;
+
+    /// Sets a wake alarm with the provided parameters for an alarm tied to
+    /// the UTC timeline.
+    ///
+    /// Similar to [Set] but uses the UTC timeline as a reference. The main
+    /// difference with respect to [Set] is that the UTC timeline is not
+    /// guaranteed to be monotonic or continuous. A scheduled alarm will match
+    /// the system's best estimate of the current UTC time.
+    ///
+    /// The caller may request multiple alarms concurrently. Re-requesting
+    /// an alarm that has the same `alarm_id` as an already scheduled alarm
+    /// causes that scheduled alarm to be canceled before the same alarm
+    /// is scheduled again.
+    ///
+    /// ## Return value
+    ///
+    /// This method will return when the alarm is *scheduled*. The caller must
+    /// serve [Notifier] to get notified about alarm firing or any errors.
+    ///
+    /// ## Protocol Errors
+    ///
+    /// * [UNSPECIFIED] you are observing a new failure mode which has not
+    ///   been assigned an error code yet. Expect this failure mode to be
+    ///   assigned a more specific error code in future versions of this API.
+    ///   This is not a bug, but an indication that you may need to update the
+    ///   API version.
+    /// * [INTERNAL] is a bug: an internal fallible call (which is expected
+    ///   to be unlikely to fail) has failed somehow. Please report this for
+    ///   investigation.
+    /// * [INVALID_ARGS]: a parameter provided by the user is not valid, such
+    ///   as an empty `alarm_id`.
+    @available(added=NEXT)
+    SetUtc(@generated_name("SetUtcArgs") resource struct {
+        /// Notifier to call when the alarm fires. When the server_end to
+        /// this channel is dropped, the alarm will be canceled.
+        notifier client_end:Notifier;
+
+        /// The deadline at which the timer is supposed to fire. This
+        /// corresponds to a time instant on the UTC timeline.
+        /// The actual instant when the timer fires may change to satisfy the
+        /// current system notion of UTC time.
+        ///
+        /// For example, scheduling a `deadline` for "now + 1h" may trigger
+        /// after 15 minutes of wall clock time expires, if the UTC timeline
+        /// is adjusted to advance by 45 minuts after this alarm is scheduled.
+        deadline InstantUtc;
 
         /// Set to a nonempty value to identify the alarm. A unique value
         /// of [AlarmId] must be picked per each unique alarm within a
@@ -196,4 +279,8 @@ type WakeAlarmsError = flexible enum {
     /// not ever happen in normal operation. Receiving this error means that the
     /// server end of the connection has a bug that must be fixed.
     INTERNAL = 3;
+    /// A parameter provided by the user is incorrect. For example, providing
+    /// an empty value for `alarm_id`.
+    @available(added=NEXT)
+    INVALID_ARGS = 4;
 };
