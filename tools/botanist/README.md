@@ -34,3 +34,9 @@ See: [`//src/diagnostics/log_listener/README.md`](/src/diagnostics/log_listener/
 
 botanist also collects serial logs from devices that support a serial
 connection, outputting the logs to the local path specified by `-serial-log`.
+
+## Unit tests execution
+```shell
+fx set core.x64 --with-host tools/botanist:tests
+fx test botanist
+```

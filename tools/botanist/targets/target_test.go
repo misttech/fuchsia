@@ -95,12 +95,13 @@ type testTarget struct {
 	nodename string
 	serial   string
 	pdu      *targetPDU
+	monsoon  *targetMonsoon
 	ipv4     net.IP
 	ipv6     *net.IPAddr
 }
 
 func (t *testTarget) TestConfig(expectsSSH bool) (any, error) {
-	return TargetInfo(t, expectsSSH, t.pdu)
+	return TargetInfo(t, expectsSSH, &targetInfoOptions{PDU: t.pdu, Monsoon: t.monsoon})
 }
 func (t *testTarget) IPv4() (net.IP, error)      { return t.ipv4, nil }
 func (t *testTarget) IPv6() (*net.IPAddr, error) { return t.ipv6, nil }
@@ -145,6 +146,16 @@ func TestTargetInfo(t *testing.T) {
 				IP:   "192.168.1.1",
 				MAC:  "12:34:56:78:9a:bc",
 				Port: 1,
+			}},
+		},
+		{
+			name: "valid with monsoon",
+			target: testTarget{nodename: "node", serial: "serial", monsoon: &targetMonsoon{
+				Sernum: "12345",
+			}},
+			expectsSSH: true,
+			want: targetInfo{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", Monsoon: &targetMonsoon{
+				Sernum: "12345",
 			}},
 		},
 	}

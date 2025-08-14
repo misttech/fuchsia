@@ -240,6 +240,38 @@ class ApiMoblyTest(unittest.TestCase):
                     ],
                 },
             ),
+            param(
+                "success_valid_controllers_monsoon",
+                override_args={
+                    "mobly_controllers": [
+                        {
+                            "type": "FuchsiaDevice",
+                            "nodename": "fuchsia_abcd",
+                            "monsoon": {"sernum": "123456"},
+                        }
+                    ],
+                },
+                expected_config_obj={
+                    "MoblyParams": {"LogPath": "output_path"},
+                    "TestBeds": [
+                        {
+                            "Controllers": {
+                                "FuchsiaDevice": [
+                                    {
+                                        "honeydew_config": _HONEYDEW_CONFIG,
+                                        "nodename": "fuchsia_abcd",
+                                        "monsoon": {
+                                            "sernum": "123456",
+                                        },
+                                    }
+                                ]
+                            },
+                            "Name": "tb_name",
+                            "TestParams": {},
+                        }
+                    ],
+                },
+            ),
         ]
     )
     def test_new_testbed_config(

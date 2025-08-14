@@ -711,6 +711,10 @@ type targetInfo struct {
 	// PDU is an optional reference to the power distribution unit controlling
 	// power delivery to the target. This will not always be present.
 	PDU *targetPDU `json:"pdu,omitempty"`
+
+	// Monsoon is an optional reference to a monsoon device attached to the
+	// target.
+	Monsoon *targetMonsoon `json:"monsoon,omitempty"`
 }
 
 type targetPDU struct {
@@ -724,16 +728,31 @@ type targetPDU struct {
 	Port uint8 `json:"port"`
 }
 
+type targetMonsoon struct {
+	// Sernum is the serial number of the monsoon device attached to the target.
+	Sernum string `json:"sernum"`
+}
+
+// Options represents devices that can be associated with a target. These are optional and will not be
+// applicable to all target types.
+type targetInfoOptions struct {
+	PDU     *targetPDU
+	Monsoon *targetMonsoon
+}
+
 // LINT.ThenChange(//src/testing/end_to_end/mobly_driver/api_mobly.py)
 
 // TargetInfo returns config used to communicate with the target (device
 // properties, serial paths, SSH properties, etc.) for use by subprocesses.
-func TargetInfo(t FuchsiaTarget, expectsSSH bool, pdu *targetPDU) (targetInfo, error) {
+func TargetInfo(t FuchsiaTarget, expectsSSH bool, opts *targetInfoOptions) (targetInfo, error) {
 	cfg := targetInfo{
 		Type:         "FuchsiaDevice",
 		Nodename:     t.Nodename(),
 		SerialSocket: t.SerialSocketPath(),
-		PDU:          pdu,
+	}
+	if opts != nil {
+		cfg.PDU = opts.PDU
+		cfg.Monsoon = opts.Monsoon
 	}
 	if !expectsSSH {
 		return cfg, nil

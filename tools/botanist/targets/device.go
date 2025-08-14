@@ -86,6 +86,9 @@ type DeviceConfig struct {
 	// botanist to determine which commands to use to flash devices
 	// in fastboot.
 	TCPFastboot bool `json:"tcp_fastboot,omitempty"`
+
+	// Metadata for a monsoon device attached to test device
+	Monsoon *targetMonsoon `json:"monsoon,omitempty"`
 }
 
 // NetworkProperties are the static network properties of a target.
@@ -384,7 +387,7 @@ func (t *Device) Wait(context.Context) error {
 
 // Config returns fields describing the target.
 func (t *Device) TestConfig(expectsSSH bool) (any, error) {
-	return TargetInfo(t, expectsSSH, t.config.PDU)
+	return TargetInfo(t, expectsSSH, &targetInfoOptions{PDU: t.config.PDU, Monsoon: t.config.Monsoon})
 }
 
 func parseOutSigners(keyPaths []string) ([]ssh.Signer, error) {
