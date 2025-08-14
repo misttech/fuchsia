@@ -60,7 +60,7 @@ import("//build/sdk/sdk_atom_alias.gni")
 #
 #     See https://fxbug.dev/42068255 for more details about this field.
 
-# The defaults for a sdk_static_library should match that of a shared_library.
+# The defaults for a sdk_static_library should match that of a static_library.
 set_defaults("sdk_static_library") {
   configs = default_common_binary_configs
 }
@@ -148,10 +148,6 @@ template("sdk_static_library") {
                              "runtime_deps",
                              "sdk_name",
                            ])
-
-    if (!defined(sources)) {
-      sources = []
-    }
 
     if (defined(visibility)) {
       visibility += [ ":$manifest_target_name" ]
