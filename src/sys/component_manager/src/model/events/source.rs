@@ -47,7 +47,7 @@ impl EventSource {
     /// The client might request to subscribe to events that it's not allowed to see. Events
     /// that are allowed should have been defined in its manifest and either offered to it or
     /// requested from the current realm.
-    pub async fn subscribe(
+    async fn subscribe(
         &mut self,
         requests: Vec<EventSubscription>,
     ) -> Result<EventStream, ModelError> {
@@ -76,11 +76,10 @@ impl EventSource {
             }
         }
         // Create an event stream for the given events
-        let subscriptions: Vec<EventSubscription> = vec![];
-        let mut stream = registry.subscribe(&self.subscriber, subscriptions).await?;
+        let mut outgoing_stream = registry.subscribe(&self.subscriber, vec![]).await?;
         for mut request in static_streams {
-            let mut tx = stream.sender();
-            stream.tasks.push(fuchsia_async::Task::spawn(async move {
+            let mut tx = outgoing_stream.sender();
+            outgoing_stream.tasks.push(fuchsia_async::Task::spawn(async move {
                 while let Some((event, _)) = request.next().await {
                     if let Err(_) = tx.send((event, Some(request.route.clone()))).await {
                         break;
@@ -88,12 +87,34 @@ impl EventSource {
                 }
             }));
         }
-        Ok(stream)
+        Ok(outgoing_stream)
     }
 
-    /// Subscribes to all applicable events in a single use statement.
-    /// This method may be called once per path, and will return None
-    /// if the event stream has already been consumed.
+    /// Subscribe to `subscriptions`. If there is more than one `EventSubscription`, `EventStream`
+    /// will preserve the component state machine's internal event order.
+    pub async fn subscribe_on_demand(
+        &mut self,
+        subscriptions: Vec<EventSubscription>,
+    ) -> Result<EventStream, ModelError> {
+        let registry = self.registry.upgrade().ok_or(EventsError::RegistryNotFound)?;
+        let mut request = registry.subscribe(&self.subscriber, subscriptions).await?;
+        let mut outgoing_stream = registry.subscribe(&self.subscriber, vec![]).await?;
+        let mut tx = outgoing_stream.sender();
+        outgoing_stream.tasks.push(fuchsia_async::Task::spawn(async move {
+            while let Some((event, _)) = request.next().await {
+                if let Err(_) = tx.send((event, Some(request.route.clone()))).await {
+                    break;
+                }
+            }
+        }));
+        Ok(outgoing_stream)
+    }
+
+    /// Subscribes to all applicable events in a single use statement. This method may be called
+    /// once per path, and will return None if the event stream has already been consumed.
+    ///
+    /// The order of events on `EventStream` will not necessarily match the internal order of
+    /// events, which is probably a bug.
     async fn subscribe_all(
         &mut self,
         subscriber_moniker: ExtendedMoniker,

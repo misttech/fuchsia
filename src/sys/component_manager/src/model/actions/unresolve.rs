@@ -214,7 +214,7 @@ pub mod tests {
         let mut event_source =
             test.builtin_environment.lock().await.event_source_factory.create_for_above_root();
         let event_stream = event_source
-            .subscribe(
+            .subscribe_on_demand(
                 events
                     .into_iter()
                     .map(|event: Name| EventSubscription {

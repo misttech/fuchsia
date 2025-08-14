@@ -1784,7 +1784,7 @@ impl BuiltinEnvironment {
                 fasync::Task::spawn(async move {
                     serve_event_stream(
                         event_source
-                            .subscribe(vec![
+                            .subscribe_on_demand(vec![
                                 EventSubscription {
                                     event_name: UseEventStreamDecl {
                                         source_name: EventType::Started.into(),

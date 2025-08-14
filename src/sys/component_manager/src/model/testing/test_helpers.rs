@@ -533,7 +533,7 @@ pub async fn new_event_stream(
 ) -> fcomponent::EventStreamProxy {
     let mut event_source = builtin_environment.event_source_factory.create_for_above_root();
     let event_stream = event_source
-        .subscribe(
+        .subscribe_on_demand(
             events
                 .into_iter()
                 .map(|event| EventSubscription {
