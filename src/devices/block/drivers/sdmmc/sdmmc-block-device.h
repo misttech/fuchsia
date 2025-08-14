@@ -18,6 +18,7 @@
 #include <lib/sync/cpp/completion.h>
 #include <lib/trace/event.h>
 #include <lib/zircon-internal/thread_annotations.h>
+#include <lib/zx/result.h>
 #include <threads.h>
 #include <zircon/types.h>
 
@@ -173,6 +174,14 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   // until both queues are empty.
   static constexpr size_t kRoundRobinRequestCount = 16;
 
+  static constexpr uint16_t kRpmbRequestProgramKey = 1;
+  static constexpr uint16_t kRpmbRequestReadWriteCounter = 2;
+  static constexpr uint16_t kRpmbRequestWriteData = 3;
+  static constexpr uint16_t kRpmbRequestReadData = 4;
+  static constexpr uint16_t kRpmbRequestReadResult = 5;
+  static constexpr uint16_t kRpmbRequestWriteConfiguration = 6;
+  static constexpr uint16_t kRpmbRequestReadConfiguration = 7;
+
   zx_status_t ProbeSdLocked() TA_REQ(worker_lock_);
   zx_status_t ProbeMmcLocked() TA_REQ(worker_lock_);
   zx_status_t MmcConfigureBus() TA_REQ(worker_lock_);
@@ -188,6 +197,7 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   zx_status_t Barrier() TA_REQ(worker_lock_);
   zx_status_t Trim(const block_trim_t& txn, const EmmcPartition partition) TA_REQ(worker_lock_);
   zx_status_t SetPartition(const EmmcPartition partition) TA_REQ(worker_lock_);
+  zx::result<uint16_t> GetRpmbRequestType(const RpmbRequestInfo& request) const;
   zx_status_t RpmbRequest(const RpmbRequestInfo& request) TA_REQ(worker_lock_);
 
   void HandleBlockOps(block::BorrowedOperationQueue<PartitionInfo>& txn_list) TA_REQ(worker_lock_);

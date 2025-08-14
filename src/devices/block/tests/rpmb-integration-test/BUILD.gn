@@ -31,11 +31,10 @@ fuchsia_test_package("rpmb-integration-test") {
   test_components = [ ":component" ]
   test_specs = {
     environments = [
+      lilac_env,
       nelson_env,
       sherlock_env,
-
-      # TODO(435721211): Fix RPMB on Sorrel and re-enable.
-      # sorrel_env,
+      sorrel_env,
     ]
   }
 }

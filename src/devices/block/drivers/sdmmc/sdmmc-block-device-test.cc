@@ -1812,6 +1812,89 @@ TEST_P(SdmmcBlockDeviceTest, RpmbRequestLimit) {
   sync_completion_wait(&error_completion, zx::duration::infinite().get());
 }
 
+TEST_P(SdmmcBlockDeviceTest, RpmbPartitionReliableWrite) {
+  constexpr uint16_t kWriteDataRequest = 3;
+  constexpr uint16_t kReadDataRequest = 4;
+
+  struct Frame {
+    uint8_t stuff[196];
+    uint8_t mac[32];
+    uint8_t data[256];
+    uint8_t nonce[16];
+    uint32_t write_counter;
+    uint16_t address;
+    uint16_t block_count;
+    uint16_t result;
+    uint16_t request;
+  };
+
+  sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
+    out_data[MMC_EXT_CSD_RPMB_SIZE_MULT] = 0x74;
+  });
+
+  ASSERT_OK(StartDriverForMmc());
+  BindRpmbClient();
+
+  std::vector<uint32_t> block_count_args;
+  sdmmc_.set_command_callback(SDMMC_SET_BLOCK_COUNT,
+                              [&](const sdmmc_req_t& req) { block_count_args.push_back(req.arg); });
+
+  zx::vmo tx_frames, rx_frames;
+  ASSERT_OK(zx::vmo::create(1024, 0, &tx_frames));
+  ASSERT_OK(zx::vmo::create(512, 0, &rx_frames));
+
+  {
+    Frame frame{.request = htobe16(kWriteDataRequest)};
+    EXPECT_OK(tx_frames.write(&frame, 512, sizeof(frame)));
+  }
+
+  fuchsia_mem::wire::Range rx_frames_range = {.offset = 0, .size = 512};
+  ASSERT_OK(rx_frames.duplicate(ZX_RIGHT_SAME_RIGHTS, &rx_frames_range.vmo));
+
+  fuchsia_hardware_rpmb::wire::Request write_read_request = {
+      .tx_frames =
+          {
+              .offset = 512,  // Verify that the offset is applied by the RPMB driver.
+              .size = 512,
+          },
+      .rx_frames = fidl::ObjectView<fuchsia_mem::wire::Range>::FromExternal(&rx_frames_range),
+  };
+  ASSERT_OK(tx_frames.duplicate(ZX_RIGHT_SAME_RIGHTS, &write_read_request.tx_frames.vmo));
+
+  {
+    auto result = rpmb_client_.sync()->Request(std::move(write_read_request));
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  }
+
+  // Write data request: reliable write should be used.
+  EXPECT_EQ(block_count_args, (std::vector<uint32_t>{MMC_SET_BLOCK_COUNT_RELIABLE_WRITE | 1, 1}));
+  block_count_args.clear();
+
+  {
+    Frame frame{.request = htobe16(kReadDataRequest)};
+    EXPECT_OK(tx_frames.write(&frame, 0, sizeof(frame)));
+  }
+
+  rx_frames_range = {.offset = 0, .size = 512};
+  ASSERT_OK(rx_frames.duplicate(ZX_RIGHT_SAME_RIGHTS, &rx_frames_range.vmo));
+
+  write_read_request = {
+      .tx_frames = {.offset = 0, .size = 512},
+      .rx_frames = fidl::ObjectView<fuchsia_mem::wire::Range>::FromExternal(&rx_frames_range),
+  };
+  ASSERT_OK(tx_frames.duplicate(ZX_RIGHT_SAME_RIGHTS, &write_read_request.tx_frames.vmo));
+
+  {
+    auto result = rpmb_client_.sync()->Request(std::move(write_read_request));
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  }
+
+  // Read data request: reliable write should not be used.
+  EXPECT_EQ(block_count_args, (std::vector<uint32_t>{1, 1}));
+}
+
 void SdmmcBlockDeviceTest::QueueBlockOps() {
   struct BlockContext {
     sync_completion_t completion = {};

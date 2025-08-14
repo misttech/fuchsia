@@ -4,6 +4,7 @@
 
 #include "sdmmc-block-device.h"
 
+#include <endian.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
@@ -806,6 +807,33 @@ zx_status_t SdmmcBlockDevice::Trim(const block_trim_t& txn, const EmmcPartition 
   return ZX_OK;
 }
 
+zx::result<uint16_t> SdmmcBlockDevice::GetRpmbRequestType(const RpmbRequestInfo& request) const {
+  constexpr size_t kRequestTypeOffset = 510;
+  constexpr uint16_t kRequestTypeMask = 0xfff;
+
+  if (request.tx_frames.size < sizeof(fuchsia_hardware_rpmb::wire::kFrameSize)) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  uint16_t request_type_be{};
+  if (zx_status_t status = request.tx_frames.vmo.read(
+          &request_type_be, request.tx_frames.offset + kRequestTypeOffset, sizeof(request_type_be));
+      status != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "Failed to read RPMB TX frame: %s", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  const uint16_t request_type = be16toh(request_type_be);
+  const uint16_t masked_request_type = request_type & kRequestTypeMask;
+
+  // Mask off the RPMB region number if appropriate.
+  if (masked_request_type >= kRpmbRequestProgramKey &&
+      masked_request_type <= kRpmbRequestReadResult) {
+    return zx::success(masked_request_type);
+  }
+  return zx::success(request_type);
+}
+
 zx_status_t SdmmcBlockDevice::RpmbRequest(const RpmbRequestInfo& request) {
   // TODO(https://fxbug.dev/42166356): Find out if RPMB requests can be retried.
   using fuchsia_hardware_rpmb::wire::kFrameSize;
@@ -815,16 +843,34 @@ zx_status_t SdmmcBlockDevice::RpmbRequest(const RpmbRequestInfo& request) {
       request.rx_frames.vmo.is_valid() ? (request.rx_frames.size / kFrameSize) : 0;
   const bool read_needed = rx_frame_count > 0;
 
+  const zx::result<uint16_t> request_type = GetRpmbRequestType(request);
+  if (request_type.is_error()) {
+    return request_type.status_value();
+  }
+
   zx_status_t status = SetPartition(RPMB_PARTITION);
   if (status != ZX_OK) {
     return status;
   }
 
-  const sdmmc_req_t set_tx_block_count = {
+  sdmmc_req_t set_tx_block_count = {
       .cmd_idx = SDMMC_SET_BLOCK_COUNT,
       .cmd_flags = SDMMC_SET_BLOCK_COUNT_FLAGS,
-      .arg = MMC_SET_BLOCK_COUNT_RELIABLE_WRITE | static_cast<uint32_t>(tx_frame_count),
+      .arg = static_cast<uint32_t>(tx_frame_count),
   };
+
+  switch (*request_type) {
+    case kRpmbRequestReadWriteCounter:
+    case kRpmbRequestReadData:
+    case kRpmbRequestReadResult:
+    case kRpmbRequestReadConfiguration:
+      break;
+    default:
+      // Use reliable writes unless the request is one of the four known read request types.
+      set_tx_block_count.arg |= MMC_SET_BLOCK_COUNT_RELIABLE_WRITE;
+      break;
+  }
+
   uint32_t unused_response[4];
   if ((status = sdmmc_->Request(&set_tx_block_count, unused_response)) != ZX_OK) {
     FDF_LOGL(ERROR, logger(), "failed to set block count for RPMB request: %d", status);
