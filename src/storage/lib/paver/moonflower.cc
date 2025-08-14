@@ -191,25 +191,9 @@ zx::result<std::unique_ptr<DevicePartitioner>> MoonflowerPartitionerFactory::New
   return MoonflowerPartitioner::Initialize(devices, svc_root, std::move(block_device));
 }
 
-class MoonflowerAbrManagerInterface {
+class MoonflowerAbrClient : public abr::Client {
  public:
-  virtual ~MoonflowerAbrManagerInterface() = default;
-  // Gets the flags for slots A and B.  If there are pending changes to the flags, they are
-  // included.
-  virtual zx::result<> GetPartitionFlags(uint64_t* a_flags, uint64_t* b_flags) = 0;
-  // Sets the flags for slots A and B.
-  virtual zx::result<> SetPartitionFlags(uint64_t a_flags, uint64_t b_flags) = 0;
-  // Swaps the type GUIDs of all A/B partitions.
-  virtual zx::result<> SwapAbPartitionTypeGuids(bool new_slot_is_b) = 0;
-  /// Discards all pending changes.  This must be called if any of the above methods fail.
-  virtual void Discard() = 0;
-  virtual zx::result<> Commit() = 0;
-};
-
-/// Implementation of A/B management using APIs offered by the storage stack.
-class MoonflowerAbrManager : public MoonflowerAbrManagerInterface {
- public:
-  static zx::result<std::unique_ptr<MoonflowerAbrManager>> Create(
+  static zx::result<std::unique_ptr<MoonflowerAbrClient>> Create(
       const MoonflowerPartitioner* partitioner) {
     zx::result zircon_a = partitioner->FindGptPartition(PartitionSpec(Partition::kZirconA));
     if (zircon_a.is_error()) {
@@ -227,14 +211,15 @@ class MoonflowerAbrManager : public MoonflowerAbrManagerInterface {
         fidl::Endpoints<fuchsia_storage_partitions::PartitionsManager>::Create();
     zx::result result = component::ConnectAt(partitioner->SvcRoot(), std::move(server));
     if (result.is_error()) {
+      ERROR("Failed to connect to PartitionsManager: %s\n", result.status_string());
       return result.take_error();
     }
 
-    return zx::ok(new MoonflowerAbrManager(partitioner, std::move(zircon_a.value()),
-                                           std::move(zircon_b.value()), std::move(client)));
+    return zx::ok(new MoonflowerAbrClient(partitioner, std::move(zircon_a.value()),
+                                          std::move(zircon_b.value()), std::move(client)));
   }
 
-  zx::result<> GetPartitionFlags(uint64_t* a_flags, uint64_t* b_flags) override {
+  zx::result<> GetPartitionFlags(uint64_t* a_flags, uint64_t* b_flags) {
     if (pending_zircon_a_flags_) {
       *a_flags = *pending_zircon_a_flags_;
     } else {
@@ -256,7 +241,7 @@ class MoonflowerAbrManager : public MoonflowerAbrManagerInterface {
     return zx::ok();
   }
 
-  zx::result<> SetPartitionFlags(uint64_t a_flags, uint64_t b_flags) override {
+  zx::result<> SetPartitionFlags(uint64_t a_flags, uint64_t b_flags) {
     zx::result result = UpdatePartitionMetadata(*zircon_a_, a_flags, {});
     if (result.is_error()) {
       return result.take_error();
@@ -270,7 +255,7 @@ class MoonflowerAbrManager : public MoonflowerAbrManagerInterface {
     return zx::ok();
   }
 
-  zx::result<> SwapAbPartitionTypeGuids(bool new_slot_is_b) override {
+  zx::result<> SwapAbPartitionTypeGuids(bool new_slot_is_b) {
     zx::result a_partitions = partitioner_->FindAllPartitions(
         [](const GptPartitionMetadata& metadata) -> bool { return metadata.name.ends_with("_a"); });
     if (a_partitions.is_error()) {
@@ -364,13 +349,13 @@ class MoonflowerAbrManager : public MoonflowerAbrManagerInterface {
     return zx::ok();
   }
 
-  void Discard() override {
+  void Discard() {
     transaction_.reset();
     pending_zircon_a_flags_.reset();
     pending_zircon_b_flags_.reset();
   }
 
-  zx::result<> Commit() override {
+  zx::result<> Commit() {
     if (transaction_.is_valid()) {
       fidl::WireResult result = partitions_manager_->CommitTransaction(std::move(transaction_));
       if (!result.ok()) {
@@ -382,12 +367,15 @@ class MoonflowerAbrManager : public MoonflowerAbrManagerInterface {
     return zx::ok();
   }
 
+  zx::result<> Flush() override { return Commit(); }
+
  private:
-  MoonflowerAbrManager(
+  MoonflowerAbrClient(
       const MoonflowerPartitioner* partitioner, std::unique_ptr<BlockPartitionClient> zircon_a,
       std::unique_ptr<BlockPartitionClient> zircon_b,
       fidl::ClientEnd<fuchsia_storage_partitions::PartitionsManager> partitions_manager)
-      : partitioner_(partitioner),
+      : abr::Client(/*custom=*/true),
+        partitioner_(partitioner),
         zircon_a_(std::move(zircon_a)),
         zircon_b_(std::move(zircon_b)),
         partitions_manager_(std::move(partitions_manager)) {}
@@ -440,187 +428,6 @@ class MoonflowerAbrManager : public MoonflowerAbrManagerInterface {
     return zx::ok(std::move(transaction));
   }
 
-  const MoonflowerPartitioner* partitioner_;
-  std::unique_ptr<BlockPartitionClient> zircon_a_;
-  std::unique_ptr<BlockPartitionClient> zircon_b_;
-  fidl::WireSyncClient<fuchsia_storage_partitions::PartitionsManager> partitions_manager_;
-  zx::eventpair transaction_;
-  std::optional<uint64_t> pending_zircon_a_flags_;
-  std::optional<uint64_t> pending_zircon_b_flags_;
-};
-
-/// Implementation of A/B management which relies on directly writing to the GPT.
-/// TODO(https://fxbug.dev/339491886): Remove when products use storage-host.
-class MoonflowerLegacyAbrManager : public MoonflowerAbrManagerInterface {
- public:
-  static zx::result<std::unique_ptr<MoonflowerLegacyAbrManager>> Create(
-      const MoonflowerPartitioner* partitioner) {
-    zx::result<FindPartitionDetailsResult> zircon_a =
-        partitioner->FindPartitionDetails(PartitionSpec(Partition::kZirconA));
-    if (zircon_a.is_error()) {
-      ERROR("Failed to find Zircon A partition\n");
-      return zircon_a.take_error();
-    }
-
-    zx::result<FindPartitionDetailsResult> zircon_b =
-        partitioner->FindPartitionDetails(PartitionSpec(Partition::kZirconB));
-    if (zircon_b.is_error()) {
-      ERROR("Failed to find Zircon B partition\n");
-      return zircon_b.take_error();
-    }
-
-    return zx::ok(new MoonflowerLegacyAbrManager(partitioner, zircon_a->index, zircon_b->index));
-  }
-
-  zx::result<> GetPartitionFlags(uint64_t* a_flags, uint64_t* b_flags) override {
-    zx::result gpt = GetGpt();
-    if (gpt.is_error()) {
-      return gpt.take_error();
-    }
-    if (zx_status_t status = gpt->GetPartitionFlags(zircon_a_index_, a_flags); status != ZX_OK) {
-      return zx::error(status);
-    }
-    if (zx_status_t status = gpt->GetPartitionFlags(zircon_b_index_, b_flags); status != ZX_OK) {
-      return zx::error(status);
-    }
-    return zx::ok();
-  }
-
-  zx::result<> SetPartitionFlags(uint64_t a_flags, uint64_t b_flags) override {
-    zx::result gpt = GetGpt();
-    if (gpt.is_error()) {
-      return gpt.take_error();
-    }
-    if (zx_status_t status = gpt->SetPartitionFlags(zircon_a_index_, a_flags); status != ZX_OK) {
-      return zx::error(status);
-    }
-    if (zx_status_t status = gpt->SetPartitionFlags(zircon_b_index_, b_flags); status != ZX_OK) {
-      return zx::error(status);
-    }
-    return zx::ok();
-  }
-
-  zx::result<> SwapAbPartitionTypeGuids(bool new_slot_is_b) override {
-    // Find all slot-specific partitions.
-    std::unordered_map<std::string, gpt_partition_t*> a_partitions;
-    std::unordered_map<std::string, gpt_partition_t*> b_partitions;
-    zx::result gpt = GetGpt();
-    if (gpt.is_error()) {
-      return gpt.take_error();
-    }
-    for (uint32_t i = 0; i < gpt::kPartitionCount; i++) {
-      zx::result<gpt_partition_t*> p = gpt->GetPartition(i);
-      if (p.is_error()) {
-        continue;
-      }
-      gpt_partition_t* gpt_entry = p.value();
-
-      char cstring_name[(GPT_NAME_LEN / 2) + 1] = {0};
-      ::utf16_to_cstring(cstring_name, reinterpret_cast<const uint16_t*>(gpt_entry->name),
-                         sizeof(cstring_name));
-      const std::string_view name = cstring_name;
-      if (name.length() < 2) {
-        continue;
-      }
-
-      const std::string_view name_without_suffix = name.substr(0, name.length() - 2);
-      if (name.ends_with("_a")) {
-        a_partitions[std::string(name_without_suffix)] = gpt_entry;  // Drop "_a" suffix.
-      } else if (name.ends_with("_b")) {
-        b_partitions[std::string(name_without_suffix)] = gpt_entry;  // Drop "_b" suffix.
-      }
-    }
-    if (a_partitions.size() != b_partitions.size()) {
-      ERROR("Different number of slot A partitions and slot B partitions.\n");
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
-
-    // Check that all of the new partitions have the same type GUID and have a corresponding old
-    // partition.
-    std::unordered_map<std::string, gpt_partition_t*>& new_partitions =
-        new_slot_is_b ? b_partitions : a_partitions;
-    std::unordered_map<std::string, gpt_partition_t*>& old_partitions =
-        new_slot_is_b ? a_partitions : b_partitions;
-    auto iter = new_partitions.find("boot");
-    if (iter == new_partitions.end()) {
-      ERROR("Failed to find the boot partition.\n");
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
-    uint8_t type_guid[GPT_GUID_LEN];
-    memcpy(type_guid, iter->second->type, GPT_GUID_LEN);
-    bool abort = false;
-    for (const auto& [part_name, part_entry] : new_partitions) {
-      auto iter = old_partitions.find(part_name);
-      if (iter == old_partitions.end()) {
-        ERROR("Failed to find corresponding %s partition.\n", part_name.c_str());
-        abort = true;
-      }
-      if (memcmp(part_entry->type, type_guid, GPT_GUID_LEN) != 0) {
-        // Make note if the device has mixed partition type GUID assignment
-        // (https://fxbug.dev/397766186).
-        ERROR("%s partition has type GUID %s (expected %s)\n", part_name.c_str(),
-              Uuid(part_entry->type).ToString().c_str(), Uuid(type_guid).ToString().c_str());
-        old_partitions.erase(part_name);
-      }
-    }
-    if (abort) {
-      ERROR("Aborting A/B partition type GUID swap.\n");
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
-
-    // Swap the old and new partition type GUIDs.
-    for (const auto& [old_part_name, old_part_entry] : old_partitions) {
-      gpt_partition_t* new_part_entry = new_partitions[old_part_name];
-      memcpy(type_guid, old_part_entry->type, GPT_GUID_LEN);
-      memcpy(old_part_entry->type, new_part_entry->type, GPT_GUID_LEN);
-      memcpy(new_part_entry->type, type_guid, GPT_GUID_LEN);
-    }
-    return zx::ok();
-  }
-
-  void Discard() override { gpt_.reset(); }
-
-  zx::result<> Commit() override {
-    zx::result<> result = zx::ok();
-    if (gpt_) {
-      result = zx::make_result(gpt_->Sync());
-    }
-    gpt_.reset();
-    return result;
-  }
-
- private:
-  MoonflowerLegacyAbrManager(const MoonflowerPartitioner* partitioner, uint32_t zircon_a_index,
-                             uint32_t zircon_b_index)
-      : partitioner_(partitioner),
-        zircon_a_index_(zircon_a_index),
-        zircon_b_index_(zircon_b_index) {}
-
-  zx::result<GptDevice*> GetGpt() {
-    if (!gpt_) {
-      zx::result gpt = partitioner_->ConnectToGpt();
-      if (gpt.is_error()) {
-        return gpt.take_error();
-      }
-      gpt_ = std::move(*gpt);
-    }
-    return zx::ok(gpt_.get());
-  }
-
-  const MoonflowerPartitioner* partitioner_;
-  std::unique_ptr<GptDevice> gpt_;
-  uint32_t zircon_a_index_;
-  uint32_t zircon_b_index_;
-};
-
-class MoonflowerAbrClient : public abr::Client {
- public:
-  explicit MoonflowerAbrClient(std::unique_ptr<MoonflowerAbrManagerInterface> abr)
-      : Client(/*custom=*/true), abr_(std::move(abr)) {}
-
-  zx::result<> Flush() override { return abr_->Commit(); }
-
- private:
   zx::result<> Read(uint8_t* buffer, size_t size) override {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
@@ -631,7 +438,7 @@ class MoonflowerAbrClient : public abr::Client {
 
   zx::result<> ReadCustom(AbrSlotData* a, AbrSlotData* b, uint8_t* one_shot_recovery) override {
     uint64_t a_flags, b_flags;
-    zx::result result = abr_->GetPartitionFlags(&a_flags, &b_flags);
+    zx::result result = GetPartitionFlags(&a_flags, &b_flags);
     if (result.is_error()) {
       return result.take_error();
     }
@@ -656,18 +463,18 @@ class MoonflowerAbrClient : public abr::Client {
     }
 
     uint64_t a_flags, b_flags;
-    zx::result result = abr_->GetPartitionFlags(&a_flags, &b_flags);
+    zx::result result = GetPartitionFlags(&a_flags, &b_flags);
     if (result.is_error()) {
       return result.take_error();
     }
     a_flags = ToMoonflower(*a, *b, a_flags);
     b_flags = ToMoonflower(*b, *a, b_flags);
 
-    auto discard_changes = fit::defer([&]() { abr_->Discard(); });
+    auto discard_changes = fit::defer([&]() { Discard(); });
 
     // SetActiveAndUnbootable calls back into ReadCustom to read the flags, so we need to set them
     // here, even though we'll update them and call SetPartitionFlags again after.
-    result = abr_->SetPartitionFlags(a_flags, b_flags);
+    result = SetPartitionFlags(a_flags, b_flags);
     if (result.is_error()) {
       return result.take_error();
     }
@@ -680,13 +487,13 @@ class MoonflowerAbrClient : public abr::Client {
       return new_b_flags.take_error();
     }
 
-    result = abr_->SetPartitionFlags(*new_a_flags, *new_b_flags);
+    result = SetPartitionFlags(*new_a_flags, *new_b_flags);
     if (result.is_error()) {
       return result.take_error();
     }
 
     if (slot_switch) {
-      zx::result result = abr_->SwapAbPartitionTypeGuids(new_slot_is_b);
+      zx::result result = SwapAbPartitionTypeGuids(new_slot_is_b);
       if (result.is_error()) {
         return result.take_error();
       }
@@ -756,27 +563,31 @@ class MoonflowerAbrClient : public abr::Client {
     return abr_slot_data;
   }
 
-  std::unique_ptr<MoonflowerAbrManagerInterface> abr_;
+  const MoonflowerPartitioner* partitioner_;
+  std::unique_ptr<BlockPartitionClient> zircon_a_;
+  std::unique_ptr<BlockPartitionClient> zircon_b_;
+  fidl::WireSyncClient<fuchsia_storage_partitions::PartitionsManager> partitions_manager_;
+  zx::eventpair transaction_;
+  std::optional<uint64_t> pending_zircon_a_flags_;
+  std::optional<uint64_t> pending_zircon_b_flags_;
 };
 
 zx::result<std::unique_ptr<abr::Client>> MoonflowerPartitioner::CreateAbrClient() const {
-  std::unique_ptr<MoonflowerAbrManagerInterface> abr;
-  if (gpt_->devices().IsStorageHost()) {
-    zx::result result = MoonflowerAbrManager::Create(this);
-    if (result.is_error()) {
-      ERROR("Failed to create ABR manager: %s\n", result.status_string());
-      return result.take_error();
-    }
-    abr = std::move(*result);
-  } else {
-    zx::result result = MoonflowerLegacyAbrManager::Create(this);
-    if (result.is_error()) {
-      ERROR("Failed to create ABR manager: %s\n", result.status_string());
-      return result.take_error();
-    }
-    abr = std::move(*result);
+  // A/B management on moonflower requires storage host APIs for GPT manipulation.
+  if (!gpt_->devices().IsStorageHost()) {
+    ERROR(
+        "Moonflower A/B slots requires the product assembly to be configured with"
+        " `storage_host_enabled` set to true in the `storage` configuration");
+    ERROR("This is the default for moonflower, it is likely you have locally disabled it");
+    ERROR("This device will need to be updated via fastboot instead");
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
-  return zx::ok(std::make_unique<MoonflowerAbrClient>(std::move(abr)));
+
+  zx::result result = MoonflowerAbrClient::Create(this);
+  if (result.is_error()) {
+    ERROR("Failed to create MoonflowerAbrClient: %s\n", result.status_string());
+  }
+  return result;
 }
 
 }  // namespace paver

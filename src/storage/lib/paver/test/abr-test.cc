@@ -307,6 +307,7 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
     args.board_name = "sorrel";
     args.fake_boot_args = std::make_unique<FakeBootArgs>();
     args.disable_block_watcher = false;
+    args.enable_storage_host = true;
     return args;
   }
 
@@ -379,7 +380,7 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
   std::unique_ptr<abr::Client> abr_client_;
 };
 
-void MoonflowerAbrClientTest::MoonflowerTest() {
+TEST_F(MoonflowerAbrClientTest, MoonflowerTest) {
   // Initial active slot A.
   ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexA));
   ASSERT_OK(abr_client_->MarkSlotSuccessful(kAbrSlotIndexA));
@@ -487,21 +488,6 @@ void MoonflowerAbrClientTest::MoonflowerTest() {
   ASSERT_NO_FATAL_FAILURE(CheckPartitionState(4, "vbmeta_b", kBootloaderType, &attributes));
   ASSERT_NO_FATAL_FAILURE(CheckPartitionState(5, "flipped_guid_a", kFactoryType, &attributes));
   ASSERT_NO_FATAL_FAILURE(CheckPartitionState(6, "flipped_guid_b", kBootloaderType, &attributes));
-}
-
-class MoonflowerAbrClientWithStorageHostTest : public MoonflowerAbrClientTest {
- protected:
-  IsolatedDevmgr::Args DevmgrArgs() override {
-    IsolatedDevmgr::Args args = MoonflowerAbrClientTest::DevmgrArgs();
-    args.enable_storage_host = true;
-    return args;
-  }
-};
-
-TEST_F(MoonflowerAbrClientTest, MoonflowerTest) { ASSERT_NO_FATAL_FAILURE(MoonflowerTest()); }
-
-TEST_F(MoonflowerAbrClientWithStorageHostTest, MoonflowerTest) {
-  ASSERT_NO_FATAL_FAILURE(MoonflowerTest());
 }
 
 class FakePartitionClient final : public paver::PartitionClient {
