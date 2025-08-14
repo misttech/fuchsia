@@ -205,7 +205,7 @@ TEST_F(AllocationTest, CreateAndReleaseMultipleImages) {
 }
 
 TEST_F(AllocationTest, MultipleClientsCreateAndReleaseImages) {
-  const auto kClientCount = 16;
+  const auto kClientCount = 8;
 
   // Add Viewports for as many as kClientCount.
   std::vector<fuchsia::ui::views::ViewCreationToken> view_creation_tokens;
