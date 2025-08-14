@@ -115,6 +115,8 @@ template("idk_prebuild_manifest") {
   #           dir. E.g. "arch/x64/lib/libfdio.so". For "shared" prebuilts, this
   #           will usually be a small link-stub, not a real library.
   #
+  #       The following part of the schema only applies to shared libraries.
+  #
   #         dist_lib (string)
   #           Only for "shared" prebuilts. Path of distributable (stripped)
   #           version of the library, relative to the SDK export dir (e.g.

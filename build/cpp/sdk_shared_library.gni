@@ -12,9 +12,12 @@ import("//build/sdk/plasa/plasa_fragment_cc.gni")
 import("//build/sdk/sdk_atom.gni")
 import("//build/sdk/sdk_atom_alias.gni")
 
-# A shared library that can be exported to an SDK in binary form.
+# A library that can be exported to an SDK in binary form.
 #
 # Parameters
+#
+#   prebuilt_library_type (required)
+#     The type of library - "static" or "shared".
 #
 #   category (required)
 #     Publication level of the library in SDKs.
@@ -29,7 +32,7 @@ import("//build/sdk/sdk_atom_alias.gni")
 #     This file is used to ensure modifications to the library's API are
 #     explicitly acknowledged.
 #     If not specified, the path will be "<sdk_name>.api".
-#     Not allowed when `no_headers` is true.
+#     Not allowed when `no_headers` is true or `category` is "internal".
 #
 #   symbols_api (required)
 #     Path to the ifs file containing the public symbols of this library for
@@ -39,12 +42,14 @@ import("//build/sdk/sdk_atom_alias.gni")
 #     This path is not used for API-level specific checks.
 #     TODO(https://fxbug.dev/310006516): Remove when the `arch/` directory is
 #     removed from the IDK if not sooner.
+#     May only be specified when `prebuilt_library_type` is "shared".
 #
 #   no_headers (optional)
 #     Specifies that the library's headers are NOT included in the SDK.
 #     When true, the API modification acknowledgement mechanism is disabled.
 #     (Only the `symbols_api` mechanism will be used.)
 #     Defaults to false.
+#     May only be specified when `prebuilt_library_type` is "shared".
 #
 #   libcxx_linkage (optional)
 #     Whether or how to link libc++. SDK shared libraries cannot link libc++.so
@@ -138,13 +143,11 @@ import("//build/sdk/sdk_atom_alias.gni")
 #      v          v
 #     bar <--- bar_sdk
 #
+template("sdk_prebuilt_library_impl") {
+  assert(defined(invoker.prebuilt_library_type),
+         "The library type must be specified.")
+  prebuilt_library_type = invoker.prebuilt_library_type
 
-# The defaults for a sdk_shared_library should match that of a shared_library.
-set_defaults("sdk_shared_library") {
-  configs = default_shared_library_configs
-}
-
-template("sdk_shared_library") {
   assert(!defined(invoker.stable),
          "Libraries are always stable (except internal).")
   assert(defined(invoker.category), "Must define an SDK category")
@@ -157,19 +160,21 @@ template("sdk_shared_library") {
     "partner",
   ]
 
-  # Temporary to minimize differences with sdk_shared_library(). See https://fxbug.dev/326656468.
+  # TODO(https://fxbug.dev/333907192): Remove "internal" support once devicetree is in "partner".
   is_internal = invoker.category == "internal"
+  assert(
+      !is_internal ||
+          (prebuilt_library_type == "static" && target_name == "devicetree"),
+      "'internal' is only supported for one static library. Do not add more internal static libraries.")
 
   assert(
       valid_categories + [ invoker.category ] - [ invoker.category ] !=
           valid_categories || is_internal,
       "'${target_name}' has unsupported SDK category '${invoker.category}'. Must be one of ${valid_categories}.")
 
-  assert(!is_internal, "'internal' is not supported for sdk_shared_library().")
-
   assert(
-      defined(invoker.symbols_api),
-      "Must define path to the golden ifs file for the PLATFORM build. See comment in //build/cpp/verify_public_symbols.gni")
+      defined(invoker.symbols_api) == (prebuilt_library_type == "shared"),
+      "Shared libraries must define the path to the golden ifs file for the PLATFORM build. See comment in //build/cpp/verify_public_symbols.gni")
 
   output_name = target_name
   if (defined(invoker.output_name)) {
@@ -187,13 +192,51 @@ template("sdk_shared_library") {
   sdk_root_path = "pkg/${sdk_name}"
   sdk_id = "sdk://${sdk_root_path}"
 
+  assert(!defined(invoker.no_headers) || prebuilt_library_type == "shared",
+         "`no_headers` is only supported for shared libraries.")
   no_headers = defined(invoker.no_headers) && invoker.no_headers
 
   main_target_name = target_name
   manifest_target_name = "${main_target_name}_sdk_manifest"
   sdk_target_name = "${main_target_name}_sdk"
 
-  shared_library(main_target_name) {
+  if (prebuilt_library_type == "static") {
+    # This is subtle: If one of the dependencies is listed in runtime_deps
+    # with an _sdk suffix, assume it is a shared_library() target, and ensure
+    # that the current target depends on the dependency built in the same
+    # build variant, i.e. ignoring build variant redirection, even when we
+    # are in the default toolchain.
+    if (current_toolchain == default_toolchain &&
+        defined(invoker.runtime_deps)) {
+      if (defined(invoker.deps)) {
+        _new_deps = []
+        foreach(dep, invoker.deps) {
+          _dep_label = get_label_info(dep, "label_no_toolchain")
+          _dep_sdk_label = _dep_label + "_sdk"
+          if (invoker.runtime_deps + [ _dep_sdk_label ] - [ _dep_sdk_label ] !=
+              invoker.runtime_deps) {
+            dep =
+                _dep_label + "(${shlib_toolchain_no_default_variant_redirect})"
+          }
+          _new_deps += [ dep ]
+        }
+        invoker.deps = []
+        invoker.deps = _new_deps
+      }
+    }
+  }
+
+  if (prebuilt_library_type == "static") {
+    underlying_target_type = "static_library"
+    prebuild_format = "static"
+    allowlist = "//build/sdk:partner_idk_static_libraries_allowlist"
+  } else if (prebuilt_library_type == "shared") {
+    underlying_target_type = "shared_library"
+    prebuild_format = "shared"
+    allowlist = "//build/sdk:partner_idk_shared_libraries_allowlist"
+  }
+
+  target(underlying_target_type, main_target_name) {
     forward_variables_from(invoker,
                            "*",
                            [
@@ -237,16 +280,18 @@ template("sdk_shared_library") {
       configs += [ "//build/config/fuchsia:no_cpp_standard_library" ]
     }
 
-    assert(!defined(metadata))
-    metadata = {
-      if (is_fuchsia) {
-        # Used by sdk_verify_runtime_deps() template.
-        sdk_runtime_deps = [
-          {
-            sdk_id = sdk_id
-            label = get_label_info(":${target_name}", "label_with_toolchain")
-          },
-        ]
+    if (prebuilt_library_type == "shared") {
+      assert(!defined(metadata))
+      metadata = {
+        if (is_fuchsia) {
+          # Used by sdk_verify_runtime_deps() template.
+          sdk_runtime_deps = [
+            {
+              sdk_id = sdk_id
+              label = get_label_info(":${target_name}", "label_with_toolchain")
+            },
+          ]
+        }
       }
     }
 
@@ -257,7 +302,9 @@ template("sdk_shared_library") {
       assert(
           invoker.category == "partner",
           "Create a separate allowlist when adding support for other categories.")
-      deps += [ "//build/sdk:partner_idk_shared_libraries_allowlist" ]
+      deps += [ allowlist ]
+    } else {
+      not_needed([ "allowlist" ])
     }
 
     if (defined(visibility) && generate_plasa_artifacts) {
@@ -350,58 +397,85 @@ template("sdk_shared_library") {
   #
   link_lib_dir = "${sdk_prebuilt_base_for_target_api_level}/lib"
 
-  # Select shared library binary from the proper toolchain.
-  # See shlib_toolchain_no_default_variant_redirect documentation comment
-  # in //build/config/BUILDCONFIG.gn to understand why this is needed.
-  main_lib_target =
-      ":${main_target_name}(${shlib_toolchain_no_default_variant_redirect})"
-  main_lib_out_dir = get_label_info(main_lib_target, "root_out_dir")
-  lib_name = "lib${output_name}.so"
+  if (prebuilt_library_type == "static") {
+    # Use the binary from the shared library toolchain to allow the static
+    # libraries shipped in the IDK to be linked into shared libraries See
+    # https://fxbug.dev/404169865.
+    main_lib_target = ":${main_target_name}(${shlib_toolchain})"
+    main_lib_out_dir = get_label_info(main_lib_target, "target_out_dir")
 
-  link_lib = "${link_lib_dir}/${lib_name}"
-  link_lib_source = "${main_lib_out_dir}/link_stub/${lib_name}"
-  dist_lib = "${sdk_prebuilt_base_for_target_api_level}/dist/${lib_name}"
-  debug_lib = "${sdk_prebuilt_base_for_target_api_level}/debug/${lib_name}"
-
-  ifs_file_name = "lib${output_name}.ifs"
-  generated_ifs_file = "${main_lib_out_dir}/${ifs_file_name}"
-  packaged_ifs_file = "${link_lib_dir}/${ifs_file_name}"
-  _goldens_dir = "//sdk/history"
-  ifs_goldens_dir = "${_goldens_dir}/${current_build_target_api_level}"
-  ifs_golden_file = "${ifs_goldens_dir}/${ifs_file_name}"
-
-  # TODO(https://fxbug.dev/310006516): Remove this block when the `arch/`
-  # directory is removed from the IDK.
-  if (current_build_target_api_level == "PLATFORM") {
-    # For legacy reasons, the file name in the IDK is different.
-    ifs_file_name = "${output_name}.ifs"
-
-    # Unlike other target API levels, the golden file is not in `_goldens_dir`.
-    # It is in the same directory as the BUILD.gn file except when the `api`
-    # parameter is specified, in which case it is next to that file.
-    if (defined(invoker.api)) {
-      ifs_golden_file = get_path_info(invoker.api, "dir") + "/${ifs_file_name}"
+    # If output_name already starts with `lib`, GN won't prepend lib to it.
+    #
+    # E.g. the following target/output name yields the corresponding lib file:
+    #  ngunwind -> libngunwind.a
+    #  libngunwind -> libngunwind.a
+    #
+    # Prepend ### and use string_replace to mimic behavior of has_prefix, for lack
+    # of such a function in GN.
+    if (string_replace("###${output_name}", "###lib", "") !=
+        "###${output_name}") {
+      lib_name = "${output_name}.a"
     } else {
-      ifs_golden_file = get_path_info(ifs_file_name, "abspath")
+      lib_name = "lib${output_name}.a"
     }
 
-    # Verify that the path generated above is equivalent to that specified by
-    # the `symbols_api` parameter.
-    # TODO(https://fxbug.dev/342032854): Remove the `symbols_api` parameter
-    # since the path can be generated and it is only used for this target API
-    # level, for which it will be unnecessary in the future.
-    assert(rebase_path(invoker.symbols_api, "//") ==
-           rebase_path(ifs_golden_file, "//"))
+    link_lib = "${link_lib_dir}/${lib_name}"
+    link_lib_source = "${main_lib_out_dir}/${lib_name}"
+  } else if (prebuilt_library_type == "shared") {
+    # Select shared library binary from the proper toolchain.
+    # See shlib_toolchain_no_default_variant_redirect documentation comment
+    # in //build/config/BUILDCONFIG.gn to understand why this is needed.
+    main_lib_target =
+        ":${main_target_name}(${shlib_toolchain_no_default_variant_redirect})"
+    main_lib_out_dir = get_label_info(main_lib_target, "root_out_dir")
+    lib_name = "lib${output_name}.so"
 
-    packaged_ifs_file = "${sdk_root_path}/${ifs_file_name}"
-  }
+    link_lib = "${link_lib_dir}/${lib_name}"
+    link_lib_source = "${main_lib_out_dir}/link_stub/${lib_name}"
+    dist_lib = "${sdk_prebuilt_base_for_target_api_level}/dist/${lib_name}"
+    debug_lib = "${sdk_prebuilt_base_for_target_api_level}/debug/${lib_name}"
 
-  ifs_file_for_idk = ifs_golden_file
+    ifs_file_name = "lib${output_name}.ifs"
+    generated_ifs_file = "${main_lib_out_dir}/${ifs_file_name}"
+    packaged_ifs_file = "${link_lib_dir}/${ifs_file_name}"
+    _goldens_dir = "//sdk/history"
+    ifs_goldens_dir = "${_goldens_dir}/${current_build_target_api_level}"
+    ifs_golden_file = "${ifs_goldens_dir}/${ifs_file_name}"
 
-  # There are not golden files for "HEAD", but the IDK needs to provide IFS
-  # files for all API levels. Therefore, use the generated file.
-  if (current_build_target_api_level == "HEAD") {
-    ifs_file_for_idk = generated_ifs_file
+    # TODO(https://fxbug.dev/310006516): Remove this block when the `arch/`
+    # directory is removed from the IDK.
+    if (current_build_target_api_level == "PLATFORM") {
+      # For legacy reasons, the file name in the IDK is different.
+      ifs_file_name = "${output_name}.ifs"
+
+      # Unlike other target API levels, the golden file is not in `_goldens_dir`.
+      # It is in the same directory as the BUILD.gn file except when the `api`
+      # parameter is specified, in which case it is next to that file.
+      if (defined(invoker.api)) {
+        ifs_golden_file =
+            get_path_info(invoker.api, "dir") + "/${ifs_file_name}"
+      } else {
+        ifs_golden_file = get_path_info(ifs_file_name, "abspath")
+      }
+
+      # Verify that the path generated above is equivalent to that specified by
+      # the `symbols_api` parameter.
+      # TODO(https://fxbug.dev/342032854): Remove the `symbols_api` parameter
+      # since the path can be generated and it is only used for this target API
+      # level, for which it will be unnecessary in the future.
+      assert(rebase_path(invoker.symbols_api, "//") ==
+             rebase_path(ifs_golden_file, "//"))
+
+      packaged_ifs_file = "${sdk_root_path}/${ifs_file_name}"
+    }
+
+    ifs_file_for_idk = ifs_golden_file
+
+    # There are not golden files for "HEAD", but the IDK needs to provide IFS
+    # files for all API levels. Therefore, use the generated file.
+    if (current_build_target_api_level == "HEAD") {
+      ifs_file_for_idk = generated_ifs_file
+    }
   }
 
   sdk_files = sdk_header_files + [
@@ -409,29 +483,33 @@ template("sdk_shared_library") {
                   source = link_lib_source
                   dest = link_lib
                 },
-                {
-                  source = "${main_lib_out_dir}/${lib_name}"
-                  dest = dist_lib
-                },
-                {
-                  source = "${main_lib_out_dir}/lib.unstripped/${lib_name}"
-                  dest = debug_lib
-                },
-                {
-                  # `generated_ifs_file` contains text, including undefined
-                  # symbols, that should not be exposed. In addition, the Target
-                  # and other such text can vary by architecture and would cause
-                  # errors when assembling the IDK. `verify_public_symbols()`
-                  # removes such text, so we must use its output for the IDK.
-                  # `verify_public_symbols_target_name` verifies the golden file
-                  # against a stripped version of `generated_ifs_file`, so we
-                  # can use the golden file here. (Ideally, we would use the
-                  # stripped file - see https://fxbug.dev/383416850.)
-                  source = ifs_file_for_idk
-                  dest = packaged_ifs_file
-                },
               ]
 
+  if (prebuilt_library_type == "shared") {
+    sdk_files += [
+      {
+        source = "${main_lib_out_dir}/${lib_name}"
+        dest = dist_lib
+      },
+      {
+        source = "${main_lib_out_dir}/lib.unstripped/${lib_name}"
+        dest = debug_lib
+      },
+      {
+        # `generated_ifs_file` contains text, including undefined
+        # symbols, that should not be exposed. In addition, the Target
+        # and other such text can vary by architecture and would cause
+        # errors when assembling the IDK. `verify_public_symbols()`
+        # removes such text, so we must use its output for the IDK.
+        # `verify_public_symbols_target_name` verifies the golden file
+        # against a stripped version of `generated_ifs_file`, so we
+        # can use the golden file here. (Ideally, we would use the
+        # stripped file - see https://fxbug.dev/383416850.)
+        source = ifs_file_for_idk
+        dest = packaged_ifs_file
+      },
+    ]
+  }
   if (generate_plasa_artifacts) {
     _plasa_artifacts_target_name = "${main_target_name}_plasa"
     plasa_fragment_cc(_plasa_artifacts_target_name) {
@@ -454,19 +532,27 @@ template("sdk_shared_library") {
   }
 
   # LINT.IfChange
+  _common_binaries = {
+    api_level = "$current_build_target_api_level"
+    arch = target_cpu
+    link_lib = link_lib
+  }
   _prebuild_info = {
-    format = "shared"
+    format = prebuild_format
     include_dir = include_dest
     file_base = sdk_root_path
     headers = sdk_metadata_headers
-    binaries = {
-      api_level = "$current_build_target_api_level"
-      arch = target_cpu
-      dist_lib = dist_lib
-      dist_path = "lib/${lib_name}"
-      link_lib = link_lib
-      debug_lib = debug_lib
-      ifs = packaged_ifs_file
+    if (prebuilt_library_type == "shared") {
+      binaries = {
+        forward_variables_from(_common_binaries, "*")
+
+        dist_lib = dist_lib
+        dist_path = "lib/${lib_name}"
+        debug_lib = debug_lib
+        ifs = packaged_ifs_file
+      }
+    } else {
+      binaries = _common_binaries
     }
   }
 
@@ -488,15 +574,19 @@ template("sdk_shared_library") {
     headers = all_headers
   }
 
-  verify_public_symbols_target_name =
-      "${main_target_name}_sdk_verify_public_symbols"
-  verify_public_symbols(verify_public_symbols_target_name) {
-    current = generated_ifs_file
-    reference = ifs_golden_file
-    library_name =
-        get_label_info(":${main_target_name}", "label_with_toolchain")
+  verify_public_symbols = prebuilt_library_type == "shared" &&
+                          current_build_target_api_level != "HEAD"
+  if (verify_public_symbols) {
+    verify_public_symbols_target_name =
+        "${main_target_name}_sdk_verify_public_symbols"
+    verify_public_symbols(verify_public_symbols_target_name) {
+      current = generated_ifs_file
+      reference = ifs_golden_file
+      library_name =
+          get_label_info(":${main_target_name}", "label_with_toolchain")
 
-    deps = [ main_lib_target ]
+      deps = [ main_lib_target ]
+    }
   }
 
   sdk_atom(manifest_target_name) {
@@ -545,7 +635,7 @@ template("sdk_shared_library") {
     if (should_verify_pragma) {
       non_sdk_deps += [ ":${verify_pragma_target_name}" ]
     }
-    if (current_build_target_api_level != "HEAD") {
+    if (verify_public_symbols) {
       non_sdk_deps += [ ":${verify_public_symbols_target_name}" ]
     }
     if (generate_plasa_artifacts) {
@@ -581,4 +671,21 @@ template("sdk_shared_library") {
       non_sdk_deps += [ ":${_plasa_artifacts_target_name}" ]
     }
   }
+}
+
+# A shared library that can be exported to an SDK in binary form.
+#
+# See the comments for `sdk_prebuilt_library_impl()` for parameters.
+# `prebuilt_library_type` is already set.
+template("sdk_shared_library") {
+  assert(!defined(invoker.prebuilt_library_type))
+  sdk_prebuilt_library_impl(target_name) {
+    prebuilt_library_type = "shared"
+    forward_variables_from(invoker, "*")
+  }
+}
+
+# The defaults for a sdk_shared_library should match that of a shared_library.
+set_defaults("sdk_shared_library") {
+  configs = default_shared_library_configs
 }
