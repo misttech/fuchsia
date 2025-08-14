@@ -174,9 +174,9 @@ template("sdk_shared_library") {
   assert(
       defined(invoker.sdk_name),
       "Libraries in the IDK must specify a name that is meaningful in that context.")
-  atom_name = invoker.sdk_name
+  sdk_name = invoker.sdk_name
 
-  sdk_root_path = "pkg/${atom_name}"
+  sdk_root_path = "pkg/${sdk_name}"
   sdk_id = "sdk://${sdk_root_path}"
 
   no_headers = defined(invoker.no_headers) && invoker.no_headers
@@ -243,7 +243,7 @@ template("sdk_shared_library") {
       }
     }
 
-    # Ensure that 'sdk_shared_library()' targets are included in the allowlist.
+    # Ensure that targets using this template are included in the allowlist.
     # The allowlist target's `visibility` list ensures that the target using
     # this template is in the allowlist.
     assert(
@@ -314,9 +314,6 @@ template("sdk_shared_library") {
         "Library does not contain any headers for external use. If this is intentional, set `no_headers = true`")
   }
 
-  sdk_metadata_headers = []
-  sdk_header_files = []
-
   if (defined(invoker.include_base)) {
     include_base = invoker.include_base
   } else if (!no_headers) {
@@ -324,6 +321,9 @@ template("sdk_shared_library") {
   }
 
   include_dest = "${sdk_root_path}/include"
+
+  sdk_metadata_headers = []
+  sdk_header_files = []
 
   foreach(header, all_headers) {
     destination = rebase_path(header, include_base)
@@ -339,16 +339,23 @@ template("sdk_shared_library") {
 
   # Add binaries.
   #
+  link_lib_dir = "${sdk_prebuilt_base_for_target_api_level}/lib"
+
   # Select shared library binary from the proper toolchain.
   # See shlib_toolchain_no_default_variant_redirect documentation comment
   # in //build/config/BUILDCONFIG.gn to understand why this is needed.
-  shared_lib_target =
+  main_lib_target =
       ":${main_target_name}(${shlib_toolchain_no_default_variant_redirect})"
-  shared_out_dir = get_label_info(shared_lib_target, "root_out_dir")
+  main_lib_out_dir = get_label_info(main_lib_target, "root_out_dir")
   lib_name = "lib${output_name}.so"
+
+  link_lib = "${link_lib_dir}/${lib_name}"
+  link_lib_source = "${main_lib_out_dir}/link_stub/${lib_name}"
+  dist_lib = "${sdk_prebuilt_base_for_target_api_level}/dist/${lib_name}"
+  debug_lib = "${sdk_prebuilt_base_for_target_api_level}/debug/${lib_name}"
+
   ifs_file_name = "lib${output_name}.ifs"
-  generated_ifs_file = "${shared_out_dir}/${ifs_file_name}"
-  link_lib_dir = "${sdk_prebuilt_base_for_target_api_level}/lib"
+  generated_ifs_file = "${main_lib_out_dir}/${ifs_file_name}"
   packaged_ifs_file = "${link_lib_dir}/${ifs_file_name}"
   _goldens_dir = "//sdk/history"
   ifs_goldens_dir = "${_goldens_dir}/${current_build_target_api_level}"
@@ -380,10 +387,6 @@ template("sdk_shared_library") {
     packaged_ifs_file = "${sdk_root_path}/${ifs_file_name}"
   }
 
-  link_lib = "${link_lib_dir}/${lib_name}"
-  dist_lib = "${sdk_prebuilt_base_for_target_api_level}/dist/${lib_name}"
-  debug_lib = "${sdk_prebuilt_base_for_target_api_level}/debug/${lib_name}"
-
   ifs_file_for_idk = ifs_golden_file
 
   # There are not golden files for "HEAD", but the IDK needs to provide IFS
@@ -394,22 +397,22 @@ template("sdk_shared_library") {
 
   sdk_files = sdk_header_files + [
                 {
-                  source = "${shared_out_dir}/link_stub/${lib_name}"
+                  source = link_lib_source
                   dest = link_lib
                 },
                 {
-                  source = "${shared_out_dir}/${lib_name}"
+                  source = "${main_lib_out_dir}/${lib_name}"
                   dest = dist_lib
                 },
                 {
-                  source = "${shared_out_dir}/lib.unstripped/${lib_name}"
+                  source = "${main_lib_out_dir}/lib.unstripped/${lib_name}"
                   dest = debug_lib
                 },
                 {
                   # `generated_ifs_file` contains text, including undefined
                   # symbols, that should not be exposed. In addition, the Target
                   # and other such text can vary by architecture and would cause
-                  # errors when assemblying the IDK. `verify_public_symbols()`
+                  # errors when assembling the IDK. `verify_public_symbols()`
                   # removes such text, so we must use its output for the IDK.
                   # `verify_public_symbols_target_name` verifies the golden file
                   # against a stripped version of `generated_ifs_file`, so we
@@ -467,7 +470,7 @@ template("sdk_shared_library") {
   verify_public_headers_target = "${main_target_name}.verify_public_headers"
   verify_public_headers(verify_public_headers_target) {
     forward_variables_from(invoker, [ "testonly" ])
-    target_label = shared_lib_target
+    target_label = main_lib_target
     headers = all_headers
   }
 
@@ -479,27 +482,26 @@ template("sdk_shared_library") {
     library_name =
         get_label_info(":${main_target_name}", "label_with_toolchain")
 
-    deps = [ shared_lib_target ]
+    deps = [ main_lib_target ]
   }
 
   sdk_atom(manifest_target_name) {
     forward_variables_from(invoker,
                            [
-                             "testonly",
+                             "category",
                              "sdk_area",
+                             "testonly",
                            ])
 
     id = sdk_id
-    idk_name = atom_name
-
-    category = invoker.category
+    idk_name = sdk_name
 
     if (no_headers) {
       assert(
           !defined(invoker.api) && sdk_header_files == [],
           "`no_headers` targets do not require/support modification acknowledgement.")
     } else {
-      api = "${atom_name}.api"
+      api = "${sdk_name}.api"
       if (defined(invoker.api)) {
         assert(
             rebase_path(invoker.api, "//") != rebase_path(api, "//"),
@@ -522,7 +524,7 @@ template("sdk_shared_library") {
 
     non_sdk_deps = [
       ":${verify_pragma_target_name}",
-      shared_lib_target,
+      main_lib_target,
     ]
     if (current_build_target_api_level != "HEAD") {
       non_sdk_deps += [ ":${verify_public_symbols_target_name}" ]
@@ -540,10 +542,10 @@ template("sdk_shared_library") {
 
   sdk_manifest_file = "${target_gen_dir}/${manifest_target_name}.sdk"
 
-  verify_runtime_deps_target = "${main_target_name}_verify"
+  verify_runtime_deps_target = "${main_target_name}_verify_runtime_deps"
 
   sdk_verify_runtime_deps(verify_runtime_deps_target) {
-    atom_target = shared_lib_target
+    atom_target = main_lib_target
     manifest_file = sdk_manifest_file
     manifest_target = ":$manifest_target_name"
   }

@@ -78,22 +78,15 @@ template("sdk_static_library") {
     "partner",
   ]
 
-  # TODO(https://fxbug.dev/333907192): Remove "internal" support once the
-  # TODOs in the assert below have been addressed.
+  # TODO(https://fxbug.dev/333907192): Remove "internal" support once devicetree is in "partner".
   is_internal = invoker.category == "internal"
+  assert(!is_internal || target_name == "devicetree",
+         "Do not add more internal static libraries.")
 
   assert(
       valid_categories + [ invoker.category ] - [ invoker.category ] !=
-          valid_categories ||
-          # TODO(https://fxbug.dev/333907192): Remove "internal" per above.
-          is_internal,
+          valid_categories || is_internal,
       "'${target_name}' has unsupported SDK category '${invoker.category}'. Must be one of ${valid_categories}.")
-
-  assert(
-      !is_internal ||
-          # TODO(https://fxbug.dev/343059325): Remove once devicetree is in "partner".
-          target_name == "devicetree",
-      "Do not add more internal static libraries.")
 
   output_name = target_name
   if (defined(invoker.output_name)) {
@@ -107,6 +100,7 @@ template("sdk_static_library") {
       defined(invoker.sdk_name),
       "Libraries in the IDK must specify a name that is meaningful in that context.")
   sdk_name = invoker.sdk_name
+
   sdk_root_path = "pkg/${sdk_name}"
   sdk_id = "sdk://${sdk_root_path}"
 
@@ -150,7 +144,7 @@ template("sdk_static_library") {
                            ])
 
     if (defined(visibility)) {
-      visibility += [ ":$manifest_target_name" ]
+      visibility += [ ":${manifest_target_name}" ]
     }
 
     if (!defined(libcxx_linkage)) {
@@ -168,7 +162,7 @@ template("sdk_static_library") {
     if (libcxx_linkage == "static") {
       configs += [ "//build/config/fuchsia:static_cpp_standard_library" ]
     } else {
-      # Adding this linker flag keeps us honest about not commiting to a
+      # Adding this linker flag keeps us honest about not committing to a
       # specific C++ ABI. If this flag is causing your library to not
       # compile, consider whether your library really ought to be in the SDK.
       # If so, consider including your library in the SDK as source rather than
@@ -178,7 +172,7 @@ template("sdk_static_library") {
       configs += [ "//build/config/fuchsia:no_cpp_standard_library" ]
     }
 
-    # Ensure that 'sdk_static_library()' targets are included in the allowlist.
+    # Ensure that targets using this template are included in the allowlist.
     # The allowlist target's `visibility` list ensures that the target using
     # this template is in the allowlist.
     if (!is_internal) {
@@ -214,9 +208,6 @@ template("sdk_static_library") {
     sdk_deps += invoker.runtime_deps
   }
 
-  sdk_header_files = []
-  sdk_metadata_headers = []
-
   # Process headers.
   all_headers = []
   if (defined(invoker.public)) {
@@ -247,6 +238,10 @@ template("sdk_static_library") {
   }
 
   include_dest = "${sdk_root_path}/include"
+
+  sdk_metadata_headers = []
+  sdk_header_files = []
+
   foreach(header, all_headers) {
     destination = rebase_path(header, include_base)
     header_dest = "${include_dest}/${destination}"
@@ -261,12 +256,13 @@ template("sdk_static_library") {
 
   # Add binaries.
   #
+  link_lib_dir = "${sdk_prebuilt_base_for_target_api_level}/lib"
+
   # Use the binary from the shared library toolchain to allow the static
   # libraries shipped in the IDK to be linked into shared libraries See
   # https://fxbug.dev/404169865.
-  static_lib_target = ":${main_target_name}(${shlib_toolchain})"
-  static_out_dir = get_label_info(static_lib_target, "target_out_dir")
-  lib_name = "lib${output_name}.a"
+  main_lib_target = ":${main_target_name}(${shlib_toolchain})"
+  main_lib_out_dir = get_label_info(main_lib_target, "target_out_dir")
 
   # If output_name already starts with `lib`, GN won't prepend lib to it.
   #
@@ -279,11 +275,16 @@ template("sdk_static_library") {
   if (string_replace("###${output_name}", "###lib", "") !=
       "###${output_name}") {
     lib_name = "${output_name}.a"
+  } else {
+    lib_name = "lib${output_name}.a"
   }
-  link_lib = "${sdk_prebuilt_base_for_target_api_level}/lib/${lib_name}"
+
+  link_lib = "${link_lib_dir}/${lib_name}"
+  link_lib_source = "${main_lib_out_dir}/${lib_name}"
+
   sdk_files = sdk_header_files + [
                 {
-                  source = "${static_out_dir}/${lib_name}"
+                  source = link_lib_source
                   dest = link_lib
                 },
               ]
@@ -336,16 +337,16 @@ template("sdk_static_library") {
   verify_public_headers_target = "${main_target_name}.verify_public_headers"
   verify_public_headers(verify_public_headers_target) {
     forward_variables_from(invoker, [ "testonly" ])
-    target_label = static_lib_target
+    target_label = main_lib_target
     headers = all_headers
   }
 
   sdk_atom(manifest_target_name) {
     forward_variables_from(invoker,
                            [
-                             "testonly",
                              "category",
                              "sdk_area",
+                             "testonly",
                            ])
 
     id = sdk_id
@@ -374,11 +375,15 @@ template("sdk_static_library") {
     }
 
     files = sdk_files
+
     deps = sdk_deps
 
-    non_sdk_deps = [ static_lib_target ]
+    non_sdk_deps = [ main_lib_target ]
     if (should_verify_pragma) {
       non_sdk_deps += [ ":${verify_pragma_target_name}" ]
+    }
+    if (generate_plasa_artifacts) {
+      non_sdk_deps += [ ":${_plasa_artifacts_target_name}" ]
     }
 
     # Explicitly add non-public dependencies, in case some of the source files
@@ -386,28 +391,28 @@ template("sdk_static_library") {
     if (defined(invoker.deps)) {
       non_sdk_deps += invoker.deps
     }
-    if (generate_plasa_artifacts) {
-      non_sdk_deps += [ ":${_plasa_artifacts_target_name}" ]
-    }
   }
 
   sdk_manifest_file = "${target_gen_dir}/${manifest_target_name}.sdk"
-  verify_runtime_deps_target = "${target_name}_verify_runtime_deps"
+
+  verify_runtime_deps_target = "${main_target_name}_verify_runtime_deps"
 
   sdk_verify_runtime_deps(verify_runtime_deps_target) {
-    atom_target = static_lib_target
+    atom_target = main_lib_target
     manifest_file = sdk_manifest_file
     manifest_target = ":$manifest_target_name"
   }
 
   sdk_atom_alias(sdk_target_name) {
     atom = ":${manifest_target_name}"
+
     non_sdk_deps = [
       ":${verify_public_headers_target}",
       ":${verify_runtime_deps_target}",
     ]
+
     if (generate_plasa_artifacts) {
-      non_sdk_deps += [ ":$_plasa_artifacts_target_name" ]
+      non_sdk_deps += [ ":${_plasa_artifacts_target_name}" ]
     }
   }
 }
