@@ -255,6 +255,20 @@ LogState* FuchsiaLogGetStateLocked() { return state; }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 
+__EXPORT zx_status_t FuchsiaLogCreateLogger(const LogSettings* settings, Logger** logger_out) {
+  if (auto logger = Logger::Create(false, settings); logger.is_error()) {
+    return logger.status_value();
+  } else {
+    *logger_out = (*logger).release();
+    return ZX_OK;
+  }
+}
+
+__EXPORT void FuchsiaLogDestroyLogger(Logger* l) { std::unique_ptr<Logger> logger(l); }
+
+__EXPORT
+uint8_t FuchsiaLogGetMinSeverity(const Logger* logger) { return logger->min_severity(); }
+
 __EXPORT
 void FuchsiaLogInitGlobalLogger(const LogSettings* settings) { Logger::GlobalInstance(settings); }
 

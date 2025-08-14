@@ -65,12 +65,21 @@ class Logger;
 // Initializes the global logger. This is safe to call multiple times.
 void FuchsiaLogInitGlobalLogger(const LogSettings*);
 
-// Returns the global minimum severity.
+// Returns the global minimum severity. This is separate for performance reasons.
 uint8_t FuchsiaLogGetGlobalMinSeverity();
 
 // Returns the global logger. This will create a logger with default settings if one does not
 // already exist.
 Logger* FuchsiaLogGetGlobalLogger();
+
+// Creates a logger. If `settings` is nullptr, default settings are used.
+zx_status_t FuchsiaLogCreateLogger(const LogSettings* settings, Logger**);
+
+// Destroys a logger.
+void FuchsiaLogDestroyLogger(Logger*);
+
+// Returns the minimum severity associated with the logger.
+uint8_t FuchsiaLogGetMinSeverity(const Logger* logger);
 
 // Writes a log record to a logger. The buffer should be in the appropriate diagnostics record
 // format.

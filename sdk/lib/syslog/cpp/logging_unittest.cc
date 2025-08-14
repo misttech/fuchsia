@@ -29,6 +29,7 @@
 #include <lib/async/dispatcher.h>
 #include <lib/async/wait.h>
 #include <lib/fpromise/promise.h>
+#include <lib/syslog/cpp/logger.h>
 #include <lib/syslog/structured_backend/cpp/log_connection.h>
 #include <lib/zx/socket.h>
 
@@ -462,6 +463,55 @@ TEST(LogConnection, EncodingError) {
   buffer.BeginRecord(FUCHSIA_LOG_INFO, {}, 0, message, 0, 1, 2);
 
   EXPECT_EQ(connection.FlushBuffer(buffer).status_value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST(Logger, LocalLogger) {
+  Logger logger;
+
+  // `logger` should be destroyed after `loop`.
+  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+
+  ASSERT_EQ(loop.StartThread(), ZX_OK);
+
+  auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
+  FakeLogSink log_sink(FUCHSIA_LOG_INFO, std::move(endpoints->server));
+
+  // Unfortunately, these has to be static because `severity_change_callback` doesn't take a
+  // context.
+  static std::mutex mutex;
+  static std::condition_variable condition;
+  static RawLogSeverity severity = 0;
+
+  auto logger_result = Logger::Create(LogSettings{
+      .single_threaded_dispatcher = loop.dispatcher(),
+      .log_sink = endpoints->client.TakeChannel().release(),
+      .severity_change_callback =
+          +[](RawLogSeverity s) {
+            std::unique_lock lock(mutex);
+            severity = s;
+            condition.notify_all();
+          },
+  });
+  ASSERT_EQ(logger_result.status_value(), ZX_OK);
+  logger = *std::move(logger_result);
+
+  LogBuffer buffer;
+  buffer.BeginRecord(FUCHSIA_LOG_INFO, {}, {}, "foo", 1, 2, 3);
+
+  ASSERT_EQ(logger.FlushBuffer(buffer).status_value(), ZX_OK);
+
+  std::vector<uint8_t> record = log_sink.ReadRecord();
+
+  std::span<const uint8_t> span = buffer.EndRecord();
+  ASSERT_EQ(record.size(), span.size());
+  EXPECT_EQ(memcmp(record.data(), span.data(), record.size()), 0);
+
+  // Make sure a severity update gets through.
+  log_sink.set_severity(FUCHSIA_LOG_WARNING);
+  std::unique_lock lock(mutex);
+  condition.wait(lock, [&] { return severity == FUCHSIA_LOG_WARNING; });
+
+  EXPECT_EQ(logger.GetMinimumSeverity(), FUCHSIA_LOG_WARNING);
 }
 
 #endif

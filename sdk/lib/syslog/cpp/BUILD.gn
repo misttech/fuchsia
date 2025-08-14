@@ -42,6 +42,8 @@ target(target_type, "cpp") {
 
     sources += [
       "log_settings_internal.h",
+      "logger.cc",
+      "logger.h",
       "logging_backend_fuchsia.cc",
     ]
 
