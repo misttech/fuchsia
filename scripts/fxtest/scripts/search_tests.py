@@ -621,7 +621,7 @@ class TestsFileMatcher:
             contents = json.load(f)
             self.names: dict[str, list[str]] = dict()
             TOOLCHAIN_REGEX = re.compile(
-                r"\(//build/toolchain:[^\)]*\)$", re.MULTILINE
+                r"\(//build/toolchain[/fuchsia]*:[^\)]*\)$", re.MULTILINE
             )
             for entry in contents:
                 labels: list[str] = []
