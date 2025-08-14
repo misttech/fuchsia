@@ -99,20 +99,10 @@ impl<T: Symlink> Connection<T> {
     // Returns true if the connection should terminate.
     async fn handle_request(&mut self, req: fio::SymlinkRequest) -> Result<bool, fidl::Error> {
         match req {
-            #[cfg(fuchsia_api_level_at_least = "26")]
             fio::SymlinkRequest::DeprecatedClone { flags, object, control_handle: _ } => {
                 self.handle_deprecated_clone(flags, object).await;
             }
-            #[cfg(not(fuchsia_api_level_at_least = "26"))]
-            fio::SymlinkRequest::Clone { flags, object, control_handle: _ } => {
-                self.handle_deprecated_clone(flags, object).await;
-            }
-            #[cfg(fuchsia_api_level_at_least = "26")]
             fio::SymlinkRequest::Clone { request, control_handle: _ } => {
-                self.handle_clone(ServerEnd::new(request.into_channel())).await;
-            }
-            #[cfg(not(fuchsia_api_level_at_least = "26"))]
-            fio::SymlinkRequest::Clone2 { request, control_handle: _ } => {
                 self.handle_clone(ServerEnd::new(request.into_channel())).await;
             }
             fio::SymlinkRequest::Close { responder } => {
