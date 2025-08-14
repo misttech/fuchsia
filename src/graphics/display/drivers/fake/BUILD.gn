@@ -49,6 +49,10 @@ static_library("fake-display-stack") {
   testonly = true
 
   sources = [
+    "fake-coordinator-harness.cc",
+    "fake-coordinator-harness.h",
+    "fake-display-engine-harness.cc",
+    "fake-display-engine-harness.h",
     "fake-display-stack.cc",
     "fake-display-stack.h",
   ]

@@ -7,26 +7,16 @@
 
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/loop.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
-#include <lib/fdf/cpp/dispatcher.h>
-#include <lib/fit/function.h>
-#include <lib/sync/cpp/completion.h>
 #include <lib/zx/result.h>
 
 #include <memory>
 #include <optional>
 
-#include "src/graphics/display/drivers/coordinator/client-priority.h"
-#include "src/graphics/display/drivers/coordinator/controller.h"
-#include "src/graphics/display/drivers/fake/fake-display.h"
+#include "src/graphics/display/drivers/fake/fake-coordinator-harness.h"
+#include "src/graphics/display/drivers/fake/fake-display-engine-harness.h"
 #include "src/graphics/display/drivers/fake/sysmem-service-provider.h"
-#include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-fidl.h"
-#include "src/graphics/display/lib/api-protocols/cpp/display-engine-fidl-adapter.h"
 
 namespace fake_display {
 
@@ -63,24 +53,15 @@ class FakeDisplayStack {
   void SyncShutdown();
 
  private:
+  bool shutdown_ = false;
+
   std::optional<fdf_testing::ScopedGlobalLogger> logger_;
 
   std::shared_ptr<fdf_testing::DriverRuntime> driver_runtime_;
   std::unique_ptr<SysmemServiceProvider> sysmem_service_provider_;
 
-  fdf::UnownedSynchronizedDispatcher engine_driver_dispatcher_;
-  fdf::UnownedSynchronizedDispatcher coordinator_driver_dispatcher_;
-
-  display::DisplayEngineEventsFidl engine_events_;
-  std::unique_ptr<FakeDisplay> display_engine_;
-  std::unique_ptr<display::DisplayEngineFidlAdapter> fidl_adapter_;
-
-  async_patterns::TestDispatcherBound<std::unique_ptr<display_coordinator::Controller>>
-      coordinator_controller_;
-
-  bool shutdown_ = false;
-
-  fidl::WireSyncClient<fuchsia_hardware_display::Provider> display_provider_client_;
+  FakeDisplayEngineHarness display_engine_harness_;
+  FakeCoordinatorHarness coordinator_harness_;
 };
 
 }  // namespace fake_display
