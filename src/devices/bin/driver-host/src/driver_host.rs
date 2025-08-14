@@ -5,6 +5,7 @@
 use crate::driver::Driver;
 use crate::utils::update_process_name;
 use anyhow::{Context, Result};
+use fidl::encoding::{clear_tls_buf, DefaultFuchsiaResourceDialect};
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl::HandleBased;
 use fuchsia_async::Timer;
@@ -129,6 +130,7 @@ impl DriverHost {
                                 .or_else(ignore_peer_closed)?;
                         }
                     }
+                    clear_tls_buf::<DefaultFuchsiaResourceDialect>();
                     Ok(())
                 }
             })

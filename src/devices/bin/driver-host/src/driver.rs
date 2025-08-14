@@ -8,7 +8,7 @@ use crate::utils::*;
 use fdf::{CurrentDispatcher, OnDispatcher};
 use fdf_component::Incoming;
 use fidl::client::decode_transaction_body;
-use fidl::encoding::{DefaultFuchsiaResourceDialect, EmptyStruct, ResultType};
+use fidl::encoding::{clear_tls_buf, DefaultFuchsiaResourceDialect, EmptyStruct, ResultType};
 use fidl::endpoints::{RequestStream, ServerEnd};
 use fidl::AsHandleRef;
 use fuchsia_sync::Mutex;
@@ -423,6 +423,8 @@ impl Driver {
                         completer.send(Err(e)).unwrap();
                         return;
                     }
+
+                    clear_tls_buf::<DefaultFuchsiaResourceDialect>();
 
                     // It's possible that this may never return if the driver blocks its main thread
                     // after replying? In that case we would probably want another dispatcher.
