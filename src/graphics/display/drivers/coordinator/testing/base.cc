@@ -21,10 +21,10 @@
 #include <fbl/mutex.h>
 
 #include "src/graphics/display/drivers/coordinator/post-display-task.h"
-#include "src/graphics/display/drivers/fake/fake-display-device-config.h"
-#include "src/graphics/display/drivers/fake/fake-display.h"
-#include "src/graphics/display/drivers/fake/fake-sysmem-device-hierarchy.h"
 #include "src/graphics/display/lib/api-types/cpp/engine-info.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display-device-config.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-sysmem-device-hierarchy.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace display_coordinator {

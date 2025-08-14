@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/fake/sysmem-service-forwarder.h"
+#include "src/graphics/display/lib/fake-display-stack/sysmem-service-forwarder.h"
 
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>

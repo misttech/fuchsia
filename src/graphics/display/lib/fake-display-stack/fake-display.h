@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_DISPLAY_H_
-#define SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_DISPLAY_H_
+#ifndef SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_DISPLAY_H_
+#define SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_DISPLAY_H_
 
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -22,8 +22,6 @@
 #include <thread>
 #include <unordered_map>
 
-#include "src/graphics/display/drivers/fake/fake-display-device-config.h"
-#include "src/graphics/display/drivers/fake/image-info.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-interface.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-interface.h"
 #include "src/graphics/display/lib/api-types/cpp/color.h"
@@ -38,6 +36,8 @@
 #include "src/graphics/display/lib/api-types/cpp/image-buffer-usage.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display-device-config.h"
+#include "src/graphics/display/lib/fake-display-stack/image-info.h"
 
 namespace fake_display {
 
@@ -259,4 +259,4 @@ class FakeDisplay : public display::DisplayEngineInterface {
 
 }  // namespace fake_display
 
-#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_DISPLAY_H_
+#endif  // SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_DISPLAY_H_

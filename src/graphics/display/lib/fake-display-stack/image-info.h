@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_IMAGE_INFO_H_
-#define SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_IMAGE_INFO_H_
+#ifndef SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_IMAGE_INFO_H_
+#define SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_IMAGE_INFO_H_
 
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <fidl/fuchsia.math/cpp/wire.h>
@@ -95,4 +95,4 @@ class CaptureImageInfo : public fbl::SinglyLinkedListable<std::unique_ptr<Captur
 
 }  // namespace fake_display
 
-#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_IMAGE_INFO_H_
+#endif  // SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_IMAGE_INFO_H_

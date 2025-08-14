@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_DISPLAY_ENGINE_HARNESS_H_
-#define SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_DISPLAY_ENGINE_HARNESS_H_
+#ifndef SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_DISPLAY_ENGINE_HARNESS_H_
+#define SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_DISPLAY_ENGINE_HARNESS_H_
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
@@ -12,9 +12,9 @@
 
 #include <memory>
 
-#include "src/graphics/display/drivers/fake/fake-display.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-fidl.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-fidl-adapter.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display.h"
 
 namespace fake_display {
 
@@ -63,4 +63,4 @@ class FakeDisplayEngineHarness {
 
 }  // namespace fake_display
 
-#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_DISPLAY_ENGINE_HARNESS_H_
+#endif  // SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_DISPLAY_ENGINE_HARNESS_H_

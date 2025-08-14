@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/fake/fake-display.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display.h"
 
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
@@ -38,7 +38,6 @@
 #include <gtest/gtest.h>
 
 #include "src/devices/testing/mock-ddk/mock-device.h"
-#include "src/graphics/display/drivers/fake/fake-sysmem-device-hierarchy.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-interface.h"
 #include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
 #include "src/graphics/display/lib/api-types/cpp/color.h"
@@ -59,6 +58,7 @@
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
 #include "src/graphics/display/lib/api-types/cpp/rectangle.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-sysmem-device-hierarchy.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace fake_display {

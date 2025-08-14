@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/fake/fake-display.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display.h"
 
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <fidl/fuchsia.math/cpp/wire.h>
@@ -37,7 +37,6 @@
 #include <vector>
 
 #include "src/graphics/display/drivers/coordinator/preferred-scanout-image-type.h"
-#include "src/graphics/display/drivers/fake/image-info.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-interface.h"
 #include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
 #include "src/graphics/display/lib/api-types/cpp/color.h"
@@ -57,6 +56,7 @@
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
 #include "src/graphics/display/lib/api-types/cpp/rectangle.h"
+#include "src/graphics/display/lib/fake-display-stack/image-info.h"
 #include "src/lib/fsl/handles/object_info.h"
 
 namespace fake_display {

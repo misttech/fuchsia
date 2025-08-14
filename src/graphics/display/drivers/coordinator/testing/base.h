@@ -16,8 +16,8 @@
 
 #include <gtest/gtest.h>
 
-#include "src/graphics/display/drivers/fake/fake-display-stack.h"
-#include "src/graphics/display/drivers/fake/fake-display.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display-stack.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display.h"
 
 namespace display_coordinator {
 

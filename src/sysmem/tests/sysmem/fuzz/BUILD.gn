@@ -46,7 +46,7 @@ fuchsia_library_fuzzer("sysmem_fuzzer") {
   deps = [
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
-    "//src/graphics/display/drivers/fake:fake-sysmem-device-hierarchy",
+    "//src/graphics/display/lib/fake-display-stack:fake-sysmem-device-hierarchy",
     "//src/sysmem/server:sysmem_common_srcs",
   ]
 }
@@ -59,7 +59,7 @@ fuchsia_library_fuzzer("sysmem_fuzzer_multi") {
   deps = [
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
-    "//src/graphics/display/drivers/fake:fake-sysmem-device-hierarchy",
+    "//src/graphics/display/lib/fake-display-stack:fake-sysmem-device-hierarchy",
     "//src/sysmem/server:sysmem_common_srcs",
   ]
 }

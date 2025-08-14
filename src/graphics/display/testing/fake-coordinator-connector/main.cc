@@ -10,11 +10,11 @@
 #include <chrono>
 #include <thread>
 
-#include "src/graphics/display/drivers/fake/fake-display-device-config.h"
-#include "src/graphics/display/drivers/fake/fake-display-stack.h"
-#include "src/graphics/display/drivers/fake/sysmem-service-forwarder.h"
 #include "src/graphics/display/lib/api-types/cpp/engine-info.h"
 #include "src/graphics/display/lib/api-types/cpp/mode.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display-device-config.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display-stack.h"
+#include "src/graphics/display/lib/fake-display-stack/sysmem-service-forwarder.h"
 
 int main(int argc, const char** argv) {
   FX_LOGS(INFO) << "Starting fake fuchsia.hardware.display.Service service.";

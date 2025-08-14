@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_SYSMEM_SERVICE_FORWARDER_H_
-#define SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_SYSMEM_SERVICE_FORWARDER_H_
+#ifndef SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_SYSMEM_SERVICE_FORWARDER_H_
+#define SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_SYSMEM_SERVICE_FORWARDER_H_
 
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <lib/zx/result.h>
 
-#include "src/graphics/display/drivers/fake/sysmem-service-provider.h"
+#include "src/graphics/display/lib/fake-display-stack/sysmem-service-provider.h"
 
 namespace fake_display {
 
@@ -40,4 +40,4 @@ class SysmemServiceForwarder : public SysmemServiceProvider {
 
 }  // namespace fake_display
 
-#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_SYSMEM_SERVICE_FORWARDER_H_
+#endif  // SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_SYSMEM_SERVICE_FORWARDER_H_

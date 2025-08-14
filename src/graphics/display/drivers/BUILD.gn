@@ -9,7 +9,6 @@ group("tests") {
     "aml-canvas:tests",
     "amlogic-display:tests",
     "coordinator:tests",
-    "fake:tests",
     "framebuffer-bochs-display:tests",
     "framebuffer-intel-display:tests",
     "goldfish-display:tests",

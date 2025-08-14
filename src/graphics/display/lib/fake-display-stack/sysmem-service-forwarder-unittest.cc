@@ -2,15 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/fake/fake-sysmem-device-hierarchy.h"
+#include "src/graphics/display/lib/fake-display-stack/sysmem-service-forwarder.h"
 
-#include <fidl/fuchsia.io/cpp/fidl.h>
-#include <fidl/fuchsia.sysmem/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
-#include <lib/component/incoming/cpp/service.h>
-#include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/fdio/directory.h>
+#include <lib/fit/result.h>
 #include <zircon/syscalls/object.h>
+
+#include <memory>
+#include <utility>
 
 #include <gtest/gtest.h>
 
@@ -20,23 +19,23 @@ namespace fake_display {
 
 namespace {
 
-TEST(FakeSysmemDeviceHierarchy, OpenAllocatorV2) {
-  zx::result<std::unique_ptr<FakeSysmemDeviceHierarchy>> create_result =
-      FakeSysmemDeviceHierarchy::Create();
+TEST(SysmemServiceForwarder, OpenAllocatorV2) {
+  zx::result<std::unique_ptr<SysmemServiceForwarder>> create_result =
+      SysmemServiceForwarder::Create();
   ASSERT_OK(create_result);
 
-  std::unique_ptr<FakeSysmemDeviceHierarchy> fake_sysmem_device_hierarchy =
+  std::unique_ptr<SysmemServiceForwarder> sysmem_service_forwarder =
       std::move(create_result).value();
 
   zx::result<fidl::ClientEnd<fuchsia_sysmem2::Allocator>> allocator_v2_result =
-      fake_sysmem_device_hierarchy->ConnectAllocator2();
+      sysmem_service_forwarder->ConnectAllocator2();
   ASSERT_OK(allocator_v2_result);
 
   fidl::SyncClient allocator_v2(std::move(allocator_v2_result).value());
   ASSERT_TRUE(allocator_v2.is_valid());
 
-  // Make FIDL calls to make sure the Allocator V2 client is correctly connected to the fake
-  // sysmem service.
+  // Make FIDL calls to make sure the Allocator V2 client is correctly connected to the component-
+  // provided sysmem service.
   auto [collection_client, collection_server] =
       fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
   fit::result<fidl::OneWayStatus> allocate_collection_result =

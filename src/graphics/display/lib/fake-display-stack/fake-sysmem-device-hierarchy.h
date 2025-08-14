@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_SYSMEM_DEVICE_HIERARCHY_H_
-#define SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_SYSMEM_DEVICE_HIERARCHY_H_
+#ifndef SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_SYSMEM_DEVICE_HIERARCHY_H_
+#define SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_SYSMEM_DEVICE_HIERARCHY_H_
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
@@ -14,7 +14,7 @@
 
 #include <memory>
 
-#include "src/graphics/display/drivers/fake/sysmem-service-provider.h"
+#include "src/graphics/display/lib/fake-display-stack/sysmem-service-provider.h"
 #include "src/sysmem/server/sysmem.h"
 
 namespace fake_display {
@@ -52,4 +52,4 @@ class FakeSysmemDeviceHierarchy : public SysmemServiceProvider {
 
 }  // namespace fake_display
 
-#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_SYSMEM_DEVICE_HIERARCHY_H_
+#endif  // SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_SYSMEM_DEVICE_HIERARCHY_H_

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/fake/fake-display-stack.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display-stack.h"
 
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
@@ -14,8 +14,8 @@
 #include <utility>
 
 #include "src/devices/testing/mock-ddk/mock-device.h"
-#include "src/graphics/display/drivers/fake/fake-coordinator-harness.h"
-#include "src/graphics/display/drivers/fake/fake-display-engine-harness.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-coordinator-harness.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display-engine-harness.h"
 
 namespace fake_display {
 

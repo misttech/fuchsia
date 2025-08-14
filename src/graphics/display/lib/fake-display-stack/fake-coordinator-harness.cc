@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/fake/fake-coordinator-harness.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-coordinator-harness.h"
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>

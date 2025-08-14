@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/fake/fake-display-engine-harness.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display-engine-harness.h"
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/fidl.h>
 #include <lib/fdf/cpp/dispatcher.h>
@@ -13,7 +13,7 @@
 #include <memory>
 #include <utility>
 
-#include "src/graphics/display/drivers/fake/fake-display.h"
+#include "src/graphics/display/lib/fake-display-stack/fake-display.h"
 
 namespace fake_display {
 

@@ -13,6 +13,7 @@ group("tests") {
     "driver-framework-migration-utils:tests",
     "driver-utils:tests",
     "edid:tests",
+    "fake-display-stack:tests",
     "framebuffer-display:tests",
     "rust:tests",
   ]

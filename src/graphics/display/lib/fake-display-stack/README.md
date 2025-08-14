@@ -18,7 +18,7 @@ using the [Inspect API][inspect] only for developer debugging purpose. Tests
 must not depend on the inspection contents from driver host or components
 providing `fake-display`.
 
-[fake-display]://src/graphics/display/drivers/fake/
+[fake-display]://src/graphics/display/lib/fake-display-stack/
 [display-coordinator]://src/graphics/display/drivers/coordinator/
-[sysmem]://src/sysmem/drivers/sysmem/
+[sysmem]://src/sysmem/server/
 [inspect]://docs/development/diagnostics/inspect/README.md

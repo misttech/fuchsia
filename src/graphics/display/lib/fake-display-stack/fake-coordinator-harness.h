@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_COORDINATOR_HARNESS_H_
-#define SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_COORDINATOR_HARNESS_H_
+#ifndef SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_COORDINATOR_HARNESS_H_
+#define SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_COORDINATOR_HARNESS_H_
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
@@ -65,4 +65,4 @@ class FakeCoordinatorHarness {
 
 }  // namespace fake_display
 
-#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_FAKE_FAKE_COORDINATOR_HARNESS_H_
+#endif  // SRC_GRAPHICS_DISPLAY_LIB_FAKE_DISPLAY_STACK_FAKE_COORDINATOR_HARNESS_H_
