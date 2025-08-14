@@ -285,6 +285,7 @@
         {
             service: [
                 "fuchsia.hardware.gnss.Service",
+                "fuchsia.hardware.google.nanohub.DataChannelService",
                 "fuchsia.hardware.google.nanohub.DisplayService",
                 "fuchsia.hardware.google.nanohub.Service",
                 "fuchsia.hardware.haptics.Service",

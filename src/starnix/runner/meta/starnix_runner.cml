@@ -175,6 +175,7 @@
         {
             service: [
                 "fuchsia.hardware.adb.Service",
+                "fuchsia.hardware.google.nanohub.DataChannelService",
                 "fuchsia.hardware.qualcomm.fastrpc.SecureService",
             ],
             from: "parent",

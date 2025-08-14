@@ -4,6 +4,7 @@
 
 #![recursion_limit = "256"]
 
+mod datachannel_file;
 mod display_sysfs_files;
 mod nanohub;
 mod nanohub_comms_directory;

@@ -179,7 +179,10 @@
             to: [ "#starnix_runner" ],
         },
         {
-            service: "fuchsia.hardware.adb.Service",
+            service: [
+                "fuchsia.hardware.adb.Service",
+                "fuchsia.hardware.google.nanohub.DataChannelService",
+            ],
             from: "parent",
             to: [ "#starnix_runner" ],
         },

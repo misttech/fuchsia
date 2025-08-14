@@ -4,6 +4,7 @@
 
 use component_events::events::{EventStream, ExitStatus, Stopped};
 use component_events::matcher::EventMatcher;
+use fake_datachannel::MockDataChannel;
 use fake_display_server::{mock_display_server, DisplayRequests};
 use fake_nanohub_server::mock_nanohub_server;
 use fake_socket_tunnel::mock_socket_tunnel;
@@ -15,6 +16,7 @@ use {
     fidl_fuchsia_hardware_google_nanohub as fnanohub,
     fidl_fuchsia_hardware_sockettunnel as fsockettunnel,
 };
+mod fake_datachannel;
 mod fake_display_server;
 mod fake_nanohub_server;
 mod fake_socket_tunnel;
@@ -25,7 +27,7 @@ async fn main() {
     let builder = RealmBuilder::with_params(
         RealmBuilderParams::new()
             .realm_name("nanohub_test")
-            .from_relative_url("#meta/container_with_sysfs_reader.cm"),
+            .from_relative_url("#meta/container_with_endpoint_reader.cm"),
     )
     .await
     .unwrap();
@@ -93,22 +95,72 @@ async fn main() {
         .await
         .unwrap();
 
-    info!("starting realm");
-    let kernel_with_container_and_sysfs_reader = builder.build().await.unwrap();
-    let realm_moniker =
-        format!("realm_builder:{}", kernel_with_container_and_sysfs_reader.root.child_name());
-    info!(realm_moniker:%; "started");
-    let sysfs_reader_moniker = format!("{realm_moniker}/nanohub_user");
+    let mock1 = builder
+        .add_local_child(
+            "mock1",
+            move |handles: LocalComponentHandles| {
+                Box::pin(MockDataChannel::mock_driverservice(
+                    "test_endpoint1".to_string(),
+                    "test_endpoint1_data".to_string(),
+                    handles,
+                ))
+            },
+            ChildOptions::new(),
+        )
+        .await
+        .unwrap();
 
-    // Wait for the sysfs_reader program to run...
-    info!(sysfs_reader_moniker:%; "waiting for sysfs_reader to exit");
+    let mock2 = builder
+        .add_local_child(
+            "mock2",
+            move |handles: LocalComponentHandles| {
+                Box::pin(MockDataChannel::mock_driverservice(
+                    "test_endpoint2".to_string(),
+                    "test_endpoint2_data".to_string(),
+                    handles,
+                ))
+            },
+            ChildOptions::new(),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::service::<fnanohub::DataChannelServiceMarker>())
+                .from(&mock1)
+                .to(Ref::child("kernel")),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::service::<fnanohub::DataChannelServiceMarker>())
+                .from(&mock2)
+                .to(Ref::child("kernel")),
+        )
+        .await
+        .unwrap();
+
+    info!("starting realm");
+    let kernel_with_container_and_endpoint_reader = builder.build().await.unwrap();
+    let realm_moniker =
+        format!("realm_builder:{}", kernel_with_container_and_endpoint_reader.root.child_name());
+    info!(realm_moniker:%; "started");
+    let endpoint_reader_moniker = format!("{realm_moniker}/nanohub_user");
+
+    // Wait for the endpoint_reader program to run...
+    info!(endpoint_reader_moniker:%; "waiting for endpoint_reader to exit");
     let stopped = EventMatcher::ok()
-        .moniker(&sysfs_reader_moniker)
+        .moniker(&endpoint_reader_moniker)
         .wait::<Stopped>(&mut events)
         .await
         .unwrap();
     let status = stopped.result().unwrap().status;
-    info!(status:?; "sysfs_reader stopped");
+    info!(status:?; "endpoint_reader stopped");
     assert_eq!(status, ExitStatus::Clean);
 
     let display_requests = display_requests.lock().unwrap();

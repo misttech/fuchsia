@@ -398,7 +398,10 @@
             to: "#testing",
         },
         {
-            service: "fuchsia.hardware.google.nanohub.Service",
+            service: [
+                "fuchsia.hardware.google.nanohub.DataChannelService",
+                "fuchsia.hardware.google.nanohub.Service",
+            ],
             from: "parent",
             to: "#testing",
         },

@@ -17,6 +17,7 @@ rustc_binary("bin") {
   edition = "2021"
   output_name = "starnix_nanohub_module_test"
   sources = [
+    "src/fake_datachannel.rs",
     "src/fake_display_server.rs",
     "src/fake_nanohub_server.rs",
     "src/fake_socket_tunnel.rs",
@@ -44,12 +45,12 @@ fuchsia_test_component("integration_test") {
 
 starnix_linux_executable("generate_linux_nanohub_module") {
   testonly = true
-  sources = [ "src/sysfs_reader.cc" ]
+  sources = [ "src/endpoint_reader.cc" ]
 }
 
-fuchsia_component("container_with_sysfs_reader") {
+fuchsia_component("container_with_endpoint_reader") {
   testonly = true
-  manifest = "meta/container_with_sysfs_reader.cml"
+  manifest = "meta/container_with_endpoint_reader.cml"
 }
 
 fuchsia_component("nanohub_user") {
@@ -72,7 +73,7 @@ fuchsia_package("nanohub_container_pkg") {
 fuchsia_test_package("starnix_nanohub_module_test") {
   test_components = [ ":integration_test" ]
   deps = [
-    ":container_with_sysfs_reader",
+    ":container_with_endpoint_reader",
     ":nanohub_container",
     ":nanohub_user",
     "//src/starnix/containers/debian:container_resources",

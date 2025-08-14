@@ -86,6 +86,10 @@
             from: "parent",
         },
         {
+            service: "fuchsia.hardware.google.nanohub.DataChannelService",
+            from: "parent",
+        },
+        {
             service: "fuchsia.hardware.qcom.hvdcpopti.Service",
             from: "parent",
             availability: "optional",

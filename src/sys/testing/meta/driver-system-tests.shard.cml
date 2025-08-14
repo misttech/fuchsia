@@ -38,7 +38,10 @@
             to: "#driver-system-tests",
         },
         {
-            service: [ "fuchsia.hardware.google.nanohub.Service" ],
+            service: [
+                "fuchsia.hardware.google.nanohub.DataChannelService",
+                "fuchsia.hardware.google.nanohub.Service",
+            ],
             from: "parent",
             to: "#driver-system-tests",
         },

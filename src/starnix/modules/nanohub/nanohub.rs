@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::datachannel_file::DataChannelDevice;
 use crate::nanohub_comms_directory::{
     build_display_comms_directory, build_nanohub_comms_directory,
 };
 use crate::socket_tunnel_file::register_socket_tunnel_device;
-use fidl_fuchsia_hardware_serial as fserial;
+use fuchsia_component::client::Service;
 use futures::TryStreamExt;
 use starnix_core::device::serial::SerialDevice;
 use starnix_core::fs::sysfs::build_device_directory;
@@ -14,10 +15,12 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::BytesFile;
 use starnix_core::vfs::FsString;
-use starnix_logging::{log_error, log_info};
+use starnix_logging::{log_error, log_info, log_warn};
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::mode;
+use std::ops::DerefMut;
 use std::sync::Arc;
+use {fidl_fuchsia_hardware_google_nanohub as fnanohub, fidl_fuchsia_hardware_serial as fserial};
 
 const SERIAL_DIRECTORY: &str = "/dev/class/serial";
 
@@ -123,6 +126,63 @@ pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, current_task: &Current
         let kernel = current_task.kernel().clone();
         async move { register_serial_device(kernel).await }
     });
+
+    current_task.kernel().kthreads.spawn_future({
+        let kernel = current_task.kernel().clone();
+        async move { register_datachannel_devices(kernel).await }
+    });
+}
+
+async fn register_datachannel_devices(kernel: Arc<Kernel>) {
+    let current_task = kernel.kthreads.system_task();
+    let service = match Service::open(fnanohub::DataChannelServiceMarker) {
+        Ok(service) => service,
+        Err(e) => {
+            log_warn!("Failed to open DriverService: {:?}", e);
+            return;
+        }
+    };
+    let mut watcher = match service.watch().await {
+        Ok(watcher) => watcher,
+        Err(e) => {
+            log_warn!("Failed to create watcher: {:?}", e);
+            return;
+        }
+    };
+
+    while let Ok(Some(data_channel_service_proxy)) = watcher.try_next().await {
+        let name = match (|| {
+            let device_proxy = data_channel_service_proxy.connect_to_device_sync()?;
+            let id = device_proxy.get_identifier(zx::MonotonicInstant::INFINITE)?;
+            Ok::<std::option::Option<std::string::String>, fidl::Error>(id.name)
+        })() {
+            Ok(Some(name)) => name,
+            Ok(None) => {
+                log_error!("Data channel device has no name, skipping registration");
+                continue;
+            }
+            Err(e) => {
+                log_error!("Failed to get device info: {:?}", e);
+                continue;
+            }
+        };
+
+        let registry = &kernel.device_registry;
+
+        let device_class =
+            registry.objects.get_or_create_class("nanohub".into(), registry.objects.virtual_bus());
+
+        if let Err(e) = registry.register_dyn_device_with_dir(
+            current_task.kernel().kthreads.unlocked_for_async().deref_mut(),
+            current_task,
+            name.as_bytes().into(),
+            device_class,
+            build_device_directory,
+            DataChannelDevice::new(data_channel_service_proxy),
+        ) {
+            log_warn!("Failed to register datachannel device: {:?}", e);
+        }
+    }
 }
 
 async fn register_serial_device(kernel: Arc<Kernel>) {
