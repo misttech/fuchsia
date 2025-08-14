@@ -35,9 +35,9 @@
 #include <cinttypes>
 
 #include <rapidjson/document.h>
-#include <src/diagnostics/lib/cpp-log-tester/log_tester.h>
 
 #include "fuchsia/logger/cpp/fidl.h"
+#include "src/lib/diagnostics/fake-log-sink/cpp/fake_log_sink.h"
 #include "src/lib/fxl/strings/join_strings.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #endif
@@ -46,7 +46,10 @@ namespace fuchsia_logging {
 
 namespace {
 std::chrono::high_resolution_clock::time_point mock_time = std::chrono::steady_clock::now();
-}
+
+using ::testing::HasSubstr;
+
+}  // namespace
 
 namespace {
 class LoggingFixture : public ::testing::Test {
@@ -65,50 +68,89 @@ class LoggingFixture : public ::testing::Test {
 
 using LoggingFixtureDeathTest = LoggingFixture;
 #ifdef __Fuchsia__
-std::string SeverityToString(const int32_t severity) {
-  if (severity == LogSeverity::Trace) {
-    return "TRACE";
-  } else if (severity == LogSeverity::Debug) {
-    return "DEBUG";
-  } else if (severity > LogSeverity::Debug && severity < LogSeverity::Info) {
-    return fxl::StringPrintf("VLOG(%d)", LogSeverity::Info - severity);
-  } else if (severity == LogSeverity::Info) {
-    return "INFO";
-  } else if (severity == LogSeverity::Warn) {
-    return "WARN";
-  } else if (severity == LogSeverity::Error) {
-    return "ERROR";
-  } else if (severity == LogSeverity::Fatal) {
-    return "FATAL";
+constexpr std::string SeverityToString(const fuchsia_diagnostics_types::Severity severity) {
+  switch (severity) {
+    case fuchsia_diagnostics_types::Severity::kTrace:
+      return "TRACE";
+    case fuchsia_diagnostics_types::Severity::kDebug:
+      return "DEBUG";
+    case fuchsia_diagnostics_types::Severity::kInfo:
+      return "INFO";
+    case fuchsia_diagnostics_types::Severity::kWarn:
+      return "WARN";
+    case fuchsia_diagnostics_types::Severity::kError:
+      return "ERROR";
+    case fuchsia_diagnostics_types::Severity::kFatal:
+      return "FATAL";
+    default:
+      return "INVALID";
   }
-  return "INVALID";
 }
 
-std::string Format(const fuchsia::logger::LogMessage& message) {
-  return fxl::StringPrintf("[%05d.%03d][%05" PRIu64 "][%05" PRIu64 "][%s] %s: %s\n",
-                           static_cast<int>(message.time.get() / 1000000000ULL),
-                           static_cast<int>((message.time.get() / 1000000ULL) % 1000ULL),
-                           message.pid, message.tid, fxl::JoinStrings(message.tags, ", ").c_str(),
-                           SeverityToString(message.severity).c_str(), message.msg.c_str());
+std::string Format(const std::optional<diagnostics::reader::LogsData>& data) {
+  if (!data) {
+    return "<invalid>\n";
+  }
+  std::string result = std::format(
+      "[{:05}.{:03}][{:05}][{:05}][{}] {}: [{}({})]", data->metadata().timestamp / 1000000000ULL,
+      (data->metadata().timestamp / 1000000ULL) % 1000ULL, data->metadata().pid.value_or(0),
+      data->metadata().tid.value_or(0), fxl::JoinStrings(data->metadata().tags, ", "),
+      SeverityToString(data->metadata().severity), data->metadata().file.value_or(""),
+      data->metadata().line.value_or(0));
+  if (!data->message().empty()) {
+    result.append(std::format(" {}", data->message()));
+  }
+  for (const auto& key : data->keys()) {
+    result.append(std::format(" {}=", key.name()));
+    switch (key.format()) {
+      case inspect::PropertyFormat::kInt:
+        result.append(std::format("{}", key.Get<inspect::IntPropertyValue>().value()));
+        break;
+      case inspect::PropertyFormat::kUint:
+        result.append(std::format("{}", key.Get<inspect::UintPropertyValue>().value()));
+        break;
+      case inspect::PropertyFormat::kDouble:
+        result.append(std::format("{}", key.Get<inspect::DoublePropertyValue>().value()));
+        break;
+      case inspect::PropertyFormat::kString:
+        result.push_back('"');
+        for (char c : key.Get<inspect::StringPropertyValue>().value()) {
+          if (c == '\"') {
+            result.push_back('\\');
+          }
+          result.push_back(c);
+        }
+        result.push_back('"');
+        break;
+      case inspect::PropertyFormat::kBool:
+        if (key.Get<inspect::BoolPropertyValue>().value()) {
+          result.append("true");
+        } else {
+          result.append("false");
+        }
+        break;
+      default:
+        ADD_FAILURE() << "Unexpected type for " << key.name() << ": "
+                      << static_cast<uint8_t>(key.format());
+    }
+  }
+  result.append("\n");
+  return result;
 }
 
-static std::string RetrieveLogs(zx::channel channel) {
-  auto logs = log_tester::RetrieveLogsAsLogMessage(std::move(channel));
-  std::stringstream stream;
-  for (const auto& log : logs) {
-    stream << Format(log);
-  }
-  return stream.str();
-}
 #endif
 
 #ifdef __Fuchsia__
-using LogState = zx::channel;
-static LogState SetupLogs(bool wait_for_initial_interest = true) {
-  return log_tester::SetupFakeLog(wait_for_initial_interest);
-}
+using LogState = FakeLogSink;
+LogState SetupLogs(bool wait_for_initial_interest = true) { return FakeLogSink(); }
 
-static std::string ReadLogs(zx::channel& remote) { return RetrieveLogs(std::move(remote)); }
+std::string ReadLogs(FakeLogSink& log_sink) {
+  std::string result;
+  while (log_sink.WaitForRecord(zx::time::infinite_past())) {
+    result.append(Format(log_sink.ReadLogsData()));
+  }
+  return result;
+}
 #else
 
 struct TestLogState {
@@ -118,7 +160,7 @@ struct TestLogState {
 
 using LogState = std::unique_ptr<TestLogState>;
 
-static LogState SetupLogs(bool wait_for_initial_interest = true) {
+LogState SetupLogs(bool wait_for_initial_interest = true) {
   auto state = std::make_unique<TestLogState>();
   {
     std::string log_file_out;
@@ -131,7 +173,7 @@ static LogState SetupLogs(bool wait_for_initial_interest = true) {
   return state;
 }
 
-static std::string ReadLogs(LogState& state) {
+std::string ReadLogs(LogState& state) {
   std::string log;
   files::ReadFileToString(state->log_file, &log);
   return log;
@@ -149,11 +191,11 @@ TEST_F(LoggingFixture, Log) {
 
   std::string log = ReadLogs(state);
 
-  EXPECT_THAT(log, testing::HasSubstr("ERROR: [sdk/lib/syslog/cpp/logging_unittest.cc(" +
-                                      std::to_string(error_line) + ")] something at error"));
+  EXPECT_THAT(log, HasSubstr("ERROR: [sdk/lib/syslog/cpp/logging_unittest.cc(" +
+                             std::to_string(error_line) + ")] something at error"));
 
-  EXPECT_THAT(log, testing::HasSubstr("INFO: [logging_unittest.cc(" + std::to_string(info_line) +
-                                      ")] and some other at info level"));
+  EXPECT_THAT(log, HasSubstr("INFO: [logging_unittest.cc(" + std::to_string(info_line) +
+                             ")] and some other at info level"));
 }
 
 TEST_F(LoggingFixture, LogFirstN) {
@@ -190,31 +232,29 @@ TEST_F(LoggingFixture, LogT) {
 
   std::string log = ReadLogs(state);
 
-  EXPECT_THAT(log, testing::HasSubstr("first] ERROR: [sdk/lib/syslog/cpp/logging_unittest.cc(" +
-                                      std::to_string(error_line) + ")] something at error"));
+  EXPECT_THAT(log, HasSubstr("first] ERROR: [sdk/lib/syslog/cpp/logging_unittest.cc(" +
+                             std::to_string(error_line) + ")] something at error"));
 
-  EXPECT_THAT(log,
-              testing::HasSubstr("second] INFO: [logging_unittest.cc(" + std::to_string(info_line) +
-                                 ")] and some other at info level"));
+  EXPECT_THAT(log, HasSubstr("second] INFO: [logging_unittest.cc(" + std::to_string(info_line) +
+                             ")] and some other at info level"));
 }
 
 TEST_F(LoggingFixtureDeathTest, CheckFailed) { ASSERT_DEATH(FX_CHECK(false), ""); }
 
 #if defined(__Fuchsia__)
 TEST_F(LoggingFixture, Plog) {
-  auto remote = log_tester::SetupFakeLog();
+  FakeLogSink sink;
 
   FX_PLOGS(ERROR, ZX_OK) << "should be ok";
   FX_PLOGS(ERROR, ZX_ERR_ACCESS_DENIED) << "got access denied";
 
-  std::string log = RetrieveLogs(std::move(remote));
-
-  EXPECT_THAT(log, testing::HasSubstr("should be ok: 0 (ZX_OK)"));
-  EXPECT_THAT(log, testing::HasSubstr("got access denied: -30 (ZX_ERR_ACCESS_DENIED)"));
+  EXPECT_THAT(sink.ReadLogsData()->message(), HasSubstr("should be ok: 0 (ZX_OK)"));
+  EXPECT_THAT(sink.ReadLogsData()->message(),
+              HasSubstr("got access denied: -30 (ZX_ERR_ACCESS_DENIED)"));
 }
 
 TEST_F(LoggingFixture, PlogT) {
-  auto remote = log_tester::SetupFakeLog(false);
+  FakeLogSink sink;
 
   int line1 = __LINE__ + 1;
   FX_PLOGST(ERROR, "abcd", ZX_OK) << "should be ok";
@@ -222,13 +262,13 @@ TEST_F(LoggingFixture, PlogT) {
   int line2 = __LINE__ + 1;
   FX_PLOGST(ERROR, "qwerty", ZX_ERR_ACCESS_DENIED) << "got access denied";
 
-  std::string log = RetrieveLogs(std::move(remote));
-
-  EXPECT_THAT(log, testing::HasSubstr("abcd] ERROR: [sdk/lib/syslog/cpp/logging_unittest.cc(" +
-                                      std::to_string(line1) + ")] should be ok: 0 (ZX_OK)"));
-  EXPECT_THAT(log, testing::HasSubstr("qwerty] ERROR: [sdk/lib/syslog/cpp/logging_unittest.cc(" +
-                                      std::to_string(line2) +
-                                      ")] got access denied: -30 (ZX_ERR_ACCESS_DENIED)"));
+  EXPECT_THAT(Format(sink.ReadLogsData()),
+              HasSubstr("abcd] ERROR: [sdk/lib/syslog/cpp/logging_unittest.cc(" +
+                        std::to_string(line1) + ")] should be ok: 0 (ZX_OK)"));
+  EXPECT_THAT(
+      Format(sink.ReadLogsData()),
+      HasSubstr("qwerty] ERROR: [sdk/lib/syslog/cpp/logging_unittest.cc(" + std::to_string(line2) +
+                ")] got access denied: -30 (ZX_ERR_ACCESS_DENIED)"));
 }
 #endif  // defined(__Fuchsia__)
 
@@ -255,25 +295,20 @@ TEST_F(LoggingFixture, SLog) {
   FX_LOG_KV(ERROR, "String with quotes", FX_KV("value", "char is '\"'"));
 
   std::string log = ReadLogs(state);
-  EXPECT_THAT(
-      log, testing::HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") +
-                              "(" + std::to_string(line1) + ")] some_msg=\"String log\""));
-  EXPECT_THAT(
-      log, testing::HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") +
-                              "(" + std::to_string(line2) + ")] some_msg=42"));
-  EXPECT_THAT(
-      log, testing::HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") +
-                              "(" + std::to_string(line4) + ")] msg first=42 second=\"string\""));
-  EXPECT_THAT(
-      log, testing::HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") +
-                              "(" + std::to_string(line5) + ")] String log"));
-  EXPECT_THAT(
-      log, testing::HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") +
-                              "(" + std::to_string(line6) + ")] float=0.25"));
+  EXPECT_THAT(log, HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") +
+                             "(" + std::to_string(line1) + ")] some_msg=\"String log\""));
+  EXPECT_THAT(log, HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") +
+                             "(" + std::to_string(line2) + ")] some_msg=42"));
+  EXPECT_THAT(log, HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") +
+                             "(" + std::to_string(line4) + ")] msg first=42 second=\"string\""));
+  EXPECT_THAT(log, HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") +
+                             "(" + std::to_string(line5) + ")] String log"));
+  EXPECT_THAT(log, HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") +
+                             "(" + std::to_string(line6) + ")] float=0.25"));
 
-  EXPECT_THAT(log, testing::HasSubstr(
-                       "ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") + "(" +
-                       std::to_string(line7) + ")] String with quotes value=\"char is '\\\"'\""));
+  EXPECT_THAT(log,
+              HasSubstr("ERROR: [" + std::string("sdk/lib/syslog/cpp/logging_unittest.cc") + "(" +
+                        std::to_string(line7) + ")] String with quotes value=\"char is '\\\"'\""));
 }
 
 TEST_F(LoggingFixture, BackendDirect) {
@@ -294,10 +329,8 @@ TEST_F(LoggingFixture, BackendDirect) {
   buffer.Flush();
 
   std::string log = ReadLogs(state);
-  EXPECT_THAT(log,
-              testing::HasSubstr("ERROR: [foo.cc(42)] Check failed: condition. Log message\n"));
-  EXPECT_THAT(log, testing::HasSubstr(
-                       "ERROR: [foo.cc(42)] Check failed: condition. fake message foo=42\n"));
+  EXPECT_THAT(log, HasSubstr("ERROR: [foo.cc(42)] Check failed: condition. Log message\n"));
+  EXPECT_THAT(log, HasSubstr("ERROR: [foo.cc(42)] Check failed: condition. fake message foo=42\n"));
 }
 
 TEST_F(LoggingFixture, MacroCompilationTest) {
@@ -353,46 +386,11 @@ TEST(StructuredLogging, FlushAndReset) {
 
 #ifdef __Fuchsia__
 
-class TestLogSink : public fidl::Server<fuchsia_logger::LogSink> {
- public:
-  zx::socket& socket() {
-    std::unique_lock lock(mutex_);
-    condition_.wait(lock, [this] { return socket_.is_valid(); });
-    return socket_;
-  }
-
- private:
-  void ConnectStructured(ConnectStructuredRequest& request,
-                         ConnectStructuredCompleter::Sync& completer) override {
-    std::unique_lock lock(mutex_);
-    socket_ = std::move(request.socket());
-    condition_.notify_all();
-  }
-
-  void WaitForInterestChange(WaitForInterestChangeCompleter::Sync& completer) override { FAIL(); }
-
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_logger::LogSink> metadata,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {
-    FAIL();
-  }
-
-  std::mutex mutex_;
-  std::condition_variable condition_;
-  zx::socket socket_;
-};
-
 TEST(LogConnection, Basic) {
-  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-  loop.StartThread();
-  zx::channel client, server;
-  ASSERT_EQ(zx::channel::create(0, &client, &server), ZX_OK);
+  auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
+  FakeLogSink log_sink(FUCHSIA_LOG_INFO, std::move(endpoints->server));
 
-  TestLogSink log_sink;
-  auto binding = fidl::BindServer(
-      loop.dispatcher(), fidl::ServerEnd<fuchsia_logger::LogSink>(std::move(server)), &log_sink);
-
-  auto connection =
-      LogConnection::Create(fidl::ClientEnd<fuchsia_logger::LogSink>(std::move(client)));
+  auto connection = LogConnection::Create(std::move(endpoints->client));
   ASSERT_EQ(connection.status_value(), ZX_OK);
 
   ASSERT_TRUE(connection->is_valid());
@@ -401,28 +399,18 @@ TEST(LogConnection, Basic) {
   buffer.BeginRecord(FUCHSIA_LOG_INFO, {}, {}, "foo", 1, 2, 3);
   ASSERT_EQ(connection->FlushBuffer(buffer).status_value(), ZX_OK);
 
-  uint8_t buf[256];
-  size_t actual;
-  ASSERT_EQ(log_sink.socket().read(0, buf, std::size(buf), &actual), ZX_OK);
+  std::vector<uint8_t> record = log_sink.ReadRecord();
 
   std::span<const uint8_t> span = buffer.EndRecord();
-  ASSERT_EQ(actual, span.size());
-  EXPECT_EQ(memcmp(buf, span.data(), actual), 0);
+  ASSERT_EQ(record.size(), span.size());
+  EXPECT_EQ(memcmp(record.data(), span.data(), record.size()), 0);
 }
 
 TEST(LogConnection, BlockIfFull) {
-  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-  loop.StartThread();
+  auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
+  FakeLogSink log_sink(FUCHSIA_LOG_INFO, std::move(endpoints->server));
 
-  zx::channel client, server;
-  ASSERT_EQ(zx::channel::create(0, &client, &server), ZX_OK);
-
-  TestLogSink log_sink;
-  auto binding = fidl::BindServer(
-      loop.dispatcher(), fidl::ServerEnd<fuchsia_logger::LogSink>(std::move(server)), &log_sink);
-
-  auto connection =
-      LogConnection::Create(fidl::ClientEnd<fuchsia_logger::LogSink>(std::move(client)));
+  auto connection = LogConnection::Create(std::move(endpoints->client));
   ASSERT_EQ(connection.status_value(), ZX_OK);
 
   ASSERT_TRUE(connection->is_valid());
@@ -446,13 +434,11 @@ TEST(LogConnection, BlockIfFull) {
   LogConnection connection2(std::move(socket), {.block_if_full = true});
 
   std::thread thread([&] {
-    // Delay reading the socket to make it more likely that we block when flushing the buffer.
+    // Delay reading the message to make it more likely that we block when flushing the buffer.
     usleep(10000);
 
-    uint8_t buf[256];
-    size_t actual;
     for (int i = 0; i < count; ++i) {
-      ASSERT_EQ(log_sink.socket().read(0, buf, std::size(buf), &actual), ZX_OK);
+      ASSERT_FALSE(log_sink.ReadRecord().empty());
     }
   });
 

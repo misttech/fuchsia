@@ -125,8 +125,8 @@ test("logging_cpp_unittests") {
       "//sdk/lib/async",
       "//sdk/lib/async:async-cpp",
       "//sdk/lib/async-loop:async-loop-cpp",
-      "//src/diagnostics/lib/cpp-log-tester",
       "//src/lib/diagnostics/accessor2logger",
+      "//src/lib/diagnostics/fake-log-sink/cpp",
       "//src/lib/fsl",
       "//third_party/rapidjson",
     ]

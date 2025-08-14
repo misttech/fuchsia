@@ -16,9 +16,9 @@
 #include <thread>
 #include <utility>
 
-#include <src/diagnostics/lib/cpp-log-tester/log_tester.h>
 #include <zxtest/zxtest.h>
 
+#include "src/lib/diagnostics/fake-log-sink/cpp/fake_log_sink.h"
 #include "src/storage/lib/watchdog/operations.h"
 
 namespace fs_watchdog {
@@ -133,6 +133,17 @@ bool PollUntilTrueOrTimeout(const std::function<bool()>& callback,
   return callback();
 }
 
+std::string CollectLogs(fuchsia_logging::FakeLogSink& sink) {
+  std::string str;
+  while (sink.WaitForRecord(zx::time::infinite_past())) {
+    std::optional<diagnostics::reader::LogsData> log = sink.ReadLogsData();
+    if (log.has_value()) {
+      str += log->message() + "\n";
+    }
+  }
+  return str;
+}
+
 TEST(Watchdog, TryToAddDuplicate) {
   auto watchdog = CreateWatchdog(kDefaultOptions);
   EXPECT_TRUE(watchdog->Start().is_ok());
@@ -144,7 +155,7 @@ TEST(Watchdog, TryToAddDuplicate) {
 }
 
 TEST(Watchdog, TryToAddDuplicateAfterTimeout) {
-  [[maybe_unused]] auto fd_pair = log_tester::SetupFakeLog();
+  fuchsia_logging::FakeLogSink sink;
   auto watchdog = CreateWatchdog(kDefaultOptions);
   EXPECT_TRUE(watchdog->Start().is_ok());
   TestOperation op(kTestOperationName1, kOperationTimeout);
@@ -198,7 +209,7 @@ TEST(Watchdog, RemoveUntrackedOperation) {
 }
 
 TEST(Watchdog, OperationTimesOut) {
-  auto fd_pair = log_tester::SetupFakeLog();
+  fuchsia_logging::FakeLogSink sink;
   {
     auto watchdog = CreateWatchdog(kDefaultOptions);
     EXPECT_TRUE(watchdog->Start().is_ok());
@@ -209,7 +220,7 @@ TEST(Watchdog, OperationTimesOut) {
                                          kPollLimit));
     }
   }
-  auto str = log_tester::RetrieveLogs(std::move(fd_pair));
+  std::string str = CollectLogs(sink);
 
   // Find known strings.
   ASSERT_TRUE(CheckOccurance(str, kLogMessageOperation, 1));
@@ -218,7 +229,7 @@ TEST(Watchdog, OperationTimesOut) {
 }
 
 TEST(Watchdog, NoTimeoutsWhenDisabled) {
-  auto fd_pair = log_tester::SetupFakeLog();
+  fuchsia_logging::FakeLogSink sink;
   {
     auto watchdog = CreateWatchdog(kDisabledOptions);
     EXPECT_TRUE(watchdog->Start().is_error());
@@ -230,7 +241,7 @@ TEST(Watchdog, NoTimeoutsWhenDisabled) {
       ASSERT_FALSE(tracker.TimeoutHandlerCalled());
     }
   }
-  auto str = log_tester::RetrieveLogs(std::move(fd_pair));
+  std::string str = CollectLogs(sink);
   // Find known strings.
   ASSERT_TRUE(CheckOccurance(str, kLogMessageOperation, 0));
   ASSERT_TRUE(CheckOccurance(str, kLogMessageExceededTimeout, 0));
@@ -238,7 +249,7 @@ TEST(Watchdog, NoTimeoutsWhenDisabled) {
 }
 
 TEST(Watchdog, NoTimeoutsWhenShutDown) {
-  auto fd_pair = log_tester::SetupFakeLog();
+  fuchsia_logging::FakeLogSink sink;
   {
     auto watchdog = CreateWatchdog(kDefaultOptions);
     EXPECT_TRUE(watchdog->Start().is_ok());
@@ -250,7 +261,7 @@ TEST(Watchdog, NoTimeoutsWhenShutDown) {
       ASSERT_FALSE(tracker.TimeoutHandlerCalled());
     }
   }
-  auto str = log_tester::RetrieveLogs(std::move(fd_pair));
+  std::string str = CollectLogs(sink);
   // Find known strings.
   ASSERT_TRUE(CheckOccurance(str, kLogMessageOperation, 0));
   ASSERT_TRUE(CheckOccurance(str, kLogMessageExceededTimeout, 0));
@@ -258,7 +269,7 @@ TEST(Watchdog, NoTimeoutsWhenShutDown) {
 }
 
 TEST(Watchdog, OperationDoesNotTimesOut) {
-  auto fd_pair = log_tester::SetupFakeLog();
+  fuchsia_logging::FakeLogSink sink;
   {
     auto watchdog = CreateWatchdog(kDefaultOptions);
     EXPECT_TRUE(watchdog->Start().is_ok());
@@ -269,7 +280,7 @@ TEST(Watchdog, OperationDoesNotTimesOut) {
       ASSERT_FALSE(tracker.TimeoutHandlerCalled());
     }
   }
-  auto str = log_tester::RetrieveLogs(std::move(fd_pair));
+  std::string str = CollectLogs(sink);
   // We should not find known strings.
   ASSERT_TRUE(CheckOccurance(str, kLogMessageOperation, 0));
   ASSERT_TRUE(CheckOccurance(str, kLogMessageExceededTimeout, 0));
@@ -277,7 +288,7 @@ TEST(Watchdog, OperationDoesNotTimesOut) {
 }
 
 TEST(Watchdog, MultipleOperationsTimeout) {
-  auto fd_pair = log_tester::SetupFakeLog();
+  fuchsia_logging::FakeLogSink sink;
   {
     auto watchdog = CreateWatchdog(kDefaultOptions);
     EXPECT_TRUE(watchdog->Start().is_ok());
@@ -295,7 +306,7 @@ TEST(Watchdog, MultipleOperationsTimeout) {
       ASSERT_FALSE(tracker3.TimeoutHandlerCalled());
     }
   }
-  auto str = log_tester::RetrieveLogs(std::move(fd_pair));
+  std::string str = CollectLogs(sink);
   // Find known strings.
   ASSERT_TRUE(CheckOccurance(str, kLogMessageOperation, 2));
   ASSERT_TRUE(CheckOccurance(str, kLogMessageExceededTimeout, 2));
@@ -305,7 +316,7 @@ TEST(Watchdog, MultipleOperationsTimeout) {
 }
 
 TEST(Watchdog, LoggedOnlyOnce) {
-  auto fd_pair = log_tester::SetupFakeLog();
+  fuchsia_logging::FakeLogSink sink;
   {
     auto watchdog = CreateWatchdog(kDefaultOptions);
     EXPECT_TRUE(watchdog->Start().is_ok());
@@ -320,7 +331,7 @@ TEST(Watchdog, LoggedOnlyOnce) {
       ASSERT_EQ(tracker.TimeoutHandlerCalledCount(), 1);
     }
   }
-  auto str = log_tester::RetrieveLogs(std::move(fd_pair));
+  std::string str = CollectLogs(sink);
   // Find known strings.
   ASSERT_TRUE(CheckOccurance(str, kLogMessageOperation, 1));
   ASSERT_TRUE(CheckOccurance(str, kLogMessageExceededTimeout, 1));
@@ -331,7 +342,7 @@ TEST(Watchdog, LoggedOnlyOnce) {
 }
 
 TEST(Watchdog, DelayedCompletionLogging) {
-  auto fd_pair = log_tester::SetupFakeLog();
+  fuchsia_logging::FakeLogSink sink;
   {
     auto watchdog = CreateWatchdog(kDefaultOptions);
     EXPECT_TRUE(watchdog->Start().is_ok());
@@ -346,7 +357,7 @@ TEST(Watchdog, DelayedCompletionLogging) {
       ASSERT_EQ(tracker.TimeoutHandlerCalledCount(), 1);
     }
   }
-  auto str = log_tester::RetrieveLogs(std::move(fd_pair));
+  std::string str = CollectLogs(sink);
   // Find known strings.
   ASSERT_TRUE(CheckOccurance(str, kLogMessageTimeout, 1));
   ASSERT_TRUE(CheckOccurance(str, kLogMessageExceededOperation, 1));

@@ -131,7 +131,7 @@ _test_deps = [
   ":helpers",
   "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
   "//sdk/lib/syslog/cpp",
-  "//src/diagnostics/lib/cpp-log-tester",
+  "//src/lib/diagnostics/fake-log-sink/cpp",
   "//zircon/system/ulib/fbl",
   "//zircon/system/ulib/zx",
   "//zircon/system/ulib/zxtest",

@@ -106,7 +106,7 @@ rustc_test("elf_runner_next_vdso_tests") {
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
-    "//src/lib/diagnostics/fake-log-sink",
+    "//src/lib/diagnostics/fake-log-sink/rust",
     "//src/lib/diagnostics/log/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
