@@ -2199,6 +2199,8 @@ void VmCowPages::DumpLocked(uint depth, bool verbose) const {
         printf("offset %#" PRIx64 " page interval end\n", offset);
       } else if (p->IsIntervalSlot()) {
         printf("offset %#" PRIx64 " single page interval slot\n", offset);
+      } else if (p->IsParentContent()) {
+        printf("offset %#" PRIx64 " parent content marker\n", offset);
       }
       return ZX_ERR_NEXT;
     };
