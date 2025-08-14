@@ -6,6 +6,7 @@ use anyhow::{Context as _, Error};
 use fidl_fuchsia_hardware_adb::{ProviderMarker, ProviderRequest, ProviderRequestStream};
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_fs::file::{AsyncReadAt, AsyncReadAtExt as _};
 use futures::{StreamExt as _, TryFutureExt as _};
 
 mod sideload_file;
@@ -39,13 +40,13 @@ impl SideloadServer {
         log::info!("Starting sideload, file size: {file_size}, block size: {block_size}");
         fasync::Task::spawn(
             async move {
-                let sideload_file = sideload_file::SideloadFile::new(
+                let mut sideload_file = sideload_file::SideloadFile::new(
                     fasync::Socket::from_socket(socket),
                     file_size,
                     block_size,
                 );
-                // TODO(https://fxbug.dev/423639056): parse offset and length from zip
-                let far_file = sideload_file.into_sub_file(89, file_size - 89);
+                let far_offset = find_far_offset(&mut sideload_file, file_size).await?;
+                let far_file = sideload_file.into_sub_file(far_offset, file_size - far_offset);
                 let archive = fuchsia_archive::AsyncUtf8Reader::new(far_file)
                     .await
                     .context("Failed to parse far")?;
@@ -61,6 +62,33 @@ impl SideloadServer {
         )
         .detach();
         Ok(())
+    }
+}
+
+/// Find the offset of the first occurrence of the 8 bytes FAR magic header in the given file.
+async fn find_far_offset(
+    sideload_file: &mut (impl AsyncReadAt + Unpin),
+    file_size: u64,
+) -> Result<u64, Error> {
+    use fuchsia_archive::MAGIC_INDEX_VALUE;
+
+    let mut buf = [0; 4096];
+    let mut offset = 0;
+    loop {
+        if offset + MAGIC_INDEX_VALUE.len() as u64 > file_size {
+            anyhow::bail!("Failed to find far offset");
+        }
+        let read_len = (buf.len() as u64).min(file_size - offset) as usize;
+        let bytes_read = sideload_file
+            .read_at(offset, &mut buf[..read_len])
+            .await
+            .with_context(|| format!("Failed to read at offset {offset}"))?;
+        if let Some(index) = memchr::memmem::find(&buf[..bytes_read], &MAGIC_INDEX_VALUE) {
+            return Ok(offset + index as u64);
+        }
+        // Include the last few bytes in the next iteration, in case the magic is split across two
+        // reads.
+        offset += bytes_read.saturating_sub(MAGIC_INDEX_VALUE.len() - 1) as u64;
     }
 }
 
@@ -88,4 +116,36 @@ async fn main() -> Result<(), Error> {
     let () = fs.collect().await;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fuchsia_fs::file::Adapter;
+    use futures::io::Cursor;
+    use test_case::test_case;
+
+    #[test_case(0, 100; "at start")]
+    #[test_case(50, 100; "in middle")]
+    #[test_case(92, 100; "at end")]
+    #[test_case(4090, 8192; "split across reads")]
+    #[fuchsia::test]
+    async fn test_find_far_offset_found(offset: usize, size: usize) {
+        let mut data = vec![0; size];
+        data[offset..offset + fuchsia_archive::MAGIC_INDEX_VALUE.len()]
+            .copy_from_slice(&fuchsia_archive::MAGIC_INDEX_VALUE);
+        let mut file = Adapter::new(Cursor::new(data));
+        let found_offset = find_far_offset(&mut file, size as u64).await.unwrap();
+        assert_eq!(found_offset, offset as u64);
+    }
+
+    #[test_case(100)]
+    #[test_case(2)]
+    #[test_case(0)]
+    #[fuchsia::test]
+    async fn test_find_far_offset_not_found(size: usize) {
+        let mut file = Adapter::new(Cursor::new(vec![0; size]));
+        let result = find_far_offset(&mut file, size as u64).await;
+        assert!(result.is_err());
+    }
 }

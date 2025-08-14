@@ -25,6 +25,7 @@ rustc_binary("adb-sideload") {
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:memchr",
   ]
 
   test_deps = [ "//third_party/rust_crates:test-case" ]
