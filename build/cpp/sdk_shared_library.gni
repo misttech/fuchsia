@@ -145,19 +145,27 @@ set_defaults("sdk_shared_library") {
 }
 
 template("sdk_shared_library") {
-  assert(!defined(invoker.stable), "Libraries are always stable.")
+  assert(!defined(invoker.stable),
+         "Libraries are always stable (except internal).")
   assert(defined(invoker.category), "Must define an SDK category")
 
   valid_categories = [
+    # "internal" is deprecated; only specific legacy cases below are allowed.
     # "compat_test" is only for ABI compatibility and thus not applicable.
     # "host_tool" is only for ABI compatibility and thus not applicable.
     # "prebuilt" is only for ABI compatibility and thus not applicable.
     "partner",
   ]
+
+  # Temporary to minimize differences with sdk_shared_library(). See https://fxbug.dev/326656468.
+  is_internal = invoker.category == "internal"
+
   assert(
       valid_categories + [ invoker.category ] - [ invoker.category ] !=
-          valid_categories,
+          valid_categories || is_internal,
       "'${target_name}' has unsupported SDK category '${invoker.category}'. Must be one of ${valid_categories}.")
+
+  assert(!is_internal, "'internal' is not supported for sdk_shared_library().")
 
   assert(
       defined(invoker.symbols_api),
@@ -183,7 +191,6 @@ template("sdk_shared_library") {
 
   main_target_name = target_name
   manifest_target_name = "${main_target_name}_sdk_manifest"
-  verify_pragma_target_name = "${main_target_name}_sdk_pragma"
   sdk_target_name = "${main_target_name}_sdk"
 
   shared_library(main_target_name) {
@@ -246,10 +253,12 @@ template("sdk_shared_library") {
     # Ensure that targets using this template are included in the allowlist.
     # The allowlist target's `visibility` list ensures that the target using
     # this template is in the allowlist.
-    assert(
-        invoker.category == "partner",
-        "Create a separate allowlist when adding support for other categories.")
-    deps += [ "//build/sdk:partner_idk_shared_libraries_allowlist" ]
+    if (!is_internal) {
+      assert(
+          invoker.category == "partner",
+          "Create a separate allowlist when adding support for other categories.")
+      deps += [ "//build/sdk:partner_idk_shared_libraries_allowlist" ]
+    }
 
     if (defined(visibility) && generate_plasa_artifacts) {
       visibility += [ ":${main_target_name}_cc_stub" ]
@@ -463,8 +472,13 @@ template("sdk_shared_library") {
 
   # LINT.ThenChange(//build/sdk/idk_prebuild_manifest.gni)
 
-  verify_pragma_once(verify_pragma_target_name) {
-    headers = all_headers
+  # Exempt internal libraries from pragma verification.
+  should_verify_pragma = !is_internal
+  if (should_verify_pragma) {
+    verify_pragma_target_name = "${main_target_name}_sdk_pragma"
+    verify_pragma_once(verify_pragma_target_name) {
+      headers = all_headers
+    }
   }
 
   verify_public_headers_target = "${main_target_name}.verify_public_headers"
@@ -500,6 +514,11 @@ template("sdk_shared_library") {
       assert(
           !defined(invoker.api) && sdk_header_files == [],
           "`no_headers` targets do not require/support modification acknowledgement.")
+      assert(!is_internal)  # Would not enter else if.
+    } else if (is_internal) {
+      assert(
+          !defined(invoker.api),
+          "\"internal\" targets do not require/support modification acknowledgement.")
     } else {
       api = "${sdk_name}.api"
       if (defined(invoker.api)) {
@@ -522,10 +541,10 @@ template("sdk_shared_library") {
 
     deps = sdk_deps
 
-    non_sdk_deps = [
-      ":${verify_pragma_target_name}",
-      main_lib_target,
-    ]
+    non_sdk_deps = [ main_lib_target ]
+    if (should_verify_pragma) {
+      non_sdk_deps += [ ":${verify_pragma_target_name}" ]
+    }
     if (current_build_target_api_level != "HEAD") {
       non_sdk_deps += [ ":${verify_public_symbols_target_name}" ]
     }

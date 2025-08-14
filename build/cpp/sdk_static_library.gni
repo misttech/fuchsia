@@ -104,6 +104,9 @@ template("sdk_static_library") {
   sdk_root_path = "pkg/${sdk_name}"
   sdk_id = "sdk://${sdk_root_path}"
 
+  no_headers = false  # Temporary to minimize differences with
+                      # sdk_shared_library(). See https://fxbug.dev/326656468.
+
   main_target_name = target_name
   manifest_target_name = "${main_target_name}_sdk_manifest"
   sdk_target_name = "${main_target_name}_sdk"
@@ -196,10 +199,14 @@ template("sdk_static_library") {
   if (defined(invoker.public_deps)) {
     all_deps += invoker.public_deps
 
-    foreach(dep, invoker.public_deps) {
-      full_label = get_label_info(dep, "label_no_toolchain")
-      sdk_dep = "${full_label}_sdk"
-      sdk_deps += [ sdk_dep ]
+    # If a prebuilt library is only provided for packaging purposes (by not
+    # exposing headers) then its dependencies need not be included in an SDK.
+    if (!no_headers) {
+      foreach(dep, invoker.public_deps) {
+        full_label = get_label_info(dep, "label_no_toolchain")
+        sdk_dep = "${full_label}_sdk"
+        sdk_deps += [ sdk_dep ]
+      }
     }
   }
 
@@ -210,30 +217,40 @@ template("sdk_static_library") {
 
   # Process headers.
   all_headers = []
-  if (defined(invoker.public)) {
-    all_headers += invoker.public
-  } else {
-    # If public headers are not defined, pick them from `sources`.
-    assert(defined(invoker.sources))
-    foreach(source_file, invoker.sources) {
-      extension = get_path_info(source_file, "extension")
-      if (extension == "h") {
-        all_headers += [ source_file ]
+  if (!no_headers) {
+    if (defined(invoker.public)) {
+      all_headers += invoker.public
+    } else {
+      # If public headers are not defined, pick them from `sources`.
+      assert(defined(invoker.sources))
+      foreach(source_file, invoker.sources) {
+        extension = get_path_info(source_file, "extension")
+        if (extension == "h") {
+          all_headers += [ source_file ]
+        }
       }
     }
   }
-  assert(all_headers != [], "Library does not contain any headers.")
+  assert(
+      all_headers != [] || no_headers,
+      "Library does not contain any headers. If this is intentional, set `no_headers = true`")
   if (defined(invoker.sdk_headers_for_internal_use)) {
     assert(
         invoker.sdk_headers_for_internal_use + all_headers - all_headers == [],
         "Headers for internal use must also be in the list of public headers.")
-    assert(all_headers - invoker.sdk_headers_for_internal_use != [],
-           "Library does not contain any headers for external use.")
+
+    # vfs_internal is a special case where the library is for internal use.
+    assert(
+        all_headers - invoker.sdk_headers_for_internal_use != [] ||
+            no_headers ||
+            get_label_info(":${target_name}", "label_no_toolchain") ==
+                "//sdk/lib/vfs/internal:vfs_internal",
+        "Library does not contain any headers for external use. If this is intentional, set `no_headers = true`")
   }
 
   if (defined(invoker.include_base)) {
     include_base = invoker.include_base
-  } else {
+  } else if (!no_headers) {
     include_base = "include"
   }
 
@@ -352,7 +369,12 @@ template("sdk_static_library") {
     id = sdk_id
     idk_name = sdk_name
 
-    if (is_internal) {
+    if (no_headers) {
+      assert(
+          !defined(invoker.api) && sdk_header_files == [],
+          "`no_headers` targets do not require/support modification acknowledgement.")
+      assert(!is_internal)  # Would not enter else if.
+    } else if (is_internal) {
       assert(
           !defined(invoker.api),
           "\"internal\" targets do not require/support modification acknowledgement.")
