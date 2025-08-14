@@ -3,13 +3,23 @@
 // found in the LICENSE file.
 
 #include <lib/affine/ratio.h>
+#include <lib/fasttime/clock.h>
 
 #include "src/starnix/kernel/vdso/vdso_calculate_time.h"
 #include "src/starnix/kernel/vdso/vdso_platform.h"
 
+// This structure implements the methods needed to satisfy the ClockTransformationAdapter concept
+// used by the fasttime library to read memory-mapped clocks.
+struct StarnixClockTransformationAdapter {
+  static void ArchYield() {}
+  static zx_instant_mono_ticks_t GetMonoTicks() { return calculate_monotonic_ticks(); }
+  static zx_instant_boot_ticks_t GetBootTicks() { return calculate_boot_ticks(); }
+};
+using StarnixClockTransformation = fasttime::ClockTransformation<StarnixClockTransformationAdapter>;
+
 // This is in its own source file so it can be unit tested.
 int64_t calculate_utc_time_nsec() {
-  int64_t reference_boot_instant = calculate_boot_time_nsec();
+  zx_instant_boot_t reference_boot_instant = calculate_boot_time_nsec();
 
   // Boot time to utc transform is read from vvar_data. The data is protected by a seqlock, and so
   // a seqlock reader is implemented

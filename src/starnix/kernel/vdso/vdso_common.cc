@@ -7,17 +7,26 @@
 #include <errno.h>
 #include <lib/fasttime/time.h>
 #include <sys/syscall.h>
-#include <zircon/time.h>
 
 #include "vdso_calculate_time.h"
 #include "vdso_platform.h"
 
-int64_t calculate_monotonic_time_nsec() {
+zx_instant_mono_ticks_t calculate_monotonic_ticks() {
+  zx_vaddr_t time_values_addr = reinterpret_cast<zx_vaddr_t>(&time_values);
+  return fasttime::compute_monotonic_ticks(time_values_addr);
+}
+
+zx_instant_boot_ticks_t calculate_boot_ticks() {
+  zx_vaddr_t time_values_addr = reinterpret_cast<zx_vaddr_t>(&time_values);
+  return fasttime::compute_boot_ticks(time_values_addr);
+}
+
+zx_instant_mono_t calculate_monotonic_time_nsec() {
   zx_vaddr_t time_values_addr = reinterpret_cast<zx_vaddr_t>(&time_values);
   return fasttime::compute_monotonic_time(time_values_addr);
 }
 
-int64_t calculate_boot_time_nsec() {
+zx_instant_boot_t calculate_boot_time_nsec() {
   zx_vaddr_t time_values_addr = reinterpret_cast<zx_vaddr_t>(&time_values);
   return fasttime::compute_boot_time(time_values_addr);
 }

@@ -695,6 +695,7 @@ source_set("vdso_calculate_utc") {
     "//zircon/kernel/lib/fasttime:headers",
     "//zircon/system/public",
     "//zircon/system/ulib/affine",
+    "//zircon/system/ulib/concurrent:concurrent_vdso",
   ]
   configs += [ ":vdso_config" ]
 }

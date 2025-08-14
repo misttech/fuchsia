@@ -6,6 +6,7 @@
 #define SRC_STARNIX_KERNEL_VDSO_VDSO_CALCULATE_TIME_H_
 
 #include <stdint.h>
+#include <zircon/time.h>
 
 #include "vvar_data.h"
 
@@ -43,14 +44,23 @@ __attribute__((__visibility__("hidden"))) extern "C" vvar_data vvar;
 // address of the variable is used.
 __attribute__((__visibility__("hidden"))) extern "C" char time_values;
 
+// Returns monotonic time in hardware ticks.
+// This is equivalent to calling zx_ticks_get, so long as the ticks are userspace accessible. If
+// they are not, then this will return ZX_TIME_INFINITE_PAST, and the caller must invoke a full
+// clock_gettime syscall.
+zx_instant_mono_ticks_t calculate_monotonic_ticks();
+
+// Similar to above, but uses the boot timeline for the calculation instead.
+zx_instant_boot_ticks_t calculate_boot_ticks();
+
 // Returns monotonic time in nanoseconds.
 // This is equivalent to calling zx_clock_get_monotonic, so long as the ticks are userspace
 // accessible. If they are not, then this will return ZX_TIME_INFINITE_PAST, and the caller must
 // invoke a full clock_gettime syscall.
-int64_t calculate_monotonic_time_nsec();
+zx_instant_mono_t calculate_monotonic_time_nsec();
 
 // Similar to above, but uses the boot clock timeline for the calculation instead.
-int64_t calculate_boot_time_nsec();
+zx_instant_boot_t calculate_boot_time_nsec();
 
 // Returns utc time in nanoseconds
 int64_t calculate_utc_time_nsec();
