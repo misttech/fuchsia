@@ -357,6 +357,7 @@ def get_default_compile_flags_feature(
     host_cpu = clang_info.fuchsia_host_arch
 
     is_macos = target_os == "mac"
+    is_host = target_os == host_os
 
     clang_tuple = to_clang_target_tuple(target_os, target_cpu)
     toolchain_dir = "external/{}".format(toolchain_repo_name)
@@ -439,21 +440,31 @@ def get_default_compile_flags_feature(
             # These are cflags that will be added to all builds
             flag_set(
                 actions = _all_compile_actions,
-                flag_groups = _iter_cflags([
-                    default_system_flags,
-                    _flag_configs.color_diagnostics,
-                    _flag_configs.pic,
-                    _flag_configs.linker_gc,
-                    _flag_configs.no_frame_pointers,
-                    _flag_configs.debuginfo,
-                    _flag_configs.default_warnings,
-                    _flag_configs.werror,
-                    _flag_configs.symbol_visibility_hidden,
-                    _flag_configs.ffp_contract_off,
-                    _flag_configs.auto_var_init,
-                    _flag_configs.thread_safety_annotations,
-                    _flag_configs.relpath_debug_info,
-                ]),
+                flag_groups = _iter_cflags(
+                    [
+                        default_system_flags,
+                        _flag_configs.color_diagnostics,
+                        _flag_configs.pic,
+                        _flag_configs.linker_gc,
+                        _flag_configs.no_frame_pointers,
+                        _flag_configs.debuginfo,
+                        _flag_configs.default_warnings,
+                        _flag_configs.symbol_visibility_hidden,
+                        _flag_configs.ffp_contract_off,
+                        _flag_configs.auto_var_init,
+                        _flag_configs.thread_safety_annotations,
+                        _flag_configs.relpath_debug_info,
+                    ] + (
+                        [
+                            # TODO(b/430020292): Re-enable werror for
+                            # strict-prototypes # on host when we have a better
+                            # way to address Go SDK compilation failure.
+                            _make_flag_config(
+                                cflags = ["-Wno-strict-prototypes"],
+                            ),
+                        ] if is_host else [_flag_configs.werror]
+                    ),
+                ),
             ),
             # These are conlyflags that will be added to all builds
             flag_set(
