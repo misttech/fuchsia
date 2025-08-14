@@ -77,18 +77,18 @@ One-way FIDL call transport errors are logged according to the examples below.
   - in code that can use C++20 `<format>`-style logging
 * `FDF_LOG(ERROR, "FIDL error calling MethodName: %s", fidl_transport_status.error().FormatDescription().c_str());`
   - in code that has to use `printf()`-style logging
-* `ZX_ASSERT_MSG(fidl_transport_status.is_ok(), "FIDL error calling MethodName: %s", fidl_transport_status.error().FormatDescription().c_str())` - in code that cannot handle errors
+* `ZX_ASSERT_MSG(fidl_transport_status.ok(), "FIDL error calling MethodName: %s", fidl_transport_status.error().FormatDescription().c_str())` - in code that cannot handle errors
 
 Two-way FIDL calls are handled similarly, using `fidl_transport_result` instead
 of `fidl_transport_status`.
 
 FIDL domain errors are reported according to the examples below.
 
-* `fdf::warn("MethodName failed: {}", fidl_domain_result.error());`
+* `fdf::warn("MethodName failed: {}", zx::make_result(fidl_domain_result.error_value()));`
   - in code that can use C++20 `<format>`-style logging
-* `FDF_LOG(WARN, "MethodName failed: %s", fidl_domain_result.status_string());`
+* `FDF_LOG(WARN, "MethodName failed: %s", zx_status_get_string(fidl_domain_result.error_value()));`
   - in code that has to use `printf()`-style logging
-* `ZX_ASSERT_MSG(fidl_domain_error.is_ok(), "MethodName failed: %s", fidl_domain_result.status_string());` - in code that cannot handle errors
+* `ZX_ASSERT_MSG(fidl_domain_result.is_ok(), "MethodName failed: %s", zx_status_get_string(fidl_domain_result.error_value()));` - in code that cannot handle errors
 
 #### Arena tags
 

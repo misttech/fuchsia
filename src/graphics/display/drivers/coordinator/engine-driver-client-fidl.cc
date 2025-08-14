@@ -8,9 +8,11 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/arena.h>
 #include <lib/fdf/dispatcher.h>
+#include <lib/fit/result.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
+#include <zircon/status.h>
 
 #include "src/graphics/display/drivers/coordinator/fidl-conversion.h"
 
@@ -32,9 +34,8 @@ void EngineDriverClientFidl::ReleaseImage(display::DriverImageId driver_image_id
   fdf::Arena arena(kArenaTag);
   fidl::OneWayStatus fidl_transport_status =
       fidl_engine_.buffer(arena)->ReleaseImage(driver_image_id.ToFidl());
-  if (!fidl_transport_status.ok()) {
-    fdf::error("ReleaseImage failed: {}", fidl_transport_status.status_string());
-  }
+  ZX_ASSERT_MSG(fidl_transport_status.ok(), "FIDL error calling ReleaseImage: %s",
+                fidl_transport_status.FormatDescription().c_str());
 }
 
 zx::result<> EngineDriverClientFidl::ReleaseCapture(
@@ -43,12 +44,12 @@ zx::result<> EngineDriverClientFidl::ReleaseCapture(
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ReleaseCapture>
       fidl_transport_result =
           fidl_engine_.buffer(arena)->ReleaseCapture(driver_capture_image_id.ToFidl());
-  if (!fidl_transport_result.ok()) {
-    fdf::error("ReleaseCapture failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
-  if (fidl_transport_result->is_error()) {
-    return zx::error(fidl_transport_result->error_value());
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling ReleaseCapture: %s",
+                fidl_transport_result.FormatDescription().c_str());
+
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
+  if (fidl_domain_result.is_error()) {
+    return zx::error(fidl_domain_result.error_value());
   }
   return zx::ok();
 }
@@ -62,12 +63,10 @@ display::ConfigCheckResult EngineDriverClientFidl::CheckConfiguration(
 
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CheckConfiguration>
       fidl_transport_result = fidl_engine_.buffer(arena)->CheckConfiguration(fidl_config);
-  if (!fidl_transport_result.ok()) {
-    fdf::error("CheckConfiguration failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling CheckConfiguration: %s",
+                fidl_transport_result.FormatDescription().c_str());
 
-  fit::result<fuchsia_hardware_display_types::ConfigResult> fidl_domain_result =
+  fit::result<fuchsia_hardware_display_types::ConfigResult>& fidl_domain_result =
       fidl_transport_result.value();
   if (fidl_domain_result.is_error()) {
     return display::ConfigCheckResult(fidl_domain_result.error_value());
@@ -82,13 +81,11 @@ void EngineDriverClientFidl::ApplyConfiguration(const DriverDisplayConfig& drive
   fuchsia_hardware_display_engine::wire::DisplayConfig fidl_config =
       ToFidlDisplayConfig(driver_display_config, layers, arena);
 
-  fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ApplyConfiguration>
+  fdf::WireUnownedResult<::fuchsia_hardware_display_engine::Engine::ApplyConfiguration>
       fidl_transport_result =
           fidl_engine_.buffer(arena)->ApplyConfiguration(fidl_config, config_stamp.ToFidl());
-  if (!fidl_transport_result.ok()) {
-    fdf::error("ApplyConfiguration failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling ApplyConfiguration: %s",
+                fidl_transport_result.FormatDescription().c_str());
 }
 
 display::EngineInfo EngineDriverClientFidl::CompleteCoordinatorConnection(
@@ -97,19 +94,19 @@ display::EngineInfo EngineDriverClientFidl::CompleteCoordinatorConnection(
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::CompleteCoordinatorConnection>
       fidl_transport_result = fidl_engine_.buffer(arena)->CompleteCoordinatorConnection(
           std::move(fidl_listener_client));
-  if (!fidl_transport_result.ok()) {
-    fdf::error("CompleteCoordinatorConnection failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
-  return display::EngineInfo::From(fidl_transport_result->engine_info);
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling CompleteCoordinatorConnection: %s",
+                fidl_transport_result.FormatDescription().c_str());
+
+  fuchsia_hardware_display_engine::wire::EngineCompleteCoordinatorConnectionResponse&
+      fidl_domain_result = fidl_transport_result.value();
+  return display::EngineInfo::From(fidl_domain_result.engine_info);
 }
 
 void EngineDriverClientFidl::UnsetListener() {
   fdf::Arena arena(kArenaTag);
   fidl::OneWayStatus fidl_transport_status = fidl_engine_.buffer(arena)->UnsetListener();
-  if (!fidl_transport_status.ok()) {
-    fdf::warn("UnsetListener failed: {}", fidl_transport_status.status_string());
-  }
+  ZX_ASSERT_MSG(fidl_transport_status.ok(), "FIDL error calling UnsetListener: %s",
+                fidl_transport_status.FormatDescription().c_str());
 }
 
 zx::result<display::DriverImageId> EngineDriverClientFidl::ImportImage(
@@ -119,14 +116,15 @@ zx::result<display::DriverImageId> EngineDriverClientFidl::ImportImage(
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ImportImage>
       fidl_transport_result = fidl_engine_.buffer(arena)->ImportImage(
           image_metadata.ToFidl(), collection_id.ToFidl(), index);
-  if (!fidl_transport_result.ok()) {
-    fdf::error("ImportImage failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling ImportImage: %s",
+                fidl_transport_result.FormatDescription().c_str());
+
+  fit::result<zx_status_t, fuchsia_hardware_display_engine::wire::EngineImportImageResponse*>&
+      fidl_domain_result = fidl_transport_result.value();
+  if (fidl_domain_result.is_error()) {
+    return zx::error(fidl_domain_result.error_value());
   }
-  if (fidl_transport_result->is_error()) {
-    return zx::error(fidl_transport_result->error_value());
-  }
-  return zx::ok(display::DriverImageId(fidl_transport_result->value()->image_id.value));
+  return zx::ok(display::DriverImageId(fidl_domain_result.value()->image_id.value));
 }
 
 zx::result<display::DriverCaptureImageId> EngineDriverClientFidl::ImportImageForCapture(
@@ -135,15 +133,17 @@ zx::result<display::DriverCaptureImageId> EngineDriverClientFidl::ImportImageFor
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ImportImageForCapture>
       fidl_transport_result =
           fidl_engine_.buffer(arena)->ImportImageForCapture(collection_id.ToFidl(), index);
-  if (!fidl_transport_result.ok()) {
-    fdf::error("ImportImageForCapture failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
-  if (fidl_transport_result->is_error()) {
-    return zx::error(fidl_transport_result->error_value());
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling ImportImageForCapture: %s",
+                fidl_transport_result.FormatDescription().c_str());
+
+  fit::result<zx_status_t,
+              fuchsia_hardware_display_engine::wire::EngineImportImageForCaptureResponse*>&
+      fidl_domain_result = fidl_transport_result.value();
+  if (fidl_domain_result.is_error()) {
+    return zx::error(fidl_domain_result.error_value());
   }
   fuchsia_hardware_display_engine::wire::ImageId image_id =
-      fidl_transport_result->value()->capture_image_id;
+      fidl_domain_result.value()->capture_image_id;
   return zx::ok(display::DriverCaptureImageId(image_id.value));
 }
 
@@ -154,12 +154,12 @@ zx::result<> EngineDriverClientFidl::ImportBufferCollection(
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ImportBufferCollection>
       fidl_transport_result = fidl_engine_.buffer(arena)->ImportBufferCollection(
           collection_id.ToFidl(), std::move(collection_token));
-  if (!fidl_transport_result.ok()) {
-    fdf::error("ImportBufferCollection failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
-  if (fidl_transport_result->is_error()) {
-    return zx::error(fidl_transport_result->error_value());
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling ImportBufferCollection: %s",
+                fidl_transport_result.FormatDescription().c_str());
+
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
+  if (fidl_domain_result.is_error()) {
+    return zx::error(fidl_domain_result.error_value());
   }
   return zx::ok();
 }
@@ -170,12 +170,12 @@ zx::result<> EngineDriverClientFidl::ReleaseBufferCollection(
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ReleaseBufferCollection>
       fidl_transport_result =
           fidl_engine_.buffer(arena)->ReleaseBufferCollection(collection_id.ToFidl());
-  if (!fidl_transport_result.ok()) {
-    fdf::error("ReleaseBufferCollection failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
-  if (fidl_transport_result->is_error()) {
-    return zx::error(fidl_transport_result->error_value());
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling ReleaseBufferCollection: %s",
+                fidl_transport_result.FormatDescription().c_str());
+
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
+  if (fidl_domain_result.is_error()) {
+    return zx::error(fidl_domain_result.error_value());
   }
   return zx::ok();
 }
@@ -186,12 +186,12 @@ zx::result<> EngineDriverClientFidl::SetBufferCollectionConstraints(
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetBufferCollectionConstraints>
       fidl_transport_result = fidl_engine_.buffer(arena)->SetBufferCollectionConstraints(
           usage.ToFidl(), collection_id.ToFidl());
-  if (!fidl_transport_result.ok()) {
-    fdf::error("SetBufferCollectionConstraints failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
-  if (fidl_transport_result->is_error()) {
-    return zx::error(fidl_transport_result->error_value());
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling SetBufferCollectionConstraints: %s",
+                fidl_transport_result.FormatDescription().c_str());
+
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
+  if (fidl_domain_result.is_error()) {
+    return zx::error(fidl_domain_result.error_value());
   }
   return zx::ok();
 }
@@ -202,12 +202,12 @@ zx::result<> EngineDriverClientFidl::StartCapture(
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::StartCapture>
       fidl_transport_result =
           fidl_engine_.buffer(arena)->StartCapture(driver_capture_image_id.ToFidl());
-  if (!fidl_transport_result.ok()) {
-    fdf::error("StartCapture failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
-  if (fidl_transport_result->is_error()) {
-    return zx::error(fidl_transport_result->error_value());
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling StartCapture: %s",
+                fidl_transport_result.FormatDescription().c_str());
+
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
+  if (fidl_domain_result.is_error()) {
+    return zx::error(fidl_domain_result.error_value());
   }
   return zx::ok();
 }
@@ -217,12 +217,12 @@ zx::result<> EngineDriverClientFidl::SetDisplayPower(display::DisplayId display_
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetDisplayPower>
       fidl_transport_result =
           fidl_engine_.buffer(arena)->SetDisplayPower(display_id.ToFidl(), power_on);
-  if (!fidl_transport_result.ok()) {
-    fdf::error("SetDisplayPower failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
-  if (fidl_transport_result->is_error()) {
-    return zx::error(fidl_transport_result->error_value());
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling SetDisplayPower: %s",
+                fidl_transport_result.FormatDescription().c_str());
+
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
+  if (fidl_domain_result.is_error()) {
+    return zx::error(fidl_domain_result.error_value());
   }
   return zx::ok();
 }
@@ -231,12 +231,12 @@ zx::result<> EngineDriverClientFidl::SetMinimumRgb(uint8_t minimum_rgb) {
   fdf::Arena arena(kArenaTag);
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetMinimumRgb>
       fidl_transport_result = fidl_engine_.buffer(arena)->SetMinimumRgb(minimum_rgb);
-  if (!fidl_transport_result.ok()) {
-    fdf::error("SetMinimumRgb failed: {}", fidl_transport_result.status_string());
-    ZX_ASSERT(fidl_transport_result.ok());
-  }
-  if (fidl_transport_result->is_error()) {
-    return zx::error(fidl_transport_result->error_value());
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling SetMinimumRgb: %s",
+                fidl_transport_result.FormatDescription().c_str());
+
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
+  if (fidl_domain_result.is_error()) {
+    return zx::error(fidl_domain_result.error_value());
   }
   return zx::ok();
 }

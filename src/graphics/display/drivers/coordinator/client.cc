@@ -1304,7 +1304,7 @@ void Client::NotifyDisplayChanges(
       fidl::VectorView<fuchsia_hardware_display_types::wire::DisplayId>::FromExternal(
           non_const_removed_display_ids.data(), non_const_removed_display_ids.size()));
   if (!fidl_transport_status.ok()) {
-    fdf::error("OnDisplaysChanged dispatch failed: {}", fidl_transport_status.error());
+    fdf::error("FIDL error calling OnDisplaysChanged: {}", fidl_transport_status.error());
   }
 }
 
@@ -1316,7 +1316,7 @@ void Client::NotifyOwnershipChange(bool client_has_ownership) {
   fidl::OneWayStatus fidl_transport_status =
       coordinator_listener_->OnClientOwnershipChange(client_has_ownership);
   if (!fidl_transport_status.ok()) {
-    fdf::error("OnClientOwnershipChange dispatch failed: {}", fidl_transport_status.error());
+    fdf::error("FIDL error calling OnClientOwnershipChange: {}", fidl_transport_status.error());
   }
 }
 
@@ -1330,7 +1330,7 @@ void Client::NotifyVsync(display::DisplayId display_id, zx::time_monotonic times
   fidl::OneWayStatus fidl_transport_status = coordinator_listener_->OnVsync(
       display_id.ToFidl(), timestamp, config_stamp.ToFidl(), vsync_ack_cookie.ToFidl());
   if (!fidl_transport_status.ok()) {
-    fdf::error("OnNotifyVsync dispatch failed: {}", fidl_transport_status.error());
+    fdf::error("FIDL error calling OnVsync: {}", fidl_transport_status.error());
   }
 }
 
