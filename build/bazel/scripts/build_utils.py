@@ -475,6 +475,33 @@ class BazelCommand(object):
             "--platforms=//build/bazel/platforms:host",  # For now, only supports host targets.
         ]
 
+    @classmethod
+    def from_dirs(
+        cls,
+        fuchsia_dir: T.Optional[Path] = None,
+        build_dir: T.Optional[Path] = None,
+    ) -> "BazelCommand":
+        if fuchsia_dir:
+            fuchsia_dir = fuchsia_dir.resolve()
+        else:
+            fuchsia_dir = find_fuchsia_dir(os.path.dirname(__file__))
+
+        if build_dir:
+            build_dir = build_dir.resolve()
+        else:
+            build_dir = find_fx_build_dir(fuchsia_dir)
+            if not build_dir:
+                raise Exception(
+                    "Could not find Fuchsia build directory, please specify build dir."
+                )
+
+        bazel_launcher = find_bazel_launcher_path(fuchsia_dir, build_dir)
+        if not bazel_launcher:
+            raise Exception(
+                f"Could not find Bazel launcher script! fuchsia dir={fuchsia_dir} build dir={build_dir}"
+            )
+        return BazelCommand(bazel_launcher)
+
     def run(self, command: str, args: T.Sequence[str] = []) -> str:
         """Run a specific Bazel command with optional args, return output as string."""
         return subprocess.check_output(

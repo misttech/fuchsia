@@ -545,31 +545,10 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    fuchsia_dir = args.fuchsia_dir
-    if fuchsia_dir:
-        fuchsia_dir = fuchsia_dir.resolve()
-    else:
-        fuchsia_dir = build_utils.find_fuchsia_dir(_SCRIPT_DIR_PATH)
-
-    build_dir = args.build_dir
-    if build_dir:
-        build_dir = build_dir.resolve()
-    else:
-        build_dir = build_utils.find_fx_build_dir(fuchsia_dir)
-        if not build_dir:
-            parser.error(
-                f"Could not find Fuchsia build directory, please use --build-dir=DIR option."
-            )
-
-    bazel_launcher = build_utils.find_bazel_launcher_path(
-        fuchsia_dir, build_dir
+    bazel_cmd = build_utils.BazelCommand.from_dirs(
+        fuchsia_dir=args.fuchsia_dir,
+        build_dir=args.build_dir,
     )
-    if not bazel_launcher:
-        parser.error(
-            f"Could not find Bazel launcher script! fuchsia_dir={fuchsia_dir} build_dir={build_dir}"
-        )
-
-    bazel_cmd = build_utils.BazelCommand(bazel_launcher)
 
     # Now query each target to get its executable and runfiles_manifest path
     # in the output base, then load the runfiles manifest.
