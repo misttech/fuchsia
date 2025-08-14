@@ -907,11 +907,19 @@ func infraToolLogChecks() []FailureModeCheck {
 			Type:            syslogType,
 			AttributeToTest: true,
 		},
-		// For https://fxbug.dev/428551639
+		// For https://fxbug.dev/433971550
 		&stringInLogCheck{
 			String:             "Restarts have not restored connectivity. Giving up.",
 			Type:               swarmingOutputType,
 			SkipAllPassedTests: true,
+		},
+		// For https://fxbug.dev/433971550
+		&stringInLogCheck{
+			String:          "ADB communication failed, attempting restart of isolated server",
+			Type:            swarmingOutputType,
+			AlwaysFlake:     true,
+			AttributeToTest: true,
+			AddTag:          true,
 		},
 	}
 }
