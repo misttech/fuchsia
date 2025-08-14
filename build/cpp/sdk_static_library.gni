@@ -2,13 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Temporarily contains `sdk_prebuilt_library_impl()`.
-import("//build/cpp/sdk_shared_library.gni")
+import("//build/cpp/sdk_prebuilt_library_impl.gni")
 
 # A static library that can be exported to an SDK in binary form.
 #
 #
-# See the comments for `sdk_prebuilt_library_impl()` for parameters.
+# See the comments in //build/cpp/sdk_prebuilt_library_impl.gni for parameters.
 # `prebuilt_library_type` is already set.
 template("sdk_static_library") {
   assert(!defined(invoker.prebuilt_library_type))

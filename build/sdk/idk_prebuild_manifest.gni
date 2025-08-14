@@ -140,7 +140,7 @@ template("idk_prebuild_manifest") {
   #     file_base (string)
   #       Same as "cc_source_library"
   #
-  #   LINT.ThenChange(//build/cpp/sdk_shared_library.gni)
+  #   LINT.ThenChange(//build/cpp/sdk_prebuilt_library_impl.gni)
   #
   # ----------------------------------------------------------------------------
   #
