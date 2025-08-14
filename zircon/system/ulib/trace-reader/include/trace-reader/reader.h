@@ -22,6 +22,7 @@
 namespace trace {
 
 class Chunk;
+struct ProviderInfo;
 
 // Reads trace records.
 // The input is a collection of |Chunk| objects (see class Chunk below).
@@ -45,6 +46,11 @@ class TraceReader {
 
   explicit TraceReader(RecordConsumer record_consumer, ErrorHandler error_handler);
 
+  // Since this class holds a std::unique_ptr<ProviderInfo> -- which is forward-declared
+  // here -- the destructor must be defined in the implementation file, where it has
+  // access to the actual ProviderInfo definition.
+  ~TraceReader();
+
   // Reads as many records as possible from the chunk, invoking the
   // record consumer for each one.  Returns true if the stream could possibly
   // contain more records if the chunk were extended with new data.
@@ -55,11 +61,11 @@ class TraceReader {
 
   // Gets the current trace provider id.
   // Returns 0 if no providers have been registered yet.
-  ProviderId current_provider_id() const { return current_provider_->id; }
+  ProviderId current_provider_id() const;
 
   // Gets the name of the current trace provider.
   // Returns an empty string if the current provider id is 0.
-  const std::string& current_provider_name() const { return current_provider_->name; }
+  const std::string& current_provider_name() const;
 
   // Gets the name of the specified provider, or an empty string if there is
   // no such provider.
@@ -99,38 +105,6 @@ class TraceReader {
   ErrorHandler const error_handler_;
 
   RecordHeader pending_header_ = 0u;
-
-  struct StringTableEntry {
-    StringTableEntry(trace_string_index_t index, std::string string)
-        : index(index), string(std::move(string)) {}
-
-    trace_string_index_t const index;
-    std::string const string;
-
-    // Used by the hash table.
-    trace_string_index_t GetKey() const { return index; }
-    static size_t GetHash(trace_string_index_t key) { return key; }
-  };
-
-  struct ThreadTableEntry {
-    ThreadTableEntry(trace_thread_index_t index, const ProcessThread& process_thread)
-        : index(index), process_thread(process_thread) {}
-
-    trace_thread_index_t const index;
-    ProcessThread const process_thread;
-
-    // Used by the hash table.
-    trace_thread_index_t GetKey() const { return index; }
-    static size_t GetHash(trace_thread_index_t key) { return key; }
-  };
-
-  struct ProviderInfo {
-    ProviderId id;
-    std::string name;
-
-    std::unordered_map<trace_string_index_t, StringTableEntry> string_table;
-    std::unordered_map<trace_thread_index_t, ThreadTableEntry> thread_table;
-  };
 
   std::unordered_map<ProviderId, std::unique_ptr<ProviderInfo>> providers_;
   ProviderInfo* current_provider_ = nullptr;

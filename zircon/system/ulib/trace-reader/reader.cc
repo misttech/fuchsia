@@ -12,12 +12,50 @@
 
 namespace trace {
 
+namespace {
+
+struct StringTableEntry {
+  StringTableEntry(trace_string_index_t index, std::string string)
+      : index(index), string(std::move(string)) {}
+
+  trace_string_index_t const index;
+  std::string const string;
+
+  // Used by the hash table.
+  trace_string_index_t GetKey() const { return index; }
+  static size_t GetHash(trace_string_index_t key) { return key; }
+};
+
+struct ThreadTableEntry {
+  ThreadTableEntry(trace_thread_index_t index, const ProcessThread& process_thread)
+      : index(index), process_thread(process_thread) {}
+
+  trace_thread_index_t const index;
+  ProcessThread const process_thread;
+
+  // Used by the hash table.
+  trace_thread_index_t GetKey() const { return index; }
+  static size_t GetHash(trace_thread_index_t key) { return key; }
+};
+
+}  // namespace
+
+struct ProviderInfo {
+  ProviderId id;
+  std::string name;
+
+  std::unordered_map<trace_string_index_t, StringTableEntry> string_table;
+  std::unordered_map<trace_thread_index_t, ThreadTableEntry> thread_table;
+};
+
 TraceReader::TraceReader(RecordConsumer record_consumer, ErrorHandler error_handler)
     : record_consumer_(std::move(record_consumer)), error_handler_(std::move(error_handler)) {
   // Provider ids begin at 1. We don't have a provider yet but we want to
   // set the current provider. So set it to non-existent provider 0.
   RegisterProvider(0u, "");
 }
+
+TraceReader::~TraceReader() = default;
 
 bool TraceReader::ReadRecords(Chunk& chunk) {
   while (true) {
@@ -918,6 +956,10 @@ void TraceReader::ReportError(std::string_view error) const {
   if (error_handler_)
     error_handler_(error);
 }
+
+ProviderId TraceReader::current_provider_id() const { return current_provider_->id; }
+
+const std::string& TraceReader::current_provider_name() const { return current_provider_->name; }
 
 Chunk::Chunk(const uint64_t* begin, size_t num_words)
     : begin_(begin), current_(begin), end_(begin_ + num_words) {}
