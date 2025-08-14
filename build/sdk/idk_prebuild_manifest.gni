@@ -54,6 +54,10 @@ template("idk_prebuild_manifest") {
   #     library name or package distribution name.
   #     Supported only for packages and bind, C++ prebuilt, C++ source, Dart,
   #     and FIDL libraries.
+  #     Names must be unique across the IDK for a given `atom_type`. In some
+  #     cases, where the `meta_dest` values do not collide because the atom
+  #     types use different base paths, atoms of different types can share the
+  #     same name.
   #
   #   is_stable (bool)
   #     Whether the atom is stable and subject to compatibility guarantees.
