@@ -222,13 +222,12 @@ template("sdk_static_library") {
   if (defined(invoker.public)) {
     all_headers += invoker.public
   } else {
-    # If no explicit headers are defined, pick them out from sources.
-    if (defined(invoker.sources)) {
-      foreach(source_file, invoker.sources) {
-        extension = get_path_info(source_file, "extension")
-        if (extension == "h") {
-          all_headers += [ source_file ]
-        }
+    # If public headers are not defined, pick them from `sources`.
+    assert(defined(invoker.sources))
+    foreach(source_file, invoker.sources) {
+      extension = get_path_info(source_file, "extension")
+      if (extension == "h") {
+        all_headers += [ source_file ]
       }
     }
   }
