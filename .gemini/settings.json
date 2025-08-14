@@ -6,6 +6,11 @@
   "excludeTools": [
     "search_file_content"
   ],
+  "includeDirectories": [
+    "local",
+    "vendor/google"
+  ],
+  "loadMemoryFromIncludeDirectories": true,
   "toolDiscoveryCommand": ".gemini/discover_tools.sh",
   "toolCallCommand": ".gemini/call_tool.sh"
 }
