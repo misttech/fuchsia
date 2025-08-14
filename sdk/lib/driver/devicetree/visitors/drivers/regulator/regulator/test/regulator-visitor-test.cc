@@ -15,6 +15,7 @@
 #include <bind/fuchsia/regulator/cpp/bind.h>
 #include <gtest/gtest.h>
 
+#include "bind/fuchsia/cpp/bind.h"
 #include "dts/regulator-test.h"
 namespace regulator_visitor_dt {
 
@@ -85,15 +86,80 @@ TEST(RegulatorVisitorTest, TestMetadataAndBindProperty) {
 
       // Check for regulator parent node specs. Skip the 1st one as it is either pdev/board device.
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
-                               bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeProperty2(bind_fuchsia_regulator::NAME, REGULATOR_NAME)}},
+          {
+              {fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
+                                  bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+               fdf::MakeProperty2(bind_fuchsia_regulator::NAME, REGULATOR_NAME)},
+          },
           (*mgr_request.parents2())[1].properties(), false));
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
           {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_vreg::SERVICE,
                                      bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeAcceptBindRule2(bind_fuchsia_regulator::NAME, REGULATOR_NAME)}},
+            fdf::MakeAcceptBindRule2(bind_fuchsia_regulator::NAME, REGULATOR_NAME),
+            fdf::MakeAcceptBindRule2(bind_fuchsia::REGULATOR_NODE_ID, static_cast<uint32_t>(0))}},
           (*mgr_request.parents2())[1].bind_rules(), false));
+    }
+  }
+
+  ASSERT_EQ(node_tested_count, 2u);
+}
+
+TEST(RegulatorVisitorTest, TestSharedRegulatorInstanceIds) {
+  fdf_devicetree::VisitorRegistry visitors;
+  ASSERT_TRUE(
+      visitors.RegisterVisitor(std::make_unique<fdf_devicetree::BindPropertyVisitor>()).is_ok());
+
+  auto tester =
+      std::make_unique<RegulatorVisitorTester>("/pkg/test-data/multiclient-regulator.dtb");
+  RegulatorVisitorTester* regulator_visitor_tester = tester.get();
+  ASSERT_TRUE(visitors.RegisterVisitor(std::move(tester)).is_ok());
+
+  ASSERT_EQ(ZX_OK, regulator_visitor_tester->manager()->Walk(visitors).status_value());
+  ASSERT_TRUE(regulator_visitor_tester->DoPublish().is_ok());
+
+  uint32_t node_tested_count = 0;
+  uint32_t mgr_request_idx = 0;
+
+  auto node_count = regulator_visitor_tester->env().SyncCall(
+      &fdf_devicetree::testing::FakeEnvWrapper::non_pbus_node_size);
+
+  for (size_t i = 0; i < node_count; i++) {
+    auto node = regulator_visitor_tester->env().SyncCall(
+        &fdf_devicetree::testing::FakeEnvWrapper::non_pbus_nodes_at, i);
+
+    if (node->args().name()->find("cpu-ctrl") != std::string::npos ||
+        node->args().name()->find("gpu-ctrl") != std::string::npos) {
+      node_tested_count++;
+      ASSERT_EQ(2lu, regulator_visitor_tester->env().SyncCall(
+                         &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_size));
+
+      auto mgr_request = regulator_visitor_tester->env().SyncCall(
+          &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, mgr_request_idx++);
+      ASSERT_TRUE(mgr_request.parents2().has_value());
+      ASSERT_EQ(2lu, mgr_request.parents2()->size());
+
+      // Check for regulator parent node specs. Skip the 1st one as it is either pdev/board device.
+      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+          {
+              {fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
+                                  bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+               fdf::MakeProperty2(bind_fuchsia_regulator::NAME, REGULATOR_NAME)},
+          },
+          (*mgr_request.parents2())[1].properties(), false));
+      bool instance0 = fdf_devicetree::testing::CheckHasBindRules(
+          {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_vreg::SERVICE,
+                                     bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule2(bind_fuchsia_regulator::NAME, REGULATOR_NAME),
+            fdf::MakeAcceptBindRule2(bind_fuchsia::REGULATOR_NODE_ID, static_cast<uint32_t>(0))}},
+          (*mgr_request.parents2())[1].bind_rules(), true);
+      bool instance1 = fdf_devicetree::testing::CheckHasBindRules(
+          {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_vreg::SERVICE,
+                                     bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule2(bind_fuchsia_regulator::NAME, REGULATOR_NAME),
+            fdf::MakeAcceptBindRule2(bind_fuchsia::REGULATOR_NODE_ID, static_cast<uint32_t>(1))}},
+          (*mgr_request.parents2())[1].bind_rules(), true);
+      ASSERT_NE(instance0, instance1);
+      ASSERT_TRUE(instance0 || instance1);
     }
   }
 

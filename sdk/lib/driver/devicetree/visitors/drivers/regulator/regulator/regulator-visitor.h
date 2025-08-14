@@ -5,6 +5,7 @@
 #ifndef LIB_DRIVER_DEVICETREE_VISITORS_DRIVERS_REGULATOR_REGULATOR_REGULATOR_VISITOR_H_
 #define LIB_DRIVER_DEVICETREE_VISITORS_DRIVERS_REGULATOR_REGULATOR_REGULATOR_VISITOR_H_
 
+#include <lib/driver/devicetree/manager/node.h>
 #include <lib/driver/devicetree/manager/visitor.h>
 #include <lib/driver/devicetree/visitors/property-parser.h>
 
@@ -27,10 +28,12 @@ class RegulatorVisitor : public fdf_devicetree::Visitor {
   bool is_match(const std::string& name);
   zx::result<> AddRegulatorMetadata(fdf_devicetree::Node& node,
                                     fdf_devicetree::ParsedProperties& values);
-  zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, fdf_devicetree::ReferenceNode& parent);
+  zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, fdf_devicetree::ReferenceNode& parent,
+                                uint32_t instance);
 
   std::unique_ptr<fdf_devicetree::PropertyParser> parser_;
   std::unique_ptr<fdf_devicetree::PropertyParser> reference_parser_;
+  std::map<fdf_devicetree::Phandle, uint16_t> regulator_client_count_;
 };
 
 }  // namespace regulator_visitor_dt

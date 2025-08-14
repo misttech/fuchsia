@@ -172,8 +172,8 @@ bool CheckHasBindRules(std::vector<fuchsia_driver_framework::BindRule> expected,
     auto iter = std::find(expected.begin(), expected.end(), rule);
     if (iter == expected.end()) {
       if (!allow_additional_rules) {
-        FX_LOGS(ERROR) << "Unexpected bind rule: "
-                       << DebugStringifyProperty(rule.key(), rule.values());
+        FX_LOGS(WARNING) << "Unexpected bind rule: "
+                         << DebugStringifyProperty(rule.key(), rule.values());
         result = false;
       }
     } else {
@@ -182,9 +182,9 @@ bool CheckHasBindRules(std::vector<fuchsia_driver_framework::BindRule> expected,
   }
 
   if (!expected.empty()) {
-    FX_LOGS(ERROR) << "All expected bind rules are not present.";
+    FX_LOGS(WARNING) << "All expected bind rules are not present.";
     for (auto& rule : expected) {
-      FX_LOGS(ERROR) << "Rule expected: " << DebugStringifyProperty(rule.key(), rule.values());
+      FX_LOGS(WARNING) << "Rule expected: " << DebugStringifyProperty(rule.key(), rule.values());
     }
     result = false;
   }
@@ -200,8 +200,8 @@ bool CheckHasBindRules(std::vector<fuchsia_driver_framework::BindRule2> expected
     auto iter = std::find(expected.begin(), expected.end(), rule);
     if (iter == expected.end()) {
       if (!allow_additional_rules) {
-        FX_LOGS(ERROR) << "Unexpected bind rule: "
-                       << DebugStringifyProperty(rule.key(), rule.values());
+        FX_LOGS(WARNING) << "Unexpected bind rule: "
+                         << DebugStringifyProperty(rule.key(), rule.values());
         result = false;
       }
     } else {
@@ -210,9 +210,9 @@ bool CheckHasBindRules(std::vector<fuchsia_driver_framework::BindRule2> expected
   }
 
   if (!expected.empty()) {
-    FX_LOGS(ERROR) << "All expected bind rules are not present.";
+    FX_LOGS(WARNING) << "All expected bind rules are not present.";
     for (auto& rule : expected) {
-      FX_LOGS(ERROR) << "Rule expected: " << DebugStringifyProperty(rule.key(), rule.values());
+      FX_LOGS(WARNING) << "Rule expected: " << DebugStringifyProperty(rule.key(), rule.values());
     }
     result = false;
   }

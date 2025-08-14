@@ -15,6 +15,7 @@
 #include <memory>
 #include <regex>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/vreg/cpp/bind.h>
 #include <bind/fuchsia/regulator/cpp/bind.h>
 
@@ -75,7 +76,19 @@ zx::result<> RegulatorVisitor::Visit(fdf_devicetree::Node& node,
   }
 
   for (auto& reference : *references) {
-    auto status = AddChildNodeSpec(node, reference.reference_node());
+    auto reference_node = reference.reference_node();
+
+    uint32_t current_count = static_cast<uint32_t>(0);
+    auto count_entry = regulator_client_count_.find(reference_node.phandle().value());
+    if (count_entry == regulator_client_count_.end()) {
+      regulator_client_count_.insert(std::pair<fdf_devicetree::Phandle, uint16_t>(
+          reference_node.phandle().value(), static_cast<uint16_t>(current_count)));
+    } else {
+      count_entry->second++;
+      current_count = static_cast<uint32_t>(count_entry->second);
+    }
+
+    auto status = AddChildNodeSpec(node, reference_node, current_count);
     if (status.is_error()) {
       FDF_LOG(ERROR, "Failed to add regulator '%s' node spec to '%s' : %s",
               reference.reference_node().name().c_str(), node.name().c_str(),
@@ -144,8 +157,10 @@ zx::result<> RegulatorVisitor::AddRegulatorMetadata(fdf_devicetree::Node& node,
   return zx::ok();
 }
 
+// Note that `instance_id` is zero-based.
 zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
-                                                fdf_devicetree::ReferenceNode& parent) {
+                                                fdf_devicetree::ReferenceNode& parent,
+                                                uint32_t instance_id) {
   auto regulator_name = parent.GetProperty<std::string>(kRegulatorName);
   if (regulator_name.is_error()) {
     FDF_LOG(ERROR, "Regulator node '%s' does not have a name: %s.", parent.name().c_str(),
@@ -159,6 +174,7 @@ zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
               fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_vreg::SERVICE,
                                        bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
               fdf::MakeAcceptBindRule2(bind_fuchsia_regulator::NAME, *regulator_name),
+              fdf::MakeAcceptBindRule2(bind_fuchsia::REGULATOR_NODE_ID, instance_id),
           },
       .properties =
           {
