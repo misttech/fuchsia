@@ -8,14 +8,15 @@ use std::num::NonZeroU64;
 
 use fidl_fuchsia_net_filter_ext::{
     self as fnet_filter_ext, Action, Change, CommitError, Domain, InstalledIpRoutine,
-    InstalledNatRoutine, InterfaceMatcher, IpHook, Matchers, Namespace, NamespaceId, NatHook,
-    PushChangesError, Resource, ResourceId, Routine, RoutineId, RoutineType, Rule, RuleId,
+    InstalledNatRoutine, IpHook, Matchers, Namespace, NamespaceId, NatHook, PushChangesError,
+    Resource, ResourceId, Routine, RoutineId, RoutineType, Rule, RuleId,
 };
 use fuchsia_async::DurationExt as _;
 use {
     fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated,
     fidl_fuchsia_net_masquerade as fnet_masquerade,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 use anyhow::{bail, Context as _};
@@ -315,14 +316,14 @@ fn create_interface_matching_jump_rule(
     // Some matchers cannot be used on all `IpHook`s.
     let (in_interface, out_interface) = match hook {
         IpHook::LocalIngress | IpHook::Ingress => {
-            (Some(InterfaceMatcher::Id(interface_id.into())), None)
+            (Some(fnet_matchers_ext::Interface::Id(interface_id.into())), None)
         }
         IpHook::LocalEgress | IpHook::Egress => {
-            (None, Some(InterfaceMatcher::Id(interface_id.into())))
+            (None, Some(fnet_matchers_ext::Interface::Id(interface_id.into())))
         }
         IpHook::Forwarding => (
-            Some(InterfaceMatcher::Id(interface_id.into())),
-            Some(InterfaceMatcher::Id(interface_id.into())),
+            Some(fnet_matchers_ext::Interface::Id(interface_id.into())),
+            Some(fnet_matchers_ext::Interface::Id(interface_id.into())),
         ),
     };
 

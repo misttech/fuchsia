@@ -13,15 +13,15 @@ use anyhow::Result;
 use argh::FromArgs as _;
 use assert_matches::assert_matches;
 use fidl_fuchsia_net_filter_ext::{
-    self as fnet_filter_ext, Action, AddressMatcher, AddressMatcherType, ControllerId, Domain,
-    InstalledIpRoutine, InterfaceMatcher, IpHook, Matchers, Namespace, NamespaceId, PortMatcher,
-    Resource, Routine, RoutineId, RoutineType, Rule, RuleId, TransportProtocolMatcher,
+    self as fnet_filter_ext, Action, ControllerId, Domain, InstalledIpRoutine, IpHook, Matchers,
+    Namespace, NamespaceId, Resource, Routine, RoutineId, RoutineType, Rule, RuleId,
 };
 use net_declare::fidl_subnet;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt as _};
 use test_case::test_case;
 use {
     fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 struct TestRealmConnector<'a> {
@@ -138,18 +138,18 @@ async fn filter_create() {
     let rule = Resource::Rule(Rule {
         id: RuleId { routine: routine_id, index: 42 },
         matchers: Matchers {
-            in_interface: Some(InterfaceMatcher::PortClass(
+            in_interface: Some(fnet_matchers_ext::Interface::PortClass(
                 fnet_interfaces_ext::PortClass::WlanClient,
             )),
-            src_addr: Some(AddressMatcher {
-                matcher: AddressMatcherType::Subnet(
+            src_addr: Some(fnet_matchers_ext::Address {
+                matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
                     fidl_subnet!("192.0.2.0/24").try_into().unwrap(),
                 ),
                 invert: true,
             }),
-            transport_protocol: Some(TransportProtocolMatcher::Tcp {
+            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                 src_port: None,
-                dst_port: Some(PortMatcher::new(22, 22, false).unwrap()),
+                dst_port: Some(fnet_matchers_ext::Port::new(22, 22, false).unwrap()),
             }),
             ..Default::default()
         },

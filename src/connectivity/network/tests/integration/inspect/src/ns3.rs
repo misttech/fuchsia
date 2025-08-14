@@ -21,10 +21,9 @@ use fidl_fuchsia_net_multicast_ext::{
     self as fnet_multicast_ext, FidlMulticastAdminIpExt, TableControllerProxy,
 };
 use fnet_filter_ext::{
-    Action, AddressMatcher, AddressMatcherType, Change, Controller, ControllerId, Domain,
-    InstalledIpRoutine, InstalledNatRoutine, InterfaceMatcher, IpHook, Matchers, Namespace,
-    NamespaceId, NatHook, PortMatcher, PortRange, Resource, Routine, RoutineId, RoutineType, Rule,
-    RuleId, TransportProtocolMatcher,
+    Action, Change, Controller, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine,
+    IpHook, Matchers, Namespace, NamespaceId, NatHook, PortRange, Resource, Routine, RoutineId,
+    RoutineType, Rule, RuleId,
 };
 use futures::StreamExt as _;
 use net_declare::{
@@ -52,6 +51,7 @@ use test_case::test_case;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_net_filter_ext as fnet_filter_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
     fidl_fuchsia_net_multicast_admin as fnet_multicast_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_netemul as fnetemul,
     fidl_fuchsia_posix_socket as fposix_socket,
@@ -2454,7 +2454,9 @@ async fn inspect_filtering_state(name: &str) {
                 Resource::Rule(Rule {
                     id: RuleId { routine: ingress_routine.clone(), index: 20 },
                     matchers: Matchers {
-                        in_interface: Some(InterfaceMatcher::Id(NonZeroU64::new(1).unwrap())),
+                        in_interface: Some(fnet_matchers_ext::Interface::Id(
+                            NonZeroU64::new(1).unwrap(),
+                        )),
                         ..Default::default()
                     },
                     action: Action::Drop,
@@ -2462,9 +2464,11 @@ async fn inspect_filtering_state(name: &str) {
                 Resource::Rule(Rule {
                     id: RuleId { routine: ingress_routine, index: 10 },
                     matchers: Matchers {
-                        transport_protocol: Some(TransportProtocolMatcher::Tcp {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                             src_port: None,
-                            dst_port: Some(PortMatcher::new(22, 22, /* invert */ false).unwrap()),
+                            dst_port: Some(
+                                fnet_matchers_ext::Port::new(22, 22, /* invert */ false).unwrap(),
+                            ),
                         }),
                         ..Default::default()
                     },
@@ -2484,8 +2488,8 @@ async fn inspect_filtering_state(name: &str) {
                 Resource::Rule(Rule {
                     id: RuleId { routine: egress_routine, index: 0 },
                     matchers: Matchers {
-                        dst_addr: Some(AddressMatcher {
-                            matcher: AddressMatcherType::Subnet(
+                        dst_addr: Some(fnet_matchers_ext::Address {
+                            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
                                 fidl_subnet!("127.0.0.0/8").try_into().unwrap(),
                             ),
                             invert: false,
@@ -2504,7 +2508,7 @@ async fn inspect_filtering_state(name: &str) {
                 Resource::Rule(Rule {
                     id: RuleId { routine: nat_routine, index: 0 },
                     matchers: Matchers {
-                        transport_protocol: Some(TransportProtocolMatcher::Udp {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                             src_port: None,
                             dst_port: None,
                         }),
@@ -2743,7 +2747,7 @@ async fn inspect_conntrack_nat_state(name: &str) {
                 Resource::Rule(Rule {
                     id: RuleId { routine: nat_routine, index: 0 },
                     matchers: Matchers {
-                        transport_protocol: Some(TransportProtocolMatcher::Udp {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                             src_port: None,
                             dst_port: None,
                         }),

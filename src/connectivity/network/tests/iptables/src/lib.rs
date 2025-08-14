@@ -10,9 +10,9 @@ use std::pin::pin;
 use component_events::events::{EventStream, ExitStatus, Stopped, StoppedPayload};
 use component_events::matcher::EventMatcher;
 use fidl_fuchsia_net_filter_ext::{
-    Action, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine, InterfaceMatcher,
-    IpHook, MarkAction, Matchers, Namespace, NamespaceId, NatHook, Resource, Routine, RoutineId,
-    RoutineType, Rule, RuleId,
+    Action, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine, IpHook, MarkAction,
+    Matchers, Namespace, NamespaceId, NatHook, Resource, Routine, RoutineId, RoutineType, Rule,
+    RuleId,
 };
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams, RealmInstance};
 use fuchsia_runtime::{HandleInfo, HandleType};
@@ -21,7 +21,7 @@ use test_case::test_case;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fcomponent_decl,
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext,
-    fidl_fuchsia_process as fprocess,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_process as fprocess,
 };
 
 const IPTABLES_RESTORE: &'static str = "iptables-restore";
@@ -391,7 +391,7 @@ fn mangle_table_with_input_marking(namespace: Namespace) -> Vec<Resource> {
         Resource::Rule(Rule {
             id: RuleId { routine: input_routine_id, index: 0 },
             matchers: Matchers {
-                in_interface: Some(InterfaceMatcher::Name("lo".into())),
+                in_interface: Some(fnet_matchers_ext::Interface::Name("lo".into())),
                 ..Default::default()
             },
             action: Action::Mark {

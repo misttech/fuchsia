@@ -92,7 +92,7 @@ impl Controller {
 mod tests {
     use super::*;
     use crate::tests::{
-        handle_commit, handle_open_controller, handle_push_changes, invalid_resource,
+        handle_commit, handle_open_controller, handle_push_changes, pretend_invalid_resource,
         test_resource, test_resource_id, unknown_resource_id,
     };
     use crate::{ChangeCommitError, ChangeValidationError};
@@ -125,7 +125,9 @@ mod tests {
         let result = controller.push_changes(
             vec![
                 Change::Create(test_resource()),
-                Change::Create(invalid_resource()),
+                // We fake the server response to say this is invalid even
+                // though it really isn't.
+                Change::Create(pretend_invalid_resource()),
                 Change::Remove(test_resource_id()),
             ],
             zx::MonotonicInstant::INFINITE,
@@ -134,7 +136,7 @@ mod tests {
         assert_matches!(
             result,
             Err(PushChangesError::ErrorOnChange(errors)) if errors == vec![(
-                Change::Create(invalid_resource()),
+                Change::Create(pretend_invalid_resource()),
                 ChangeValidationError::InvalidPortMatcher
             )]
         );

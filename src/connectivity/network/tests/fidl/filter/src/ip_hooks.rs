@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use assert_matches::assert_matches;
 use fidl_fuchsia_net_filter_ext::{
     Action, Change, Controller, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine,
-    InterfaceMatcher, IpHook, Matchers, Namespace, NamespaceId, NatHook, Resource, ResourceId,
-    Routine, RoutineId, RoutineType, Rule, RuleId, TransportProtocolMatcher,
+    IpHook, Matchers, Namespace, NamespaceId, NatHook, Resource, ResourceId, Routine, RoutineId,
+    RoutineType, Rule, RuleId,
 };
 use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
 use futures::future::LocalBoxFuture;
@@ -30,8 +30,8 @@ use netstack_testing_macros::netstack_test;
 use test_case::test_case;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_routes_ext as fnet_routes_ext,
-    fidl_fuchsia_posix_socket as fposix_socket,
+    fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
 };
 
 use crate::matchers::{
@@ -306,7 +306,7 @@ impl SocketType for TcpSocket {
 
     fn matcher<I: Ip>() -> Matchers {
         Matchers {
-            transport_protocol: Some(TransportProtocolMatcher::Tcp {
+            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                 src_port: None,
                 dst_port: None,
             }),
@@ -552,7 +552,7 @@ impl SocketType for UdpSocket {
 
     fn matcher<I: Ip>() -> Matchers {
         Matchers {
-            transport_protocol: Some(TransportProtocolMatcher::Udp {
+            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                 src_port: None,
                 dst_port: None,
             }),
@@ -739,8 +739,8 @@ impl SocketType for IcmpSocket {
     fn matcher<I: Ip>() -> Matchers {
         Matchers {
             transport_protocol: Some(match I::VERSION {
-                IpVersion::V4 => TransportProtocolMatcher::Icmp,
-                IpVersion::V6 => TransportProtocolMatcher::Icmpv6,
+                IpVersion::V4 => fnet_matchers_ext::TransportProtocol::Icmp,
+                IpVersion::V6 => fnet_matchers_ext::TransportProtocol::Icmpv6,
             }),
             ..Default::default()
         }
@@ -1657,7 +1657,7 @@ impl<'a, I: RouterTestIpExt> TestRouterNet<'a, I> {
         let mut matcher = matcher.matcher::<I>(interfaces, subnets, ports).await;
         // Only filter traffic that is arriving on this particular interface.
         let interface_matcher = |interface: &netemul::TestInterface<'_>| {
-            Some(InterfaceMatcher::Id(
+            Some(fnet_matchers_ext::Interface::Id(
                 NonZeroU64::new(interface.id()).expect("interface ID should be nonzero"),
             ))
         };

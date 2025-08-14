@@ -6,10 +6,7 @@ use std::collections::HashMap;
 
 use derivative::Derivative;
 use fidl::endpoints::ControlHandle;
-use fidl_fuchsia_net_filter_ext::{
-    AddressMatcher, AddressMatcherType, CommitError, FidlConversionError, InterfaceMatcher,
-    Matchers, PushChangesError, RuleId, Subnet,
-};
+use fidl_fuchsia_net_filter_ext::{CommitError, Matchers, PushChangesError, RuleId};
 use fnet_masquerade::Error;
 use futures::stream::LocalBoxStream;
 use futures::{future, StreamExt as _, TryStreamExt as _};
@@ -18,6 +15,7 @@ use net_declare::fidl_subnet;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated,
     fidl_fuchsia_net_masquerade as fnet_masquerade,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 use crate::filter::{FilterControl, FilterEnabledState, FilterError};
@@ -40,7 +38,7 @@ pub(super) type EventStream = LocalBoxStream<'static, Result<Event, fidl::Error>
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct ValidatedConfig {
     /// The network to be masqueraded.
-    pub src_subnet: Subnet,
+    pub src_subnet: fnet_matchers_ext::Subnet,
     /// The interface through which to masquerade.
     pub output_interface: InterfaceId,
 }
@@ -58,9 +56,7 @@ impl TryFrom<fnet_masquerade::ControlConfig> for ValidatedConfig {
             return Err(Error::Unsupported);
         }
         Ok(Self {
-            src_subnet: src_subnet
-                .try_into()
-                .map_err(|_: FidlConversionError| Error::InvalidArguments)?,
+            src_subnet: src_subnet.try_into().map_err(|_| Error::InvalidArguments)?,
             output_interface: InterfaceId::new(output_interface).ok_or(Error::InvalidArguments)?,
         })
     }
@@ -210,9 +206,9 @@ async fn add_or_remove_masquerade_rule(
             let rule = crate::filter::add_masquerade_rule_current(
                 filter,
                 Matchers {
-                    out_interface: Some(InterfaceMatcher::Id(output_interface.into())),
-                    src_addr: Some(AddressMatcher {
-                        matcher: AddressMatcherType::Subnet(src_subnet),
+                    out_interface: Some(fnet_matchers_ext::Interface::Id(output_interface.into())),
+                    src_addr: Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(src_subnet),
                         invert: false,
                     }),
                     ..Default::default()
@@ -465,9 +461,7 @@ pub mod test {
     use assert_matches::assert_matches;
     use fidl_fuchsia_net_filter::{ControlRequest, NamespaceControllerRequest};
     use fidl_fuchsia_net_filter_deprecated::FilterRequest;
-    use fidl_fuchsia_net_filter_ext::{
-        Action, AddressMatcherType, Change, InterfaceMatcher, Resource, ResourceId,
-    };
+    use fidl_fuchsia_net_filter_ext::{Action, Change, Resource, ResourceId};
     use futures::future::FusedFuture;
     use futures::FutureExt;
     use test_case::test_case;
@@ -639,7 +633,7 @@ pub mod test {
                                     .clone()
                                     .expect("out_interface should be Some");
                                 let output_interface = match output_interface {
-                                    InterfaceMatcher::Id(value) => value.get(),
+                                    fnet_matchers_ext::Interface::Id(value) => value.get(),
                                     matcher => panic!("unexpected interface matcher: {matcher:?}"),
                                 };
                                 let src_subnet = rule
@@ -649,7 +643,9 @@ pub mod test {
                                     .expect("src_addr should be Some");
                                 assert!(!src_subnet.invert);
                                 let src_subnet = match src_subnet.matcher {
-                                    AddressMatcherType::Subnet(value) => value.into(),
+                                    fnet_matchers_ext::AddressMatcherType::Subnet(value) => {
+                                        value.into()
+                                    }
                                     matcher => panic!("unexpected address matcher: {matcher:?}"),
                                 };
                                 Some(fnet_masquerade::ControlConfig {

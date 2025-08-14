@@ -10,9 +10,8 @@ use anyhow::{anyhow, Context as _};
 use argh::{ArgsInfo, FromArgs};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_filter_ext as fnet_filter_ext,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers as fnet_matchers,
+    fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 #[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
@@ -261,7 +260,7 @@ impl FromStr for InterfaceMatcher {
     }
 }
 
-impl From<InterfaceMatcher> for fnet_filter_ext::InterfaceMatcher {
+impl From<InterfaceMatcher> for fnet_matchers_ext::Interface {
     fn from(matcher: InterfaceMatcher) -> Self {
         match matcher {
             InterfaceMatcher::Id(id) => Self::Id(id),
@@ -288,7 +287,7 @@ impl FromStr for AddressMatcher {
     }
 }
 
-impl From<AddressMatcher> for fnet_filter_ext::AddressMatcher {
+impl From<AddressMatcher> for fnet_matchers_ext::Address {
     fn from(matcher: AddressMatcher) -> Self {
         let AddressMatcher { matcher, invert } = matcher;
         Self { matcher: matcher.into(), invert }
@@ -298,8 +297,8 @@ impl From<AddressMatcher> for fnet_filter_ext::AddressMatcher {
 /// An address matcher
 #[derive(Clone, Debug, PartialEq)]
 pub enum AddressMatcherType {
-    Subnet(fnet_filter_ext::Subnet),
-    Range(fnet_filter_ext::AddressRange),
+    Subnet(fnet_matchers_ext::Subnet),
+    Range(fnet_matchers_ext::AddressRange),
 }
 
 impl FromStr for AddressMatcherType {
@@ -331,7 +330,7 @@ impl FromStr for AddressMatcherType {
     }
 }
 
-impl From<AddressMatcherType> for fnet_filter_ext::AddressMatcherType {
+impl From<AddressMatcherType> for fnet_matchers_ext::AddressMatcherType {
     fn from(matcher: AddressMatcherType) -> Self {
         match matcher {
             AddressMatcherType::Subnet(subnet) => Self::Subnet(subnet),
@@ -366,7 +365,7 @@ impl FromStr for TransportProtocolMatcher {
 
 /// An invertible address matcher
 #[derive(Clone, Debug, PartialEq)]
-pub struct PortMatcher(fnet_filter_ext::PortMatcher);
+pub struct PortMatcher(fnet_matchers_ext::Port);
 
 impl FromStr for PortMatcher {
     type Err = anyhow::Error;
@@ -378,12 +377,12 @@ impl FromStr for PortMatcher {
         })?;
         let start = start.parse::<u16>()?;
         let end = end.parse::<u16>()?;
-        let matcher = fnet_filter_ext::PortMatcher::new(start, end, invert)?;
+        let matcher = fnet_matchers_ext::Port::new(start, end, invert)?;
         Ok(Self(matcher))
     }
 }
 
-impl From<PortMatcher> for fnet_filter_ext::PortMatcher {
+impl From<PortMatcher> for fnet_matchers_ext::Port {
     fn from(matcher: PortMatcher) -> Self {
         matcher.0
     }
@@ -661,17 +660,17 @@ mod tests {
     #[test_case("!!33333..=22222" => Err(()); "double invert")]
     #[test_case(
         "22..=22" =>
-        Ok(PortMatcher(fnet_filter_ext::PortMatcher::new(22, 22, /* invert */ false).unwrap()));
+        Ok(PortMatcher(fnet_matchers_ext::Port::new(22, 22, /* invert */ false).unwrap()));
         "valid single port matcher"
     )]
     #[test_case(
         "0..=65535" =>
-        Ok(PortMatcher(fnet_filter_ext::PortMatcher::new(0, 65535, /* invert */ false).unwrap()));
+        Ok(PortMatcher(fnet_matchers_ext::Port::new(0, 65535, /* invert */ false).unwrap()));
         "valid port range matcher"
     )]
     #[test_case(
         "!443..=443" =>
-        Ok(PortMatcher(fnet_filter_ext::PortMatcher::new(443, 443, /* invert */ true).unwrap()));
+        Ok(PortMatcher(fnet_matchers_ext::Port::new(443, 443, /* invert */ true).unwrap()));
         "valid inverse port matcher"
     )]
     fn port_matcher(s: &str) -> Result<PortMatcher, ()> {

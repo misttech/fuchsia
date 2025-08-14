@@ -76,7 +76,8 @@ use {
     fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_net_filter_ext as fnet_filter_ext, fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_tun as fnet_tun,
     fidl_fuchsia_posix as fposix, fidl_fuchsia_posix_socket as fposix_socket,
     fidl_fuchsia_posix_socket_packet as fpacket,
@@ -4835,7 +4836,7 @@ async fn setup_redirect_test<'a>(
     name: &str,
     sandbox: &'a TestSandbox,
     subnet: fnet::Subnet,
-    matcher: fnet_filter_ext::TransportProtocolMatcher,
+    matcher: fnet_matchers_ext::TransportProtocol,
     redirect: Option<RangeInclusive<NonZeroU16>>,
 ) -> RedirectTestSetup<'a> {
     use fnet_filter_ext::{
@@ -4890,7 +4891,7 @@ const LISTEN_PORT: NonZeroU16 = NonZeroU16::new(11111).unwrap();
 
 struct TestCaseV4 {
     original_dst: std::net::SocketAddr,
-    matcher: fnet_filter_ext::TransportProtocolMatcher,
+    matcher: fnet_matchers_ext::TransportProtocol,
     redirect_dst: Option<RangeInclusive<NonZeroU16>>,
     expect_redirect: bool,
 }
@@ -4899,7 +4900,7 @@ struct TestCaseV4 {
 #[test_case(
     TestCaseV4 {
         original_dst: std::net::SocketAddr::new(Ipv4::ADDR, LISTEN_PORT.get()),
-        matcher: fnet_filter_ext::TransportProtocolMatcher::Tcp { src_port: None, dst_port: None },
+        matcher: fnet_matchers_ext::TransportProtocol::Tcp { src_port: None, dst_port: None },
         redirect_dst: None,
         expect_redirect: true,
     };
@@ -4908,7 +4909,7 @@ struct TestCaseV4 {
 #[test_case(
     TestCaseV4 {
         original_dst: std::net::SocketAddr::new(Ipv4::ADDR, 22222),
-        matcher: fnet_filter_ext::TransportProtocolMatcher::Tcp { src_port: None, dst_port: None },
+        matcher: fnet_matchers_ext::TransportProtocol::Tcp { src_port: None, dst_port: None },
         redirect_dst: Some(LISTEN_PORT..=LISTEN_PORT),
         expect_redirect: true,
     };
@@ -4917,7 +4918,7 @@ struct TestCaseV4 {
 #[test_case(
     TestCaseV4 {
         original_dst: std::net::SocketAddr::new(std_ip!("127.0.0.1"), LISTEN_PORT.get()),
-        matcher: fnet_filter_ext::TransportProtocolMatcher::Udp { src_port: None, dst_port: None },
+        matcher: fnet_matchers_ext::TransportProtocol::Udp { src_port: None, dst_port: None },
         redirect_dst: None,
         expect_redirect: false,
     };
@@ -4973,7 +4974,7 @@ async fn redirect_original_destination_v4(name: &str, test_case: TestCaseV4) {
 
 struct TestCaseV6 {
     original_dst: std::net::SocketAddr,
-    matcher: fnet_filter_ext::TransportProtocolMatcher,
+    matcher: fnet_matchers_ext::TransportProtocol,
     redirect_dst: Option<RangeInclusive<NonZeroU16>>,
 }
 
@@ -4981,7 +4982,7 @@ struct TestCaseV6 {
 #[test_case(
     TestCaseV6 {
         original_dst: std::net::SocketAddr::new(Ipv6::ADDR, LISTEN_PORT.get()),
-        matcher: fnet_filter_ext::TransportProtocolMatcher::Tcp { src_port: None, dst_port: None },
+        matcher: fnet_matchers_ext::TransportProtocol::Tcp { src_port: None, dst_port: None },
         redirect_dst: None,
     };
     "redirect to localhost"
@@ -4989,7 +4990,7 @@ struct TestCaseV6 {
 #[test_case(
     TestCaseV6 {
         original_dst: std::net::SocketAddr::new(Ipv6::ADDR, 22222),
-        matcher: fnet_filter_ext::TransportProtocolMatcher::Tcp { src_port: None, dst_port: None },
+        matcher: fnet_matchers_ext::TransportProtocol::Tcp { src_port: None, dst_port: None },
         redirect_dst: Some(LISTEN_PORT..=LISTEN_PORT),
     };
     "redirect to localhost port 11111"
@@ -4997,7 +4998,7 @@ struct TestCaseV6 {
 #[test_case(
     TestCaseV6 {
         original_dst: std::net::SocketAddr::new(std_ip!("::1"), LISTEN_PORT.get()),
-        matcher: fnet_filter_ext::TransportProtocolMatcher::Udp { src_port: None, dst_port: None },
+        matcher: fnet_matchers_ext::TransportProtocol::Udp { src_port: None, dst_port: None },
         redirect_dst: None,
     };
     "no redirect"
@@ -5048,7 +5049,7 @@ async fn redirect_original_destination_v6(name: &str, test_case: TestCaseV6) {
 #[test_case(
     TestCaseV4 {
         original_dst: std::net::SocketAddr::new(Ipv4::ADDR, LISTEN_PORT.get()),
-        matcher: fnet_filter_ext::TransportProtocolMatcher::Tcp { src_port: None, dst_port: None },
+        matcher: fnet_matchers_ext::TransportProtocol::Tcp { src_port: None, dst_port: None },
         redirect_dst: None,
         expect_redirect: true,
     };
@@ -5057,7 +5058,7 @@ async fn redirect_original_destination_v6(name: &str, test_case: TestCaseV6) {
 #[test_case(
     TestCaseV4 {
         original_dst: std::net::SocketAddr::new(Ipv4::ADDR, 22222),
-        matcher: fnet_filter_ext::TransportProtocolMatcher::Tcp { src_port: None, dst_port: None },
+        matcher: fnet_matchers_ext::TransportProtocol::Tcp { src_port: None, dst_port: None },
         redirect_dst: Some(LISTEN_PORT..=LISTEN_PORT),
         expect_redirect: true,
     };
@@ -5066,7 +5067,7 @@ async fn redirect_original_destination_v6(name: &str, test_case: TestCaseV6) {
 #[test_case(
     TestCaseV4 {
         original_dst: std::net::SocketAddr::new(std_ip!("127.0.0.1"), LISTEN_PORT.get()),
-        matcher: fnet_filter_ext::TransportProtocolMatcher::Udp { src_port: None, dst_port: None },
+        matcher: fnet_matchers_ext::TransportProtocol::Udp { src_port: None, dst_port: None },
         redirect_dst: None,
         expect_redirect: false,
     };

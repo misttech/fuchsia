@@ -13,7 +13,7 @@ use fidl_fuchsia_net_filter_ext::{
 };
 use {
     fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_root as fnet_root,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_root as fnet_root,
 };
 
 use crate::{connect_with_context, opts, NetCliDepsConnector};
@@ -441,13 +441,13 @@ pub(super) async fn do_filter<C: NetCliDepsConnector, W: std::io::Write>(
                                 }
                                 Some(matcher) => Some(match matcher {
                                     TransportProtocolMatcher::Tcp => {
-                                        fnet_filter_ext::TransportProtocolMatcher::Tcp {
+                                        fnet_matchers_ext::TransportProtocol::Tcp {
                                             src_port: src_port.map(Into::into),
                                             dst_port: dst_port.map(Into::into),
                                         }
                                     }
                                     TransportProtocolMatcher::Udp => {
-                                        fnet_filter_ext::TransportProtocolMatcher::Udp {
+                                        fnet_matchers_ext::TransportProtocol::Udp {
                                             src_port: src_port.map(Into::into),
                                             dst_port: dst_port.map(Into::into),
                                         }
@@ -458,15 +458,15 @@ pub(super) async fn do_filter<C: NetCliDepsConnector, W: std::io::Write>(
                                                 "cannot match on src or dst port for ICMP packets"
                                             ));
                                         }
-                                        fnet_filter_ext::TransportProtocolMatcher::Icmp
+                                        fnet_matchers_ext::TransportProtocol::Icmp
                                     }
                                     TransportProtocolMatcher::Icmpv6 => {
                                         if src_port != None || dst_port != None {
                                             return Err(anyhow!(
-                                            "cannot match on src or dst port for ICMPv6 packets"
-                                        ));
+                                                "cannot match on src or dst port for ICMPv6 packets"
+                                            ));
                                         }
-                                        fnet_filter_ext::TransportProtocolMatcher::Icmpv6
+                                        fnet_matchers_ext::TransportProtocol::Icmpv6
                                     }
                                 }),
                             },
@@ -484,7 +484,7 @@ pub(super) async fn do_filter<C: NetCliDepsConnector, W: std::io::Write>(
                                     return Err(anyhow!(
                                         "transparent proxy must specify at least one of local \
                                             address and local port"
-                                    ))
+                                    ));
                                 }
                                 (Some(addr), None) => {
                                     let addr = fnet_ext::IpAddress::from_str(&addr)?.into();
@@ -1600,7 +1600,7 @@ mod tests {
                             index: INDEX_FIRST,
                         },
                         matchers: Matchers {
-                            in_interface: Some(fnet_filter_ext::InterfaceMatcher::Id(
+                            in_interface: Some(fnet_matchers_ext::Interface::Id(
                                 NonZeroU64::new(23).expect("Failed to create NonZeroU64"),
                             )),
                             out_interface: None,
@@ -1626,8 +1626,8 @@ mod tests {
                         matchers: Matchers {
                             in_interface: None,
                             out_interface: None,
-                            src_addr: Some(fnet_filter_ext::AddressMatcher {
-                                matcher: fnet_filter_ext::AddressMatcherType::Subnet(
+                            src_addr: Some(fnet_matchers_ext::Address {
+                                matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
                                     fidl_subnet!("192.168.0.1/32").try_into().unwrap(),
                                 ),
                                 invert: false,
@@ -1655,9 +1655,7 @@ mod tests {
                             out_interface: None,
                             src_addr: None,
                             dst_addr: None,
-                            transport_protocol: Some(
-                                fnet_filter_ext::TransportProtocolMatcher::Icmpv6,
-                            ),
+                            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Icmpv6),
                         },
                         action: fnet_filter_ext::Action::Accept,
                     }),
@@ -1679,15 +1677,13 @@ mod tests {
                             out_interface: None,
                             src_addr: None,
                             dst_addr: None,
-                            transport_protocol: Some(
-                                fnet_filter_ext::TransportProtocolMatcher::Tcp {
-                                    src_port: None,
-                                    dst_port: Some(
-                                        fnet_filter_ext::PortMatcher::new(41, 42, true)
-                                            .expect("Failed to create PortMatcher"),
-                                    ),
-                                },
-                            ),
+                            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                                src_port: None,
+                                dst_port: Some(
+                                    fnet_matchers_ext::Port::new(41, 42, true)
+                                        .expect("Failed to create PortMatcher"),
+                                ),
+                            }),
                         },
                         action: fnet_filter_ext::Action::Accept,
                     }),
@@ -1750,9 +1746,9 @@ mod tests {
         uninstalled NAT routines {
             routine e {
                 11. Matchers { in_interface: Id(23) } -> Accept
-                12. Matchers { src_addr: AddressMatcher { matcher: 192.168.0.1/32, invert: false } } -> Accept
+                12. Matchers { src_addr: Address { matcher: 192.168.0.1/32, invert: false } } -> Accept
                 13. Matchers { transport_protocol: Icmpv6 } -> Accept
-                14. Matchers { transport_protocol: Tcp { dst_port: PortMatcher { range: 41..=42, invert: true } } } -> Accept
+                14. Matchers { transport_protocol: Tcp { dst_port: Port { range: 41..=42, invert: true } } } -> Accept
             }
         }
     }

@@ -23,6 +23,7 @@ use {
     fidl_fuchsia_net_filter_ext as fnet_filter_ext,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 enum ForwardingConfig {
@@ -465,10 +466,10 @@ async fn install_forwarding_filter(
         fnet_filter_ext::RoutineId { namespace: namespace.clone(), name: name.to_owned() };
 
     let matchers = fnet_filter_ext::Matchers {
-        in_interface: Some(fnet_filter_ext::InterfaceMatcher::Id(
+        in_interface: Some(fnet_matchers_ext::Interface::Id(
             NonZeroU64::new(ingress_if.id()).unwrap(),
         )),
-        out_interface: Some(fnet_filter_ext::InterfaceMatcher::Id(
+        out_interface: Some(fnet_matchers_ext::Interface::Id(
             NonZeroU64::new(egress_if.id()).unwrap(),
         )),
         ..Default::default()

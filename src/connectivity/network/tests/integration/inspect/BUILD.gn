@@ -78,6 +78,7 @@ rustc_test("netstack3_inspect_tests") {
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/network/fidl_fuchsia_net_filter_ext",
     "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
+    "//src/lib/network/fidl_fuchsia_net_matchers_ext",
     "//src/lib/network/fidl_fuchsia_net_multicast_ext",
     "//src/lib/network/fidl_fuchsia_net_routes_ext",
     "//src/lib/network/packet",

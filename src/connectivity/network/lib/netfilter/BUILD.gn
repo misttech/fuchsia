@@ -16,6 +16,7 @@ rustc_library("netfilter") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/network/fidl_fuchsia_net_filter_ext",
     "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
+    "//src/lib/network/fidl_fuchsia_net_matchers_ext",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:pest",
     "//third_party/rust_crates:pest_derive",

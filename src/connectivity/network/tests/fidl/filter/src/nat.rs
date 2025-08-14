@@ -12,8 +12,7 @@ use assert_matches::assert_matches;
 use fidl_fuchsia_net::MarkDomain;
 use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt as _};
 use fidl_fuchsia_net_filter_ext::{
-    Action, AddressMatcher, AddressMatcherType, Change, CommitError, InterfaceMatcher, MarkAction,
-    Matchers, NatHook, PortRange, Resource, Rule, RuleId,
+    Action, Change, CommitError, MarkAction, Matchers, NatHook, PortRange, Resource, Rule, RuleId,
 };
 use futures::{FutureExt as _, StreamExt as _};
 use heck::ToSnakeCase as _;
@@ -35,7 +34,10 @@ use packet_formats::icmp::{
 };
 use packet_formats::ip::{IpPacketBuilder, IpProto, Ipv4Proto, Ipv6Proto};
 use test_case::test_case;
-use {fidl_fuchsia_net_routes as fnet_routes, fuchsia_async as fasync};
+use {
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_routes as fnet_routes,
+    fuchsia_async as fasync,
+};
 
 use crate::ip_hooks::{
     Addrs, BoundSockets, ExpectedConnectivity, IcmpSocket, OriginalDestination, Ports, Realms,
@@ -178,7 +180,7 @@ async fn masquerade_remove_and_add_address<I: RouterTestIpExt>(name: &str) {
     // traffic behind its IP address.
     net.install_nat_rule(
         Matchers {
-            out_interface: Some(InterfaceMatcher::Id(
+            out_interface: Some(fnet_matchers_ext::Interface::Id(
                 NonZeroU64::new(net.router_server_interface.id()).unwrap(),
             )),
             ..Default::default()
@@ -470,7 +472,7 @@ async fn masquerade<I: RouterTestIpExt, S: SocketType>(name: &str, _socket_type:
     // traffic behind its IP address.
     net.install_nat_rule(
         Matchers {
-            out_interface: Some(InterfaceMatcher::Id(
+            out_interface: Some(fnet_matchers_ext::Interface::Id(
                 NonZeroU64::new(net.router_server_interface.id()).unwrap(),
             )),
             ..Default::default()
@@ -562,7 +564,7 @@ async fn masquerade_icmp_error<
     // traffic behind its IP address.
     net.install_nat_rule(
         Matchers {
-            out_interface: Some(InterfaceMatcher::Id(
+            out_interface: Some(fnet_matchers_ext::Interface::Id(
                 NonZeroU64::new(net.router_server_interface.id()).unwrap(),
             )),
             ..Default::default()
@@ -705,7 +707,7 @@ async fn masquerade_rewrite_src_port<I: RouterTestIpExt, S: SocketType>(
     };
     net.install_nat_rule(
         Matchers {
-            out_interface: Some(InterfaceMatcher::Id(
+            out_interface: Some(fnet_matchers_ext::Interface::Id(
                 NonZeroU64::new(net.router_server_interface.id()).unwrap(),
             )),
             ..S::matcher::<I>()
@@ -775,11 +777,13 @@ async fn implicit_snat_ports_of_locally_generated_traffic<I: RouterTestIpExt, S:
         TestRouterNet::<I>::new(&sandbox, &name, None /* ip_hook */, Some(NatHook::Egress)).await;
     net.install_nat_rule(
         Matchers {
-            src_addr: Some(AddressMatcher {
-                matcher: AddressMatcherType::Subnet(I::ROUTER_CLIENT_SUBNET.try_into().unwrap()),
+            src_addr: Some(fnet_matchers_ext::Address {
+                matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                    I::ROUTER_CLIENT_SUBNET.try_into().unwrap(),
+                ),
                 invert: false,
             }),
-            out_interface: Some(InterfaceMatcher::Id(
+            out_interface: Some(fnet_matchers_ext::Interface::Id(
                 NonZeroU64::new(net.router_server_interface.id()).unwrap(),
             )),
             ..S::matcher::<I>()

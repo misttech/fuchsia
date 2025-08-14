@@ -10,6 +10,7 @@ use packet_formats::ip::{IpExt, IpProto, Ipv4Proto, Ipv6Proto};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext,
     fidl_fuchsia_net_interfaces as fnet_interfaces,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 use super::{ConversionResult, IpVersionMismatchError, IpVersionStrictness, TryConvertToCoreState};
@@ -74,7 +75,7 @@ impl TryConvertToCoreState for fnet_filter_ext::Matchers {
     }
 }
 
-impl TryConvertToCoreState for fnet_filter_ext::InterfaceMatcher {
+impl TryConvertToCoreState for fnet_matchers_ext::Interface {
     type CoreState<I: IpExt> = netstack3_core::filter::InterfaceMatcher<fnet_interfaces::PortClass>;
 
     fn try_convert<I: IpExt>(
@@ -94,7 +95,7 @@ impl TryConvertToCoreState for fnet_filter_ext::InterfaceMatcher {
     }
 }
 
-impl TryConvertToCoreState for fnet_filter_ext::AddressMatcher {
+impl TryConvertToCoreState for fnet_matchers_ext::Address {
     type CoreState<I: IpExt> = netstack3_core::filter::AddressMatcher<I::Addr>;
 
     fn try_convert<I: IpExt>(
@@ -112,7 +113,7 @@ impl TryConvertToCoreState for fnet_filter_ext::AddressMatcher {
 
         let Self { matcher, invert } = self;
         let matcher = match matcher {
-            fnet_filter_ext::AddressMatcherType::Subnet(subnet) => {
+            fnet_matchers_ext::AddressMatcherType::Subnet(subnet) => {
                 let fnet::Subnet { addr, prefix_len } = subnet.into();
                 let addr = addr.into_ext();
                 let Wrap(result) = I::map_ip::<_, Wrap<I>>(
@@ -151,7 +152,7 @@ impl TryConvertToCoreState for fnet_filter_ext::AddressMatcher {
                     ConversionResult::Omit => return Ok(ConversionResult::Omit),
                 }
             }
-            fnet_filter_ext::AddressMatcherType::Range(range) => {
+            fnet_matchers_ext::AddressMatcherType::Range(range) => {
                 let (start, end) = (range.start().into_ext(), range.end().into_ext());
                 let Wrap(result) = I::map_ip::<_, Wrap<I>>(
                     (),
@@ -192,7 +193,7 @@ impl TryConvertToCoreState for fnet_filter_ext::AddressMatcher {
     }
 }
 
-impl TryConvertToCoreState for fnet_filter_ext::TransportProtocolMatcher {
+impl TryConvertToCoreState for fnet_matchers_ext::TransportProtocol {
     type CoreState<I: IpExt> = netstack3_core::filter::TransportProtocolMatcher<I::Proto>;
 
     fn try_convert<I: IpExt>(
@@ -206,13 +207,13 @@ impl TryConvertToCoreState for fnet_filter_ext::TransportProtocolMatcher {
         );
 
         let into_core_port_matcher =
-            |matcher: fnet_filter_ext::PortMatcher| netstack3_core::filter::PortMatcher {
+            |matcher: fnet_matchers_ext::Port| netstack3_core::filter::PortMatcher {
                 range: matcher.range().clone(),
                 invert: matcher.invert,
             };
 
         let matcher = match self {
-            fnet_filter_ext::TransportProtocolMatcher::Tcp { src_port, dst_port } => {
+            fnet_matchers_ext::TransportProtocol::Tcp { src_port, dst_port } => {
                 netstack3_core::filter::TransportProtocolMatcher {
                     proto: I::map_ip_out(
                         (),
@@ -223,7 +224,7 @@ impl TryConvertToCoreState for fnet_filter_ext::TransportProtocolMatcher {
                     dst_port: dst_port.map(into_core_port_matcher),
                 }
             }
-            fnet_filter_ext::TransportProtocolMatcher::Udp { src_port, dst_port } => {
+            fnet_matchers_ext::TransportProtocol::Udp { src_port, dst_port } => {
                 netstack3_core::filter::TransportProtocolMatcher {
                     proto: I::map_ip_out(
                         (),
@@ -234,7 +235,7 @@ impl TryConvertToCoreState for fnet_filter_ext::TransportProtocolMatcher {
                     dst_port: dst_port.map(into_core_port_matcher),
                 }
             }
-            fnet_filter_ext::TransportProtocolMatcher::Icmp => {
+            fnet_matchers_ext::TransportProtocol::Icmp => {
                 let Wrap(result) = I::map_ip_out::<_, Wrap<I>>(
                     (),
                     |()| Wrap(Ok(ConversionResult::State(Ipv4Proto::Icmp))),
@@ -250,7 +251,7 @@ impl TryConvertToCoreState for fnet_filter_ext::TransportProtocolMatcher {
                     dst_port: None,
                 }
             }
-            fnet_filter_ext::TransportProtocolMatcher::Icmpv6 => {
+            fnet_matchers_ext::TransportProtocol::Icmpv6 => {
                 let Wrap(result) = I::map_ip_out::<_, Wrap<I>>(
                     (),
                     |()| Wrap(ip_version_strictness.mismatch_result()),

@@ -64,7 +64,7 @@ impl PortClass {
 
 /// An Error returned when converting from `fnet_interfaces::PortClass` to
 /// `PortClass`.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 #[allow(missing_docs)]
 pub enum UnknownPortClassError {
     #[error(transparent)]
@@ -74,14 +74,14 @@ pub enum UnknownPortClassError {
 }
 
 /// An error returned when `fnet_interfaces::PortClass` is an unknown variant.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 #[error("unknown fuchsia.net.interfaces/PortClass ordinal: {unknown_ordinal}")]
 pub struct UnknownNetInterfacesPortClassError {
     unknown_ordinal: u64,
 }
 
 /// An error returned when `fhardware_network::PortClass` is an unknown variant.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 #[error("unknown fuchsia.hardware.network/PortClass ordinal: {unknown_ordinal}")]
 pub struct UnknownHardwareNetworkPortClassError {
     unknown_ordinal: u16,

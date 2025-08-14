@@ -8,6 +8,7 @@ use pest::Parser;
 use {
     fidl_fuchsia_net_filter_ext as filter_ext,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 use crate::grammar::{Error, FilterRuleParser, InvalidReason, Rule};
@@ -43,7 +44,7 @@ fn parse_direction(pair: Pair<'_, Rule>) -> Direction {
     }
 }
 
-// A subset of `filter_ext::TransportProtocolMatcher` to handle current
+// A subset of `fnet_matchers_ext::TransportProtocol` to handle current
 // parsing capabilities.
 enum TransportProtocol {
     Tcp,
@@ -77,21 +78,21 @@ fn parse_devclass(pair: Pair<'_, Rule>) -> Option<fnet_interfaces_ext::PortClass
 
 fn parse_src(
     pair: Pair<'_, Rule>,
-) -> Result<(Option<filter_ext::AddressMatcher>, Option<filter_ext::PortMatcher>), Error> {
+) -> Result<(Option<fnet_matchers_ext::Address>, Option<fnet_matchers_ext::Port>), Error> {
     assert_eq!(pair.as_rule(), Rule::src);
     parse_src_or_dst(pair)
 }
 
 fn parse_dst(
     pair: Pair<'_, Rule>,
-) -> Result<(Option<filter_ext::AddressMatcher>, Option<filter_ext::PortMatcher>), Error> {
+) -> Result<(Option<fnet_matchers_ext::Address>, Option<fnet_matchers_ext::Port>), Error> {
     assert_eq!(pair.as_rule(), Rule::dst);
     parse_src_or_dst(pair)
 }
 
 fn parse_src_or_dst(
     pair: Pair<'_, Rule>,
-) -> Result<(Option<filter_ext::AddressMatcher>, Option<filter_ext::PortMatcher>), Error> {
+) -> Result<(Option<fnet_matchers_ext::Address>, Option<fnet_matchers_ext::Port>), Error> {
     let mut inner = pair.into_inner();
     match inner.next() {
         Some(pair) => match pair.as_rule() {
@@ -102,9 +103,10 @@ fn parse_src_or_dst(
                     None => None,
                 };
                 Ok((
-                    Some(filter_ext::AddressMatcher {
-                        matcher: filter_ext::AddressMatcherType::Subnet(
-                            filter_ext::Subnet::try_from(subnet).map_err(Error::Fidl)?,
+                    Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                            fnet_matchers_ext::Subnet::try_from(subnet)
+                                .map_err(|err| Error::Fidl(err.into()))?,
                         ),
                         invert: invert_match,
                     }),
@@ -118,15 +120,15 @@ fn parse_src_or_dst(
     }
 }
 
-fn parse_port_range(pair: Pair<'_, Rule>) -> Result<filter_ext::PortMatcher, Error> {
+fn parse_port_range(pair: Pair<'_, Rule>) -> Result<fnet_matchers_ext::Port, Error> {
     assert_eq!(pair.as_rule(), Rule::port_range);
     let mut inner = pair.into_inner();
     let pair = inner.next().unwrap();
     match pair.as_rule() {
         Rule::port => {
             let port_num = util::parse_port_num(inner.next().unwrap())?;
-            filter_ext::PortMatcher::new(port_num, port_num, false).map_err(|err| match err {
-                filter_ext::PortMatcherError::InvalidPortRange => {
+            fnet_matchers_ext::Port::new(port_num, port_num, false).map_err(|err| match err {
+                fnet_matchers_ext::PortError::InvalidPortRange => {
                     Error::Invalid(InvalidReason::InvalidPortRange)
                 }
             })
@@ -134,8 +136,8 @@ fn parse_port_range(pair: Pair<'_, Rule>) -> Result<filter_ext::PortMatcher, Err
         Rule::range => {
             let port_start = util::parse_port_num(inner.next().unwrap())?;
             let port_end = util::parse_port_num(inner.next().unwrap())?;
-            filter_ext::PortMatcher::new(port_start, port_end, false).map_err(|err| match err {
-                filter_ext::PortMatcherError::InvalidPortRange => {
+            fnet_matchers_ext::Port::new(port_start, port_end, false).map_err(|err| match err {
+                fnet_matchers_ext::PortError::InvalidPortRange => {
                     Error::Invalid(InvalidReason::InvalidPortRange)
                 }
             })
@@ -164,7 +166,7 @@ fn parse_rule(
             let Some(ref routine_id) = routines.local_ingress else {
                 return Err(Error::RoutineNotProvided(direction));
             };
-            in_interface = port_class.map(|class| filter_ext::InterfaceMatcher::PortClass(class));
+            in_interface = port_class.map(|class| fnet_matchers_ext::Interface::PortClass(class));
             routine_id
         }
         Direction::LocalEgress => {
@@ -172,16 +174,16 @@ fn parse_rule(
             let Some(ref routine_id) = routines.local_egress else {
                 return Err(Error::RoutineNotProvided(direction));
             };
-            out_interface = port_class.map(|class| filter_ext::InterfaceMatcher::PortClass(class));
+            out_interface = port_class.map(|class| fnet_matchers_ext::Interface::PortClass(class));
             routine_id
         }
     };
     let (src_addr, src_port) = parse_src(pairs.next().unwrap())?;
     let (dst_addr, dst_port) = parse_dst(pairs.next().unwrap())?;
     let transport_protocol = proto.map(|proto| match proto {
-        TransportProtocol::Tcp => filter_ext::TransportProtocolMatcher::Tcp { src_port, dst_port },
-        TransportProtocol::Udp => filter_ext::TransportProtocolMatcher::Udp { src_port, dst_port },
-        TransportProtocol::Icmp => filter_ext::TransportProtocolMatcher::Icmp,
+        TransportProtocol::Tcp => fnet_matchers_ext::TransportProtocol::Tcp { src_port, dst_port },
+        TransportProtocol::Udp => fnet_matchers_ext::TransportProtocol::Udp { src_port, dst_port },
+        TransportProtocol::Icmp => fnet_matchers_ext::TransportProtocol::Icmp,
     });
 
     Ok(filter_ext::Rule {
@@ -217,8 +219,8 @@ fn validate_rule(rule: &filter_ext::Rule) -> Result<(), Error> {
     if let (Some(src_subnet), Some(dst_subnet)) = (&rule.matchers.src_addr, &rule.matchers.dst_addr)
     {
         if let (
-            filter_ext::AddressMatcherType::Subnet(src_subnet),
-            filter_ext::AddressMatcherType::Subnet(dst_subnet),
+            fnet_matchers_ext::AddressMatcherType::Subnet(src_subnet),
+            fnet_matchers_ext::AddressMatcherType::Subnet(dst_subnet),
         ) = (&src_subnet.matcher, &dst_subnet.matcher)
         {
             if !util::ip_version_eq(&src_subnet.get().addr, &dst_subnet.get().addr) {
@@ -332,7 +334,7 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
                         dst_port: None,
                     }),
@@ -351,7 +353,7 @@ mod test {
                 filter_ext::Rule {
                     id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                     matchers: filter_ext::Matchers {
-                        transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                             src_port: None,
                             dst_port: None,
                         }),
@@ -362,7 +364,7 @@ mod test {
                 filter_ext::Rule {
                     id: filter_ext::RuleId { routine: local_egress_routine(), index: 1 },
                     matchers: filter_ext::Matchers {
-                        transport_protocol: Some(filter_ext::TransportProtocolMatcher::Udp {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                             src_port: None,
                             dst_port: None,
                         }),
@@ -381,13 +383,14 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
                         dst_port: None,
                     }),
-                    src_addr: Some(filter_ext::AddressMatcher {
-                        matcher: filter_ext::AddressMatcherType::Subnet(
-                            filter_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24")).unwrap()
+                    src_addr: Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24"))
+                                .unwrap()
                         ),
                         invert: false,
                     }),
@@ -406,8 +409,8 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
-                        src_port: Some(filter_ext::PortMatcher::new(10000, 10000, false).unwrap()),
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
                         dst_port: None,
                     }),
                     ..Default::default()
@@ -428,8 +431,8 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
-                        src_port: Some(filter_ext::PortMatcher::new(10000, 10010, false).unwrap()),
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10010, false).unwrap()),
                         dst_port: None,
                     }),
                     ..Default::default()
@@ -461,13 +464,14 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
-                        src_port: Some(filter_ext::PortMatcher::new(10000, 10000, false).unwrap()),
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
                         dst_port: None,
                     }),
-                    src_addr: Some(filter_ext::AddressMatcher {
-                        matcher: filter_ext::AddressMatcherType::Subnet(
-                            filter_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24")).unwrap()
+                    src_addr: Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24"))
+                                .unwrap()
                         ),
                         invert: false,
                     }),
@@ -489,13 +493,14 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
-                        src_port: Some(filter_ext::PortMatcher::new(10000, 10000, false).unwrap()),
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
                         dst_port: None,
                     }),
-                    src_addr: Some(filter_ext::AddressMatcher {
-                        matcher: filter_ext::AddressMatcherType::Subnet(
-                            filter_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24")).unwrap()
+                    src_addr: Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24"))
+                                .unwrap()
                         ),
                         invert: true,
                     }),
@@ -517,13 +522,14 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
-                        src_port: Some(filter_ext::PortMatcher::new(10000, 10000, false).unwrap()),
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
                         dst_port: None,
                     }),
-                    src_addr: Some(filter_ext::AddressMatcher {
-                        matcher: filter_ext::AddressMatcherType::Subnet(
-                            filter_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32")).unwrap()
+                    src_addr: Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32"))
+                                .unwrap()
                         ),
                         invert: false,
                     }),
@@ -545,13 +551,14 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
-                        dst_port: Some(filter_ext::PortMatcher::new(10000, 10000, false).unwrap()),
+                        dst_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
                     }),
-                    dst_addr: Some(filter_ext::AddressMatcher {
-                        matcher: filter_ext::AddressMatcherType::Subnet(
-                            filter_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32")).unwrap()
+                    dst_addr: Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32"))
+                                .unwrap()
                         ),
                         invert: false,
                     }),
@@ -584,19 +591,21 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
-                        src_port: Some(filter_ext::PortMatcher::new(10000, 10000, false).unwrap()),
-                        dst_port: Some(filter_ext::PortMatcher::new(1000, 1000, false).unwrap()),
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
+                        dst_port: Some(fnet_matchers_ext::Port::new(1000, 1000, false).unwrap()),
                     }),
-                    src_addr: Some(filter_ext::AddressMatcher {
-                        matcher: filter_ext::AddressMatcherType::Subnet(
-                            filter_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32")).unwrap()
+                    src_addr: Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32"))
+                                .unwrap()
                         ),
                         invert: false,
                     }),
-                    dst_addr: Some(filter_ext::AddressMatcher {
-                        matcher: filter_ext::AddressMatcherType::Subnet(
-                            filter_ext::Subnet::try_from(fidl_subnet!("2345:6789::/32")).unwrap()
+                    dst_addr: Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("2345:6789::/32"))
+                                .unwrap()
                         ),
                         invert: false,
                     }),
@@ -615,10 +624,10 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    in_interface: Some(filter_ext::InterfaceMatcher::PortClass(
+                    in_interface: Some(fnet_matchers_ext::Interface::PortClass(
                         fnet_interfaces_ext::PortClass::WlanAp,
                     )),
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
                         dst_port: None,
                     }),
@@ -639,12 +648,12 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    in_interface: Some(filter_ext::InterfaceMatcher::PortClass(
+                    in_interface: Some(fnet_matchers_ext::Interface::PortClass(
                         fnet_interfaces_ext::PortClass::WlanAp
                     )),
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
-                        dst_port: Some(filter_ext::PortMatcher::new(1, 2, false).unwrap()),
+                        dst_port: Some(fnet_matchers_ext::Port::new(1, 2, false).unwrap()),
                     }),
                     ..Default::default()
                 },
@@ -664,7 +673,7 @@ mod test {
             Ok(vec![filter_ext::Rule {
                 id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
                 matchers: filter_ext::Matchers {
-                    transport_protocol: Some(filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
                         dst_port: None,
                     }),

@@ -17,11 +17,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use assert_matches::assert_matches;
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_net_filter_ext::{
-    self as fnet_filter_ext, Action, AddressMatcher, AddressMatcherType, AddressRange, Change,
-    ChangeCommitError, CommitError, Controller, ControllerId, Domain, Event, InstalledIpRoutine,
-    InstalledNatRoutine, InterfaceMatcher, IpHook, Matchers, Namespace, NamespaceId, NatHook,
-    PortMatcher, PortRange, PushChangesError, Resource, ResourceId, Routine, RoutineId,
-    RoutineType, Rule, RuleId, Subnet, TransparentProxy, TransportProtocolMatcher,
+    self as fnet_filter_ext, Action, Change, ChangeCommitError, CommitError, Controller,
+    ControllerId, Domain, Event, InstalledIpRoutine, InstalledNatRoutine, IpHook, Matchers,
+    Namespace, NamespaceId, NatHook, PortRange, PushChangesError, Resource, ResourceId, Routine,
+    RoutineId, RoutineType, Rule, RuleId, TransparentProxy,
 };
 use fidl_fuchsia_net_interfaces_ext::PortClass;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
@@ -38,7 +37,7 @@ use netstack_testing_macros::netstack_test;
 use test_case::{test_case, test_matrix};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_matchers as fnet_matchers,
+    fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 trait TestValue {
@@ -98,10 +97,11 @@ impl TestValue for Rule {
         Rule {
             id: RuleId { routine: RoutineId::test_value(), index: 0 },
             matchers: Matchers {
-                transport_protocol: Some(TransportProtocolMatcher::Tcp {
+                transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                     src_port: None,
                     dst_port: Some(
-                        PortMatcher::new(22, 22, /* invert */ false).expect("valid port range"),
+                        fnet_matchers_ext::Port::new(22, 22, /* invert */ false)
+                            .expect("valid port range"),
                     ),
                 }),
                 ..Default::default()
@@ -1320,9 +1320,9 @@ enum InvalidMatcher {
 
 fn invalid_address_range_matcher<I: net_types::ip::Ip>() -> Matchers {
     Matchers {
-        src_addr: Some(AddressMatcher {
-            matcher: AddressMatcherType::Range(
-                AddressRange::try_from({
+        src_addr: Some(fnet_matchers_ext::Address {
+            matcher: fnet_matchers_ext::AddressMatcherType::Range(
+                fnet_matchers_ext::AddressRange::try_from({
                     let (start, end) = match I::VERSION {
                         // IPv6 range in an IPv4 namespace
                         IpVersion::V4 => (fidl_ip!("2001:db8::1"), fidl_ip!("2001:db8::2")),
@@ -1341,9 +1341,9 @@ fn invalid_address_range_matcher<I: net_types::ip::Ip>() -> Matchers {
 
 fn invalid_subnet_matcher<I: net_types::ip::Ip>() -> Matchers {
     Matchers {
-        src_addr: Some(AddressMatcher {
-            matcher: AddressMatcherType::Subnet(
-                Subnet::try_from({
+        src_addr: Some(fnet_matchers_ext::Address {
+            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                fnet_matchers_ext::Subnet::try_from({
                     match I::VERSION {
                         // IPv6 subnet in an IPv4 namespace
                         IpVersion::V4 => fidl_subnet!("2001:db8::/64"),
@@ -1364,9 +1364,9 @@ fn invalid_transport_protocol_matcher<I: net_types::ip::Ip>() -> Matchers {
         transport_protocol: Some({
             match I::VERSION {
                 // ICMPv6 in an IPv4 namespace
-                IpVersion::V4 => TransportProtocolMatcher::Icmpv6,
+                IpVersion::V4 => fnet_matchers_ext::TransportProtocol::Icmpv6,
                 // ICMPv4 in an IPv6 namespace
-                IpVersion::V6 => TransportProtocolMatcher::Icmp,
+                IpVersion::V6 => fnet_matchers_ext::TransportProtocol::Icmp,
             }
         }),
         ..Default::default()
@@ -1848,11 +1848,15 @@ async fn invalid_matcher_for_hook(
             id: rule_id.clone(),
             matchers: match interface_matcher {
                 WhichInterface::In => Matchers {
-                    in_interface: Some(InterfaceMatcher::PortClass(PortClass::WlanClient)),
+                    in_interface: Some(fnet_matchers_ext::Interface::PortClass(
+                        PortClass::WlanClient,
+                    )),
                     ..Default::default()
                 },
                 WhichInterface::Out => Matchers {
-                    out_interface: Some(InterfaceMatcher::PortClass(PortClass::WlanClient)),
+                    out_interface: Some(fnet_matchers_ext::Interface::PortClass(
+                        PortClass::WlanClient,
+                    )),
                     ..Default::default()
                 },
             },
@@ -1987,7 +1991,7 @@ async fn invalid_action_for_hook(
             Resource::Rule(Rule {
                 id: rule_id.clone(),
                 matchers: Matchers {
-                    transport_protocol: Some(TransportProtocolMatcher::Udp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                         src_port: None,
                         dst_port: None,
                     }),
@@ -2078,17 +2082,17 @@ impl ActionWithPort {
         ActionWithPort::Masquerade,
     ],
     [
-        (Some(TransportProtocolMatcher::Tcp { src_port: None, dst_port: None }), Ok(())),
-        (Some(TransportProtocolMatcher::Udp { src_port: None, dst_port: None }), Ok(())),
-        (Some(TransportProtocolMatcher::Icmp), Err(())),
-        (Some(TransportProtocolMatcher::Icmpv6), Err(())),
+        (Some(fnet_matchers_ext::TransportProtocol::Tcp { src_port: None, dst_port: None }), Ok(())),
+        (Some(fnet_matchers_ext::TransportProtocol::Udp { src_port: None, dst_port: None }), Ok(())),
+        (Some(fnet_matchers_ext::TransportProtocol::Icmp), Err(())),
+        (Some(fnet_matchers_ext::TransportProtocol::Icmpv6), Err(())),
         (None, Err(())),
     ]
 )]
 async fn invalid_matcher_for_action_with_specified_port(
     name: &str,
     action: ActionWithPort,
-    matcher_and_expected_result: (Option<TransportProtocolMatcher>, Result<(), ()>),
+    matcher_and_expected_result: (Option<fnet_matchers_ext::TransportProtocol>, Result<(), ()>),
 ) {
     let (matcher, expected_result) = matcher_and_expected_result;
 

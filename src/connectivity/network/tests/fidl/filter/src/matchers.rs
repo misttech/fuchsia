@@ -6,12 +6,12 @@ use std::fmt::Debug;
 use std::num::NonZeroU64;
 use std::ops::RangeInclusive;
 
-use fidl_fuchsia_net_filter_ext::{
-    AddressMatcher, AddressMatcherType, InterfaceMatcher, Matchers, PortMatcher,
-    TransportProtocolMatcher,
-};
+use fidl_fuchsia_net_filter_ext::Matchers;
 use net_types::ip::{Ip, IpVersion};
-use {fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_matchers as fnet_matchers};
+use {
+    fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_matchers as fnet_matchers,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
+};
 
 use crate::ip_hooks::{
     IcmpSocket, Interfaces, IrrelevantToTest, Ports, SocketType, Subnets, TcpSocket, UdpSocket,
@@ -65,12 +65,12 @@ impl Matcher for InterfaceId {
         let Interfaces { ingress, egress } = interfaces;
         Matchers {
             in_interface: ingress.map(|interface| {
-                InterfaceMatcher::Id(
+                fnet_matchers_ext::Interface::Id(
                     NonZeroU64::new(interface.id()).expect("interface ID should be nonzero"),
                 )
             }),
             out_interface: egress.map(|interface| {
-                InterfaceMatcher::Id(
+                fnet_matchers_ext::Interface::Id(
                     NonZeroU64::new(interface.id()).expect("interface ID should be nonzero"),
                 )
             }),
@@ -91,8 +91,10 @@ impl Matcher for InterfaceName {
         _subnets: Subnets,
         _ports: Ports,
     ) -> Matchers {
-        async fn get_interface_name(interface: &netemul::TestInterface<'_>) -> InterfaceMatcher {
-            InterfaceMatcher::Name(
+        async fn get_interface_name(
+            interface: &netemul::TestInterface<'_>,
+        ) -> fnet_matchers_ext::Interface {
+            fnet_matchers_ext::Interface::Name(
                 interface.get_interface_name().await.expect("get interface name"),
             )
         }
@@ -122,8 +124,10 @@ impl Matcher for InterfaceDeviceClass {
         _subnets: Subnets,
         _ports: Ports,
     ) -> Matchers {
-        async fn get_port_class(interface: &netemul::TestInterface<'_>) -> InterfaceMatcher {
-            InterfaceMatcher::PortClass(
+        async fn get_port_class(
+            interface: &netemul::TestInterface<'_>,
+        ) -> fnet_matchers_ext::Interface {
+            fnet_matchers_ext::Interface::PortClass(
                 interface.get_port_class().await.expect("get port class").into(),
             )
         }
@@ -158,16 +162,16 @@ impl Matcher for SrcAddressSubnet {
 
         Matchers {
             src_addr: Some(match inversion {
-                Inversion::Default => AddressMatcher {
-                    matcher: AddressMatcherType::Subnet(
+                Inversion::Default => fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
                         fnet_ext::apply_subnet_mask(src)
                             .try_into()
                             .expect("subnet should be valid"),
                     ),
                     invert: false,
                 },
-                Inversion::InverseMatch => AddressMatcher {
-                    matcher: AddressMatcherType::Subnet(
+                Inversion::InverseMatch => fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
                         other.try_into().expect("subnet should be valid"),
                     ),
                     invert: true,
@@ -195,16 +199,16 @@ impl Matcher for SrcAddressRange {
 
         Matchers {
             src_addr: Some(match inversion {
-                Inversion::Default => AddressMatcher {
-                    matcher: AddressMatcherType::Range(
+                Inversion::Default => fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Range(
                         fnet_matchers::AddressRange { start: src.addr, end: src.addr }
                             .try_into()
                             .expect("address range should be valid"),
                     ),
                     invert: false,
                 },
-                Inversion::InverseMatch => AddressMatcher {
-                    matcher: AddressMatcherType::Range(
+                Inversion::InverseMatch => fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Range(
                         fnet_matchers::AddressRange { start: other.addr, end: other.addr }
                             .try_into()
                             .expect("address range should be valid"),
@@ -234,16 +238,16 @@ impl Matcher for DstAddressSubnet {
 
         Matchers {
             dst_addr: Some(match inversion {
-                Inversion::Default => AddressMatcher {
-                    matcher: AddressMatcherType::Subnet(
+                Inversion::Default => fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
                         fnet_ext::apply_subnet_mask(dst)
                             .try_into()
                             .expect("subnet should be valid"),
                     ),
                     invert: false,
                 },
-                Inversion::InverseMatch => AddressMatcher {
-                    matcher: AddressMatcherType::Subnet(
+                Inversion::InverseMatch => fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
                         other.try_into().expect("subnet should be valid"),
                     ),
                     invert: true,
@@ -271,16 +275,16 @@ impl Matcher for DstAddressRange {
 
         Matchers {
             dst_addr: Some(match inversion {
-                Inversion::Default => AddressMatcher {
-                    matcher: AddressMatcherType::Range(
+                Inversion::Default => fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Range(
                         fnet_matchers::AddressRange { start: dst.addr, end: dst.addr }
                             .try_into()
                             .expect("address range should be valid"),
                     ),
                     invert: false,
                 },
-                Inversion::InverseMatch => AddressMatcher {
-                    matcher: AddressMatcherType::Range(
+                Inversion::InverseMatch => fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Range(
                         fnet_matchers::AddressRange { start: other.addr, end: other.addr }
                             .try_into()
                             .expect("address range should be valid"),
@@ -317,7 +321,7 @@ impl Matcher for Tcp {
         _ports: Ports,
     ) -> Matchers {
         Matchers {
-            transport_protocol: Some(TransportProtocolMatcher::Tcp {
+            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                 src_port: None,
                 dst_port: None,
             }),
@@ -342,15 +346,15 @@ impl Matcher for TcpSrcPort {
         let Ports { src, dst } = ports;
 
         Matchers {
-            transport_protocol: Some(TransportProtocolMatcher::Tcp {
+            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                 src_port: Some(match inversion {
                     Inversion::Default => {
-                        PortMatcher::new(src, src, /* invert */ false)
+                        fnet_matchers_ext::Port::new(src, src, /* invert */ false)
                             .expect("should be valid port range")
                     }
                     Inversion::InverseMatch => {
                         let port = unique_ephemeral_port(&[src, dst]);
-                        PortMatcher::new(port, port, /* invert */ true)
+                        fnet_matchers_ext::Port::new(port, port, /* invert */ true)
                             .expect("should be valid port range")
                     }
                 }),
@@ -377,16 +381,16 @@ impl Matcher for TcpDstPort {
         let Ports { src, dst } = ports;
 
         Matchers {
-            transport_protocol: Some(TransportProtocolMatcher::Tcp {
+            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                 src_port: None,
                 dst_port: Some(match inversion {
                     Inversion::Default => {
-                        PortMatcher::new(dst, dst, /* invert */ false)
+                        fnet_matchers_ext::Port::new(dst, dst, /* invert */ false)
                             .expect("should be valid port range")
                     }
                     Inversion::InverseMatch => {
                         let port = unique_ephemeral_port(&[src, dst]);
-                        PortMatcher::new(port, port, /* invert */ true)
+                        fnet_matchers_ext::Port::new(port, port, /* invert */ true)
                             .expect("should be valid port range")
                     }
                 }),
@@ -409,7 +413,7 @@ impl Matcher for Udp {
         _ports: Ports,
     ) -> Matchers {
         Matchers {
-            transport_protocol: Some(TransportProtocolMatcher::Udp {
+            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                 src_port: None,
                 dst_port: None,
             }),
@@ -434,15 +438,15 @@ impl Matcher for UdpSrcPort {
         let Ports { src, dst } = ports;
 
         Matchers {
-            transport_protocol: Some(TransportProtocolMatcher::Udp {
+            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                 src_port: Some(match inversion {
                     Inversion::Default => {
-                        PortMatcher::new(src, src, /* invert */ false)
+                        fnet_matchers_ext::Port::new(src, src, /* invert */ false)
                             .expect("should be valid port range")
                     }
                     Inversion::InverseMatch => {
                         let port = unique_ephemeral_port(&[src, dst]);
-                        PortMatcher::new(port, port, /* invert */ true)
+                        fnet_matchers_ext::Port::new(port, port, /* invert */ true)
                             .expect("should be valid port range")
                     }
                 }),
@@ -469,16 +473,16 @@ impl Matcher for UdpDstPort {
         let Ports { src, dst } = ports;
 
         Matchers {
-            transport_protocol: Some(TransportProtocolMatcher::Udp {
+            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                 src_port: None,
                 dst_port: Some(match inversion {
                     Inversion::Default => {
-                        PortMatcher::new(dst, dst, /* invert */ false)
+                        fnet_matchers_ext::Port::new(dst, dst, /* invert */ false)
                             .expect("should be valid port range")
                     }
                     Inversion::InverseMatch => {
                         let port = unique_ephemeral_port(&[src, dst]);
-                        PortMatcher::new(port, port, /* invert */ true)
+                        fnet_matchers_ext::Port::new(port, port, /* invert */ true)
                             .expect("should be valid port range")
                     }
                 }),
@@ -503,8 +507,8 @@ impl Matcher for Icmp {
         Matchers {
             transport_protocol: Some({
                 match I::VERSION {
-                    IpVersion::V4 => TransportProtocolMatcher::Icmp,
-                    IpVersion::V6 => TransportProtocolMatcher::Icmpv6,
+                    IpVersion::V4 => fnet_matchers_ext::TransportProtocol::Icmp,
+                    IpVersion::V6 => fnet_matchers_ext::TransportProtocol::Icmpv6,
                 }
             }),
             ..Default::default()

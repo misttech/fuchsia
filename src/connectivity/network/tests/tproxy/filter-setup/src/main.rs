@@ -18,13 +18,13 @@
 
 use std::num::NonZeroU16;
 
-use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::{
     Action, Change, Controller, ControllerId, Domain, InstalledIpRoutine, IpHook, Matchers,
-    Namespace, NamespaceId, PortMatcher, Resource, Routine, RoutineId, RoutineType, Rule, RuleId,
-    TransparentProxy, TransportProtocolMatcher,
+    Namespace, NamespaceId, Resource, Routine, RoutineId, RoutineType, Rule, RuleId,
+    TransparentProxy,
 };
 use net_declare::fidl_ip;
+use {fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext};
 
 const BUS_NAME: &str = "test-bus";
 const SETUP_COMPLETE: &str = "setup-complete";
@@ -54,9 +54,9 @@ async fn main() {
         Resource::Rule(Rule {
             id: RuleId { routine: routine_id.clone(), index: 0 },
             matchers: Matchers {
-                transport_protocol: Some(TransportProtocolMatcher::Udp {
+                transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                     src_port: None,
-                    dst_port: Some(PortMatcher::new(10000, 19999, false).unwrap()),
+                    dst_port: Some(fnet_matchers_ext::Port::new(10000, 19999, false).unwrap()),
                 }),
                 ..Default::default()
             },
@@ -65,9 +65,9 @@ async fn main() {
         Resource::Rule(Rule {
             id: RuleId { routine: routine_id.clone(), index: 1 },
             matchers: Matchers {
-                transport_protocol: Some(TransportProtocolMatcher::Udp {
+                transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                     src_port: None,
-                    dst_port: Some(PortMatcher::new(20000, 29999, false).unwrap()),
+                    dst_port: Some(fnet_matchers_ext::Port::new(20000, 29999, false).unwrap()),
                 }),
                 ..Default::default()
             },
@@ -76,9 +76,9 @@ async fn main() {
         Resource::Rule(Rule {
             id: RuleId { routine: routine_id.clone(), index: 2 },
             matchers: Matchers {
-                transport_protocol: Some(TransportProtocolMatcher::Udp {
+                transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                     src_port: None,
-                    dst_port: Some(PortMatcher::new(30000, 39999, false).unwrap()),
+                    dst_port: Some(fnet_matchers_ext::Port::new(30000, 39999, false).unwrap()),
                 }),
                 ..Default::default()
             },
@@ -90,9 +90,9 @@ async fn main() {
         Resource::Rule(Rule {
             id: RuleId { routine: routine_id.clone(), index: 3 },
             matchers: Matchers {
-                transport_protocol: Some(TransportProtocolMatcher::Udp {
+                transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                     src_port: None,
-                    dst_port: Some(PortMatcher::new(40000, 49999, false).unwrap()),
+                    dst_port: Some(fnet_matchers_ext::Port::new(40000, 49999, false).unwrap()),
                 }),
                 ..Default::default()
             },
@@ -101,9 +101,9 @@ async fn main() {
         Resource::Rule(Rule {
             id: RuleId { routine: routine_id.clone(), index: 4 },
             matchers: Matchers {
-                transport_protocol: Some(TransportProtocolMatcher::Udp {
+                transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                     src_port: None,
-                    dst_port: Some(PortMatcher::new(50000, 59999, false).unwrap()),
+                    dst_port: Some(fnet_matchers_ext::Port::new(50000, 59999, false).unwrap()),
                 }),
                 ..Default::default()
             },

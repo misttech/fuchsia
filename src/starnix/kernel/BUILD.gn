@@ -365,6 +365,7 @@ rustc_library("starnix_core") {
     "//src/lib/fuchsia-sync",
     "//src/lib/mundane",
     "//src/lib/network/fidl_fuchsia_net_filter_ext",
+    "//src/lib/network/fidl_fuchsia_net_matchers_ext",
     "//src/lib/process_builder",
     "//src/lib/replace-with",
     "//src/lib/trace/rust:trace",

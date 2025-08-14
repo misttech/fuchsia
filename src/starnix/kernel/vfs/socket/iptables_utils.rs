@@ -32,7 +32,10 @@ use std::ops::RangeInclusive;
 use std::str::Utf8Error;
 use thiserror::Error;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext};
+use {
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
+};
 
 const TABLE_FILTER: &str = "filter";
 const TABLE_MANGLE: &str = "mangle";
@@ -69,7 +72,7 @@ pub enum IpTableParseError {
     #[error("FIDL conversion error: {0}")]
     FidlConversion(#[from] fnet_filter_ext::FidlConversionError),
     #[error("Port matcher error: {0}")]
-    PortMatcher(#[from] fnet_filter_ext::PortMatcherError),
+    PortMatcher(#[from] fnet_matchers_ext::PortError),
     #[error("buffer of size {size} is too small to read ipt_replace or ip6t_replace")]
     BufferTooSmallForMetadata { size: usize },
     #[error("specified size {specified_size} does not match size of entries {entries_size}")]
@@ -1502,19 +1505,19 @@ impl Entry {
         let ip_info = &self.entry_info.ip_info;
 
         if let Some(subnet) = ip_info.src_subnet {
-            let subnet = fnet_filter_ext::Subnet::try_from(subnet)
-                .map_err(IpTableParseError::FidlConversion)?;
-            matchers.src_addr = Some(fnet_filter_ext::AddressMatcher {
-                matcher: fnet_filter_ext::AddressMatcherType::Subnet(subnet),
+            let subnet = fnet_matchers_ext::Subnet::try_from(subnet)
+                .map_err(|err| IpTableParseError::FidlConversion(err.into()))?;
+            matchers.src_addr = Some(fnet_matchers_ext::Address {
+                matcher: fnet_matchers_ext::AddressMatcherType::Subnet(subnet),
                 invert: ip_info.inverse_flags.contains(IptIpInverseFlags::SOURCE_IP_ADDRESS),
             });
         }
 
         if let Some(subnet) = ip_info.dst_subnet {
-            let subnet = fnet_filter_ext::Subnet::try_from(subnet)
-                .map_err(IpTableParseError::FidlConversion)?;
-            matchers.dst_addr = Some(fnet_filter_ext::AddressMatcher {
-                matcher: fnet_filter_ext::AddressMatcherType::Subnet(subnet),
+            let subnet = fnet_matchers_ext::Subnet::try_from(subnet)
+                .map_err(|err| IpTableParseError::FidlConversion(err.into()))?;
+            matchers.dst_addr = Some(fnet_matchers_ext::Address {
+                matcher: fnet_matchers_ext::AddressMatcherType::Subnet(subnet),
                 invert: ip_info.inverse_flags.contains(IptIpInverseFlags::DESTINATION_IP_ADDRESS),
             });
         }
@@ -1524,7 +1527,7 @@ impl Entry {
                 log_debug!("IpTables: ignored rule-specification with inversed input interface");
                 return Ok(None);
             }
-            matchers.in_interface = Some(fnet_filter_ext::InterfaceMatcher::Name(interface.clone()))
+            matchers.in_interface = Some(fnet_matchers_ext::Interface::Name(interface.clone()))
         }
 
         if let Some(ref interface) = ip_info.out_interface {
@@ -1532,8 +1535,7 @@ impl Entry {
                 log_debug!("IpTables: ignored rule-specification with inversed output interface");
                 return Ok(None);
             }
-            matchers.out_interface =
-                Some(fnet_filter_ext::InterfaceMatcher::Name(interface.clone()))
+            matchers.out_interface = Some(fnet_matchers_ext::Interface::Name(interface.clone()))
         }
 
         if ip_info.should_match_protocol() {
@@ -1542,31 +1544,27 @@ impl Entry {
                 IPPROTO_IP => {}
 
                 IPPROTO_TCP => {
-                    matchers.transport_protocol =
-                        Some(fnet_filter_ext::TransportProtocolMatcher::Tcp {
-                            // These fields are set later by `xt_tcp` match extension, if present.
-                            src_port: None,
-                            dst_port: None,
-                        });
+                    matchers.transport_protocol = Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                        // These fields are set later by `xt_tcp` match extension, if present.
+                        src_port: None,
+                        dst_port: None,
+                    });
                 }
 
                 IPPROTO_UDP => {
-                    matchers.transport_protocol =
-                        Some(fnet_filter_ext::TransportProtocolMatcher::Udp {
-                            // These fields are set later by `xt_udp` match extension, if present.
-                            src_port: None,
-                            dst_port: None,
-                        });
+                    matchers.transport_protocol = Some(fnet_matchers_ext::TransportProtocol::Udp {
+                        // These fields are set later by `xt_udp` match extension, if present.
+                        src_port: None,
+                        dst_port: None,
+                    });
                 }
 
                 IPPROTO_ICMP => {
-                    matchers.transport_protocol =
-                        Some(fnet_filter_ext::TransportProtocolMatcher::Icmp)
+                    matchers.transport_protocol = Some(fnet_matchers_ext::TransportProtocol::Icmp)
                 }
 
                 IPPROTO_ICMPV6 => {
-                    matchers.transport_protocol =
-                        Some(fnet_filter_ext::TransportProtocolMatcher::Icmpv6)
+                    matchers.transport_protocol = Some(fnet_matchers_ext::TransportProtocol::Icmpv6)
                 }
 
                 protocol => {
@@ -1594,7 +1592,7 @@ impl Entry {
                     flg_cmp: _,
                 }) => {
                     // TCP match extension is only valid if protocol is specified as TCP.
-                    let Some(fnet_filter_ext::TransportProtocolMatcher::Tcp {
+                    let Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         ref mut src_port,
                         ref mut dst_port,
                     }) = fnet_filter_matchers.transport_protocol.as_mut()
@@ -1609,7 +1607,7 @@ impl Entry {
                         return Err(IpTableParseError::MatchExtensionOverwrite);
                     }
                     src_port.replace(
-                        fnet_filter_ext::PortMatcher::new(
+                        fnet_matchers_ext::Port::new(
                             spts[0],
                             spts[1],
                             inverse_flags.contains(XtTcpInverseFlags::SOURCE_PORT),
@@ -1617,7 +1615,7 @@ impl Entry {
                         .map_err(IpTableParseError::PortMatcher)?,
                     );
                     dst_port.replace(
-                        fnet_filter_ext::PortMatcher::new(
+                        fnet_matchers_ext::Port::new(
                             dpts[0],
                             dpts[1],
                             inverse_flags.contains(XtTcpInverseFlags::DESTINATION_PORT),
@@ -1627,7 +1625,7 @@ impl Entry {
                 }
                 Matcher::Udp(xt_udp { spts, dpts, invflags, __bindgen_padding_0 }) => {
                     // UDP match extension is only valid if protocol is specified as UDP.
-                    let Some(fnet_filter_ext::TransportProtocolMatcher::Udp {
+                    let Some(fnet_matchers_ext::TransportProtocol::Udp {
                         ref mut src_port,
                         ref mut dst_port,
                     }) = fnet_filter_matchers.transport_protocol.as_mut()
@@ -1642,7 +1640,7 @@ impl Entry {
                         return Err(IpTableParseError::MatchExtensionOverwrite);
                     }
                     src_port.replace(
-                        fnet_filter_ext::PortMatcher::new(
+                        fnet_matchers_ext::Port::new(
                             spts[0],
                             spts[1],
                             inverse_flags.contains(XtUdpInverseFlags::SOURCE_PORT),
@@ -1650,7 +1648,7 @@ impl Entry {
                         .map_err(IpTableParseError::PortMatcher)?,
                     );
                     dst_port.replace(
-                        fnet_filter_ext::PortMatcher::new(
+                        fnet_matchers_ext::Port::new(
                             dpts[0],
                             dpts[1],
                             inverse_flags.contains(XtUdpInverseFlags::DESTINATION_PORT),
@@ -2575,13 +2573,13 @@ mod tests {
                     routine: filter_input_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    src_addr: Some(fnet_filter_ext::AddressMatcher {
-                        matcher: fnet_filter_ext::AddressMatcherType::Subnet(
-                            fnet_filter_ext::Subnet::try_from(expected_subnet).unwrap(),
+                    src_addr: Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                            fnet_matchers_ext::Subnet::try_from(expected_subnet).unwrap(),
                         ),
                         invert: true,
                     }),
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
                         dst_port: None,
                     }),
@@ -2595,13 +2593,13 @@ mod tests {
                     routine: filter_input_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    src_addr: Some(fnet_filter_ext::AddressMatcher {
-                        matcher: fnet_filter_ext::AddressMatcherType::Subnet(
-                            fnet_filter_ext::Subnet::try_from(expected_subnet).unwrap(),
+                    src_addr: Some(fnet_matchers_ext::Address {
+                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                            fnet_matchers_ext::Subnet::try_from(expected_subnet).unwrap(),
                         ),
                         invert: false,
                     }),
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Udp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                         src_port: None,
                         dst_port: None,
                     }),
@@ -2615,7 +2613,7 @@ mod tests {
                     routine: filter_input_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    in_interface: Some(fnet_filter_ext::InterfaceMatcher::Name("en0".to_string())),
+                    in_interface: Some(fnet_matchers_ext::Interface::Name("en0".to_string())),
                     ..Default::default()
                 },
                 action: fnet_filter_ext::Action::Drop,
@@ -2626,7 +2624,7 @@ mod tests {
                     routine: filter_input_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Icmp),
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Icmp),
                     ..Default::default()
                 },
                 action: fnet_filter_ext::Action::Drop,
@@ -2637,7 +2635,7 @@ mod tests {
                     routine: filter_input_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Icmpv6),
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Icmpv6),
                     ..Default::default()
                 },
                 action: fnet_filter_ext::Action::Drop,
@@ -2664,9 +2662,7 @@ mod tests {
                     routine: filter_output_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    out_interface: Some(fnet_filter_ext::InterfaceMatcher::Name(
-                        "wifi1".to_string(),
-                    )),
+                    out_interface: Some(fnet_matchers_ext::Interface::Name("wifi1".to_string())),
                     ..Default::default()
                 },
                 action: fnet_filter_ext::Action::Accept,
@@ -2802,11 +2798,9 @@ mod tests {
                     routine: filter_input_routine(&expected_namespace).id,
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Tcp {
-                        src_port: Some(fnet_filter_ext::PortMatcher::new(0, 65535, false).unwrap()),
-                        dst_port: Some(
-                            fnet_filter_ext::PortMatcher::new(8000, 8000, true).unwrap()
-                        ),
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                        src_port: Some(fnet_matchers_ext::Port::new(0, 65535, false).unwrap()),
+                        dst_port: Some(fnet_matchers_ext::Port::new(8000, 8000, true).unwrap()),
                     }),
                     ..Default::default()
                 },
@@ -2821,11 +2815,9 @@ mod tests {
                     routine: filter_input_routine(&expected_namespace).id,
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Udp {
-                        src_port: Some(
-                            fnet_filter_ext::PortMatcher::new(2000, 3000, false).unwrap()
-                        ),
-                        dst_port: Some(fnet_filter_ext::PortMatcher::new(0, 65535, false).unwrap()),
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
+                        src_port: Some(fnet_matchers_ext::Port::new(2000, 3000, false).unwrap()),
+                        dst_port: Some(fnet_matchers_ext::Port::new(0, 65535, false).unwrap()),
                     }),
                     ..Default::default()
                 },
@@ -3609,7 +3601,7 @@ mod tests {
                     routine: nat_prerouting_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
                         dst_port: None,
                     }),
@@ -3625,7 +3617,7 @@ mod tests {
                     routine: nat_prerouting_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Udp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                         src_port: None,
                         dst_port: None,
                     }),
@@ -3641,7 +3633,7 @@ mod tests {
                     routine: nat_prerouting_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
                         dst_port: None,
                     }),
@@ -3676,7 +3668,7 @@ mod tests {
                     routine: nat_output_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
                         dst_port: None,
                     }),
@@ -3690,7 +3682,7 @@ mod tests {
                     routine: nat_output_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Udp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                         src_port: None,
                         dst_port: None,
                     }),
@@ -3706,7 +3698,7 @@ mod tests {
                     routine: nat_output_routine(&expected_namespace).id.clone(),
                 },
                 matchers: fnet_filter_ext::Matchers {
-                    transport_protocol: Some(fnet_filter_ext::TransportProtocolMatcher::Tcp {
+                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                         src_port: None,
                         dst_port: None,
                     }),
