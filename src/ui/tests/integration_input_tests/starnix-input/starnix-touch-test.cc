@@ -101,7 +101,7 @@ class StarnixTouchTest : public starnix_input_test::StarnixInputTestBase {
     }
   }
 
-  // Reads sequences of touch events from `touch_dump.cc`, via `out_socket`
+  // Reads sequences of touch events from `input_dump.cc`, via `out_socket`
   // until we get num_expected events.
   //
   // Because of the variable amount of packets read at a time, we may create
@@ -176,6 +176,15 @@ class StarnixTouchTest : public starnix_input_test::StarnixInputTestBase {
     EXPECT_EQ(result.size(), num_expected);
     return result;
   }
+
+  void InitTouchInputRelay(zx::socket& in_socket, zx::socket& out_socket) {
+    // Wait for `input_dump` to start.
+    WaitForMessageFromInputDump(out_socket, relay_api::kWaitForStdinMessage);
+    // Inform `input_dump` to run the touch_relay.
+    std::stringstream ss;
+    ss << relay_api::kDeviceDelimiter << " " << relay_api::kTouchDev;
+    WriteMessageToSocket(in_socket, ss.str());
+  }
 };
 
 // TODO: https://fxbug.dev/42082519 - Test for DPR=2.0, too.
@@ -185,7 +194,10 @@ TEST_F(StarnixTouchTest, Tap) {
   // Wait until #launch_input is presented before injecting input.
   WaitForViewPresentation();
 
-  // Wait for `input_dump` to start.
+  // Start `input_dump` for a touch device.
+  InitTouchInputRelay(in_socket, out_socket);
+
+  // `input_dump` is ready to receive events.
   WaitForMessageFromInputDump(out_socket, relay_api::kWaitForStdinMessage);
 
   std::stringstream ss;
@@ -234,7 +246,10 @@ TEST_F(StarnixTouchTest, EventsDuringFileCloseAreIgnored) {
   // Wait until #launch_input is presented before injecting input.
   WaitForViewPresentation();
 
-  // Wait for `touch_dump` to start.
+  // Start `input_dump` for a touch device.
+  InitTouchInputRelay(in_socket, out_socket);
+
+  // `input_dump` is ready to receive events.
   WaitForMessageFromInputDump(out_socket, relay_api::kWaitForStdinMessage);
 
   std::stringstream ss;
@@ -256,7 +271,7 @@ TEST_F(StarnixTouchTest, EventsDuringFileCloseAreIgnored) {
 
   FX_LOGS(INFO) << "device file closed";
 
-  // Now the file is closed. Send 1 tap to top left. touch_dump should not receive this event
+  // Now the file is closed. Send 1 tap to top left. input_dump should not receive this event
   // sequence.
   InjectInput(TapLocation::kTopLeft);
 
@@ -272,10 +287,10 @@ TEST_F(StarnixTouchTest, EventsDuringFileCloseAreIgnored) {
 
   FX_LOGS(INFO) << "device file opened";
 
-  // Wait for `touch_dump` to ready for event injection.
+  // Wait for `input_dump` to ready for event injection.
   WaitForMessageFromInputDump(out_socket, relay_api::kReadyMessage);
 
-  // Send 1 tap to bottom right. touch_dump should receive this event sequence.
+  // Send 1 tap to bottom right. input_dump should receive this event sequence.
   InjectInput(TapLocation::kBottomRight);
   {
     auto events = GetTouchEventSequenceOfLen(out_socket, kDownUpNumEvents);
@@ -294,14 +309,17 @@ TEST_F(StarnixTouchTest, EventsDuringFileCloseAreIgnored) {
 
 // OpenFileDuringEventSequenceReceivesPartialSequence tests event delivery when the device file is
 // opened in the middle of an event sequence. It verifies that only events generated after the file
-// is opened are recorded in touch_dump.
+// is opened are recorded in input_dump.
 TEST_F(StarnixTouchTest, OpenFileDuringEventSequenceReceivesPartialSequence) {
   auto [in_socket, out_socket] = LaunchDumper();
 
   // Wait until #launch_input is presented before injecting input.
   WaitForViewPresentation();
 
-  // Wait for `touch_dump` to start.
+  // Start `input_dump` for a touch device.
+  InitTouchInputRelay(in_socket, out_socket);
+
+  // `input_dump` is ready to receive events.
   WaitForMessageFromInputDump(out_socket, relay_api::kWaitForStdinMessage);
 
   std::stringstream ss;
@@ -323,7 +341,7 @@ TEST_F(StarnixTouchTest, OpenFileDuringEventSequenceReceivesPartialSequence) {
 
   FX_LOGS(INFO) << "device file closed";
 
-  // Now the file is closed. Send 1 tap to top left. touch_dump should not receive this down event.
+  // Now the file is closed. Send 1 tap to top left. input_dump should not receive this down event.
   fuchsia_input_report::TouchInputReport down;
   down.contacts({{fuchsia_input_report::ContactInputReport{
       {
@@ -349,7 +367,7 @@ TEST_F(StarnixTouchTest, OpenFileDuringEventSequenceReceivesPartialSequence) {
 
   FX_LOGS(INFO) << "device file opened";
 
-  // Wait for `touch_dump` to ready for event injection.
+  // Wait for `input_dump` to ready for event injection.
   WaitForMessageFromInputDump(out_socket, relay_api::kReadyMessage);
 
   fuchsia_input_report::TouchInputReport move;

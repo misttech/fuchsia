@@ -142,12 +142,15 @@ void write_message_to_stdout(const std::string& message) {
   ASSERT_EQ(message.size(), static_cast<size_t>(n_written), "expected n_written=%zu, but got %zd");
 }
 
-constexpr std::string kDevice = "/dev/input/event0";
+constexpr std::string kTouchDevice = "/dev/input/event0";
+constexpr std::string kMouseDevice = "/dev/input/event2";
 
 int main() {
   int epoll_fd = ENSURE(epoll_create, 1);  // Per manual page, must be >0.
 
   char input_buffer[128];
+
+  std::string device;
 
   while (true) {
     // Let starnix test fixture know that we are ready for an input message.
@@ -171,12 +174,22 @@ int main() {
       return 0;
     }
 
+    if (cmd == relay_api::kDeviceDelimiter) {
+      ss >> device;
+      if (device == relay_api::kTouchDev) {
+        device = kTouchDevice;
+      } else if (device == relay_api::kMouseDev) {
+        device = kMouseDevice;
+      }
+      continue;
+    }
+
     if (cmd == relay_api::kEventCmd) {
       // open the device, handle X events, then close.
       size_t num_of_events;
       ss >> num_of_events;
 
-      int device_fd = open_device(epoll_fd, kDevice);
+      int device_fd = open_device(epoll_fd, device);
 
       // Let starnix test fixture know that we're ready for it to inject input events.
       write_message_to_stdout(relay_api::kReadyMessage);

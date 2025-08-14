@@ -18,6 +18,9 @@ constexpr std::string kEventDelimiter = "EVENT";
 constexpr char kEventFormat[] = "EVENT tv_sec=%ld tv_usec=%ld type=%hu code=%hu value=%d";
 constexpr std::string kQuitCmd = "quit";
 constexpr std::string kEventCmd = "watch_event";
+constexpr std::string kDeviceDelimiter = "SET_DEVICE";
+constexpr std::string kTouchDev = "touch";
+constexpr std::string kMouseDev = "mouse";
 
 // The formatted event string will be sent across systems, so verify that the
 // size of a `long` is the same on both sides. Similarly for `unsigned short`.
@@ -45,6 +48,9 @@ constexpr size_t kMoveNumPackets = 4;
 constexpr size_t kUpNumPackets = 4;
 
 constexpr size_t kDownUpNumPackets = kDownNumPackets + kUpNumPackets;
+
+// Mouse wheel scroll is expressed in two `uapi::input_event`s: REL_WHEEL and EV_SYN.
+constexpr size_t kScrollNumPackets = 2;
 
 }  // namespace relay_api
 

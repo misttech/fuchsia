@@ -44,14 +44,51 @@ cc_test_executable("starnix-touch-test-bin") {
   ]
 }
 
+cc_test_executable("starnix-mouse-test-bin") {
+  testonly = true
+  sources = [
+    "relay-api.h",
+    "starnix-input-test-base.h",
+    "starnix-mouse-test.cc",
+  ]
+  output_name = "starnix-mouse-test"
+  deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
+    "//sdk/fidl/fuchsia.element:fuchsia.element_cpp",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//sdk/fidl/fuchsia.process:fuchsia.process_cpp",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
+    "//sdk/fidl/fuchsia.tracing.provider:fuchsia.tracing.provider_cpp",
+    "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_cpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_cpp",
+    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_cpp",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_cpp",
+    "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_cpp",
+    "//sdk/lib/sys/component/cpp/testing:cpp",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/loop_fixture",
+    "//src/ui/testing/util",  # for portable-ui-test
+    "//third_party/googletest:gtest",
+  ]
+}
+
 ###
 ### The Fuchsia component containing the test binary.
 ###
 
 fuchsia_test_component("starnix-touch-test-component") {
   testonly = true
-  manifest = "meta/starnix-input-test.cml"
+  manifest = "meta/starnix-touch-test.cml"
   deps = [ ":starnix-touch-test-bin" ]
+  test_type = "starnix"
+}
+
+fuchsia_test_component("starnix-mouse-test-component") {
+  testonly = true
+  manifest = "meta/starnix-mouse-test.cml"
+  deps = [ ":starnix-mouse-test-bin" ]
   test_type = "starnix"
 }
 
@@ -60,8 +97,11 @@ fuchsia_test_component("starnix-touch-test-component") {
 ###
 
 # The Fuchsia package containing the test component and necessary subpackages.
-fuchsia_test_package("starnix-touch-test") {
-  test_components = [ ":starnix-touch-test-component" ]
+fuchsia_test_package("starnix-input-integration-tests") {
+  test_components = [
+    ":starnix-touch-test-component",
+    ":starnix-mouse-test-component",
+  ]
 
   # Must be visible to universe, since `fx test` will suggest adding this target
   # to universe, if not already present.
@@ -107,5 +147,5 @@ fuchsia_test_package("starnix-touch-test") {
 group("tests") {
   testonly = true
   visibility += [ "*" ]
-  deps = [ ":starnix-touch-test" ]
+  deps = [ ":starnix-input-integration-tests" ]
 }

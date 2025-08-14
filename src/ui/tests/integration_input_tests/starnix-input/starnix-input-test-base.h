@@ -1,6 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include <fidl/fuchsia.component.decl/cpp/fidl.h>
 #include <fidl/fuchsia.component/cpp/fidl.h>
 #include <fidl/fuchsia.element/cpp/fidl.h>
@@ -9,11 +10,12 @@
 #include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
 #include <fidl/fuchsia.ui.display.singleton/cpp/fidl.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
+#include <lib/zx/socket.h>
+#include <lib/zx/time.h>
 #include <zircon/processargs.h>
 
 #include "relay-api.h"
 #include "src/ui/testing/util/portable_ui_test.h"
-#include "third_party/android/platform/bionic/libc/kernel/uapi/linux/input-event-codes.h"
 
 namespace starnix_input_test {
 
