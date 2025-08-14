@@ -14,8 +14,4 @@ protocol Boost {
     SetBoost(struct {
         enable bool;
     }) -> () error SetBoostError;
-
-    IsBoostSupported() -> (struct {
-        supported bool;
-    });
 };

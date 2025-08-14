@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use anyhow::{format_err, Context, Error};
 use fuchsia_component::server::ServiceFs;
@@ -193,7 +194,6 @@ impl CpuManager {
         .map(|_| ())
     }
 
-    #[cfg(feature = "enable_android_power_hints")]
     async fn handle_boost_requests(
         mut stream: fcpumanager::BoostRequestStream,
         handler: Option<Rc<dyn Node>>,
@@ -202,7 +202,6 @@ impl CpuManager {
         while let Some(request) = stream.try_next().await? {
             match request {
                 fcpumanager::BoostRequest::SetBoost { enable, responder } => {
-                    use crate::message::{Message, MessageReturn};
                     if !boost_supported {
                         log::error!("SetBoost is not supported, enable: {}", enable);
                         responder.send(Err(fcpumanager::SetBoostError::NotSupported))?;
@@ -224,33 +223,6 @@ impl CpuManager {
                         log::error!("No handler for the manger fidl");
                         responder.send(Err(fcpumanager::SetBoostError::Internal))?;
                     }
-                }
-                fcpumanager::BoostRequest::IsBoostSupported { responder } => {
-                    responder.send(true)?;
-                }
-                fcpumanager::BoostRequest::_UnknownMethod { .. } => {
-                    log::info!("Received an unknown method");
-                }
-            }
-        }
-        Ok(())
-    }
-
-    #[cfg(not(feature = "enable_android_power_hints"))]
-    async fn handle_boost_requests(
-        mut stream: fcpumanager::BoostRequestStream,
-        _handler: Option<Rc<dyn Node>>,
-        _power_hints_enabled: bool,
-    ) -> Result<(), Error> {
-        while let Some(request) = stream.try_next().await? {
-            match request {
-                fcpumanager::BoostRequest::SetBoost { enable, responder } => {
-                    log::error!("SetBoost is not supported, enable: {}", enable);
-                    responder.send(Err(fcpumanager::SetBoostError::NotSupported))?;
-                }
-                fcpumanager::BoostRequest::IsBoostSupported { responder } => {
-                    log::error!("Boost is not supported");
-                    responder.send(false)?;
                 }
                 fcpumanager::BoostRequest::_UnknownMethod { .. } => {
                     log::info!("Received an unknown method");
