@@ -110,6 +110,7 @@ fuchsia_structured_config_values("default_component_config") {
   values = {
     # Below are default values that are only expected to be changed for integration tests.
     node_config_path = "/config/node_config.json"
+    cpu_boost_enabled = false
   }
 }
 

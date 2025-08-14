@@ -293,7 +293,8 @@ impl TestEnvBuilder {
 
         // Set up CPU Manager's required routes
         let parent_to_cpu_manager_routes = Route::new()
-            .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"));
+            .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"))
+            .capability(Capability::configuration("fuchsia.power.cpu.BoostEnabled"));
         realm_builder
             .add_route(parent_to_cpu_manager_routes.from(Ref::parent()).to(&cpu_manager))
             .await

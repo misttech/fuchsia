@@ -66,7 +66,13 @@ impl CpuManager {
                 async move {
                     match request {
                         Services::Boost(stream) => {
-                            if let Err(e) = Self::handle_boost_requests(stream, handler).await {
+                            if let Err(e) = Self::handle_boost_requests(
+                                stream,
+                                handler,
+                                structured_config.cpu_boost_enabled,
+                            )
+                            .await
+                            {
                                 log::error!("Error handling Manager requests: {}", e);
                             }
                         }
@@ -191,11 +197,17 @@ impl CpuManager {
     async fn handle_boost_requests(
         mut stream: fcpumanager::BoostRequestStream,
         handler: Option<Rc<dyn Node>>,
+        boost_supported: bool,
     ) -> Result<(), Error> {
         while let Some(request) = stream.try_next().await? {
             match request {
                 fcpumanager::BoostRequest::SetBoost { enable, responder } => {
                     use crate::message::{Message, MessageReturn};
+                    if !boost_supported {
+                        log::error!("SetBoost is not supported, enable: {}", enable);
+                        responder.send(Err(fcpumanager::SetBoostError::NotSupported))?;
+                        continue;
+                    }
                     let msg = Message::SetBoost(enable);
                     if let Some(handler) = &handler {
                         match handler.handle_message(&msg).await {
@@ -228,6 +240,7 @@ impl CpuManager {
     async fn handle_boost_requests(
         mut stream: fcpumanager::BoostRequestStream,
         _handler: Option<Rc<dyn Node>>,
+        _power_hints_enabled: bool,
     ) -> Result<(), Error> {
         while let Some(request) = stream.try_next().await? {
             match request {
@@ -249,8 +262,11 @@ impl CpuManager {
 }
 
 fn log_config(config: &cpu_manager_config_lib::Config) {
-    let cpu_manager_config_lib::Config { node_config_path } = config;
-    info!("Configuration: node_config_path={}", node_config_path);
+    let cpu_manager_config_lib::Config { node_config_path, cpu_boost_enabled } = config;
+    info!(
+        "Configuration: node_config_path={}, cpu_boost_enabled={}",
+        node_config_path, cpu_boost_enabled
+    );
 }
 
 #[cfg(test)]

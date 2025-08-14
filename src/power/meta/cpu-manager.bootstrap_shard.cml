@@ -62,5 +62,10 @@
             to: [ "#cpu_manager" ],
             dependency: "weak",
         },
+        {
+            config: "fuchsia.power.cpu.BoostEnabled",
+            from: "parent",
+            to: "#cpu_manager",
+        },
     ],
 }

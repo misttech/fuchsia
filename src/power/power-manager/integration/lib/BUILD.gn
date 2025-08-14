@@ -88,6 +88,7 @@ fuchsia_structured_config_values("integration-cpu-manager-structured-config") {
   testonly = true
   cm_label = ":integration-cpu-manager-manifest"
   values = {
+    cpu_boost_enabled = false
     node_config_path = ""
   }
 }

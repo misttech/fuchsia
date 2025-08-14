@@ -29,6 +29,13 @@
             availability: "optional",
         },
         { service: "fuchsia.hardware.cpu.ctrl.Service" },
+        {
+            config: "fuchsia.power.cpu.BoostEnabled",
+            key: "cpu_boost_enabled",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
     ],
     config: {
         // Path to a node config file for the CPU Manager to use. Typically set as a default

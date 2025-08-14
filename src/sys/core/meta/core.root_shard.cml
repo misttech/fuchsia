@@ -38,6 +38,7 @@
                 "fuchsia.memory.ImminentOomCaptureDelay",
                 "fuchsia.memory.NormalCaptureDelay",
                 "fuchsia.memory.WarningCaptureDelay",
+                "fuchsia.power.cpu.BoostEnabled",
                 "fuchsia.power.SuspendEnabled",
                 "fuchsia.recovery.DisplayRotation",
                 "fuchsia.recovery.UseFxBlob",
