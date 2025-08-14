@@ -36,7 +36,9 @@ impl MountAction {
         // file system before creating the initial task.
         let fs = match spec.fs_type.as_slice() {
             b"remote_bundle" => RemoteBundle::new_fs(locked, kernel, pkg, options, rights)?,
-            b"remotefs" => create_remotefs_filesystem(locked, kernel, pkg, options, rights)?,
+            b"remote_pkg_subdir" => {
+                create_remotefs_filesystem(locked, kernel, pkg, options, rights)?
+            }
             b"tmpfs" => TmpFs::new_fs_with_options(locked, kernel, options)?,
             _ => bail!("unsupported root file system: {}", spec.fs_type),
         };
@@ -60,10 +62,8 @@ impl MountAction {
                 RemoteBundle::new_fs(locked, current_task.kernel(), pkg, options, rights)?
             }
 
-            // When used in a mounts declaration in CML, remotefs is relative to the pkg directory,
-            // which is different than when remotefs is used with the mount() syscall. In that case,
-            // remotefs is relative to the data directory.
-            b"remotefs" => {
+            // Mounts a subdirectory of the container's `/pkg`.
+            b"remote_pkg_subdir" => {
                 create_remotefs_filesystem(locked, current_task.kernel(), pkg, options, rights)?
             }
 

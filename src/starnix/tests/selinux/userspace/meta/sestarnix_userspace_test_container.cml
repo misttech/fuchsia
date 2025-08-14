@@ -13,7 +13,7 @@
         ],
         init: [],
         kernel_cmdline: "",
-        mounts: [ "/:remotefs::nosuid,nodev,relatime" ],
+        mounts: [ "/:remote_pkg_subdir::nosuid,nodev,relatime" ],
         name: "sestarnix_userspace_test_container",
         startup_file_path: "",
         default_seclabel: "#kernel",
