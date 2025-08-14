@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <deque>
 #include <optional>
+#include <ranges>
 #include <unordered_set>
 #include <utility>
 
@@ -21,6 +22,18 @@
 #include "src/devices/bin/driver_manager/shutdown/node_removal_tracker.h"
 #include "src/devices/lib/log/log.h"
 #include "src/lib/fxl/strings/join_strings.h"
+
+template <>
+struct std::formatter<driver_manager::OfferTransport> : std::formatter<std::string_view> {
+  auto format(const driver_manager::OfferTransport& transport, std::format_context& ctx) const {
+    switch (transport) {
+      case driver_manager::OfferTransport::ZirconTransport:
+        return std::formatter<std::string_view>::format("ZirconTransport", ctx);
+      case driver_manager::OfferTransport::DriverTransport:
+        return std::formatter<std::string_view>::format("DriverTransport", ctx);
+    }
+  }
+};
 
 namespace fdf {
 using namespace fuchsia_driver_framework;
@@ -41,59 +54,6 @@ const std::string kCompositeParent = "owned by composite(s)";
 // DFv2.
 constexpr bool kEnableCompositeNodeSpecRebind = false;
 
-// Return a clone of `node_properties`. The data referenced by the clone is owned by `arena`.
-std::vector<fuchsia_driver_framework::wire::NodeProperty2> CloneNodeProperties(
-    fidl::AnyArena& arena,
-    const std::vector<fuchsia_driver_framework::NodeProperty2>& node_properties) {
-  std::vector<fuchsia_driver_framework::wire::NodeProperty2> clone;
-  clone.reserve(node_properties.size());
-  for (const auto& node_property : node_properties) {
-    clone.emplace_back(fidl::ToWire(arena, node_property));
-  }
-  return clone;
-}
-
-// Return a clone of the node properties of `parents`. The data referenced by the clone is owned by
-// `arena`.
-std::vector<fuchsia_driver_framework::wire::NodePropertyEntry2> GetParentNodePropertyEntries(
-    fidl::AnyArena& arena,
-    const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties) {
-  std::vector<fuchsia_driver_framework::wire::NodePropertyEntry2> entries;
-  for (const auto& parent : parent_properties) {
-    std::vector<fuchsia_driver_framework::wire::NodeProperty2> properties_clone =
-        CloneNodeProperties(arena, parent.properties());
-
-    entries.emplace_back(fuchsia_driver_framework::wire::NodePropertyEntry2{
-        .name = fidl::StringView(arena, parent.name()),
-        .properties = fuchsia_driver_framework::wire::NodeProperties(arena, properties_clone)});
-  }
-  return entries;
-}
-
-template <typename R, typename F>
-std::optional<R> VisitOffer(fdecl::Offer& offer, F apply) {
-  // Note, we access each field of the union as mutable, so that `apply` can
-  // modify the field if necessary.
-  switch (offer.Which()) {
-    case fdecl::Offer::Tag::kService:
-      return apply(offer.service());
-    case fdecl::Offer::Tag::kProtocol:
-      return apply(offer.protocol());
-    case fdecl::Offer::Tag::kDirectory:
-      return apply(offer.directory());
-    case fdecl::Offer::Tag::kStorage:
-      return apply(offer.storage());
-    case fdecl::Offer::Tag::kRunner:
-      return apply(offer.runner());
-    case fdecl::Offer::Tag::kResolver:
-      return apply(offer.resolver());
-    case fdecl::Offer::Tag::kEventStream:
-      return apply(offer.event_stream());
-    default:
-      return {};
-  }
-}
-
 const char* CollectionName(Collection collection) {
   switch (collection) {
     case Collection::kNone:
@@ -109,60 +69,83 @@ const char* CollectionName(Collection collection) {
 
 // Processes the offer by validating it has a source_name and adding a source ref to it.
 // Returns the offer back out.
-fit::result<fdf::wire::NodeError, fdecl::Offer> ProcessNodeOffer(fdecl::Offer add_offer,
-                                                                 fdecl::Ref source) {
-  auto has_source_name =
-      VisitOffer<bool>(add_offer, [](const auto& decl) { return decl->source_name().has_value(); });
-  if (!has_source_name.value_or(false)) {
-    return fit::as_error(fdf::wire::NodeError::kOfferSourceNameMissing);
+fit::result<fdf::NodeError, NodeOffer> ProcessNodeOffer(const fdf::Offer& add_offer,
+                                                        Collection source_collection,
+                                                        std::string_view source_name) {
+  std::optional<OfferTransport> transport;
+  std::optional<fdecl::Offer> fdecl_offer;
+
+  switch (add_offer.Which()) {
+    case fdf::Offer::Tag::kZirconTransport:
+      fdecl_offer.emplace(add_offer.zircon_transport().value());
+      transport.emplace(OfferTransport::ZirconTransport);
+      break;
+    case fdf::Offer::Tag::kDriverTransport:
+      fdecl_offer.emplace(add_offer.driver_transport().value());
+      transport.emplace(OfferTransport::DriverTransport);
+      break;
+    default:
+      LOGF(ERROR, "Unknown offer transport type %d", add_offer.Which());
+      return fit::error(fdf::NodeError::kInternal);
   }
 
-  auto has_ref = VisitOffer<bool>(add_offer, [](const auto& decl) {
-    return decl->source().has_value() || decl->target().has_value();
-  });
-  if (has_ref.value_or(false)) {
-    return fit::as_error(fdf::wire::NodeError::kOfferRefExists);
+  auto service_offer = fdecl_offer->service();
+  if (!service_offer.has_value()) {
+    return fit::as_error(fdf::NodeError::kUnsupportedArgs);
   }
 
-  // Assign the source of the offer.
-  VisitOffer<bool>(add_offer, [source = std::move(source)](auto decl) mutable {
-    decl->source(std::move(source));
-    return true;
-  });
+  if (!service_offer->source_name().has_value()) {
+    return fit::as_error(fdf::NodeError::kOfferSourceNameMissing);
+  }
 
-  return fit::ok(std::move(add_offer));
+  if (service_offer->target_name().has_value() &&
+      service_offer->target_name().value() != service_offer->source_name().value()) {
+    return fit::as_error(fdf::NodeError::kUnsupportedArgs);
+  }
+
+  if (service_offer->source().has_value() || service_offer->target().has_value()) {
+    return fit::as_error(fdf::NodeError::kOfferRefExists);
+  }
+
+  if (!service_offer->source_instance_filter().has_value()) {
+    return fit::as_error(fdf::NodeError::kOfferSourceInstanceFilterMissing);
+  }
+
+  if (!service_offer->renamed_instances().has_value()) {
+    return fit::as_error(fdf::NodeError::kOfferRenamedInstancesMissing);
+  }
+
+  return fit::ok(NodeOffer{
+      .source_name = std::string(source_name),
+      .source_collection = source_collection,
+      .transport = transport.value(),
+      .service_name = service_offer->source_name().value(),
+      .source_instance_filter = service_offer->source_instance_filter().value(),
+      .renamed_instances = service_offer->renamed_instances().value(),
+  });
 }
 
 // Processes the offer by validating it has a source_name and adding a source ref to it.
 // Returns a tuple containing the offer as well as node property that provides transport
 // information for the offer.
-fit::result<fdf::wire::NodeError, std::tuple<fdecl::Offer, fdf::NodeProperty2>>
-ProcessNodeOfferWithTransportProperty(fdecl::Offer add_offer, fdecl::Ref source,
-                                      const std::string& transport_for_property) {
-  auto result = ProcessNodeOffer(std::move(add_offer), std::move(source));
+fit::result<fdf::NodeError, std::tuple<NodeOffer, fdf::NodeProperty2>>
+ProcessNodeOfferWithTransportProperty(const fdf::Offer& add_offer, Collection source_collection,
+                                      std::string_view source_name) {
+  fit::result result = ProcessNodeOffer(add_offer, source_collection, source_name);
   if (result.is_error()) {
     return result.take_error();
   }
 
-  auto processed_offer = std::move(result.value());
+  NodeOffer processed_offer = std::move(result.value());
 
-  std::optional<fdf::NodeProperty2> node_property = std::nullopt;
-  VisitOffer<bool>(processed_offer, [&node_property, &transport_for_property](const auto& decl) {
-    auto& name = decl->source_name();
-    if (name.has_value()) {
-      const std::string& name_str = name.value();
-      node_property.emplace(fdf::MakeProperty2(name_str, name_str + "." + transport_for_property));
-    }
+  const std::string& name = processed_offer.service_name;
+  auto node_property =
+      fdf::MakeProperty2(name, std::format("{}.{}", name, processed_offer.transport));
 
-    return true;
-  });
-
-  return fit::ok(std::make_tuple(std::move(processed_offer), std::move(node_property.value())));
+  return fit::ok(std::make_tuple(std::move(processed_offer), std::move(node_property)));
 }
 
-bool IsDefaultOffer(std::string_view target_name) {
-  return std::string_view("default").compare(target_name) == 0;
-}
+bool IsDefaultOffer(std::string_view target_name) { return target_name == "default"; }
 
 template <typename T>
 void CloseIfExists(std::optional<fidl::ServerBinding<T>>& ref) {
@@ -171,163 +154,115 @@ void CloseIfExists(std::optional<fidl::ServerBinding<T>>& ref) {
   }
 }
 
-fit::result<fdf::wire::NodeError> ValidateSymbols(std::vector<fdf::NodeSymbol>& symbols) {
+fit::result<fdf::NodeError> ValidateSymbols(std::vector<fdf::NodeSymbol>& symbols) {
   std::unordered_set<std::string_view> names;
   for (auto& symbol : symbols) {
     if (!symbol.name().has_value()) {
       LOGF(ERROR, "SymbolError: a symbol is missing a name");
-      return fit::error(fdf::wire::NodeError::kSymbolNameMissing);
+      return fit::error(fdf::NodeError::kSymbolNameMissing);
     }
     if (!symbol.address().has_value()) {
       LOGF(ERROR, "SymbolError: symbol '%s' is missing an address", symbol.name().value().c_str());
-      return fit::error(fdf::wire::NodeError::kSymbolAddressMissing);
+      return fit::error(fdf::NodeError::kSymbolAddressMissing);
     }
     auto [_, inserted] = names.emplace(symbol.name().value());
     if (!inserted) {
       LOGF(ERROR, "SymbolError: symbol '%s' already exists", symbol.name().value().c_str());
-      return fit::error(fdf::wire::NodeError::kSymbolAlreadyExists);
+      return fit::error(fdf::NodeError::kSymbolAlreadyExists);
     }
   }
   return fit::ok();
 }
 
-std::optional<NodeOffer> CreateCompositeOffer(fidl::AnyArena& arena, NodeOffer& offer,
-                                              std::string_view parents_name, bool primary_parent) {
-  zx::result get_offer_result = GetInnerOffer(offer);
-  if (get_offer_result.is_error()) {
-    return std::nullopt;
-  }
-
-  auto [inner_offer, transport] = get_offer_result.value();
-
-  std::optional<fdecl::wire::Offer> composite_offer;
-  if (inner_offer.is_service()) {
-    // We route 'service' capabilities based on the parent's name.
-    composite_offer = CreateCompositeServiceOffer(arena, inner_offer, parents_name, primary_parent);
-  } else {
-    // Other capabilities we can simply forward unchanged, but allocated on the new arena.
-    composite_offer = fidl::ToWire(arena, fidl::ToNatural(inner_offer));
-  }
-
-  if (!composite_offer) {
-    return std::nullopt;
-  }
-
-  switch (transport) {
-    case OfferTransport::ZirconTransport:
-      return fdf::wire::Offer::WithZirconTransport(arena, *composite_offer);
-    case OfferTransport::DriverTransport:
-      return fdf::wire::Offer::WithDriverTransport(arena, *composite_offer);
-  }
-}
-
 }  // namespace
 
-zx::result<std::pair<fdecl::wire::Offer, OfferTransport>> GetInnerOffer(const NodeOffer& offer) {
-  switch (offer.Which()) {
-    case fdf::wire::Offer::Tag::kZirconTransport:
-      return zx::ok(std::make_pair(offer.zircon_transport(), OfferTransport::ZirconTransport));
-    case fdf::wire::Offer::Tag::kDriverTransport:
-      return zx::ok(std::make_pair(offer.driver_transport(), OfferTransport::DriverTransport));
-    default:
-      LOGF(ERROR, "Unknown offer transport type %d", offer.Which());
-      return zx::error(ZX_ERR_INVALID_ARGS);
+fdf::Offer ToFidl(const NodeOffer& offer) {
+  auto service = fdecl::OfferService{{
+      .source = fdecl::Ref::WithChild(fdecl::ChildRef{{
+          .name = offer.source_name,
+          .collection = CollectionName(offer.source_collection),
+      }}),
+      .source_name = offer.service_name,
+      .target_name = offer.service_name,
+      .source_instance_filter = offer.source_instance_filter,
+      .renamed_instances = offer.renamed_instances,
+  }};
+
+  auto fdecl_offer = fdecl::Offer::WithService(service);
+  switch (offer.transport) {
+    case OfferTransport::ZirconTransport:
+      return fdf::Offer::WithZirconTransport(std::move(fdecl_offer));
+    case OfferTransport::DriverTransport:
+      return fdf::Offer::WithDriverTransport(std::move(fdecl_offer));
   }
 }
 
-std::optional<fdecl::wire::Offer> CreateCompositeServiceOffer(fidl::AnyArena& arena,
-                                                              fdecl::wire::Offer& offer,
-                                                              std::string_view parents_name,
-                                                              bool primary_parent) {
-  if (!offer.is_service() || !offer.service().has_source_instance_filter() ||
-      !offer.service().has_renamed_instances()) {
-    return std::nullopt;
-  }
-
-  size_t new_instance_count = offer.service().renamed_instances().size();
+NodeOffer CreateCompositeOffer(const NodeOffer& offer, std::string_view parents_name,
+                               bool primary_parent) {
+  size_t new_instance_count = offer.renamed_instances.size();
   if (primary_parent) {
-    for (auto& instance : offer.service().renamed_instances()) {
-      if (IsDefaultOffer(instance.target_name.get())) {
+    for (const auto& instance : offer.renamed_instances) {
+      if (IsDefaultOffer(instance.target_name())) {
         new_instance_count++;
       }
     }
   }
 
-  size_t new_filter_count = offer.service().source_instance_filter().size();
+  size_t new_filter_count = offer.source_instance_filter.size();
   if (primary_parent) {
-    for (auto& filter : offer.service().source_instance_filter()) {
-      if (IsDefaultOffer(filter.get())) {
+    for (const auto& filter : offer.source_instance_filter) {
+      if (IsDefaultOffer(filter)) {
         new_filter_count++;
       }
     }
   }
 
-  // We have to create a new offer so we aren't manipulating our parent's offer.
-  auto service = fdecl::wire::OfferService::Builder(arena);
-  if (offer.service().has_source_name()) {
-    service.source_name(offer.service().source_name());
-  }
-  if (offer.service().has_target_name()) {
-    service.target_name(offer.service().target_name());
-  }
-  if (offer.service().has_source()) {
-    service.source(offer.service().source());
-  }
-  if (offer.service().has_target()) {
-    service.target(offer.service().target());
-  }
-
-  size_t index = 0;
-  fidl::VectorView<fdecl::wire::NameMapping> mappings(arena, new_instance_count);
-  for (auto instance : offer.service().renamed_instances()) {
+  std::vector<fdecl::NameMapping> mappings;
+  mappings.reserve(new_instance_count);
+  for (const auto& instance : offer.renamed_instances) {
     // The instance is not "default", so copy it over.
-    if (!IsDefaultOffer(instance.target_name.get())) {
-      mappings[index].source_name = fidl::StringView(arena, instance.source_name.get());
-      mappings[index].target_name = fidl::StringView(arena, instance.target_name.get());
-      index++;
+    if (!IsDefaultOffer(instance.target_name())) {
+      mappings.emplace_back(instance);
       continue;
     }
 
     // We are the primary parent, so add the "default" offer.
     if (primary_parent) {
-      mappings[index].source_name = fidl::StringView(arena, instance.source_name.get());
-      mappings[index].target_name = fidl::StringView(arena, instance.target_name.get());
-      index++;
+      mappings.emplace_back(instance);
     }
 
     // Rename the instance to match the parent's name.
-    mappings[index].source_name = fidl::StringView(arena, instance.source_name.get());
-    mappings[index].target_name = fidl::StringView(arena, parents_name);
-    index++;
+    mappings.emplace_back(instance.source_name(), std::string(parents_name));
   }
-  ZX_ASSERT(index == new_instance_count);
+  ZX_ASSERT(mappings.size() == new_instance_count);
 
-  index = 0;
-  fidl::VectorView<fidl::StringView> filters(arena, new_instance_count);
-  for (auto filter : offer.service().source_instance_filter()) {
+  std::vector<std::string> filters;
+  filters.reserve(new_filter_count);
+  for (const auto& filter : offer.source_instance_filter) {
     // The filter is not "default", so copy it over.
-    if (!IsDefaultOffer(filter.get())) {
-      filters[index] = fidl::StringView(arena, filter.get());
-      index++;
+    if (!IsDefaultOffer(filter)) {
+      filters.push_back(filter);
       continue;
     }
 
     // We are the primary parent, so add the "default" filter.
     if (primary_parent) {
-      filters[index] = fidl::StringView(arena, "default");
-      index++;
+      filters.push_back("default");
     }
 
     // Rename the filter to match the parent's name.
-    filters[index] = fidl::StringView(arena, parents_name);
-    index++;
+    filters.emplace_back(parents_name);
   }
-  ZX_ASSERT(index == new_filter_count);
+  ZX_ASSERT(filters.size() == new_filter_count);
 
-  service.renamed_instances(mappings);
-  service.source_instance_filter(filters);
-
-  return fdecl::wire::Offer::WithService(arena, service.Build());
+  return NodeOffer{
+      .source_name = offer.source_name,
+      .source_collection = offer.source_collection,
+      .transport = offer.transport,
+      .service_name = offer.service_name,
+      .source_instance_filter = std::move(filters),
+      .renamed_instances = std::move(mappings),
+  };
 }
 
 Node::Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents,
@@ -391,13 +326,7 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
   ZX_ASSERT(primary);
 
   // Copy the symbols from the primary parent.
-  composite->symbols_.reserve(primary->symbols_.size());
-  for (auto& symbol : primary->symbols_) {
-    composite->symbols_.emplace_back(fdf::wire::NodeSymbol::Builder(composite->arena_)
-                                         .name(composite->arena_, symbol.name().get())
-                                         .address(symbol.address())
-                                         .Build());
-  }
+  composite->symbols_ = primary->symbols_;
 
   // Copy the dictionary from the primary parent.
   composite->dictionary_ref_ = primary->dictionary_ref_;
@@ -415,12 +344,9 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
     node_offers.reserve(node_offers.size() + parent_offers.size());
 
     for (auto& parent_offer : parent_offers) {
-      auto offer = CreateCompositeOffer(composite->arena_, parent_offer,
-                                        composite->parents_names_[parent_index],
-                                        parent_index == primary_index);
-      if (offer) {
-        node_offers.push_back(*offer);
-      }
+      NodeOffer offer = CreateCompositeOffer(parent_offer, composite->parents_names_[parent_index],
+                                             parent_index == primary_index);
+      node_offers.push_back(std::move(offer));
     }
     parent_index++;
   }
@@ -802,44 +728,36 @@ std::shared_ptr<BindResultTracker> Node::CreateBindResultTracker() {
       });
 }
 
-void Node::SetNonCompositeProperties(
-    cpp20::span<const fuchsia_driver_framework::NodeProperty2> properties) {
-  std::vector<fuchsia_driver_framework::wire::NodeProperty2> wire;
-  wire.reserve(properties.size() + 1);  // + 1 for DFv2 prop.
-  for (const auto& property : properties) {
-    wire.emplace_back(fidl::ToWire(arena_, property));
-  }
-  wire.emplace_back(fdf::MakeProperty2(arena_, bind_fuchsia_platform::DRIVER_FRAMEWORK_VERSION,
-                                       static_cast<uint32_t>(2)));
-
-  std::vector<fuchsia_driver_framework::wire::NodePropertyEntry2> entries;
-  entries.emplace_back(fuchsia_driver_framework::wire::NodePropertyEntry2{
-      .name = "default",
-      .properties = fuchsia_driver_framework::wire::NodeProperties(arena_, wire)});
-
-  properties_ = fuchsia_driver_framework::wire::NodePropertyDictionary2(arena_, entries);
+void Node::SetNonCompositeProperties(std::vector<fdf::NodeProperty2> properties) {
+  properties.emplace_back(fdf::MakeProperty2(bind_fuchsia_platform::DRIVER_FRAMEWORK_VERSION,
+                                             static_cast<uint32_t>(2)));
+  properties_ = fdf::NodePropertyDictionary2{
+      fdf::NodePropertyEntry2{{
+          .name = "default",
+          .properties = std::move(properties),
+      }},
+  };
   SynchronizePropertiesDict();
 }
 
-void Node::SetCompositeParentProperties(
-    const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties) {
-  auto entries = GetParentNodePropertyEntries(arena_, parent_properties);
+void Node::SetCompositeParentProperties(const fdf::NodePropertyDictionary2& parent_properties) {
+  fdf::NodePropertyDictionary2 properties = parent_properties;
 
   ZX_ASSERT(primary_index_ < parents_.size());
-  const auto default_node_properties = entries[primary_index_].properties.get();
-  entries.emplace_back(fuchsia_driver_framework::wire::NodePropertyEntry2{
+  const auto& default_node_properties = parent_properties[primary_index_].properties();
+  properties.emplace_back(fdf::NodePropertyEntry2{{
       .name = "default",
-      .properties = fuchsia_driver_framework::wire::NodeProperties::FromExternal(
-          default_node_properties.data(), default_node_properties.size())});
+      .properties = default_node_properties,
+  }});
 
-  properties_ = fuchsia_driver_framework::wire::NodePropertyDictionary2(arena_, entries);
+  properties_ = std::move(properties);
   SynchronizePropertiesDict();
 }
 
 void Node::SynchronizePropertiesDict() {
   properties_dict_.clear();
   for (const auto& entry : properties_) {
-    properties_dict_[std::string(entry.name.get())] = entry.properties.get();
+    properties_dict_[entry.name()] = entry.properties();
   }
 }
 
@@ -854,32 +772,32 @@ std::vector<fdf::BusInfo> Node::GetBusTopology() const {
   return segments;
 }
 
-fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
+fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
     fuchsia_driver_framework::NodeAddArgs args,
     fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller,
     fidl::ServerEnd<fuchsia_driver_framework::Node> node) {
   if (!unbinding_children_completers_.empty()) {
     LOGF(ERROR, "Failed to add node: Node is currently unbinding all of its children");
-    return fit::as_error(fdf::wire::NodeError::kUnbindChildrenInProgress);
+    return fit::as_error(fdf::NodeError::kUnbindChildrenInProgress);
   }
   if (node_manager_ == nullptr) {
     LOGF(WARNING, "Failed to add Node, as this Node '%s' was removed", name().data());
-    return fit::as_error(fdf::wire::NodeError::kNodeRemoved);
+    return fit::as_error(fdf::NodeError::kNodeRemoved);
   }
   if (GetNodeShutdownCoordinator().IsShuttingDown()) {
     LOGF(WARNING, "Failed to add Node, as this Node '%s' is being removed", name().c_str());
-    return fit::as_error(fdf::wire::NodeError::kNodeRemoved);
+    return fit::as_error(fdf::NodeError::kNodeRemoved);
   }
   if (!args.name().has_value()) {
     LOGF(ERROR, "Failed to add Node, a name must be provided");
-    return fit::as_error(fdf::wire::NodeError::kNameMissing);
+    return fit::as_error(fdf::NodeError::kNameMissing);
   }
   std::string_view name = args.name().value();
   for (auto& child : children_) {
     if (child->name() == name) {
       LOGF(ERROR, "Failed to add Node '%.*s', name already exists among siblings",
            static_cast<int>(name.size()), name.data());
-      return fit::as_error(fdf::wire::NodeError::kNameAlreadyExists);
+      return fit::as_error(fdf::NodeError::kNameAlreadyExists);
     }
   };
   DeviceInspect inspect = inspect_.CreateChild(std::string(name), 0);
@@ -902,7 +820,7 @@ fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>> No
           ERROR,
           "Failed to add Node '%.*s'. Found values for both properties and properties2 are set. Only one of the fields can be set.",
           static_cast<int>(name.size()), name.data());
-      return fit::as_error(fdf::wire::NodeError::kUnsupportedArgs);
+      return fit::as_error(fdf::NodeError::kUnsupportedArgs);
     }
 
     properties.reserve(arg_deprecated_properties->size());
@@ -911,7 +829,7 @@ fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>> No
         LOGF(ERROR,
              "Failed to add Node '%.*s'. Found integer-based key %zu which is no longer supported.",
              static_cast<int>(name.size()), name.data(), property.key().int_value().value());
-        return fit::as_error(fdf::wire::NodeError::kUnsupportedArgs);
+        return fit::as_error(fdf::NodeError::kUnsupportedArgs);
       }
       properties.emplace_back(ToProperty2(property));
     }
@@ -930,51 +848,20 @@ fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>> No
     while (source_node && source_node->collection_ == Collection::kNone) {
       source_node = source_node->GetPrimaryParent();
     }
-    fdecl::Ref source_ref =
-        fdecl::Ref::WithChild(fdecl::ChildRef()
-                                  .name(source_node->MakeComponentMoniker())
-                                  .collection(CollectionName(source_node->collection_)));
+    std::string source_name = source_node->MakeComponentMoniker();
+    Collection source_collection = source_node->collection_;
 
     if (fdf_offers.has_value()) {
       for (auto& fdf_offer : fdf_offers.value()) {
-        std::optional<fuchsia_component_decl::Offer> offer;
-        std::optional<std::string> transport;
-
-        switch (fdf_offer.Which()) {
-          case fdf::Offer::Tag::kZirconTransport:
-            offer.emplace(fdf_offer.zircon_transport().value());
-            transport.emplace("ZirconTransport");
-            break;
-          case fdf::Offer::Tag::kDriverTransport:
-            offer.emplace(fdf_offer.driver_transport().value());
-            transport.emplace("DriverTransport");
-            break;
-          default:
-            LOGF(ERROR, "Unknown offer transport type %d", fdf_offer.Which());
-            return fit::error(fdf::NodeError::kInternal);
-        }
-
         fit::result new_offer =
-            ProcessNodeOfferWithTransportProperty(offer.value(), source_ref, transport.value());
+            ProcessNodeOfferWithTransportProperty(fdf_offer, source_collection, source_name);
         if (new_offer.is_error()) {
           LOGF(ERROR, "Failed to add Node '%s': Bad add offer: %d",
                child->MakeTopologicalPath().c_str(), new_offer.error_value());
           return new_offer.take_error();
         }
         auto [processed_offer, property] = std::move(new_offer.value());
-        switch (fdf_offer.Which()) {
-          case fdf::Offer::Tag::kZirconTransport:
-            child->offers_.emplace_back(fdf::wire::Offer::WithZirconTransport(
-                child->arena_, fidl::ToWire(child->arena_, processed_offer)));
-            break;
-          case fdf::Offer::Tag::kDriverTransport:
-            child->offers_.emplace_back(fdf::wire::Offer::WithDriverTransport(
-                child->arena_, fidl::ToWire(child->arena_, processed_offer)));
-            break;
-          default:
-            LOGF(ERROR, "Unknown offer transport type %d", fdf_offer.Which());
-            return fit::error(fdf::NodeError::kInternal);
-        }
+        child->offers_.emplace_back(processed_offer);
         properties.emplace_back(property);
       }
     }
@@ -985,25 +872,19 @@ fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>> No
   // Copy the dictionary of a parent node down to the child.
   child->dictionary_ref_ = dictionary_ref_;
 
-  child->SetNonCompositeProperties(properties);
+  child->SetNonCompositeProperties(std::move(properties));
 
   child->SetAndPublishInspect();
 
-  if (args.symbols().has_value()) {
-    auto is_valid = ValidateSymbols(args.symbols().value());
+  if (auto& symbols = args.symbols(); symbols.has_value()) {
+    auto is_valid = ValidateSymbols(symbols.value());
     if (is_valid.is_error()) {
       LOGF(ERROR, "Failed to add Node '%.*s', bad symbols", static_cast<int>(name.size()),
            name.data());
       return fit::as_error(is_valid.error_value());
     }
 
-    child->symbols_.reserve(args.symbols().value().size());
-    for (auto& symbol : args.symbols().value()) {
-      child->symbols_.emplace_back(fdf::wire::NodeSymbol::Builder(child->arena_)
-                                       .name(child->arena_, symbol.name().value())
-                                       .address(symbol.address().value())
-                                       .Build());
-    }
+    child->symbols_ = std::move(args.symbols().value());
   }
 
   Devnode::Target devfs_target;
@@ -1056,9 +937,8 @@ fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>> No
   return fit::ok(child);
 }
 
-void Node::WaitForChildToExit(
-    std::string_view name,
-    fit::callback<void(fit::result<fuchsia_driver_framework::wire::NodeError>)> callback) {
+void Node::WaitForChildToExit(std::string_view name,
+                              fit::callback<void(fit::result<fdf::NodeError>)> callback) {
   for (auto& child : children_) {
     if (child->name() != name) {
       continue;
@@ -1066,14 +946,14 @@ void Node::WaitForChildToExit(
     if (!child->GetNodeShutdownCoordinator().IsShuttingDown()) {
       LOGF(ERROR, "Failed to add Node '%.*s', name already exists among siblings",
            static_cast<int>(name.size()), name.data());
-      callback(fit::as_error(fdf::wire::NodeError::kNameAlreadyExists));
+      callback(fit::as_error(fdf::NodeError::kNameAlreadyExists));
       return;
     }
     if (child->remove_complete_callback_) {
       LOGF(ERROR,
            "Failed to add Node '%.*s': Node with name already exists and is marked to be replaced.",
            static_cast<int>(name.size()), name.data());
-      callback(fit::as_error(fdf::wire::NodeError::kNameAlreadyExists));
+      callback(fit::as_error(fdf::NodeError::kNameAlreadyExists));
       return;
     }
     child->remove_complete_callback_ = [callback = std::move(callback)]() mutable {
@@ -1090,14 +970,14 @@ void Node::AddChild(fuchsia_driver_framework::NodeAddArgs args,
                     AddNodeResultCallback callback) {
   if (!args.name().has_value()) {
     LOGF(ERROR, "Failed to add Node, a name must be provided");
-    callback(fit::as_error(fdf::wire::NodeError::kNameMissing));
+    callback(fit::as_error(fdf::NodeError::kNameMissing));
     return;
   }
 
   // Verify the properties.
   if (args.properties().has_value() && args.properties2().has_value()) {
     LOGF(ERROR, "Failed to add Node, both properties and properties2 fields were set");
-    callback(fit::as_error(fdf::wire::NodeError::kUnsupportedArgs));
+    callback(fit::as_error(fdf::NodeError::kUnsupportedArgs));
     return;
   }
 
@@ -1108,7 +988,7 @@ void Node::AddChild(fuchsia_driver_framework::NodeAddArgs args,
       if (property_keys.contains(property.key())) {
         LOGF(ERROR,
              "Failed to add Node since properties2 contain multiple properties with the same key");
-        callback(fit::as_error(fdf::wire::NodeError::kDuplicatePropertyKeys));
+        callback(fit::as_error(fdf::NodeError::kDuplicatePropertyKeys));
         return;
       }
       property_keys.insert(property.key());
@@ -1118,8 +998,8 @@ void Node::AddChild(fuchsia_driver_framework::NodeAddArgs args,
   std::string name = args.name().value();
   WaitForChildToExit(
       name, [self = shared_from_this(), args = std::move(args), controller = std::move(controller),
-             node = std::move(node), callback = std::move(callback)](
-                fit::result<fuchsia_driver_framework::wire::NodeError> result) mutable {
+             node = std::move(node),
+             callback = std::move(callback)](fit::result<fdf::NodeError> result) mutable {
         if (result.is_error()) {
           callback(result.take_error());
           return;
@@ -1235,8 +1115,7 @@ void Node::handle_unknown_method(
 void Node::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
   AddChild(fidl::ToNatural(request->args), std::move(request->controller), std::move(request->node),
            [completer = completer.ToAsync()](
-               fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>>
-                   result) mutable {
+               fit::result<fdf::NodeError, std::shared_ptr<Node>> result) mutable {
              if (result.is_error()) {
                completer.Reply(result.take_error());
              } else {
@@ -1295,16 +1174,18 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
     return;
   }
 
+  fidl::Arena arena;
+
   auto symbols = fidl::VectorView<fdf::wire::NodeSymbol>();
   if (colocate) {
-    symbols = this->symbols();
+    symbols = fidl::ToWire(arena, this->symbols());
   }
 
-  fidl::VectorView<fdf::wire::Offer> offers_for_start_wire(arena_, offers_.size());
-  for (size_t i = 0; i < offers_.size(); i++) {
-    const auto& offer = offers_[i];
-    offers_for_start_wire[i] = fidl::ToWire(arena_, fidl::ToNatural(offer));
-  }
+  std::vector<fdf::Offer> natural_offers;
+  natural_offers.reserve(offers_.size());
+  std::ranges::transform(offers_, std::back_inserter(natural_offers), ToFidl);
+  auto offers = fidl::ToWire(arena, natural_offers);
+  auto properties = fidl::ToWire(arena, properties_);
 
   if (colocate) {
     // Whether dynamic linking is enabled for a driver host is determined by the first driver in the
@@ -1329,7 +1210,7 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
     }
     dynamic_linker_load_args = std::move(*result);
     dynamic_linker_start_args =
-        DriverHost::DriverStartArgs(properties_, symbols, offers_for_start_wire, start_info);
+        DriverHost::DriverStartArgs(properties, symbols, offers, start_info);
   }
 
   // Launch a driver host if we are not colocated.
@@ -1398,9 +1279,8 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
 
   driver_component_.emplace(*this, std::string(url), std::move(controller),
                             std::move(driver_endpoints.client), std::move(node_token_dup));
-  driver_host_.value()->Start(std::move(client_end), name_, properties_, symbols,
-                              offers_for_start_wire, start_info, std::move(node_token),
-                              std::move(driver_endpoints.server),
+  driver_host_.value()->Start(std::move(client_end), name_, properties, symbols, offers, start_info,
+                              std::move(node_token), std::move(driver_endpoints.server),
                               [weak_self = weak_from_this(), name = name_,
                                cb = std::move(cb)](zx::result<> result) mutable {
                                 auto node_ptr = weak_self.lock();
@@ -1583,8 +1463,8 @@ void Node::on_fidl_error(fidl::UnbindInfo info) {
   Remove(RemovalSet::kAll, nullptr);
 }
 
-std::optional<cpp20::span<const fuchsia_driver_framework::wire::NodeProperty2>>
-Node::GetNodeProperties(std::string_view parent_name) const {
+std::optional<std::span<const fdf::NodeProperty2>> Node::GetNodeProperties(
+    std::string_view parent_name) const {
   auto it = properties_dict_.find(std::string(parent_name));
   if (it == properties_dict_.end()) {
     return std::nullopt;
@@ -1618,15 +1498,16 @@ void Node::SetAndPublishInspect() {
   constexpr char kDeviceTypeString[] = "Device";
   constexpr char kCompositeDeviceTypeString[] = "Composite Device";
 
-  cpp20::span<const fuchsia_driver_framework::wire::NodeProperty2> property_vector;
+  cpp20::span<const fdf::NodeProperty2> property_vector;
   uint32_t protocol_id = 0;
   if (type_ == NodeType::kNormal) {
     auto properties = GetNodeProperties();
     ZX_ASSERT_MSG(properties.has_value(), "Non-composite node \"%s\" missing node properties",
                   name_.c_str());
     for (auto& node_property : properties.value()) {
-      if (node_property.key.get() == bind_fuchsia::PROTOCOL && node_property.value.is_int_value()) {
-        protocol_id = node_property.value.int_value();
+      if (node_property.key() == bind_fuchsia::PROTOCOL &&
+          node_property.value().int_value().has_value()) {
+        protocol_id = node_property.value().int_value().value();
       }
     }
 

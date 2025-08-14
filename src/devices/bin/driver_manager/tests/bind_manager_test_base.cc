@@ -396,8 +396,8 @@ TEST_F(BindManagerTestBase, TestAddNode) {
   ASSERT_TRUE(test_node_1_properties.has_value());
   ASSERT_EQ(2u, test_node_1_properties->size());
   const auto& test_node_1_property_1 = test_node_1_properties.value()[0];
-  ASSERT_EQ(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, std::string(test_node_1_property_1.key.get()));
-  ASSERT_EQ(static_cast<uint32_t>(0), test_node_1_property_1.value.int_value());
+  ASSERT_EQ(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, std::string(test_node_1_property_1.key()));
+  ASSERT_EQ(static_cast<uint32_t>(0), test_node_1_property_1.value().int_value().value());
 
   AddAndBindNode("test-2");
   ASSERT_EQ(2u, nodes().size());
@@ -410,8 +410,8 @@ TEST_F(BindManagerTestBase, TestAddNode) {
   ASSERT_TRUE(test_node_2_properties.has_value());
   ASSERT_EQ(2u, test_node_2_properties->size());
   const auto& test_node_2_property_1 = test_node_2_properties.value()[0];
-  ASSERT_EQ(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, std::string(test_node_2_property_1.key.get()));
-  ASSERT_EQ(static_cast<uint32_t>(1), test_node_2_property_1.value.int_value());
+  ASSERT_EQ(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, std::string(test_node_2_property_1.key()));
+  ASSERT_EQ(static_cast<uint32_t>(1), test_node_2_property_1.value().int_value().value());
 
   // Complete the outstanding request.
   DriverIndexReplyWithNoMatch("test-2");

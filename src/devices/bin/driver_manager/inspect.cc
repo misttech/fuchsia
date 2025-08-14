@@ -46,7 +46,7 @@ DeviceInspect DeviceInspect::CreateChild(std::string name, uint32_t protocol_id)
 
 void DeviceInspect::SetStaticValues(
     const std::string& topological_path, uint32_t protocol_id, const std::string& type,
-    const cpp20::span<const fuchsia_driver_framework::wire::NodeProperty2>& properties,
+    std::span<const fuchsia_driver_framework::NodeProperty2> properties,
     const std::string& driver_url) {
   protocol_id_ = protocol_id;
   device_node_.CreateString("topological_path", topological_path, &static_values_);
@@ -64,27 +64,22 @@ void DeviceInspect::SetStaticValues(
   for (uint32_t i = 0; i < properties.size(); ++i) {
     auto inspect_property = properties_array.CreateChild(std::to_string(i));
     auto& property = properties[i];
-    inspect_property.CreateString("key", std::string(property.key.get()), &static_values_);
+    inspect_property.CreateString("key", std::string(property.key()), &static_values_);
 
-    switch (property.value.Which()) {
-      case fuchsia_driver_framework::wire::NodePropertyValue::Tag::kStringValue:
-        inspect_property.CreateString("value", std::string(property.value.string_value().get()),
-                                      &static_values_);
-        break;
-      case fuchsia_driver_framework::wire::NodePropertyValue::Tag::kIntValue:
-        inspect_property.CreateUint("value", property.value.int_value(), &static_values_);
-        break;
-      case fuchsia_driver_framework::wire::NodePropertyValue::Tag::kEnumValue:
-        inspect_property.CreateString("value", std::string(property.value.enum_value().get()),
-                                      &static_values_);
-        break;
-      case fuchsia_driver_framework::wire::NodePropertyValue::Tag::kBoolValue:
-        inspect_property.CreateBool("value", property.value.bool_value(), &static_values_);
-        break;
-      default: {
-        inspect_property.CreateString("value", "UNKNOWN VALUE TYPE", &static_values_);
-        break;
-      }
+    if (const auto& str_prop = property.value().string_value(); str_prop.has_value()) {
+      inspect_property.CreateString("value", str_prop.value(), &static_values_);
+
+    } else if (const auto& int_prop = property.value().int_value(); int_prop.has_value()) {
+      inspect_property.CreateUint("value", int_prop.value(), &static_values_);
+
+    } else if (const auto& enum_prop = property.value().enum_value(); enum_prop.has_value()) {
+      inspect_property.CreateString("value", enum_prop.value(), &static_values_);
+
+    } else if (const auto& bool_prop = property.value().bool_value(); bool_prop.has_value()) {
+      inspect_property.CreateBool("value", bool_prop.value(), &static_values_);
+
+    } else {
+      inspect_property.CreateString("value", "UNKNOWN VALUE TYPE", &static_values_);
     }
     static_values_.emplace(std::move(inspect_property));
   }

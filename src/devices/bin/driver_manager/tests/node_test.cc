@@ -452,9 +452,9 @@ TEST_F(Dfv2NodeTest, TestCompositeNodeProperties) {
   ASSERT_EQ(1ul, primary_parent_node_properties->size());
 
   const auto& primary_parent_node_property_1 = primary_parent_node_properties.value()[0];
-  ASSERT_EQ(kParent1NodeProperties[0].key(), std::string(primary_parent_node_property_1.key.get()));
+  ASSERT_EQ(kParent1NodeProperties[0].key(), primary_parent_node_property_1.key());
   ASSERT_EQ(kParent1NodeProperties[0].value().int_value().value(),
-            primary_parent_node_property_1.value.int_value());
+            primary_parent_node_property_1.value().int_value().value());
 
   // Verify parent 1 properties.
   const auto& parent_1_node_properties = composite->GetNodeProperties(kParent1Name);
@@ -462,10 +462,10 @@ TEST_F(Dfv2NodeTest, TestCompositeNodeProperties) {
   ASSERT_EQ(1ul, parent_1_node_properties->size());
 
   const auto& parent_1_node_property_1 = parent_1_node_properties.value()[0];
-  ASSERT_EQ(kParent1NodeProperties[0].key(), std::string(parent_1_node_property_1.key.get()));
-  ASSERT_TRUE(parent_1_node_property_1.value.is_int_value());
+  ASSERT_EQ(kParent1NodeProperties[0].key(), parent_1_node_property_1.key());
+  ASSERT_TRUE(parent_1_node_property_1.value().int_value().has_value());
   ASSERT_EQ(kParent1NodeProperties[0].value().int_value().value(),
-            parent_1_node_property_1.value.int_value());
+            parent_1_node_property_1.value().int_value().value());
 
   // Verify parent 2 properties.
   const auto& parent_2_node_properties = composite->GetNodeProperties(kParent2Name);
@@ -473,10 +473,10 @@ TEST_F(Dfv2NodeTest, TestCompositeNodeProperties) {
   ASSERT_EQ(1ul, parent_2_node_properties->size());
 
   const auto& parent_2_node_property_1 = parent_2_node_properties.value()[0];
-  ASSERT_EQ(kParent2NodeProperties[0].key(), parent_2_node_property_1.key.get());
-  ASSERT_TRUE(parent_2_node_property_1.value.is_string_value());
+  ASSERT_EQ(kParent2NodeProperties[0].key(), parent_2_node_property_1.key());
+  ASSERT_TRUE(parent_2_node_property_1.value().string_value().has_value());
   ASSERT_EQ(kParent2NodeProperties[0].value().string_value().value(),
-            parent_2_node_property_1.value.string_value().get());
+            parent_2_node_property_1.value().string_value().value());
 }
 
 // Verify Node::UnbindChildren() unbinds all of the children of a node with zero child.

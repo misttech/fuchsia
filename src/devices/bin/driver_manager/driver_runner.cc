@@ -49,48 +49,7 @@ namespace {
 constexpr auto kBootScheme = "fuchsia-boot://";
 constexpr std::string_view kRootDeviceName = "dev";
 
-template <typename R, typename F>
-std::optional<R> VisitOffer(const NodeOffer& offer, F apply) {
-  zx::result get_offer_result = GetInnerOffer(offer);
-  if (get_offer_result.is_error()) {
-    return {};
-  }
-
-  auto [inner_offer, _] = get_offer_result.value();
-
-  // Note, we access each field of the union as mutable, so that `apply` can
-  // modify the field if necessary.
-  switch (inner_offer.Which()) {
-    case fdecl::wire::Offer::Tag::kService:
-      return apply(inner_offer.service());
-    case fdecl::wire::Offer::Tag::kProtocol:
-      return apply(inner_offer.protocol());
-    case fdecl::wire::Offer::Tag::kDirectory:
-      return apply(inner_offer.directory());
-    case fdecl::wire::Offer::Tag::kStorage:
-      return apply(inner_offer.storage());
-    case fdecl::wire::Offer::Tag::kRunner:
-      return apply(inner_offer.runner());
-    case fdecl::wire::Offer::Tag::kResolver:
-      return apply(inner_offer.resolver());
-    case fdecl::wire::Offer::Tag::kEventStream:
-      return apply(inner_offer.event_stream());
-    default:
-      return {};
-  }
-}
-
 void InspectNode(inspect::Inspector& inspector, InspectStack& stack) {
-  const auto inspect_decl = [](auto& decl) -> std::string_view {
-    if (decl.has_target_name()) {
-      return decl.target_name().get();
-    }
-    if (decl.has_source_name()) {
-      return decl.source_name().get();
-    }
-    return "<missing>";
-  };
-
   std::forward_list<inspect::Node> roots;
   std::unordered_set<const Node*> unique_nodes;
   while (!stack.empty()) {
@@ -108,15 +67,14 @@ void InspectNode(inspect::Inspector& inspector, InspectStack& stack) {
     if (const auto& offers = node->offers(); !offers.empty()) {
       std::vector<std::string_view> strings;
       for (const auto& offer : offers) {
-        auto string = VisitOffer<std::string_view>(offer, inspect_decl);
-        strings.push_back(string.value_or("unknown"));
+        strings.push_back(offer.service_name);
       }
       root->RecordString("offers", fxl::JoinStrings(strings, ", "));
     }
     if (auto symbols = node->symbols(); !symbols.empty()) {
       std::vector<std::string_view> strings;
       for (auto& symbol : symbols) {
-        strings.push_back(symbol.name().get());
+        strings.push_back(symbol.name().value());
       }
       root->RecordString("symbols", fxl::JoinStrings(strings, ", "));
     }

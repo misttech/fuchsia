@@ -20,6 +20,7 @@
 
 #include "gmock/gmock.h"
 #include "src/devices/bin/driver_manager/composite_node_spec_impl.h"
+#include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/testing/fake_driver_index.h"
 #include "src/devices/bin/driver_manager/tests/driver_runner_test_fixture.h"
 
@@ -185,7 +186,7 @@ TEST_P(DriverRunnerTest, StartRootDriver_AddUnownedChild_OfferMissingSource) {
           {
               {
                   fuchsia_driver_framework::Offer::WithZirconTransport(
-                      fuchsia_component_decl::Offer::WithProtocol(fdecl::OfferProtocol({
+                      fuchsia_component_decl::Offer::WithService(fdecl::OfferService({
                           .target_name = std::make_optional<std::string>("fuchsia.package.Renamed"),
                       }))),
               },
@@ -213,12 +214,12 @@ TEST_P(DriverRunnerTest, StartRootDriver_AddUnownedChild_OfferHasRef) {
           {
               {
                   fuchsia_driver_framework::Offer::WithZirconTransport(
-                      fuchsia_component_decl::Offer::WithProtocol(fdecl::OfferProtocol({
+                      fuchsia_component_decl::Offer::WithService(fdecl::OfferService({
                           .source = fdecl::Ref::WithSelf(fdecl::SelfRef()),
                           .source_name = "fuchsia.package.Protocol",
                       }))),
                   fuchsia_driver_framework::Offer::WithZirconTransport(
-                      fuchsia_component_decl::Offer::WithProtocol(fdecl::OfferProtocol({
+                      fuchsia_component_decl::Offer::WithService(fdecl::OfferService({
                           .source_name = "fuchsia.package.Protocol",
                           .target = fdecl::Ref::WithSelf(fdecl::SelfRef()),
                       }))),
@@ -334,20 +335,17 @@ TEST_P(DriverRunnerTest, StartSecondDriver_NewDriverHost) {
         EXPECT_EQ(second_driver_url, decl.url());
 
         EXPECT_EQ(1u, offers.size());
-        ASSERT_TRUE(offers[0].Which() == fdecl::Offer::Tag::kProtocol);
-        auto& protocol = offers[0].protocol().value();
+        ASSERT_TRUE(offers[0].Which() == fdecl::Offer::Tag::kService);
+        auto& service = offers[0].service().value();
 
-        ASSERT_TRUE(protocol.source().has_value());
-        ASSERT_TRUE(protocol.source().value().Which() == fdecl::Ref::Tag::kChild);
-        auto& source_ref = protocol.source().value().child().value();
+        ASSERT_TRUE(service.source().has_value());
+        ASSERT_TRUE(service.source().value().Which() == fdecl::Ref::Tag::kChild);
+        auto& source_ref = service.source().value().child().value();
         EXPECT_EQ("dev", source_ref.name());
         EXPECT_EQ("boot-drivers", source_ref.collection().value_or("missing"));
 
-        ASSERT_TRUE(protocol.source_name().has_value());
-        EXPECT_EQ("fuchsia.package.Protocol", protocol.source_name().value());
-
-        ASSERT_TRUE(protocol.target_name().has_value());
-        EXPECT_EQ("fuchsia.package.Renamed", protocol.target_name());
+        ASSERT_TRUE(service.source_name().has_value());
+        EXPECT_EQ("fuchsia.package.Protocol", service.source_name().value());
       });
 
   fdfw::NodeAddArgs args({
@@ -365,9 +363,13 @@ TEST_P(DriverRunnerTest, StartSecondDriver_NewDriverHost) {
           {
               {
                   fuchsia_driver_framework::Offer::WithZirconTransport(
-                      fuchsia_component_decl::Offer::WithProtocol(fdecl::OfferProtocol({
+                      fuchsia_component_decl::Offer::WithService(fdecl::OfferService({
                           .source_name = "fuchsia.package.Protocol",
-                          .target_name = "fuchsia.package.Renamed",
+                          .source_instance_filter = std::vector<std::string>{"default"},
+                          .renamed_instances =
+                              std::vector<fdecl::NameMapping>{
+                                  fdecl::NameMapping("default", "instance-1"),
+                              },
                       }))),
               },
           },
@@ -413,9 +415,13 @@ TEST_P(DriverRunnerTest, StartSecondDriver_SameDriverHost) {
           {
               {
                   fuchsia_driver_framework::Offer::WithZirconTransport(
-                      fuchsia_component_decl::Offer::WithProtocol(fdecl::OfferProtocol({
+                      fuchsia_component_decl::Offer::WithService(fdecl::OfferService({
                           .source_name = "fuchsia.package.Protocol",
-                          .target_name = "fuchsia.package.Renamed",
+                          .source_instance_filter = std::vector<std::string>{"default"},
+                          .renamed_instances =
+                              std::vector<fdecl::NameMapping>{
+                                  fdecl::NameMapping("default", "instance-1"),
+                              },
                       }))),
               },
           },
@@ -1282,37 +1288,48 @@ TEST_P(DriverRunnerTest, StartAndInspect) {
   ASSERT_EQ(ZX_OK, root_driver.status_value());
 
   PrepareRealmForSecondDriverComponentStart();
-  fdfw::NodeAddArgs args({
-      .name = "second",
-      .symbols =
-          {
+  fdfw::NodeAddArgs args(
+      {
+          .name = "second",
+          .symbols =
               {
-                  fdfw::NodeSymbol({
-                      .name = "symbol-A",
-                      .address = 0x2301,
-                  }),
-                  fdfw::NodeSymbol({
-                      .name = "symbol-B",
-                      .address = 0x1985,
-                  }),
+                  {
+                      fdfw::NodeSymbol({
+                          .name = "symbol-A",
+                          .address = 0x2301,
+                      }),
+                      fdfw::NodeSymbol({
+                          .name = "symbol-B",
+                          .address = 0x1985,
+                      }),
+                  },
               },
-          },
-      .offers2 =
-          {
+          .offers2 =
               {
-                  fuchsia_driver_framework::Offer::WithZirconTransport(
-                      fuchsia_component_decl::Offer::WithProtocol(fdecl::OfferProtocol({
-                          .source_name = "fuchsia.package.ProtocolA",
-                          .target_name = "fuchsia.package.RenamedA",
-                      }))),
-                  fuchsia_driver_framework::Offer::WithZirconTransport(
-                      fuchsia_component_decl::Offer::WithProtocol(fdecl::OfferProtocol({
-                          .source_name = "fuchsia.package.ProtocolB",
-                          .target_name = "fuchsia.package.RenamedB",
-                      }))),
+                  {
+                      fuchsia_driver_framework::Offer::WithZirconTransport(
+                          fuchsia_component_decl::Offer::WithService(fdecl::OfferService({
+                              .source_name = "fuchsia.package.ProtocolA",
+                              .source_instance_filter = std::vector<std::string>{"default"},
+                              .renamed_instances =
+                                  std::vector<fdecl::NameMapping>{
+                                      fdecl::NameMapping("default", "instance-1"),
+                                  },
+                          }))),
+                      fuchsia_driver_framework::Offer::WithZirconTransport(
+                          fuchsia_component_decl::Offer::WithService(
+                              fdecl::OfferService(
+                                  {
+                                      .source_name = "fuchsia.package.ProtocolB",
+                                      .source_instance_filter = std::vector<std::string>{"default"},
+                                      .renamed_instances =
+                                          std::vector<fdecl::NameMapping>{
+                                              fdecl::NameMapping("default", "instance-1"),
+                                          },
+                                  }))),
+                  },
               },
-          },
-  });
+      });
   std::shared_ptr<CreatedChild> child =
       root_driver->driver->AddChild(std::move(args), false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
@@ -1336,7 +1353,7 @@ TEST_P(DriverRunnerTest, StartAndInspect) {
       CheckNode(hierarchy, {.node_name = {"node_topology", "dev", "second"},
                             .child_names = {},
                             .str_properties = {
-                                {"offers", "fuchsia.package.RenamedA, fuchsia.package.RenamedB"},
+                                {"offers", "fuchsia.package.ProtocolA, fuchsia.package.ProtocolB"},
                                 {"symbols", "symbol-A, symbol-B"},
                                 {"driver", "unbound"},
                             }}));
@@ -1560,106 +1577,74 @@ TEST_P(DriverRunnerTest, DeviceControllerBind) {
 
 TEST(CompositeServiceOfferTest, WorkingOffer) {
   const std::string_view kServiceName = "fuchsia.service";
-  fidl::Arena<> arena;
-  auto service = fdecl::wire::OfferService::Builder(arena);
-  service.source_name(arena, kServiceName);
-  service.target_name(arena, kServiceName);
 
-  fidl::VectorView<fdecl::wire::NameMapping> mappings(arena, 2);
-  mappings[0].source_name = fidl::StringView(arena, "instance-1");
-  mappings[0].target_name = fidl::StringView(arena, "default");
-
-  mappings[1].source_name = fidl::StringView(arena, "instance-1");
-  mappings[1].target_name = fidl::StringView(arena, "instance-2");
-  service.renamed_instances(mappings);
-
-  fidl::VectorView<fidl::StringView> filters(arena, 2);
-  filters[0] = fidl::StringView(arena, "default");
-  filters[1] = fidl::StringView(arena, "instance-2");
-  service.source_instance_filter(filters);
-
-  auto offer = fdecl::wire::Offer::WithService(arena, service.Build());
-  auto new_offer = driver_manager::CreateCompositeServiceOffer(arena, offer, "parent_node", false);
-  ASSERT_TRUE(new_offer);
-
-  ASSERT_EQ(2ul, new_offer->service().renamed_instances().size());
+  auto offer = driver_manager::NodeOffer{
+      .source_collection = driver_manager::Collection::kBoot,
+      .transport = driver_manager::OfferTransport::ZirconTransport,
+      .service_name = std::string(kServiceName),
+      .source_instance_filter = std::vector<std::string>{"default", "instance-2"},
+      .renamed_instances =
+          std::vector<fdecl::NameMapping>{
+              fdecl::NameMapping("instance-1", "default"),
+              fdecl::NameMapping("instance-1", "instance-2"),
+          },
+  };
+  auto new_offer = driver_manager::CreateCompositeOffer(offer, "parent_node", false);
+  ASSERT_EQ(2ul, new_offer.renamed_instances.size());
   // Check that the default instance got renamed.
-  ASSERT_EQ(std::string("instance-1"),
-            std::string(new_offer->service().renamed_instances()[0].source_name.get()));
-  ASSERT_EQ(std::string("parent_node"),
-            std::string(new_offer->service().renamed_instances()[0].target_name.get()));
+  ASSERT_EQ(std::string("instance-1"), new_offer.renamed_instances[0].source_name());
+  ASSERT_EQ(std::string("parent_node"), new_offer.renamed_instances[0].target_name());
 
   // Check that a non-default instance stayed the same.
-  ASSERT_EQ(std::string("instance-1"),
-            std::string(new_offer->service().renamed_instances()[1].source_name.get()));
-  ASSERT_EQ(std::string("instance-2"),
-            std::string(new_offer->service().renamed_instances()[1].target_name.get()));
+  ASSERT_EQ(std::string("instance-1"), new_offer.renamed_instances[1].source_name());
+  ASSERT_EQ(std::string("instance-2"), new_offer.renamed_instances[1].target_name());
 
-  ASSERT_EQ(2ul, new_offer->service().source_instance_filter().size());
+  ASSERT_EQ(2ul, new_offer.source_instance_filter.size());
   // Check that the default filter got renamed.
-  ASSERT_EQ(std::string("parent_node"),
-            std::string(new_offer->service().source_instance_filter()[0].get()));
+  ASSERT_EQ(std::string("parent_node"), new_offer.source_instance_filter[0]);
 
   // Check that a non-default filter stayed the same.
-  ASSERT_EQ(std::string("instance-2"),
-            std::string(new_offer->service().source_instance_filter()[1].get()));
+  ASSERT_EQ(std::string("instance-2"), new_offer.source_instance_filter[1]);
 }
 
 TEST(CompositeServiceOfferTest, WorkingOfferPrimary) {
   const std::string_view kServiceName = "fuchsia.service";
-  fidl::Arena<> arena;
-  auto service = fdecl::wire::OfferService::Builder(arena);
-  service.source_name(arena, kServiceName);
-  service.target_name(arena, kServiceName);
 
-  fidl::VectorView<fdecl::wire::NameMapping> mappings(arena, 2);
-  mappings[0].source_name = fidl::StringView(arena, "instance-1");
-  mappings[0].target_name = fidl::StringView(arena, "default");
+  auto offer = driver_manager::NodeOffer{
+      .source_collection = driver_manager::Collection::kBoot,
+      .transport = driver_manager::OfferTransport::ZirconTransport,
+      .service_name = std::string(kServiceName),
+      .source_instance_filter = std::vector<std::string>{"default", "instance-2"},
+      .renamed_instances =
+          std::vector<fdecl::NameMapping>{
+              fdecl::NameMapping("instance-1", "default"),
+              fdecl::NameMapping("instance-1", "instance-2"),
+          },
+  };
+  auto new_offer = driver_manager::CreateCompositeOffer(offer, "parent_node", true);
 
-  mappings[1].source_name = fidl::StringView(arena, "instance-1");
-  mappings[1].target_name = fidl::StringView(arena, "instance-2");
-  service.renamed_instances(mappings);
-
-  fidl::VectorView<fidl::StringView> filters(arena, 2);
-  filters[0] = fidl::StringView(arena, "default");
-  filters[1] = fidl::StringView(arena, "instance-2");
-  service.source_instance_filter(filters);
-
-  auto offer = fdecl::wire::Offer::WithService(arena, service.Build());
-  auto new_offer = driver_manager::CreateCompositeServiceOffer(arena, offer, "parent_node", true);
-  ASSERT_TRUE(new_offer);
-
-  ASSERT_EQ(3ul, new_offer->service().renamed_instances().size());
+  ASSERT_EQ(3ul, new_offer.renamed_instances.size());
   // Check that the default instance stayed the same (because we're primary).
-  ASSERT_EQ(std::string("instance-1"),
-            std::string(new_offer->service().renamed_instances()[0].source_name.get()));
-  ASSERT_EQ(std::string("default"),
-            std::string(new_offer->service().renamed_instances()[0].target_name.get()));
+  ASSERT_EQ(std::string("instance-1"), new_offer.renamed_instances[0].source_name());
+  ASSERT_EQ(std::string("default"), new_offer.renamed_instances[0].target_name());
 
   // Check that the default instance got renamed.
-  ASSERT_EQ(std::string("instance-1"),
-            std::string(new_offer->service().renamed_instances()[1].source_name.get()));
-  ASSERT_EQ(std::string("parent_node"),
-            std::string(new_offer->service().renamed_instances()[1].target_name.get()));
+  ASSERT_EQ(std::string("instance-1"), new_offer.renamed_instances[1].source_name());
+  ASSERT_EQ(std::string("parent_node"), new_offer.renamed_instances[1].target_name());
 
   // Check that a non-default instance stayed the same.
-  ASSERT_EQ(std::string("instance-1"),
-            std::string(new_offer->service().renamed_instances()[2].source_name.get()));
-  ASSERT_EQ(std::string("instance-2"),
-            std::string(new_offer->service().renamed_instances()[2].target_name.get()));
+  ASSERT_EQ(std::string("instance-1"), new_offer.renamed_instances[2].source_name());
+  ASSERT_EQ(std::string("instance-2"), new_offer.renamed_instances[2].target_name());
 
-  ASSERT_EQ(3ul, new_offer->service().source_instance_filter().size());
+  ASSERT_EQ(3ul, new_offer.source_instance_filter.size());
   // Check that the default filter stayed the same (because we're primary).
-  EXPECT_EQ(std::string("default"),
-            std::string(new_offer->service().source_instance_filter()[0].get()));
+  EXPECT_EQ(std::string("default"), new_offer.source_instance_filter[0]);
 
   // Check that the default filter got renamed.
-  EXPECT_EQ(std::string("parent_node"),
-            std::string(new_offer->service().source_instance_filter()[1].get()));
+  EXPECT_EQ(std::string("parent_node"), new_offer.source_instance_filter[1]);
 
   // Check that a non-default filter stayed the same.
-  EXPECT_EQ(std::string("instance-2"),
-            std::string(new_offer->service().source_instance_filter()[2].get()));
+  EXPECT_EQ(std::string("instance-2"), new_offer.source_instance_filter[2]);
 }
 
 TEST(NodeTest, ToCollection) {

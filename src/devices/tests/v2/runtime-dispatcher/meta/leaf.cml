@@ -14,11 +14,7 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     use: [
-        {
-            protocol: [
-                "fuchsia.runtime.test.Handshake",
-                "fuchsia.runtime.test.Waiter",
-            ],
-        },
+        { service: "fuchsia.runtime.test.Service" },
+        { protocol: "fuchsia.runtime.test.Waiter" },
     ],
 }

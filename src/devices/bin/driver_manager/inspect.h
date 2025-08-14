@@ -74,10 +74,10 @@ class DeviceInspect {
 
   // Set the values that should not change during the life of the device.
   // This should only be called once, calling it more than once will create duplicate entries.
-  void SetStaticValues(
-      const std::string& topological_path, uint32_t protocol_id, const std::string& type,
-      const cpp20::span<const fuchsia_driver_framework::wire::NodeProperty2>& properties,
-      const std::string& driver_url);
+  void SetStaticValues(const std::string& topological_path, uint32_t protocol_id,
+                       const std::string& type,
+                       std::span<const fuchsia_driver_framework::NodeProperty2> properties,
+                       const std::string& driver_url);
 
   void set_state(const std::string& state) { state_.Set(state); }
   void set_local_id(uint64_t local_id) { local_id_.Set(local_id); }

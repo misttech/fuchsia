@@ -828,6 +828,16 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.driver.framework/NodeError.OFFER_RENAMED_INSTANCES_MISSING",
+        "value": "15"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.driver.framework/NodeError.OFFER_SOURCE_INSTANCE_FILTER_MISSING",
+        "value": "14"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.driver.framework/NodeError.OFFER_SOURCE_NAME_MISSING",
         "value": "6"
     },

@@ -47,7 +47,7 @@ class LeafDriver : public fdf::DriverBase {
     ZX_ASSERT((*driver_dispatcher()->options() & FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS) ==
               FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS);
 
-    auto result = incoming()->Connect<ft::Handshake>();
+    auto result = incoming()->Connect<ft::Service::Handshake>();
     if (result.is_error()) {
       return result.status_value();
     }

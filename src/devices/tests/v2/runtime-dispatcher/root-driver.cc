@@ -29,20 +29,19 @@ class RootDriver : public fdf::DriverBase, public fidl::WireServer<ft::Handshake
     fdf::info("Start hook reached");
     node_.Bind(std::move(node()), dispatcher());
     // Setup the outgoing directory.
-    auto service = [this](fidl::ServerEnd<ft::Handshake> server_end) {
-      fidl::BindServer(dispatcher(), std::move(server_end), this);
-    };
-    zx::result<> status =
-        outgoing()->component().AddUnmanagedProtocol<ft::Handshake>(std::move(service));
+    auto handler = ft::Service::InstanceHandler({
+        .handshake =
+            [this](fidl::ServerEnd<ft::Handshake> server_end) {
+              fidl::BindServer(dispatcher(), std::move(server_end), this);
+            },
+    });
+    zx::result<> status = outgoing()->AddService<ft::Service>(std::move(handler));
     if (status.is_error()) {
       return status;
     }
 
     // Offer `fuchsia.test.Handshake` to the driver that binds to the node.
-    auto offer = fdf::Offer::WithZirconTransport(
-        fcd::Offer::WithProtocol({{.source_name = fidl::DiscoverableProtocolName<ft::Handshake>,
-                                   .target_name = fidl::DiscoverableProtocolName<ft::Handshake>,
-                                   .dependency_type = fcd::DependencyType::kStrong}}));
+    auto offer = fdf::MakeOffer2<ft::Service>();
 
     // Set the properties of the node that a driver will bind to.
     auto property =

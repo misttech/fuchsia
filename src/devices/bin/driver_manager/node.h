@@ -18,8 +18,6 @@
 #include <memory>
 #include <utility>
 
-#include "lib/fidl/cpp/wire/client.h"
-#include "lib/fidl/cpp/wire/internal/transport_channel.h"
 #include "src/devices/bin/driver_manager/bind/bind_result_tracker.h"
 #include "src/devices/bin/driver_manager/controller_allowlist_passthrough.h"
 #include "src/devices/bin/driver_manager/devfs/devfs.h"
@@ -31,27 +29,32 @@
 
 namespace driver_manager {
 
-using NodeOffer = fuchsia_driver_framework::wire::Offer;
-
 enum class OfferTransport : std::uint8_t {
   DriverTransport,
   ZirconTransport,
 };
 
-zx::result<std::pair<fuchsia_component_decl::wire::Offer, OfferTransport>> GetInnerOffer(
-    const NodeOffer& offer);
+struct NodeOffer {
+  std::string source_name;
+  Collection source_collection;
+  OfferTransport transport;
+  std::string service_name;
+  std::vector<std::string> source_instance_filter;
+  std::vector<fuchsia_component_decl::NameMapping> renamed_instances;
+};
+
+fuchsia_driver_framework::Offer ToFidl(const NodeOffer& offer);
 
 // This function creates a composite offer based on a service offer.
-std::optional<fuchsia_component_decl::wire::Offer> CreateCompositeServiceOffer(
-    fidl::AnyArena& arena, fuchsia_component_decl::wire::Offer& offer,
-    std::string_view parents_name, bool primary_parent);
+NodeOffer CreateCompositeOffer(const NodeOffer& offer, std::string_view parents_name,
+                               bool primary_parent);
 
 class Node;
 struct NodeInfo;
 class NodeRemovalTracker;
 
-using AddNodeResultCallback = fit::callback<void(
-    fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>>)>;
+using AddNodeResultCallback =
+    fit::callback<void(fit::result<fuchsia_driver_framework::NodeError, std::shared_ptr<Node>>)>;
 
 using DestroyDriverComponentCallback =
     fit::callback<void(fidl::WireUnownedResult<fuchsia_component::Realm::DestroyChild>& result)>;
@@ -189,8 +192,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Exposed for testing.
   // Set properties to non-composite node properties containing a clone of `properties` and
   // "DRIVER_FRAMEWORK_VERSION == 2".
-  void SetNonCompositeProperties(
-      cpp20::span<const fuchsia_driver_framework::NodeProperty2> properties);
+  void SetNonCompositeProperties(std::vector<fuchsia_driver_framework::NodeProperty2> properties);
 
   // Evaluates the given rematch_flags against the node. Returns true if rematch should take place,
   // false otherwise. Rematching is done based on the node type and url both matching:
@@ -257,19 +259,13 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   const std::list<std::shared_ptr<Node>>& children() const { return children_; }
 
-  fidl::ArenaBase& arena() { return arena_; }
-
   const std::vector<NodeOffer>& offers() const { return offers_; }
 
-  // TODO(https://fxbug.dev/42160282): Remove const_cast once VectorView supports const.
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeSymbol> symbols() const {
-    return fidl::VectorView<fuchsia_driver_framework::wire::NodeSymbol>::FromExternal(
-        const_cast<decltype(symbols_)&>(symbols_));
-  }
+  const std::vector<fuchsia_driver_framework::NodeSymbol>& symbols() const { return symbols_; }
 
   // Returns the node properties of the node and its parents if the node is a composite node.
   // See `properties_` property for more info.
-  const fuchsia_driver_framework::wire::NodePropertyDictionary2& properties() const {
+  const fuchsia_driver_framework::NodePropertyDictionary2& properties() const {
     return properties_;
   }
 
@@ -277,7 +273,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Returns std::nullopt if the node is a non-composite and `parent_name` is not "default".
   // Returns std::nullopt if the parent node cannot be found.
   // See `properties_` property for more info.
-  std::optional<cpp20::span<const fuchsia_driver_framework::wire::NodeProperty2>> GetNodeProperties(
+  std::optional<std::span<const fuchsia_driver_framework::NodeProperty2>> GetNodeProperties(
       std::string_view parent_name = "default") const;
 
   void SetDictionaryRef(std::optional<uint64_t> dictionary_ref) {
@@ -306,7 +302,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     driver_package_type_ = driver_package_type;
   }
 
-  void set_symbols(std::vector<fuchsia_driver_framework::wire::NodeSymbol> symbols) {
+  void set_symbols(std::vector<fuchsia_driver_framework::NodeSymbol> symbols) {
     symbols_ = std::move(symbols);
   }
 
@@ -413,11 +409,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // the process of being removed.
   void WaitForChildToExit(
       std::string_view name,
-      fit::callback<void(fit::result<fuchsia_driver_framework::wire::NodeError>)> callback);
+      fit::callback<void(fit::result<fuchsia_driver_framework::NodeError>)> callback);
 
   std::shared_ptr<BindResultTracker> CreateBindResultTracker();
 
-  fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>> AddChildHelper(
+  fit::result<fuchsia_driver_framework::NodeError, std::shared_ptr<Node>> AddChildHelper(
       fuchsia_driver_framework::NodeAddArgs args,
       fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller,
       fidl::ServerEnd<fuchsia_driver_framework::Node> node);
@@ -439,7 +435,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Set properties to composite node properties containing a clone of the node properties of
   // `parents_`.
   void SetCompositeParentProperties(
-      const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties);
+      const fuchsia_driver_framework::NodePropertyDictionary2& parent_properties);
 
   // Update `properties_dict_` to identify the contents of `properties_`.
   void SynchronizePropertiesDict();
@@ -467,19 +463,18 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   bool host_restart_on_crash_ = false;
 
-  fidl::Arena<128> arena_;
   std::vector<NodeOffer> offers_;
-  std::vector<fuchsia_driver_framework::wire::NodeSymbol> symbols_;
+  std::vector<fuchsia_driver_framework::NodeSymbol> symbols_;
 
   // Contains the properties of the node or its parents if the node is a composite or legacy
   // composite node. "default" entry refers to the node's properties if the node is a
   // non-composite. "default" entry refers to the primary parent node's properties if the node is a
   // composite. All referenced data is owned by `arena_`. Make sure to call
   // `Node::SynchronizePropertiesDict()` when modified.
-  fuchsia_driver_framework::wire::NodePropertyDictionary2 properties_;
+  fuchsia_driver_framework::NodePropertyDictionary2 properties_;
 
   // Maps the node properties of the entries of `properties_` by their name.
-  std::unordered_map<std::string, cpp20::span<const fuchsia_driver_framework::wire::NodeProperty2>>
+  std::unordered_map<std::string, cpp20::span<const fuchsia_driver_framework::NodeProperty2>>
       properties_dict_;
 
   std::optional<fuchsia_driver_framework::BusInfo> bus_info_;

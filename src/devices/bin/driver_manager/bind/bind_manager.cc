@@ -4,6 +4,8 @@
 
 #include "src/devices/bin/driver_manager/bind/bind_manager.h"
 
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
+
 #include "src/devices/bin/driver_manager/node_property_conversion.h"
 #include "src/devices/lib/log/log.h"
 
@@ -131,7 +133,8 @@ void BindManager::BindInternal(BindRequest request,
   // should not be used.
   if (node->type() == NodeType::kNormal) {
     if (std::optional props = node->GetNodeProperties(); props.has_value()) {
-      builder.properties(props.value());
+      auto props_vec = std::vector(props.value().begin(), props.value().end());
+      builder.properties(fidl::ToWire(arena, props_vec));
     }
   }
   if (!driver_url_suffix.empty()) {

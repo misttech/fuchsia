@@ -10,7 +10,7 @@
 namespace driver_manager {
 
 inline fuchsia_driver_framework::NodeProperty2 ToProperty2(
-    const fuchsia_driver_framework::NodeProperty property) {
+    const fuchsia_driver_framework::NodeProperty& property) {
   ZX_ASSERT(property.key().Which() == fuchsia_driver_framework::NodePropertyKey::Tag::kStringValue);
   return fuchsia_driver_framework::NodeProperty2{
       {.key = property.key().string_value().value(), .value = property.value()}};
@@ -25,11 +25,20 @@ inline fuchsia_driver_framework::NodeProperty2 ToProperty2(
 }
 
 inline fuchsia_driver_framework::NodeProperty ToDeprecatedProperty(
-    const fuchsia_driver_framework::wire::NodeProperty2 property) {
+    const fuchsia_driver_framework::NodeProperty2& property) {
   return fuchsia_driver_framework::NodeProperty{
-      {.key = fuchsia_driver_framework::NodePropertyKey::WithStringValue(
-           std::string(property.key.get())),
-       .value = fidl::ToNatural(property.value)}};
+      {.key =
+           fuchsia_driver_framework::NodePropertyKey::WithStringValue(std::string(property.key())),
+       .value = property.value()}};
+}
+
+inline fuchsia_driver_framework::wire::NodeProperty ToDeprecatedProperty(
+    fidl::AnyArena& allocator, const fuchsia_driver_framework::NodeProperty2& property) {
+  fuchsia_driver_framework::wire::NodePropertyValue value;
+  return fuchsia_driver_framework::wire::NodeProperty{
+      .key = fidl::ToWire(
+          allocator, fuchsia_driver_framework::NodePropertyKey::WithStringValue(property.key())),
+      .value = fidl::ToWire(allocator, property.value())};
 }
 
 inline fuchsia_driver_framework::wire::NodeProperty ToDeprecatedProperty(
@@ -42,7 +51,7 @@ inline fuchsia_driver_framework::wire::NodeProperty ToDeprecatedProperty(
 }
 
 inline fuchsia_driver_framework::BindRule2 ToBindRule2(
-    const fuchsia_driver_framework::BindRule bind_rule) {
+    const fuchsia_driver_framework::BindRule& bind_rule) {
   ZX_ASSERT(bind_rule.key().Which() ==
             fuchsia_driver_framework::NodePropertyKey::Tag::kStringValue);
   return fuchsia_driver_framework::BindRule2{{.key = bind_rule.key().string_value().value(),

@@ -103,19 +103,19 @@ zx::result<fdd::wire::NodeInfo> CreateDeviceInfo(fidl::AnyArena& allocator,
   }
 
   // Copy over the offers.
-  const auto& offers = node->offers();
+  const std::vector<NodeOffer>& offers = node->offers();
   if (!offers.empty()) {
     fidl::VectorView<fuchsia_component_decl::wire::Offer> node_offers(allocator, offers.size());
     for (size_t i = 0; i < offers.size(); i++) {
-      const auto& offer = offers[i];
-      zx::result get_offer_result = GetInnerOffer(offer);
-      if (get_offer_result.is_error()) {
-        node_offers[i] = {};
-        continue;
+      const NodeOffer& offer = offers[i];
+      switch (offer.transport) {
+        case OfferTransport::DriverTransport:
+          node_offers[i] = fidl::ToWire(allocator, ToFidl(offer).driver_transport().value());
+          break;
+        case OfferTransport::ZirconTransport:
+          node_offers[i] = fidl::ToWire(allocator, ToFidl(offer).zircon_transport().value());
+          break;
       }
-
-      auto [inner_offer, _] = get_offer_result.value();
-      node_offers[i] = fidl::ToWire(allocator, fidl::ToNatural(inner_offer));
     }
 
     device_info.offer_list(node_offers);

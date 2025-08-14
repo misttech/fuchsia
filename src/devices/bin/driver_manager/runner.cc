@@ -81,14 +81,15 @@ void Runner::StartDriverComponent(
   fidl::VectorView<fdecl::wire::Offer> dynamic_offers(arena, offers_count);
   if (!offers.empty()) {
     for (size_t i = 0; i < offers.size(); i++) {
-      const auto& offer = offers[i];
-      zx::result get_offer_result = GetInnerOffer(offer);
-      if (get_offer_result.is_error()) {
-        return callback(get_offer_result.take_error());
+      const NodeOffer& offer = offers[i];
+      switch (offer.transport) {
+        case OfferTransport::DriverTransport:
+          dynamic_offers[i] = fidl::ToWire(arena, ToFidl(offer).driver_transport().value());
+          break;
+        case OfferTransport::ZirconTransport:
+          dynamic_offers[i] = fidl::ToWire(arena, ToFidl(offer).zircon_transport().value());
+          break;
       }
-
-      auto [inner_offer, _] = get_offer_result.value();
-      dynamic_offers[i] = inner_offer;
     }
   }
   if (!dictionary_ref.has_value()) {

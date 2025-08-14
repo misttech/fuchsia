@@ -292,6 +292,14 @@ type NodeError = flexible enum {
     /// The Node contains multiple properties with the same key.
     @available(added=28)
     DUPLICATE_PROPERTY_KEYS = 13;
+
+    /// The Node is missing source instance filters,
+    @available(added=NEXT)
+    OFFER_SOURCE_INSTANCE_FILTER_MISSING = 14;
+
+    /// The Node is missing renamed instances,
+    @available(added=NEXT)
+    OFFER_RENAMED_INSTANCES_MISSING = 15;
 };
 
 /// Protocol through which a driver manages a node that it is bound to.

@@ -13,3 +13,7 @@ closed protocol Handshake {
 closed protocol Waiter {
     strict Ack();
 };
+
+service Service {
+    handshake client_end:Handshake;
+};
