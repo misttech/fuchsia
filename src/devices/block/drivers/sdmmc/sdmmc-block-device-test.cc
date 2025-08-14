@@ -2444,7 +2444,6 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
 }
 
 TEST_P(SdmmcBlockDeviceTest, PowerOffNotification) {
-  libsync::Completion sleep_complete;
   uint8_t power_off_notification = 0;
   sdmmc_.set_command_callback(MMC_SWITCH, [&](const sdmmc_req_t& req, uint32_t out_response[4]) {
     const uint8_t index = (req.arg >> 16) & 0xff;
@@ -2458,7 +2457,6 @@ TEST_P(SdmmcBlockDeviceTest, PowerOffNotification) {
                                 in_sleep_state = (req.arg >> 15) & 0x1;
                                 if (in_sleep_state) {
                                   out_response[0] |= MMC_STATUS_CURRENT_STATE_STBY;
-                                  sleep_complete.Signal();
                                 } else {
                                   out_response[0] |= MMC_STATUS_CURRENT_STATE_SLP;
                                 }
@@ -2498,12 +2496,14 @@ TEST_P(SdmmcBlockDeviceTest, PowerOffNotification) {
 
   EXPECT_FALSE(in_sleep_state);
 
+  libsync::Completion sleep_complete;
   // Transition to off, then Call PrepareStop().
-  incoming_.SyncCall([](IncomingNamespace* incoming) {
+  incoming_.SyncCall([&](IncomingNamespace* incoming) {
     incoming->power_broker.hardware_power_element_runner_client_
         ->SetLevel(SdmmcBlockDevice::kPowerLevelOff)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
+          sleep_complete.Signal();
         });
   });
   runtime_.PerformBlockingWork([&] { sleep_complete.Wait(); });
