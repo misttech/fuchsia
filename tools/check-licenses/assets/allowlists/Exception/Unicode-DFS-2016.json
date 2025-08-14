@@ -28,7 +28,7 @@
                         "projects": [
                             "prebuilt/third_party/rust/linux-x64",
                             "third_party/rust_crates/vendor/regex-syntax-0.6.29",
-                            "third_party/rust_crates/vendor/regex-syntax-0.8.3",
+                            "third_party/rust_crates/vendor/regex-syntax-0.8.5",
                             "third_party/rust_crates/vendor/bstr-1.5.0"
                         ],
                         "bug": "",
@@ -76,14 +76,14 @@
                         "notes": []
                     },
                     {
-                      "projects": [
-                        "prebuilt/starnix/linux-amd64",
-                        "prebuilt/starnix/linux-arm64",
-                        "prebuilt/starnix/linux-armhf",
-                        "prebuilt/starnix/linux-riscv64"
-                      ],
-                      "bug": "",
-                      "notes": []
+                        "projects": [
+                            "prebuilt/starnix/linux-amd64",
+                            "prebuilt/starnix/linux-arm64",
+                            "prebuilt/starnix/linux-armhf",
+                            "prebuilt/starnix/linux-riscv64"
+                        ],
+                        "bug": "",
+                        "notes": []
                     }
                 ]
             }

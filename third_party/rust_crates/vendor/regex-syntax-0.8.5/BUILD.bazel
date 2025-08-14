@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "regex-syntax",
     package_url = "https://github.com/rust-lang/regex/tree/master/regex-syntax",
-    package_version = "0.8.3",
+    package_version = "0.8.5",
 )
 
 license(
@@ -84,5 +84,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.8.3",
+    version = "0.8.5",
 )
