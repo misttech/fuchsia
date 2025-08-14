@@ -26,6 +26,7 @@ set -e
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/updates.sh || exit $?
 fx-config-read
+fx-fail-if-main-pb-is-not-set
 
 function needs-update {
   local targets_path="${FUCHSIA_BUILD_DIR}/amber-files/repository/targets.json"

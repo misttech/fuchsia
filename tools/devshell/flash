@@ -26,6 +26,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.
 # shellcheck source=/dev/null
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/fx-flash.sh || exit $?
 fx-config-read
+fx-fail-if-main-pb-is-not-set
 
 usage() {
     fx-command-help
