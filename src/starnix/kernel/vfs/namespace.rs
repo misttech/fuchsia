@@ -14,8 +14,9 @@ use crate::vfs::socket::{SocketAddress, SocketHandle, UnixSocket};
 use crate::vfs::{
     fileops_impl_dataless, fileops_impl_delegate_read_and_seek, fileops_impl_nonseekable,
     fileops_impl_noop_sync, fs_node_impl_not_dir, CheckAccessReason, DirEntry, DirEntryHandle,
-    FileHandle, FileObject, FileOps, FileSystemHandle, FileSystemOptions, FsNode, FsNodeHandle,
-    FsNodeOps, FsStr, FsString, PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind,
+    FileHandle, FileObject, FileOps, FileSystemHandle, FileSystemOptions, FileWriteGuardMode,
+    FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString, PathBuilder, RenameFlags, SymlinkTarget,
+    UnlinkKind,
 };
 use macro_rules_attribute::apply;
 use ref_cast::RefCast;
@@ -1093,6 +1094,10 @@ impl NamespaceNode {
         ActiveNamespaceNode::new(self)
     }
 
+    pub fn into_mapping(self, mode: Option<FileWriteGuardMode>) -> Result<Arc<FileMapping>, Errno> {
+        self.into_active().into_mapping(mode)
+    }
+
     /// Create a node in the file system.
     ///
     /// Works for any type of node other than a symlink.
@@ -1675,6 +1680,13 @@ impl ActiveNamespaceNode {
     pub fn to_passive(&self) -> NamespaceNode {
         self.deref().clone()
     }
+
+    pub fn into_mapping(self, mode: Option<FileWriteGuardMode>) -> Result<Arc<FileMapping>, Errno> {
+        if let Some(mode) = mode {
+            self.entry.node.write_guard_state.lock().acquire(mode)?;
+        }
+        Ok(Arc::new(FileMapping { name: self, mode }))
+    }
 }
 
 impl Deref for ActiveNamespaceNode {
@@ -1694,6 +1706,20 @@ impl Eq for ActiveNamespaceNode {}
 impl Hash for ActiveNamespaceNode {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.deref().hash(state)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileMapping {
+    pub name: ActiveNamespaceNode,
+    mode: Option<FileWriteGuardMode>,
+}
+
+impl Drop for FileMapping {
+    fn drop(&mut self) {
+        if let Some(mode) = self.mode {
+            self.name.entry.node.write_guard_state.lock().release(mode);
+        }
     }
 }
 

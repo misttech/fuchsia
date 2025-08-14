@@ -45,9 +45,6 @@
                 // TODO(https://fxbug.dev/297438799)
                 "MmapTest.CanMprotectNonExecMmapToExecutable",
 
-                // TODO(https://fxbug.dev/42072786)
-                "MMapProcTest.AdjacentFileMappings",
-
                 // TODO(https://fxbug.dev/411617451)
                 "MMapProcTest.MProtectAppliedPartially",
 

@@ -16,7 +16,7 @@ use crate::task::{
 use crate::vfs::buffers::{InputBuffer, InputBufferExt as _, OutputBuffer};
 use crate::vfs::{
     fileops_impl_noop_sync, fileops_impl_seekless, Anon, FileHandle, FileObject, FileOps,
-    FileWriteGuardRef, FsNodeInfo, NamespaceNode, SeekTarget,
+    FsNodeInfo, NamespaceNode, SeekTarget,
 };
 use starnix_logging::{log_info, track_stub, Level};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
@@ -151,8 +151,7 @@ impl FileOps for DevZero {
             // functionally equivalent to an anonymous mapping. Doing so affects
             // the output of `/proc/self/maps` and identifies this mapping as
             // file-based.
-            MappingName::File(Box::new(filename.into_active())),
-            FileWriteGuardRef(None),
+            MappingName::File(filename.into_mapping(None)?),
         )
     }
 

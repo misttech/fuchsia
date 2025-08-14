@@ -26,8 +26,8 @@ use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
     fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_dir_readonly, CacheMode,
     DirEntry, DirectoryEntryType, FdFlags, FdNumber, FileHandle, FileObject, FileObjectState,
-    FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FileWriteGuardRef,
-    FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode, SpecialNode,
+    FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
+    FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode, SpecialNode,
 };
 use starnix_core::{fileops_impl_dataless, security};
 use starnix_lifecycle::AtomicU64Counter;
@@ -5063,8 +5063,7 @@ impl BinderDriver {
             prot_flags,
             prot_flags.to_access(),
             mapping_options,
-            MappingName::File(Box::new(filename.into_active())),
-            FileWriteGuardRef(None),
+            MappingName::File(filename.into_mapping(None)?),
         )?;
 
         // Map the VMO into the driver's address space.

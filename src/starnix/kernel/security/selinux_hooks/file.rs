@@ -307,8 +307,8 @@ pub fn file_mprotect(
             )?;
         }
     }
-    let fs_node = if let MappingName::File(active_namespace_node) = mapping.name() {
-        Some((&(*active_namespace_node).entry.node).clone())
+    let fs_node = if let MappingName::File(file) = mapping.name() {
+        Some(file.name.entry.node.clone())
     } else {
         None
     };

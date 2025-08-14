@@ -10,7 +10,7 @@ use crate::mm::{
 use crate::security;
 use crate::task::CurrentTask;
 use crate::vdso::vdso_loader::ZX_TIME_VALUES_MEMORY;
-use crate::vfs::{FdNumber, FileHandle, FileWriteGuard, FileWriteGuardMode, FileWriteGuardRef};
+use crate::vfs::{FdNumber, FileHandle, FileMapping, FileWriteGuardMode};
 use process_builder::{elf_load, elf_parse};
 use starnix_logging::{log_error, log_warn};
 use starnix_sync::{Locked, Unlocked};
@@ -227,12 +227,12 @@ fn access_from_vmar_flags(vmar_flags: zx::VmarFlags) -> Access {
     access
 }
 
-struct Mapper<'a> {
-    file: &'a FileHandle,
-    mm: &'a Arc<MemoryManager>,
-    file_write_guard: FileWriteGuardRef,
+struct Mapper {
+    file: Arc<FileMapping>,
+    mm: Arc<MemoryManager>,
 }
-impl elf_load::Mapper for Mapper<'_> {
+
+impl elf_load::Mapper for Mapper {
     fn map(
         &self,
         vmar_offset: usize,
@@ -261,8 +261,7 @@ impl elf_load::Mapper for Mapper<'_> {
                 ProtectionFlags::from_vmar_flags(vmar_flags),
                 access_from_vmar_flags(vmar_flags),
                 MappingOptions::ELF_BINARY,
-                MappingName::File(Box::new(self.file.name.clone())),
-                self.file_write_guard.clone(),
+                MappingName::File(self.file.clone()),
             )
             .map_err(|e| {
                 // TODO: Find a way to propagate this errno to the caller.
@@ -279,10 +278,9 @@ enum LoadElfUsage {
 }
 
 fn load_elf(
-    elf: FileHandle,
+    elf_file: Arc<FileMapping>,
     elf_memory: Arc<MemoryObject>,
     mm: &Arc<MemoryManager>,
-    file_write_guard: FileWriteGuardRef,
     usage: LoadElfUsage,
 ) -> Result<LoadedElf, Errno> {
     let vmo = elf_memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
@@ -322,7 +320,7 @@ fn load_elf(
     // TODO(https://fxbug.dev/380427153): I think we need to do a 32-bit wrap here and then
     // a 32-bit wrap at the wrapping addition.  The Mapper may need a checked_add as well.
     let vaddr_bias = file_base.wrapping_sub(elf_info.low);
-    let mapper = Mapper { file: &elf, mm, file_write_guard };
+    let mapper = Mapper { file: elf_file, mm: mm.clone() };
     elf_load::map_elf_segments(vmo, &headers, &mapper, mm.base_addr.ptr(), vaddr_bias)
         .map_err(elf_load_error_to_errno)?;
     Ok(LoadedElf { arch_width, headers, file_base, vaddr_bias, length })
@@ -331,7 +329,7 @@ fn load_elf(
 /// Holds a resolved ELF VMO and associated parameters necessary for an execve call.
 pub struct ResolvedElf {
     /// A file handle to the resolved ELF executable.
-    pub file: FileHandle,
+    pub file: Arc<FileMapping>,
     /// A VMO to the resolved ELF executable.
     pub memory: Arc<MemoryObject>,
     /// An ELF interpreter, if specified in the ELF executable header.
@@ -343,7 +341,6 @@ pub struct ResolvedElf {
     /// Used by Linux Security Modules to store security module state for the new process.
     pub security_state: security::ResolvedElfState,
     /// Exec/write lock.
-    pub file_write_guard: FileWriteGuardRef,
     /// Enum indicating the architecture width (32 or 64 bits).
     pub arch_width: ArchWidth,
 }
@@ -351,11 +348,9 @@ pub struct ResolvedElf {
 /// Holds a resolved ELF interpreter VMO.
 pub struct ResolvedInterpElf {
     /// A file handle to the resolved ELF interpreter.
-    file: FileHandle,
+    file: Arc<FileMapping>,
     /// A VMO to the resolved ELF interpreter.
     memory: Arc<MemoryObject>,
-    /// Exec/write lock.
-    file_write_guard: FileWriteGuardRef,
 }
 
 // The magic bytes of a script file.
@@ -540,25 +535,15 @@ fn resolve_elf(
             None,
             ProtectionFlags::READ | ProtectionFlags::EXEC,
         )?;
-        let file_write_guard =
-            FileWriteGuard::new(&interp_file.name.entry.node, FileWriteGuardMode::Exec)?.into_ref();
-        Some(ResolvedInterpElf { file: interp_file, memory: interp_memory, file_write_guard })
+        let interp_file =
+            interp_file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
+        Some(ResolvedInterpElf { file: interp_file, memory: interp_memory })
     } else {
         None
     };
-    let file_write_guard =
-        FileWriteGuard::new(&file.name.entry.node, FileWriteGuardMode::Exec)?.into_ref();
+    let file = file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
     let arch_width = get_arch_width(&elf_headers);
-    Ok(ResolvedElf {
-        file,
-        memory,
-        interp,
-        argv,
-        environ,
-        security_state,
-        file_write_guard,
-        arch_width,
-    })
+    Ok(ResolvedElf { file, memory, interp, argv, environ, security_state, arch_width })
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -601,13 +586,7 @@ pub fn load_executable(
     original_path: &CStr,
 ) -> Result<ThreadStartInfo, Errno> {
     let mm = current_task.mm().ok_or_else(|| errno!(EINVAL))?;
-    let main_elf = load_elf(
-        resolved_elf.file,
-        resolved_elf.memory,
-        mm,
-        resolved_elf.file_write_guard,
-        LoadElfUsage::MainElf,
-    )?;
+    let main_elf = load_elf(resolved_elf.file, resolved_elf.memory, mm, LoadElfUsage::MainElf)?;
     mm.initialize_brk_origin(
         main_elf.arch_width,
         UserAddress::from_ptr(main_elf.file_base)
@@ -616,15 +595,7 @@ pub fn load_executable(
     )?;
     let interp_elf = resolved_elf
         .interp
-        .map(|interp| {
-            load_elf(
-                interp.file,
-                interp.memory,
-                mm,
-                interp.file_write_guard,
-                LoadElfUsage::Interpreter,
-            )
-        })
+        .map(|interp| load_elf(interp.file, interp.memory, mm, LoadElfUsage::Interpreter))
         .transpose()?;
 
     let entry_elf = interp_elf.as_ref().unwrap_or(&main_elf);
@@ -672,7 +643,6 @@ pub fn load_executable(
         VVAR_MAX_ACCESS,
         MappingOptions::empty(),
         MappingName::Vvar,
-        FileWriteGuardRef(None),
     )?;
 
     // Create a private clone of the starnix kernel vDSO.
@@ -696,7 +666,6 @@ pub fn load_executable(
         VVAR_MAX_ACCESS,
         MappingOptions::empty(),
         MappingName::Vvar,
-        FileWriteGuardRef(None),
     )?;
 
     // Overwrite the third part of the vvar mapping to contain the vDSO clone.
@@ -709,7 +678,6 @@ pub fn load_executable(
         VDSO_MAX_ACCESS,
         MappingOptions::DONT_SPLIT,
         MappingName::Vdso,
-        FileWriteGuardRef(None),
     )?;
 
     let auxv = {

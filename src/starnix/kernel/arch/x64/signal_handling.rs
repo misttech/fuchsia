@@ -241,7 +241,6 @@ mod tests {
     use crate::signals::{restore_from_signal_handler, SignalDetail};
     use crate::task::Kernel;
     use crate::testing::*;
-    use crate::vfs::FileWriteGuardRef;
     use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::errors::{EINTR, ERESTARTSYS};
     use starnix_uapi::file_mode::Access;
@@ -559,7 +558,6 @@ mod tests {
                 Access::rwx(),
                 MappingOptions::empty(),
                 MappingName::Stack,
-                FileWriteGuardRef(None),
             )
             .expect("failed to map stack VMO");
         let stack_address = (stack_base + (STACK_SIZE - 8)).expect("OOB memory access.");

@@ -15,7 +15,7 @@ use crate::vfs::syscalls::{
 };
 use crate::vfs::{
     fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, FdNumber,
-    FileHandle, FileObject, FileOps, FileWriteGuardRef, NamespaceNode,
+    FileHandle, FileObject, FileOps, NamespaceNode,
 };
 use bitflags::bitflags;
 use starnix_logging::{set_zx_name, track_stub};
@@ -922,8 +922,7 @@ impl FileOps for IoUringFileObject {
             prot_flags,
             Access::rwx(),
             options,
-            MappingName::File(Box::new(filename.into_active())),
-            FileWriteGuardRef(None),
+            MappingName::File(filename.into_mapping(None)?),
         )
     }
 }

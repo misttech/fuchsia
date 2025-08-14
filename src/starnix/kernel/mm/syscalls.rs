@@ -1394,7 +1394,6 @@ mod tests {
                 Access::rwx(),
                 MappingOptions::empty(),
                 MappingName::None,
-                crate::vfs::FileWriteGuardRef(None),
             )
             .unwrap();
 

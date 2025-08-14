@@ -17,8 +17,8 @@ use starnix_core::mm::{
 };
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    default_ioctl, default_seek, fileops_impl_noop_sync, FileObject, FileOps, FileWriteGuardRef,
-    FsString, InputBuffer, NamespaceNode, OutputBuffer, SeekTarget,
+    default_ioctl, default_seek, fileops_impl_noop_sync, FileObject, FileOps, FsString,
+    InputBuffer, NamespaceNode, OutputBuffer, SeekTarget,
 };
 use starnix_lifecycle::AtomicU32Counter;
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
@@ -205,7 +205,6 @@ impl FileOps for Ashmem {
             file.max_access_for_memory_mapping(),
             mapping_options,
             MappingName::Ashmem(state.name.clone().into()),
-            FileWriteGuardRef(None),
         )?;
 
         Ok(mapped_addr)

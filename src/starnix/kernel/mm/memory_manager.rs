@@ -20,7 +20,7 @@ use crate::vfs::aio::AioContext;
 use crate::vfs::pseudo::dynamic_file::{
     DynamicFile, DynamicFileBuf, DynamicFileSource, SequenceFileSource,
 };
-use crate::vfs::{FileWriteGuardRef, FsNodeOps, FsString, NamespaceNode};
+use crate::vfs::{FsNodeOps, FsString, NamespaceNode};
 use anyhow::{anyhow, Error};
 use bitflags::bitflags;
 use cfg_if::cfg_if;
@@ -582,7 +582,6 @@ impl MemoryManagerState {
         max_access: Access,
         populate: bool,
         name: MappingName,
-        file_write_guard: FileWriteGuardRef,
         released_mappings: &mut ReleasedMappings,
     ) -> Result<UserAddress, Errno> {
         self.validate_addr(addr, length)?;
@@ -600,8 +599,8 @@ impl MemoryManagerState {
         {
             // Take the lock on directory entry while holding the one on the mm state to ensure any
             // wrong ordering will trigger the tracing-mutex at the right call site.
-            if let MappingName::File(name) = &name {
-                let _l1 = name.entry.parent();
+            if let MappingName::File(file) = &name {
+                let _l1 = file.name.entry.parent();
             }
         }
 
@@ -618,7 +617,6 @@ impl MemoryManagerState {
             flags,
             max_access,
             name,
-            file_write_guard,
         );
         self.mappings.insert(mapped_addr..end, mapping);
 
@@ -699,7 +697,6 @@ impl MemoryManagerState {
             Access::rwx(),
             options.contains(MappingOptions::POPULATE),
             name,
-            FileWriteGuardRef(None),
             released_mappings,
         )
     }
@@ -857,7 +854,6 @@ impl MemoryManagerState {
                     original_mapping.max_access(),
                     false,
                     original_mapping.name(),
-                    original_mapping.file_write_guard().clone(),
                     released_mappings,
                 )?))
             }
@@ -1040,7 +1036,6 @@ impl MemoryManagerState {
             src_mapping.max_access(),
             false,
             src_mapping.name(),
-            src_mapping.file_write_guard().clone(),
             released_mappings,
         )?;
 
@@ -3046,7 +3041,6 @@ impl MemoryManager {
                         mapping.max_access(),
                         false,
                         mapping.name().clone(),
-                        FileWriteGuardRef(None),
                         &mut released_mappings,
                     )?;
                     assert!(released_mappings.is_empty());
@@ -3204,7 +3198,6 @@ impl MemoryManager {
         max_access: Access,
         options: MappingOptions,
         name: MappingName,
-        file_write_guard: FileWriteGuardRef,
     ) -> Result<UserAddress, Errno> {
         let flags = MappingFlags::from_access_flags_and_options(prot_flags, options);
 
@@ -3223,7 +3216,6 @@ impl MemoryManager {
             max_access,
             options.contains(MappingOptions::POPULATE),
             name,
-            file_write_guard,
             &mut released_mappings,
         );
 
@@ -3896,7 +3888,7 @@ fn write_map(
             #[cfg(feature = "alternate_anon_allocs")]
             MappingBacking::PrivateAnonymous => 0,
         },
-        if let MappingName::File(filename) = &map.name() { filename.entry.node.ino } else { 0 }
+        if let MappingName::File(file) = &map.name() { file.name.entry.node.ino } else { 0 }
     )?;
     let fill_to_name = |sink: &mut DynamicFileBuf| {
         // The filename goes at >= the 74th column (73rd when zero indexed)
@@ -3930,12 +3922,12 @@ fn write_map(
             fill_to_name(sink);
             sink.write(b"[vvar]");
         }
-        MappingName::File(name) => {
+        MappingName::File(file) => {
             fill_to_name(sink);
             // File names can have newlines that need to be escaped before printing.
             // According to https://man7.org/linux/man-pages/man5/proc.5.html the only
             // escaping applied to paths is replacing newlines with an octal sequence.
-            let path = name.path(task);
+            let path = file.name.path(task);
             sink.write_iter(
                 path.iter()
                     .flat_map(|b| if *b == b'\n' { b"\\012" } else { std::slice::from_ref(b) })
@@ -5483,7 +5475,6 @@ mod tests {
                 Access::rwx(),
                 MappingOptions::empty(),
                 MappingName::None,
-                FileWriteGuardRef(None),
             )
             .expect("map failed");
 

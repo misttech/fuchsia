@@ -17,8 +17,8 @@ use crate::vfs::fsverity::{
 };
 use crate::vfs::{
     ActiveNamespaceNode, DirentSink, EpollFileObject, EpollKey, FallocMode, FdTableId,
-    FileSystemHandle, FileWriteGuard, FileWriteGuardMode, FileWriteGuardRef, FsNodeHandle,
-    NamespaceNode, RecordLockCommand, RecordLockOwner,
+    FileSystemHandle, FileWriteGuardMode, FsNodeHandle, NamespaceNode, RecordLockCommand,
+    RecordLockOwner,
 };
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_types::ownership::ReleaseGuard;
@@ -309,7 +309,7 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         let file_write_guard = if options.contains(MappingOptions::SHARED) && file.can_write() {
             profile_duration!("AcquireFileWriteGuard");
             let node = &file.name.entry.node;
-            let mut state = node.write_guard_state.lock();
+            let state = node.write_guard_state.lock();
 
             // `F_SEAL_FUTURE_WRITE` should allow `mmap(PROT_READ)`, but block
             // `mprotect(PROT_WRITE)`. This is different from `F_SEAL_WRITE`, which blocks
@@ -326,12 +326,12 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
                 }
                 memory = Arc::new(memory.duplicate_handle(new_rights).map_err(impossible_error)?);
 
-                FileWriteGuardRef(None)
+                None
             } else {
-                state.create_write_guard(node.clone(), FileWriteGuardMode::WriteMapping)?.into_ref()
+                Some(FileWriteGuardMode::WriteMapping)
             }
         } else {
-            FileWriteGuardRef(None)
+            None
         };
 
         current_task.mm().ok_or_else(|| errno!(EINVAL))?.map_memory(
@@ -342,8 +342,7 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
             prot_flags,
             file.max_access_for_memory_mapping(),
             options,
-            MappingName::File(Box::new(filename.into_active())),
-            file_write_guard,
+            MappingName::File(filename.into_mapping(file_write_guard)?),
         )
     }
 
@@ -1450,7 +1449,9 @@ pub struct FileObjectState {
     /// See fcntl F_SETLEASE and F_GETLEASE.
     lease: Mutex<FileLeaseType>,
 
-    _file_write_guard: Option<FileWriteGuard>,
+    // This extra reference to the FsNode should not be needed, but it is needed to make
+    // Inotify.ExcludeUnlinkInodeEvents pass.
+    _mysterious_node: Option<FsNodeHandle>,
 
     /// Opaque security state associated this file object.
     pub security_state: security::FileObjectState,
@@ -1534,8 +1535,9 @@ impl FileObject {
         name: NamespaceNode,
         flags: OpenFlags,
     ) -> Result<FileHandle, Errno> {
-        let file_write_guard = if flags.can_write() {
-            Some(FileWriteGuard::new(&name.entry.node, FileWriteGuardMode::WriteFile)?)
+        let _mysterious_node = if flags.can_write() {
+            name.entry.node.write_guard_state.lock().acquire(FileWriteGuardMode::WriteFile)?;
+            Some(name.entry.node.clone())
         } else {
             None
         };
@@ -1555,7 +1557,7 @@ impl FileObject {
                     async_owner: Default::default(),
                     epoll_files: Default::default(),
                     lease: Default::default(),
-                    _file_write_guard: file_write_guard,
+                    _mysterious_node,
                     security_state,
                 },
             }
@@ -2199,6 +2201,11 @@ impl Releasable for FileObject {
                 }
             }
         }
+
+        if self.can_write() {
+            self.name.entry.node.write_guard_state.lock().release(FileWriteGuardMode::WriteFile);
+        }
+
         let locked = locked.cast_locked::<FileOpsCore>();
         let ops = self.ops;
         let state = self.state;
