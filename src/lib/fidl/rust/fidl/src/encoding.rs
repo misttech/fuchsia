@@ -3605,6 +3605,19 @@ pub fn with_tls_decode_buf<R, D: ResourceDialect>(
     })
 }
 
+/// Clear the thread local buffers used for encoding and decoding.
+#[inline]
+pub fn clear_tls_buf<D: ResourceDialect>() {
+    with_tls_buf::<D, ()>(|buf| {
+        buf.bytes.clear();
+        buf.bytes.shrink_to_fit();
+        buf.encode_handles.clear();
+        buf.encode_handles.shrink_to_fit();
+        buf.decode_handles.clear();
+        buf.decode_handles.shrink_to_fit();
+    });
+}
+
 /// Encodes the provided type into the thread-local encoding buffers.
 ///
 /// This function may not be called recursively.
