@@ -58,7 +58,8 @@ DEFINE_OPTION("kernel.arm64.enable-asid", bool, arm64_enable_asid, {true}, R"""(
 This enables use of ASIDs. True by default if the underlying hardware supports 16-bit ASIDs.
 )""")
 
-DEFINE_OPTION("kernel.arm64.alternate-vbar", Arm64AlternateVbar, arm64_alternate_vbar, {Arm64AlternateVbar::kAuto}, R"""(
+DEFINE_OPTION("kernel.arm64.alternate-vbar", Arm64AlternateVbar, arm64_alternate_vbar,
+              {Arm64AlternateVbar::kAuto}, R"""(
 This selects the alternate exception vector implementation used to work around
 CPU-specific issues on entry to EL1 from EL0.  Values can be:
  * `none` - No mitigations performed in early EL0 exception paths.
@@ -109,4 +110,10 @@ will result in a panic during early boot.
 // TODO(https://fxbug.dev/42182308): Remove once user space support is complete
 DEFINE_OPTION("kernel.arm64.pci", bool, arm64_kernel_pci, {true}, R"""(
 Enables kernel mode PCI support and kernel PCI syscalls.
+)""")
+
+DEFINE_OPTION("kernel.arm64.smccc-qcom", bool, arm64_smccc_qcom, {false}, R"""(
+Enables kernel assisted Yielding SMCCC calls that conform to QCOM's protocol.
+
+The kernel will automatically resume preempted SMCCC Yielding calls on behalf of the caller.
 )""")

@@ -1181,6 +1181,14 @@ will result in a panic during early boot.
 
 Enables kernel mode PCI support and kernel PCI syscalls.
 
+### kernel.arm64.smccc-qcom=\<bool>
+
+**Default:** `false`
+
+Enables kernel assisted Yielding SMCCC calls that conform to QCOM's protocol.
+
+The kernel will automatically resume preempted SMCCC Yielding calls on behalf of the caller.
+
 
 ## Options available only on riscv64 machines
 
