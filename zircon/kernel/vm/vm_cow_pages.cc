@@ -1310,6 +1310,25 @@ zx_status_t VmCowPages::ForEveryOwnedHierarchyPageInRange(S* self, T func, uint6
   return ZX_OK;
 }
 
+// Walks all the descendants in a preorder traversal. Stops if func returns anything other than
+// ZX_OK.
+zx_status_t VmCowPages::DebugForEachDescendant(
+    fit::function<bool(VmCowPages* cow, uint depth)> visit) {
+  auto cursor = TreeWalkCursor{LockedPtr(this)};
+
+  // TODO(https://fxbug.dev/438581232): Add depth formatting
+  int depth = 0;
+  do {
+    AssertHeld(cursor.GetCur()->lock_ref());
+    auto status = visit(cursor.GetCur().get(), depth);
+    if (status != ZX_OK) {
+      return status;
+    }
+  } while (cursor.NextChild());
+
+  return ZX_OK;
+}
+
 bool VmCowPages::DedupZeroPage(vm_page_t* page, uint64_t offset) {
   canary_.Assert();
 
@@ -7294,12 +7313,12 @@ zx_status_t VmCowPages::ReplacePageLocked(vm_page_t* before_page, uint64_t offse
   return ZX_OK;
 }
 
-bool VmCowPages::DebugValidateHierarchyLocked() const TA_REQ(lock()) {
+bool VmCowPages::DebugValidateHierarchyLocked() TA_REQ(lock()) {
   canary_.Assert();
 
-  const VmCowPages* cur = this;
+  VmCowPages* cur = this;
   AssertHeld(cur->lock_ref());
-  const VmCowPages* parent_most = cur;
+  VmCowPages* parent_most = cur;
   do {
     if (!cur->DebugValidatePageSharingLocked()) {
       return false;
@@ -7312,16 +7331,14 @@ bool VmCowPages::DebugValidateHierarchyLocked() const TA_REQ(lock()) {
   // Iterate whole hierarchy; the iteration order doesn't matter.  Since there are cases with
   // >2 children, in-order isn't well defined, so we choose pre-order, but post-order would also
   // be fine.
-  AssertHeld(parent_most->lock_ref());
-  zx_status_t status =
-      parent_most->DebugForEachDescendant([this](const VmCowPages* cur, int depth) {
-        AssertHeld(cur->lock_ref());
-        if (!cur->DebugValidateBacklinksLocked()) {
-          dprintf(INFO, "cur: %p this: %p\n", cur, this);
-          return ZX_ERR_BAD_STATE;
-        }
-        return ZX_OK;
-      });
+  zx_status_t status = parent_most->DebugForEachDescendant([this](VmCowPages* cur, int depth) {
+    AssertHeld(cur->lock_ref());
+    if (!cur->DebugValidateBacklinksLocked()) {
+      dprintf(INFO, "cur: %p this: %p\n", cur, this);
+      return ZX_ERR_BAD_STATE;
+    }
+    return ZX_OK;
+  });
   return status == ZX_OK;
 }
 
