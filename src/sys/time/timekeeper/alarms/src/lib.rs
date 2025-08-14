@@ -638,13 +638,14 @@ impl std::cmp::PartialOrd for TimerNode {
 }
 
 impl Ord for TimerNode {
-    /// Compares two [TimerNode]s, by "which is sooner".
+    /// Compares two [TimerNode]s, by "which is sooner", with a sooner
+    /// deadline being "greater".
     ///
     /// Ties are broken by alarm ID, then by connection ID.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let ordering = other.deadline.cmp(&self.deadline);
         if ordering == std::cmp::Ordering::Equal {
-            let ordering = self.alarm_id.cmp(&self.alarm_id);
+            let ordering = self.alarm_id.cmp(&other.alarm_id);
             if ordering == std::cmp::Ordering::Equal {
                 self.cid.cmp(&other.cid)
             } else {
@@ -2552,5 +2553,68 @@ mod tests {
                 .await,
             Err(fidl::Error::ClientChannelClosed { .. })
         );
+    }
+
+    #[derive(Debug)]
+    struct FakeResponder {}
+
+    impl AlarmResponder for FakeResponder {
+        fn send(
+            &self,
+            _alarm_id: &str,
+            _result: Result<fidl::EventPair, fidl_fuchsia_time_alarms::WakeAlarmsError>,
+        ) -> Option<Result<(), fidl::Error>> {
+            None
+        }
+    }
+
+    // Make sure the first alarm is always one with a greater koid value.
+    #[test_case(
+        "alarm1",
+        fasync::BootInstant::from_nanos(42),
+        "alarm2",
+        fasync::BootInstant::from_nanos(42),
+        std::cmp::Ordering::Less ; "same deadline tie broken by alarm id"
+    )]
+    #[test_case(
+        "alarm1",
+        fasync::BootInstant::from_nanos(42),
+        "alarm2",
+        fasync::BootInstant::from_nanos(43),
+        std::cmp::Ordering::Greater ; "sooner deadline is greater"
+    )]
+    #[test_case(
+        "alarm",
+        fasync::BootInstant::from_nanos(42),
+        "alarm",
+        fasync::BootInstant::from_nanos(42),
+        std::cmp::Ordering::Greater ; "same deadline and alarm id tie broken by connection ID"
+    )]
+    #[test_case(
+        "alarm",
+        fasync::BootInstant::from_nanos(42),
+        "alarm",
+        fasync::BootInstant::from_nanos(43),
+        std::cmp::Ordering::Greater ; "different deadlines, sooner is 'greater'"
+    )]
+    fn test_timer_node_comparison_by_alarm_id(
+        id1: &str,
+        deadline1: fasync::BootInstant,
+        id2: &str,
+        deadline2: fasync::BootInstant,
+        expected: std::cmp::Ordering,
+    ) {
+        let (koid1, koid2) = {
+            let koid1 = zx::Event::create().as_handle_ref().get_koid().unwrap();
+            let koid2 = zx::Event::create().as_handle_ref().get_koid().unwrap();
+            (std::cmp::max(koid1, koid2), std::cmp::min(koid1, koid2))
+        };
+
+        assert_gt!(koid1, koid2);
+
+        let one = TimerNode::new(deadline1, id1.into(), koid1, Rc::new(FakeResponder {}));
+        let other = TimerNode::new(deadline2, id2.into(), koid2, Rc::new(FakeResponder {}));
+
+        assert_eq!(expected, one.cmp(&other), "one={one:?}, other={other:?}");
     }
 }
