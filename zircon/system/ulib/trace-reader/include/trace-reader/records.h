@@ -587,6 +587,7 @@ class LargeRecordData final {
 };
 
 // A decoded record.
+// See docs/reference/tracing/trace-format.md#record_types
 class Record final {
  public:
   // Metadata record data.
