@@ -329,7 +329,7 @@ impl FileOps for SyncFile {
             {
                 canceler = WaitCanceler::merge_unbounded(
                     canceler,
-                    WaitCanceler::new_counter(Arc::downgrade(&sync_point.counter), canceler_result),
+                    WaitCanceler::new_port(canceler_result),
                 );
             } else {
                 canceler_result.cancel();

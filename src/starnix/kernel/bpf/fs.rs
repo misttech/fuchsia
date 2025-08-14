@@ -254,7 +254,7 @@ impl FileOps for BpfHandle {
         let canceler = waiter
             .wake_on_zircon_signals(&vmo.as_handle_ref(), RINGBUF_SIGNAL, handler)
             .expect("Failed to wait for signals on ringbuf VMO");
-        Some(WaitCanceler::new_vmo(Arc::downgrade(&vmo), canceler))
+        Some(WaitCanceler::new_port(canceler))
     }
 
     fn query_events(

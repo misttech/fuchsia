@@ -185,7 +185,7 @@ impl FileOps for DataChannelFile {
                 signal_handler,
             )
             .unwrap();
-        Some(WaitCanceler::new_event(Arc::downgrade(&self.event), pw))
+        Some(WaitCanceler::new_port(pw))
     }
 }
 

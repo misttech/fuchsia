@@ -18,7 +18,6 @@ use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error, from_status_like_fdio, uapi, ucred};
-use std::sync::Arc;
 use zerocopy::IntoBytes;
 use zx::AsHandleRef;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_starnix_binder as fbinder};
@@ -30,7 +29,7 @@ static WRITABLE_SIGNAL: zx::Signals =
 
 pub struct RemoteUnixDomainSocket {
     client: fbinder::UnixDomainSocketSynchronousProxy,
-    event: Arc<zx::EventPair>,
+    event: zx::EventPair,
 }
 
 impl RemoteUnixDomainSocket {
@@ -44,7 +43,7 @@ impl RemoteUnixDomainSocket {
             .map_err(|_| errno!(ECONNREFUSED))?
             .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?;
         let event = response.event.ok_or_else(|| errno!(ECONNREFUSED))?;
-        Ok(Self { client, event: event.into() })
+        Ok(Self { client, event })
     }
 
     fn get_signals_from_events(events: FdEvents) -> zx::Signals {
@@ -221,12 +220,12 @@ impl SocketOps for RemoteUnixDomainSocket {
         };
         let canceler = waiter
             .wake_on_zircon_signals(
-                self.event.as_ref(),
+                &self.event,
                 Self::get_signals_from_events(events),
                 signal_handler,
             )
             .unwrap();
-        WaitCanceler::new_event_pair(Arc::downgrade(&self.event), canceler)
+        WaitCanceler::new_port(canceler)
     }
 
     fn query_events(
@@ -329,6 +328,7 @@ mod tests {
     use fidl::endpoints::RequestStream;
     use futures::StreamExt;
     use starnix_sync::Mutex;
+    use std::sync::Arc;
     use zx::HandleBased;
     use {fidl_fuchsia_unknown as funknown, fuchsia_async as fasync};
 

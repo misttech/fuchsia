@@ -3,21 +3,21 @@
 // found in the LICENSE file.
 
 use crate::power::OnWakeOps;
-use crate::task::{CurrentTask, PortWaitCanceler, TargetTime, WaitCanceler};
+use crate::task::{CurrentTask, TargetTime};
 use crate::time::utc::estimate_boot_deadline_from_utc;
 use crate::vfs::timer::TimerOps;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, from_status_like_fdio};
-use std::sync::{Arc, Weak};
+use std::sync::Weak;
 use zx::{self as zx, AsHandleRef, HandleRef};
 
 pub struct MonotonicZxTimer {
-    timer: Arc<zx::MonotonicTimer>,
+    timer: zx::MonotonicTimer,
 }
 
 impl MonotonicZxTimer {
     pub fn new() -> Self {
-        Self { timer: Arc::new(zx::MonotonicTimer::create()) }
+        Self { timer: zx::MonotonicTimer::create() }
     }
 }
 
@@ -43,22 +43,18 @@ impl TimerOps for MonotonicZxTimer {
         self.timer.cancel().map_err(|status| from_status_like_fdio!(status))
     }
 
-    fn wait_canceler(&self, canceler: PortWaitCanceler) -> WaitCanceler {
-        WaitCanceler::new_mono_timer(Arc::downgrade(&self.timer), canceler)
-    }
-
     fn as_handle_ref(&self) -> HandleRef<'_> {
         self.timer.as_handle_ref()
     }
 }
 
 pub struct BootZxTimer {
-    timer: Arc<zx::BootTimer>,
+    timer: zx::BootTimer,
 }
 
 impl BootZxTimer {
     pub fn new() -> Self {
-        Self { timer: Arc::new(zx::BootTimer::create()) }
+        Self { timer: zx::BootTimer::create() }
     }
 }
 
@@ -85,10 +81,6 @@ impl TimerOps for BootZxTimer {
 
     fn stop(&self, _current_task: &CurrentTask) -> Result<(), Errno> {
         self.timer.cancel().map_err(|status| from_status_like_fdio!(status))
-    }
-
-    fn wait_canceler(&self, canceler: PortWaitCanceler) -> WaitCanceler {
-        WaitCanceler::new_boot_timer(Arc::downgrade(&self.timer), canceler)
     }
 
     fn as_handle_ref(&self) -> HandleRef<'_> {

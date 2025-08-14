@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::power::{create_proxy_for_wake_events_counter_zero, OnWakeOps};
-use crate::task::{CurrentTask, LockedAndTask, PortWaitCanceler, TargetTime, WaitCanceler};
+use crate::task::{CurrentTask, LockedAndTask, TargetTime};
 use crate::vfs::timer::TimerOps;
 use anyhow::{Context, Result};
 use fuchsia_inspect::ArrayProperty;
@@ -854,7 +854,7 @@ impl HrTimerManager {
 
 #[derive(Debug)]
 pub struct HrTimer {
-    event: Arc<zx::Event>,
+    event: zx::Event,
 
     /// True iff the timer is currently set to trigger at an interval.
     ///
@@ -880,8 +880,7 @@ impl Drop for HrTimer {
 
 impl HrTimer {
     pub fn new() -> HrTimerHandle {
-        let ret =
-            Arc::new(Self { event: Arc::new(zx::Event::create()), is_interval: Mutex::new(false) });
+        let ret = Arc::new(Self { event: zx::Event::create(), is_interval: Mutex::new(false) });
         let wake_alarm_id = ret.wake_alarm_id();
         ftrace::duration!(c"alarms", c"hrtimer::new", "timer_id" => ret.get_id(), "wake_alarm_id" => &wake_alarm_id[..]);
         ftrace::flow_begin!(c"alarms", c"hrtimer_lifecycle", ret.trace_id(), "wake_alarm_id" => &wake_alarm_id[..]);
@@ -924,7 +923,7 @@ impl TimerOps for HrTimerHandle {
         deadline: TargetTime,
     ) -> Result<(), Errno> {
         // Before (re)starting the timer, ensure the signal is cleared.
-        signal_handle(&*self.event, zx::Signals::TIMER_SIGNALED, zx::Signals::NONE)
+        signal_handle(&self.event, zx::Signals::TIMER_SIGNALED, zx::Signals::NONE)
             .map_err(|status| from_status_like_fdio!(status))?;
         current_task.kernel().hrtimer_manager.add_timer(
             source,
@@ -936,13 +935,9 @@ impl TimerOps for HrTimerHandle {
 
     fn stop(&self, current_task: &CurrentTask) -> Result<(), Errno> {
         // Clear the signal when removing the hrtimer.
-        signal_handle(&*self.event, zx::Signals::TIMER_SIGNALED, zx::Signals::NONE)
+        signal_handle(&self.event, zx::Signals::TIMER_SIGNALED, zx::Signals::NONE)
             .map_err(|status| from_status_like_fdio!(status))?;
         Ok(current_task.kernel().hrtimer_manager.remove_timer(self)?)
-    }
-
-    fn wait_canceler(&self, canceler: PortWaitCanceler) -> WaitCanceler {
-        WaitCanceler::new_event(Arc::downgrade(&self.event), canceler)
     }
 
     fn as_handle_ref(&self) -> HandleRef<'_> {

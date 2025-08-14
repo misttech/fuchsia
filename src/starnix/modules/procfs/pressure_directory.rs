@@ -229,16 +229,16 @@ impl FileOps for MemoryPressureFile {
         };
 
         // Create a new event and start waiting for it.
-        let event = Arc::new(zx::Event::create());
+        let event = zx::Event::create();
         let signal_handler = SignalHandler {
             inner: SignalHandlerInner::ZxHandle(get_events_from_signals),
             event_handler: handler,
             err_code: None,
         };
         let canceler = waiter
-            .wake_on_zircon_signals(event.as_ref(), zx::Signals::EVENT_SIGNALED, signal_handler)
+            .wake_on_zircon_signals(&event, zx::Signals::EVENT_SIGNALED, signal_handler)
             .unwrap();
-        let result = WaitCanceler::new_event(Arc::downgrade(&event), canceler);
+        let result = WaitCanceler::new_port(canceler);
 
         // Update the notification state.
         monitor.client_state.lock(locked).mutate_in_place(|old_value| match old_value {
@@ -323,7 +323,7 @@ enum PressureMonitorClientState {
     ///
     /// In this state, we remember the handle to notify the client, so we can signal it as soon the
     /// pressure event happens.
-    WaitingForPressure { target_event: Arc<zx::Event> },
+    WaitingForPressure { target_event: zx::Event },
 }
 
 impl PressureMonitorThread {

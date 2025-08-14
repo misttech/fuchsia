@@ -14,7 +14,6 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
-use std::sync::Arc;
 use zx::{self as zx, AsHandleRef};
 
 pub struct PidFdFileObject {
@@ -22,7 +21,7 @@ pub struct PidFdFileObject {
     tg: ThreadGroupKey,
 
     // Receives a notification when the tracked process terminates.
-    terminated_event: Arc<zx::EventPair>,
+    terminated_event: zx::EventPair,
 }
 
 impl PidFdFileObject {
@@ -57,10 +56,7 @@ where
     Anon::new_private_file(
         locked,
         current_task,
-        Box::new(PidFdFileObject {
-            tg: proc.into(),
-            terminated_event: Arc::new(proc.drop_notifier.event()),
-        }),
+        Box::new(PidFdFileObject { tg: proc.into(), terminated_event: proc.drop_notifier.event() }),
         flags,
         "[pidfd]",
     )
@@ -91,12 +87,12 @@ impl FileOps for PidFdFileObject {
         };
         let canceler = waiter
             .wake_on_zircon_signals(
-                self.terminated_event.as_ref(),
+                &self.terminated_event,
                 PidFdFileObject::get_signals_from_events(events),
                 signal_handler,
             )
             .unwrap(); // errors cannot happen unless the kernel is out of memory
-        Some(WaitCanceler::new_event_pair(Arc::downgrade(&self.terminated_event), canceler))
+        Some(WaitCanceler::new_port(canceler))
     }
 
     fn query_events(

@@ -224,31 +224,7 @@ impl WaitCanceler {
         Self::new_inner(WaitCancelerInner::Zxio(WaitCancelerZxio { zxio, inner }))
     }
 
-    pub fn new_timer(_timer: Weak<zx::Timer>, inner: PortWaitCanceler) -> Self {
-        Self::new_inner(WaitCancelerInner::Port(WaitCancelerPort { inner }))
-    }
-
-    pub fn new_event(_event: Weak<zx::Event>, inner: PortWaitCanceler) -> Self {
-        Self::new_inner(WaitCancelerInner::Port(WaitCancelerPort { inner }))
-    }
-
-    pub fn new_event_pair(_event_pair: Weak<zx::EventPair>, inner: PortWaitCanceler) -> Self {
-        Self::new_inner(WaitCancelerInner::Port(WaitCancelerPort { inner }))
-    }
-
-    pub fn new_mono_timer(_timer: Weak<zx::MonotonicTimer>, inner: PortWaitCanceler) -> Self {
-        Self::new_inner(WaitCancelerInner::Port(WaitCancelerPort { inner }))
-    }
-
-    pub fn new_boot_timer(_timer: Weak<zx::BootTimer>, inner: PortWaitCanceler) -> Self {
-        Self::new_inner(WaitCancelerInner::Port(WaitCancelerPort { inner }))
-    }
-
-    pub fn new_vmo(_vmo: Weak<zx::Vmo>, inner: PortWaitCanceler) -> Self {
-        Self::new_inner(WaitCancelerInner::Port(WaitCancelerPort { inner }))
-    }
-
-    pub fn new_counter(_counter: Weak<zx::Counter>, inner: PortWaitCanceler) -> Self {
+    pub fn new_port(inner: PortWaitCanceler) -> Self {
         Self::new_inner(WaitCancelerInner::Port(WaitCancelerPort { inner }))
     }
 
