@@ -85,5 +85,6 @@ workbench_platform_config = {
                 },
             },
         },
+        "scheduler_enable_new_wakeup_accounting": True,
     },
 }
