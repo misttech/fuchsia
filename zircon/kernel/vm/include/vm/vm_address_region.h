@@ -1120,6 +1120,10 @@ class VmMapping final : public VmAddressRegionOrMapping {
   zx_status_t EnumerateProtectionRangesLocked(vaddr_t base, size_t size, F func) const
       TA_REQ(lock()) {
     DEBUG_ASSERT(is_in_range_locked(base, size));
+    // If the mapping is no longer alive, then return early since there's nothing to enumerate.
+    if (!IsAliveLocked()) {
+      return ZX_OK;
+    }
     return ProtectRangesLocked().EnumerateProtectionRanges(base_, size_, base, size, func);
   }
 
