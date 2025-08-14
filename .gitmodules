@@ -708,3 +708,8 @@
 	url = https://fuchsia.googlesource.com/third_party/ogg
 	name = third_party/ogg
 	ignore = all
+[submodule "third_party/pylibs/coverage/src"]
+	path = third_party/pylibs/coverage/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/nedbat/coveragepy
+	name = third_party/pylibs/coverage
+	ignore = all
