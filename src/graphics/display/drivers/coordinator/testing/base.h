@@ -32,7 +32,7 @@ class TestBase : public testing::Test {
   fake_display::FakeDisplay& FakeDisplayEngine();
 
   fidl::ClientEnd<fuchsia_sysmem2::Allocator> ConnectToSysmemAllocatorV2();
-  const fidl::WireSyncClient<fuchsia_hardware_display::Provider>& DisplayProviderClient();
+  fidl::WireSyncClient<fuchsia_hardware_display::Provider> DisplayProviderClient();
 
   async_dispatcher_t* dispatcher() { return loop_.dispatcher(); }
 
@@ -49,6 +49,8 @@ class TestBase : public testing::Test {
   async::Loop loop_;
 
   std::unique_ptr<fake_display::FakeDisplayStack> fake_display_stack_;
+
+  fidl::ClientEnd<fuchsia_io::Directory> incoming_root_directory_;
 };
 
 }  // namespace display_coordinator

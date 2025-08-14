@@ -22,7 +22,9 @@ FakeCoordinatorHarness::FakeCoordinatorHarness(
     fdf::ClientEnd<fuchsia_hardware_display_engine::Engine> engine_client)
     : driver_runtime_(*driver_runtime),
       coordinator_driver_dispatcher_(driver_runtime_.StartBackgroundDispatcher()),
-      coordinator_controller_(coordinator_driver_dispatcher_->async_dispatcher(), std::in_place) {
+      coordinator_controller_(coordinator_driver_dispatcher_->async_dispatcher(), std::in_place),
+      outgoing_(coordinator_driver_dispatcher_->async_dispatcher(), std::in_place,
+                async_patterns::PassDispatcher) {
   ZX_ASSERT(driver_runtime != nullptr);
 
   coordinator_controller_.SyncCall(
@@ -38,15 +40,19 @@ FakeCoordinatorHarness::FakeCoordinatorHarness(
         *controller = std::move(create_result).value();
       });
 
-  auto [provider_client, provider_server] =
-      fidl::Endpoints<fuchsia_hardware_display::Provider>::Create();
-  provider_client_ =
-      fidl::WireSyncClient<fuchsia_hardware_display::Provider>(std::move(provider_client));
-  coordinator_controller_.SyncCall(
-      [&](std::unique_ptr<display_coordinator::Controller>* controller) {
-        fidl::BindServer(coordinator_driver_dispatcher_->async_dispatcher(),
-                         std::move(provider_server), controller->get());
-      });
+  fidl::ProtocolHandler<fuchsia_hardware_display::Provider> provider_handler =
+      coordinator_controller_.SyncCall(
+          [&](std::unique_ptr<display_coordinator::Controller>* controller) {
+            return (*controller)->bind_handler(coordinator_driver_dispatcher_->async_dispatcher());
+          });
+  fuchsia_hardware_display::Service::InstanceHandler service_handler({
+      .provider = std::move(provider_handler),
+  });
+  zx::result<> add_service_result = outgoing_.SyncCall([&](component::OutgoingDirectory* outgoing) {
+    return outgoing->AddService<fuchsia_hardware_display::Service>(std::move(service_handler));
+  });
+  ZX_ASSERT_MSG(add_service_result.is_ok(), "Failed to add display service: %s",
+                add_service_result.status_string());
 }
 
 FakeCoordinatorHarness::~FakeCoordinatorHarness() {
@@ -59,6 +65,8 @@ void FakeCoordinatorHarness::SyncShutdown() {
     return;
   }
   shutdown_ = true;
+
+  outgoing_.reset();
 
   coordinator_controller_.SyncCall(
       [&](std::unique_ptr<display_coordinator::Controller>* controller) {
@@ -79,10 +87,23 @@ void FakeCoordinatorHarness::SyncShutdown() {
   coordinator_is_shut_down.Wait();
 }
 
-const fidl::WireSyncClient<fuchsia_hardware_display::Provider>&
-FakeCoordinatorHarness::provider_client() const {
-  ZX_ASSERT_MSG(!shutdown_, "provider_client() called after SyncShutdown()");
-  return provider_client_;
+fidl::ClientEnd<fuchsia_io::Directory> FakeCoordinatorHarness::Serve() {
+  ZX_ASSERT_MSG(!shutdown_, "Serve() called after SyncShutdown()");
+  auto [directory_client_end, directory_server_end] =
+      fidl::Endpoints<fuchsia_io::Directory>::Create();
+  zx::result<> serve_result =
+      outgoing_.SyncCall(&component::OutgoingDirectory::Serve, std::move(directory_server_end));
+  ZX_ASSERT_MSG(serve_result.is_ok(), "Failed to serve to outgoing directory: %s",
+                serve_result.status_string());
+  return std::move(directory_client_end);
+}
+
+void FakeCoordinatorHarness::ServeToProcessOutgoingDirectory() {
+  ZX_ASSERT_MSG(!shutdown_, "ServeToProcessOutgoingDirectory() called after SyncShutdown()");
+  zx::result<> serve_result =
+      outgoing_.SyncCall(&component::OutgoingDirectory::ServeFromStartupInfo);
+  ZX_ASSERT_MSG(serve_result.is_ok(), "Failed to serve to process outgoing directory: %s",
+                serve_result.status_string());
 }
 
 }  // namespace fake_display

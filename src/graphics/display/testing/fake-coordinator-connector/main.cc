@@ -6,25 +6,17 @@
 #include <lib/async-loop/default.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/syslog/cpp/macros.h>
-#include <lib/trace-provider/provider.h>
+
+#include <chrono>
+#include <thread>
 
 #include "src/graphics/display/drivers/fake/fake-display-device-config.h"
+#include "src/graphics/display/drivers/fake/fake-display-stack.h"
+#include "src/graphics/display/drivers/fake/sysmem-service-forwarder.h"
 #include "src/graphics/display/lib/api-types/cpp/engine-info.h"
 #include "src/graphics/display/lib/api-types/cpp/mode.h"
-#include "src/graphics/display/testing/fake-coordinator-connector/service.h"
 
 int main(int argc, const char** argv) {
-  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
-  trace::TraceProviderWithFdio trace_provider(loop.dispatcher());
-  component::OutgoingDirectory outgoing(loop.dispatcher());
-
-  zx::result<> serve_outgoing_directory_result = outgoing.ServeFromStartupInfo();
-  if (serve_outgoing_directory_result.is_error()) {
-    FX_LOGS(ERROR) << "Failed to serve outgoing directory: "
-                   << serve_outgoing_directory_result.status_string();
-    return -1;
-  }
-
   FX_LOGS(INFO) << "Starting fake fuchsia.hardware.display.Service service.";
 
   static constexpr fake_display::FakeDisplayDeviceConfig kFakeDisplayDeviceConfig = {
@@ -42,22 +34,20 @@ int main(int argc, const char** argv) {
       .periodic_vsync = true,
   };
 
-  display::FakeDisplayCoordinatorConnector connector(kFakeDisplayDeviceConfig);
+  zx::result<std::unique_ptr<fake_display::SysmemServiceForwarder>>
+      sysmem_service_forwarder_result = fake_display::SysmemServiceForwarder::Create();
+  FX_CHECK(sysmem_service_forwarder_result.is_ok());
 
-  fuchsia_hardware_display::Service::InstanceHandler display_service_handler({
-      .provider = connector.bind_handler(loop.dispatcher()),
-  });
-  zx::result<> publish_service_result =
-      outgoing.AddService<fuchsia_hardware_display::Service>(std::move(display_service_handler));
-  if (publish_service_result.is_error()) {
-    FX_LOGS(ERROR) << "Cannot publish display Service to default service directory: "
-                   << publish_service_result.status_string();
-    return -1;
+  std::unique_ptr<fake_display::SysmemServiceForwarder> sysmem_service_forwarder =
+      std::move(sysmem_service_forwarder_result).value();
+
+  fake_display::FakeDisplayStack fake_display_stack(std::move(sysmem_service_forwarder),
+                                                    kFakeDisplayDeviceConfig);
+
+  fake_display_stack.ServeCoordinatorToProcessOutgoingDirectory();
+
+  while (true) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
-
-  loop.Run();
-
-  FX_LOGS(INFO) << "Quit fake Display Coordinator Connector main loop.";
-
   return 0;
 }

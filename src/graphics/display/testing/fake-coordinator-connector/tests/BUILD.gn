@@ -7,37 +7,8 @@ import("//build/test.gni")
 
 group("tests") {
   testonly = true
-  public_deps = [
-    ":fake-display-coordinator-connector-integration-tests-package",
-    ":fake-display-coordinator-connector-unittests-package",
-  ]
-}
-
-test("fake-display-coordinator-connector-unittests") {
-  sources = [ "fake-display-coordinator-connector-unittest.cc" ]
-  deps = [
-    "//sdk/lib/fidl/hlcpp",
-    "//src/graphics/display/testing/fake-coordinator-connector:service",
-    "//src/lib/fxl/test:gtest_main",
-    "//src/lib/testing/loop_fixture",
-    "//third_party/googletest:gtest",
-  ]
-}
-
-fuchsia_unittest_package(
-    "fake-display-coordinator-connector-unittests-package") {
-  package_name = "fake-display-coordinator-connector-unittests"
-
-  manifest = "meta/fake-display-coordinator-connector-unittests.cml"
-  deps = [ ":fake-display-coordinator-connector-unittests" ]
-  test_specs = {
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
-
-  # Needed to access the system Sysmem service.
-  test_type = "vulkan"
+  public_deps =
+      [ ":fake-display-coordinator-connector-integration-tests-package" ]
 }
 
 test("fake-display-coordinator-connector-integration-tests") {

@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/fdf/cpp/dispatcher.h>
 
@@ -39,8 +40,15 @@ class FakeCoordinatorHarness {
   // This method is idemponent.
   void SyncShutdown();
 
+  // Serves coordinator services to the returned directory.
+  //
   // Must not be called after `SyncShutdown()`.
-  const fidl::WireSyncClient<fuchsia_hardware_display::Provider>& provider_client() const;
+  fidl::ClientEnd<fuchsia_io::Directory> Serve();
+
+  // Serves coordinator services to the process's outgoing directory.
+  //
+  // Must not be called after `SyncShutdown()`.
+  void ServeToProcessOutgoingDirectory();
 
  private:
   bool shutdown_ = false;
@@ -52,7 +60,7 @@ class FakeCoordinatorHarness {
   async_patterns::TestDispatcherBound<std::unique_ptr<display_coordinator::Controller>>
       coordinator_controller_;
 
-  fidl::WireSyncClient<fuchsia_hardware_display::Provider> provider_client_;
+  async_patterns::TestDispatcherBound<component::OutgoingDirectory> outgoing_;
 };
 
 }  // namespace fake_display

@@ -39,11 +39,6 @@ class FakeDisplayStack {
   FakeDisplay& display_engine();
 
   // Must not be called after SyncShutdown().
-  //
-  // The returned client is guaranteed to be valid.
-  const fidl::WireSyncClient<fuchsia_hardware_display::Provider>& display_provider_client();
-
-  // Must not be called after SyncShutdown().
   fidl::ClientEnd<fuchsia_sysmem2::Allocator> ConnectToSysmemAllocatorV2();
 
   // Must be called at least once.
@@ -51,6 +46,16 @@ class FakeDisplayStack {
   // Join all threads providing display and sysmem protocols, and remove all
   // the devices bound to the mock root device.
   void SyncShutdown();
+
+  // Serves coordinator services to the returned directory.
+  //
+  // Must not be called after `SyncShutdown()`.
+  fidl::ClientEnd<fuchsia_io::Directory> ServeCoordinator();
+
+  // Serves coordinator services to the process's outgoing directory.
+  //
+  // Must not be called after `SyncShutdown()`.
+  void ServeCoordinatorToProcessOutgoingDirectory();
 
  private:
   bool shutdown_ = false;

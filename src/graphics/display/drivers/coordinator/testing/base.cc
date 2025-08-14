@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.sysmem/cpp/fidl.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
@@ -50,6 +51,7 @@ void TestBase::SetUp() {
   };
   fake_display_stack_ = std::make_unique<fake_display::FakeDisplayStack>(
       std::move(create_sysmem_provider_result).value(), kDeviceConfig);
+  incoming_root_directory_ = fake_display_stack_->ServeCoordinator();
 }
 
 void TestBase::TearDown() {
@@ -131,8 +133,25 @@ fake_display::FakeDisplay& TestBase::FakeDisplayEngine() {
 fidl::ClientEnd<fuchsia_sysmem2::Allocator> TestBase::ConnectToSysmemAllocatorV2() {
   return fake_display_stack_->ConnectToSysmemAllocatorV2();
 }
-const fidl::WireSyncClient<fuchsia_hardware_display::Provider>& TestBase::DisplayProviderClient() {
-  return fake_display_stack_->display_provider_client();
+
+fidl::WireSyncClient<fuchsia_hardware_display::Provider> TestBase::DisplayProviderClient() {
+  auto [incoming_svc_directory, incoming_svc_server] =
+      fidl::Endpoints<fuchsia_io::Directory>::Create();
+
+  zx_status_t open_svc_status = fdio_open3_at(incoming_root_directory_.channel().get(), "svc",
+                                              uint64_t{fuchsia_io::kPermReadable},
+                                              incoming_svc_server.TakeChannel().release());
+  ZX_ASSERT_MSG(open_svc_status == ZX_OK, "Failed to open /svc directory: %s",
+                zx_status_get_string(open_svc_status));
+
+  component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher(
+      incoming_svc_directory.borrow());
+  zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
+      watcher.GetNextInstance(/*stop_at_idle=*/false);
+  ZX_ASSERT_MSG(provider_result.is_ok(), "Failed to connect to display provider: %s",
+                provider_result.status_string());
+  return fidl::WireSyncClient<fuchsia_hardware_display::Provider>(
+      std::move(provider_result).value());
 }
 
 }  // namespace display_coordinator

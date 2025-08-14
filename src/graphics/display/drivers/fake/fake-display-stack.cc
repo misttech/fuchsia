@@ -38,12 +38,6 @@ FakeDisplay& FakeDisplayStack::display_engine() {
   return display_engine_harness_.display_engine();
 }
 
-const fidl::WireSyncClient<fuchsia_hardware_display::Provider>&
-FakeDisplayStack::display_provider_client() {
-  ZX_ASSERT_MSG(!shutdown_, "display_provider_client() called after SyncShutdown()");
-  return coordinator_harness_.provider_client();
-}
-
 fidl::ClientEnd<fuchsia_sysmem2::Allocator> FakeDisplayStack::ConnectToSysmemAllocatorV2() {
   ZX_ASSERT_MSG(!shutdown_, "ConnectToSysmemAllocatorV2() called after SyncShutdown()");
 
@@ -67,6 +61,18 @@ void FakeDisplayStack::SyncShutdown() {
   display_engine_harness_.SyncShutdown();
 
   sysmem_service_provider_.reset();
+}
+
+fidl::ClientEnd<fuchsia_io::Directory> FakeDisplayStack::ServeCoordinator() {
+  ZX_ASSERT_MSG(!shutdown_, "SyncShutdown() called before ServeCoordinator()");
+  return coordinator_harness_.Serve();
+}
+
+void FakeDisplayStack::ServeCoordinatorToProcessOutgoingDirectory() {
+  ZX_ASSERT_MSG(!shutdown_,
+                "SyncShutdown() called before "
+                "ServeCoordinatorToProcessOutgoingDirectory()");
+  coordinator_harness_.ServeToProcessOutgoingDirectory();
 }
 
 }  // namespace fake_display
