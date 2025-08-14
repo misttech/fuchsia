@@ -57,7 +57,7 @@ func (c *CircularLogs) Push(content string) {
 	defer c.mu.Unlock()
 
 	newEntry := LogEntry{
-		Timestamp: zx.Sys_clock_get_monotonic(),
+		Timestamp: zx.Time(zx.Sys_clock_get_monotonic()),
 		Content:   content,
 	}
 

@@ -465,7 +465,7 @@ func addressMapToSlice(addressMap map[tcpip.ProtocolAddress]addressProperties) [
 
 func toZxTimeInfiniteIfZero(t tcpip.MonotonicTime) zx.Time {
 	if t == (tcpip.MonotonicTime{}) {
-		return zx.TimensecInfinite
+		return zx.Time(zx.TimensecInfinite)
 	}
 	return fidlconv.ToZxTime(t)
 }

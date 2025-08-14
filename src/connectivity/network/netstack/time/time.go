@@ -43,7 +43,7 @@ type Time struct {
 
 // Now returns the current monotonic time relative to system start.
 func Now() Time {
-	return Time{zx.Sys_clock_get_monotonic()}
+	return Time{zx.Time(zx.Sys_clock_get_monotonic())}
 }
 
 // Add returns the Time t+d. If the sum is such as to exceed the maximum or

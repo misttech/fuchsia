@@ -362,7 +362,7 @@ func (l *Logger) logf(callDepth int, logLevel LogLevel, tag string, format strin
 	if LogLevel(atomic.LoadInt32(&l.level)) > logLevel {
 		return nil
 	}
-	time := zx.Sys_clock_get_monotonic()
+	time := zx.Time(zx.Sys_clock_get_monotonic())
 	msg := fmt.Sprintf(format, a...)
 	if logLevel >= l.options.MinSeverityForFileAndLineInfo {
 		_, file, line, ok := runtime.Caller(callDepth)
