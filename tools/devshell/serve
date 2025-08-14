@@ -8,6 +8,7 @@
 ## usage: fx serve [-v] [-l host[:port]] [-c version] [--no-device] [--name NAME]
 ##
 ##   -l port            port that "fx serve" will listen on
+##   --address          address that "fx serve will listen on"
 ##   --no-device        Do not register the repository with a specific device.
 ##   --name NAME        Name the generated update source config NAME.
 ##   --[no-]persist     enable or disable persistence of repository metadata. Disabled
@@ -37,6 +38,7 @@ fx-standard-switches "$@"
 set -- "${FX_ARGV[@]}"
 
 port=""
+address="[::]"
 verbose=false
 clean_first=false
 source_name=""
@@ -47,6 +49,10 @@ while (($#)); do
   case "$1" in
     -l)
       port="${2##*:}"
+      shift
+      ;;
+    --address)
+      address="$2"
       shift
       ;;
     --name)
@@ -177,7 +183,7 @@ fi
 # Start repository server in foreground, wait until it
 # voluntarily exits
 # TODO(b/360931702): Allow listening IP address to be set.
-server_flags=( repository server start "${server_mode}"  --address "[::]:${port}" )
+server_flags=( repository server start "${server_mode}"  --address "${address}:${port}" )
 server_flags+=( --repository "${source_name}" --repo-path "${repo_dir}" )
 server_flags+=( --trusted-root "${repo_dir}/repository/9.root.json" )
 server_flags+=( --alias "fuchsia.com" --alias "chromium.org" )
