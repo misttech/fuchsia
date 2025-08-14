@@ -261,16 +261,16 @@ HermeticAudioRealm::CtorArgs HermeticAudioRealm::BuildRealm(Options options,
               Protocol{"fuchsia.inspect.InspectSink"},
           },
       .source = ChildRef{InspectSinkMock::kName},
-      .targets = {DictionaryRef{"self/test-diagnostics"}},
+      .targets = {DictionaryRef{.base_ref = SelfRef(), .path = "test-diagnostics"}},
   });
 
   builder.AddRoute({
       .capabilities =
           {
-              Protocol{.name = "fuchsia.logger.LogSink", .from_dictionary = "diagnostics"},
+              Protocol{.name = "fuchsia.logger.LogSink"},
           },
       .source = ParentRef(),
-      .targets = {DictionaryRef{"self/test-diagnostics"}},
+      .targets = {DictionaryRef{.base_ref = SelfRef(), .path = "test-diagnostics"}},
   });
 
   switch (options.audio_core_config_data.index()) {

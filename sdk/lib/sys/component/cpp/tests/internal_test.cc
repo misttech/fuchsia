@@ -29,6 +29,7 @@
 #include <zircon/status.h>
 
 #include <cstddef>
+#include <memory>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -212,8 +213,6 @@ class ConvertParameterizedFixture
 // The parameter type must be a copyable type per
 // http://google.github.io/googletest/advanced.html#how-to-write-value-parameterized-tests.
 // Since at least one member of `ChildOptions` is not copyable, we need to work around this.
-// A `std::shared_ptr` is copyable but must be dereferenced to access the value.
-// `GetInput()` abstracts the dereferencing when necessary.
 class ConvertChildOptionsParameterizedFixture
     : public ConvertParameterizedFixture<std::shared_ptr<ChildOptions>, fctest::ChildOptions> {
  protected:
@@ -265,15 +264,29 @@ INSTANTIATE_TEST_SUITE_P(
                            .startup_mode = StartupMode::LAZY, .environment = "bar"}),
                        component::tests::CreateFidlChildOptions(StartupMode::LAZY, "bar", {}))));
 
-class ConvertRefParameterizedFixture : public ConvertParameterizedFixture<Ref, fcdecl::Ref> {};
+class ConvertRefParameterizedFixture
+    : public ConvertParameterizedFixture<std::pair<Ref, RefContext>, RefPathPair> {};
 
-ZX_COMPONENT_TYPED_TEST_P(ConvertRefParameterizedFixture, ConvertsAllFields)
+#define ZX_COMPONENT_REF_TEST_P(test_suite_name, method_name)  \
+  TEST_P(test_suite_name, method_name) {                       \
+    auto param = GetParam();                                   \
+    const auto& input = param.first;                           \
+    auto actual = ConvertRefToFidl(input.first, input.second); \
+    auto expected = std::move(*param.second);                  \
+    EXPECT_TRUE(fidl::Equals(actual.first, expected.first));   \
+    EXPECT_EQ(actual.second, expected.second);                 \
+  }
+
+ZX_COMPONENT_REF_TEST_P(ConvertRefParameterizedFixture, ConvertsAllFields)
 INSTANTIATE_TEST_SUITE_P(
     ConvertTest, ConvertRefParameterizedFixture,
     testing::Values(
-        std::make_pair(Ref{ParentRef{}},
-                       std::make_shared<fcdecl::Ref>(fcdecl::Ref::WithParent(fcdecl::ParentRef{}))),
-        std::make_pair(ChildRef{.name = "foo"}, component::tests::CreateFidlChildRef("foo"))));
+        std::make_pair(std::make_pair(Ref{ParentRef{}}, RefContext::SOURCE),
+                       std::make_shared<RefPathPair>(fcdecl::Ref::WithParent(fcdecl::ParentRef{}),
+                                                     ".")),
+        std::make_pair(std::make_pair(Ref{ChildRef{.name = "foo"}}, RefContext::SOURCE),
+                       std::make_shared<RefPathPair>(
+                           fcdecl::Ref::WithChild(fcdecl::ChildRef{.name = "foo"}), "."))));
 
 class ConvertCapabilityParameterizedFixture
     : public ConvertParameterizedFixture<Capability, fctest::Capability> {};
@@ -283,56 +296,75 @@ INSTANTIATE_TEST_SUITE_P(
     ConvertTest, ConvertCapabilityParameterizedFixture,
     testing::Values(std::make_pair(Protocol{"foo"},
                                    component::tests::CreateFidlProtocolCapability(/*name=*/"foo")),
-                    std::make_pair(Protocol{.name = "foo",
-                                            .as = "bar",
-                                            .type = fcdecl::DependencyType::WEAK,
-                                            .path = "/foo/bar/baz",
-                                            .from_dictionary = "source/dict"},
-                                   component::tests::CreateFidlProtocolCapability(
-                                       /*name=*/"foo", /*as=*/"bar",
-                                       /*type=*/fcdecl::DependencyType::WEAK,
-                                       /*path=*/"/foo/bar/baz",
-                                       /*from_dictionary=*/"source/dict")),
+                    std::make_pair(
+                        Protocol{
+                            .name = "foo",
+                            .as = "bar",
+                            .type = fcdecl::DependencyType::WEAK,
+                            .path = "/foo/bar/baz",
+                        },
+                        component::tests::CreateFidlProtocolCapability(
+                            /*name=*/"foo", /*as=*/"bar",
+                            /*type=*/fcdecl::DependencyType::WEAK,
+                            /*path=*/"/foo/bar/baz")),
                     std::make_pair(Service{"foo"},
                                    component::tests::CreateFidlServiceCapability(/*name=*/"foo")),
-                    std::make_pair(Service{.name = "foo",
-                                           .as = "bar",
-                                           .path = "/foo/bar/baz",
-                                           .from_dictionary = "source/dict"},
-                                   component::tests::CreateFidlServiceCapability(
-                                       /*name=*/"foo", /*as=*/"bar",
-                                       /*path=*/"/foo/bar/baz",
-                                       /*from_dictionary=*/"source/dict")),
+                    std::make_pair(
+                        Service{
+                            .name = "foo",
+                            .as = "bar",
+                            .path = "/foo/bar/baz",
+                        },
+                        component::tests::CreateFidlServiceCapability(
+                            /*name=*/"foo", /*as=*/"bar",
+                            /*path=*/"/foo/bar/baz")),
                     std::make_pair(Directory{"foo"},
                                    component::tests::CreateFidlDirectoryCapability(/*name=*/"foo")),
-                    std::make_pair(Directory{.name = "foo",
-                                             .as = "bar",
-                                             .type = fcdecl::DependencyType::WEAK,
-                                             .subdir = "baz",
-                                             .rights = fio::Operations::EXECUTE,
-                                             .path = "/foo/bar/baz",
-                                             .from_dictionary = "source/dict"},
-                                   component::tests::CreateFidlDirectoryCapability(
-                                       /*name=*/"foo", /*as=*/"bar",
-                                       /*type=*/fcdecl::DependencyType::WEAK,
-                                       /*subdir=*/"baz",
-                                       /*rights=*/fio::Operations::EXECUTE,
-                                       /*path=*/"/foo/bar/baz",
-                                       /*from_dictionary=*/"source/dict"))));
+                    std::make_pair(
+                        Directory{
+                            .name = "foo",
+                            .as = "bar",
+                            .type = fcdecl::DependencyType::WEAK,
+                            .subdir = "baz",
+                            .rights = fio::Operations::EXECUTE,
+                            .path = "/foo/bar/baz",
+                        },
+                        component::tests::CreateFidlDirectoryCapability(
+                            /*name=*/"foo", /*as=*/"bar",
+                            /*type=*/fcdecl::DependencyType::WEAK,
+                            /*subdir=*/"baz",
+                            /*rights=*/fio::Operations::EXECUTE,
+                            /*path=*/"/foo/bar/baz"))));
 
 class ConvertTest : public testing::Test {};
 
 TEST_F(ConvertTest, ToFidlVec) {
-  std::vector<fcdecl::Ref> actual_values =
-      ConvertToFidlVec<Ref, fcdecl::Ref>({ChildRef{"foo"}, ChildRef{"bar"}});
-  std::vector<std::shared_ptr<fcdecl::Ref>> expected_values = {
-      component::tests::CreateFidlChildRef("foo"), component::tests::CreateFidlChildRef("bar")};
+  std::vector<Capability> input{Protocol{.name = "foo"}, Protocol{.name = "bar"}};
+  auto actual_values = ConvertToFidlVec<Capability, fctest::Capability>(input);
+  std::vector<std::shared_ptr<fctest::Capability>> expected_values{
+      component::tests::CreateFidlProtocolCapability(/*name=*/"foo"),
+      component::tests::CreateFidlProtocolCapability(/*name=*/"bar")};
+  ZX_ASSERT(actual_values.size() == expected_values.size());
+  for (size_t i = 0; i < expected_values.size(); ++i) {
+    const auto& actual = actual_values[i];
+    const auto& expected = *expected_values[i];
+    EXPECT_TRUE(fidl::Equals(actual, expected));
+  }
+}
+
+TEST_F(ConvertTest, RefToFidlVec) {
+  std::vector<Ref> input{ChildRef{"foo"}, ChildRef{"bar"}};
+  std::vector<RefPathPair> actual_values = ConvertRefToFidlVec(input, RefContext::SOURCE);
+  std::vector<std::shared_ptr<RefPathPair>> expected_values{
+      std::make_shared<RefPathPair>(fcdecl::Ref::WithChild(fcdecl::ChildRef{.name = "foo"}), "."),
+      std::make_shared<RefPathPair>(fcdecl::Ref::WithChild(fcdecl::ChildRef{.name = "bar"}), ".")};
 
   ZX_ASSERT(actual_values.size() == expected_values.size());
   for (size_t i = 0; i < expected_values.size(); ++i) {
-    auto& actual = actual_values[i];
-    auto& expected = (*expected_values[i]);
-    EXPECT_TRUE(fidl::Equals(actual, expected));
+    const auto& actual = actual_values[i];
+    const auto& expected = *expected_values[i];
+    EXPECT_TRUE(fidl::Equals(actual.first, expected.first));
+    EXPECT_EQ(actual.second, expected.second);
   }
 }
 

@@ -47,54 +47,93 @@ fuchsia::component::test::ChildOptions ConvertToFidl(const ChildOptions& options
   return result;
 }
 
-namespace {
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-std::string NameFromDictionaryRef(const DictionaryRef& ref) {
-  size_t delim = ref.path.find('/');
-  if (delim == std::string_view::npos || ref.path.substr(0, delim) != "self") {
-    ZX_PANIC("DictionaryRef path must be of the form self/<dictionary_name>");
-  }
-  std::string_view name = ref.path.substr(delim + 1, ref.path.size());
-  if (name.find('/') != std::string_view::npos) {
-    ZX_PANIC("DictionaryRef path must be of the form self/<dictionary_name>");
-  }
-  return std::string(name);
-}
-#endif
-}  // namespace
-
-fuchsia::component::decl::Ref ConvertToFidl(Ref ref) {
+RefPathPair ConvertRefToFidl(const Ref& ref, RefContext ctx) {
   if (auto child_ref = std::get_if<ChildRef>(&ref)) {
     fuchsia::component::decl::ChildRef result;
     result.name = std::string(child_ref->name);
-    return fuchsia::component::decl::Ref::WithChild(std::move(result));
+    return std::make_pair(fuchsia::component::decl::Ref::WithChild(std::move(result)), ".");
   }
   if (auto _ = std::get_if<ParentRef>(&ref)) {
-    return fuchsia::component::decl::Ref::WithParent(fuchsia::component::decl::ParentRef());
+    return std::make_pair(
+        fuchsia::component::decl::Ref::WithParent(fuchsia::component::decl::ParentRef()), ".");
   }
   if (auto collection_ref = std::get_if<CollectionRef>(&ref)) {
     fuchsia::component::decl::CollectionRef result;
     result.name = std::string(collection_ref->name);
-    return fuchsia::component::decl::Ref::WithCollection(std::move(result));
+    return std::make_pair(fuchsia::component::decl::Ref::WithCollection(std::move(result)), ".");
   }
   if (auto _ = std::get_if<FrameworkRef>(&ref)) {
-    return fuchsia::component::decl::Ref::WithFramework(fuchsia::component::decl::FrameworkRef());
+    return std::make_pair(
+        fuchsia::component::decl::Ref::WithFramework(fuchsia::component::decl::FrameworkRef()),
+        ".");
   }
   if (auto _ = std::get_if<VoidRef>(&ref)) {
-    return fuchsia::component::decl::Ref::WithVoidType(fuchsia::component::decl::VoidRef());
+    return std::make_pair(
+        fuchsia::component::decl::Ref::WithVoidType(fuchsia::component::decl::VoidRef()), ".");
   }
   if (auto _ = std::get_if<SelfRef>(&ref)) {
-    return fuchsia::component::decl::Ref::WithSelf(fuchsia::component::decl::SelfRef());
+    return std::make_pair(
+        fuchsia::component::decl::Ref::WithSelf(fuchsia::component::decl::SelfRef()), ".");
   }
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   if (auto dictionary_ref = std::get_if<DictionaryRef>(&ref)) {
-    fuchsia::component::decl::CapabilityRef result;
-    result.name = NameFromDictionaryRef(*dictionary_ref);
-    return fuchsia::component::decl::Ref::WithCapability(std::move(result));
+    auto path = std::string(dictionary_ref->path);
+    const auto* base_ref = &dictionary_ref->base_ref;
+    switch (ctx) {
+      case SOURCE:
+        if (auto child_ref = std::get_if<ChildRef>(base_ref)) {
+          fuchsia::component::decl::ChildRef result;
+          result.name = std::string(child_ref->name);
+          return std::make_pair(fuchsia::component::decl::Ref::WithChild(std::move(result)),
+                                std::move(path));
+        }
+        if (auto _ = std::get_if<ParentRef>(base_ref)) {
+          return std::make_pair(
+              fuchsia::component::decl::Ref::WithParent(fuchsia::component::decl::ParentRef()),
+              std::move(path));
+        }
+        if (auto _ = std::get_if<FrameworkRef>(base_ref)) {
+          return std::make_pair(fuchsia::component::decl::Ref::WithFramework(
+                                    fuchsia::component::decl::FrameworkRef()),
+                                std::move(path));
+        }
+        if (auto _ = std::get_if<VoidRef>(base_ref)) {
+          return std::make_pair(
+              fuchsia::component::decl::Ref::WithVoidType(fuchsia::component::decl::VoidRef()),
+              std::move(path));
+        }
+        if (auto _ = std::get_if<SelfRef>(base_ref)) {
+          return std::make_pair(
+              fuchsia::component::decl::Ref::WithSelf(fuchsia::component::decl::SelfRef()),
+              std::move(path));
+        }
+        ZX_PANIC("ConvertToFidl(Ref) reached unreachable block!");
+        break;
+      case TARGET:
+        if (dictionary_ref->path.find('/') != std::string_view::npos ||
+            !std::holds_alternative<SelfRef>(*base_ref)) {
+          ZX_PANIC(
+              "DictionaryRef path must have the form "
+              "{.base_ref=SelfRef(), .path=<dictionary_name>}");
+        }
+        fuchsia::component::decl::CapabilityRef result;
+        result.name = std::string(dictionary_ref->path);
+        return std::make_pair(fuchsia::component::decl::Ref::WithCapability(std::move(result)),
+                              ".");
+    }
   }
 #endif
 
   ZX_PANIC("ConvertToFidl(Ref) reached unreachable block!");
+}
+
+std::vector<RefPathPair> ConvertRefToFidlVec(const std::vector<Ref>& inputs, RefContext ctx) {
+  std::vector<RefPathPair> result;
+  result.reserve(inputs.size());
+  for (const auto& input : inputs) {
+    result.push_back(ConvertRefToFidl(input, ctx));
+  }
+  return result;
 }
 
 fuchsia::component::test::Capability ConvertToFidl(Capability capability) {
@@ -105,9 +144,6 @@ fuchsia::component::test::Capability ConvertToFidl(Capability capability) {
     ZX_COMPONENT_ADD_STR_IF_PRESENT(protocol, as, fidl_capability);
     ZX_COMPONENT_ADD_STR_IF_PRESENT(protocol, path, fidl_capability);
     ZX_COMPONENT_ADD_IF_PRESENT(protocol, type, fidl_capability);
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-    ZX_COMPONENT_ADD_STR_IF_PRESENT(protocol, from_dictionary, fidl_capability);
-#endif
     ZX_COMPONENT_ADD_IF_PRESENT(protocol, availability, fidl_capability);
 
     return fuchsia::component::test::Capability::WithProtocol(std::move(fidl_capability));
@@ -118,9 +154,6 @@ fuchsia::component::test::Capability ConvertToFidl(Capability capability) {
     fidl_capability.set_name(std::string(service->name));
     ZX_COMPONENT_ADD_STR_IF_PRESENT(service, as, fidl_capability);
     ZX_COMPONENT_ADD_STR_IF_PRESENT(service, path, fidl_capability);
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-    ZX_COMPONENT_ADD_STR_IF_PRESENT(service, from_dictionary, fidl_capability);
-#endif
     ZX_COMPONENT_ADD_IF_PRESENT(service, availability, fidl_capability);
 
     return fuchsia::component::test::Capability::WithService(std::move(fidl_capability));
@@ -134,9 +167,6 @@ fuchsia::component::test::Capability ConvertToFidl(Capability capability) {
     ZX_COMPONENT_ADD_STR_IF_PRESENT(directory, subdir, fidl_capability);
     ZX_COMPONENT_ADD_IF_PRESENT(directory, rights, fidl_capability);
     ZX_COMPONENT_ADD_STR_IF_PRESENT(directory, path, fidl_capability);
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-    ZX_COMPONENT_ADD_STR_IF_PRESENT(directory, from_dictionary, fidl_capability);
-#endif
     ZX_COMPONENT_ADD_IF_PRESENT(directory, availability, fidl_capability);
 
     return fuchsia::component::test::Capability::WithDirectory(std::move(fidl_capability));
@@ -157,7 +187,6 @@ fuchsia::component::test::Capability ConvertToFidl(Capability capability) {
 
     fidl_capability.set_name(std::string(dictionary->name));
     ZX_COMPONENT_ADD_STR_IF_PRESENT(dictionary, as, fidl_capability);
-    ZX_COMPONENT_ADD_STR_IF_PRESENT(dictionary, from_dictionary, fidl_capability);
     ZX_COMPONENT_ADD_IF_PRESENT(dictionary, availability, fidl_capability);
 
     return fuchsia::component::test::Capability::WithDictionary(std::move(fidl_capability));
@@ -181,9 +210,6 @@ fuchsia::component::test::Capability ConvertToFidl(Capability capability) {
     fidl_capability.set_name(std::string(resolver->name));
     ZX_COMPONENT_ADD_STR_IF_PRESENT(resolver, as, fidl_capability);
     ZX_COMPONENT_ADD_STR_IF_PRESENT(resolver, path, fidl_capability);
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-    ZX_COMPONENT_ADD_STR_IF_PRESENT(resolver, from_dictionary, fidl_capability);
-#endif
 
     return fuchsia::component::test::Capability::WithResolver(std::move(fidl_capability));
   }
@@ -194,9 +220,6 @@ fuchsia::component::test::Capability ConvertToFidl(Capability capability) {
     fidl_capability.set_name(std::string(runner->name));
     ZX_COMPONENT_ADD_STR_IF_PRESENT(runner, as, fidl_capability);
     ZX_COMPONENT_ADD_STR_IF_PRESENT(runner, path, fidl_capability);
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-    ZX_COMPONENT_ADD_STR_IF_PRESENT(runner, from_dictionary, fidl_capability);
-#endif
 
     return fuchsia::component::test::Capability::WithRunner(std::move(fidl_capability));
   }

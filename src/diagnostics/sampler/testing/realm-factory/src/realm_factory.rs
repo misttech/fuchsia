@@ -189,7 +189,7 @@ pub async fn create_realm(options: ftest::RealmOptions) -> Result<RealmInstance,
             Route::new()
                 .capability(Capability::protocol::<finspect::InspectSinkMarker>())
                 .from(&test_case_archivist)
-                .to(Ref::dictionary("self/diagnostics")),
+                .to(Ref::dictionary(Ref::self_(), "diagnostics")),
         )
         .await?;
 
@@ -197,9 +197,8 @@ pub async fn create_realm(options: ftest::RealmOptions) -> Result<RealmInstance,
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<flogger::LogSinkMarker>())
-                .from(Ref::parent())
-                .from_dictionary("diagnostics")
-                .to(Ref::dictionary("self/diagnostics")),
+                .from(Ref::dictionary(Ref::parent(), "diagnostics"))
+                .to(Ref::dictionary(Ref::self_(), "diagnostics")),
         )
         .await?;
 
@@ -249,8 +248,7 @@ pub async fn create_realm(options: ftest::RealmOptions) -> Result<RealmInstance,
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<fdiagnostics::ArchiveAccessorMarker>())
-                .from_dictionary("diagnostics-accessors")
-                .from(&test_case_archivist)
+                .from(Ref::dictionary(&test_case_archivist, "diagnostics-accessors"))
                 .to(&sampler)
                 .to(Ref::parent()),
         )

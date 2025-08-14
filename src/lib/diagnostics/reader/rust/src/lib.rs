@@ -1115,8 +1115,7 @@ mod tests {
             .add_route(
                 Route::new()
                     .capability(Capability::protocol_by_name("fuchsia.diagnostics.ArchiveAccessor"))
-                    .from_dictionary("diagnostics-accessors")
-                    .from(&archivist)
+                    .from(Ref::dictionary(&archivist, "diagnostics-accessors"))
                     .to(Ref::parent()),
             )
             .await

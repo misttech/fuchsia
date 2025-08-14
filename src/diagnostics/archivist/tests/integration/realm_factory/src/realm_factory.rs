@@ -192,8 +192,7 @@ impl ArchivistRealmFactory {
                         ))
                         .as_("fuchsia.diagnostics.LoWPANArchiveAccessor"),
                     )
-                    .from_dictionary("diagnostics-accessors")
-                    .from(&test_realm)
+                    .from(Ref::dictionary(&test_realm, "diagnostics-accessors"))
                     .to(Ref::parent()),
             )
             .await?;
@@ -232,8 +231,7 @@ impl ArchivistRealmFactory {
                     .capability(
                         Capability::protocol_by_name("fuchsia.debugdata.Publisher").optional(),
                     )
-                    .from(Ref::parent())
-                    .from_dictionary("diagnostics")
+                    .from(Ref::dictionary(Ref::parent(), "diagnostics"))
                     .to(&test_realm),
             )
             .await?;
@@ -250,7 +248,7 @@ impl ArchivistRealmFactory {
                         Capability::protocol_by_name("fuchsia.debugdata.Publisher").optional(),
                     )
                     .from(Ref::parent())
-                    .to(Ref::dictionary("self/diagnostics")),
+                    .to(Ref::dictionary(Ref::self_(), "diagnostics")),
             )
             .await?;
         test_realm
@@ -259,7 +257,7 @@ impl ArchivistRealmFactory {
                     .capability(Capability::protocol::<LogSinkMarker>())
                     .capability(Capability::protocol::<InspectSinkMarker>())
                     .from(&archivist)
-                    .to(Ref::dictionary("self/diagnostics")),
+                    .to(Ref::dictionary(Ref::self_(), "diagnostics")),
             )
             .await?;
 

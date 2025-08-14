@@ -159,12 +159,6 @@
     },
     {
         "kind": "table/member",
-        "name": "fuchsia.component.test/Dictionary.from_dictionary",
-        "ordinal": "5",
-        "type": "string"
-    },
-    {
-        "kind": "table/member",
         "name": "fuchsia.component.test/Dictionary.name",
         "ordinal": "1",
         "type": "string:255"
@@ -190,12 +184,6 @@
         "name": "fuchsia.component.test/Directory.availability",
         "ordinal": "7",
         "type": "fuchsia.component.decl/Availability"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.component.test/Directory.from_dictionary",
-        "ordinal": "8",
-        "type": "string"
     },
     {
         "kind": "table/member",
@@ -347,12 +335,6 @@
     },
     {
         "kind": "table/member",
-        "name": "fuchsia.component.test/Protocol.from_dictionary",
-        "ordinal": "6",
-        "type": "string"
-    },
-    {
-        "kind": "table/member",
         "name": "fuchsia.component.test/Protocol.name",
         "ordinal": "1",
         "type": "string:255"
@@ -471,6 +453,16 @@
         "direction": "two_way",
         "request": "fuchsia.component.test/RealmAddRouteRequest",
         "response": "fuchsia.component.test/Realm_AddRoute_Response",
+        "error": "fuchsia.component.test/RealmBuilderError"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.component.test/Realm.AddRouteFromDictionary",
+        "strictness": "strict",
+        "ordinal": "2448485041728984274",
+        "direction": "two_way",
+        "request": "fuchsia.component.test/RealmAddRouteFromDictionaryRequest",
+        "response": "fuchsia.component.test/Realm_AddRouteFromDictionary_Response",
         "error": "fuchsia.component.test/RealmBuilderError"
     },
     {
@@ -738,6 +730,34 @@
     {
         "kind": "struct",
         "name": "fuchsia.component.test/RealmAddLocalChildRequest"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component.test/RealmAddRouteFromDictionaryRequest.capabilities",
+        "ordinal": "1",
+        "type": "vector<fuchsia.component.test/Capability>"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component.test/RealmAddRouteFromDictionaryRequest.from",
+        "ordinal": "2",
+        "type": "fuchsia.component.decl/Ref"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component.test/RealmAddRouteFromDictionaryRequest.from_dictionary",
+        "ordinal": "3",
+        "type": "string:1024"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component.test/RealmAddRouteFromDictionaryRequest.to",
+        "ordinal": "4",
+        "type": "vector<fuchsia.component.decl/Ref>"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.component.test/RealmAddRouteFromDictionaryRequest"
     },
     {
         "kind": "struct/member",
@@ -1094,12 +1114,6 @@
     },
     {
         "kind": "table/member",
-        "name": "fuchsia.component.test/Resolver.from_dictionary",
-        "ordinal": "4",
-        "type": "string"
-    },
-    {
-        "kind": "table/member",
         "name": "fuchsia.component.test/Resolver.name",
         "ordinal": "1",
         "type": "string:255"
@@ -1119,12 +1133,6 @@
         "name": "fuchsia.component.test/Runner.as",
         "ordinal": "2",
         "type": "string:255"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.component.test/Runner.from_dictionary",
-        "ordinal": "4",
-        "type": "string"
     },
     {
         "kind": "table/member",
@@ -1153,12 +1161,6 @@
         "name": "fuchsia.component.test/Service.availability",
         "ordinal": "4",
         "type": "fuchsia.component.decl/Availability"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.component.test/Service.from_dictionary",
-        "ordinal": "5",
-        "type": "string"
     },
     {
         "kind": "table/member",

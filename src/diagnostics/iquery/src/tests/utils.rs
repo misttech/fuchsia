@@ -125,7 +125,7 @@ impl TestBuilder {
                     .capability(Capability::protocol::<finspect::InspectSinkMarker>())
                     .capability(Capability::protocol::<flogger::LogSinkMarker>())
                     .from(&archivist)
-                    .to(Ref::dictionary("self/diagnostics")),
+                    .to(Ref::dictionary(Ref::self_(), "diagnostics")),
             )
             .await
             .expect("route InspectSink and LogSink to self/diagnostics");

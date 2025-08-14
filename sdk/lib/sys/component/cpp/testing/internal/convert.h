@@ -14,9 +14,18 @@
 namespace component_testing {
 namespace internal {
 
+enum RefContext : uint8_t {
+  SOURCE,
+  TARGET,
+};
+
+using RefPathPair = std::pair<fuchsia::component::decl::Ref, std::string>;
+
 fuchsia::component::test::ChildOptions ConvertToFidl(const ChildOptions& options);
-fuchsia::component::decl::Ref ConvertToFidl(Ref ref);
 fuchsia::component::test::Capability ConvertToFidl(Capability capability);
+// Returns reference and dictionary path (may be ".")
+RefPathPair ConvertRefToFidl(const Ref& ref, RefContext ctx);
+std::vector<RefPathPair> ConvertRefToFidlVec(const std::vector<Ref>& inputs, RefContext ctx);
 
 template <class Input, class Output>
 std::vector<Output> ConvertToFidlVec(std::vector<Input> inputs) {

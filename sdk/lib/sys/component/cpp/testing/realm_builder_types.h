@@ -45,9 +45,6 @@ struct Protocol final {
   std::optional<std::string_view> as = std::nullopt;
   std::optional<DependencyType> type = std::nullopt;
   std::optional<std::string_view> path = std::nullopt;
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  std::optional<std::string_view> from_dictionary = std::nullopt;
-#endif
   std::optional<fuchsia::component::decl::Availability> availability = std::nullopt;
 };
 
@@ -58,9 +55,6 @@ struct Service final {
   std::string_view name;
   std::optional<std::string_view> as = std::nullopt;
   std::optional<std::string_view> path = std::nullopt;
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  std::optional<std::string_view> from_dictionary = std::nullopt;
-#endif
   std::optional<fuchsia::component::decl::Availability> availability = std::nullopt;
 };
 
@@ -73,9 +67,6 @@ struct Directory final {
   std::optional<std::string_view> subdir = std::nullopt;
   std::optional<fuchsia::io::Operations> rights = std::nullopt;
   std::optional<std::string_view> path = std::nullopt;
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  std::optional<std::string_view> from_dictionary = std::nullopt;
-#endif
   std::optional<fuchsia::component::decl::Availability> availability = std::nullopt;
 };
 
@@ -99,7 +90,6 @@ struct Config final {
 struct Dictionary final {
   std::string_view name;
   std::optional<std::string_view> as = std::nullopt;
-  std::optional<std::string_view> from_dictionary = std::nullopt;
   std::optional<fuchsia::component::decl::Availability> availability = std::nullopt;
 };
 
@@ -109,9 +99,6 @@ struct Resolver final {
   std::string_view name;
   std::optional<std::string_view> as = std::nullopt;
   std::optional<std::string_view> path = std::nullopt;
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  std::optional<std::string_view> from_dictionary = std::nullopt;
-#endif
 };
 
 // A runner capability.
@@ -120,9 +107,6 @@ struct Runner final {
   std::string_view name;
   std::optional<std::string_view> as = std::nullopt;
   std::optional<std::string_view> path = std::nullopt;
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  std::optional<std::string_view> from_dictionary = std::nullopt;
-#endif
 };
 
 // A capability to be routed from one component to another.
@@ -377,12 +361,20 @@ struct FrameworkRef {};
 // "void".
 struct VoidRef {};
 
-// A reference to a dictiory capability defined by this component. `path` must
-// have the format "self/<dictionary_name>".
+// A reference to a component or other entity in a route, when used in `DictionaryRef`. This is a
+// subset of `Ref`.
+using BaseRef = std::variant<ParentRef, ChildRef, FrameworkRef, VoidRef, SelfRef>;
+
+// A reference to a dictionary capability.
 struct DictionaryRef {
+  // The source of the dictionary.
+  BaseRef base_ref;
+
+  // The path to the dictionary, which may contain multiple segments if the dictionary is nested.
   std::string_view path;
 };
 
+// A reference to a component or other entity in a route.
 using Ref =
     std::variant<ParentRef, ChildRef, CollectionRef, FrameworkRef, VoidRef, SelfRef, DictionaryRef>;
 

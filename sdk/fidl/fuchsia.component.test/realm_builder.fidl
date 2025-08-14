@@ -218,8 +218,8 @@ type Protocol = table {
     5: availability fuchsia.component.decl.Availability;
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
-    /// the capability.
-    @available(added=25)
+    /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
+    @available(added=25, removed=NEXT)
     6: from_dictionary string:MAX;
 };
 
@@ -259,8 +259,8 @@ type Directory = table {
     7: availability fuchsia.component.decl.Availability;
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
-    /// the capability.
-    @available(added=25)
+    /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
+    @available(added=25, removed=NEXT)
     8: from_dictionary string:MAX;
 };
 
@@ -309,8 +309,8 @@ type Service = table {
     4: availability fuchsia.component.decl.Availability;
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
-    /// the capability.
-    @available(added=25)
+    /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
+    @available(added=25, removed=NEXT)
     5: from_dictionary string:MAX;
 };
 
@@ -388,7 +388,8 @@ type Dictionary = table {
     4: availability fuchsia.component.decl.Availability;
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
-    /// the capability.
+    /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
+    @available(added=25, removed=NEXT)
     5: from_dictionary string:MAX;
 };
 
@@ -409,8 +410,8 @@ type Resolver = table {
     3: path string:fuchsia.component.MAX_PATH_LENGTH;
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
-    /// the capability.
-    @available(added=25)
+    /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
+    @available(added=25, removed=NEXT)
     4: from_dictionary string:MAX;
 };
 
@@ -431,8 +432,8 @@ type Runner = table {
     3: path string:fuchsia.component.MAX_PATH_LENGTH;
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
-    /// the capability.
-    @available(added=25)
+    /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
+    @available(added=25, removed=NEXT)
     4: from_dictionary string:MAX;
 };
 
@@ -720,6 +721,21 @@ closed protocol Realm {
         component_manager_relative_url fuchsia.url.Url;
     }) -> () error RealmBuilderError;
 
+    /// Identical to `AddRouteFromDictionary`, except it does not accept `from_dictionary` which
+    /// it always sets to ".".
+    @available(deprecated=NEXT)
+    @deprecated("use AddRouteFromDictionary instead")
+    strict AddRoute(struct {
+        /// The capabilities that are to be routed.
+        capabilities vector<Capability>:MAX;
+
+        /// The location where the elements of `capabilities` are available.
+        from fuchsia.component.decl.Ref;
+
+        /// The locations that should be able to access `capabilities`.
+        to vector<fuchsia.component.decl.Ref>:MAX;
+    }) -> () error RealmBuilderError;
+
     /// Mutates component manifests in the realm such that every component in
     /// `to` will have a valid capability route for each item in `capabilities`
     /// provided by `from`.
@@ -735,12 +751,18 @@ closed protocol Realm {
     ///   involved manifests to fail validation.
     /// - `BUILD_ALREADY_CALLED`: The `Builder.Build` function has been called
     ///   for this realm, and thus this `Realm` channel can no longer be used.
-    strict AddRoute(struct {
+    @available(added=NEXT)
+    strict AddRouteFromDictionary(struct {
         /// The capabilities that are to be routed.
         capabilities vector<Capability>:MAX;
 
         /// The location where the elements of `capabilities` are available.
         from fuchsia.component.decl.Ref;
+
+        /// A path. If ".", `capabilities` are routed directly from `from`.
+        /// Otherwise, this represents a path in a dictionary routed by `from`
+        /// which contains the `capabilities`.
+        from_dictionary fuchsia.component.decl.dictionary_path;
 
         /// The locations that should be able to access `capabilities`.
         to vector<fuchsia.component.decl.Ref>:MAX;

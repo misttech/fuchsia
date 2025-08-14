@@ -105,8 +105,7 @@ pub async fn create(name: &str, fs: &TestFs) -> RealmInstance {
                     )
                     .as_("fuchsia.diagnostics.persist.DataPersistence"),
                 )
-                .from_dictionary("diagnostics-persist-capabilities")
-                .from(&persistence)
+                .from(Ref::dictionary(&persistence, "diagnostics-persist-capabilities"))
                 .to(Ref::parent()),
         )
         .await
@@ -144,8 +143,7 @@ pub async fn create(name: &str, fs: &TestFs) -> RealmInstance {
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<ArchiveAccessorMarker>())
-                .from_dictionary("diagnostics-accessors")
-                .from(&archivist)
+                .from(Ref::dictionary(&archivist, "diagnostics-accessors"))
                 .to(Ref::parent()),
         )
         .await
@@ -158,8 +156,7 @@ pub async fn create(name: &str, fs: &TestFs) -> RealmInstance {
                     Capability::protocol::<ArchiveAccessorMarker>()
                         .as_("fuchsia.diagnostics.ArchiveAccessor.feedback"),
                 )
-                .from_dictionary("diagnostics-accessors")
-                .from(&archivist)
+                .from(Ref::dictionary(&archivist, "diagnostics-accessors"))
                 .to(&persistence),
         )
         .await
@@ -181,7 +178,7 @@ pub async fn create(name: &str, fs: &TestFs) -> RealmInstance {
             Route::new()
                 .capability(Capability::protocol::<InspectSinkMarker>())
                 .from(&archivist)
-                .to(Ref::dictionary("self/diagnostics")),
+                .to(Ref::dictionary(Ref::self_(), "diagnostics")),
         )
         .await
         .expect("Failed to add route for InspectSink");
@@ -191,9 +188,8 @@ pub async fn create(name: &str, fs: &TestFs) -> RealmInstance {
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<LogSinkMarker>())
-                .from_dictionary("diagnostics")
-                .from(Ref::parent())
-                .to(Ref::dictionary("self/diagnostics")),
+                .from(Ref::dictionary(Ref::parent(), "diagnostics"))
+                .to(Ref::dictionary(Ref::self_(), "diagnostics")),
         )
         .await
         .expect("Failed to add route for LogSink");

@@ -128,8 +128,7 @@ async fn setup_test_with_extra(
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<fecho::EchoMarker>())
-                .from_dictionary("output")
-                .from(&dispatcher)
+                .from(Ref::dictionary(&dispatcher, "output"))
                 .to(Ref::parent()),
         )
         .await

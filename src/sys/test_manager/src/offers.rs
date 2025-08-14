@@ -5,7 +5,7 @@
 use crate::constants::{HERMETIC_RESOLVER_REALM_NAME, TEST_ROOT_COLLECTION, WRAPPER_REALM_NAME};
 use anyhow::Error;
 use fuchsia_component_test::error::Error as RealmBuilderError;
-use fuchsia_component_test::{Capability, RealmBuilder, Ref, Route, SubRealmBuilder};
+use fuchsia_component_test::{Capability, RealmBuilder, Ref, RefContext, Route, SubRealmBuilder};
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_test as ftest};
 
 pub(crate) fn map_offers(offers: Vec<fdecl::Offer>) -> Result<Vec<ftest::Capability>, Error> {
@@ -97,12 +97,16 @@ pub(crate) async fn apply_offers(
                 // scoping each of them to only those realms respectively. The outcome is that wrapper and
                 // root see only their own events.
                 let mut test_wrapper_event_stream = event_stream.clone();
-                test_wrapper_event_stream.scope = Some(vec![Ref::child(WRAPPER_REALM_NAME).into()]);
+                let (test_wrapper_realm, _) =
+                    Ref::child(WRAPPER_REALM_NAME).into_fidl(RefContext::Source);
+                let (hermetic_resolver_realm, _) =
+                    Ref::child(HERMETIC_RESOLVER_REALM_NAME).into_fidl(RefContext::Source);
+                let (test_root_collection, _) =
+                    Ref::collection(TEST_ROOT_COLLECTION).into_fidl(RefContext::Source);
+                test_wrapper_event_stream.scope = Some(vec![test_wrapper_realm]);
                 let mut test_root_event_stream = event_stream.clone();
-                test_root_event_stream.scope = Some(vec![
-                    Ref::collection(TEST_ROOT_COLLECTION).into(),
-                    Ref::child(HERMETIC_RESOLVER_REALM_NAME).into(),
-                ]);
+                test_root_event_stream.scope =
+                    Some(vec![test_root_collection, hermetic_resolver_realm]);
                 (
                     ftest::Capability::EventStream(test_wrapper_event_stream),
                     ftest::Capability::EventStream(test_root_event_stream),

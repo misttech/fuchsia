@@ -213,8 +213,7 @@ async fn stop_with_dynamic_dictionary() {
         .add_route(
             Route::new()
                 .capability(Capability::protocol_by_name("fidl.test.components.Trigger-dynamic"))
-                .from_dictionary("bundle")
-                .from(&stop_with_dynamic_dictionary)
+                .from(Ref::dictionary(&stop_with_dynamic_dictionary, "bundle"))
                 .to(Ref::parent()),
         )
         .await

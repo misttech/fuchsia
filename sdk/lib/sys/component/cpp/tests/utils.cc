@@ -1,5 +1,5 @@
 // Copyright 2022 The Fuchsia Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
+// Uelm_e of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <fuchsia/component/decl/cpp/fidl.h>
@@ -103,8 +103,7 @@ std::shared_ptr<fctest::ChildOptions> CreateFidlChildOptions(
 
 std::shared_ptr<fctest::Capability> CreateFidlProtocolCapability(
     std::string_view name, std::optional<std::string_view> as,
-    std::optional<fcdecl::DependencyType> type, std::optional<std::string_view> path,
-    std::optional<std::string_view> from_dictionary) {
+    std::optional<fcdecl::DependencyType> type, std::optional<std::string_view> path) {
   fctest::Protocol capability;
   capability.set_name(std::string(name));
   if (as.has_value()) {
@@ -116,16 +115,13 @@ std::shared_ptr<fctest::Capability> CreateFidlProtocolCapability(
   if (path.has_value()) {
     capability.set_path(std::string(*path));
   }
-  if (from_dictionary.has_value()) {
-    capability.set_from_dictionary(std::string(*from_dictionary));
-  }
   return std::make_shared<fctest::Capability>(
       fctest::Capability::WithProtocol(std::move(capability)));
 }
 
 std::shared_ptr<fctest::Capability> CreateFidlServiceCapability(
-    std::string_view name, std::optional<std::string_view> as, std::optional<std::string_view> path,
-    std::optional<std::string_view> from_dictionary) {
+    std::string_view name, std::optional<std::string_view> as,
+    std::optional<std::string_view> path) {
   fctest::Service capability;
   capability.set_name(std::string(name));
   if (as.has_value()) {
@@ -133,9 +129,6 @@ std::shared_ptr<fctest::Capability> CreateFidlServiceCapability(
   }
   if (path.has_value()) {
     capability.set_path(std::string(*path));
-  }
-  if (from_dictionary.has_value()) {
-    capability.set_from_dictionary(std::string(*from_dictionary));
   }
   return std::make_shared<fctest::Capability>(
       fctest::Capability::WithService(std::move(capability)));
@@ -151,8 +144,7 @@ std::shared_ptr<fctest::Capability> CreateFidlServiceCapability(std::string_view
 std::shared_ptr<fctest::Capability> CreateFidlDirectoryCapability(
     std::string_view name, std::optional<std::string_view> as,
     std::optional<fcdecl::DependencyType> type, std::optional<std::string_view> subdir,
-    std::optional<fio::Operations> rights, std::optional<std::string_view> path,
-    std::optional<std::string_view> from_dictionary) {
+    std::optional<fio::Operations> rights, std::optional<std::string_view> path) {
   fctest::Directory capability;
   capability.set_name(std::string(name));
   if (as.has_value()) {
@@ -169,9 +161,6 @@ std::shared_ptr<fctest::Capability> CreateFidlDirectoryCapability(
   }
   if (path.has_value()) {
     capability.set_path(std::string(*path));
-  }
-  if (from_dictionary.has_value()) {
-    capability.set_from_dictionary(std::string(*from_dictionary));
   }
   return std::make_shared<fctest::Capability>(
       fctest::Capability::WithDirectory(std::move(capability)));

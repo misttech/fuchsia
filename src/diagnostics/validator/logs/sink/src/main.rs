@@ -217,7 +217,7 @@ impl Puppet {
                 Route::new()
                     .capability(Capability::protocol::<LogSinkMarker>())
                     .from(&mocks_server)
-                    .to(Ref::dictionary("self/diagnostics"))
+                    .to(Ref::dictionary(Ref::self_(), "diagnostics"))
                     .to(&puppet),
             )
             .await?;

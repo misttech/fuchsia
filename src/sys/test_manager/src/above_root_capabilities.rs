@@ -7,7 +7,7 @@ use crate::constants::{
 };
 use anyhow::{format_err, Error};
 use fuchsia_component_test::error::Error as RealmBuilderError;
-use fuchsia_component_test::{Capability, RealmBuilder, Ref, Route, SubRealmBuilder};
+use fuchsia_component_test::{Capability, RealmBuilder, Ref, RefContext, Route, SubRealmBuilder};
 use std::collections::HashMap;
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_test as ftest};
 
@@ -73,13 +73,16 @@ impl AboveRootCapabilitiesForTest {
             let (capability_for_test_wrapper, capability_for_test_root) =
                 if let ftest::Capability::EventStream(event_stream) = &capability {
                     let mut test_wrapper_event_stream = event_stream.clone();
-                    test_wrapper_event_stream.scope =
-                        Some(vec![Ref::child(WRAPPER_REALM_NAME).into()]);
+                    let (wrapper_realm, _) =
+                        Ref::child(WRAPPER_REALM_NAME).into_fidl(RefContext::Source);
+                    let (hermetic_resolver_realm, _) =
+                        Ref::child(HERMETIC_RESOLVER_REALM_NAME).into_fidl(RefContext::Source);
+                    let (test_root_collection, _) =
+                        Ref::collection(TEST_ROOT_COLLECTION).into_fidl(RefContext::Source);
+                    test_wrapper_event_stream.scope = Some(vec![wrapper_realm]);
                     let mut test_root_event_stream = event_stream.clone();
-                    test_root_event_stream.scope = Some(vec![
-                        Ref::collection(TEST_ROOT_COLLECTION).into(),
-                        Ref::child(HERMETIC_RESOLVER_REALM_NAME).into(),
-                    ]);
+                    test_root_event_stream.scope =
+                        Some(vec![test_root_collection, hermetic_resolver_realm]);
                     (
                         ftest::Capability::EventStream(test_wrapper_event_stream),
                         ftest::Capability::EventStream(test_root_event_stream),

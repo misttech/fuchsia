@@ -136,21 +136,44 @@ Realm Realm::AddChildRealmFromDecl(const std::string& child_name,
 Realm& Realm::AddRoute(Route route) {
   auto capabilities = internal::ConvertToFidlVec<Capability, fuchsia::component::test::Capability>(
       route.capabilities);
-  auto source = internal::ConvertToFidl(route.source);
-  auto target = internal::ConvertToFidlVec<Ref, fuchsia::component::decl::Ref>(route.targets);
+  fuchsia::component::decl::Ref source;
+  std::string from_dictionary;
+  std::tie(source, from_dictionary) =
+      internal::ConvertRefToFidl(route.source, internal::RefContext::SOURCE);
+  std::vector<Ref> route_targets;
+  for (auto t : std::move(route.targets)) {
+    route_targets.emplace_back(t);
+  }
+  std::vector<fuchsia::component::decl::Ref> target;
+  for (auto& t : internal::ConvertRefToFidlVec(route_targets, internal::RefContext::TARGET)) {
+    target.push_back(std::move(t.first));
+  }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  fuchsia::component::test::Realm_AddRouteFromDictionary_Result result;
+  ZX_COMPONENT_ASSERT_STATUS_AND_RESULT_OK(
+      "Realm/AddRouteFromDictionary",
+      realm_proxy_->AddRouteFromDictionary(std::move(capabilities), std::move(source),
+                                           std::move(from_dictionary), std::move(target), &result),
+      result);
+#else
   fuchsia::component::test::Realm_AddRoute_Result result;
   ZX_COMPONENT_ASSERT_STATUS_AND_RESULT_OK(
       "Realm/AddRoute",
       realm_proxy_->AddRoute(std::move(capabilities), std::move(source), std::move(target),
                              &result),
       result);
+#endif
   return *this;
 }
 
 Realm& Realm::RouteReadOnlyDirectory(const std::string& name, std::vector<Ref> to,
                                      DirectoryContents directory) {
-  auto to_fidl = internal::ConvertToFidlVec<Ref, fuchsia::component::decl::Ref>(std::move(to));
+  std::vector<fuchsia::component::decl::Ref> to_fidl;
+  to_fidl.reserve(to.size());
+  for (auto& ref : to) {
+    to_fidl.push_back(internal::ConvertRefToFidl(ref, internal::RefContext::SOURCE).first);
+  }
   auto directory_fidl = directory.TakeAsFidl();
 
   fuchsia::component::test::Realm_ReadOnlyDirectory_Result result;

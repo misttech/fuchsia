@@ -5,6 +5,7 @@
 use crate::error::Error;
 use crate::local_component_runner::LocalComponentRunnerBuilder;
 use anyhow::{format_err, Context as _};
+use assert_matches::assert_matches;
 use cm_rust::{FidlIntoNative, NativeIntoFidl};
 use component_events::events::Started;
 use component_events::matcher::EventMatcher;
@@ -52,6 +53,7 @@ enum RefInner {
     Capability(String),
     Child(String),
     Collection(String),
+    Dictionary(Box<Self>, String),
     Debug,
     Framework,
     Parent,
@@ -63,21 +65,6 @@ impl Ref {
     pub fn capability(name: impl Into<String>) -> Ref {
         Ref { value: RefInner::Capability(name.into()), scope: None }
     }
-
-    /// A reference to a dictionary defined by this component as the target of the route.
-    /// `path` must have the form `"self/<dictionary_name>`.
-    pub fn dictionary(path: impl Into<String>) -> Ref {
-        let path: String = path.into();
-        let parts: Vec<_> = path.split('/').collect();
-        if parts.len() != 2 || parts[0] != "self" {
-            panic!(
-                "Input to dictionary() must have the form \"self/<dictionary_name>\", \
-                    was: {path}"
-            );
-        }
-        Self::capability(parts[1])
-    }
-
     pub fn child(name: impl Into<String>) -> Ref {
         Ref { value: RefInner::Child(name.into()), scope: None }
     }
@@ -106,6 +93,26 @@ impl Ref {
         Ref { value: RefInner::Void, scope: None }
     }
 
+    /// A reference to a dictionary, possibly nested.
+    /// `base` represents the first segment of the dictionary path, and `remainder` captures the
+    /// rest of the path. `base` is a `Ref` so it is compatible with `Ref` objects returned by
+    /// previous RealmBuilder API calls. For example, if you had "parent/diagnostics" in CML,
+    /// `base` would be `Ref::parent()` and `remainder` is `"diagnostics"`.
+    pub fn dictionary(base: impl Into<Ref>, remainder: impl Into<String>) -> Ref {
+        let base = base.into();
+        let remainder = remainder.into();
+        assert_matches!(
+            base.value,
+            RefInner::Self_
+                | RefInner::Parent
+                | RefInner::Framework
+                | RefInner::Void
+                | RefInner::Child(_),
+            "invalid dictionary root {base}"
+        );
+        Self { value: RefInner::Dictionary(Box::new(base.value), remainder), scope: None }
+    }
+
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401254890)
     fn check_scope(&self, realm_scope: &Vec<String>) -> Result<(), Error> {
         if let Some(ref_scope) = self.scope.as_ref() {
@@ -115,11 +122,17 @@ impl Ref {
         }
         Ok(())
     }
+
+    /// Converts this `Ref` to a fidl `Ref`, and a dictionary path if the `Ref` is `Dictionary`.
+    pub fn into_fidl(self, ctx: RefContext) -> (fdecl::Ref, Option<String>) {
+        self.value.into_fidl(ctx)
+    }
 }
 
-impl Into<fdecl::Ref> for Ref {
-    fn into(self) -> fdecl::Ref {
-        match self.value {
+impl RefInner {
+    fn into_fidl(self, ctx: RefContext) -> (fdecl::Ref, Option<String>) {
+        let mut path_out = None;
+        let ref_ = match self {
             RefInner::Capability(name) => fdecl::Ref::Capability(fdecl::CapabilityRef { name }),
             RefInner::Child(name) => fdecl::Ref::Child(fdecl::ChildRef { name, collection: None }),
             RefInner::Collection(name) => fdecl::Ref::Collection(fdecl::CollectionRef { name }),
@@ -128,8 +141,71 @@ impl Into<fdecl::Ref> for Ref {
             RefInner::Parent => fdecl::Ref::Parent(fdecl::ParentRef {}),
             RefInner::Self_ => fdecl::Ref::Self_(fdecl::SelfRef {}),
             RefInner::Void => fdecl::Ref::VoidType(fdecl::VoidRef {}),
+            RefInner::Dictionary(base_ref, path) => {
+                match ctx {
+                    RefContext::Source => {
+                        // `base_ref` cannot be Dictionary so this will only recurse once
+                        let (ref_, _) = base_ref.into_fidl(ctx);
+                        path_out = Some(path);
+                        ref_
+                    }
+                    RefContext::Target => {
+                        if !matches!(*base_ref, RefInner::Self_) || path.split("/").count() != 1 {
+                            panic!(
+                                "dictionary in `to` must have the form \
+                                   `self/<dictionary_name>, was {}/{}",
+                                base_ref, path
+                            )
+                        }
+                        fdecl::Ref::Capability(fdecl::CapabilityRef { name: path })
+                    }
+                }
+            }
+        };
+        (ref_, path_out)
+    }
+}
+
+impl Display for RefInner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            RefInner::Capability(name) => {
+                write!(f, "#{name}")
+            }
+            RefInner::Child(name) => {
+                write!(f, "#{name}")
+            }
+            RefInner::Collection(name) => {
+                write!(f, "#{name}")
+            }
+            RefInner::Debug => {
+                write!(f, "debug")
+            }
+            RefInner::Framework => {
+                write!(f, "framework")
+            }
+            RefInner::Parent => {
+                write!(f, "parent")
+            }
+            RefInner::Self_ => {
+                write!(f, "self")
+            }
+            RefInner::Void => {
+                write!(f, "void")
+            }
+            RefInner::Dictionary(base_ref, path) => {
+                write!(f, "{base_ref}/{path}")
+            }
         }
     }
+}
+
+/// Designates whether a [`Ref`] is being used in the context of a source or target, which is
+/// necessary to convert it to `fdecl::Ref` properly.
+#[derive(Clone, Copy, Debug)]
+pub enum RefContext {
+    Source,
+    Target,
 }
 
 /// A SubRealmBuilder may be referenced as a child in a route, in order to route a capability to or
@@ -182,6 +258,9 @@ impl Display for Ref {
             }
             RefInner::Void => {
                 write!(f, "void")?;
+            }
+            RefInner::Dictionary(base_ref, path) => {
+                write!(f, "{base_ref}/{path}")?;
             }
         }
         if let Some(ref_scope) = self.scope.as_ref() {
@@ -241,6 +320,12 @@ impl From<&SubRealmBuilder> for ChildRef {
 impl From<&ChildRef> for ChildRef {
     fn from(input: &ChildRef) -> ChildRef {
         input.clone()
+    }
+}
+
+impl Display for ChildRef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.name)
     }
 }
 
@@ -648,7 +733,15 @@ impl Into<ftest::Capability> for EventStream {
         ftest::Capability::EventStream(ftest::EventStream {
             name: Some(self.name),
             as_: self.rename,
-            scope: self.scope.map(|scopes| scopes.into_iter().map(|scope| scope.into()).collect()),
+            scope: self.scope.map(|scopes| {
+                scopes
+                    .into_iter()
+                    .map(|scope| {
+                        let (scope, _) = scope.into_fidl(RefContext::Source);
+                        scope
+                    })
+                    .collect()
+            }),
             path: self.path,
             ..Default::default()
         })
@@ -774,13 +867,14 @@ impl Into<ftest::Capability> for RunnerCapability {
 pub struct Route {
     capabilities: Vec<ftest::Capability>,
     from: Option<Ref>,
-    from_dictionary: Option<String>,
     to: Vec<Ref>,
+    // For compatibility with `from_dictionary` API. This will be removed soon.
+    from_dictionary_placeholder: Option<String>,
 }
 
 impl Route {
     pub fn new() -> Self {
-        Self { capabilities: vec![], from: None, from_dictionary: None, to: vec![] }
+        Self { capabilities: vec![], from: None, to: vec![], from_dictionary_placeholder: None }
     }
 
     /// Adds a capability to this route. Must be called at least once.
@@ -791,34 +885,39 @@ impl Route {
 
     /// Adds a source to this route. Must be called exactly once. Will panic if called a second
     /// time.
-    pub fn from(mut self, from: impl Into<Ref>) -> Self {
-        if self.from.is_some() {
-            panic!("from is already set for this route");
-        }
-        self.from = Some(from.into());
-        self
-    }
-
-    /// Adds a source dictionary to this route. When this option is used, the source given by
-    /// `from` is expected to provide a dictionary whose name is the first path segment of
-    /// `from_dictionary`, and `capability` is expected to exist within this dictionary at
-    /// the `from_dictionary` path.
     ///
-    /// Must be called exactly once. Will panic if called a second time.
-    ///
-    /// This is the RealmBuilder equivalent of cml's `from` when used with a path. That is, if
-    /// `from` contains the path `"parent/a/b"`, that is equivalent to the following construction:
+    /// `Ref::dictionary` with a path may be supplied to route a capability from a dictionary. For
+    /// example:
     ///
     /// ```
     /// Route::new()
-    ///     .from(Ref::parent)
-    ///     .from_dictionary("a/b")
+    ///     .capability(Capability::protocol::<flogger::LogSinkMarker>())
+    ///     .from(Ref::dictionary(Ref::parent(), "diagnostics"))
+    ///     .to(Ref::dictionary(Ref::self_(), "diagnostics"))
     /// ```
-    pub fn from_dictionary(mut self, from_dictionary: impl Into<String>) -> Self {
-        if self.from_dictionary.is_some() {
-            panic!("from_dictionary is already set for this route");
+    pub fn from(mut self, from: impl Into<Ref>) -> Self {
+        let mut from = from.into();
+        if let Some(path) = self.from_dictionary_placeholder.take() {
+            from = Ref::dictionary(from, path);
         }
-        self.from_dictionary = Some(from_dictionary.into());
+        if self.from.is_some() {
+            panic!("from is already set for this route");
+        }
+        self.from = Some(from);
+        self
+    }
+
+    /// DEPRECATED, will be deleted soon. Use from(Ref::dictionary()) instead
+    pub fn from_dictionary(mut self, from_dictionary: impl Into<String>) -> Self {
+        let from_dictionary = from_dictionary.into();
+        let from = match self.from.as_ref() {
+            Some(from) => Some(Ref::dictionary(from.clone(), from_dictionary)),
+            None => {
+                self.from_dictionary_placeholder = Some(from_dictionary);
+                None
+            }
+        };
+        self.from = from;
         self
     }
 
@@ -965,7 +1064,6 @@ pub struct RealmBuilder {
     local_component_runner_builder: LocalComponentRunnerBuilder,
     collection_name: String,
     start: bool,
-    realm_name: String,
 }
 
 impl RealmBuilder {
@@ -1080,13 +1178,13 @@ impl RealmBuilder {
                 realm_proxy,
                 realm_path: vec![],
                 local_component_runner_builder: local_component_runner_builder.clone(),
+                name: realm_name,
             },
             component_realm_proxy,
             builder_proxy,
             local_component_runner_builder,
             collection_name,
             start,
-            realm_name,
         })
     }
 
@@ -1114,7 +1212,7 @@ impl RealmBuilder {
         let factory = ScopedInstanceFactory::new(self.collection_name)
             .with_realm_proxy(self.component_realm_proxy);
         let root = factory
-            .new_named_instance(self.realm_name, root_url)
+            .new_named_instance(self.root_realm.name, root_url)
             .await
             .map_err(Error::FailedToCreateChild)?;
         let realm =
@@ -1342,6 +1440,7 @@ pub struct SubRealmBuilder {
     realm_proxy: ftest::RealmProxy,
     realm_path: Vec<String>,
     local_component_runner_builder: LocalComponentRunnerBuilder,
+    name: String,
 }
 
 impl SubRealmBuilder {
@@ -1355,11 +1454,12 @@ impl SubRealmBuilder {
         self.realm_proxy.add_child_realm(&name, &options.into(), child_realm_server_end).await??;
 
         let mut child_path = self.realm_path.clone();
-        child_path.push(name);
+        child_path.push(name.clone());
         Ok(SubRealmBuilder {
             realm_proxy: child_realm_proxy,
             realm_path: child_path,
             local_component_runner_builder: self.local_component_runner_builder.clone(),
+            name,
         })
     }
 
@@ -1381,11 +1481,12 @@ impl SubRealmBuilder {
             .await??;
 
         let mut child_path = self.realm_path.clone();
-        child_path.push(name);
+        child_path.push(name.clone());
         Ok(SubRealmBuilder {
             realm_proxy: child_realm_proxy,
             realm_path: child_path,
             local_component_runner_builder: self.local_component_runner_builder.clone(),
+            name,
         })
     }
 
@@ -1408,11 +1509,12 @@ impl SubRealmBuilder {
             .await??;
 
         let mut child_path = self.realm_path.clone();
-        child_path.push(name);
+        child_path.push(name.clone());
         Ok(SubRealmBuilder {
             realm_proxy: child_realm_proxy,
             realm_path: child_path,
             local_component_runner_builder: self.local_component_runner_builder.clone(),
+            name,
         })
     }
 
@@ -1546,55 +1648,38 @@ impl SubRealmBuilder {
 
     /// Adds a route between components within the realm
     pub async fn add_route(&self, route: Route) -> Result<(), Error> {
+        let from = route.from.ok_or(Error::MissingSource)?;
+
         #[allow(unused_mut)] // Mutable not needed if not at API level NEXT
         let mut capabilities = route.capabilities;
-        if let Some(source) = &route.from {
-            source.check_scope(&self.realm_path)?;
-        }
         for target in &route.to {
             target.check_scope(&self.realm_path)?;
         }
-        if let Some(from_dictionary) = route.from_dictionary {
-            for c in &mut capabilities {
-                match c {
-                    ftest::Capability::Protocol(c) => {
-                        c.from_dictionary = Some(from_dictionary.clone());
-                    }
-                    ftest::Capability::Directory(c) => {
-                        c.from_dictionary = Some(from_dictionary.clone());
-                    }
-                    ftest::Capability::Service(c) => {
-                        c.from_dictionary = Some(from_dictionary.clone());
-                    }
-                    ftest::Capability::Dictionary(c) => {
-                        c.from_dictionary = Some(from_dictionary.clone());
-                    }
-                    ftest::Capability::Resolver(c) => {
-                        c.from_dictionary = Some(from_dictionary.clone());
-                    }
-                    ftest::Capability::Runner(c) => {
-                        c.from_dictionary = Some(from_dictionary.clone());
-                    }
-                    ftest::Capability::Storage(_)
-                    | ftest::Capability::Config(_)
-                    | ftest::Capability::EventStream(_) => {
-                        return Err(Error::FromDictionaryNotSupported(c.clone()));
-                    }
-                    ftest::CapabilityUnknown!() => {}
-                }
-            }
-        }
+        from.check_scope(&self.realm_path)?;
+        let (route_source, from_dictionary) = from.into_fidl(RefContext::Source);
         if !capabilities.is_empty() {
-            let route_targets = route.to.into_iter().map(Into::into).collect::<Vec<fdecl::Ref>>();
+            let route_targets = route
+                .to
+                .into_iter()
+                .map(|to| {
+                    let (to, path) = to.into_fidl(RefContext::Target);
+                    assert_matches!(path, None);
+                    to
+                })
+                .collect::<Vec<fdecl::Ref>>();
             // If we don't name the future with `let` and then await it in a second step, rustc
             // will decide this function is not Send and then Realm Builder won't be usable on
             // multi-threaded executors. This is caused by the mutable references held in the
             // future generated by `add_route`.
-            let fut = self.realm_proxy.add_route(
+            #[cfg(fuchsia_api_level_at_least = "25")]
+            let fut = self.realm_proxy.add_route_from_dictionary(
                 &capabilities,
-                &route.from.ok_or(Error::MissingSource)?.into(),
+                &route_source,
+                from_dictionary.as_ref().map(|s| s.as_str()).unwrap_or("."),
                 &route_targets,
             );
+            #[cfg(not(fuchsia_api_level_at_least = "25"))]
+            let fut = self.realm_proxy.add_route(&capabilities, &route_source, &route_targets);
             fut.await??;
         }
         Ok(())
@@ -1613,7 +1698,14 @@ impl SubRealmBuilder {
         for target in &to {
             target.check_scope(&self.realm_path)?;
         }
-        let to = to.into_iter().map(Into::into).collect::<Vec<_>>();
+        let to = to
+            .into_iter()
+            .map(|to| {
+                let (to, path) = to.into_fidl(RefContext::Target);
+                assert_matches!(path, None);
+                to
+            })
+            .collect::<Vec<_>>();
 
         let fut = self.realm_proxy.read_only_directory(
             &directory_name.into(),
@@ -1666,6 +1758,12 @@ impl SubRealmBuilder {
             .use_nested_component_manager(component_manager_fragment_only_url)
             .await?
             .map_err(Into::into)
+    }
+}
+
+impl Display for SubRealmBuilder {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.name)
     }
 }
 
@@ -2669,8 +2767,8 @@ mod tests {
                     Capability::protocol_by_name("test2").into(),
                 ],
                 from: Some(Ref::child("a").into()),
-                from_dictionary: None,
                 to: vec![Ref::collection("b").into(), Ref::parent().into(),],
+                from_dictionary_placeholder: None,
             },
         );
     }
@@ -2723,9 +2821,10 @@ mod tests {
         ReplaceRealmDecl {
             component_decl: fdecl::Component,
         },
-        AddRoute {
+        AddRouteFromDictionary {
             capabilities: Vec<ftest::Capability>,
             from: fdecl::Ref,
+            from_dictionary: String,
             to: Vec<fdecl::Ref>,
         },
         ReadOnlyDirectory {
@@ -2896,9 +2995,23 @@ mod tests {
                             .unwrap();
                         responder.send(Ok(())).unwrap();
                     }
-                    ftest::RealmRequest::AddRoute { responder, capabilities, from, to } => {
+                    ftest::RealmRequest::AddRoute { .. } => {
+                        panic!("AddRoute is deprecated");
+                    }
+                    ftest::RealmRequest::AddRouteFromDictionary {
+                        responder,
+                        capabilities,
+                        from,
+                        from_dictionary,
+                        to,
+                    } => {
                         report_requests
-                            .send(ServerRequest::AddRoute { capabilities, from, to })
+                            .send(ServerRequest::AddRouteFromDictionary {
+                                capabilities,
+                                from,
+                                from_dictionary,
+                                to,
+                            })
                             .await
                             .unwrap();
                         responder.send(Ok(())).unwrap();
@@ -3088,11 +3201,7 @@ mod tests {
             .into_iter()
             .map(|t| {
                 let t: Ref = t.into();
-                t
-            })
-            .map(|t| {
-                let t: fdecl::Ref = t.into();
-                t
+                t.into_fidl(RefContext::Target).0
             })
             .collect::<Vec<_>>();
 
@@ -3358,7 +3467,7 @@ mod tests {
         );
         assert_matches!(
             receive_server_requests.next().await,
-            Some(ServerRequest::AddRoute { capabilities, from, to })
+            Some(ServerRequest::AddRouteFromDictionary { capabilities, from, to, from_dictionary })
                 if capabilities == vec![
                     Capability::protocol_by_name("test").into(),
                     Capability::directory("test2").into(),
@@ -3366,8 +3475,9 @@ mod tests {
                     Capability::configuration("test4").into(),
                     Capability::dictionary("test5").into(),
                 ]
-                    && from == Ref::child("a").into()
-                    && to == vec![Ref::parent().into()]
+                    && from == Ref::child("a").into_fidl(RefContext::Source).0
+                    && to == vec![Ref::parent().into_fidl(RefContext::Target).0]
+                    && from_dictionary == "."
         );
         assert_matches!(receive_server_requests.next().now_or_never(), None);
     }
@@ -3392,7 +3502,7 @@ mod tests {
                     .capability(Capability::service_by_name("test3"))
                     .capability(Capability::dictionary("test4"))
                     .from(&child_a)
-                    .to(Ref::dictionary("self/my_dict")),
+                    .to(Ref::dictionary(Ref::self_(), "my_dict")),
             )
             .await
             .unwrap();
@@ -3408,15 +3518,16 @@ mod tests {
         );
         assert_matches!(
             receive_server_requests.next().await,
-            Some(ServerRequest::AddRoute { capabilities, from, to })
+            Some(ServerRequest::AddRouteFromDictionary { capabilities, from, to, from_dictionary })
                 if capabilities == vec![
                     Capability::protocol_by_name("test").into(),
                     Capability::directory("test2").into(),
                     Capability::service_by_name("test3").into(),
                     Capability::dictionary("test4").into(),
                 ]
-                    && from == Ref::child("a").into()
-                    && to == vec![Ref::dictionary("self/my_dict").into()]
+                    && from == Ref::child("a").into_fidl(RefContext::Source).0
+                    && to == vec![Ref::dictionary(Ref::self_(), "my_dict").into_fidl(RefContext::Target).0]
+                    && from_dictionary == "."
         );
         assert_matches!(receive_server_requests.next().now_or_never(), None);
     }
@@ -3433,8 +3544,7 @@ mod tests {
                     .capability(Capability::directory("test2"))
                     .capability(Capability::service_by_name("test3"))
                     .capability(Capability::dictionary("test4"))
-                    .from(&child_a)
-                    .from_dictionary("source/dict")
+                    .from(Ref::dictionary(&child_a, "source/dict"))
                     .to(Ref::parent()),
             )
             .await
@@ -3445,50 +3555,18 @@ mod tests {
             Some(ServerRequest::AddChild { name, url, options })
                 if &name == "a" && &url == "test://a" && options == ChildOptions::new().into()
         );
-
-        let mut expected_capabilities = vec![];
-        expected_capabilities.push({
-            let mut c: ftest::Capability = Capability::protocol_by_name("test").into();
-            if let ftest::Capability::Protocol(ref mut c) = c {
-                c.from_dictionary = Some("source/dict".into());
-            } else {
-                unreachable!();
-            }
-            c
-        });
-        expected_capabilities.push({
-            let mut c: ftest::Capability = Capability::directory("test2").into();
-            if let ftest::Capability::Directory(ref mut c) = c {
-                c.from_dictionary = Some("source/dict".into());
-            } else {
-                unreachable!();
-            }
-            c
-        });
-        expected_capabilities.push({
-            let mut c: ftest::Capability = Capability::service_by_name("test3").into();
-            if let ftest::Capability::Service(ref mut c) = c {
-                c.from_dictionary = Some("source/dict".into());
-            } else {
-                unreachable!();
-            }
-            c
-        });
-        expected_capabilities.push({
-            let mut c: ftest::Capability = Capability::dictionary("test4").into();
-            if let ftest::Capability::Dictionary(ref mut c) = c {
-                c.from_dictionary = Some("source/dict".into());
-            } else {
-                unreachable!();
-            }
-            c
-        });
         assert_matches!(
             receive_server_requests.next().await,
-            Some(ServerRequest::AddRoute { capabilities, from, to })
-                if capabilities == expected_capabilities
-                    && from == Ref::child("a").into()
-                    && to == vec![Ref::parent().into()]
+            Some(ServerRequest::AddRouteFromDictionary { capabilities, from, to, from_dictionary })
+                if capabilities == vec![
+                    Capability::protocol_by_name("test").into(),
+                    Capability::directory("test2").into(),
+                    Capability::service_by_name("test3").into(),
+                    Capability::dictionary("test4").into(),
+                ]
+                    && from == Ref::child("a").into_fidl(RefContext::Source).0
+                    && to == vec![Ref::parent().into_fidl(RefContext::Target).0]
+                    && from_dictionary == "source/dict"
         );
         assert_matches!(receive_server_requests.next().now_or_never(), None);
     }
@@ -3685,13 +3763,14 @@ mod tests {
         );
         assert_matches!(
             receive_sub_realm_requests.next().await,
-            Some(ServerRequest::AddRoute { capabilities, from, to })
+            Some(ServerRequest::AddRouteFromDictionary { capabilities, from, to, from_dictionary })
                 if capabilities == vec![
                     Capability::protocol_by_name("test").into(),
                     Capability::directory("test2").into(),
                 ]
-                    && from == Ref::child("a").into()
-                    && to == vec![Ref::parent().into()]
+                    && from == Ref::child("a").into_fidl(RefContext::Source).0
+                    && to == vec![Ref::parent().into_fidl(RefContext::Target).0]
+                    && from_dictionary == "."
         );
         assert_matches!(receive_sub_realm_requests.next().now_or_never(), None);
         assert_matches!(receive_server_requests.next().now_or_never(), None);

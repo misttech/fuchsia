@@ -51,21 +51,18 @@ std::shared_ptr<fctest::ChildOptions> CreateFidlChildOptions(
 std::shared_ptr<fctest::Capability> CreateFidlProtocolCapability(
     std::string_view name, std::optional<std::string_view> as = std::nullopt,
     std::optional<fcdecl::DependencyType> type = std::nullopt,
-    std::optional<std::string_view> path = std::nullopt,
-    std::optional<std::string_view> from_dictionary = std::nullopt);
+    std::optional<std::string_view> path = std::nullopt);
 
 std::shared_ptr<fctest::Capability> CreateFidlServiceCapability(
     std::string_view name, std::optional<std::string_view> as = std::nullopt,
-    std::optional<std::string_view> path = std::nullopt,
-    std::optional<std::string_view> from_dictionary = std::nullopt);
+    std::optional<std::string_view> path = std::nullopt);
 
 std::shared_ptr<fctest::Capability> CreateFidlDirectoryCapability(
     std::string_view name, std::optional<std::string_view> as = std::nullopt,
     std::optional<fcdecl::DependencyType> type = std::nullopt,
     std::optional<std::string_view> subdir = std::nullopt,
     std::optional<fio::Operations> rights = std::nullopt,
-    std::optional<std::string_view> path = std::nullopt,
-    std::optional<std::string_view> from_dictionary = std::nullopt);
+    std::optional<std::string_view> path = std::nullopt);
 
 }  // namespace tests
 }  // namespace component

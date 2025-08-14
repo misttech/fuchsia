@@ -48,8 +48,7 @@ async fn create_realm() -> RealmBuilder {
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<ArchiveAccessorMarker>())
-                .from_dictionary("diagnostics-accessors")
-                .from(&archivist)
+                .from(Ref::dictionary(&archivist, "diagnostics-accessors"))
                 .to(Ref::parent()),
         )
         .await

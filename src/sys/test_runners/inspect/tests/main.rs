@@ -99,7 +99,7 @@ async fn run_test(
                     "fuchsia.diagnostics.ArchiveAccessor.legacy_metrics",
                 ))
                 .from(&fake_archivist)
-                .to(Ref::dictionary("self/diagnostics-accessors")),
+                .to(Ref::dictionary(Ref::self_(), "diagnostics-accessors")),
         )
         .await?;
     builder

@@ -864,7 +864,7 @@ async fn get_realm(
                 .capability(Capability::protocol_by_name("fuchsia.inspect.InspectSink"))
                 .from(&archivist)
                 .to(test_root.clone())
-                .to(Ref::dictionary(format!("self/{DIAGNOSTICS_DICTIONARY_NAME}")))
+                .to(Ref::dictionary(Ref::self_(), DIAGNOSTICS_DICTIONARY_NAME))
                 .to(&resolver),
         )
         .await?;
@@ -873,7 +873,7 @@ async fn get_realm(
             Route::new()
                 .capability(Capability::protocol_by_name("fuchsia.debugdata.Publisher"))
                 .from(&debug_data)
-                .to(Ref::dictionary(format!("self/{DIAGNOSTICS_DICTIONARY_NAME}"))),
+                .to(Ref::dictionary(Ref::self_(), DIAGNOSTICS_DICTIONARY_NAME)),
         )
         .await?;
 
@@ -896,8 +896,7 @@ async fn get_realm(
                 .capability(Capability::protocol::<
                     fidl_fuchsia_diagnostics_host::ArchiveAccessorMarker,
                 >())
-                .from_dictionary("diagnostics-accessors")
-                .from(&archivist)
+                .from(Ref::dictionary(&archivist, "diagnostics-accessors"))
                 .to(Ref::parent())
                 .to(test_root.clone()),
         )

@@ -235,10 +235,11 @@ TEST_F(RealmBuilderTest, RoutesProtocolFromDictionary) {
       fuchsia::component::decl::Capability::WithDictionary(std::move(dict)));
   realm_builder.AddRoute(Route{.capabilities = {Protocol{test::placeholders::Echo::Name_}},
                                .source = ChildRef{kEchoServer},
-                               .targets = {DictionaryRef{"self/dict"}}});
-  auto protocol = Protocol{.name = test::placeholders::Echo::Name_, .from_dictionary = "dict"};
-  realm_builder.AddRoute(
-      Route{.capabilities = {protocol}, .source = SelfRef(), .targets = {ParentRef()}});
+                               .targets = {DictionaryRef{.base_ref = SelfRef(), .path = "dict"}}});
+  auto protocol = Protocol{.name = test::placeholders::Echo::Name_};
+  realm_builder.AddRoute(Route{.capabilities = {protocol},
+                               .source = DictionaryRef{.base_ref = SelfRef(), .path = "dict"},
+                               .targets = {ParentRef()}});
   auto realm = realm_builder.Build(dispatcher());
   auto echo = realm.component().ConnectSync<test::placeholders::Echo>();
   fidl::StringPtr response;

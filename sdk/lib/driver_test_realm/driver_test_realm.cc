@@ -183,23 +183,21 @@ class DriverTestRealm final : public fidl::Server<fuchsia_driver_test::Realm> {
           case fuchsia_component_test::Capability::Tag::kProtocol: {
             const auto& offer_cap_proto = offer_cap.protocol().value();
             converted.emplace(Protocol{
-                offer_cap_proto.name().value(),
-                offer_cap_proto.as(),
-                offer_cap_proto.type().has_value() ? std::make_optional(static_cast<DependencyType>(
-                                                         offer_cap_proto.type().value()))
-                                                   : std::nullopt,
-                offer_cap_proto.path(),
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-                offer_cap_proto.from_dictionary(),
-#endif
+                .name = offer_cap_proto.name().value(),
+                .as = offer_cap_proto.as(),
+                .type = offer_cap_proto.type().has_value()
+                            ? std::make_optional(
+                                  static_cast<DependencyType>(offer_cap_proto.type().value()))
+                            : std::nullopt,
+                .path = offer_cap_proto.path(),
             });
             break;
           }
           case fuchsia_component_test::Capability::Tag::kConfig: {
             const auto& offer_cap_config = offer_cap.config().value();
             converted.emplace(Config{
-                offer_cap_config.name().value(),
-                offer_cap_config.as(),
+                .name = offer_cap_config.name().value(),
+                .as = offer_cap_config.as(),
             });
             break;
           }
@@ -246,12 +244,9 @@ class DriverTestRealm final : public fidl::Server<fuchsia_driver_test::Realm> {
           case fuchsia_component_test::Capability::Tag::kService: {
             const auto& expose_cap_service = expose_cap.service().value();
             converted.emplace(Service{
-                expose_cap_service.name().value(),
-                expose_cap_service.as(),
-                expose_cap_service.path(),
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-                expose_cap_service.from_dictionary(),
-#endif
+                .name = expose_cap_service.name().value(),
+                .as = expose_cap_service.as(),
+                .path = expose_cap_service.path(),
             });
             break;
           }
