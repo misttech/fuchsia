@@ -1,0 +1,7 @@
+Name: coveragepy
+License: Apache 2.0
+License File: src/LICENSE.txt
+Upstream Git: https://github.com/nedbat/coveragepy
+Description:
+
+coverage supports collecting line coverage information for Python tests.

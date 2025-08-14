@@ -180,6 +180,8 @@ tables_generator_tests_*.txt
 /third_party/ubpf/src
 !/third_party/github.com/google/cppdap
 /third_party/github.com/google/cppdap/src
+!/third_party/pylibs/coverage
+/third_party/pylibs/coverage/src
 !/third_party/pylibs/mypy
 /third_party/pylibs/mypy/src
 !/third_party/pylibs/mypy_extensions

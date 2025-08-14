@@ -9,11 +9,11 @@
     * Rerun the //pylibs/update-pylibs.sh script.
   -->
   <projects>
-    <!-- astroid-3.0.2 -->
+    <!-- astroid-3.0.3 -->
     <project name="third_party/pylibs/astroid"
         path="third_party/pylibs/astroid/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/pylint-dev/astroid"
-        revision="e6dea9cc9e8427f1b0e405dc5de8002a0c3f5239"
+        revision="0375d1a22262b4d7a4327aad5d770b2cd262c4ef"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- autoflake-2.3.1 -->
     <project name="third_party/pylibs/autoflake"
@@ -21,11 +21,17 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/PyCQA/autoflake"
         revision="0544741e2b4a22b472d9d93e37d4ea9153820bb1"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- dill-0.3.7 -->
+    <!-- coverage-7.6.1 -->
+    <project name="third_party/pylibs/coverage"
+        path="third_party/pylibs/coverage/src"
+        remote="https://fuchsia.googlesource.com/third_party/github.com/nedbat/coveragepy"
+        revision="515034cba03fe602c6e0ce874f7921cac539ef9a"
+        gerrithost="https://fuchsia-review.googlesource.com"/>
+    <!-- dill-0.4.0 -->
     <project name="third_party/pylibs/dill"
         path="third_party/pylibs/dill/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/uqfoundation/dill"
-        revision="d33477195e0433b5add1c16e4ea7c54747b2feaa"
+        revision="16eb90b0895fa60c751bc4bdc18dbdf9a6b31a2e"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- isort-5.13.2 -->
     <project name="third_party/pylibs/isort"
@@ -45,11 +51,11 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/python/mypy"
         revision="6b3c41838d8e7a39242b6fd035535e2d76eabfc6"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- mypy_extensions-1.0.0 -->
+    <!-- mypy_extensions-1.1.0 -->
     <project name="third_party/pylibs/mypy_extensions"
         path="third_party/pylibs/mypy_extensions/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/python/mypy_extensions"
-        revision="4161db8f25f87b034a7498bfc575ef2df3e2b3fe"
+        revision="70d9435779df27a522b146f2c5dee06ccacae373"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- platformdirs-4.1.0 -->
     <project name="third_party/pylibs/platformdirs"
@@ -57,11 +63,11 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/platformdirs/platformdirs"
         revision="f772aab1dd35c9ba58e137aaf3bd8efb7d6f8b7b"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- pyflakes-3.2.0 -->
+    <!-- pyflakes-3.4.0 -->
     <project name="third_party/pylibs/pyflakes"
         path="third_party/pylibs/pyflakes/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/PyCQA/pyflakes"
-        revision="5a2f4003cf4bb5cadb2e5e6ebd1905605772d5d0"
+        revision="b66726b3e6f1787fa4221d760b355c615b6f7a92"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- pylint-3.0.2 -->
     <project name="third_party/pylibs/pylint"
@@ -75,17 +81,17 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/pyusb/pyusb"
         revision="b9b8a2b1ecb822af0c0f1d2cf0c0ec69f19765e3"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- tomlkit-0.12.3 -->
+    <!-- tomlkit-0.13.3 -->
     <project name="third_party/pylibs/tomlkit"
         path="third_party/pylibs/tomlkit/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/sdispater/tomlkit"
-        revision="ae271a01875e9b05ca083411a3549dad74594394"
+        revision="8c963db32784623f8fc076ad4ef9b6b01ab0d542"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- typing_extensions-4.9.0 -->
+    <!-- typing_extensions-4.14.1 -->
     <project name="third_party/pylibs/typing_extensions"
         path="third_party/pylibs/typing_extensions/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/python/typing_extensions"
-        revision="fc461d6faf4585849b561f2e4cbb06e9db095307"
+        revision="42027aba3558c9d9133a90bca17f6fecaecc48d8"
         gerrithost="https://fuchsia-review.googlesource.com"/>
   </projects>
 </manifest>
