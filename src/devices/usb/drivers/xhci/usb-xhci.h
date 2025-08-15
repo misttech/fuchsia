@@ -38,7 +38,6 @@
 #include "src/devices/usb/drivers/xhci/xhci-port-state.h"
 #include "src/devices/usb/drivers/xhci/xhci-transfer-ring.h"
 #include "src/devices/usb/drivers/xhci/xhci_config.h"
-#include "src/devices/usb/lib/usb-phy/include/usb-phy/usb-phy.h"
 
 namespace usb_xhci {
 
@@ -419,9 +418,6 @@ class UsbXhci : public fdf::DriverBase,
 
   // Whether or not the HCI instance is currently active
   std::atomic_bool running_ = true;
-
-  // PHY protocol
-  std::optional<usb_phy::UsbPhyClient> phy_;
 
   // Pointer to the test harness when being called from a unit test
   // This is an opaque pointer that is managed by the test.

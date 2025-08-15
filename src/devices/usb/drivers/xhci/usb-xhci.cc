@@ -1688,11 +1688,6 @@ zx::result<> UsbXhci::Start() {
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_result.is_ok() && pdev_result->is_valid()) {
     pdev_ = fdf::PDev{std::move(*pdev_result)};
-    // We need at least a PDEV, but the PHY is optional for devices not implementing OTG.
-    auto phy_result = usb_phy::UsbPhyClient::Create(incoming(), "xhci-phy");
-    if (phy_result.is_ok()) {
-      phy_.emplace(std::move(phy_result.value()));
-    }
   } else {
     // A device doesn't have to have a PDEV. It might use PCI instead.
     if (pdev_result.error_value() != ZX_ERR_NOT_FOUND) {
