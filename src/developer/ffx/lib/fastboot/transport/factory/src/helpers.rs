@@ -27,8 +27,7 @@ where
         true,
         false,
         DiscoverySources::MDNS | DiscoverySources::MANUAL | DiscoverySources::FASTBOOT_FILE,
-    )
-    .await?;
+    )?;
 
     if let Some(event) = device_stream.next().await {
         // This is the first event that matches our filter.

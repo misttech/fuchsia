@@ -214,8 +214,7 @@ async fn list_targets_main(args: SubCommandListTargets) -> Result<(), FunnelErro
         true,
         true,
         DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT,
-    )
-    .await?;
+    )?;
 
     let mut stdout = io::stdout().lock();
 
@@ -248,8 +247,7 @@ async fn funnel_main(args: SubCommandHost) -> Result<(), FunnelError> {
         true,
         false,
         DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT,
-    )
-    .await?;
+    )?;
 
     let mut stdout = io::stdout().lock();
     let targets = discover_target_events(&mut stdout, device_stream, wait_duration).await?;

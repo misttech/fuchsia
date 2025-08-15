@@ -14,7 +14,7 @@ use fidl_fuchsia_developer_ffx::{self as ffx};
 use fidl_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
 use fuchsia_async::TimeoutExt;
 use futures::future::{join_all, LocalBoxFuture};
-use futures::{pin_mut, select, FutureExt, StreamExt};
+use futures::{pin_mut, FutureExt, StreamExt};
 use itertools::Itertools;
 use netext::{IsLocalAddr, ScopedSocketAddr};
 use std::cell::RefCell;
@@ -102,6 +102,16 @@ pub trait TargetResolver {
     /// Sets the discovery sources of the resolver.
     fn with_sources(sources: DiscoverySources) -> Self;
 
+    /// Gets the discovery sources of the resolver.
+    fn sources(&self) -> DiscoverySources;
+
+    /// Gets a stream of handles from the resolver's sources that match the query
+    fn discovery_stream(
+        &self,
+        query: TargetInfoQuery,
+        ctx: EnvironmentContext,
+    ) -> Result<impl futures::Stream<Item = TargetHandle>>;
+
     /// Resolves a `TargetInfoQuery` into a list of matching `TargetHandle`s.
     ///
     /// This method is expected to perform discovery and return all targets
@@ -159,53 +169,88 @@ pub trait TargetResolver {
         if let TargetInfoQuery::Addr(a) = target_spec {
             return Ok(Resolution::from_addr(*a));
         }
-        let mut handles;
 
-        let handles_fut = self.resolve_target_query(target_spec.clone(), env_context).fuse();
-        // We want to query both the manual targets and the discoverable handles concurrently.
-        if let TargetInfoQuery::NodenameOrSerial(ref s) = target_spec {
-            let manual_target_fut = self.try_resolve_manual_target(s, env_context).fuse();
-            pin_mut!(manual_target_fut);
-            pin_mut!(handles_fut);
-            loop {
-                select! {
-                    mtr = manual_target_fut => match mtr {
-                        Err(e) => {
-                            log::debug!("Failed to resolve target {s} as manual target: {e:?}");
-                            // Keep going, waiting for the discovery to complete
-                        }
-                        Ok(Some(res)) => return Ok(res), // We found a manual target, so we're done
-                        _ => (), // Keep going
-                    },
-                    handles_res = handles_fut => {
-                        // We got a response from discovery
-                        handles = handles_res.map_err(|_| FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::FailedDiscovery, target: Some(target_spec.into())})?;
-                        break;
-                    },
-                }
-            }
-        } else {
-            // If the query is not a nodename, we won't even bother with trying to resolve a manual
-            // target.
-            handles = handles_fut.await.map_err(|_| FfxTargetError::OpenTargetError {
+        let handles_stream = self
+            .discovery_stream(target_spec.clone(), env_context.clone())
+            .map_err(|_| FfxTargetError::OpenTargetError {
                 err: ffx::OpenTargetError::FailedDiscovery,
                 target: Some(target_spec.into()),
             })?;
-        };
-        if handles.len() == 0 {
-            return Err(FfxTargetError::OpenTargetError {
+        pin_mut!(handles_stream);
+        let mut discovered: Option<TargetHandle> = None;
+
+        // If the query is not specified, we won't even bother with trying to resolve a manual target.
+        if let TargetInfoQuery::NodenameOrSerial(ref s) = target_spec {
+            // We want to query both the manual targets and the discoverable handles concurrently.
+            let manual_target_fut = self.try_resolve_manual_target(s, env_context).fuse();
+            pin_mut!(manual_target_fut);
+            let next_handle_fut = handles_stream.next().fuse();
+            pin_mut!(next_handle_fut);
+            futures::select! {
+                mtr = &mut manual_target_fut => match mtr {
+                    Err(e) => {
+                        log::debug!("Failed to resolve target {s} as manual target: {e:?}");
+                        // Keep going, waiting for the discovery to complete
+                    }
+                    Ok(Some(res)) => return Ok(res), // We found a manual target, so we're done
+                    _ => (), // No manual target with this name
+                },
+                handle_res = next_handle_fut => {
+                    // We got a response from discovery
+                    if let Some(handle) = handle_res {
+                        discovered = Some(handle);
+                    }
+                },
+            }
+        }
+        // Keep on reading (or start reading, if the target wasn't specified)
+        while let Some(handle) = handles_stream.next().await {
+            // If we've already discovered one, then fail, since our query is ambiguous
+            if discovered.is_some() {
+                return Err(FfxTargetError::OpenTargetError {
+                    err: ffx::OpenTargetError::QueryAmbiguous,
+                    target: Some(target_spec.into()),
+                });
+            } else {
+                discovered = Some(handle);
+            }
+        }
+        match discovered {
+            Some(handle) => Ok(Resolution::from_target_handle(handle).map_err(|_| {
+                // The conversion will fail if it is a fastboot device with no addresses, or
+                // the target is in the wrong state. Roughly, we can consider that to be that
+                // we couldn't find a valid target.
+                FfxTargetError::OpenTargetError {
+                    err: ffx::OpenTargetError::TargetNotFound,
+                    target: Some(target_spec.into()),
+                }
+            })?),
+            None => Err(FfxTargetError::OpenTargetError {
                 err: ffx::OpenTargetError::TargetNotFound,
                 target: Some(target_spec.into()),
-            });
+            }),
         }
-        if handles.len() > 1 {
-            return Err(FfxTargetError::OpenTargetError {
-                err: ffx::OpenTargetError::QueryAmbiguous,
-                target: Some(target_spec.into()),
-            });
+    }
+}
+
+// Used for testing only. Must be pub (and not cfg(test)) so it is available
+// from other crates.
+pub mod mock_stream {
+    use discovery::TargetHandle;
+    // Used in tests
+    #[allow(dead_code)]
+    pub struct MockHandleStream(pub Vec<TargetHandle>);
+    impl futures::Stream for MockHandleStream {
+        type Item = super::TargetHandle;
+
+        // Return each handle once, then return None to close the stream.
+        fn poll_next(
+            mut self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Self::Item>> {
+            let next = if self.0.is_empty() { None } else { Some(self.0.remove(0)) };
+            std::task::Poll::Ready(next)
         }
-        // Unwrap() is okay because we validate that we have at least one entry
-        Ok(Resolution::from_target_handle(handles.remove(0)).unwrap())
     }
 }
 
@@ -214,6 +259,14 @@ mock! {
     TargetResolver{}
     impl TargetResolver for TargetResolver {
         fn with_sources(sources: DiscoverySources) -> Self;
+        fn sources(&self) -> DiscoverySources;
+        #[allow(refining_impl_trait)]
+        fn discovery_stream(
+            &self,
+            query: TargetInfoQuery,
+            ctx: EnvironmentContext,
+        ) -> Result<crate::resolve::mock_stream::MockHandleStream>;
+
         async fn resolve_target_query(
             &self,
             query: TargetInfoQuery,
@@ -243,6 +296,89 @@ pub async fn resolve_target_query(
             | DiscoverySources::FASTBOOT_FILE,
     )
     .await
+}
+
+// Return a Stream of TargetHandles that come from the specified sources,
+// and match the query. We close the stream early if a result "perfectly"
+// matches the query (e.g. an mDNS response with the exact name requested).
+// Otherwise, we wait for CONFIG_LOCAL_DISCOVERY_TIMEOUT before closing the
+// stream.
+// Note that we implement the check for a perfect match here, because all
+// callers (e.g. resolve_target_query(), `ffx target list`'s get_handle_stream())
+// all benefit from this behavior. If we end up with a caller that wants to provide
+// a query but does _not_ want to terminate the stream early, we can refactor this
+// code.
+fn get_discovery_stream_with_sources(
+    query: TargetInfoQuery,
+    sources: DiscoverySources,
+    ctx: EnvironmentContext,
+) -> Result<impl futures::Stream<Item = TargetHandle>> {
+    let query_clone = query.clone();
+    let filter = move |handle: &TargetHandle| {
+        let description = handle_to_description(handle);
+        query_clone.match_description(&description)
+    };
+    let emu_instance_root: PathBuf = ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR)?;
+    let fastboot_file_path: Option<PathBuf> =
+        ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+    let discovery_delay = ctx.get(CONFIG_LOCAL_DISCOVERY_TIMEOUT).unwrap_or(2000);
+    let delay = Duration::from_millis(discovery_delay);
+    let stream = discovery::wait_for_devices(
+        filter,
+        Some(emu_instance_root),
+        fastboot_file_path,
+        true,
+        false,
+        sources,
+    )?;
+
+    // This is tricky. We want the stream to complete immediately if we find
+    // a target whose name/serial matches the query exactly. Otherwise, run
+    // until the timer fires.
+    // We can't use `Stream::take_until()`, because that would require us
+    // to return true for the found item, and false for the _next_ item.
+    // But there may be no next item, so the stream would end up waiting
+    // for the timer anyway. Instead, we create two futures: the timer, and
+    // one that is ready when we find the target we're looking for. Then we
+    // use `Stream::take_until()`, waiting until _either_ of those futures
+    // is ready (by using `race()`). The only remaining tricky part is that
+    // we need to examine each event to determine if it matches what we're
+    // looking for -- so we interpose a closure via `Stream::map()` that
+    // examines each item, before returning them unmodified.
+    // We could stop the race early in case of failure by using the same
+    // technique, I suppose.
+    let timer = fuchsia_async::Timer::new(delay).fuse();
+    let found_target_event = async_utils::event::Event::new();
+    let found_it = found_target_event.wait().fuse();
+    // We can see the same handle multiple times (e.g. if it produces multiple
+    // mDNS events during our timeout period). "seen" lets us dedup those
+    // handles.
+    let seen = Rc::new(RefCell::new(HashSet::new()));
+    Ok(stream
+        .filter_map(move |ev| {
+            let found_ev = found_target_event.clone();
+            let q_clone = query.clone();
+            let seen = seen.clone();
+            async move {
+                match ev {
+                    TargetEvent::Added(ref h) => {
+                        if seen.borrow().contains(h) {
+                            None
+                        } else {
+                            if query_matches_handle(&q_clone, h) {
+                                log::debug!("Signaling early as discovered target matches query");
+                                found_ev.signal();
+                            }
+                            seen.borrow_mut().insert(h.clone());
+                            Some((*h).clone())
+                        }
+                    }
+                    // We've only asked for Added events
+                    _ => unreachable!(),
+                }
+            }
+        })
+        .take_until(futures_lite::future::race(timer, found_it)))
 }
 
 struct RetrievedTargetInfo {
@@ -425,6 +561,8 @@ pub async fn resolve_target_address(
 ) -> Result<Resolution, FfxTargetError> {
     DefaultTargetResolver::default().resolve_target_address(target_spec, ctx).await
 }
+
+#[derive(Clone, Copy)]
 pub struct DefaultTargetResolver {
     sources: DiscoverySources,
 }
@@ -456,85 +594,7 @@ pub async fn get_discovery_stream(
         sources = sources | DiscoverySources::MDNS;
     }
     // Get nodename, in case we're trying to find an exact match
-    DefaultTargetResolver::with_sources(sources).get_discovery_stream(query, ctx).await
-}
-
-impl DefaultTargetResolver {
-    async fn get_discovery_stream(
-        &self,
-        query: TargetInfoQuery,
-        ctx: &EnvironmentContext,
-    ) -> Result<impl futures::Stream<Item = TargetHandle>> {
-        let query_clone = query.clone();
-        let filter = move |handle: &TargetHandle| {
-            let description = handle_to_description(handle);
-            query_clone.match_description(&description)
-        };
-        let emu_instance_root: PathBuf = ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR)?;
-        let fastboot_file_path: Option<PathBuf> =
-            ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
-        let discovery_delay = ctx.get(CONFIG_LOCAL_DISCOVERY_TIMEOUT).unwrap_or(2000);
-        let delay = Duration::from_millis(discovery_delay);
-        let stream = discovery::wait_for_devices(
-            filter,
-            Some(emu_instance_root),
-            fastboot_file_path,
-            true,
-            false,
-            self.sources,
-        )
-        .await?;
-
-        // This is tricky. We want the stream to complete immediately if we find
-        // a target whose name/serial matches the query exactly. Otherwise, run
-        // until the timer fires.
-        // We can't use `Stream::take_until()`, because that would require us
-        // to return true for the found item, and false for the _next_ item.
-        // But there may be no next item, so the stream would end up waiting
-        // for the timer anyway. Instead, we create two futures: the timer, and
-        // one that is ready when we find the target we're looking for. Then we
-        // use `Stream::take_until()`, waiting until _either_ of those futures
-        // is ready (by using `race()`). The only remaining tricky part is that
-        // we need to examine each event to determine if it matches what we're
-        // looking for -- so we interpose a closure via `Stream::map()` that
-        // examines each item, before returning them unmodified.
-        // We could stop the race early in case of failure by using the same
-        // technique, I suppose.
-        let timer = fuchsia_async::Timer::new(delay).fuse();
-        let found_target_event = async_utils::event::Event::new();
-        let found_it = found_target_event.wait().fuse();
-        // We can see the same handle multiple times (e.g. if it produces multiple
-        // mDNS events during our timeout period). "seen" lets us dedup those
-        // handles.
-        let seen = Rc::new(RefCell::new(HashSet::new()));
-        Ok(stream
-            .filter_map(move |ev| {
-                let found_ev = found_target_event.clone();
-                let q_clone = query.clone();
-                let seen = seen.clone();
-                async move {
-                    match ev {
-                        TargetEvent::Added(ref h) => {
-                            if seen.borrow().contains(h) {
-                                None
-                            } else {
-                                if query_matches_handle(&q_clone, h) {
-                                    log::debug!(
-                                        "Signaling early as discovered target matches query"
-                                    );
-                                    found_ev.signal();
-                                }
-                                seen.borrow_mut().insert(h.clone());
-                                Some((*h).clone())
-                            }
-                        }
-                        // We've only asked for Added events
-                        _ => unreachable!(),
-                    }
-                }
-            })
-            .take_until(futures_lite::future::race(timer, found_it)))
-    }
+    get_discovery_stream_with_sources(query, sources, ctx.clone())
 }
 
 fn query_matches_handle(query: &TargetInfoQuery, h: &TargetHandle) -> bool {
@@ -616,13 +676,25 @@ impl TargetResolver for DefaultTargetResolver {
         Self { sources }
     }
 
+    fn sources(&self) -> DiscoverySources {
+        self.sources
+    }
+
+    fn discovery_stream(
+        &self,
+        query: TargetInfoQuery,
+        ctx: EnvironmentContext,
+    ) -> Result<impl futures::Stream<Item = TargetHandle>> {
+        get_discovery_stream_with_sources(query, self.sources, ctx)
+    }
+
     async fn resolve_target_query(
         &self,
         query: TargetInfoQuery,
         ctx: &EnvironmentContext,
     ) -> Result<Vec<TargetHandle>> {
-        let results: Vec<_> = self.get_discovery_stream(query, ctx).await?.collect().await;
-        log::debug!("target events results: {results:?}");
+        let results: Vec<_> = self.discovery_stream(query, ctx.clone())?.collect().await;
+        log::debug!("discovery stream results: {results:?}");
         Ok(results)
     }
 
@@ -920,14 +992,20 @@ mod test {
         }
     }
 
-    #[fuchsia::test]
-    async fn test_can_resolve_target_locally() {
-        let test_env = ffx_config::test_init().await.unwrap();
-        let mut resolver = MockTargetResolver::new();
-        // A network address will resolve to itself
+    fn get_addr_and_spec() -> (SocketAddr, TargetInfoQuery) {
         let addr = "127.0.0.1:123".to_string();
         let addr_spec =
             TargetInfoQuery::Addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 123));
+        let sa = addr.parse::<SocketAddr>().unwrap();
+        (sa, addr_spec)
+    }
+
+    #[fuchsia::test]
+    async fn test_can_resolve_target_locally_addr() {
+        let test_env = ffx_config::test_init().await.unwrap();
+        let resolver = MockTargetResolver::new();
+        // A network address will resolve to itself
+        let (_, addr_spec) = get_addr_and_spec();
         // Note that this will fail if we try to call resolve_target_spec()
         // since we haven't mocked a return value. So it's also checking that no
         // resolution is done.
@@ -936,7 +1014,12 @@ mod test {
                 .await
                 .unwrap();
         assert_eq!(target_spec, addr_spec.clone().into());
+    }
 
+    #[fuchsia::test]
+    async fn test_can_resolve_target_locally_serial() {
+        let test_env = ffx_config::test_init().await.unwrap();
+        let resolver = MockTargetResolver::new();
         // A serial spec will resolve to itself
         let sn = "abcdef".to_string();
         let sn_spec = TargetInfoQuery::Serial(sn.clone());
@@ -948,22 +1031,36 @@ mod test {
                 .await
                 .unwrap();
         assert_eq!(target_spec, sn_spec.clone());
+    }
 
+    #[fuchsia::test]
+    async fn test_can_resolve_target_locally_dns() {
+        let test_env = ffx_config::test_init().await.unwrap();
+        let mut resolver = MockTargetResolver::new();
         // A DNS name will satisfy the resolution request
         let name_spec = TargetInfoQuery::NodenameOrSerial("foobar".to_string());
-        let sa = addr.parse::<SocketAddr>().unwrap();
+        let (sa, addr_spec) = get_addr_and_spec();
         let state = TargetState::Product { addrs: vec![sa.into()], serial: None };
         let th = TargetHandle { node_name: name_spec.clone().into(), state, manual: false };
-        resolver.expect_resolve_target_query().return_once(move |_, _| Ok(vec![th]));
+        resolver.expect_sources().return_once(move || DiscoverySources::all());
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
+        resolver
+            .expect_discovery_stream()
+            .return_once(move |_, _| Ok(mock_stream::MockHandleStream(vec![th])));
         let target_spec =
             locally_resolve_target_spec(&name_spec.clone(), &resolver, &test_env.context)
                 .await
                 .unwrap();
         assert_eq!(target_spec, addr_spec);
+    }
 
-        // A serial number for an existing target will satisfy the resolution request
+    #[fuchsia::test]
+    async fn test_can_resolve_target_locally_serial_name() {
+        let test_env = ffx_config::test_init().await.unwrap();
         let mut resolver = MockTargetResolver::new();
+        // Test with "<serial>", _not_ "serial:<serial>"
+        let sn = "abcdef".to_string();
+        let sn_spec = TargetInfoQuery::Serial(sn.clone());
         let th = TargetHandle {
             node_name: None,
             state: TargetState::Fastboot(discovery::FastbootTargetState {
@@ -972,25 +1069,34 @@ mod test {
             }),
             manual: false,
         };
-        resolver.expect_resolve_target_query().return_once(move |_, _| Ok(vec![th]));
+        resolver.expect_sources().return_once(move || DiscoverySources::all());
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        // Test with "<serial>", _not_ "serial:<serial>"
+        resolver
+            .expect_discovery_stream()
+            .return_once(move |_, _| Ok(mock_stream::MockHandleStream(vec![th])));
         let target_spec =
             locally_resolve_target_spec(&(sn.clone().into()), &resolver, &test_env.context)
                 .await
                 .unwrap();
         assert_eq!(target_spec, sn_spec);
+    }
 
-        // An ambiguous name will result in an error
+    #[fuchsia::test]
+    async fn test_can_resolve_target_locally_ambiguous() {
+        let test_env = ffx_config::test_init().await.unwrap();
         let mut resolver = MockTargetResolver::new();
+        // An ambiguous name will result in an error
         let name_spec = Some("foobar".to_string());
-        let sa = addr.parse::<SocketAddr>().unwrap();
+        let (sa, _) = get_addr_and_spec();
         let ts1 = TargetState::Product { addrs: vec![sa.into(), sa.into()], serial: None };
         let ts2 = TargetState::Product { addrs: vec![sa.into(), sa.into()], serial: None };
         let th1 = TargetHandle { node_name: name_spec.clone(), state: ts1, manual: false };
         let th2 = TargetHandle { node_name: name_spec.clone(), state: ts2, manual: false };
-        resolver.expect_resolve_target_query().return_once(move |_, _| Ok(vec![th1, th2]));
+        resolver.expect_sources().return_once(move || DiscoverySources::all());
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
+        resolver
+            .expect_discovery_stream()
+            .return_once(move |_, _| Ok(mock_stream::MockHandleStream(vec![th1, th2])));
         let target_spec_res =
             locally_resolve_target_spec(&("foo".to_string().into()), &resolver, &test_env.context)
                 .await;

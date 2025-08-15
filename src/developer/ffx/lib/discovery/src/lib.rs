@@ -175,8 +175,7 @@ where
             self.notify_added,
             self.notify_removed,
             self.sources,
-        )
-        .await?;
+        )?;
         Ok(stream)
     }
 }
@@ -198,7 +197,7 @@ impl Default for DiscoverySources {
     }
 }
 
-pub async fn wait_for_devices<F>(
+pub fn wait_for_devices<F>(
     filter: F,
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
@@ -728,8 +727,7 @@ pub mod test {
             true,
             false,
             DiscoverySources::EMULATOR,
-        )
-        .await?;
+        )?;
 
         // Assert that the existing emulator is discovered
         let next =
