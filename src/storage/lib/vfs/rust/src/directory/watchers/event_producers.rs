@@ -8,7 +8,7 @@
 //! of this abstraction.
 
 use fidl_fuchsia_io as fio;
-use static_assertions::assert_eq_size;
+use static_assertions::const_assert;
 
 /// Watcher event producer, that generates buffers filled with watcher events.  Watchers use this
 /// API to obtain buffers that are then sent to the actual watchers.  Every producer may generate
@@ -40,54 +40,14 @@ pub trait EventProducer {
     fn buffer(&mut self) -> Vec<u8>;
 }
 
-/// Common mechanism used by both [`StaticVecEventProducer`] and, later, [`SinkEventProducer`].
-struct CachingEventProducer {
-    mask: fio::WatchMask,
-    event: fio::WatchEvent,
-    current_buffer: Option<Vec<u8>>,
-}
-
-impl CachingEventProducer {
-    fn new(mask: fio::WatchMask, event: fio::WatchEvent) -> Self {
-        CachingEventProducer { mask, event, current_buffer: None }
-    }
-
-    fn mask(&self) -> fio::WatchMask {
-        self.mask
-    }
-
-    fn event(&self) -> fio::WatchEvent {
-        self.event
-    }
-
-    fn prepare_for_next_buffer(&mut self) {
-        self.current_buffer = None;
-    }
-
-    /// Users of [`CachingEventProducer`] should use this method to implement
-    /// [`EventProducer::buffer`].  `fill_buffer` is a callback used to populate the buffer when
-    /// necessary.  It's 'u8' argument is the event ID used by this producer.
-    fn buffer<FillBuffer>(&mut self, fill_buffer: FillBuffer) -> Vec<u8>
-    where
-        FillBuffer: FnOnce(fio::WatchEvent) -> Vec<u8>,
-    {
-        match &self.current_buffer {
-            Some(buf) => buf.clone(),
-            None => {
-                let buf = fill_buffer(self.event);
-                self.current_buffer = Some(buf.clone());
-                buf
-            }
-        }
-    }
-}
-
 /// An [`EventProducer`] that uses a `Vec<String>` with names of the entires to be put into the
 /// watcher event.
 pub struct StaticVecEventProducer {
-    cache: CachingEventProducer,
     names: Vec<String>,
     next: usize,
+    mask: fio::WatchMask,
+    event: fio::WatchEvent,
+    buffer: Vec<u8>,
 }
 
 impl StaticVecEventProducer {
@@ -111,156 +71,11 @@ impl StaticVecEventProducer {
 
     fn new(mask: fio::WatchMask, event: fio::WatchEvent, names: Vec<String>) -> Self {
         debug_assert!(!names.is_empty());
-        Self { cache: CachingEventProducer::new(mask, event), names, next: 0 }
-    }
-
-    // Can not use `&mut self` here as it would "lock" the whole object disallowing the
-    // `self.cache.buffer()` call where we want to pass this method in a closure.
-    fn fill_buffer(event: fio::WatchEvent, next: &mut usize, names: &mut Vec<String>) -> Vec<u8> {
-        let mut buffer = vec![];
-
-        while *next < names.len() {
-            if !encode_name(&mut buffer, event, &names[*next]) {
-                break;
-            }
-            *next += 1;
-        }
-
-        buffer
+        Self { names, next: 0, mask, event, buffer: Vec::new() }
     }
 }
 
 impl EventProducer for StaticVecEventProducer {
-    fn mask(&self) -> fio::WatchMask {
-        self.cache.mask()
-    }
-
-    fn event(&self) -> fio::WatchEvent {
-        self.cache.event()
-    }
-
-    fn prepare_for_next_buffer(&mut self) -> bool {
-        self.cache.prepare_for_next_buffer();
-        self.next < self.names.len()
-    }
-
-    fn buffer(&mut self) -> Vec<u8> {
-        let cache = &mut self.cache;
-        let next = &mut self.next;
-        let names = &mut self.names;
-        cache.buffer(|event| Self::fill_buffer(event, next, names))
-    }
-}
-
-/// An event producer for an event containing only one name.  It is slightly optimized, but
-/// otherwise functionally equivalent to the [`StaticVecEventProducer`] with an array of one
-/// element.
-pub struct SingleNameEventProducer {
-    producer: SingleBufferEventProducer,
-}
-
-impl SingleNameEventProducer {
-    /// Constructs a new [`SingleNameEventProducer`] that will produce an event for one name of
-    /// type `WatchEvent::Deleted`. Deleted refers to the directory the watcher itself is on, and
-    /// therefore statically refers to itself as ".".
-    pub fn deleted() -> Self {
-        Self::new(fio::WatchMask::DELETED, fio::WatchEvent::Deleted, ".")
-    }
-
-    /// Constructs a new [`SingleNameEventProducer`] that will produce an event for one name of
-    /// type `WatchEvent::Added`.
-    pub fn added(name: &str) -> Self {
-        Self::new(fio::WatchMask::ADDED, fio::WatchEvent::Added, name)
-    }
-
-    /// Constructs a new [`SingleNameEventProducer`] that will produce an event for one name of
-    /// type `WatchEvent::Removed`.
-    pub fn removed(name: &str) -> Self {
-        Self::new(fio::WatchMask::REMOVED, fio::WatchEvent::Removed, name)
-    }
-
-    /// Constructs a new [`SingleNameEventProducer`] that will produce an event for one name of
-    /// type `WatchEvent::Existing`.
-    pub fn existing(name: &str) -> Self {
-        Self::new(fio::WatchMask::EXISTING, fio::WatchEvent::Existing, name)
-    }
-
-    /// Constructs a new [`SingleNameEventProducer`] that will produce an `WatchEvent::Idle` event.
-    pub fn idle() -> Self {
-        Self::new(fio::WatchMask::IDLE, fio::WatchEvent::Idle, "")
-    }
-
-    fn new(mask: fio::WatchMask, event: fio::WatchEvent, name: &str) -> Self {
-        let mut buffer = vec![];
-        encode_name(&mut buffer, event, name);
-
-        Self { producer: SingleBufferEventProducer::new(mask, event, buffer) }
-    }
-}
-
-impl EventProducer for SingleNameEventProducer {
-    fn mask(&self) -> fio::WatchMask {
-        self.producer.mask()
-    }
-
-    fn event(&self) -> fio::WatchEvent {
-        self.producer.event()
-    }
-
-    fn prepare_for_next_buffer(&mut self) -> bool {
-        self.producer.prepare_for_next_buffer()
-    }
-
-    fn buffer(&mut self) -> Vec<u8> {
-        self.producer.buffer()
-    }
-}
-
-pub(crate) fn encode_name(buffer: &mut Vec<u8>, event: fio::WatchEvent, name: &str) -> bool {
-    if buffer.len() + (2 + name.len()) > fio::MAX_BUF as usize {
-        return false;
-    }
-
-    // We are going to encode the file name length as u8.
-    debug_assert!(u8::max_value() as u64 >= fio::MAX_NAME_LENGTH);
-
-    buffer.push(event.into_primitive());
-    buffer.push(name.len() as u8);
-    buffer.extend_from_slice(name.as_bytes());
-    true
-}
-
-enum SingleBufferEventProducerState {
-    Start,
-    FirstEvent,
-    Done,
-}
-
-/// An event producer for an event that has one buffer of data.
-pub struct SingleBufferEventProducer {
-    mask: fio::WatchMask,
-    event: fio::WatchEvent,
-    buffer: Vec<u8>,
-    state: SingleBufferEventProducerState,
-}
-
-impl SingleBufferEventProducer {
-    /// Constructs a new [`SingleBufferEventProducer`] that will produce an event for one name of
-    /// type `WatchEvent::Existing`.
-    pub fn existing(buffer: Vec<u8>) -> Self {
-        assert_eq_size!(usize, u64);
-        debug_assert!(buffer.len() as u64 <= fio::MAX_BUF);
-        Self::new(fio::WatchMask::EXISTING, fio::WatchEvent::Existing, buffer)
-    }
-
-    fn new(mask: fio::WatchMask, event: fio::WatchEvent, buffer: Vec<u8>) -> Self {
-        assert_eq_size!(usize, u64);
-        debug_assert!(buffer.len() as u64 <= fio::MAX_BUF);
-        Self { mask, event, buffer, state: SingleBufferEventProducerState::Start }
-    }
-}
-
-impl EventProducer for SingleBufferEventProducer {
     fn mask(&self) -> fio::WatchMask {
         self.mask
     }
@@ -270,20 +85,103 @@ impl EventProducer for SingleBufferEventProducer {
     }
 
     fn prepare_for_next_buffer(&mut self) -> bool {
-        match self.state {
-            SingleBufferEventProducerState::Start => {
-                self.state = SingleBufferEventProducerState::FirstEvent;
-                true
-            }
-            SingleBufferEventProducerState::FirstEvent => {
-                self.state = SingleBufferEventProducerState::Done;
-                false
-            }
-            SingleBufferEventProducerState::Done => false,
-        }
+        self.buffer.clear();
+        self.next < self.names.len()
     }
 
     fn buffer(&mut self) -> Vec<u8> {
+        if self.buffer.is_empty() {
+            while self.next < self.names.len() {
+                if !encode_name(&mut self.buffer, self.event, &self.names[self.next]) {
+                    break;
+                }
+                self.next += 1;
+            }
+        }
         self.buffer.clone()
     }
+}
+
+/// An event producer for an event containing only one name.
+pub struct SingleNameEventProducer<'a> {
+    name: &'a str,
+    buffer: Vec<u8>,
+    mask: fio::WatchMask,
+    event: fio::WatchEvent,
+}
+
+impl<'a> SingleNameEventProducer<'a> {
+    /// Constructs a new [`SingleNameEventProducer`] that will produce an event for one name of
+    /// type `WatchEvent::Deleted`. Deleted refers to the directory the watcher itself is on, and
+    /// therefore statically refers to itself as ".".
+    pub fn deleted() -> Self {
+        Self::new(fio::WatchMask::DELETED, fio::WatchEvent::Deleted, ".")
+    }
+
+    /// Constructs a new [`SingleNameEventProducer`] that will produce an event for one name of
+    /// type `WatchEvent::Added`.
+    pub fn added(name: &'a str) -> Self {
+        Self::new(fio::WatchMask::ADDED, fio::WatchEvent::Added, name)
+    }
+
+    /// Constructs a new [`SingleNameEventProducer`] that will produce an event for one name of
+    /// type `WatchEvent::Removed`.
+    pub fn removed(name: &'a str) -> Self {
+        Self::new(fio::WatchMask::REMOVED, fio::WatchEvent::Removed, name)
+    }
+
+    /// Constructs a new [`SingleNameEventProducer`] that will produce an event for one name of
+    /// type `WatchEvent::Existing`.
+    pub fn existing(name: &'a str) -> Self {
+        Self::new(fio::WatchMask::EXISTING, fio::WatchEvent::Existing, name)
+    }
+
+    /// Constructs a new [`SingleNameEventProducer`] that will produce an `WatchEvent::Idle` event.
+    pub fn idle() -> Self {
+        Self::new(fio::WatchMask::IDLE, fio::WatchEvent::Idle, "")
+    }
+
+    fn new(mask: fio::WatchMask, event: fio::WatchEvent, name: &'a str) -> Self {
+        Self { name, buffer: Vec::new(), mask, event }
+    }
+}
+
+impl EventProducer for SingleNameEventProducer<'_> {
+    fn mask(&self) -> fio::WatchMask {
+        self.mask
+    }
+
+    fn event(&self) -> fio::WatchEvent {
+        self.event
+    }
+
+    fn prepare_for_next_buffer(&mut self) -> bool {
+        // The buffer is populated the first time `EventProducer::buffer` is called. If the buffer
+        // is empty then we are able to produce another buffer. If the buffer is already populated
+        // then this event has already been sent.
+        self.buffer.is_empty()
+    }
+
+    fn buffer(&mut self) -> Vec<u8> {
+        if self.buffer.is_empty() {
+            encode_name(&mut self.buffer, self.event, self.name);
+        }
+        self.buffer.clone()
+    }
+}
+
+fn encode_name(buffer: &mut Vec<u8>, event: fio::WatchEvent, name: &str) -> bool {
+    let event_size = 2 + name.len();
+    if buffer.len() + event_size > fio::MAX_BUF as usize {
+        return false;
+    }
+
+    // We are going to encode the file name length as u8.
+    const_assert!(u8::max_value() as u64 >= fio::MAX_NAME_LENGTH);
+
+    buffer.reserve(event_size);
+    buffer.push(event.into_primitive());
+    buffer.push(name.len() as u8);
+    buffer.extend_from_slice(name.as_bytes());
+    true
 }
