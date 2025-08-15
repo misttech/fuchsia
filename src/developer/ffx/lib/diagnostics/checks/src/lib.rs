@@ -16,6 +16,7 @@ use ffx_target::{
     Connection, DefaultTargetResolver, TargetConnection, TargetConnectionError, TargetConnector,
     TargetResolver,
 };
+use std::path::PathBuf;
 use std::time::Duration;
 use termion::{color, style};
 
@@ -251,16 +252,17 @@ where
         notifier: &mut Self::Notifier,
     ) -> anyhow::Result<()> {
         let sources = sources_from_query(&input);
-        let sources =
+        let sources_string =
             sources.iter_names().map(|(n, _)| n.to_owned()).collect::<Vec<_>>().join(", ");
         let nodename = match input {
             TargetInfoQuery::NodenameOrSerial(v) => Some(v),
             _ => None,
         };
         if let Some(nodename) = nodename {
-            notifier.info(format!("Attempting to find device \"{nodename}\" via {sources}..."))
+            notifier
+                .info(format!("Attempting to find device \"{nodename}\" via {sources_string}..."))
         } else {
-            notifier.info(format!("Attempting to find device via {sources}..."))
+            notifier.info(format!("Attempting to find device via {sources_string}..."))
         }
     }
 
@@ -285,7 +287,7 @@ where
     fn check<'a>(
         &'a mut self,
         input: Self::Input,
-        _notifier: &'a mut Self::Notifier,
+        notifier: &'a mut Self::Notifier,
     ) -> CheckFut<'a, Self::Output> {
         // This step, on account of it being the most broad, will have the most potential ways to
         // fail, meaning that the solution space is quite wide. If this fails and there are no
@@ -297,14 +299,24 @@ where
         // example: if the device is an IP address, we should not attempt to resolve the device via
         // mDNS, as we already have the IP address.
         Box::pin(async {
+            let sources = sources_from_query(&input);
+            if sources.contains(DiscoverySources::EMULATOR) {
+                // This isn't an option as it's intended to be part of the default config.
+                let emu_instance_root: PathBuf =
+                    self.ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR)?;
+                notifier
+                    .info(format!("Searching for emulators at {}", emu_instance_root.display()))?;
+            }
             // There should be some kind of error here if the device resolves to an empty array.
-            let resolver = R::with_sources(sources_from_query(&input));
+            let resolver = R::with_sources(sources);
             let mut targets = resolver.resolve_target_query(input, self.ctx).await?;
             if targets.is_empty() {
                 return Err(anyhow::anyhow!("Unable to find any devices"));
             }
             if targets.len() > 1 {
-                return Err(anyhow::anyhow!("Too many targets. You may need to be more specific in the device you are checking. Found: {targets:?}"));
+                return Err(anyhow::anyhow!(
+                    "Too many targets. You may need to be more specific in the device you are checking. Found: {targets:?}"
+                ));
             }
             Ok(targets.pop().unwrap())
         })
@@ -528,7 +540,9 @@ where
                         ..
                     }) = input.state
                     else {
-                        panic!("input in incorrect state. Expecting Fastboot state instead found: {input:?}");
+                        panic!(
+                            "input in incorrect state. Expecting Fastboot state instead found: {input:?}"
+                        );
                     };
                     FastbootConnectionKind::Usb(serial_number)
                 }
@@ -557,7 +571,7 @@ mod test {
     use fdomain_client::fidl::DiscoverableProtocolMarker;
     use fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker;
     use ffx_fastboot_connection_factory::test::setup_connection_factory;
-    use ffx_target::{mock_stream, FDomainConnection, Resolution};
+    use ffx_target::{FDomainConnection, Resolution, mock_stream};
     use fidl_fuchsia_developer_remotecontrol as rcs;
     use fidl_fuchsia_hwinfo::{ProductInfo, ProductMarker, ProductRequest};
     use fuchsia_async::Task;
