@@ -48,6 +48,10 @@ closed protocol ExpectBusTest {
     /// ensure that `ExpectControl()` has arrived before calling
     /// `Control()`.
     strict Sync() -> ();
+
+    strict Connect(struct {
+        connect bool;
+    }) -> ();
 };
 
 service BusTestService {

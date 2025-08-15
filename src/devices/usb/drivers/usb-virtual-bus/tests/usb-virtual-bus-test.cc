@@ -122,6 +122,7 @@ TEST_F(VirtualBusTest, ControlOutTransfer) {
     EXPECT_TRUE(result.is_ok());
 
     runtime().Quit();
+    runtime().ResetQuit();
   });
   runtime().Run();
 
@@ -150,6 +151,7 @@ TEST_F(VirtualBusTest, ControlInTransfer) {
     EXPECT_TRUE(result.is_ok());
 
     runtime().Quit();
+    runtime().ResetQuit();
   });
   runtime().Run();
 
@@ -178,6 +180,7 @@ TEST_F(VirtualBusTest, OutTransfer) {
     EXPECT_TRUE(result.is_ok());
 
     runtime().Quit();
+    runtime().ResetQuit();
   });
   runtime().Run();
 
@@ -209,6 +212,7 @@ TEST_F(VirtualBusTest, InTransfer) {
     EXPECT_TRUE(result.is_ok());
 
     runtime().Quit();
+    runtime().ResetQuit();
   });
   runtime().Run();
 
@@ -218,6 +222,23 @@ TEST_F(VirtualBusTest, InTransfer) {
   for (size_t i = 0; i < kExpectedDataSize; i++) {
     EXPECT_EQ(result->data()[i], static_cast<uint8_t>(i));
   }
+  runtime().Run();
+}
+
+TEST_F(VirtualBusTest, Reconnect) {
+  expect_test_->Connect(false).ThenExactlyOnce([this](auto& result) {
+    EXPECT_TRUE(result.is_ok());
+
+    runtime().Quit();
+    runtime().ResetQuit();
+  });
+  runtime().Run();
+
+  expect_test_->Connect(true).ThenExactlyOnce([this](auto& result) {
+    EXPECT_TRUE(result.is_ok());
+
+    runtime().Quit();
+  });
   runtime().Run();
 }
 

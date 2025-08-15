@@ -88,6 +88,7 @@ class TestFunction : public fdf::DriverBase,
   void ExpectOut(ExpectOutCompleter::Sync& completer) override;
   void ExpectIn(ExpectInRequest& request, ExpectInCompleter::Sync& completer) override;
   void Sync(SyncCompleter::Sync& completer) override { completer.Reply(); }
+  void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override;
 
   virtual void QueueOut() = 0;
   virtual void QueueIn(std::vector<uint8_t> data) = 0;

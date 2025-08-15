@@ -41,6 +41,12 @@ void TestFunction::ExpectIn(ExpectInRequest& request, ExpectInCompleter::Sync& c
   QueueIn(std::move(request.data()));
 }
 
+void TestFunction::Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) {
+  request.connect() ? function_.SetInterface(this, &usb_function_interface_protocol_ops_)
+                    : function_.SetInterface(nullptr, nullptr);
+  completer.Reply();
+}
+
 size_t TestFunction::UsbFunctionInterfaceGetDescriptorsSize() { return sizeof(descriptor_); }
 
 void TestFunction::UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer,
