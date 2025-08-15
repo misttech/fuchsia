@@ -143,7 +143,7 @@ mod test {
     #[test]
     fn wait_for_event() -> Result<(), zx::Status> {
         let port = zx::Port::create_with_opts(zx::PortOptions::BIND_TO_INTERRUPT);
-        let mut exec = crate::TestExecutor::new_with_port(port);
+        let mut exec = crate::TestExecutor::builder().port(port).build();
         let mut deliver_events =
             || assert!(exec.run_until_stalled(&mut pending::<()>()).is_pending());
 

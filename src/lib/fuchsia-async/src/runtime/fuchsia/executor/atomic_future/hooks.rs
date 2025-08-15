@@ -2,22 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::instrument::Hooks;
+
 use super::{AtomicFutureHandle, Meta, VTable};
 use fuchsia_sync::Mutex;
 use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::task::{Context, Poll};
-
-pub trait Hooks {
-    /// Called when the task has completed.
-    fn task_completed(&mut self);
-
-    /// Called when the task is about to be polled.
-    fn task_poll_start(&mut self);
-
-    /// Called when the task has finished being polled.
-    fn task_poll_end(&mut self);
-}
 
 /// We don't want to pay a cost if there are no hooks, so we store a mapping from task ID to
 /// HooksWrapper in the executor.

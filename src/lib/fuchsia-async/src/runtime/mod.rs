@@ -7,6 +7,9 @@ mod fuchsia;
 #[cfg(target_os = "fuchsia")]
 use self::fuchsia as implementation;
 
+#[cfg(target_os = "fuchsia")]
+pub mod instrument;
+
 #[cfg(not(target_os = "fuchsia"))]
 mod portable;
 #[cfg(not(target_os = "fuchsia"))]

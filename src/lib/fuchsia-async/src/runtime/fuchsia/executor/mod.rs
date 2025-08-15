@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 /// A future which can be used by multiple threads at once.
-mod atomic_future;
+pub(crate) mod atomic_future;
 mod common;
 mod local;
 mod packets;

@@ -10,6 +10,7 @@ use super::packets::{
 };
 use super::scope::ScopeHandle;
 use super::time::{BootInstant, MonotonicInstant};
+use crate::runtime::instrument::TaskInstrument;
 use crossbeam::queue::SegQueue;
 use fuchsia_sync::Mutex;
 use zx::BootDuration;
@@ -109,12 +110,18 @@ pub(crate) struct Executor {
     // Data that belongs to the user that can be accessed via EHandle::local(). See
     // `TestExecutor::poll_until_stalled`.
     pub(super) owner_data: Mutex<Option<Box<dyn Any + Send>>>,
+    pub(super) instrument: Option<Arc<dyn TaskInstrument>>,
     pub(super) hooks_map: HooksMap,
 }
 
 impl Executor {
-    pub fn new(time: ExecutorTime, is_local: bool, num_threads: u8) -> Self {
-        Self::new_with_port(time, is_local, num_threads, zx::Port::create())
+    pub fn new(
+        time: ExecutorTime,
+        is_local: bool,
+        num_threads: u8,
+        instrument: Option<Arc<dyn TaskInstrument>>,
+    ) -> Self {
+        Self::new_with_port(time, is_local, num_threads, zx::Port::create(), instrument)
     }
 
     pub fn new_with_port(
@@ -122,6 +129,7 @@ impl Executor {
         is_local: bool,
         num_threads: u8,
         port: zx::Port,
+        instrument: Option<Arc<dyn TaskInstrument>>,
     ) -> Self {
         #[cfg(test)]
         ACTIVE_EXECUTORS.fetch_add(1, Ordering::Relaxed);
@@ -146,6 +154,7 @@ impl Executor {
             num_threads,
             polled: AtomicU64::new(0),
             owner_data: Mutex::new(None),
+            instrument,
             hooks_map: HooksMap::default(),
         }
     }
@@ -659,6 +668,15 @@ impl EHandle {
             .expect("Fuchsia Executor must be created first");
 
         EHandle { root_scope }
+    }
+
+    /// Set the fake time to a given value.
+    ///
+    /// # Panics
+    ///
+    /// If the executor was not created with fake time.
+    pub fn set_fake_time(&self, t: MonotonicInstant) {
+        self.inner().set_fake_time(t)
     }
 
     pub(super) fn rm_local() {

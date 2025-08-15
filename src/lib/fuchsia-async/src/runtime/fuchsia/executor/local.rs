@@ -8,6 +8,7 @@ use super::scope::ScopeHandle;
 use super::time::{BootInstant, MonotonicInstant};
 use zx::BootDuration;
 
+use crate::runtime::instrument::TaskInstrument;
 use futures::future::{self, Either};
 use futures::task::AtomicWaker;
 use std::fmt;
@@ -48,16 +49,21 @@ impl Default for LocalExecutor {
 impl LocalExecutor {
     /// Create a new single-threaded executor running with actual time.
     pub fn new() -> Self {
-        Self::new_with_port(zx::Port::create())
+        Self::new_with_port(zx::Port::create(), None)
     }
 
-    /// Create a new single-threaded executor running with actual time, with a port.
-    pub(crate) fn new_with_port(port: zx::Port) -> Self {
+    /// Create a new single-threaded executor running with actual time, with a port
+    /// and instrumentation.
+    pub(crate) fn new_with_port(
+        port: zx::Port,
+        instrument: Option<Arc<dyn TaskInstrument>>,
+    ) -> Self {
         let inner = Arc::new(Executor::new_with_port(
             ExecutorTime::RealTime,
             /* is_local */ true,
             /* num_threads */ 1,
             port,
+            instrument,
         ));
         let root_scope = ScopeHandle::root(inner);
         Executor::set_local(root_scope.clone());
@@ -145,6 +151,7 @@ impl Drop for LocalExecutor {
 #[derive(Default)]
 pub struct LocalExecutorBuilder {
     port: Option<zx::Port>,
+    instrument: Option<Arc<dyn TaskInstrument>>,
 }
 
 impl LocalExecutorBuilder {
@@ -159,10 +166,16 @@ impl LocalExecutorBuilder {
         self
     }
 
+    /// Sets the instrumentation hook.
+    pub fn instrument(mut self, instrument: Option<Arc<dyn TaskInstrument>>) -> Self {
+        self.instrument = instrument;
+        self
+    }
+
     /// Builds the `LocalExecutor`, consuming this `LocalExecutorBuilder`.
     pub fn build(self) -> LocalExecutor {
         match self.port {
-            Some(port) => LocalExecutor::new_with_port(port),
+            Some(port) => LocalExecutor::new_with_port(port, self.instrument),
             None => LocalExecutor::new(),
         }
     }
@@ -186,32 +199,22 @@ impl Default for TestExecutor {
 impl TestExecutor {
     /// Create a new executor for testing.
     pub fn new() -> Self {
-        Self { local: LocalExecutor::new() }
+        Self::builder().build()
     }
 
-    /// Create a new executor for testing from a port.
-    pub(crate) fn new_with_port(port: zx::Port) -> Self {
-        Self { local: LocalExecutor::new_with_port(port) }
+    /// Create a new single-threaded executor running with fake time.
+    pub fn new_with_fake_time() -> Self {
+        Self::builder().fake_time(true).build()
+    }
+
+    /// Creates a new builder for a `TestExecutor`.
+    pub fn builder() -> TestExecutorBuilder {
+        TestExecutorBuilder::new()
     }
 
     /// Get a reference to the Fuchsia `zx::Port` being used to listen for events.
     pub fn port(&self) -> &zx::Port {
         self.local.port()
-    }
-
-    /// Create a new single-threaded executor running with fake time.
-    pub fn new_with_fake_time() -> Self {
-        let inner = Arc::new(Executor::new(
-            ExecutorTime::FakeTime {
-                mono_reading_ns: AtomicI64::new(zx::MonotonicInstant::INFINITE_PAST.into_nanos()),
-                mono_to_boot_offset_ns: AtomicI64::new(0),
-            },
-            /* is_local */ true,
-            /* num_threads */ 1,
-        ));
-        let root_scope = ScopeHandle::root(inner);
-        Executor::set_local(root_scope.clone());
-        Self { local: LocalExecutor { ehandle: EHandle { root_scope } } }
     }
 
     /// Return the current time according to the executor.
@@ -437,6 +440,7 @@ impl TestExecutor {
 pub struct TestExecutorBuilder {
     port: Option<zx::Port>,
     fake_time: bool,
+    instrument: Option<Arc<dyn TaskInstrument>>,
 }
 
 impl TestExecutorBuilder {
@@ -445,33 +449,46 @@ impl TestExecutorBuilder {
         Self::default()
     }
 
-    /// Sets the port for the executor. Only supported
-    /// when fake time isn't also used.
+    /// Sets the port for the executor.
     pub fn port(mut self, port: zx::Port) -> Self {
         self.port = Some(port);
         self
     }
 
     /// Sets whether the executor should use fake time.
-    /// Only supported when a port isn't also used.
     pub fn fake_time(mut self, fake_time: bool) -> Self {
         self.fake_time = fake_time;
         self
     }
 
+    /// Sets the task instrumentation.
+    pub fn instrument(mut self, instrument: Arc<dyn TaskInstrument>) -> Self {
+        self.instrument = Some(instrument);
+        self
+    }
+
     /// Builds the `TestExecutor`, consuming this `TestExecutorBuilder`.
     pub fn build(self) -> TestExecutor {
-        if self.fake_time {
-            if self.port.is_some() {
-                panic!("Creating an executor with both fake time and a port isn't supported.");
+        let time = if self.fake_time {
+            ExecutorTime::FakeTime {
+                mono_reading_ns: AtomicI64::new(zx::MonotonicInstant::INFINITE_PAST.into_nanos()),
+                mono_to_boot_offset_ns: AtomicI64::new(0),
             }
-            TestExecutor::new_with_fake_time()
         } else {
-            match self.port {
-                Some(port) => TestExecutor::new_with_port(port),
-                None => TestExecutor::new(),
-            }
-        }
+            ExecutorTime::RealTime
+        };
+        let port = self.port.unwrap_or_else(zx::Port::create);
+        let inner = Arc::new(Executor::new_with_port(
+            time,
+            /* is_local */ true,
+            /* num_threads */ 1,
+            port,
+            self.instrument,
+        ));
+        let root_scope = ScopeHandle::root(inner);
+        Executor::set_local(root_scope.clone());
+        let local = LocalExecutor { ehandle: EHandle { root_scope } };
+        TestExecutor { local }
     }
 }
 

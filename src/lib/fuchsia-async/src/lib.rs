@@ -52,6 +52,9 @@ pub use self::handle::{
     },
 };
 
+#[cfg(target_os = "fuchsia")]
+pub use runtime::instrument;
+
 /// An emulation library for Zircon handles on non-Fuchsia platforms.
 #[cfg(not(target_os = "fuchsia"))]
 pub mod emulated_handle {

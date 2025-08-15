@@ -394,6 +394,11 @@ impl ScopeHandle {
         self.new_child_inner(String::new())
     }
 
+    /// Returns a reference to the instrument data.
+    pub fn instrument_data(&self) -> Option<&(dyn Any + Send + Sync)> {
+        self.inner.instrument_data.as_deref()
+    }
+
     /// Create a child scope.
     pub fn new_child_with_name(&self, name: impl Into<String>) -> Scope {
         self.new_child_inner(name.into())
@@ -409,6 +414,13 @@ impl ScopeHandle {
                     &state,
                     JoinResults::default().into(),
                 )),
+
+                instrument_data: self
+                    .inner
+                    .executor
+                    .instrument
+                    .as_ref()
+                    .map(|value| value.scope_created(&name, Some(self))),
                 name,
             }),
         };
@@ -472,9 +484,13 @@ impl ScopeHandle {
     pub(super) fn root(executor: Arc<Executor>) -> ScopeHandle {
         ScopeHandle {
             inner: Arc::new(ScopeInner {
-                executor,
                 state: Condition::new(ScopeState::new_root(JoinResults::default().into())),
                 name: "root".to_string(),
+                instrument_data: executor
+                    .instrument
+                    .as_ref()
+                    .map(|value| value.scope_created("root", None)),
+                executor,
             }),
         }
     }
@@ -573,11 +589,12 @@ impl ScopeHandle {
     where
         Fut::Output: Send,
     {
-        AtomicFutureHandle::new(
-            Some(self.clone()),
-            id.unwrap_or_else(|| self.executor().next_task_id()),
-            fut,
-        )
+        let id = id.unwrap_or_else(|| self.executor().next_task_id());
+        let mut task = AtomicFutureHandle::new(Some(self.clone()), id, fut);
+        if let Some(instrument) = &self.executor().instrument {
+            instrument.task_created(self, &mut task);
+        }
+        task
     }
 
     /// Creates a new task associated with this scope.  This does not spawn it on the executor.
@@ -595,14 +612,15 @@ impl ScopeHandle {
             );
         }
 
+        let id = id.unwrap_or_else(|| self.executor().next_task_id());
         // SAFETY: We've confirmed that the futures here will never be used across multiple threads,
         // so the Send requirements that `new_local` requires should be met.
         unsafe {
-            AtomicFutureHandle::new_local(
-                Some(self.clone()),
-                id.unwrap_or_else(|| self.executor().next_task_id()),
-                fut,
-            )
+            let mut task = AtomicFutureHandle::new_local(Some(self.clone()), id, fut);
+            if let Some(instrument) = &self.executor().instrument {
+                instrument.task_created(self, &mut task);
+            }
+            task
         }
     }
 }
@@ -664,6 +682,11 @@ impl<R: Send + 'static> ScopeStream<R> {
                         &state,
                         Box::new(ResultsStream { inner: Arc::clone(&stream) }),
                     )),
+                    instrument_data: handle
+                        .executor()
+                        .instrument
+                        .as_ref()
+                        .map(|value| value.scope_created(&name, Some(handle))),
                     name,
                 }),
             };
@@ -1210,6 +1233,7 @@ struct ScopeInner {
     executor: Arc<Executor>,
     state: Condition<ScopeState>,
     name: String,
+    instrument_data: Option<Box<dyn Any + Send + Sync>>,
 }
 
 impl Drop for ScopeInner {

@@ -6,6 +6,7 @@ use super::common::{Executor, ExecutorTime, MAIN_TASK_ID};
 use super::scope::ScopeHandle;
 use fuchsia_sync::{Condvar, Mutex};
 
+use crate::runtime::instrument::TaskInstrument;
 use futures::FutureExt;
 use std::future::Future;
 use std::sync::atomic::Ordering;
@@ -45,9 +46,14 @@ impl SendExecutor {
     fn new_inner(
         num_threads: u8,
         worker_init: Option<Arc<dyn Fn() + Send + Sync + 'static>>,
+        instrument: Option<Arc<dyn TaskInstrument>>,
     ) -> Self {
-        let inner =
-            Arc::new(Executor::new(ExecutorTime::RealTime, /* is_local */ false, num_threads));
+        let inner = Arc::new(Executor::new(
+            ExecutorTime::RealTime,
+            /* is_local */ false,
+            num_threads,
+            instrument,
+        ));
         let root_scope = ScopeHandle::root(inner.clone());
         Executor::set_local(root_scope.clone());
         Self { inner, root_scope, threads: Vec::default(), worker_init }
@@ -182,6 +188,7 @@ impl Drop for SendExecutor {
 pub struct SendExecutorBuilder {
     num_threads: Option<u8>,
     worker_init: Option<Arc<dyn Fn() + Send + Sync + 'static>>,
+    instrument: Option<Arc<dyn TaskInstrument>>,
 }
 
 impl SendExecutorBuilder {
@@ -202,9 +209,15 @@ impl SendExecutorBuilder {
         self
     }
 
+    /// Sets the instrumentation hook.
+    pub fn instrument(mut self, instrument: Option<Arc<dyn TaskInstrument>>) -> Self {
+        self.instrument = instrument;
+        self
+    }
+
     /// Builds the `SendExecutor`, consuming this `SendExecutorBuilder`.
     pub fn build(self) -> SendExecutor {
-        SendExecutor::new_inner(self.num_threads.unwrap_or(1), self.worker_init)
+        SendExecutor::new_inner(self.num_threads.unwrap_or(1), self.worker_init, self.instrument)
     }
 }
 
