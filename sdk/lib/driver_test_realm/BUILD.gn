@@ -173,7 +173,7 @@ fuchsia_component("dtr_support_component") {
 executable("fake_resolver_bin") {
   output_name = "fake_resolver"
   sources = [ "fake_resolver.cc" ]
-  data_deps = [ "fake_driver:driver_package" ]
+  data_deps = [ "//sdk/lib/driver_test_realm/fake_driver:component" ]
   deps = [
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
     "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_cpp",
