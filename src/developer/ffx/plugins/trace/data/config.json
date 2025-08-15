@@ -7,6 +7,7 @@
                 "benchmark",
                 "blobfs",
                 "driver_dispatcher",
+                "dvfs",
                 "fxfs",
                 "gfx",
                 "input",
