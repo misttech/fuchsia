@@ -1,1 +1,0 @@
-This library helps DFv1 drivers utilize either the FIDL or Banjo version of usb-phy.fidl.
