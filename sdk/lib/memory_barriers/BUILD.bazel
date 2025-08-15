@@ -17,9 +17,6 @@ idk_cc_source_library(
         "//src/sysmem:__subpackages__",
         "//vendor/amlogic/drivers:__subpackages__",
 
-        # This visibility entry is for GN-only.
-        "//src/lib/memory_barriers:__pkg__",
-
         # TODO(https://fxbug.dev/330709069): Remove these once the bots and targets are removed.
         "//build/sdk:__subpackages__",
 

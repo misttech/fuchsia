@@ -49,7 +49,6 @@ sdk_source_set("memory_barriers") {
   visibility = [
     "//build/bazel/bazel_idk/tests:*",
     "//build/sdk/*",
-    "//src/lib/memory_barriers:*",
     "//src/media/*",
     "//src/sysmem/*",
     "//vendor/amlogic/drivers/*",
