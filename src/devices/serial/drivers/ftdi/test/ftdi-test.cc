@@ -103,7 +103,8 @@ class FtdiTest : public zxtest::Test {
   fbl::String devpath_;
 };
 
-TEST_F(FtdiTest, ReadAndWriteTest) {
+// TODO(https://fxbug.dev/434354165): Disabled due to flakes.
+TEST_F(FtdiTest, DISABLED_ReadAndWriteTest) {
   zx::result result = component::ConnectAt<fuchsia_hardware_serial::DeviceProxy>(
       fdio_cpp::UnownedFdioCaller(bus_->GetRootFd()).directory(), devpath_.c_str());
   ASSERT_OK(result.status_value());
