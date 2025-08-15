@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use assembly_config_schema::Architecture;
 use camino::Utf8PathBuf;
 use serde::Deserialize;
@@ -151,14 +151,24 @@ fn version_to_cipd_tag(version: impl AsRef<str>) -> String {
 /// Find an artifact from a local path.
 fn parse_local_path(s: impl AsRef<str>) -> Result<Option<Artifact>> {
     let s = s.as_ref();
-    if s.contains("/") || std::fs::exists(s)? {
-        // TODO: validate the path exists.
-        let path =
-            Utf8PathBuf::from_str(s).with_context(|| format!("Local path is not utf8: {}", &s))?;
-        Ok(Some(Artifact::Local(path)))
-    } else {
-        Ok(None)
+    let exists = std::fs::exists(s)?;
+
+    // If the input does not have a slash, it might be a name, not a path.
+    // We do not want to return an error in that case.
+    if !exists && !s.contains("/") {
+        return Ok(None);
     }
+
+    if !exists {
+        bail!(
+            "The input looks like a path because it has a '/', but the path does not exist: {}",
+            &s
+        );
+    }
+
+    let path =
+        Utf8PathBuf::from_str(s).with_context(|| format!("Local path is not utf8: {}", &s))?;
+    Ok(Some(Artifact::Local(path)))
 }
 
 /// Find an artifact with `name` in the Fuchsia `build_dir` using the `build_api`.
@@ -228,10 +238,12 @@ mod tests {
 
     #[test]
     fn test_local_platform() {
+        let tmp_dir = tempdir().unwrap();
+        let tmp_path = Utf8PathBuf::from_path_buf(tmp_dir.path().to_path_buf()).unwrap();
+
         assert_eq!(
-            Artifact::Local("path/to/platform".into()),
-            Artifact::from_platform(Some("path/to/platform".into()), &Architecture::X64, None)
-                .unwrap(),
+            Artifact::Local(tmp_path.clone().into()),
+            Artifact::from_platform(Some(tmp_path.into()), &Architecture::X64, None).unwrap(),
         );
     }
 
