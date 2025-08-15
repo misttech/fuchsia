@@ -79,6 +79,7 @@ impl Watcher {
                     Some(_) | None => {}
                 },
                 default_network_update = default_network_rx.select_next_some() => {
+                    log::trace!("Saw new update: {default_network_update:?}");
                     let mut state = state.as_mut();
                     state.updates_seen += 1;
                     state.default_network_update = default_network_update;

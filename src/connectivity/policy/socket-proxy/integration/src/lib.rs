@@ -12,7 +12,7 @@ use fidl_fuchsia_posix_socket::{self as fposix_socket, OptionalUint32};
 use fuchsia_async::DurationExt as _;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
-    Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Ref, Route,
+    Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmBuilderParams, Ref, Route,
 };
 use futures::lock::Mutex;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
@@ -25,7 +25,7 @@ use test_case::test_case;
 use {
     fidl_fuchsia_net_policy_properties as fnp_properties,
     fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy, fidl_fuchsia_posix as fposix,
-    fidl_fuchsia_posix_socket_raw as fposix_socket_raw,
+    fidl_fuchsia_posix_socket_raw as fposix_socket_raw, fuchsia_async as fasync,
 };
 
 enum IncomingService {
@@ -422,6 +422,7 @@ async fn netcfg_mock(
 
     loop {
         let update = watcher.watch().await.expect("watcher failed");
+        log::info!("Got Watcher Update: {update:?}");
         default_network_updates.lock().await.push(update);
     }
 }
@@ -449,13 +450,13 @@ fn create_fuchsia_network(id: u32) -> fnp_socketproxy::Network {
     }
 }
 
-async fn repeat_check<T, GetT, GetFut>(count: usize, get_a: GetT, b: T)
+async fn check_until<T, GetT, GetFut>(timeout: fasync::MonotonicInstant, get_a: GetT, b: T)
 where
     GetT: Fn() -> GetFut,
     GetFut: Future<Output = T>,
     T: std::cmp::PartialEq<T> + std::fmt::Debug,
 {
-    for _ in 0..count {
+    while fasync::MonotonicInstant::now() < timeout {
         let a = get_a().await;
         if a == b {
             break;
@@ -714,8 +715,8 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
     }
 
     if should_set_default {
-        repeat_check(
-            5,
+        check_until(
+            zx::MonotonicDuration::from_seconds(1).after_now(),
             || async { default_network_updates.lock().await.clone() },
             vec![
                 // Initial default
@@ -733,8 +734,8 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
         .await;
     } else {
         // If no default is set, no updates are expected.
-        repeat_check(
-            5,
+        check_until(
+            zx::MonotonicDuration::from_seconds(1).after_now(),
             || async { default_network_updates.lock().await.clone() },
             vec![
                 // Initial default
@@ -932,8 +933,8 @@ async fn integration_across_registries() -> Result<(), Error> {
         assert_eq!(*first_mark, OptionalUint32::Value(STARNIX_NETWORK_MARK));
     }
 
-    repeat_check(
-        5,
+    check_until(
+        zx::MonotonicDuration::from_seconds(1).after_now(),
         || async { default_network_updates.lock().await.clone() },
         vec![
             // Initial default
@@ -1168,14 +1169,19 @@ async fn watch_dns_with_registry() -> Result<(), Error> {
 #[fuchsia::test]
 async fn watch_dns_across_registries() -> Result<(), Error> {
     let default_network_updates = Arc::new(Mutex::new(Vec::new()));
-    let builder = RealmBuilder::new().await?;
+    let builder = RealmBuilder::with_params(
+        RealmBuilderParams::new().realm_name("realm-watch_dns_across_registries"),
+    )
+    .await?;
     let netcfg = builder
         .add_local_child(
             "netcfg",
             {
                 let default_network_updates = default_network_updates.clone();
                 move |handles: LocalComponentHandles| {
-                    Box::pin(netcfg_mock(handles, default_network_updates.clone()))
+                    log::info!("Starting Netcfg Mock");
+                    let default_network_updates = default_network_updates.clone();
+                    Box::pin(netcfg_mock(handles, default_network_updates))
                 }
             },
             ChildOptions::new().eager(),
@@ -1205,6 +1211,17 @@ async fn watch_dns_across_registries() -> Result<(), Error> {
         .await?;
 
     let realm = builder.build().await?;
+
+    log::info!("Waiting for netcfg_mock to start");
+    check_until(
+        zx::MonotonicDuration::from_seconds(1).after_now(),
+        || async { default_network_updates.lock().await.clone() },
+        vec![
+            // Initial default
+            Default::default(),
+        ],
+    )
+    .await;
 
     let dns_watcher: fnp_socketproxy::DnsServerWatcherProxy = realm
         .root
@@ -1299,8 +1316,8 @@ async fn watch_dns_across_registries() -> Result<(), Error> {
     assert_eq!(fuchsia_networks.remove(2).await?, Ok(()));
     assert!(dns_watcher.watch_servers().now_or_never().is_none());
 
-    repeat_check(
-        5,
+    check_until(
+        zx::MonotonicDuration::from_seconds(1).after_now(),
         || async { default_network_updates.lock().await.clone() },
         vec![
             // Initial call, empty update.
