@@ -51,7 +51,7 @@ pub(in crate::security) fn file_permission(
 
     has_file_permissions(
         &security_server.as_permission_check(),
-        current_task.kernel(),
+        current_task,
         current_sid,
         file,
         NO_PERMISSIONS,
@@ -61,7 +61,7 @@ pub(in crate::security) fn file_permission(
     todo_has_fs_node_permissions(
         TODO_DENY!("https://fxbug.dev/385121365", "Enforce file_permission checks"),
         &security_server.as_permission_check(),
-        &current_task.kernel(),
+        current_task,
         current_sid,
         &file.name.entry.node,
         &permissions_from_flags(permission_flags, file_class),
@@ -86,7 +86,7 @@ pub(in crate::security) fn file_receive(
     if let Some(bpf_handle) = file.downcast_file::<BpfHandle>() {
         has_file_permissions(
             &permission_check,
-            current_task.kernel(),
+            current_task,
             subject_sid,
             file,
             NO_PERMISSIONS,
@@ -107,7 +107,7 @@ pub(in crate::security) fn file_receive(
     todo_has_file_permissions(
         TODO_DENY!("https://fxbug.dev/399894966", "Check file receive permission."),
         &permission_check,
-        &current_task.kernel(),
+        current_task,
         subject_sid,
         file,
         &permissions_from_flags(permission_flags, fs_node_class),
@@ -127,7 +127,7 @@ pub(in crate::security) fn check_file_ioctl_access(
     match canonicalize_ioctl_request(current_task, request) {
         FIBMAP | FIONREAD | FIGETBSZ | FS_IOC_GETFLAGS | FS_IOC_GETVERSION => has_file_permissions(
             &permission_check,
-            current_task.kernel(),
+            current_task,
             subject_sid,
             file,
             &[CommonFsNodePermission::GetAttr],
@@ -135,7 +135,7 @@ pub(in crate::security) fn check_file_ioctl_access(
         ),
         FS_IOC_SETFLAGS | FS_IOC_SETVERSION => has_file_permissions(
             &permission_check,
-            current_task.kernel(),
+            current_task,
             subject_sid,
             file,
             &[CommonFsNodePermission::SetAttr],
@@ -143,7 +143,7 @@ pub(in crate::security) fn check_file_ioctl_access(
         ),
         FIONBIO | FIOASYNC => has_file_permissions(
             &permission_check,
-            current_task.kernel(),
+            current_task,
             subject_sid,
             file,
             NO_PERMISSIONS,
@@ -154,7 +154,7 @@ pub(in crate::security) fn check_file_ioctl_access(
             let ioctl = request as u16;
             has_file_ioctl_permission(
                 &permission_check,
-                current_task.kernel(),
+                current_task,
                 subject_sid,
                 file,
                 ioctl,
@@ -174,7 +174,7 @@ pub(in crate::security) fn check_file_lock_access(
     let subject_sid = current_task_state(current_task).lock().current_sid;
     has_file_permissions(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         subject_sid,
         file,
         &[CommonFsNodePermission::Lock],
@@ -200,7 +200,7 @@ pub(in crate::security) fn check_file_fcntl_access(
             // Checks both the Lock and Use permissions.
             has_file_permissions(
                 &permission_check,
-                current_task.kernel(),
+                current_task,
                 subject_sid,
                 file,
                 &[CommonFsNodePermission::Lock],
@@ -211,7 +211,7 @@ pub(in crate::security) fn check_file_fcntl_access(
             // Only checks the Use permission.
             has_file_permissions(
                 &permission_check,
-                current_task.kernel(),
+                current_task,
                 subject_sid,
                 file,
                 NO_PERMISSIONS,
@@ -240,7 +240,7 @@ pub(in crate::security) fn check_file_fcntl_access(
             todo_has_fs_node_permissions(
                 TODO_DENY!("https://fxbug.dev/385121365", "Enforce file_permission() checks"),
                 &security_server.as_permission_check(),
-                &current_task.kernel(),
+                current_task,
                 subject_sid,
                 file.node(),
                 &permissions_from_flags(PermissionFlags::APPEND, fs_node_class),
@@ -253,7 +253,7 @@ pub(in crate::security) fn check_file_fcntl_access(
         todo_has_fs_node_permissions(
             TODO_DENY!("https://fxbug.dev/385121365", "Enforce file_permission() checks"),
             &security_server.as_permission_check(),
-            &current_task.kernel(),
+            current_task,
             subject_sid,
             file.node(),
             &permissions_from_flags(PermissionFlags::WRITE, fs_node_class),
@@ -300,7 +300,7 @@ pub fn file_mprotect(
             let subject_sid = current_task_state(current_task).lock().current_sid;
             check_self_permission(
                 &security_server.as_permission_check(),
-                current_task.kernel(),
+                current_task,
                 subject_sid,
                 permission,
                 current_task.into(),
@@ -331,7 +331,7 @@ pub fn mmap_file(
         todo_has_file_permissions(
             TODO_DENY!("https://fxbug.dev/405381460", "Check permissions when mapping."),
             &security_server.as_permission_check(),
-            &current_task.kernel(),
+            current_task,
             current_sid,
             file,
             &[CommonFsNodePermission::Map],
@@ -366,7 +366,7 @@ fn file_map_prot_check(
             todo_check_permission(
                 TODO_DENY!("https://fxbug.dev/405381460", "Check permissions when mapping."),
                 &security_server.as_permission_check(),
-                &current_task.kernel(),
+                current_task,
                 current_sid,
                 current_sid,
                 ProcessPermission::ExecMem,
@@ -395,7 +395,7 @@ fn file_map_prot_check(
         todo_has_fs_node_permissions(
             TODO_DENY!("https://fxbug.dev/405381460", "Check permissions when mapping."),
             &security_server.as_permission_check(),
-            &current_task.kernel(),
+            current_task,
             current_sid,
             fs_node,
             &permissions,

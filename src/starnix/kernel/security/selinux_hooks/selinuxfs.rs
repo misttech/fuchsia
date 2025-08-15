@@ -70,7 +70,7 @@ pub(in crate::security) fn selinuxfs_check_access(
     let permission_check = security_server.as_permission_check();
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         source_sid,
         target_sid,
         permission,

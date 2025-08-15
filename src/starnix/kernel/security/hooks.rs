@@ -10,7 +10,7 @@ use crate::bpf::program::Program;
 use crate::bpf::BpfMap;
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
 use crate::security::KernelState;
-use crate::task::{CurrentTask, Kernel, Task};
+use crate::task::{CurrentTask, FullCredentials, Kernel, Task};
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::socket::{
     Socket, SocketAddress, SocketDomain, SocketFile, SocketPeer, SocketProtocol,
@@ -1859,6 +1859,13 @@ pub fn selinuxfs_check_access(
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::selinuxfs::selinuxfs_check_access(security_server, current_task, permission)
     })
+}
+
+/// Marks the credentials as being used for an internal operation. All SELinux permission checks
+/// will be skipped on this task.
+pub fn creds_start_internal_operation(creds: &mut FullCredentials) {
+    track_hook_duration!(c"security.hooks.creds_start_internal_operation");
+    creds.security_state.lock().internal_operation = true;
 }
 
 pub mod testing {

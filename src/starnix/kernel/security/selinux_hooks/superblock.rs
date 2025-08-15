@@ -155,7 +155,7 @@ pub(in crate::security) fn sb_kern_mount(
     let target_sid = fs_sid(fs)?;
     check_permission(
         permission_check,
-        current_task.kernel(),
+        current_task,
         source_sid,
         target_sid,
         FileSystemPermission::Mount,
@@ -178,7 +178,7 @@ pub(in crate::security) fn sb_mount(
         let audit_context = [current_task.into(), fs.as_ref().into()];
         check_permission(
             permission_check,
-            current_task.kernel(),
+            current_task,
             source_sid,
             target_sid,
             FileSystemPermission::Remount,
@@ -194,7 +194,7 @@ pub(in crate::security) fn sb_mount(
         let audit_context = [current_task.into(), node.into()];
         check_permission(
             permission_check,
-            current_task.kernel(),
+            current_task,
             source_sid,
             target_sid,
             CommonFilePermission::MountOn.for_class(target_class),
@@ -235,7 +235,7 @@ pub(in crate::security) fn sb_statfs(
     let target_sid = fs_sid(fs)?;
     check_permission(
         permission_check,
-        current_task.kernel(),
+        current_task,
         source_sid,
         target_sid,
         FileSystemPermission::GetAttr,
@@ -258,7 +258,7 @@ pub(in crate::security) fn sb_umount(
     let audit_context = [current_task.into(), fs.as_ref().into()];
     check_permission(
         permission_check,
-        current_task.kernel(),
+        current_task,
         source_sid,
         target_sid,
         FileSystemPermission::Unmount,

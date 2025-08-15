@@ -5,6 +5,7 @@
 use crate::device::kobject::DeviceMetadata;
 use crate::device::DeviceMode;
 use crate::fs::tmpfs::{TmpFs, TmpFsData, TmpFsNodeType};
+use crate::security;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::{
     path, DirEntryHandle, FileSystemHandle, FileSystemOptions, FsStr, LookupContext, MountInfo,
@@ -87,12 +88,15 @@ pub fn devtmpfs_create_device(
     event: Option<Arc<InterruptibleEvent>>,
 ) {
     kernel.kthreads.spawn(move |locked, current_task| {
-        if let Err(e) = devtmpfs_create_device_internal(locked, current_task, &device_metadata) {
-            log_warn!("Cannot add device {device_metadata:?} in devtmpfs ({e:?})");
-        }
-        if let Some(event) = event {
-            event.notify();
-        }
+        current_task.override_creds(security::creds_start_internal_operation, || {
+            if let Err(e) = devtmpfs_create_device_internal(locked, current_task, &device_metadata)
+            {
+                log_warn!("Cannot add device {device_metadata:?} in devtmpfs ({e:?})");
+            }
+            if let Some(event) = event {
+                event.notify();
+            }
+        });
     });
 }
 

@@ -523,7 +523,7 @@ fn may_create(
         &[current_task.into(), parent.into(), fs.as_ref().into(), Auditable::Name(name)];
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         parent_sid,
         DirPermission::Search,
@@ -531,7 +531,7 @@ fn may_create(
     )?;
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         parent_sid,
         DirPermission::AddName,
@@ -556,7 +556,7 @@ fn may_create(
     let audit_context = &[current_task.into(), fs.as_ref().into(), Auditable::Name(name)];
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         new_file_sid,
         CommonFsNodePermission::Create.for_class(new_file_class),
@@ -574,7 +574,7 @@ fn may_create(
 
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         new_file_sid,
         fs_label.sid,
         FileSystemPermission::Associate,
@@ -608,7 +608,7 @@ fn may_link(
     };
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         parent_sid,
         DirPermission::Search,
@@ -616,7 +616,7 @@ fn may_link(
     )?;
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         parent_sid,
         DirPermission::AddName,
@@ -624,7 +624,7 @@ fn may_link(
     )?;
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         file_sid,
         CommonFilePermission::Link.for_class(file_class),
@@ -658,7 +658,7 @@ fn may_unlink_or_rmdir(
 
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         parent_sid,
         DirPermission::Search,
@@ -666,7 +666,7 @@ fn may_unlink_or_rmdir(
     )?;
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         parent_sid,
         DirPermission::RemoveName,
@@ -682,7 +682,7 @@ fn may_unlink_or_rmdir(
     match operation {
         UnlinkKind::NonDirectory => check_permission(
             &permission_check,
-            current_task.kernel(),
+            current_task,
             current_sid,
             file_sid,
             CommonFilePermission::Unlink.for_class(file_class),
@@ -690,7 +690,7 @@ fn may_unlink_or_rmdir(
         ),
         UnlinkKind::Directory => check_permission(
             &permission_check,
-            current_task.kernel(),
+            current_task,
             current_sid,
             file_sid,
             DirPermission::RemoveDir,
@@ -812,7 +812,7 @@ pub(in crate::security) fn check_fs_node_rename_access(
 
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         old_parent_sid,
         DirPermission::Search,
@@ -822,7 +822,7 @@ pub(in crate::security) fn check_fs_node_rename_access(
     let audit_context_old_name = &[current_task.into(), Auditable::Name(old_basename)];
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         old_parent_sid,
         DirPermission::RemoveName,
@@ -837,7 +837,7 @@ pub(in crate::security) fn check_fs_node_rename_access(
 
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         file_sid,
         CommonFilePermission::Rename.for_class(file_class),
@@ -848,7 +848,7 @@ pub(in crate::security) fn check_fs_node_rename_access(
     let new_parent_sid = fs_node_effective_sid_and_class(new_parent).sid;
     check_permission(
         &permission_check,
-        current_task.kernel(),
+        current_task,
         current_sid,
         new_parent_sid,
         DirPermission::AddName,
@@ -878,7 +878,7 @@ pub(in crate::security) fn check_fs_node_rename_access(
         // permission during the `old_parent_sid` verification.
         check_permission(
             &permission_check,
-            current_task.kernel(),
+            current_task,
             current_sid,
             new_parent_sid,
             DirPermission::Search,
@@ -891,7 +891,7 @@ pub(in crate::security) fn check_fs_node_rename_access(
         if file_class == FileClass::Dir.into() {
             check_permission(
                 &permission_check,
-                current_task.kernel(),
+                current_task,
                 current_sid,
                 file_sid,
                 DirPermission::Reparent,
@@ -912,7 +912,7 @@ pub(in crate::security) fn check_fs_node_read_link_access(
     let current_sid = current_task_state(current_task).lock().current_sid;
     has_fs_node_permissions(
         &security_server.as_permission_check(),
-        current_task.kernel(),
+        current_task,
         current_sid,
         fs_node,
         &[CommonFsNodePermission::Read],
@@ -932,7 +932,7 @@ pub(in crate::security) fn fs_node_permission(
     todo_has_fs_node_permissions(
         TODO_DENY!("https://fxbug.dev/380855359", "Enforce fs_node_permission checks."),
         &security_server.as_permission_check(),
-        &current_task.kernel(),
+        current_task,
         current_sid,
         fs_node,
         &permissions_from_flags(permission_flags, fs_node_class),
@@ -949,7 +949,7 @@ pub(in crate::security) fn check_fs_node_getattr_access(
     todo_has_fs_node_permissions(
         TODO_DENY!("https://fxbug.dev/383284672", "Enable permission checks in getattr."),
         &security_server.as_permission_check(),
-        &current_task.kernel(),
+        current_task,
         current_sid,
         fs_node,
         &[CommonFsNodePermission::GetAttr],
@@ -981,7 +981,7 @@ pub(in crate::security) fn check_fs_node_setattr_access(
 
     has_fs_node_permissions(
         &security_server.as_permission_check(),
-        current_task.kernel(),
+        current_task,
         current_sid,
         fs_node,
         &permissions,
@@ -1000,7 +1000,7 @@ pub(in crate::security) fn check_fs_node_setxattr_access(
     let current_sid = current_task_state(current_task).lock().current_sid;
     has_fs_node_permissions(
         &security_server.as_permission_check(),
-        current_task.kernel(),
+        current_task,
         current_sid,
         fs_node,
         &[CommonFsNodePermission::SetAttr],
@@ -1017,7 +1017,7 @@ pub(in crate::security) fn check_fs_node_getxattr_access(
     let current_sid = current_task_state(current_task).lock().current_sid;
     has_fs_node_permissions(
         &security_server.as_permission_check(),
-        current_task.kernel(),
+        current_task,
         current_sid,
         fs_node,
         &[CommonFsNodePermission::GetAttr],
@@ -1033,7 +1033,7 @@ pub(in crate::security) fn check_fs_node_listxattr_access(
     let current_sid = current_task_state(current_task).lock().current_sid;
     has_fs_node_permissions(
         &security_server.as_permission_check(),
-        current_task.kernel(),
+        current_task,
         current_sid,
         fs_node,
         &[CommonFsNodePermission::GetAttr],
@@ -1052,7 +1052,7 @@ pub(in crate::security) fn check_fs_node_removexattr_access(
     let current_sid = current_task_state(current_task).lock().current_sid;
     has_fs_node_permissions(
         &security_server.as_permission_check(),
-        current_task.kernel(),
+        current_task,
         current_sid,
         fs_node,
         &[CommonFsNodePermission::SetAttr],
@@ -1183,7 +1183,7 @@ where
         let permission_check = security_server.as_permission_check();
         check_permission(
             &permission_check,
-            current_task.kernel(),
+            current_task,
             task_sid,
             old_sid,
             CommonFsNodePermission::RelabelFrom.for_class(fs_node_class),
@@ -1191,7 +1191,7 @@ where
         )?;
         check_permission(
             &permission_check,
-            current_task.kernel(),
+            current_task,
             task_sid,
             new_sid,
             CommonFsNodePermission::RelabelTo.for_class(fs_node_class),
@@ -1199,7 +1199,7 @@ where
         )?;
         check_permission(
             &permission_check,
-            current_task.kernel(),
+            current_task,
             new_sid,
             fs_label.sid,
             FileSystemPermission::Associate,

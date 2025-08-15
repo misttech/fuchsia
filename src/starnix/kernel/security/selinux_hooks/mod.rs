@@ -17,7 +17,7 @@ pub(super) mod task;
 pub(super) mod testing;
 
 use super::{FsNodeSecurityXattr, PermissionFlags, TaskState};
-use crate::task::{CurrentTask, FullCredentials, Kernel, Task};
+use crate::task::{CurrentTask, FullCredentials, Task};
 use crate::vfs::{Anon, DirEntry, FileHandle, FileObject, FileSystem, FsNode, OutputBuffer};
 use audit::{audit_decision, audit_todo_decision, Auditable};
 use selinux::permission_check::PermissionCheck;
@@ -70,16 +70,23 @@ fn permissions_from_flags(flags: PermissionFlags, class: FsNodeClass) -> Vec<Ker
     result
 }
 
+fn is_internal_operation(current_task: &CurrentTask) -> bool {
+    current_task_state(current_task).lock().internal_operation
+}
+
 /// Checks that `current_task` has permission to "use" the specified `file`, and the specified
 /// `permissions` to the underlying [`crate::vfs::FsNode`].
 fn has_file_permissions(
     permission_check: &PermissionCheck<'_>,
-    kernel: &Kernel,
+    current_task: &CurrentTask,
     subject_sid: SecurityId,
     file: &FileObject,
     permissions: &[impl ForClass<FsNodeClass>],
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
+    if is_internal_operation(current_task) {
+        return Ok(());
+    };
     // Validate that the `subject` has the "fd { use }" permission to the `file`.
     // If the file and task security domains are identical then `fd { use }` is implicitly granted.
     let file_sid = file.security_state.state.sid;
@@ -88,7 +95,7 @@ fn has_file_permissions(
         let audit_context = [audit_context, file.into(), node.into()];
         check_permission(
             permission_check,
-            kernel,
+            current_task,
             subject_sid,
             file_sid,
             FdPermission::Use,
@@ -101,7 +108,7 @@ fn has_file_permissions(
         let audit_context = [audit_context, file.into()];
         has_fs_node_permissions(
             permission_check,
-            kernel,
+            current_task,
             subject_sid,
             file.node(),
             permissions,
@@ -117,7 +124,7 @@ fn has_file_permissions(
 fn todo_has_file_permissions(
     bug: BugRef,
     permission_check: &PermissionCheck<'_>,
-    kernel: &Kernel,
+    current_task: &CurrentTask,
     subject_sid: SecurityId,
     file: &FileObject,
     permissions: &[impl ForClass<FsNodeClass>],
@@ -132,7 +139,7 @@ fn todo_has_file_permissions(
         todo_check_permission(
             bug.clone(),
             permission_check,
-            kernel,
+            current_task,
             subject_sid,
             file_sid,
             FdPermission::Use,
@@ -146,7 +153,7 @@ fn todo_has_file_permissions(
         todo_has_fs_node_permissions(
             bug.clone(),
             permission_check,
-            kernel,
+            current_task,
             subject_sid,
             file.node(),
             permissions,
@@ -159,7 +166,7 @@ fn todo_has_file_permissions(
 
 fn has_file_ioctl_permission(
     permission_check: &PermissionCheck<'_>,
-    kernel: &Kernel,
+    current_task: &CurrentTask,
     subject_sid: SecurityId,
     file: &FileObject,
     ioctl: u16,
@@ -168,7 +175,7 @@ fn has_file_ioctl_permission(
     // Validate that the `subject` has the "fd { use }" permission to the `file`.
     has_file_permissions(
         permission_check,
-        kernel,
+        current_task,
         subject_sid,
         file,
         NO_PERMISSIONS,
@@ -190,7 +197,7 @@ fn has_file_ioctl_permission(
     // Check the `ioctl` permission and extended permission on the underlying node.
     check_ioctl_permission(
         permission_check,
-        kernel,
+        current_task,
         subject_sid,
         target_sid,
         target_class,
@@ -201,13 +208,16 @@ fn has_file_ioctl_permission(
 
 fn check_ioctl_permission(
     permission_check: &PermissionCheck<'_>,
-    kernel: &Kernel,
+    current_task: &CurrentTask,
     subject_sid: SecurityId,
     target_sid: SecurityId,
     target_class: FsNodeClass,
     ioctl: u16,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
+    if is_internal_operation(current_task) {
+        return Ok(());
+    }
     let ioctl_permission = CommonFsNodePermission::Ioctl.for_class(target_class);
     let result = permission_check.has_ioctl_permission(
         subject_sid,
@@ -218,7 +228,8 @@ fn check_ioctl_permission(
 
     if result.audit {
         if !result.permit {
-            kernel
+            current_task
+                .kernel()
                 .security_state
                 .state
                 .as_ref()
@@ -228,7 +239,7 @@ fn check_ioctl_permission(
         }
 
         audit_decision(
-            kernel.audit_logger(),
+            current_task.kernel().audit_logger(),
             permission_check,
             result.clone(),
             subject_sid,
@@ -244,7 +255,7 @@ fn check_ioctl_permission(
 /// Checks that `current_task` has the specified `permissions` to the `node`.
 fn has_fs_node_permissions(
     permission_check: &PermissionCheck<'_>,
-    kernel: &Kernel,
+    current_task: &CurrentTask,
     subject_sid: SecurityId,
     fs_node: &FsNode,
     permissions: &[impl ForClass<FsNodeClass>],
@@ -261,7 +272,7 @@ fn has_fs_node_permissions(
     for permission in permissions {
         check_permission(
             permission_check,
-            kernel,
+            current_task,
             subject_sid,
             target.sid,
             permission.for_class(target.class),
@@ -276,7 +287,7 @@ fn has_fs_node_permissions(
 fn todo_has_fs_node_permissions(
     bug: BugRef,
     permission_check: &PermissionCheck<'_>,
-    kernel: &Kernel,
+    current_task: &CurrentTask,
     subject_sid: SecurityId,
     fs_node: &FsNode,
     permissions: &[impl ForClass<FsNodeClass>],
@@ -294,7 +305,7 @@ fn todo_has_fs_node_permissions(
         todo_check_permission(
             bug.clone(),
             permission_check,
-            kernel,
+            current_task,
             subject_sid,
             target.sid,
             permission.for_class(target.class),
@@ -357,16 +368,20 @@ fn fs_node_effective_sid_and_class(fs_node: &FsNode) -> FsNodeSidAndClass {
 fn todo_check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
     bug: BugRef,
     permission_check: &PermissionCheck<'_>,
-    kernel: &Kernel,
+    current_task: &CurrentTask,
     source_sid: SecurityId,
     target_sid: SecurityId,
     permission: P,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
+    if is_internal_operation(current_task) {
+        return Ok(());
+    }
+    let kernel = current_task.kernel();
     if kernel.features.selinux_test_suite {
         check_permission(
             permission_check,
-            kernel,
+            current_task,
             source_sid,
             target_sid,
             permission,
@@ -395,17 +410,21 @@ fn todo_check_permission<P: ClassPermission + Into<KernelPermission> + Clone + '
 /// Checks whether `source_sid` is allowed the specified `permission` on `target_sid`.
 fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
     permission_check: &PermissionCheck<'_>,
-    kernel: &Kernel,
+    current_task: &CurrentTask,
     source_sid: SecurityId,
     target_sid: SecurityId,
     permission: P,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
+    if is_internal_operation(current_task) {
+        return Ok(());
+    }
     let result = permission_check.has_permission(source_sid, target_sid, permission.clone());
 
     if result.audit {
         if !result.permit {
-            kernel
+            current_task
+                .kernel()
                 .security_state
                 .state
                 .as_ref()
@@ -415,7 +434,7 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
         }
 
         audit_decision(
-            kernel.audit_logger(),
+            current_task.kernel().audit_logger(),
             permission_check,
             result.clone(),
             source_sid,
@@ -431,12 +450,19 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
 /// Checks that `subject_sid` has the specified process `permission` on `self`.
 fn check_self_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
     permission_check: &PermissionCheck<'_>,
-    kernel: &Kernel,
+    current_task: &CurrentTask,
     subject_sid: SecurityId,
     permission: P,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
-    check_permission(permission_check, kernel, subject_sid, subject_sid, permission, audit_context)
+    check_permission(
+        permission_check,
+        current_task,
+        subject_sid,
+        subject_sid,
+        permission,
+        audit_context,
+    )
 }
 
 /// Returns the security state structure for the kernel.
@@ -492,6 +518,10 @@ pub(super) struct TaskAttrs {
 
     /// SID for sockets created by the task.
     pub sockcreate_sid: Option<SecurityId>,
+
+    /// Indicates that the task with these credentials is performing an internal operation where
+    /// access checks must be skipped.
+    pub internal_operation: bool,
 }
 
 impl TaskAttrs {
@@ -514,6 +544,7 @@ impl TaskAttrs {
             fscreate_sid: None,
             keycreate_sid: None,
             sockcreate_sid: None,
+            internal_operation: false,
         }
     }
 }

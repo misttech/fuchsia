@@ -20,7 +20,7 @@ pub fn binder_set_context_mgr(
     let sid = current_task_state(current_task).lock().current_sid;
     check_self_permission(
         &security_server.as_permission_check(),
-        current_task.kernel(),
+        current_task,
         sid,
         BinderPermission::SetContextMgr,
         audit_context,
@@ -40,7 +40,7 @@ pub fn binder_transaction(
     todo_check_permission(
         TODO_DENY!("https://fxbug.dev/427888888", "Enforce call check."),
         &security_server.as_permission_check(),
-        target_task.kernel(),
+        current_task,
         source_sid,
         target_sid,
         BinderPermission::Call,

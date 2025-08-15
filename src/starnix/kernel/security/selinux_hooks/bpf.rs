@@ -49,7 +49,7 @@ pub(in crate::security) fn check_bpf_access<Attr: FromBytes>(
     };
     check_self_permission(
         &security_server.as_permission_check(),
-        current_task.kernel(),
+        current_task,
         sid,
         permission,
         audit_context,
@@ -77,7 +77,7 @@ pub(in crate::security) fn check_bpf_map_access(
     for permission in permissions {
         check_permission(
             &security_server.as_permission_check(),
-            current_task.kernel(),
+            current_task,
             subject_sid,
             bpf_map.security_state.state.sid,
             permission,
@@ -99,7 +99,7 @@ pub fn check_bpf_prog_access(
     let subject_sid = current_task_state(current_task).lock().current_sid;
     check_permission(
         &security_server.as_permission_check(),
-        current_task.kernel(),
+        current_task,
         subject_sid,
         bpf_program.security_state.state.sid,
         BpfPermission::ProgRun,
