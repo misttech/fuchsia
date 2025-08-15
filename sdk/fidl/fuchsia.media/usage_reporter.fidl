@@ -26,14 +26,13 @@ type UsageState = flexible union {
 /// A protocol for setting up watchers of audio usages.
 // TODO(https://fxbug.dev/384934089): deprecate and remove |Usage|
 @discoverable(server="platform")
-closed(removed=26) open(added=26) protocol UsageReporter {
-    @available(deprecated=26, note="Use Watch2, Usage2 and UsageWatcher2")
+open protocol UsageReporter {
+    @deprecated("Use Watch2, Usage2 and UsageWatcher2")
     strict Watch(resource struct {
         usage Usage;
         usage_watcher client_end:UsageWatcher;
     });
 
-    @available(added=26)
     flexible Watch2(resource struct {
         usage Usage2;
         usage_watcher client_end:UsageWatcher2;
@@ -43,7 +42,7 @@ closed(removed=26) open(added=26) protocol UsageReporter {
 /// A protocol for listening to changes to the policy state of an audio usage.
 ///
 /// User actions, such as lowering the volume or muting a stream, are not reflected in this API.
-@available(deprecated=26, note="Use Watch2, Usage2 and UsageWatcher2")
+@deprecated("Use Watch2, Usage2 and UsageWatcher2")
 closed protocol UsageWatcher {
     /// Called on first connection and whenever the watched usage changes. The provided
     /// usage will always be the bound usage; it is provided so that an implementation of
@@ -58,7 +57,6 @@ closed protocol UsageWatcher {
     }) -> ();
 };
 
-@available(added=26)
 closed protocol UsageWatcher2 {
     /// Called on first connection and whenever the watched usage changes. The provided
     /// usage will always be the bound usage; it is provided so that an implementation of
@@ -74,7 +72,7 @@ closed protocol UsageWatcher2 {
 
 /// A protocol for setting up watchers of usage gain.
 @discoverable(server="platform")
-closed(removed=26) open(added=26) protocol UsageGainReporter {
+open protocol UsageGainReporter {
     /// Connects a listener to a stream of usage gain setting changes
     /// for `usage` on the device identified by `device_token`. Usage
     /// Gain is not set directly by any client; it is a translation of
@@ -88,7 +86,7 @@ closed(removed=26) open(added=26) protocol UsageGainReporter {
     /// and their unique ids if it is necessary for a client to select
     /// an id at runtime.
     // TODO(https://fxbug.dev/384934089): deprecate and remove |Usage|
-    @available(deprecated=26, note="Use RegisterListener2 and Usage2")
+    @deprecated("Use RegisterListener2 and Usage2")
     strict RegisterListener(resource struct {
         device_unique_id string:36;
         usage Usage;
@@ -107,7 +105,6 @@ closed(removed=26) open(added=26) protocol UsageGainReporter {
     /// `AudioDeviceEnumerator` provides programmatic access to devices
     /// and their unique ids if it is necessary for a client to select
     /// an id at runtime.
-    @available(added=26)
     flexible RegisterListener2(resource struct {
         device_unique_id string:36;
         usage Usage2;

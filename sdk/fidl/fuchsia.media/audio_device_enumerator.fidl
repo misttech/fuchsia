@@ -54,7 +54,7 @@ closed protocol AudioDeviceEnumerator {
         device_token uint64;
         gain_info AudioGainInfo;
     });
-    @available(deprecated=15)
+    @deprecated
     strict -> OnDefaultDeviceChanged(struct {
         old_default_token uint64;
         new_default_token uint64;
@@ -97,10 +97,12 @@ closed protocol AudioDeviceEnumerator {
     /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
     /// , see
     /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-    @available(deprecated=20)
+    @deprecated
     strict AddDeviceByChannel(resource struct {
         device_name string:256;
         is_input bool;
+
+        @deprecated
         channel client_end:fuchsia.hardware.audio.StreamConfig;
     });
 };

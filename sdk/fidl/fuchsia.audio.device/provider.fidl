@@ -29,7 +29,7 @@ open protocol Provider {
         /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
         /// , see
         /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-        @available(deprecated=HEAD)
+        @deprecated
         3: driver_client DriverClient;
     }) -> (table {}) error ProviderAddDeviceError;
 };
