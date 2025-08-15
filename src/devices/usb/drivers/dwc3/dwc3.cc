@@ -93,11 +93,14 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent) {
       {BusPath::kUsbIpa, "interconnect-usb-ipa"},
       {BusPath::kDdrUsb, "interconnect-ddr-usb"}};
 
-  static const std::vector<std::string> kRegulatorNames{"regulator-core", "regulator-vdd18"};
-  // TODO(b/429753599): enable regulator-vdd33 when fixed.
-
   static const std::vector<std::string> kClockNames{"core-clk", "iface-clk", "bus-aggr-clk",
                                                     "xo",       "sleep-clk", "utmi-clk"};
+
+  static const std::vector<std::string> kRegulatorNames = {
+      {"regulator-core"},
+      {"regulator-vdd18"},
+      {"regulator-vdd33"},
+  };
 
   std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients;
   for (const auto& [path, node_name] : kBusPathNames) {
@@ -197,7 +200,7 @@ zx::result<> QualcommExtension::VoteVoltage(bool on) {
   const static std::unordered_map<std::string, uint32_t> kVoltages{
       {"regulator-core", 904000},
       {"regulator-vdd18", 1800000},
-      // {"regulator-vdd33", 3080000},
+      {"regulator-vdd33", 3080000},
   };
   // clang-format on
 
