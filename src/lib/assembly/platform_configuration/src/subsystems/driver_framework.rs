@@ -5,6 +5,7 @@
 use crate::subsystems::prelude::*;
 use anyhow::anyhow;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
+use assembly_config_schema::platform_settings::development_support_config::DevelopmentSupportConfig;
 use assembly_config_schema::platform_settings::driver_framework_config::{
     DriverFrameworkConfig, TestFuzzingConfig,
 };
@@ -12,12 +13,16 @@ use assembly_config_schema::platform_settings::storage_config::StorageConfig;
 use assembly_images_config::FilesystemImageMode;
 
 pub(crate) struct DriverFrameworkSubsystemConfig;
-impl DefineSubsystemConfiguration<(&DriverFrameworkConfig, &StorageConfig)>
-    for DriverFrameworkSubsystemConfig
+impl
+    DefineSubsystemConfiguration<(
+        &DriverFrameworkConfig,
+        &StorageConfig,
+        &DevelopmentSupportConfig,
+    )> for DriverFrameworkSubsystemConfig
 {
     fn define_configuration(
         context: &ConfigurationContext<'_>,
-        config: &(&DriverFrameworkConfig, &StorageConfig),
+        config: &(&DriverFrameworkConfig, &StorageConfig, &DevelopmentSupportConfig),
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         // This is always set to false, but should be configurable once drivers actually support
@@ -26,13 +31,24 @@ impl DefineSubsystemConfiguration<(&DriverFrameworkConfig, &StorageConfig)>
             "fuchsia.driver.UseHardwareIommu",
             Config::new(ConfigValueType::Bool, false.into()),
         )?;
-        let (driver_framework, storage) = config;
+        let (driver_framework, storage, development_support) = config;
 
         let mut disabled_drivers = driver_framework.disabled_drivers.clone();
         // TODO(https://fxbug.dev/42052994): Remove this once DFv2 is enabled by default and there
         // exists only one da7219 driver.
         disabled_drivers.push("fuchsia-boot:///#meta/da7219.cm".to_string());
-        builder.platform_bundle("driver_framework");
+        builder.platform_bundle("driver_framework_common");
+
+        if development_support.heapdump.driver_framework {
+            context.ensure_build_type_and_feature_set_level(
+                &[BuildType::Eng],
+                &[FeatureSetLevel::Standard],
+                "enable_heapdump_instrumentation",
+            )?;
+            builder.platform_bundle("driver_framework_with_heapdump");
+        } else {
+            builder.platform_bundle("driver_framework_no_instrumentation");
+        }
 
         let enable_ephemeral_drivers = match (context.build_type, context.feature_set_level) {
             (BuildType::Eng, FeatureSetLevel::Standard) => {

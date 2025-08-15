@@ -4,7 +4,10 @@
 {
     include: [ "//src/devices/bin/driver-host/meta/driver_host.shard.cml" ],
     program: {
-        binary: "bin/driver-host",
+        binary: "bin/driver-host-with-heapdump",
         use_next_vdso: "true",
     },
+    use: [
+        { protocol: "fuchsia.system.state.SystemStateTransition" },
+    ],
 }

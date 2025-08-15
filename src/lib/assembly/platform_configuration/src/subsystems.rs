@@ -325,7 +325,7 @@ fn configure_subsystems(
 
     driver_framework::DriverFrameworkSubsystemConfig::define_configuration(
         &context_base.for_subsystem("driver_framework"),
-        &(&platform.driver_framework, &platform.storage),
+        &(&platform.driver_framework, &platform.storage, &platform.development_support),
         builder,
     )
     .context("Configuring the 'driver_framework' subsystem")?;

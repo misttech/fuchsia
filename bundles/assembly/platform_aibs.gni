@@ -30,7 +30,8 @@ bootstrap_user_platform_aib_names = [
   "console",
 
   # Driver Framework
-  "driver_framework",
+  "driver_framework_common",
+  "driver_framework_no_instrumentation",
 
   # Power
   "legacy_power_framework",
@@ -443,6 +444,7 @@ eng_only_platform_aib_names =
       "topology_test_daemon",
 
       # Driver development support
+      "driver_framework_with_heapdump",
       "full_drivers",
 
       # Audio development/debugging
@@ -479,7 +481,8 @@ required_user_aib_names = [
   "bootstrap",
   "core_realm",
   "core_realm_user_and_userdebug",
-  "driver_framework",
+  "driver_framework_common",
+  "driver_framework_no_instrumentation",
   "legacy_power_framework",
   "zircon",
 ]

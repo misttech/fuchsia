@@ -11,6 +11,12 @@ fuchsia_component_manifest("manifest") {
   restricted_features = [ "allow_long_names" ]
 }
 
+fuchsia_component_manifest("manifest_with_heapdump") {
+  component_name = "driver_manager"
+  manifest = "meta/driver_manager_with_heapdump.cml"
+  restricted_features = [ "allow_long_names" ]
+}
+
 fuchsia_structured_config_cpp_elf_lib("driver_manager_config") {
   cm_label = ":manifest"
 }
@@ -161,7 +167,7 @@ source_set("driver_development_service") {
   ]
 }
 
-executable("driver_manager") {
+_driver_manager_common = {
   sources = [ "main.cc" ]
 
   deps = [
@@ -173,8 +179,6 @@ executable("driver_manager") {
     "//src/sys/lib/stdout-to-debuglog/cpp",
   ]
 
-  configs += [ "//build/config:all_source" ]
-
   if (toolchain_variant.libprefix != "") {
     # The libprefix always ends with a / but that's not part of the
     # "config" string in the loader-service protocol.
@@ -185,9 +189,27 @@ executable("driver_manager") {
   }
 }
 
+executable("driver_manager") {
+  forward_variables_from(_driver_manager_common, "*")
+}
+
+executable("driver_manager_with_heapdump") {
+  forward_variables_from(_driver_manager_common, "*")
+  deps += [ "//src/performance/memory/heapdump/instrumentation" ]
+  if (!defined(defines)) {
+    defines = []
+  }
+  defines += [ "ENABLE_HEAPDUMP=true" ]
+}
+
 fuchsia_component("component") {
   cm_label = ":manifest"
   deps = [ ":driver_manager" ]
+}
+
+fuchsia_component("component_with_heapdump") {
+  cm_label = ":manifest_with_heapdump"
+  deps = [ ":driver_manager_with_heapdump" ]
 }
 
 # List of shared libraries used by drivers.
@@ -219,6 +241,15 @@ fuchsia_package("package") {
   package_name = "driver_manager"
   deps = [
     ":component",
+    ":driver_manager_config_default",
+    ":driver_shared_libraries",
+  ]
+}
+
+fuchsia_package("package_with_heapdump") {
+  package_name = "driver_manager"
+  deps = [
+    ":component_with_heapdump",
     ":driver_manager_config_default",
     ":driver_shared_libraries",
   ]

@@ -5,15 +5,15 @@
     offer: [
         {
             protocol: "fuchsia.memory.heapdump.process.Registry",
-            from: "#core",
-            to: "#bootstrap",
+            from: "parent",
+            to: "#driver-hosts",
             dependency: "weak",
         },
-    ],
-    expose: [
         {
             protocol: "fuchsia.memory.heapdump.process.Registry",
-            from: "#core",
+            from: "parent",
+            to: "#driver_manager",
+            dependency: "weak",
         },
     ],
 }

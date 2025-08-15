@@ -20,8 +20,18 @@ enum ExposedProtocols {
     DriverHost(DriverHostRequestStream),
 }
 
+#[cfg(feature = "heapdump")]
+extern "C" {
+    fn heapdump_bind_with_fdio();
+}
+
 #[fuchsia::main(logging = true, logging_tags = ["driver_host", "driver"])]
 async fn main() -> Result<(), anyhow::Error> {
+    #[cfg(feature = "heapdump")]
+    unsafe {
+        heapdump_bind_with_fdio()
+    };
+
     // Redirect standard out to debuglog.
     if let Err(_) = stdout_to_debuglog::init().await {
         log::warn!(

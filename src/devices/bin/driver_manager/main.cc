@@ -32,6 +32,9 @@
 #include <memory>
 
 #include <fbl/unique_fd.h>
+#ifdef ENABLE_HEAPDUMP
+#include <heapdump/bind.h>
+#endif
 
 #include "src/devices/bin/driver_manager/devfs/devfs.h"
 #include "src/devices/bin/driver_manager/driver_development/driver_development_service.h"
@@ -64,6 +67,10 @@ void SetLoggingProcessName() {
 }  // namespace
 
 int main(int argc, char** argv) {
+#ifdef ENABLE_HEAPDUMP
+  heapdump_bind_with_fdio();
+#endif
+
   zx_status_t status = StdoutToDebuglog::Init();
   if (status != ZX_OK) {
     LOGF(INFO, "Failed to redirect stdout to debuglog, assuming test environment and continuing");

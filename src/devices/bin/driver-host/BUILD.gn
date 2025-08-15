@@ -14,11 +14,8 @@ group("tests") {
   deps = [ ":driver-host-unittests" ]
 }
 
-rustc_binary("bin") {
-  output_name = "driver-host"
+_bin_common = {
   edition = "2021"
-
-  configs += [ "//build/config/rust:bootfs" ]
 
   with_unit_tests = true
 
@@ -45,6 +42,7 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace-provider",
+    "//src/performance/memory/heapdump/instrumentation",
     "//src/sys/lib/namespace",
     "//src/sys/lib/stdout-to-debuglog/rust",
     "//src/sys/lib/task-exceptions",
@@ -64,6 +62,19 @@ rustc_binary("bin") {
   ]
 }
 
+rustc_binary("bin") {
+  forward_variables_from(_bin_common, "*")
+  output_name = "driver-host"
+  configs += [ "//build/config/rust:bootfs" ]
+}
+
+rustc_binary("bin_with_heapdump") {
+  forward_variables_from(_bin_common, "*")
+  output_name = "driver-host-with-heapdump"
+  features = [ "heapdump" ]
+  configs += [ "//build/config/rust:bootfs" ]
+}
+
 fuchsia_component("component") {
   component_name = "driver_host"
   manifest = "meta/driver_host.cml"
@@ -76,11 +87,31 @@ fuchsia_component("next_component") {
   deps = [ ":bin" ]
 }
 
+fuchsia_component("component_with_heapdump") {
+  component_name = "driver_host"
+  manifest = "meta/driver_host_with_heapdump.cml"
+  deps = [ ":bin_with_heapdump" ]
+}
+
+fuchsia_component("next_component_with_heapdump") {
+  component_name = "driver_host_next"
+  manifest = "meta/driver_host_next_with_heapdump.cml"
+  deps = [ ":bin_with_heapdump" ]
+}
+
 fuchsia_package("package") {
   package_name = "driver_host"
   deps = [
     ":component",
     ":next_component",
+  ]
+}
+
+fuchsia_package("package_with_heapdump") {
+  package_name = "driver_host"
+  deps = [
+    ":component_with_heapdump",
+    ":next_component_with_heapdump",
   ]
 }
 

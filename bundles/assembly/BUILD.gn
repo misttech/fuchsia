@@ -2507,12 +2507,10 @@ assembly_input_bundle("diagnostics_triage_detect_mali") {
 # feature_set_levels: minimal
 # build-types: all
 #
-assembly_input_bundle("driver_framework") {
+assembly_input_bundle("driver_framework_common") {
   bootfs_packages = [
     "//src/devices/bin/devfs:package",
-    "//src/devices/bin/driver_manager:package",
     "//src/devices/bin/driver_manager/devfs:package",
-    "//src/devices/bin/driver-host:package",
     "//src/devices/bin/driver-index:package",
   ]
   compiled_packages = [
@@ -2523,6 +2521,43 @@ assembly_input_bundle("driver_framework") {
         {
           component_name = "bootstrap"
           shards = [ "//src/devices/bin/driver_framework/meta/driver_framework.bootstrap_shard.cml" ]
+        },
+      ]
+    },
+  ]
+}
+
+# Driver Framework Support
+#
+# feature_set_levels: minimal
+# build-types: all
+#
+assembly_input_bundle("driver_framework_no_instrumentation") {
+  bootfs_packages = [
+    "//src/devices/bin/driver_manager:package",
+    "//src/devices/bin/driver-host:package",
+  ]
+}
+
+# This AIB contains Driver Manager and Driver Host linked with with the Heapdump
+# instrumentation library for memory profiling.
+#
+# feature_set_levels: standard
+# build-types: eng
+#
+assembly_input_bundle("driver_framework_with_heapdump") {
+  bootfs_packages = [
+    "//src/devices/bin/driver_manager:package_with_heapdump",
+    "//src/devices/bin/driver-host:package_with_heapdump",
+  ]
+  compiled_packages = [
+    {
+      bootfs_package = true
+      name = "bootstrap"
+      components = [
+        {
+          component_name = "bootstrap"
+          shards = [ "//src/devices/bin/driver_framework/meta/heapdump.bootstrap_shard.cml" ]
         },
       ]
     },
