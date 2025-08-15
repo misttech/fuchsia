@@ -39,7 +39,7 @@ group("tests") {
     "bin/display-tweak:tests",
     "drivers:tests",
     "lib:tests",
-    "testing/fake-coordinator-connector:tests",
+    "testing/fake-display-stack-host:tests",
     "testing/software-compositor:tests",
   ]
 }

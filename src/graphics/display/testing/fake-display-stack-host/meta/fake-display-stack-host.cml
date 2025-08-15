@@ -9,7 +9,7 @@
     ],
     program: {
         runner: "elf",
-        binary: "bin/fake_display_coordinator_connector",
+        binary: "bin/fake-display-stack-host",
     },
     capabilities: [
         { service: "fuchsia.hardware.display.Service" },

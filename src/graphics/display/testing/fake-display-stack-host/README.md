@@ -1,13 +1,13 @@
-# Fake Display Coordinator Connector
+# Fake Display Stack Host
 
 The `BUILD.gn` in this directory a component package named
-`fake-display-coordinator-connector`. It publishes the
+`fake-display-stack-host`. It publishes the
 `fuchsia.hardware.display.Service` service that can be used
 for hermetic testing without real hardware dependency.
 
 ## Introduction
 
-The goal of `fake-display-coordinator-connector` is to provide a display engine
+The goal of `fake-display-stack-host` is to provide a display engine
 driver (`fake-display`) and a display coordinator driver within a hermetic
 testing environment. This removes the dependency on acquiring the display
 coordinator, allowing tests to run in display-less environments hermetically and
@@ -17,14 +17,14 @@ allowing multiple display coordinator and display driver instances to co-exist.
 
 Realms should declare a child component in its component manifest for the
 display coordinator connector. The child must be named
-`display-coordinator-connector` to make its capabilities be correctly routed.
+`fake-display-stack-host` to make its capabilities be correctly routed.
 
 They should also include the corresponding shard component manifest file
-`fake_display_coordinator_connector.shard.cml` to route required capabilities to
-the `display-coordinator-connector` child.
+`fake-display-stack-host.shard.cml` to route required capabilities to
+the `fake-display-stack-host` child.
 
 They should also explicitly offer the `fuchsia.hardware.display.Service`
-service from `display-coordinator-connector` to clients (for example, Scenic).
+service from `fake-display-stack-host` to clients (for example, Scenic).
 
 For example, here is an excerpt of `ui_test_realm`
 (`//src/ui/testing/ui_test_realm/meta/scenic.shard.cml`) declaring a fake
@@ -35,18 +35,18 @@ to the display coordinator connector, and providing the
 ```json5
 {
   include: [
-    "//src/graphics/display/testing/fake-coordinator-connector/meta/fake_display_coordinator_connector.shard.cml",
+    "//src/graphics/display/testing/fake-display-stack-host/meta/fake-display-stack-host.shard.cml",
   ],
   children: [
     {
-      name: "display-coordinator-connector",
-      url: "#meta/display-coordinator-connector.cm",
+      name: "fake-display-stack-host",
+      url: "#meta/fake-display-stack-host.cm",
     },
   ],
   offer: [
     {
       service: "fuchsia.hardware.display.Service",
-      from: "#display-coordinator-connector",
+      from: "#fake-display-stack-host",
       to: ["#scenic"],
     },
   ],

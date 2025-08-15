@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/graphics/display/testing/fake-coordinator-connector/meta/fake_display_coordinator_connector.shard.cml",
+        "//src/graphics/display/testing/fake-display-stack-host/meta/fake-display-stack-host.shard.cml",
 
         // Defines a base set of services scenic uses and exposes.
         "//src/ui/meta/scenic_base_routes.shard.cml",
@@ -12,8 +12,8 @@
     ],
     children: [
         {
-            name: "display-coordinator-connector",
-            url: "#meta/display-coordinator-connector.cm",
+            name: "fake-display-stack-host",
+            url: "#meta/fake-display-stack-host.cm",
         },
         {
             name: "fake_cobalt",
@@ -27,7 +27,7 @@
     offer: [
         {
             service: "fuchsia.hardware.display.Service",
-            from: "#display-coordinator-connector",
+            from: "#fake-display-stack-host",
             to: [ "#scenic" ],
         },
         {
@@ -39,7 +39,7 @@
             dictionary: "diagnostics",
             from: "parent",
             to: [
-                "#display-coordinator-connector",
+                "#fake-display-stack-host",
                 "#fake_cobalt",
                 "#scenic",
             ],

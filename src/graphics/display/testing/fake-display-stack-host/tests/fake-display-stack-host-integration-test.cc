@@ -12,7 +12,7 @@
 
 namespace {
 
-TEST(FakeDisplayCoordinatorConnector, ConnectToServiceMemberWithListener) {
+TEST(FakeDisplayStackHost, ConnectToServiceMemberWithListener) {
   component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
   zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
       watcher.GetNextInstance(/*stop_at_idle=*/false);

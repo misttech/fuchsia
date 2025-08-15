@@ -47,7 +47,7 @@ test("get_hardware_display_coordinator_test_bin") {
 fuchsia_unittest_package("get_hardware_display_coordinator_test") {
   deps = [
     ":get_hardware_display_coordinator_test_bin",
-    "//src/graphics/display/testing/fake-coordinator-connector:child-component",
+    "//src/graphics/display/testing/fake-display-stack-host:child-component",
   ]
   manifest = "tests/meta/get_hardware_display_coordinator_test.cml"
   test_specs = {

@@ -9,7 +9,7 @@ import("//tools/cmc/build/expect_includes.gni")
 
 executable("bin") {
   testonly = true
-  output_name = "fake_display_coordinator_connector"
+  output_name = "fake-display-stack-host"
 
   sources = [ "main.cc" ]
 
@@ -27,24 +27,24 @@ executable("bin") {
 
 fuchsia_component("component") {
   testonly = true
-  manifest = "meta/fake_display_coordinator_connector.cml"
-  component_name = "display-coordinator-connector"
+  manifest = "meta/fake-display-stack-host.cml"
+  component_name = "fake-display-stack-host"
   deps = [ ":bin" ]
 }
 
-fuchsia_package("fake-coordinator-connector") {
+fuchsia_package("fake-display-stack-host") {
   testonly = true
-  package_name = "fake-display-coordinator-connector"
+  package_name = "fake-display-stack-host"
   deps = [ ":component" ]
 }
 
-export_fuchsia_package_to_bazel("fake-coordinator-connector.bazel_input") {
+export_fuchsia_package_to_bazel("fake-display-stack-host.bazel_input") {
   testonly = true
-  package = ":fake-coordinator-connector"
+  package = ":fake-display-stack-host"
 }
 
 expect_includes("shard-includes") {
-  includes = [ "meta/fake_display_coordinator_connector.shard.cml" ]
+  includes = [ "meta/fake-display-stack-host.shard.cml" ]
 }
 
 # Includes `component` as a child component

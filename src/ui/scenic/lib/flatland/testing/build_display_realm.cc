@@ -13,10 +13,8 @@ namespace flatland::testing {
 
 component_testing::RealmRoot BuildFakeDisplayRealm(async_dispatcher_t* dispatcher) {
   component_testing::RealmBuilder builder = component_testing::RealmBuilder::Create();
-  static constexpr std::string_view kCoordinatorConnectorChildName =
-      "display-coordinator-connector";
-  builder.AddChild(std::string(kCoordinatorConnectorChildName),
-                   "#meta/display-coordinator-connector.cm");
+  static constexpr std::string_view kCoordinatorConnectorChildName = "fake-display-stack-host";
+  builder.AddChild(std::string(kCoordinatorConnectorChildName), "#meta/fake-display-stack-host.cm");
 
   // Route capabilities from the test to the child component.
   builder.AddRoute(component_testing::Route{

@@ -53,7 +53,7 @@ source_set("stress-test-flatland") {
   testonly = true
   deps = [
     ":scenic-stressor-flatland-bin",
-    "//src/graphics/display/testing/fake-coordinator-connector:component",
+    "//src/graphics/display/testing/fake-display-stack-host:component",
     "//src/lib/vulkan/validation_layers",
     "//src/ui/scenic:scenic_with_default_config",
   ]

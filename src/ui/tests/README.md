@@ -237,7 +237,7 @@ capabilities are routed to and from components. This is crucial for testing
 because it allows test authors to have fine-grained control over the test
 environment of their components. Take for example `scenic`. In
 `touch-input-test`, a handle to `fuchsia.hardware.display.Service` from
-`fake-display-coordinator-connector#meta/display-coordinator-connector.cm`
+`fake-display-stack-host#meta/fake-display-stack-host.cm`
 is routed. By providing a fake hardware display provider, we can write
 integration tests without having to use the real display controller. This
 mapping of source and target is explicitly written in the test

@@ -18,7 +18,7 @@ common_bazel_inputs = [
   # Cache packages.
   "//src/ui/bin/terminal:terminal.bazel_input",
   "//src/ui/bin/tiles-session:tiles-session.bazel_input",
-  "//src/graphics/display/testing/fake-coordinator-connector:fake-coordinator-connector.bazel_input",
+  "//src/graphics/display/testing/fake-display-stack-host:fake-display-stack-host.bazel_input",
   "//src/diagnostics/validator/inspect:validator.bazel_input",
   "//src/tests/fidl/dynsuite/client_suite/harness:harness.bazel_input",
   "//src/tests/fidl/dynsuite/server_suite/harness:harness.bazel_input",

@@ -163,7 +163,7 @@ group("tests") {
     # configurations on which these tests run rather than as deps.
     # TODO(https://fxbug.dev/42070261): Should these be deps of the individual test
     # targets above?
-    "///src/graphics/display/testing/fake-coordinator-connector",
+    "///src/graphics/display/testing/fake-display-stack-host",
     "//src/cobalt/bin/testing/fake_cobalt",
     "//src/graphics/bin/vulkan_loader",
     "//src/testing/fidl/intl_property_manager",

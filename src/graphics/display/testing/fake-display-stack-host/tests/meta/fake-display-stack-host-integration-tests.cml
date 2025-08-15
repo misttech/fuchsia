@@ -3,24 +3,24 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/graphics/display/testing/fake-coordinator-connector/meta/fake_display_coordinator_connector.shard.cml",
+        "//src/graphics/display/testing/fake-display-stack-host/meta/fake-display-stack-host.shard.cml",
         "//src/sys/test_runners/gtest/default.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
     program: {
-        binary: "test/fake-display-coordinator-connector-integration-tests",
+        binary: "test/fake-display-stack-host-integration-tests",
     },
     children: [
         {
-            name: "display-coordinator-connector",
-            url: "#meta/display-coordinator-connector.cm",
+            name: "fake-display-stack-host",
+            url: "#meta/fake-display-stack-host.cm",
         },
     ],
     use: [
         {
             service: "fuchsia.hardware.display.Service",
-            from: "#display-coordinator-connector",
+            from: "#fake-display-stack-host",
         },
     ],
 }

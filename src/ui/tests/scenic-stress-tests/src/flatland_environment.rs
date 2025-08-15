@@ -29,10 +29,10 @@ pub struct FlatlandEnvironment {
 impl FlatlandEnvironment {
     pub async fn new(args: Args) -> Self {
         let builder = RealmBuilder::new().await.unwrap();
-        let display_coordinator_connector = builder
+        let fake_display_stack_host = builder
             .add_child(
-                "display-coordinator-connector",
-                "#meta/display-coordinator-connector.cm",
+                "fake-display-stack-host",
+                "#meta/fake-display-stack-host.cm",
                 ChildOptions::new(),
             )
             .await
@@ -112,7 +112,7 @@ impl FlatlandEnvironment {
                     .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"))
                     .from(Ref::parent())
                     .to(&scenic)
-                    .to(&display_coordinator_connector),
+                    .to(&fake_display_stack_host),
             )
             .await
             .unwrap();
@@ -132,7 +132,7 @@ impl FlatlandEnvironment {
             .add_route(
                 Route::new()
                     .capability(Capability::service_by_name("fuchsia.hardware.display.Service"))
-                    .from(&display_coordinator_connector)
+                    .from(&fake_display_stack_host)
                     .to(&scenic),
             )
             .await

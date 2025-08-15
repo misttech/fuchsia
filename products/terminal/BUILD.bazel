@@ -85,7 +85,7 @@ _PRODUCT_CACHE_PACKAGES = [
     "//src/ui/bin/terminal",
     "//src/ui/bin/tiles-session",
     # Used to mock out display hardware in UI integration tests.
-    "//src/graphics/display/testing/fake-coordinator-connector",
+    "//src/graphics/display/testing/fake-display-stack-host",
     # Add validator package for use in tests.
     # TODO(https://fxbug.dev/42077782): Remove once we support packages in the
     # SDK.
