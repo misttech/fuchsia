@@ -11,7 +11,7 @@ library fuchsia.hardware.audio;
 /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
 /// with one DAI and one Ring Buffer, see
 /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-@available(deprecated=20)
+@deprecated
 closed protocol DaiConnector {
     /// This connects to a DAI protocol server.
     strict Connect(resource struct {
@@ -25,7 +25,7 @@ closed protocol DaiConnector {
 /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
 /// with one DAI and one Ring Buffer, see
 /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-@available(deprecated=20)
+@deprecated
 service DaiConnectorService {
     dai_connector client_end:DaiConnector;
 };

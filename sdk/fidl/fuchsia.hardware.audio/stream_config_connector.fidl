@@ -11,7 +11,7 @@ library fuchsia.hardware.audio;
 /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
 /// with one Ring Buffer, see
 /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-@available(deprecated=20)
+@deprecated
 closed protocol StreamConfigConnector {
     /// Connect to a `StreamConfig` protocol.
     /// This method allows a component to serve FIDL outside the devhost's control.
@@ -26,21 +26,21 @@ closed protocol StreamConfigConnector {
 /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
 /// with one Ring Buffer, see
 /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-@available(deprecated=20)
+@deprecated
 service StreamConfigConnectorService {
     stream_config_connector client_end:StreamConfigConnector;
 };
 
 // This service was added to allow conversion from devfs to services.
 // It should be considered just as deprecated as the StreamConfigConnector protocol
-@available(deprecated=20)
+@deprecated
 service StreamConfigConnectorInputService {
     stream_config_connector client_end:StreamConfigConnector;
 };
 
 // This service was added to allow conversion from devfs to services.
 // It should be considered just as deprecated as the StreamConfigConnector protocol
-@available(deprecated=20)
+@deprecated
 service StreamConfigConnectorOutputService {
     stream_config_connector client_end:StreamConfigConnector;
 };

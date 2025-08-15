@@ -51,22 +51,12 @@ type ElementType = flexible enum {
     /// Sample Rate Conversion.
     SAMPLE_RATE_CONVERSION = 11;
 
-    /// The start/end of a pipeline.
-    ///
-    /// # Deprecation
-    ///
-    /// Use `RING_BUFFER` or `DAI_INTERCONNECT` instead.
-    @available(removed=20)
-    ENDPOINT = 12;
-
     /// Ring Buffer.
     /// This is the first of two types of elements that can start/end processing pipelines.
-    @available(added=20)
     RING_BUFFER = 13;
 
     /// Digital Audio Interface Interconnect.
     /// This is the second of two types of elements that can start/end processing pipelines.
-    @available(added=20)
     DAI_INTERCONNECT = 14;
 };
 
@@ -85,29 +75,7 @@ type TypeSpecificElement = flexible union {
     4: dynamics Dynamics;
 
     // See dai_interconnect.fidl.
-    //
-    // # Deprecation
-    //
-    // Use `DaiInterconnect` instead.
-    @available(removed=20)
-    5: endpoint Endpoint;
-
-    // See dai_interconnect.fidl.
-    @available(added=20)
     6: dai_interconnect DaiInterconnect;
-};
-
-///
-/// # Deprecation
-///
-/// Use `processing_delay` instead.
-@available(removed=20)
-type Latency = flexible union {
-    /// Latency added to the pipeline as a zx.Duration.
-    1: latency_time zx.Duration;
-
-    /// Latency added to the pipeline as a number of frames.
-    2: latency_frames uint32;
 };
 
 type Element = table {
@@ -129,14 +97,6 @@ type Element = table {
     ///         CONNECTION_POINT, DELAY, MUTE, RING_BUFFER or SAMPLE_RATE_CONVERSION.
     3: type_specific TypeSpecificElement;
 
-    /// Can the processing element be disabled via `SetElementState`.
-    ///
-    /// # Deprecation
-    ///
-    /// Use `can_bypass` instead.
-    @available(removed=20)
-    4: can_disable bool;
-
     /// If included, a textual description of the processing element.
     ///
     /// Optional. If present, must not be empty.
@@ -146,7 +106,6 @@ type Element = table {
     /// If not included or false, the processing element is always started.
     ///
     /// Optional.
-    @available(added=20)
     6: can_stop bool;
 
     /// If true, the processing element can be bypassed via `SetElementState`.
@@ -155,7 +114,6 @@ type Element = table {
     /// must never set this field to true.
     ///
     /// Optional.
-    @available(added=20)
     7: can_bypass bool;
 };
 
@@ -177,15 +135,6 @@ type TypeSpecificElementState = flexible union {
     4: dynamics DynamicsElementState;
 
     // See dai_interconnect.fidl.
-    //
-    // # Deprecation
-    //
-    // Use `DaiInterconnectElementState` instead.
-    @available(removed=20)
-    5: endpoint EndpointElementState;
-
-    // See dai_interconnect.fidl.
-    @available(added=20)
     6: dai_interconnect DaiInterconnectElementState;
 };
 
@@ -202,22 +151,6 @@ type ElementState = table {
     /// Invalid if specified for elements of type AUTOMATIC_GAIN_CONTROL, AUTOMATIC_GAIN_LIMITER,
     ///         CONNECTION_POINT, DELAY, MUTE, RING_BUFFER or SAMPLE_RATE_CONVERSION.
     1: type_specific TypeSpecificElementState;
-
-    /// Enable/disable state for the processing element.
-    ///
-    /// # Deprecation
-    ///
-    /// Use `bypassed` instead.
-    @available(removed=20)
-    2: enabled bool;
-
-    /// How much latency this element adds, if enabled.
-    ///
-    /// # Deprecation
-    ///
-    /// Use `processing_delay` instead.
-    @available(removed=20)
-    3: latency Latency;
 
     /// If included, an opaque object of octets for conveying vendor-specific information from the
     /// driver to `SignalProcessing` clients.
@@ -236,7 +169,6 @@ type ElementState = table {
     /// No audio data flows through stopped elements.
     ///
     /// Required.
-    @available(added=20)
     5: started bool;
 
     /// The bypass state for this processing element.
@@ -251,7 +183,6 @@ type ElementState = table {
     /// Audio flows through a bypassed element, unchanged.
     ///
     /// Optional.
-    @available(added=20)
     6: bypassed bool;
 
     /// If included, the driver's best estimate of the amount of time it takes the element's
@@ -264,7 +195,6 @@ type ElementState = table {
     /// If not included, `turn_on_delay` is unknown.
     ///
     /// Optional. If specified, must be non-negative.
-    @available(added=20)
     7: turn_on_delay zx.Duration;
 
     /// If included, the driver's best estimate of the amount of time it takes the element's
@@ -277,7 +207,6 @@ type ElementState = table {
     /// If not included, `turn_off_delay` is unknown.
     ///
     /// Optional. If specified, must be non-negative.
-    @available(added=20)
     8: turn_off_delay zx.Duration;
 
     /// If included, the driver's best estimate of the delay added by this processing element,
@@ -291,7 +220,6 @@ type ElementState = table {
     /// is contained in the `RingBufferProperties` field `driver_transfer_bytes`.
     ///
     /// Optional. If specified, must be non-negative.
-    @available(added=20)
     9: processing_delay zx.Duration;
 };
 
@@ -299,7 +227,6 @@ type ElementState = table {
 /// The type of processing element control is defined by the type of parameters provided in this
 /// union. This type-specific variant must match the `ElementType` entry in the corresponding
 /// `Element`.
-@available(added=20)
 type SettableTypeSpecificElementState = flexible union {
     // See vendor_specific.fidl.
     1: vendor_specific VendorSpecificState;
@@ -315,7 +242,6 @@ type SettableTypeSpecificElementState = flexible union {
 };
 
 /// Processing element state that can be set by clients.
-@available(added=20)
 type SettableElementState = table {
     /// Type-specific element-state parameters that can be set by clients.
     ///
@@ -407,7 +333,7 @@ type Topology = table {
 ///
 /// For an overview see
 /// [[Signal Processing Interface]](https://fuchsia.dev/fuchsia-src/concepts/drivers/driver_architectures/audio_drivers/audio_signal_processing).
-closed(removed=24) open(added=24) protocol SignalProcessing {
+open protocol SignalProcessing {
     /// Exposes read-only signal processing properties.
     compose Reader;
 
@@ -469,9 +395,6 @@ closed(removed=24) open(added=24) protocol SignalProcessing {
     strict SetElementState(struct {
         processing_element_id ElementId;
 
-        @available(replaced=20)
-        state ElementState;
-        @available(added=20)
         state SettableElementState;
     }) -> () error zx.Status;
 };
@@ -481,7 +404,7 @@ closed(removed=24) open(added=24) protocol SignalProcessing {
 ///
 /// For an overview see
 /// [[Signal Processing Interface]](https://fuchsia.dev/fuchsia-src/concepts/drivers/driver_architectures/audio_drivers/audio_signal_processing).
-closed(removed=24) open(added=24) protocol Reader {
+open protocol Reader {
     /// Returns a vector of supported processing elements.
     /// This vector must include one or more processing elements.
     strict GetElements() -> (struct {

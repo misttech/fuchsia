@@ -6,7 +6,6 @@ library fuchsia.hardware.audio;
 using zx;
 using fuchsia.hardware.audio.signalprocessing;
 
-@available(added=20)
 type CodecProperties = table {
     /// Driver type is input (true) or output (false)
     /// If not included, then the driver may be used for both input and output.
@@ -77,7 +76,7 @@ type CodecFormatInfo = table {
 /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
 /// with one DAI and no Ring Buffer, see
 /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-@available(deprecated=20)
+@deprecated
 closed protocol Codec {
     /// Allows providing driver health state.
     compose Health;
@@ -92,7 +91,6 @@ closed protocol Codec {
     strict Reset() -> ();
 
     /// Retrieves top level static properties.
-    @available(added=20)
     strict GetProperties() -> (struct {
         properties CodecProperties;
     });
@@ -106,10 +104,6 @@ closed protocol Codec {
     /// If the driver cannot successfully configure the codec to stop, it will close the codec
     /// protocol channel, in which case the client may obtain a new codec protocol channel and retry.
     strict Stop() -> (struct {
-        @available(replaced=20, renamed="stop_time")
-        start_time zx.Time;
-
-        @available(added=20)
         stop_time zx.Time;
     });
 
@@ -123,29 +117,6 @@ closed protocol Codec {
     /// in which case the client may obtain a new codec protocol channel and retry.
     strict Start() -> (struct {
         start_time zx.Time;
-    });
-
-    /// Returns whether a codec is bridgeable.
-    ///
-    /// # Deprecation
-    ///
-    /// Not supported anymore, bridged configurations are no longer changeable at runtime.
-    /// A driver can still be configured to operate in bridged mode or not at boot time.
-    @available(deprecated=17, removed=20)
-    strict IsBridgeable() -> (struct {
-        supports_bridged_mode bool;
-    });
-
-    /// Sets a codec's bridged mode. This method is required, but it only needs to take action if
-    /// the codec supports bridged mode as specified by its reply to `IsBridgeable`.
-    ///
-    /// # Deprecation
-    ///
-    /// Not supported anymore, bridged configurations are no longer changeable at runtime.
-    /// A driver can still be configured to operate in bridged mode or not at boot time.
-    @available(deprecated=17, removed=20)
-    strict SetBridgedMode(struct {
-        enable_bridged_mode bool;
     });
 
     /// Retrieves the DAI formats supported by the codec, if not available at the time the codec
@@ -178,7 +149,7 @@ closed protocol Codec {
 /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
 /// with one DAI and no Ring Buffer, see
 /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-@available(deprecated=20)
+@deprecated
 service CodecService {
     codec client_end:Codec;
 };

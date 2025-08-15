@@ -64,11 +64,6 @@ type DynamicsSupportedControls = flexible bits : uint64 {
     LINKED_CHANNELS = 0x80;
 
     /// If set, `SetElementState` can change a dynamics band's `threshold_type` parameter.
-    @available(replaced=20, renamed="THRESHOLD_TYPE")
-    THREDSHOLD_TYPE = 0x100;
-
-    /// If set, `SetElementState` can change a dynamics band's `threshold_type` parameter.
-    @available(added=20)
     THRESHOLD_TYPE = 0x100;
 };
 

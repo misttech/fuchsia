@@ -31,7 +31,6 @@ type DaiProperties = table {
     /// If not included, there is no unique id for the driver.
     ///
     /// Optional.
-    @available(added=20)
     4: unique_id array<uint8, UNIQUE_ID_SIZE>;
 
     /// An identifier for the clock domain in which this hardware operates. If
@@ -54,7 +53,6 @@ type DaiProperties = table {
     /// notification updates to recover the hardware's clock.
     ///
     /// Required.
-    @available(added=20)
     5: clock_domain ClockDomain;
 };
 
@@ -66,7 +64,7 @@ type DaiProperties = table {
 /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
 /// with one DAI and one Ring Buffer, see
 /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-@available(deprecated=20)
+@deprecated
 closed protocol Dai {
     /// Allows providing driver health state.
     compose Health;
@@ -121,7 +119,7 @@ closed protocol Dai {
 /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
 /// with one DAI and one Ring Buffer, see
 /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-@available(deprecated=20)
+@deprecated
 service DaiService {
     dai client_end:Dai;
 };

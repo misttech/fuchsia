@@ -30,55 +30,7 @@ type PlugDetectCapabilities = flexible enum {
     CAN_ASYNC_NOTIFY = 1;
 };
 
-/// Endpoint types.
-///
-/// # Deprecation
-///
-/// Use `ElementType` `RING_BUFFER` or `DAI_INTERCONNECT` instead.
-@available(removed=20)
-type EndpointType = flexible enum : uint8 {
-    /// The endpoint represents a ring buffer.
-    /// A ring buffer processing element's id allows for multi-ring buffer topologies to
-    /// be supported by a driver providing the fuchsia.hardware.audio/Composite API.
-    RING_BUFFER = 1;
-
-    /// The endpoint represents a Digital Audio Interface Interconnect,
-    /// e.g. connecting an SoC audio subsystem to a DAC + amplifier hardware codec.
-    DAI_INTERCONNECT = 2;
-};
-
-/// Parameters for an `Element` with `type` equal to `ENDPOINT`.
-///
-/// # Deprecation
-///
-/// Use `DaiInterconnect` and `ElementType` `DAI_INTERCONNECT` instead.
-@available(removed=20)
-type Endpoint = table {
-    /// Specifies what the endpoint represents.
-    ///
-    /// Required.
-    1: type EndpointType;
-
-    /// Plug Detect Capabilities.
-    /// Required.
-    2: plug_detect_capabilities PlugDetectCapabilities;
-};
-
-/// State for an `Element` with `type` equal to `ENDPOINT`.
-///
-/// # Deprecation
-///
-/// Use `DaiInterconnectElementState` and `ElementType` `DAI_INTERCONNECT` instead.
-@available(removed=20)
-type EndpointElementState = table {
-    /// If included the plug detect state for this endpoint.
-    ///
-    /// Required for servers.
-    1: plug_state PlugState;
-};
-
 /// Parameters for an `Element` with `ElementType` `DAI_INTERCONNECT`.
-@available(added=20)
 type DaiInterconnect = table {
     /// Plug Detect Capabilities.
     ///
@@ -87,7 +39,6 @@ type DaiInterconnect = table {
 };
 
 /// State for an `Element` with `ElementType` `DAI_INTERCONNECT`.
-@available(added=20)
 type DaiInterconnectElementState = table {
     /// The plug state for this DAI interconnect.
     ///

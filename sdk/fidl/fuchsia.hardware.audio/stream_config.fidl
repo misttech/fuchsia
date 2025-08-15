@@ -114,7 +114,7 @@ type StreamProperties = table {
 /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
 /// with one Ring Buffer, see
 /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-@available(deprecated=20)
+@deprecated
 closed protocol StreamConfig {
     /// Allows providing driver health state.
     compose Health;
@@ -182,7 +182,7 @@ closed protocol StreamConfig {
 /// [Audio Composite](https://fuchsia.dev/fuchsia-src/development/audio/drivers/composite)
 /// with one Ring Buffer, see
 /// [Audio Drivers Architecture](https://fuchsia.dev/fuchsia-src/development/audio/drivers/architecture)
-@available(deprecated=20)
+@deprecated
 service StreamConfigService {
     stream_config client_end:StreamConfig;
 };
