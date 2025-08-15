@@ -4,6 +4,7 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
+import("//build/rust/rustc_test.gni")
 import(
     "//src/lib/testing/expectation/fuchsia_test_with_expectations_package.gni")
 import("//src/lib/testing/expectation/generated_expectations_file.gni")
@@ -11,7 +12,6 @@ import("//src/lib/testing/expectation/generated_expectations_file.gni")
 rustc_binary("bin") {
   edition = "2021"
   name = "expectation_comparer"
-  with_unit_tests = true
   deps = [
     "expectations_matcher",
     "ser",
@@ -26,11 +26,19 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:serde_json5",
   ]
-  test_deps = [
+  sources = [ "src/main.rs" ]
+  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+}
+
+rustc_test("example_tests") {
+  edition = "2021"
+  name = "expectation_comparer_example_tests"
+  deps = [
     "//src/lib/fuchsia",
     "//third_party/rust_crates:log",
   ]
-  sources = [ "src/main.rs" ]
+  source_root = "src/tests.rs"
+  sources = [ "src/tests.rs" ]
   configs -= [ "//build/config/rust/lints:allow_unused_results" ]
 }
 
@@ -39,13 +47,13 @@ fuchsia_component("expectation_comparer") {
   deps = [ ":bin" ]
 }
 
-fuchsia_unittest_component("expectation-unittests") {
-  deps = [ ":bin_test" ]
+fuchsia_unittest_component("expectation-example-tests") {
+  deps = [ ":example_tests" ]
   manifest = "meta/test_root.cml"
 }
 
 fuchsia_test_with_expectations_package("expectation-example-package") {
-  test_components = [ ":expectation-unittests" ]
+  test_components = [ ":expectation-example-tests" ]
 
   test_specs = {
     log_settings = {
@@ -57,7 +65,7 @@ fuchsia_test_with_expectations_package("expectation-example-package") {
 
 fuchsia_test_with_expectations_package(
     "expectation-example-package-just-err-logs-cases") {
-  test_components = [ ":expectation-unittests" ]
+  test_components = [ ":expectation-example-tests" ]
   treatment_of_cases_with_error_logs = "RUN_ONLY_CASES_WITH_ERROR_LOGS"
 
   test_specs = {
@@ -70,7 +78,7 @@ fuchsia_test_with_expectations_package(
 
 fuchsia_test_with_expectations_package(
     "expectation-example-package-no-err-logs-cases") {
-  test_components = [ ":expectation-unittests" ]
+  test_components = [ ":expectation-example-tests" ]
   treatment_of_cases_with_error_logs = "SKIP_CASES_WITH_ERROR_LOGS"
   expectations = "example_expectations.json5"
 }
@@ -84,7 +92,7 @@ generated_expectations_file("generated_expectations_example") {
 
 fuchsia_test_with_expectations_package(
     "expectation-example-package-generated") {
-  test_components = [ ":expectation-unittests" ]
+  test_components = [ ":expectation-example-tests" ]
 
   treatment_of_cases_with_error_logs = "SKIP_CASES_WITH_ERROR_LOGS"
   generated_expectations = ":generated_expectations_example"

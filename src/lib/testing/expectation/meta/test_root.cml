@@ -8,6 +8,6 @@
     ],
     program: {
         runner: "rust_test_runner",
-        binary: "bin/expectation_comparer_bin_test",
+        binary: "bin/expectation_comparer_example_tests",
     },
 }
