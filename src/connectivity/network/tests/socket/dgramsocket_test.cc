@@ -25,6 +25,7 @@
 #include <zircon/status.h>
 
 #include "src/connectivity/network/netstack/udp_serde/udp_serde.h"
+#include "src/lib/testing/predicates/status.h"
 #endif
 
 #include "src/connectivity/network/tests/os.h"
@@ -47,6 +48,8 @@ void PrintTo(const std::chrono::duration<Rep, Period>& duration, std::ostream* o
 namespace {
 
 #if defined(__Fuchsia__)
+#include <fcntl.h>
+
 // Saturates `recvfd`'s receive buffers by writing `sendbuf` to `sendfd` N times using `io_method`.
 // `sendbuf` is resized and N picked to ensure that:
 //   - `recvfd`'s associated zircon socket contains `sizeof(kernel buf) - remainder` bytes, where
@@ -61,10 +64,12 @@ void FillRxBuffersLeavingRemainderInZirconSocket(const fbl::unique_fd& recvfd,
   // Start with the maximum datagram payload size, derived as:
   // 65535 bytes (max IP packet size) - 20 bytes (IPv4 header) - 8 bytes (UDP header)
   size_t payload_size = 65507;
-  size_t recv_capacity;
-  ASSERT_NO_FATAL_FAILURE(RxCapacity(recvfd.get(), recv_capacity));
+
+  zx::socket socket;
+  ZxSocketDgram(recvfd.get(), socket);
   zx_info_socket_t zx_socket_info;
-  ASSERT_NO_FATAL_FAILURE(ZxSocketInfoDgram(recvfd.get(), zx_socket_info));
+  ASSERT_OK(
+      socket.get_info(ZX_INFO_SOCKET, &zx_socket_info, sizeof(zx_socket_info), nullptr, nullptr));
 
   // Pick a payload size which is less than the maximum datagram payload size and ensures
   // that the zircon socket has a remainder, as described above.
@@ -81,20 +86,37 @@ void FillRxBuffersLeavingRemainderInZirconSocket(const fbl::unique_fd& recvfd,
               "payload size) != 0";
   }
 
+  // Ensure the socket is blocking so that we don't busy-loop below.
+  int flags = fcntl(sendfd.get(), F_GETFL);
+  ASSERT_GE(flags, 0) << strerror(errno);
+  ASSERT_EQ(flags & O_NONBLOCK, 0);
+
   // It's possible that the receiver's Netstack receive buffer will fill up even when its zircon
   // socket still has space (because the shuttling routines have lagged). When this happens, the
   // receiver will drop inbound packets; if enough packets are dropped, we might fail to fill up
-  // the zircon socket. To avoid this scenario, send significantly more than the receiver's total
-  // Rx capacity.
-  size_t payload_count = (2 * recv_capacity) / payload_size;
-
+  // the zircon socket. To avoid this scenario, send until we directly observe that the zircon
+  // socket is full, and then send one more payload to ensure there is data sitting in the Netstack
+  // receive buffer.
   sendbuf = std::vector<char>(payload_size, 'a');
-  while (payload_count > 0) {
+  while (true) {
     ASSERT_EQ(io_method.ExecuteIO(sendfd.get(), sendbuf.data(), sendbuf.size()),
               ssize_t(sendbuf.size()))
         << strerror(errno);
-    --payload_count;
+
+    zx_info_socket_t zx_socket_info;
+    ASSERT_OK(
+        socket.get_info(ZX_INFO_SOCKET, &zx_socket_info, sizeof(zx_socket_info), nullptr, nullptr));
+
+    if (zx_socket_info.rx_buf_max - zx_socket_info.rx_buf_size < payload_size) {
+      break;
+    }
   }
+
+  // Send one more payload to ensure there is data in the Netstack's receive buffer that cannot yet
+  // be written to the zircon socket.
+  ASSERT_EQ(io_method.ExecuteIO(sendfd.get(), sendbuf.data(), sendbuf.size()),
+            ssize_t(sendbuf.size()))
+      << strerror(errno);
 }
 #endif  // defined(__Fuchsia__)
 

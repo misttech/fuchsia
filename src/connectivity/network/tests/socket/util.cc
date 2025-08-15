@@ -35,6 +35,12 @@ void ZxSocketInfoStream(int fd, zx_info_socket_t& out_info) {
 }
 
 void ZxSocketInfoDgram(int fd, zx_info_socket_t& out_info) {
+  zx::socket socket;
+  ZxSocketDgram(fd, socket);
+  ASSERT_OK(socket.get_info(ZX_INFO_SOCKET, &out_info, sizeof(out_info), nullptr, nullptr));
+}
+
+void ZxSocketDgram(int fd, zx::socket& out_socket) {
   fidl::ClientEnd<fuchsia_posix_socket::DatagramSocket> client_end;
   ASSERT_OK(fdio_fd_clone(fd, client_end.channel().reset_and_get_address()));
   fidl::WireSyncClient client{std::move(client_end)};
@@ -43,8 +49,7 @@ void ZxSocketInfoDgram(int fd, zx_info_socket_t& out_info) {
   ASSERT_OK(result.status());
   const fidl::WireResponse response = result.value();
   ASSERT_TRUE(response.has_socket());
-  ASSERT_OK(
-      response.socket().get_info(ZX_INFO_SOCKET, &out_info, sizeof(out_info), nullptr, nullptr));
+  out_socket = std::move(response.socket());
 }
 
 #endif

@@ -101,6 +101,7 @@ struct ShutdownType {
 sockaddr_in6 MapIpv4SockaddrToIpv6Sockaddr(const sockaddr_in& addr4);
 
 #if defined(__Fuchsia__)
+#include <lib/zx/socket.h>
 #include <zircon/syscalls/object.h>
 // Returns the socket info associated with the provided `fd`, backed by a
 // `fposix_socket::StreamSocket`.
@@ -109,6 +110,11 @@ void ZxSocketInfoStream(int fd, zx_info_socket_t& out_info);
 // Returns the socket info associated with the provided `fd`, backed by a
 // `fposix_socket::DatagramSocket`.
 void ZxSocketInfoDgram(int fd, zx_info_socket_t& out_info);
+
+// Returns the underlying zircon socket associated with the provided `fd`,
+// backed by a `fposix_socket::DatagramSocket`.
+void ZxSocketDgram(int fd, zx::socket& out_socket);
+
 #endif
 
 // Returns the Tx capacity of the provided `fd`. NOTE: On Fuchsia, this accounts for

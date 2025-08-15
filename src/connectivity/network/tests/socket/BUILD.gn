@@ -79,6 +79,7 @@ test("netstack_${dgramsocket_label}_test") {
   deps = [
     ":util",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/fbl",
   ]
