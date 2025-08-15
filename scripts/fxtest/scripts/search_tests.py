@@ -14,6 +14,7 @@ import tempfile
 import time
 import typing
 from collections import defaultdict
+from multiprocessing import Pool
 
 import colorama
 import jellyfish
@@ -742,13 +743,46 @@ def create_search_locations(
     )
 
 
-def collect_remote_tests_jsons(
-    fuchsia_directory: str, builders: list[str]
-) -> list[str]:
-    remote_tests_jsons = []
+def _fetch_remote_tests_json_for_builder(builder: str) -> str:
+    """Worker function to fetch a single tests.json file."""
+    fuchsia_directory = os.getenv("FUCHSIA_DIR")
+    if not fuchsia_directory:
+        # This should not happen if the main process checked it,
+        # but it's good practice for a worker process.
+        raise Exception("Worker process could not find FUCHSIA_DIR")
+
     lkg_tool = os.path.join(
         fuchsia_directory, "prebuilt", "tools", "lkg", "lkg"
     )
+    gsutil_tool = os.path.join(
+        fuchsia_directory, "prebuilt", "tools", "gsutil", "gsutil"
+    )
+
+    build_id = subprocess.check_output(
+        [lkg_tool, "build", "-builder", builder],
+        text=True,
+    ).strip()
+
+    gsutil_command = [
+        gsutil_tool,
+        "cat",
+        f"gs://fuchsia-artifacts-internal/builds/{build_id}/build_api/tests.json",
+    ]
+
+    clean_builder_name = builder.replace("/", "_")
+    output_filename = os.path.join(
+        tempfile.gettempdir(), f"{clean_builder_name}_tests.json"
+    )
+
+    with open(output_filename, "w") as f:
+        subprocess.run(gsutil_command, check=True, stdout=f)
+
+    return output_filename
+
+
+def collect_remote_tests_jsons(
+    fuchsia_directory: str, builders: list[str]
+) -> list[str]:
     gsutil_tool = os.path.join(
         fuchsia_directory, "prebuilt", "tools", "gsutil", "gsutil"
     )
@@ -765,29 +799,11 @@ def collect_remote_tests_jsons(
         )
         return []
 
-    for builder in DEFAULT_BUILDERS + builders:
-        # Run lkg build and get the build ID
-        # This assumes lkg output will only contain the build ID and nothing else.
-        build_id = subprocess.check_output(
-            [lkg_tool, "build", "-builder", builder],
-            text=True,
-        ).strip()
-
-        # Fetch tests.json using gsutil and the obtained build ID
-        gsutil_command = [
-            gsutil_tool,
-            "cat",
-            f"gs://fuchsia-artifacts-internal/builds/{build_id}/build_api/tests.json",
-        ]
-
-        clean_builder_name = builder.replace("/", "_")
-        output_filename = os.path.join(
-            tempfile.gettempdir(), f"{clean_builder_name}_tests.json"
+    all_builders = DEFAULT_BUILDERS + builders
+    with Pool(processes=len(all_builders)) as pool:
+        remote_tests_jsons = pool.map(
+            _fetch_remote_tests_json_for_builder, all_builders
         )
-
-        with open(output_filename, "w") as f:
-            subprocess.run(gsutil_command, check=True, stdout=f)
-        remote_tests_jsons.append(output_filename)
 
     return remote_tests_jsons
 

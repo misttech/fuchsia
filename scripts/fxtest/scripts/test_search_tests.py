@@ -92,14 +92,27 @@ class TestSearchLocations(PreserveEnvAndCaptureOutputTestCase):
             )
             self.assertNotEqual("", str(locations))
 
-    @mock.patch("search_tests.subprocess")
-    def test_success_with_remote(self, mock_subprocess: mock.MagicMock) -> None:
-        mock_subprocess.check_output.return_value = "fake-build-id-123\n"
-        mock_subprocess.run.side_effect = (
-            lambda *args, **kwargs: mock.MagicMock(
-                spec=subprocess.CompletedProcess, returncode=0
-            )
+    @mock.patch("search_tests.Pool")
+    @mock.patch("search_tests.subprocess.run")
+    @mock.patch("search_tests.subprocess.check_output")
+    def test_success_with_remote(
+        self,
+        mock_check_output: mock.MagicMock,
+        mock_run: mock.MagicMock,
+        mock_pool: mock.MagicMock,
+    ) -> None:
+        mock_check_output.return_value = b"fake-build-id-123\n"
+        mock_run.side_effect = lambda *args, **kwargs: mock.MagicMock(
+            spec=subprocess.CompletedProcess, returncode=0
         )
+        mock_pool.return_value.__enter__.return_value.map.return_value = [
+            "/fake/path/1",
+            "/fake/path/2",
+            "/fake/path/3",
+            "/fake/path/4",
+            "/fake/path/5",
+        ]
+
         with tempfile.TemporaryDirectory() as dir:
             with open(os.path.join(dir, ".fx-build-dir"), "w") as f:
                 f.write("out/other")
