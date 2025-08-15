@@ -8,6 +8,7 @@
 
 mod artifact;
 mod artifact_cache;
+mod gn_label;
 
 pub use artifact::Artifact;
 pub use artifact_cache::ArtifactCache;

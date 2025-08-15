@@ -23,6 +23,7 @@ rustc_library("artifact_cache") {
   sources = [
     "src/artifact.rs",
     "src/artifact_cache.rs",
+    "src/gn_label.rs",
     "src/lib.rs",
   ]
 }

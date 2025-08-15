@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use assembly_config_schema::Architecture;
 use camino::Utf8PathBuf;
 use serde::Deserialize;
 use std::str::FromStr;
+
+use crate::gn_label::GNLabel;
 
 /// An artifact reference.
 #[derive(Debug, PartialEq)]
@@ -46,6 +48,7 @@ pub struct MOSIdentifier {
 struct BuildApiEntry {
     name: String,
     outdir: Utf8PathBuf,
+    label: GNLabel,
 }
 
 #[derive(Deserialize)]
@@ -190,6 +193,18 @@ fn parse_local_name(
         .with_context(|| format!("searching for artifact {}", name.as_ref()))
         .with_context(|| format!("searching build api: {}", &build_api))?;
     let artifact_path = build_dir.join(&artifact_entry.outdir);
+
+    // If the artifact does not exist, then prompt the user to build it.
+    if !std::fs::exists(&artifact_path)? {
+        return Err(anyhow!(
+            "Build it with: fx build {}",
+            artifact_entry.label.without_toolchain()
+        ))
+        .with_context(|| {
+            format!("'{}' is found in the build api, but needs to be built.", name.as_ref(),)
+        });
+    }
+
     Ok(Artifact::Local(artifact_path))
 }
 
@@ -290,9 +305,13 @@ mod tests {
             {
                 "name": "product_a",
                 "outdir": "path/to/local/product",
+                "label": "//build/images/fuchsia:fuchsia"
             }
         ]);
         serde_json::to_writer(&products_file, &products).unwrap();
+        let product_path = tmp_path.join("path/to/local/product");
+        std::fs::create_dir_all(product_path.parent().unwrap()).unwrap();
+        File::create(&product_path).unwrap();
 
         assert_eq!(
             Artifact::Local(tmp_path.join("path/to/local/product")),
@@ -311,9 +330,13 @@ mod tests {
             {
                 "name": "board_a",
                 "outdir": "path/to/local/board",
+                "label": "//build/images/fuchsia:fuchsia"
             }
         ]);
         serde_json::to_writer(&boards_file, &boards).unwrap();
+        let board_path = tmp_path.join("path/to/local/board");
+        std::fs::create_dir_all(board_path.parent().unwrap()).unwrap();
+        File::create(&board_path).unwrap();
 
         assert_eq!(
             Artifact::Local(tmp_path.join("path/to/local/board")),
