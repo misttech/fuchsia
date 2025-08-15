@@ -38,15 +38,9 @@ class TestFunction : public fdf::DriverBase,
   zx_status_t UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed);
   zx_status_t UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting);
 
- private:
-  void ExpectControl(ExpectControlRequest& request,
-                     ExpectControlCompleter::Sync& completer) override;
-  void ExpectOut(ExpectOutCompleter::Sync& completer) override;
-  void ExpectIn(ExpectInRequest& request, ExpectInCompleter::Sync& completer) override;
-  void Sync(SyncCompleter::Sync& completer) override { completer.Reply(); }
+  ddk::UsbFunctionProtocolClient& function() { return function_; }
 
-  fdf::OwnedChildNode child_;
-  fidl::ServerBindingGroup<fuchsia_hardware_usb_virtualbustest::ExpectBusTest> bindings_;
+ protected:
   ddk::UsbFunctionProtocolClient function_;
 
   struct VirtualBusTestDescriptor {
@@ -86,13 +80,26 @@ class TestFunction : public fdf::DriverBase,
           },
   };
 
-  size_t parent_req_size_ = 0;
+  std::optional<ExpectOutCompleter::Async> expect_out_;
+  std::optional<ExpectInCompleter::Async> expect_in_;
+
+ private:
+  void ExpectControl(ExpectControlRequest& request,
+                     ExpectControlCompleter::Sync& completer) override;
+  void ExpectOut(ExpectOutCompleter::Sync& completer) override;
+  void ExpectIn(ExpectInRequest& request, ExpectInCompleter::Sync& completer) override;
+  void Sync(SyncCompleter::Sync& completer) override { completer.Reply(); }
+
+  virtual void QueueOut() = 0;
+  virtual void QueueIn(std::vector<uint8_t> data) = 0;
+
+  fdf::OwnedChildNode child_;
+  fidl::ServerBindingGroup<fuchsia_hardware_usb_virtualbustest::ExpectBusTest> bindings_;
+
   bool configured_ = false;
 
   std::vector<uint8_t> expect_control_data_;
   std::optional<ExpectControlCompleter::Async> expect_control_;
-  std::optional<ExpectOutCompleter::Async> expect_out_;
-  std::optional<ExpectInCompleter::Async> expect_in_;
 };
 }  // namespace virtualbus
 

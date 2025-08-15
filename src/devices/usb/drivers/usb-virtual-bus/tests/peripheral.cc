@@ -5,7 +5,6 @@
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/peripheral.h"
 
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_export.h>
 
 #include <usb/request-cpp.h>
 
@@ -29,51 +28,17 @@ void TestFunction::ExpectOut(ExpectOutCompleter::Sync& completer) {
   }
   expect_out_ = completer.ToAsync();
 
-  usb_request_complete_callback_t complete = {
-      .callback =
-          [](void* ctx, usb_request_t* req) {
-            usb::Request<> request(req, static_cast<TestFunction*>(ctx)->parent_req_size_);
-            std::vector<uint8_t> data(request.request()->response.actual);
-            size_t actual = request.CopyFrom(data.data(), data.size(), 0);
-            if (actual != data.size()) {
-              static_cast<TestFunction*>(ctx)->expect_out_->Reply(zx::error(ZX_ERR_BAD_STATE));
-              static_cast<TestFunction*>(ctx)->expect_out_.reset();
-              return;
-            }
-
-            static_cast<TestFunction*>(ctx)->expect_out_->Reply(zx::ok(std::move(data)));
-            static_cast<TestFunction*>(ctx)->expect_out_.reset();
-          },
-      .ctx = this,
-  };
-  std::optional<usb::Request<>> data_out_req;
-  usb::Request<>::Alloc(&data_out_req, kMaxPacketSize, descriptor_.bulk_out.b_endpoint_address,
-                        parent_req_size_);
-  function_.RequestQueue(data_out_req->take(), &complete);
+  QueueOut();
 }
 
 void TestFunction::ExpectIn(ExpectInRequest& request, ExpectInCompleter::Sync& completer) {
-  usb_request_complete_callback_t complete = {
-      .callback =
-          [](void* ctx, usb_request_t* req) {
-            usb::Request<> request(req, static_cast<TestFunction*>(ctx)->parent_req_size_);
-            static_cast<TestFunction*>(ctx)->expect_in_->Reply(
-                zx::ok(request.request()->response.actual));
-            static_cast<TestFunction*>(ctx)->expect_in_.reset();
-          },
-      .ctx = this,
-  };
-
-  std::optional<usb::Request<>> data_in_req;
-  usb::Request<>::Alloc(&data_in_req, request.data().size(), descriptor_.bulk_in.b_endpoint_address,
-                        parent_req_size_);
-  size_t actual = data_in_req->CopyTo(request.data().data(), request.data().size(), 0);
-  if (actual != request.data().size()) {
+  if (expect_in_.has_value()) {
     completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
   expect_in_ = completer.ToAsync();
-  function_.RequestQueue(data_in_req->take(), &complete);
+
+  QueueIn(std::move(request.data()));
 }
 
 size_t TestFunction::UsbFunctionInterfaceGetDescriptorsSize() { return sizeof(descriptor_); }
@@ -154,8 +119,6 @@ zx::result<> TestFunction::Start() {
   }
   function_ = *function;
 
-  parent_req_size_ = function_.GetRequestSize();
-
   zx_status_t status = function_.AllocInterface(&descriptor_.interface.b_interface_number);
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "usb_function_alloc_interface failed");
@@ -168,7 +131,7 @@ zx::result<> TestFunction::Start() {
   }
   status = function_.AllocEp(USB_DIR_IN, &descriptor_.bulk_in.b_endpoint_address);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "usb_function_alloc_ep failed");
+    FDF_LOG(ERROR, "usb_function_alloc_ep failed");
     return zx::error(status);
   }
 
@@ -187,7 +150,7 @@ zx::result<> TestFunction::Start() {
                                           fidl::kIgnoreBindingClosure),
           }));
   if (serve_result.is_error()) {
-    zxlogf(ERROR, "Failed to add Device service %s", serve_result.status_string());
+    FDF_LOG(ERROR, "Failed to add Device service %s", serve_result.status_string());
     return serve_result.take_error();
   }
 
@@ -197,5 +160,3 @@ zx::result<> TestFunction::Start() {
 }
 
 }  // namespace virtualbus
-
-FUCHSIA_DRIVER_EXPORT(virtualbus::TestFunction);

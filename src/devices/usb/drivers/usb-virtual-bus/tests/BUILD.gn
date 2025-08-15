@@ -60,11 +60,10 @@ driver_bind_rules("usb-virtual-bus-tester-function-bind") {
   ]
 }
 
-fuchsia_cc_driver("virtual-bus-tester-function-driver") {
+source_set("virtual-bus-tester-function-common") {
   testonly = true
-  output_name = "virtual-bus-tester-function"
   sources = [ "peripheral.cc" ]
-  deps = [
+  public_deps = [
     ":fuchsia.hardware.usb.virtualbustest_cpp",
     ":usb-virtual-bus-tester-function-bind",
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
@@ -76,12 +75,38 @@ fuchsia_cc_driver("virtual-bus-tester-function-driver") {
   ]
 }
 
-fuchsia_driver_component("virtual-bus-tester-function") {
+fuchsia_cc_driver("virtual-bus-tester-function-banjo-driver") {
+  testonly = true
+  output_name = "virtual-bus-tester-function-banjo"
+  sources = [ "peripheral-banjo.cc" ]
+  deps = [ ":virtual-bus-tester-function-common" ]
+}
+
+fuchsia_driver_component("virtual-bus-tester-function-banjo") {
   testonly = true
   info = "meta/virtual-bus-tester-function-info.json"
-  component_name = "virtual-bus-tester-function"
-  deps = [ ":virtual-bus-tester-function-driver" ]
-  manifest = "meta/virtual-bus-tester-function.cml"
+  component_name = "virtual-bus-tester-function-banjo"
+  deps = [ ":virtual-bus-tester-function-banjo-driver" ]
+  manifest = "meta/virtual-bus-tester-function-banjo.cml"
+}
+
+fuchsia_cc_driver("virtual-bus-tester-function-fidl-driver") {
+  testonly = true
+  output_name = "virtual-bus-tester-function-fidl"
+  sources = [ "peripheral-fidl.cc" ]
+  deps = [
+    ":virtual-bus-tester-function-common",
+    "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
+    "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client-dfv2-compat-logging",
+  ]
+}
+
+fuchsia_driver_component("virtual-bus-tester-function-fidl") {
+  testonly = true
+  info = "meta/virtual-bus-tester-function-info.json"
+  component_name = "virtual-bus-tester-function-fidl"
+  deps = [ ":virtual-bus-tester-function-fidl-driver" ]
+  manifest = "meta/virtual-bus-tester-function-fidl.cml"
 }
 
 test("usb-virtual-bus-test-bin") {
@@ -99,17 +124,38 @@ test("usb-virtual-bus-test-bin") {
   ]
 }
 
-fuchsia_unittest_package("usb-virtual-bus-test") {
-  deps = [
+source_set("usb-virtual-bus-test-common") {
+  testonly = true
+  public_deps = [
     ":usb-virtual-bus-test-bin",
-    ":virtual-bus-tester",
-    ":virtual-bus-tester-function",
     "//src/devices/board/drivers/integration-test",
     "//src/devices/bus/drivers/platform",
     "//src/devices/usb/drivers/usb-bus",
     "//src/devices/usb/drivers/usb-composite",
     "//src/devices/usb/drivers/usb-peripheral",
     "//src/devices/usb/drivers/usb-virtual-bus",
+  ]
+}
+
+fuchsia_unittest_package("usb-virtual-bus-banjo-test") {
+  deps = [
+    ":usb-virtual-bus-test-common",
+    ":virtual-bus-tester",
+    ":virtual-bus-tester-function-banjo",
+  ]
+  test_specs = {
+    log_settings = {
+      # Will fail to bind to default configuration.
+      max_severity = "ERROR"
+    }
+  }
+}
+
+fuchsia_unittest_package("usb-virtual-bus-fidl-test") {
+  deps = [
+    ":usb-virtual-bus-test-common",
+    ":virtual-bus-tester",
+    ":virtual-bus-tester-function-fidl",
   ]
   test_specs = {
     log_settings = {

@@ -60,7 +60,8 @@ fuchsia_driver_component("usb-virtual-bus") {
 group("tests") {
   testonly = true
   deps = [
-    "tests:usb-virtual-bus-test",
+    "tests:usb-virtual-bus-banjo-test",
+    "tests:usb-virtual-bus-fidl-test",
     "tests:usb-virtual-bus-unit-test",
   ]
 }

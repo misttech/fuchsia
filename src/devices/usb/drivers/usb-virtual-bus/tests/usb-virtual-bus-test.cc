@@ -174,6 +174,12 @@ TEST_F(VirtualBusTest, OutTransfer) {
 
     runtime().Quit();
   });
+  expect_test_->Sync().ThenExactlyOnce([this](auto& result) {
+    EXPECT_TRUE(result.is_ok());
+
+    runtime().Quit();
+  });
+  runtime().Run();
 
   std::vector<uint8_t> data(kExpectedDataSize);
   for (size_t i = 0; i < data.size(); i++) {
@@ -199,6 +205,12 @@ TEST_F(VirtualBusTest, InTransfer) {
 
     runtime().Quit();
   });
+  expect_test_->Sync().ThenExactlyOnce([this](auto& result) {
+    EXPECT_TRUE(result.is_ok());
+
+    runtime().Quit();
+  });
+  runtime().Run();
 
   auto result = test_->In(kExpectedDataSize);
   ASSERT_TRUE(result.is_ok());
