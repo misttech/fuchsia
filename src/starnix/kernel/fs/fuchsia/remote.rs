@@ -380,11 +380,6 @@ pub fn new_remote_file_ops(handle: zx::Handle) -> Result<Box<dyn FileOps>, Errno
     Ok(ops)
 }
 
-// TODO(https://fxbug.dev/42056856): Remove this when out-of-tree servers report the discoverable
-// protocol name.
-const UNIX_DOMAIN_SOCKET_PROTOCOL_NAMES: [&str; 2] =
-    [fbinder::UnixDomainSocketMarker::PROTOCOL_NAME, fbinder::UNIX_DOMAIN_SOCKET_PROTOCOL_NAME];
-
 fn remote_file_attrs_and_ops(
     mut handle: zx::Handle,
 ) -> Result<(zxio_node_attr, Box<dyn FileOps>), Errno> {
@@ -395,9 +390,8 @@ fn remote_file_attrs_and_ops(
     if handle_type == zx::ObjectType::CHANNEL {
         let channel = zx::Channel::from(handle);
         let queryable = funknown::QueryableSynchronousProxy::new(channel);
-        if let Ok(Ok(name)) = queryable.query(zx::MonotonicInstant::INFINITE).map(String::from_utf8)
-        {
-            if UNIX_DOMAIN_SOCKET_PROTOCOL_NAMES.contains(&name.as_str()) {
+        if let Ok(name) = queryable.query(zx::MonotonicInstant::INFINITE) {
+            if name == fbinder::UnixDomainSocketMarker::PROTOCOL_NAME.as_bytes() {
                 let socket_ops = RemoteUnixDomainSocket::new(queryable.into_channel())?;
                 let socket = Socket::new_with_ops(Box::new(socket_ops))?;
                 let file_ops = SocketFile::new(socket);

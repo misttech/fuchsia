@@ -243,10 +243,6 @@ open protocol Binder {
     }) error fuchsia.posix.Errno;
 };
 
-// TODO(https://fxbug.dev/42056856): Migrate all usages of this constant to the generated
-// discoverable protocol identifier instead.
-const UNIX_DOMAIN_SOCKET_PROTOCOL_NAME string = "fuchsia.starnix.binder/UnixDomainSocket";
-
 // The maximum number of handles that is allowed for read/write operations.
 const MAX_HANDLE_COUNT uint64 = 8;
 
