@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_hardware_google_nanohub as fnanohub;
 use starnix_core::device::DeviceOps;
 use starnix_core::task::{
     CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, WaitCanceler, Waiter,
@@ -18,6 +17,9 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use std::sync::Arc;
 use zx::{AsHandleRef, HandleBased, Rights, WaitResult};
+use {fidl_fuchsia_hardware_google_nanohub as fnanohub, fidl_fuchsia_starnix_runner as frunner};
+
+use fuchsia_runtime;
 
 #[derive(Clone)]
 pub struct DataChannelDevice {
@@ -62,6 +64,29 @@ impl DataChannelFile {
             log_error!("Failed to duplicate event handle: {:?}", e);
             Errno::new(EIO)
         })?;
+
+        let manager =
+            fuchsia_component::client::connect_to_protocol_sync::<frunner::ManagerMarker>()
+                .expect("failed");
+
+        let wake_source_event = event.duplicate_handle(Rights::SAME_RIGHTS).map_err(|e| {
+            log_error!("Failed to duplicate event handle for wake source: {:?}", e);
+            Errno::new(EIO)
+        })?;
+        manager
+            .add_wake_source(frunner::ManagerAddWakeSourceRequest {
+                container_job: Some(
+                    fuchsia_runtime::job_default()
+                        .duplicate(Rights::SAME_RIGHTS)
+                        .expect("Failed to dup handle"),
+                ),
+                name: Some("nanohub-datachannel".to_string()),
+                handle: Some(wake_source_event.into_handle()),
+                signals: Some((zx::Signals::from_bits_truncate(fnanohub::SIGNAL_WAKELOCK)).bits()),
+                ..Default::default()
+            })
+            .map_err(|e| errno!(EIO, e))?;
+
         client
             .register(event, zx::MonotonicInstant::INFINITE)
             .map_err(|e| errno!(EIO, e))?
@@ -96,6 +121,9 @@ impl FileOps for DataChannelFile {
                 .map_err(|e| errno!(EIO, e))?
             {
                 Ok(response) => {
+                    // Keep the wake lease alive until the data has been processed.
+                    // The lease is dropped at the end of this scope.
+                    let _wake_lease = response.wake_lease;
                     if let Some(d) = response.data {
                         if d.len() > data.available() {
                             log_warn!("Data returned by datachannel too large for buffer");
