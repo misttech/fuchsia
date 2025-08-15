@@ -244,6 +244,15 @@ where
         rx_meta: Self::Meta,
         mut buf: Self::Buffer,
     ) {
+        // NOTE: At the time of writing, netdevice_worker in bindings uses a
+        // Buf<&mut [u8]> to feed receive frames into core. Matching the same
+        // type as bindings gives us the benefit of not generating rx path code
+        // twice.
+        //
+        // TODO(https://fxbug.dev/42051635): This might no longer be true when
+        // we revisit owned netdevice buffers, at which point we must consider
+        // the binary size tradeoff here.
+        let mut buf = Buf::new(buf.as_mut(), ..);
         let (frame, whole_body) =
             match buf.parse_with_view::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::NoCheck) {
                 Err(e) => {
