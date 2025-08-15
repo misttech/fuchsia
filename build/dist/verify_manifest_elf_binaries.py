@@ -227,61 +227,31 @@ def find_unstripped_file(
     return debugfile
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--source-dir",
-        default=".",
-        help="Root directory for source paths. Default is current directory.",
-    )
-    parser.add_argument(
-        "--toolchain-lib-dir",
-        default=[],
-        action="append",
-        metavar="DIR",
-        help="Path to toolchain-provided lib directory. Can be used multiple times.",
-    )
+class VerificationFailure(Exception):
+    def __init__(
+        self,
+        errors: list[str],
+        extras: list[str] | None = None,
+    ) -> None:
+        self.errors = errors
+        self.extras = extras
 
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--fini-manifest", help="Input FINI manifest.")
-    group.add_argument(
-        "--partial-manifest", help="Input partial distribution manifest."
-    )
+    def __str__(self) -> str:
+        lines = self.errors.copy()
+        if self.extras:
+            lines.extend(self.extras)
+        return "\n".join(lines)
 
-    parser.add_argument("--stamp", required=True, help="Output stamp file.")
-    parser.add_argument("--depfile", help="Output Ninja depfile.")
 
-    args = parser.parse_args()
+def verify_manifest_elf_binaries(
+    manifest_entries: dict[str, str],
+    toolchain_lib_dirs: list[str],
+) -> set[str]:
+    """Verify a set of manifest entries, throwing a VerificationFailure exception on failure.
 
+    Returns a set of inputs for depfile inclusion on verification success.
+    """
     depfile_items = set()
-
-    # Read the input manifest into a {target: source} dictionary.
-    manifest_entries: dict[str, str] = {}
-
-    input_manifest = args.fini_manifest
-    with open(input_manifest) as f:
-        for line in f:
-            line = line.rstrip()
-            target, _, source = line.partition("=")
-            assert source is not None, "Invalid manifest line: [%s]" % line
-
-            source_file = os.path.join(args.source_dir, source)
-
-            # Duplicate entries happen in some manifests, but they will have the
-            # same content, so assert otherwise.
-            if target in manifest_entries:
-                assert (
-                    manifest_entries[target] == source_file
-                ), 'Duplicate entries for target "%s": %s vs %s' % (
-                    target,
-                    source_file,
-                    manifest_entries[target],
-                )
-
-            assert os.path.exists(source_file), (
-                "Missing source file for manifest line: %s" % line
-            )
-            manifest_entries[target] = source_file
 
     # Filter the input manifest entries to keep only the ELF ones
     # that are not under data/, lib/firmware/ or meta/
@@ -360,25 +330,82 @@ def main() -> int:
             continue
         if target in elf_entries:
             unstripped = find_unstripped_file(
-                source_file, depfile_items, args.toolchain_lib_dir
+                source_file, depfile_items, toolchain_lib_dirs
             )
             if unstripped is None:
                 errors.append("No unstripped file found for " + source_file)
 
     if errors:
-        print(
-            "ERRORS FOUND IN %s:\n%s" % (input_manifest, "\n".join(errors)),
-            file=sys.stderr,
+        raise (VerificationFailure(errors, extras))
+
+    return depfile_items
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--source-dir",
+        default=".",
+        help="Root directory for source paths. Default is current directory.",
+    )
+    parser.add_argument(
+        "--toolchain-lib-dir",
+        default=[],
+        action="append",
+        metavar="DIR",
+        help="Path to toolchain-provided lib directory. Can be used multiple times.",
+    )
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--fini-manifest", help="Input FINI manifest.")
+    group.add_argument(
+        "--partial-manifest", help="Input partial distribution manifest."
+    )
+
+    parser.add_argument("--stamp", required=True, help="Output stamp file.")
+    parser.add_argument("--depfile", help="Output Ninja depfile.")
+
+    args = parser.parse_args()
+
+    # Read the input manifest into a {target: source} dictionary.
+    manifest_entries: dict[str, str] = {}
+
+    input_manifest = args.fini_manifest
+    with open(input_manifest) as f:
+        for line in f:
+            line = line.rstrip()
+            target, _, source = line.partition("=")
+            assert source is not None, "Invalid manifest line: [%s]" % line
+
+            source_file = os.path.join(args.source_dir, source)
+
+            # Duplicate entries happen in some manifests, but they will have the
+            # same content, so assert otherwise.
+            if target in manifest_entries:
+                assert (
+                    manifest_entries[target] == source_file
+                ), 'Duplicate entries for target "%s": %s vs %s' % (
+                    target,
+                    source_file,
+                    manifest_entries[target],
+                )
+
+            assert os.path.exists(source_file), (
+                "Missing source file for manifest line: %s" % line
+            )
+            manifest_entries[target] = source_file
+
+    try:
+        inputs = verify_manifest_elf_binaries(
+            manifest_entries, args.toolchain_lib_dir
         )
-        if extras:
-            print("\n".join(extras), file=sys.stderr)
+    except VerificationFailure as e:
+        print(e, file=sys.stderr)
         return 1
 
     if args.depfile:
         with open(args.depfile, "w") as f:
-            f.write(
-                "%s: %s\n" % (input_manifest, " ".join(sorted(depfile_items)))
-            )
+            f.write("%s: %s\n" % (input_manifest, " ".join(sorted(inputs))))
 
     # Write the stamp file on success.
     with open(args.stamp, "w") as f:
