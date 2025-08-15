@@ -12,14 +12,15 @@ rustc_binary("bin") {
 
   deps = [
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
-    "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_rust",
     "//sdk/fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_rust",
+    "//src/connectivity/bluetooth/lib/bt-gatt-fuchsia",
     "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:bt-common",
+    "//third_party/rust_crates:bt-gatt",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:getopts",
     "//third_party/rust_crates:num",
@@ -27,8 +28,9 @@ rustc_binary("bin") {
   ]
 
   test_deps = [
-    "//sdk/rust/zx",
+    "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_rust",
     "//src/connectivity/bluetooth/lib/bt-fidl-mocks",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
   ]
 
@@ -37,7 +39,6 @@ rustc_binary("bin") {
     "src/gatt.rs",
     "src/gatt/commands.rs",
     "src/gatt/repl.rs",
-    "src/gatt/types.rs",
     "src/main.rs",
   ]
 

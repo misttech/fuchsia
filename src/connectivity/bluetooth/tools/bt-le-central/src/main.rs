@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use anyhow::{format_err, Context as _, Error};
-use fidl::endpoints;
-use fidl_fuchsia_bluetooth_le::{CentralMarker, Filter, ScanOptions, ScanResultWatcherMarker};
+use bt_gatt::Central;
+use bt_gatt_fuchsia::FuchsiaTypes;
+use fidl_fuchsia_bluetooth_le::CentralMarker;
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::assigned_numbers;
 use fuchsia_bluetooth::types::{PeerId, Uuid};
-use futures::{try_join, TryFutureExt};
 use getopts::Options;
 use std::str::FromStr;
 
@@ -17,7 +17,11 @@ use crate::central::{CentralState, CentralStatePtr};
 mod central;
 mod gatt;
 
-async fn do_scan(appname: &String, args: &[String], state: CentralStatePtr) -> Result<(), Error> {
+async fn do_scan<T: bt_gatt::GattTypes>(
+    appname: &String,
+    args: &[String],
+    state: CentralStatePtr<T>,
+) -> Result<(), Error> {
     let mut opts = Options::new();
 
     let _ = opts.optflag("h", "help", "");
@@ -47,7 +51,7 @@ async fn do_scan(appname: &String, args: &[String], state: CentralStatePtr) -> R
         return Ok(());
     }
 
-    state.write().remaining_scan_results = match matches.opt_str("s") {
+    state.lock().remaining_scan_results = match matches.opt_str("s") {
         Some(num) => match num.parse() {
             Err(_) | Ok(0) => {
                 return Err(format_err!(
@@ -61,10 +65,13 @@ async fn do_scan(appname: &String, args: &[String], state: CentralStatePtr) -> R
         None => None,
     };
 
-    state.write().connect = matches.opt_present("c");
+    state.lock().connect = matches.opt_present("c");
 
-    if state.read().remaining_scan_results.is_some() && state.read().connect {
-        return Err(format_err!("Cannot use both -s and -c options at the same time"));
+    {
+        let lock = state.lock();
+        if lock.remaining_scan_results.is_some() && lock.connect {
+            return Err(format_err!("Cannot use both -s and -c options at the same time"));
+        }
     }
 
     let uuid: Option<fidl_fuchsia_bluetooth::Uuid> = match matches.opt_str("u") {
@@ -87,34 +94,26 @@ async fn do_scan(appname: &String, args: &[String], state: CentralStatePtr) -> R
 
     let name = matches.opt_str("n");
 
-    let mut filters = Vec::<Filter>::new();
+    use bt_gatt::central::{Filter, ScanFilter};
+
+    let mut filters = ScanFilter::default();
     if uuid.is_some() {
-        filters.push(Filter { service_uuid: uuid, ..Default::default() });
+        let _ = filters.add(Filter::ServiceUuid(bt_gatt_fuchsia::to_gatt_uuid(&uuid.unwrap())));
     }
     if name.is_some() {
-        filters.push(Filter { name: name, ..Default::default() });
+        let _ = filters.add(Filter::MatchesName(name.unwrap()));
     }
-    if filters.is_empty() {
-        // At least 1 filter must be specified, so pass an empty filter to match everything.
-        filters.push(Filter::default());
-    }
-    let scan_options = ScanOptions { filters: Some(filters), ..Default::default() };
+    let scan_fut = state.lock().get_central().scan(&[filters]);
 
-    let (result_watcher_client, result_watcher_server) =
-        endpoints::create_proxy::<ScanResultWatcherMarker>();
+    let watch_fut = central::watch_scan_results(state, scan_fut);
 
-    let scan_fut = state
-        .write()
-        .get_svc()
-        .scan(&scan_options, result_watcher_server)
-        .map_err(|e| format_err!("scan error: {:?}", e));
-
-    let watch_fut = central::watch_scan_results(state, result_watcher_client);
-
-    try_join!(scan_fut, watch_fut).map(|_| ())
+    watch_fut.await.map(|_| ())
 }
 
-async fn do_connect<'a>(state: CentralStatePtr, args: &'a [String]) -> Result<(), Error> {
+async fn do_connect<'a, T: bt_gatt::GattTypes>(
+    state: CentralStatePtr<T>,
+    args: &'a [String],
+) -> Result<(), Error> {
     if args.len() < 1 {
         println!("connect: peer-id is required");
         return Err(format_err!("invalid connect arguments"));
@@ -125,7 +124,7 @@ async fn do_connect<'a>(state: CentralStatePtr, args: &'a [String]) -> Result<()
 
     let matches = opts.parse(&args[1..])?;
 
-    let possible_uuid = matches.opt_str("u").map(|u| u.parse::<Uuid>());
+    let possible_uuid = matches.opt_str("u").map(|u| u.parse::<bt_common::Uuid>());
     let uuid = match possible_uuid {
         None => None,
         Some(Ok(uuid)) => Some(uuid),
@@ -134,7 +133,12 @@ async fn do_connect<'a>(state: CentralStatePtr, args: &'a [String]) -> Result<()
 
     let peer_id: PeerId = PeerId::from_str(&args[0]).map_err(|_| format_err!("invalid peer id"))?;
 
-    central::connect(&state, peer_id, uuid).await
+    central::connect::<T>(
+        state.lock().get_central(),
+        bt_gatt_fuchsia::to_gatt_peer_id(&peer_id.into()),
+        uuid,
+    )
+    .await
 }
 
 fn usage(appname: &str) -> () {
@@ -161,7 +165,9 @@ fn main() -> Result<(), Error> {
     let central_svc = fuchsia_component::client::connect_to_protocol::<CentralMarker>()
         .context("Failed to connect to BLE Central service")?;
 
-    let state = CentralState::new(central_svc);
+    let central = bt_gatt_fuchsia::Central::new(central_svc);
+
+    let state = CentralState::<FuchsiaTypes>::new(central);
 
     let command = &args[1];
     let fut = async {

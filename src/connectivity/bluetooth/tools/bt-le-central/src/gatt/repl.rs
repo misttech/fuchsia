@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
-use fidl_fuchsia_bluetooth_gatt2::ClientProxy;
+use anyhow::{format_err, Error};
+use bt_common::Uuid;
 use fuchsia_async as fasync;
 use futures::channel::mpsc::{channel, SendError};
 use futures::{Sink, SinkExt, Stream, StreamExt};
@@ -11,11 +11,24 @@ use rustyline::error::ReadlineError;
 use rustyline::{CompletionType, Config, EditMode, Editor};
 use std::thread;
 
-use super::commands::{Cmd, CmdHelper};
 use super::{
-    do_connect, do_disable_notify, do_enable_notify, do_list, do_read_by_type, do_read_chr,
-    do_read_desc, do_read_long_chr, do_read_long_desc, do_write_chr, do_write_desc,
-    do_write_long_chr, do_write_long_desc, GattClient, GattClientPtr,
+    commands::{Cmd, CmdHelper},
+    do_connect,
+    //  do_read_by_type,
+    do_disable_notify,
+    do_enable_notify,
+    do_find_services,
+    do_list,
+    do_read_chr,
+    do_read_desc,
+    do_read_long_chr,
+    do_read_long_desc,
+    do_write_chr,
+    do_write_desc,
+    do_write_long_chr,
+    do_write_long_desc,
+    GattClient,
+    GattClientPtr,
 };
 
 const PROMPT: &str = "GATT> ";
@@ -28,16 +41,16 @@ pub static CHA: &str = "\x1b[1G";
 
 // Starts the GATT REPL. This first requests a list of remote services and resolves the
 // returned future with an error if no services are found.
-pub async fn start_gatt_loop<'a>(proxy: ClientProxy) -> Result<(), Error> {
-    let client = GattClient::new(proxy);
+pub async fn start_gatt_loop<'a, T: bt_gatt::GattTypes>(
+    client: T::Client,
+    service: Option<Uuid>,
+) -> Result<(), Error> {
+    let client = GattClient::<T>::new(client);
 
-    println!("  discovering services...");
-
-    // TODO(https://fxbug.dev/42060614): This only gets the list of initial services. We should watch for
-    // future service updates as well.
-    let (services, _) =
-        client.read().proxy.watch_services(&[]).await.context("Failed to watch services")?;
-    client.write().set_services(services);
+    if let Some(uuid) = service {
+        println!("  discovering service {}...", uuid.recognize());
+        client.find_service(uuid).await;
+    }
 
     let (mut commands, mut acks) = cmd_stream();
     while let Some(cmd) = commands.next().await {
@@ -106,7 +119,10 @@ fn cmd_stream() -> (impl Stream<Item = String>, impl Sink<(), Error = SendError>
 }
 
 // Processes `cmd` and returns its result.
-async fn handle_cmd(line: String, client: &GattClientPtr) -> Result<(), Error> {
+async fn handle_cmd<T: bt_gatt::GattTypes>(
+    line: String,
+    client: &GattClientPtr<T>,
+) -> Result<(), Error> {
     let mut components = line.trim().split_whitespace();
     let cmd = components.next().map(|c| c.parse());
     let args: Vec<&str> = components.collect();
@@ -123,6 +139,10 @@ async fn handle_cmd(line: String, client: &GattClientPtr) -> Result<(), Error> {
             do_list(&args, client);
             Ok(())
         }
+        Some(Ok(Cmd::Find)) => {
+            do_find_services(&args, client).await;
+            Ok(())
+        }
         Some(Ok(Cmd::Connect)) => do_connect(&args, client).await,
         Some(Ok(Cmd::ReadChr)) => do_read_chr(&args, client).await,
         Some(Ok(Cmd::ReadLongChr)) => do_read_long_chr(&args, client).await,
@@ -132,7 +152,6 @@ async fn handle_cmd(line: String, client: &GattClientPtr) -> Result<(), Error> {
         Some(Ok(Cmd::ReadLongDesc)) => do_read_long_desc(&args, client).await,
         Some(Ok(Cmd::WriteDesc)) => do_write_desc(args, client).await,
         Some(Ok(Cmd::WriteLongDesc)) => do_write_long_desc(&args, client).await,
-        Some(Ok(Cmd::ReadByType)) => do_read_by_type(&args, client).await,
         Some(Ok(Cmd::EnableNotify)) => do_enable_notify(&args, client).await,
         Some(Ok(Cmd::DisableNotify)) => do_disable_notify(&args, client).await,
         Some(Err(e)) => {
@@ -140,5 +159,9 @@ async fn handle_cmd(line: String, client: &GattClientPtr) -> Result<(), Error> {
             Ok(())
         }
         None => Ok(()),
+        Some(Ok(unhandled)) => {
+            println!("Not implemented: {unhandled:?}");
+            Ok(())
+        }
     }
 }

@@ -18,7 +18,7 @@ macro_rules! gen_commands {
         $($variant:ident = ($val:expr, [$($flag:expr),*], [$($arg:expr),*], $help:expr)),*,
     }) => {
         /// Enum of all possible commands
-        #[derive(PartialEq)]
+        #[derive(Debug, PartialEq)]
         pub enum $name {
             $($variant),*
         }
@@ -92,7 +92,8 @@ gen_commands! {
     Cmd {
         Help = ("help", [], [], "Print this help message"),
         List = ("list", [], [], "List discovered services"),
-        Connect = ("connect", [], ["index"], "Connect to a service"),
+        Find = ("find", [], ["uuid"], "Find services"),
+        Connect = ("connect", [], ["uuid", "index"], "Connect to a service"),
         ReadChr = ("read-chr", [], ["id"], "Read a characteristic"),
         ReadLongChr = ("read-long-chr", [], ["id", "offset", "max bytes"],
                         "Read a long characteristic."),

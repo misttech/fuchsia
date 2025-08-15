@@ -5,47 +5,41 @@
 // TODO(armansito): Remove this once a server channel can be killed using a Controller
 #![allow(unreachable_code)]
 
-use anyhow::{format_err, Context, Error};
-use fidl::endpoints;
-use fidl::endpoints::Proxy;
-use fidl_fuchsia_bluetooth_gatt2::ClientMarker;
-use fidl_fuchsia_bluetooth_le::{
-    CentralProxy, ConnectionMarker, ConnectionOptions, ScanResultWatcherProxy,
-};
-use fuchsia_bluetooth::types::le::Peer;
-use fuchsia_bluetooth::types::{PeerId, Uuid};
-use fuchsia_sync::RwLock;
+use anyhow::{format_err, Error};
+use fuchsia_sync::Mutex;
 use futures::future::FutureExt;
-use futures::select;
-use std::pin::pin;
+use futures::{pin_mut, StreamExt};
 use std::sync::Arc;
+
+use bt_common::{PeerId, Uuid};
+use bt_gatt::central::Central;
 
 use crate::gatt::repl::start_gatt_loop;
 
-pub type CentralStatePtr = Arc<RwLock<CentralState>>;
+pub type CentralStatePtr<T> = Arc<Mutex<CentralState<T>>>;
 
-pub struct CentralState {
+pub struct CentralState<T: bt_gatt::GattTypes> {
     // If `Some(n)`, stop scanning and close the delegate handle after n more scan results.
     pub remaining_scan_results: Option<u64>,
 
     // If true, attempt to connect to the first scan result.
     pub connect: bool,
 
-    // The proxy that we use to perform LE central requests.
-    svc: CentralProxy,
+    // The central that we use to perform requests.
+    svc: Arc<T::Central>,
 }
 
-impl CentralState {
-    pub fn new(proxy: CentralProxy) -> CentralStatePtr {
-        Arc::new(RwLock::new(CentralState {
+impl<T: bt_gatt::GattTypes> CentralState<T> {
+    pub fn new(central: T::Central) -> CentralStatePtr<T> {
+        Arc::new(Mutex::new(CentralState {
             remaining_scan_results: None,
             connect: false,
-            svc: proxy,
+            svc: Arc::new(central),
         }))
     }
 
-    pub fn get_svc(&self) -> &CentralProxy {
-        &self.svc
+    pub fn get_central(&self) -> Arc<T::Central> {
+        self.svc.clone()
     }
 
     /// If the remaining_scan_results is specified, decrement until it reaches 0.
@@ -68,71 +62,52 @@ impl CentralState {
 /// Watch for scan results from the given `result_watcher`. If `state.connect`, then try to connect
 /// to the first connectable peer and stop scanning. Returns when `state.remaining_scan_results`
 /// results have been received, or after the connected peer disconnects (whichever happens first).
-pub async fn watch_scan_results(
-    state: CentralStatePtr,
-    result_watcher: ScanResultWatcherProxy,
+pub async fn watch_scan_results<T: bt_gatt::GattTypes>(
+    state: CentralStatePtr<T>,
+    result_stream: T::ScanResultStream,
 ) -> Result<(), Error> {
-    if result_watcher.is_closed() {
-        return Err(format_err!("ScanResultWatcherProxy closed"));
-    }
+    eprintln!("Starting Scan");
+    let mut pinned_stream = Box::pin(result_stream);
+    let connect_id = loop {
+        let next = pinned_stream.next().await;
 
-    loop {
-        let fidl_peers: Vec<fidl_fuchsia_bluetooth_le::Peer> = result_watcher
-            .watch()
-            .await
-            .map_err(|e| format_err!("ScanResultWatcherProxy error: {e}"))?;
-
-        for fidl_peer in fidl_peers {
-            let peer = Peer::try_from(fidl_peer)?;
-            eprintln!(" {}", peer);
-
-            if state.write().decrement_scan_count() {
-                continue;
-            }
-
-            if state.read().connect && peer.connectable {
-                // connect_peripheral will log errors, so the result can be ignored.
-                // TODO(https://fxbug.dev/42060216): Use Central.Connect instead of deprecated Central.ConnectPeripheral.
-                let _ = connect(&state, peer.id, None).await;
-            }
-
+        let Some(peer) = next else {
+            eprintln!("No scan results, scan finished.");
             return Ok(());
+        };
+
+        let peer = peer.map_err(|e| format_err!("Scan error: {e}"))?;
+
+        eprintln!(" {:?}", peer);
+
+        if state.lock().decrement_scan_count() {
+            continue;
         }
-    }
+
+        if state.lock().connect && peer.connectable {
+            break peer.id;
+            // connect_peripheral will log errors, so the result can be ignored.
+            // TODO(https://fxbug.dev/42060216): Use Central.Connect instead of deprecated Central.ConnectPeripheral.
+        }
+
+        return Ok(());
+    };
+
+    drop(pinned_stream);
+    let _ = connect::<T>(state.lock().get_central(), connect_id, None).await;
+    Ok(())
 }
 
 /// Attempts to connect to the peripheral with the given `peer_id` and begins the GATT REPL if this succeeds.
 /// If `service_uuid` is specified, limit GATT service discovery to services with the indicated UUID.
-pub async fn connect(
-    state: &CentralStatePtr,
+pub async fn connect<T: bt_gatt::GattTypes>(
+    central: Arc<T::Central>,
     peer_id: PeerId,
     service_uuid: Option<Uuid>,
 ) -> Result<(), Error> {
-    let (conn_proxy, conn_server) = endpoints::create_proxy::<ConnectionMarker>();
+    let client = central.connect(peer_id).await?;
 
-    let conn_opts = ConnectionOptions {
-        bondable_mode: Some(true),
-        service_filter: service_uuid.map(Into::into),
-        ..Default::default()
-    };
-
-    state
-        .read()
-        .svc
-        .connect(&peer_id.into(), &conn_opts, conn_server)
-        .context("Failed to connect")?;
-
-    let (gatt_proxy, gatt_server) = endpoints::create_proxy::<ClientMarker>();
-    conn_proxy.request_gatt_client(gatt_server).context("GATT client request failed")?;
-
-    let mut conn_closed_fut = conn_proxy.on_closed().fuse();
-    let gatt_loop_fut = start_gatt_loop(gatt_proxy).fuse();
-    let mut gatt_loop_fut = pin!(gatt_loop_fut);
-    select! {
-        result = gatt_loop_fut => result,
-        _ = conn_closed_fut => {
-            println!("connection closed");
-            Ok(())
-        },
-    }
+    let gatt_loop_fut = start_gatt_loop::<T>(client, service_uuid).fuse();
+    pin_mut!(gatt_loop_fut);
+    gatt_loop_fut.await
 }

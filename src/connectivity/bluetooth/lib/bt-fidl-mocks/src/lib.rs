@@ -19,6 +19,9 @@ pub mod gatt2;
 /// Mock utilities for fuchsia.hardware.bluetooth.
 pub mod hci;
 
+/// Mock utilities for fuchsia.bluetooth.le.
+pub mod le;
+
 const TIMEOUT_SECONDS: i64 = 4 * 60;
 
 pub fn timeout_duration() -> MonotonicDuration {
