@@ -107,10 +107,78 @@ class TestExecution:
             list[str]: The command line for the test.
         """
 
-        if self._use_test_interface():
+        min_severity_logs: list[str] = []
+
+        if self._use_test_pilot() and self._test.info.execution is not None:
             # assert for mypy
             assert self._test.build.test.new_path is not None
-            return [os.path.join(".", self._test.build.test.new_path)]
+
+            execution = self._test.info.execution
+
+            if self._flags.min_severity_logs:
+                min_severity_logs = self._flags.min_severity_logs
+            elif execution.min_severity_logs is not None:
+                min_severity_logs = [execution.min_severity_logs]
+
+            extra_args = []
+
+            # TODO(https://fxbug.dev/327640651): For now add ask path as
+            # host-tools till we figure out a better way.
+            extra_args += [
+                "--sdk-tool-path="
+                + os.path.join(self._exec_env.out_dir, "host-tools")
+            ]
+
+            if self._device_env is not None:
+                extra_args += ["--target=" + self._device_env.address]
+
+            if execution.realm:
+                extra_args += ["--realm=" + execution.realm]
+            if execution.max_severity_logs and self._flags.restrict_logs:
+                extra_args += [
+                    "--max-severity-logs=" + execution.max_severity_logs,
+                ]
+            if min_severity_logs:
+                extra_args += [
+                    "--min-severity-logs=" + ",".join(min_severity_logs)
+                ]
+
+            parallel_cases = self._flags.parallel_cases
+            if (
+                parallel_cases == 0
+                and self._test.build.test.parallel is not None
+            ):
+                parallel_cases = self._test.build.test.parallel
+            if parallel_cases != 0:
+                extra_args += [
+                    "--max-concurrent-test-case-runs=" + str(parallel_cases),
+                ]
+
+            for test_filter in self._flags.test_filter:
+                extra_args += ["--test-case-filter=" + test_filter]
+            if self._flags.also_run_disabled_tests:
+                extra_args += ["--run-disabled-cases"]
+            if self._flags.show_full_moniker_in_logs:
+                extra_args += ["--show-full-moniker-in-logs"]
+            if self._flags.break_on_failure:
+                extra_args += ["--break-on-failure"]
+
+            suffix_args = (
+                ["--"] + self._flags.extra_args
+                if self._flags.extra_args
+                else []
+            )
+
+            return (
+                [
+                    os.path.join(
+                        self._exec_env.out_dir, self._test.build.test.new_path
+                    )
+                ]
+                + extra_args
+                + suffix_args
+            )
+
         elif self._test.info.execution is not None:
             exec_env = self._exec_env
             execution = self._test.info.execution
@@ -118,7 +186,6 @@ class TestExecution:
             component_url = self._get_component_url()
             assert component_url is not None
 
-            min_severity_logs: list[str] = []
             if self._flags.min_severity_logs:
                 min_severity_logs = self._flags.min_severity_logs
             elif execution.min_severity_logs is not None:
@@ -236,31 +303,14 @@ class TestExecution:
         if (
             self._test.build.test.path
             or self._test.is_e2e_test()
-            or self._use_test_interface()
+            or self._use_test_pilot()
         ):
             env.update(
                 {
                     "CWD": self._exec_env.out_dir,
                 }
             )
-        if self._use_test_interface():
-            # TODO(https://fxbug.dev/327640651): Add support for other
-            # parameters like test filter, etc.
-            env.update(
-                {
-                    # TODO(https://fxbug.dev/327640651): For now add SDK path as
-                    # host-tools till we figure out a better way.
-                    "FUCHSIA_SDK_TOOL_PATH": os.path.join(
-                        self._exec_env.out_dir, "host-tools"
-                    ),
-                }
-            )
-            if self._device_env is not None:
-                env.update(
-                    {
-                        "FUCHSIA_TARGETS": f"{self._device_env.address}:{self._device_env.port}",
-                    }
-                )
+        if self._use_test_pilot():
             if self._flags.extra_args:
                 custom_args = " ".join(self._flags.extra_args)
                 env.update(
@@ -268,7 +318,8 @@ class TestExecution:
                         "FUCHSIA_CUSTOM_TEST_ARGS": custom_args,
                     }
                 )
-        elif self._test.is_e2e_test() and self._device_env is not None:
+
+        if self._test.is_e2e_test() and self._device_env is not None:
             env.update(
                 {
                     "FUCHSIA_DEVICE_ADDR": self._device_env.address,
@@ -341,11 +392,19 @@ class TestExecution:
         if "CWD" in env and not os.path.isabs(outdir):
             outdir = os.path.relpath(outdir, env["CWD"])
 
-        env.update(
-            {
-                "FUCHSIA_TEST_OUTDIR": outdir,
-            }
-        )
+        if not self._use_test_pilot():
+            env.update(
+                {
+                    "FUCHSIA_TEST_OUTDIR": outdir,
+                }
+            )
+        else:
+            env.update(
+                {
+                    "FUCHSIA_OUTPUT_DIRECTORY": outdir,
+                }
+            )
+
         output = await run_command(
             *command,
             recorder=recorder,
@@ -442,8 +501,8 @@ class TestExecution:
                 )
         return component_url
 
-    def _use_test_interface(self) -> bool:
-        """Should this test use the experimental test interface API.
+    def _use_test_pilot(self) -> bool:
+        """Should this test use test_pilot.
 
 
         Returns:
@@ -451,7 +510,7 @@ class TestExecution:
             interface.
         """
         return (
-            self._flags.use_test_interface
+            self._flags.use_test_pilot
             and self._test.build.test.new_path is not None
         )
 

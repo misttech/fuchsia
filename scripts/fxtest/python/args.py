@@ -93,7 +93,7 @@ class Flags:
     show_full_moniker_in_logs: bool
     break_on_failure: bool
     breakpoints: typing.List[str]
-    use_test_interface: bool
+    use_test_pilot: bool
     extra_args: typing.List[str]
     env: typing.List[str]
     allow_temporary_package_server: bool
@@ -536,9 +536,9 @@ def parse_args(
     )
 
     execution.add_argument(
-        "--use-test-interface",
+        "--use-test-pilot",
         action=argparse.BooleanOptionalAction,
-        help="""Run test components using test interface API. Note: this flag is experimental""",
+        help="""Run test components using test-pilot. Note: this flag is experimental""",
         default=False,
     )
 

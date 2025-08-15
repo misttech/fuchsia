@@ -417,11 +417,22 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             exec_env,
-            args.parse_args(["--use-test-interface", "--", "--some_extra_arg"]),
+            args.parse_args(["--use-test-pilot", "--", "--some_extra_arg"]),
         )
 
         command_line = test.command_line()
-        self.assertEquals(["./bin/test_component_wrapper.sh"], command_line)
+        self.assertEquals(
+            [
+                "/out/fuchsia/bin/test_component_wrapper.sh",
+                "--sdk-tool-path=/out/fuchsia/host-tools",
+                "--realm=foo_tests",
+                "--max-severity-logs=INFO",
+                "--min-severity-logs=TRACE",
+                "--",
+                "--some_extra_arg",
+            ],
+            command_line,
+        )
         env = test.environment()
         assert env is not None
         # TODO: Add environment checking when added.
@@ -433,7 +444,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             env,
         )
 
-        # without -use-test-interface-flag
+        # without -use-test-pilot-flag
         test = execution.TestExecution(
             test_list_file.Test(
                 tests_json_file.TestEntry(

@@ -121,14 +121,14 @@ class TestArgs(unittest.TestCase):
         self.assertEqual(flags.e2e, True)
         self.assertEqual(flags.only_e2e, True)
 
-    def test_use_test_interface(self) -> None:
-        flags = args.parse_args(["--use-test-interface"])
+    def test_use_test_pilot(self) -> None:
+        flags = args.parse_args(["--use-test-pilot"])
         flags.validate()
-        self.assertEqual(flags.use_test_interface, True)
+        self.assertEqual(flags.use_test_pilot, True)
 
         flags = args.parse_args([])
         flags.validate()
-        self.assertEqual(flags.use_test_interface, False)
+        self.assertEqual(flags.use_test_pilot, False)
 
     def test_expand_output_variable(self) -> None:
         flags = args.parse_args(["--outdir", "$FUCHSIA_OUT/test_out"])
