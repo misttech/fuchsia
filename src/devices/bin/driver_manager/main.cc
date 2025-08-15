@@ -19,6 +19,7 @@
 #include <lib/zx/port.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/vmo.h>
+#include <malloc.h>
 #include <threads.h>
 #include <zircon/process.h>
 #include <zircon/processargs.h>
@@ -185,6 +186,11 @@ int main(int argc, char** argv) {
   }
 
   async::PostTask(loop.dispatcher(), [] { LOGF(INFO, "driver_manager main loop is running"); });
+
+  driver_runner.WaitForBootup([dispatcher = loop.dispatcher()]() {
+    // Once bootup is complete we can free some heap memory.
+    async::PostTask(dispatcher, []() { mallopt(M_PURGE, 0); });
+  });
 
   status = loop.Run();
   LOGF(ERROR, "Driver Manager exited unexpectedly: %s", zx_status_get_string(status));
