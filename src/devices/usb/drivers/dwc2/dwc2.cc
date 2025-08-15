@@ -4,17 +4,20 @@
 
 #include "src/devices/usb/drivers/dwc2/dwc2.h"
 
+#include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/driver/fidl.h>
-#include <lib/ddk/binding_driver.h>
 #include <lib/ddk/metadata.h>
-#include <lib/ddk/platform-defs.h>
 #include <lib/dma-buffer/buffer.h>
-#include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/stdcompat/span.h>
+#include <lib/driver/compat/cpp/metadata.h>
+#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/fdf/cpp/dispatcher.h>
+#include <lib/fit/function.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/profile.h>
+#include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <threads.h>
 #include <zircon/status.h>
@@ -23,10 +26,13 @@
 #include <zircon/threads.h>
 
 #include <cstdlib>
+#include <memory>
 #include <mutex>
+#include <span>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
+#include <usb/dwc2/metadata.h>
 
 #include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
 
@@ -34,6 +40,7 @@ namespace dwc2 {
 
 namespace fdci = fuchsia_hardware_usb_dci;
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+namespace fpdev = fuchsia_hardware_platform_device;
 namespace fphy = fuchsia_hardware_usb_phy;
 
 void Dwc2::dump_regs() {
@@ -99,12 +106,48 @@ zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer& buffer, zx_off_t 
   return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
 }
 
+zx::result<> Dwc2::Start() {
+  zx::result dispatcher = fdf::SynchronizedDispatcher::Create(
+      fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "irq-dispatcher",
+      fit::bind_member<&Dwc2::DispatcherShutdownHandler>(this),
+      "fuchsia.devices.usb.drivers.dwc2.interrupt");
+  if (dispatcher.is_error()) {
+    FDF_LOG(ERROR, "could not create irq-dispatcher: %s", dispatcher.status_string());
+    return dispatcher.take_error();
+  }
+  irq_dispatcher_ = std::move(*dispatcher);
+
+  zx_status_t status = Init(config_);
+  if (status != ZX_OK) {
+    FDF_LOG(ERROR, "Init(): %s", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  auto thunk = [this]() { this->IrqThread(); };
+  status = async::PostTask(irq_dispatcher_.async_dispatcher(), std::move(thunk));
+  if (status != ZX_OK) {
+    FDF_LOG(ERROR, "could not post IrqThread() task: %s", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  return zx::ok();
+}
+
+void Dwc2::PrepareStop(fdf::PrepareStopCompleter completer) {
+  irq_.destroy();
+  irq_dispatcher_.ShutdownAsync();
+  irq_thread_stopped_.Wait();
+  completer(zx::ok());
+}
+
+void Dwc2::DispatcherShutdownHandler(fdf_dispatcher_t* dispatcher) { irq_thread_stopped_.Signal(); }
+
 // Handler for usbreset interrupt.
 void Dwc2::HandleReset() {
   auto* mmio = get_mmio();
 
   // TODO(b/355271738): Downgrade back to SERIAL when done debugging b/355271738.
-  zxlogf(INFO, "\nRESET");
+  FDF_LOG(INFO, "\nRESET");
 
   ep0_state_ = Ep0State::DISCONNECTED;
   configured_ = false;
@@ -164,14 +207,14 @@ void Dwc2::HandleReset() {
 // Handler for usbsuspend interrupt.
 void Dwc2::HandleSuspend() {
   // TODO(b/355271738): Logs added to debug b/355271738. Remove when fixed.
-  zxlogf(INFO, "%s", __func__);
+  FDF_LOG(INFO, "%s", __func__);
   SetConnected(false);
 }
 
 // Handler for enumdone interrupt.
 void Dwc2::HandleEnumDone() {
   // TODO(b/355271738): Logs added to debug b/355271738. Remove when fixed.
-  zxlogf(INFO, "%s", __func__);
+  FDF_LOG(INFO, "%s", __func__);
   SetConnected(true);
 
   auto* mmio = get_mmio();
@@ -226,7 +269,7 @@ void Dwc2::HandleInEpInterrupt() {
         } else {
           HandleTransferComplete(ep_num);
           if (diepint.nak()) {
-            zxlogf(ERROR, "Unhandled interrupt diepint.nak ep_num %u", ep_num);
+            FDF_LOG(ERROR, "Unhandled interrupt diepint.nak ep_num %u", ep_num);
             DIEPINT::Get(ep_num).ReadFrom(mmio).set_nak(1).WriteTo(mmio);
           }
         }
@@ -234,16 +277,16 @@ void Dwc2::HandleInEpInterrupt() {
 
       // TODO(voydanoff) Implement error recovery for these interrupts
       if (diepint.epdisabled()) {
-        zxlogf(ERROR, "Unhandled interrupt diepint.epdisabled for ep_num %u", ep_num);
+        FDF_LOG(ERROR, "Unhandled interrupt diepint.epdisabled for ep_num %u", ep_num);
         DIEPINT::Get(ep_num).ReadFrom(mmio).set_epdisabled(1).WriteTo(mmio);
       }
       if (diepint.ahberr()) {
-        zxlogf(ERROR, "Unhandled interrupt diepint.ahberr for ep_num %u", ep_num);
+        FDF_LOG(ERROR, "Unhandled interrupt diepint.ahberr for ep_num %u", ep_num);
         DIEPINT::Get(ep_num).ReadFrom(mmio).set_ahberr(1).WriteTo(mmio);
       }
       if (diepint.timeout()) {
-        zxlogf(ERROR, "(diepint.timeout) (ep%u) DIEPINT=0x%08x DIEPMSK=0x%08x", ep_num,
-               diepint.reg_value(), diepmsk.reg_value());
+        FDF_LOG(ERROR, "(diepint.timeout) (ep%u) DIEPINT=0x%08x DIEPMSK=0x%08x", ep_num,
+                diepint.reg_value(), diepmsk.reg_value());
 
         // The timeout is due to one of two cases:
         //   1. The core never received an ACK to sent IN-data. In this case, the host
@@ -269,11 +312,11 @@ void Dwc2::HandleInEpInterrupt() {
         return;
       }
       if (diepint.intktxfemp()) {
-        zxlogf(ERROR, "Unhandled interrupt diepint.intktxfemp for ep_num %u", ep_num);
+        FDF_LOG(ERROR, "Unhandled interrupt diepint.intktxfemp for ep_num %u", ep_num);
         DIEPINT::Get(ep_num).ReadFrom(mmio).set_intktxfemp(1).WriteTo(mmio);
       }
       if (diepint.intknepmis()) {
-        zxlogf(ERROR, "Unhandled interrupt diepint.intknepmis for ep_num %u", ep_num);
+        FDF_LOG(ERROR, "Unhandled interrupt diepint.intknepmis for ep_num %u", ep_num);
         DIEPINT::Get(ep_num).ReadFrom(mmio).set_intknepmis(1).WriteTo(mmio);
       }
       if (diepint.inepnakeff()) {
@@ -323,11 +366,11 @@ void Dwc2::HandleOutEpInterrupt() {
         DOEPINT::Get(ep_num).ReadFrom(mmio).set_setup(1).WriteTo(mmio);
 
         memcpy(&cur_setup_, ep0_buffer_->virt(), sizeof(cur_setup_));
-        zxlogf(DEBUG,
-               "SETUP bm_request_type: 0x%02x b_request: %u w_value: %u w_index: %u "
-               "w_length: %u\n",
-               cur_setup_.bm_request_type, cur_setup_.b_request, cur_setup_.w_value,
-               cur_setup_.w_index, cur_setup_.w_length);
+        FDF_LOG(DEBUG,
+                "SETUP bm_request_type: 0x%02x b_request: %u w_value: %u w_index: %u "
+                "w_length: %u\n",
+                cur_setup_.bm_request_type, cur_setup_.b_request, cur_setup_.w_value,
+                cur_setup_.w_index, cur_setup_.w_length);
 
         HandleEp0Setup();
       }
@@ -344,11 +387,11 @@ void Dwc2::HandleOutEpInterrupt() {
       }
       // TODO(voydanoff) Implement error recovery for these interrupts
       if (doepint.epdisabled()) {
-        zxlogf(ERROR, "Unhandled interrupt doepint.epdisabled for ep_num %u", ep_num);
+        FDF_LOG(ERROR, "Unhandled interrupt doepint.epdisabled for ep_num %u", ep_num);
         DOEPINT::Get(ep_num).ReadFrom(mmio).set_epdisabled(1).WriteTo(mmio);
       }
       if (doepint.ahberr()) {
-        zxlogf(ERROR, "Unhandled interrupt doepint.ahberr for ep_num %u", ep_num);
+        FDF_LOG(ERROR, "Unhandled interrupt doepint.ahberr for ep_num %u", ep_num);
         DOEPINT::Get(ep_num).ReadFrom(mmio).set_ahberr(1).WriteTo(mmio);
       }
     }
@@ -368,23 +411,23 @@ zx_status_t Dwc2::HandleSetupRequest(size_t* out_actual) {
     // Handle some special setup requests in this driver
     switch (cur_setup_.b_request) {
       case USB_REQ_SET_ADDRESS:
-        zxlogf(INFO, "SET_ADDRESS %d", cur_setup_.w_value);
+        FDF_LOG(INFO, "SET_ADDRESS %d", cur_setup_.w_value);
         SetAddress(static_cast<uint8_t>(cur_setup_.w_value));
         now = zx::clock::get_boot();
         elapsed = now - irq_timestamp_;
-        zxlogf(
+        FDF_LOG(
             INFO,
             "Took %i microseconds to reply to SET_ADDRESS interrupt\nStarted waiting at %lx\nGot "
             "hardware IRQ at %lx\nFinished processing at %lx, context switch happened at %lx",
             static_cast<int>(elapsed.to_usecs()), wait_start_time_.get(), irq_timestamp_.get(),
             now.get(), irq_dispatch_timestamp_.get());
         if (elapsed.to_msecs() > 2) {
-          zxlogf(ERROR, "Handling SET_ADDRESS took greater than 2ms");
+          FDF_LOG(ERROR, "Handling SET_ADDRESS took greater than 2ms");
         }
         *out_actual = 0;
         return ZX_OK;
       case USB_REQ_SET_CONFIGURATION:
-        zxlogf(INFO, "SET_CONFIGURATION %d", cur_setup_.w_value);
+        FDF_LOG(INFO, "SET_CONFIGURATION %d", cur_setup_.w_value);
         configured_ = true;
         if (dci_intf_.is_valid()) {
           status = DoControl(cur_setup_, nullptr, 0, nullptr, 0, out_actual);
@@ -538,7 +581,7 @@ void Dwc2::FlushTxFifo(uint32_t fifo_num) {
     grstctl.ReadFrom(mmio);
     // Retry count of 10000 comes from Amlogic bootloader driver.
     if (++count > 10000) {
-      zxlogf(ERROR, "took more than 10k cycles to TX-FIFO flush for FIFO-%d", fifo_num);
+      FDF_LOG(ERROR, "took more than 10k cycles to TX-FIFO flush for FIFO-%d", fifo_num);
       break;
     }
   } while (grstctl.txfflsh() == 1);
@@ -729,7 +772,7 @@ void Dwc2::HandleEp0TransferComplete(bool is_in) {
     }
     case Ep0State::STALL:
     default:
-      zxlogf(ERROR, "EP0 state is %d, should not get here", static_cast<int>(ep0_state_));
+      FDF_LOG(ERROR, "EP0 state is %d, should not get here", static_cast<int>(ep0_state_));
       break;
   }
 }
@@ -738,7 +781,7 @@ void Dwc2::HandleEp0TransferComplete(bool is_in) {
 void Dwc2::SoftDisconnect() {
   auto* mmio = get_mmio();
 
-  zxlogf(WARNING, "executing USB port soft-disconnect and controller reset");
+  FDF_LOG(WARNING, "executing USB port soft-disconnect and controller reset");
   DCTL::Get().ReadFrom(mmio).set_sftdiscon(1).WriteTo(mmio);
   auto grstctl = GRSTCTL::Get();
   grstctl.ReadFrom(mmio).set_csftrst(1).WriteTo(mmio);
@@ -758,7 +801,7 @@ void Dwc2::HandleEp0TimeoutRecovery() {
   ep0_state_ = Ep0State::DISCONNECTED;
   zx::nanosleep(zx::deadline_after(zx::msec(50)));
   InitController();  // Clears the GRSTCTRL.sftdiscon condition.
-  zxlogf(INFO, "USB port soft-disconnect and controller reset sequence complete");
+  FDF_LOG(INFO, "USB port soft-disconnect and controller reset sequence complete");
 }
 
 // Handles transfer complete events for endpoints other than endpoint zero
@@ -794,21 +837,21 @@ zx_status_t Dwc2::InitController() {
 
   auto gsnpsid = GSNPSID::Get().ReadFrom(mmio).reg_value();
   if (gsnpsid != 0x4f54400a && gsnpsid != 0x4f54330a) {
-    zxlogf(WARNING,
-           "DWC2 driver has not been tested with IP version 0x%08x. "
-           "The IP has quirks, so things may not work as expected\n",
-           gsnpsid);
+    FDF_LOG(WARNING,
+            "DWC2 driver has not been tested with IP version 0x%08x. "
+            "The IP has quirks, so things may not work as expected\n",
+            gsnpsid);
   }
 
   auto ghwcfg2 = GHWCFG2::Get().ReadFrom(mmio);
   if (!ghwcfg2.dynamic_fifo()) {
-    zxlogf(ERROR, "DWC2 driver requires dynamic FIFO support");
+    FDF_LOG(ERROR, "DWC2 driver requires dynamic FIFO support");
     return ZX_ERR_NOT_SUPPORTED;
   }
 
   auto ghwcfg4 = GHWCFG4::Get().ReadFrom(mmio);
   if (!ghwcfg4.ded_fifo_en()) {
-    zxlogf(ERROR, "DWC2 driver requires dedicated FIFO support");
+    FDF_LOG(ERROR, "DWC2 driver requires dedicated FIFO support");
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -974,60 +1017,41 @@ void Dwc2::SetConnected(bool connected) {
   connected_ = connected;
 }
 
-zx_status_t Dwc2::Create(void* ctx, zx_device_t* parent) {
-  zx_handle_t structured_config_vmo;
-  zx_status_t status = device_get_config_vmo(parent, &structured_config_vmo);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to get config vmo: %s", zx_status_get_string(status));
-    return status;
-  }
-
-  auto dev = std::make_unique<Dwc2>(parent, fdf::Dispatcher::GetCurrent()->async_dispatcher());
-  status = dev->Init(dwc2_config::Config::CreateFromVmo(zx::vmo(structured_config_vmo)));
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  // devmgr is now in charge of the device.
-  [[maybe_unused]] auto* _ = dev.release();
-  return ZX_OK;
-}
-
 zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
-  zx::result pdev_client_end =
-      DdkConnectFragmentFidlProtocol<fuchsia_hardware_platform_device::Service::Device>("pdev");
-  if (pdev_client_end.is_error()) {
-    zxlogf(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
-    return pdev_client_end.status_value();
+  zx::result pdev = incoming()->Connect<fpdev::Service::Device>("pdev");
+  if (pdev.is_error()) {
+    FDF_LOG(ERROR, "Connect(): %s", pdev.status_string());
+    return pdev.status_value();
   }
-  fdf::PDev pdev{std::move(pdev_client_end.value())};
+  pdev_ = std::make_unique<fdf::PDev>(std::move(*pdev));
 
   // Initialize mac address metadata server.
-  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(parent(), "pdev");
+  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
       result.is_error()) {
-    zxlogf(ERROR, "Failed to forward mac address metadata: %s", result.status_string());
+    FDF_LOG(ERROR, "Failed to forward mac address metadata: %s", result.status_string());
     return result.status_value();
   }
-  if (zx_status_t status = mac_address_metadata_server_.Serve(outgoing_, dispatcher_);
-      status != ZX_OK) {
-    zxlogf(ERROR, "Failed to serve mac address metadata: %s", zx_status_get_string(status));
-    return status;
+  if (zx::result serve = mac_address_metadata_server_.Serve(*outgoing(), dispatcher());
+      serve.is_error()) {
+    FDF_LOG(ERROR, "Failed to serve mac address metadata: %s", serve.status_string());
+    return serve.status_value();
   }
 
   // Initialize serial number metadata server.
-  if (zx::result result = serial_number_metadata_server_.ForwardMetadataIfExists(parent(), "pdev");
+  if (zx::result result =
+          serial_number_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
       result.is_error()) {
-    zxlogf(ERROR, "Failed to forward serial number metadata: %s", result.status_string());
+    FDF_LOG(ERROR, "Failed to forward serial number metadata: %s", result.status_string());
     return result.status_value();
   }
-  if (zx_status_t status = serial_number_metadata_server_.Serve(outgoing_, dispatcher_);
-      status != ZX_OK) {
-    zxlogf(ERROR, "Failed to serve serial number metadata: %s", zx_status_get_string(status));
-    return status;
+  if (zx::result serve = serial_number_metadata_server_.Serve(*outgoing(), dispatcher());
+      serve.is_error()) {
+    FDF_LOG(ERROR, "Failed to serve serial number metadata: %s", serve.status_string());
+    return serve.status_value();
   }
 
   // USB PHY protocol is optional.
-  auto phy = DdkConnectFragmentRuntimeProtocol<fphy::Service::Device>(parent(), "dwc2-phy");
+  zx::result phy = incoming()->Connect<fphy::Service::Device>("dwc2-phy");
   if (phy.is_ok()) {
     phy_.Bind(std::move(*phy));
   }
@@ -1036,111 +1060,81 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
     endpoints_[i].emplace(i, this);
   }
 
-  size_t actual = 0;
-  auto status = DdkGetFragmentMetadata("pdev", DEVICE_METADATA_PRIVATE, &metadata_,
-                                       sizeof(metadata_), &actual);
-  if (status != ZX_OK || actual != sizeof(metadata_)) {
-    zxlogf(ERROR, "Dwc2::Init can't get driver metadata: %s, actual size: %ld expected size: %ld",
-           zx_status_get_string(status), actual, sizeof(metadata_));
+  zx::result metadata =
+      compat::GetMetadata<dwc2_metadata_t>(incoming(), DEVICE_METADATA_PRIVATE, "pdev");
+  if (metadata.is_error()) {
+    FDF_LOG(ERROR, "GetMetadata(): %s", metadata.status_string());
     return ZX_ERR_INTERNAL;
   }
+  metadata_ = *metadata.value();
 
-  zx::result mmio = pdev.MapMmio(0);
+  zx::result mmio = pdev_->MapMmio(0);
   if (mmio.is_error()) {
-    zxlogf(ERROR, "Failed to map mmio: %s", mmio.status_string());
+    FDF_LOG(ERROR, "Failed to map mmio: %s", mmio.status_string());
     return mmio.status_value();
   }
   mmio_ = std::move(mmio.value());
 
   // If suspend is enabled, set interrupt to wakeable.
   zx::result interrupt =
-      pdev.GetInterrupt(0, config.enable_suspend() ? ZX_INTERRUPT_WAKE_VECTOR : 0);
+      pdev_->GetInterrupt(0, config.enable_suspend() ? ZX_INTERRUPT_WAKE_VECTOR : 0);
   if (interrupt.is_error()) {
-    zxlogf(ERROR, "Failed to get interrupt: %s", interrupt.status_string());
+    FDF_LOG(ERROR, "Failed to get interrupt: %s", interrupt.status_string());
     return interrupt.status_value();
   }
   irq_ = std::move(interrupt.value());
 
-  zx::result bti = pdev.GetBti(0);
+  zx::result bti = pdev_->GetBti(0);
   if (bti.is_error()) {
-    zxlogf(ERROR, "Failed to get bti: %s", bti.status_string());
+    FDF_LOG(ERROR, "Failed to get bti: %s", bti.status_string());
     return bti.status_value();
   }
   bti_ = std::move(bti.value());
 
-  status = dma_buffer::CreateBufferFactory()->CreateContiguous(bti_, kEp0BufferSize, 12, true,
-                                                               &ep0_buffer_);
+  zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(bti_, kEp0BufferSize, 12,
+                                                                           true, &ep0_buffer_);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "dma_buffer::CreateBufferFactory()->CreateContiguous(): %s",
-           zx_status_get_string(status));
+    FDF_LOG(ERROR, "dma_buffer::CreateBufferFactory()->CreateContiguous(): %s",
+            zx_status_get_string(status));
     return status;
   }
 
   zx::result result =
-      outgoing_.AddService<fdci::UsbDciService>(fdci::UsbDciService::InstanceHandler({
-          .device = bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure),
+      outgoing()->AddService<fdci::UsbDciService>(fdci::UsbDciService::InstanceHandler({
+          .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                            fidl::kIgnoreBindingClosure),
       }));
   if (result.is_error()) {
-    zxlogf(ERROR, "Failed to add service %s", result.status_string());
-    return result.status_value();
-  }
-  auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-  if (endpoints.is_error()) {
-    return endpoints.status_value();
-  }
-  result = outgoing_.Serve(std::move(endpoints->server));
-  if (result.is_error()) {
-    zxlogf(ERROR, "Failed to service the outgoing directory");
+    FDF_LOG(ERROR, "Failed to add service %s", result.status_string());
     return result.status_value();
   }
 
-  const zx_device_str_prop_t props[] = {
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                           bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_VID_DESIGNWARE),
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                           bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC2),
+  std::vector props{
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
+                        bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_VID_DESIGNWARE),
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
+                        bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC2),
   };
 
-  std::array offers = {
-      fdci::UsbDciService::Name,
-      ddk::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>::kFidlServiceName,
-      ddk::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>::kFidlServiceName,
+  std::vector offers{
+      fdf::MakeOffer2<fdci::UsbDciService>(),
+      mac_address_metadata_server_.MakeOffer(),
+      serial_number_metadata_server_.MakeOffer(),
   };
-  status = DdkAdd(ddk::DeviceAddArgs("dwc2")
-                      .set_str_props(props)
-                      .set_fidl_service_offers(offers)
-                      .set_outgoing_dir(endpoints->client.TakeChannel()));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Dwc2::Init DdkAdd failed: %d", status);
-    return status;
+
+  zx::result child = AddChild(name(), props, offers);
+  if (child.is_error()) {
+    FDF_LOG(ERROR, "AddChild(): %s", child.status_string());
+    return child.error_value();
   }
+  child_.Bind(std::move(*child));
 
   return ZX_OK;
 }
 
-void Dwc2::DdkInit(ddk::InitTxn txn) {
-  int rc = thrd_create_with_name(
-      &irq_thread_, [](void* arg) -> int { return reinterpret_cast<Dwc2*>(arg)->IrqThread(); },
-      reinterpret_cast<void*>(this), "dwc2-interrupt-thread");
-  if (rc == thrd_success) {
-    irq_thread_started_ = true;
-    txn.Reply(ZX_OK);
-  } else {
-    txn.Reply(ZX_ERR_INTERNAL);
-  }
-}
-
 int Dwc2::IrqThread() {
   auto* mmio = get_mmio();
-  const char* role_name = "fuchsia.devices.usb.drivers.dwc2.interrupt";
-  const zx_status_t status = device_set_profile_by_role(parent_, thrd_get_zx_handle(thrd_current()),
-                                                        role_name, strlen(role_name));
-  if (status != ZX_OK) {
-    // This should be an error since we won't be able to guarantee we can meet deadlines.
-    // Failure to meet deadlines can result in undefined behavior on the bus.
-    zxlogf(ERROR, "%s: Failed to apply role to IRQ thread: %s", __FUNCTION__,
-           zx_status_get_string(status));
-  }
+
   while (1) {
     wait_start_time_ = zx::clock::get_boot();
     auto wait_res = irq_.wait(&irq_timestamp_);
@@ -1149,7 +1143,7 @@ int Dwc2::IrqThread() {
       break;
     }
     if (wait_res != ZX_OK) {
-      zxlogf(ERROR, "dwc_usb: irq wait failed, retcode = %d", wait_res);
+      FDF_LOG(ERROR, "dwc_usb: irq wait failed, retcode = %d", wait_res);
     }
 
     // It doesn't seem that this inner loop should be necessary,
@@ -1182,48 +1176,8 @@ int Dwc2::IrqThread() {
     }
   }
 
-  zxlogf(INFO, "dwc_usb: irq thread finished");
+  FDF_LOG(INFO, "dwc_usb: irq thread finished");
   return 0;
-}
-
-void Dwc2::DdkUnbind(ddk::UnbindTxn txn) {
-  irq_.destroy();
-  if (irq_thread_started_) {
-    irq_thread_started_ = false;
-    thrd_join(irq_thread_, nullptr);
-  }
-  txn.Reply();
-}
-
-void Dwc2::DdkRelease() { delete this; }
-
-void Dwc2::DdkSuspend(ddk::SuspendTxn txn) {
-  {
-    std::lock_guard<std::mutex> lock(lock_);
-
-    irq_.destroy();
-    shutting_down_ = true;
-    // Disconnect from host to prevent DMA from being started
-    DCTL::Get().ReadFrom(&mmio_.value()).set_sftdiscon(1).WriteTo(&mmio_.value());
-    auto grstctl = GRSTCTL::Get();
-    auto mmio = &mmio_.value();
-    // Start soft reset sequence -- I think this should clear the DMA FIFOs
-    grstctl.FromValue(0).set_csftrst(1).WriteTo(mmio);
-
-    // Wait for reset to complete
-    while (grstctl.ReadFrom(mmio).csftrst()) {
-      // Arbitrary sleep to yield our timeslice while we wait for
-      // hardware to complete its reset.
-      zx::nanosleep(zx::deadline_after(zx::msec(1)));
-    }
-  }
-
-  if (irq_thread_started_) {
-    irq_thread_started_ = false;
-    thrd_join(irq_thread_, nullptr);
-  }
-  ep0_buffer_.release();
-  txn.Reply(ZX_OK, 0);
 }
 
 zx_status_t Dwc2::DoControl(const fdescriptor::wire::UsbSetup& setup, const uint8_t* write_buffer,
@@ -1243,7 +1197,7 @@ zx_status_t Dwc2::DoControl(const fdescriptor::wire::UsbSetup& setup, const uint
     return result->error_value();
   }
 
-  cpp20::span<uint8_t> read_data = result.value()->read.get();
+  std::span<uint8_t> read_data = result.value()->read.get();
 
   if (!read_data.empty()) {
     std::memcpy(out_read_buffer, read_data.data(), read_data.size_bytes());
@@ -1257,7 +1211,7 @@ void Dwc2::ConnectToEndpoint(ConnectToEndpointRequest& request,
                              ConnectToEndpointCompleter::Sync& completer) {
   uint8_t ep_num = DWC_ADDR_TO_INDEX(request.ep_addr());
   if (ep_num == DWC_EP0_IN || ep_num == DWC_EP0_OUT || ep_num >= std::size(endpoints_)) {
-    zxlogf(ERROR, "Dwc2::UsbDciRequestQueue: bad ep address 0x%02X", request.ep_addr());
+    FDF_LOG(ERROR, "Dwc2::UsbDciRequestQueue: bad ep address 0x%02X", request.ep_addr());
     completer.Reply(fit::as_error(ZX_ERR_IO_NOT_PRESENT));
     return;
   }
@@ -1268,13 +1222,13 @@ void Dwc2::ConnectToEndpoint(ConnectToEndpointRequest& request,
 
 void Dwc2::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) {
   if (!request.interface().is_valid()) {
-    zxlogf(ERROR, "Interface should be valid");
+    FDF_LOG(ERROR, "Interface should be valid");
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
 
   if (dci_intf_.is_valid()) {
-    zxlogf(ERROR, "%s: dci_intf_ already set!", __func__);
+    FDF_LOG(ERROR, "%s: dci_intf_ already set!", __func__);
     completer.Reply(zx::error(ZX_ERR_ALREADY_BOUND));
     return;
   }
@@ -1311,7 +1265,7 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
   uint8_t ep_num = DWC_ADDR_TO_INDEX(ep_addr);
 
   if (ep_num == DWC_EP0_IN || ep_num == DWC_EP0_OUT || ep_num >= std::size(endpoints_)) {
-    zxlogf(ERROR, "Dwc2::ConfigureEndpoint: bad ep address 0x%02X", ep_addr);
+    FDF_LOG(ERROR, "Dwc2::ConfigureEndpoint: bad ep address 0x%02X", ep_addr);
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
@@ -1321,7 +1275,7 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
   uint16_t max_packet_size = usb_ep_max_packet2(request.ep_descriptor());
 
   if (ep_type == USB_ENDPOINT_ISOCHRONOUS) {
-    zxlogf(ERROR, "Dwc2::ConfigureEndpoint: isochronous endpoints are not supported");
+    FDF_LOG(ERROR, "Dwc2::ConfigureEndpoint: isochronous endpoints are not supported");
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
@@ -1356,7 +1310,7 @@ void Dwc2::DisableEndpoint(DisableEndpointRequest& request,
 
   unsigned ep_num = DWC_ADDR_TO_INDEX(request.ep_address());
   if (ep_num == DWC_EP0_IN || ep_num == DWC_EP0_OUT || ep_num >= std::size(endpoints_)) {
-    zxlogf(ERROR, "Dwc2::UsbDciConfigEp: bad ep address 0x%02X", request.ep_address());
+    FDF_LOG(ERROR, "Dwc2::UsbDciConfigEp: bad ep address 0x%02X", request.ep_address());
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
@@ -1406,7 +1360,7 @@ void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
   if (DWC_EP_IS_OUT(ep_addr())) {
     size_t length = request.length();
     if (length == 0 || length % max_packet_size != 0) {
-      zxlogf(ERROR, "dwc_ep_queue: OUT transfers must be multiple of max packet size");
+      FDF_LOG(ERROR, "dwc_ep_queue: OUT transfers must be multiple of max packet size");
       RequestComplete(ZX_ERR_INVALID_ARGS, 0, std::move(request));
       return;
     }
@@ -1415,13 +1369,13 @@ void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
   std::lock_guard<std::mutex> _(lock);
 
   if (!enabled) {
-    zxlogf(ERROR, "dwc_ep_queue ep not enabled!");
+    FDF_LOG(ERROR, "dwc_ep_queue ep not enabled!");
     RequestComplete(ZX_ERR_BAD_STATE, 0, std::move(request));
     return;
   }
 
   if (!dwc2_->configured_) {
-    zxlogf(ERROR, "dwc_ep_queue not configured!");
+    FDF_LOG(ERROR, "dwc_ep_queue not configured!");
     RequestComplete(ZX_ERR_BAD_STATE, 0, std::move(request));
     return;
   }
@@ -1453,13 +1407,6 @@ void Dwc2::Endpoint::CancelAll() {
   }
 }
 
-static constexpr zx_driver_ops_t driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = Dwc2::Create;
-  return ops;
-}();
-
 }  // namespace dwc2
 
-ZIRCON_DRIVER(dwc2, dwc2::driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT(dwc2::Dwc2);

@@ -6,39 +6,44 @@
 #define SRC_DEVICES_USB_DRIVERS_DWC2_DWC2_H_
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/driver/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/device.h>
 #include <lib/dma-buffer/buffer.h>
+#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/driver/platform-device/cpp/pdev.h>
+#include <lib/fdf/cpp/dispatcher.h>
 #include <lib/mmio/mmio.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/zx/interrupt.h>
+#include <lib/zx/result.h>
 #include <threads.h>
 
-#include <atomic>
-#include <mutex>
+#include <memory>
 #include <queue>
+#include <utility>
 
-#include <ddktl/device.h>
-#include <ddktl/metadata_server.h>
 #include <usb/dwc2/metadata.h>
 
 #include "src/devices/usb/drivers/dwc2/dwc2_config.h"
 #include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
-#include "src/devices/usb/lib/usb-endpoint/include/usb-endpoint/usb-endpoint-server.h"
+#include "src/devices/usb/lib/usb-endpoint/include/usb-endpoint/sdk/usb-endpoint-server.h"
 
 namespace dwc2 {
 
-class Dwc2;
-using Dwc2Type = ddk::Device<Dwc2, ddk::Initializable, ddk::Unbindable, ddk::Suspendable>;
-
-class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
+class Dwc2 : public fdf::DriverBase,
+             public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
  public:
-  explicit Dwc2(zx_device_t* parent, async_dispatcher_t* dispatcher)
-      : Dwc2Type(parent), dispatcher_(dispatcher), outgoing_(dispatcher) {}
+  Dwc2(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
+      : DriverBase("dwc2", std::move(start_args), std::move(dispatcher)),
+        config_{take_config<dwc2_config::Config>()} {}
+
+  zx::result<> Start() override;
+  void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
   // Neither copyable nor movable.
   Dwc2(Dwc2&&) = delete;
@@ -46,15 +51,8 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
   Dwc2& operator=(Dwc2&&) = delete;
   Dwc2& operator=(const Dwc2&) = delete;
 
-  static zx_status_t Create(void* ctx, zx_device_t* parent);
   zx_status_t Init(const dwc2_config::Config& config);
   int IrqThread();
-
-  // Device protocol implementation.
-  void DdkInit(ddk::InitTxn txn);
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkRelease();
-  void DdkSuspend(ddk::SuspendTxn txn);
 
   // fuchsia_hardware_usb_dci::UsbDci protocol implementation.
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
@@ -201,6 +199,8 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
 
   std::optional<Endpoint> endpoints_[DWC_MAX_EPS];
 
+  std::unique_ptr<fdf::PDev> pdev_;
+
   // Used for synchronizing global state
   // and non ep specific hardware registers.
   // Endpoint.lock should be acquired first
@@ -220,9 +220,6 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
   std::optional<fdf::MmioBuffer> mmio_;
 
   zx::interrupt irq_;
-  thrd_t irq_thread_;
-  // True if |irq_thread_| can be joined.
-  std::atomic_bool irq_thread_started_ = false;
 
   dwc2_metadata_t metadata_;
   bool connected_ = false;
@@ -237,12 +234,19 @@ class Dwc2 : public Dwc2Type, public fidl::Server<fuchsia_hardware_usb_dci::UsbD
   zx::time_boot wait_start_time_;
   bool shutting_down_ __TA_GUARDED(lock_) = false;
 
-  async_dispatcher_t* dispatcher_;
-  component::OutgoingDirectory outgoing_;
+  fdf::SynchronizedDispatcher irq_dispatcher_;
+  libsync::Completion irq_thread_stopped_;  // Signled by shutdown handler.
+  void DispatcherShutdownHandler(fdf_dispatcher_t* dispatcher);
+
   fidl::ServerBindingGroup<fuchsia_hardware_usb_dci::UsbDci> bindings_;
 
-  ddk::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata> mac_address_metadata_server_;
-  ddk::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata> serial_number_metadata_server_;
+  fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>
+      mac_address_metadata_server_;
+  fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>
+      serial_number_metadata_server_;
+
+  dwc2_config::Config config_;
+  fidl::SyncClient<fuchsia_driver_framework::NodeController> child_;
 };
 
 }  // namespace dwc2

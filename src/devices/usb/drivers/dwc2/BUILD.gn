@@ -31,37 +31,42 @@ source_set("common") {
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
   deps = [
-    "//sdk/lib/driver/platform-device/cpp",
+    "//sdk/lib/async",
+    "//sdk/lib/driver/compat/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.designware.platform:fuchsia.designware.platform_cpp",
-    "//src/devices/lib/driver",
-    "//src/devices/lib/driver:driver_runtime",
-    "//zircon/system/ulib/zx",
   ]
   public_deps = [
     ":dwc2-config",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/component/outgoing/cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/metadata/cpp",
+    "//sdk/lib/driver/platform-device/cpp",
+    "//sdk/lib/driver/power/cpp",
     "//sdk/lib/fit",
     "//src/devices/lib/dma-buffer",
     "//src/devices/lib/mmio",
     "//src/devices/usb/lib/usb:descriptors",
     "//src/devices/usb/lib/usb:dwc2",
-    "//src/devices/usb/lib/usb-endpoint:usb-endpoint-server",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//src/devices/usb/lib/usb-endpoint:usb-endpoint-server-sdk",
+    "//src/lib/ddk:ddk_metadata_only",
     "//zircon/system/ulib/hwreg",
+    "//zircon/system/ulib/sync:sync-cpp",
+    "//zircon/system/ulib/zx",
   ]
 }
 
 fuchsia_cc_driver("dwc2-driver") {
-  legacy = true
   output_name = "dwc2"
-  deps = [ ":common" ]
+  deps = [
+    ":common",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
 }
 
 fuchsia_component_manifest("dwc2-manifest") {
@@ -101,8 +106,12 @@ test("dwc2-test-bin") {
   output_name = "dwc2-test"
   deps = [
     ":common",
-    "//src/devices/testing/mock-ddk",
-    "//zircon/system/ulib/zxtest",
+    "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
+    "//sdk/lib/driver/fake-mmio-reg/cpp",
+    "//sdk/lib/driver/fake-platform-device/cpp",
+    "//sdk/lib/driver/testing/cpp",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
   ]
 }
 
