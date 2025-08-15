@@ -9,7 +9,7 @@
     ],
     program: {
         runner: "driver",
-        binary: "driver/virtual-bus-tester.so",
+        binary: "driver/virtual-bus-tester-banjo.so",
         bind: "meta/bind/usb-virtual-bus-tester-bind.bindbc",
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],

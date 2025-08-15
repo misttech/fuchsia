@@ -15,13 +15,12 @@
 
 namespace virtualbus {
 
-constexpr auto kMaxPacketSize = 20;
-
 class TestFunction : public fdf::DriverBase,
                      public ddk::UsbFunctionInterfaceProtocol<TestFunction>,
                      public fidl::Server<fuchsia_hardware_usb_virtualbustest::ExpectBusTest> {
- private:
+ protected:
   static constexpr std::string_view kName = "virtual-bus-test-peripheral";
+  static constexpr auto kMaxPacketSize = 20;
 
  public:
   TestFunction(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)

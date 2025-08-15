@@ -27,11 +27,10 @@ fidl("fuchsia.hardware.usb.virtualbustest") {
   public_deps = [ "//zircon/vdso/zx" ]
 }
 
-fuchsia_cc_driver("virtual-bus-tester-driver") {
+source_set("virtual-bus-tester-common") {
   testonly = true
-  output_name = "virtual-bus-tester"
   sources = [ "host.cc" ]
-  deps = [
+  public_deps = [
     ":fuchsia.hardware.usb.virtualbustest_cpp",
     ":usb-virtual-bus-tester-bind",
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
@@ -43,12 +42,38 @@ fuchsia_cc_driver("virtual-bus-tester-driver") {
   ]
 }
 
-fuchsia_driver_component("virtual-bus-tester") {
+fuchsia_cc_driver("virtual-bus-tester-banjo-driver") {
+  testonly = true
+  output_name = "virtual-bus-tester-banjo"
+  sources = [ "host-banjo.cc" ]
+  deps = [ ":virtual-bus-tester-common" ]
+}
+
+fuchsia_driver_component("virtual-bus-tester-banjo") {
   testonly = true
   info = "meta/virtual-bus-tester-info.json"
-  component_name = "virtual-bus-tester"
-  deps = [ ":virtual-bus-tester-driver" ]
-  manifest = "meta/virtual-bus-tester.cml"
+  component_name = "virtual-bus-tester-banjo"
+  deps = [ ":virtual-bus-tester-banjo-driver" ]
+  manifest = "meta/virtual-bus-tester-banjo.cml"
+}
+
+fuchsia_cc_driver("virtual-bus-tester-fidl-driver") {
+  testonly = true
+  output_name = "virtual-bus-tester-fidl"
+  sources = [ "host-fidl.cc" ]
+  deps = [
+    ":virtual-bus-tester-common",
+    "//sdk/fidl/fuchsia.hardware.usb:fuchsia.hardware.usb_cpp",
+    "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client-dfv2-compat-logging",
+  ]
+}
+
+fuchsia_driver_component("virtual-bus-tester-fidl") {
+  testonly = true
+  info = "meta/virtual-bus-tester-info.json"
+  component_name = "virtual-bus-tester-fidl"
+  deps = [ ":virtual-bus-tester-fidl-driver" ]
+  manifest = "meta/virtual-bus-tester-fidl.cml"
 }
 
 driver_bind_rules("usb-virtual-bus-tester-function-bind") {
@@ -140,7 +165,7 @@ source_set("usb-virtual-bus-test-common") {
 fuchsia_unittest_package("usb-virtual-bus-banjo-test") {
   deps = [
     ":usb-virtual-bus-test-common",
-    ":virtual-bus-tester",
+    ":virtual-bus-tester-banjo",
     ":virtual-bus-tester-function-banjo",
   ]
   test_specs = {
@@ -154,7 +179,7 @@ fuchsia_unittest_package("usb-virtual-bus-banjo-test") {
 fuchsia_unittest_package("usb-virtual-bus-fidl-test") {
   deps = [
     ":usb-virtual-bus-test-common",
-    ":virtual-bus-tester",
+    ":virtual-bus-tester-fidl",
     ":virtual-bus-tester-function-fidl",
   ]
   test_specs = {

@@ -5,17 +5,10 @@
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/host.h"
 
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_export.h>
 
 #include <usb/request-cpp.h>
 
 namespace virtualbus {
-
-void Device::PrepareStop(fdf::PrepareStopCompleter completer) {
-  usb_client_.CancelAll(bulk_out_addr_);
-  usb_client_.CancelAll(bulk_in_addr_);
-  completer(zx::ok());
-}
 
 void Device::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
   if (request.is_in()) {
@@ -49,28 +42,9 @@ void Device::Out(OutRequest& request, OutCompleter::Sync& completer) {
     completer.Close(ZX_ERR_BAD_STATE);
     return;
   }
-
-  std::optional<usb::Request<>> req;
-  zx_status_t status =
-      usb::Request<>::Alloc(&req, request.data().size(), bulk_out_addr_, parent_req_size_);
-  if (status != ZX_OK) {
-    completer.Reply(zx::error(status));
-    return;
-  }
-  size_t copy_result = req->CopyTo(request.data().data(), request.data().size(), 0);
-  ZX_ASSERT(copy_result == request.data().size());
-
-  usb_request_complete_callback_t complete = {
-      .callback =
-          [](void* ctx, usb_request_t* request) {
-            usb::Request<> req(request, static_cast<Device*>(ctx)->parent_req_size_);
-            static_cast<Device*>(ctx)->out_completer_->Reply(
-                zx::ok(req.request()->response.actual));
-          },
-      .ctx = this,
-  };
   out_completer_ = completer.ToAsync();
-  usb_client_.RequestQueue(req->take(), &complete);
+
+  QueueOut(std::move(request.data()));
 }
 
 void Device::In(InRequest& request, InCompleter::Sync& completer) {
@@ -78,32 +52,9 @@ void Device::In(InRequest& request, InCompleter::Sync& completer) {
     completer.Close(ZX_ERR_BAD_STATE);
     return;
   }
-
-  std::optional<usb::Request<>> req;
-  zx_status_t status = usb::Request<>::Alloc(&req, request.size(), bulk_in_addr_, parent_req_size_);
-  if (status != ZX_OK) {
-    completer.Reply(zx::error(status));
-    return;
-  }
-
-  usb_request_complete_callback_t complete = {
-      .callback =
-          [](void* ctx, usb_request_t* request) {
-            usb::Request<> req(request, static_cast<Device*>(ctx)->parent_req_size_);
-
-            std::vector<uint8_t> data(req.request()->response.actual);
-            size_t actual = req.CopyFrom(data.data(), data.size(), 0);
-            if (actual != req.request()->response.actual) {
-              static_cast<Device*>(ctx)->in_completer_->Reply(zx::error(ZX_ERR_BAD_STATE));
-              return;
-            }
-
-            static_cast<Device*>(ctx)->in_completer_->Reply(zx::ok(std::move(data)));
-          },
-      .ctx = this,
-  };
   in_completer_ = completer.ToAsync();
-  usb_client_.RequestQueue(req->take(), &complete);
+
+  QueueIn(request.size());
 }
 
 zx::result<> Device::Start() {
@@ -140,11 +91,9 @@ zx::result<> Device::Start() {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
   if (!bulk_in_addr_) {
-    zxlogf(ERROR, "could not find bulk in endpoint");
+    FDF_LOG(ERROR, "could not find bulk in endpoint");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
-
-  parent_req_size_ = usb_client_.GetRequestSize();
 
   zx::result child = AddOwnedChild(kName);
   if (child.is_error()) {
@@ -159,7 +108,7 @@ zx::result<> Device::Start() {
                                             fidl::kIgnoreBindingClosure),
       }));
   if (serve_result.is_error()) {
-    zxlogf(ERROR, "Failed to add Device service %s", serve_result.status_string());
+    FDF_LOG(ERROR, "Failed to add Device service %s", serve_result.status_string());
     return serve_result.take_error();
   }
 
@@ -167,5 +116,3 @@ zx::result<> Device::Start() {
 }
 
 }  // namespace virtualbus
-
-FUCHSIA_DRIVER_EXPORT(virtualbus::Device);
