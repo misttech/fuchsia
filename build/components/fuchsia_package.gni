@@ -264,7 +264,6 @@ template("fuchsia_package") {
                                  "testonly",
                                ])
         manifest = _files.fini_manifest
-        check_unstripped_files = true
         deps = [ ":$package_manifest_target" ]
       }
     }

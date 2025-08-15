@@ -38,11 +38,8 @@ declare_args() {
 template("verify_manifest_elf_binaries") {
   if (defined(invoker.manifest)) {
     input_manifest = invoker.manifest
-  } else if (defined(invoker.partial_manifest)) {
-    input_manifest = invoker.partial_manifest
   } else {
-    assert(defined(invoker.manifest) || defined(invoker.partial_manifest),
-           "Missing 'manifest' or 'partial_manifest' argument!")
+    assert(defined(invoker.manifest), "Missing 'manifest' argument!")
   }
   if (disable_elf_checks) {
     group(target_name) {
@@ -75,24 +72,12 @@ template("verify_manifest_elf_binaries") {
       outputs = [ "$target_gen_dir/${target_name}" ]
       depfile = outputs[0] + ".d"
       args = [
-        "--check-stripped",
         "--depfile=" + rebase_path(depfile, root_build_dir),
         "--stamp=" + rebase_path(outputs[0], root_build_dir),
+        "--fini-manifest=" + rebase_path(sources[0], root_build_dir),
+        "--toolchain-lib-dir=${rebased_clang_dir}/lib",
+        "--toolchain-lib-dir=${rebased_rustc_prefix}/lib",
       ]
-      if (defined(invoker.manifest)) {
-        args += [ "--fini-manifest=" + rebase_path(sources[0], root_build_dir) ]
-      } else {
-        args +=
-            [ "--partial-manifest=" + rebase_path(sources[0], root_build_dir) ]
-      }
-      if (defined(invoker.check_unstripped_files) &&
-          invoker.check_unstripped_files) {
-        args += [
-          "--check-unstripped-files",
-          "--toolchain-lib-dir=${rebased_clang_dir}/lib",
-          "--toolchain-lib-dir=${rebased_rustc_prefix}/lib",
-        ]
-      }
       deps = invoker.deps
     }
   }
