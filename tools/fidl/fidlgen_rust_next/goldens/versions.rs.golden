@@ -244,7 +244,7 @@ pub struct OtherProtocol;
 pub mod other_protocol {
     pub mod prelude {
         pub use crate::{
-            other_protocol, OtherProtocol, OtherProtocolClientHandler, OtherProtocolServerHandler,
+            OtherProtocol, OtherProtocolClientHandler, OtherProtocolServerHandler, other_protocol,
         };
     }
 
@@ -345,7 +345,7 @@ pub struct Protocol;
 
 pub mod protocol {
     pub mod prelude {
-        pub use crate::{protocol, Protocol, ProtocolClientHandler, ProtocolServerHandler};
+        pub use crate::{Protocol, ProtocolClientHandler, ProtocolServerHandler, protocol};
     }
 
     pub struct Foo;
@@ -564,7 +564,6 @@ impl ::fidl_next::Encodable for Struct {
 unsafe impl<___E> ::fidl_next::Encode<___E> for Struct
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -643,7 +642,6 @@ unsafe impl ::fidl_next::Wire for WireStruct {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStruct
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -685,7 +683,6 @@ impl ::fidl_next::Encodable for Table {
 unsafe impl<___E> ::fidl_next::Encode<___E> for Table
 where
     ___E: ::fidl_next::Encoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -772,7 +769,6 @@ unsafe impl ::fidl_next::Wire for WireTable<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireTable<'static>
 where
     ___D: ::fidl_next::Decoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -826,7 +822,6 @@ impl ::fidl_next::Encodable for Union {
 unsafe impl<___E> ::fidl_next::Encode<___E> for Union
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -843,7 +838,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -956,7 +951,6 @@ impl WireUnion {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireUnion
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -1011,11 +1005,7 @@ impl WireOptionalUnion {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnion> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnion> {
@@ -1030,7 +1020,6 @@ impl WireOptionalUnion {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalUnion
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(

@@ -171,7 +171,7 @@ where
 
         match self {
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -193,7 +193,7 @@ where
 
         match self {
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -395,11 +395,7 @@ impl WireOptionalEmptyFlexibleUnion {
     }
 
     pub fn as_ref(&self) -> Option<&WireEmptyFlexibleUnion> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireEmptyFlexibleUnion> {
@@ -469,7 +465,6 @@ impl ::fidl_next::Encodable for ExplicitFlexibleUnion {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ExplicitFlexibleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -490,7 +485,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -501,7 +496,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ExplicitFlexibleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -522,7 +516,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -705,7 +699,6 @@ impl<'de> WireExplicitFlexibleUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireExplicitFlexibleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -761,11 +754,7 @@ impl<'de> WireOptionalExplicitFlexibleUnion<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireExplicitFlexibleUnion<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireExplicitFlexibleUnion<'de>> {
@@ -780,7 +769,6 @@ impl<'de> WireOptionalExplicitFlexibleUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalExplicitFlexibleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -823,7 +811,6 @@ impl ::fidl_next::Encodable for ExplicitFoo {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ExplicitFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -844,7 +831,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -855,7 +842,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ExplicitFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -876,7 +862,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -1055,7 +1041,6 @@ impl<'de> WireExplicitFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireExplicitFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1113,11 +1098,7 @@ impl<'de> WireOptionalExplicitFoo<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireExplicitFoo<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireExplicitFoo<'de>> {
@@ -1132,7 +1113,6 @@ impl<'de> WireOptionalExplicitFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalExplicitFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1173,7 +1153,6 @@ impl ::fidl_next::Encodable for Pizza {
 unsafe impl<___E> ::fidl_next::Encode<___E> for Pizza
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1198,7 +1177,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for Pizza
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1299,7 +1277,6 @@ unsafe impl ::fidl_next::Wire for WirePizza<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WirePizza<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1331,7 +1308,6 @@ impl ::fidl_next::Encodable for Pasta {
 unsafe impl<___E> ::fidl_next::Encode<___E> for Pasta
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1356,7 +1332,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for Pasta
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1457,7 +1432,6 @@ unsafe impl ::fidl_next::Wire for WirePasta<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WirePasta<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1500,7 +1474,6 @@ impl ::fidl_next::Encodable for ExplicitPizzaOrPasta {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ExplicitPizzaOrPasta
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1528,7 +1501,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ExplicitPizzaOrPasta
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1726,7 +1698,6 @@ impl<'de> WireExplicitPizzaOrPasta<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireExplicitPizzaOrPasta<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1786,11 +1757,7 @@ impl<'de> WireOptionalExplicitPizzaOrPasta<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireExplicitPizzaOrPasta<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireExplicitPizzaOrPasta<'de>> {
@@ -1805,7 +1772,6 @@ impl<'de> WireOptionalExplicitPizzaOrPasta<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalExplicitPizzaOrPasta<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1850,7 +1816,6 @@ impl ::fidl_next::Encodable for ExplicitStrictFoo {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ExplicitStrictFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1878,7 +1843,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ExplicitStrictFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -2076,7 +2040,6 @@ impl<'de> WireExplicitStrictFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireExplicitStrictFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -2134,11 +2097,7 @@ impl<'de> WireOptionalExplicitStrictFoo<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireExplicitStrictFoo<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireExplicitStrictFoo<'de>> {
@@ -2153,7 +2112,6 @@ impl<'de> WireOptionalExplicitStrictFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalExplicitStrictFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -2196,7 +2154,6 @@ impl ::fidl_next::Encodable for ExplicitUnion {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ExplicitUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -2224,7 +2181,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ExplicitUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -2418,7 +2374,6 @@ impl<'de> WireExplicitUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireExplicitUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -2476,11 +2431,7 @@ impl<'de> WireOptionalExplicitUnion<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireExplicitUnion<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireExplicitUnion<'de>> {
@@ -2495,7 +2446,6 @@ impl<'de> WireOptionalExplicitUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalExplicitUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -2794,11 +2744,7 @@ impl WireOptionalFieldCollision {
     }
 
     pub fn as_ref(&self) -> Option<&WireFieldCollision> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireFieldCollision> {
@@ -2874,7 +2820,6 @@ impl ::fidl_next::Encodable for FlexibleFoo {
 unsafe impl<___E> ::fidl_next::Encode<___E> for FlexibleFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -2895,7 +2840,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -2906,7 +2851,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for FlexibleFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -2927,7 +2871,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -3106,7 +3050,6 @@ impl<'de> WireFlexibleFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireFlexibleFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -3164,11 +3107,7 @@ impl<'de> WireOptionalFlexibleFoo<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireFlexibleFoo<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireFlexibleFoo<'de>> {
@@ -3183,7 +3122,6 @@ impl<'de> WireOptionalFlexibleFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalFlexibleFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -3228,7 +3166,6 @@ impl ::fidl_next::Encodable for FlexiblePizzaOrPasta {
 unsafe impl<___E> ::fidl_next::Encode<___E> for FlexiblePizzaOrPasta
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -3249,7 +3186,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -3260,7 +3197,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for FlexiblePizzaOrPasta
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -3281,7 +3217,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -3464,7 +3400,6 @@ impl<'de> WireFlexiblePizzaOrPasta<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireFlexiblePizzaOrPasta<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -3524,11 +3459,7 @@ impl<'de> WireOptionalFlexiblePizzaOrPasta<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireFlexiblePizzaOrPasta<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireFlexiblePizzaOrPasta<'de>> {
@@ -3543,7 +3474,6 @@ impl<'de> WireOptionalFlexiblePizzaOrPasta<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalFlexiblePizzaOrPasta<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -3592,7 +3522,6 @@ impl ::fidl_next::Encodable for FlexibleUnion {
 unsafe impl<___E> ::fidl_next::Encode<___E> for FlexibleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -3617,7 +3546,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -3628,7 +3557,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for FlexibleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -3653,7 +3581,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -3860,7 +3788,6 @@ impl<'de> WireFlexibleUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireFlexibleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -3929,11 +3856,7 @@ impl<'de> WireOptionalFlexibleUnion<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireFlexibleUnion<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireFlexibleUnion<'de>> {
@@ -3948,7 +3871,6 @@ impl<'de> WireOptionalFlexibleUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalFlexibleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -4000,7 +3922,6 @@ impl ::fidl_next::Encodable for NewerSimpleUnion {
 unsafe impl<___E> ::fidl_next::Encode<___E> for NewerSimpleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -4025,7 +3946,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -4036,7 +3957,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for NewerSimpleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -4061,7 +3981,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -4268,7 +4188,6 @@ impl<'de> WireNewerSimpleUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireNewerSimpleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -4337,11 +4256,7 @@ impl<'de> WireOptionalNewerSimpleUnion<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireNewerSimpleUnion<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireNewerSimpleUnion<'de>> {
@@ -4356,7 +4271,6 @@ impl<'de> WireOptionalNewerSimpleUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalNewerSimpleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -4402,7 +4316,6 @@ impl ::fidl_next::Encodable for NullableUnionStruct {
 unsafe impl<___E> ::fidl_next::Encode<___E> for NullableUnionStruct
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -4427,7 +4340,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for NullableUnionStruct
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -4528,7 +4440,6 @@ unsafe impl ::fidl_next::Wire for WireNullableUnionStruct<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireNullableUnionStruct<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -4564,7 +4475,6 @@ impl ::fidl_next::Encodable for OlderSimpleUnion {
 unsafe impl<___E> ::fidl_next::Encode<___E> for OlderSimpleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -4585,7 +4495,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -4596,7 +4506,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for OlderSimpleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -4617,7 +4526,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -4798,7 +4707,6 @@ impl<'de> WireOlderSimpleUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOlderSimpleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -4854,11 +4762,7 @@ impl<'de> WireOptionalOlderSimpleUnion<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireOlderSimpleUnion<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireOlderSimpleUnion<'de>> {
@@ -4873,7 +4777,6 @@ impl<'de> WireOptionalOlderSimpleUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalOlderSimpleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -4914,7 +4817,6 @@ impl ::fidl_next::Encodable for PizzaOrPasta {
 unsafe impl<___E> ::fidl_next::Encode<___E> for PizzaOrPasta
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -4942,7 +4844,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for PizzaOrPasta
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5136,7 +5037,6 @@ impl<'de> WirePizzaOrPasta<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WirePizzaOrPasta<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -5196,11 +5096,7 @@ impl<'de> WireOptionalPizzaOrPasta<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WirePizzaOrPasta<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WirePizzaOrPasta<'de>> {
@@ -5215,7 +5111,6 @@ impl<'de> WireOptionalPizzaOrPasta<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalPizzaOrPasta<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -5554,11 +5449,7 @@ impl WireOptionalReverseOrdinalUnion {
     }
 
     pub fn as_ref(&self) -> Option<&WireReverseOrdinalUnion> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireReverseOrdinalUnion> {
@@ -5639,7 +5530,6 @@ impl ::fidl_next::Encodable for StrictBoundedUnion {
 unsafe impl<___E> ::fidl_next::Encode<___E> for StrictBoundedUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5663,7 +5553,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for StrictBoundedUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5840,7 +5729,6 @@ impl<'de> WireStrictBoundedUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStrictBoundedUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -5899,11 +5787,7 @@ impl<'de> WireOptionalStrictBoundedUnion<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireStrictBoundedUnion<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireStrictBoundedUnion<'de>> {
@@ -5918,7 +5802,6 @@ impl<'de> WireOptionalStrictBoundedUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalStrictBoundedUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -5961,7 +5844,6 @@ impl ::fidl_next::Encodable for StrictFoo {
 unsafe impl<___E> ::fidl_next::Encode<___E> for StrictFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5989,7 +5871,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for StrictFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -6183,7 +6064,6 @@ impl<'de> WireStrictFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStrictFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -6241,11 +6121,7 @@ impl<'de> WireOptionalStrictFoo<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireStrictFoo<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireStrictFoo<'de>> {
@@ -6260,7 +6136,6 @@ impl<'de> WireOptionalStrictFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalStrictFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -6303,7 +6178,6 @@ impl ::fidl_next::Encodable for StrictPizzaOrPasta {
 unsafe impl<___E> ::fidl_next::Encode<___E> for StrictPizzaOrPasta
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -6331,7 +6205,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for StrictPizzaOrPasta
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -6529,7 +6402,6 @@ impl<'de> WireStrictPizzaOrPasta<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStrictPizzaOrPasta<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -6589,11 +6461,7 @@ impl<'de> WireOptionalStrictPizzaOrPasta<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireStrictPizzaOrPasta<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireStrictPizzaOrPasta<'de>> {
@@ -6608,7 +6476,6 @@ impl<'de> WireOptionalStrictPizzaOrPasta<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalStrictPizzaOrPasta<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -6655,7 +6522,6 @@ impl ::fidl_next::Encodable for StrictSimpleUnion {
 unsafe impl<___E> ::fidl_next::Encode<___E> for StrictSimpleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -6687,7 +6553,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for StrictSimpleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -6907,7 +6772,6 @@ impl<'de> WireStrictSimpleUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStrictSimpleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -6968,11 +6832,7 @@ impl<'de> WireOptionalStrictSimpleUnion<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireStrictSimpleUnion<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireStrictSimpleUnion<'de>> {
@@ -6987,7 +6847,6 @@ impl<'de> WireOptionalStrictSimpleUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalStrictSimpleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -7034,7 +6893,6 @@ impl ::fidl_next::Encodable for StrictUnion {
 unsafe impl<___E> ::fidl_next::Encode<___E> for StrictUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -7066,7 +6924,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for StrictUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -7292,7 +7149,6 @@ impl<'de> WireStrictUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStrictUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -7361,11 +7217,7 @@ impl<'de> WireOptionalStrictUnion<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireStrictUnion<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireStrictUnion<'de>> {
@@ -7380,7 +7232,6 @@ impl<'de> WireOptionalStrictUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalStrictUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -7426,7 +7277,6 @@ impl ::fidl_next::Encodable for StructWithNullableUnion {
 unsafe impl<___E> ::fidl_next::Encode<___E> for StructWithNullableUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -7451,7 +7301,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for StructWithNullableUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -7552,7 +7401,6 @@ unsafe impl ::fidl_next::Wire for WireStructWithNullableUnion<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructWithNullableUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -7585,7 +7433,6 @@ unsafe impl<___E> ::fidl_next::Encode<___E>
     for TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -7611,7 +7458,6 @@ unsafe impl<___E> ::fidl_next::EncodeRef<___E>
     for TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -7733,7 +7579,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireTestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -7766,7 +7611,6 @@ unsafe impl<___E> ::fidl_next::Encode<___E>
     for TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -7792,7 +7636,6 @@ unsafe impl<___E> ::fidl_next::EncodeRef<___E>
     for TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -7915,7 +7758,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireTestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -7942,7 +7784,7 @@ pub struct TestProtocol;
 pub mod test_protocol {
     pub mod prelude {
         pub use crate::{
-            test_protocol, TestProtocol, TestProtocolClientHandler, TestProtocolServerHandler,
+            TestProtocol, TestProtocolClientHandler, TestProtocolServerHandler, test_protocol,
         };
 
         pub use crate::TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse;
@@ -8047,10 +7889,8 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for TestProtocol
 where
     ___H: TestProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <test_protocol::StrictUnionHenceResponseMayBeStackAllocated as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <test_protocol::FlexibleUnionHenceResponseMustBeHeapAllocated as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -8154,7 +7994,6 @@ impl ::fidl_next::Encodable for Union {
 unsafe impl<___E> ::fidl_next::Encode<___E> for Union
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -8186,7 +8025,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for Union
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -8412,7 +8250,6 @@ impl<'de> WireUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -8481,11 +8318,7 @@ impl<'de> WireOptionalUnion<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnion<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnion<'de>> {
@@ -8500,7 +8333,6 @@ impl<'de> WireOptionalUnion<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -8565,7 +8397,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -8593,7 +8425,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -8827,11 +8659,7 @@ impl WireOptionalUnionContainingEmptyStruct {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnionContainingEmptyStruct> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnionContainingEmptyStruct> {
@@ -8913,7 +8741,6 @@ impl ::fidl_next::Encodable for UnionSandwich {
 unsafe impl<___E> ::fidl_next::Encode<___E> for UnionSandwich
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -8944,7 +8771,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for UnionSandwich
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -9075,7 +8901,6 @@ unsafe impl ::fidl_next::Wire for WireUnionSandwich<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireUnionSandwich<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -9115,7 +8940,6 @@ impl ::fidl_next::Encodable for UnionWithAttributes {
 unsafe impl<___E> ::fidl_next::Encode<___E> for UnionWithAttributes
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -9132,7 +8956,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -9143,7 +8967,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for UnionWithAttributes
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -9160,7 +8983,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -9325,7 +9148,6 @@ impl<'de> WireUnionWithAttributes<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireUnionWithAttributes<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -9378,11 +9200,7 @@ impl<'de> WireOptionalUnionWithAttributes<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnionWithAttributes<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnionWithAttributes<'de>> {
@@ -9397,7 +9215,6 @@ impl<'de> WireOptionalUnionWithAttributes<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalUnionWithAttributes<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(

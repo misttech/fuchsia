@@ -756,7 +756,6 @@ impl ::fidl_next::Encodable for UnionLargeArray {
 unsafe impl<___E> ::fidl_next::Encode<___E> for UnionLargeArray
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -780,7 +779,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for UnionLargeArray
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -954,7 +952,6 @@ impl<'de> WireUnionLargeArray<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireUnionLargeArray<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1009,11 +1006,7 @@ impl<'de> WireOptionalUnionLargeArray<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnionLargeArray<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnionLargeArray<'de>> {
@@ -1028,7 +1021,6 @@ impl<'de> WireOptionalUnionLargeArray<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalUnionLargeArray<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1067,7 +1059,6 @@ impl ::fidl_next::Encodable for UnionSmallArray {
 unsafe impl<___E> ::fidl_next::Encode<___E> for UnionSmallArray
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1091,7 +1082,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for UnionSmallArray
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1265,7 +1255,6 @@ impl<'de> WireUnionSmallArray<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireUnionSmallArray<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1320,11 +1309,7 @@ impl<'de> WireOptionalUnionSmallArray<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnionSmallArray<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnionSmallArray<'de>> {
@@ -1339,7 +1324,6 @@ impl<'de> WireOptionalUnionSmallArray<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalUnionSmallArray<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(

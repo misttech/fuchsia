@@ -13,8 +13,8 @@ impl ::fidl_next::Discoverable for AnotherDiscoverableProtocol {
 pub mod another_discoverable_protocol {
     pub mod prelude {
         pub use crate::{
-            another_discoverable_protocol, AnotherDiscoverableProtocol,
-            AnotherDiscoverableProtocolClientHandler, AnotherDiscoverableProtocolServerHandler,
+            AnotherDiscoverableProtocol, AnotherDiscoverableProtocolClientHandler,
+            AnotherDiscoverableProtocolServerHandler, another_discoverable_protocol,
         };
     }
 
@@ -888,7 +888,6 @@ impl ::fidl_next::Encodable for ChannelProtocolTakeHandleRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ChannelProtocolTakeHandleRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -974,7 +973,6 @@ unsafe impl ::fidl_next::Wire for WireChannelProtocolTakeHandleRequest {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireChannelProtocolTakeHandleRequest
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -1017,7 +1015,6 @@ impl ::fidl_next::Encodable for ChannelProtocolMutateSocketRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ChannelProtocolMutateSocketRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -1103,7 +1100,6 @@ unsafe impl ::fidl_next::Wire for WireChannelProtocolMutateSocketRequest {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireChannelProtocolMutateSocketRequest
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -1146,7 +1142,6 @@ impl ::fidl_next::Encodable for ChannelProtocolMutateSocketResponse {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ChannelProtocolMutateSocketResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -1232,7 +1227,6 @@ unsafe impl ::fidl_next::Wire for WireChannelProtocolMutateSocketResponse {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireChannelProtocolMutateSocketResponse
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -1259,8 +1253,8 @@ pub struct ChannelProtocol;
 pub mod channel_protocol {
     pub mod prelude {
         pub use crate::{
-            channel_protocol, ChannelProtocol, ChannelProtocolClientHandler,
-            ChannelProtocolServerHandler,
+            ChannelProtocol, ChannelProtocolClientHandler, ChannelProtocolServerHandler,
+            channel_protocol,
         };
 
         pub use crate::ChannelProtocolEventARequest;
@@ -1349,7 +1343,6 @@ pub mod channel_protocol {
         impl<T0, T1> ::fidl_next::Encodable for MethodA<T0, T1>
         where
             T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
-
             T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
         {
             type Encoded = crate::WireChannelProtocolMethodARequest;
@@ -1358,9 +1351,7 @@ pub mod channel_protocol {
         unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for MethodA<T0, T1>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
-
             T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
         {
             #[inline]
@@ -1394,7 +1385,6 @@ pub mod channel_protocol {
         impl<T0, T1> ::fidl_next::Encodable for EventA<T0, T1>
         where
             T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
-
             T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
         {
             type Encoded = crate::WireChannelProtocolEventARequest;
@@ -1403,9 +1393,7 @@ pub mod channel_protocol {
         unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for EventA<T0, T1>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
-
             T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
         {
             #[inline]
@@ -1439,7 +1427,6 @@ pub mod channel_protocol {
         impl<T0, T1> ::fidl_next::Encodable for MethodB<T0, T1>
         where
             T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
-
             T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
         {
             type Encoded = crate::WireChannelProtocolMethodBRequest;
@@ -1448,9 +1435,7 @@ pub mod channel_protocol {
         unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for MethodB<T0, T1>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
-
             T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
         {
             #[inline]
@@ -1489,9 +1474,7 @@ pub mod channel_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for TakeHandle<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::fuchsia::HandleEncoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireHandle>,
         {
             #[inline]
@@ -1527,9 +1510,7 @@ pub mod channel_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for MutateSocket<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::fuchsia::HandleEncoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireSocket>,
         {
             #[inline]
@@ -1596,9 +1577,9 @@ pub mod channel_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireChannelProtocolMethodARequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireChannelProtocolMethodARequest,
+                    >,
             {
                 self.sender.send_one_way(3155008840945527714, request)
             }
@@ -1635,9 +1616,9 @@ pub mod channel_protocol {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireChannelProtocolMethodBRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireChannelProtocolMethodBRequest,
+                    >,
             {
                 self.sender
                     .send_two_way(8903004957800778182, request)
@@ -1658,7 +1639,6 @@ pub mod channel_protocol {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
             {
                 self.take_handle_with(TakeHandle { h })
@@ -1673,9 +1653,9 @@ pub mod channel_protocol {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireChannelProtocolTakeHandleRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireChannelProtocolTakeHandleRequest,
+                    >,
             {
                 self.sender
                     .send_two_way(591935489944717925, request)
@@ -1696,7 +1676,6 @@ pub mod channel_protocol {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
             {
                 self.mutate_socket_with(MutateSocket { a })
@@ -1711,9 +1690,9 @@ pub mod channel_protocol {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireChannelProtocolMutateSocketRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireChannelProtocolMutateSocketRequest,
+                    >,
             {
                 self.sender
                     .send_two_way(7411742788430590287, request)
@@ -1757,9 +1736,9 @@ pub mod channel_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::EventA as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::EventA as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(2220452875311597006, request)
             }
@@ -1783,13 +1762,10 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ChannelProto
 where
     ___H: ChannelProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <channel_protocol::EventA as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <channel_protocol::MethodB as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <channel_protocol::MutateSocket as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -1857,16 +1833,12 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ChannelProto
 where
     ___H: ChannelProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <channel_protocol::MethodA as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <channel_protocol::MethodB as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <channel_protocol::TakeHandle as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <channel_protocol::MutateSocket as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -1949,8 +1921,8 @@ impl ::fidl_next::Discoverable for DiscoverableProtocol {
 pub mod discoverable_protocol {
     pub mod prelude {
         pub use crate::{
-            discoverable_protocol, DiscoverableProtocol, DiscoverableProtocolClientHandler,
-            DiscoverableProtocolServerHandler,
+            DiscoverableProtocol, DiscoverableProtocolClientHandler,
+            DiscoverableProtocolServerHandler, discoverable_protocol,
         };
     }
 
@@ -2232,7 +2204,6 @@ impl ::fidl_next::Encodable for HandleRightsProtocolNoResponseMethodRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for HandleRightsProtocolNoResponseMethodRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -2319,7 +2290,6 @@ unsafe impl ::fidl_next::Wire for WireHandleRightsProtocolNoResponseMethodReques
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireHandleRightsProtocolNoResponseMethodRequest
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -2362,7 +2332,6 @@ impl ::fidl_next::Encodable for HandleRightsProtocolResponseMethodRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for HandleRightsProtocolResponseMethodRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -2449,7 +2418,6 @@ unsafe impl ::fidl_next::Wire for WireHandleRightsProtocolResponseMethodRequest 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireHandleRightsProtocolResponseMethodRequest
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -2492,7 +2460,6 @@ impl ::fidl_next::Encodable for HandleRightsProtocolResponseMethodResponse {
 unsafe impl<___E> ::fidl_next::Encode<___E> for HandleRightsProtocolResponseMethodResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -2579,7 +2546,6 @@ unsafe impl ::fidl_next::Wire for WireHandleRightsProtocolResponseMethodResponse
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireHandleRightsProtocolResponseMethodResponse
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -2622,7 +2588,6 @@ impl ::fidl_next::Encodable for HandleRightsProtocolAnEventRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for HandleRightsProtocolAnEventRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -2708,7 +2673,6 @@ unsafe impl ::fidl_next::Wire for WireHandleRightsProtocolAnEventRequest {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireHandleRightsProtocolAnEventRequest
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -2735,8 +2699,8 @@ pub struct HandleRightsProtocol;
 pub mod handle_rights_protocol {
     pub mod prelude {
         pub use crate::{
-            handle_rights_protocol, HandleRightsProtocol, HandleRightsProtocolClientHandler,
-            HandleRightsProtocolServerHandler,
+            HandleRightsProtocol, HandleRightsProtocolClientHandler,
+            HandleRightsProtocolServerHandler, handle_rights_protocol,
         };
 
         pub use crate::HandleRightsProtocolAnEventRequest;
@@ -2800,9 +2764,7 @@ pub mod handle_rights_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for NoResponseMethod<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::fuchsia::HandleEncoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireSocket>,
         {
             #[inline]
@@ -2838,9 +2800,7 @@ pub mod handle_rights_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ResponseMethod<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::fuchsia::HandleEncoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireSocket>,
         {
             #[inline]
@@ -2876,9 +2836,7 @@ pub mod handle_rights_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for AnEvent<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::fuchsia::HandleEncoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireSocket>,
         {
             #[inline]
@@ -2930,7 +2888,6 @@ pub mod handle_rights_protocol {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
             {
                 self.no_response_method_with(NoResponseMethod { h })
@@ -2942,9 +2899,9 @@ pub mod handle_rights_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireHandleRightsProtocolNoResponseMethodRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireHandleRightsProtocolNoResponseMethodRequest,
+                    >,
             {
                 self.sender.send_one_way(1155044649514904573, request)
             }
@@ -2963,7 +2920,6 @@ pub mod handle_rights_protocol {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
             {
                 self.response_method_with(ResponseMethod { h })
@@ -2978,9 +2934,9 @@ pub mod handle_rights_protocol {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireHandleRightsProtocolResponseMethodRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireHandleRightsProtocolResponseMethodRequest,
+                    >,
             {
                 self.sender
                     .send_two_way(5956276128041940295, request)
@@ -3009,7 +2965,6 @@ pub mod handle_rights_protocol {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
             {
                 self.an_event_with(AnEvent { h })
@@ -3021,9 +2976,9 @@ pub mod handle_rights_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::AnEvent as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::AnEvent as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(476727631355490611, request)
             }
@@ -3047,10 +3002,8 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for HandleRights
 where
     ___H: HandleRightsProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <handle_rights_protocol::ResponseMethod as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <handle_rights_protocol::AnEvent as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -3100,10 +3053,8 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for HandleRights
 where
     ___H: HandleRightsProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <handle_rights_protocol::NoResponseMethod as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <handle_rights_protocol::ResponseMethod as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -3595,8 +3546,8 @@ pub struct ManyParameters;
 pub mod many_parameters {
     pub mod prelude {
         pub use crate::{
-            many_parameters, ManyParameters, ManyParametersClientHandler,
-            ManyParametersServerHandler,
+            ManyParameters, ManyParametersClientHandler, ManyParametersServerHandler,
+            many_parameters,
         };
 
         pub use crate::ManyParametersFifteenRequest;
@@ -3652,33 +3603,19 @@ pub mod many_parameters {
             for Fifteen<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>
         where
             T0: ::fidl_next::Encodable<Encoded = bool>,
-
             T1: ::fidl_next::Encodable<Encoded = bool>,
-
             T2: ::fidl_next::Encodable<Encoded = bool>,
-
             T3: ::fidl_next::Encodable<Encoded = bool>,
-
             T4: ::fidl_next::Encodable<Encoded = bool>,
-
             T5: ::fidl_next::Encodable<Encoded = bool>,
-
             T6: ::fidl_next::Encodable<Encoded = bool>,
-
             T7: ::fidl_next::Encodable<Encoded = bool>,
-
             T8: ::fidl_next::Encodable<Encoded = bool>,
-
             T9: ::fidl_next::Encodable<Encoded = bool>,
-
             T10: ::fidl_next::Encodable<Encoded = bool>,
-
             T11: ::fidl_next::Encodable<Encoded = bool>,
-
             T12: ::fidl_next::Encodable<Encoded = bool>,
-
             T13: ::fidl_next::Encodable<Encoded = bool>,
-
             T14: ::fidl_next::Encodable<Encoded = bool>,
         {
             type Encoded = crate::WireManyParametersFifteenRequest;
@@ -3689,35 +3626,20 @@ pub mod many_parameters {
             for Fifteen<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T1: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T2: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T3: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T4: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T5: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T6: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T7: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T8: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T9: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T10: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T11: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T12: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T13: ::fidl_next::Encode<___E, Encoded = bool>,
-
             T14: ::fidl_next::Encode<___E, Encoded = bool>,
         {
             #[inline]
@@ -3921,9 +3843,9 @@ pub mod many_parameters {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireManyParametersFifteenRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireManyParametersFifteenRequest,
+                    >,
             {
                 self.sender.send_one_way(6423043252952467815, request)
             }
@@ -3979,7 +3901,6 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ManyParamete
 where
     ___H: ManyParametersServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <many_parameters::Fifteen as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -4047,7 +3968,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -4073,7 +3994,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -4303,11 +4224,7 @@ impl WireOptionalTheUnion {
     }
 
     pub fn as_ref(&self) -> Option<&WireTheUnion> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireTheUnion> {
@@ -4736,8 +4653,8 @@ pub struct MethodWithUnion;
 pub mod method_with_union {
     pub mod prelude {
         pub use crate::{
-            method_with_union, MethodWithUnion, MethodWithUnionClientHandler,
-            MethodWithUnionServerHandler,
+            MethodWithUnion, MethodWithUnionClientHandler, MethodWithUnionServerHandler,
+            method_with_union,
         };
 
         pub use crate::MethodWithUnionUnionMethodRequest;
@@ -4773,7 +4690,6 @@ pub mod method_with_union {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for UnionMethod<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = crate::WireTheUnion>,
         {
             #[inline]
@@ -4841,9 +4757,9 @@ pub mod method_with_union {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireMethodWithUnionUnionMethodRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireMethodWithUnionUnionMethodRequest,
+                    >,
             {
                 self.sender
                     .send_two_way(4124874338266649112, request)
@@ -4870,7 +4786,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for MethodWithUn
 where
     ___H: MethodWithUnionClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <method_with_union::UnionMethod as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -4906,7 +4821,6 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for MethodWithUn
 where
     ___H: MethodWithUnionServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <method_with_union::UnionMethod as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -4960,8 +4874,8 @@ impl ::fidl_next::Discoverable for PlatformServer {
 pub mod platform_server {
     pub mod prelude {
         pub use crate::{
-            platform_server, PlatformServer, PlatformServerClientHandler,
-            PlatformServerServerHandler,
+            PlatformServer, PlatformServerClientHandler, PlatformServerServerHandler,
+            platform_server,
         };
     }
 
@@ -5110,7 +5024,6 @@ impl ::fidl_next::Encodable for ProtocolEnds {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ProtocolEnds
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -5262,7 +5175,6 @@ unsafe impl ::fidl_next::Wire for WireProtocolEnds {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireProtocolEnds
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -5304,7 +5216,6 @@ unsafe impl<___E> ::fidl_next::Encode<___E>
     for WithAndWithoutRequestResponseNoRequestWithResponseResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5330,7 +5241,6 @@ unsafe impl<___E> ::fidl_next::EncodeRef<___E>
     for WithAndWithoutRequestResponseNoRequestWithResponseResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5448,7 +5358,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireWithAndWithoutRequestResponseNoRequestWithResponseResponse<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -5481,7 +5390,6 @@ unsafe impl<___E> ::fidl_next::Encode<___E>
     for WithAndWithoutRequestResponseWithRequestNoResponseRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5507,7 +5415,6 @@ unsafe impl<___E> ::fidl_next::EncodeRef<___E>
     for WithAndWithoutRequestResponseWithRequestNoResponseRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5623,7 +5530,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireWithAndWithoutRequestResponseWithRequestNoResponseRequest<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -5656,7 +5562,6 @@ unsafe impl<___E> ::fidl_next::Encode<___E>
     for WithAndWithoutRequestResponseWithRequestEmptyResponseRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5682,7 +5587,6 @@ unsafe impl<___E> ::fidl_next::EncodeRef<___E>
     for WithAndWithoutRequestResponseWithRequestEmptyResponseRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5801,7 +5705,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireWithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -5834,7 +5737,6 @@ unsafe impl<___E> ::fidl_next::Encode<___E>
     for WithAndWithoutRequestResponseWithRequestWithResponseRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5860,7 +5762,6 @@ unsafe impl<___E> ::fidl_next::EncodeRef<___E>
     for WithAndWithoutRequestResponseWithRequestWithResponseRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -5979,7 +5880,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireWithAndWithoutRequestResponseWithRequestWithResponseRequest<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -6012,7 +5912,6 @@ unsafe impl<___E> ::fidl_next::Encode<___E>
     for WithAndWithoutRequestResponseWithRequestWithResponseResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -6038,7 +5937,6 @@ unsafe impl<___E> ::fidl_next::EncodeRef<___E>
     for WithAndWithoutRequestResponseWithRequestWithResponseResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -6157,7 +6055,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireWithAndWithoutRequestResponseWithRequestWithResponseResponse<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -6189,7 +6086,6 @@ impl ::fidl_next::Encodable for WithAndWithoutRequestResponseOnWithResponseReque
 unsafe impl<___E> ::fidl_next::Encode<___E> for WithAndWithoutRequestResponseOnWithResponseRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -6215,7 +6111,6 @@ unsafe impl<___E> ::fidl_next::EncodeRef<___E>
     for WithAndWithoutRequestResponseOnWithResponseRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -6326,7 +6221,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireWithAndWithoutRequestResponseOnWithResponseRequest<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -6353,8 +6247,8 @@ pub struct WithAndWithoutRequestResponse;
 pub mod with_and_without_request_response {
     pub mod prelude {
         pub use crate::{
-            with_and_without_request_response, WithAndWithoutRequestResponse,
-            WithAndWithoutRequestResponseClientHandler, WithAndWithoutRequestResponseServerHandler,
+            WithAndWithoutRequestResponse, WithAndWithoutRequestResponseClientHandler,
+            WithAndWithoutRequestResponseServerHandler, with_and_without_request_response,
         };
 
         pub use crate::WithAndWithoutRequestResponseNoRequestWithResponseResponse;
@@ -6488,9 +6382,7 @@ pub mod with_and_without_request_response {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for WithRequestNoResponse<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
         {
             #[inline]
@@ -6527,9 +6419,7 @@ pub mod with_and_without_request_response {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for WithRequestEmptyResponse<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
         {
             #[inline]
@@ -6566,9 +6456,7 @@ pub mod with_and_without_request_response {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for WithRequestWithResponse<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
         {
             #[inline]
@@ -6604,9 +6492,7 @@ pub mod with_and_without_request_response {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for OnWithResponse<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
         {
             #[inline]
@@ -6686,24 +6572,23 @@ pub mod with_and_without_request_response {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.with_request_no_response_with(WithRequestNoResponse { arg })
             }
 
-            pub fn with_request_no_response_with<___R>(
-                &self,
-                request: ___R,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
-            where
-                ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireWithAndWithoutRequestResponseWithRequestNoResponseRequest<
-                        'static,
-                    >,
-                >,
-            {
+
+
+                            pub fn with_request_no_response_with<___R>(
+                                &self,
+                                request: ___R,
+                            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+                            where
+                                ___R: ::fidl_next::Encode<
+                                    <___T as ::fidl_next::Transport>::SendBuffer,
+                                    Encoded = crate::WireWithAndWithoutRequestResponseWithRequestNoResponseRequest<'static>,
+                                >,
+                            {
                 self.sender.send_one_way(7326057319832554103, request)
             }
 
@@ -6721,7 +6606,6 @@ pub mod with_and_without_request_response {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.with_request_empty_response_with(WithRequestEmptyResponse { arg })
@@ -6761,7 +6645,6 @@ pub mod with_and_without_request_response {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.with_request_with_response_with(WithRequestWithResponse { arg })
@@ -6815,7 +6698,6 @@ pub mod with_and_without_request_response {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.on_with_response_with(OnWithResponse { ret })
@@ -6827,9 +6709,9 @@ pub mod with_and_without_request_response {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::OnWithResponse as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::OnWithResponse as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(5811598563493228968, request)
             }
@@ -6858,13 +6740,10 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithAndWitho
 where
     ___H: WithAndWithoutRequestResponseClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <with_and_without_request_response::NoRequestWithResponse as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_and_without_request_response::WithRequestWithResponse as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_and_without_request_response::OnWithResponse as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -6961,13 +6840,10 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for WithAndWitho
 where
     ___H: WithAndWithoutRequestResponseServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <with_and_without_request_response::WithRequestNoResponse as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_and_without_request_response::WithRequestEmptyResponse as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_and_without_request_response::WithRequestWithResponse as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -7301,7 +7177,6 @@ impl ::fidl_next::Encodable for WithErrorSyntaxHandleInResultResponse {
 unsafe impl<___E> ::fidl_next::Encode<___E> for WithErrorSyntaxHandleInResultResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -7387,7 +7262,6 @@ unsafe impl ::fidl_next::Wire for WireWithErrorSyntaxHandleInResultResponse {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireWithErrorSyntaxHandleInResultResponse
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -7414,8 +7288,8 @@ pub struct WithErrorSyntax;
 pub mod with_error_syntax {
     pub mod prelude {
         pub use crate::{
-            with_error_syntax, WithErrorSyntax, WithErrorSyntaxClientHandler,
-            WithErrorSyntaxServerHandler,
+            WithErrorSyntax, WithErrorSyntaxClientHandler, WithErrorSyntaxServerHandler,
+            with_error_syntax,
         };
 
         pub use crate::ErrorEnum;
@@ -7578,16 +7452,12 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithErrorSyn
 where
     ___H: WithErrorSyntaxClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <with_error_syntax::ResponseAsStruct as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_error_syntax::ErrorAsPrimitive as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_error_syntax::ErrorAsEnum as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_error_syntax::HandleInResult as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -7721,7 +7591,6 @@ impl ::fidl_next::Encodable for WithProtocolEndsClientEndsRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for WithProtocolEndsClientEndsRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -7813,7 +7682,6 @@ unsafe impl ::fidl_next::Wire for WireWithProtocolEndsClientEndsRequest {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireWithProtocolEndsClientEndsRequest
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -7863,7 +7731,6 @@ impl ::fidl_next::Encodable for WithProtocolEndsClientEndsResponse {
 unsafe impl<___E> ::fidl_next::Encode<___E> for WithProtocolEndsClientEndsResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -7960,7 +7827,6 @@ unsafe impl ::fidl_next::Wire for WireWithProtocolEndsClientEndsResponse {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireWithProtocolEndsClientEndsResponse
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -8010,7 +7876,6 @@ impl ::fidl_next::Encodable for WithProtocolEndsServerEndsRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for WithProtocolEndsServerEndsRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -8107,7 +7972,6 @@ unsafe impl ::fidl_next::Wire for WireWithProtocolEndsServerEndsRequest {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireWithProtocolEndsServerEndsRequest
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -8153,7 +8017,6 @@ impl ::fidl_next::Encodable for WithProtocolEndsServerEndsResponse {
 unsafe impl<___E> ::fidl_next::Encode<___E> for WithProtocolEndsServerEndsResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -8245,7 +8108,6 @@ unsafe impl ::fidl_next::Wire for WireWithProtocolEndsServerEndsResponse {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireWithProtocolEndsServerEndsResponse
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -8287,7 +8149,6 @@ impl ::fidl_next::Encodable for WithProtocolEndsStructContainingEndsRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for WithProtocolEndsStructContainingEndsRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -8376,7 +8237,6 @@ unsafe impl ::fidl_next::Wire for WireWithProtocolEndsStructContainingEndsReques
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireWithProtocolEndsStructContainingEndsRequest
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -8418,7 +8278,6 @@ impl ::fidl_next::Encodable for WithProtocolEndsStructContainingEndsResponse {
 unsafe impl<___E> ::fidl_next::Encode<___E> for WithProtocolEndsStructContainingEndsResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -8507,7 +8366,6 @@ unsafe impl ::fidl_next::Wire for WireWithProtocolEndsStructContainingEndsRespon
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireWithProtocolEndsStructContainingEndsResponse
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -8534,8 +8392,8 @@ pub struct WithProtocolEnds;
 pub mod with_protocol_ends {
     pub mod prelude {
         pub use crate::{
-            with_protocol_ends, WithProtocolEnds, WithProtocolEndsClientHandler,
-            WithProtocolEndsServerHandler,
+            WithProtocolEnds, WithProtocolEndsClientHandler, WithProtocolEndsServerHandler,
+            with_protocol_ends,
         };
 
         pub use crate::WithProtocolEndsClientEndsRequest;
@@ -8596,11 +8454,11 @@ pub mod with_protocol_ends {
         impl<T0> ::fidl_next::Encodable for ClientEnds<T0>
         where
             T0: ::fidl_next::Encodable<
-                Encoded = ::fidl_next::ClientEnd<
-                    crate::DiscoverableProtocol,
-                    ::fidl_next::fuchsia::WireChannel,
+                    Encoded = ::fidl_next::ClientEnd<
+                        crate::DiscoverableProtocol,
+                        ::fidl_next::fuchsia::WireChannel,
+                    >,
                 >,
-            >,
         {
             type Encoded = crate::WireWithProtocolEndsClientEndsRequest;
         }
@@ -8608,16 +8466,14 @@ pub mod with_protocol_ends {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ClientEnds<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::fuchsia::HandleEncoder,
-
             T0: ::fidl_next::Encode<
-                ___E,
-                Encoded = ::fidl_next::ClientEnd<
-                    crate::DiscoverableProtocol,
-                    ::fidl_next::fuchsia::WireChannel,
+                    ___E,
+                    Encoded = ::fidl_next::ClientEnd<
+                        crate::DiscoverableProtocol,
+                        ::fidl_next::fuchsia::WireChannel,
+                    >,
                 >,
-            >,
         {
             #[inline]
             fn encode(
@@ -8645,11 +8501,11 @@ pub mod with_protocol_ends {
         impl<T0> ::fidl_next::Encodable for ServerEnds<T0>
         where
             T0: ::fidl_next::Encodable<
-                Encoded = ::fidl_next::ServerEnd<
-                    crate::DiscoverableProtocol,
-                    ::fidl_next::fuchsia::WireOptionalChannel,
+                    Encoded = ::fidl_next::ServerEnd<
+                        crate::DiscoverableProtocol,
+                        ::fidl_next::fuchsia::WireOptionalChannel,
+                    >,
                 >,
-            >,
         {
             type Encoded = crate::WireWithProtocolEndsServerEndsRequest;
         }
@@ -8657,16 +8513,14 @@ pub mod with_protocol_ends {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ServerEnds<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::fuchsia::HandleEncoder,
-
             T0: ::fidl_next::Encode<
-                ___E,
-                Encoded = ::fidl_next::ServerEnd<
-                    crate::DiscoverableProtocol,
-                    ::fidl_next::fuchsia::WireOptionalChannel,
+                    ___E,
+                    Encoded = ::fidl_next::ServerEnd<
+                        crate::DiscoverableProtocol,
+                        ::fidl_next::fuchsia::WireOptionalChannel,
+                    >,
                 >,
-            >,
         {
             #[inline]
             fn encode(
@@ -8701,9 +8555,7 @@ pub mod with_protocol_ends {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructContainingEnds<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::fuchsia::HandleEncoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = crate::WireProtocolEnds>,
         {
             #[inline]
@@ -8761,7 +8613,6 @@ pub mod with_protocol_ends {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
             {
                 self.client_ends_with(ClientEnds { in_ })
@@ -8776,9 +8627,9 @@ pub mod with_protocol_ends {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireWithProtocolEndsClientEndsRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireWithProtocolEndsClientEndsRequest,
+                    >,
             {
                 self.sender
                     .send_two_way(5870448041025163330, request)
@@ -8802,7 +8653,6 @@ pub mod with_protocol_ends {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
             {
                 self.server_ends_with(ServerEnds { in_ })
@@ -8817,9 +8667,9 @@ pub mod with_protocol_ends {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireWithProtocolEndsServerEndsRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireWithProtocolEndsServerEndsRequest,
+                    >,
             {
                 self.sender
                     .send_two_way(8115535094437022259, request)
@@ -8840,7 +8690,6 @@ pub mod with_protocol_ends {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
             {
                 self.struct_containing_ends_with(StructContainingEnds { in_ })
@@ -8855,9 +8704,9 @@ pub mod with_protocol_ends {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireWithProtocolEndsStructContainingEndsRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireWithProtocolEndsStructContainingEndsRequest,
+                    >,
             {
                 self.sender
                     .send_two_way(4076866772260025813, request)
@@ -8884,13 +8733,10 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithProtocol
 where
     ___H: WithProtocolEndsClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <with_protocol_ends::ClientEnds as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_protocol_ends::ServerEnds as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_protocol_ends::StructContainingEnds as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -8944,13 +8790,10 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for WithProtocol
 where
     ___H: WithProtocolEndsServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <with_protocol_ends::ClientEnds as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_protocol_ends::ServerEnds as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <with_protocol_ends::StructContainingEnds as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {

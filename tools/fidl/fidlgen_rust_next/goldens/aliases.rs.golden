@@ -192,9 +192,7 @@ impl ::fidl_next::Encodable for ExampleOfUseOfAliases {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ExampleOfUseOfAliases
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -356,9 +354,7 @@ unsafe impl ::fidl_next::Wire for WireExampleOfUseOfAliases<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireExampleOfUseOfAliases<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(

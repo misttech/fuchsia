@@ -524,7 +524,6 @@ impl ::fidl_next::Encodable for Struct {
 unsafe impl<___E> ::fidl_next::Encode<___E> for Struct
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -561,7 +560,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for Struct
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -714,7 +712,6 @@ unsafe impl ::fidl_next::Wire for WireStruct<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStruct<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(

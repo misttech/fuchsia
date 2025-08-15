@@ -263,7 +263,6 @@ impl ::fidl_next::Encodable for OverrideTest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for OverrideTest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -294,7 +293,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for OverrideTest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -421,7 +419,6 @@ unsafe impl ::fidl_next::Wire for WireOverrideTest<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOverrideTest<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -935,7 +932,6 @@ impl ::fidl_next::Encodable for Expression {
 unsafe impl<___E> ::fidl_next::Encode<___E> for Expression
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -963,7 +959,7 @@ where
             >(value, 3, encoder, raw)?,
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -974,7 +970,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for Expression
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1002,7 +997,7 @@ where
             >(value, 3, encoder, raw)?,
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -1201,7 +1196,6 @@ impl<'de> WireExpression<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireExpression<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1267,11 +1261,7 @@ impl<'de> WireOptionalExpression<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireExpression<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireExpression<'de>> {
@@ -1286,7 +1276,6 @@ impl<'de> WireOptionalExpression<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalExpression<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1349,7 +1338,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -1375,7 +1364,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -1603,11 +1592,7 @@ impl WireOptionalUnionMember {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnionMember> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnionMember> {
@@ -2067,7 +2052,6 @@ impl ::fidl_next::Encodable for SomeProtocolSomeMethodRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for SomeProtocolSomeMethodRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -2095,7 +2079,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for SomeProtocolSomeMethodRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -2213,7 +2196,6 @@ unsafe impl ::fidl_next::Wire for WireSomeProtocolSomeMethodRequest<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSomeProtocolSomeMethodRequest<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -2556,7 +2538,7 @@ pub struct SomeProtocol;
 pub mod some_protocol {
     pub mod prelude {
         pub use crate::{
-            some_protocol, SomeProtocol, SomeProtocolClientHandler, SomeProtocolServerHandler,
+            SomeProtocol, SomeProtocolClientHandler, SomeProtocolServerHandler, some_protocol,
         };
 
         pub use crate::SomeProtocolSomeMethodRequest;
@@ -2593,7 +2575,6 @@ pub mod some_protocol {
         impl<T0, T1> ::fidl_next::Encodable for SomeMethod<T0, T1>
         where
             T0: ::fidl_next::Encodable<Encoded = crate::WireUnionMember>,
-
             T1: ::fidl_next::Encodable<Encoded = crate::WireTableMember<'static>>,
         {
             type Encoded = crate::WireSomeProtocolSomeMethodRequest<'static>;
@@ -2602,11 +2583,8 @@ pub mod some_protocol {
         unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for SomeMethod<T0, T1>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = crate::WireUnionMember>,
-
             T1: ::fidl_next::Encode<___E, Encoded = crate::WireTableMember<'static>>,
         {
             #[inline]
@@ -2669,7 +2647,6 @@ pub mod some_protocol {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.some_method_with(SomeMethod { union_member, table_member })
@@ -2684,9 +2661,9 @@ pub mod some_protocol {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireSomeProtocolSomeMethodRequest<'static>,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireSomeProtocolSomeMethodRequest<'static>,
+                    >,
             {
                 self.sender
                     .send_two_way(2515914517457749720, request)
@@ -2713,7 +2690,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for SomeProtocol
 where
     ___H: SomeProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <some_protocol::SomeMethod as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -2749,7 +2725,6 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for SomeProtocol
 where
     ___H: SomeProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <some_protocol::SomeMethod as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {

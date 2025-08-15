@@ -14,7 +14,6 @@ impl ::fidl_next::Encodable for SuperFooRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for SuperFooRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -39,7 +38,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for SuperFooRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -140,7 +138,6 @@ unsafe impl ::fidl_next::Wire for WireSuperFooRequest<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSuperFooRequest<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -332,7 +329,7 @@ pub struct Super;
 
 pub mod super_ {
     pub mod prelude {
-        pub use crate::{super_, Super, SuperClientHandler, SuperServerHandler};
+        pub use crate::{Super, SuperClientHandler, SuperServerHandler, super_};
 
         pub use crate::SuperFooRequest;
 
@@ -367,9 +364,7 @@ pub mod super_ {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Foo<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
         {
             #[inline]
@@ -421,7 +416,6 @@ pub mod super_ {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.foo_with(Foo { s })
@@ -433,9 +427,9 @@ pub mod super_ {
             ) -> Result<::fidl_next::ResponseFuture<'_, super::Foo, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireSuperFooRequest<'static>,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireSuperFooRequest<'static>,
+                    >,
             {
                 self.sender
                     .send_two_way(7540745593380780216, request)
@@ -462,7 +456,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Super
 where
     ___H: SuperClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <super_::Foo as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -498,7 +491,6 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Super
 where
     ___H: SuperServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <super_::Foo as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -547,7 +539,7 @@ pub struct Sub;
 
 pub mod sub {
     pub mod prelude {
-        pub use crate::{sub, Sub, SubClientHandler, SubServerHandler};
+        pub use crate::{Sub, SubClientHandler, SubServerHandler, sub};
 
         pub use crate::SuperFooRequest;
 
@@ -582,9 +574,7 @@ pub mod sub {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Foo<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
         {
             #[inline]
@@ -636,7 +626,6 @@ pub mod sub {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.foo_with(Foo { s })
@@ -648,9 +637,9 @@ pub mod sub {
             ) -> Result<::fidl_next::ResponseFuture<'_, super::Foo, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireSuperFooRequest<'static>,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireSuperFooRequest<'static>,
+                    >,
             {
                 self.sender
                     .send_two_way(7540745593380780216, request)
@@ -677,7 +666,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Sub
 where
     ___H: SubClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <sub::Foo as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -713,7 +701,6 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Sub
 where
     ___H: SubServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <sub::Foo as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {

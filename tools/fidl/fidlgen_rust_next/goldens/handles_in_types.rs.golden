@@ -16,7 +16,6 @@ impl ::fidl_next::Encodable for EmptyResourceStruct {
 unsafe impl<___E> ::fidl_next::Encode<___E> for EmptyResourceStruct
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -86,7 +85,6 @@ unsafe impl ::fidl_next::Wire for WireEmptyResourceStruct {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireEmptyResourceStruct
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -119,7 +117,6 @@ impl ::fidl_next::Encodable for EmptyResourceTable {
 unsafe impl<___E> ::fidl_next::Encode<___E> for EmptyResourceTable
 where
     ___E: ::fidl_next::Encoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -185,7 +182,6 @@ unsafe impl ::fidl_next::Wire for WireEmptyResourceTable<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireEmptyResourceTable<'static>
 where
     ___D: ::fidl_next::Decoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -224,7 +220,6 @@ impl ::fidl_next::Encodable for EmptyResourceUnion {
 unsafe impl<___E> ::fidl_next::Encode<___E> for EmptyResourceUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -237,7 +232,7 @@ where
 
         match self {
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -336,7 +331,6 @@ impl WireEmptyResourceUnion {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireEmptyResourceUnion
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -386,11 +380,7 @@ impl WireOptionalEmptyResourceUnion {
     }
 
     pub fn as_ref(&self) -> Option<&WireEmptyResourceUnion> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireEmptyResourceUnion> {
@@ -405,7 +395,6 @@ impl WireOptionalEmptyResourceUnion {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalEmptyResourceUnion
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -584,7 +573,6 @@ impl ::fidl_next::Encodable for TableWithHandle {
 unsafe impl<___E> ::fidl_next::Encode<___E> for TableWithHandle
 where
     ___E: ::fidl_next::Encoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -671,7 +659,6 @@ unsafe impl ::fidl_next::Wire for WireTableWithHandle<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireTableWithHandle<'static>
 where
     ___D: ::fidl_next::Decoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -725,7 +712,6 @@ impl ::fidl_next::Encodable for UnionWithHandle {
 unsafe impl<___E> ::fidl_next::Encode<___E> for UnionWithHandle
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -743,7 +729,7 @@ where
             >(value, 1, encoder, raw)?,
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -856,7 +842,6 @@ impl WireUnionWithHandle {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireUnionWithHandle
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -915,11 +900,7 @@ impl WireOptionalUnionWithHandle {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnionWithHandle> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnionWithHandle> {
@@ -934,7 +915,6 @@ impl WireOptionalUnionWithHandle {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalUnionWithHandle
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -985,9 +965,7 @@ impl ::fidl_next::Encodable for HandlesInTypes {
 unsafe impl<___E> ::fidl_next::Encode<___E> for HandlesInTypes
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -1110,9 +1088,7 @@ unsafe impl ::fidl_next::Wire for WireHandlesInTypes<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireHandlesInTypes<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(

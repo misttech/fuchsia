@@ -47,7 +47,7 @@ pub struct MyProtocol;
 pub mod my_protocol {
     pub mod prelude {
         pub use crate::{
-            my_protocol, MyProtocol, MyProtocolClientHandler, MyProtocolServerHandler,
+            MyProtocol, MyProtocolClientHandler, MyProtocolServerHandler, my_protocol,
         };
     }
 
@@ -215,9 +215,7 @@ impl ::fidl_next::Encodable for Testing {
 unsafe impl<___E> ::fidl_next::Encode<___E> for Testing
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -489,9 +487,7 @@ unsafe impl ::fidl_next::Wire for WireTesting<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireTesting<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(

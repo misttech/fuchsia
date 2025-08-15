@@ -71,8 +71,8 @@ pub struct SomeDriverProtocol;
 pub mod some_driver_protocol {
     pub mod prelude {
         pub use crate::{
-            some_driver_protocol, SomeDriverProtocol, SomeDriverProtocolClientHandler,
-            SomeDriverProtocolServerHandler,
+            SomeDriverProtocol, SomeDriverProtocolClientHandler, SomeDriverProtocolServerHandler,
+            some_driver_protocol,
         };
     }
 

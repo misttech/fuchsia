@@ -364,7 +364,7 @@ pub struct TwoWay;
 
 pub mod two_way {
     pub mod prelude {
-        pub use crate::{two_way, TwoWay, TwoWayClientHandler, TwoWayServerHandler};
+        pub use crate::{TwoWay, TwoWayClientHandler, TwoWayServerHandler, two_way};
 
         pub use crate::TwoWayAddRequest;
 
@@ -394,7 +394,6 @@ pub mod two_way {
         impl<T0, T1> ::fidl_next::Encodable for Add<T0, T1>
         where
             T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
-
             T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
         {
             type Encoded = crate::WireTwoWayAddRequest;
@@ -403,9 +402,7 @@ pub mod two_way {
         unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Add<T0, T1>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
-
             T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
         {
             #[inline]
@@ -475,9 +472,9 @@ pub mod two_way {
             ) -> Result<::fidl_next::ResponseFuture<'_, super::Add, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireTwoWayAddRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireTwoWayAddRequest,
+                    >,
             {
                 self.sender
                     .send_two_way(989730524426044687, request)
@@ -504,7 +501,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for TwoWay
 where
     ___H: TwoWayClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <two_way::Add as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -540,7 +536,6 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for TwoWay
 where
     ___H: TwoWayServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <two_way::Add as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {

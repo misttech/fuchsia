@@ -18,7 +18,6 @@ impl ::fidl_next::Encodable for FlexibleFoo {
 unsafe impl<___E> ::fidl_next::Encode<___E> for FlexibleFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -39,7 +38,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -50,7 +49,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for FlexibleFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -71,7 +69,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -250,7 +248,6 @@ impl<'de> WireFlexibleFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireFlexibleFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -308,11 +305,7 @@ impl<'de> WireOptionalFlexibleFoo<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireFlexibleFoo<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireFlexibleFoo<'de>> {
@@ -327,7 +320,6 @@ impl<'de> WireOptionalFlexibleFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalFlexibleFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -370,7 +362,6 @@ impl ::fidl_next::Encodable for StrictFoo {
 unsafe impl<___E> ::fidl_next::Encode<___E> for StrictFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -398,7 +389,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for StrictFoo
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -592,7 +582,6 @@ impl<'de> WireStrictFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStrictFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -650,11 +639,7 @@ impl<'de> WireOptionalStrictFoo<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireStrictFoo<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireStrictFoo<'de>> {
@@ -669,7 +654,6 @@ impl<'de> WireOptionalStrictFoo<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalStrictFoo<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -710,7 +694,6 @@ impl ::fidl_next::Encodable for ProtocolRequestStrictResponseFlexibleRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ProtocolRequestStrictResponseFlexibleRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -735,7 +718,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ProtocolRequestStrictResponseFlexibleRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -843,7 +825,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireProtocolRequestStrictResponseFlexibleRequest<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -875,7 +856,6 @@ impl ::fidl_next::Encodable for ProtocolRequestStrictResponseFlexibleResponse {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ProtocolRequestStrictResponseFlexibleResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -900,7 +880,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ProtocolRequestStrictResponseFlexibleResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1008,7 +987,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireProtocolRequestStrictResponseFlexibleResponse<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1040,7 +1018,6 @@ impl ::fidl_next::Encodable for ProtocolRequestFlexibleResponseStrictRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ProtocolRequestFlexibleResponseStrictRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1065,7 +1042,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ProtocolRequestFlexibleResponseStrictRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1173,7 +1149,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireProtocolRequestFlexibleResponseStrictRequest<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1205,7 +1180,6 @@ impl ::fidl_next::Encodable for ProtocolRequestFlexibleResponseStrictResponse {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ProtocolRequestFlexibleResponseStrictResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1230,7 +1204,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ProtocolRequestFlexibleResponseStrictResponse
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1338,7 +1311,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireProtocolRequestFlexibleResponseStrictResponse<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1364,7 +1336,7 @@ pub struct Protocol;
 
 pub mod protocol {
     pub mod prelude {
-        pub use crate::{protocol, Protocol, ProtocolClientHandler, ProtocolServerHandler};
+        pub use crate::{Protocol, ProtocolClientHandler, ProtocolServerHandler, protocol};
 
         pub use crate::ProtocolRequestFlexibleResponseStrictRequest;
 
@@ -1415,9 +1387,7 @@ pub mod protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for RequestStrictResponseFlexible<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = crate::WireStrictFoo<'static>>,
         {
             #[inline]
@@ -1453,9 +1423,7 @@ pub mod protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for RequestFlexibleResponseStrict<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = crate::WireFlexibleFoo<'static>>,
         {
             #[inline]
@@ -1510,7 +1478,6 @@ pub mod protocol {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.request_strict_response_flexible_with(RequestStrictResponseFlexible { s })
@@ -1525,9 +1492,9 @@ pub mod protocol {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireProtocolRequestStrictResponseFlexibleRequest<'static>,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireProtocolRequestStrictResponseFlexibleRequest<'static>,
+                    >,
             {
                 self.sender
                     .send_two_way(700529454616207123, request)
@@ -1548,7 +1515,6 @@ pub mod protocol {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.request_flexible_response_strict_with(RequestFlexibleResponseStrict { s })
@@ -1563,9 +1529,9 @@ pub mod protocol {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireProtocolRequestFlexibleResponseStrictRequest<'static>,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireProtocolRequestFlexibleResponseStrictRequest<'static>,
+                    >,
             {
                 self.sender
                     .send_two_way(5191655763393883319, request)
@@ -1592,10 +1558,8 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Protocol
 where
     ___H: ProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <protocol::RequestStrictResponseFlexible as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <protocol::RequestFlexibleResponseStrict as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -1640,10 +1604,8 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Protocol
 where
     ___H: ProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <protocol::RequestStrictResponseFlexible as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <protocol::RequestFlexibleResponseStrict as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {

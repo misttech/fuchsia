@@ -7,5 +7,5 @@
 {{ range .Comments }}
 ///{{ . }}
 {{- end }}
-pub const {{ UpperCaseWithUnderscores . }}: {{ ConstType . }} = {{ ConstValue . }};  {{ if .Expression }}  // {{ .Expression }} {{ end }}
+pub const {{ UpperCaseWithUnderscores . }}: {{ ConstType . }} = {{ ConstValue . }};  {{ if .Expression }}  // {{ .Expression }}{{ end }}
 {{ end }}

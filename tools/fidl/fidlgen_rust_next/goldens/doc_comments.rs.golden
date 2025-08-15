@@ -35,7 +35,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -61,7 +61,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -291,11 +291,7 @@ impl WireOptionalFlexibleUnion {
     }
 
     pub fn as_ref(&self) -> Option<&WireFlexibleUnion> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireFlexibleUnion> {
@@ -365,7 +361,7 @@ pub struct Interface;
 
 pub mod interface {
     pub mod prelude {
-        pub use crate::{interface, Interface, InterfaceClientHandler, InterfaceServerHandler};
+        pub use crate::{Interface, InterfaceClientHandler, InterfaceServerHandler, interface};
     }
 
     pub struct Method;
@@ -1345,11 +1341,7 @@ impl WireOptionalStrictUnion {
     }
 
     pub fn as_ref(&self) -> Option<&WireStrictUnion> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireStrictUnion> {

@@ -14,7 +14,6 @@ impl ::fidl_next::Encodable for UnionSize12Alignment4 {
 unsafe impl<___E> ::fidl_next::Encode<___E> for UnionSize12Alignment4
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -38,7 +37,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for UnionSize12Alignment4
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -214,7 +212,6 @@ impl<'de> WireUnionSize12Alignment4<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireUnionSize12Alignment4<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -267,11 +264,7 @@ impl<'de> WireOptionalUnionSize12Alignment4<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnionSize12Alignment4<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnionSize12Alignment4<'de>> {
@@ -286,7 +279,6 @@ impl<'de> WireOptionalUnionSize12Alignment4<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalUnionSize12Alignment4<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -327,7 +319,6 @@ impl ::fidl_next::Encodable for SandwichUnionSize12Alignment4 {
 unsafe impl<___E> ::fidl_next::Encode<___E> for SandwichUnionSize12Alignment4
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -358,7 +349,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for SandwichUnionSize12Alignment4
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -493,7 +483,6 @@ unsafe impl ::fidl_next::Wire for WireSandwichUnionSize12Alignment4<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSandwichUnionSize12Alignment4<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -721,7 +710,6 @@ impl ::fidl_next::Encodable for UnionSize24Alignment8 {
 unsafe impl<___E> ::fidl_next::Encode<___E> for UnionSize24Alignment8
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -746,7 +734,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for UnionSize24Alignment8
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -924,7 +911,6 @@ impl<'de> WireUnionSize24Alignment8<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireUnionSize24Alignment8<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -981,11 +967,7 @@ impl<'de> WireOptionalUnionSize24Alignment8<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnionSize24Alignment8<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnionSize24Alignment8<'de>> {
@@ -1000,7 +982,6 @@ impl<'de> WireOptionalUnionSize24Alignment8<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalUnionSize24Alignment8<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1043,7 +1024,6 @@ impl ::fidl_next::Encodable for SandwichUnionSize24Alignment8 {
 unsafe impl<___E> ::fidl_next::Encode<___E> for SandwichUnionSize24Alignment8
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1074,7 +1054,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for SandwichUnionSize24Alignment8
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1209,7 +1188,6 @@ unsafe impl ::fidl_next::Wire for WireSandwichUnionSize24Alignment8<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSandwichUnionSize24Alignment8<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1247,7 +1225,6 @@ impl ::fidl_next::Encodable for UnionSize36Alignment4 {
 unsafe impl<___E> ::fidl_next::Encode<___E> for UnionSize36Alignment4
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1271,7 +1248,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for UnionSize36Alignment4
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1447,7 +1423,6 @@ impl<'de> WireUnionSize36Alignment4<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireUnionSize36Alignment4<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1500,11 +1475,7 @@ impl<'de> WireOptionalUnionSize36Alignment4<'de> {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnionSize36Alignment4<'de>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnionSize36Alignment4<'de>> {
@@ -1519,7 +1490,6 @@ impl<'de> WireOptionalUnionSize36Alignment4<'de> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalUnionSize36Alignment4<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -1560,7 +1530,6 @@ impl ::fidl_next::Encodable for SandwichUnionSize36Alignment4 {
 unsafe impl<___E> ::fidl_next::Encode<___E> for SandwichUnionSize36Alignment4
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1591,7 +1560,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for SandwichUnionSize36Alignment4
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -1726,7 +1694,6 @@ unsafe impl ::fidl_next::Wire for WireSandwichUnionSize36Alignment4<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSandwichUnionSize36Alignment4<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -2024,11 +1991,7 @@ impl WireOptionalUnionSize8Alignment4 {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnionSize8Alignment4> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnionSize8Alignment4> {

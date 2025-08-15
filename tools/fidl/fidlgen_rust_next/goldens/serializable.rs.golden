@@ -563,11 +563,7 @@ impl WireOptionalSerializableUnion {
     }
 
     pub fn as_ref(&self) -> Option<&WireSerializableUnion> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireSerializableUnion> {

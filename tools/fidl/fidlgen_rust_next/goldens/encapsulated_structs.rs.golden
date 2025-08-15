@@ -522,9 +522,7 @@ impl ::fidl_next::Encodable for NonInlineStructTestStruct {
 unsafe impl<___E> ::fidl_next::Encode<___E> for NonInlineStructTestStruct
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -609,9 +607,7 @@ unsafe impl ::fidl_next::Wire for WireNonInlineStructTestStruct<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireNonInlineStructTestStruct<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
@@ -838,9 +834,7 @@ impl ::fidl_next::Encodable for TopLevelStruct {
 unsafe impl<___E> ::fidl_next::Encode<___E> for TopLevelStruct
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
-
     ___E: ::fidl_next::fuchsia::HandleEncoder,
 {
     #[inline]
@@ -921,9 +915,7 @@ unsafe impl ::fidl_next::Wire for WireTopLevelStruct<'static> {
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireTopLevelStruct<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
-
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(

@@ -45,7 +45,7 @@ pub struct FirstProtocol;
 pub mod first_protocol {
     pub mod prelude {
         pub use crate::{
-            first_protocol, FirstProtocol, FirstProtocolClientHandler, FirstProtocolServerHandler,
+            FirstProtocol, FirstProtocolClientHandler, FirstProtocolServerHandler, first_protocol,
         };
     }
 
@@ -182,7 +182,6 @@ impl ::fidl_next::DiscoverableService for MultiHeterogeneousMemberService {
 impl<___C> ::fidl_next::Service<___C> for MultiHeterogeneousMemberService
 where
     ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
-
     ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
 {
     type Connector = MultiHeterogeneousMemberServiceConnector<___C>;
@@ -198,7 +197,6 @@ pub struct MultiHeterogeneousMemberServiceConnector<___C> {
 impl<___C> MultiHeterogeneousMemberServiceConnector<___C>
 where
     ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
-
     ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
 {
     /// Attempts to connect to the `first_member` service member.
@@ -279,7 +277,6 @@ impl ::fidl_next::DiscoverableService for MultiHomogeneousMemberService {
 impl<___C> ::fidl_next::Service<___C> for MultiHomogeneousMemberService
 where
     ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
-
     ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
 {
     type Connector = MultiHomogeneousMemberServiceConnector<___C>;
@@ -295,7 +292,6 @@ pub struct MultiHomogeneousMemberServiceConnector<___C> {
 impl<___C> MultiHomogeneousMemberServiceConnector<___C>
 where
     ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
-
     ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
 {
     /// Attempts to connect to the `first_member` service member.
@@ -368,8 +364,8 @@ pub struct SecondProtocol;
 pub mod second_protocol {
     pub mod prelude {
         pub use crate::{
-            second_protocol, SecondProtocol, SecondProtocolClientHandler,
-            SecondProtocolServerHandler,
+            SecondProtocol, SecondProtocolClientHandler, SecondProtocolServerHandler,
+            second_protocol,
         };
     }
 

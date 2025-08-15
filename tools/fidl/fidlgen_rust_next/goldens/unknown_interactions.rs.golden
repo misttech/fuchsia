@@ -224,7 +224,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -251,7 +251,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -516,11 +516,7 @@ impl WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse 
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -1049,7 +1045,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -1076,7 +1072,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -1345,11 +1341,7 @@ impl WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrRespon
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -1657,9 +1649,10 @@ pub struct UnknownInteractionsAjarDriverProtocol;
 pub mod unknown_interactions_ajar_driver_protocol {
     pub mod prelude {
         pub use crate::{
-            unknown_interactions_ajar_driver_protocol, UnknownInteractionsAjarDriverProtocol,
+            UnknownInteractionsAjarDriverProtocol,
             UnknownInteractionsAjarDriverProtocolClientHandler,
             UnknownInteractionsAjarDriverProtocolServerHandler,
+            unknown_interactions_ajar_driver_protocol,
         };
 
         pub use crate::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse;
@@ -2454,7 +2447,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -2481,7 +2474,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -2737,11 +2730,7 @@ impl WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionResponse {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnknownInteractionsAjarProtocolStrictTwoWayUnionResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -3254,7 +3243,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -3281,7 +3270,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -3541,11 +3530,7 @@ impl WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse {
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -4056,7 +4041,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -4083,7 +4068,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -4337,11 +4322,7 @@ impl WireOptionalUnknownInteractionsAjarProtocolStrictEventUnionRequest {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnknownInteractionsAjarProtocolStrictEventUnionRequest> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnknownInteractionsAjarProtocolStrictEventUnionRequest> {
@@ -4844,7 +4825,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -4871,7 +4852,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -5127,11 +5108,7 @@ impl WireOptionalUnknownInteractionsAjarProtocolFlexibleEventUnionRequest {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnknownInteractionsAjarProtocolFlexibleEventUnionRequest> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -5430,9 +5407,8 @@ pub struct UnknownInteractionsAjarProtocol;
 pub mod unknown_interactions_ajar_protocol {
     pub mod prelude {
         pub use crate::{
-            unknown_interactions_ajar_protocol, UnknownInteractionsAjarProtocol,
-            UnknownInteractionsAjarProtocolClientHandler,
-            UnknownInteractionsAjarProtocolServerHandler,
+            UnknownInteractionsAjarProtocol, UnknownInteractionsAjarProtocolClientHandler,
+            UnknownInteractionsAjarProtocolServerHandler, unknown_interactions_ajar_protocol,
         };
 
         pub use crate::UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest;
@@ -5712,7 +5688,6 @@ pub mod unknown_interactions_ajar_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StrictEventFields<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
         {
             #[inline]
@@ -5748,7 +5723,6 @@ pub mod unknown_interactions_ajar_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for FlexibleEventFields<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
         {
             #[inline]
@@ -5927,9 +5901,9 @@ pub mod unknown_interactions_ajar_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::StrictEventFields as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::StrictEventFields as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(5838220329633564521, request)
             }
@@ -5940,9 +5914,9 @@ pub mod unknown_interactions_ajar_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::StrictEventUnion as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::StrictEventUnion as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(6303151946645602671, request)
             }
@@ -5953,9 +5927,9 @@ pub mod unknown_interactions_ajar_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::StrictEventTable as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::StrictEventTable as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(659277224687564957, request)
             }
@@ -5987,9 +5961,9 @@ pub mod unknown_interactions_ajar_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::FlexibleEventFields as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::FlexibleEventFields as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(4298964238728681570, request)
             }
@@ -6000,9 +5974,9 @@ pub mod unknown_interactions_ajar_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::FlexibleEventUnion as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::FlexibleEventUnion as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(8950943792372972717, request)
             }
@@ -6013,9 +5987,9 @@ pub mod unknown_interactions_ajar_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::FlexibleEventTable as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::FlexibleEventTable as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(705539350563403440, request)
             }
@@ -6093,43 +6067,30 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for UnknownInter
 where
     ___H: UnknownInteractionsAjarProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <unknown_interactions_ajar_protocol::StrictTwoWayFields as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::StrictTwoWayUnion as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::StrictTwoWayTable as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::StrictTwoWayErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::StrictTwoWayFieldsErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::StrictTwoWayUnionErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::StrictTwoWayTableErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::StrictEventFields as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::StrictEventUnion as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::StrictEventTable as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::FlexibleEventFields as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::FlexibleEventUnion as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_ajar_protocol::FlexibleEventTable as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -6584,7 +6545,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -6611,7 +6572,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -6880,11 +6841,7 @@ impl WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionRespons
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -7418,7 +7375,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -7445,7 +7402,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -7719,11 +7676,7 @@ impl WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResp
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -8034,9 +7987,10 @@ pub struct UnknownInteractionsClosedDriverProtocol;
 pub mod unknown_interactions_closed_driver_protocol {
     pub mod prelude {
         pub use crate::{
-            unknown_interactions_closed_driver_protocol, UnknownInteractionsClosedDriverProtocol,
+            UnknownInteractionsClosedDriverProtocol,
             UnknownInteractionsClosedDriverProtocolClientHandler,
             UnknownInteractionsClosedDriverProtocolServerHandler,
+            unknown_interactions_closed_driver_protocol,
         };
 
         pub use crate::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse;
@@ -8795,7 +8749,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -8822,7 +8776,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -9082,11 +9036,7 @@ impl WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionResponse {
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsClosedProtocolStrictTwoWayUnionResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -9607,7 +9557,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -9634,7 +9584,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -9899,11 +9849,7 @@ impl WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse {
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -10416,7 +10362,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -10443,7 +10389,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -10699,11 +10645,7 @@ impl WireOptionalUnknownInteractionsClosedProtocolStrictEventUnionRequest {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnknownInteractionsClosedProtocolStrictEventUnionRequest> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -11002,9 +10944,8 @@ pub struct UnknownInteractionsClosedProtocol;
 pub mod unknown_interactions_closed_protocol {
     pub mod prelude {
         pub use crate::{
-            unknown_interactions_closed_protocol, UnknownInteractionsClosedProtocol,
-            UnknownInteractionsClosedProtocolClientHandler,
-            UnknownInteractionsClosedProtocolServerHandler,
+            UnknownInteractionsClosedProtocol, UnknownInteractionsClosedProtocolClientHandler,
+            UnknownInteractionsClosedProtocolServerHandler, unknown_interactions_closed_protocol,
         };
 
         pub use crate::UnknownInteractionsClosedProtocolStrictEventFieldsRequest;
@@ -11218,7 +11159,6 @@ pub mod unknown_interactions_closed_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StrictEventFields<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
         {
             #[inline]
@@ -11391,9 +11331,9 @@ pub mod unknown_interactions_closed_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::StrictEventFields as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::StrictEventFields as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(6736355582617074292, request)
             }
@@ -11404,9 +11344,9 @@ pub mod unknown_interactions_closed_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::StrictEventUnion as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::StrictEventUnion as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(4288682345454280036, request)
             }
@@ -11417,9 +11357,9 @@ pub mod unknown_interactions_closed_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::StrictEventTable as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::StrictEventTable as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(2871682464255309246, request)
             }
@@ -11463,34 +11403,24 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T>
 where
     ___H: UnknownInteractionsClosedProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <unknown_interactions_closed_protocol::StrictTwoWayFields as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_closed_protocol::StrictTwoWayUnion as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_closed_protocol::StrictTwoWayTable as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_closed_protocol::StrictTwoWayErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_closed_protocol::StrictTwoWayFieldsErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_closed_protocol::StrictTwoWayUnionErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_closed_protocol::StrictTwoWayTableErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_closed_protocol::StrictEventFields as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_closed_protocol::StrictEventUnion as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_closed_protocol::StrictEventTable as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -11907,7 +11837,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -11934,7 +11864,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -12194,11 +12124,7 @@ impl WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionResponse {
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsDriverProtocolStrictTwoWayUnionResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -12719,7 +12645,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -12746,7 +12672,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -13011,11 +12937,7 @@ impl WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse {
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -13539,7 +13461,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -13566,7 +13488,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -13826,11 +13748,7 @@ impl WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse {
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -14356,7 +14274,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -14383,7 +14301,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -14651,11 +14569,7 @@ impl WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse
     pub fn as_ref(
         &self,
     ) -> Option<&WireUnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -14962,9 +14876,8 @@ pub struct UnknownInteractionsDriverProtocol;
 pub mod unknown_interactions_driver_protocol {
     pub mod prelude {
         pub use crate::{
-            unknown_interactions_driver_protocol, UnknownInteractionsDriverProtocol,
-            UnknownInteractionsDriverProtocolClientHandler,
-            UnknownInteractionsDriverProtocolServerHandler,
+            UnknownInteractionsDriverProtocol, UnknownInteractionsDriverProtocolClientHandler,
+            UnknownInteractionsDriverProtocolServerHandler, unknown_interactions_driver_protocol,
         };
 
         pub use crate::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse;
@@ -16163,7 +16076,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -16190,7 +16103,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -16441,11 +16354,7 @@ impl WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionResponse {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnknownInteractionsProtocolStrictTwoWayUnionResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnknownInteractionsProtocolStrictTwoWayUnionResponse> {
@@ -16948,7 +16857,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -16975,7 +16884,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -17230,11 +17139,7 @@ impl WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionErrResponse {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnknownInteractionsProtocolStrictTwoWayUnionErrResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -17742,7 +17647,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -17769,7 +17674,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -18023,11 +17928,7 @@ impl WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionResponse {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnknownInteractionsProtocolFlexibleTwoWayUnionResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnknownInteractionsProtocolFlexibleTwoWayUnionResponse> {
@@ -18537,7 +18438,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -18564,7 +18465,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -18820,11 +18721,7 @@ impl WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(
@@ -19328,7 +19225,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -19355,7 +19252,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -19605,11 +19502,7 @@ impl WireOptionalUnknownInteractionsProtocolStrictEventUnionRequest {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnknownInteractionsProtocolStrictEventUnionRequest> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnknownInteractionsProtocolStrictEventUnionRequest> {
@@ -20104,7 +19997,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
             }
         }
 
@@ -20131,7 +20024,7 @@ where
             }
 
             Self::UnknownOrdinal_(ordinal) => {
-                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize))
+                return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
             }
         }
 
@@ -20382,11 +20275,7 @@ impl WireOptionalUnknownInteractionsProtocolFlexibleEventUnionRequest {
     }
 
     pub fn as_ref(&self) -> Option<&WireUnknownInteractionsProtocolFlexibleEventUnionRequest> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     pub fn into_option(self) -> Option<WireUnknownInteractionsProtocolFlexibleEventUnionRequest> {
@@ -20679,8 +20568,8 @@ pub struct UnknownInteractionsProtocol;
 pub mod unknown_interactions_protocol {
     pub mod prelude {
         pub use crate::{
-            unknown_interactions_protocol, UnknownInteractionsProtocol,
-            UnknownInteractionsProtocolClientHandler, UnknownInteractionsProtocolServerHandler,
+            UnknownInteractionsProtocol, UnknownInteractionsProtocolClientHandler,
+            UnknownInteractionsProtocolServerHandler, unknown_interactions_protocol,
         };
 
         pub use crate::UnknownInteractionsProtocolFlexibleEventFieldsRequest;
@@ -21098,7 +20987,6 @@ pub mod unknown_interactions_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StrictEventFields<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
         {
             #[inline]
@@ -21134,7 +21022,6 @@ pub mod unknown_interactions_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for FlexibleEventFields<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
         {
             #[inline]
@@ -21401,9 +21288,9 @@ pub mod unknown_interactions_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::StrictEventFields as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::StrictEventFields as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(8896208255987935026, request)
             }
@@ -21414,9 +21301,9 @@ pub mod unknown_interactions_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::StrictEventUnion as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::StrictEventUnion as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(3919175221694221274, request)
             }
@@ -21427,9 +21314,9 @@ pub mod unknown_interactions_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::StrictEventTable as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::StrictEventTable as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(2711448698318579984, request)
             }
@@ -21461,9 +21348,9 @@ pub mod unknown_interactions_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::FlexibleEventFields as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::FlexibleEventFields as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(3613822014516746241, request)
             }
@@ -21474,9 +21361,9 @@ pub mod unknown_interactions_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::FlexibleEventUnion as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::FlexibleEventUnion as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(2499446536152409191, request)
             }
@@ -21487,9 +21374,9 @@ pub mod unknown_interactions_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::FlexibleEventTable as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::FlexibleEventTable as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(5724881371349617120, request)
             }
@@ -21567,67 +21454,46 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for UnknownInter
 where
     ___H: UnknownInteractionsProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <unknown_interactions_protocol::StrictTwoWayFields as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::StrictTwoWayUnion as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::StrictTwoWayTable as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::StrictTwoWayErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::StrictTwoWayFieldsErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::StrictTwoWayUnionErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::StrictTwoWayTableErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleTwoWay as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleTwoWayFields as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleTwoWayUnion as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleTwoWayTable as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleTwoWayErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleTwoWayFieldsErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleTwoWayUnionErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleTwoWayTableErr as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::StrictEventFields as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::StrictEventUnion as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::StrictEventTable as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleEventFields as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleEventUnion as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <unknown_interactions_protocol::FlexibleEventTable as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {

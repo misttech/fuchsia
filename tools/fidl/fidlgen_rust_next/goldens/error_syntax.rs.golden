@@ -14,7 +14,6 @@ impl ::fidl_next::Encodable for ExampleUseOfErrorSyntaxCallWhichMayFailRequest {
 unsafe impl<___E> ::fidl_next::Encode<___E> for ExampleUseOfErrorSyntaxCallWhichMayFailRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -39,7 +38,6 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ExampleUseOfErrorSyntaxCallWhichMayFailRequest
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
     ___E: ::fidl_next::Encoder,
 {
     #[inline]
@@ -147,7 +145,6 @@ unsafe impl<___D> ::fidl_next::Decode<___D>
     for WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
@@ -353,8 +350,8 @@ pub struct ExampleUseOfErrorSyntax;
 pub mod example_use_of_error_syntax {
     pub mod prelude {
         pub use crate::{
-            example_use_of_error_syntax, ExampleUseOfErrorSyntax,
-            ExampleUseOfErrorSyntaxClientHandler, ExampleUseOfErrorSyntaxServerHandler,
+            ExampleUseOfErrorSyntax, ExampleUseOfErrorSyntaxClientHandler,
+            ExampleUseOfErrorSyntaxServerHandler, example_use_of_error_syntax,
         };
 
         pub use ::fidl_next_test_errorsyntax_parent::ParentUsesErrorSyntaxComposedCallWhichMayFailRequest;
@@ -427,9 +424,7 @@ pub mod example_use_of_error_syntax {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ComposedCallWhichMayFail<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
         {
             #[inline]
@@ -465,9 +460,7 @@ pub mod example_use_of_error_syntax {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for CallWhichMayFail<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             ___E: ::fidl_next::Encoder,
-
             T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
         {
             #[inline]
@@ -522,7 +515,6 @@ pub mod example_use_of_error_syntax {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.composed_call_which_may_fail_with(ComposedCallWhichMayFail { s })
@@ -562,7 +554,6 @@ pub mod example_use_of_error_syntax {
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
-
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
                 self.call_which_may_fail_with(CallWhichMayFail { s })
@@ -577,9 +568,11 @@ pub mod example_use_of_error_syntax {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static>,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<
+                            'static,
+                        >,
+                    >,
             {
                 self.sender
                     .send_two_way(3757408930698888354, request)
@@ -606,10 +599,8 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ExampleUseOf
 where
     ___H: ExampleUseOfErrorSyntaxClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <example_use_of_error_syntax::ComposedCallWhichMayFail as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <example_use_of_error_syntax::CallWhichMayFail as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -654,10 +645,8 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ExampleUseOf
 where
     ___H: ExampleUseOfErrorSyntaxServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <example_use_of_error_syntax::ComposedCallWhichMayFail as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <example_use_of_error_syntax::CallWhichMayFail as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {

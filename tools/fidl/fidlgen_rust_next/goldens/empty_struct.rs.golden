@@ -839,7 +839,7 @@ pub struct EmptyProtocol;
 pub mod empty_protocol {
     pub mod prelude {
         pub use crate::{
-            empty_protocol, EmptyProtocol, EmptyProtocolClientHandler, EmptyProtocolServerHandler,
+            EmptyProtocol, EmptyProtocolClientHandler, EmptyProtocolServerHandler, empty_protocol,
         };
 
         pub use crate::EmptyProtocolReceiveRequest;
@@ -903,7 +903,6 @@ pub mod empty_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Send<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = crate::WireEmpty>,
         {
             #[inline]
@@ -939,7 +938,6 @@ pub mod empty_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Receive<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = crate::WireEmpty>,
         {
             #[inline]
@@ -975,7 +973,6 @@ pub mod empty_protocol {
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for SendAndReceive<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-
             T0: ::fidl_next::Encode<___E, Encoded = crate::WireEmpty>,
         {
             #[inline]
@@ -1037,9 +1034,9 @@ pub mod empty_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireEmptyProtocolSendRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireEmptyProtocolSendRequest,
+                    >,
             {
                 self.sender.send_one_way(1378773277029173000, request)
             }
@@ -1071,9 +1068,9 @@ pub mod empty_protocol {
             >
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireEmptyProtocolSendAndReceiveRequest,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = crate::WireEmptyProtocolSendAndReceiveRequest,
+                    >,
             {
                 self.sender
                     .send_two_way(534401212734647530, request)
@@ -1112,9 +1109,9 @@ pub mod empty_protocol {
             ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
             where
                 ___R: ::fidl_next::Encode<
-                    <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = <super::Receive as ::fidl_next::Method>::Response,
-                >,
+                        <___T as ::fidl_next::Transport>::SendBuffer,
+                        Encoded = <super::Receive as ::fidl_next::Method>::Response,
+                    >,
             {
                 self.sender.send_event(2301564782476583487, request)
             }
@@ -1138,10 +1135,8 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for EmptyProtoco
 where
     ___H: EmptyProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <empty_protocol::Receive as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <empty_protocol::SendAndReceive as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
@@ -1191,10 +1186,8 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for EmptyProtoco
 where
     ___H: EmptyProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <empty_protocol::Send as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-
     <empty_protocol::SendAndReceive as ::fidl_next::Method>::Request:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {

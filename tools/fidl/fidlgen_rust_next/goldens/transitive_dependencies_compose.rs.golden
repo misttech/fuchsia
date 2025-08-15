@@ -8,7 +8,7 @@ pub struct Top;
 
 pub mod top {
     pub mod prelude {
-        pub use crate::{top, Top, TopClientHandler, TopServerHandler};
+        pub use crate::{Top, TopClientHandler, TopServerHandler, top};
 
         pub use ::fidl_next_test_bottom::BottomGetFooResponse;
     }
@@ -77,7 +77,6 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Top
 where
     ___H: TopClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-
     <top::GetFoo as ::fidl_next::Method>::Response:
         ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
 {
