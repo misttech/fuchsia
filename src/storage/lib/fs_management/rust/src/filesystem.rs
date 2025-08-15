@@ -21,7 +21,17 @@ use std::sync::Arc;
 use zx::{self as zx, AsHandleRef as _, Status};
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
-/// An abstract connector for things that speak fuchsia.hardware.block.Block and similar protocols.
+/// Creates new connections to an instance of fuchsia.hardware.block.Block and similar protocols
+/// (Volume, Partition).
+///
+/// NOTE: It is important to understand the difference between `BlockConnector` and the actual
+/// protocols (e.g. a `ClientEnd<BlockMarker>` or `BlockProxy`): `BlockConnector` is used to *create
+/// new connections* to a Block.
+///
+/// It is not possible to directly convert a `ClientEnd<BlockMarker>` (or `BlockProxy`) into a
+/// `BlockConnector`, because Block is not cloneable.  To implement `BlockConnector`, you will need
+/// a way to generate new connections to a Block instance.  A few common implementations are
+/// provided below.
 pub trait BlockConnector: Send + Sync {
     fn connect_channel_to_volume(&self, server_end: ServerEnd<VolumeMarker>) -> Result<(), Error>;
     fn connect_volume(&self) -> Result<ClientEnd<VolumeMarker>, Error> {
