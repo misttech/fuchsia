@@ -447,7 +447,7 @@ pub struct TaskMutableState {
     pub ptrace: Option<PtraceState>,
 
     /// Information that a tracer needs to inspect this process.
-    pub captured_thread_state: Option<CapturedThreadState>,
+    pub captured_thread_state: Option<Box<CapturedThreadState>>,
 }
 
 impl TaskMutableState {
@@ -513,7 +513,7 @@ impl TaskMutableState {
         }
     }
 
-    pub fn take_captured_state(&mut self) -> Option<CapturedThreadState> {
+    pub fn take_captured_state(&mut self) -> Option<Box<CapturedThreadState>> {
         if self.captured_thread_state.is_some() {
             let mut state = None;
             std::mem::swap(&mut state, &mut self.captured_thread_state);
@@ -523,10 +523,10 @@ impl TaskMutableState {
     }
 
     pub fn copy_state_from(&mut self, current_task: &CurrentTask) {
-        self.captured_thread_state = Some(CapturedThreadState {
+        self.captured_thread_state = Some(Box::new(CapturedThreadState {
             thread_state: current_task.thread_state.extended_snapshot(),
             dirty: false,
-        });
+        }));
     }
 
     /// Returns the task's currently active signal mask.

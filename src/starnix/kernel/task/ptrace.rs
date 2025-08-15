@@ -860,7 +860,7 @@ where
 
             // NB: The behavior of the syscall is different from the behavior in ptrace(2),
             // which is provided by libc.
-            let src = LongPtr::new(captured, addr);
+            let src = LongPtr::new(captured.as_ref(), addr);
             let val = tracee.read_multi_arch_object(src)?;
 
             let dst = LongPtr::new(&src, data);
@@ -872,7 +872,7 @@ where
                 return error!(ESRCH);
             };
 
-            let src = LongPtr::new(captured, addr);
+            let src = LongPtr::new(captured.as_ref(), addr);
             let val = data.ptr() as u64;
             tracee.write_multi_arch_object(src, val)?;
             Ok(starnix_syscalls::SUCCESS)
@@ -882,7 +882,7 @@ where
                 return error!(ESRCH);
             };
 
-            let dst = LongPtr::new(captured, data);
+            let dst = LongPtr::new(captured.as_ref(), data);
             let val = ptrace_peekuser(&mut captured.thread_state, addr.ptr() as usize)?;
             current_task.write_multi_arch_object(dst, val as u64)?;
             return Ok(starnix_syscalls::SUCCESS);
@@ -1263,7 +1263,7 @@ pub fn ptrace_pokeuser(
         if offset >= std::mem::size_of::<user>() {
             return error!(EIO);
         }
-        if offset < UserRegsStructPtr::size_of_object_for(thread_state) {
+        if offset < UserRegsStructPtr::size_of_object_for(thread_state.as_ref()) {
             return thread_state.thread_state.set_user_register(offset, value);
         }
     }
